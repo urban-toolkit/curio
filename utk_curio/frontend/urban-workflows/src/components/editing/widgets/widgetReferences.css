@@ -54,13 +54,6 @@
   color: var(--curio-accent-mint-fg);
 }
 
-/* A shared reference, to a Parameter node's widget: the same box, amber. */
-.monaco-editor .view-line .curio-widget-ref.curio-shared-ref {
-  background: var(--curio-accent-amber-bg);
-  border-color: #e8c99a;
-  color: var(--curio-accent-amber-fg);
-}
-
 /* A selection reference, to the ids a view's selection picks: the same box,
    peach. */
 .monaco-editor .view-line .curio-widget-ref.curio-selection-ref {

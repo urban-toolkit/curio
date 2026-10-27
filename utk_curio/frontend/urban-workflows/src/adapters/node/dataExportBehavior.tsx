@@ -7,7 +7,7 @@ import { fetchOutputFile } from '../../services/outputFiles';
 import { resolveNodeDisplayLabel } from '../../utils/palettePackageFactoryDraft';
 import { triggerBlobDownload } from '../../services/packages';
 import { exportDownloadName } from '../../utils/dataExportTarget';
-import { runKeyWithShared, sharedWidgetsOf } from '../../utils/references/sharedParameters';
+import { runKeyOf } from '../../utils/references/runKeys';
 
 /** What the Download button last did, under it. */
 type Status = { text: string; error?: boolean } | null;
@@ -30,7 +30,7 @@ type NamedFile = { path: string; value: string | null };
  */
 export const useDataExportBehavior: NodeBehaviorHook = (data, nodeState) => {
   const {
-    playNodesUpTo, isRunActive: browserRunActive, serverRunActive, outputs, nodes,
+    playNodesUpTo, isRunActive: browserRunActive, serverRunActive, outputs,
   } = useFlowContext();
   const isRunActive = Boolean(browserRunActive || serverRunActive);
 
@@ -117,8 +117,8 @@ export const useDataExportBehavior: NodeBehaviorHook = (data, nodeState) => {
     // The result is current when the node's last run succeeded with the code,
     // widgets and selections it holds now (useNodeState stamps the run key).
     const current = outputCode === 'success' && outputPath != null
-      && (data as { executedCode?: string }).executedCode === runKeyWithShared(
-        nodeState.code ?? '', (data as any).widgets, sharedWidgetsOf(nodes ?? []), (data as any).selections,
+      && (data as { executedCode?: string }).executedCode === runKeyOf(
+        nodeState.code ?? '', (data as any).widgets, (data as any).selections,
       );
     if (current) {
       void download(outputPath);
@@ -129,7 +129,7 @@ export const useDataExportBehavior: NodeBehaviorHook = (data, nodeState) => {
     setPending(true);
     setStatus({ text: 'Running the node...' });
     playNodesUpTo(data.nodeId);
-  }, [busy, pending, wired, outputCode, outputPath, data, nodeState.code, nodes, download, playNodesUpTo]);
+  }, [busy, pending, wired, outputCode, outputPath, data, nodeState.code, download, playNodesUpTo]);
 
   // The run a click started: download the file it wrote once it is over. A
   // run that ends without a new result of this node's hands out nothing.

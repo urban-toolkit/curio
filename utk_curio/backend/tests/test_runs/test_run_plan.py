@@ -69,7 +69,6 @@ def test_ancestors_follow_data_edges_only():
     ("curio.builtin/data-loading@1", "", "run"),
     ("curio.builtin/js-computation", "", "run"),
     ("curio.builtin/data-pool", "", "forward"),
-    ("curio.builtin/parameter@1", "", "forward"),
     ("curio.builtin/note@1", "# Findings\n- one", "forward"),
     ("curio.builtin/vis-vega@1", "{}", "forward"),
     ("curio.builtin/vis-simple", "", "forward"),
@@ -104,6 +103,9 @@ def test_the_roster_decides_what_a_package_node_runs():
     # A saved Compare Scenarios node: its package no longer holds the template.
     "curio.builtin/compare-scenarios",
     "curio.builtin/compare-scenarios@1",
+    # A saved Parameter node, the same.
+    "curio.builtin/parameter",
+    "curio.builtin/parameter@1",
     # A package nothing holds.
     "curio.nowhere/missing-node",
     "curio.nowhere/missing-node@1",

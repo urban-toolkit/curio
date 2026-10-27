@@ -1,10 +1,9 @@
 """Turning a node's references into code (#662): ``[!! season !!]`` names a
 widget, ``[!! input_1 !!]`` an input (by circle, counted from 0),
 ``[!! input_1.height !!]`` a column of that input, ``[!! input_1:roads !!]``
-(or ``[!! input_1:roads.height !!]``) a layer an input carries,
-``[!! @season !!]`` a shared tag: the widget of the Parameter node named
-``season``, and ``[!! selection picked !!]`` one of the node's selection tags:
-the ids of the rows a view's selection picks, which the node holds at
+(or ``[!! input_1:roads.height !!]``) a layer an input carries, and
+``[!! selection picked !!]`` one of the node's selection tags: the ids of the
+rows a view's selection picks, which the node holds at
 ``metadata.selections``.
 
 In a Vega-Lite or Autark spec, the scenario chips write the scenarios of the
@@ -32,8 +31,8 @@ browser runs before posting a node's code. Both write the same code: one table
 of cases, ``codeReferences.cases.json`` beside the TypeScript module, is read by
 Jest and by ``tests/test_execution/test_code_references.py``.
 
-A widget, shared or selection reference standing on its own becomes a literal
-of the language (a selection's ids are a list); inside a string literal it
+A widget or selection reference standing on its own becomes a literal of the
+language (a selection's ids are a list); inside a string literal it
 becomes the value's text, escaped for that string;
 inside a comment, the plain text. A column reference is written like a text
 value: its name. In a Vega-Lite chart's spec, a reference where Vega-Lite reads
@@ -91,10 +90,6 @@ STACKED_DATASET = "inputs"
 #: ``INPUT_NAME_ONLY_PATTERN`` in ``widgetModel.ts`` and with the widget
 #: name's ``not`` in ``docs/schemas/node-package.v4.json``.
 INPUT_NAME_ONLY_RE = re.compile(r"^(?:input_\d+|inputs)$")
-
-#: What a shared reference starts with. Kept in sync with ``SHARED_PREFIX`` in
-#: ``codeReferences.ts``.
-SHARED_PREFIX = "@"
 
 #: What stands inside a selection reference, ``selection picked``. Kept in sync
 #: with ``SELECTION_REFERENCE_PATTERN`` in ``codeReferences.ts``.
@@ -295,9 +290,9 @@ def _parse_scenario_chip(rest: str) -> dict:
 
 
 def parse_reference(inner: str) -> dict:
-    """``{"kind": "widget", "name"}``, ``{"kind": "shared", "name"}``,
-    ``{"kind": "selection", "name"}``, ``{"kind": "input", "slot",
-    "layer"?, "column"?}``, ``{"kind": "scenario", "chip", "slot"?}``,
+    """``{"kind": "widget", "name"}``, ``{"kind": "selection", "name"}``,
+    ``{"kind": "input", "slot", "layer"?, "column"?}``,
+    ``{"kind": "scenario", "chip", "slot"?}``,
     ``{"kind": "dataset"}`` (``[!! inputs !!]``) or ``{"kind": "stacked",
     "column"}``; ``slot`` is None for ``input_?`` (or ``scenario input_?``),
     the input whose edge was deleted, and a scenario ``chip`` None for a word
@@ -315,8 +310,6 @@ def parse_reference(inner: str) -> dict:
             return {"kind": "stacked", "column": stacked.group(1)}
         if inner == STACKED_DATASET:
             return {"kind": "dataset"}
-        if inner.startswith(SHARED_PREFIX):
-            return {"kind": "shared", "name": inner[len(SHARED_PREFIX):]}
         return {"kind": "widget", "name": inner}
     parsed = {"kind": "input", "slot": None if m.group(1) == "?" else int(m.group(1))}
     if m.group(2) is not None:
@@ -333,12 +326,6 @@ def _names_of_kind_in(code: object, kind: str) -> list[str]:
         if parsed["kind"] == kind and parsed["name"] not in names:
             names.append(parsed["name"])
     return names
-
-
-def shared_names_in(code: object) -> list[str]:
-    """The names of the shared tags *code* references, each once, in order.
-    Kept in sync with ``sharedNamesIn`` in ``codeReferences.ts``."""
-    return _names_of_kind_in(code, "shared")
 
 
 def selection_names_in(code: object) -> list[str]:
@@ -904,11 +891,10 @@ def reference_problem(
     inputs: list,
     context: tuple,
     language: str,
-    shared: list = (),
     selections: list = (),
 ) -> str | None:
-    """Why *reference* cannot be resolved against *widgets*, *inputs*, the
-    *shared* tags and the node's *selections*, standing in *context*, or None."""
+    """Why *reference* cannot be resolved against *widgets*, *inputs* and the
+    node's *selections*, standing in *context*, or None."""
     legacy = legacy_reference_message(reference, inner)
     if legacy:
         return legacy
@@ -928,19 +914,6 @@ def reference_problem(
                 f"{reference}: the selection holds {_selection_size(tag)} ids, more than the "
                 f"{SELECTION_ID_CAP} a selection tag takes. Select fewer rows in its view."
             )
-        return None
-    if parsed["kind"] == "shared":
-        name = parsed["name"]
-        if not WIDGET_NAME_RE.match(name):
-            return (
-                f"{reference} does not name a Parameter node. "
-                "Parameter names are letters, digits and underscores."
-            )
-        named = sum(1 for w in shared if w.get("name") == name)
-        if named == 0:
-            return f"{reference}: no Parameter node is named {name}. Add one, or drag a tag from Shared."
-        if named > 1:
-            return f"{reference}: {named} Parameter nodes are named {name}. Rename all but one."
         return None
     if parsed["kind"] == "scenario":
         return _scenario_problem(reference, parsed, inputs, context, language)
@@ -1190,10 +1163,9 @@ def widget_name_problem(name: object) -> str | None:
     pattern as ECMA-262 does, where ``$`` ends the text, while Python's
     ``re.match`` lets a final line break through. And ``input_<k>`` names one
     of the node's inputs, in its code as in its chips, and ``inputs`` the
-    dataset they are stacked in (:data:`STACKED_DATASET`). The Widgets tab and
-    a Parameter node refuse such a name (:func:`check_widget_def`), and so does
-    a package manifest for a template's widgets
-    (``packages/repositories/manifests.py``)."""
+    dataset they are stacked in (:data:`STACKED_DATASET`). The Widgets tab
+    refuses such a name (:func:`check_widget_def`), and so does a package
+    manifest for a template's widgets (``packages/repositories/manifests.py``)."""
     if not isinstance(name, str) or not WIDGET_NAME_RE.fullmatch(name):
         return "A name is letters, digits and underscores, and does not start with a digit."
     if name == STACKED_DATASET:
@@ -1203,7 +1175,7 @@ def widget_name_problem(name: object) -> str | None:
     return None
 
 
-def widget_name_or_type_problem(definition: dict, others=(), parameter: bool = False) -> str | None:
+def widget_name_or_type_problem(definition: dict, others=()) -> str | None:
     """What the Widgets tab refuses in a widget before it reads its options
     and its default, or None: a name :func:`widget_name_problem` refuses, a
     name one of *others* has, or a type outside :data:`WIDGET_KINDS`. The
@@ -1214,23 +1186,22 @@ def widget_name_or_type_problem(definition: dict, others=(), parameter: bool = F
     if problem := widget_name_problem(name):
         return problem
     if any(isinstance(w, dict) and w.get("name") == name for w in others):
-        return f"Another Parameter node is named {name}." if parameter else f"This node already has a widget named {name}."
+        return f"This node already has a widget named {name}."
     if definition.get("type") not in WIDGET_KINDS:
         return "Pick a widget type."
     return None
 
 
-def check_widget_def(definition: dict, others=(), parameter: bool = False) -> str | None:
+def check_widget_def(definition: dict, others=()) -> str | None:
     """What is wrong with a widget being added, or None: ``checkWidgetDef`` in
     ``widgetModel.ts``, what the Widgets tab checks a widget with. *others*
-    are the node's other widgets, whose names it must not reuse; for a
-    Parameter node's widget (*parameter*), the other Parameter nodes'. Its
+    are the node's other widgets, whose names it must not reuse. Its
     options are read as the canvas reads them before the tab checks them
     (:func:`_choices`, :func:`_number_option`), so a malformed option counts
     as missing. A package manifest's template widgets are checked here too,
     each with its kind's default when it gives none
     (:func:`widget_with_default`, ``packages/repositories/manifests.py``)."""
-    if problem := widget_name_or_type_problem(definition, others, parameter):
+    if problem := widget_name_or_type_problem(definition, others):
         return problem
     kind = definition.get("type")
     options = definition.get("options") if isinstance(definition.get("options"), dict) else {}
@@ -1283,16 +1254,6 @@ def normalize_widgets(raw) -> list:
     return out
 
 
-def normalize_shared(raw) -> list:
-    """The well-formed widgets in *raw*, one per Parameter node, as
-    :func:`normalize_widgets` reads each. Unlike a node's own widgets, two with
-    one name are both kept, so a reference to that name can say so."""
-    out: list = []
-    for entry in raw if isinstance(raw, (list, tuple)) else []:
-        out.extend(normalize_widgets([entry]))
-    return out
-
-
 def normalize_selections(raw) -> list:
     """The well-formed selection tags in *raw* (a spec's
     ``metadata.selections``), one per name, of the :data:`WIDGET_NAME_RE`
@@ -1332,7 +1293,6 @@ def _resolved_text(
     inputs: list,
     context: tuple,
     language: str,
-    shared_by_name: dict,
     selections_by_name: dict,
     place: dict | None = None,
 ) -> str:
@@ -1346,10 +1306,8 @@ def _resolved_text(
     if parsed["kind"] == "dataset":
         # The dataset itself is its name too, which no place reads as a field.
         return _write_text(STACKED_DATASET, context, language)
-    if parsed["kind"] in ("shared", "selection", "scenario"):
-        if parsed["kind"] == "shared":
-            value = effective_value(shared_by_name[parsed["name"]])
-        elif parsed["kind"] == "selection":
+    if parsed["kind"] in ("selection", "scenario"):
+        if parsed["kind"] == "selection":
             value = selections_by_name[parsed["name"]]["ids"]
         else:
             value = _scenario_value(parsed, inputs)
@@ -1440,7 +1398,7 @@ def with_stand_in_chips(code: str) -> tuple[str, list]:
         if problem is not None:
             refusals.append(problem)
         stands_in = kind["kind"] in _STAND_IN_KINDS and problem is None
-        out.append(_resolved_text(ref.group(1), {}, inputs, context, "json", {}, {}) if stands_in else written)
+        out.append(_resolved_text(ref.group(1), {}, inputs, context, "json", {}) if stands_in else written)
         last = ref.end()
     out.append(code[last:])
     return "".join(out), refusals
@@ -1451,7 +1409,6 @@ def resolve_references(
     widgets: Iterable = (),
     language: str = "python",
     inputs: Iterable = (),
-    shared: Iterable = (),
     selections: Iterable = (),
     grammar: str | None = None,
 ) -> tuple[str, list]:
@@ -1461,8 +1418,8 @@ def resolve_references(
     "layerName"?, "columns"?: [...], "dtypes"?: {...}, "layers"?: [{"name",
     "columns"?}, ...], "scenario"?: {"scenario"?, "name", "color", "rank"?}}``
     each, ``scenario`` the label its rows carry, which the scenario chips write
-    (``WorkflowSpec.input_scenarios``). *shared* are the widgets of the dataflow's Parameter nodes, one per
-    node. *selections* are the node's selection tags (``metadata.selections``).
+    (``WorkflowSpec.input_scenarios``). *selections* are the node's selection
+    tags (``metadata.selections``).
     *grammar* is the grammar of a JSON document: in a Vega-Lite spec
     (:data:`VEGA_LITE`), a reference where Vega-Lite reads a field name writes
     each name escaped (:func:`vega_field_name`).
@@ -1472,7 +1429,6 @@ def resolve_references(
     if language not in LANGUAGES:
         raise ValueError(f"unknown code language {language!r}")
     widgets = normalize_widgets(list(widgets or []))
-    shared = normalize_shared(list(shared or []))
     selections = normalize_selections(list(selections or []))
     inputs = sorted((dict(i) for i in inputs or ()), key=lambda i: i.get("slot", 0))
     refs = list(REFERENCE_RE.finditer(code))
@@ -1481,7 +1437,6 @@ def resolve_references(
     contexts = _contexts(code, refs, language)
     places = _vega_field_places(code, refs, contexts) if language == "json" and grammar == VEGA_LITE else None
     by_name = {w["name"]: w for w in widgets}
-    shared_by_name = {w["name"]: w for w in shared}
     selections_by_name = {t["name"]: t for t in selections}
     problems: list = []
     out: list = []
@@ -1490,14 +1445,14 @@ def resolve_references(
         out.append(code[last:ref.start()])
         written = ref.group(0)
         problem = reference_problem(
-            written, ref.group(1), widgets, inputs, context, language, shared, selections
+            written, ref.group(1), widgets, inputs, context, language, selections=selections,
         )
         if problem is not None:
             problems.append({"reference": written, "message": problem})
             out.append(written)
         else:
             out.append(_resolved_text(
-                ref.group(1), by_name, inputs, context, language, shared_by_name, selections_by_name,
+                ref.group(1), by_name, inputs, context, language, selections_by_name,
                 places[index] if places is not None else None,
             ))
         last = ref.end()

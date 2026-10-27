@@ -536,24 +536,22 @@ def test_another_user_reloading_the_dataflow_sees_its_data(
 # A visitor's own values (#1117)
 # ---------------------------------------------------------------------------
 
-ROWS = "dash-rows"
-SCALE = "dash-scale"
 SHAPER = "dash-shaper"
 VIEWER_RUN_STEM = "dashboard-viewer-run"
 
-#: How many rows the producer makes, by the pinned Rows choice: the three the
-#: owner saved, or five.
+#: How many rows the producer makes, by a Rows choice of its own: the three
+#: the owner saved, or five.
 ROWS_PRODUCER_CODE = (
     "import pandas as pd\n\n"
-    "rows = [!! @rows !!]\n"
+    "rows = [!! rows !!]\n"
     "counts = {'three': [3, 7, 5], 'five': [3, 7, 5, 9, 4]}[rows]\n"
     "return pd.DataFrame({'category': list('abcde')[:len(counts)], 'count': counts})\n"
 )
 
-#: The producer's rows scaled by the pinned Scale choice: a second Python step,
-#: which reads what the first one made.
+#: The producer's rows scaled by a Scale choice of its own: a second Python
+#: step, which reads what the first one made.
 SHAPER_CODE = (
-    "scale = [!! @scale !!]\n"
+    "scale = [!! scale !!]\n"
     "factor = {'one': 1, 'ten': 10}[scale]\n"
     "return input_0.assign(count=input_0['count'] * factor)\n"
 )
@@ -598,9 +596,10 @@ _CHART_PIXELS_JS = """(id) => {
 }"""
 
 
-def _choice(node_id: str, name: str, label: str, choices: list, x: int) -> dict:
-    """A pinned Parameter node holding one choice, shown as radio buttons."""
-    node = {**_node(node_id, "curio.builtin/parameter", x), "y": 700, "dashboardPinned": True}
+def _with_choice(node: dict, name: str, label: str, choices: list) -> dict:
+    """*node* pinned with one choice of its own, shown as radio buttons: its
+    tile's control."""
+    node = {**node, "dashboardPinned": True}
     node["metadata"]["widgets"] = [{
         "name": name, "type": "choice", "label": label, "default": choices[0],
         "options": {"choices": choices, "display": "radio"},
@@ -610,8 +609,8 @@ def _choice(node_id: str, name: str, label: str, choices: list, x: int) -> dict:
 
 def _controls_spec() -> dict:
     """Two Python steps, the second reading what the first made, then a Data
-    Pool and the chart; a pinned choice read by each step. The pool is pinned
-    too: its table shows the rows a value made."""
+    Pool and the chart; each step pinned with a choice of its own, which its
+    code reads. The pool is pinned too: its table shows the rows a value made."""
     def edge(source: str, target: str) -> dict:
         return {"id": f"reactflow__edge-{source}out-{target}in", "source": source, "target": target}
 
@@ -623,12 +622,12 @@ def _controls_spec() -> dict:
             "packages": [],
             "datasets": [],
             "nodes": [
-                _node(PRODUCER, "curio.builtin/data-loading", 0, ROWS_PRODUCER_CODE),
-                _node(SHAPER, "curio.builtin/computation-analysis", 700, SHAPER_CODE),
+                _with_choice(_node(PRODUCER, "curio.builtin/data-loading", 0, ROWS_PRODUCER_CODE),
+                             "rows", "Rows", ["three", "five"]),
+                _with_choice(_node(SHAPER, "curio.builtin/computation-analysis", 700, SHAPER_CODE),
+                             "scale", "Scale", ["one", "ten"]),
                 {**_node(POOL, "curio.builtin/data-pool", 1400), "dashboardPinned": True},
                 _node(CHART, "curio.builtin/vis-vega", 2100, CHART_SPEC),
-                _choice(ROWS, "rows", "Rows", ["three", "five"], 0),
-                _choice(SCALE, "scale", "Scale", ["one", "ten"], 700),
             ],
             "edges": [edge(PRODUCER, SHAPER), edge(SHAPER, POOL), edge(POOL, CHART)],
         },
@@ -812,7 +811,7 @@ def _saved_tiles_drew(page) -> None:
 
 
 def _pick(page, node_id: str, choice: str):
-    """The radio button of *choice* on the pinned Parameter node *node_id*."""
+    """The radio button of *choice* on the tile of the pinned node *node_id*."""
     return node_locator(page, node_id).get_by_role("radio", name=choice)
 
 
@@ -865,7 +864,7 @@ def test_a_visitor_changes_a_pinned_control_and_the_next_one_gets_the_kept_outpu
     try:
         first.opens(hosted, project_id)
         first.waits_for("the saved tiles", lambda: _saved_tiles_drew(first.page))
-        five = _pick(first.page, ROWS, "five")
+        five = _pick(first.page, PRODUCER, "five")
         expect(five).to_be_enabled(timeout=10000)
         # The visitor changes the controls with no notice that the changes are not saved.
         expect(first.page.get_by_test_id("shared-view-banner")).to_have_count(0)
@@ -899,7 +898,7 @@ def test_a_visitor_changes_a_pinned_control_and_the_next_one_gets_the_kept_outpu
         second.opens(hosted, project_id)
         second.waits_for("the saved tiles", lambda: _saved_tiles_drew(second.page))
         saved_pixels = second.page.evaluate(_CHART_PIXELS_JS, CHART)
-        _pick(second.page, ROWS, "five").check()
+        _pick(second.page, PRODUCER, "five").check()
         second.waits_for("the pool's five rows", lambda: _pool_shows(second.page, 5))
         second.waits_for("the chart of five rows", lambda: _chart_redrew(second.page, saved_pixels))
         second.waits_for_runs(1)
@@ -910,7 +909,7 @@ def test_a_visitor_changes_a_pinned_control_and_the_next_one_gets_the_kept_outpu
         )
 
         # Only the second step reads Scale: the first step's output is the kept one.
-        _pick(second.page, SCALE, "ten").check()
+        _pick(second.page, SHAPER, "ten").check()
         second.waits_for("the rows scaled ten times", lambda: _first_row_has_cell(second.page, "30"))
         second.waits_for_runs(2)
         assert len(_runs_started(second.asked)) == 2, "two changes, two runs" + second.story()
@@ -1055,15 +1054,6 @@ def test_tiles_below_a_step_that_fails_name_it_with_no_node_to_open(
 
 TILE_CONTROLS_STEM = "dashboard-tile-controls"
 
-#: How many rows the producer makes, by a Rows choice of its own: the three
-#: the owner saved, or five.
-OWN_ROWS_PRODUCER_CODE = (
-    "import pandas as pd\n\n"
-    "rows = [!! rows !!]\n"
-    "counts = {'three': [3, 7, 5], 'five': [3, 7, 5, 9, 4]}[rows]\n"
-    "return pd.DataFrame({'category': list('abcde')[:len(counts)], 'count': counts})\n"
-)
-
 #: The chart's bars, as opaque as its own Opacity slider says.
 OWN_OPACITY_CHART_SPEC = """{
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
@@ -1080,13 +1070,8 @@ def _own_rows_spec() -> dict:
     shown as radio buttons."""
     spec = _spec()
     spec["dataflow"]["name"] = "Dashboard code node controls e2e"
-    producer = spec["dataflow"]["nodes"][0]
-    producer["content"] = OWN_ROWS_PRODUCER_CODE
-    producer["dashboardPinned"] = True
-    producer["metadata"]["widgets"] = [{
-        "name": "rows", "type": "choice", "label": "Rows", "default": "three",
-        "options": {"choices": ["three", "five"], "display": "radio"},
-    }]
+    nodes = spec["dataflow"]["nodes"]
+    nodes[0] = _with_choice({**nodes[0], "content": ROWS_PRODUCER_CODE}, "rows", "Rows", ["three", "five"])
     return spec
 
 
@@ -1356,11 +1341,11 @@ GPU_LOAD = "dash-gpu-load"
 GPU_STEP = "dash-gpu-step"
 GPU_AFTER = "dash-gpu-after"
 
-#: As many points as the pinned Rows choice says, each with a count.
+#: As many points as its own Rows choice says, each with a count.
 GPU_LOAD_CODE = (
     "import geopandas as gpd\n"
     "from shapely.geometry import Point\n\n"
-    "rows = [!! @rows !!]\n"
+    "rows = [!! rows !!]\n"
     "counts = {'three': [3, 7, 5], 'five': [3, 7, 5, 9, 4]}[rows]\n"
     "points = [Point(-87.63 + 0.001 * i, 41.88) for i in range(len(counts))]\n"
     "return gpd.GeoDataFrame({'count': counts}, geometry=points, crs='EPSG:4326')\n"
@@ -1390,8 +1375,8 @@ GPU_AFTER_CODE = (
 
 def _gpu_spec() -> dict:
     """Python, then an Autark compute only a browser runs, then Python, then
-    the table, a Data Pool the test pins. The pinned Rows choice is read by
-    the first step, so another Rows runs all three."""
+    the table, a Data Pool the test pins. The first step is pinned with a Rows
+    choice of its own, so another Rows runs all three."""
     def edge(source: str, target: str) -> dict:
         return {"id": f"reactflow__edge-{source}out-{target}in", "source": source, "target": target}
 
@@ -1403,11 +1388,11 @@ def _gpu_spec() -> dict:
             "packages": [],
             "datasets": [],
             "nodes": [
-                _node(GPU_LOAD, "curio.builtin/data-loading", 0, GPU_LOAD_CODE),
+                _with_choice(_node(GPU_LOAD, "curio.builtin/data-loading", 0, GPU_LOAD_CODE),
+                             "rows", "Rows", ["three", "five"]),
                 _node(GPU_STEP, "curio.builtin/autk-grammar", 700, GPU_COMPUTE_SPEC),
                 _node(GPU_AFTER, "curio.builtin/computation-analysis", 1400, GPU_AFTER_CODE),
                 _node(POOL, "curio.builtin/data-pool", 2100),
-                _choice(ROWS, "rows", "Rows", ["three", "five"], 0),
             ],
             "edges": [edge(GPU_LOAD, GPU_STEP), edge(GPU_STEP, GPU_AFTER), edge(GPU_AFTER, POOL)],
         },
@@ -1490,7 +1475,7 @@ def test_a_step_only_a_browser_runs_is_run_by_each_visitors_page_for_it_alone(
         assert _runs_started(first.asked) == [], (
             "opening the dashboard started a run, though its tile has its saved output" + first.story()
         )
-        _pick(first.page, ROWS, "five").check()
+        _pick(first.page, GPU_LOAD, "five").check()
         first.waits_for("the five rows doubled on this page's GPU", lambda: _five_doubled_rows(first.page))
         first.waits_for_runs(2)
         started = _runs_started(first.asked)
@@ -1512,7 +1497,7 @@ def test_a_step_only_a_browser_runs_is_run_by_each_visitors_page_for_it_alone(
     try:
         second.opens(hosted, project_id)
         second.waits_for("the saved table", lambda: _pool_shows(second.page, 3))
-        _pick(second.page, ROWS, "five").check()
+        _pick(second.page, GPU_LOAD, "five").check()
         second.waits_for("the five rows doubled on this page's GPU", lambda: _five_doubled_rows(second.page))
         second.waits_for_runs(2)
         # Its own page ran the GPU step: the first page's result was not handed to it.
@@ -1685,16 +1670,15 @@ SCENARIO_COLORS = {"base": "rgb(42, 157, 143)", "tall": "rgb(232, 106, 60)"}
 
 
 def _scenario_spec() -> dict:
-    """A loader and a shared Parameter node, two scenarios of one node each, and
-    a node reading both outcomes; every node pinned. The canvas puts the two
-    scenarios' nodes in one column, as the distance layout would too."""
+    """A loader and a value node, the scenarios' context, two scenarios of one
+    node each, the second reading the value too, and a node reading both
+    outcomes; every node pinned. The canvas puts the two scenarios' nodes in one
+    column, as the distance layout would too."""
     def pinned(node: dict) -> dict:
         return {**node, "dashboardPinned": True}
 
-    factor = {
-        "id": SCN_FACTOR, "type": "curio.builtin/parameter", "x": 0, "y": 700, "content": "",
-        "goal": "", "metadata": {"keywords": [], "widgets": [{"name": "factor", "type": "number", "default": 2}]},
-    }
+    factor = {**_node(SCN_FACTOR, "curio.builtin/computation-analysis", 0, "return [!! factor !!]\n"), "y": 700}
+    factor["metadata"]["widgets"] = [{"name": "factor", "type": "number", "default": 2}]
     edge = lambda source, target, handle="in": {  # noqa: E731
         "id": f"e-{source}-{target}", "source": source, "target": target,
         "sourceHandle": "out", "targetHandle": handle,
@@ -1711,12 +1695,13 @@ def _scenario_spec() -> dict:
                 pinned(factor),
                 pinned(_node(SCN_BASE, "curio.builtin/computation-analysis", 700, "return input_0\n")),
                 pinned({**_node(SCN_TALL, "curio.builtin/computation-analysis", 700,
-                                "factor = [!! @factor !!]\nreturn input_0\n"), "y": 700}),
+                                "factor = input_1\nreturn input_0\n"), "y": 700}),
                 pinned(_node(SCN_COMPARE, "curio.builtin/computation-analysis", 1400, "return input_0\n")),
             ],
             "edges": [
                 edge(SCN_LOAD, SCN_BASE),
                 edge(SCN_LOAD, SCN_TALL),
+                edge(SCN_FACTOR, SCN_TALL, "in_1"),
                 edge(SCN_BASE, SCN_COMPARE),
                 edge(SCN_TALL, SCN_COMPARE, "in_1"),
             ],
@@ -1781,7 +1766,7 @@ def test_scenarios_get_a_column_each_under_a_header_in_their_color(
     opened = page.evaluate(_TILE_POSITIONS_JS)
     x = {node_id: at[0] for node_id, at in opened.items()}
     assert x[SCN_LOAD] == x[SCN_FACTOR] < x[SCN_BASE] < x[SCN_TALL] < x[SCN_COMPARE], (
-        f"tile columns {x!r}: the loader and the shared Parameter node first, then "
+        f"tile columns {x!r}: the loader and the value node first, then "
         f"one column per scenario, then the node reading both"
     )
 

@@ -29,7 +29,7 @@ import {
   type SelectionTag,
 } from "../../utils/references/selectionTags";
 import { resolveReferences } from "../../utils/references/codeReferences";
-import { runKeyWithShared } from "../../utils/references/sharedParameters";
+import { runKeyOf } from "../../utils/references/runKeys";
 import { resetViewSelections, selectionStateOf } from "../../utils/references/viewSelections";
 import { grammarRuns, resetAutkNodeMocks } from "../_support/autkNodeMocks";
 import { mountAutkNode, stubWebGpu, unstubWebGpu } from "../_support/autkNode";
@@ -146,7 +146,7 @@ describe("a tag over the cap", () => {
   test("stops the run with a message that says so", () => {
     const { problems } = resolveReferences(
       "x = [!! selection picked !!]",
-      { widgets: [], inputs: [], shared: [], selections: [over] },
+      { widgets: [], inputs: [], selections: [over] },
       "python",
     );
     expect(problems.map((p) => p.message)).toEqual([
@@ -159,7 +159,7 @@ describe("a tag over the cap", () => {
     const ids = Array.from({ length: SELECTION_ID_CAP + 1 }, (_, i) => i);
     const { code, problems } = resolveReferences(
       "x = [!! selection picked !!]",
-      { widgets: [], inputs: [], shared: [], selections: [{ name: "picked", node: "c", column: "osm_id", ids }] },
+      { widgets: [], inputs: [], selections: [{ name: "picked", node: "c", column: "osm_id", ids }] },
       "python",
     );
     expect(code).toBe("x = [!! selection picked !!]");
@@ -172,14 +172,14 @@ describe("a new selection marks the node stale", () => {
   const code = "return input_0[input_0.osm_id.isin([!! selection picked !!])]";
 
   test("its run key follows the ids its code names", () => {
-    const before = runKeyWithShared(code, [], [], [tag]);
-    expect(runKeyWithShared(code, [], [], [withState(tag, { ids: [101, 104] })])).not.toBe(before);
-    expect(runKeyWithShared(code, [], [], [withState(tag, { count: 20000 })])).not.toBe(before);
-    expect(runKeyWithShared(code, [], [], [{ ...tag }])).toBe(before);
+    const before = runKeyOf(code, [], [tag]);
+    expect(runKeyOf(code, [], [withState(tag, { ids: [101, 104] })])).not.toBe(before);
+    expect(runKeyOf(code, [], [withState(tag, { count: 20000 })])).not.toBe(before);
+    expect(runKeyOf(code, [], [{ ...tag }])).toBe(before);
   });
 
   test("code that names no selection tag keeps the key it had", () => {
-    expect(runKeyWithShared("return input_0", [], [], [tag])).toBe(runKeyWithShared("return input_0", [], []));
+    expect(runKeyOf("return input_0", [], [tag])).toBe(runKeyOf("return input_0", []));
   });
 
   test("only a selection the user made counts, not a chart declaring its selects", () => {

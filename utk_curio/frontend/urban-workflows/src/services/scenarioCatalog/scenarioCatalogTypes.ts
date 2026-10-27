@@ -51,8 +51,6 @@ export interface ScenarioNodeEntry {
   type: string;
   /** Its title, when it has one. */
   label?: string;
-  /** A Parameter node's one widget, with the value it holds. */
-  parameter?: { name: string; value: unknown };
   results: ScenarioResult[];
 }
 
@@ -88,8 +86,6 @@ export interface SpecEdgeShape {
 export interface ScenarioCopyContext {
   nodeId: string;
   label: string;
-  /** A Parameter node: copied with its value. */
-  parameter?: boolean;
   /** The node whose saved output stands for this one's, which arrives as data. */
   source?: { nodeId: string; copiedFrom: string[]; datasetId?: string };
 }
@@ -105,7 +101,7 @@ export interface ScenarioCopyPlan {
   context: ScenarioCopyContext[];
   /** Each outcome, with the levers whose saved outputs it shows. */
   outcomes: { nodeId: string; label: string; sources: string[] }[];
-  /** The levers and the Parameter nodes of the context, and the edges into the levers. */
+  /** The levers, and the edges into them. */
   dataflow: { nodes: SpecNodeShape[]; edges: SpecEdgeShape[] };
   /** Packages the target project gets. */
   packages: string[];

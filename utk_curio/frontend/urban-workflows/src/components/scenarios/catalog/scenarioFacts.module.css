@@ -55,13 +55,6 @@
   overflow-wrap: anywhere;
 }
 
-.nodeParameter {
-  margin-left: 8px;
-  font-family: var(--curio-font-mono);
-  font-size: 12px;
-  color: var(--curio-text-secondary);
-}
-
 .resultList {
   margin: 4px 0 0;
   padding-left: 18px;

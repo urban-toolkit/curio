@@ -408,8 +408,8 @@ Data Catalog dataset on the node, or click **Choose file** to pick a file, and
 its code loads it ([Data Catalog](#data-catalog)).
 
 Above the code or spec, one row lists every chip the node can use, by category:
-**Inputs**, **Scenarios**, **Widgets**, **Selections** and **Shared**, each with
-its count, and each only when it has chips. The categories start closed. Click
+**Inputs**, **Scenarios**, **Widgets** and **Selections**, each with its count,
+and each only when it has chips. The categories start closed. Click
 one to list its chips under the row, which closes the one open, and click it
 again to close it. A category stays open on that node while the dataflow is
 open. On the canvas the header takes at most half of the node's editor, and the
@@ -426,8 +426,8 @@ scenario box's color. An input whose node has not run says which node to run.
 - **Scenarios**: in a Vega-Lite or Autark spec whose node has an input from a
   scenario box, the chips of the boxes' colors and names
   ([Scenario colors and order](#scenario-colors-and-order)).
-- **Widgets**, **Selections** and **Shared**: the node's widgets, its selection
-  tags and the Parameter nodes' values ([Widgets](#widgets)).
+- **Widgets** and **Selections**: the node's widgets and its selection tags
+  ([Widgets](#widgets)).
 
 Drag a node's bottom-right corner to resize it. For viewers of a shared dataflow,
 nodes keep their size and have no delete. A minimized node is a small chip with
@@ -487,8 +487,8 @@ run dataflows in the browser, and a run stops when its tab closes.
 ### Running stale nodes automatically
 
 **View > Run stale nodes automatically** turns on running after a change. A
-change to a widget's value or a Parameter node's value then runs the nodes that
-use it and the nodes below them, half a second after the last change, as a run
+change to a widget's value then runs the node that holds it and the nodes below
+it, half a second after the last change, as a run
 on the server. Moving a slider runs them once, after it stops. A change made
 during a run waits for it to end, then runs once. **Run All** shows a small
 bolt while it is on.
@@ -589,26 +589,9 @@ from the node's inputs reaches its code as `input_0`, `input_1`, and so on, one
 variable per input circle, or through input chips (see
 [Several inputs](#several-inputs)).
 
-### Shared values: the Parameter node
-
-A **Parameter** node holds one widget that any node can use, such as a season
-that several nodes read.
-
-1. Drag **Parameter** from the **Built-in** palette onto the canvas. Give it a
-   name, a type, a label and a default, as for a widget, and click **Add parameter**.
-2. Its tag, **@name**, shows under **Shared** above every node's code or spec
-   and in every node's **Widgets** tab. Drag it into the code, or click it to
-   insert it at the cursor. In the code it is written `[!! @name !!]` and drawn
-   as an amber chip; it runs as a widget's value does.
-3. Set the value in the Parameter node.
-
-A Parameter node has no edges, and it lists the nodes whose code uses it.
-Changing its value marks those nodes as needing a new run, or runs them when
-the dataflow runs stale nodes automatically. **Edit** renames it,
-and their code follows the new name. A reference to a name no Parameter node
-has, or that two Parameter nodes have, stops the run with a message naming it.
-Pinned to the dashboard, a Parameter node shows its control, and anyone viewing
-the dashboard can change its value ([Dashboards](#dashboards)).
+To give several nodes one value, such as a season, put its widget on one Python
+node whose code returns it, `return [!! season !!]`, and connect that node to
+each node that reads it.
 
 ### Selection tags
 
@@ -775,9 +758,8 @@ to compare alternatives: the same analysis with buildings twice as tall, say. It
 boundary splits the dataflow into three parts:
 
 - **Fixed context:** the nodes outside the scenario that it reads, through an edge
-  into it or through a Parameter node's tag its code uses. The scenario takes their
-  outputs as given. A node two alternatives share sits outside both, as their
-  common context.
+  into it. The scenario takes their outputs as given. A node two alternatives
+  share sits outside both, as their common context.
 - **Levers:** the nodes in the scenario, which is what an alternative changes: its
   data loaders, widget values, code and specs, and the features it removes or
   changes by hand (see [The Map Editor node](#the-map-editor-node)).
@@ -1532,8 +1514,8 @@ the page opens.
 - **Save the dataflow** after changing anything else the page shows, such as a chart's
   spec: the page shows what is on disk.
 - **Controls**: a pinned node's widgets show on its tile, above a chart or map and in
-  place of a code node's code, and anyone viewing the page can change them and a pinned
-  Parameter node's value. A chart or map draws again with a new value of its own widget.
+  place of a code node's code, and anyone viewing the page can change them. A chart or
+  map draws again with a new value of its own widget.
   Any other change runs the nodes it reaches on the server, with your datasets, models and
   packages and none of your keys, and the tiles below show the result. A viewer never
   changes the dataflow, its saved outputs or your Data Catalog, and putting the value back
@@ -1550,7 +1532,7 @@ the page opens.
   their title band and resize, and **Save layout** records where they sit, without
   touching the canvas positions.
 - **Scenarios** each get a column, framed under a header in the scenario's color. The
-  tiles they share (their fixed context, and pinned Parameter nodes outside them) come
+  tiles they share (their fixed context, and any other tile no outcome reaches) come
   first, and tiles that read their outcomes, such as a comparison, come last. Tiles
   without a saved place are laid out this way when the page opens; while editing the
   layout, **Arrange by scenario** puts every tile back in its column.

@@ -99,19 +99,20 @@ test("a widget's new value on a node with no setter leaves it out of date, the d
   expect(flow.requestAutoRun).toHaveBeenCalledWith(["chart"]);
 });
 
-test("a Parameter's new value with no setter leaves the nodes that use it out of date, and runs them", () => {
+test("a value node's new value with no setter leaves it out of date and runs it, the node its readers follow", () => {
   const flow = canvas([
-    node("p1", "curio.builtin/parameter@1", { widgets: [SEASON] }),
-    node("a", "curio.builtin/computation-analysis@1", { code: "s = [!! @season !!]" }),
+    node("v", "curio.builtin/computation-analysis@1", { code: "return [!! season !!]", widgets: [SEASON] }),
+    node("a", "curio.builtin/computation-analysis@1", { code: "s = input_0" }),
     node("b", "curio.builtin/computation-analysis@1", { code: "print(1)" }),
   ]);
 
-  writeNodeSettings(flow, "p1", { widgets: { season: "winter" } });
+  writeNodeSettings(flow, "v", { widgets: { season: "winter" } });
 
   const [, data] = flow.updateDataNode.mock.calls[0];
   expect(data.widgets[0].value).toBe("winter");
-  expect(flow.markNodeStale.mock.calls.map((call) => call[0])).toEqual(["a"]);
-  expect(flow.requestAutoRun).toHaveBeenCalledWith(["a"]);
+  // The nodes wired after it run with it: an automatic run takes every node below the ones it is asked for.
+  expect(flow.markNodeStale.mock.calls.map((call) => call[0])).toEqual(["v"]);
+  expect(flow.requestAutoRun).toHaveBeenCalledWith(["v"]);
 });
 
 test("a setter is taken off by what its registration returned, and a newer one for the node stays", () => {

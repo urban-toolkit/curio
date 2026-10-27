@@ -21,11 +21,6 @@ from utk_curio.backend.app.execution.code_references import (
     resolve_references,
 )
 
-#: The node that holds one shared widget, which any node's code names as
-#: ``[!! @name !!]``. Kept in sync with ``PARAMETER_NODE_TYPE`` in
-#: ``src/utils/references/sharedParameters.ts``.
-PARAMETER_TYPE = "curio.builtin/parameter"
-
 
 def named_input_slot(edge: dict) -> int | None:
     """Which input circle an edge names: ``in`` → 0, ``in_N`` → N, or None.
@@ -346,17 +341,6 @@ class WorkflowSpec:
         """The circles of *node_id* that have an edge, in order."""
         return [input_slot(e) for e in self._data_edges_to(node_id)]
 
-    def shared_widgets(self) -> list:
-        """The widgets the dataflow's Parameter nodes hold, in node order: what
-        a ``[!! @name !!]`` reference names (#662). A Parameter node has no
-        edge, so its value reaches a node through this list, not an input."""
-        return [
-            widget
-            for n in self.nodes
-            if isinstance(n.raw_type, str) and n.raw_type.split("@", 1)[0] == PARAMETER_TYPE
-            for widget in n.widgets
-        ]
-
     def node_label(self, node_id: str) -> str:
         """What the canvas names the node *node_id* as an input's label: its
         title, else its header as ``node_names.display_label`` writes it, its
@@ -410,8 +394,8 @@ class WorkflowSpec:
     def node_code(self, node, language: str, content: str | None = None, grammar: str | None = None) -> str:
         """*node*'s code (or *content* in its place) with its references
         resolved as the canvas resolves them before a run: its widgets, its
-        wired circles, each with the scenario label its rows carry, the shared
-        tags and its selection tags. *grammar* is the grammar its JSON document
+        wired circles, each with the scenario label its rows carry, and its
+        selection tags. *grammar* is the grammar its JSON document
         is written in, which a Vega-Lite chart's spec names to write a column's
         name escaped where Vega-Lite reads a field. Raises
         ``CodeReferenceError``."""
@@ -429,7 +413,6 @@ class WorkflowSpec:
             node.widgets,
             language,
             self.input_slots(node.id),
-            self.shared_widgets(),
             node.selections,
             grammar,
             input_scenarios=self.input_scenarios(node.id),
@@ -695,33 +678,30 @@ def seed_node_code(code: str, seed: int = 42) -> str:
 
 
 def resolve_code_references(
-    code: str, widgets=(), language: str = "python", input_slots=(), shared=(), selections=(), grammar=None,
+    code: str, widgets=(), language: str = "python", input_slots=(), selections=(), grammar=None,
     input_scenarios=None,
 ) -> str:
     """Replace a node's references with code, exactly as the frontend does
     before posting to the sandbox (#662): widget references with their values,
     input and column references by *input_slots*, the circles that have an
-    edge, shared references with the values of the *shared* widgets
-    (``WorkflowSpec.shared_widgets``), selection references with the ids the
-    node's *selections* hold (``metadata.selections``), and scenario chips
-    with the label each circle carries in *input_scenarios*
-    (``WorkflowSpec.input_scenarios``). In a JSON document of the *grammar*
-    ``vega-lite``, a name where Vega-Lite reads a field is written escaped
-    (``code_references.resolve_references``).
+    edge, selection references with the ids the node's *selections* hold
+    (``metadata.selections``), and scenario chips with the label each circle
+    carries in *input_scenarios* (``WorkflowSpec.input_scenarios``). In a JSON
+    document of the *grammar* ``vega-lite``, a name where Vega-Lite reads a
+    field is written escaped (``code_references.resolve_references``).
 
     Raises ``CodeReferenceError`` naming every reference that cannot be
     resolved: an old ``[!! name$TYPE$default !!]`` marker, a name the node has
-    no widget or selection tag for, an input with no edge, a Parameter node
-    that is missing or named twice, a selection holding more ids than a tag
-    takes, or a scenario chip where no label is known.
+    no widget or selection tag for, an input with no edge, a selection holding
+    more ids than a tag takes, or a scenario chip where no label is known.
     """
     return _resolved_or_raise(*code_references_and_problems(
-        code, widgets, language, input_slots, shared, selections, grammar, input_scenarios=input_scenarios,
+        code, widgets, language, input_slots, selections, grammar, input_scenarios=input_scenarios,
     ))
 
 
 def code_references_and_problems(
-    code: str, widgets=(), language: str = "python", input_slots=(), shared=(), selections=(), grammar=None,
+    code: str, widgets=(), language: str = "python", input_slots=(), selections=(), grammar=None,
     input_scenarios=None,
 ) -> tuple[str, list]:
     """:func:`resolve_code_references`, with each reference it cannot resolve
@@ -729,7 +709,7 @@ def code_references_and_problems(
     rather than raised."""
     labels = input_scenarios or {}
     inputs = [{"slot": slot, **({"scenario": labels[slot]} if slot in labels else {})} for slot in input_slots]
-    return resolve_references(code, widgets, language, inputs, shared, selections, grammar)
+    return resolve_references(code, widgets, language, inputs, selections=selections, grammar=grammar)
 
 
 def _resolved_or_raise(resolved: str, problems: list) -> str:

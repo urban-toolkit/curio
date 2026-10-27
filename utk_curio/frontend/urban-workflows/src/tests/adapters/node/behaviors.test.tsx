@@ -142,7 +142,7 @@ import { useCodeNodeBehavior } from '../../../adapters/node/codeNodeBehavior';
 import { useDataExportBehavior } from '../../../adapters/node/dataExportBehavior';
 import { triggerBlobDownload } from '../../../services/packages/packagesBlobTransport';
 import { fetchData } from '../../../services/api';
-import { runKeyWithShared } from '../../../utils/references/sharedParameters';
+import { runKeyOf } from '../../../utils/references/runKeys';
 import { useVegaBehavior } from '../../../adapters/node/vegaBehavior';
 import { useSimpleVisBehavior } from '../../../adapters/node/simpleVisBehavior';
 import { standardInOut, withInputCircles } from '../../../adapters/node/handleHelpers';
@@ -287,7 +287,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
     function exportNode(succeeded: boolean, { stale = false } = {}) {
       const data = makeMockData({ nodeType: 'curio.builtin/data-export@1', input: { path: 'in', dataType: 'dataframe' } as any });
       if (succeeded) {
-        (data as any).executedCode = runKeyWithShared(stale ? 'return 1\n' : CODE, undefined, [], undefined);
+        (data as any).executedCode = runKeyOf(stale ? 'return 1\n' : CODE, undefined, undefined);
       }
       const nodeState = makeMockNodeState({
         code: CODE,

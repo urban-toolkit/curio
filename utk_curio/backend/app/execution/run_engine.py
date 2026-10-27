@@ -1,6 +1,5 @@
 """A dataflow run on the server: Run All, a node's play button, or an
-automatic run after a widget or Parameter change (#845), with no browser
-needed.
+automatic run after a widget change (#845), with no browser needed.
 
 :func:`plan_run` decides what runs, as Run All and ``playNodesUpTo`` decide it
 on the canvas: every node, or one or several nodes and the ancestors whose
@@ -113,9 +112,9 @@ def passed_on(output: dict) -> dict:
 
 
 def sent_code(plan: "Plan", step: "Step") -> str:
-    """*step*'s code as a run sends it: its widgets, its wired circles and the
-    dataflow's shared tags written in, as the canvas and the headless runner
-    resolve them. Python is indented as ``PythonInterpreter.ts`` posts it;
+    """*step*'s code as a run sends it: its widgets, its wired circles and its
+    selection tags written in, as the canvas and the headless runner resolve
+    them. Python is indented as ``PythonInterpreter.ts`` posts it;
     JavaScript goes as written, as ``JavaScriptInterpreter.ts`` posts it (an
     indented ``import`` is no longer a module's own), and so does an Autark
     document, whose references resolve as a spec's do. Raises

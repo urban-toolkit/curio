@@ -1,6 +1,6 @@
 /* The thin scrollbar of Curio's panels and code editors: the Data Catalog's
-   columns and previews, every widget panel (a node's Widgets tab, a Parameter
-   node), and every node's code or spec editor. Defined here once. A panel
+   columns and previews, every widget panel (a node's Widgets tab, a dashboard
+   tile's controls), and every node's code or spec editor. Defined here once. A panel
    takes it as the first line of its rule:
    `composes: thinScrollbar from "<path to src>/styles/scrollbars.module.css";`
 

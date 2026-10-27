@@ -772,7 +772,10 @@ def vega(spec: dict) -> str:
 
 
 #: Both plots' legend: over the plot, its names whole, one under the other
-#: where the plot is narrow.
+#: where the plot is narrow. The line widths read the same field as the
+#: colors, so Vega-Lite draws their legend as this one: their encoding sets no
+#: legend of its own, since a `legend: null` there turns this one off and on at
+#: once.
 LEGEND = {"orient": "top", "direction": "horizontal", "title": None, "labelLimit": 0}
 NARROW_LEGEND = {**LEGEND, "direction": "vertical"}
 
@@ -799,7 +802,7 @@ def plot() -> str:
                     "color": {"field": "scenario_name", "type": "nominal", "title": "Scenario",
                               "scale": "SCENARIO_COLORS", "sort": "SCENARIO_ORDER", "legend": NARROW_LEGEND},
                     "strokeWidth": {"field": "scenario_name", "type": "nominal", "sort": "SCENARIO_ORDER",
-                                    "scale": {"range": [5, 2]}, "legend": None},
+                                    "scale": {"range": [5, 2]}},
                     "tooltip": [
                         {"field": "scenario_name", "type": "nominal", "title": "Scenario"},
                         {"field": "clock", "type": "nominal", "title": "Time"},
@@ -847,7 +850,7 @@ def year_plot() -> str:
             "color": {"field": "scenario_name", "type": "nominal", "title": "Scenario",
                       "scale": "SCENARIO_COLORS", "sort": "SCENARIO_ORDER", "legend": LEGEND},
             "strokeWidth": {"field": "scenario_name", "type": "nominal", "sort": "SCENARIO_ORDER",
-                            "scale": {"range": [4, 1.5]}, "legend": None},
+                            "scale": {"range": [4, 1.5]}},
             "tooltip": [
                 {"field": "scenario_name", "type": "nominal", "title": "Scenario"},
                 {"field": "date", "type": "nominal", "title": "Day"},

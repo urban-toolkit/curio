@@ -1,17 +1,13 @@
 /**
  * A node's widgets as controls that set their values (#662, #1117), the rows a
- * pinned node's dashboard tile shows and a Parameter node's body shows its one
- * in: a label and a control each. A value reaches the node once its control
- * settles, or at once when it is left; a value set from outside while one
- * settles replaces it; on a dashboard a read-only kind stays disabled.
+ * pinned node's dashboard tile shows: a label and a control each. A value
+ * reaches the node once its control settles, or at once when it is left; a
+ * value set from outside while one settles replaces it; on a dashboard a
+ * read-only kind stays disabled.
  */
 import React from "react";
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import {
-  VALUE_SETTLE_MS,
-  WidgetValueControls,
-  WidgetValueRow,
-} from "../../components/editing/widgets/WidgetValueControls";
+import { VALUE_SETTLE_MS, WidgetValueControls } from "../../components/editing/widgets/WidgetValueControls";
 import type { WidgetDef } from "../../utils/widgets/widgetModel";
 
 const factor: WidgetDef = { name: "factor", type: "number", label: "Factor", default: 2 };
@@ -117,29 +113,5 @@ describe("a tile's controls", () => {
 
     rerender(<WidgetValueControls widgets={[factor]} onCommit={jest.fn()} />);
     expect(container.firstElementChild?.className).not.toContain("panelAboveOutput");
-  });
-});
-
-describe("one row with a tag and buttons, as a Parameter node shows its widget", () => {
-  test("gives its buttons the row's flush, which sends a value still settling", () => {
-    const onCommit = jest.fn();
-    render(
-      <WidgetValueRow
-        widget={factor}
-        onCommit={onCommit}
-        tag={<span data-testid="tag">@factor</span>}
-        actions={(flush) => (
-          <button type="button" onClick={() => flush()}>
-            Edit
-          </button>
-        )}
-      />,
-    );
-    expect(screen.getByTestId("tag")).toBeTruthy();
-
-    fireEvent.change(numberInput("Factor"), { target: { value: "4" } });
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-
-    expect(onCommit).toHaveBeenCalledWith("factor", 4);
   });
 });

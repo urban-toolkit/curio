@@ -165,8 +165,8 @@ export function notebookCellBox(
 }
 
 // How tall a cell's output is. A chart or a map has no height of its own, so
-// it gets a definite one to draw in; a table, a summary, a control or a note
-// takes its own, up to a cap, and scrolls inside past it.
+// it gets a definite one to draw in; a table, a summary or a note takes its
+// own, up to a cap, and scrolls inside past it.
 const CHART_HEIGHT = 320;
 const MAP_HEIGHT = 400;
 const OUTPUT_CAP = 360;
@@ -175,7 +175,6 @@ const NATURAL_HEIGHT_KINDS: ReadonlySet<string> = new Set([
   NodeType.DATA_POOL,
   NodeType.VIS_SIMPLE,
   NodeType.DATA_SUMMARY,
-  "curio.builtin/parameter",
   "curio.builtin/spatial-join",
   "curio.builtin/note",
 ]);

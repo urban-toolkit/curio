@@ -1,7 +1,7 @@
 """Built-in nodes are known by what their templates declare, not by name.
 
 A dashboard walks through the nodes that show what reaches them, a run on the
-server hands on what a download, a Parameter node or a note receives, and the
+server hands on what a download or a note receives, and the
 Data Catalog counts a dataset's consumers from the nodes after the one that
 loads it. Each reads the ``behavior`` a node's template declares (or, for the
 node that loads a dataset, its ``loadsDataset`` flag, which the agents read
@@ -32,7 +32,7 @@ DATA_SPEC = json.dumps({"data": [{"type": "osm"}]})
 #: Templates of ``acme.tools@1`` named like built-in ones: each is a plain code node.
 NAMED_LIKE_A_BUILTIN = (
     "data-loading", "data-export", "vis-vega", "vis-simple", "data-pool",
-    "autk-grammar", "note", "parameter",
+    "autk-grammar", "note",
 )
 
 
@@ -202,7 +202,6 @@ def test_the_builtin_views_are_walked_through_where_the_catalog_lacks_them(catal
 @pytest.mark.parametrize("template_id, content", [
     ("data-export", ""),
     ("note", "# A note"),
-    ("parameter", ""),
     ("vis-vega", "{}"),
     ("vis-simple", ""),
     ("data-pool", ""),
@@ -238,7 +237,8 @@ def test_a_run_never_forwards_a_package_template_that_declares_the_data_exports_
 @pytest.mark.parametrize("node_type, content, role", [
     ("curio.builtin/data-export@1", "", "run"),
     ("curio.builtin/note@1", "# A note", "forward"),
-    ("curio.builtin/parameter", "", "forward"),
+    # A saved Parameter node: no package provides its template any more.
+    ("curio.builtin/parameter", "", "missing"),
     ("curio.builtin/vis-vega@1", "{}", "forward"),
     ("curio.builtin/vis-simple", "", "forward"),
     ("curio.builtin/data-pool@1", "", "forward"),

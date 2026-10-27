@@ -161,7 +161,6 @@ const labelsOf = (scenarios: any[]) => new Map(
 );
 const scopeOf = (labels: Map<number, any>) => ({
   widgets: [],
-  shared: [],
   inputs: [0, 1].map((slot): InputScope => ({ slot, dataType: "dataframe", columns: ["segment", "sunlight"], scenario: labels.get(slot) })),
 });
 /** What the editor writes for *raw* with *labels*, or null when a chip does not resolve. */
@@ -260,7 +259,7 @@ describe("a chart reading inputs names its rows by its inputs' boxes", () => {
     const raw = '{"data": {"name": [!! inputs !!]}, "mark": "bar", "encoding": {'
       + '"x": {"field": "scenario_name", "type": "nominal"}, "y": {"field": [!! input_0.sunlight !!], "type": "quantitative"}}}';
     expect(() => JSON.parse(raw)).toThrow();
-    const scope = { widgets: [], shared: [], inputs: [0, 1].map((slot) => ({ slot, columns: ["segment", "sunlight"] })) };
+    const scope = { widgets: [], inputs: [0, 1].map((slot) => ({ slot, columns: ["segment", "sunlight"] })) };
     const { code, problems } = resolveReferences(raw, scope, "json", "vega-lite");
     expect(problems).toEqual([]);
     expect(JSON.parse(code).data).toEqual({ name: "inputs" });

@@ -56,17 +56,19 @@ COUNT_ROWS = f'print("{ROW_MARKER}", len(input_0))\nreturn input_0\n'
 DATA_WIDGET = "[data-controls-with-code] [data-dataset-drop]"
 
 # Drops a file named *name* holding *text* on the element *selector* names, at
-# its centre, with dragenter, dragover and drop, as a drop from the desktop
-# arrives. Answers whether the page took the drop (a dragover it accepted).
-_DROP_FILE_JS = r"""({ selector, name, text, type }) => {
+# *at* from its top-left corner (its centre without one), with dragenter,
+# dragover and drop, as a drop from the desktop arrives. Answers whether the
+# page took the drop (a dragover it accepted).
+_DROP_FILE_JS = r"""({ selector, name, text, type, at }) => {
     const target = document.querySelector(selector);
     if (!target) return `no element ${selector}`;
     const box = target.getBoundingClientRect();
     const transfer = new DataTransfer();
     transfer.items.add(new File([text], name, { type }));
+    const [x, y] = at || [box.width / 2, box.height / 2];
     const init = {
         bubbles: true, cancelable: true, composed: true, dataTransfer: transfer,
-        clientX: box.x + box.width / 2, clientY: box.y + box.height / 2,
+        clientX: box.x + x, clientY: box.y + y,
     };
     target.dispatchEvent(new DragEvent("dragenter", init));
     const over = new DragEvent("dragover", init);
@@ -93,8 +95,14 @@ def _enter(page, base: str, server: str, name: str) -> dict:
     return entered
 
 
-def _drop_file(page, selector: str, name: str, text: str, type: str = "text/csv") -> None:
-    taken = page.evaluate(_DROP_FILE_JS, {"selector": selector, "name": name, "text": text, "type": type})
+def _drop_file(
+    page, selector: str, name: str, text: str, type: str = "text/csv",
+    at: tuple[float, float] | None = None,
+) -> None:
+    taken = page.evaluate(
+        _DROP_FILE_JS,
+        {"selector": selector, "name": name, "text": text, "type": type, "at": list(at) if at else None},
+    )
     assert taken == "taken", f"the drop of {name} on {selector} was {taken}"
 
 
@@ -192,7 +200,8 @@ def test_a_file_dropped_on_the_empty_canvas_makes_a_data_loading_node(
     _enter(page, app_frontend.base_url, current_server, "Data Loading canvas drop")
     before = {node["id"] for node in canvas_nodes(page)}
 
-    _drop_file(page, CANVAS_DROP_TARGET, "trees.csv", TREES)
+    # Where the other tests drop a fresh tile, so the node after it has room.
+    _drop_file(page, CANVAS_DROP_TARGET, "trees.csv", TREES, at=(170, 200))
 
     page.wait_for_function(
         "(n) => window.__curio_reactFlow.getNodes().length > n", arg=len(before), timeout=60000,

@@ -25,7 +25,7 @@ jest.mock("../../services/nodeRuntimeReport", () => ({
 }));
 
 import { useNodeState } from "../../hook/useNodeState";
-import { runKeyWithShared } from "../../utils/references/sharedParameters";
+import { runKeyOf } from "../../utils/references/runKeys";
 
 const CODE = "ids = [!! selection picked !!]\nreturn input_0[input_0['osm_id'].isin(ids)]";
 const picked = (ids: number[]) => [{ name: "picked", node: "scatter", column: "osm_id", ids }];
@@ -39,12 +39,12 @@ function countingNode() {
 
 test("a result is stamped with the key its run started with, not the node's current one", () => {
   const { data, hook } = countingNode();
-  const ranWith = runKeyWithShared(CODE, undefined, [], picked([1001, 1002, 1003, 1004, 1005]));
+  const ranWith = runKeyOf(CODE, undefined, picked([1001, 1002, 1003, 1004, 1005]));
 
   act(() => hook.result.current.setOutput({ code: "success", content: "Saved to file: art", runKey: ranWith }));
 
   expect(data.executedCode).toBe(ranWith);
-  expect(data.executedCode).not.toBe(runKeyWithShared(CODE, undefined, [], picked([])));
+  expect(data.executedCode).not.toBe(runKeyOf(CODE, undefined, picked([])));
 });
 
 test("a result that carries no key is stamped with the node's current one", () => {
@@ -52,5 +52,5 @@ test("a result that carries no key is stamped with the node's current one", () =
 
   act(() => hook.result.current.setOutput({ code: "success", content: "Saved to file: art" }));
 
-  expect(data.executedCode).toBe(runKeyWithShared(CODE, undefined, [], picked([])));
+  expect(data.executedCode).toBe(runKeyOf(CODE, undefined, picked([])));
 });

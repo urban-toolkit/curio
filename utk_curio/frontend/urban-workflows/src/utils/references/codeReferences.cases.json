@@ -1,5 +1,5 @@
 {
-  "about": "Code reference cases: widget, input, column, shared, selection and scenario references, and the dataset inputs and its fields. Read by src/tests/utils/codeReferences.test.ts and by utk_curio/backend/tests/test_execution/test_code_references.py: the browser and the headless runner must write the same code. A case's inputs are the node's wired circles, with their data type, the layer name their value gives, columns and layers when known, and the scenario label their rows carry: the id, name and color of the box the feeding node is in, with that box's rank in the dataflow's list of boxes, or the node's name in grey for a node in no box. Its selections are the node's selection tags, with the ids each holds. A JSON case may name its document's grammar: in a Vega-Lite spec (vega-lite), a reference where Vega-Lite reads a field name writes each name escaped for Vega-Lite.",
+  "about": "Code reference cases: widget, input, column, selection and scenario references, and the dataset inputs and its fields. Read by src/tests/utils/codeReferences.test.ts and by utk_curio/backend/tests/test_execution/test_code_references.py: the browser and the headless runner must write the same code. A case's inputs are the node's wired circles, with their data type, the layer name their value gives, columns and layers when known, and the scenario label their rows carry: the id, name and color of the box the feeding node is in, with that box's rank in the dataflow's list of boxes, or the node's name in grey for a node in no box. Its selections are the node's selection tags, with the ids each holds. A JSON case may name its document's grammar: in a Vega-Lite spec (vega-lite), a reference where Vega-Lite reads a field name writes each name escaped for Vega-Lite.",
   "cases": [
     {
       "name": "a number on its own",
@@ -583,69 +583,31 @@
       "problems": ["[!! input_0.missing !!]: input_0 has no column missing."]
     },
     {
-      "name": "a shared tag takes its Parameter node's set value",
-      "language": "python",
-      "code": "season = [!! @season !!]",
-      "widgets": [],
-      "shared": [{"name": "season", "type": "choice", "options": {"choices": ["summer", "winter"]}, "default": "summer", "value": "winter"}],
-      "expected": "season = \"winter\""
-    },
-    {
-      "name": "a shared tag and a widget of the same name are two values",
-      "language": "javascript",
-      "code": "return [!! @n !!] + [!! n !!];",
-      "widgets": [{"name": "n", "type": "number", "default": 1}],
-      "shared": [{"name": "n", "type": "number", "default": 10}],
-      "expected": "return 10 + 1;"
-    },
-    {
-      "name": "shared tags in a Vega-Lite spec, inside a title and on their own",
-      "language": "json",
-      "code": "{\"title\": \"Season: [!! @season !!]\", \"width\": [!! @width !!]}",
-      "widgets": [],
-      "shared": [
-        {"name": "season", "type": "text", "default": "winter"},
-        {"name": "width", "type": "number", "default": 300}
-      ],
-      "expected": "{\"title\": \"Season: winter\", \"width\": 300}"
-    },
-    {
-      "name": "a shared tag inside a string and a comment",
-      "language": "python",
-      "code": "s = 'It is [!! @season !!]'  # [!! @season !!]",
-      "widgets": [],
-      "shared": [{"name": "season", "type": "text", "default": "Ann's winter"}],
-      "expected": "s = 'It is Ann\\'s winter'  # Ann's winter"
-    },
-    {
-      "name": "a shared tag no Parameter node holds",
+      "name": "a name that starts with @ names no widget, even beside a widget of the name after it",
       "language": "python",
       "code": "x = [!! @missing !!]",
       "widgets": [{"name": "missing", "type": "number", "default": 1}],
-      "shared": [],
       "expected": "x = [!! @missing !!]",
-      "problems": ["[!! @missing !!]: no Parameter node is named missing. Add one, or drag a tag from Shared."]
+      "problems": ["[!! @missing !!] does not name a widget. Widget names are letters, digits and underscores."]
     },
     {
-      "name": "two Parameter nodes with one name",
+      "name": "a name that starts with @ names no widget in JavaScript",
       "language": "javascript",
       "code": "const k = [!! @k !!];",
       "widgets": [],
-      "shared": [
-        {"name": "k", "type": "number", "default": 1},
-        {"name": "k", "type": "number", "default": 2}
-      ],
       "expected": "const k = [!! @k !!];",
-      "problems": ["[!! @k !!]: 2 Parameter nodes are named k. Rename all but one."]
+      "problems": ["[!! @k !!] does not name a widget. Widget names are letters, digits and underscores."]
     },
     {
-      "name": "a shared tag that does not name a Parameter node",
+      "name": "a name that starts with @ names no widget in a spec",
       "language": "json",
-      "code": "{\"a\": [!! @9lives !!]}",
-      "widgets": [],
-      "shared": [],
-      "expected": "{\"a\": [!! @9lives !!]}",
-      "problems": ["[!! @9lives !!] does not name a Parameter node. Parameter names are letters, digits and underscores."]
+      "code": "{\"a\": [!! @9lives !!], \"title\": \"Season: [!! @season !!]\"}",
+      "widgets": [{"name": "season", "type": "text", "default": "winter"}],
+      "expected": "{\"a\": [!! @9lives !!], \"title\": \"Season: [!! @season !!]\"}",
+      "problems": [
+        "[!! @9lives !!] does not name a widget. Widget names are letters, digits and underscores.",
+        "[!! @season !!] does not name a widget. Widget names are letters, digits and underscores."
+      ]
     },
     {
       "name": "a selection tag's ids on their own are a list",
@@ -894,15 +856,6 @@
       "code": "{\"encoding\": {\"y\": {\"field\": [!! y !!], \"title\": \"[!! y !!]\"}, \"x\": {\"field\": \"total_[!! y !!]\"}}}",
       "widgets": [{"name": "y", "type": "text", "default": "rain.mm"}],
       "expected": "{\"encoding\": {\"y\": {\"field\": \"rain\\\\.mm\", \"title\": \"rain.mm\"}, \"x\": {\"field\": \"total_rain\\\\.mm\"}}}"
-    },
-    {
-      "name": "a shared tag in a Vega-Lite field is escaped as a widget is",
-      "language": "json",
-      "grammar": "vega-lite",
-      "code": "{\"encoding\": {\"y\": {\"field\": \"[!! @measure !!]\", \"title\": \"[!! @measure !!]\"}}}",
-      "widgets": [],
-      "shared": [{"name": "measure", "type": "text", "default": "rain.mm"}],
-      "expected": "{\"encoding\": {\"y\": {\"field\": \"rain\\\\.mm\", \"title\": \"rain.mm\"}}}"
     },
     {
       "name": "a list of texts in a fold is escaped name by name, and written as it is in a sort",

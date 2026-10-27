@@ -601,10 +601,10 @@ def test_factory_build_returns_zip(client, user_and_token, tmp_curio):
 def test_save_as_package_from_a_node_whose_code_holds_chips_lists_its_libraries(
     client, user_and_token, tmp_curio,
 ):
-    """#707: a node reads its inputs, their columns and layers, its widgets,
-    shared tags and selections through ``[!! ... !!]`` references. They are not
-    Python, so the import scan could not parse the node's code and the package
-    it was saved as listed none of its libraries."""
+    """#707: a node reads its inputs, their columns and layers, its widgets
+    and selections through ``[!! ... !!]`` references. They are not Python, so
+    the import scan could not parse the node's code and the package it was
+    saved as listed none of its libraries."""
     _, token = user_and_token
     draft = _draft()
     draft["sources"]["demo"]["code"] = (
@@ -613,7 +613,7 @@ def test_save_as_package_from_a_node_whose_code_holds_chips_lists_its_libraries(
         "frame = [!! input_0 !!]\n"
         "roads = [!! input_1:roads !!]\n"
         "area = frame[[!! input_0.area !!]]\n"
-        "scale = [!! factor !!] * [!! @season !!]\n"
+        "scale = [!! factor !!] * [!! season !!]\n"
         "picked = [!! selection picked !!]\n"
         "return np.asarray(area) * scale\n"
     )

@@ -432,7 +432,7 @@ proposal {proposal_id} created for the settings of node {node_id}; it awaits the
 
 ## plan.widgets-not-placeable
 
-plan node {ref} ({label}) cannot hold widgets: a widget is placed in a node's code or spec, or held by a Parameter node
+plan node {ref} ({label}) cannot hold widgets: a widget is placed in a node's code or spec
 
 ## plan.scenario-name-taken
 
@@ -605,10 +605,6 @@ edges has {count} entries (max {max_edges})
 ## plan.too-big-with-copies
 
 with its copies the plan has {nodes} nodes and {edges} edges (max {max_nodes} and {max_edges})
-
-## plan.parameter-one-widget
-
-{where} is a Parameter node, which holds exactly one widget: give it in widgets
 
 ## plan.block-not-json
 

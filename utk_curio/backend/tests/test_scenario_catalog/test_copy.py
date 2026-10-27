@@ -594,25 +594,6 @@ def test_a_model_the_account_may_not_add_is_refused_naming_it(client, user_and_t
     assert not dataset_dir(_user_dir_key_of(user), f"{computed_dataset_id('loader-1', target)}@1").exists()
 
 
-def test_a_shared_parameter_comes_with_the_plan_and_its_value(client, user_and_token):
-    _, token = user_and_token
-    spec = _spec("Shadows", [BASELINE])
-    spec["dataflow"]["nodes"][1]["content"] = "return [!! @season !!]"
-    spec["dataflow"]["nodes"].append({
-        "id": "season", "type": "curio.builtin/parameter@1", "content": "", "x": 0, "y": 300,
-        "metadata": {"widgets": [{"name": "season", "type": "text", "default": "winter", "value": "summer"}]},
-    })
-    source, target = _source_and_target(client, token, spec)
-    _save_outputs(client, token, source, {"load": "id\n1\n"})
-
-    plan = _plan(client, token, source, target).get_json()
-
-    assert plan["problems"] == []
-    assert [(c["nodeId"], c.get("parameter", False)) for c in plan["context"]] == [("load", False), ("season", True)]
-    season = next(n for n in plan["dataflow"]["nodes"] if n["id"] == "season")
-    assert season["metadata"]["widgets"][0]["value"] == "summer"
-
-
 def test_a_context_that_passes_on_several_outputs_is_refused(client, user_and_token):
     _, token = user_and_token
     nodes = [

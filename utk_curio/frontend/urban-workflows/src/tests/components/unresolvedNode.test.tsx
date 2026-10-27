@@ -68,6 +68,8 @@ import { notebookCellMinHeight, notebookHandlePlaces } from "../../utils/noteboo
 const SEGMENTATION = "model.curio.ddrnet23-slim/image-segmentation";
 // A Merge Flow node, as a dataflow saved before Merge Flow left Builtin names it.
 const MERGE_FLOW = "curio.builtin/merge-flow";
+// A Parameter node, as a dataflow saved before the Parameter node left Builtin names it.
+const PARAMETER = "curio.builtin/parameter@1";
 
 /** A node of *packageId* at *major*, as the registry holds each installed package's. */
 function packageNode(id: string, packageId: string, major: number): NodeDescriptor {
@@ -304,6 +306,15 @@ describe("UnresolvedNode for a type its installed package no longer has (#1048)"
     expect(screen.queryByRole("button")).toBeNull();
     expect(screen.queryByText("Missing node package")).toBeNull();
     expect(screen.queryByTestId("unresolved-node")).toBeNull();
+  });
+
+  it("gives a saved Parameter node, which Builtin no longer has, the same card", () => {
+    render(<UnresolvedNode nodeId="n1" nodeType={PARAMETER} registryReady />);
+    const card = screen.getByTestId("removed-node-type");
+    expect(card).toHaveTextContent("Removed node type");
+    expect(card).toHaveTextContent(`This dataflow asks for ${PARAMETER}, which Builtin no longer has.`);
+    expect(card).toHaveAttribute("data-tooltip", `No installed package provides ${PARAMETER}`);
+    expect(screen.queryByRole("button")).toBeNull();
   });
 
   it("says so for a versioned type whose major the account has", () => {

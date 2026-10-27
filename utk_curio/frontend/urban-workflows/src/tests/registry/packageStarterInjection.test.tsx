@@ -395,7 +395,7 @@ describe('Scout\'s charts, as the repository ships them (the plan answering koma
     // Wired, it reads that dataset: the chip as its editor resolves it before a run.
     const box = { scenario: 's-base', name: 'Baseline', color: '#2a9d8f', rank: 0 };
     const wired = resolveReferences(
-      starter, { widgets: normalizeWidgets(node.widgets), inputs: [{ slot: 0, scenario: box }], shared: [] }, 'json', VEGA_LITE,
+      starter, { widgets: normalizeWidgets(node.widgets), inputs: [{ slot: 0, scenario: box }] }, 'json', VEGA_LITE,
     );
     expect(wired.problems).toEqual([]);
     expect(JSON.parse(wired.code).data).toEqual({ name: 'inputs' });

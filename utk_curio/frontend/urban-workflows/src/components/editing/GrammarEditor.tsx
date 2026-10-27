@@ -15,7 +15,7 @@ import { NOTEBOOK_SPEC_EDITOR_MAX, useNotebookEditorHeight } from "./useNotebook
 import { nodeEditorLook } from "./nodeEditorLook";
 import { NODE_EDITOR_SCROLLING } from "./nodeEditorScrolling";
 
-const NO_REFERENCES: ReferenceScope = { widgets: [], inputs: [], shared: [] };
+const NO_REFERENCES: ReferenceScope = { widgets: [], inputs: [] };
 const NO_INPUTS: InputScope[] = [];
 
 type GrammarEditorProps = {
@@ -289,7 +289,6 @@ export default function GrammarEditor({
                 nodeId={nodeId}
                 widgets={references.widgets}
                 inputs={stripInputs}
-                shared={references.shared}
                 selections={references.selections}
                 language={widgetLanguage}
                 grammar={referenceGrammar}

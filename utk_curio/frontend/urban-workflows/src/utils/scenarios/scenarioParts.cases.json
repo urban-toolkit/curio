@@ -43,27 +43,16 @@
       "savedSources": {"a": ["a"], "b": ["b"]}
     },
     {
-      "name": "a Parameter node named by a lever's shared tag is context, though no edge reaches it",
+      "name": "a value node wired into a lever is context, and its saved output stands for it",
       "nodes": [
-        {"id": "season", "type": "curio.builtin/parameter@1", "content": "", "metadata": {"widgets": [{"name": "season", "type": "text", "default": "winter"}]}},
-        {"id": "other", "type": "curio.builtin/parameter@1", "content": "", "metadata": {"widgets": [{"name": "unused", "type": "number", "default": 1}]}},
-        {"id": "a", "type": "curio.builtin/computation-analysis@1", "content": "return [!! @season !!]"}
+        {"id": "season", "type": "curio.builtin/computation-analysis@1", "content": "return [!! season !!]", "metadata": {"widgets": [{"name": "season", "type": "text", "default": "winter"}]}},
+        {"id": "other", "type": "curio.builtin/computation-analysis@1", "content": "return [!! unused !!]", "metadata": {"widgets": [{"name": "unused", "type": "number", "default": 1}]}},
+        {"id": "a", "type": "curio.builtin/computation-analysis@1", "content": "return input_0"}
       ],
-      "edges": [],
+      "edges": [{"source": "season", "target": "a"}],
       "scenario": ["a"],
       "expected": {"levers": ["a"], "context": ["season"], "outcomes": ["a"]},
-      "savedSources": {"season": [], "a": ["a"]}
-    },
-    {
-      "name": "a Parameter node inside the scenario is a lever and never an outcome",
-      "nodes": [
-        {"id": "factor", "type": "curio.builtin/parameter@1", "content": "", "metadata": {"widgets": [{"name": "factor", "type": "number", "default": 2}]}},
-        {"id": "a", "type": "curio.builtin/computation-analysis@1", "content": "return [!! @factor !!]"}
-      ],
-      "edges": [],
-      "scenario": ["factor", "a"],
-      "expected": {"levers": ["factor", "a"], "context": [], "outcomes": ["a"]},
-      "savedSources": {"factor": [], "a": ["a"]}
+      "savedSources": {"season": ["season"], "a": ["a"]}
     },
     {
       "name": "context is listed in dataflow order, once each",

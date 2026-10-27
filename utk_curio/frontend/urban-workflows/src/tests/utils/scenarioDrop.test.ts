@@ -44,21 +44,23 @@ function plan(overrides: Partial<ScenarioCopyPlan> = {}): ScenarioCopyPlan {
   };
 }
 
-const SEASON: SpecNode = {
-  id: "season",
-  type: "curio.builtin/parameter@1",
-  x: 0,
-  y: 400,
-  content: "",
-  metadata: { widgets: [{ name: "season", type: "text", default: "winter", value: "summer" }] },
-};
-
+/** The plan with a second context node: Season, a value node (a Python node
+ *  that returns its widget's value) wired into the scale lever's second circle. */
 function withSeason(): ScenarioCopyPlan {
   const base = plan();
   return {
     ...base,
-    context: [...base.context, { nodeId: "season", label: "Parameter", parameter: true }],
-    dataflow: { ...base.dataflow, nodes: [...base.dataflow.nodes, SEASON] },
+    context: [
+      ...base.context,
+      { nodeId: "season", label: "Season", source: { nodeId: "season", copiedFrom: [], datasetId: "computed.p-src.season" } },
+    ],
+    dataflow: {
+      ...base.dataflow,
+      edges: [
+        ...base.dataflow.edges,
+        { id: "e3", source: "season", target: "scale", sourceHandle: "out", targetHandle: "in_1" },
+      ],
+    },
   };
 }
 
@@ -126,36 +128,36 @@ describe("planScenarioDrop", () => {
     expect(d.scenario.color.toLowerCase()).not.toBe("#e86a3c");
   });
 
-  test("a Parameter node of the context arrives as a copy with its value, beside the box", () => {
+  test("a value node of the context arrives as a Data Loading node over its saved value, wired where it was", () => {
     const d = drop(withSeason());
-    const season = copyOf(d, "season");
-    expect(season.id).not.toBe("season");
-    expect((season.metadata?.widgets as any[])[0]).toMatchObject({ name: "season", value: "summer" });
-    expect(season.x).toBeLessThan(AT.x);
-    expect(d.scenario.nodes).not.toContain(season.id);
-    // It is reached by its name, not an edge, and is not a saved output.
-    expect(d.edges.some((e) => e.source === season.id)).toBe(false);
-    expect(d.outputs.some((o) => o.node === season.id)).toBe(false);
-  });
-
-  test("a parameter name this dataflow already uses is refused, naming it", () => {
-    const mine: SpecNode = { ...SEASON, id: "my-season", metadata: { widgets: [{ name: "season", type: "text", default: "dry" }] } };
-    const built = planScenarioDrop(withSeason(), { nodes: [mine], edges: [] }, [], { newId: counter(), at: AT });
-    expect(built).toEqual({
-      error: 'This dataflow already has a parameter named "season". Rename it, then drag "Twice as tall" again.',
-    });
+    expect(d.loaders.map((loader) => loader.source)).toEqual(["load", "season"]);
+    const season = d.loaders[1];
+    expect(season.copiedFrom).toEqual(["season"]);
+    expect(season.position.x).toBeLessThan(AT.x);
+    const scale = copyOf(d, "scale");
+    expect(d.edges).toContainEqual(
+      expect.objectContaining({ source: season.id, sourceHandle: "out", target: scale.id, targetHandle: "in_1" }),
+    );
+    expect(d.outputs).toContainEqual({ source: "season", node: season.id });
+    // Only the levers are copied.
+    expect(d.nodes.some((n) => (n.metadata?.copiedFrom as string[] | undefined)?.at(-1) === "season")).toBe(false);
   });
 
   test("a second scenario of the same project reuses the context the first brought", () => {
     const first = drop(withSeason());
-    const loader: SpecNode = { id: first.loaders[0].id, type: "curio.builtin/data-loading", metadata: { copiedFrom: first.loaders[0].copiedFrom } };
-    const live = { nodes: [loader, copyOf(first, "season"), ...first.nodes.filter((n) => n.id !== copyOf(first, "season").id)], edges: first.edges };
+    const loaders: SpecNode[] = first.loaders.map((loader) => ({
+      id: loader.id, type: "curio.builtin/data-loading", metadata: { copiedFrom: loader.copiedFrom },
+    }));
+    const live = { nodes: [...loaders, ...first.nodes], edges: first.edges };
 
     const second = drop(withSeason(), live, [first.scenario]);
 
     expect(second.loaders).toEqual([]);
-    expect(second.reused.map((n) => n.id).sort()).toEqual([loader.id, copyOf(first, "season").id].sort());
-    expect(second.edges).toContainEqual(expect.objectContaining({ source: loader.id, target: copyOf(second, "scale").id }));
+    expect(second.reused.map((n) => n.id).sort()).toEqual(loaders.map((n) => n.id).sort());
+    expect(second.edges).toContainEqual(expect.objectContaining({ source: loaders[0].id, target: copyOf(second, "scale").id }));
+    expect(second.edges).toContainEqual(
+      expect.objectContaining({ source: loaders[1].id, target: copyOf(second, "scale").id, targetHandle: "in_1" }),
+    );
     expect(second.outputs).toEqual([{ source: "scale", node: copyOf(second, "scale").id }]);
     expect(second.nodes.some((n) => (n.metadata?.copiedFrom as string[] | undefined)?.at(-1) === "season")).toBe(false);
   });

@@ -49,7 +49,7 @@ export interface Run {
   id: string;
   projectId: string;
   projectName: string | null;
-  /** `auto`: a widget or Parameter change ran the nodes it touched (#845). */
+  /** `auto`: a widget change ran the nodes it touched (#845). */
   trigger: "all" | "node" | "rerun" | "auto";
   targetNodeId: string | null;
   /** The nodes a run of several nodes ran. */

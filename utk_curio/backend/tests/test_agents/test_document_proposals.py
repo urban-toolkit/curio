@@ -7,8 +7,8 @@ document that does not validate fails the node as one, not as an ungrounded
 source.
 
 A document is checked with its references resolved as far as the dataflow
-knows them: the node's widgets (a created node's, the ones it declares), the
-shared tags, and its wired inputs with their boxes. A reference nothing can
+knows them: the node's widgets (a created node's, the ones it declares) and
+its wired inputs with their boxes. A reference nothing can
 resolve yet, such as an input chip of a node with no edge, is read as Solve
 reads one for a node it does not hold. The documents are
 ``test_document_validation``'s.

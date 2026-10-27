@@ -56,8 +56,6 @@ class TestTemplateContentKind:
         assert kinds["data-pool"] == "none"       # editor none + an input port
         assert kinds["vis-simple"] == "none"
         assert kinds["spatial-join"] == "none"
-        # Set through the widget it holds (#662), not through written content.
-        assert kinds["parameter"] == "none"
         # Its title and text are what its author wrote: a person, or the
         # Researcher placing its findings.
         assert kinds["note"] == "note"
@@ -68,7 +66,7 @@ class TestTemplateContentKind:
         assert set(kinds) == {
             "data-loading", "data-export", "data-transformation", "data-pool",
             "computation-analysis", "data-summary", "js-computation",
-            "vis-vega", "vis-simple", "autk-grammar", "spatial-join", "parameter",
+            "vis-vega", "vis-simple", "autk-grammar", "spatial-join",
             "edit-features", "note",
         }
 

@@ -1,13 +1,12 @@
 /**
  * The header above a node's code or spec, as a test reads it (#662): its row of
- * categories (Inputs, Scenarios, Widgets, Selections, Shared), each with its
- * name, its count and whether it is open, and the chips of a category once it
- * is opened. Opening a category the header does not have throws, so a test that
+ * categories (Inputs, Scenarios, Widgets, Selections), each with its name, its
+ * count and whether it is open, and the chips of a category once it is opened. Opening a category the header does not have throws, so a test that
  * needs a tag fails where the header has no category for it.
  */
 import { fireEvent } from "@testing-library/react";
 
-export type StripCategory = "inputs" | "scenarios" | "widgets" | "selections" | "shared";
+export type StripCategory = "inputs" | "scenarios" | "widgets" | "selections";
 
 export interface CategoryButton {
   category: string | null;

@@ -1,7 +1,8 @@
 """An agent changes a setting of a node already on the canvas
 (``node.settings.write``): a Data Pool's conflict modes, a Simple View's image
 column, a Spatial Join's operation and output, or the values of a node's
-widgets, a Parameter node's among them.
+widgets, a value node's among them: a Python node that returns its widget's
+value to the nodes wired after it.
 
 Each change is judged by its node's own rule, the one a planned or created
 node's setting is judged by, so a mode the pool has not, an empty column, a
@@ -55,8 +56,8 @@ def _nodes() -> list[dict]:
         {"id": "chart", "type": "curio.builtin/computation-analysis", "title": "Shadow by tract",
          "content": "return input_0.groupby('tract')['shadow'].agg([!! combine !!])", "x": 1200, "y": 0,
          "metadata": {"widgets": [dict(COMBINE), dict(THRESHOLD)]}},
-        {"id": "season", "type": "curio.builtin/parameter", "title": "Season", "content": "", "x": 1600, "y": 0,
-         "metadata": {"widgets": [dict(SEASON)]}},
+        {"id": "season", "type": "curio.builtin/computation-analysis", "title": "Season",
+         "content": "return [!! season !!]", "x": 1600, "y": 0, "metadata": {"widgets": [dict(SEASON)]}},
     ]
 
 
@@ -323,12 +324,12 @@ class TestAChangeReachesTheCardAndTheNode:
         assert "value" not in widgets["threshold"]
         assert response.get_json()["appliedSettings"]["settings"] == {"widgets": {"combine": "max"}}
 
-    def test_a_parameters_value_named_from_the_canvas(self, client, user_and_token, tmp_curio, monkeypatch):
+    def test_a_value_nodes_value_named_from_the_canvas(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
         project, att, proposal, _ = _propose(
             client, user, token, monkeypatch, target=None, nodeId="season", widgets={"season": "winter"},
         )
-        assert proposal["summary"] == "Change the settings of the Parameter node · Season"
+        assert proposal["summary"] == "Change the settings of the Python Computation node · Season"
         assert proposal["settingLines"] == ["season: winter"]
         assert _apply(client, token, project, att, proposal).status_code == 200
         assert _saved(user, project)["season"]["metadata"]["widgets"][0]["value"] == "winter"
