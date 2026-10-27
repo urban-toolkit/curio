@@ -478,6 +478,16 @@ def _said_only_what_was_scripted(panel) -> None:
     expect(panel).not_to_contain_text(FALLBACK_REPLY)
 
 
+def _shows_headers(page, titles: list[str]) -> None:
+    """Each of *titles* is a node's header on the canvas, not only in the
+    save: the name a plan gave the node, in place of its template's."""
+    headers = page.evaluate(
+        "() => window.__curio_reactFlow.getNodes().map((n) => n.data && n.data.packageTemplateLabel)"
+    )
+    missing = [title for title in titles if title not in headers]
+    assert not missing, f"no node on the canvas is headed {missing}"
+
+
 def _wait_for_code(page, node_id: str, code: str, *, timeout: float = 60000) -> None:
     """Wait until the canvas node holds *code*, as an apply or Solve writes it."""
     page.wait_for_function(
@@ -726,6 +736,7 @@ def crown_heights_first_version(ctx: Ctx) -> None:
         if node.get("title") != title or (node.get("metadata") or {}).get("packageTemplateLabel") != title
     ]
     assert not untitled, f"the plan's nodes {untitled} did not land with their titles"
+    _shows_headers(page, [*titles, TABLE_TITLE])
     days =(_by_title(saved, nodes[nid("steps")]["title"]).get("metadata") or {}).get("widgets") or []
     assert [w.get("name") for w in days] == ["day"], f"the day's sun steps hold the widgets {days}"
     made = sorted((e["source"], e["target"], e.get("targetHandle") or "in") for e in saved["edges"])
@@ -1022,6 +1033,7 @@ def crown_heights_plot_and_map(ctx: Ctx) -> None:
         if not _same_code(node.get("content") or "", nodes[nid(PLOT_AND_MAP[titles.index(title)])]["content"])
     ]
     assert not wrong, f"Solve wrote other specs than the example's for {wrong}"
+    _shows_headers(page, titles)
     saved = _saved(ctx, token, project_id)
     made = {new: nid(key) for key, new in zip(PLOT_AND_MAP, (plot, added))}
     wired = sorted(
