@@ -17,7 +17,7 @@ import type { CanvasTemplateConfig } from "../utils/canvasTemplateConfig";
 import { canvasTemplateConfigFromSpec } from "../utils/canvasTemplateConfigSpec";
 import { dataPoolFromSpec } from "../utils/dataPoolSpec";
 import { normalizeWidgets, type WidgetDef } from "../utils/widgets/widgetModel";
-import { runKeyWithShared, sharedWidgetsOfSpec } from "../utils/references/sharedParameters";
+import { runKeyOf } from "../utils/references/runKeys";
 import { normalizeSelections, type SelectionTag } from "../utils/references/selectionTags";
 import { lineageFromSpec } from "../utils/scenarios/duplicateSelection";
 
@@ -161,9 +161,6 @@ export function useCode(): IUseCode {
 
         let nodes = [];
         let edges = [];
-        // #662: the Parameter nodes' widgets, which a restored output's run
-        // key covers, as a run's does.
-        const shared = sharedWidgetsOfSpec(trill.dataflow.nodes);
 
         for(const node of trill.dataflow.nodes){
             let x = node.x;
@@ -305,7 +302,7 @@ export function useCode(): IUseCode {
                 // The same content a run shows (CodeEditor), and the source
                 // playNodesUpTo compares against to tell a valid result.
                 nodeMeta.output = { code: "success", content: "Saved to file: " + restored };
-                nodeMeta.executedCode = runKeyWithShared(node.content, nodeMeta.widgets, shared, nodeMeta.selections);
+                nodeMeta.executedCode = runKeyOf(node.content, nodeMeta.widgets, nodeMeta.selections);
             }
 
             nodes.push(generateCodeNode(node.type, nodeMeta));

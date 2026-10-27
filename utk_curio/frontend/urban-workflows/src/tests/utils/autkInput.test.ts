@@ -493,7 +493,6 @@ describe("a layer chip in the document reads the frame its input carries (#662)"
   // each wired circle with the value it holds, before any column is read.
   const scopeOf = (values: unknown[]) => ({
     widgets: [],
-    shared: [],
     inputs: inputScopeFor(
       "map",
       values.map((_, slot) => ({

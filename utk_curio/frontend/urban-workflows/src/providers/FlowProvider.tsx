@@ -446,8 +446,8 @@ const FlowProvider = ({
     const dashboardRun = useDashboardRun({
         enabled: dashboardOn, reactFlow, outcomes: stepOutcomes, outputsRef, showToast, playNodes,
     });
-    // #845: where Run All runs on the server, a widget or Parameter change can
-    // run the nodes it touched through the same start, once the changes settle.
+    // #845: where Run All runs on the server, a widget change can run the
+    // nodes it touched through the same start, once the changes settle.
     // On a dashboard every change does, with no toggle, as a viewer's run (#1117).
     const autoRunner = useAutoRun({
         enabled: dashboardOn || (runsOnServer && !!workflowOps.autoRun),

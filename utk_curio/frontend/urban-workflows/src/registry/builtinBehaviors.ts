@@ -19,7 +19,6 @@ import {
   useDataSummaryBehavior,
   useAutkViewBehavior,
   useSpatialJoinBehavior,
-  useParameterBehavior,
   useEditFeaturesBehavior,
   useNoteBehavior,
 } from '../adapters/node';
@@ -36,9 +35,6 @@ registerBehavior('autk-grammar', useAutkViewBehavior);
 // curio.builtin@1 spatial-join node (stays in core because the builtin
 // package's behaviors must be registered before ANY package registry runs).
 registerBehavior('spatial-join', useSpatialJoinBehavior);
-// curio.builtin@1 parameter node: one widget any node's code names as
-// [!! @name !!] (#662).
-registerBehavior('parameter', useParameterBehavior);
 // curio.builtin@1 edit-features node: features picked on its map, removed,
 // given a value or restored, as a list its code applies by id (#662).
 registerBehavior('edit-features', useEditFeaturesBehavior);

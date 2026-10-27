@@ -1,7 +1,7 @@
 /**
  * The header above a node's code or spec (#662): one row of the categories of
- * chips the node can use, Inputs, Scenarios, Widgets, Selections and Shared,
- * each with its count and only when it has chips, all closed. A click opens a
+ * chips the node can use, Inputs, Scenarios, Widgets and Selections, each
+ * with its count and only when it has chips, all closed. A click opens a
  * category's chips under the row and closes the one open, so one category shows
  * its chips at a time. A category stays open for its node while the dataflow is
  * open, so the node's editor mounting again keeps it; another node's header
@@ -30,7 +30,6 @@ const widgets: WidgetDef[] = [
   { name: "combine", type: "choice", default: "mean", options: { choices: ["mean", "sum"] } },
   { name: "y_title", type: "text", default: "" },
 ];
-const shared: WidgetDef[] = [{ name: "season", type: "text", default: "summer" }];
 const selections: SelectionTag[] = [{ name: "picked", node: "scatter", column: "osm_id", ids: [101] }];
 
 // Each test its own node, so no category it opens is open in another.
@@ -43,7 +42,6 @@ function chart(nodeId: string, more: Record<string, unknown> = {}) {
       nodeId={nodeId}
       widgets={widgets}
       inputs={inputs}
-      shared={shared}
       selections={selections}
       language="json"
       grammar="vega-lite"
@@ -61,10 +59,9 @@ describe("the header's row", () => {
       { category: "scenarios", label: "Scenarios 5", open: false },
       { category: "widgets", label: "Widgets 3", open: false },
       { category: "selections", label: "Selections 1", open: false },
-      { category: "shared", label: "Shared 1", open: false },
     ]);
     for (const tag of [
-      "[data-input-tag]", "[data-inputs-tag]", "[data-widget-tag]", "[data-selection-tag]", "[data-shared-tag]",
+      "[data-input-tag]", "[data-inputs-tag]", "[data-widget-tag]", "[data-selection-tag]",
       "[data-scenario-swatches]", "[data-scenario-input]", "[data-strip-chips]",
     ]) {
       expect(view.container.querySelector(tag)).toBeNull();
@@ -112,8 +109,6 @@ describe("the header's row", () => {
     expect(view.container.querySelector("[data-widget-tag]")).toBeNull();
 
     // Every other category the same way, each with its own chips.
-    expect(openCategory(view.container, "shared").querySelector('[data-shared-tag="season"]')!.textContent).toBe("@season");
-    expect(open()).toEqual(["shared"]);
     expect(openCategory(view.container, "selections").querySelector('[data-selection-tag="picked"]')!.textContent).toBe(
       "selection picked",
     );
@@ -125,7 +120,7 @@ describe("the header's row", () => {
 
   test("a header with no node id, which keeps its own categories, opens one at a time too", () => {
     const view = render(
-      <ReferenceStrip widgets={widgets} inputs={inputs} shared={shared} language="python" onInsert={jest.fn()} />,
+      <ReferenceStrip widgets={widgets} inputs={inputs} language="python" onInsert={jest.fn()} />,
     );
     const open = () => headerRow(view.container).filter((entry) => entry.open).map((entry) => entry.category);
     openCategory(view.container, "inputs");
@@ -181,9 +176,9 @@ describe("what the header reads", () => {
   test("code, Python or JavaScript, shows no Scenarios and no inputs tag, though its inputs come from boxes", () => {
     for (const language of ["python", "javascript"] as const) {
       const view = render(
-        <ReferenceStrip nodeId={newNode()} widgets={widgets} inputs={inputs} shared={shared} language={language} onInsert={jest.fn()} />,
+        <ReferenceStrip nodeId={newNode()} widgets={widgets} inputs={inputs} language={language} onInsert={jest.fn()} />,
       );
-      expect(headerRow(view.container).map((entry) => entry.label)).toEqual(["Inputs 2", "Widgets 3", "Shared 1"]);
+      expect(headerRow(view.container).map((entry) => entry.label)).toEqual(["Inputs 2", "Widgets 3"]);
       const chips = openCategory(view.container, "inputs");
       expect(Array.from(chips.querySelectorAll("[data-input-tag]")).map((tag) => tag.textContent)).toEqual([
         "input_0", "input_1",
@@ -196,7 +191,7 @@ describe("what the header reads", () => {
   test("an Autark spec has no inputs tag, and its Scenarios a chip per input", () => {
     const view = render(chart(newNode(), { grammar: undefined }));
     expect(headerRow(view.container).map((entry) => entry.label)).toEqual([
-      "Inputs 2", "Scenarios 2", "Widgets 3", "Selections 1", "Shared 1",
+      "Inputs 2", "Scenarios 2", "Widgets 3", "Selections 1",
     ]);
   });
 

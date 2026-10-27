@@ -35,7 +35,7 @@ test("its starter loads what the Data widget holds", () => {
   expect(datasetWidgetReadBy(template.widgets, starter)?.name).toBe("data");
 
   const held = normalizeWidgets(template.widgets).map((w) => ({ ...w, value: "data.utk.trees" }));
-  const { code, problems } = resolveReferences(starter, { widgets: held, inputs: [], shared: [] }, "python");
+  const { code, problems } = resolveReferences(starter, { widgets: held, inputs: [] }, "python");
   expect(problems).toEqual([]);
   expect(code).toBe('data = curio_load_data("data.utk.trees")\nreturn data\n');
 });

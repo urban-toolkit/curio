@@ -9,8 +9,8 @@ marker in its code.
 A widget's name is letters, digits and underscores, not starting with a digit,
 and not an input's name, ``input_0``, ``input_1`` and so on, nor ``inputs``,
 the name the node's stacked inputs are read by: a manifest that breaks either
-rule is refused as the Widgets tab and a Parameter node refuse the name, with
-the same words. Its type is one of the Widgets tab's kinds, and
+rule is refused as the Widgets tab refuses the name, with the same words. Its
+type is one of the Widgets tab's kinds, and
 no two widgets of a template share a name: a manifest that breaks either is
 refused as the Widgets tab refuses the widget, with the same words.
 
@@ -102,8 +102,7 @@ def _load(tmp_path: Path, raw: dict):
 @pytest.mark.parametrize("name", ["input_0", "input_12", "inputs"])
 def test_a_widget_named_as_an_input_is_read_is_refused_as_the_widgets_tab_refuses_it(tmp_path, name):
     """``check_widget_def`` is the Widgets tab's own check (``checkWidgetDef``),
-    held to it by ``widgetChecks.cases.json``; a Parameter node's widget goes
-    through the same check."""
+    held to it by ``widgetChecks.cases.json``."""
     tab_says = check_widget_def(_number(name))
     assert tab_says
     with pytest.raises(ManifestError) as refused:
@@ -158,8 +157,7 @@ WELL_SHAPED = {
 )
 def test_a_badly_shaped_name_is_refused_as_the_widgets_tab_refuses_it(tmp_path, name):
     """The canvas drops a widget whose name has another shape, so the manifest
-    is refused, with the words the Widgets tab and a Parameter node refuse the
-    name with."""
+    is refused, with the words the Widgets tab refuses the name with."""
     tab_says = check_widget_def(_number(name))
     assert tab_says
     with pytest.raises(ManifestError) as refused:
@@ -286,14 +284,8 @@ def _loads_or_is_refused_with(tmp_path, widgets: list, expected: str | None) -> 
     assert str(refused.value).endswith(f".templates[0].widgets[{len(widgets) - 1}]: {expected}")
 
 
-#: The Widgets tab's cases for a widget beside the node's other widgets. A
-#: Parameter node's own cases are about other Parameter nodes, not a template.
-DEFINITIONS = [case for case in TAB_CASES["definitions"] if not case.get("parameter")]
-
-
-def test_every_definition_but_a_parameter_nodes_is_a_templates():
-    left_out = [case for case in TAB_CASES["definitions"] if case not in DEFINITIONS]
-    assert DEFINITIONS and all(case.get("parameter") is True for case in left_out)
+#: The Widgets tab's cases for a widget beside the node's other widgets.
+DEFINITIONS = TAB_CASES["definitions"]
 
 
 @pytest.mark.parametrize("case", DEFINITIONS, ids=[case["name"] for case in DEFINITIONS])

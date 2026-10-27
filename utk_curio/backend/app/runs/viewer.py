@@ -4,9 +4,9 @@ owner's Data Catalog.
 
 Anyone who can open the dashboard starts one: the page needs no sign-in. What
 a viewer may change is what the pins put on the page (:func:`dashboard_controls`):
-the widget of a pinned Parameter node and every widget of a pinned node,
-except the kinds ``contracts/dashboardRuns.json`` keeps read-only, a text or a
-file, whose free value could name another of the owner's datasets or files.
+every widget of a pinned node, except the kinds ``contracts/dashboardRuns.json``
+keeps read-only, a text or a file, whose free value could name another of the
+owner's datasets or files.
 Each value is checked as the Widgets tab checks it (``check_widget_value``).
 
 What runs: the saved dataflow with the values laid over it in memory, planned
@@ -147,8 +147,8 @@ def reset() -> None:
 
 def dashboard_controls(spec: dict) -> dict:
     """``{(node id, widget name): widget}``: the controls the pins put on the
-    page that a viewer may change. Every widget of a pinned node, a pinned
-    Parameter node's one included, but the read-only kinds."""
+    page that a viewer may change. Every widget of a pinned node but the
+    read-only kinds."""
     from utk_curio.backend.app.projects.dashboard_payload import is_pinned
 
     controls: dict = {}
@@ -214,8 +214,8 @@ def _control_values(controls: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def _resolved_code(parsed, node) -> Optional[str]:
-    """A node's code as a run sends it, its widgets and shared values written
-    in; None for a node with no code."""
+    """A node's code as a run sends it, its widgets written in; None for a
+    node with no code."""
     from utk_curio.backend.app.execution.code_references import CodeReferenceError
 
     if node.category == "grammar":

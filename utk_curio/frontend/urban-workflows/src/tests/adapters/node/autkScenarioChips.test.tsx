@@ -72,7 +72,7 @@ function written(scenarios: unknown): any {
       ? { ...input.label, rank: listed.findIndex((scenario) => scenario.id === input.scenario!.id) }
       : input.label,
   }));
-  const { code, problems } = resolveReferences(DOCUMENT, { widgets: [], inputs, shared: [] }, 'json');
+  const { code, problems } = resolveReferences(DOCUMENT, { widgets: [], inputs }, 'json');
   expect(problems).toEqual([]);
   return JSON.parse(code);
 }

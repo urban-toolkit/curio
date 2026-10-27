@@ -201,7 +201,7 @@ function buildDescriptor(pkg: RawPackage, template: RawPackageTemplate, order: n
   const installMsMaybe = normalizedInstallUpdatedAtMs(pkg.installUpdatedAtMs);
 
   let handles: HandleDef[];
-  // A template with no port at all (the Parameter node) takes no edge.
+  // A template with no port at all (the Note) takes no edge.
   if (inputPorts.length === 0 && outputPorts.length === 0) handles = [];
   else if (inputPorts.length === 0) handles = outputOnly();
   else if (outputPorts.length === 0) handles = inputOnly();

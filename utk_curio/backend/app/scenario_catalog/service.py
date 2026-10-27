@@ -11,11 +11,9 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from utk_curio.backend.app.execution.code_references import effective_value, normalize_shared
 from utk_curio.backend.app.projects.scenarios import scenario_summaries
 from utk_curio.backend.app.scenario_catalog.domain.copy import copy_plan, node_label, requirements
 from utk_curio.backend.app.scenario_catalog.domain.parts import (
-    is_parameter_node,
     saved_sources,
     scenario_parts,
     spec_nodes_and_edges,
@@ -61,10 +59,6 @@ def _node_entry(node: dict, results: list[dict]) -> dict[str, Any]:
     entry: dict[str, Any] = {"id": node["id"], "type": str(node.get("type") or "")}
     if isinstance(label, str) and label:
         entry["label"] = label
-    if is_parameter_node(node):
-        widgets = normalize_shared(metadata.get("widgets"))
-        if widgets:
-            entry["parameter"] = {"name": widgets[0]["name"], "value": effective_value(widgets[0])}
     entry["results"] = results
     return entry
 
@@ -180,7 +174,7 @@ class ScenarioCatalogService:
         saved = projects.saved_outputs_of(self.user, project_id, spec, [
             entry["source"]["nodeId"]
             for entry in plan["context"]
-            if not entry.get("parameter") and entry.get("source") is not None
+            if entry.get("source") is not None
         ] + [source for outcome in plan["outcomes"] for source in outcome["sources"]])
         name = scenario["name"]
         problems: list[str] = []
@@ -188,8 +182,6 @@ class ScenarioCatalogService:
         runs_refused = server_runs.refusal(self.user)
 
         for entry in plan["context"]:
-            if entry.get("parameter"):
-                continue
             source = entry.get("source")
             if source is None:
                 count = len(entry["sources"])

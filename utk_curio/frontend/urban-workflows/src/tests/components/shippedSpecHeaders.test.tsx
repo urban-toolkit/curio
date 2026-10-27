@@ -3,9 +3,8 @@
  *
  * Covered: each Vega-Lite and Autark node of every dataflow in docs/examples,
  * its header built as the canvas builds it (the node's edges, the boxes its
- * inputs come from, its widgets and selection tags, the dataflow's Parameter
- * nodes), and Scout's 15 chart templates, each with its manifest's widgets, on
- * two inputs from two boxes. A node's or a template's kind is read from the
+ * inputs come from, its widgets and selection tags), and Scout's 15 chart
+ * templates, each with its manifest's widgets, on two inputs from two boxes. A node's or a template's kind is read from the
  * package manifests: a template that draws with the Vega-Lite grammar
  * (`grammarId`), or with the Autark grammar's behavior.
  *
@@ -30,7 +29,6 @@ import {
 } from "../../utils/references/codeReferences";
 import { inputScopeFor } from "../../utils/references/inputScope";
 import { normalizeSelections } from "../../utils/references/selectionTags";
-import { sharedWidgetsOfSpec } from "../../utils/references/sharedParameters";
 import { inputScenarios } from "../../utils/scenarios/inputScenarios";
 import { normalizeScenarios } from "../../utils/scenarios/scenarioModel";
 import { normalizeWidgets, type WidgetDef } from "../../utils/widgets/widgetModel";
@@ -75,8 +73,6 @@ function placeOf(parsed: ParsedReference): Place {
   switch (parsed.kind) {
     case "widget":
       return { category: "widgets", selector: `[data-widget-tag="${parsed.name}"]` };
-    case "shared":
-      return { category: "shared", selector: `[data-shared-tag="${parsed.name}"]` };
     case "selection":
       return { category: "selections", selector: `[data-selection-tag="${parsed.name}"]` };
     case "input":
@@ -109,7 +105,6 @@ interface HeaderCase {
     nodeId: string;
     widgets: WidgetDef[];
     inputs: InputScope[];
-    shared: WidgetDef[];
     selections: SelectionTag[];
     grammar?: string;
   };
@@ -132,7 +127,6 @@ function dataflowCases(): HeaderCase[] {
     // As the canvas holds them: a node's title is what an input's label names.
     const canvasNodes = nodes.map((node) => ({ id: node.id, type: node.type, data: { title: node.title, nodeType: node.type } }));
     const scenarios = normalizeScenarios(flow.scenarios, nodes.map((node) => node.id));
-    const shared = sharedWidgetsOfSpec(nodes);
     for (const node of nodes) {
       const type = unversioned(node.type);
       if (!vegaLite.has(type) && !autark.has(type)) continue;
@@ -151,7 +145,6 @@ function dataflowCases(): HeaderCase[] {
           nodeId: `${relative(file)}:${node.id}`,
           widgets: normalizeWidgets(node.metadata?.widgets),
           inputs,
-          shared,
           selections: normalizeSelections(node.metadata?.selections),
           grammar: vegaLite.has(type) ? VEGA_LITE : undefined,
         },
@@ -179,7 +172,6 @@ function templateCases(): HeaderCase[] {
         nodeId: `curio.scout/${template.id}`,
         widgets: normalizeWidgets(template.widgets),
         inputs: TWO_BOXED,
-        shared: [],
         selections: [],
         grammar: VEGA_LITE,
       },

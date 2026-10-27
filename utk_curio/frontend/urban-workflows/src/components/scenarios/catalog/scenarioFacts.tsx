@@ -85,21 +85,6 @@ export function scenarioNodeLabel(entry: Pick<ScenarioNodeEntry, "id" | "type" |
   return (entry.type && templateName(entry.type)) || entry.id;
 }
 
-function formatValue(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (value === undefined) return "";
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
-}
-
-/** A Parameter node's widget and the value it holds: `"year = 2020"`. */
-export function scenarioParameterLine(parameter: NonNullable<ScenarioNodeEntry["parameter"]>): string {
-  return `${parameter.name} = ${formatValue(parameter.value)}`;
-}
-
 function countLabel(count: number, one: string, many: string): string {
   return `${count.toLocaleString("en-US")} ${count === 1 ? one : many}`;
 }
@@ -134,9 +119,9 @@ export function scenarioInfoRows(
   return rows.filter((fact): fact is ScenarioFact => fact != null);
 }
 
-/** One section of the details view: its nodes, each with its parameter value
- *  and its saved outputs. Without *results*, the nodes alone: a scenario read
- *  off the canvas, whose outputs may not be saved yet. */
+/** One section of the details view: its nodes, each with its saved outputs.
+ *  Without *results*, the nodes alone: a scenario read off the canvas, whose
+ *  outputs may not be saved yet. */
 export const ScenarioNodeList: React.FC<{
   entries: ScenarioNodeEntry[];
   /** What an empty section says. */
@@ -149,17 +134,13 @@ export const ScenarioNodeList: React.FC<{
       {entries.map((entry) => (
         <li key={entry.id} className={styles.nodeItem} data-scenario-node-id={entry.id}>
           <span className={styles.nodeLabel}>{scenarioNodeLabel(entry)}</span>
-          {entry.parameter ? (
-            <span className={styles.nodeParameter}>{scenarioParameterLine(entry.parameter)}</span>
-          ) : null}
           {!results ? null : entry.results.length > 0 ? (
             <ul className={styles.resultList}>
               {entry.results.map((result) => (
                 <li key={result.datasetId}>{scenarioResultLine(result)}</li>
               ))}
             </ul>
-          ) : entry.parameter ? null : (
-            // A Parameter node's value is in the dataflow; it saves no output.
+          ) : (
             <p className={styles.noOutput}>No saved output</p>
           )}
         </li>

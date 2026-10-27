@@ -42,9 +42,6 @@ export const WIDGET_REF_MIME = "application/x-curio-widget";
 /** What a dragged input or column tag carries: what stands inside its
  * reference, such as `input_1` or `input_1.height`. */
 export const INPUT_REF_MIME = "application/x-curio-input";
-/** What a dragged shared tag carries: what stands inside its reference, such
- * as `@season`. */
-export const SHARED_REF_MIME = "application/x-curio-shared";
 /** What a dragged selection tag carries: what stands inside its reference,
  * such as `selection picked`. */
 export const SELECTION_REF_MIME = "application/x-curio-selection";
@@ -53,7 +50,7 @@ export const SELECTION_REF_MIME = "application/x-curio-selection";
  * `scenario colors`. */
 export const SCENARIO_REF_MIME = "application/x-curio-scenario";
 
-const REFERENCE_MIMES = [WIDGET_REF_MIME, INPUT_REF_MIME, SHARED_REF_MIME, SELECTION_REF_MIME, SCENARIO_REF_MIME];
+const REFERENCE_MIMES = [WIDGET_REF_MIME, INPUT_REF_MIME, SELECTION_REF_MIME, SCENARIO_REF_MIME];
 
 /** The most ids a selection chip's hover lists. */
 const HOVER_IDS = 5;
@@ -81,7 +78,7 @@ export function offsetToPosition(code: string, offset: number): { lineNumber: nu
 export interface ReferenceMark extends ChipMark {
   /** What stands inside the reference. */
   name: string;
-  kind: "widget" | "input" | "shared" | "selection" | "scenario" | "dataset" | "stacked";
+  kind: "widget" | "input" | "selection" | "scenario" | "dataset" | "stacked";
 }
 
 /** *names* as a list in words: `a`, `a and b`, `a, b and c`. */
@@ -105,10 +102,6 @@ function hoverFor(inner: string, scope: ReferenceScope, language: CodeLanguage):
   if (parsed.kind === "widget") {
     const widget = scope.widgets.find((w) => w.name === inner) as WidgetDef;
     return `${inner} = ${widgetLiteral(effectiveValue(widget), language)}`;
-  }
-  if (parsed.kind === "shared") {
-    const widget = scope.shared.find((w) => w.name === parsed.name) as WidgetDef;
-    return `${inner} = ${widgetLiteral(effectiveValue(widget), language)}, from its Parameter node`;
   }
   if (parsed.kind === "selection") {
     const tag = (scope.selections ?? []).find((t) => t.name === parsed.name);
@@ -184,8 +177,8 @@ export function referenceMarks(code: string, scope: ReferenceScope, language: Co
       problem,
       hover: problem ?? hoverFor(ref.inner, scope, language),
       // An input or column chip is drawn like a widget's, in green, and so are
-      // the dataset inputs and its fields; a shared one in amber; a selection
-      // in peach; a scenario chip in lilac.
+      // the dataset inputs and its fields; a selection in peach; a scenario
+      // chip in lilac.
       kindClass: kind === "widget" ? null : chipClass({ kind, problem }),
     };
   });
@@ -194,7 +187,6 @@ export function referenceMarks(code: string, scope: ReferenceScope, language: Co
 const KIND_CLASSES: Record<ReferenceMark["kind"], string> = {
   widget: "curio-widget-ref",
   input: "curio-input-ref",
-  shared: "curio-shared-ref",
   selection: "curio-selection-ref",
   scenario: "curio-scenario-ref",
   dataset: "curio-input-ref",
@@ -284,7 +276,7 @@ function draggedReference(event: { dataTransfer?: DataTransfer | null }): string
   return mime ? event.dataTransfer?.getData(mime) || null : null;
 }
 
-/** Whether *event* drags a widget, input, column or shared tag. */
+/** Whether *event* drags a widget, input, column, selection or scenario tag. */
 export function isReferenceDrag(event: { dataTransfer?: DataTransfer | null }): boolean {
   const types = Array.from(event.dataTransfer?.types ?? []);
   return REFERENCE_MIMES.some((m) => types.includes(m));

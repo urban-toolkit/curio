@@ -18,7 +18,7 @@ When "inputContract" rides your inputs it tells you the shape of THIS node's inp
 
 ## Widgets
 
-When "nodeContext" lists "widgets", the node declares them: values the user sets in its Widgets tab. Place each one where its value is used as its reference, `{{widgets.reference:factor}}` for the widget named factor, and never type the value itself in its place, so the user's setting reaches the code. On its own a reference is a value of the code's language; inside a quoted text it is the value's text. Each widget's "value" is what the reference stands for now. "sharedTags" lists the values the dataflow's {{template.label:curio.builtin/parameter}} nodes hold, which any node reads as `{{widgets.shared:season}}` for the one named season. Never place a reference to a widget that is not listed.
+When "nodeContext" lists "widgets", the node declares them: values the user sets in its Widgets tab. Place each one where its value is used as its reference, `{{widgets.reference:factor}}` for the widget named factor, and never type the value itself in its place, so the user's setting reaches the code. On its own a reference is a value of the code's language; inside a quoted text it is the value's text. Each widget's "value" is what the reference stands for now. Never place a reference to a widget that is not listed.
 
 ## Documents
 

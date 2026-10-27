@@ -16,7 +16,7 @@
 import { useCallback, useState, useSyncExternalStore } from "react";
 
 /** The header's categories, in its row's order. */
-export const STRIP_CATEGORIES = ["inputs", "scenarios", "widgets", "selections", "shared"] as const;
+export const STRIP_CATEGORIES = ["inputs", "scenarios", "widgets", "selections"] as const;
 export type StripCategory = (typeof STRIP_CATEGORIES)[number];
 
 const NONE: ReadonlySet<StripCategory> = new Set();

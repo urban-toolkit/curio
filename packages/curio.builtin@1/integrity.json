@@ -1,7 +1,7 @@
 {
   "sha256": {
     "README.md": "4f403ab48b71d2bf96bb0a5c5d01c67a2b1fddb125206132ea5fb169c1bad698",
-    "manifest.json": "4c640fc4b882eb22517031d99da0703e063d91524b360c9b69dc94a9396f0bb2",
+    "manifest.json": "23c650fdfba26ed6d99cba2fcba201b65c00185f0756e4d48a7f3256b70135e3",
     "sources/data-loading.py": "d53681dfdb38b6dba78d2d7b04b21ed75d985b88bc6843805b5cd271351aca9a"
   }
 }

@@ -5,7 +5,7 @@ import { Starter, useStarterContext } from '../providers/StarterProvider';
 import { useUserContext } from '../providers/UserProvider';
 import { useFlowContext } from '../providers/FlowProvider';
 import { reportFromNodeOutput, reportNodeRuntime } from '../services/nodeRuntimeReport';
-import { runKeyWithShared, sharedWidgetsOf } from '../utils/references/sharedParameters';
+import { runKeyOf } from '../utils/references/runKeys';
 import { noteCodeEdit } from '../utils/references/codeEdits';
 
 export interface NodeOutput {
@@ -15,7 +15,7 @@ export interface NodeOutput {
   /** Set only on a failed run that ended in a ModuleNotFoundError (#299). */
   missingModule?: MissingModuleNotice | null;
   /**
-   * On a run's success: the run key (`runKeyWithShared`) the run started with,
+   * On a run's success: the run key (`runKeyOf`) the run started with,
    * which the node is stamped with. A value changed while it ran then leaves
    * the node stale.
    */
@@ -33,12 +33,12 @@ export function useNodeState(data: any, nodeType: NodeTemplateId) {
 
   const { editUserStarter } = useStarterContext();
   const { user } = useUserContext();
-  const { projectId, nodes } = useFlowContext();
+  const { projectId } = useFlowContext();
 
   useEffect(() => {
     data.code = code;
-    // The flow's state does not see this write, so whatever lists the nodes
-    // that use a shared tag is told here.
+    // The flow's state does not see this write, so a view that reads every
+    // node's code (codeEdits) is told here.
     noteCodeEdit();
   }, [code]);
 
@@ -55,13 +55,12 @@ export function useNodeState(data: any, nodeType: NodeTemplateId) {
   // straight after a load, while identical content compares equal.
   useEffect(() => {
     data.output = output;
-    // #662: the key includes the node's widget values, the shared tags it
-    // names and the ids its selection tags hold, so a new value or a new
-    // selection re-runs it. A run's result carries the key it started with:
-    // one taken now would hide a value changed while it ran.
+    // #662: the key includes the node's widget values and the ids its
+    // selection tags hold, so a new value or a new selection re-runs it. A
+    // run's result carries the key it started with: one taken now would hide
+    // a value changed while it ran.
     if (output?.code === 'success') {
-      data.executedCode = output.runKey
-        ?? runKeyWithShared(code, data.widgets, sharedWidgetsOf(nodes ?? []), data.selections);
+      data.executedCode = output.runKey ?? runKeyOf(code, data.widgets, data.selections);
     }
     // dev/135: the node instance already held its own outcome here — and only
     // here, in memory, so an agent asked about a node that had just failed in

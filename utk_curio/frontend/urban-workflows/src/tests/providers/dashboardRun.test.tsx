@@ -49,9 +49,9 @@ const dayTile = () => ({ id: "day", data: { nodeId: "day", dashboardPinned: true
 
 function makeNodes(): any[] {
     return [
-        { id: "param", data: { nodeId: "param", dashboardPinned: true, widgets: [{ ...period }] } },
+        { id: "param", data: { nodeId: "param", dashboardPinned: true, code: "return [!! period !!]", widgets: [{ ...period }] } },
         { id: "notes", data: { nodeId: "notes", dashboardPinned: true, widgets: [{ ...note }] } },
-        { id: "grid", data: { nodeId: "grid", code: "return [!! @period !!]", widgets: [] } },
+        { id: "grid", data: { nodeId: "grid", code: "return input_0", widgets: [] } },
         { id: "chart", data: { nodeId: "chart", dashboardPinned: true } },
     ];
 }

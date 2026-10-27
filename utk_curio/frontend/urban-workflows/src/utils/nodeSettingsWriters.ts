@@ -16,7 +16,6 @@
  * Provenance drawer: an entry holds code, so putting one back could not put
  * back a setting.
  */
-import { isParameterNode, nodesUsingShared } from "./references/sharedParameters";
 import { normalizeWidgets, type WidgetDef, type WidgetValue } from "./widgets/widgetModel";
 
 /**
@@ -109,9 +108,8 @@ export interface NodeSettingsCanvas {
  * Makes the change *settings* on node *nodeId*: each setting through the
  * setter the node registered for it, as a pick in the node makes it, and the
  * rest into the node's data through *canvas*'s `updateDataNode`. A widget's
- * new value made there still does what the Widgets tab's does: what reads it
- * is out of date, the dataflow Unsaved, and an automatic run takes it, the
- * node itself, or the nodes that use a Parameter node's value.
+ * new value made there still does what the Widgets tab's does: the node is
+ * out of date, the dataflow Unsaved, and an automatic run takes the node.
  */
 export function writeNodeSettings(canvas: NodeSettingsCanvas, nodeId: string, settings: NodeSettings): void {
   const rest: NodeSettings = {};
@@ -128,11 +126,7 @@ export function writeNodeSettings(canvas: NodeSettingsCanvas, nodeId: string, se
   if (!node) return;
   canvas.updateDataNode(nodeId, withNodeSettings(node.data ?? {}, rest));
   if (!rest.widgets) return;
-  const names = Object.keys(rest.widgets);
-  const readers = isParameterNode(node)
-    ? Array.from(new Set(names.flatMap((name) => nodesUsingShared(nodes, name).map((reader) => reader.id))))
-    : [nodeId];
-  for (const id of readers) canvas.markNodeStale?.(id);
+  canvas.markNodeStale?.(nodeId);
   canvas.markDirty?.();
-  canvas.requestAutoRun?.(readers);
+  canvas.requestAutoRun?.([nodeId]);
 }

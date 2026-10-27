@@ -16,8 +16,8 @@
  * render (`readEditFeaturesCode`) and writes a new code for each change, which
  * adds an entry to the node's Provenance drawer. The code is mirrored into the
  * node's data without a change of the flow's state (useNodeState), so the body
- * listens for code edits, as the Parameter node does: a code put back from the
- * Provenance drawer shows its edits at once, in the list and on the map.
+ * listens for code edits (codeEdits): a code put back from the Provenance
+ * drawer shows its edits at once, in the list and on the map.
  *
  * Code the node cannot read is never rewritten: the body says why and offers
  * nothing, and a run still runs the code. A layer with no column that

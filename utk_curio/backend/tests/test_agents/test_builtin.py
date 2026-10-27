@@ -1109,7 +1109,10 @@ class TestResearcher:
         # 2026-10-23: a setting of an existing node changes through
         # node.settings.write, never a new node, a plan or rewritten content
         # (step 4).
-        "cb0317f7593ad1540d9b22e8181b71f696813bef3c00beed863eca5179fc4d6b"
+        # 2026-10-26: a value several nodes read is a widget on one Python
+        # node that returns it, wired into each reader, and a setting change
+        # names a widget's value only: the Parameter node is gone (PR #1186).
+        "7ceb84cbd0b03bc18f7daf026e7a89789f468dcf358d661f971bf86cf00a4ca4"
     )
 
     def test_manifest_surface(self):

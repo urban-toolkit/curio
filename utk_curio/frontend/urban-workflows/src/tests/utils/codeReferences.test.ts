@@ -21,7 +21,6 @@ import {
   type InputScope,
 } from "../../utils/references/codeReferences";
 import { normalizeWidgets } from "../../utils/widgets/widgetModel";
-import { normalizeShared } from "../../utils/references/sharedParameters";
 import type { SelectionTag } from "../../utils/references/selectionTags";
 
 type Case = {
@@ -32,7 +31,6 @@ type Case = {
   code: string;
   widgets: unknown[];
   inputs?: InputScope[];
-  shared?: unknown[];
   selections?: unknown[];
   expected: string;
   problems?: string[];
@@ -45,7 +43,6 @@ describe("the shared reference cases", () => {
       {
         widgets: normalizeWidgets(c.widgets),
         inputs: c.inputs ?? [],
-        shared: normalizeShared(c.shared ?? []),
         // The table's tags are well formed, as the editor's scope holds them.
         selections: (c.selections ?? []) as SelectionTag[],
       },
@@ -70,6 +67,19 @@ describe("the shared reference cases", () => {
     expect([...languages].sort()).toEqual(["javascript", "json", "python"]);
   });
 
+  test("the table refuses a name that starts with @ in every language: it names no widget", () => {
+    for (const language of ["python", "javascript", "json"]) {
+      const refused = (cases.cases as Case[]).filter(
+        (c) =>
+          c.language === language &&
+          c.code.includes("[!! @") &&
+          (c.problems ?? []).some((p) => p.startsWith("[!! @") && p.includes("does not name a widget.")),
+      );
+      expect([language, refused.length > 0]).toEqual([language, true]);
+    }
+    expect(parseReference("@season")).toEqual({ kind: "widget", name: "@season" });
+  });
+
   test("the table has input references in every language", () => {
     for (const language of ["python", "javascript", "json"]) {
       const codes = (cases.cases as Case[]).filter((c) => c.language === language).map((c) => c.code).join(" ");
@@ -89,7 +99,7 @@ describe("the shared reference cases", () => {
 
 describe("a layer chip in code", () => {
   const layered: InputScope[] = [{ slot: 0, layers: [{ name: "table_osm_roads" }, { name: "table_osm_buildings" }] }];
-  const scope = (inputs: InputScope[]) => ({ widgets: [], inputs, shared: [] });
+  const scope = (inputs: InputScope[]) => ({ widgets: [], inputs });
 
   test("is the call that picks the layer, in Python and JavaScript alike", () => {
     for (const language of ["python", "javascript"] as CodeLanguage[]) {
@@ -122,7 +132,7 @@ describe("references", () => {
   });
 
   test("problems read as one message, a line each", () => {
-    const { problems } = resolveReferences("[!! a !!] [!! b$X$1 !!]", { widgets: [], inputs: [], shared: [] }, "python");
+    const { problems } = resolveReferences("[!! a !!] [!! b$X$1 !!]", { widgets: [], inputs: [] }, "python");
     expect(describeReferenceProblems(problems).split("\n")).toHaveLength(2);
   });
 
@@ -138,7 +148,7 @@ describe("references", () => {
     expect(parseReference("selection picked")).toEqual({ kind: "selection", name: "picked" });
     expect(parseReference("selection")).toEqual({ kind: "widget", name: "selection" });
     expect(parseReference("selection_2")).toEqual({ kind: "widget", name: "selection_2" });
-    expect(parseReference("@selection")).toEqual({ kind: "shared", name: "selection" });
+    expect(parseReference("@selection")).toEqual({ kind: "widget", name: "@selection" });
   });
 
   test("a column name that would not read back is not offered", () => {
@@ -181,7 +191,7 @@ describe("closing up circles", () => {
     const code = renumberInputReferences("return [!! input_2 !!]", 1);
     const { code: resolved } = resolveReferences(
       code,
-      { widgets: [], inputs: [{ slot: 0 }, { slot: 1 }], shared: [] },
+      { widgets: [], inputs: [{ slot: 0 }, { slot: 1 }] },
       "python",
     );
     expect(resolved).toBe("return input_1");
@@ -199,7 +209,7 @@ describe("inputs named input_k", () => {
   test("a chip spelled the old way is refused, naming its new spelling", () => {
     const { code, problems } = resolveReferences(
       "x = [!! input 0 !!] + [!! input 1:roads.lanes !!]",
-      { widgets: [], inputs: [{ slot: 0 }, { slot: 1 }], shared: [] },
+      { widgets: [], inputs: [{ slot: 0 }, { slot: 1 }] },
       "python",
     );
     expect(code).toBe("x = [!! input 0 !!] + [!! input 1:roads.lanes !!]");
@@ -226,7 +236,7 @@ describe("inputs named input_k", () => {
     const code = renumberInputReferences("return [!! input_2 !!], input_2", 1);
     const { code: resolved } = resolveReferences(
       code,
-      { widgets: [], inputs: [{ slot: 0 }, { slot: 1 }], shared: [] },
+      { widgets: [], inputs: [{ slot: 0 }, { slot: 1 }] },
       "python",
     );
     expect(resolved).toBe("return input_1, input_1");
@@ -350,7 +360,7 @@ describe("scenario chips, the dataset inputs and its fields", () => {
       { slot: 0, scenario: { scenario: "fastest", name: "Fastest route", color: "#42A5F5", rank: 0 } },
       { slot: 1, scenario: { scenario: "weather-aware", name: "Weather-aware route", color: "#00838F", rank: 1 } },
     ];
-    expect(resolveReferences(code, { widgets: [], inputs, shared: [] }, "json")).toEqual({
+    expect(resolveReferences(code, { widgets: [], inputs }, "json")).toEqual({
       code: '{"color": "#00838F"}',
       problems: [],
     });
@@ -388,7 +398,7 @@ describe("a Vega-Lite spec nested 5,000 deep", () => {
   // overflowed the stack, in the Widgets tab's render too.
   test("writes its names as they are, and does not overflow the stack", () => {
     const deep = '{"a": '.repeat(5000) + '{"field": "[!! y !!]"}' + "}".repeat(5000);
-    const scope = { widgets: normalizeWidgets([{ name: "y", type: "text", default: "rain.mm" }]), inputs: [], shared: [] };
+    const scope = { widgets: normalizeWidgets([{ name: "y", type: "text", default: "rain.mm" }]), inputs: [] };
     const result = resolveReferences(deep, scope, "json", "vega-lite");
     expect(result.problems).toEqual([]);
     expect(result.code).toBe(deep.replace("[!! y !!]", "rain.mm"));

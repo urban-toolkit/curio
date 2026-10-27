@@ -518,9 +518,9 @@ export default function UpMenu() {
                             </HeaderMenuItem>
                         </>
                     )}
-                    {/* #845: a widget or Parameter change runs the nodes it
-                        makes stale. Saved with the dataflow; offered where
-                        Run All runs on the server. */}
+                    {/* #845: a widget change runs the nodes it makes stale.
+                        Saved with the dataflow; offered where Run All runs on
+                        the server. */}
                     {autoRunAvailable && (
                         <>
                             <HeaderMenuDivider />

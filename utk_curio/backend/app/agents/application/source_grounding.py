@@ -214,7 +214,7 @@ class GroundingContext:
     package_modules: dict[str, dict] | None = None
     #: What a run resolves the node's chips with, as ``WorkflowSpec.node_code``
     #: gives them to ``code_references.resolve_references``: ``{"widgets",
-    #: "inputs", "shared", "selections"}``. None where the gate has no
+    #: "inputs", "selections"}``. None where the gate has no
     #: dataflow; a chip it cannot resolve leaves its argument unjudged.
     chips: dict | None = None
 
@@ -578,17 +578,16 @@ UNRESOLVED_CHIP = "__curio_chip__"
 def _with_chips_resolved(code: str, language: str = "python", chips: dict | None = None) -> str:
     """*code* with each chip (``[!! season !!]``, ``[!! input_0 !!]``) written
     as a run writes it before the node runs, from *chips* (the node's
-    widgets, wired inputs, the dataflow's shared tags and the node's selection
-    tags, :attr:`GroundingContext.chips`, through
-    ``code_references.resolve_references``), and each it cannot resolve as
-    :data:`UNRESOLVED_CHIP`, so the code parses."""
+    widgets, wired inputs and selection tags, :attr:`GroundingContext.chips`,
+    through ``code_references.resolve_references``), and each it cannot
+    resolve as :data:`UNRESOLVED_CHIP`, so the code parses."""
     from utk_curio.backend.app.execution.code_references import REFERENCE_RE, resolve_references
 
     if chips is not None and REFERENCE_RE.search(code):
         try:
             code, _problems = resolve_references(
                 code, chips.get("widgets") or (), language, chips.get("inputs") or (),
-                chips.get("shared") or (), chips.get("selections") or (),
+                selections=chips.get("selections") or (),
             )
         except Exception:  # noqa: BLE001 - a chip the resolver cannot write stays unresolved
             pass

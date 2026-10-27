@@ -198,7 +198,7 @@ describe("a layer chip in the spec reads the frame its input carries (#662)", ()
       () => null,
       () => undefined,
     );
-    const { code, problems } = resolveReferences(text, { widgets: [], inputs, shared: [] }, "json");
+    const { code, problems } = resolveReferences(text, { widgets: [], inputs }, "json");
     expect(problems).toEqual([]);
     return JSON.parse(code);
   };

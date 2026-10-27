@@ -80,8 +80,8 @@ jest.mock("../../registry/nodeRegistry", () => {
       useNodeBehavior: () => ({}),
     },
   };
-  // A kind with no editor (Data Pool, Simple View, Parameter...) draws its
-  // body straight from its behavior.
+  // A kind with no editor (Data Pool, Simple View, Note...) draws its body
+  // straight from its behavior.
   const React = require("react");
   const editorless = {
     ...descriptor,

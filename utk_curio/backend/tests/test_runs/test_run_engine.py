@@ -112,22 +112,6 @@ class TestPlayShapesEachNode:
         )]))
         assert recorder.calls["a"]["code"] == "    return 3\n"
 
-    def test_a_parameter_nodes_value_reaches_the_nodes_that_name_it(self):
-        # #662: a Parameter node has no edge; [!! @name !!] reads its widget.
-        recorder, events, finished = run(spec([
-            node("p", "curio.builtin/parameter@1", "",
-                 metadata={"widgets": [{"name": "factor", "type": "number", "default": 2, "value": 5}]}),
-            node("a", content="return [!! @factor !!] * 10"),
-            node("j", "curio.builtin/js-computation", "return [!! @factor !!] + 1;"),
-        ]))
-        assert recorder.calls["a"]["code"] == "    return 5 * 10\n"
-        assert "return 5 + 1;" in recorder.calls["j"]["code"]
-        # The Parameter node itself is never sent to the sandbox: it has
-        # nothing to run, and holds nothing up.
-        assert "p" not in recorder.calls
-        assert finished["p"]["status"] == "forwarded"
-        assert outcome(events)["status"] == "succeeded"
-
     def test_a_selection_tags_ids_reach_the_node_that_names_it(self):
         # #662: the ids a view's selection picked, saved on the node that reads
         # them, as the canvas saves them before a run.
@@ -340,6 +324,31 @@ class TestNodesTheServerDoesNotRun:
         assert finished["other"]["status"] == "ok"
         assert outcome(events) == {"status": "failed", "ok": 2, "failed": 1, "skipped": 1, "waiting": 0}
 
+    def test_a_saved_parameter_node_fails_naming_its_type_and_its_tag_names_no_widget(self):
+        # A saved Parameter node: no package holds its template any more, so
+        # the run fails it as the canvas's card names it, and a node whose code
+        # names [!! @factor !!] fails before the sandbox, the name being no
+        # widget's. A node that reads neither runs.
+        gone = "curio.builtin/parameter@1"
+        recorder, events, finished = run(spec([
+            node("p", gone, "",
+                 metadata={"widgets": [{"name": "factor", "type": "number", "default": 2, "value": 5}]}),
+            node("a", content="return [!! @factor !!] * 10"),
+            node("j", "curio.builtin/js-computation", "return [!! @factor !!] + 1;"),
+            node("other", content="return 1"),
+        ]))
+        assert not {"p", "a", "j"} & set(recorder.calls)
+        assert finished["p"]["status"] == "error"
+        assert finished["p"]["stderrTail"] == f"No installed package provides {gone}"
+        for reader in ("a", "j"):
+            assert finished[reader]["status"] == "error"
+            assert (
+                "[!! @factor !!] does not name a widget. Widget names are letters, digits and underscores."
+                in finished[reader]["stderrTail"]
+            )
+        assert finished["other"]["status"] == "ok"
+        assert outcome(events) == {"status": "failed", "ok": 1, "failed": 3, "skipped": 0, "waiting": 0}
+
     def test_a_chart_at_the_end_does_not_hold_the_run(self):
         _, events, finished = run(spec(
             [node("a"), node("chart", "curio.builtin/vis-vega", "{}")], [edge("a", "chart")],
@@ -354,16 +363,15 @@ class TestAnAutarkNodeThatOnlyLoadsData:
     browser does), and a failed attempt is tried once more, as
     ``runDataInBackend`` tries it."""
 
-    LOAD = {"type": "osm", "pbfFileUrl": "[!! @extract !!]", "outputTableName": "table_osm",
+    LOAD = {"type": "osm", "pbfFileUrl": "[!! extract !!]", "outputTableName": "table_osm",
             "autoLoadLayers": {"layers": ["roads"]}}
 
     def test_it_runs_as_its_document_with_its_references_resolved(self):
         recorder, events, finished = run(spec([
-            node("p", "curio.builtin/parameter@1", "", metadata={"widgets": [
+            node("osm", AUTARK, json.dumps({"data": [self.LOAD]}), metadata={"widgets": [
                 {"name": "extract", "type": "text", "default": "",
                  "value": "docs/examples/data/back_bay.osm.pbf"},
             ]}),
-            node("osm", AUTARK, json.dumps({"data": [self.LOAD]})),
         ]))
         call = recorder.calls["osm"]
         assert call["engine"] == "javascript"

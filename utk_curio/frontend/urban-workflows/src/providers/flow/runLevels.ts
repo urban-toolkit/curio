@@ -1,7 +1,7 @@
 // The order Run All runs a dataflow in: the edges it follows, the levels of
 // nodes it runs one after another, and the nodes a play runs.
 import type { Edge, Node } from "reactflow";
-import { runKeyWithShared, sharedWidgetsOf } from "../../utils/references/sharedParameters";
+import { runKeyOf } from "../../utils/references/runKeys";
 
 /** The edges a run orders nodes by: every edge but a two-way interaction link. */
 export function directedEdgesOf<E extends { sourceHandle?: string | null; targetHandle?: string | null }>(
@@ -111,9 +111,6 @@ export function nodesToRunUpTo(
         ...ancestorLevels,
         ancestorNodes.filter(n => !levelled.has(n.id)).map(n => n.id),
     ];
-    // The Parameter nodes' widgets: a node whose code names one runs again
-    // when its value changed, though no edge leads from it.
-    const shared = sharedWidgetsOf(currentNodes);
     for (const level of decisionOrder) {
         for (const nodeId of level) {
             const node = currentNodes.find(n => n.id === nodeId);
@@ -126,13 +123,12 @@ export function nodesToRunUpTo(
                 emittedForInput.has(nodeId) && emittedForInput.get(nodeId) === node.data.input;
             const neverSucceeded =
                 outputCode !== "success" && !(outputCode !== "error" && emittedCurrent);
-            // #662: the key covers the node's widget values, the shared tags
-            // it names and its selection tags' ids too, so a changed value or
-            // a new selection counts as changed code.
+            // #662: the key covers the node's widget values and its selection
+            // tags' ids too, so a changed value or a new selection counts as
+            // changed code.
             const codeChanged =
                 node.data.executedCode !== undefined &&
-                node.data.executedCode !==
-                    runKeyWithShared(node.data.code, node.data.widgets, shared, node.data.selections);
+                node.data.executedCode !== runKeyOf(node.data.code, node.data.widgets, node.data.selections);
             const upstreamRerunning = ancestorEdges.some(
                 e => e.target === nodeId && willRun.has(e.source)
             );

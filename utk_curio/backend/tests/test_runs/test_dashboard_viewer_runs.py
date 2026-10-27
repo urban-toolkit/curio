@@ -2,8 +2,8 @@
 the server (komar41's #1117), which never changes the dataflow or its
 owner's Data Catalog.
 
-The dashboard here pins a Parameter node, Period, and a chart fed by a Python
-node, Grid, whose code reads Period's value as ``[!! @period !!]``. The
+The dashboard here pins a Python node, Grid, whose code reads its own widget,
+Period, as ``[!! period !!]``, and the chart Grid feeds. The
 sandbox is a fake behind ``sandbox_request``: it answers a node's run with an
 artifact named after the node, and records what the backend asks it to
 describe and forget. ``viewer`` is imported inside each test, so a checkout
@@ -18,7 +18,6 @@ from datetime import timedelta
 import pytest
 
 CODE = "curio.builtin/computation-analysis"
-PARAMETER = "curio.builtin/parameter"
 CHART = "curio.builtin/vis-vega"
 TOKEN_HEADER = "X-Curio-Run-Token"
 
@@ -34,17 +33,17 @@ def _period(**fields):
     }
 
 
-def _day_node():
-    """A pinned Parameter node holding a date, Day, saved at Dec 21."""
-    return {"id": "day", "type": PARAMETER, "content": "", "dashboardPinned": True,
-            "metadata": {"widgets": [{"name": "day", "type": "date", "label": "Day", "default": "2027-12-21"}]}}
+def _day():
+    """A date widget, Day, saved at Dec 21."""
+    return {"name": "day", "type": "date", "label": "Day", "default": "2027-12-21"}
 
 
-def _nodes(*, grid_code="return [!! @period !!]", extra=()):
+def _nodes(*, grid_code="return [!! period !!]", grid_widgets=None, extra=()):
+    """Grid, pinned, reading widgets of its own (Period unless *grid_widgets*
+    are given), feeds the pinned chart."""
     return [
-        {"id": "param", "type": PARAMETER, "content": "", "dashboardPinned": True,
-         "metadata": {"widgets": [_period()]}},
-        {"id": "grid", "type": CODE, "content": f"# node grid\n{grid_code}"},
+        {"id": "grid", "type": CODE, "content": f"# node grid\n{grid_code}", "dashboardPinned": True,
+         "metadata": {"widgets": list(grid_widgets) if grid_widgets is not None else [_period()]}},
         {"id": "chart", "type": CHART, "content": "{}", "dashboardPinned": True},
         *extra,
     ]
@@ -213,7 +212,7 @@ def _events(client, project_id, run_id, token):
 
 
 def _month(client, project_id):
-    started = _run(client, project_id, {"param": {"period": "Month"}})
+    started = _run(client, project_id, {"grid": {"period": "Month"}})
     assert started.status_code == 202, started.get_data(as_text=True)
     body = started.get_json()
     _wait(body["runId"])
@@ -242,9 +241,9 @@ class TestAViewerRunsTheDashboard:
         self, client, user_and_token, sandbox, saved,
     ):
         _, token = user_and_token
-        pid = _create(client, token, _nodes(grid_code="return [!! @day !!]", extra=[_day_node()]))
+        pid = _create(client, token, _nodes(grid_code="return [!! day !!]", grid_widgets=[_day()]))
 
-        started = _run(client, pid, {"day": {"day": "2027-06-21"}})
+        started = _run(client, pid, {"grid": {"day": "2027-06-21"}})
 
         assert started.status_code == 202, started.get_data(as_text=True)
         _wait(started.get_json()["runId"])
@@ -273,7 +272,7 @@ class TestAViewerRunsTheDashboard:
         _, token = user_and_token
         pid = _create(client, token)
 
-        for values in ({}, {"param": {"period": "Date"}}):
+        for values in ({}, {"grid": {"period": "Date"}}):
             resp = _run(client, pid, values)
             assert resp.status_code == 200, resp.get_data(as_text=True)
             assert resp.get_json() == {"runId": None, "token": None, "joined": False, "nodeIds": []}
@@ -281,7 +280,7 @@ class TestAViewerRunsTheDashboard:
 
     def test_a_dashboard_whose_tiles_read_no_node_runs_nothing(self, client, user_and_token, sandbox, saved):
         _, token = user_and_token
-        nodes = [node for node in _nodes() if node["id"] == "param"]
+        nodes = [node for node in _nodes() if node["id"] == "chart"]
         pid = _create(client, token, nodes, edges=[])
 
         resp = _run(client, pid, {})
@@ -326,7 +325,7 @@ class TestAViewerRunsTheDashboard:
         from utk_curio.backend.app.projects.schemas import OutputRef
 
         _, token = user_and_token
-        nodes = _nodes(grid_code="return input_0 + [!! @period !!]", extra=[
+        nodes = _nodes(grid_code="return input_0 + [!! period !!]", extra=[
             {"id": "load", "type": CODE, "content": "# node load\nreturn 'rows'"},
         ])
         pid = _create(client, token, nodes, EDGES + [{"id": "load-grid", "source": "load", "target": "grid"}])
@@ -345,7 +344,7 @@ class TestAViewerRunsTheDashboard:
         from utk_curio.backend.app.projects.schemas import OutputRef
 
         _, token = user_and_token
-        nodes = _nodes(grid_code="return input_0 + [!! @period !!]", extra=[
+        nodes = _nodes(grid_code="return input_0 + [!! period !!]", extra=[
             {"id": "load", "type": CODE, "content": "# node load\nkey = curio_secret('weather')\nreturn 'rows'"},
         ])
         pid = _create(client, token, nodes, EDGES + [{"id": "load-grid", "source": "load", "target": "grid"}])
@@ -417,23 +416,26 @@ class TestAPinnedNodesOwnWidgets:
 
 class TestRefusedValues:
     @pytest.mark.parametrize("values, words", [
-        ({"param": {"period": "Week"}}, "Pick one of the choices"),
-        ({"param": {"nope": 1}}, "not a control"),
-        ({"grid": {"period": "Month"}}, "not a control"),
+        ({"grid": {"period": "Week"}}, "Pick one of the choices"),
+        ({"grid": {"nope": 1}}, "not a control"),
+        # A widget of a node that is not pinned.
+        ({"hidden": {"period": "Month"}}, "not a control"),
         ({"note": {"note": "x"}}, "not a control"),
         ("Month", "must map"),
         # A date the month does not have, a date with a time, and a number.
-        ({"day": {"day": "2027-02-30"}}, "Day: Enter a date."),
-        ({"day": {"day": "2027-06-21T12:00:00"}}, "Day: Enter a date."),
-        ({"day": {"day": 20270621}}, "Day: Enter a date."),
+        ({"grid": {"day": "2027-02-30"}}, "Day: Enter a date."),
+        ({"grid": {"day": "2027-06-21T12:00:00"}}, "Day: Enter a date."),
+        ({"grid": {"day": 20270621}}, "Day: Enter a date."),
     ])
     def test_a_value_that_is_not_a_controls_or_does_not_suit_it_is_refused(
         self, client, user_and_token, sandbox, saved, values, words,
     ):
         _, token = user_and_token
-        note = {"id": "note", "type": PARAMETER, "content": "", "dashboardPinned": True,
+        note = {"id": "note", "type": CODE, "content": "# node note\nreturn [!! note !!]", "dashboardPinned": True,
                 "metadata": {"widgets": [{"name": "note", "type": "text", "default": ""}]}}
-        pid = _create(client, token, _nodes(extra=[note, _day_node()]))
+        hidden = {"id": "hidden", "type": CODE, "content": "# node hidden\nreturn [!! period !!]",
+                  "metadata": {"widgets": [_period()]}}
+        pid = _create(client, token, _nodes(grid_widgets=[_period(), _day()], extra=[note, hidden]))
 
         resp = client.post(
             f"/api/projects/{pid}/dashboard/runs", data=json.dumps({"values": values}),
@@ -463,7 +465,7 @@ class TestRefusedValues:
         from utk_curio.backend.app.runs import kept, viewer
 
         _, token = user_and_token
-        pid = _create(client, token, _nodes(grid_code='key = curio_secret("weather")\nreturn [!! @period !!]'))
+        pid = _create(client, token, _nodes(grid_code='key = curio_secret("weather")\nreturn [!! period !!]'))
 
         body = _month(client, pid)
 
@@ -516,7 +518,7 @@ class TestNothingIsSaved:
 
 def _tried(client, project_id, period, address):
     """A visitor's try of *period*, run to its end; its start's status."""
-    resp = _run(client, project_id, {"param": {"period": period}}, address=address)
+    resp = _run(client, project_id, {"grid": {"period": period}}, address=address)
     if resp.status_code == 202:
         _wait(resp.get_json()["runId"])
     return resp.status_code
@@ -579,9 +581,9 @@ class TestLimits:
         saved.clear()
         sandbox.hold = {"grid"}
 
-        first = _run(client, pid, {"param": {"period": "Date"}})
-        second = _run(client, pid, {"param": {"period": "Month"}})
-        third = _run(client, pid, {"param": {"period": "Year"}})
+        first = _run(client, pid, {"grid": {"period": "Date"}})
+        second = _run(client, pid, {"grid": {"period": "Month"}})
+        third = _run(client, pid, {"grid": {"period": "Year"}})
 
         assert (first.status_code, second.status_code) == (202, 202)
         assert third.status_code == 429, third.get_data(as_text=True)
@@ -594,9 +596,9 @@ class TestLimits:
         pid = _create(client, token)
         sandbox.hold = {"grid"}
 
-        first = _run(client, pid, {"param": {"period": "Month"}}).get_json()
+        first = _run(client, pid, {"grid": {"period": "Month"}}).get_json()
         assert sandbox.started.wait(timeout=10)
-        second = _run(client, pid, {"param": {"period": "Month"}}).get_json()
+        second = _run(client, pid, {"grid": {"period": "Month"}}).get_json()
 
         assert second["runId"] == first["runId"] and second["joined"] is True
         assert second["token"] == first["token"]
@@ -610,7 +612,7 @@ class TestLimits:
         _, token = user_and_token
         pid = _create(client, token)
         sandbox.hold = {"grid"}
-        viewer_run = _run(client, pid, {"param": {"period": "Month"}}).get_json()
+        viewer_run = _run(client, pid, {"grid": {"period": "Month"}}).get_json()
         assert sandbox.started.wait(timeout=10)
 
         owner_run = client.post(f"/api/projects/{pid}/runs", data=json.dumps({}), headers=_auth(token))
@@ -968,12 +970,17 @@ COMPUTE = json.dumps({"compute": [{
 LAYER = {"dataType": "geodataframe", "data": {"type": "FeatureCollection", "features": []}, "layerName": "grid"}
 
 
+def _grid():
+    """Grid, pinned with its own Period, which its code reads."""
+    return {"id": "grid", "type": CODE, "content": "# node grid\nreturn [!! period !!]", "dashboardPinned": True,
+            "metadata": {"widgets": [_period()]}}
+
+
 def _gpu_nodes():
-    """Grid, then the GPU step the page runs, then After, which the chart reads."""
+    """Grid, pinned with its Period, then the GPU step the page runs, then
+    After, which the chart reads."""
     return [
-        {"id": "param", "type": PARAMETER, "content": "", "dashboardPinned": True,
-         "metadata": {"widgets": [_period()]}},
-        {"id": "grid", "type": CODE, "content": "# node grid\nreturn [!! @period !!]"},
+        _grid(),
         {"id": "gpu", "type": AUTARK, "content": COMPUTE},
         {"id": "after", "type": CODE, "content": "# node after\nreturn input_0"},
         {"id": "chart", "type": CHART, "content": "{}", "dashboardPinned": True},
@@ -1001,7 +1008,7 @@ def _on_the_page(client, project_id, browser_outputs, token, values=None):
         headers[TOKEN_HEADER] = token
     return client.post(
         f"/api/projects/{project_id}/dashboard/runs",
-        data=json.dumps({"values": values or {"param": {"period": "Month"}}, "browserOutputs": browser_outputs}),
+        data=json.dumps({"values": values or {"grid": {"period": "Month"}}, "browserOutputs": browser_outputs}),
         headers=headers,
     )
 
@@ -1146,12 +1153,11 @@ FOUR_GPU = ("gpu-a1", "gpu-a2", "gpu-b1", "gpu-b2")
 
 
 def _four_gpu_nodes():
-    """Grid; under it scenario A's two GPU steps and scenario B's two; then
-    each scenario's After, which reads its own two and a chart reads."""
+    """Grid, pinned with its Period; under it scenario A's two GPU steps and
+    scenario B's two; then each scenario's After, which reads its own two and a
+    chart reads."""
     return [
-        {"id": "param", "type": PARAMETER, "content": "", "dashboardPinned": True,
-         "metadata": {"widgets": [_period()]}},
-        {"id": "grid", "type": CODE, "content": "# node grid\nreturn [!! @period !!]"},
+        _grid(),
         *({"id": node_id, "type": AUTARK, "content": COMPUTE} for node_id in FOUR_GPU),
         {"id": "after-a", "type": CODE, "content": "# node after-a\nreturn [input_0, input_1]"},
         {"id": "after-b", "type": CODE, "content": "# node after-b\nreturn [input_0, input_1]"},
@@ -1293,12 +1299,10 @@ class TestFourStepsLeftToThePage:
 
 
 def _tile_on_gpu_nodes():
-    """Grid, then the GPU step the page runs, which a pinned chart reads
-    directly: nothing on the server comes after it."""
+    """Grid, pinned with its Period, then the GPU step the page runs, which a
+    pinned chart reads directly: nothing on the server comes after it."""
     return [
-        {"id": "param", "type": PARAMETER, "content": "", "dashboardPinned": True,
-         "metadata": {"widgets": [_period()]}},
-        {"id": "grid", "type": CODE, "content": "# node grid\nreturn [!! @period !!]"},
+        _grid(),
         {"id": "gpu", "type": AUTARK, "content": COMPUTE},
         {"id": "chart", "type": CHART, "content": "{}", "dashboardPinned": True},
     ]
@@ -1351,13 +1355,11 @@ POOL = "curio.builtin/data-pool"
 
 
 def _gpu_on_ground_nodes(*extra):
-    """Grid, which reads Period, and Ground, which reads no control; the GPU
-    step the page runs on both; then After, which the chart reads. No tile
-    reads Ground."""
+    """Grid, pinned with its Period, which its code reads, and Ground, which
+    reads no control; the GPU step the page runs on both; then After, which the
+    chart reads. No tile reads Ground."""
     return [
-        {"id": "param", "type": PARAMETER, "content": "", "dashboardPinned": True,
-         "metadata": {"widgets": [_period()]}},
-        {"id": "grid", "type": CODE, "content": "# node grid\nreturn [!! @period !!]"},
+        _grid(),
         {"id": "ground", "type": CODE, "content": "# node ground\nreturn 'open ground'"},
         {"id": "gpu", "type": AUTARK, "content": COMPUTE},
         {"id": "after", "type": CODE, "content": "# node after\nreturn input_0"},

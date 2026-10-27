@@ -818,8 +818,8 @@ def _document_refusal(
 
 def _proposed_document(user_key, project_id, node_type, code, node_id, widgets, templates, grammar) -> str:
     """*code* with its references resolved as far as the dataflow knows them,
-    as the canvas resolves them before it draws: the node's widgets, the
-    shared tags, its wired inputs and their boxes. The node is *node_id*'s
+    as the canvas resolves them before it draws: the node's widgets, its
+    wired inputs and their boxes. The node is *node_id*'s
     saved one, or the one a proposal creates, with the *widgets* it declares.
     A reference nothing resolves yet, such as the input chip of a circle no
     edge reaches, is left as written, and the validator reads it as Solve
@@ -857,9 +857,9 @@ def _loader_calls(kind: str) -> str:
 def _chip_context(spec: dict | None, node_id: object = None, widgets=None) -> dict | None:
     """What a run resolves a node's chips with, as ``WorkflowSpec.node_code``
     gives it: the node's widgets, its wired circles, each with the scenario
-    label its rows carry, the dataflow's shared tags and the node's selection
-    tags. *widgets* are those of a node the dataflow does not hold yet, as
-    node.create proposes it. None without a dataflow."""
+    label its rows carry, and the node's selection tags. *widgets* are those
+    of a node the dataflow does not hold yet, as node.create proposes it. None
+    without a dataflow."""
     from utk_curio.backend.app.execution import workflow_spec
 
     if not isinstance(spec, dict):
@@ -874,7 +874,6 @@ def _chip_context(spec: dict | None, node_id: object = None, widgets=None) -> di
                 {"slot": slot, **({"scenario": labels[slot]} if slot in labels else {})}
                 for slot in (flow.input_slots(node.id) if node is not None else [])
             ],
-            "shared": flow.shared_widgets(),
             "selections": node.selections if node is not None else [],
         }
     except Exception:  # noqa: BLE001 - a dataflow that cannot be read resolves no chip

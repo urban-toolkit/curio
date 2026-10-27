@@ -300,7 +300,7 @@ def check(code: object, shape: dict | None) -> dict | None:
     circles = shape.get("circles") or [0]
     inputs = [{"slot": circle} for circle in circles]
     code, _ = resolve_references(code, (), "python", inputs)
-    # #662: what is left is a widget or a shared tag, a value when the node
+    # #662: what is left is a widget or a selection tag, a value when the node
     # runs; standing in as one, it keeps the code parseable for this gate.
     code = REFERENCE_RE.sub("None", code)
     names = {f"input_{circle}" for circle in circles}

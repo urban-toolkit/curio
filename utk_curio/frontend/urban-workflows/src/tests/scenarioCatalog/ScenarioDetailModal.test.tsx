@@ -1,7 +1,7 @@
 /**
  * A scenario's details: its fixed context, levers and outcomes, each node
- * with its parameter value and saved outputs, and the project graph with the
- * scenario marked on it.
+ * with its saved outputs, and the project graph with the scenario marked on
+ * it.
  */
 import React from "react";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -81,15 +81,8 @@ describe("ScenarioDetailModal", () => {
     expect(section("Fixed context").getByText("Load parcels")).toBeInTheDocument();
     expect(section("Levers").getByText("Filter roofs")).toBeInTheDocument();
     // No title of its own, and no registry in a test: the template's name.
-    expect(section("Levers").getByText("parameter")).toBeInTheDocument();
+    expect(section("Levers").getByText("computation-analysis")).toBeInTheDocument();
     expect(section("Outcomes").getByText("vis-vega")).toBeInTheDocument();
-  });
-
-  test("shows a Parameter node's value", async () => {
-    api.getScenario.mockResolvedValue(heatDetails());
-    renderModal();
-    await modal().findByRole("region", { name: "Levers" });
-    expect(section("Levers").getByText("year = 2020")).toBeInTheDocument();
   });
 
   test("shows each node's saved outputs, or says it has none", async () => {
@@ -98,11 +91,11 @@ describe("ScenarioDetailModal", () => {
     await modal().findByRole("region", { name: "Levers" });
     expect(section("Fixed context").getByText("Parcels · geojson · 1,204 features")).toBeInTheDocument();
     expect(section("Outcomes").getByText("Roof chart data · csv · 42 rows")).toBeInTheDocument();
-    // The filter saved nothing; the Parameter node's value is in the dataflow,
-    // so it is not said to lack an output.
+    // The filter saved nothing; the value node saved its year.
     expect(section("Levers").getAllByText("No saved output")).toHaveLength(1);
-    const parameter = document.querySelector('[data-scenario-node-id="year"]') as HTMLElement;
-    expect(within(parameter).queryByText("No saved output")).toBeNull();
+    const value = document.querySelector('[data-scenario-node-id="year"]') as HTMLElement;
+    expect(within(value).getByText("Year · json")).toBeInTheDocument();
+    expect(within(value).queryByText("No saved output")).toBeNull();
     expect(section("Fixed context").queryByText("No saved output")).toBeNull();
   });
 
