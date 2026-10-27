@@ -23,6 +23,8 @@ What each test pins:
   the node, centered in what the bar, the title and the rail leave visible;
 * a double-click inside the node's editor, which is not a drag region, leaves
   the view where it was;
+* the zoom is judged where it lands, even when the browser draws no frame
+  halfway through it;
 * on a read-only canvas (a visitor with no account on another user's dataflow),
   where nodes do not drag, the same two double-clicks do the same, and a drag
   from a node's corner leaves its size: only an owner resizes.
@@ -363,6 +365,77 @@ def _stored_size(page, node_id: str) -> list:
     )
 
 
+#: How far past the zoom it starts from the view is when the hold below stops
+#: the page's frames: about halfway from the 0.76 both nodes are framed at to
+#: the 1.31 the double-click frames PRODUCER at, and well past the 0.05 the
+#: double-click's own wait asks for.
+_HELD_PAST_ZOOM = 0.25
+
+#: How long the hold below keeps frames back: several of a viewport wait's
+#: reads, 250 ms apart.
+_HOLD_MS = 1500
+
+# Before the app's own scripts, so d3's timers, which take requestAnimationFrame
+# when the app loads and move React Flow's view, go through it. Once armed with
+# a zoom, it lets frames come until the frame after the one in which the view's
+# zoom first passes that zoom; then it keeps every frame callback back, as a
+# loaded runner that draws no frame does, and lets them come again on a timer,
+# *ms* later. The frame after, not the same one, so a wait that reads the zoom
+# once a frame gets a frame to see it pass. It records the view while frames
+# are held, where PRODUCER sits in sight then (read on a timer once React has
+# drawn that view, which needs no frame), the view when they come again, and
+# how long they were held.
+_HOLD_FRAMES_MID_ZOOM_JS = """(() => {
+    const request = window.requestAnimationFrame.bind(window);
+    const cancel = window.cancelAnimationFrame.bind(window);
+    const framed = () => (__FRAMED__)(__ID__);
+    const view = () => window.__curio_reactFlow.getViewport();
+    const record = {};
+    let armed = null;
+    let passedIn = null;
+    let frame = null;
+    let held = null;
+    let nextId = -1;
+    const release = () => {
+        const deferred = [...held.values()];
+        record.viewportAtRelease = view();
+        record.heldForMs = performance.now() - record.heldAtMs;
+        held = null;
+        deferred.forEach((callback) => request(callback));
+    };
+    const hold = () => {
+        held = new Map();
+        record.heldAtMs = performance.now();
+        record.viewport = view();
+        setTimeout(() => { record.framed = framed(); }, 100);
+        setTimeout(release, armed.ms);
+        armed = null;
+    };
+    window.requestAnimationFrame = (callback) => {
+        if (armed && passedIn !== null && frame > passedIn) hold();
+        if (held) {
+            const id = nextId--;
+            held.set(id, callback);
+            return id;
+        }
+        return request((stamp) => {
+            frame = stamp;
+            callback(stamp);
+            if (armed && passedIn === null && view().zoom > armed.zoom) passedIn = stamp;
+        });
+    };
+    window.cancelAnimationFrame = (id) => {
+        if (held && held.delete(id)) return;
+        cancel(id);
+    };
+    window.__curioTestHoldMidZoom = (zoom, ms) => {
+        armed = { zoom, ms };
+        passedIn = null;
+    };
+    window.__curioTestMidZoomHold = record;
+})();""".replace("__FRAMED__", _FRAMED_JS).replace("__ID__", json.dumps(PRODUCER))
+
+
 # ---------------------------------------------------------------------------
 # Scenarios
 # ---------------------------------------------------------------------------
@@ -688,6 +761,44 @@ def test_on_a_read_only_canvas_a_double_click_where_the_node_would_drag_zooms_on
     require_project_page()
     _enter_read_only(page, app_frontend, current_server, prefix="card_ro_zoom")
     _double_click_the_header_frames_the_node(page, "a read-only canvas")
+
+
+def test_on_a_read_only_canvas_the_zoom_is_judged_where_it_lands_though_frames_stop_mid_zoom(
+    app_frontend: "FrontendPage", current_server, page,
+):
+    """The double-click's zoom is a d3 transition, which moves only when the
+    browser draws a frame. Twice on CI the test above read the view on its way
+    to where the app frames PRODUCER, and found PRODUCER off center: dx -42 on
+    #1025's run 39352206012 (10-20) and dx -6 in run 40441039786 (10-27). The
+    runner had drawn no frame for longer than the 250 ms between two reads.
+    Here frames stop halfway through the zoom for 1.5 s."""
+    require_project_page()
+    page.context.add_init_script(_HOLD_FRAMES_MID_ZOOM_JS)
+    _enter_read_only(page, app_frontend, current_server, prefix="card_ro_held")
+    assert page.evaluate("() => typeof window.__curioTestHoldMidZoom === 'function'"), (
+        "the init script that holds frames back mid-zoom is not in the page"
+    )
+    _wait_for_header(page, PRODUCER)
+    start = page.evaluate("() => window.__curio_reactFlow.getViewport().zoom")
+    page.evaluate(
+        "([zoom, ms]) => window.__curioTestHoldMidZoom(zoom, ms)", [start + _HELD_PAST_ZOOM, _HOLD_MS],
+    )
+
+    _double_click_the_header_frames_the_node(page, "a read-only canvas that drew no frame mid-zoom")
+
+    hold = page.evaluate("() => window.__curioTestMidZoomHold")
+    assert hold.get("heldAtMs") is not None, (
+        f"frames were never held during the zoom, so this test proves nothing: {hold}"
+    )
+    assert hold.get("viewportAtRelease") == hold["viewport"] and hold.get("heldForMs", 0) >= 1000, (
+        f"the view moved while frames were held, or they were held for less than 1 s, so this "
+        f"test proves nothing: {hold}"
+    )
+    framed = hold.get("framed")
+    assert framed and (abs(framed["dx"]) > 4 or abs(framed["dy"]) > 4), (
+        "PRODUCER was already framed when frames stopped, so a read then would pass and this "
+        f"test proves nothing: {hold}"
+    )
 
 
 def test_on_a_read_only_canvas_a_double_click_inside_the_editor_leaves_the_view(
