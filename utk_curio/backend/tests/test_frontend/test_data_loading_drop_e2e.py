@@ -250,16 +250,20 @@ def test_a_geotiff_chosen_on_a_fresh_node_names_its_window_and_the_node_shows_no
     require_user_auth()
     _enter(page, app_frontend.base_url, current_server, "Data Loading GeoTIFF")
     loader = drag_builtin_to_canvas(page, "#tile-data-loading", at=(170, 200))
-    widget = _data_widget(page, loader)
-    widget.wait_for(state="visible", timeout=30000)
+    # The Data box, whichever pane holds it: what fails is the drop, not the tab.
+    box = node_locator(page, loader).locator("[data-dataset-drop]")
+    box.wait_for(state="visible", timeout=30000)
     _opens_with_the_starter(page, loader)
     assert page.evaluate(_WATCH_STATUS_JS, loader), "the node shows no status to watch"
 
     with page.expect_file_chooser(timeout=15000) as chooser:
-        widget.get_by_text("Choose file", exact=True).click()
+        box.get_by_text("Choose file", exact=True).click()
     chooser.value.set_files({"name": "heights.tif", "mimeType": "image/tiff", "buffer": _geotiff_bytes()})
 
-    _holds(page, loader, "Heights")
+    expect(box).to_have_attribute("data-dataset-drop", "set", timeout=60000)
+    expect(box).to_contain_text("Heights", timeout=10000)
+    state = dataset_widget_state(page, loader)
+    assert str(state["value"]).startswith("imported.") and state["value"] in state["datasetRefs"], state
     # The starter becomes the GeoTIFF's loader, which names its window.
     wait_for_node_code(page, loader, GEOTIFF_LOADER)
     seen = page.evaluate("() => window.__curioNodeStatusSeen")
