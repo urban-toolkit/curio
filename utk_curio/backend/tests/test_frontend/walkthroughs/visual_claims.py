@@ -241,7 +241,7 @@ def spatial_join_explains_itself(ctx: Ctx) -> None:
          "a play, as any code node has.",
     tests=[
         "src/tests/utils/dataExportTarget.test.ts",
-        "src/tests/adapters/node/behaviors.test.tsx",
+        "src/tests/adapters/node/dataExportBehavior.test.tsx",
         "src/tests/components/nodeEditorControlsWithCode.test.tsx",
         "sandbox/tests/test_data_export_files.py",
     ],
