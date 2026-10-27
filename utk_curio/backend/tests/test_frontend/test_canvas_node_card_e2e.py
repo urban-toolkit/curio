@@ -317,19 +317,40 @@ def _box_size(page, node_id: str) -> list:
     )
 
 
-def _settled_viewport(page, *, timeout_ms: int = 10000) -> dict:
-    """React Flow's viewport once two reads 250 ms apart agree: a zoom is a
-    d3 transition that lands over a few hundred milliseconds."""
-    last = page.evaluate("() => window.__curio_reactFlow.getViewport()")
+#: React Flow's viewport, and whether a move of it has yet to land. React Flow
+#: moves the view through a d3 transition on the element it zooms, the
+#: canvas's `.react-flow__renderer`, and d3 keeps the transitions scheduled or
+#: running on an element in its `__transition` until they end.
+_VIEWPORT_JS = """() => {
+    const canvas = document.querySelector('.react-flow');
+    const pane = canvas && canvas.querySelector('.react-flow__renderer');
+    return {viewport: window.__curio_reactFlow.getViewport(), moving: !!(pane && pane.__transition)};
+}"""
+
+
+def _settled_viewport(page, *, timeout_ms: int = 30000) -> dict:
+    """React Flow's viewport once its moves have landed: no d3 transition is
+    left on the canvas, and two reads 250 ms apart agree.
+
+    A zoom is a d3 transition, which moves only when the browser draws a
+    frame. A loaded runner can draw none for longer than 250 ms, so two equal
+    reads alone can catch a zoom halfway. Every read is on a timer, so the
+    wait itself needs no frame."""
+    last = None
     waited = 0
-    while waited < timeout_ms:
+    while True:
+        now = page.evaluate(_VIEWPORT_JS)
+        if not now["moving"] and now["viewport"] == last:
+            return last
+        last = None if now["moving"] else now["viewport"]
+        if waited >= timeout_ms:
+            break
         page.wait_for_timeout(250)
         waited += 250
-        now = page.evaluate("() => window.__curio_reactFlow.getViewport()")
-        if now == last:
-            return now
-        last = now
-    raise AssertionError(f"the view kept moving: last read {last}")
+    raise AssertionError(
+        f"the view did not land in {timeout_ms} ms: last read {now['viewport']}, "
+        f"{'a move still under way' if now['moving'] else 'still moving'}"
+    )
 
 
 #: Where a node sits in the part of the pane nothing covers: below the bar and
@@ -770,8 +791,10 @@ def test_on_a_read_only_canvas_the_zoom_is_judged_where_it_lands_though_frames_s
     browser draws a frame. Twice on CI the test above read the view on its way
     to where the app frames PRODUCER, and found PRODUCER off center: dx -42 on
     #1025's run 39352206012 (10-20) and dx -6 in run 40441039786 (10-27). The
-    runner had drawn no frame for longer than the 250 ms between two reads.
-    Here frames stop halfway through the zoom for 1.5 s."""
+    runner had drawn no frame for longer than the 250 ms between two reads,
+    and the wait took two equal reads for a zoom that had landed; it now waits
+    for React Flow's move to end. Here frames stop halfway through the zoom
+    for 1.5 s."""
     require_project_page()
     page.context.add_init_script(_HOLD_FRAMES_MID_ZOOM_JS)
     _enter_read_only(page, app_frontend, current_server, prefix="card_ro_held")
