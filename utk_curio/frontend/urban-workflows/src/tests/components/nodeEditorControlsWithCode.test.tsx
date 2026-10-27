@@ -3,7 +3,9 @@
  * controls above its code on the canvas, so what the code reads and the code
  * are seen together. A dataset widget's control is where a file or a Data
  * Catalog dataset is dropped, and its Choose file hands the files it picks to
- * the node (DatasetWidgetContext), which takes them as a drop.
+ * the node (DatasetWidgetContext), which takes them as a drop. Controls of the
+ * node's own (Data Export's Download, `controlsComponent`) sit at the right of
+ * its widgets' controls, there and on its dashboard tile.
  */
 import React from "react";
 import { fireEvent, render, within } from "@testing-library/react";
@@ -16,11 +18,12 @@ import {
 const mockMarkDirty = jest.fn();
 const mockMarkNodeStale = jest.fn();
 const mockRequestAutoRun = jest.fn();
+let mockDashboardOn = false;
 const LOADER = "acme.tools/loader";
 
 jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => ({
-    dashboardOn: false,
+    dashboardOn: mockDashboardOn,
     markDirty: mockMarkDirty,
     markNodeStale: mockMarkNodeStale,
     requestAutoRun: mockRequestAutoRun,
@@ -86,6 +89,7 @@ beforeEach(() => {
   mockMarkDirty.mockReset();
   mockMarkNodeStale.mockReset();
   mockRequestAutoRun.mockReset();
+  mockDashboardOn = false;
 });
 
 test("the controls sit above the code, in the code's own pane", () => {
@@ -99,6 +103,60 @@ test("the controls sit above the code, in the code's own pane", () => {
   expect(code.querySelector("[data-testid='monaco']")).not.toBeNull();
   // The code takes what the controls leave.
   expect(code.style.flexGrow).toBe("1");
+});
+
+describe("controls of the node's own (Data Export's Download)", () => {
+  const FILE_NAME: WidgetDef = { name: "file_name", type: "text", label: "File name", default: "" };
+  const download = <button type="button" data-download-button="true">Download trees.csv</button>;
+
+  /** The row of the widgets' controls and the node's own, in *pane*. */
+  function controlsRow(pane: HTMLElement): { widgetCell: HTMLElement; own: HTMLElement } {
+    const row = pane.querySelector<HTMLElement>("[data-controls-row]");
+    if (!row) throw new Error("no row of controls was drawn");
+    const [widgetCell, own] = Array.from(row.children) as HTMLElement[];
+    return { widgetCell, own };
+  }
+
+  test("sit at the right of its widgets' controls, in one row above the code", () => {
+    const { container } = render(
+      <NodeEditor {...baseProps} data={nodeData([FILE_NAME])} controlsComponent={download} />,
+    );
+
+    const column = activePane(container).querySelector<HTMLElement>("[data-controls-with-code]");
+    if (!column) throw new Error("the code pane has no column of controls and code");
+    const [row, code] = Array.from(column.children) as HTMLElement[];
+    expect(row.hasAttribute("data-controls-row")).toBe(true);
+    const { widgetCell, own } = controlsRow(column);
+    expect(widgetCell.querySelector("[data-widget-controls]")).not.toBeNull();
+    expect(within(widgetCell).getByText("File name")).toBeTruthy();
+    expect(own.getAttribute("data-node-controls")).toBe("true");
+    expect(within(own).getByRole("button", { name: "Download trees.csv" })).toBeTruthy();
+    expect(code.querySelector("[data-testid='monaco']")).not.toBeNull();
+    expect(code.style.flexGrow).toBe("1");
+  });
+
+  test("stay above the code when the node holds no widgets", () => {
+    const { container } = render(
+      <NodeEditor {...baseProps} data={nodeData([])} controlsComponent={download} />,
+    );
+
+    const { widgetCell, own } = controlsRow(activePane(container));
+    expect(widgetCell.querySelector("[data-widget-controls]")).toBeNull();
+    expect(within(own).getByRole("button", { name: "Download trees.csv" })).toBeTruthy();
+  });
+
+  test("on a dashboard tile, sit beside the controls of its widgets", () => {
+    mockDashboardOn = true;
+    const { container } = render(
+      <NodeEditor {...baseProps} data={nodeData([FILE_NAME])} controlsComponent={download} />,
+    );
+
+    const { widgetCell, own } = controlsRow(activePane(container));
+    expect(within(widgetCell).getByText("File name")).toBeTruthy();
+    expect(within(own).getByRole("button", { name: "Download trees.csv" })).toBeTruthy();
+    // The tile shows its controls, not its code.
+    expect(activePane(container).querySelector("[data-testid='monaco']")).toBeNull();
+  });
 });
 
 test("a template that does not declare it keeps its controls in the Widgets tab", () => {
