@@ -154,9 +154,9 @@ return data
 ```
 
 To have the node open on its **Widgets** tab, where the user sets what the
-code reads, add `"opensOnWidgets": true`, as Data Loading does. The code stays
-on the **Code** tab. A node whose code reads none of its widgets opens on its
-code.
+code reads, add `"opensOnWidgets": true`, as Data Loading and Data Export do.
+The code stays on the **Code** tab. A node whose code reads none of its widgets
+opens on its code.
 
 When the starter is the node's whole content and only its widgets change from
 one use to the next, add `"starterIsContent": true` beside `source`. A node the

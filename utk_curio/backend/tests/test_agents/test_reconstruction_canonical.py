@@ -286,6 +286,9 @@ class TestRoles:
         assert role_for_template(
             TEMPLATES["curio.builtin/data-export"], has_incoming_data_edge=True
         ) == "export"
+        # An export whose code the sandbox runs: it writes the file.
+        assert TEMPLATES["curio.builtin/data-export"].executable is True
+        assert TEMPLATES["curio.builtin/data-export"].has_code is True
 
     def test_a_template_that_declares_loads_dataset_is_a_loader_even_when_fed(self):
         """Data Loading declares ``loadsDataset``: its node is a loader at the

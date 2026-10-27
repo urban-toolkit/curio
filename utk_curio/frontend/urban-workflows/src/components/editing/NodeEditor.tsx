@@ -93,6 +93,10 @@ type NodeEditorProps = {
     provenance?: boolean;
     customWidgetsCallback?: any;
     contentComponent?: any;
+    /** The behavior's own controls, with the widgets' controls: on the
+     * Widgets tab and on a tile (registry/types,
+     * NodeBehaviorResult.controlsComponent). */
+    controlsComponent?: React.ReactNode;
     disableWidgets?: boolean; // Added prop to freeze widget buttons
 };
 
@@ -113,6 +117,7 @@ function NodeEditor({
     provenance,
     customWidgetsCallback,
     contentComponent,
+    controlsComponent,
     disableWidgets,
 }: NodeEditorProps) {
     const [userCode, setUserCode] = useState<string>(""); // python or grammar with marks unresolved
@@ -312,7 +317,11 @@ function NodeEditor({
     // node's code, whose pane stays mounted and hidden, since its editor holds
     // the node's run.
     const hasOutputPane = outputId != undefined || contentComponent != undefined;
-    const tileControls = dashboardOn && widgetsTab && widgets.length > 0;
+    // The behavior's own controls (Data Export's Download) go with the
+    // widgets' controls, wherever those are shown: under its widgets' rows on
+    // the Widgets tab, and under a tile's controls.
+    const hasOwnControls = controlsComponent != undefined && controlsComponent !== false;
+    const tileControls = Boolean(dashboardOn) && ((widgetsTab && widgets.length > 0) || hasOwnControls);
     const controlsAboveOutput = tileControls && hasOutputPane;
     // A notebook cell shows its input and its output at once: the output pane
     // stays visible under the input tabs (Node.css), so a run, which would
@@ -610,6 +619,13 @@ function NodeEditor({
 
     // Under a tile's controls the output fills what they leave.
     const belowControls: CSS.Properties = { flex: 1, minHeight: 0 };
+    // The behavior's own controls (Data Export's Download), under the
+    // widgets' controls on a tile.
+    const ownControls = hasOwnControls ? (
+        <div className="nowheel nodrag" data-node-controls="true" style={{ padding: "4px 10px 10px" }}>
+            {controlsComponent}
+        </div>
+    ) : null;
     const outputMount = outputId != undefined ? (
         // Vega sizes its canvas in CSS px from the compiled spec, so a
         // multi-view chart is taller than the pane and was simply cut off
@@ -672,12 +688,15 @@ function NodeEditor({
                             >
                                 {tileControls && !hasOutputPane ? (
                                     <Tab.Pane eventKey="controls" style={paneStyle}>
-                                        <WidgetValueControls
-                                            widgets={widgets}
-                                            dashboard
-                                            disabled={disableWidgets}
-                                            onCommit={commitTileValue}
-                                        />
+                                        {widgetsTab && widgets.length > 0 ? (
+                                            <WidgetValueControls
+                                                widgets={widgets}
+                                                dashboard
+                                                disabled={disableWidgets}
+                                                onCommit={commitTileValue}
+                                            />
+                                        ) : null}
+                                        {ownControls}
                                     </Tab.Pane>
                                 ) : null}
 
@@ -741,6 +760,8 @@ function NodeEditor({
                                             onSelectionsChange={updateSelections}
                                             views={views}
                                             nodeIds={nodeIds}
+                                            // A tile shows them with its own controls.
+                                            controls={dashboardOn ? undefined : controlsComponent}
                                         />
                                     </Tab.Pane>
                                 ) : null}
@@ -796,6 +817,7 @@ function NodeEditor({
                                                     onCommit={commitTileValue}
                                                     aboveOutput
                                                 />
+                                                {ownControls}
                                                 {outputMount}
                                             </div>
                                         ) : outputMount}

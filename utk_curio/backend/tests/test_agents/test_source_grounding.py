@@ -230,6 +230,29 @@ class TestOutputFiles:
         loading = sg.check_grounding(self.MAKE_HEIGHTS, "python", _ctx(is_data_loading=True))
         assert not loading.ok and "no grounded source" in loading.violations[0], loading.violations
 
+    def test_the_name_a_data_export_writes_is_not_a_source(self):
+        """``curio_export(input_0, "trees.csv")`` writes the file its name
+        names (a Data Export node's code): its name, by position or as
+        ``name=``, is skipped in both scanners as ``curio_output_file``'s is."""
+        for code in (
+            'return curio_export(input_0, "trees.csv")',
+            "return curio_export(input_0, name='trees.geojson')",
+            'return curio_export(input_0, f"trees-{year}.csv")',
+            'return curio_export(input_0, "trees.csv")\nx = (1',  # syntax error, regex
+            "return curio_export(input_0, name='trees.geojson')\nx = (1",  # syntax error, regex
+        ):
+            verdict = sg.check_grounding(code, "python", _ctx())
+            assert verdict.ok, (code, verdict.violations)
+            assert sg.scan_sources(code, "python") == [], code
+        # A file the export's code reads is still read.
+        for code in (
+            'return curio_export(pd.read_csv("names.csv"), "trees.csv")',
+            'df = pd.read_csv("names.csv")\nreturn curio_export(df, "trees.csv")\nx = (1',
+        ):
+            verdict = sg.check_grounding(code, "python", _ctx())
+            assert not verdict.ok, code
+            assert "Curio cannot see" in verdict.violations[0], (code, verdict.violations)
+
     def test_a_data_file_literal_outside_the_call_is_still_a_path(self):
         for code in (
             'path = "heights.tif"\nreturn rasterio.open(path)',

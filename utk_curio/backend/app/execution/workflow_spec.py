@@ -81,14 +81,14 @@ GRAMMAR_TYPES = {"VIS_VEGA", "AUTK_GRAMMAR"}
 # These tables are the OFFLINE FALLBACK (DEC-076): the template roster decides
 # executability whenever it is reachable; do not grow them.
 PY_CODE_TYPES = {
-    "DATA_LOADING", "DATA_TRANSFORMATION",
+    "DATA_LOADING", "DATA_TRANSFORMATION", "DATA_EXPORT",
     "COMPUTATION_ANALYSIS",
 }
 CODE_TYPES = PY_CODE_TYPES | {"JS_COMPUTATION"}
 
 # The CODE_TYPES that render a "code" tab with a Monaco editor: all of them.
 CODE_EDITOR_TYPES = {
-    "DATA_LOADING", "DATA_TRANSFORMATION",
+    "DATA_LOADING", "DATA_TRANSFORMATION", "DATA_EXPORT",
     "COMPUTATION_ANALYSIS",
     "JS_COMPUTATION",
 }

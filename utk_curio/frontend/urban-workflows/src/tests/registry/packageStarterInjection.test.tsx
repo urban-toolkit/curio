@@ -33,6 +33,7 @@ jest.mock('../../providers/StarterProvider', () => ({
       }
       if (type === 'curio.scout/raster-calculator@1') return mockCalculatorStarters(type);
       if (type === 'curio.scout/dots-with-a-range@1') return mockChartStarters(type);
+      if (type === 'curio.builtin/data-export@1') return mockExportStarters(type);
       return [];
     },
   }),
@@ -46,7 +47,11 @@ import { loadIconRefs } from '../../registry/iconRegistry';
 import { BUILTIN_PACKAGE_ID, registerPackageTemplates } from '../../registry/packagesClient';
 import { clearPackageNodes } from '../../registry/nodeRegistry';
 import { getBehavior } from '../../registry/behaviorRegistry';
-import { packageStarterCode, usePackageNodeBehavior } from '../../adapters/node/packageNodeBehavior';
+import {
+  packageStarterCode,
+  savedBeforeItsStarter,
+  usePackageNodeBehavior,
+} from '../../adapters/node/packageNodeBehavior';
 import { useStarterContext } from '../../providers/StarterProvider';
 import { behaviorDataView } from '../../utils/behaviorDataView';
 import { VEGA_LITE, resolveReferences } from '../../utils/references/codeReferences';
@@ -69,6 +74,22 @@ function mockCalculatorStarters(type: string) {
   return [{
     id: 's3', type, name: 'raster-calculator', description: '', accessLevel: 'ANY',
     code: readCalculatorStarter(), custom: false,
+  }];
+}
+
+/** Curio's built-in package, as the repository ships it. */
+const BUILTIN = path.join(REPO_ROOT, 'packages', 'curio.builtin@1');
+
+/** The code Curio ships for its Data Export. */
+function readExportStarter(): string {
+  return fs.readFileSync(path.join(BUILTIN, 'sources', 'data-export.py'), 'utf-8');
+}
+
+/** What the starters feed lists for Data Export: `sources/data-export.py`. */
+function mockExportStarters(type: string) {
+  return [{
+    id: 's5', type, name: 'data-export', description: '', accessLevel: 'ANY',
+    code: readExportStarter(), custom: false,
   }];
 }
 
@@ -389,6 +410,112 @@ describe('Scout\'s charts, as the repository ships them (the plan answering koma
     expect(offered.filter((code) => code !== undefined)).toEqual([]);
     expect(node.code).toBe(edited);
     expect(node.widgets).toBe(widgets);
+  });
+});
+
+/** Curio's built-in package with its Data Export's template, read from its manifest. */
+function exportPack(): ShippedPack {
+  const manifest = JSON.parse(fs.readFileSync(path.join(BUILTIN, 'manifest.json'), 'utf-8'));
+  const template = manifest.templates.find((t: { id: string }) => t.id === 'data-export');
+  return {
+    ...chartPack(),
+    packageId: manifest.id,
+    version: '1.0.0',
+    name: manifest.name,
+    publisher: manifest.publisher,
+    description: manifest.description,
+    license: manifest.license,
+    templates: [{
+      ...chartPack().templates[0],
+      id: `${manifest.id}/data-export@1`,
+      templateId: template.id,
+      label: template.label,
+      category: template.category,
+      engine: template.engine,
+      description: template.description,
+      iconRef: template.iconRef,
+      behavior: template.behavior,
+      paletteOrder: template.paletteOrder,
+      editor: template.editor,
+      hasCode: template.hasCode,
+      hasWidgets: template.hasWidgets,
+      hasGrammar: template.hasGrammar,
+      grammarId: null,
+      badge: null,
+      inputPorts: template.inputPorts,
+      outputPorts: template.outputPorts,
+      source: template.source,
+      widgets: template.widgets,
+    }],
+  };
+}
+
+/** The starter injection on a Data Export node with *data*: every code it
+ *  offers the editor, and the node's data after. Run alone, as the node's own
+ *  behavior (`dataExportBehavior`) reads a canvas this suite does not hold. */
+function dropExport(data: Record<string, unknown>) {
+  const [desc] = registerPackageTemplates([exportPack()]);
+  const node: Record<string, unknown> = { nodeType: desc.id, ...data };
+  const nodeState = { code: typeof data.code === 'string' ? data.code : '' } as unknown as UseNodeStateReturn;
+  const offered: Array<string | undefined> = [];
+  renderHook(() => {
+    const result = usePackageNodeBehavior(node as unknown as NodeBehaviorData, nodeState);
+    offered.push(result.defaultValueOverride);
+    return result;
+  });
+  return { offered, node };
+}
+
+describe('Curio\'s Data Export, as the repository ships it', () => {
+  beforeEach(() => clearPackageNodes());
+  const FILE_NAME = [{ name: 'file_name', type: 'text', label: 'File name', default: '' }];
+
+  test('a fresh drop opens with the code that writes its input to the file File name names', () => {
+    const { offered, node } = dropExport({});
+    expect(readExportStarter()).toBe('return curio_export(input_0, [!! file_name !!])\n');
+    expect(offered).toContain(readExportStarter());
+    expect(node.widgets).toEqual(FILE_NAME);
+  });
+
+  test('a node saved before it had code, with no code and no widgets, opens with its starter and File name', () => {
+    const { offered, node } = dropExport({ code: '' });
+    expect(offered).toContain(readExportStarter());
+    expect(node.widgets).toEqual(FILE_NAME);
+    // Once the editor has it, the node's code falls back to the starter, not
+    // to the empty code it was saved with.
+    expect(node.defaultCode).toBe(readExportStarter());
+  });
+
+  test('a node whose code was cleared after it opened keeps its empty code and its File name', () => {
+    const widgets = [{ ...FILE_NAME[0], value: 'trees' }];
+    const { offered, node } = dropExport({ code: '', widgets });
+    expect(offered.filter((code) => code !== undefined)).toEqual([]);
+    expect(node.widgets).toBe(widgets);
+    expect(node.defaultCode).toBeUndefined();
+  });
+
+  test('a node saved with code of its own keeps it', () => {
+    const code = 'path = curio_output_file("trees.parquet")\ninput_0.to_parquet(path)\nreturn path\n';
+    const { offered } = dropExport({ code, widgets: FILE_NAME });
+    expect(offered.filter((offer) => offer !== undefined)).toEqual([]);
+  });
+});
+
+describe('savedBeforeItsStarter', () => {
+  beforeEach(() => clearPackageNodes());
+
+  test('is a node with no code and none of the widgets its template declares', () => {
+    const [desc] = registerPackageTemplates([exportPack()]);
+    expect(savedBeforeItsStarter('', undefined, desc)).toBe(true);
+    expect(savedBeforeItsStarter('  \n', undefined, desc)).toBe(true);
+    expect(savedBeforeItsStarter('', [], desc)).toBe(false);
+    expect(savedBeforeItsStarter('return 1', undefined, desc)).toBe(false);
+    expect(savedBeforeItsStarter(undefined, undefined, desc)).toBe(false);
+  });
+
+  test('a template that declares no widgets has no such node: its empty code stays empty', () => {
+    const [desc] = registerPackageTemplates([calculatorPack()]);
+    expect(savedBeforeItsStarter('', undefined, desc)).toBe(false);
   });
 });
 

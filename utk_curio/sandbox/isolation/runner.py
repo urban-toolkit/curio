@@ -73,11 +73,11 @@ def _failure(stderr):
     return {"stdout": [], "stderr": stderr, "output": {"path": "", "dataType": "str"}}
 
 
-def _persist_output(descriptor, *, node_type, session_id, exec_uid=None):
-    """File the child's output away. Returns its artifact id, whose file the
-    Data Catalog links when the output is saved, as in process. With an
-    execution account (*exec_uid*), each file the child wrote becomes the
-    sandbox's own (``staging.persist_output``).
+def _persist_output(descriptor, *, node_type, session_id, exec_uid=None, art_id=None):
+    """File the child's output away as *art_id*. Returns its artifact id,
+    whose file the Data Catalog links when the output is saved, as in
+    process. With an execution account (*exec_uid*), each file the child
+    wrote becomes the sandbox's own (``staging.persist_output``).
 
     The write handle is no longer dropped here. It used to be, because the
     backend opened the DuckDB file read-only for the catalog, auto-install and
@@ -97,7 +97,7 @@ def _persist_output(descriptor, *, node_type, session_id, exec_uid=None):
 
     with _exec_lock.hold("isolated_persist"):
         return staging.persist_output(
-            descriptor, node_id=node_type, session_id=session_id, exec_uid=exec_uid
+            descriptor, node_id=node_type, session_id=session_id, exec_uid=exec_uid, art_id=art_id,
         )
 
 
@@ -224,8 +224,8 @@ def execute_isolated(
     the sandbox's privileges anyway, so confining its cwd would buy nothing and
     would change behaviour for every existing dataflow.
     """
-    from utk_curio.sandbox.util import staging
-    from utk_curio.sandbox.util.parsers import _shared_data_dir
+    from utk_curio.sandbox.util import output_files, staging
+    from utk_curio.sandbox.util.parsers import _make_id, _shared_data_dir
 
     work_dir = launch_dir
     overlay_dir = None
@@ -323,10 +323,21 @@ def execute_isolated(
         _remember_imports(imports_session if imports_session is not None else session_id, manifest["imports"])
 
         descriptor = manifest["output"]
-        art_id = _persist_output(
-            descriptor, node_type=node_type, session_id=session_id,
-            exec_uid=config.exec_uid,
+        # The id the output is stored as, chosen first: the file a text
+        # output names leaves the scratch directory for the folder named
+        # after it (util/output_files.py).
+        art_id = _make_id()
+        output_files.keep_named_file(
+            descriptor, scratch_dir, manifest["outputFiles"], art_id, exec_uid=config.exec_uid,
         )
+        try:
+            art_id = _persist_output(
+                descriptor, node_type=node_type, session_id=session_id,
+                exec_uid=config.exec_uid, art_id=art_id,
+            )
+        except BaseException:
+            output_files.forget_run_output(art_id)
+            raise
         return {
             "stdout": manifest["stdout"],
             "stderr": manifest["stderr"],

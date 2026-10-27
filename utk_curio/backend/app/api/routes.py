@@ -23,6 +23,7 @@ GEOMETRY_ACCEPT_HEADER = "X-Curio-Accept-Geometry"
 SANDBOX_GET_TIMEOUT      = 300  # /get (full artifact JSON)
 SANDBOX_PREVIEW_TIMEOUT  = 60   # /get-preview (always small by definition)
 SANDBOX_RASTER_TIMEOUT   = 120  # /raster (a GeoTIFF an Autark map can hold)
+SANDBOX_OUTPUT_FILE_TIMEOUT = 300  # /output-file (a file a node wrote, to download)
 # /version is a cached constant on the sandbox side, and the version badge is
 # waiting on it, so it gets a short deadline rather than a generous one.
 SANDBOX_VERSION_TIMEOUT  = 5
@@ -45,6 +46,10 @@ def _sandbox_call(method: str, path: str, *, label: str, timeout: int, **kwargs)
 
 #: Chunk size for relaying a sandbox reply to the browser.
 RELAY_CHUNK_BYTES = 64 * 1024
+
+#: The reply headers a relay passes on besides the ``X-Curio-*`` ones: the
+#: name a downloaded file is saved under (``/output-file``).
+RELAYED_HEADERS = frozenset({"content-disposition"})
 
 
 def _relay_sandbox_reply(resp, *, label, file_name, t0, error_prefix=None):
@@ -71,7 +76,10 @@ def _relay_sandbox_reply(resp, *, label, file_name, t0, error_prefix=None):
             resp.close()
         return message, 500
 
-    forwarded = {k: v for k, v in resp.headers.items() if k.startswith("X-Curio-")}
+    forwarded = {
+        k: v for k, v in resp.headers.items()
+        if k.startswith("X-Curio-") or k.lower() in RELAYED_HEADERS
+    }
 
     def body():
         sent = 0
@@ -399,6 +407,40 @@ def relay_raster(file_name, session_id, saved_path=None):
     if isinstance(resp, tuple):
         return resp
     return _relay_sandbox_reply(resp, label='/raster', file_name=file_name, t0=t0)
+
+
+@bp.route('/output-file', methods=['GET'])
+@require_auth
+def get_output_file():
+    """The file a node's output names, to download: a Data Export node's.
+
+    Asked by the output's artifact id, never by a path, and read by the
+    sandbox under the session ``/get`` reads under (``_read_session``). The
+    sandbox serves the file only when it lies in the folder of the run that
+    made the output (``sandbox/util/output_files.py``), with the name it is
+    saved under in ``Content-Disposition``. Statuses and bodies pass through
+    as the sandbox gives them, so the node can say why nothing downloaded.
+    """
+    file_name = request.args.get('fileName')
+
+    if not file_name:
+        return 'No artifact id specified', 400
+    return relay_output_file(file_name, _read_session(file_name))
+
+
+def relay_output_file(file_name, session_id):
+    """``/output-file``: the file the output *file_name* names, read under
+    *session_id*. A dashboard viewer's read (``runs/viewer_routes.py``) names
+    the session its kept output was made in."""
+    t0 = time.perf_counter()
+    resp = _sandbox_call(
+        'get', '/output-file',
+        label='/output-file', timeout=SANDBOX_OUTPUT_FILE_TIMEOUT, stream=True,
+        params=_sandbox_read_params(file_name, session_id, None),
+    )
+    if isinstance(resp, tuple):
+        return resp
+    return _relay_sandbox_reply(resp, label='/output-file', file_name=file_name, t0=t0)
 
 
 @bp.route('/processPythonCode', methods=['POST'])

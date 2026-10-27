@@ -418,7 +418,7 @@ def _read_json_artifact(rel_path):
     return json.loads(zlib.decompress(payload).decode("utf-8"))
 
 
-def save_to_duckdb(value, node_id=None, session_id=None):
+def save_to_duckdb(value, node_id=None, session_id=None, art_id=None):
     """
     Save a Python value to the artifacts table.
 
@@ -428,6 +428,8 @@ def save_to_duckdb(value, node_id=None, session_id=None):
         node_id: the workflow node id that produced this artifact.
         session_id: Bearer token of the session that produced this artifact.
                     Used to scope artifact access so concurrent sessions are isolated.
+        art_id: the id to store it as, when the run chose it before it ran
+                (its output folder is named after it, util/output_files.py).
 
     Returns:
         str: the id of the new artifact row.
@@ -435,7 +437,7 @@ def save_to_duckdb(value, node_id=None, session_id=None):
     init_db()
     con = get_connection()
     try:
-        art_id = _make_id()
+        art_id = art_id or _make_id()
 
         if value is None:
             con.execute(
@@ -1152,8 +1154,10 @@ def _session_rows(con, session_ids):
 
 def describe_session_artifacts(session_ids) -> dict:
     """``{session id: {"bytes", "ids"}}``: the artifacts each session made, by
-    id, and how many bytes they hold, the files they were written to and the
-    values their rows keep."""
+    id, and how many bytes they hold, the files they were written to, the
+    files their runs wrote (``output_files``) and the values their rows keep."""
+    from utk_curio.sandbox.util.output_files import folder_bytes
+
     session_ids = list(session_ids)
     described = {session_id: {"bytes": 0, "ids": []} for session_id in session_ids}
     if not session_ids:
@@ -1165,7 +1169,7 @@ def describe_session_artifacts(session_ids) -> dict:
     finally:
         con.close()
     for art_id, session_id, kind, value_str, blob_bytes, json_bytes in rows:
-        size = (blob_bytes or 0) + (json_bytes or 0)
+        size = (blob_bytes or 0) + (json_bytes or 0) + folder_bytes(str(art_id))
         path = _stored_file(kind, value_str)
         if path is not None:
             try:
@@ -1180,9 +1184,22 @@ def describe_session_artifacts(session_ids) -> dict:
     return described
 
 
+def _rows_naming_run_files(con) -> list:
+    """``(kind, value_str)`` of the rows that name a file in a run's folder."""
+    from utk_curio.sandbox.util.output_files import outputs_root
+
+    return con.execute(
+        "SELECT kind, value_str FROM artifacts WHERE kind IN ('raster', 'str') AND starts_with(value_str, ?)",
+        [str(outputs_root()) + os.sep],
+    ).fetchall()
+
+
 def forget_session_artifacts(session_ids) -> int:
-    """Delete every artifact the sessions made: its row and the file the store
-    wrote its value to. Returns how many rows went."""
+    """Delete every artifact the sessions made: its row, the file the store
+    wrote its value to, and the folder of the files its run wrote, unless a
+    remaining row names a file there. Returns how many rows went."""
+    from utk_curio.sandbox.util.output_files import folders_named_by, forget_run_output
+
     session_ids = list(session_ids)
     if not session_ids:
         return 0
@@ -1192,15 +1209,18 @@ def forget_session_artifacts(session_ids) -> int:
         rows = _session_rows(con, session_ids)
         placeholders = ",".join("?" for _ in session_ids)
         con.execute(f"DELETE FROM artifacts WHERE session_id IN ({placeholders})", session_ids)
+        named = folders_named_by(_rows_naming_run_files(con))
     finally:
         con.close()
-    for _id, _session_id, kind, value_str, _blob, _json in rows:
+    for art_id, _session_id, kind, value_str, _blob, _json in rows:
         path = _stored_file(kind, value_str)
         if path is not None:
             try:
                 path.unlink()
             except FileNotFoundError:
                 pass
+        if str(art_id) not in named:
+            forget_run_output(str(art_id))
     return len(rows)
 
 
@@ -1277,6 +1297,9 @@ def forget_made_before(cutoff_ms) -> int:
       the values to, a raster's own file when it is there, and any file there
       that nothing has used since the cutoff. A file a remaining row names
       stays, and a file the Data Catalog linked keeps its other name.
+    - The folder of the files a run wrote (``output_files``) goes with the
+      run's row, or past the cutoff when no row was stored for it, unless a
+      remaining row names a file in it.
     - So do the files earlier versions wrote at the top of the shared data
       directory (:data:`_LEFTOVER_FILE`, :data:`_LEFTOVER_BUNDLES`), once
       their time is past the cutoff.
@@ -1347,6 +1370,26 @@ def forget_made_before(cutoff_ms) -> int:
             if path.resolve() not in staying_files and _older_than(path, cutoff_ms):
                 with contextlib.suppress(OSError):
                     path.unlink()
+
+    # The folder of the files a run wrote (``output_files``) goes with its
+    # row, and one no row was stored for goes once its time is past the
+    # cutoff. A folder a remaining row names a file in stays.
+    from utk_curio.sandbox.util import output_files
+
+    every_id = {str(art_id) for art_id, *_rest in rows}
+    named = staying_ids | output_files.folders_named_by(
+        (kind, value_str) for art_id, _session, kind, value_str, _value_json in rows
+        if str(art_id) not in going
+    )
+    runs = output_files.outputs_root()
+    if runs.is_dir() and not runs.is_symlink():
+        for folder in runs.iterdir():
+            if not output_files.is_artifact_id(folder.name) or folder.name in named:
+                continue
+            if folder.is_symlink() or not folder.is_dir():
+                continue
+            if folder.name in going or (folder.name not in every_id and _older_than(folder, cutoff_ms)):
+                shutil.rmtree(folder, ignore_errors=True)
 
     shared = _shared_data_dir()
     for path in shared.iterdir() if shared.is_dir() else ():

@@ -17,10 +17,11 @@ import {
 import { WidgetControl } from "../../components/editing/widgets/WidgetControl";
 
 const LOADER = "acme.tools/loader";
+let mockDashboardOn = false;
 
 jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => ({
-    dashboardOn: false,
+    dashboardOn: mockDashboardOn,
     markDirty: jest.fn(),
     markNodeStale: jest.fn(),
     requestAutoRun: jest.fn(),
@@ -48,9 +49,10 @@ jest.mock("../../providers/CollaborationProvider", () => ({
     onRemote: jest.fn(() => jest.fn()),
   }),
 }));
+// The Widgets tab, with the controls of the node's own it is handed.
 jest.mock("../../components/editing/WidgetsEditor", () => ({
   __esModule: true,
-  default: () => <div data-testid="widgets-editor" />,
+  default: ({ controls }: any) => <div data-testid="widgets-editor">{controls}</div>,
 }));
 
 import NodeEditor from "../../components/editing/NodeEditor";
@@ -155,6 +157,51 @@ describe("where a node opens", () => {
     fireEvent.click(codeTab(container));
     rerender(<NodeEditor {...baseProps} data={nodeData([DATA, ROWS])} />);
     expect(showsCode(container)).toBe(true);
+  });
+});
+
+describe("controls of the node's own (Data Export's Download)", () => {
+  const FILE_NAME: WidgetDef = { name: "file_name", type: "text", label: "File name", default: "" };
+  const EXPORT_STARTER = "return curio_export(input_0, [!! file_name !!])";
+  const download = <button type="button" data-download-button="true">Download trees.csv</button>;
+  const props = { ...baseProps, defaultValue: EXPORT_STARTER, controlsComponent: download };
+
+  afterEach(() => { mockDashboardOn = false; });
+
+  test("sit on the Widgets tab the node opens on, beside File name, and nowhere on its code", () => {
+    const { container } = render(<NodeEditor {...props} data={nodeData([FILE_NAME])} />);
+
+    expect(showsWidgets(container)).toBe(true);
+    const pane = activePane(container);
+    expect(within(pane).getByRole("button", { name: "Download trees.csv" })).toBeTruthy();
+    expect(container.querySelectorAll("[data-download-button]")).toHaveLength(1);
+
+    fireEvent.click(codeTab(container));
+    expect(showsCode(container)).toBe(true);
+    expect(within(activePane(container)).queryByRole("button", { name: "Download trees.csv" })).toBeNull();
+  });
+
+  test("stay on the Widgets tab when the node holds no widgets", () => {
+    const { container } = render(<NodeEditor {...props} data={nodeData([])} />);
+
+    fireEvent.click(container.querySelector<HTMLElement>('.nav-link[data-rr-ui-event-key="widgets"]')!);
+    expect(within(activePane(container)).getByRole("button", { name: "Download trees.csv" })).toBeTruthy();
+  });
+
+  test("on a dashboard tile, sit under the controls of its widgets, once", () => {
+    mockDashboardOn = true;
+    const { container } = render(<NodeEditor {...props} data={nodeData([FILE_NAME])} />);
+
+    const pane = activePane(container);
+    expect(within(pane).getByText("File name")).toBeTruthy();
+    const own = pane.querySelector<HTMLElement>("[data-node-controls]");
+    expect(own && within(own).getByRole("button", { name: "Download trees.csv" })).toBeTruthy();
+    // After the File name control, and in no other pane.
+    expect(pane.querySelector("[data-widget-controls]")!.compareDocumentPosition(own!)
+      & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(container.querySelectorAll("[data-download-button]")).toHaveLength(1);
+    // The tile shows its controls, not its code.
+    expect(pane.querySelector("[data-testid='monaco']")).toBeNull();
   });
 });
 

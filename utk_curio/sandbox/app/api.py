@@ -787,6 +787,44 @@ def get_raster():
     )
 
 
+@app.route('/output-file', methods=['GET'])
+@require_sandbox_token
+@holds_duckdb
+def get_output_file():
+    """The file an output names, to download: a Data Export node's.
+
+    The output is read by its artifact id under ``sessionId``, as ``/get``
+    reads one. It must be text naming a file in the folder of the run that
+    made it, or a path inside that folder once every link on the way is
+    followed (``util/output_files.named_file``). The file is sent under its
+    own name, in ``Content-Disposition``; a refusal is JSON with its reason.
+    """
+    import mimetypes
+
+    from flask import send_file
+
+    from utk_curio.sandbox.util.output_files import OutputFileRefused, named_file
+
+    art_id = request.args.get('fileName')
+    if not art_id:
+        abort(400, "fileName is required")
+    session_id = request.args.get('sessionId') or None
+    try:
+        path = named_file(art_id, session_id)
+    except OutputFileRefused as refused:
+        return jsonify({
+            'error': refused.code,
+            'message': str(refused),
+            'fileName': art_id,
+        }), refused.status
+    return send_file(
+        path,
+        mimetype=mimetypes.guess_type(path.name)[0] or 'application/octet-stream',
+        as_attachment=True,
+        download_name=path.name,
+    )
+
+
 def _reply_when_run(route, node_type, run):
     """Answer a node run at once and keep the connection busy while it waits
     for its place (#889, ``sandbox/run_place.py``). The run holds the DuckDB

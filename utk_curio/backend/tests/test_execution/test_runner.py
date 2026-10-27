@@ -447,13 +447,15 @@ class TestDev118NotExecutableTarget:
     def test_executable_kinds(self):
         from utk_curio.backend.app.execution.workflow_spec import is_executable_kind
 
+        # A Data Export's code writes the file its Download saves: it runs.
         for kind in ("curio.builtin/data-loading", "curio.builtin/computation-analysis@1",
-                     "curio.builtin/js-computation", "DATA_LOADING"):
+                     "curio.builtin/js-computation", "DATA_LOADING",
+                     "curio.builtin/data-export@1", "curio.builtin/data-export", "DATA_EXPORT"):
             assert is_executable_kind(kind) is True, kind
-        # Data Export is one Download button with no code (#226). Merge Flow is
-        # gone (#662): an old spec that still names it must not run it either.
+        # Merge Flow is gone (#662): an old spec that still names it must not
+        # run it either.
         for kind in ("curio.builtin/vis-vega", "curio.builtin/autk-grammar@1", "curio.builtin/data-pool",
-                     "curio.builtin/merge-flow", "curio.builtin/vis-simple", "curio.builtin/data-export@1",
+                     "curio.builtin/merge-flow", "curio.builtin/vis-simple",
                      "some.pkg/custom-node@1", "", None):
             assert is_executable_kind(kind) is False, kind
 

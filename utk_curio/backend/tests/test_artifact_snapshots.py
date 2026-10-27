@@ -259,6 +259,38 @@ def test_a_tuple_of_a_list_and_a_table_is_read_without_any_json_envelope(shared_
     assert artifact_differences(snapshot_artifact("out"), snapshot) == []
 
 
+def test_a_path_in_its_runs_folder_is_compared_without_the_folders_id(shared_data, monkeypatch):
+    """Each Python run writes the files it returns in a folder named after its
+    output's id (``sandbox/util/output_files.py``), so two runs of one node
+    name the same file in two folders: a raster's own file, or the path a text
+    output names (example 18's mosaic). They match by the file's name and
+    place in their run's folder, and any other difference still shows."""
+    def under(run, name):
+        return f"/app/.curio/data/outputs/{run}/{name}"
+
+    first, again = "1793066425227_ce535399", "1793066427331_def49e0e"
+    sandbox = _Sandbox(rows={
+        "mosaic": {"kind": "str", "value_str": under(first, "mosaic-312f967d1f7582c7.vrt")},
+        "mosaic-again": {"kind": "str", "value_str": under(again, "mosaic-312f967d1f7582c7.vrt")},
+        "another-mosaic": {"kind": "str", "value_str": under(again, "mosaic-0000000000000000.vrt")},
+        "heights": {"kind": "raster", "value_str": under(first, "heights.tif")},
+        "heights-again": {"kind": "raster", "value_str": under(again, "heights.tif")},
+        "slope-again": {"kind": "raster", "value_str": under(again, "slope.tif")},
+        "text": {"kind": "str", "value_str": f"outputs/{first} is a run"},
+    })
+    monkeypatch.setattr("requests.get", sandbox.get)
+
+    assert artifact_differences(snapshot_artifact("mosaic-again"), snapshot_artifact("mosaic")) == []
+    assert artifact_differences(snapshot_artifact("heights-again"), snapshot_artifact("heights")) == []
+    assert artifact_differences(snapshot_artifact("another-mosaic"), snapshot_artifact("mosaic")) == [
+        "the output is '/app/.curio/data/outputs/<run>/mosaic-0000000000000000.vrt', "
+        "expected '/app/.curio/data/outputs/<run>/mosaic-312f967d1f7582c7.vrt'"
+    ]
+    assert artifact_differences(snapshot_artifact("slope-again"), snapshot_artifact("heights")) != []
+    # Text that names no file in a run's folder is compared as it is.
+    assert snapshot_artifact("text") == {"kind": "str", "value": f"outputs/{first} is a run"}
+
+
 def test_a_kind_it_does_not_know_and_an_unseen_json_file_fall_back_to_the_envelope(shared_data, monkeypatch):
     sandbox = _Sandbox(
         rows={

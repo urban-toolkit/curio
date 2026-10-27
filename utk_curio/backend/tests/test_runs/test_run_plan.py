@@ -72,7 +72,9 @@ def test_ancestors_follow_data_edges_only():
     ("curio.builtin/note@1", "# Findings\n- one", "forward"),
     ("curio.builtin/vis-vega@1", "{}", "forward"),
     ("curio.builtin/vis-simple", "", "forward"),
-    ("curio.builtin/data-export", "", "forward"),
+    # Its code writes the file its Download saves: a run runs it.
+    ("curio.builtin/data-export", "", "run"),
+    ("curio.builtin/data-export@1", "return curio_export(input_0, \"trees\")", "run"),
     ("curio.builtin/autk-grammar", RENDER_SPEC, "forward"),
     ("curio.builtin/autk-grammar", DATA_SPEC, "run"),
     ("curio.builtin/autk-grammar", COMPUTE_SPEC, "browser"),

@@ -2,11 +2,12 @@
 template declares, then the catalog, then the packages Curio ships.
 
 A package of the account's own can declare a Data Export's behavior for one
-of its templates. A run of a dataflow holding such a node forwards what
-reaches it, as it forwards a Data Export, for the account whose store holds
-the package; for any other account no installed package provides the node's
-type, so the run fails it, naming the type, and skips what it feeds, as the
-canvas does with the card it shows for it. The sandbox is a fake behind
+of its templates, with code that writes the file. A run of a dataflow holding
+such a node runs that code, as it runs a Data Export's, for the account whose
+store holds the package: it reads what reaches it, and what it feeds reads
+its own output. For any other account no installed package provides the
+node's type, so the run fails it, naming the type, and skips what it feeds, as
+the canvas does with the card it shows for it. The sandbox is a fake behind
 ``node_exec.sandbox_request``. ``runs`` is imported inside each test, so a
 checkout without it fails each test on its own.
 """
@@ -36,8 +37,8 @@ STORE_PACKAGE = {
     "templates": [
         {
             "id": "download", "label": "My download", "description": "", "category": "data",
-            "engine": "python", "editor": "none", "behavior": "data-export",
-            "hasCode": False, "hasGrammar": False, "hasWidgets": False,
+            "engine": "python", "editor": "code", "behavior": "data-export",
+            "hasCode": True, "hasGrammar": False, "hasWidgets": False,
             "inputPorts": [_port()], "outputPorts": [],
         },
     ],
@@ -114,7 +115,7 @@ def _create(client, token):
         "name": "Store download",
         "nodes": [
             _code_node("src", "return 1"),
-            {"id": "dl", "type": "acme.mine/download@1", "content": ""},
+            {"id": "dl", "type": "acme.mine/download@1", "content": '# node dl\nreturn curio_export(input_0, "x")'},
             _code_node("after", "return input_0"),
         ],
         "edges": [
@@ -149,17 +150,20 @@ def _run(client, token, project_id):
     return roles, resp.get_json()
 
 
-def test_a_run_forwards_a_download_saved_in_the_accounts_store(client, db, user_and_token, sandbox):
+def test_a_run_runs_a_download_saved_in_the_accounts_store(client, db, user_and_token, sandbox):
     alice, alice_token = user_and_token
     project_id = _create(client, alice_token)
     _hold_the_package(alice)
 
     roles, run = _run(client, alice_token, project_id)
 
-    assert roles == {"src": "run", "dl": "forward", "after": "run"}
+    assert roles == {"src": "run", "dl": "run", "after": "run"}
     assert run["status"] == "succeeded"
-    # The node after the download read what reached the download.
-    assert sandbox.bodies["after"]["file_path"] == "art-src"
+    # The download's code read what reached it, and wrote its file.
+    assert sandbox.bodies["dl"]["file_path"] == "art-src"
+    assert 'curio_export(input_0, "x")' in sandbox.bodies["dl"]["code"]
+    # It was run, not forwarded: what it feeds read its own output.
+    assert sandbox.bodies["after"]["file_path"] == "art-dl"
 
 
 def test_for_another_account_the_same_node_is_a_type_no_installed_package_provides(

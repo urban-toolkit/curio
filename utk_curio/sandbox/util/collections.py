@@ -64,15 +64,18 @@ LOCATOR_COLUMNS = (
 )
 
 
-def make_collection_helpers(resolve_index, collections, media_dir, *, output_dir=None):
+def make_collection_helpers(resolve_index, collections, media_dir, *, output_dir=None, output_names=None):
     """The helpers for one execution: ``curio_load_collection``,
-    ``curio_derived_file`` and ``curio_output_file``.
+    ``curio_derived_file``, ``curio_output_file`` and ``curio_export``.
 
     *resolve_index(dataset_id)* returns the local path of a collection's index,
     the same resolver ``curio_data_path`` uses. *collections* maps each id
     the backend resolved to ``{root|objects, kind}``. *output_dir* is where a
     node writes a file it returns (a raster, say): the scratch directory when
-    isolated, whose files the parent keeps, and the media directory otherwise.
+    isolated, whose files the parent keeps, and the run's own folder in
+    process (``util/output_files.py``); without one, the media directory's
+    ``outputs``. *output_names*, a list, gets each name ``curio_output_file``
+    gives, which an isolated child reports to its parent.
     """
     known = dict(collections or {})
 
@@ -166,10 +169,21 @@ def make_collection_helpers(resolve_index, collections, media_dir, *, output_dir
         if not folder:
             raise RuntimeError("This node has nowhere to write an output file.")
         os.makedirs(folder, exist_ok=True)
+        if output_names is not None and name not in output_names:
+            output_names.append(name)
         return os.path.join(folder, name)
+
+    def curio_export(data, name=""):
+        """Write *data* to a file of this node's (``curio_output_file``) and
+        return the file's name: a table as CSV, a GeoDataFrame as GeoJSON, a
+        raster as GeoTIFF, anything else as JSON (``util/exports.py``)."""
+        from utk_curio.sandbox.util.exports import export
+
+        return export(data, name, curio_output_file)
 
     return {
         "curio_load_collection": curio_load_collection,
         "curio_derived_file": curio_derived_file,
         "curio_output_file": curio_output_file,
+        "curio_export": curio_export,
     }

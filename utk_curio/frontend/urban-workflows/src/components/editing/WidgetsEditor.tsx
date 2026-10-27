@@ -62,6 +62,9 @@ type WidgetsEditorProps = {
     /** On a dashboard's tile (#1117): a viewer changes the values, except a
      * read-only kind's, and nothing else (no tags to drag, no edits). */
     valuesOnly?: boolean;
+    /** Controls of the node's own, under its widgets' rows: Data Export's
+     * Download, beside the File name it saves under (`controlsComponent`). */
+    controls?: React.ReactNode;
 };
 
 type Editing = { mode: "add" } | { mode: "edit"; name: string } | null;
@@ -92,6 +95,7 @@ function WidgetsEditor({
     customWidgetsCallback,
     disableWidgets,
     valuesOnly = false,
+    controls,
 }: WidgetsEditorProps) {
     // Tags, edits and selections are the dataflow's author's, never a viewer's.
     const frozen = disableWidgets || valuesOnly;
@@ -199,6 +203,11 @@ function WidgetsEditor({
                     </div>
                 ),
             )}
+            {controls ? (
+                <div className={styles.nodeControls} data-node-controls="true">
+                    {controls}
+                </div>
+            ) : null}
             {valuesOnly ? null : editing?.mode === "add" ? (
                 <WidgetForm
                     others={widgets}
