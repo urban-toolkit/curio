@@ -24,6 +24,7 @@ class Narrator(Protocol):
     def say(self, title: str, sub: str = "", hold: float | None = None) -> None: ...
     def beat(self, ms: float = 700) -> None: ...
     def focus(self, locator, *, hold: float = 900, ring: bool = True): ...
+    def point_at(self, x: float, y: float, *, hold: float = 600) -> None: ...
     def click(self, locator, *, force: bool = False, dispatch: bool = False,
               hold: float = 700, ring: bool = True) -> None: ...
     def type_into(self, locator, text: str, *, delay: float = 55) -> None: ...
@@ -70,6 +71,11 @@ class SilentNarrator:
         self.beat(hold)
         return box
 
+    def point_at(self, x: float, y: float, *, hold: float = 600) -> None:
+        # A drag the page dispatches moves no pointer, so there is nothing to
+        # point; the pause stays.
+        self.beat(hold)
+
     def click(self, locator, *, force: bool = False, dispatch: bool = False,
               hold: float = 700, ring: bool = True) -> None:
         if dispatch:
@@ -104,6 +110,10 @@ class Ctx:
     snapshot: Callable[..., None] = lambda label, **kw: None
     #: Pins one node, up close, as its own baseline. Also a no-op while recording.
     node_snapshot: Callable[[str, str], None] = lambda label, node_id: None
+    #: Notes where a part of the video starts or ends, as seconds into the
+    #: recording. Supplied by the video runner, which saves the marks beside
+    #: the video so a clip can be cut from them; a no-op in the baseline suite.
+    mark: Callable[[str, str], None] = lambda name, event: None
 
     def capture_node(self, label: str, node_id: str) -> None:
         """Pin one node, framed up close, as a baseline called *label*.
@@ -137,6 +147,9 @@ class Ctx:
 
     def focus(self, locator, **kw):
         return self.narrator.focus(locator, **kw)
+
+    def point_at(self, x: float, y: float, **kw) -> None:
+        self.narrator.point_at(x, y, **kw)
 
     def beat(self, ms: float = 700) -> None:
         self.narrator.beat(ms)
@@ -197,6 +210,11 @@ class Walkthrough:
     #: table cannot demonstrate itself without the right one. So each scene says
     #: what it needs, and says nothing when it needs nothing.
     example: str | None = None
+    #: Cuts the example back to where the journey begins: the example's spec
+    #: in, the spec the journey opens on out. A journey that shows a step of
+    #: building an example opens on the example without what that step adds,
+    #: and ends where the example is. ``None`` opens the example as it is.
+    start: Callable[[dict], dict] | None = None
     #: Needs the stack seeded with the example dataflows. The scene then carries
     #: the ``examples`` marker, so an ordinary run skips it honestly instead of
     #: asserting against an empty gallery and blaming the seed.

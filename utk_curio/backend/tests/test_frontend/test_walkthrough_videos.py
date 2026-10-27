@@ -28,7 +28,9 @@ journey closes, to paste beside the video.
 """
 from __future__ import annotations
 
+import json
 import os
+import time
 import traceback
 
 import pytest
@@ -39,7 +41,8 @@ from .walkthroughs import (
     Ctx,
     SilentNarrator,
     Walkthrough,
-    load_example_spec,
+    opening_spec,
+    opens_on_nodes,
 )
 from .utils import (
     REPO_ROOT,
@@ -137,6 +140,15 @@ def test_record_walkthrough(walk: Walkthrough, app_frontend, current_server, bro
         record_video_size=VIDEO_SIZE,
     )
     page = context.new_page()
+    # Playwright starts the recording with the page, so seconds on this clock
+    # are seconds into the video: where a scene marks a clip's start, its end
+    # and each wait to cut out.
+    started = time.monotonic()
+    marks: list[dict] = []
+
+    def mark(name: str, event: str) -> None:
+        marks.append({"name": name, "event": event, "seconds": round(time.monotonic() - started, 2)})
+
     # The drawers slide with translate3d and read prefers-reduced-motion through
     # useSyncExternalStore, so a panel is only reachable once the transition is
     # collapsed. The narration's own pacing supplies the sense of movement.
@@ -159,6 +171,7 @@ def test_record_walkthrough(walk: Walkthrough, app_frontend, current_server, bro
         narrator = SilentNarrator(page, beat_cap=None)
     failure: str | None = None
     try:
+        spec = opening_spec(walk)
         stub_login_and_enter_workflow(
             page,
             frontend_url=app_frontend.base_url,
@@ -166,12 +179,12 @@ def test_record_walkthrough(walk: Walkthrough, app_frontend, current_server, bro
             name="Walkthrough",
             username=f"walkvid_{walk.slug.replace(chr(45), chr(95))[:24]}",
             project_name=walk.title,
-            project_spec=load_example_spec(walk.example) if walk.example else None,
+            project_spec=spec,
         )
         require_owner_view(page)
         # An empty dataflow has no nodes; only wait for one when the scene
-        # asked for a spec that puts them there.
-        if walk.example:
+        # opens on a spec that puts them there.
+        if opens_on_nodes(spec):
             page.wait_for_selector(".react-flow__node", timeout=45000)
 
         walk.run(Ctx(
@@ -180,6 +193,7 @@ def test_record_walkthrough(walk: Walkthrough, app_frontend, current_server, bro
             backend=current_server,
             narrator=narrator,
             recording=True,
+            mark=mark,
         ))
         dismiss_toasts(page)
         page.wait_for_timeout(1200)
@@ -210,6 +224,9 @@ def test_record_walkthrough(walk: Walkthrough, app_frontend, current_server, bro
 
     with open(os.path.join(OUT_DIR, f"{walk.stem}.md"), "w", encoding="utf-8") as fh:
         fh.write(_report(walk))
+    if marks:
+        with open(os.path.join(OUT_DIR, f"{walk.stem}.marks.json"), "w", encoding="utf-8") as fh:
+            json.dump({"marks": marks}, fh, indent=2)
 
     print(f"[walkthrough] {walk.slug}: {written}")
     if failure:
