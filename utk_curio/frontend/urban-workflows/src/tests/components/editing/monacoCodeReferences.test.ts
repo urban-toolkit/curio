@@ -202,6 +202,20 @@ describe("chips", () => {
     expect(chipClass(mark)).toBe("curio-widget-ref-problem");
   });
 
+  test("an empty dataset widget's chip waits for its data: drawn as any chip, its hover says what to drop", () => {
+    const data: WidgetDef = { name: "data", type: "dataset", label: "Data", default: "" };
+    const starter = "data = curio_load_data([!! data !!])\nreturn data\n";
+    const [waiting] = referenceMarks(starter, { widgets: [data], inputs: [] }, "python");
+    expect(waiting.problem).toBeNull();
+    expect(chipClass(waiting)).toBe("curio-widget-ref");
+    expect(waiting.hover).toBe("[!! data !!]: drop a file or a Data Catalog dataset on Data first.");
+    // A run still refuses it.
+    expect(resolveReferences(starter, { widgets: [data], inputs: [] }, "python").problems).toHaveLength(1);
+    const [held] = referenceMarks(starter, { widgets: [{ ...data, value: "data.utk.trees" }], inputs: [] }, "python");
+    expect(held.problem).toBeNull();
+    expect(held.hover).toBe('data = "data.utk.trees"');
+  });
+
   test("an input chip names the node that feeds it", () => {
     const [input, column] = referenceMarks("a = [!! input_0 !!]\nb = [!! input_0.length !!]", withInputs, "python");
     expect(input.kind).toBe("input");

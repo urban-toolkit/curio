@@ -17,13 +17,14 @@ type NamedFile = { path: string; value: string | null };
 
 /**
  * Data Export: its Python code writes the file (`curio_export`), and a
- * Download button beside its File name saves it.
+ * Download button under its File name saves it.
  *
  * The node runs as any code node runs, on its play, a Run All or a change of
  * File name, and its output is the name of the file it wrote; a Run All writes
- * the file and never downloads it. The button sits in the strip above the
- * code (`controlsComponent`, NodeEditor) and downloads the file the node's
- * output names, through `/output-file`. A node with no current result first
+ * the file and never downloads it. The button sits on the Widgets tab the node
+ * opens on, under its widgets' rows, and on its dashboard tile under the tile's
+ * controls (`controlsComponent`; NodeEditor, WidgetsEditor), and downloads the
+ * file the node's output names, through `/output-file`. A node with no current result first
  * runs, with the nodes before it, and the button downloads the file that run
  * wrote. The download keeps the file's name; a file named by default (File
  * name left empty) is named after what feeds the node (utils/dataExportTarget).

@@ -190,7 +190,7 @@ describe("the height of a cell's output", () => {
     }
   });
 
-  test("a Data Export is a code node, its controls above its code: its box is a code node's", () => {
+  test("a Data Export is a code node: its box is a code node's", () => {
     expect(notebookOutputBox("curio.builtin/data-export@1")).toEqual(
       notebookOutputBox("curio.builtin/data-transformation@1"),
     );

@@ -172,9 +172,9 @@ export interface NodeBehaviorResult {
   /** Custom React subtree rendered inside the NodeEditor content area. */
   contentComponent?: React.ReactNode;
   /**
-   * Controls of the node's own, beside its widgets' controls: in the strip
-   * above its code (a template that declares `widgetsWithCode`), and on its
-   * dashboard tile. Data Export's Download button.
+   * Controls of the node's own, with its widgets' controls: under their rows
+   * on its Widgets tab, and under its dashboard tile's controls. Data Export's
+   * Download button.
    */
   controlsComponent?: React.ReactNode;
   /** Replace `nodeState.setOutput`, used when output state is managed locally (DataPool). */
@@ -251,9 +251,9 @@ export interface NodeDescriptor {
   /** True when the template declares `loadsDataset`: a node of it loads the
    *  dataset it names (`loadsData` in `registry/declaredNodes`). */
   loadsDataset?: boolean;
-  /** True when the template declares `widgetsWithCode`: a node of it shows its
-   *  widgets' controls above its code (NodeEditor). */
-  widgetsWithCode?: boolean;
+  /** True when the template declares `opensOnWidgets`: a node of it opens on
+   *  its Widgets tab while its code reads one of its widgets (NodeEditor). */
+  opensOnWidgets?: boolean;
   inPalette: boolean;
   paletteOrder?: number;
   /** Optional small label rendered as a badge over the icon in ToolsMenu (e.g. "AUTK", "Vega-Lite"). */

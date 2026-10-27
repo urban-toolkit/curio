@@ -403,15 +403,16 @@ selected: the editor's tabs (code, widgets, spec, output), **Provenance** (the
 node's runs, see [Provenance](#provenance)), the **Save output dataset** toggle,
 settings, about, pin, **Minimize** and delete.
 Code and specs sit in a gray box, and a code node's output is below its code.
-A Data Loading node shows its **Data** widget above its code: drop a file or a
-Data Catalog dataset on the node, or click **Choose file** to pick a file, and
-its code loads it ([Data Catalog](#data-catalog)).
+A Data Loading node opens on its **Widgets** tab, on its **Data** widget: drop
+a file or a Data Catalog dataset on the node, or click **Choose file** to pick
+a file, and its code, on the **Code** tab, loads it ([Data Catalog](#data-catalog)).
 
-A Data Export node shows its **File name** and its **Download** button above its
-code, `return curio_export(input_0, [!! file_name !!])`, which writes the data
-wired into it to a file: a table as CSV, a GeoDataFrame as GeoJSON, a raster as
-GeoTIFF and anything else as JSON. Once the node has run, the button names the
-file, and **Download** saves it. When the node's result is out of date,
+A Data Export node opens on its **Widgets** tab, on its **File name** and its
+**Download** button. Its code, on the **Code** tab,
+`return curio_export(input_0, [!! file_name !!])`, writes the data wired into
+it to a file: a table as CSV, a GeoDataFrame as GeoJSON, a raster as GeoTIFF
+and anything else as JSON. Once the node has run, the button names the file,
+and **Download** saves it. When the node's result is out of date,
 **Download** first runs the node and the nodes above it.
 
 - The file ends in its format's extension: **File name** `trees` gives

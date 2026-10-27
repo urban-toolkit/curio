@@ -230,19 +230,19 @@ def spatial_join_explains_itself(ctx: Ctx) -> None:
     slug="data-export-is-one-button",
     refs=[226],
     title="Data Export names the file it will give you",
-    premise="Drop a Data Export node and read the controls above its code.",
+    premise="Drop a Data Export node and read the Widgets tab it opens on.",
     note="It asked for a format in a dropdown and then wrote every file as "
          "data_export whatever the input was, so three exports from one "
          "dataflow collided under one name. The node's Python code writes the "
          "file, curio_export(input_0, [!! file_name !!]): a table as CSV, a "
-         "GeoDataFrame as GeoJSON, a raster as GeoTIFF. Its File name and its "
-         "one Download button sit above that code, and the button names the "
-         "file once a run wrote it. The node has a Code tab, a Widgets tab and "
-         "a play, as any code node has.",
+         "GeoDataFrame as GeoJSON, a raster as GeoTIFF. The node opens on its "
+         "Widgets tab, its File name and one Download button under it, and the "
+         "button names the file once a run wrote it. Its code is on its Code "
+         "tab, and it has a play, as any code node has.",
     tests=[
         "src/tests/utils/dataExportTarget.test.ts",
         "src/tests/adapters/node/dataExportBehavior.test.tsx",
-        "src/tests/components/nodeEditorControlsWithCode.test.tsx",
+        "src/tests/components/nodeEditorOpensOnWidgets.test.tsx",
         "sandbox/tests/test_data_export_files.py",
     ],
     # The one node carrying a Download button, so the clip cannot land on one
@@ -257,28 +257,32 @@ def spatial_join_explains_itself(ctx: Ctx) -> None:
 def data_export_is_one_button(ctx: Ctx) -> None:
     from ..utils import drag_builtin_to_canvas, node_locator, wait_for_node_code
 
-    ctx.say("Data Export", "Its File name and one Download button, above its code.")
+    ctx.say("Data Export", "Its File name and one Download button, on its Widgets tab.")
     node_id = drag_builtin_to_canvas(ctx.page, "#tile-data-export", at=(260, 200))
     node = node_locator(ctx.page, node_id)
     node.scroll_into_view_if_needed()
     ctx.focus(node, hold=1000)
 
     # A code node: its Code and Widgets tabs and its play, and the code that
-    # writes the file.
+    # writes the file. It opens on its Widgets tab.
     for tab in ("code", "widgets"):
         expect(node.locator(f'.nav-link[data-rr-ui-event-key="{tab}"]')).to_have_count(1)
     expect(node.locator("svg.fa-circle-play")).to_have_count(1)
     wait_for_node_code(ctx.page, node_id, "return curio_export(input_0, [!! file_name !!])\n")
+    expect(node.locator('.nav-link[data-rr-ui-event-key="widgets"]')).to_have_class(
+        re.compile(r"\bactive\b"), timeout=20000,
+    )
 
-    # Above the code, in one row: the File name and the one Download button.
-    row = node.locator("[data-controls-with-code] [data-controls-row]")
-    expect(row.get_by_text("File name", exact=True)).to_be_visible(timeout=20000)
-    download = row.locator('[data-node-controls] button[aria-label^="Download"]')
+    # On the Widgets tab: the File name, and under it the one Download button.
+    panel = node.locator("[data-widgets-panel]")
+    expect(panel.get_by_text("File name", exact=True)).to_be_visible(timeout=20000)
+    download = panel.locator('[data-node-controls] button[aria-label^="Download"]')
     expect(download).to_have_count(1)
+    expect(node.locator('button[aria-label^="Download"]')).to_have_count(1)
     # Unconnected: disabled, saying why rather than offering a file that
     # cannot be written.
     expect(download).to_be_disabled()
-    expect(row.get_by_text("Connect a dataset to export it")).to_be_visible()
+    expect(panel.get_by_text("Connect a dataset to export it")).to_be_visible()
 
     # Park the pointer off the node, so no hover tooltip sits in the frame:
     # one that may or may not have faded is 3% of a 3% budget.

@@ -2723,9 +2723,15 @@ content.
 A widget of type `dataset` holds a Data Catalog id, and its reference writes
 the id as a string, so Data Loading's starter, `data = curio_load_data([!! data !!])`,
 loads whatever it holds; `code_references.reference_problem` and its twin
-`referenceProblem` refuse code that reads an empty one. A template that declares
-`widgetsWithCode` has `NodeEditor` draw its widgets' controls
-(`WidgetValueControls`) above its code. The node takes drops on its whole card,
+`referenceProblem` refuse code that reads an empty one; the editor draws its
+chip as any other and the Widgets tab leaves it out of its list
+(`waitsForData`). A template that declares `opensOnWidgets` has `NodeEditor`
+open on its Widgets tab while its code reads one of its widgets
+(`readsAWidget`), and a fresh node turns there when its starter and widgets
+arrive; its code stays on the Code tab. A behavior's own controls
+(`controlsComponent`, Data Export's Download) sit under the widgets' rows on
+that tab (`WidgetsEditor`'s `controls`) and under a dashboard tile's controls.
+The node takes drops on its whole card,
 in `NodeContainer`'s capture listeners (`components/styles.tsx`), since Monaco
 stops drop events before they reach a control: a Data Catalog card, or a file
 from the computer that `useDataFileImport` first imports

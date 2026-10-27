@@ -31,6 +31,7 @@ import {
   referenceText,
   resolveReferences,
   stackedFields,
+  waitsForData,
   widgetLiteral,
   type CodeLanguage,
   type ReferenceScope,
@@ -161,7 +162,10 @@ export function referenceMarks(code: string, scope: ReferenceScope, language: Co
     const start = offsetToPosition(code, ref.start);
     const end = offsetToPosition(code, ref.end);
     const written = code.slice(ref.start, ref.end);
-    const problem = referenceProblem(written, ref.inner, scope, contexts[index], language);
+    const found = referenceProblem(written, ref.inner, scope, contexts[index], language);
+    // An empty Data waits for its data: its chip is drawn as any other, and
+    // its hover says what to drop (waitsForData).
+    const problem = found !== null && waitsForData({ reference: written, message: found }, scope) ? null : found;
     // The name starts after "[!!" and the spaces that follow it.
     let nameStart = ref.start + 3;
     while (nameStart < ref.end && /\s/.test(code[nameStart])) nameStart += 1;
@@ -175,7 +179,7 @@ export function referenceMarks(code: string, scope: ReferenceScope, language: Co
       name: ref.inner,
       kind,
       problem,
-      hover: problem ?? hoverFor(ref.inner, scope, language),
+      hover: found ?? hoverFor(ref.inner, scope, language),
       // An input or column chip is drawn like a widget's, in green, and so are
       // the dataset inputs and its fields; a selection in peach; a scenario
       // chip in lilac.

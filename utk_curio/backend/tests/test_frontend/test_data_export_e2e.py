@@ -1,8 +1,8 @@
 """Playwright E2E: a Data Export node's code writes the file its Download button saves.
 
-A Data Export node holds ``return curio_export(input_0, [!! file_name !!])``,
-with its File name and its Download button in the strip above that code. A
-run writes the data on its input to a file, a table as CSV, a GeoDataFrame as
+A Data Export node holds ``return curio_export(input_0, [!! file_name !!])``
+on its Code tab, and opens on its Widgets tab: its File name, then its Download
+button. A run writes the data on its input to a file, a table as CSV, a GeoDataFrame as
 GeoJSON and a raster as GeoTIFF, under the File name with its format's
 extension, and the button names that file. Download saves it; with no result
 of the node's code and widgets as they are, it first runs the node and the
@@ -21,6 +21,7 @@ Run::
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from typing import TYPE_CHECKING
 
@@ -47,6 +48,7 @@ if TYPE_CHECKING:
 
 EXPORT_TYPE = "curio.builtin/data-export"
 STARTER = "return curio_export(input_0, [!! file_name !!])\n"
+WIDGETS_TAB = '.nav-link[data-rr-ui-event-key="widgets"]'
 STEM = "data-export"
 #: A download that first runs two Python nodes on the server.
 DOWNLOAD_TIMEOUT_MS = 240000
@@ -92,13 +94,13 @@ def _enter(page, base: str, server: str, name: str) -> dict:
     return entered
 
 
-def _strip(page, export: str):
-    """The row of the export's controls above its code."""
-    return node_locator(page, export).locator("[data-controls-with-code] [data-controls-row]")
+def _widgets_panel(page, export: str):
+    """The export's Widgets tab, which it opens on: File name, then Download."""
+    return node_locator(page, export).locator("[data-widgets-panel]")
 
 
 def _download_button(page, export: str):
-    return _strip(page, export).locator('[data-node-controls] button[aria-label^="Download"]')
+    return _widgets_panel(page, export).locator('[data-node-controls] button[aria-label^="Download"]')
 
 
 def _chain(page, code: str) -> tuple[str, str]:
@@ -108,14 +110,16 @@ def _chain(page, code: str) -> tuple[str, str]:
     set_node_code(page, source, code)
     export = drag_builtin_to_canvas(page, "#tile-data-export", at=(760, 220))
     wait_for_node_code(page, export, STARTER)
+    # It opens on its Widgets tab, where its File name and Download are.
+    expect(node_locator(page, export).locator(WIDGETS_TAB)).to_have_class(re.compile(r"\bactive\b"), timeout=30000)
     connect_nodes(page, source, export)
     expect(_download_button(page, export)).to_be_enabled(timeout=30000)
     return source, export
 
 
 def _name_the_file(page, export: str, name: str) -> None:
-    """Type *name* in the strip's File name and leave it, as a user does."""
-    field = _strip(page, export).get_by_label("File name", exact=True)
+    """Type *name* in the Widgets tab's File name and leave it, as a user does."""
+    field = _widgets_panel(page, export).get_by_label("File name", exact=True)
     field.fill(name)
     field.press("Tab")
     page.wait_for_function(
@@ -157,6 +161,8 @@ def test_a_table_downloads_as_csv_under_its_file_name_running_the_nodes_before_i
     wait_for_node_done(page, source)
     wait_for_node_done(page, export, node_type=EXPORT_TYPE)
     expect(_download_button(page, export)).to_have_text("Download trees.csv", timeout=30000)
+    # The run left the node on its Widgets tab.
+    expect(node_locator(page, export).locator(WIDGETS_TAB)).to_have_class(re.compile(r"\bactive\b"))
     page.mouse.move(5, 5)
     save_node_closeup(page, STEM, export, test_name=f"{STEM}_after_a_download")
 

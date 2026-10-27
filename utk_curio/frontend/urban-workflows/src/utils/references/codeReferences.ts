@@ -849,6 +849,16 @@ function datasetProblem(reference: string, inputs: readonly InputScope[], langua
   return null;
 }
 
+/** Whether *problem* is only an empty dataset widget of *scope* waiting for its
+ * data: a node that has not been given its data, not code at fault. A run
+ * still refuses it; the editor draws its chip as any other and the Widgets tab
+ * leaves it out of its list, where the widget itself says what to drop. */
+export function waitsForData(problem: { reference: string; message: string }, scope: ReferenceScope): boolean {
+  return scope.widgets.some(
+    (w) => w.type === "dataset" && effectiveValue(w) === "" && problem.message === emptyDatasetMessage(problem.reference, w),
+  );
+}
+
 /** Why *reference* cannot be resolved in *scope*, standing in *context*, or null. */
 export function referenceProblem(
   reference: string,

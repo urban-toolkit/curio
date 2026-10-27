@@ -1,9 +1,9 @@
 """The built-in Data Loading node's Data widget, and what any template's
-widgets and ``widgetsWithCode`` give its nodes.
+widgets and ``opensOnWidgets`` give its nodes.
 
 A fresh Data Loading node opens with its starter, which loads the Data
-Catalog dataset its Data widget holds, and shows the widget above its code
-(``widgetsWithCode``). A node an agent creates from any template starts with
+Catalog dataset its Data widget holds, on its Widgets tab, its code on the
+Code tab (``opensOnWidgets``). A node an agent creates from any template starts with
 the widgets the template declares, as the roster names them to the agents
 (``declared_widgets``), whatever writes its content.
 """
@@ -47,24 +47,24 @@ def _loader(**fields) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# widgetsWithCode
+# opensOnWidgets
 # ---------------------------------------------------------------------------
 
 def test_the_parser_keeps_the_flag():
-    assert TemplateManifest.from_json(_loader(widgetsWithCode=True), where="t").widgets_with_code is True
-    assert TemplateManifest.from_json(_loader(), where="t").widgets_with_code is False
+    assert TemplateManifest.from_json(_loader(opensOnWidgets=True), where="t").opens_on_widgets is True
+    assert TemplateManifest.from_json(_loader(), where="t").opens_on_widgets is False
 
 
 def test_the_parser_refuses_a_flag_that_is_not_a_boolean():
-    with pytest.raises(ManifestError, match="widgetsWithCode"):
-        TemplateManifest.from_json(_loader(widgetsWithCode="yes"), where="t")
+    with pytest.raises(ManifestError, match="opensOnWidgets"):
+        TemplateManifest.from_json(_loader(opensOnWidgets="yes"), where="t")
 
 
 def test_the_schema_describes_the_flag():
-    flag = SCHEMA["$defs"]["template"]["properties"]["widgetsWithCode"]
+    flag = SCHEMA["$defs"]["template"]["properties"]["opensOnWidgets"]
     assert flag["type"] == "boolean" and flag["description"]
     validator = Draft202012Validator(SCHEMA)
-    assert not list(validator.iter_errors(_manifest_dict("test.loaders", kinds=[_loader(widgetsWithCode=True)])))
+    assert not list(validator.iter_errors(_manifest_dict("test.loaders", kinds=[_loader(opensOnWidgets=True)])))
 
 
 def test_the_package_listing_carries_the_flag_and_the_data_widget():
@@ -74,10 +74,10 @@ def test_the_package_listing_carries_the_flag_and_the_data_widget():
     payload = package_payload(load_package_manifest(BUILTIN))
     by_id = {template["templateId"]: template for template in payload["templates"]}
     loading = by_id["data-loading"]
-    assert loading["widgetsWithCode"] is True
+    assert loading["opensOnWidgets"] is True
     assert loading["source"] == "sources/data-loading.py"
     assert loading["widgets"] == [DATA]
-    assert by_id["data-transformation"]["widgetsWithCode"] is False
+    assert by_id["data-transformation"]["opensOnWidgets"] is False
 
 
 # ---------------------------------------------------------------------------

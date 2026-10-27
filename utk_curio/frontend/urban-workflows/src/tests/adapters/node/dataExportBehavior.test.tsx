@@ -1,6 +1,6 @@
 /**
  * Data Export's behavior: its Python code writes the file (`curio_export`), and
- * its Download button, in the strip above that code (`controlsComponent`),
+ * its Download button, on the Widgets tab under File name (`controlsComponent`),
  * saves the file the node's output names, read at `/output-file` by the
  * output's artifact id. A node with no current result runs first, with the
  * nodes before it, and a run that fails hands out nothing.
@@ -195,7 +195,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       );
     }
 
-    /** The node's controls, as the strip above its code shows them, drawn
+    /** The node's controls, as its Widgets tab shows them, drawn
      *  again in one place on each call. A new tree on each call made every
      *  `waitFor` poll a change of the page, which woke the wait to draw yet
      *  another, until the Jest worker ran out of memory. */
@@ -211,7 +211,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       return controls(result).querySelector('button[data-download-button]') as HTMLButtonElement;
     }
 
-    test('adds a Download control to the strip above its code: no Output tab, and it runs as any code node', async () => {
+    test('adds a Download control to its Widgets tab: no Output tab, and it runs as any code node', async () => {
       const result = await callBehavior(useDataExportBehavior);
       assertValidBehaviorResult(result.current);
       expect(result.current.controlsComponent).toBeDefined();

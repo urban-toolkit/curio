@@ -21,6 +21,13 @@ export function datasetWidgetReadBy(widgets: unknown, code: unknown): WidgetDef 
   return normalizeWidgets(widgets).find((w) => w.type === "dataset" && reads(code, w.name)) ?? null;
 }
 
+/** Whether *code* reads any of *widgets*: a node whose template opens on its
+ * Widgets tab opens there when it does (NodeEditor). */
+export function readsAWidget(widgets: unknown, code: unknown): boolean {
+  if (typeof code !== "string" || code === "") return false;
+  return normalizeWidgets(widgets).some((w) => reads(code, w.name));
+}
+
 /** The first dataset widget among *widgets*, read by the code or not. */
 export function firstDatasetWidget(widgets: unknown): WidgetDef | null {
   return normalizeWidgets(widgets).find((w) => w.type === "dataset") ?? null;

@@ -24,6 +24,8 @@ export type MountedAutkNode = {
   interactions: jest.Mock;
   /** Render the node again, as a change in the flow it reads does. */
   rerender: () => void;
+  /** Take the node off the page, as a deleted node or a closed dataflow does. */
+  unmount: () => void;
 };
 
 /**
@@ -67,6 +69,7 @@ export function mountAutkNode(
     lastOutput: () => setOutput.mock.calls[setOutput.mock.calls.length - 1]?.[0],
     interactions,
     rerender: () => act(() => { mounted.rerender(<Probe />); }),
+    unmount: () => act(() => { mounted.unmount(); }),
   };
 }
 

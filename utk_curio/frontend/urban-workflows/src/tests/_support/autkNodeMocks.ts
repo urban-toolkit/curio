@@ -20,6 +20,11 @@ export type GrammarRun = {
   highlights: Array<[string, number[]]>;
   /** The maps this run drew, made by `drawnMaps.make` when a test sets it. */
   maps: any[];
+  /**
+   * What ends the DuckDB worker of the database this run made, as autk-grammar
+   * keeps it (its engine's context, an AutkDb holding DuckDB-Wasm's database).
+   */
+  terminate: jest.Mock;
 };
 
 /** Every run of the stand-in grammar, in order. */
@@ -42,6 +47,9 @@ export const heldDraws: { until: Promise<void> | null } = { until: null };
  */
 export const drawnExports: { of: null | ((table: string, handed: any[]) => any[]) } = { of: null };
 
+/** What a run fails with once it made its database, for a test of a failed draw; none unless a test sets it. */
+export const failedDraws: { error: Error | null } = { error: null };
+
 export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string, unknown>) => {
   const handlers: Record<string, (event: any) => void> = {};
   const highlights: Array<[string, number[]]> = [];
@@ -57,6 +65,13 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
     clearHighlightOnMap: jest.fn((table: string) => { highlights.push([table, []]); }),
   };
   grammar.run = jest.fn(async (spec: any) => {
+    // The database the run reads, where autk-grammar keeps it.
+    const terminate = jest.fn(async () => undefined);
+    grammar.grammarEngine = { context: { db: { terminate } } };
+    if (failedDraws.error) {
+      grammarRuns.push({ targets, spec, pick: () => {}, brush: () => {}, highlights, maps: [], terminate });
+      throw failedDraws.error;
+    }
     const maps = drawnMaps.make && spec?.map ? [drawnMaps.make()] : [];
     if (maps.length > 0) grammar.maps = maps;
     const exportOf = drawnExports.of;
@@ -75,6 +90,7 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
       brush: (selection) => handlers['plot:selection']?.({ selection }),
       highlights,
       maps,
+      terminate,
     });
     if (heldDraws.until) await heldDraws.until;
   });
@@ -125,6 +141,7 @@ export function resetAutkNodeMocks(): void {
   drawnMaps.make = null;
   heldDraws.until = null;
   drawnExports.of = null;
+  failedDraws.error = null;
   AutkGrammar.mockClear();
   markNodeErrored.mockClear();
   showToast.mockClear();
