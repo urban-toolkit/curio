@@ -99,9 +99,9 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
   // (#347); on a dashboard, a viewer's run making the rows, or why it stopped
   // before them.
   const { upstreamErrored, upstreamRunning, upstreamStopped, onDashboard } = useGrammarInputState(data.nodeId);
-  // Lazy init: if input is already present on mount (e.g. in tests) seed the
-  // view so the first render already produces a contentComponent. The effect
-  // will overwrite this once it fetches any path reference.
+  // Lazy init: if input is already present on mount seed the view so the
+  // first render already produces a contentComponent. One that carries its
+  // rows shows at once; the effect reads one that names its artifact.
   const initial = useMemo(() => deriveView(data.input), []);
   const [currentMode, setCurrentMode] = useState<SimpleVisMode>(initial.mode);
   const [rows, setRows] = useState<any[]>(initial.rows);
@@ -114,8 +114,9 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
   // path): the body says what it shows is coming, not that the input is not a
   // table. Told in the render that brings the input, not an effect after it:
   // an input is read once the read of it, the latest, has ended. The one the
-  // node mounted with is its first view above.
-  const [readInput, setReadInput] = useState<unknown>(data.input);
+  // node mounted with is read already when its first view above holds its
+  // rows; one that names its artifact is read as a later one is.
+  const [readInput, setReadInput] = useState<unknown>(() => (data.input?.path ? null : data.input));
   const latestInputRef = useRef<unknown>(data.input);
   const reading = data.input != null && data.input !== '' && data.input !== readInput;
 
@@ -130,9 +131,12 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
 
   useEffect(() => {
     const handleInput = async () => {
-      const shouldProcess = dataInputBypass.current;
+      // The input the node mounted with is read too: it can reach the node
+      // before the node mounts, as a dashboard's saved output reaches a tile,
+      // and its first view above cannot read a path. It is no new run, so it
+      // is filed in no provenance and sent no further, as a later input is.
+      const arrived = dataInputBypass.current;
       dataInputBypass.current = true;
-      if (!shouldProcess) return;
       if (data.input == null || data.input === '') return;
 
       const input = data.input;
@@ -151,7 +155,9 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
           }
         }
 
-        nodeExecProv(startTime, startTime, workflowNameRef.current, data.nodeId, mapTypes(typesInput), mapTypes(typesInput), '');
+        if (arrived) {
+          nodeExecProv(startTime, startTime, workflowNameRef.current, data.nodeId, mapTypes(typesInput), mapTypes(typesInput), '');
+        }
 
         const view = deriveView(parsedInput);
         setCurrentMode(view.mode);
@@ -161,7 +167,7 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
 
         // Downstream first, then the outcome: the outcome is what tells a Run All
         // this node is done, and the nodes it feeds must have the rows by then.
-        if (typeof data.outputCallback === 'function') {
+        if (arrived && typeof data.outputCallback === 'function') {
           data.outputCallback(data.nodeId, input);
         }
         nodeState.setOutput({ code: 'success', content: parsedInput });
