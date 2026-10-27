@@ -203,7 +203,10 @@ class TestThePlanApply:
         shadows = next(n for n in nodes if n["goal"].startswith("Shadows") and "copiedFrom" not in n.get("metadata", {}))
         copy = next(n for n in nodes if "copiedFrom" in n.get("metadata", {}))
         assert shadows["metadata"]["widgets"] == [FACTOR]
-        assert copy["metadata"] == {"widgets": [{**FACTOR, "value": 2}], "copiedFrom": [shadows["id"]]}
+        # A plan names its nodes' headers, a copy as its original.
+        assert copy["metadata"] == {
+            "widgets": [{**FACTOR, "value": 2}], "copiedFrom": [shadows["id"]], "packageTemplateLabel": "Shadows",
+        }
         assert copy["goal"] == shadows["goal"]
         assert spec["dataflow"]["scenarios"] == [
             {"id": body["appliedGraph"]["scenarios"][0]["id"], "name": "Real heights", "color": "#3567c7",
@@ -284,10 +287,12 @@ class TestTheNodeByNodeApply:
         assert [s["name"] for s in first["createdScenarios"]] == ["Real heights"]
         assert first["scenarioStates"] == {"0": "applied"}
         original = first["createdNode"]
-        assert original["metadata"] == {"widgets": [FACTOR]}
+        assert original["metadata"] == {"widgets": [FACTOR], "packageTemplateLabel": "Shadows"}
 
         second = _apply_node(client, token, alice_project, att_id, pid, "shadows_tall").get_json()
-        assert second["createdNode"]["metadata"] == {"widgets": [{**FACTOR, "value": 2}], "copiedFrom": [original["id"]]}
+        assert second["createdNode"]["metadata"] == {
+            "widgets": [{**FACTOR, "value": 2}], "copiedFrom": [original["id"]], "packageTemplateLabel": "Shadows",
+        }
         assert [s["name"] for s in second["createdScenarios"]] == ["Twice as tall"]
         assert second["status"] == "pending"  # compare and its edges are still to come
         spec = _spec(user, alice_project)
