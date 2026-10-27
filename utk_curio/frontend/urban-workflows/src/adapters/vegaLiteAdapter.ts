@@ -9,7 +9,7 @@
 import { GrammarAdapter, registerGrammarAdapter } from '../registry/grammarAdapter';
 import visDefaults from '../contracts/visDefaults.json';
 import { prepareVegaInput } from '../utils/vegaInput';
-import { vegaTooltipHandler } from '../components/tooltip/vegaTooltip';
+import { reachVegaTooltips, vegaTooltipHandler } from '../components/tooltip/vegaTooltip';
 
 const vega = require('vega');
 const lite = require('vega-lite');
@@ -40,6 +40,8 @@ export const vegaLiteAdapter: GrammarAdapter = {
       .tooltip(vegaTooltipHandler)
       .initialize(container)
       .hover();
+    // And the nearest mark's, as the node's charts reach it.
+    reachVegaTooltips(view);
 
     await view.runAsync();
     return view;

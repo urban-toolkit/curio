@@ -31,7 +31,7 @@ import type { ScenarioLabel } from "../utils/scenarios/scenarioColors";
 import type { NodeEmptyReason } from "../utils/nodeEmptyState";
 import { resolveGrammarEmptyReason } from "../utils/nodeEmptyState";
 import { clearEmptyState, writeEmptyState } from "../utils/writeEmptyState";
-import { vegaTooltipHandler } from "../components/tooltip/vegaTooltip";
+import { reachVegaTooltips, vegaTooltipHandler } from "../components/tooltip/vegaTooltip";
 
 // const schema = require('./vega-schema.json');
 const vega = require("vega");
@@ -683,6 +683,8 @@ export const useVega = ({
       .tooltip(vegaTooltipHandler)
       .initialize("#vega" + data.nodeId)
       .hover();
+    // And the nearest mark's, near a line Vega answers only at its points.
+    reachVegaTooltips(view);
     // Emptied once there is a view that shows none of it: a spec vega cannot
     // parse leaves them as they were.
     if (fromTags === "clear") clearTags();
