@@ -717,7 +717,9 @@ def crown_heights_first_version(ctx: Ctx) -> None:
     saved = _saved(ctx, token, project_id)
     by_ref = {ref: _by_title(saved, nodes[node_id]["title"])["id"] for ref, node_id in refs.items()}
     by_ref["check-table"] = _by_title(saved, TABLE_TITLE)["id"]
-    days = (_by_title(saved, nodes[nid("steps")]["title"]).get("metadata") or {}).get("widgets") or []
+    untitled = [title for title in [*titles, TABLE_TITLE] if _by_title(saved, title).get("title") != title]
+    assert not untitled, f"the plan's nodes {untitled} did not land with their titles"
+    days =(_by_title(saved, nodes[nid("steps")]["title"]).get("metadata") or {}).get("widgets") or []
     assert [w.get("name") for w in days] == ["day"], f"the day's sun steps hold the widgets {days}"
     made = sorted((e["source"], e["target"], e.get("targetHandle") or "in") for e in saved["edges"])
     planned = sorted(
