@@ -1064,9 +1064,13 @@ def read_node_output_text(page, node_id: str, *, timeout: float = 10000) -> str:
 
     The text is the Jupyter-style counter followed by the result, e.g.
     ``"[1]:Saved to file: xyz"`` or ``"[ ]:No output yet"``.
+
+    The box is under the code, on the Code tab, and is read whichever tab
+    the node shows: a node that opens on its widgets (Data Loading) stays
+    there when it runs.
     """
     box = node_locator(page, node_id).locator("[data-curio-node-output]").first
-    box.wait_for(state="visible", timeout=timeout)
+    box.wait_for(state="attached", timeout=timeout)
     return box.text_content() or ""
 
 

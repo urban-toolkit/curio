@@ -83,7 +83,7 @@
           "default": ""
         }
       ],
-      "widgetsWithCode": true
+      "opensOnWidgets": true
     },
     {
       "category": "data",

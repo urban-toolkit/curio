@@ -16,6 +16,7 @@ import {
     describeEmptyInputs,
     describeReferenceProblems,
     resolveReferences,
+    waitsForData,
     type CodeLanguage,
     type InputScope,
 } from "../../utils/references/codeReferences";
@@ -117,8 +118,11 @@ function WidgetsEditor({
         }
     }, []);
 
+    // An empty Data waits for its data, which its own control says
+    // (waitsForData); a run still refuses it.
     const problems = useMemo(
-        () => resolveReferences(String(userCode ?? ""), scope, language, grammar).problems,
+        () => resolveReferences(String(userCode ?? ""), scope, language, grammar).problems
+            .filter((problem) => !waitsForData(problem, scope)),
         [userCode, scope, language, grammar],
     );
 

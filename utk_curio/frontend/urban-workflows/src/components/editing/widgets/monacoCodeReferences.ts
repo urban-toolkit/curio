@@ -20,12 +20,7 @@ import {
   type ChipMark,
   type ChipSpan,
 } from "./referenceChips";
-import {
-  effectiveValue,
-  emptyDatasetMessage,
-  type WidgetDef,
-  type WidgetValue,
-} from "../../../utils/widgets/widgetModel";
+import { effectiveValue, type WidgetDef, type WidgetValue } from "../../../utils/widgets/widgetModel";
 import { anyFromABox } from "../../../utils/scenarios/scenarioColors";
 import {
   findReferences,
@@ -36,6 +31,7 @@ import {
   referenceText,
   resolveReferences,
   stackedFields,
+  waitsForData,
   widgetLiteral,
   type CodeLanguage,
   type ReferenceScope,
@@ -167,12 +163,9 @@ export function referenceMarks(code: string, scope: ReferenceScope, language: Co
     const end = offsetToPosition(code, ref.end);
     const written = code.slice(ref.start, ref.end);
     const found = referenceProblem(written, ref.inner, scope, contexts[index], language);
-    // A dataset widget that holds no dataset yet is a node waiting for its
-    // data, not code at fault: its chip is drawn as any other, and its hover
-    // says what to drop. A run still refuses it.
-    const widget = scope.widgets.find((w) => w.name === ref.inner);
-    const waiting = found !== null && widget?.type === "dataset" && found === emptyDatasetMessage(written, widget);
-    const problem = waiting ? null : found;
+    // An empty Data waits for its data: its chip is drawn as any other, and
+    // its hover says what to drop (waitsForData).
+    const problem = found !== null && waitsForData({ reference: written, message: found }, scope) ? null : found;
     // The name starts after "[!!" and the spaces that follow it.
     let nameStart = ref.start + 3;
     while (nameStart < ref.end && /\s/.test(code[nameStart])) nameStart += 1;

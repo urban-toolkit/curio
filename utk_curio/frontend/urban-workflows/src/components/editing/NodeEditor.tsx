@@ -32,6 +32,7 @@ import { unversionedNodeType } from "../../utils/flowNodeCanonicalType";
 import { notebookOutputBox } from "../../utils/notebookLayout";
 import { useNodeHeaderSlot } from "./nodeHeaderSlot";
 import { normalizeWidgets, type WidgetDef, type WidgetValue } from "../../utils/widgets/widgetModel";
+import { readsAWidget } from "../../utils/widgets/datasetWidgets";
 import { registerNodeSettingWriter, withWidgetValues } from "../../utils/nodeSettingsWriters";
 import { isVegaLiteNodeType } from "../../registry/vegaLiteNodes";
 import {
@@ -129,13 +130,26 @@ function NodeEditor({
     const [replacedCode, setReplacedCode] = useState<string>(""); // python or grammar with marks resolved
     const [replacedCodeDirty, setReplacedCodeDirty] = useState<number>(0); // code has to rerun every time button is pressed (having changes or not)
     const [fullscreen, setFullscreen] = useState<string>("");
+    const { dashboardOn, markDirty, markNodeStale, requestAutoRun, nodes: flowNodes } = useFlowContext();
+    // A template that declares opensOnWidgets (Data Loading) opens on its
+    // Widgets tab, where the user sets what its code reads, while its code
+    // reads one of its widgets; its code stays on the Code tab. A node whose
+    // code reads none, such as an example's literal loader, opens on its code.
+    const opensOnWidgets = !dashboardOn && widgetsTab && code
+        && tryGetNodeDescriptor(nodeType)?.opensOnWidgets === true;
+    const widgetsFirst = (written: unknown, held: unknown) => opensOnWidgets && readsAWidget(held, written);
     // Not the literal "code": grammar-only kinds (autk-grammar, vis-vega declare
     // hasCode:false) have no code pane, so hardcoding it left NO pane active on
     // mount and the editor rendered inside a display:none tab (#157).
     const [activeTab, setActiveTab] = useState<string>(
-        () => resolveInitialEditorTab({ code, grammar, widgets: widgetsTab })
+        () => resolveInitialEditorTab({
+            code, grammar, widgets: widgetsTab, widgetsFirst: widgetsFirst(defaultValue, data.widgets),
+        })
     );
-    const { dashboardOn, markDirty, markNodeStale, requestAutoRun, nodes: flowNodes } = useFlowContext();
+    // Whether the node's first tab is settled: at once for a node that
+    // mounts with its code and widgets, else when they arrive, or when the
+    // user picks a tab.
+    const tabSettledRef = useRef(Boolean(defaultValue) && normalizeWidgets(data.widgets).length > 0);
 
     // #662: the node's widgets. Node data holds them (TrillGenerator saves
     // data.widgets), set directly as data.code is, so a value change does not
@@ -146,6 +160,14 @@ function NodeEditor({
         // Replaced from outside: a package template's widgets seeded on drop.
         setWidgets(normalizeWidgets(dataWidgets));
     }, [dataWidgets]);
+    // A fresh node takes its template's starter and widgets after it mounts:
+    // it turns to its Widgets tab when they arrive, once, unless the user has
+    // picked a tab.
+    useEffect(() => {
+        if (tabSettledRef.current || !defaultCode || widgets.length === 0) return;
+        tabSettledRef.current = true;
+        if (widgetsFirst(defaultCode, widgets)) setActiveTab("widgets");
+    }, [defaultCode, widgets]);
     const updateWidgets = (next: WidgetDef[]) => {
         data.widgets = next;
         setWidgets(next);
@@ -166,11 +188,11 @@ function NodeEditor({
         if (!widgetsTab) return undefined;
         return registerNodeSettingWriter(data.nodeId, "widgets", (values) => writeValuesRef.current(values));
     }, [data.nodeId, widgetsTab]);
-    // A control on the node's dashboard tile, or above its code, sets a value
-    // as the Widgets tab does, and a run takes it (#1117). Read from node
-    // data, which updateWidgets writes at once: two controls that settle
-    // together each keep the other's value.
-    const commitControlValue = (name: string, value: WidgetValue) => {
+    // A control on the node's dashboard tile sets a value as the Widgets tab
+    // does, and a viewer's run takes it (#1117). Read from node data, which
+    // updateWidgets writes at once: two controls that settle together each
+    // keep the other's value.
+    const commitTileValue = (name: string, value: WidgetValue) => {
         updateWidgets(withWidgetValues(normalizeWidgets(data.widgets), { [name]: value }));
         requestAutoRun?.([data.nodeId]);
     };
@@ -292,14 +314,6 @@ function NodeEditor({
     const hasOutputPane = outputId != undefined || contentComponent != undefined;
     const tileControls = dashboardOn && widgetsTab && widgets.length > 0;
     const controlsAboveOutput = tileControls && hasOutputPane;
-    // A template that declares widgetsWithCode shows its widgets' controls
-    // above its code on the canvas (Data Loading's Data), so what the code
-    // reads and the code are seen together; its Widgets tab still edits them.
-    // Its code pane keeps one layout with or without widgets, so adding the
-    // first one does not mount the editor again.
-    const withCodeLayout = !dashboardOn && widgetsTab
-        && tryGetNodeDescriptor(nodeType)?.widgetsWithCode === true;
-    const controlsWithCode = withCodeLayout && widgets.length > 0;
     // A notebook cell shows its input and its output at once: the output pane
     // stays visible under the input tabs (Node.css), so a run, which would
     // switch to the Output tab, leaves the input tab in place.
@@ -431,6 +445,7 @@ function NodeEditor({
             });
             return;
         }
+        tabSettledRef.current = true;
         setActiveTab(eventKey);
     };
 
@@ -593,35 +608,8 @@ function NodeEditor({
         </Nav>
     ) : null;
 
-    // Under a tile's controls the output fills what they leave, and under a
-    // node's controls its code does.
+    // Under a tile's controls the output fills what they leave.
     const belowControls: CSS.Properties = { flex: 1, minHeight: 0 };
-    const codeEditor = (
-        <CodeEditor
-            floatCode={floatCode}
-            // A tile's code is read-only: Save
-            // layout would save a stray edit.
-            readOnly={readOnly || !!dashboardOn}
-            defaultValue={defaultCode}
-            replacedCodeDirty={
-                replacedCodeDirty
-            }
-            replacedCode={replacedCode}
-            sendCodeToWidgets={primeWidgets}
-            setOutputCallback={
-                setOutputCallback
-            }
-            data={data}
-            output={output}
-            nodeType={nodeType}
-            references={scope}
-            stripInputs={inputs}
-            onLoadColumns={loadColumns}
-            widgetLanguage={widgetLanguage}
-            chipPreviews={chipPreviews}
-            restoredCode={restoredCode}
-        />
-    );
     const outputMount = outputId != undefined ? (
         // Vega sizes its canvas in CSS px from the compiled spec, so a
         // multi-view chart is taller than the pane and was simply cut off
@@ -688,7 +676,7 @@ function NodeEditor({
                                             widgets={widgets}
                                             dashboard
                                             disabled={disableWidgets}
-                                            onCommit={commitControlValue}
+                                            onCommit={commitTileValue}
                                         />
                                     </Tab.Pane>
                                 ) : null}
@@ -698,27 +686,30 @@ function NodeEditor({
                                         eventKey="code"
                                         style={paneStyle}
                                     >
-                                        {withCodeLayout ? (
-                                            // The controls at their own
-                                            // height, and the code below
-                                            // filling the rest of the node.
-                                            <div
-                                                data-controls-with-code="true"
-                                                style={inCell ? undefined : { display: "flex", flexDirection: "column", height: "100%" }}
-                                            >
-                                                {controlsWithCode ? (
-                                                    <WidgetValueControls
-                                                        widgets={widgets}
-                                                        disabled={disableWidgets || readOnly}
-                                                        onCommit={commitControlValue}
-                                                        aboveOutput
-                                                    />
-                                                ) : null}
-                                                <div style={inCell ? undefined : belowControls}>
-                                                    {codeEditor}
-                                                </div>
-                                            </div>
-                                        ) : codeEditor}
+                                        <CodeEditor
+                                            floatCode={floatCode}
+                                            // A tile's code is read-only: Save
+                                            // layout would save a stray edit.
+                                            readOnly={readOnly || !!dashboardOn}
+                                            defaultValue={defaultCode}
+                                            replacedCodeDirty={
+                                                replacedCodeDirty
+                                            }
+                                            replacedCode={replacedCode}
+                                            sendCodeToWidgets={primeWidgets}
+                                            setOutputCallback={
+                                                setOutputCallback
+                                            }
+                                            data={data}
+                                            output={output}
+                                            nodeType={nodeType}
+                                            references={scope}
+                                            stripInputs={inputs}
+                                            onLoadColumns={loadColumns}
+                                            widgetLanguage={widgetLanguage}
+                                            chipPreviews={chipPreviews}
+                                            restoredCode={restoredCode}
+                                        />
                                     </Tab.Pane>
                                 ) : null}
 
@@ -802,7 +793,7 @@ function NodeEditor({
                                                     widgets={widgets}
                                                     dashboard
                                                     disabled={disableWidgets}
-                                                    onCommit={commitControlValue}
+                                                    onCommit={commitTileValue}
                                                     aboveOutput
                                                 />
                                                 {outputMount}

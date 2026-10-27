@@ -403,9 +403,9 @@ selected: the editor's tabs (code, widgets, spec, output), **Provenance** (the
 node's runs, see [Provenance](#provenance)), the **Save output dataset** toggle,
 settings, about, pin, **Minimize** and delete.
 Code and specs sit in a gray box, and a code node's output is below its code.
-A Data Loading node shows its **Data** widget above its code: drop a file or a
-Data Catalog dataset on the node, or click **Choose file** to pick a file, and
-its code loads it ([Data Catalog](#data-catalog)).
+A Data Loading node opens on its **Widgets** tab, on its **Data** widget: drop
+a file or a Data Catalog dataset on the node, or click **Choose file** to pick
+a file, and its code, on the **Code** tab, loads it ([Data Catalog](#data-catalog)).
 
 Above the code or spec, one row lists every chip the node can use, by category:
 **Inputs**, **Scenarios**, **Widgets** and **Selections**, each with its count,

@@ -1,7 +1,8 @@
 """Playwright E2E: a Data Loading node loads a file dropped on it or picked with Choose file.
 
-A fresh Data Loading node opens with its Data widget above its starter code,
-``data = curio_load_data([!! data !!])``. A CSV file from the computer dropped
+A fresh Data Loading node opens on its Widgets tab, where its Data widget is,
+with its starter code, ``data = curio_load_data([!! data !!])``, on its Code
+tab. A CSV file from the computer dropped
 on the node is imported into the Data Catalog and added to the dataflow, the
 widget names it, the code stays the starter, and a run hands the file's rows
 to the node after it. Choose file, the widget's file dialog, does the same,
@@ -19,6 +20,7 @@ Run::
 """
 from __future__ import annotations
 
+import re
 import uuid
 from typing import TYPE_CHECKING
 
@@ -53,8 +55,10 @@ TREES = "tree_id,height\n1,10\n2,12\n3,9\n"
 PARKS = "park_id,area\n1,5.5\n2,7.25\n"
 ROW_MARKER = "ROWS"
 COUNT_ROWS = f'print("{ROW_MARKER}", len(input_0))\nreturn input_0\n'
-#: The Data widget above the code. The node's Widgets tab draws it too.
-DATA_WIDGET = "[data-controls-with-code] [data-dataset-drop]"
+#: The Data widget, on the node's Widgets tab.
+DATA_WIDGET = "[data-widgets-panel] [data-dataset-drop]"
+#: The node's Widgets tab, which a Data Loading node opens on.
+WIDGETS_TAB = '.nav-link[data-rr-ui-event-key="widgets"]'
 
 # Drops a file named *name* holding *text* on the element *selector* names, at
 # *at* from its top-left corner (its centre without one), with dragenter,
@@ -141,7 +145,7 @@ def _rows_reach_the_next_node(page, loader: str, rows: int) -> None:
     assert f"{ROW_MARKER} {rows}" in transform_output, transform_output
 
 
-def test_a_fresh_data_loading_node_shows_its_data_widget_above_its_starter(
+def test_a_fresh_data_loading_node_opens_on_its_data_widget(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
     require_user_auth()
@@ -149,13 +153,15 @@ def test_a_fresh_data_loading_node_shows_its_data_widget_above_its_starter(
 
     loader = drag_builtin_to_canvas(page, "#tile-data-loading", at=(170, 200))
 
+    # It opens on its Widgets tab, where the Data widget is; the starter is on
+    # its Code tab.
+    expect(node_locator(page, loader).locator(WIDGETS_TAB)).to_have_class(
+        re.compile(r"\bactive\b"), timeout=30000,
+    )
     widget = _data_widget(page, loader)
     expect(widget).to_have_attribute("data-dataset-drop", "empty", timeout=30000)
     expect(widget).to_contain_text("Drop a file or a Data Catalog dataset here")
     expect(widget.get_by_text("Choose file", exact=True)).to_be_visible()
-    # The widget sits above the code, in the code's own pane.
-    column = node_locator(page, loader).locator("[data-controls-with-code]")
-    expect(column.locator("[data-widget-controls]")).to_have_count(1)
     _opens_with_the_starter(page, loader)
     save_node_closeup(page, STEM, loader, test_name=f"{STEM}_fresh_node")
 
@@ -213,6 +219,8 @@ def test_a_file_dropped_on_the_empty_canvas_makes_a_data_loading_node(
     )
     [loader] = [node["id"] for node in canvas_nodes(page) if node["id"] not in before]
     _holds(page, loader, "Trees")
+    # Made holding the file, it opens on its Widgets tab.
+    expect(node_locator(page, loader).locator(WIDGETS_TAB)).to_have_class(re.compile(r"\bactive\b"))
     _opens_with_the_starter(page, loader)
     _rows_reach_the_next_node(page, loader, 3)
 

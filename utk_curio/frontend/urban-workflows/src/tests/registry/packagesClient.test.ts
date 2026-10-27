@@ -252,17 +252,17 @@ describe('backendHandler dispatch key (memo dev/91 commit 5)', () => {
   });
 });
 
-describe('widgetsWithCode: a node that shows its widgets above its code', () => {
+describe('opensOnWidgets: a node that opens on its Widgets tab', () => {
   afterEach(() => clearPackageNodes());
 
   test('the descriptor carries the flag its template declares', () => {
-    const loader = { ...FIXTURE_PACK.templates[0], widgetsWithCode: true };
+    const loader = { ...FIXTURE_PACK.templates[0], opensOnWidgets: true };
     const [descriptor] = registerPackageTemplates([{ ...FIXTURE_PACK, templates: [loader] }]);
-    expect(descriptor.widgetsWithCode).toBe(true);
+    expect(descriptor.opensOnWidgets).toBe(true);
   });
 
   test('templates without it register without it', () => {
     const [dl] = registerPackageTemplates([FIXTURE_PACK]);
-    expect(dl.widgetsWithCode).toBeUndefined();
+    expect(dl.opensOnWidgets).toBeUndefined();
   });
 });

@@ -153,9 +153,10 @@ data = curio_load_data([!! data !!])
 return data
 ```
 
-To show the widgets above the code, where the user sets what the code reads,
-add `"widgetsWithCode": true`, as Data Loading does. The **Widgets** tab still
-adds and edits them.
+To have the node open on its **Widgets** tab, where the user sets what the
+code reads, add `"opensOnWidgets": true`, as Data Loading does. The code stays
+on the **Code** tab. A node whose code reads none of its widgets opens on its
+code.
 
 When the starter is the node's whole content and only its widgets change from
 one use to the next, add `"starterIsContent": true` beside `source`. A node the
