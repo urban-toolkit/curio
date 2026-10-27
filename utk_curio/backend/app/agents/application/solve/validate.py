@@ -150,7 +150,9 @@ def _validate_events(
                 "attachment_id": attachment_id, "session_id": session_id,
                 "granted": [], "manifest": None,
             },
-            dataset_paths_fn=lambda codes: agents_grounding._exec_dataset_paths(project_id, *codes),
+            dataset_paths_fn=lambda codes, formats: agents_grounding._exec_dataset_paths(
+                project_id, *codes, formats=formats,
+            ),
             exec_user_key=user_key,
             acting_user=acting_user,
             secrets_fn=agents_grounding._exec_secrets_resolver(user_key),

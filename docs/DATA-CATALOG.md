@@ -145,8 +145,8 @@ The generated Python is one line, `curio_load_data("<datasetId>")` (`curio_load_
 | `onnx` | An onnxruntime `InferenceSession` on the CPU → `session`. onnxruntime comes with a model that runs on ONNX, such as DDRNet23-Slim, when it is added. |
 | `netcdf` | An xarray `Dataset`, read with netCDF4 → `ds` |
 | `bundle` | Every part, in the tuple, list or dict the producing node returned → `bundle`. `part="<file>"` reads one part. |
-| OSM, GeoPackage or GTFS group | A `layers` dict, one `curio_load_data` per layer |
-| NetCDF group | A `layers` dict, one `curio_load_data` per variable |
+| OSM, GeoPackage or GTFS group | A `layers` dict, one `curio_load_data` per layer. `curio_load_data("<groupId>")` loads the same dict. |
+| NetCDF group | A `layers` dict, one `curio_load_data` per variable. `curio_load_data("<groupId>")` loads the same dict. |
 | `collection` | `curio_load_collection("<datasetId>")`: the collection's index, one row per file with a readable `path` → `collection` |
 
 A node's output cannot be a model session or an xarray Dataset, so the loader for an `onnx` or `netcdf` dataset, or a NetCDF group, returns nothing: the node's own code uses `session` or `ds` and returns a table, a raster or a value.

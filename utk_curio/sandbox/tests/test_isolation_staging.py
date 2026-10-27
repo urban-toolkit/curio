@@ -254,6 +254,33 @@ def test_a_tuple_output_round_trips(workspace, scratch):
     assert loaded == (1, "two")
 
 
+def test_a_dict_of_frames_output_round_trips_through_the_store(workspace, scratch):
+    """A dict holding frames, such as a layer group's layers, is stored as
+    the in-process worker stores it: each value an artifact of its own,
+    under its key, in order."""
+    art_id = _run_and_persist(
+        "    from shapely.geometry import Point\n"
+        "    return {'points': gpd.GeoDataFrame({'a': [1]}, geometry=[Point(3, 4)], crs='EPSG:4326'),\n"
+        "            'table': pd.DataFrame({'b': [2]}), 'count': 2}\n",
+        scratch,
+    )
+    loaded = load_from_duckdb(art_id)
+    assert list(loaded) == ["points", "table", "count"]
+    assert isinstance(loaded["points"], gpd.GeoDataFrame)
+    assert loaded["points"].crs == "EPSG:4326" and loaded["points"].geometry.iloc[0].x == 3
+    pd.testing.assert_frame_equal(loaded["table"], pd.DataFrame({"b": [2]}))
+    assert loaded["count"] == 2
+
+
+def test_a_list_of_frames_output_round_trips_through_the_store(workspace, scratch):
+    art_id = _run_and_persist(
+        "    return [pd.DataFrame({'a': [1]}), pd.DataFrame({'a': [2]})]\n", scratch,
+    )
+    loaded = load_from_duckdb(art_id)
+    assert isinstance(loaded, list)
+    assert [int(frame["a"].iloc[0]) for frame in loaded] == [1, 2]
+
+
 def test_the_output_is_tagged_with_the_session(workspace, scratch):
     art_id = _run_and_persist("    return 1\n", scratch, session_id="session-a")
     # The owning session reads it; another session must not.

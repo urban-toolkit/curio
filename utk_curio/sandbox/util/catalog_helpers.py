@@ -5,7 +5,9 @@
     GeoDataFrame, a raster, a JSON document, the parts of a multi-output result
     in the tuple, list or dict its node returned,
     a collection's index, an onnxruntime session for an ONNX model, or an
-    xarray Dataset for a NetCDF file. For a GeoTIFF,
+    xarray Dataset for a NetCDF file. A layer group (an OSM extract or a
+    GeoPackage of several layers) is a dict of its layers by name, each read
+    as its own id is. For a GeoTIFF,
     ``curio_load_data("<id>", bounds=(west, south, east, north))`` reads only
     the cells inside the bounds, in the raster's CRS, at its own cell size.
     For a dataset of several files (a ``bundle``),
@@ -42,6 +44,17 @@ import json
 import os
 from pathlib import Path
 from typing import Any, Callable
+
+#: The format of a layer group's entry among a run's formats: the group's
+#: layers, in its order, each as ``[name, dataset id]`` under ``layers``.
+#: The group has no file; each layer has its own path and format.
+LAYER_GROUP_FORMAT = "layer-group"
+
+#: The most datasets a run reads by the ids its code names, as the backend's
+#: scan finds them (``code_refs.MAX_DATASET_IDS``)...
+MAX_NAMED_DATASETS = 32
+#: ...and the most layers of the layer groups among them it reads besides.
+MAX_GROUP_LAYERS = 256
 
 #: The extensions a dataset whose format did not travel with it is read by.
 _FORMAT_BY_SUFFIX = {
@@ -349,6 +362,56 @@ def _renamed(old: str, replacement: str) -> Callable[..., Any]:
     return gone
 
 
+def layer_group_entry(layers) -> dict:
+    """The entry among a run's formats of a layer group whose layers are
+    *layers*, ``(name, dataset id)`` pairs in the group's order."""
+    return {"format": LAYER_GROUP_FORMAT, "layers": [[str(name), str(dataset_id)] for name, dataset_id in layers]}
+
+
+def layers_of_group(entry) -> list[tuple[str, str]] | None:
+    """The ``(name, dataset id)`` pairs of a layer group's *entry*, in its
+    order, at most :data:`MAX_GROUP_LAYERS`; None when *entry* is no layer
+    group's. A pair of any other shape is left out."""
+    if not isinstance(entry, dict) or entry.get("format") != LAYER_GROUP_FORMAT:
+        return None
+    listed = entry.get("layers")
+    layers = []
+    for layer in listed if isinstance(listed, list) else []:
+        if len(layers) == MAX_GROUP_LAYERS:
+            break
+        if isinstance(layer, (list, tuple)) and len(layer) == 2 and all(isinstance(p, str) and p for p in layer):
+            layers.append((layer[0], layer[1]))
+    return layers
+
+
+def dataset_refs(paths, formats) -> tuple[dict, dict]:
+    """``(paths, formats)`` of a run's request as the sandbox takes them.
+
+    The paths of the first :data:`MAX_NAMED_DATASETS` ids the code names, and
+    of the layers of the layer groups among them, at most
+    :data:`MAX_GROUP_LAYERS` in all; how each of those is read (its
+    ``format`` and ``layerType``, as text); and each group's entry, which has
+    no path of its own. A value of any other shape is dropped, never fatal.
+    """
+    paths = {str(key): str(value) for key, value in paths.items() if value} if isinstance(paths, dict) else {}
+    formats = {str(key): value for key, value in formats.items()} if isinstance(formats, dict) else {}
+    groups: dict[str, list] = {}
+    for key, entry in formats.items():
+        layers = layers_of_group(entry)
+        if layers is not None and len(groups) < MAX_NAMED_DATASETS:
+            groups[key] = layers
+    layer_ids = list(dict.fromkeys(dataset_id for layers in groups.values() for _name, dataset_id in layers))
+    layer_ids = layer_ids[:MAX_GROUP_LAYERS]
+    named = [key for key in paths if key not in layer_ids][:MAX_NAMED_DATASETS]
+    kept = {key: paths[key] for key in [*named, *layer_ids] if key in paths}
+    read_as = {
+        key: {k: str(v) for k, v in formats[key].items() if k in ("format", "layerType") and v}
+        for key in kept if isinstance(formats.get(key), dict)
+    }
+    read_as.update((key, layer_group_entry(layers)) for key, layers in groups.items())
+    return kept, read_as
+
+
 def install_catalog_helpers(
     namespace: dict,
     *,
@@ -364,8 +427,10 @@ def install_catalog_helpers(
 
     *data_path* resolves a dataset id to its file (absolute in process, a
     staged copy under isolation). *formats* is ``{id: {"format", "layerType"}}``
-    as the backend resolved it. *models* is ``{id: folder}``, relative to
-    *model_base* when staged.
+    as the backend resolved it, and a layer group's id has an entry naming its
+    layers (:func:`layer_group_entry`), each of which has a file and a format
+    of its own. *models* is ``{id: folder}``, relative to *model_base* when
+    staged.
     """
     from utk_curio.sandbox.util.collections import make_collection_helpers
     from utk_curio.sandbox.util.models import make_model_folder
@@ -388,8 +453,7 @@ def install_catalog_helpers(
 
         return str(python_raster_dir() / name)
 
-    def curio_load_data(dataset_id, bounds=None, part=None):
-        dataset_id = str(dataset_id)
+    def read_one(dataset_id, bounds, part):
         info = known_formats.get(dataset_id, {})
         # The backend resolves only the ids that are collections into
         # *collections*, on every path (Play, a node run, Solve's validation),
@@ -427,6 +491,25 @@ def install_catalog_helpers(
 
         with rasterio.open(path) as whole:
             return read_window(whole, bounds, raster_output_file, name=dataset_id)
+
+    def curio_load_data(dataset_id, bounds=None, part=None):
+        dataset_id = str(dataset_id)
+        layers = layers_of_group(known_formats.get(dataset_id))
+        if layers is None:
+            return read_one(dataset_id, bounds, part)
+        if bounds is not None:
+            raise ValueError(
+                f"bounds read a window of a raster, and {dataset_id} is a layer group: "
+                f'load it without bounds, curio_load_data("{dataset_id}").'
+            )
+        if part is not None:
+            raise ValueError(
+                f"part names one file of a dataset of several, and {dataset_id} is a layer group: "
+                f'load it without part, curio_load_data("{dataset_id}"), which gives its layers by name.'
+            )
+        # Each layer as its own id reads, under the name the group's loader
+        # gives it (layer_group.named_layers in the backend).
+        return {name: read_one(layer_id, None, None) for name, layer_id in layers}
 
     def curio_load_model(model_id):
         model_id = str(model_id)

@@ -260,6 +260,7 @@ def run_through_node(
     progress=None,
     as_validation: bool = True,
     dataset_paths: dict | None = None,
+    dataset_formats: dict | None = None,
     exec_user_key: str | None = None,
     secrets: dict | None = None,
     collections: dict | None = None,
@@ -286,7 +287,9 @@ def run_through_node(
     ``curio_data_path("<id>")`` calls) and ``exec_user_key`` ride the
     payload exactly as the interactive ``/processPythonCode`` sends them —
     without them the Data Catalog's portable loader form failed under
-    validation while working on Play. A sandbox execution timeout is the
+    validation while working on Play. ``dataset_formats`` rides with them:
+    how ``curio_load_data`` reads each, such as a layer group's entry naming
+    its layers. A sandbox execution timeout is the
     NODE's failure (``ExecutionTimeout`` → error record, blocker), never
     infrastructure.
 
@@ -431,6 +434,8 @@ def run_through_node(
             payload["session_id"] = session_id
         if dataset_paths:
             payload["dataset_paths"] = dict(dataset_paths)
+        if dataset_formats:
+            payload["dataset_formats"] = dict(dataset_formats)
         if exec_user_key:
             payload["user_key"] = exec_user_key
         if secrets:

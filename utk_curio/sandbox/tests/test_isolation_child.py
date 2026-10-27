@@ -166,7 +166,7 @@ class TestFailures(ChildTestCase):
     def test_an_unstorable_return_value_is_reported(self):
         result = self.run_code("    return object()\n")
         self.assertFalse(result["ok"])
-        self.assertIn("cannot store", result["stderr"])
+        self.assertIn("A node cannot hand on an object. Return a table", result["stderr"])
 
     def test_the_tripwire_fires_when_nothing_is_wired(self):
         result = self.run_code("    return input_0['x']\n")
