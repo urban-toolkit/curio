@@ -154,8 +154,8 @@ return data
 ```
 
 To show the widgets above the code, where the user sets what the code reads,
-add `"widgetsWithCode": true`, as Data Loading does. The **Widgets** tab still
-adds and edits them.
+add `"widgetsWithCode": true`, as Data Loading and Data Export do. The
+**Widgets** tab still adds and edits them.
 
 When the starter is the node's whole content and only its widgets change from
 one use to the next, add `"starterIsContent": true` beside `source`. A node the
