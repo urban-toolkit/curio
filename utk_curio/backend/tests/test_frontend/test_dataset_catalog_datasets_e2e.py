@@ -7,9 +7,10 @@ the app itself uses (``list_catalog_datasets`` via
 *format* has no recipe fails loudly rather than quietly collecting nothing.
 
 Each case installs the dataset from the drawer, drops it on the canvas to get a
-generated loader, wires a Data Transformation to it, runs both, and asserts on
-values parsed out of the committed file - row/feature counts, column names, the
-geometry type that came back from ``gpd.read_file``. Geo datasets get a third
+Data Loading node whose Data widget holds it, wires a Data Transformation to
+it, runs both, and asserts on values parsed out of the committed file -
+row/feature counts, column names, the geometry type that came back from
+``gpd.read_file``. Geo datasets get a third
 node, a Vega-Lite chart of a per-feature measure derived from the parsed
 geometry, so the coordinates are proven to survive all the way to a rendered
 mark rather than merely to a row count.
@@ -70,12 +71,12 @@ from .utils import (
     assert_vega_canvas_rendered,
     canvas_node_type,
     connect_nodes,
+    dataset_widget_state,
     drag_to_canvas,
     drag_builtin_to_canvas,
     close_tools_palette,
     open_tools_palette,
     play_node,
-    read_node_code,
     require_project_page,
     require_user_auth,
     run_node_and_wait,
@@ -85,6 +86,7 @@ from .utils import (
     set_node_code,
     require_owner_view,
     stub_login_and_enter_workflow,
+    wait_for_node_code,
     wait_for_node_done,
 )
 
@@ -268,28 +270,22 @@ def test_dataset_loads_and_feeds_a_consumer(
         "dropping a dataset must take the dataset branch of handleDrop and "
         "create a Data Loading node"
     )
-    loader_code = read_node_code(page, loader_id)
-    assert plan.loader_marker in loader_code, (
-        f"the generated loader for a {dataset.manifest.format} dataset does "
-        f"not call {plan.loader_marker}:\n{loader_code}"
-    )
-    # The portable form: the sandbox resolves the id at execution time, so the
-    # generated code carries no machine- or user-specific absolute path. A
-    # collection is read through ``curio_load_collection``, which resolves the same
-    # way and adds where each of its files is.
-    # A GeoTIFF's loader names its window as well, `bounds=None`.
-    from utk_curio.backend.app.datasets.domain.catalog_item import LOADER_OPTIONS
-
-    call = "curio_load_collection" if dataset.manifest.format == "collection" else "curio_load_data"
-    options = LOADER_OPTIONS.get(dataset.manifest.format, "")
-    assert f'{call}("{dataset.dataset_id}"{options})' in loader_code, (
-        f"loader does not resolve the dataset by id:\n{loader_code}"
-    )
+    # Its code reads the Data widget: the starter, or what a drop writes from
+    # it for the format (a GeoTIFF's names its window, `bounds=None`). It may
+    # reach the editor a moment after the node.
+    wait_for_node_code(page, loader_id, plan.loader_code)
+    # The portable form: the widget holds the dataset's id, which the sandbox
+    # resolves at execution time, so the code carries no machine- or
+    # user-specific absolute path. The node is bound to the dataset, as a save
+    # keeps it and the Data Catalog counts it.
+    state = dataset_widget_state(page, loader_id)
+    assert state["value"] == dataset.dataset_id, f"the Data widget does not hold the dataset: {state}"
+    assert dataset.dataset_id in state["datasetRefs"], f"the node is not bound to the dataset: {state}"
     if plan.loader_suffix:
         # The format's value stays in the loader's own code (an xarray Dataset
         # cannot cross an edge), so the loader uses it there and returns a
         # table for its consumer.
-        set_node_code(page, loader_id, loader_code.rstrip("\n") + "\n" + plan.loader_suffix)
+        set_node_code(page, loader_id, plan.loader_code.rstrip("\n") + "\n" + plan.loader_suffix)
 
     # 3. A CONSUMER, wired to it. The edge id is derived, not random, so it
     #    doubles as an assertion that the handles the drag hit were the

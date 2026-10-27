@@ -108,9 +108,9 @@ There are three places you work with datasets, and they are **not** interchangea
 
 ### Workflows
 
-**I want to use a catalog dataset in my dataflow.** Open the dataflow, then click **Data Catalog** in the top bar. Find the dataset and click **Add to project**. It now appears in the left Tools panel's **Data Catalog** dropdown. Drag it onto the canvas to get a Data Loading node wired to it ([part 3](#3-using-a-dataset-in-a-dataflow)).
+**I want to use a catalog dataset in my dataflow.** Open the dataflow, then click **Data Catalog** in the top bar. Find the dataset and click **Add to project**. It now appears in the left Tools panel's **Data Catalog** dropdown. Drag it onto the canvas to get a Data Loading node that loads it ([part 3](#3-using-a-dataset-in-a-dataflow)).
 
-**I want to use a file from my computer.** Open the drawer and click **Import dataset** in the footer. Pick the file (`.csv`, `.geojson`, `.json`, `.parquet`, `.tif`, `.tiff`, `.onnx`, `.nc`, `.pbf`, `.gpkg`, or a `.zip` holding one shapefile). Import only registers the dataset in your account: click **Add to project** on it to add it to the open dataflow.
+**I want to use a file from my computer.** Drop the file on the canvas or on a Data Loading node, or click a Data Loading node's **Choose file** and pick it (`.csv`, `.geojson`, `.json`, `.parquet`, `.tif`, `.tiff`, `.onnx`, `.nc`, `.pbf`, `.gpkg`, or a `.zip` holding one shapefile). Curio imports it into your account, adds it to the open dataflow and loads it. **Import dataset** in the drawer's footer only registers a file in your account: click **Add to project** on it to add it to the open dataflow.
 
 **I want a dataset from an open data portal.** Download it from the [Discovery Catalog](DISCOVERY-CATALOG.md). It lands here as an imported dataset.
 
@@ -128,12 +128,20 @@ There are three places you work with datasets, and they are **not** interchangea
 
 ## 3. Using a dataset in a dataflow
 
-Adding a dataset to a dataflow creates nothing on the canvas. You use it by **dragging** it from the **Data Catalog** palette, or from a card in the drawer:
+Adding a dataset to a dataflow creates nothing on the canvas. You use it by **dragging** it from the **Data Catalog** palette, or from a card in the drawer. A file from your computer, dropped or picked with **Choose file**, is imported and added to the dataflow first, then used the same way:
 
-- **Drop on empty canvas**: Curio creates a **Data Loading** node filled in with loader code for that dataset, and says *"Created a Data Loading node for `<title>`."*
-- **Drop onto an existing node**: the loader code is merged into that node's code under a `# Curio dataset loader: <title>` marker, and Curio says *"Applied `<title>` to this node."* If the node's code ends in a `return`, the loader goes before it and the return is rewritten.
+- **Drop on empty canvas**: Curio creates a **Data Loading** node whose **Data** widget holds the dataset, and says *"Created a Data Loading node for `<title>`."* Its code loads what the widget holds:
 
-The generated Python is one line, `curio_load_data("<datasetId>")` (`curio_load_data("<datasetId>", bounds=None)` for a GeoTIFF), which reads the dataset the way its format is read:
+  ```python
+  data = curio_load_data([!! data !!])
+  return data
+  ```
+
+  For a GeoTIFF, the call names the window it reads: `curio_load_data([!! data !!], bounds=None)`.
+- **Drop onto a Data Loading node**: its **Data** widget takes the dataset, and Curio says *"Applied `<title>` to this node."* So does any node whose code reads a **Dataset** widget ([Widgets](USAGE.md#widgets)). Until you edit the code, it follows the dataset: a GeoTIFF's names its bounds, and a NetCDF file or an ONNX model, which load as a value a node cannot pass on, get `ds = curio_load_data([!! data !!])` (`session` for a model), with no return, for you to finish.
+- **Drop onto another node**: the loader code is merged into that node's code under a `# Curio dataset loader: <title>` marker, and Curio says *"Applied `<title>` to this node."* If the node's code ends in a `return`, the loader goes before it and the return is rewritten.
+
+The merged Python is one line, `curio_load_data("<datasetId>")` (`curio_load_data("<datasetId>", bounds=None)` for a GeoTIFF), which reads the dataset the way its format is read:
 
 | Format | What `curio_load_data` returns |
 |---|---|

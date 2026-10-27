@@ -28,7 +28,8 @@ from utk_curio.backend.app.agents.application.solve import budgets as agents_bud
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
 from utk_curio.backend.app.agents.domain import document_validation
 from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
-from utk_curio.backend.app.datasets.domain.layer_group import ids_read, layer_group_formats
+from utk_curio.backend.app.datasets.domain.constants import is_layer_group_id, layer_group_kind
+from utk_curio.backend.app.datasets.domain.layer_group import group_base_title, ids_read, layer_group_formats
 from utk_curio.backend.app.execution import workflow_spec
 from utk_curio.backend.app.projects import storage as projects_storage
 from utk_curio.backend.app.agents.domain import agent_text
@@ -515,6 +516,7 @@ def _catalog_grounding_refs(project_id: str, items: list | None = None) -> tuple
         items = _catalog_listing_items(project_id)
     by_path: dict = {}
     by_id: dict = {}
+    groups: dict[str, list] = {}
     for item in items or []:
         if not isinstance(item, dict) or not item.get("id"):
             continue
@@ -528,6 +530,19 @@ def _catalog_grounding_refs(project_id: str, items: list | None = None) -> tuple
         by_id[ref.dataset_id] = ref
         if isinstance(path, str) and path.strip():
             by_path[path] = ref
+        group_id = item.get("groupId")
+        if isinstance(group_id, str) and is_layer_group_id(group_id):
+            groups.setdefault(group_id, []).append(item)
+    # A layer group's own id, which ``curio_load_data("<group id>")`` loads as
+    # its layers (a Data widget holds one once an OSM extract or a GeoPackage
+    # is dropped), is known when its layers are.
+    for group_id, members in groups.items():
+        by_id.setdefault(group_id, source_grounding.CatalogRef(
+            dataset_id=group_id,
+            title=group_base_title(members, group_id),
+            format=layer_group_kind(group_id) or "",
+            path="",
+        ))
     return by_path, by_id
 
 

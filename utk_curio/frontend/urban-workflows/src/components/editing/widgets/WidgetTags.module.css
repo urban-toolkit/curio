@@ -488,6 +488,41 @@
   color: var(--curio-text-secondary);
 }
 
+/* A dataset widget: where a file or a Data Catalog dataset is dropped, naming
+   the dataset it holds. Its node takes the drop, and outlines it while a drop
+   is over the node. */
+.datasetDrop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: var(--widget-h);
+  padding: 4px 6px;
+  border: 1px dashed var(--curio-border-strong);
+  border-radius: 6px;
+}
+
+.datasetDropActive {
+  border-style: solid;
+  border-color: var(--curio-category-data-fg);
+  background: var(--curio-category-data-bg);
+}
+
+.datasetName {
+  flex: 1;
+  overflow: hidden;
+  min-width: 0;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.datasetHint {
+  flex: 1;
+  min-width: 0;
+  color: var(--curio-text-secondary);
+}
+
 .choices {
   display: flex;
   flex-wrap: wrap;

@@ -8,7 +8,7 @@ In this tutorial, we are going to learn how Curio can easily help with visualizi
 
 After initializing Curio, you will see a blank canvas. Click **Built-in** at the top of the left rail to open the built-in node types, and drag any of them onto the canvas to instantiate a node. Below it sit the **Node Catalog** and **Data Catalog** dropdowns, which is where extra nodes and datasets come from once you need them.
 
-Start by dragging a `Data Loading` node onto the canvas. Inside the node, switch to the `Code` view and enter the following snippet:
+Start by dragging a `Data Loading` node onto the canvas. It opens on its **Data** box; open its **Code** tab and replace its code with the following snippet:
 
 ```python
 import pandas as pd
@@ -21,9 +21,10 @@ return df
 
 Hit **Run**. The Python `return` outputs `df` for the next node.
 
-To work from a CSV or GeoJSON file instead, import it through the **Data
-Catalog** button in the top bar and drag the dataset onto the canvas, which creates a
-`Data Loading` node already wired to it. See
+To work from a CSV or GeoJSON file instead, keep the node's own code and drop
+the file on the node's **Data** box, on its **Widgets** tab, or click **Choose
+file** there and pick it:
+Curio adds the file to your Data Catalog and the node loads it. See
 [DATA-CATALOG.md](DATA-CATALOG.md#3-using-a-dataset-in-a-dataflow). To set a
 value without editing the code, such as a threshold, add a widget in the node's
 **Widgets** tab and drag its tag into the code; see [Widgets](USAGE.md#widgets).

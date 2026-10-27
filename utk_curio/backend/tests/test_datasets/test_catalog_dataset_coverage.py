@@ -79,7 +79,8 @@ def test_dataset_has_an_e2e_recipe(dataset: CatalogDataset):
         f"the {dataset.manifest.format} plan has no downstream code, so the "
         f"E2E test would load the dataset and assert nothing about it"
     )
-    assert plan.loader_marker
+    # The loader a drop makes reads the dataset its Data widget holds.
+    assert "curio_load_data([!! data !!]" in plan.loader_code
 
 
 @pytest.mark.parametrize("dataset", CATALOG, ids=_ids(CATALOG))

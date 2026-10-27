@@ -54,9 +54,12 @@ import { CollaborationSidePanel } from "./collab/CollaborationSidePanel";
 import { CanvasSidePanels } from "./layout/CanvasSidePanels";
 import {
     buildDatasetLoaderNodeOptions,
+    buildDatasetWidgetNodeOptions,
     hasDatasetDrag,
     readDatasetDragPayload,
+    type DatasetDragPayload,
 } from "../services/datasetCatalog";
+import { hasFileDrag, useDataFileImport } from "./datasets/useDataFileImport";
 import {
     hasModelDrag,
     packageCardNodeOptions,
@@ -124,6 +127,7 @@ export function MainCanvas() {
         onEdgesDelete,
         onNodesDelete,
         markDirty,
+        requestAutoRun,
         requestProjectSave,
         notebookOn,
         notebookContentHeight,
@@ -361,6 +365,7 @@ export function MainCanvas() {
         // silently fails to attach). Node-creation drags keep "move".
         const wantsCopy =
             hasDatasetDrag(event.dataTransfer) ||
+            hasFileDrag(event.dataTransfer) ||
             hasModelDrag(event.dataTransfer) ||
             hasPackageCardDrag(event.dataTransfer) ||
             hasScenarioDrag(event.dataTransfer) ||
@@ -416,26 +421,52 @@ export function MainCanvas() {
         };
     }, []);
 
+    // A dataset dropped on the empty canvas, a Data Catalog card or a file just
+    // imported, becomes a Data Loading node holding it: the node a drop on a
+    // fresh Data Loading node makes, its Data widget set to the dataset and its
+    // template's starter as its code. Like a value set in that widget, it runs
+    // when automatic runs are on.
+    const { getStarters } = useStarterContext();
+    const createLoaderFor = useCallback((dataset: DatasetDragPayload, position: XYPosition) => {
+        const descriptor = tryGetNodeDescriptor(NodeType.DATA_LOADING);
+        const options =
+            buildDatasetWidgetNodeOptions(dataset, position, descriptor?.widgets, packageStarterCode(descriptor, getStarters))
+            ?? buildDatasetLoaderNodeOptions(dataset, position);
+        const created = createCodeNode(NodeType.DATA_LOADING, options);
+        revealCreated(created);
+        showToast(
+            `Created a Data Loading node for ${dataset.title}.`,
+            "success",
+            viewDatasetDetailsToast(openDatasetDetails, dataset.datasetId),
+        );
+        markDirty();
+        // A node still waiting for its starter has nothing to run yet.
+        if (created && options.code !== undefined) requestAutoRun?.([created.id]);
+    }, [getStarters, revealCreated, createCodeNode, markDirty, showToast, openDatasetDetails, requestAutoRun]);
+
     const handleCanvasDrop = useCallback((event: React.DragEvent) => {
         event.preventDefault();
         event.stopPropagation();
         const dataset = readDatasetDragPayload(event.dataTransfer);
-        if (dataset) {
-            const position = dropPosition(event);
-            revealCreated(createCodeNode(NodeType.DATA_LOADING, buildDatasetLoaderNodeOptions(dataset, position)));
-            showToast(
-                `Created a Data Loading node for ${dataset.title}.`,
-                "success",
-                viewDatasetDetailsToast(openDatasetDetails, dataset.datasetId),
-            );
-            markDirty();
-        }
-    }, [dropPosition, revealCreated, createCodeNode, markDirty, showToast, openDatasetDetails]);
+        if (dataset) createLoaderFor(dataset, dropPosition(event));
+    }, [dropPosition, createLoaderFor]);
+
+    // A file from the computer dropped on the empty canvas: imported into the
+    // Data Catalog and this dataflow, then made a Data Loading node as a card is.
+    const importDataFile = useDataFileImport();
+    const handleFileCanvasDrop = useCallback((event: React.DragEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const position = dropPosition(event);
+        const files = Array.from(event.dataTransfer.files || []);
+        void importDataFile(files).then((dataset) => {
+            if (dataset) createLoaderFor(dataset, position);
+        });
+    }, [dropPosition, importDataFile, createLoaderFor]);
 
     // A model dragged onto the empty canvas is its package's card (it carries
     // both drags): the card drop below makes its package's node. Only a model
     // whose package has no node at all gets here.
-    const { getStarters } = useStarterContext();
     const handleModelCanvasDrop = useCallback((event: React.DragEvent) => {
         event.preventDefault();
         event.stopPropagation();
@@ -513,6 +544,10 @@ export function MainCanvas() {
             handleCanvasDrop(event);
             return;
         }
+        if (hasFileDrag(event.dataTransfer)) {
+            handleFileCanvasDrop(event);
+            return;
+        }
         if (hasPackageCardDrag(event.dataTransfer)) {
             handlePackageCardCanvasDrop(event);
             return;
@@ -576,7 +611,7 @@ export function MainCanvas() {
         const position = dropPosition(event);
         revealCreated(createCodeNode(type, { position }));
         markDirty();
-    }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleModelCanvasDrop, handlePackageCardCanvasDrop, handleScenarioCanvasDrop, projectId, showToast, requestProjectSave, reactFlow, hostedGuest]);
+    }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleFileCanvasDrop, handleModelCanvasDrop, handlePackageCardCanvasDrop, handleScenarioCanvasDrop, projectId, showToast, requestProjectSave, reactFlow, hostedGuest]);
 
     // The Delete key reaches these through React Flow, which sends the
     // selected edges plus every edge attached to a deleted node first, then

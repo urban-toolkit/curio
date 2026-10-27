@@ -367,6 +367,37 @@ class TestChips:
         assert _gate("rows = curio_load_data([!! dataset !!])\nreturn rows", node_type=DL, is_data_loading=True) is None
 
 
+class TestLayerGroups:
+    """A layer group's own id (an OSM extract's, a GeoPackage's), which
+    ``curio_load_data`` loads as its layers and a Data widget holds once such
+    a file is dropped on its node, is known to the gate when its layers are
+    the account's."""
+
+    GROUP = "osm.x1a2b3c4d"
+    LAYERS = [
+        {"id": "imported.xbuildings", "groupId": "osm.x1a2b3c4d", "title": "Manhattan (buildings)",
+         "format": "parquet", "path": "/store/imported.xbuildings@1/data/buildings.parquet", "layerName": "buildings"},
+        {"id": "imported.xroads", "groupId": "osm.x1a2b3c4d", "title": "Manhattan (roads)",
+         "format": "parquet", "path": "/store/imported.xroads@1/data/roads.parquet", "layerName": "roads"},
+    ]
+
+    def test_code_that_loads_a_group_whose_layers_are_listed_passes(self, tmp_curio):
+        _by_path, by_id = grounding._catalog_grounding_refs(PROJECT, self.LAYERS)
+        group = by_id.get(self.GROUP)
+        assert group is not None, sorted(by_id)
+        assert (group.title, group.format) == ("Manhattan", "osm")
+        code = f'layers = curio_load_data("{self.GROUP}")\nreturn layers'
+        assert _gate(code, node_type=DL, catalog_ids=list(by_id), is_data_loading=True) is None
+
+    def test_a_group_none_of_whose_layers_is_listed_is_refused(self, tmp_curio):
+        _by_path, by_id = grounding._catalog_grounding_refs(PROJECT, self.LAYERS)
+        refusal = _gate(
+            'layers = curio_load_data("osm.x99999999")\nreturn layers',
+            node_type=DL, catalog_ids=list(by_id), is_data_loading=True,
+        )
+        assert refusal and "osm.x99999999" in refusal, refusal
+
+
 class TestImports:
     """A module a package ships is handed only to the nodes of that package and
     of the packages that depend on it, as a run hands it out; a built-in node

@@ -26,6 +26,7 @@ export const WIDGET_KINDS = [
   "text-list",
   "range",
   "file",
+  "dataset",
 ] as const;
 
 export type WidgetKind = (typeof WIDGET_KINDS)[number];
@@ -75,6 +76,7 @@ export const WIDGET_KIND_LABELS: Record<WidgetKind, string> = {
   "text-list": "List of texts",
   range: "Range",
   file: "Text file",
+  dataset: "Dataset",
 };
 
 /** The kinds whose options list choices. */
@@ -98,6 +100,20 @@ const INPUT_NAME_ONLY_RE = new RegExp(INPUT_NAME_ONLY_PATTERN);
 
 /** A text file widget keeps the file's text in the dataflow, so it is capped. */
 export const FILE_WIDGET_MAX_CHARS = 1_000_000;
+
+/** A dataset widget's value: the id of a Data Catalog dataset, a layer group
+ * or a collection, as node code names one in `curio_load_data("<id>")`; empty
+ * until one is dropped on it. Kept in sync with `DATASET_ID_RE` in
+ * `utk_curio/backend/app/execution/code_references.py` and with
+ * `SAFE_DATASET_ID_RE` in `services/datasetCatalog/datasetLoaderSnippets.ts`. */
+export const DATASET_ID_PATTERN = String.raw`^[A-Za-z0-9][A-Za-z0-9._@-]{0,199}$`;
+const DATASET_ID_RE = new RegExp(DATASET_ID_PATTERN);
+
+/** What a run refuses when code reads an empty dataset widget. Kept in sync
+ * with `empty_dataset_message` in `code_references.py`. */
+export function emptyDatasetMessage(reference: string, widget: Pick<WidgetDef, "name" | "label">): string {
+  return `${reference}: drop a file or a Data Catalog dataset on ${widget.label || widget.name} first.`;
+}
 
 export function effectiveValue(widget: WidgetDef): WidgetValue {
   return widget.value !== undefined ? widget.value : widget.default;
@@ -214,6 +230,10 @@ export function checkWidgetValue(
       return value.length > FILE_WIDGET_MAX_CHARS
         ? `The file is longer than ${FILE_WIDGET_MAX_CHARS.toLocaleString("en-US")} characters. Add it to the Data Catalog instead.`
         : null;
+    case "dataset":
+      return typeof value === "string" && (value === "" || DATASET_ID_RE.test(value))
+        ? null
+        : "Drop a file or a Data Catalog dataset.";
     case "checkbox":
       return typeof value === "boolean" ? null : "Choose true or false.";
     case "choice": {
