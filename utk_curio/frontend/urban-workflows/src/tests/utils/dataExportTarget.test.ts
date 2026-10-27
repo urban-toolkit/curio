@@ -79,6 +79,14 @@ describe("exportDownloadName", () => {
     expect(exportDownloadName("data_export.csv", {}, "Trip Summary")).toBe("Trip_Summary.csv");
   });
 
+  test("a source named after its file gives its name once, with the file's own extension", () => {
+    // A dataset dropped from the computer keeps its file's name as its title.
+    expect(exportDownloadName("data_export.geojson", null, "boundaries.geojson")).toBe("boundaries.geojson");
+    expect(exportDownloadName("data_export.geojson", null, "trees.csv")).toBe("trees.geojson");
+    // A dot that starts no data format's extension is part of the name.
+    expect(exportDownloadName("data_export.csv", null, "St. Louis parcels")).toBe("St._Louis_parcels.csv");
+  });
+
   test("falls back to the default stem when nothing names the input", () => {
     expect(exportDownloadName("data_export.csv", null)).toBe("data_export.csv");
     expect(exportDownloadName("data_export.json", undefined, null)).toBe("data_export.json");

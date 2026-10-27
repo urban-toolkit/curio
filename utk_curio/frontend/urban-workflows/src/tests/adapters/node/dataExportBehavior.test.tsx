@@ -253,7 +253,10 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       await waitFor(() => expect(downloadButton(result).textContent).toBe('Download trees.csv'));
 
       const setOutput = nodeState.setOutput as jest.Mock;
-      await act(async () => { downloadButton(result).click(); });
+      // Found before the act: a tree drawn inside an act is committed only
+      // when that act ends.
+      const button = downloadButton(result);
+      await act(async () => { button.click(); });
 
       await waitFor(() => expect(triggerBlobDownload).toHaveBeenCalledTimes(1));
       // Asked by the output's artifact id, never by a path.
@@ -278,7 +281,10 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       const { data, nodeState } = exportNode(true);
       const { result } = mount(data, nodeState);
       await waitFor(() => expect(downloadButton(result).textContent).toBe('Download boundaries.geojson'));
-      await act(async () => { downloadButton(result).click(); });
+      // Found before the act: a tree drawn inside an act is committed only
+      // when that act ends.
+      const button = downloadButton(result);
+      await act(async () => { button.click(); });
       await waitFor(() => expect(triggerBlobDownload).toHaveBeenCalledWith(FILE, 'boundaries.geojson'));
     });
 
@@ -288,7 +294,10 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       const { data, nodeState } = exportNode(false);
       const { result, rerender } = mount(data, nodeState);
 
-      await act(async () => { downloadButton(result).click(); });
+      // Found before the act: a tree drawn inside an act is committed only
+      // when that act ends.
+      const button = downloadButton(result);
+      await act(async () => { button.click(); });
       expect(mockPlayNodesUpTo).toHaveBeenCalledWith('node-1');
       expect(mockFetch).not.toHaveBeenCalled();
 
@@ -314,7 +323,10 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       wroteFile('art-1', 'trees.csv');
       const { data, nodeState } = exportNode(true, { stale: true });
       const { result } = mount(data, nodeState);
-      await act(async () => { downloadButton(result).click(); });
+      // Found before the act: a tree drawn inside an act is committed only
+      // when that act ends.
+      const button = downloadButton(result);
+      await act(async () => { button.click(); });
       expect(mockPlayNodesUpTo).toHaveBeenCalledWith('node-1');
       expect(mockFetch).not.toHaveBeenCalled();
     });
@@ -324,7 +336,10 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       wroteFile('art-1', 'trees.csv');
       const { data, nodeState } = exportNode(true, { stale: true });
       const { result, rerender } = mount(data, nodeState);
-      await act(async () => { downloadButton(result).click(); });
+      // Found before the act: a tree drawn inside an act is committed only
+      // when that act ends.
+      const button = downloadButton(result);
+      await act(async () => { button.click(); });
 
       mockIsRunActive = true;
       await act(async () => { rerender({ data, nodeState }); });
@@ -347,7 +362,10 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       });
       const { data, nodeState } = exportNode(true);
       const { result } = mount(data, nodeState);
-      await act(async () => { downloadButton(result).click(); });
+      // Found before the act: a tree drawn inside an act is committed only
+      // when that act ends.
+      const button = downloadButton(result);
+      await act(async () => { button.click(); });
       await waitFor(() => expect(controls(result).textContent).toContain('outside the folder of the run that made it'));
       expect(triggerBlobDownload).not.toHaveBeenCalled();
     });

@@ -18,6 +18,13 @@ const PATH_SEPARATORS = /[\\/]+/g;
 // git classify this file as binary, so it landed with no reviewable diff and
 // stayed invisible to grep and ripgrep.
 const CONTROL_CHARS = /[\x00-\x1f\x7f]/g;
+/**
+ * The extension of a data format at the end of a name: a source titled after
+ * its file (`boundaries.geojson`) gives its name without it, so the download
+ * ends in its own file's extension once. The sandbox knows the same ones
+ * (`DATA_EXTENSIONS`, `sandbox/util/exports.py`).
+ */
+const DATA_EXTENSION = /\.(csv|tsv|txt|json|geojson|tif|tiff|parquet|gpkg|shp|zip|xlsx|xls|nc|pbf|xml|kml|gml)$/i;
 
 /**
  * Make *name* safe to hand to a browser download.
@@ -72,5 +79,7 @@ export function exportDownloadName(
     typeof input?.dataset === "string"
       ? sanitizeExportStem(input.dataset.replace(/\.[^.]+$/, ""))
       : "";
-  return `${fromDataset || sanitizeExportStem(sourceName) || DEFAULT_STEM}${extension}`;
+  const fromSource =
+    typeof sourceName === "string" ? sanitizeExportStem(sourceName.trim().replace(DATA_EXTENSION, "")) : "";
+  return `${fromDataset || fromSource || DEFAULT_STEM}${extension}`;
 }
