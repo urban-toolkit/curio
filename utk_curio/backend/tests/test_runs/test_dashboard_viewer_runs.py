@@ -684,6 +684,47 @@ class TestFollowingAndReading:
         assert entry.session_id.startswith("kept-") and entry.session_id != token
         assert (elsewhere.status_code, unknown.status_code) == (404, 404)
 
+    def test_a_file_a_viewers_run_wrote_downloads_in_its_session_and_only_on_its_dashboard(
+        self, client, user_and_token, sandbox, saved, monkeypatch,
+    ):
+        """A Data Export's file, asked by its output's id: the sandbox reads it
+        in the kept session that made it, and the name it is saved under comes
+        through."""
+        from utk_curio.backend.app.api import routes as api_routes
+        from utk_curio.backend.app.runs.models import KeptStepOutput
+
+        _, token = user_and_token
+        pid = _create(client, token)
+        _month(client, pid)
+        entry = KeptStepOutput.query.filter_by(project_id=pid).one()
+        asked = []
+
+        class File:
+            ok = True
+            status_code = 200
+            headers = {"Content-Type": "text/csv", "Content-Disposition": "attachment; filename=month.csv"}
+
+            def iter_content(self, chunk_size):
+                yield b"month\nJune\n"
+
+            def close(self):
+                pass
+
+        def sandbox_call(method, path, **kwargs):
+            asked.append((path, kwargs["params"]))
+            return File()
+
+        monkeypatch.setattr(api_routes, "_sandbox_call", sandbox_call)
+        read = client.get(f"/api/projects/{pid}/dashboard/outputs/output-file?fileName={entry.output_path}")
+        other = _create(client, token, name="Another dashboard")
+        elsewhere = client.get(f"/api/projects/{other}/dashboard/outputs/output-file?fileName={entry.output_path}")
+
+        assert read.status_code == 200, read.get_data(as_text=True)
+        assert read.get_data() == b"month\nJune\n"
+        assert read.headers["Content-Disposition"] == "attachment; filename=month.csv"
+        assert asked == [("/output-file", {"fileName": entry.output_path, "sessionId": entry.session_id})]
+        assert elsewhere.status_code == 404
+
     def test_the_run_token_may_be_sent_cross_origin(self, client, user_and_token):
         from utk_curio.backend.app import CORS_HEADERS
 
