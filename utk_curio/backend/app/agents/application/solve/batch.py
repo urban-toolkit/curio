@@ -1458,8 +1458,8 @@ class SolveBatch:
             # dev/132 (closes dev/131 F4): the eager mapping,
             # topped up for a dataset the user imported or
             # installed since this session started.
-            dataset_paths_fn=lambda codes: agents_grounding._session_dataset_paths(
-                self.project_id, self.acting_user, self.solve_dataset_paths, codes
+            dataset_paths_fn=lambda codes, formats: agents_grounding._session_dataset_paths(
+                self.project_id, self.acting_user, self.solve_dataset_paths, codes, formats
             ),
             # dev/133: the batch's memoized preview — one
             # description per artifact, reused by the emptiness

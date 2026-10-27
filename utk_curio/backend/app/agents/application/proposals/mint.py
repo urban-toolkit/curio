@@ -827,6 +827,14 @@ def _node_create_starter(user_key: str, project_id: str, entry: dict) -> dict | 
     return packages_services.content_starters(user_key, project_id, [entry["id"]]).get(entry["id"])
 
 
+def _node_create_declared_widgets(user_key: str, project_id: str, entry: dict) -> list:
+    """The widgets a created node's template declares, which a node of it
+    starts with, as a planned node of it does (``plans._declared_widgets``)."""
+    from utk_curio.backend.app.packages import service as packages_services
+
+    return packages_services.declared_widgets(user_key, project_id, [entry["id"]]).get(entry["id"]) or []
+
+
 def _mint_node_create(
     user_key: str, project_id: str, loop_ctx: dict, req: dict
 ) -> tuple[str, str, dict | None]:
@@ -868,10 +876,15 @@ def _mint_node_create(
     widgets, widget_errors = _node_create_widgets(entry, params.get("widgets"))
     if widget_errors:
         return agents_tool_rounds._refuse_params("; ".join(widget_errors))
-    if starter is not None:
-        # The template's widgets, each the request names set as it says, at
-        # mint, so the card shows what Apply writes.
-        widgets = agents_plan_scenarios._set_over(starter["widgets"], widgets)
+    # The template's widgets, each the request names set as it says, at mint,
+    # so the card shows what Apply writes: a starter's, which it places, or
+    # the ones any other template declares, which a node of it starts with on
+    # the canvas and the roster names (Data Loading's Data).
+    template_widgets = starter["widgets"] if starter is not None else _node_create_declared_widgets(
+        user_key, project_id, entry,
+    )
+    if template_widgets:
+        widgets = agents_plan_scenarios._set_over(template_widgets, widgets)
     # dev/114 (DEC-072): the source-grounding gate — BEFORE any store write.
     # A same-run node.create after the runtime minted dataset candidates is
     # refused too: the user reviews and confirms a source first (DEC-006).

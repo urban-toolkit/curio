@@ -196,7 +196,21 @@ WIDGET_KINDS = (
     "text-list",
     "range",
     "file",
+    "dataset",
 )
+
+#: A dataset widget's value: the id of a Data Catalog dataset, a layer group or
+#: a collection, as node code names one in ``curio_load_data("<id>")``; empty
+#: until one is dropped on it. Kept in sync with ``DATASET_ID_PATTERN`` in
+#: ``widgetModel.ts`` and with ``DATASET_PATH_CALL_RE`` in
+#: ``datasets/domain/code_refs.py``, whose calls such an id fills.
+DATASET_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@-]{0,199}$")
+
+
+def empty_dataset_message(reference: str, widget: dict) -> str:
+    """What a run refuses when code reads an empty dataset widget;
+    ``emptyDatasetMessage`` in ``widgetModel.ts``."""
+    return f"{reference}: drop a file or a Data Catalog dataset on {widget.get('label') or widget.get('name')} first."
 
 
 class CodeReferenceError(ValueError):
@@ -959,8 +973,13 @@ def reference_problem(
         )
     if not WIDGET_NAME_RE.match(inner):
         return f"{reference} does not name a widget. Widget names are letters, digits and underscores."
-    if not any(w.get("name") == inner for w in widgets):
+    widget = next((w for w in widgets if w.get("name") == inner), None)
+    if widget is None:
         return f"{reference}: this node has no widget named {inner}. Add it in the Widgets tab."
+    # An empty dataset widget names no dataset for the code to load; text
+    # that only mentions it, in a comment or a string, still writes "".
+    if widget.get("type") == "dataset" and context[0] == "code" and effective_value(widget) == "":
+        return empty_dataset_message(reference, widget)
     return None
 
 
@@ -1096,6 +1115,11 @@ def check_widget_value(widget: dict, value) -> str | None:
             return (f"The file is longer than {FILE_WIDGET_MAX_CHARS:,} characters. "
                     "Add it to the Data Catalog instead.")
         return None
+    if kind == "dataset":
+        # fullmatch: ``$`` lets a final line break through ``match``, and
+        # the browser reads the pattern as ECMA-262 does.
+        fine = isinstance(value, str) and (value == "" or DATASET_ID_RE.fullmatch(value) is not None)
+        return None if fine else "Drop a file or a Data Catalog dataset."
     if kind == "checkbox":
         return None if isinstance(value, bool) else "Choose true or false."
     if kind == "choice":
@@ -1434,3 +1458,21 @@ def resolve_references(
         last = ref.end()
     out.append(code[last:])
     return "".join(out), problems
+
+
+def node_run_code(node) -> str:
+    """A saved spec node's code (``content``) with its own widgets written in
+    as a run writes them, every other reference left as written: what a scan
+    for the datasets and collections a run reads looks at, since the id a
+    dataset widget holds is in no literal ``curio_load_data`` call until then.
+    Never raises: a scan must not fail its run."""
+    if not isinstance(node, dict) or not isinstance(node.get("content"), str):
+        return ""
+    code = node["content"]
+    metadata = node.get("metadata")
+    if "[!!" not in code or not isinstance(metadata, dict):
+        return code
+    try:
+        return resolve_references(code, metadata.get("widgets") or [])[0]
+    except Exception:  # noqa: BLE001 - a scan reads what it can
+        return code

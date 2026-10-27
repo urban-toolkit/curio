@@ -398,6 +398,55 @@ export function getDatasetLoaderSnippet(dataset: DatasetLike): DatasetLoaderSnip
   return snippetForFormat(dataset.format, datasetPath(dataset), idOf(dataset), autarkLayerType(dataset));
 }
 
+/**
+ * The code a node with a dataset widget runs for *dataset* when what it loads
+ * cannot leave the node (`KEPT_IN_CODE`: an onnxruntime session, an xarray
+ * Dataset): the loader a drop writes for that format, reading the widget
+ * *widgetName* in place of the id and returning nothing. Null for every other
+ * format, whose loaded value the node's code hands on as it is.
+ */
+export function keptInCodeLoader(dataset: Pick<DatasetLike, "format">, widgetName: string): string | null {
+  const variable = LOADED_VARIABLES[dataset.format];
+  if (!KEPT_IN_CODE.has(dataset.format) || !variable) return null;
+  return [
+    `${variable} = curio_load_data([!! ${widgetName} !!])`,
+    `# ${variable} cannot leave this node: return a table, a raster or a value made from it.`,
+    "",
+  ].join("\n");
+}
+
+/**
+ * The code a node with a dataset widget runs for *dataset*, made from its
+ * template's *starter*: the loader that keeps the value in the code when what
+ * it loads cannot leave the node (`keptInCodeLoader`); the starter naming its
+ * format's options (`LOADER_OPTIONS`: a GeoTIFF's `bounds`), so the node
+ * shows them, as a dropped loader always did; else the starter. Undefined
+ * with no starter, unless the value is kept in the code.
+ */
+export function widgetLoaderCode(
+  dataset: Pick<DatasetLike, "format">,
+  widgetName: string,
+  starter: string | undefined,
+): string | undefined {
+  const kept = keptInCodeLoader(dataset, widgetName);
+  if (kept !== null) return kept;
+  if (starter === undefined) return undefined;
+  const options = LOADER_OPTIONS[dataset.format];
+  const call = `curio_load_data([!! ${widgetName} !!])`;
+  return options && starter.includes(call)
+    ? starter.replace(call, `curio_load_data([!! ${widgetName} !!]${options})`)
+    : starter;
+}
+
+/** Whether *code* is one a drop writes from *starter* for the widget
+ * *widgetName*, for a dataset of any format (`widgetLoaderCode`): code no one
+ * has edited, which the next drop rewrites for its own dataset. */
+export function isWidgetLoaderCode(code: string | undefined, widgetName: string, starter: string): boolean {
+  const formats = [...KEPT_IN_CODE, ...(Object.keys(LOADER_OPTIONS) as DatasetFormat[])];
+  const written = [starter, ...formats.map((format) => widgetLoaderCode({ format }, widgetName, starter))];
+  return written.some((form) => form !== undefined && form.trim() === (code ?? "").trim());
+}
+
 export function buildDatasetLoaderCode(dataset: DatasetLike): string {
   const snippet = getDatasetLoaderSnippet(dataset);
   const parts: (string | null)[] = [...snippet.imports, "", snippet.code];

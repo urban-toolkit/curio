@@ -114,17 +114,26 @@ def test_the_scanner_finds_an_id_followed_by_options():
 def test_sandbox_cap_matches_the_backend_cap():
     """The sandbox truncates ``dataset_paths`` independently of the backend.
 
-    ``sandbox/app/api.py`` cannot import the backend, so it carries a bare
-    literal. If the backend cap is raised without touching it, every id past the
+    ``sandbox/app/api.py`` reshapes what the backend sends with
+    ``catalog_helpers.dataset_refs``, which keeps the paths of at most
+    ``MAX_NAMED_DATASETS`` ids the code names (and the layers of the layer
+    groups among them), a number of its own: the sandbox does not import the
+    backend. If the backend cap is raised without touching it, every id past the
     sandbox's limit is dropped and the node fails with a confusing per-id error.
     """
+    from utk_curio.sandbox.util.catalog_helpers import MAX_NAMED_DATASETS, dataset_refs
+
     src = SANDBOX_API.read_text(encoding="utf-8")
-    match = re.search(r"list\(dataset_paths\.items\(\)\)\[:(\d+)\]", src)
-    assert match, f"could not find the dataset_paths truncation in {SANDBOX_API}"
-    assert int(match.group(1)) == MAX_EXEC_DATASET_IDS, (
-        f"sandbox truncates at {match.group(1)} but the backend cap is "
+    assert re.search(r"dataset_refs\(\s*request\.json\.get\('dataset_paths'\)", src), (
+        f"{SANDBOX_API} no longer reshapes dataset_paths with catalog_helpers.dataset_refs"
+    )
+    assert MAX_NAMED_DATASETS == MAX_EXEC_DATASET_IDS, (
+        f"sandbox truncates at {MAX_NAMED_DATASETS} but the backend cap is "
         f"{MAX_EXEC_DATASET_IDS}"
     )
+    named = {f"imported.x{index:03d}": f"/data/{index}.csv" for index in range(MAX_EXEC_DATASET_IDS + 8)}
+    kept, _formats = dataset_refs(named, {})
+    assert list(kept) == list(named)[:MAX_EXEC_DATASET_IDS]
 
 
 def _check_catalog_helper_ids(label: str, nodes: list[dict]) -> int:

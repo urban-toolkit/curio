@@ -70,6 +70,12 @@
     {"name":"a range the wrong way round","widget":{"type":"range"},"value":[5,0],"expected":"Enter two numbers, the first not larger than the second."},
     {"name":"a text file","widget":{"type":"file"},"value":"id,height\n1,10\n","expected":null},
     {"name":"a file that is not text","widget":{"type":"file"},"value":null,"expected":"Choose a text file."},
+    {"name":"a dataset's id","widget":{"type":"dataset"},"value":"data.utk.trees","expected":null},
+    {"name":"a layer group's id","widget":{"type":"dataset"},"value":"osm.x1a2b3c4d","expected":null},
+    {"name":"a dataset widget that holds no dataset yet","widget":{"type":"dataset"},"value":"","expected":null},
+    {"name":"a dataset id with a quote in it","widget":{"type":"dataset"},"value":"data.utk\")\nimport os","expected":"Drop a file or a Data Catalog dataset."},
+    {"name":"a dataset id that ends in a line break","widget":{"type":"dataset"},"value":"data.utk.trees\n","expected":"Drop a file or a Data Catalog dataset."},
+    {"name":"a dataset that is not text","widget":{"type":"dataset"},"value":5,"expected":"Drop a file or a Data Catalog dataset."},
     {"name":"an unknown kind","widget":{"type":"colour"},"value":"red","expected":"Unknown widget type."}
   ],
   "declared": [
@@ -83,6 +89,7 @@
     {"name":"a checkbox group without choices or a default","widget":{"name":"classes","type":"checkbox-group"},"expected":"Give at least one choice."},
     {"name":"a multi-select without choices or a default","widget":{"name":"modes","type":"multi-select"},"expected":"Give at least one choice."},
     {"name":"a default of null","widget":{"name":"src","type":"text","default":null},"expected":null},
+    {"name":"a dataset widget without a default","widget":{"name":"data","type":"dataset","label":"Data"},"expected":null},
     {"name":"a number whose minimum is above its maximum","widget":{"name":"k","type":"number","default":3,"options":{"min":4,"max":2}},"expected":"The minimum must be below the maximum."},
     {"name":"a slider whose minimum is a text","widget":{"name":"rain","type":"slider","default":0,"options":{"min":"0","max":1}},"expected":"A slider needs a minimum and a maximum."},
     {"name":"a number whose step is a text","widget":{"name":"k","type":"number","default":1,"options":{"step":"1"}},"expected":null},

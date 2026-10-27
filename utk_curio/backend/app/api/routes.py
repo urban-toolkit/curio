@@ -529,9 +529,9 @@ def get_starters():
 
     Starters are sourced from each installed package's optional per-template
     ``source`` file and keyed on the canonical package id
-    ``<packageId>/<templateId>@<major>``. The pre-installed ``curio.builtin@1``
-    package ships no sources, so dragging a built-in node onto the canvas
-    yields an empty editor; third-party packages may ship a starter per template.
+    ``<packageId>/<templateId>@<major>``. In the pre-installed ``curio.builtin@1``
+    package only Data Loading ships one, so its other nodes open with an empty
+    editor; third-party packages may ship a starter per template.
     A model package's template without a ``source`` gets the cell Curio writes
     for its model's type (``packages.application.starters``).
     """

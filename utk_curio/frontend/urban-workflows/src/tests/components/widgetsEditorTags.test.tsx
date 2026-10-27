@@ -116,6 +116,18 @@ describe("a run", () => {
     );
   });
 
+  test("an empty Data is not listed, its own control says what to drop, and a run still ends with it", () => {
+    const data: WidgetDef = { name: "data", type: "dataset", label: "Data", default: "" };
+    const { props, view } = renderEditor({ userCode: "data = curio_load_data([!! data !!])\nreturn data", widgets: [data] });
+    expect(screen.queryByLabelText("References that do not resolve")).toBeNull();
+
+    view.rerender(<WidgetsEditor {...props} markersDirty={1} />);
+    expect(props.sendReplacedCode).not.toHaveBeenCalled();
+    expect(props.onResolveError).toHaveBeenCalledWith(
+      expect.stringContaining("[!! data !!]: drop a file or a Data Catalog dataset on Data first."),
+    );
+  });
+
   test("mounting resolves nothing; only a change of the count does", () => {
     const { props } = renderEditor({ userCode: "return [!! factor !!]", widgets: [factor] });
     expect(props.sendReplacedCode).not.toHaveBeenCalled();

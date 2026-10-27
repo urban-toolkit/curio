@@ -30,7 +30,7 @@ import {
 } from "../../../services/datasetCatalog";
 import { buildSaveableLiveOutputs } from "../../../utils/saveOutputDataset";
 import { resolveComputedInstallTitle } from "../../../utils/palettePackageFactoryDraft";
-import { dataflowRefFromCatalogItem } from "./dataflowDatasetRef";
+import { addDatasetToDataflow, dataflowRefFromCatalogItem } from "./dataflowDatasetRef";
 import { permanentDeletionNotice } from "../../../services/retentionCopy";
 import { codeOnlyDataflows, codeOnlyWarning } from "../../../services/codeOnlyUsage";
 import type { DrawerTab } from "./datasetCatalogDrawerTypes";
@@ -200,32 +200,12 @@ export function useDatasetCatalogDrawer(presented: boolean) {
       });
       try {
         const isGroup = isLayerGroupId(dataset.id);
-        // An OSM group's id is synthetic — install each real per-layer dataset
-        // so their dataflow refs (which feed the saved spec) stay accurate.
-        const memberIds = isGroup ? dataset.groupLayerIds ?? [] : [dataset.id];
-        const installedItems: DatasetCatalogItem[] = [];
-        for (const memberId of memberIds) {
-          installedItems.push(
-            await datasetCatalogApi.installToDataflow(
-              id,
-              memberId,
-              isGroup ? undefined : dataset,
-              isGroup ? undefined : resolveComputedInstallTitle(dataset),
-            ),
-          );
-        }
-        setDataflowDatasets((prev) => {
-          const installedIds = new Set(installedItems.map((it) => it.id));
-          const next = prev.filter(
-            (row) => !installedIds.has(String(row?.datasetId || row?.id)),
-          );
-          return [...next, ...installedItems.map(dataflowRefFromCatalogItem)];
-        });
-        // One refresh event fans out to every catalog listener — including this
-        // hook's own listener, which does the bust-cache reload. Calling
-        // catalog.reload here too issued the expensive multi-source listing
-        // twice per action (#178).
-        notifyDatasetCatalogRefresh();
+        const installedItems = await addDatasetToDataflow(
+          id,
+          dataset,
+          setDataflowDatasets,
+          resolveComputedInstallTitle(dataset),
+        );
         showToast(
           isGroup
             ? `Added ${installedItems.length} layers from ${dataset.title} to this project.`

@@ -13,7 +13,14 @@ import { ThemeProvider } from "@mui/material/styles";
 import styles from "./WidgetTags.module.css";
 import { LocationControl } from "./LocationControl";
 import { widgetTheme } from "./widgetTheme";
+import { useDatasetWidgetNode } from "./datasetWidgetContext";
 import { tooltipStore } from "../../tooltip/tooltipStore";
+import { CatalogFormatBadge } from "../../catalog/CatalogKindVisuals";
+import {
+  DATASET_FORMAT_LABEL,
+  DATASET_IMPORT_ACCEPT,
+  type DatasetFormat,
+} from "../../../services/datasetCatalog/datasetCatalogTypes";
 import {
   FILE_WIDGET_MAX_CHARS,
   checkWidgetValue,
@@ -58,6 +65,8 @@ export function WidgetControl({ widget, value, onChange, disabled = false, ariaL
   );
   const [problem, setProblem] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  // A dataset widget's node: the dataset's title, and the files it takes.
+  const datasetNode = useDatasetWidgetNode();
   const sliderRef = useRef<HTMLSpanElement | null>(null);
   // A slider's value while its thumb is dragged: the press closed the hover
   // tooltip, so this one shows at the thumb until the drag ends.
@@ -438,6 +447,60 @@ export function WidgetControl({ widget, value, onChange, disabled = false, ariaL
         </span>
       );
       break;
+    case "dataset": {
+      // Where a file or a Data Catalog dataset is dropped. The node takes the
+      // drop on its whole card (NodeContainer), so this shows what it holds,
+      // lights up while a drop is over the node, and offers Choose file.
+      const id = typeof value === "string" ? value : "";
+      const known = id ? datasetNode.describe(id) : undefined;
+      const format = known?.format as DatasetFormat | undefined;
+      const formatLabel = format ? DATASET_FORMAT_LABEL[format] : undefined;
+      const canChoose = !disabled && datasetNode.takeFiles !== undefined;
+      control = (
+        <span
+          className={`${styles.datasetDrop}${datasetNode.dropping ? ` ${styles.datasetDropActive}` : ""}`}
+          data-dataset-drop={id ? "set" : "empty"}
+        >
+          {id ? (
+            <>
+              <span className={styles.datasetName} data-tooltip={id}>
+                {known?.title || id}
+              </span>
+              {format && formatLabel ? <CatalogFormatBadge label={formatLabel} formatKey={format} /> : null}
+            </>
+          ) : (
+            <span className={styles.datasetHint}>Drop a file or a Data Catalog dataset here</span>
+          )}
+          {canChoose ? (
+            <Button
+              variant="outlined"
+              component="label"
+              onKeyDown={(e: React.KeyboardEvent<HTMLLabelElement>) => {
+                if (e.key !== "Enter" && e.key !== " ") return;
+                e.preventDefault();
+                fileInput.current?.click();
+              }}
+            >
+              Choose file
+              <input
+                ref={fileInput}
+                type="file"
+                hidden
+                aria-label={label}
+                accept={DATASET_IMPORT_ACCEPT}
+                onChange={(e) => {
+                  const files = Array.from(e.target.files ?? []);
+                  // The same file chosen again is a change too.
+                  e.target.value = "";
+                  if (files.length > 0) datasetNode.takeFiles?.(files);
+                }}
+              />
+            </Button>
+          ) : null}
+        </span>
+      );
+      break;
+    }
     default:
       control = null;
   }

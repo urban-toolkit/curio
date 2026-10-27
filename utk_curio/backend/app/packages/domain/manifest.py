@@ -346,6 +346,10 @@ class TemplateManifest:
     # dataflow. An agent whose node target requires the flag attaches to it,
     # and Solve finds the node a source before it writes its code.
     loads_dataset: bool = False
+    # ``opensOnWidgets``: a node of this template opens on its Widgets tab
+    # while its code reads one of its widgets (Data Loading's Data, Data
+    # Export's File name); its code stays on the Code tab.
+    opens_on_widgets: bool = False
 
     @classmethod
     def from_json(cls, raw: object, *, where: str) -> "TemplateManifest":
@@ -409,6 +413,9 @@ class TemplateManifest:
         loads_dataset_raw = raw.get("loadsDataset", False)
         if not isinstance(loads_dataset_raw, bool):
             raise ManifestError(f"{where}.loadsDataset must be a boolean when present")
+        opens_on_widgets_raw = raw.get("opensOnWidgets", False)
+        if not isinstance(opens_on_widgets_raw, bool):
+            raise ManifestError(f"{where}.opensOnWidgets must be a boolean when present")
         dataflow_categories = _parse_dataflow_categories(raw.get(DATAFLOW_CATEGORIES), where=where)
         return cls(
             template_id=template_id,
@@ -441,6 +448,7 @@ class TemplateManifest:
             widgets=widgets_raw,
             starter_is_content=starter_is_content_raw,
             loads_dataset=loads_dataset_raw,
+            opens_on_widgets=opens_on_widgets_raw,
         )
 
 

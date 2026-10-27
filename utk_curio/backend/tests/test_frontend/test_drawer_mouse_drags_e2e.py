@@ -36,6 +36,7 @@ from .utils import (
     CANVAS_DROP_TARGET,
     api_json,
     canvas_node_type,
+    dataset_widget_state,
     drag_to_canvas_with_the_mouse,
     enable_save_output,
     node_locator,
@@ -48,6 +49,7 @@ from .utils import (
     set_canvas_zoom,
     stub_login_and_enter_workflow,
     wait_for_drawer_closed,
+    wait_for_node_code,
 )
 
 if TYPE_CHECKING:
@@ -60,6 +62,13 @@ MODEL_DRAWER = '[data-curio-model-catalog-drawer="true"]'
 CARD = 'article:not([role="status"])'
 
 LOADER_TYPE = "curio.builtin/data-loading"
+#: Data Loading's starter, which loads what its Data widget holds.
+STARTER = "data = curio_load_data([!! data !!])\nreturn data\n"
+#: What a drop writes in its place for NetCDF variables, which cannot leave the node.
+NETCDF_LOADER = (
+    "ds = curio_load_data([!! data !!])\n"
+    "# ds cannot leave this node: return a table, a raster or a value made from it.\n"
+)
 ANALYSIS_TYPE = "curio.builtin/computation-analysis"
 SEGMENTATION = "model.curio.ddrnet23-slim/image-segmentation"
 
@@ -147,6 +156,15 @@ def _toast(page, text: str):
     return page.locator('[aria-label="Notifications"]').get_by_text(text).first
 
 
+def _holds(page, node: str, dataset_id: str, refs: list[str], code: str) -> None:
+    """The Data Loading node *node* holds *dataset_id* in its Data widget, is
+    bound to exactly *refs* and none other, and its code is *code*, which
+    reads the widget."""
+    wait_for_node_code(page, node, code)
+    state = dataset_widget_state(page, node)
+    assert (state["value"], sorted(state["datasetRefs"])) == (dataset_id, sorted(refs)), state
+
+
 def test_a_dataset_card_dragged_from_the_data_catalog_drawer_becomes_a_data_loading_node(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
@@ -158,8 +176,7 @@ def test_a_dataset_card_dragged_from_the_data_catalog_drawer_becomes_a_data_load
     node = drag_to_canvas_with_the_mouse(page, card.locator("h3"), at=UNDER_THE_SCRIM)
 
     assert (canvas_node_type(page, node) or "").split("@")[0] == LOADER_TYPE
-    code = read_node_code(page, node)
-    assert f'curio_load_data("{BOUNDARY}")' in code, code
+    _holds(page, node, BOUNDARY, [BOUNDARY], STARTER)
     expect(_toast(page, f"Created a Data Loading node for {BOUNDARY_TITLE}.")).to_be_visible(
         timeout=10000
     )
@@ -176,10 +193,10 @@ def test_a_layer_group_card_dragged_from_the_data_catalog_drawer_becomes_a_loade
     node = drag_to_canvas_with_the_mouse(page, card.locator("h3"), at=UNDER_THE_SCRIM)
 
     assert (canvas_node_type(page, node) or "").split("@")[0] == LOADER_TYPE
-    code = read_node_code(page, node)
-    # One read per layer, by the layer's own id: no dataset has the group's id.
-    missing = [layer for layer in WRF_LAYERS if f'curio_load_data("{layer}")' not in code]
-    assert (missing, WRF_GROUP in code) == ([], False), code
+    # The widget holds the group, which loads every layer of it, and what
+    # NetCDF variables load stays in the code. The node is bound to each layer
+    # by the layer's own id: no dataset has the group's id.
+    _holds(page, node, WRF_GROUP, list(WRF_LAYERS), NETCDF_LOADER)
 
     # The drawer's scrim lies over the canvas: close the drawer, then run it.
     page.keyboard.press("Escape")
@@ -269,5 +286,5 @@ def test_a_saved_output_dragged_from_the_data_palette_becomes_a_data_loading_nod
     )
 
     assert (canvas_node_type(page, node) or "").split("@")[0] == LOADER_TYPE
-    code = read_node_code(page, node)
-    assert f'curio_load_data("{computed_dataset_id(PRODUCER, project_id)}")' in code, code
+    saved = computed_dataset_id(PRODUCER, project_id)
+    _holds(page, node, saved, [saved], STARTER)

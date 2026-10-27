@@ -164,16 +164,19 @@ def test_map_edits_names_no_what_differs(builtin_package_dir: Path):
             assert word not in line, line
 
 
-def test_builtin_package_ships_no_sources(builtin_package_dir: Path):
-    """Built-in templates are structural shells — no starter code files."""
+def test_only_data_loading_ships_a_starter(builtin_package_dir: Path):
+    """Data Loading opens with the code that loads what its Data widget holds;
+    every other built-in template opens empty, and ships no starter file."""
     manifest = load_package_manifest(builtin_package_dir)
     for template in manifest.templates:
-        assert template.source is None, (
-            f"built-in template {template.template_id} must not declare a source"
-        )
-    assert not (builtin_package_dir / "sources").exists(), (
-        "built-in package must not ship a sources/ directory"
-    )
+        if template.template_id == "data-loading":
+            assert template.source == "sources/data-loading.py"
+        else:
+            assert template.source is None, (
+                f"built-in template {template.template_id} must not declare a source"
+            )
+    shipped = sorted(p.name for p in (builtin_package_dir / "sources").iterdir())
+    assert shipped == ["data-loading.py"], shipped
 
 
 def test_every_catalog_package_validates_against_schema():

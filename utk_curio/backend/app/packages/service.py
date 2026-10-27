@@ -88,6 +88,7 @@ from utk_curio.backend.app.packages.application.store_install import (
 )
 from utk_curio.backend.app.packages.application.starters import (
     content_starters,
+    declared_widgets,
     generate_package_starters,
 )
 from utk_curio.backend.app.packages.application.model_packages import (
@@ -168,6 +169,7 @@ __all__ = [
     "install_python_deps",
     "example_dep_package_ids",
     "content_starters",
+    "declared_widgets",
     "generate_package_starters",
     "seed_dev_packages",
     "install_package_from_archive",

@@ -7,6 +7,7 @@ import GrammarEditor from "./GrammarEditor";
 import WidgetsEditor from "./WidgetsEditor";
 import { NodeType } from "../../constants";
 import type { GrammarRedraw, NodeTemplateId } from "../../registry/types";
+import { tryGetNodeDescriptor } from "../../registry/nodeRegistry";
 import Col from "react-bootstrap/Col";
 import Nav from "react-bootstrap/Nav";
 import Row from "react-bootstrap/Row";
@@ -31,6 +32,7 @@ import { unversionedNodeType } from "../../utils/flowNodeCanonicalType";
 import { notebookOutputBox } from "../../utils/notebookLayout";
 import { useNodeHeaderSlot } from "./nodeHeaderSlot";
 import { normalizeWidgets, type WidgetDef, type WidgetValue } from "../../utils/widgets/widgetModel";
+import { readsAWidget } from "../../utils/widgets/datasetWidgets";
 import { registerNodeSettingWriter, withWidgetValues } from "../../utils/nodeSettingsWriters";
 import { isVegaLiteNodeType } from "../../registry/vegaLiteNodes";
 import {
@@ -128,13 +130,26 @@ function NodeEditor({
     const [replacedCode, setReplacedCode] = useState<string>(""); // python or grammar with marks resolved
     const [replacedCodeDirty, setReplacedCodeDirty] = useState<number>(0); // code has to rerun every time button is pressed (having changes or not)
     const [fullscreen, setFullscreen] = useState<string>("");
+    const { dashboardOn, markDirty, markNodeStale, requestAutoRun, nodes: flowNodes } = useFlowContext();
+    // A template that declares opensOnWidgets (Data Loading) opens on its
+    // Widgets tab, where the user sets what its code reads, while its code
+    // reads one of its widgets; its code stays on the Code tab. A node whose
+    // code reads none, such as an example's literal loader, opens on its code.
+    const opensOnWidgets = !dashboardOn && widgetsTab && code
+        && tryGetNodeDescriptor(nodeType)?.opensOnWidgets === true;
+    const widgetsFirst = (written: unknown, held: unknown) => opensOnWidgets && readsAWidget(held, written);
     // Not the literal "code": grammar-only kinds (autk-grammar, vis-vega declare
     // hasCode:false) have no code pane, so hardcoding it left NO pane active on
     // mount and the editor rendered inside a display:none tab (#157).
     const [activeTab, setActiveTab] = useState<string>(
-        () => resolveInitialEditorTab({ code, grammar, widgets: widgetsTab })
+        () => resolveInitialEditorTab({
+            code, grammar, widgets: widgetsTab, widgetsFirst: widgetsFirst(defaultValue, data.widgets),
+        })
     );
-    const { dashboardOn, markDirty, markNodeStale, requestAutoRun, nodes: flowNodes } = useFlowContext();
+    // Whether the node's first tab is settled: at once for a node that
+    // mounts with its code and widgets, else when they arrive, or when the
+    // user picks a tab.
+    const tabSettledRef = useRef(Boolean(defaultValue) && normalizeWidgets(data.widgets).length > 0);
 
     // #662: the node's widgets. Node data holds them (TrillGenerator saves
     // data.widgets), set directly as data.code is, so a value change does not
@@ -145,6 +160,14 @@ function NodeEditor({
         // Replaced from outside: a package template's widgets seeded on drop.
         setWidgets(normalizeWidgets(dataWidgets));
     }, [dataWidgets]);
+    // A fresh node takes its template's starter and widgets after it mounts:
+    // it turns to its Widgets tab when they arrive, once, unless the user has
+    // picked a tab.
+    useEffect(() => {
+        if (tabSettledRef.current || !defaultCode || widgets.length === 0) return;
+        tabSettledRef.current = true;
+        if (widgetsFirst(defaultCode, widgets)) setActiveTab("widgets");
+    }, [defaultCode, widgets]);
     const updateWidgets = (next: WidgetDef[]) => {
         data.widgets = next;
         setWidgets(next);
@@ -422,6 +445,7 @@ function NodeEditor({
             });
             return;
         }
+        tabSettledRef.current = true;
         setActiveTab(eventKey);
     };
 

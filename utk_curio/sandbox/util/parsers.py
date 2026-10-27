@@ -38,6 +38,7 @@ from utk_curio.sandbox.util.codec import (
     _serialize_parquet_meta,
     _write_dataframe_parquet,
     active_geometry_name,
+    cannot_hand_on,
     is_geospatial_frame,
     detect_kind,
     make_json_safe,
@@ -551,7 +552,7 @@ def save_to_duckdb(value, node_id=None, session_id=None):
             )
 
         else:
-            raise TypeError(f"save_to_duckdb: unsupported type {type(value)}")
+            raise cannot_hand_on(value)
 
         if session_id is not None:
             con.execute(

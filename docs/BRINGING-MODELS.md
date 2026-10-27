@@ -371,9 +371,9 @@ Each widget has:
 - `name`: letters, digits and underscores, not starting with a digit, and
   unique among the template's widgets. Not `input_0`, `input_1` and so on, nor
   `inputs`: those names read the node's inputs.
-- `type`: one of 14 kinds: `number`, `slider`, `text`, `choice`, `checkbox`,
+- `type`: one of 15 kinds: `number`, `slider`, `text`, `choice`, `checkbox`,
   `checkbox-group`, `multi-select`, `datetime`, `date`, `location`,
-  `number-list`, `text-list`, `range` and `file`. [USAGE.md, Widgets](USAGE.md#widgets) shows
+  `number-list`, `text-list`, `range`, `file` and `dataset`. [USAGE.md, Widgets](USAGE.md#widgets) shows
   the control each kind draws and the value the code gets.
 - `label`: what the Widgets tab calls it.
 - `default`: the value a dropped node starts with. Without one, it is the

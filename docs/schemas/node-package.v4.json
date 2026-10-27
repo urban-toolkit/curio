@@ -282,7 +282,7 @@
           "not": { "pattern": "^(?:input_\\d+|inputs)$" },
           "description": "Letters, digits and underscores, not starting with a digit. Not input_0, input_1 and so on, nor inputs: those names read the node's inputs."
         },
-        "type": { "type": "string", "enum": ["number", "slider", "text", "choice", "checkbox", "checkbox-group", "multi-select", "datetime", "date", "location", "number-list", "text-list", "range", "file"] },
+        "type": { "type": "string", "enum": ["number", "slider", "text", "choice", "checkbox", "checkbox-group", "multi-select", "datetime", "date", "location", "number-list", "text-list", "range", "file", "dataset"] },
         "label": { "type": "string" },
         "default": {},
         "value": {},
@@ -358,7 +358,7 @@
         "outputPorts": { "type": "array", "items": { "$ref": "#/$defs/port" } },
         "source": {
           "type": "string",
-          "description": "Package-relative path to a single optional starter source file (e.g. 'sources/uhvi-load.py', 'sources/chart.vl.json'). Omit for structural kinds (built-in nodes ship no starter)."
+          "description": "Package-relative path to a single optional starter source file (e.g. 'sources/data-loading.py', 'sources/chart.vl.json'). Omit it for a node that opens empty."
         },
         "bidirectional": {
           "type": "boolean",
@@ -388,6 +388,11 @@
           "type": "array",
           "items": { "$ref": "#/$defs/widget" },
           "description": "The widgets a freshly dropped node of this template starts with (#662). The template's source places each one as a `[!! name !!]` reference."
+        },
+        "opensOnWidgets": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, a node of this template opens on its Widgets tab, where the user sets what its code reads, while its code reads one of its widgets. Its code stays on the Code tab. A node whose code reads none of its widgets, or that has none, opens on its code."
         },
         "starterIsContent": {
           "type": "boolean",

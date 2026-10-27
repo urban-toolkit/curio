@@ -55,6 +55,9 @@ type CreateCodeNodeOptions = {
     datasetRefs?: string[];
     appliedDatasets?: Record<string, unknown>;
     datasetSource?: DatasetNodeSource;
+    // What each dataset widget was set to by a drop, and the refs it bound
+    // (canonical shape metadata.datasetWidgets; datasetApplication).
+    datasetWidgets?: Record<string, unknown>;
     // The model a Model Catalog drop set (canonical shape metadata.modelRefs).
     modelRefs?: { id: string; name: string }[];
     saveOutputDataset?: boolean;
@@ -103,7 +106,8 @@ export interface LoadTrillOptions {
 }
 
 interface IUseCode {
-    createCodeNode: (nodeType: string, options?: CreateCodeNodeOptions) => void;
+    /** Adds a node of *nodeType* to the canvas and returns it. */
+    createCodeNode: (nodeType: string, options?: CreateCodeNodeOptions) => Node;
     loadTrill: (
         trill: any,
         suggestionType?: string,
@@ -214,6 +218,12 @@ export function useCode(): IUseCode {
 
             if(node.metadata != undefined && node.metadata.datasetSource != undefined)
                 nodeMeta.datasetSource = node.metadata.datasetSource;
+
+            // What each dataset widget was set to, so the next drop takes the
+            // place of the refs it bound.
+            if(node.metadata != undefined && node.metadata.datasetWidgets != undefined
+                && typeof node.metadata.datasetWidgets === "object" && !Array.isArray(node.metadata.datasetWidgets))
+                nodeMeta.datasetWidgets = node.metadata.datasetWidgets;
 
             if(node.metadata != undefined && Array.isArray(node.metadata.modelRefs))
                 nodeMeta.modelRefs = node.metadata.modelRefs;
@@ -418,6 +428,7 @@ export function useCode(): IUseCode {
             datasetRefs = undefined,
             appliedDatasets = undefined,
             datasetSource = undefined,
+            datasetWidgets = undefined,
             modelRefs = undefined,
             saveOutputDataset = undefined,
             appearance = undefined,
@@ -471,6 +482,7 @@ export function useCode(): IUseCode {
                 datasetRefs,
                 appliedDatasets,
                 datasetSource,
+                datasetWidgets,
                 appearance,
                 title,
                 spatialJoin,

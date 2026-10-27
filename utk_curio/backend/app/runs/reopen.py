@@ -23,22 +23,25 @@ from utk_curio.backend.app.runs import kept
 def _datasets_by_node(codes: dict, project_id: str, owner) -> dict:
     """``{node id: dataset identities}`` (``kept.datasets_read``) for each
     code in *codes*, every dataset they name resolved in one pass, as a run
-    resolves a node's (``node_exec.resolve_dataset_paths``)."""
+    resolves a node's (``node_exec.resolve_dataset_paths``): a layer group's
+    id as its layers."""
     from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
+    from utk_curio.backend.app.datasets.domain.layer_group import ids_read
     from utk_curio.backend.app.datasets.infrastructure import left_out_files
     from utk_curio.backend.app.execution.node_exec import MAX_EXEC_DATASET_IDS, resolve_dataset_ids
 
     named = {node_id: dataset_ids_in_code(code, limit=MAX_EXEC_DATASET_IDS) for node_id, code in codes.items()}
+    formats: dict = {}
     # A shipped dataset a pip install leaves out is fetched as it resolves;
     # one that cannot be is left out, as a run leaves it.
     with left_out_files.failures():
         paths = resolve_dataset_ids(
-            sorted({dataset_id for ids in named.values() for dataset_id in ids}), project_id, owner,
+            sorted({dataset_id for ids in named.values() for dataset_id in ids}), project_id, owner, formats,
         )
     return {
         node_id: kept.datasets_read(
             codes[node_id], project_id, owner,
-            paths={dataset_id: paths[dataset_id] for dataset_id in ids if dataset_id in paths},
+            paths={dataset_id: paths[dataset_id] for dataset_id in ids_read(ids, formats) if dataset_id in paths},
         )
         for node_id, ids in named.items()
     }

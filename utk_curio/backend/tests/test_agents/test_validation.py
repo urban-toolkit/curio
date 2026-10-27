@@ -173,6 +173,36 @@ class TestDev115Passthrough:
         assert isinstance(result["evidence"]["durationMs"], int)
 
 
+class TestCollectionsInDatasetWidgets:
+    """A Data Loading node's Data widget may hold a collection's id, which is
+    in no literal call until the run writes it in: the collections a
+    validation resolves are found in each node's code and in the candidate's
+    as the run writes them, with their nodes' widgets."""
+
+    def test_the_candidate_and_its_ancestors_are_read_with_their_widgets(self, tmp_curio, monkeypatch):
+        from utk_curio.backend.app.discovery.application import exec_collections
+
+        scanned = []
+        monkeypatch.setattr(
+            exec_collections, "resolve_exec_collections",
+            lambda code, user_key, user=None: scanned.append(code) or ({}, None),
+        )
+        data = {"name": "data", "type": "dataset", "label": "Data", "default": ""}
+        load = {**_node("load", node_type="curio.builtin/data-loading",
+                        content="return curio_load_data([!! data !!])"),
+                "metadata": {"widgets": [{**data, "value": "imported.xnoise"}]}}
+        target = {**_node("t", content=""), "metadata": {"widgets": [{**data, "value": "imported.xorthos"}]}}
+        spec = _spec([load, target], [{"id": "e1", "source": "load", "target": "t"}])
+
+        validation.validate_candidate(
+            KEY, PID, spec, "t", "frames = curio_load_data([!! data !!])\nreturn frames", exec_fn=_exec({}),
+        )
+
+        assert len(scanned) == 1
+        assert 'curio_load_data("imported.xnoise")' in scanned[0], scanned[0]
+        assert 'frames = curio_load_data("imported.xorthos")' in scanned[0], scanned[0]
+
+
 class TestNotExecutable:
     """dev/118 (DEC-075): the fourth verdict — a browser-rendered kind is
     neither a pass nor a content failure."""

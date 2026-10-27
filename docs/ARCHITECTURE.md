@@ -1338,8 +1338,11 @@ Five design points worth knowing:
   can write beside the library or under HOME, and the execution account can do
   neither.
 - **No pickle in either direction.** A child's manifest carries a kind tag,
-  JSON scalars, and flat filenames only. Unpickling a hostile child's output in
-  the privileged parent would hand back most of what isolation removed.
+  JSON scalars, and flat filenames only. A list or dict that holds frames, such
+  as a layer group's layers, names each item as an output of its own, which the
+  parent stores as `list_of_ids` or `dict_of_ids`, as the in-process path does.
+  Unpickling a hostile child's output in the privileged parent would hand back
+  most of what isolation removed.
 - **Node code loses direct store access.** The in-process path seeds
   `load_from_duckdb` / `save_to_duckdb` / `save_dataset_parquet` into user
   scope; under isolation those names raise instead. Nodes exchange data through
@@ -1499,10 +1502,13 @@ fails open into a runtime error from the sandbox.
    `curio_data_path("<id>")` calls (single or double quoted), dedupes the
    ids, and caps them at `MAX_EXEC_DATASET_IDS` (32).
 2. It resolves them via `DatasetCatalogService.resolve_execution_paths`, which
-   refuses any path outside the allowed read roots. Resolution **fails open**: an
-   error yields an empty mapping rather than blocking the run.
+   refuses any path outside the allowed read roots. A layer group's id resolves
+   to its layers: each layer's path, and an entry among the formats that names
+   the layers in order, which `curio_load_data` reads into a dict. Resolution
+   **fails open**: an error yields an empty mapping rather than blocking the run.
 3. The resulting `{id: absPath}` map rides along on the `/exec` body. The sandbox
-   re-validates it (dict-shaped, stringified, ≤32 entries) and injects
+   re-validates it (dict-shaped, stringified, ≤32 entries the code names, plus
+   the layers of the groups among them) and injects
    `curio_data_path` into the user namespace, where an unknown id raises an
    actionable `RuntimeError` instead of returning a foreign path.
 4. Under fork isolation, `stage_dataset_paths`
@@ -2667,11 +2673,18 @@ completion's output cap is the deployment constant
 | `/starters` | GET | Per-template starter source bodies from every installed package, keyed on `<packageId>/<templateId>@<major>` |
 
 Starters come from each installed package's optional per-template `source` file.
-`curio.builtin@1` ships no sources, so dragging a built-in node onto the canvas
-yields an empty editor; third-party packages may ship a starter per template.
-When a template declares both `behavior: "code"` and a `source`, the frontend
-composes `withPackageStarter` over the behavior hook so the starter is injected
-on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
+In `curio.builtin@1` only Data Loading ships one (`sources/data-loading.py`),
+so its other nodes open with an empty editor; third-party packages may ship a
+starter per template. When a template declares both `behavior: "code"` and a
+`source`, the frontend composes `withPackageStarter` over the behavior hook so
+the starter, and the template's `widgets` beside it, are injected on a fresh drop
+(see [Behavior Hooks](#behavior-hooks)).
+
+A template's `widgets` reach a node an agent creates too, whatever writes its
+content: both plan applies and `node.create` read them with `declared_widgets`
+(`packages/application/starters.py`) and set the plan's or the request's widgets
+over them (`plan_scenarios.created_node_metadata`, `plan_scenarios._set_over`),
+as the roster names them to the agents (`templates._template_entry`).
 
 A template that declares `starterIsContent` gives its starter to a node an
 agent's plan or `node.create` creates too. Both plan applies, the whole plan and one node
@@ -2682,7 +2695,7 @@ widgets are the template's with each one the plan declares set over the one of
 its name (`plan_scenarios.created_node_metadata`). It never joins `nodeRuns` as
 pending, so Solve does not write it, and its ref is `approved`, so the
 Simulation Mode driver does not validate it either. Every other planned node is
-created empty for Solve to write.
+created with its template's declared widgets and no content, for Solve to write.
 
 A `node.create` of such a template gives no content, and any other content is
 refused (`mint.starter-is-content`, which names the template's widgets). The
@@ -2692,6 +2705,45 @@ the spec and the widgets Apply writes. Neither the source-grounding gate nor
 the document check reads the starter, as neither reads a plan's. A template
 whose starter is not its whole content keeps its rule: the request gives the
 content.
+
+### Dataset widgets and drops
+
+A widget of type `dataset` holds a Data Catalog id, and its reference writes
+the id as a string, so Data Loading's starter, `data = curio_load_data([!! data !!])`,
+loads whatever it holds; `code_references.reference_problem` and its twin
+`referenceProblem` refuse code that reads an empty one; the editor draws its
+chip as any other and the Widgets tab leaves it out of its list
+(`waitsForData`). A template that declares `opensOnWidgets` has `NodeEditor`
+open on its Widgets tab while its code reads one of its widgets
+(`readsAWidget`), and a fresh node turns there when its starter and widgets
+arrive; its code stays on the Code tab. The node takes drops on its whole card,
+in `NodeContainer`'s capture listeners (`components/styles.tsx`), since Monaco
+stops drop events before they reach a control: a Data Catalog card, or a file
+from the computer that `useDataFileImport` first imports
+(`datasetCatalogApi.importDataset`) and adds to the dataflow
+(`addDatasetToDataflow`, the drawer's Add to project), sets the first dataset
+widget the node's code reads (`datasetWidgetReadBy`), and on any other node the
+loader is merged into the code (`mergeDatasetLoaderCode`). While the code is one
+a drop wrote from the template's starter (`isWidgetLoaderCode`), it becomes the
+one for the new dataset (`widgetLoaderCode`): the starter, naming a GeoTIFF's
+`bounds` (`LOADER_OPTIONS`), or for an ONNX model or a NetCDF file the loader
+that keeps the value in the code (`keptInCodeLoader`). The dataset control's
+**Choose file** hands its files to the same path through
+`DatasetWidgetContext`. Setting the widget trades the bindings it made before
+for the new dataset's (`applyDatasetToWidget`: `datasetRefs`, `appliedDatasets`,
+a layer group's members), recorded per widget in `datasetWidgets`, which the
+save writes at `metadata.datasetWidgets`; `nodeBoundDatasetIds` also reads the
+widgets' values. On the empty canvas, `MainCanvas` makes the Data Loading node a
+drop on a fresh one would make (`buildDatasetWidgetNodeOptions`). The kind is
+read-only on a dashboard tile (`contracts/dashboardRuns.json`).
+
+The id a dataset widget holds is in no literal call until a run writes it in.
+Play, server runs and viewer runs scan the code they send, with its references
+written in. The scans of a saved spec read each node's code through
+`code_references.node_run_code`, which writes in the node's own widgets: Solve's
+dataset paths (`VerifiedRounds._round_dataset_paths`), the collections of
+`resolve_spec_collections` (Solve's validation, an agent's node run) and Solve's
+blocker signature, so a dataset dropped on an upstream loader is progress.
 
 ### Auth Routes
 
