@@ -29,7 +29,6 @@ import re
 import time
 import uuid
 
-from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
 from utk_curio.backend.app.agents.domain import builtin
@@ -39,8 +38,6 @@ from ..utils import (
     CANVAS_DROP_TARGET,
     _DRAG_TO_CANVAS_JS,
     api_json,
-    assert_autark_map_drawn,
-    assert_vega_canvas_rendered,
     captured_agent_prompts,
     close_scenario_details,
     close_scenario_drawer,
@@ -65,6 +62,7 @@ from ..utils import (
     use_scripted_llm,
     wait_for_node_done,
 )
+from ..utils.capture_waits import _wait_for_no_node_running
 from .framework import Ctx, walkthrough
 from .steps import load_example_spec
 
@@ -140,6 +138,9 @@ PLOT_AND_MAP_PROMPT = (
     "Plot the block's share in shadow through the day, a line per scenario, "
     "and map the shade the tower adds."
 )
+
+#: How much of a long prompt a clip shows typed before it cuts to the whole.
+PROMPT_SHOWN = 48
 
 #: What each first turn's title call is answered: the queue's next reply
 #: names the chat, and an empty queue would name it after the scripted
@@ -378,8 +379,18 @@ def _open_chat(ctx: Ctx, agent):
     return panel
 
 
-def _send(ctx: Ctx, panel, message: str) -> None:
-    ctx.narrator.type_into(panel.get_by_role("textbox", name="Message this agent"), message)
+def _send(ctx: Ctx, panel, message: str, *, shown: int | None = None) -> None:
+    """Type *message* and send it. With *shown*, the clip shows its first
+    *shown* characters typed and cuts to the whole of it."""
+    field = panel.get_by_role("textbox", name="Message this agent")
+    if shown is None:
+        ctx.narrator.type_into(field, message)
+    else:
+        ctx.narrator.type_into(field, message[:shown])
+        ctx.mark("cut", "start")
+        field.fill(message)
+        ctx.beat(300)
+        ctx.mark("cut", "end")
     ctx.click(panel.get_by_role("button", name="Send", exact=True))
 
 
@@ -617,15 +628,6 @@ def _frame_all(ctx: Ctx) -> None:
     park_pointer(ctx.page)
 
 
-def _drew(check) -> bool:
-    """Whether *check*, a drawing check, passes."""
-    try:
-        check()
-    except (AssertionError, PlaywrightTimeoutError):
-        return False
-    return True
-
-
 def _play(ctx: Ctx, node_id: str) -> None:
     ctx.focus(node_locator(ctx.page, node_id).locator("svg.fa-circle-play"), hold=400)
     play_node(ctx.page, node_id)
@@ -717,7 +719,12 @@ def crown_heights_first_version(ctx: Ctx) -> None:
     saved = _saved(ctx, token, project_id)
     by_ref = {ref: _by_title(saved, nodes[node_id]["title"])["id"] for ref, node_id in refs.items()}
     by_ref["check-table"] = _by_title(saved, TABLE_TITLE)["id"]
-    untitled = [title for title in [*titles, TABLE_TITLE] if _by_title(saved, title).get("title") != title]
+    # Named as the example names them: a title, and a header that shows it.
+    by_name = {title: _by_title(saved, title) for title in [*titles, TABLE_TITLE]}
+    untitled = [
+        title for title, node in by_name.items()
+        if node.get("title") != title or (node.get("metadata") or {}).get("packageTemplateLabel") != title
+    ]
     assert not untitled, f"the plan's nodes {untitled} did not land with their titles"
     days =(_by_title(saved, nodes[nid("steps")]["title"]).get("metadata") or {}).get("widgets") or []
     assert [w.get("name") for w in days] == ["day"], f"the day's sun steps hold the widgets {days}"
@@ -765,8 +772,11 @@ def crown_heights_scenarios(ctx: Ctx) -> None:
         if node["copiedFrom"]
     }
     assert sorted(copies) == sorted(chain), f"the copies name {sorted(copies)} as their originals"
-    for scenario_id, scenario in zip(cards, (without, with_)):
-        _name_scenario(ctx, scenario_id, scenario["name"], scenario["color"])
+    _name_scenario(ctx, cards[0], without["name"], without["color"])
+    # The second is named the same way; the clip cuts to it named.
+    ctx.mark("cut", "start")
+    _name_scenario(ctx, cards[1], with_["name"], with_["color"])
+    ctx.mark("cut", "end")
     close_scenario_drawer(page)
 
     # A Map Editor node in the second scenario, between the buildings and the
@@ -900,16 +910,23 @@ def crown_heights_map_editor(ctx: Ctx) -> None:
     ctx.mark("clip", "start")
     _drop_agent(ctx, node_builder, _centre(page, editor))
     panel = _open_chat(ctx, node_builder)
-    _send(ctx, panel, TOWER_PROMPT)
+    _send(ctx, panel, TOWER_PROMPT, shown=PROMPT_SHOWN)
     _apply(ctx, panel)
     _wait_for_code(page, editor, edits)
     _said_only_what_was_scripted(panel)
     _close_chat(ctx, panel)
     frame_nodes(page, [editor, with_map])
     _play(ctx, editor)
+    # Played, the Map Editor runs the steps below it too: the map draws the
+    # tower, then its shadow once the GPU steps have run again. The clip cuts
+    # to the end.
+    ctx.mark("cut", "start")
     wait_for_node_done(page, editor, node_type=EDIT_TYPE)
     expect(node_locator(page, editor).locator('li[data-edit-op="add"]')).to_have_count(2, timeout=30000)
     _wait_for_redraw(page, with_map, "the tower was added")
+    _wait_for_no_node_running(page, timeout_ms=RUN_ALL_MS)
+    _wait_for_map_drawn(page, with_map, "the steps below the Map Editor ran again")
+    ctx.mark("cut", "end")
     ctx.beat(2500)
     ctx.mark("clip", "end")
 
@@ -974,7 +991,7 @@ def crown_heights_plot_and_map(ctx: Ctx) -> None:
 
     ctx.mark("clip", "start")
     panel = _open_chat(ctx, builder)
-    _send(ctx, panel, PLOT_AND_MAP_PROMPT)
+    _send(ctx, panel, PLOT_AND_MAP_PROMPT, shown=PROMPT_SHOWN)
     _apply_plan(ctx, panel, len(plan["nodes"]))
     nodes = _nodes(spec)
     titles = [nodes[node_id]["title"] for node_id in refs.values()]
@@ -982,15 +999,19 @@ def crown_heights_plot_and_map(ctx: Ctx) -> None:
     _said_only_what_was_scripted(panel)
     _close_chat(ctx, panel)
     plot, added = (written[nodes[nid(key)]["title"]]["id"] for key in PLOT_AND_MAP)
+    for title in titles:
+        _wait_for_code(page, written[title]["id"], written[title]["content"])
     frame_nodes(page, [plot, added])
-    # Each draws its spec from the results its inputs already hold; one that
-    # has not drawn a moment after Solve is played.
-    if not _drew(lambda: assert_vega_canvas_rendered(page, plot, timeout=8000)):
-        _play(ctx, plot)
-    if not _drew(lambda: assert_autark_map_drawn(page, added, timeout=8000)):
-        _play(ctx, added)
+    # Each draws its spec, once played, from the results its inputs already
+    # hold. The clip cuts each draw's wait.
+    _play(ctx, plot)
+    ctx.mark("cut", "start")
     _plot_drew(page, plot, _colors())
+    ctx.mark("cut", "end")
+    _play(ctx, added)
+    ctx.mark("cut", "start")
     _wait_for_map_drawn(page, added, "Solve wrote its spec")
+    ctx.mark("cut", "end")
     ctx.beat(2500)
     ctx.mark("clip", "end")
 
