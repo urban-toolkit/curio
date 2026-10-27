@@ -1206,8 +1206,9 @@ class TestSessionRealData:
             clear_canvas_overlays(page)
             export_id = grid_drop(s, "data-export", 2, 1)
             connect_nodes(page, transform_id, export_id)
-            # The node is one Download button (#226). With no input yet it runs
-            # the transform first, then downloads.
+            # Its Download button sits above its code. With no result yet it
+            # runs the transform and the export's code first, then downloads
+            # the file that run wrote.
             button = node_locator(page, export_id).get_by_role(
                 "button", name=re.compile(r"^Download")
             )
