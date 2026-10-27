@@ -7,8 +7,10 @@ its Download button reads the file that name names (``util/output_files.py``).
 What the data is decides how it is written: a table as CSV, a GeoDataFrame as
 GeoJSON, a raster as GeoTIFF, and anything else as JSON. An empty name is
 ``data_export``, which the node's Download names after what feeds the node
-(``utils/dataExportTarget.ts`` in the canvas), and a name with no extension
-gets the format's.
+(``utils/dataExportTarget.ts`` in the canvas). The file's extension is its
+format's: a name with none gets it, and a name ending in another data format's
+(``trees.csv`` for a GeoDataFrame) gets it in that one's place, so a file's
+name never says a format its bytes are not.
 """
 
 from __future__ import annotations
@@ -22,9 +24,18 @@ import unicodedata
 #: The stem of a file whose data carries no name of its own.
 DEFAULT_STEM = "data_export"
 
-#: The extension each kind of data is written with (``codec.detect_kind``).
-EXTENSIONS = {"dataframe": "csv", "geodataframe": "geojson", "raster": "tif"}
-JSON_EXTENSION = "json"
+#: The extensions a file of each kind of data may end in (``codec.detect_kind``),
+#: the one it is given first.
+EXTENSIONS = {"dataframe": ("csv",), "geodataframe": ("geojson", "json"), "raster": ("tif", "tiff")}
+JSON_EXTENSIONS = ("json",)
+
+#: The extensions of data formats: a name ending in one that is not its data's
+#: format's has it replaced by the format's. Any other ending, ``trees.v2``,
+#: is part of the name, and the format's extension follows it.
+DATA_EXTENSIONS = frozenset({
+    "csv", "tsv", "txt", "json", "geojson", "tif", "tiff", "parquet", "gpkg",
+    "shp", "zip", "xlsx", "xls", "nc", "pbf", "xml", "kml", "gml",
+})
 
 #: The longest name ``curio_output_file`` takes.
 MAX_NAME_CHARS = 128
@@ -37,11 +48,11 @@ _LEADING = re.compile(r"^[^A-Za-z0-9]+")
 _TRAILING = re.compile(r"[._]+$")
 
 
-def extension_for(data) -> str:
-    """The extension *data* is written with."""
+def extensions_for(data) -> tuple:
+    """The extensions a file of *data* may end in, the one it is given first."""
     from utk_curio.sandbox.util.codec import detect_kind
 
-    return EXTENSIONS.get(detect_kind(data), JSON_EXTENSION)
+    return EXTENSIONS.get(detect_kind(data), JSON_EXTENSIONS)
 
 
 def _plain(text: str) -> str:
@@ -59,12 +70,17 @@ def _plain(text: str) -> str:
 
 def export_name(name, data) -> str:
     """The file *name* names for *data*: made plain, ``data_export`` when
-    empty, and given the data's format's extension when it has none."""
-    extension = extension_for(data)
+    empty, and ending in the extension of the format *data* is written in."""
+    extensions = extensions_for(data)
     stem = _plain(str(name) if name is not None else "") or DEFAULT_STEM
-    if "." not in stem:
-        return f"{stem[: MAX_NAME_CHARS - len(extension) - 1]}.{extension}"
-    return stem[:MAX_NAME_CHARS]
+    base, dot, ending = stem.rpartition(".")
+    if dot and ending.lower() in extensions:
+        stem, extension = base, ending
+    else:
+        if dot and ending.lower() in DATA_EXTENSIONS:
+            stem = _TRAILING.sub("", base) or DEFAULT_STEM
+        extension = extensions[0]
+    return f"{stem[: MAX_NAME_CHARS - len(extension) - 1]}.{extension}"
 
 
 def _json_default(value):
