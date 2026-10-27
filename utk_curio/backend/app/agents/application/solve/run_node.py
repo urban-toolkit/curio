@@ -19,6 +19,7 @@ from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application.solve import budgets as agents_budgets
 from utk_curio.backend.app.agents.application.solve import validate as agents_validate
+from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.projects import storage as projects_storage
 
 
@@ -93,6 +94,7 @@ def _run_node_events(
     in-flight guard on every exit, disconnect included."""
 
     from utk_curio.backend.app.execution import runner
+    from utk_curio.backend.app.execution.code_references import node_run_code
 
     from utk_curio.backend.app.discovery.application.exec_collections import (
         resolve_spec_collections,
@@ -110,6 +112,20 @@ def _run_node_events(
         acting_user = agents_spec_reads._acting_user()
         artifact_session = agents_spec_reads._acting_token()
         collections, media_dir = resolve_spec_collections(spec, user_key, user=acting_user)
+        # The paths of the Data Catalog datasets the run reads, and how
+        # curio_load_data reads a layer group, as Play and Solve's runs
+        # resolve them: over each node's code as the run writes it, so the id
+        # a Data widget holds counts (node_run_code).
+        dataset_formats: dict = {}
+        dataset_paths = agents_grounding._exec_dataset_paths(
+            project_id,
+            *(
+                node_run_code(n)
+                for n in ((spec.get("dataflow") or {}).get("nodes") or [])
+                if isinstance(n, dict)
+            ),
+            formats=dataset_formats,
+        )
 
         def _run():
             try:
@@ -119,6 +135,8 @@ def _run_node_events(
                     session_id=artifact_session,
                     exec_fn=exec_fn,
                     acting_user=acting_user,
+                    dataset_paths=dataset_paths or None,
+                    dataset_formats=dataset_formats or None,
                     collections=collections, media_dir=media_dir,
                     as_validation=False,  # a REAL run, journaled as one
                     progress=lambda nid, i, total: progress_queue.put(
