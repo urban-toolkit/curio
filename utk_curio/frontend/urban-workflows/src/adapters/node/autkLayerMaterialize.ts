@@ -10,6 +10,7 @@ import { NodeType } from '../../constants';
 import type { JavaScriptInterpreter } from '../../JavaScriptInterpreter';
 import { detectCoordinateFormat } from '../../utils/geoCrs';
 import { withExtensionRetry } from './duckdbExtensionRetry';
+import { closeAutkDb } from './autkDbClose';
 import { autkTableName } from '../../utils/autkInput';
 import { framesFromPayload } from '../../utils/grammarInput';
 import { deriveBuildingHeight } from '../../utils/buildingHeight';
@@ -192,7 +193,13 @@ export async function loadSpecLayers(spec: any): Promise<Array<{ name: string; t
     // another instance rather than a failed node (#318).
     const db: any = await withExtensionRetry(async () => {
         const instance: any = new AutkDb();
-        await instance.init();
+        try {
+            await instance.init();
+        } catch (err) {
+            // A failed attempt ends its own database (autkDbClose).
+            closeAutkDb(instance);
+            throw err;
+        }
         return instance;
     });
     // Reasons individual sources / reads failed, surfaced below when the load
@@ -269,6 +276,8 @@ export async function loadSpecLayers(spec: any): Promise<Array<{ name: string; t
             }
         }),
     );
+    // Every layer is read: nothing below asks the database again (autkDbClose).
+    closeAutkDb(db);
     const usable = layers.filter(
         (l): l is { name: string; type: string; geojson: FeatureCollection } => l != null,
     );

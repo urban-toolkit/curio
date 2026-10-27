@@ -21,6 +21,7 @@ import { snapSourceToGrid } from '../../utils/geoPrecision';
 import { fitPlotToPane } from '../../utils/autkPlotSizing';
 import { UNREPORTED_MESSAGE, describeError, runAndAlwaysSettle } from './autkRunSettlement';
 import { withExtensionRetry } from './duckdbExtensionRetry';
+import { closeGrammarDb } from './autkDbClose';
 import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../utils/autkSpecKind';
 import { autkOneViewProblem } from '../../contracts/autkGrammar';
 import {
@@ -162,8 +163,9 @@ export const useAutkGrammarBehavior = (
     // interaction zoom fix and the press guard), cleared and re-populated on
     // each applyGrammar run with a map, and on unmount.
     const pickFixCleanupRef = useRef<(() => void) | null>(null);
-    // Destroys the last run's maps (adapters/node/autkMapDrawing): when the
-    // next run removes their canvas, and when the node leaves the page.
+    // Destroys the last run's maps (adapters/node/autkMapDrawing) and ends its
+    // database (autkDbClose): when the next run removes their canvas, and when
+    // the node leaves the page.
     const destroyMapsRef = useRef<(() => void) | null>(null);
     const destroyLastMaps = () => {
         destroyMapsRef.current?.();
@@ -954,13 +956,23 @@ export const useAutkGrammarBehavior = (
                 const grammar = await withExtensionRetry(async () => {
                     const g = new AutkGrammar(targets);
                     if (drawsRasters) withRasterSources(g, newAutkDb);
-                    await g.run(spec);
+                    try {
+                        await g.run(spec);
+                    } catch (err) {
+                        // A failed attempt ends its own database (autkDbClose).
+                        closeGrammarDb(g);
+                        throw err;
+                    }
                     return g;
                 });
                 // The node keeps the grammar's maps, handed over first, so they
                 // are destroyed with the next run or the node even if a step
-                // below fails.
-                destroyMapsRef.current = trackMaps(grammar);
+                // below fails, and with them the database the run drew from.
+                const destroyMaps = trackMaps(grammar);
+                destroyMapsRef.current = () => {
+                    destroyMaps();
+                    closeGrammarDb(grammar);
+                };
                 // A node that left the page while they were made destroys them
                 // now, and its run ends there.
                 if (leftPage()) {
