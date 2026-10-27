@@ -827,6 +827,22 @@ def dataset_widget_state(page, node_id: str, name: str = "data") -> dict:
     return state
 
 
+def assert_shows_only_controls(page, node_id: str) -> None:
+    """*node_id* shows its Widgets tab, and the tab holds only its controls,
+    the rows a dashboard tile shows (``[data-widget-controls]``): no tag,
+    Edit, Delete, Add widget or selections. Data Loading and Data Export
+    (``opensOnControls``)."""
+    node = node_locator(page, node_id)
+    expect(node.locator('.nav-link[data-rr-ui-event-key="widgets"]')).to_have_class(re.compile(r"\bactive\b"))
+    pane = node.locator(".tab-pane.active")
+    expect(pane.locator("[data-widget-controls]")).to_have_count(1)
+    for part in ("[data-widget-tag]", "[data-widgets-panel]", "[data-selections-panel]"):
+        expect(pane.locator(part)).to_have_count(0)
+    for name in ("Add widget", "Add selection"):
+        expect(pane.get_by_role("button", name=name, exact=True)).to_have_count(0)
+    expect(pane.get_by_role("button", name=re.compile(r"^(Edit|Delete) widget "))).to_have_count(0)
+
+
 #: The categories of chips a node's header lists, in its row's order
 #: (``ReferenceStrip`` in WidgetTag.tsx).
 STRIP_CATEGORIES = ("inputs", "scenarios", "widgets", "selections")
@@ -1066,7 +1082,7 @@ def read_node_output_text(page, node_id: str, *, timeout: float = 10000) -> str:
     ``"[1]:Saved to file: xyz"`` or ``"[ ]:No output yet"``.
 
     The box is under the code, on the Code tab, and is read whichever tab
-    the node shows: a node that opens on its widgets (Data Loading) stays
+    the node shows: a node that opens on its controls (Data Loading) stays
     there when it runs.
     """
     box = node_locator(page, node_id).locator("[data-curio-node-output]").first
