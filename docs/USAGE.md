@@ -403,12 +403,12 @@ selected: the editor's tabs (code, widgets, spec, output), **Provenance** (the
 node's runs, see [Provenance](#provenance)), the **Save output dataset** toggle,
 settings, about, pin, **Minimize** and delete.
 Code and specs sit in a gray box, and a code node's output is below its code.
-A Data Loading node opens on its **Widgets** tab, on its **Data** widget: drop
-a file or a Data Catalog dataset on the node, or click **Choose file** to pick
-a file, and its code, on the **Code** tab, loads it ([Data Catalog](#data-catalog)).
+A Data Loading node opens on its **Widgets** tab, which holds only its **Data**
+box: drop a file or a Data Catalog dataset on the node, or click **Choose file**
+to pick a file, and its code, on the **Code** tab, loads it ([Data Catalog](#data-catalog)).
 
-A Data Export node opens on its **Widgets** tab, on its **File name** and its
-**Download** button. Its code, on the **Code** tab,
+A Data Export node opens on its **Widgets** tab, which holds only its
+**File name** and its **Download** button. Its code, on the **Code** tab,
 `return curio_export(input_0, [!! file_name !!])`, writes the data wired into
 it to a file: a table as CSV, a GeoDataFrame as GeoJSON, a raster as GeoTIFF
 and anything else as JSON. Once the node has run, the button names the file,
@@ -557,7 +557,8 @@ either what changed in a node since a run.
 
 A widget is a value a node's code reads that you set in a form, without editing
 the code: a threshold, a season, a list of years. Python, Vega-Lite and Autark
-nodes have them.
+nodes have them. A Data Loading or Data Export node keeps the widgets it comes
+with: its **Widgets** tab shows only their controls.
 
 1. Open the node's **Widgets** tab (toolbox icon) and click **Add widget**.
 2. Give it a name (letters, digits and underscores), a type, a label, and a

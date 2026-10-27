@@ -153,10 +153,12 @@ data = curio_load_data([!! data !!])
 return data
 ```
 
-To have the node open on its **Widgets** tab, where the user sets what the
-code reads, add `"opensOnWidgets": true`, as Data Loading and Data Export do.
-The code stays on the **Code** tab. A node whose code reads none of its widgets
-opens on its code.
+To have the node's **Widgets** tab show only its controls, add
+`"opensOnControls": true`, as Data Loading and Data Export do: a label and a
+control for each widget, as on a dashboard tile, with no tags, **Edit**,
+**Delete**, **Add widget** or selections. The node opens there while its code
+reads one of its widgets, and the code stays on the **Code** tab. A node whose
+code reads none of its widgets opens on its code.
 
 When the starter is the node's whole content and only its widgets change from
 one use to the next, add `"starterIsContent": true` beside `source`. A node the

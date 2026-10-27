@@ -1,7 +1,9 @@
 /**
  * A node's widgets as controls that set their values (#662): a label and a
  * WidgetControl each. A pinned node's dashboard tile shows them (NodeEditor),
- * where a viewer changes every kind but the read-only ones (#1117).
+ * where a viewer changes every kind but the read-only ones (#1117), and so
+ * does the Widgets tab of a template that shows only its controls
+ * (`opensOnControls`: Data Loading, Data Export).
  *
  * A value reaches the node when its control settles, VALUE_SETTLE_MS after the
  * last keystroke or slider step, or at once when the control is left, so a
@@ -95,10 +97,17 @@ type ControlsProps = {
   /** Above an output, at their own height: the output fills the rest. Else
    * they fill their pane, scrolling past it. */
   aboveOutput?: boolean;
+  /** Controls of the node's own under its widgets' rows: Data Export's
+   * Download, beside the File name it saves under (`controlsComponent`). */
+  controls?: React.ReactNode;
+  /** What the panel says when it holds no control. */
+  empty?: string;
 };
 
 /** A tile's controls: every widget of its node, in a panel. */
-export function WidgetValueControls({ widgets, onCommit, dashboard = false, disabled = false, aboveOutput = false }: ControlsProps) {
+export function WidgetValueControls({
+  widgets, onCommit, dashboard = false, disabled = false, aboveOutput = false, controls, empty,
+}: ControlsProps) {
   return (
     <div
       className={`nowheel nodrag ${styles.panel}${aboveOutput ? ` ${styles.panelAboveOutput}` : ""}`}
@@ -113,6 +122,12 @@ export function WidgetValueControls({ widgets, onCommit, dashboard = false, disa
           disabled={disabled}
         />
       ))}
+      {controls ? (
+        <div className={styles.nodeControls} data-node-controls="true">
+          {controls}
+        </div>
+      ) : null}
+      {widgets.length === 0 && !controls && empty ? <p className={styles.empty}>{empty}</p> : null}
     </div>
   );
 }

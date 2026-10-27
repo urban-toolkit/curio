@@ -2724,13 +2724,17 @@ A widget of type `dataset` holds a Data Catalog id, and its reference writes
 the id as a string, so Data Loading's starter, `data = curio_load_data([!! data !!])`,
 loads whatever it holds; `code_references.reference_problem` and its twin
 `referenceProblem` refuse code that reads an empty one; the editor draws its
-chip as any other and the Widgets tab leaves it out of its list
-(`waitsForData`). A template that declares `opensOnWidgets` has `NodeEditor`
-open on its Widgets tab while its code reads one of its widgets
-(`readsAWidget`), and a fresh node turns there when its starter and widgets
-arrive; its code stays on the Code tab. A behavior's own controls
-(`controlsComponent`, Data Export's Download) sit under the widgets' rows on
-that tab (`WidgetsEditor`'s `controls`) and under a dashboard tile's controls.
+chip as any other and the full Widgets tab leaves it out of its list
+(`waitsForData`). A template that declares `opensOnControls` has `NodeEditor`
+show only its controls on its Widgets tab, the rows a dashboard tile shows
+(`WidgetValueControls`), with no tag, edit, new widget or selection, and open
+there while its code reads one of its widgets (`readsAWidget`); a fresh node
+turns there when its starter and widgets arrive, and its code stays on the
+Code tab. With no `WidgetsEditor` mounted, such a node's runs resolve their
+references in `NodeEditor`, as a node with no Widgets tab does. A behavior's
+own controls (`controlsComponent`, Data Export's Download) sit under the
+widgets' rows, on that tab (`WidgetValueControls`' `controls`) and on a
+dashboard tile.
 The node takes drops on its whole card,
 in `NodeContainer`'s capture listeners (`components/styles.tsx`), since Monaco
 stops drop events before they reach a control: a Data Catalog card, or a file
