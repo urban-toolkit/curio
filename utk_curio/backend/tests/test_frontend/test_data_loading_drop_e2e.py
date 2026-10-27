@@ -36,6 +36,7 @@ from .utils import (
     require_user_auth,
     run_node_and_wait,
     save_node_closeup,
+    set_canvas_zoom,
     set_node_code,
     stub_login_and_enter_workflow,
     wait_for_node_code,
@@ -128,6 +129,9 @@ def _holds(page, node_id: str, title: str) -> None:
 
 def _rows_reach_the_next_node(page, loader: str, rows: int) -> None:
     """A run of the loader hands its rows to a Data Transformation wired after it."""
+    # A close-up leaves the view framed on the loader: back to the view the
+    # loader was dropped in, so the next node lands beside it.
+    set_canvas_zoom(page, 1)
     transform = drag_builtin_to_canvas(page, "#tile-data-transformation", at=(760, 220))
     set_node_code(page, transform, COUNT_ROWS)
     connect_nodes(page, loader, transform)
