@@ -1279,6 +1279,21 @@ class TestDataflowPlanApply:
         ).get_json()["attachments"]
         assert cards[0]["builderSession"]["phase"] == "applied"
 
+    def test_apply_titles_each_node_as_the_plan_names_it(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        """A node a plan creates carries the plan's title, as a node an agent
+        creates on its own does, so its header shows that title rather than
+        its template's name."""
+        user, token = user_and_token
+        att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
+        body = self._apply(client, token, alice_project, att_id, proposal["proposalId"]).get_json()
+        planned = sorted(
+            (f"{n['title']} — {n['intent']}", n["title"]) for n in proposal["plan"]["nodes"]
+        )
+        # The nodes the canvas inserts, and the nodes the spec saves.
+        assert sorted((n["goal"], n.get("title")) for n in body["appliedGraph"]["nodes"]) == planned
+        created = [n for n in self._spec(user, alice_project)["dataflow"]["nodes"] if n["id"] != "n1"]
+        assert sorted((n["goal"], n.get("title")) for n in created) == planned
+
     def test_graph_shape_drift_marks_stale_409(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         from utk_curio.backend.app.projects import storage as projects_storage
         from utk_curio.backend.app.projects.services import _user_dir_key
@@ -1643,6 +1658,16 @@ class TestPerNodePlanApply:
         assert r.get_json()["editedGoals"] == {ref: "Load ONLY the 2024 heat data"}
         body = self._apply_node(client, token, alice_project, att_id, proposal["proposalId"], ref).get_json()
         assert body["createdNode"]["goal"] == "Load ONLY the 2024 heat data"
+
+    def test_apply_node_titles_the_node_as_the_plan_names_it(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        """Applied one row at a time, a plan's node is titled as the whole-plan
+        apply titles it."""
+        user, token = user_and_token
+        att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
+        planned = proposal["plan"]["nodes"][0]
+        body = self._apply_node(client, token, alice_project, att_id, proposal["proposalId"], planned["ref"]).get_json()
+        assert body["createdNode"].get("title") == planned["title"]
+        assert [n.get("title") for n in self._spec_nodes(user, alice_project)] == [planned["title"]]
 
     def test_goal_edit_guards(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
