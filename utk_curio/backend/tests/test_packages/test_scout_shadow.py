@@ -1052,6 +1052,8 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
     assert "curio.builtin/parameter" not in by_type
     (season,) = by_type["curio.builtin/computation-analysis"]
     assert season["title"] == "Season"
+    # Its header and the chips it feeds name it Season, not its type's name.
+    assert season["metadata"]["packageTemplateLabel"] == "Season"
     assert season["metadata"]["widgets"] == _template()["widgets"]
     assert season["content"].rstrip("\n").endswith("\nreturn [!! season !!]"), season["content"]
 
