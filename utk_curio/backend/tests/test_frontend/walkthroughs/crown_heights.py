@@ -782,10 +782,16 @@ def crown_heights_scenarios(ctx: Ctx) -> None:
     ctx.point_at(*drop, hold=400)
     editor = drag_to_canvas(page, tile, at=(drop[0] - pane["x"], drop[1] - pane["y"]))
     close_tools_palette(page, "builtin")
-    frame_nodes(page, [nid("buildings"), editor, tower])
+    # The copy reads the Map Editor where it read the buildings, on its first
+    # circle, with the ground on its second. Its lower connection comes out
+    # first: then the other never moves up a circle, and its code still reads
+    # input_0 and input_1 as written.
+    frame_nodes(page, [nid("buildings"), nid("ground"), editor, tower])
+    _delete_edge(ctx, nid("ground"), tower)
     _delete_edge(ctx, nid("buildings"), tower)
     _connect(ctx, nid("buildings"), editor)
     _connect(ctx, editor, tower, target_handle="in")
+    _connect(ctx, nid("ground"), tower, target_handle="in_1")
     _select(ctx, editor)
     ctx.focus(page.get_by_role("button", name="Scenario Catalog", exact=True), hold=400)
     open_in_project_tab(page)
@@ -820,9 +826,17 @@ def crown_heights_scenarios(ctx: Ctx) -> None:
         assert (by_id[copied].get("metadata") or {}).get("copiedFrom") == [original], by_id[copied]
     wiring = {(e["source"], e["target"], e.get("targetHandle") or "in") for e in saved["edges"]}
     assert (nid("buildings"), editor, "in") in wiring, "the buildings do not feed the Map Editor"
-    assert (editor, tower, "in") in wiring, "the Map Editor does not feed the copy's buildings for the GPU"
-    assert not any(s == nid("buildings") and t == tower for s, t, _ in wiring), (
-        "the copy's buildings for the GPU still read the existing buildings"
+    # The copy reads what the example's second scenario reads, on the same
+    # circles, with its code as the original's.
+    ours = {nid("add-building"): editor}
+    expected = sorted(
+        (ours.get(e["source"], e["source"]), e.get("targetHandle") or "in")
+        for e in _example()["dataflow"]["edges"] if e["target"] == nid("tower")
+    )
+    made = sorted((source, handle) for source, target, handle in wiring if target == tower)
+    assert made == expected, f"the copy's buildings for the GPU read {made}, not the example's {expected}"
+    assert _same_code(by_id[tower].get("content") or "", _nodes(_example())[nid("tower")]["content"]), (
+        f"the copy's code changed as its connections did: {by_id[tower].get('content')!r}"
     )
 
 
