@@ -27,6 +27,10 @@ export interface FlowContextProps {
     onNodesChange: (changes: NodeChange[]) => void;
     onEdgesChange: (changes: EdgeChange[]) => void;
     onConnect: (connection: Connection, custom_nodes?: any, custom_edges?: any, custom_workflow?: string, provenance?: boolean, skipValidation?: boolean, sourceAddedByLoad?: boolean) => void;
+    /** For edges added as they are rather than through onConnect (an agent's
+     * apply): what each one's source holds goes to its own target, as a drawn
+     * connection hands it over. */
+    handOverAlongEdges: (edges: Edge[]) => void;
     isValidConnection: (connection: Connection) => boolean;
     onEdgesDelete: (connections: Edge[]) => void;
     onNodesDelete: (changes: NodeChange[]) => void;

@@ -9,6 +9,7 @@ jest.mock("../../hook/useCode", () => ({
 const mockApplyNodeContent = jest.fn();
 const mockApplyNodeSettings = jest.fn();
 const mockOnEdgesChange = jest.fn();
+const mockHandOverAlongEdges = jest.fn();
 const mockApplyReviewedRemovals = jest.fn();
 // #662: the canvas's scenarios, which an applied plan's join.
 const mockSetScenarios = jest.fn();
@@ -18,6 +19,7 @@ jest.mock("../../providers/FlowProvider", () => ({
     applyNodeContent: mockApplyNodeContent,
     applyNodeSettings: mockApplyNodeSettings,
     onEdgesChange: mockOnEdgesChange,
+    handOverAlongEdges: mockHandOverAlongEdges,
     applyReviewedRemovals: mockApplyReviewedRemovals,
     scenarios: mockScenarios.current,
     setScenarios: mockSetScenarios,
@@ -213,6 +215,10 @@ describe("graph-created (dev/52 — a whole applied plan)", () => {
       // bridge must always provide it (loadTrill parity), or the first
       // render of the inserted edge crashes the canvas.
       expect(changes[0].item.data).toEqual({});
+      // The edges inserted are the ones whose sources hand over what they
+      // hold, as along a drawn connection.
+      expect(mockHandOverAlongEdges).toHaveBeenCalledTimes(1);
+      expect(mockHandOverAlongEdges.mock.calls[0][0]).toEqual(changes.map((change: any) => change.item));
       act(() => {
         jest.runAllTimers();
       });
@@ -245,6 +251,7 @@ describe("graph-created (dev/52 — a whole applied plan)", () => {
     expect(changes[0].item).toMatchObject({
       id: "ce1", targetHandle: "in_2", sourceHandle: "out", data: {},
     });
+    expect(mockHandOverAlongEdges.mock.calls[0][0]).toEqual(changes.map((change: any) => change.item));
     expect(mockSetCenter).not.toHaveBeenCalled();
     expect(mockFitViewWithMenuOffset).not.toHaveBeenCalled();
     // Idempotent per batch.
@@ -255,6 +262,7 @@ describe("graph-created (dev/52 — a whole applied plan)", () => {
       }),
     );
     expect(mockOnEdgesChange).toHaveBeenCalledTimes(1);
+    expect(mockHandOverAlongEdges).toHaveBeenCalledTimes(1);
   });
 
   it("passes the apply's explicit handles through (input circles, dev/67-3)", () => {

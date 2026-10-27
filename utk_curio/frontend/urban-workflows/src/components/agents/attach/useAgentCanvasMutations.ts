@@ -83,8 +83,10 @@ function appliedEdgeToCanvasEdge(edge: {
 
 export function useAgentCanvasMutations(): void {
   const { createCodeNode } = useCode();
-  const { applyNodeContent, applyNodeSettings, onEdgesChange, applyReviewedRemovals, scenarios, setScenarios } =
-    useFlowContext();
+  const {
+    applyNodeContent, applyNodeSettings, onEdgesChange, handOverAlongEdges, applyReviewedRemovals, scenarios,
+    setScenarios,
+  } = useFlowContext();
   const { nodeEditProv } = useProvenanceContext();
   const { reveal } = useNotebookViewContext();
   const reactFlow = useReactFlow();
@@ -181,12 +183,11 @@ export function useAgentCanvasMutations(): void {
       // parity), no fit/center (the nodes are already where the user looks).
       if (processedRef.current.has(mutation.batchId)) return;
       processedRef.current.add(mutation.batchId);
-      onEdgesChange(
-        mutation.edges.map((edge) => ({
-          type: "add" as const,
-          item: appliedEdgeToCanvasEdge(edge) as never,
-        })),
-      );
+      const added = mutation.edges.map(appliedEdgeToCanvasEdge);
+      onEdgesChange(added.map((edge) => ({ type: "add" as const, item: edge as never })));
+      // What the edges' sources already hold reaches their targets, as along
+      // a drawn connection.
+      handOverAlongEdges(added as never);
       return;
     }
     if (mutation.kind === "graph-created") {
@@ -201,14 +202,13 @@ export function useAgentCanvasMutations(): void {
       for (const node of mutation.nodes) {
         if (!live.has(node.id)) insertNode(node);
       }
-      onEdgesChange(
-        mutation.edges.map((edge) => ({
-          type: "add" as const,
-          // dev/67-3: the apply assigns real handles (input circles in_N),
-          // passed through; dev/112: interaction edges become bidirectional.
-          item: appliedEdgeToCanvasEdge(edge) as never,
-        })),
-      );
+      // dev/67-3: the apply assigns real handles (input circles in_N),
+      // passed through; dev/112: interaction edges become bidirectional.
+      const added = mutation.edges.map(appliedEdgeToCanvasEdge);
+      onEdgesChange(added.map((edge) => ({ type: "add" as const, item: edge as never })));
+      // A planned node wired to a node that already ran gets its result, as
+      // along a drawn connection: a plot added to a run dataflow draws.
+      handOverAlongEdges(added as never);
       joinSaved(mutation.scenarios);
       window.setTimeout(
         () => fitViewWithMenuOffset(reactFlow, { duration: 400 }),
