@@ -61,6 +61,7 @@ from .utils import (
     require_project_page,
     require_user_auth,
     save_workflow_test_screenshot,
+    settled_viewport,
     stub_db_user,
     stub_login_and_enter_workflow,
     wait_for_drawer_closed,
@@ -314,42 +315,6 @@ def _box_size(page, node_id: str) -> list:
         "(id) => { const b = document.getElementById(`${id}resizable`);"
         " return b ? [b.offsetWidth, b.offsetHeight] : null; }",
         node_id,
-    )
-
-
-#: React Flow's viewport, and whether a move of it has yet to land. React Flow
-#: moves the view through a d3 transition on the element it zooms, the
-#: canvas's `.react-flow__renderer`, and d3 keeps the transitions scheduled or
-#: running on an element in its `__transition` until they end.
-_VIEWPORT_JS = """() => {
-    const canvas = document.querySelector('.react-flow');
-    const pane = canvas && canvas.querySelector('.react-flow__renderer');
-    return {viewport: window.__curio_reactFlow.getViewport(), moving: !!(pane && pane.__transition)};
-}"""
-
-
-def _settled_viewport(page, *, timeout_ms: int = 30000) -> dict:
-    """React Flow's viewport once its moves have landed: no d3 transition is
-    left on the canvas, and two reads 250 ms apart agree.
-
-    A zoom is a d3 transition, which moves only when the browser draws a
-    frame. A loaded runner can draw none for longer than 250 ms, so two equal
-    reads alone can catch a zoom halfway. Every read is on a timer, so the
-    wait itself needs no frame."""
-    last = None
-    waited = 0
-    while True:
-        now = page.evaluate(_VIEWPORT_JS)
-        if not now["moving"] and now["viewport"] == last:
-            return last
-        last = None if now["moving"] else now["viewport"]
-        if waited >= timeout_ms:
-            break
-        page.wait_for_timeout(250)
-        waited += 250
-    raise AssertionError(
-        f"the view did not land in {timeout_ms} ms: last read {now['viewport']}, "
-        f"{'a move still under way' if now['moving'] else 'still moving'}"
     )
 
 
@@ -736,7 +701,7 @@ def _double_click_the_header_frames_the_node(page, canvas: str) -> None:
     """Double-click PRODUCER's header where a press drags the node (or would,
     on a read-only canvas), and expect the view zoomed onto PRODUCER."""
     _wait_for_header(page, PRODUCER)
-    before = _settled_viewport(page)
+    before = settled_viewport(page)
 
     # The header's free stretch, where a press would drag the node.
     spot = _header_spot(page, PRODUCER)
@@ -751,7 +716,7 @@ def _double_click_the_header_frames_the_node(page, canvas: str) -> None:
             f"a double-click on PRODUCER's header on {canvas} did not zoom in: {before} -> "
             f"{page.evaluate('() => window.__curio_reactFlow.getViewport()')}"
         ) from None
-    after = _settled_viewport(page)
+    after = settled_viewport(page)
 
     # Framed as the DATASET chip frames a node: whole, and centered in what the
     # bar, the title and the rail leave visible. React Flow's own double-click
@@ -769,13 +734,13 @@ def _double_click_the_editor_keeps_the_view(page, canvas: str) -> None:
     _wait_for_header(page, PRODUCER)
     lines = node_locator(page, PRODUCER).locator(".monaco-editor .view-lines").first
     expect(lines).to_be_visible(timeout=30000)
-    before = _settled_viewport(page)
+    before = settled_viewport(page)
 
     # The editor is not a drag region: a double-click there selects a word.
     box = lines.bounding_box()
     page.mouse.dblclick(box["x"] + 30, box["y"] + 8)
     page.wait_for_timeout(800)
-    after = _settled_viewport(page)
+    after = settled_viewport(page)
     assert after == before, (
         f"a double-click in PRODUCER's editor moved the view on {canvas}: {before} -> {after}"
     )

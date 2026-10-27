@@ -76,6 +76,7 @@ from .utils import (
     require_user_auth,
     save_dataflow,
     save_workflow_test_screenshot,
+    settled_viewport,
     stub_db_login,
     stub_login_and_enter_workflow,
     wait_for_node_done,
@@ -479,23 +480,6 @@ def _scroll_to(page, y: float) -> None:
 
 def _scroll_top(page) -> float:
     return page.locator(SCROLLER).evaluate("(el) => el.scrollTop")
-
-
-def _settled_viewport(page, *, timeout_ms: int = 15000) -> dict:
-    """React Flow's viewport once nothing moves it: two equal reads a few
-    hundred milliseconds apart. React Flow 11 sets a view through a d3
-    transition, so a view set by a switch or a fit lands a frame or two later."""
-    read = "() => window.__curio_reactFlow.getViewport()"
-    last = page.evaluate(read)
-    waited = 0
-    while waited < timeout_ms:
-        page.wait_for_timeout(300)
-        waited += 300
-        now = page.evaluate(read)
-        if all(abs(now[key] - last[key]) < 0.01 for key in ("x", "y", "zoom")):
-            return now
-        last = now
-    raise AssertionError(f"the canvas viewport kept moving: last read {last}")
 
 
 #: The view the notebook view holds React Flow at (MainCanvas).
@@ -992,7 +976,7 @@ def test_back_on_the_canvas_every_node_is_where_it_was(
     # The load's fit frames these nodes below zoom 1. It can wait for the node
     # packages first, so the view to bring back is taken once it has moved.
     page.wait_for_function("() => window.__curio_reactFlow.getViewport().zoom < 1", timeout=20000)
-    viewport = _settled_viewport(page)
+    viewport = settled_viewport(page)
     before = _positions(page)
     drawn = _settled_boxes(page)
 
@@ -1074,7 +1058,7 @@ def test_back_on_the_canvas_the_view_comes_back_while_the_page_draws_no_frame(
         "the init script that holds animation frames back is not in the page"
     )
     page.wait_for_function("() => window.__curio_reactFlow.getViewport().zoom < 1", timeout=20000)
-    left_at = _settled_viewport(page)
+    left_at = settled_viewport(page)
 
     _show(page, "notebook")
     # MainCanvas holds React Flow at the origin in the notebook view: the view
@@ -1128,7 +1112,7 @@ def test_a_fit_in_the_notebook_view_is_put_back_while_the_page_draws_no_frame(
     )
     # The load's own fit lands first, so it moves nothing in the notebook view.
     page.wait_for_function("() => window.__curio_reactFlow.getViewport().zoom < 1", timeout=20000)
-    _settled_viewport(page)
+    settled_viewport(page)
     _show(page, "notebook")
     _wait_for_view(page, ORIGIN)
 

@@ -46,6 +46,7 @@ from .vega_svg import (  # noqa: F401
 )
 from .capture_waits import (  # noqa: F401
     _wait_for_reactflow_ready,
+    settled_viewport,
     dismiss_toasts,
     WEBFONT_FAMILY,
     WEBFONT_TIMEOUT_MS,
