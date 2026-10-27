@@ -645,6 +645,7 @@ def _play(ctx: Ctx, node_id: str) -> None:
     tests=["test_frontend/test_example_reconstruction_e2e.py",
            "test_frontend/test_agent_scenarios_e2e.py"],
     example=EXAMPLE,
+    dataflow_name=NAME,
     start=_empty,
     needs_examples=True,
 )
@@ -734,6 +735,7 @@ def crown_heights_first_version(ctx: Ctx) -> None:
     tests=["test_frontend/test_scenarios_canvas_e2e.py",
            "test_frontend/test_scenarios_in_project_e2e.py"],
     example=EXAMPLE,
+    dataflow_name=NAME,
     start=_first_version,
     needs_examples=True,
 )
@@ -851,6 +853,7 @@ def crown_heights_scenarios(ctx: Ctx) -> None:
     tests=["test_frontend/test_map_edits_agent_e2e.py",
            "test_frontend/test_crown_heights_dashboard_e2e.py"],
     example=EXAMPLE,
+    dataflow_name=NAME,
     start=_without_edits,
     needs_examples=True,
 )
@@ -926,6 +929,7 @@ def _saved_spec_root(ctx: Ctx, token: str, project_id: str) -> dict:
             "writes their specs, and both draw.",
     tests=["test_frontend/test_crown_heights_dashboard_e2e.py"],
     example=EXAMPLE,
+    dataflow_name=NAME,
     start=_without_plot_and_map,
     needs_examples=True,
 )
@@ -1012,6 +1016,7 @@ def crown_heights_plot_and_map(ctx: Ctx) -> None:
             "the maps and the day's plot.",
     tests=["test_frontend/test_crown_heights_dashboard_e2e.py"],
     example=EXAMPLE,
+    dataflow_name=NAME,
     needs_examples=True,
     # The dashboard page lays its tiles out itself.
     fit_reactflow=False,

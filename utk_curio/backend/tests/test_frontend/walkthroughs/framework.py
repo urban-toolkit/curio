@@ -215,6 +215,9 @@ class Walkthrough:
     #: building an example opens on the example without what that step adds,
     #: and ends where the example is. ``None`` opens the example as it is.
     start: Callable[[dict], dict] | None = None
+    #: The name the dataflow opens with. ``None`` names it after the title; a
+    #: journey that builds an example keeps the example's name.
+    dataflow_name: str | None = None
     #: Needs the stack seeded with the example dataflows. The scene then carries
     #: the ``examples`` marker, so an ordinary run skips it honestly instead of
     #: asserting against an empty gallery and blaming the seed.

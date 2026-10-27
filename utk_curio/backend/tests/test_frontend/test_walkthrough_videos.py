@@ -178,7 +178,7 @@ def test_record_walkthrough(walk: Walkthrough, app_frontend, current_server, bro
             backend_url=current_server,
             name="Walkthrough",
             username=f"walkvid_{walk.slug.replace(chr(45), chr(95))[:24]}",
-            project_name=walk.title,
+            project_name=walk.dataflow_name or walk.title,
             project_spec=spec,
         )
         require_owner_view(page)
