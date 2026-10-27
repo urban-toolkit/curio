@@ -46,6 +46,7 @@ from ..utils import (
     close_scenario_drawer,
     close_tools_palette,
     connect_nodes,
+    dismiss_toasts,
     drag_to_canvas,
     frame_nodes,
     keep_drawing,
@@ -767,8 +768,16 @@ def crown_heights_scenarios(ctx: Ctx) -> None:
     close_scenario_drawer(page)
 
     # A Map Editor node in the second scenario, between the buildings and the
-    # copy of the chain, where the proposed building will be added.
+    # copy of the chain, where the proposed building will be added. The copy's
+    # two connections come out first, while no node covers them, the lower one
+    # first: then the other never moves up a circle, and the copy's code still
+    # reads input_0 and input_1 as written.
     tower = copies[nid("base-tower")]
+    # Duplicate as scenario's toast sits where the copy's connections arrive.
+    dismiss_toasts(page)
+    frame_nodes(page, [nid("buildings"), nid("ground"), tower])
+    _delete_edge(ctx, nid("ground"), tower)
+    _delete_edge(ctx, nid("buildings"), tower)
     frame_nodes(page, [nid("buildings"), tower, copies[nid("base-year-rays")]])
     ctx.focus(page.locator('#builtin-palette button[data-tooltip="Open built-in palette"]'), hold=400)
     open_tools_palette(page, "builtin")
@@ -785,12 +794,8 @@ def crown_heights_scenarios(ctx: Ctx) -> None:
     editor = drag_to_canvas(page, tile, at=(drop[0] - pane["x"], drop[1] - pane["y"]))
     close_tools_palette(page, "builtin")
     # The copy reads the Map Editor where it read the buildings, on its first
-    # circle, with the ground on its second. Its lower connection comes out
-    # first: then the other never moves up a circle, and its code still reads
-    # input_0 and input_1 as written.
+    # circle, with the ground on its second.
     frame_nodes(page, [nid("buildings"), nid("ground"), editor, tower])
-    _delete_edge(ctx, nid("ground"), tower)
-    _delete_edge(ctx, nid("buildings"), tower)
     _connect(ctx, nid("buildings"), editor)
     _connect(ctx, editor, tower, target_handle="in")
     _connect(ctx, nid("ground"), tower, target_handle="in_1")
