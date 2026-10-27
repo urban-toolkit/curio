@@ -35,11 +35,28 @@ export interface ViewportMotionHint {
  * flow drawn inside one of its nodes.
  *
  * Any move of the view, a gesture's or a fit's, also hides the Curio tooltip:
- * the target it was placed beside is somewhere else now.
+ * the target it was placed beside is somewhere else now. React Flow reports a
+ * fit that lands where the view already is as a move too (each d3 zoom event
+ * reaches ``onMove``); that one moves nothing, so a tooltip shown or on its way
+ * stays. On a slow page the load's fit can land that way after the pointer
+ * has come to rest on a target.
  */
 export function useViewportMotionHint(): ViewportMotionHint {
   const store = useStoreApi();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The view before React Flow's last change of it: its store holds the new
+  // view by the time ``onMove`` is called.
+  const before = useRef<Viewport | null>(null);
+
+  useEffect(
+    () =>
+      store.subscribe((state, prev) => {
+        if (state.transform === prev.transform) return;
+        const [x, y, zoom] = prev.transform;
+        before.current = { x, y, zoom };
+      }),
+    [store],
+  );
 
   const settle = useCallback(() => {
     if (timer.current !== null) clearTimeout(timer.current);
@@ -54,8 +71,10 @@ export function useViewportMotionHint(): ViewportMotionHint {
   }, [store, settle]);
 
   const onMove = useCallback(
-    (event: MouseEvent | TouchEvent | null) => {
-      hideTooltip();
+    (event: MouseEvent | TouchEvent | null, viewport: Viewport) => {
+      // As React Flow's own viewChanged tells a move from none.
+      const was = before.current;
+      if (!was || was.x !== viewport.x || was.y !== viewport.y || was.zoom !== viewport.zoom) hideTooltip();
       if (event) moving();
       else settle();
     },
