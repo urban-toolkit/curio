@@ -4,13 +4,14 @@ autk-grammar, autk-compute, autk-db and autk-plot come from the registry, with
 autk-core, one copy of each, in the frontend's tree; the repo root's tree,
 which the sandbox's Node and the Discovery Catalog's OpenStreetMap downloads
 load autk-db from, takes autk-db and autk-core the same way. autk-map is the
-one Autark package Curio vendors: 4.1.1-curio.1, packed from
-urban-toolkit/autark#118 (a raster colored with one color function) until
-Autark releases it, one copy in the frontend's tree, which autk-grammar's maps
+one Autark package Curio vendors: 4.1.1-curio.2, packed from
+urban-toolkit/autark#118 (a raster colored with one color function) and
+autark#120 (a destroyed map releases its shared SSAO textures) until Autark
+releases them, one copy in the frontend's tree, which autk-grammar's maps
 use too (an npm override). The Autark packages, all but autk-grammar, which is
 released on its own, are one release, 4.1.0 or later: from 4.1.0 on, autk-map
 draws a map on demand (adapters/node/autkMapDrawing). The vendored autk-map is
-release 4.1.1 with that one change. autk-grammar is 4.1.0 or later: from 4.1.0
+release 4.1.1 with those two changes. autk-grammar is 4.1.0 or later: from 4.1.0
 on, it lists the maps a run drew (`AutkGrammar.maps`), which is where Curio
 takes a node's maps from (`grammarMaps`). Nothing else is vendored.
 """
@@ -44,10 +45,10 @@ GRAMMAR_MAPS_RELEASE = (4, 1, 0)
 #: The one vendored Autark package, in the frontend's tree: its tarball in
 #: vendor/autark/, its version and its npm integrity.
 VENDORED_NAME = "autk-map"
-VENDORED_TARBALL = "urban-toolkit-autk-map-4.1.1-curio.1.tgz"
-VENDORED_VERSION = "4.1.1-curio.1"
+VENDORED_TARBALL = "urban-toolkit-autk-map-4.1.1-curio.2.tgz"
+VENDORED_VERSION = "4.1.1-curio.2"
 VENDORED_INTEGRITY = (
-    "sha512-kQD5vdCyEewf6rkjdkmLbpcrRAu+ETGHHyS/sgCv786yZcbWm0WWPi0dNYL67oRKxWBDyCW5JJjSkFkFeS2Wbw=="
+    "sha512-ZGEzOxUTpu6LmCfSN7QhArNjMU8oSrxQUTl0mPbrGhiHIU73U5GGVz0mdZSP9q416LBQwmtJxaFaC/Eitjfczw=="
 )
 VENDORED_SPEC = f"file:vendor/autark/{VENDORED_TARBALL}"
 

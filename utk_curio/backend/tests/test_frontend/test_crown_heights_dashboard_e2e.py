@@ -251,6 +251,28 @@ _TABLE_JS = """(id) => {
 }"""
 
 #: The canvas the Vega-Lite node *id* draws on, as a PNG, or null.
+#: Counts the WebGPU textures a page holds: created, less those destroyed.
+#: Garbage collection frees a texture without its destroy(), so a texture a
+#: page drops without destroying it stays counted, as it stays in the GPU's
+#: memory until a collection the page cannot count on.
+_LIVE_GPU_TEXTURES_JS = """(() => {
+    if (typeof GPUDevice === 'undefined') return;
+    let live = 0;
+    const create = GPUDevice.prototype.createTexture;
+    GPUDevice.prototype.createTexture = function (descriptor) {
+        const texture = create.call(this, descriptor);
+        live += 1;
+        const destroy = texture.destroy;
+        let gone = false;
+        texture.destroy = function () {
+            if (!gone) { gone = true; live -= 1; }
+            return destroy.call(this);
+        };
+        return texture;
+    };
+    Object.defineProperty(window, '__curioLiveGpuTextures', { get: () => live });
+})();"""
+
 _PLOT_PIXELS_JS = """(id) => {
     const canvas = document.querySelector('#vega' + id + ' canvas');
     return canvas ? canvas.toDataURL('image/png') : null;
@@ -1088,8 +1110,11 @@ def test_a_visitor_in_a_private_window_goes_through_the_four_days(
     Day radio lists them, ending on the winter solstice again: what the day's
     runs made of it is the CPU's, the three maps and the day's plot draw it,
     the year's plot draws on and the table keeps the CPU's months, and the
-    page logs no error. A response listener, not a route, reads each run's
-    stream, so the cache stays on."""
+    page logs no error. Back on the winter solstice, the page holds no more
+    GPU textures than it opened with: each map drawn again destroys the one
+    before with all its textures (autark#120, the shared SSAO textures). A
+    response listener, not a route, reads each run's stream, so the cache
+    stays on."""
     require_project_page()
     require_user_auth()
     ids = _ids()
@@ -1101,6 +1126,7 @@ def test_a_visitor_in_a_private_window_goes_through_the_four_days(
 
     with _CompressingProxy(hosted) as proxied:
         ctx = browser.new_context()
+        ctx.add_init_script(_LIVE_GPU_TEXTURES_JS)
         page = ctx.new_page()
         diagnostics.watch_browser_log(page)
         errors: list[str] = []
@@ -1123,6 +1149,7 @@ def test_a_visitor_in_a_private_window_goes_through_the_four_days(
             _year_reads(on_open, ids)
             read = len(starts)
             opened = _keep_drawing_maps(page, ids)
+            textures_on_open = page.evaluate("() => window.__curioLiveGpuTextures")
             plot = page.evaluate(_PLOT_PIXELS_JS, ids["plot"])
             months = _months_read(page, ids["summary-view"])
             for row in FOUR_DAYS:
@@ -1158,6 +1185,11 @@ def test_a_visitor_in_a_private_window_goes_through_the_four_days(
                 _keep_drawing_maps(page, ids)
                 plot = page.evaluate(_PLOT_PIXELS_JS, ids["plot"])
             assert not errors, f"the page logged errors while the days changed: {errors!r}"
+            textures_back = page.evaluate("() => window.__curioLiveGpuTextures")
+            assert textures_back <= textures_on_open, (
+                f"back on the winter solstice the page holds {textures_back} GPU textures, "
+                f"{textures_on_open} when it opened: the maps drawn again left textures behind"
+            )
         except Exception as failure:
             # The harness records its own page, about:blank here, so this
             # window's screenshot, nodes and log go with the failure, and the
