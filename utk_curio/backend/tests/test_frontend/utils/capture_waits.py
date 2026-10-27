@@ -1,5 +1,5 @@
 """What a capture waits for first: the viewport fit, toasts swept away, the
-webfont, and no node running.
+webfont, and no node running. Also a viewport that has landed after a move.
 """
 
 import time
@@ -175,6 +175,44 @@ def _wait_for_reactflow_ready(
             _did_not_hold(page, options, stable_reads, limit, time.monotonic() - started)
         )
     page.evaluate("() => { delete window.__curio_fitWait; }")
+
+
+#: React Flow's viewport, and whether a move of it has yet to land. React Flow
+#: moves the view through a d3 transition on the element it zooms, the
+#: canvas's `.react-flow__renderer`, and d3 keeps the transitions scheduled or
+#: running on an element in its `__transition` until they end.
+_VIEWPORT_MOVE_JS = """() => {
+    const canvas = document.querySelector('.react-flow');
+    const pane = canvas && canvas.querySelector('.react-flow__renderer');
+    return {viewport: window.__curio_reactFlow.getViewport(), moving: !!(pane && pane.__transition)};
+}"""
+
+
+def settled_viewport(page: Page, *, timeout_ms: int = 30000) -> dict:
+    """React Flow's viewport once its moves have landed: no d3 transition is
+    left on the canvas, and two reads 250 ms apart agree.
+
+    A move set through React Flow's ``setViewport`` (a fit, a zoom onto a
+    node, a put-back) is a d3 transition, which moves only when the browser
+    draws a frame. A loaded runner can draw none for longer than 250 ms, so
+    two equal reads alone can catch a zoom halfway (the node card zoom test,
+    10-20 and 10-27). Every read is on a timer, so the wait itself needs no
+    frame."""
+    last = None
+    waited = 0
+    while True:
+        now = page.evaluate(_VIEWPORT_MOVE_JS)
+        if not now["moving"] and now["viewport"] == last:
+            return last
+        last = None if now["moving"] else now["viewport"]
+        if waited >= timeout_ms:
+            break
+        page.wait_for_timeout(250)
+        waited += 250
+    raise AssertionError(
+        f"the canvas viewport did not land in {timeout_ms} ms: last read {now['viewport']}, "
+        f"{'a move still under way' if now['moving'] else 'still moving'}"
+    )
 
 
 def dismiss_toasts(

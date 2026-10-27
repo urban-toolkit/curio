@@ -81,7 +81,7 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
   - `environment.py`: `REPO_ROOT`, `state_root`, stack flags and public config, `require_*` skips, `debug_log`.
   - `sandbox.py`: direct sandbox calls, `load_artifact_as_dict`, `execute_workflow_programmatically`, and `snapshot_artifact` with `artifact_differences` (two runs' outputs compared as stored: tables over Arrow, lists and dicts by their stored JSON, never the JSON envelope; unit test `tests/test_artifact_snapshots.py`).
   - `vega_svg.py`: Vega-Lite SVG helpers.
-  - `capture_waits.py`: what a capture waits for: `_wait_for_reactflow_ready`, `dismiss_toasts`, `_wait_for_webfont`, running nodes. `images.py`: captures, `_compare_images`.
+  - `capture_waits.py`: what a capture waits for: `_wait_for_reactflow_ready`, `dismiss_toasts`, `_wait_for_webfont`, running nodes; and `settled_viewport`, the canvas view once a move has landed (no d3 transition left on the canvas, two equal reads). `images.py`: captures, `_compare_images`.
   - `screenshots.py`: `save_workflow_test_screenshot`, `MAX_DIFF_RATIO`, mint and re-mint, `frame_nodes`, `dump_browser_log`.
   - `closeups.py`: `save_node_closeup`, the close-up budgets, viewport hints. `dialogs.py`: `accept_confirm_dialog`, `wait_for_drawer_closed`, `leave_agent_badge`.
   - `scenario_drawer.py`: the open dataflow's scenarios in the Scenario Catalog drawer's In project tab: `open_in_project_tab`, `in_project_card`, `scenario_card_button`, `open_scenario_details`, `scenario_part`, `close_scenario_drawer`.

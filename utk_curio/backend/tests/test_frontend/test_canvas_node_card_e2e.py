@@ -23,6 +23,8 @@ What each test pins:
   the node, centered in what the bar, the title and the rail leave visible;
 * a double-click inside the node's editor, which is not a drag region, leaves
   the view where it was;
+* the zoom is judged where it lands, even when the browser draws no frame
+  halfway through it;
 * on a read-only canvas (a visitor with no account on another user's dataflow),
   where nodes do not drag, the same two double-clicks do the same, and a drag
   from a node's corner leaves its size: only an owner resizes.
@@ -59,6 +61,7 @@ from .utils import (
     require_project_page,
     require_user_auth,
     save_workflow_test_screenshot,
+    settled_viewport,
     stub_db_user,
     stub_login_and_enter_workflow,
     wait_for_drawer_closed,
@@ -315,21 +318,6 @@ def _box_size(page, node_id: str) -> list:
     )
 
 
-def _settled_viewport(page, *, timeout_ms: int = 10000) -> dict:
-    """React Flow's viewport once two reads 250 ms apart agree: a zoom is a
-    d3 transition that lands over a few hundred milliseconds."""
-    last = page.evaluate("() => window.__curio_reactFlow.getViewport()")
-    waited = 0
-    while waited < timeout_ms:
-        page.wait_for_timeout(250)
-        waited += 250
-        now = page.evaluate("() => window.__curio_reactFlow.getViewport()")
-        if now == last:
-            return now
-        last = now
-    raise AssertionError(f"the view kept moving: last read {last}")
-
-
 #: Where a node sits in the part of the pane nothing covers: below the bar and
 #: the dataflow's title and chips, right of the node rail. Offsets of the
 #: node's edges from that area's edges, and of its center from the area's.
@@ -361,6 +349,100 @@ def _stored_size(page, node_id: str) -> list:
         " return [d.nodeWidth, d.nodeHeight]; }",
         node_id,
     )
+
+
+#: How far past the zoom it starts from the view is when the hold below stops
+#: the zoom: just past the 0.05 the double-click's own wait asks for, early on
+#: the way from the 0.76 both nodes are framed at to the 1.31 the double-click
+#: frames PRODUCER at, so the view stops far from where it lands.
+_HELD_PAST_ZOOM = 0.06
+
+#: How far the page's clock moves each frame from the double-click until the
+#: hold below: the zoom (300 ms) is then read at 30, 60, 90 ms and so on of its
+#: course, however far apart the runner draws its frames.
+_STEP_MS = 30
+
+#: How long the hold below keeps the zoom's next frame back: many of a
+#: viewport wait's reads, 250 ms apart, even when the double-click's own wait
+#: sees the zoom start only on a frame drawn late.
+_HOLD_MS = 3000
+
+# Before the app's own scripts, so d3's timer, which takes requestAnimationFrame
+# and reads performance.now() to know how far a zoom has come, goes through
+# them. Once armed with a zoom, from the double-click on (before the page's own
+# handlers, so before the zoom starts) the page's clock moves *step* ms a frame
+# and stands still between frames. Where the zoom stops then depends on frames
+# counted, not on how far apart the runner draws them. d3's timer asks for its
+# next frame from inside the frame callback that moved the view: the first such
+# request made with the view's zoom past the armed zoom is kept back, so the
+# zoom stops there, as on a loaded runner that draws no frame, and is handed
+# on, on a timer, *ms* later. The clock runs on from where it stood. Every other
+# frame callback goes through, so a wait that reads the zoom once a frame still
+# sees it. It records the view while the zoom is held, where PRODUCER sits in
+# sight then (read on a timer once React has drawn that view, which needs no
+# frame), the view when the zoom goes on, how long it was held, and the frames
+# the zoom ran on the stepped clock.
+_HOLD_FRAMES_MID_ZOOM_JS = """(() => {
+    const request = window.requestAnimationFrame.bind(window);
+    const realNow = performance.now.bind(performance);
+    const framed = () => (__FRAMED__)(__ID__);
+    const view = () => window.__curio_reactFlow.getViewport();
+    const record = {};
+    let armed = null;
+    // The page's clock: realNow() - offset, or `stepped` while it is stepped.
+    let offset = 0;
+    let stepped = null;
+    let lastStamp = null;
+    // The view's zoom when the frame callback running now began, while armed.
+    let zoomAtStart = null;
+    performance.now = () => (stepped !== null ? stepped : realNow() - offset);
+    const hold = (callback) => {
+        const ms = armed.ms;
+        armed = null;
+        offset = realNow() - stepped;
+        stepped = null;
+        record.heldAtMs = realNow();
+        record.viewport = view();
+        setTimeout(() => { record.framed = framed(); }, 100);
+        setTimeout(() => {
+            record.viewportAtRelease = view();
+            record.heldForMs = realNow() - record.heldAtMs;
+            request(callback);
+        }, ms);
+    };
+    window.addEventListener('dblclick', () => {
+        if (!armed || stepped !== null) return;
+        stepped = realNow() - offset;
+        record.steps = 0;
+    }, true);
+    window.requestAnimationFrame = (callback) => {
+        if (armed && zoomAtStart !== null) {
+            const zoom = view().zoom;
+            if (zoom !== zoomAtStart && zoom > armed.zoom) {
+                hold(callback);
+                return 0;
+            }
+        }
+        if (!armed) return request(callback);
+        return request((stamp) => {
+            if (stepped !== null && stamp !== lastStamp) {
+                stepped += armed ? armed.step : 0;
+                record.steps += 1;
+            }
+            lastStamp = stamp;
+            zoomAtStart = window.__curio_reactFlow ? view().zoom : null;
+            try {
+                callback(stamp);
+            } finally {
+                zoomAtStart = null;
+            }
+        });
+    };
+    window.__curioTestHoldMidZoom = (zoom, step, ms) => {
+        armed = { zoom, step, ms };
+    };
+    window.__curioTestMidZoomHold = record;
+})();""".replace("__FRAMED__", _FRAMED_JS).replace("__ID__", json.dumps(PRODUCER))
 
 
 # ---------------------------------------------------------------------------
@@ -619,7 +701,7 @@ def _double_click_the_header_frames_the_node(page, canvas: str) -> None:
     """Double-click PRODUCER's header where a press drags the node (or would,
     on a read-only canvas), and expect the view zoomed onto PRODUCER."""
     _wait_for_header(page, PRODUCER)
-    before = _settled_viewport(page)
+    before = settled_viewport(page)
 
     # The header's free stretch, where a press would drag the node.
     spot = _header_spot(page, PRODUCER)
@@ -634,7 +716,7 @@ def _double_click_the_header_frames_the_node(page, canvas: str) -> None:
             f"a double-click on PRODUCER's header on {canvas} did not zoom in: {before} -> "
             f"{page.evaluate('() => window.__curio_reactFlow.getViewport()')}"
         ) from None
-    after = _settled_viewport(page)
+    after = settled_viewport(page)
 
     # Framed as the DATASET chip frames a node: whole, and centered in what the
     # bar, the title and the rail leave visible. React Flow's own double-click
@@ -652,13 +734,13 @@ def _double_click_the_editor_keeps_the_view(page, canvas: str) -> None:
     _wait_for_header(page, PRODUCER)
     lines = node_locator(page, PRODUCER).locator(".monaco-editor .view-lines").first
     expect(lines).to_be_visible(timeout=30000)
-    before = _settled_viewport(page)
+    before = settled_viewport(page)
 
     # The editor is not a drag region: a double-click there selects a word.
     box = lines.bounding_box()
     page.mouse.dblclick(box["x"] + 30, box["y"] + 8)
     page.wait_for_timeout(800)
-    after = _settled_viewport(page)
+    after = settled_viewport(page)
     assert after == before, (
         f"a double-click in PRODUCER's editor moved the view on {canvas}: {before} -> {after}"
     )
@@ -688,6 +770,46 @@ def test_on_a_read_only_canvas_a_double_click_where_the_node_would_drag_zooms_on
     require_project_page()
     _enter_read_only(page, app_frontend, current_server, prefix="card_ro_zoom")
     _double_click_the_header_frames_the_node(page, "a read-only canvas")
+
+
+def test_on_a_read_only_canvas_the_zoom_is_judged_where_it_lands_though_frames_stop_mid_zoom(
+    app_frontend: "FrontendPage", current_server, page,
+):
+    """The double-click's zoom is a d3 transition, which moves only when the
+    browser draws a frame. Twice on CI the test above read the view on its way
+    to where the app frames PRODUCER, and found PRODUCER off center: dx -42 on
+    #1025's run 39352206012 (10-20) and dx -6 in run 40441039786 (10-27). The
+    runner had drawn no frame for longer than the 250 ms between two reads,
+    and the wait took two equal reads for a zoom that had landed; it now waits
+    for React Flow's move to end. Here the zoom stops early, at a point set by
+    frames counted on a stepped clock, for 3 s."""
+    require_project_page()
+    page.context.add_init_script(_HOLD_FRAMES_MID_ZOOM_JS)
+    _enter_read_only(page, app_frontend, current_server, prefix="card_ro_held")
+    assert page.evaluate("() => typeof window.__curioTestHoldMidZoom === 'function'"), (
+        "the init script that holds frames back mid-zoom is not in the page"
+    )
+    _wait_for_header(page, PRODUCER)
+    start = page.evaluate("() => window.__curio_reactFlow.getViewport().zoom")
+    page.evaluate(
+        "([zoom, step, ms]) => window.__curioTestHoldMidZoom(zoom, step, ms)",
+        [start + _HELD_PAST_ZOOM, _STEP_MS, _HOLD_MS],
+    )
+
+    _double_click_the_header_frames_the_node(page, "a read-only canvas that drew no frame mid-zoom")
+
+    hold = page.evaluate("() => window.__curioTestMidZoomHold")
+    assert hold.get("heldAtMs") is not None and hold.get("steps", 0) >= 1, (
+        f"the zoom was never held, or never ran on the stepped clock, so this test proves nothing: {hold}"
+    )
+    assert hold.get("viewportAtRelease") == hold["viewport"] and hold.get("heldForMs", 0) >= _HOLD_MS - 50, (
+        f"the view moved while the zoom was held, or it was held for less than {_HOLD_MS} ms, so "
+        f"this test proves nothing: {hold}"
+    )
+    framed = hold.get("framed")
+    assert framed and (abs(framed["dx"]) > 4 or abs(framed["dy"]) > 4), (
+        f"the zoom was held where PRODUCER is already framed, so a read then would pass: {hold}"
+    )
 
 
 def test_on_a_read_only_canvas_a_double_click_inside_the_editor_leaves_the_view(
