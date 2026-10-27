@@ -387,71 +387,65 @@ def _stored_size(page, node_id: str) -> list:
 
 
 #: How far past the zoom it starts from the view is when the hold below stops
-#: the page's frames: about halfway from the 0.76 both nodes are framed at to
-#: the 1.31 the double-click frames PRODUCER at, and well past the 0.05 the
-#: double-click's own wait asks for.
-_HELD_PAST_ZOOM = 0.25
+#: the zoom: just past the 0.05 the double-click's own wait asks for, early on
+#: the way from the 0.76 both nodes are framed at to the 1.31 the double-click
+#: frames PRODUCER at, so the view stops far from where it lands.
+_HELD_PAST_ZOOM = 0.06
 
-#: How long the hold below keeps frames back: several of a viewport wait's
-#: reads, 250 ms apart.
+#: How long the hold below keeps the zoom's next frame back: several of a
+#: viewport wait's reads, 250 ms apart.
 _HOLD_MS = 1500
 
-# Before the app's own scripts, so d3's timers, which take requestAnimationFrame
-# when the app loads and move React Flow's view, go through it. Once armed with
-# a zoom, it lets frames come until the frame after the one in which the view's
-# zoom first passes that zoom; then it keeps every frame callback back, as a
-# loaded runner that draws no frame does, and lets them come again on a timer,
-# *ms* later. The frame after, not the same one, so a wait that reads the zoom
-# once a frame gets a frame to see it pass. It records the view while frames
-# are held, where PRODUCER sits in sight then (read on a timer once React has
-# drawn that view, which needs no frame), the view when they come again, and
-# how long they were held.
+# Before the app's own scripts, so d3's timer, which takes requestAnimationFrame
+# when the app loads and moves React Flow's view, goes through it. d3's timer
+# asks for its next frame from inside the frame callback that moved the view.
+# Once armed with a zoom, the first such request made with the view's zoom past
+# it is kept back, so the zoom stops there, as on a loaded runner that draws no
+# frame, and is handed on, on a timer, *ms* later. Every other callback goes
+# through, so a wait that reads the zoom once a frame still sees it. It records
+# the view while the zoom is held, where PRODUCER sits in sight then (read on a
+# timer once React has drawn that view, which needs no frame), the view when
+# the zoom goes on, and how long it was held.
 _HOLD_FRAMES_MID_ZOOM_JS = """(() => {
     const request = window.requestAnimationFrame.bind(window);
-    const cancel = window.cancelAnimationFrame.bind(window);
     const framed = () => (__FRAMED__)(__ID__);
     const view = () => window.__curio_reactFlow.getViewport();
     const record = {};
     let armed = null;
-    let passedIn = null;
-    let frame = null;
-    let held = null;
-    let nextId = -1;
-    const release = () => {
-        const deferred = [...held.values()];
-        record.viewportAtRelease = view();
-        record.heldForMs = performance.now() - record.heldAtMs;
-        held = null;
-        deferred.forEach((callback) => request(callback));
-    };
-    const hold = () => {
-        held = new Map();
+    // The view's zoom when the frame callback running now began, while armed.
+    let zoomAtStart = null;
+    const hold = (callback) => {
+        const ms = armed.ms;
+        armed = null;
         record.heldAtMs = performance.now();
         record.viewport = view();
         setTimeout(() => { record.framed = framed(); }, 100);
-        setTimeout(release, armed.ms);
-        armed = null;
+        setTimeout(() => {
+            record.viewportAtRelease = view();
+            record.heldForMs = performance.now() - record.heldAtMs;
+            request(callback);
+        }, ms);
     };
     window.requestAnimationFrame = (callback) => {
-        if (armed && passedIn !== null && frame > passedIn) hold();
-        if (held) {
-            const id = nextId--;
-            held.set(id, callback);
-            return id;
+        if (armed && zoomAtStart !== null) {
+            const zoom = view().zoom;
+            if (zoom !== zoomAtStart && zoom > armed.zoom) {
+                hold(callback);
+                return 0;
+            }
         }
+        if (!armed) return request(callback);
         return request((stamp) => {
-            frame = stamp;
-            callback(stamp);
-            if (armed && passedIn === null && view().zoom > armed.zoom) passedIn = stamp;
+            zoomAtStart = window.__curio_reactFlow ? view().zoom : null;
+            try {
+                callback(stamp);
+            } finally {
+                zoomAtStart = null;
+            }
         });
-    };
-    window.cancelAnimationFrame = (id) => {
-        if (held && held.delete(id)) return;
-        cancel(id);
     };
     window.__curioTestHoldMidZoom = (zoom, ms) => {
         armed = { zoom, ms };
-        passedIn = null;
     };
     window.__curioTestMidZoomHold = record;
 })();""".replace("__FRAMED__", _FRAMED_JS).replace("__ID__", json.dumps(PRODUCER))
