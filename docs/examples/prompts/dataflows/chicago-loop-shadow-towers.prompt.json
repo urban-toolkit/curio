@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/chicago-loop-shadow-towers.json",
-    "sha256": "396473cba7dea1eb04913505d465db4773d055fcf9ffb0d2e0faa660f214130e",
+    "sha256": "d051c02ec535c1f1121a56ca37e52c77634ded9dcf2d90a2468a6ad47ec4d1c7",
     "walkthrough": null
   },
   "prompt": "Compare two scenarios of SCOUT's high-rise shadow case on the Chicago Loop. Load SCOUT's Loop buildings from the Data Catalog; in one scenario keep them as they are, in the other first take out the 15 buildings SCOUT's second scenario removes, by their building ids, as edits I can change later, removing, raising or lowering others, on a map of the remaining buildings colored by height and linked both ways to the edits, so a building I pick on the map is picked there. In both, turn the buildings' heights into a zoom 16 height raster with SCOUT's building rasterizer, run SCOUT's Deep Umbra shadow model on it, with the season, summer, from one setting wired into both scenarios' shadow model runs, draw the accumulated shadow on an Autark map of its own, both scenarios' maps on one color scale from 0 to 720 minutes, and take its mean and median over the ground, where the height raster is under 1.08 m. Then chart the two scenarios' mean accumulated shadow side by side, and map how the shadow changes when the buildings are removed. The rasterizer, the raster statistics and the shadow model are not part of the standard node set, so whatever provides them needs installing first.",
@@ -337,7 +337,7 @@
   "split": "train",
   "review": {
     "status": "pending-owner-review",
-    "draftedBy": "the SCOUT shadow step (#662), from the example JSON, 2026-10-05; its difference map on an Autark node after the Compare Scenarios node, 2026-10-17; one color range on both shadow maps, 2026-10-17; its Towers removed node an Interaction node, 2026-10-17; its rasterizers and Raster Calculators the nodes of the SCOUT Rasters package, 2026-10-18; those nodes the Scout package's (curio.scout@1), 2026-10-20; its comparisons without Compare Scenarios, Scout's Bars charting both scenarios' statistics and a Raster Calculator taking the change in shadow, in the plan answering komar41's review (step 6.3), 2026-10-20; its Interaction node feeding a map of the remaining buildings, linked to it by an interaction edge, in the plan revising PR #1055 (step 7), 2026-10-22; its shared settings Python nodes wired into the nodes that read them, in the plan moving shared values onto wired nodes (step 2), 2026-10-25",
+    "draftedBy": "the SCOUT shadow step (#662), from the example JSON, 2026-10-05; its difference map on an Autark node after the Compare Scenarios node, 2026-10-17; one color range on both shadow maps, 2026-10-17; its Towers removed node an Interaction node, 2026-10-17; its rasterizers and Raster Calculators the nodes of the SCOUT Rasters package, 2026-10-18; those nodes the Scout package's (curio.scout@1), 2026-10-20; its comparisons without Compare Scenarios, Scout's Bars charting both scenarios' statistics and a Raster Calculator taking the change in shadow, in the plan answering komar41's review (step 6.3), 2026-10-20; its Interaction node feeding a map of the remaining buildings, linked to it by an interaction edge, in the plan revising PR #1055 (step 7), 2026-10-22; its shared settings Python nodes wired into the nodes that read them, in the plan moving shared values onto wired nodes (step 2), 2026-10-25; its Season node named Season in its header, 2026-10-26",
     "reviewedBy": null,
     "reviewedAt": null
   },
