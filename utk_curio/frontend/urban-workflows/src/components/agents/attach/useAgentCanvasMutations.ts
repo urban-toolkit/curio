@@ -107,6 +107,8 @@ export function useAgentCanvasMutations(): void {
     // image column, as loadTrill reads them.
     const dataPool = dataPoolFromSpec(node.metadata?.dataPool);
     const simpleVis = node.metadata?.simpleVis;
+    // #412: a renamed header, which the node's header shows.
+    const header = node.metadata?.packageTemplateLabel;
     createCodeNode(node.type, {
       nodeId: node.id,
       code: node.content,
@@ -121,6 +123,7 @@ export function useAgentCanvasMutations(): void {
       ...(spatialJoin ? { spatialJoin } : {}),
       ...(dataPool ? { dataPool } : {}),
       ...(simpleVis ? { simpleVis } : {}),
+      ...(typeof header === "string" && header ? { packageTemplateLabel: header } : {}),
     });
     // Code an agent wrote starts the node's history, an edit named after the
     // agent, as its applied change to a node's code is named. Only a node.create

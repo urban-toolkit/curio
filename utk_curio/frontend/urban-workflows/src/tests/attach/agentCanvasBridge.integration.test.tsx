@@ -176,6 +176,23 @@ describe('apply→canvas bridge integration (dev/48 §3.3 / dev/51 regression)',
     expect(api.nodes.filter((n: any) => n.id === CREATED.id)).toHaveLength(1);
   });
 
+  it('a node a plan names lands with that name as its header (#412), as a load reads it', async () => {
+    renderCanvas();
+    await flush();
+    const name = 'Load existing buildings';
+    await act(async () => {
+      notifyAgentCanvasMutation({
+        kind: 'graph-created',
+        planId: 'plan-names-its-nodes',
+        nodes: [{ ...CREATED, title: name, metadata: { packageTemplateLabel: name } }],
+        edges: [],
+      });
+    });
+    await flush();
+    const inserted = api.nodes.find((n: any) => n.id === CREATED.id);
+    expect(inserted?.data?.packageTemplateLabel).toBe(name);
+  });
+
   it('node-content-applied updates the live node data.code (the dev/41 clobber fix)', async () => {
     renderCanvas();
     await flush();
