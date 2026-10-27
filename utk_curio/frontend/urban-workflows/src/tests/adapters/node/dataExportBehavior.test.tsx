@@ -195,9 +195,17 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       );
     }
 
-    /** The node's controls, as the strip above its code shows them. */
+    /** The node's controls, as the strip above its code shows them, drawn
+     *  again in one place on each call. A new tree on each call made every
+     *  `waitFor` poll a change of the page, which woke the wait to draw yet
+     *  another, until the Jest worker ran out of memory. */
+    let shown: ReturnType<typeof render> | null = null;
+    afterEach(() => { shown = null; });
     function controls(result: { current: NodeBehaviorResult }) {
-      return render(<>{result.current.controlsComponent}</>).container;
+      const tree = <>{result.current.controlsComponent}</>;
+      if (shown) shown.rerender(tree);
+      else shown = render(tree);
+      return shown.container;
     }
     function downloadButton(result: { current: NodeBehaviorResult }): HTMLButtonElement {
       return controls(result).querySelector('button[data-download-button]') as HTMLButtonElement;
