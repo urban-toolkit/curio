@@ -71,6 +71,11 @@ jest.mock('../../providers/CollaborationProvider', () => ({
     unlockNode: jest.fn(),
     signalExecDisplay: jest.fn(),
     broadcastOutputProduced: jest.fn(),
+    broadcastNodeAdded: jest.fn(),
+    broadcastNodeUpdated: jest.fn(),
+    broadcastNodeRemoved: jest.fn(),
+    broadcastEdgeAdded: jest.fn(),
+    broadcastEdgeRemoved: jest.fn(),
     onRemote: jest.fn(),
   }),
 }));

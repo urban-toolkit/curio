@@ -57,6 +57,7 @@ describe("the collaboration panel", () => {
       panelOpen: true,
       users: [FIRST_TAB, SECOND_TAB, WATCHER],
       activity: [],
+      proposals: [],
       participantId,
       role,
     };
