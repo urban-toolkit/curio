@@ -66,15 +66,19 @@ class TestRun:
         msgs = calls[0]
         assert msgs[0]["role"] == "system"
         # dev/06 parity: the system turn composes the preamble + instruction,
-        # exactly as every legacy call site did.
+        # exactly as every legacy call site did, and between them the skills
+        # the agent's chat lists, to load with skill.read.
         preamble = builtin.read_prompt_text("agent.curio.researcher@1", "system")
         instruction = builtin.read_instruction_text("agent.curio.researcher@1")
+        from utk_curio.backend.app.agents.application import skill_runs
         from utk_curio.backend.app.agents.domain import content as content_mod
 
+        catalog = skill_runs.catalog_text(skill_runs.RunSkills(
+            catalog=skill_runs.agent_skills(builtin.get_builtin_manifest("agent.curio.researcher@1"))))
         # dev/39: the runtime-owned structured-tail instruction composes last,
         # followed by the tools the agent is granted, the read tools first.
         assert msgs[0]["content"].startswith(
-            f"{preamble}\n\n{instruction}\n\n{content_mod.tail_instruction()}"
+            f"{preamble}\n\n{catalog}\n\n{instruction}\n\n{content_mod.tail_instruction()}"
         )
         assert "- dataflow.read:" in msgs[0]["content"]
         assert msgs[1] == {"role": "user", "content": "explain this node"}
@@ -326,10 +330,11 @@ class TestExecutionRecords:
         assert pins["model"] == DEFAULT_LLM_MODEL
         assert pins["llm"] == {"configId": None, "label": "Deployment default",
                                "baseUrlHost": "127.0.0.1:9", "source": "deployment"}
-        # dev/39: granted tools are pinned, every one, in the declared order.
+        # dev/39: granted tools are pinned, every one, in the declared order,
+        # then skill.read, which a run that lists skills is granted.
         assert pins["tools"] == [
             "catalog.search", "discovery.sources", "discovery.search", "discovery.acquire",
-            "dataset.install", "dataflow.read",
+            "dataset.install", "dataflow.read", "skill.read",
         ]
         # One pin left: the run caps and the budget it used to record are gone.
         assert pins["policy"] == {
@@ -608,7 +613,8 @@ class TestToolGrants:
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
             headers=_auth(token),
         ).get_json()["turns"]
-        assert turns[1]["execution"]["pins"]["tools"] == []
+        # Only skill.read: the agent names no skills, so it lists them all.
+        assert turns[1]["execution"]["pins"]["tools"] == ["skill.read"]
 
     def test_unknown_optional_tools_are_dropped_with_a_warning(self, client, user_and_token, tmp_curio, alice_project, monkeypatch, caplog):
         """An agent saved when the Discovery tools were datalake.* still runs
@@ -642,7 +648,7 @@ class TestToolGrants:
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
             headers=_auth(token),
         ).get_json()["turns"]
-        assert turns[1]["execution"]["pins"]["tools"] == []
+        assert turns[1]["execution"]["pins"]["tools"] == ["skill.read"]
 
     def test_registered_read_tool_is_granted_and_pinned(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         from utk_curio.backend.app.agents.application import tools as tools_mod
@@ -674,7 +680,7 @@ class TestToolGrants:
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
             headers=_auth(token),
         ).get_json()["turns"]
-        assert turns[1]["execution"]["pins"]["tools"] == ["ghost.tool"]
+        assert turns[1]["execution"]["pins"]["tools"] == ["ghost.tool", "skill.read"]
 
 
 class TestRunContext:
@@ -1177,11 +1183,12 @@ class TestToolLoop:
         monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         user, token = user_and_token
         # No built-in card is both tool-free and delegate-free, so an owned
-        # definition that declares neither stands in for a grant-less run.
+        # definition that declares neither stands in for a grant-less run. It
+        # names no skills either: a run that lists skills holds skill.read.
         coord = "agent.test.plain-helper@1"
         storage.write_definition(_user_dir_key(user), coord, {
             "id": "agent.test.plain-helper", "name": "Plain Helper", "category": "node",
-            "version": "1.0.0",
+            "version": "1.0.0", "skills": [],
             "capabilities": [{"id": "conversation.respond", "contractVersion": "1"}],
             "compatibleTargets": [{"kind": "node", "requires": []}],
             "provenance": {"publisher": "curio", "trust": "imported"},

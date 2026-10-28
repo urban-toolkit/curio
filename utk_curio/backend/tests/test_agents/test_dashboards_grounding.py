@@ -77,22 +77,37 @@ def _message() -> str:
 
 class TestTheDashboardsPage:
     """The skill ``skills/dashboards/SKILL.md`` says what a pin does, what the
-    dashboard refuses and who pins, and every agent Curio ships reads it."""
+    dashboard refuses and who pins, and the agents that meet a tile read it."""
 
     def _page(self) -> str:
         from utk_curio.backend.app.agents.domain import agent_text
 
         return agent_text.skill_text(SKILL)
 
-    def test_every_agent_curio_ships_reads_it_in_its_preamble(self):
-        from utk_curio.backend.app.agents.domain import builtin
+    def test_the_agents_that_meet_a_tile_read_it(self, tmp_curio):
+        """The chats that build and explain list it, to load when a task needs
+        it; a mode that reads a dataflow holding a pinned node is handed it,
+        and so is the round after the dashboard refused a tile's spec."""
+        from utk_curio.backend.app.agents.application import skill_runs
+        from utk_curio.backend.app.agents.domain import builtin, dashboards
 
         page = self._page().rstrip("\n")
         assert page.splitlines()[0] == "## Dashboards"
-        manifests = builtin.list_builtin_manifests()
-        assert len(manifests) >= 7, [m.dir_name for m in manifests]
-        for m in manifests:
-            assert builtin.read_prompt_text(m.dir_name, "system").count(page) == 1, m.dir_name
+        preamble = builtin.read_page("default_preamble.md", wanted_by="the test")
+        cards = [m for m in builtin.list_builtin_manifests() if m.catalog.listed]
+        listing = [m.agent_id for m in cards if SKILL in skill_runs.for_chat(
+            KEY, PID, m, {"dataflow": {"nodes": []}}, {"kind": "canvas"}, preamble, []).names]
+        assert listing == ["agent.curio.researcher", "agent.curio.node-builder", "agent.curio.dataflow-builder"]
+        spec = {"dataflow": {"nodes": [_tile(MAP)], "edges": []}}
+        for coord, capability, inputs, refused in (
+            ("agent.curio.dataflow-planner@1", "workflow.plan.create", {}, None),
+            ("agent.curio.dataflow-reader@1", "dataflow.explain", {}, None),
+            (NB, "node.content.generate", {"nodeType": AUTK}, dashboards.KIND),
+        ):
+            run = skill_runs.for_delegated(KEY, PID, builtin.get_builtin_manifest(coord), capability, inputs, spec,
+                                           preamble, refused=refused)
+            assert SKILL in [skill.name for skill in run.handed], coord
+            assert page in skill_runs.skills_text(run), coord
 
     def test_it_names_a_tiles_row_and_the_size_the_dashboard_holds_a_page_to(self):
         """The row ``dataflow.read`` gives a tile, and the dashboard's own

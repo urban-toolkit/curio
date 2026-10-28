@@ -496,8 +496,12 @@ def test_agent_runs_on_native_tools(spec, current_server: str):
         "a run on native tools was still taught the fenced request syntax"
     )
     offers = captured_agent_offers(current_server)
-    names = {tools.wire_name(t) for t in _tool_ids(spec)} | ({"delegate"} if spec.delegates_to else set())
+    # Its tools, skill.read, which a chat that lists skills holds, and the
+    # delegation tool when it delegates.
+    skill_read = tools.wire_name("skill.read")
+    names = {tools.wire_name(t) for t in _tool_ids(spec)} | {skill_read} | ({"delegate"} if spec.delegates_to else set())
     assert set(offers[0]["tools"]) <= names and offers[0]["toolChoice"] == "auto", offers[0]
+    assert skill_read in offers[0]["tools"], offers[0]
     if leg == "prompts":
         return
     assert tools.wire_name(tool) in offers[0]["tools"], offers[0]
@@ -508,6 +512,45 @@ def test_agent_runs_on_native_tools(spec, current_server: str):
         assert proposals and proposals[0]["tool"] == tool, run["content"]
     else:
         assert result["name"] == tools.wire_name(tool)
+
+
+@pytest.mark.parametrize("native", [False, True], ids=["fenced", "native"])
+def test_a_chat_loads_a_skill_and_holds_it_for_its_next_turn(native: bool, current_server: str):
+    """The Node Builder's chat loads ``widgets`` with skill.read, fenced and
+    natively: the call's result is the skill, wrapped as
+    ``<skill_content>``, and the turn records it. The next turn holds it in
+    its system turn, and loading it again answers that the conversation holds
+    it already, with no second copy."""
+    require_project_page()
+    require_user_auth()
+    spec = next(s for s in _CARDS if s.agent_id == "agent.curio.node-builder")
+    token, base, attachment_id = _attached(spec, current_server, "skill" + ("n" if native else "f"))
+    if native:
+        ask = {"text": VISIBLE_PROSE, "toolCalls": [{"name": "skill.read", "arguments": {"name": "widgets"}}]}
+    else:
+        ask = _tail({"toolRequest": {"tool": "skill.read", "params": {"name": "widgets"}}})
+
+    script_agent_replies(current_server, ask, "Loaded.", native_tools=native)
+    api_json(f"{base}/attachments/{attachment_id}/run", token, method="POST",
+             payload={"message": "Which widgets can a chart have?"})
+    first = captured_agent_prompts(current_server)
+    assert '<available_skills>' in first[0][0]["content"] and "<name>widgets</name>" in first[0][0]["content"]
+    result = first[1][-1]
+    assert result["role"] == ("tool" if native else "user"), result
+    assert result["content"].count('<skill_content name="widgets">') == 1, result["content"][:300]
+    turns = api_json(f"{base}/attachments/{attachment_id}/session", token)["turns"]
+    assert turns[-1]["execution"]["skillsLoaded"] == ["widgets"], turns[-1]["execution"]
+
+    script_agent_replies(current_server, ask, "Still loaded.", native_tools=native)
+    api_json(f"{base}/attachments/{attachment_id}/run", token, method="POST",
+             payload={"message": "And for a map?"})
+    second = captured_agent_prompts(current_server)
+    assert second[0][0]["content"].count('<skill_content name="widgets">') == 1
+    again = second[1][-1]["content"]
+    assert "already in this conversation" in again and "<skill_content" not in again, again
+    turns = api_json(f"{base}/attachments/{attachment_id}/session", token)["turns"]
+    assert turns[-1]["execution"]["pins"]["skills"]["kept"] == ["widgets"]
+    assert "skillsLoaded" not in turns[-1]["execution"]
 
 
 def test_a_refusal_of_native_tools_falls_back_to_the_fenced_protocol(current_server: str):
