@@ -173,21 +173,19 @@ def commit_with_retry(apply_changes, attempts: int = _WRITE_CONFLICT_ATTEMPTS):
     return retry_on_write_conflict(_apply_and_commit, attempts=attempts)
 
 
-# Flask-SocketIO singleton, populated by init_socketio(app) when
-# ENABLE_COLLAB=True. Left as None otherwise so the flask-socketio package is
-# never imported on deployments that don't use real-time collaboration.
+# The app's Flask-SocketIO server, made by init_socketio(app) for every backend:
+# the collaboration room and each open dataflow's doc (app/collaboration/)
+# travel over it.
 socketio = None
 
 
 def init_socketio(app):
-    """Construct + bind the SocketIO singleton.
+    """Make *app*'s SocketIO server, and keep it as this module's ``socketio``.
 
-    Imported lazily so backends running with ENABLE_COLLAB=0 don't need
-    flask-socketio installed.
+    One per app, so an app made later (the test suites make many) serves its
+    own sockets rather than an earlier app's.
     """
     global socketio
-    if socketio is not None:
-        return socketio
     from flask_socketio import SocketIO
     from utk_curio.backend.config import COLLAB_CORS_ORIGINS
     raw = COLLAB_CORS_ORIGINS.strip()
@@ -197,12 +195,13 @@ def init_socketio(app):
         origins = [o.strip() for o in raw.split(",") if o.strip()]
     # async_mode="threading" mirrors the existing Flask dev server's threaded
     # model so the reloader keeps working without monkey-patching the world
-    # (eventlet/gevent would require import-time patching).
+    # (eventlet/gevent would require import-time patching). Its WebSocket
+    # transport is simple-websocket, a thread per open socket.
     # manage_session=False: flask-socketio's default tries to assign to
     # ``RequestContext.session``, which became a read-only property in
-    # Flask 3.x. We do not use the Flask session anyway — every per-sid
-    # detail (user_id, username, …) is stashed via
-    # ``sio.server.save_session(...)`` in the collaboration auth handshake.
+    # Flask 3.x. The Flask session is not used anyway: what each socket is
+    # (user_id, username, participant) is kept in collaboration/room_state.py
+    # by the handshake.
     socketio = SocketIO(
         app,
         cors_allowed_origins=origins,
