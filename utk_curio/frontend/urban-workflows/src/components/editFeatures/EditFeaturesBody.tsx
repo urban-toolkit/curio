@@ -34,6 +34,7 @@ import { faRotateLeft, faRotateRight, faXmark } from "@fortawesome/free-solid-sv
 import NodeEmptyState from "../nodes/NodeEmptyState";
 import { MOD_KEY_LABEL, isTypingTarget } from "../canvasKeyBindings";
 import { useFlowContext } from "../../providers/FlowProvider";
+import { useSharedView } from "../../hook/useSharedView";
 import { useProvenanceContext, type NodeExecRecord } from "../../providers/ProvenanceProvider";
 import { autoRunTargets } from "../../providers/flow/useAutoRun";
 import { readAutkInput, autkSourcesFrom } from "../../utils/autkInput";
@@ -243,7 +244,10 @@ export function EditFeaturesBody({
   const settings = "problem" in read ? undefined : read.settings;
   const comments = "problem" in read ? undefined : read.comments;
   const circles = circlesInto(nodeId, flow?.edges ?? []);
-  const writable = !flow?.dashboardOn && flow?.viewerMode !== "shared";
+  // As the node's behavior writes: not on the dashboard, nor on a watcher's
+  // read-only canvas (useSharedView).
+  const readOnly = useSharedView();
+  const writable = !flow?.dashboardOn && !readOnly;
   const editable = writable && unreadable === null;
   const layers = useInputLayers(input);
   const layer = layers ? chosenLayer(layers, settings) : undefined;

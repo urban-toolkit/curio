@@ -250,9 +250,24 @@ def _owner_user_dir_key(project) -> str:
     return str(project.user_id)
 
 
-def _assert_guest_can_save(user) -> None:
-    if user.is_guest and not _is_shared_guest(user):
-        raise ProjectError("Guest users cannot save projects", 403)
+#: What a guest who may not save is told, the words the page shows when its
+#: File > Save or Save a copy is refused (``useWorkflowOperations.ts``).
+GUEST_SAVE_REFUSAL = "Guest users cannot save projects"
+
+
+def _assert_guest_can_save(user, *, cleanup: bool = False) -> None:
+    """Refuse a guest's save: a hosted one's (``capabilities.is_hosted_guest``,
+    the page's ``isHostedGuest``), and any guest's but the shared one. Without
+    ``--deploy`` the shared guest is the one local user and saves.
+
+    *cleanup* is a write Curio makes for another of the account's actions, a
+    removed dataset's bindings cleared out of the dataflows that held it
+    (``datasets/repositories/installed.py``). A hosted guest's account makes
+    those as its dataset actions do: the rule refuses the saves a tab sends."""
+    from utk_curio.backend.app.users.capabilities import is_hosted_guest
+
+    if (user.is_guest and not _is_shared_guest(user)) or (is_hosted_guest(user) and not cleanup):
+        raise ProjectError(GUEST_SAVE_REFUSAL, 403)
 
 
 def _humanize_node_type(node_type: Optional[str]) -> Optional[str]:
@@ -1024,11 +1039,12 @@ def save_project(user, data: ProjectCreate, *, sign_in: Optional[str] = None) ->
                       categories=_categories(user, project_id, effective_spec))
 
 
-def _project_to_save(user, project_id: str):
-    """The project *user* may save, or the refusal a save gets: a guest other
-    than the shared one cannot save (403), and a project is saved by its owner
-    alone (``NotFoundError`` for anyone else)."""
-    _assert_guest_can_save(user)
+def _project_to_save(user, project_id: str, *, cleanup: bool = False):
+    """The project *user* may save, or the refusal a save gets: a guest who
+    may not save is refused (403, :func:`_assert_guest_can_save`, with its
+    *cleanup*), and a project is saved by its owner alone (``NotFoundError``
+    for anyone else, its editors included)."""
+    _assert_guest_can_save(user, cleanup=cleanup)
     return repo.get_for_user(project_id, user.id)
 
 
@@ -1070,10 +1086,12 @@ def _refuse_an_older_save(ukey: str, project_id: str, data: ProjectUpdate) -> No
 
 def update_project(
     user, project_id: str, data: ProjectUpdate, *, sign_in: Optional[str] = None,
+    cleanup: bool = False,
 ) -> ProjectDetail:
     """Save *data* over *project_id*. *sign_in*: the caller's, for a save a
-    request sent (:func:`_readable_sent_outputs`)."""
-    project = _project_to_save(user, project_id)
+    request sent (:func:`_readable_sent_outputs`). *cleanup*: a write for
+    another of the account's actions, not a save (:func:`_assert_guest_can_save`)."""
+    project = _project_to_save(user, project_id, cleanup=cleanup)
     ukey = _user_dir_key(user)
     readable = _readable_sent_outputs(user, data.outputs, sign_in)
 
@@ -1331,6 +1349,7 @@ def mutate_dataflow_datasets(user, project_id: str, mutate) -> Optional[dict]:
     written here. Skips the manifest rewrite — the manifest carries
     outputs/name/description only. Returns the resulting spec, or ``None``
     when the project has no spec on disk.
+
     """
     project = repo.get_for_user(project_id, user.id)
     ukey = _user_dir_key(user)

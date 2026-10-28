@@ -51,11 +51,11 @@ Each backend feature's `service.py` is its public entry point for routes and oth
 
 Under `utk_curio/backend/app/`:
 
-- `projects/`: dataflows: routes, services, storage, seeding, categories, dashboard payload.
+- `projects/`: dataflows: routes, services, storage, seeding, categories, dashboard payload, and who edits one (`access.py`: `room_role`, the editors list behind Share > Invite editors).
 - `runs/`: dataflow runs on the server: tables and retention (`models.py`, `repositories.py`), starting, following and cancelling one (`service.py`, `routes.py`), live runs (`jobs.py`), a dashboard viewer's runs, which need no sign-in (`viewer.py`, `viewer_routes.py`), and the outputs kept runs keep by key, for seven days, with their sweep (`kept.py`). The engine is `execution/run_engine.py` with `execution/run_plan.py`; which outputs a run saves is `execution/save_policy.py`.
 - `users/`: accounts, sessions, auth routes, capabilities, connection keys, Data source keys (`source_keys.py`), rate limits.
 - `execution/`: one node run as Play does it (`node_exec.py`, behind `/processPythonCode` and `/processJavaScriptCode`), the sandbox HTTP client (`sandbox_client.py`), headless dataflow runner (`runner.py`), per-node runtime journal, sandbox token.
-- `collaboration/`: real-time co-editing over Socket.IO (`events.py`, `room_state.py`).
+- `collaboration/`: real-time co-editing over Socket.IO (`events.py`, `room_state.py`, `roles.py`: a change to the editors told to the room).
 - `monitor/`: monitor page backend: counters, stats, hardware, storage, error log.
 - `notebooks/`: Jupyter notebook import (`analyzer.py`).
 - `api/routes.py`: sandbox proxies, starters, file serving.
@@ -93,6 +93,7 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
   - `db_stubs.py`: `stub_db_user`, `stub_db_login`, `stub_login_and_enter_workflow`, `api_json`.
   - `catalog_clock.py`: `CATALOG_CALENDAR`, the fixed date that tests marked `catalog_calendar` run on (conftest.py).
   - `palettes.py`: tool palettes. `upload.py`: `upload_workflow`. `page.py`: `FrontendPage`.
+  - `routes.py`: `end_routes` and `close_after_routes`, which take a page's or a context's routes off once the calls of them still running have ended (`unroute_all(behavior="wait")`), before the context closes. Closing a context does not wait for them: a call that then reads what its `route.fetch()` was answered fails, and Playwright raises that at the worker's next call, which can be another test's.
   - `canvas_authoring.py`: `drag_to_canvas`, `drag_builtin_to_canvas` (a built-in tile, through the rail's Built-in palette), `drag_to_canvas_with_the_mouse`, `connect_nodes`, `set_node_code`, `play_node`, `run_node_and_wait`.
   - `run_all.py`: Run All state, holding a run open.
   - `node_drawings.py`: `assert_vega_canvas_rendered`, `assert_autark_map_drawn` and the other drawing checks.
@@ -117,6 +118,7 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
 - `unit`: backend pytest in four parts, plus the sandbox suite.
 - `jest`: Jest and `npm run typecheck`.
 - `e2e-desktop`: e2e tests without WebGPU, split over CPU runners.
+- `e2e-collab`: the e2e tests marked `needs_collab`, on a stack started with `--collab` (`CURIO_E2E_STACK_ARGS`, `docker-compose.ci.yml`).
 - `test-isolated`: Python-node workflows on the fork-isolated stack (`docker-compose.ci-isolated.yml`).
 - `test-exec-user`: isolation with an execution account (`docker-compose.ci-exec-user.yml`).
 - `preview-runner`: preview runner tests (`utk_curio/tools/preview_runner.py`) in headless Chromium.

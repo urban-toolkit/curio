@@ -220,10 +220,13 @@ class InstalledDatasetRepository:
             nodes_changed = True
 
         if nodes_changed:
+            # A cleanup for the dataset's removal, not a save: a hosted guest's
+            # removal clears its bindings as it clears its refs above.
             project_services.update_project(
                 self.user,
                 dataflow_id,
                 ProjectUpdate(spec=spec, outputs=None, name=None, description=None, thumbnail_accent=None),
+                cleanup=True,
             )
             changed = True
 

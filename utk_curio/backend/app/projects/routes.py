@@ -184,6 +184,57 @@ def get_shared_project(project_id: str):
 
 
 # ---------------------------------------------------------------------------
+# /api/projects/:id/editors - who the owner invited to edit (projects/access.py)
+# ---------------------------------------------------------------------------
+@projects_bp.route("/<project_id>/editors", methods=["GET"])
+@require_auth
+def list_editors(project_id: str):
+    """The dataflow's editors, for its owner alone: anyone else is told it is
+    not found, as the other owner routes tell them, and a guest is refused."""
+    from utk_curio.backend.app.projects import access
+
+    try:
+        editors = access.list_editors(g.user, project_id)
+    except NotFoundError:
+        return _error("Project not found", 404)
+    except ProjectError as exc:
+        return _error(str(exc), exc.status)
+    return jsonify({"editors": editors}), 200
+
+
+@projects_bp.route("/<project_id>/editors", methods=["POST"])
+@require_auth
+def add_editor(project_id: str):
+    """Invite an account by ``{"username": ...}``; answers with the list."""
+    from utk_curio.backend.app.projects import access
+
+    body = request.get_json(silent=True) or {}
+    username = body.get("username")
+    try:
+        editors = access.add_editor(g.user, project_id, username if isinstance(username, str) else "")
+    except NotFoundError:
+        return _error("Project not found", 404)
+    except ProjectError as exc:
+        return _error(str(exc), exc.status)
+    return jsonify({"editors": editors}), 201
+
+
+@projects_bp.route("/<project_id>/editors/<int:user_id>", methods=["DELETE"])
+@require_auth
+def remove_editor(project_id: str, user_id: int):
+    """Take an editor off the list; answers with the list."""
+    from utk_curio.backend.app.projects import access
+
+    try:
+        editors = access.remove_editor(g.user, project_id, user_id)
+    except NotFoundError:
+        return _error("Not found", 404)
+    except ProjectError as exc:
+        return _error(str(exc), exc.status)
+    return jsonify({"editors": editors}), 200
+
+
+# ---------------------------------------------------------------------------
 # GET /api/projects/:id/outputs/{get,get-preview,raster} - a canvas's reads
 # ---------------------------------------------------------------------------
 def _output_read(project_id: str):

@@ -145,6 +145,7 @@ _RESETTABLE_TABLES: tuple[str, ...] = (
     "exec_cache_entry",
     "dataflow_run_step",
     "dataflow_run",
+    "project_editor",
     "project",
     "auth_attempt",
     "user_session",
