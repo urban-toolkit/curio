@@ -299,6 +299,9 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
                 continue;
             }
             const trill = trillNodeOf(node);
+            // A node's editor holds "" before anything is typed, which the
+            // doc holds as no code: its editor writes the first it gets.
+            if (trill.content === "") delete trill.content;
             cache.set(node.id, { node, code: node.data?.code, trill });
             trillNodes.push(trill);
         }

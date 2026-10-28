@@ -29,7 +29,8 @@ import * as Y from "yjs";
 import layoutJson from "../../contracts/dataflowDoc.json";
 import { changedStretch } from "../../utils/textStretch";
 
-type Json = unknown;
+// A Trill value: whatever JSON holds.
+type Json = any;
 type Fields = Record<string, Json>;
 
 interface Layout {
