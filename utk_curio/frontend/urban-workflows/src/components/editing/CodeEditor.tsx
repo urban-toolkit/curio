@@ -139,7 +139,11 @@ function CodeEditor({
     chipPreviews = null,
     restoredCode = null,
 }: CodeEditorProps) {
-    const [code, setCode] = useState<string>(""); // code with all original markers
+    // The code with all original markers, the node's from the first render: what
+    // this floats into the node's code at mount. Floated as the editor's empty
+    // "", the node's code read "" until its code came in, and a save then kept
+    // "" as the node's code.
+    const [code, setCode] = useState<string>(() => (typeof defaultValue === "string" ? defaultValue : ""));
     const [execCount, setExecCount] = useState<number>(0);
     // #662: the mounted editor, for the reference tags and chips.
     const [widgetEditor, setWidgetEditor] = useState<{ editor: any; monaco: any } | null>(null);

@@ -170,6 +170,14 @@ describe("CodeEditor content sync (dev/70)", () => {
         expect(sendCodeToWidgets).toHaveBeenCalledWith(SAVED_CODE);
     });
 
+    test("floats the node's code from the first render, never the editor's empty \"\"", () => {
+        // Floated at mount, "" was the node's code until its code came in, and
+        // a save taken then kept "" as the node's code.
+        const { floatCode } = renderCodeEditor(SAVED_CODE);
+        expect(floatCode).toHaveBeenCalledWith(SAVED_CODE);
+        expect(floatCode).not.toHaveBeenCalledWith("");
+    });
+
     test("an undefined defaultValue leaves the editor empty (fresh palette node)", () => {
         const { sendCodeToWidgets } = renderCodeEditor(undefined);
         expect(lastEditor().getValue()).toBe("");

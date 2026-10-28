@@ -58,6 +58,25 @@ const VARIANT_TITLE: Record<ToastVariant, string> = {
     info: "Info",
 };
 
+/**
+ * How a screen reader announces a toast: an error at once, as an alert, and
+ * anything else politely, as a status, when the reader is free.
+ *
+ * Through a ref, not props: React-Bootstrap's Toast writes role="alert" and
+ * aria-live="assertive" on every toast after the props it is given, so a
+ * "Saved" interrupted the reader as an error does. React never writes those
+ * two attributes again, since the values the library gives never change.
+ */
+function announcedAs(variant: ToastVariant) {
+    const role = variant === "error" ? "alert" : "status";
+    const live = variant === "error" ? "assertive" : "polite";
+    return (toast: HTMLDivElement | null) => {
+        if (!toast) return;
+        toast.setAttribute("role", role);
+        toast.setAttribute("aria-live", live);
+    };
+}
+
 // How long a toast stays up before it clears itself. An ERROR never does: it
 // reports something that went wrong and usually names what to do about it -
 // a library that will not import, a package that could not be added - and
@@ -169,8 +188,7 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
                         key={toast.seq}
                         show
                         onClose={() => dismiss(toast.ids)}
-                        role={toast.variant === "error" ? "alert" : "status"}
-                        aria-live={toast.variant === "error" ? "assertive" : "polite"}
+                        ref={announcedAs(toast.variant)}
                         aria-atomic="true"
                         style={{
                             backgroundColor: VARIANT_BG[toast.variant],

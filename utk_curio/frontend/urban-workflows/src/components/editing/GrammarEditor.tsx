@@ -66,7 +66,11 @@ export default function GrammarEditor({
     chipPreviews = null,
     restoredCode = null,
 }: GrammarEditorProps) {
-    const [grammar, _setGrammar] = useState("{}");
+    // The spec the node holds from the first render: what this floats into the
+    // node's code at mount. Floated as the editor's empty "{}", the node's code
+    // read "{}" until the spec came in, and a save then (the one that makes a
+    // dataflow loaded from a file a project) kept "{}" as the node's spec.
+    const [grammar, _setGrammar] = useState<string>(() => (typeof defaultValue === "string" ? defaultValue : "{}"));
     // #662: the mounted editor, for the reference tags and chips. A
     // reference is not JSON until it is resolved, so the errors it causes are hidden.
     const [widgetEditor, setWidgetEditor] = useState<{ editor: any; monaco: any } | null>(null);
