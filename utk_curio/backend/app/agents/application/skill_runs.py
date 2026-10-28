@@ -10,14 +10,18 @@ clients says (https://agentskills.io/client-implementation/adding-skills-support
   the start of each run as the model chosen for it is): the ones it removed
   left out, the ones it added after the rest. Those its preamble holds
   already, as the default preamble holds the core skills, are in the system
-  turn, so nothing below lists or hands them again.
+  turn, so nothing below lists or hands them again. A name is a skill Curio
+  ships or one the account holds of its own (:func:`account_skills`,
+  ``repositories/user_skills.py``): one it imported, or its copy of one it
+  added from the shared catalog, read leniently and held as written.
 - **The packages' skills.** Every run on a dataflow also holds the skills of
   the packages the dataflow uses (``dataflow.packages``), each package's
   ``skills/`` (``packages.dataflow_skill_folders``), whatever its agent
   names, after the agent's own (:func:`package_skills`). They are read
   strictly, as the skills Curio ships are, and held as written: no marker of
-  theirs is filled. A name shows once: Curio's skill, then the first
-  package's, and a warning names each skill left out for it.
+  theirs is filled. A name shows once: Curio's skill, then the account's
+  skill the agent holds, then the first package's, and a warning names each
+  skill left out for it.
 - **The catalog.** A chat run lists those skills, each by its name and
   description, under the guide's short instruction (the section
   ``skill-catalog`` of ``frames.md``), and is granted ``skill.read`` to load
@@ -78,6 +82,7 @@ from utk_curio.backend.app.agents.domain import dashboards
 from utk_curio.backend.app.agents.domain import plan_topology
 from utk_curio.backend.app.agents.domain import skills as skill_format
 from utk_curio.backend.app.agents.infrastructure import agent_skills as agent_skill_store
+from utk_curio.backend.app.agents.repositories import user_skills
 from utk_curio.backend.app.packages import service as packages_services
 
 log = logging.getLogger(__name__)
@@ -166,28 +171,69 @@ def shipped_skills() -> dict[str, skill_format.Skill]:
     return {skill.name: skill for skill in skill_format.shipped_skills()}
 
 
+def account_skills(user_key: str | None) -> dict[str, skill_format.Skill]:
+    """The skills the account *user_key* holds of its own
+    (``repositories/user_skills.py``): those it imported and its copies of
+    skills from the shared catalog, read leniently, as a skill brought from
+    elsewhere is, by name. One whose name is not its folder's, or is a skill
+    Curio ships, is left out and logged, as is one that cannot be read."""
+    if not user_key:
+        return {}
+    try:
+        folders = user_skills.folders(user_key)
+    except (OSError, ValueError) as exc:
+        log.warning("Could not list the skills of account %s: %s", user_key, exc)
+        return {}
+    shipped = {folder.name for folder in skill_format.shipped_folders()}
+    found: dict[str, skill_format.Skill] = {}
+    for folder in folders:
+        try:
+            skill = skill_format.parse(folder, strict=False)
+        except (OSError, ValueError) as exc:  # a SkillError, or a file that is not UTF-8
+            log.warning("Runs go without the skill in %s, which cannot be read: %s", folder, exc)
+            continue
+        if skill.name != folder.name or skill.name in shipped:
+            log.warning("Runs go without the skill in %s: its name, %s, is %s", folder, skill.name,
+                        "a skill Curio ships" if skill.name in shipped else "not its folder's")
+            continue
+        found[skill.name] = skill
+    return found
+
+
+def usable_skills(user_key: str | None,
+                  shipped: Mapping[str, skill_format.Skill] | None = None) -> dict[str, skill_format.Skill]:
+    """Every skill an agent of the account *user_key* may hold, by name: the
+    skills Curio ships, then the account's own (:func:`account_skills`)."""
+    shipped = shipped_skills() if shipped is None else shipped
+    return {**shipped, **account_skills(user_key)}
+
+
 def agent_skills(manifest, shipped: Mapping[str, skill_format.Skill] | None = None, *,
-                 choice: agent_skill_store.SkillChoice | None = None) -> tuple[skill_format.Skill, ...]:
+                 choice: agent_skill_store.SkillChoice | None = None,
+                 usable: Mapping[str, skill_format.Skill] | None = None) -> tuple[skill_format.Skill, ...]:
     """The skills the agent *manifest* defines may hold, in its order: the
     ones it names, or every skill Curio ships when it names none (and when
-    there is no manifest). A name Curio ships no skill by is left out and
-    logged. With *choice*, what an account changed of them
+    there is no manifest). With *choice*, what an account changed of them
     (:func:`account_choice`): the ones it removed are left out, and the ones
-    it added follow the rest, in the order it added them."""
+    it added follow the rest, in the order it added them. A name is found in
+    *usable*, the skills an agent of the account may hold
+    (:func:`usable_skills`), or only among the skills Curio ships without
+    it; a name found nowhere is left out and logged."""
     shipped = shipped_skills() if shipped is None else shipped
+    usable = shipped if usable is None else usable
     names = getattr(manifest, "skills", None)
     if names is None:
         found = list(shipped.values())
     else:
-        unknown = [name for name in names if name not in shipped]
+        unknown = [name for name in names if name not in usable]
         if unknown:
-            log.warning("Agent %s names skills Curio does not ship, so its runs go without them: %s",
+            log.warning("Agent %s names skills neither Curio nor its account holds, so its runs go without them: %s",
                         getattr(manifest, "dir_name", "?"), ", ".join(unknown))
-        found = [shipped[name] for name in names if name in shipped]
+        found = [usable[name] for name in names if name in usable]
     if choice:
         found = [skill for skill in found if skill.name not in choice.removed]
-        found += [shipped[name] for name in choice.added
-                  if name in shipped and all(skill.name != name for skill in found)]
+        found += [usable[name] for name in choice.added
+                  if name in usable and all(skill.name != name for skill in found)]
     return tuple(found)
 
 
@@ -214,16 +260,18 @@ def placed_in(preamble: str | None, shipped: Mapping[str, skill_format.Skill]) -
     return frozenset(name for name in shipped if agent_text.skill_text(name) in preamble)
 
 
-def package_skills(user_key: str | None, spec,
-                   shipped: Mapping[str, skill_format.Skill]) -> tuple[tuple[str, skill_format.Skill], ...]:
+def package_skills(user_key: str | None, spec, shipped: Mapping[str, skill_format.Skill],
+                   held: Iterable[skill_format.Skill] = ()) -> tuple[tuple[str, skill_format.Skill], ...]:
     """The skills of the packages the dataflow *spec* uses, as
     ``(<packageId>@<major>, skill)``: the packages in the lockfile's order,
     each one's skills by name (``packages.dataflow_skill_folders``), each
-    read strictly, as the skills Curio ships are. A name shows once: a skill
-    with the name of one Curio ships (*shipped*), or of one an earlier
-    package ships, is left out, and a warning names it, its package and who
-    ships the skill runs hold by that name. One that cannot be read is left
-    out and logged."""
+    read strictly, as the skills Curio ships are. A name shows once, in this
+    order: a skill Curio ships (*shipped*), a skill of the account the agent
+    holds (*held*), then the first package's. A package's skill of a name
+    taken so is left out, and a warning names it, its package and whose
+    skill runs hold by that name. One that cannot be read is left out and
+    logged."""
+    held_names = {skill.name for skill in held}
     found: dict[str, tuple[str, skill_format.Skill]] = {}
     for dir_name, folder in packages_services.dataflow_skill_folders(user_key, spec):
         try:
@@ -234,6 +282,9 @@ def package_skills(user_key: str | None, spec,
         if skill.name in shipped:
             log.warning("The skill %s of %s is left out of runs: its name is a skill Curio ships, which they hold",
                         skill.name, dir_name)
+        elif skill.name in held_names:
+            log.warning("The skill %s of %s is left out of runs: the agent holds the account's own skill of that "
+                        "name", skill.name, dir_name)
         elif skill.name in found:
             log.warning("The skill %s of %s is left out of runs: %s ships a skill of that name, which they hold",
                         skill.name, dir_name, found[skill.name][0])
@@ -244,17 +295,19 @@ def package_skills(user_key: str | None, spec,
 
 def _pool(user_key: str | None, manifest, preamble: str | None,
           spec=None) -> tuple[dict, frozenset[str], tuple[skill_format.Skill, ...], dict[str, str]]:
-    """Every skill Curio ships, the ones *preamble* holds, the skills a run
-    may hold that it does not (the agent's, after what the account *user_key*
-    changed of them, then those of the packages the dataflow *spec* uses,
+    """Every skill an agent of the account *user_key* may hold
+    (:func:`usable_skills`), the ones *preamble* holds, the skills a run may
+    hold that it does not (the agent's, after what the account changed of
+    them, then those of the packages the dataflow *spec* uses,
     :func:`package_skills`), and the package each of those comes from,
     ``<packageId>@<major>``, by the skill's name."""
     shipped = shipped_skills()
+    usable = usable_skills(user_key, shipped)
     placed = placed_in(preamble, shipped)
-    agents = agent_skills(manifest, shipped, choice=account_choice(user_key, manifest))
+    agents = agent_skills(manifest, shipped, choice=account_choice(user_key, manifest), usable=usable)
     own = tuple(skill for skill in agents if skill.name not in placed)
-    packaged = package_skills(user_key, spec, shipped)
-    return shipped, placed, (*own, *(skill for _, skill in packaged)), {
+    packaged = package_skills(user_key, spec, shipped, own)
+    return usable, placed, (*own, *(skill for _, skill in packaged)), {
         skill.name: dir_name for dir_name, skill in packaged
     }
 
@@ -366,17 +419,19 @@ def _reads(manifest, capability: str) -> tuple[str, ...]:
 # --- A run's skills ------------------------------------------------------------------
 
 
-def _own(names: Iterable[str], shipped: Mapping[str, skill_format.Skill], placed: frozenset[str],
+def _own(names: Iterable[str], usable: Mapping[str, skill_format.Skill], placed: frozenset[str],
          handed: list[skill_format.Skill], whose: str) -> list[skill_format.Skill]:
     """The skills *names* names, a capability's or an instruction's own, that
     *handed* and the preamble (*placed*) do not hold already, from every skill
-    Curio ships. A name Curio ships no skill by is left out and logged."""
+    an agent of the account may hold (*usable*). A name of no such skill is
+    left out and logged."""
     found: list[skill_format.Skill] = []
     for name in names:
-        if name not in shipped:
-            log.warning("%s names a skill Curio does not ship, %s, so its runs go without it", whose, name)
+        if name not in usable:
+            log.warning("%s names a skill neither Curio nor the account holds, %s, so its runs go without it",
+                        whose, name)
         elif name not in placed and all(skill.name != name for skill in (*handed, *found)):
-            found.append(shipped[name])
+            found.append(usable[name])
     return found
 
 
@@ -394,13 +449,13 @@ def for_chat(user_key: str, project_id: str, manifest, spec, target, preamble: s
     the behavior and the template of the node it is attached to, then its
     instruction's own, those its conversation loaded or named before, and
     those *message* names (:func:`named_in`) that it does not hold already."""
-    shipped, placed, pool, packages = _pool(user_key, manifest, preamble, spec)
+    usable, placed, pool, packages = _pool(user_key, manifest, preamble, spec)
     node_id = target.get("targetId") if isinstance(target, dict) and target.get("kind") == "node" else None
     node_type = agents_dataflow_block.node_type_of(spec, node_id) if node_id else None
     handed = list(serving(
         pool, behaviors=behaviors_of(user_key, project_id, [node_type]), templates=[node_type], packages=packages,
     ) if node_type else ())
-    handed += _own(_instruction_skills(manifest), shipped, placed, handed,
+    handed += _own(_instruction_skills(manifest), usable, placed, handed,
                    f"The instruction of agent {getattr(manifest, 'dir_name', '?')}")
     by_name = {skill.name: skill for skill in pool}
     kept = tuple(
@@ -438,7 +493,7 @@ def for_delegated(user_key: str, project_id: str, manifest, capability: str, inp
     refusal records), then the capability's own, then, for a capability with
     no instruction of its own, which runs the agent's instruction, the
     instruction's. It lists none: it holds no tool."""
-    shipped, placed, pool, packages = _pool(user_key, manifest, preamble, spec)
+    usable, placed, pool, packages = _pool(user_key, manifest, preamble, spec)
     behaviors: set[str] = set()
     features: set[str] = set()
     templates: list[object] = []
@@ -457,10 +512,10 @@ def for_delegated(user_key: str, project_id: str, manifest, capability: str, inp
     if isinstance(refused, str) and refused:
         handed += [skill for skill in answering(pool, refused, node_behaviors) if skill not in handed]
     declared = manifest.capability(capability) if manifest is not None else None
-    handed += _own(declared.skills if declared is not None else (), shipped, placed, handed,
+    handed += _own(declared.skills if declared is not None else (), usable, placed, handed,
                    f"Capability {capability}")
     if declared is None or not declared.instruction:
-        handed += _own(_instruction_skills(manifest), shipped, placed, handed,
+        handed += _own(_instruction_skills(manifest), usable, placed, handed,
                        f"The instruction of agent {getattr(manifest, 'dir_name', '?')}")
     return RunSkills(handed=tuple(handed), placed=placed)
 
