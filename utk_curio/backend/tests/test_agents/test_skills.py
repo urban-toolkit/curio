@@ -200,11 +200,17 @@ def test_strict_mode_names_every_problem_it_finds(tmp_path):
      lambda s: s.allowed_tools == "dataflow.read node.read"),
     (("description: Use this skill when a node reads a city's street trees.", "description: " + "d" * 1100),
      "street-trees", lambda s: len(s.description) == 1100),
+    (("description: Use this skill when a node reads a city's street trees.",
+      "description: Use this skill when: a node reads a city's street trees"),
+     "street-trees", lambda s: s.description == "Use this skill when: a node reads a city's street trees"
+     and any("a colon and a space" in warning for warning in s.warnings)),
 ])
 def test_lenient_mode_warns_and_reads_the_skill(tmp_path, change, folder, check):
     """agentskills.io's guide for clients: a name that differs from its
     folder or runs past 64 characters warns, and so does every break of the
-    format's rules that leaves the skill readable."""
+    format's rules that leaves the skill readable. A plain value that holds a
+    colon and a space, which YAML refuses and other clients' readers take, is
+    read as quoted text, as the guide advises."""
     skills = _skills()
     old, new = change
     where = _skill(tmp_path, GOOD.replace(old, new, 1), folder=folder)
@@ -222,12 +228,13 @@ def test_lenient_mode_warns_and_reads_the_skill(tmp_path, change, folder, check)
     (GOOD.replace("description: Use this skill when a node reads a city's street trees.", 'description: ""'),
      "gives no description"),
     (GOOD.replace("description: Use this skill when a node reads a city's street trees.",
-                  "description: Use this skill when: the user asks"), "its frontmatter is not YAML"),
+                  "description: [Use this skill when the user asks"), "its frontmatter is not YAML"),
     ("- a list\n", "is no YAML mapping"),
 ])
 def test_lenient_mode_refuses_a_skill_with_no_description_or_unreadable_yaml(tmp_path, front, said):
     """A description is how an agent knows when to use a skill, so a skill
-    with none is refused, and so is frontmatter no YAML reader can read."""
+    with none is refused, and so is frontmatter no YAML reader can read, even
+    with each plain value that holds a colon read as quoted text."""
     skills = _skills()
     with pytest.raises(skills.SkillError, match=said):
         skills.parse(_skill(tmp_path, front), strict=False)
