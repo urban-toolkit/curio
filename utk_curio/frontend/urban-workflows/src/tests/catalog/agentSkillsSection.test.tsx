@@ -5,11 +5,12 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
  * An agent's details list its skills beside In chat, Tools and Modes.
  *
  * The rows are this account's: the core skills its preamble holds, then its
- * own, then those a mode of it always holds. Add skill picks one of the skills
- * it does not hold, Remove drops one, and Restore brings back the list it
- * ships with, each through the agent's skills routes. The core skills and a
- * mode's own show no Remove, and an account that may change nothing (a hosted
- * guest) sees the list alone.
+ * own, then those its chat or a mode of it always holds. Add skill picks one
+ * of the skills it does not hold, Remove drops one, and Restore brings back
+ * the list it ships with, each through the agent's skills routes. The core
+ * skills and those its instruction or a mode names as its own show no Remove,
+ * and an account that may change nothing (a hosted guest) sees the list
+ * alone.
  */
 
 jest.mock("../../services/agents/agentsApi", () => ({
@@ -46,7 +47,8 @@ const AGENT = {
 } as never;
 
 const row = (name: string, extra: Record<string, unknown> = {}) => ({
-  name, description: `When to use ${name}.`, core: false, added: false, modes: [], removable: true, ...extra,
+  name, description: `When to use ${name}.`, core: false, added: false, chat: false, modes: [], asked: false,
+  removable: true, ...extra,
 });
 
 /** The Dataset Finder's skills as the server lists them, before any change. */
@@ -110,6 +112,29 @@ it("offers no Remove for the core skills or a mode's own, and says why", async (
   expect(section.getByText("Always for Find datasets")).toBeInTheDocument();
   // Nothing changed yet, so there is nothing to restore.
   expect(section.queryByRole("button", { name: "Restore" })).toBeNull();
+});
+
+it("offers no Remove for what its chat or a call of it always holds, and says which", async () => {
+  await openDetails({
+    ...SHIPPED,
+    skills: [
+      ...SHIPPED.skills,
+      row("reuse-first", { chat: true, modes: ["Recommend packages", "Write a package"], removable: false }),
+      row("research-notes", { chat: true, removable: false }),
+      row("widgets", { asked: true, removable: false }),
+      row("data-sources", { chat: true, asked: true, removable: false }),
+      row("provenance"),
+    ],
+  });
+  const section = skillsSection();
+  expect(section.getByText("Always in chat and for Recommend packages, Write a package")).toBeInTheDocument();
+  expect(section.getByText("Always in chat")).toBeInTheDocument();
+  // A call another agent asks for is none of its modes, so it is never named by an id.
+  expect(section.getByText("Always when another agent asks")).toBeInTheDocument();
+  expect(section.getByText("Always in chat and when another agent asks")).toBeInTheDocument();
+  expect(section.getAllByRole("button", { name: /^Remove / }).map((b) => b.getAttribute("aria-label"))).toEqual([
+    "Remove provenance from Dataset Finder",
+  ]);
 });
 
 it("adds a skill picked from the ones it does not hold", async () => {

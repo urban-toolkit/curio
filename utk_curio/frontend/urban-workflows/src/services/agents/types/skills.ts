@@ -15,7 +15,7 @@ export interface SkillAgentUse {
   card: boolean;
   /** This account added the skill to it. */
   added: boolean;
-  /** Its every call holds the skill, or a mode of it always does. */
+  /** Its every call holds the skill, or its chat or a mode of it always does. */
   always: boolean;
 }
 
@@ -63,8 +63,14 @@ export interface AgentSkillRow {
   core: boolean;
   /** This account added it. */
   added: boolean;
+  /** Its chat holds it from its first message whatever the agent's skills
+   *  are: its instruction follows it. */
+  chat: boolean;
   /** The modes that hold it whatever the agent's skills are. */
   modes: string[];
+  /** A call another agent asks it for, which is none of its modes, holds it
+   *  whatever its skills are. */
+  asked: boolean;
   removable: boolean;
 }
 
@@ -93,7 +99,8 @@ export interface RunSkill {
 export interface AgentRunSkillPins {
   /** What its chat could load. */
   catalog?: string[];
-  /** Handed for the node it is attached to. */
+  /** Handed for the node it is attached to, and the procedures its
+   *  instruction follows. */
   handed?: string[];
   /** Taken in by an earlier turn, and held again. */
   kept?: string[];

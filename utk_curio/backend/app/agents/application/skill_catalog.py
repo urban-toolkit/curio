@@ -12,8 +12,8 @@ The Agent Catalog lists skills beside agents (``routes/skills.py``):
 - :func:`skill_text`: one skill's body as an agent reads it, and its files.
 - :func:`agent_skill_rows`: one agent's skills as its details list them: the
   core skills its preamble holds, those its manifest names after the
-  account's changes, and those a mode of it names as its own; which the
-  account may remove, and which it may add.
+  account's changes, and those its instruction or a capability of it names
+  as its own; which the account may remove, and which it may add.
 - :func:`add_skill`, :func:`remove_skill` and :func:`restore_skills`: the
   account's changes (``infrastructure/agent_skills.py``), each checked. A run
   reads them when it starts (``skill_runs.account_choice``), so its catalog
@@ -23,6 +23,8 @@ The Agent Catalog lists skills beside agents (``routes/skills.py``):
 """
 
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 from utk_curio.backend.app.agents.application import catalog
 from utk_curio.backend.app.agents.application import skill_runs
@@ -63,29 +65,56 @@ def _agents(user_key: str) -> list[AgentManifest]:
     return list(found.values())
 
 
-def _own_modes(m: AgentManifest) -> dict[str, list[str]]:
-    """Each skill a capability of *m* names as its own, with the modes that
-    hold it whatever the agent's skills are: each mode by its label, a
-    capability with none by its id."""
+@dataclass(frozen=True)
+class _Held:
+    """What an agent holds for an account, by skill name."""
+
+    #: The skills its preamble places, which every call holds.
+    placed: frozenset[str]
+    #: Its own skills after the account's changes, those placed left out.
+    own: list
+    #: The skills its instruction names as its own, which its chat holds
+    #: from its first message whatever its skills are.
+    chat: list[str]
+    #: Each skill a mode of it names as its own, with those modes' labels.
+    modes: dict[str, list[str]]
+    #: The skills only a capability that is no mode names as its own: a
+    #: call another agent asks it for, which a built-in leaves unlabeled.
+    asked: list[str]
+
+    def always(self, name: str) -> bool:
+        """Whether a run of the agent holds *name* whatever its skills are."""
+        return name in self.placed or name in self.chat or name in self.modes or name in self.asked
+
+
+def _own_modes(m: AgentManifest) -> tuple[dict[str, list[str]], list[str]]:
+    """Each skill a capability of *m* names as its own, which the
+    capability's runs hold whatever the agent's skills are: with the labels
+    of the modes that name it, and apart, those a capability that is no mode
+    names (``catalog.agent_modes`` leaves out a built-in's unlabeled
+    capability, a call another agent asks it for)."""
     labels = {cap: mode["label"] for mode in catalog.agent_modes(m) for cap in mode["capabilities"]}
     found: dict[str, list[str]] = {}
+    asked: list[str] = []
     for capability in m.capabilities:
+        label = labels.get(capability.id)
         for name in capability.skills:
-            modes = found.setdefault(name, [])
-            label = labels.get(capability.id, capability.id)
-            if label not in modes:
-                modes.append(label)
-    return found
+            if label is None:
+                if name not in asked:
+                    asked.append(name)
+            elif label not in found.setdefault(name, []):
+                found[name].append(label)
+    return found, asked
 
 
-def _held(user_key: str, m: AgentManifest, shipped: dict) -> tuple[frozenset[str], list, dict[str, list[str]]]:
-    """What the agent *m* holds for the account *user_key*: the skills its
-    preamble places, its own skills after the account's changes (those
-    placed left out), and its modes' own skills."""
+def _held(user_key: str, m: AgentManifest, shipped: dict) -> _Held:
+    """What the agent *m* holds for the account *user_key* (:class:`_Held`)."""
     placed = skill_runs.placed_in(prompts._resolve_prompt_text(user_key, m.dir_name, "system"), shipped)
     choice = skill_runs.account_choice(user_key, m)
     own = [skill for skill in skill_runs.agent_skills(m, shipped, choice=choice) if skill.name not in placed]
-    return placed, own, _own_modes(m)
+    chat = [name for name in dict.fromkeys(m.instruction_skills) if name in shipped and name not in placed]
+    modes, asked = _own_modes(m)
+    return _Held(placed=placed, own=own, chat=chat, modes=modes, asked=asked)
 
 
 def _require_agent(user_key: str, coord: str) -> AgentManifest:
@@ -127,16 +156,16 @@ def skills_listing(user_key: str) -> list[dict]:
     labels = packages_services.catalog_template_labels()
     users: dict[str, list[dict]] = {name: [] for name in shipped}
     for m in _agents(user_key):
-        placed, own, modes = _held(user_key, m, shipped)
+        held = _held(user_key, m, shipped)
         added = set(skill_runs.account_choice(user_key, m).added)
-        names = [*sorted(placed), *(skill.name for skill in own), *modes]
+        names = [*sorted(held.placed), *(skill.name for skill in held.own), *held.chat, *held.modes, *held.asked]
         for name in dict.fromkeys(names):
             if name in users:
                 users[name].append({
                     "id": m.agent_id, "name": m.name, "coord": m.dir_name,
                     "card": not builtin.is_internal(m.dir_name),
-                    "added": name in added and name not in placed,
-                    "always": name in placed or name in modes,
+                    "added": name in added and name not in held.placed,
+                    "always": held.always(name),
                 })
     return [
         {
@@ -171,32 +200,38 @@ def skill_text(name: str) -> dict:
 
 def agent_skill_rows(user_key: str, coord: str, *, editable: bool = True) -> dict:
     """The skills of the agent at *coord*, as its details list them: each
-    ``{name, description, core, added, modes, removable}``, the core skills
-    its preamble holds first, then its own in its order, then those only its
-    modes name; ``addable``, the skills it does not hold; and ``changed``,
-    whether the account changed them, which Restore undoes."""
+    ``{name, description, core, added, chat, modes, asked, removable}``
+    (:class:`_Held` says what ``chat``, ``modes`` and ``asked`` are), the
+    core skills its preamble holds first, then its own in its order, then
+    those only its instruction names, then those only its capabilities name;
+    ``addable``, the skills it does not hold; and ``changed``, whether the
+    account changed them, which Restore undoes. Only a skill its runs hold
+    whatever its skills are is not ``removable``."""
     m = _require_agent(user_key, coord)
     shipped = skill_runs.shipped_skills()
-    placed, own, modes = _held(user_key, m, shipped)
+    held = _held(user_key, m, shipped)
     choice = skill_runs.account_choice(user_key, m)
     changeable = editable and m.agent_id in {row["id"] for row in catalog.choosable_agents(user_key)}
 
     def row(skill: skill_format.Skill, *, core: bool = False) -> dict:
-        own_modes = modes.get(skill.name, [])
         return {
             "name": skill.name,
             "description": skill.description,
             "core": core,
             "added": skill.name in choice.added and not core,
-            "modes": own_modes,
-            "removable": changeable and not core and not own_modes,
+            "chat": skill.name in held.chat,
+            "modes": held.modes.get(skill.name, []),
+            "asked": skill.name in held.asked,
+            "removable": changeable and not held.always(skill.name),
         }
 
-    rows = [row(shipped[name], core=True) for name in shipped if name in placed]
-    rows += [row(skill) for skill in own]
+    rows = [row(shipped[name], core=True) for name in shipped if name in held.placed]
+    rows += [row(skill) for skill in held.own]
     listed = {entry["name"] for entry in rows}
-    rows += [row(shipped[name]) for name in modes if name in shipped and name not in listed]
-    listed |= set(modes)
+    for name in dict.fromkeys([*held.chat, *held.modes, *held.asked]):
+        if name in shipped and name not in listed:
+            rows.append(row(shipped[name]))
+            listed.add(name)
     return {
         "coord": m.dir_name,
         "agentId": m.agent_id,
@@ -224,8 +259,7 @@ def add_skill(user_key: str, coord: str, name: object) -> dict:
     _require_changeable(user_key, m)
     shipped = skill_runs.shipped_skills()
     name = _shipped_name(name, shipped)
-    placed, _own, _modes = _held(user_key, m, shipped)
-    if name in placed:
+    if name in _held(user_key, m, shipped).placed:
         raise AgentServiceError(f"{m.name} holds {name} in every call already", 400)
     named = {skill.name for skill in skill_runs.agent_skills(m, shipped)}
 
@@ -240,20 +274,26 @@ def add_skill(user_key: str, coord: str, name: object) -> dict:
 
 def remove_skill(user_key: str, coord: str, name: object) -> dict:
     """Remove the skill *name* from the agent at *coord*, for the account.
-    A core skill and a skill a mode of it names as its own are refused, as
-    is a skill it does not hold."""
+    A core skill and a skill its instruction or a capability of it names as
+    its own are refused, as is a skill it does not hold."""
     m = _require_agent(user_key, coord)
     _require_changeable(user_key, m)
     shipped = skill_runs.shipped_skills()
     name = _shipped_name(name, shipped)
-    placed, own, modes = _held(user_key, m, shipped)
-    if name in placed:
+    held = _held(user_key, m, shipped)
+    if name in held.placed:
         raise AgentServiceError(f"{name} is in every call of {m.name}, so it cannot be removed", 400)
-    if name in modes:
+    if name in held.chat:
+        raise AgentServiceError(f"{name} is always held by the chat of {m.name}, so it cannot be removed", 400)
+    if name in held.modes:
         raise AgentServiceError(
-            f"{name} is always held by {', '.join(modes[name])} of {m.name}, so it cannot be removed", 400,
+            f"{name} is always held by {', '.join(held.modes[name])} of {m.name}, so it cannot be removed", 400,
         )
-    if all(skill.name != name for skill in own):
+    if name in held.asked:
+        raise AgentServiceError(
+            f"{name} is always held when another agent asks {m.name} for its work, so it cannot be removed", 400,
+        )
+    if all(skill.name != name for skill in held.own):
         raise AgentServiceError(f"{m.name} has no skill {name}", 404)
     named = {skill.name for skill in skill_runs.agent_skills(m, shipped)}
 

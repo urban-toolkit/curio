@@ -17,7 +17,7 @@ export interface UsedSkill {
 
 /** What each way of holding a skill says, on hover of its name. */
 export const SKILL_USE_WORDS: Record<SkillUse, string> = {
-  handed: "Handed for the node this chat is on",
+  handed: "Handed for this chat's node or instruction",
   named: "Named with / in the message",
   kept: "Kept from earlier in this chat",
   loaded: "Loaded for this reply",
@@ -25,9 +25,9 @@ export const SKILL_USE_WORDS: Record<SkillUse, string> = {
 
 /**
  * The skills a reply's run held or loaded, each once, as its record keeps
- * them: those it was handed for its node, those its message named, those
- * earlier turns took in, then those it loaded. None for a run that predates
- * the record's skills.
+ * them: those it was handed for its node or its instruction, those its
+ * message named, those earlier turns took in, then those it loaded. None for
+ * a run that predates the record's skills.
  */
 export function skillsUsedBy(execution: AgentExecution | null | undefined): UsedSkill[] {
   const held = execution?.pins?.skills ?? {};

@@ -83,7 +83,7 @@ describe("the line under a reply", () => {
     });
     expect(line()).toHaveTextContent("Skills: widgets, map-edits, scenarios, provenance");
     // How each came to be held, on hover of its name.
-    expect(getByTooltip(document.body, "Handed for the node this chat is on")).toHaveTextContent("widgets");
+    expect(getByTooltip(document.body, "Handed for this chat's node or instruction")).toHaveTextContent("widgets");
     expect(getByTooltip(document.body, "Named with / in the message")).toHaveTextContent("map-edits");
     expect(getByTooltip(document.body, "Kept from earlier in this chat")).toHaveTextContent("scenarios");
     expect(getByTooltip(document.body, "Loaded for this reply")).toHaveTextContent("provenance");

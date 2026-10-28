@@ -21,6 +21,7 @@ import re
 
 from playwright.sync_api import expect
 
+from utk_curio import shipped
 from utk_curio.backend.app.agents.domain import builtin
 
 from .test_agent_chat_e2e import (
@@ -56,9 +57,20 @@ def _rail_row(page, section: str, value: str):
     return page.locator(f'[data-curio-rail-section="{section}"][data-curio-rail-value="{value}"]')
 
 
+def _shipped_skills() -> list[str]:
+    """Every skill Curio ships, by name: each folder of ``skills/`` that holds a ``SKILL.md``."""
+    return sorted(folder.name for folder in shipped.path("skills").iterdir() if (folder / "SKILL.md").is_file())
+
+
+def _always_held(spec) -> set[str]:
+    """The skills the agent *spec* defines holds whatever its list is: its
+    instruction's own, and each of its modes' own."""
+    return {*spec.instruction_skills, *(name for capability in spec.capabilities for name in capability.skills)}
+
+
 def _the_catalog_page_lists_the_skills(page, frontend: str) -> None:
     """The rail's Skills section lists every skill Curio ships in the grid,
-    and the drawer opens on the first by name."""
+    by name, and the drawer opens on the first."""
     _goto_when_served(page, f"{frontend}/catalog/agents")
     expect(page.get_by_role("heading", name="Agent Catalog", level=1)).to_be_visible(timeout=30000)
     all_skills = _rail_row(page, "skills", "all-skills")
@@ -66,10 +78,11 @@ def _the_catalog_page_lists_the_skills(page, frontend: str) -> None:
     expect(all_skills).to_contain_text("All skills")
     all_skills.click()
     cards = page.locator("article[data-skill-name]")
-    expect(cards).to_have_count(16, timeout=20000)
+    expected = _shipped_skills()
+    expect(cards).to_have_count(len(expected), timeout=20000)
     expect(page.locator("article[data-agent-coord]")).to_have_count(0)
     names = cards.evaluate_all("els => els.map(e => e.getAttribute('data-skill-name'))")
-    assert names == sorted(names), f"the skills are not listed by name: {names}"
+    assert names == expected, f"the grid does not list the skills Curio ships by name: {names}"
     drawer = page.locator(BROWSE_DRAWER)
     expect(drawer.get_by_role("heading", name=names[0], exact=True)).to_be_visible(timeout=15000)
     expect(drawer.get_by_text("Skill details", exact=True)).to_be_visible()
@@ -112,8 +125,14 @@ def _the_finder_is_given_the_skill(page, backend: str, token: str) -> None:
     skills = dialog.locator('[data-curio-agent-skills="true"]')
     expect(skills.locator('[data-curio-skill-row="catalogs"]')).to_contain_text("Always for Find datasets",
                                                                                timeout=15000)
-    # The core skills and the mode's own show no Remove.
-    expect(skills.get_by_role("button", name=re.compile(r"^Remove "))).to_have_count(0)
+    # The core skills and those its chat or a mode holds as their own show no
+    # Remove: only the rest of its manifest's list does.
+    spec = builtin.get_builtin_manifest(FINDER)
+    assert ADDED not in spec.skills and "catalogs" in _always_held(spec)
+    removable = [name for name in spec.skills if name not in _always_held(spec)]
+    expect(skills.get_by_role("button", name=re.compile(r"^Remove "))).to_have_count(len(removable))
+    for name in removable:
+        expect(skills.get_by_role("button", name=f"Remove {name} from Dataset Finder")).to_be_visible()
     skills.get_by_role("button", name="Add skill").click()
     picker = skills.get_by_role("list", name="Skills to add to Dataset Finder")
     with page.expect_response(
@@ -152,23 +171,30 @@ def test_a_skill_added_to_an_agent_reaches_its_chat(page, frontend_server, curre
     _a_skills_details_open_in_a_modal(page)
     _the_finder_is_given_the_skill(page, current_server, login["token"])
 
-    # The Dataset Finder's chat, on a dataflow of its own.
+    # The Dataset Finder's chat, on a dataflow of its own. Its manifest's list
+    # holds none of the core skills, which its preamble places.
     spec = builtin.get_builtin_manifest(FINDER)
+    assert not {"nodes", "node-control", "compatibility"} & set(spec.skills)
     _open_dataflow_with_agent(session, spec, project_name="Skills reach the chat", replies=(VISIBLE_PROSE,))
     panel = _open_chat(page, spec)
     box = panel.get_by_role("textbox", name="Message this agent")
 
     # `/` lists the skills its next run lists: its own, and the one added.
+    offered = [*spec.skills, ADDED]
     box.fill("/")
     menu = panel.get_by_role("listbox", name="Skills")
-    expect(menu.get_by_role("option")).to_have_count(2, timeout=15000)
-    expect(menu.get_by_role("option").first).to_contain_text("/catalogs")
-    expect(menu.get_by_role("option").nth(1)).to_contain_text(f"/{ADDED}")
+    options = menu.get_by_role("option")
+    expect(options).to_have_count(len(offered), timeout=15000)
+    for index, name in enumerate(offered):
+        expect(options.nth(index)).to_contain_text(f"/{name}")
     save_workflow_test_screenshot(page, STEM, test_name="slash-list", fit_reactflow=False,
                                   clip_selector=CHAT_PANEL_SELECTOR)
 
-    box.fill("/node")
-    expect(menu.get_by_role("option")).to_have_count(1, timeout=10000)
+    # Typing more of the name keeps the skills it matches, the added one first.
+    query = ADDED[:4]
+    assert [name for name in offered if name.startswith(query)] == [ADDED]
+    box.fill(f"/{query}")
+    expect(options).to_have_count(sum(query in name for name in offered), timeout=10000)
     box.press("Enter")
     expect(menu).to_have_count(0, timeout=10000)
     expect(box).to_have_value(f"/{ADDED} ")
@@ -176,15 +202,19 @@ def test_a_skill_added_to_an_agent_reaches_its_chat(page, frontend_server, curre
     box.fill(message)
     panel.get_by_role("button", name="Send", exact=True).click()
 
+    # The line names what the run held: its instruction's own, then the one named.
     expect(panel.get_by_text(VISIBLE_PROSE, exact=False)).to_be_visible(timeout=30000)
     line = panel.locator('[data-curio-reply-skills="true"]')
-    expect(line).to_have_text(f"Skills: {ADDED}", timeout=15000)
-    expect(line.locator("[data-tooltip]")).to_have_attribute("data-tooltip", "Named with / in the message")
+    used = [*spec.instruction_skills, ADDED]
+    expect(line).to_have_text(f"Skills: {', '.join(used)}", timeout=15000)
+    expect(line.locator("[data-tooltip]")).to_have_count(len(used))
+    expect(line.locator("[data-tooltip]").last).to_have_text(ADDED)
+    expect(line.locator("[data-tooltip]").last).to_have_attribute("data-tooltip", "Named with / in the message")
 
     # The run listed the added skill in its catalog, and was handed it.
     system = captured_system_prompt(current_server)
     catalog = system[system.index("<available_skills>"):system.index("</available_skills>")]
-    assert re.findall(r"<name>([^<]+)</name>", catalog) == ["catalogs", ADDED], catalog[:600]
+    assert re.findall(r"<name>([^<]+)</name>", catalog) == offered, catalog[:600]
     assert f'<skill_content name="{ADDED}">' in system
 
     dismiss_toasts(page)

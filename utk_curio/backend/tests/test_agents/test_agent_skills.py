@@ -4,14 +4,16 @@ An account changes an agent's skills in the agent's details: **Add skill**,
 **Remove** and **Restore**, kept in ``.curio/users/<key>/agent-skills.json``
 (``infrastructure/agent_skills.py``) and read when each run starts, as the
 model chosen for the agent is, so a run's catalog and the skills it is handed
-follow them. The core skills and a mode's own skills cannot be removed, a
-hosted guest may change nothing, and a chat message that starts with
-``/<name>`` hands that skill to its run. The skills listing names what each
-skill serves and the agents that use it. Runs go through the scripted
-provider (``testing_provider``).
+follow them. The core skills and the skills an agent's instruction or one of
+its modes names as its own cannot be removed, a hosted guest may change
+nothing, and a chat message that starts with ``/<name>`` hands that skill to
+its run. The skills listing names what each skill serves and the agents that
+use it. Runs go through the scripted provider (``testing_provider``).
 
-New names are read inside each test, so this module imports on a checkout
-without them and each test fails on its own.
+What Curio ships is read from its files, ``skills/`` and the agents'
+manifests, so a skill added there moves no expectation here. New names are
+read inside each test, so this module imports on a checkout without them and
+each test fails on its own.
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ from unittest.mock import patch
 
 import pytest
 
+from utk_curio import shipped
 from utk_curio.backend.app.agents.infrastructure import testing_provider
 from utk_curio.backend.app.projects.services import _user_dir_key
 from utk_curio.backend.tests._support.agent_routes import _auth
@@ -34,6 +37,76 @@ RS = "agent.curio.researcher@1"
 PLANNER = "agent.curio.dataflow-planner@1"
 CORE = ["compatibility", "node-control", "nodes"]
 VEGA = "curio.builtin/vis-vega"
+
+
+# --- What Curio ships, read from its files -----------------------------------------
+
+
+def _shipped_skills() -> list[str]:
+    """Every skill Curio ships, by name: each folder of ``skills/`` that holds a ``SKILL.md``."""
+    return sorted(folder.name for folder in shipped.path("skills").iterdir() if (folder / "SKILL.md").is_file())
+
+
+def _manifest(coord: str) -> dict:
+    """The manifest of the agent Curio ships at *coord*, as its file says."""
+    return json.loads((shipped.path("agents") / coord / "manifest.json").read_text(encoding="utf-8"))
+
+
+def _own(coord: str) -> list[str]:
+    """The skills the manifest of *coord* names (``skills``), those the preamble places left out."""
+    return [name for name in _manifest(coord)["skills"] if name not in CORE]
+
+
+def _chat_own(coord: str) -> list[str]:
+    """The skills the instruction of *coord* names as its own (``prompts.instruction.skills``)."""
+    return list(_manifest(coord)["prompts"]["instruction"].get("skills", []))
+
+
+def _modes_own(coord: str) -> dict[str, list[str]]:
+    """Each skill a mode of *coord* (a capability its manifest labels) names
+    as its own, with the labels of those modes."""
+    found: dict[str, list[str]] = {}
+    for capability in _manifest(coord)["capabilities"]:
+        for name in capability.get("skills", []) if "label" in capability else []:
+            labels = found.setdefault(name, [])
+            if capability["label"] not in labels:
+                labels.append(capability["label"])
+    return found
+
+
+def _asked_own(coord: str) -> list[str]:
+    """The skills a capability of *coord* that is no mode names as its own:
+    one its manifest leaves unlabeled, a call another agent asks it for."""
+    found: list[str] = []
+    for capability in _manifest(coord)["capabilities"]:
+        for name in capability.get("skills", []) if "label" not in capability else []:
+            if name not in found:
+                found.append(name)
+    return found
+
+
+def _handed_in_chat(coord: str) -> dict:
+    """What a chat of *coord* on the canvas is handed with every message, as
+    its answer's ``skills`` name it: its instruction's own, when it names any."""
+    return {"handed": _chat_own(coord)} if _chat_own(coord) else {}
+
+
+def _serving(behavior: str) -> set[str]:
+    """The skills Curio ships whose ``SKILL.md`` names *behavior* in its ``curio-behaviors``."""
+    found = set()
+    for name in _shipped_skills():
+        front = (shipped.path("skills") / name / "SKILL.md").read_text(encoding="utf-8").split("---", 2)[1]
+        line = re.search(r"^\s*curio-behaviors:\s*(.+)$", front, re.MULTILINE)
+        if line and behavior in line.group(1).strip().strip("\"'").split():
+            found.add(name)
+    return found
+
+
+def _template_behavior(template: str) -> str:
+    """The behavior the base package's manifest gives the template *template*."""
+    package = json.loads((shipped.path("packages") / "curio.builtin@1" / "manifest.json").read_text(encoding="utf-8"))
+    return next(entry["behavior"] for entry in package["templates"]
+                if f"curio.builtin/{entry['id']}" == template)
 
 
 def _store():
@@ -168,7 +241,7 @@ def test_the_listing_names_every_skill_with_what_it_serves_and_who_uses_it(clien
     body = client.get("/api/agents/skills", headers=_auth(token)).get_json()
     assert body["editable"] is True and body["reason"] is None
     cards = {card["name"]: card for card in body["skills"]}
-    assert len(cards) == 16
+    assert list(cards) == _shipped_skills()
     assert sorted(name for name, card in cards.items() if card["core"]) == CORE
     widgets = cards["widgets"]
     assert widgets["description"].startswith("Use this skill")
@@ -184,6 +257,13 @@ def test_the_listing_names_every_skill_with_what_it_serves_and_who_uses_it(clien
     assert users["Dataset Finder"]["card"] is True and users["Dataset Finder"]["always"] is True
     assert users["Dataflow Reader"]["card"] is False
     assert {agent["name"] for agent in cards["nodes"]["agents"]} >= {"Researcher", "Dataset Finder"}
+    # The skills its instruction and its modes name are the agent's whatever
+    # its list is, so it always uses them.
+    held_always = [*_chat_own(RS), *_modes_own(RS)]
+    assert held_always
+    for name in held_always:
+        used = {agent["name"]: agent for agent in cards[name]["agents"]}
+        assert used["Researcher"]["always"] is True, name
 
 
 def test_one_skill_reads_as_an_agent_reads_it(client, user_and_token, tmp_curio):
@@ -199,20 +279,77 @@ def test_one_skill_reads_as_an_agent_reads_it(client, user_and_token, tmp_curio)
 # --- An agent's skills ---------------------------------------------------------------
 
 
+def _expected_rows(coord: str) -> tuple[list[str], list[str], list[str]]:
+    """The rows of the agent Curio ships at *coord*, read from its manifest:
+    the core skills, its own, then those only its instruction names, then
+    those only its capabilities name; the ones it may lose (neither its chat
+    nor a capability holds them as their own); and the skills it may gain,
+    in the order Curio ships them."""
+    own = _own(coord)
+    always = [*_chat_own(coord), *_modes_own(coord), *_asked_own(coord)]
+    names = [*CORE, *own]
+    for name in always:
+        if name not in names:
+            names.append(name)
+    removable = [name for name in own if name not in always]
+    return names, removable, [name for name in _shipped_skills() if name not in names]
+
+
 def test_an_agents_skills_are_its_core_ones_its_own_and_its_modes(client, user_and_token, tmp_curio):
     _, token = user_and_token
     rows = client.get(_rows_url(DF), headers=_auth(token)).get_json()
-    assert _names(rows) == [*CORE, "catalogs"]
+    names, removable, addable = _expected_rows(DF)
+    assert _names(rows) == names
+    assert [row["name"] for row in rows["skills"] if row["removable"]] == removable
     assert all(_row(rows, name)["core"] and not _row(rows, name)["removable"] for name in CORE)
     catalogs = _row(rows, "catalogs")
     assert catalogs["modes"] == ["Find datasets"] and catalogs["removable"] is False
-    assert {skill["name"] for skill in rows["addable"]} == {
-        "node-functions", "widgets", "selection-chips", "autark", "vega-lite-starter", "autark-starter",
-        "vega-lite-maps", "interaction-edges", "map-edits", "scenarios", "dashboards", "provenance",
-    }
+    assert catalogs["chat"] is False
+    assert [skill["name"] for skill in rows["addable"]] == addable
     assert rows["changed"] is False and rows["editable"] is True and rows["reason"] is None
+
     researcher = client.get(_rows_url(RS), headers=_auth(token)).get_json()
-    assert _row(researcher, "provenance")["removable"] is True and researcher["addable"] == []
+    names, removable, addable = _expected_rows(RS)
+    assert _names(researcher) == names and "provenance" in removable
+    assert [row["name"] for row in researcher["skills"] if row["removable"]] == removable
+    assert [skill["name"] for skill in researcher["addable"]] == addable
+    # The procedures its chat instruction follows are its chat's whatever its
+    # list is, so they offer no Remove; each row names the modes holding it.
+    assert _chat_own(RS)
+    for name in _chat_own(RS):
+        row = _row(researcher, name)
+        assert row["chat"] is True and row["removable"] is False, row
+        assert row["modes"] == _modes_own(RS).get(name, []), row
+    assert all(row["chat"] is False for row in researcher["skills"] if row["name"] not in _chat_own(RS))
+
+    # The Node Builder's calls that other agents ask for are none of its
+    # modes: their skills are always held, and no row names them by an id.
+    builder = client.get(_rows_url(NB), headers=_auth(token)).get_json()
+    names, removable, addable = _expected_rows(NB)
+    assert _names(builder) == names
+    assert [row["name"] for row in builder["skills"] if row["removable"]] == removable
+    assert [skill["name"] for skill in builder["addable"]] == addable
+    assert _asked_own(NB)
+    for name in _asked_own(NB):
+        row = _row(builder, name)
+        assert row["asked"] is True and row["removable"] is False, row
+    assert all(row["asked"] is False for row in builder["skills"] if row["name"] not in _asked_own(NB))
+    assert {label for row in builder["skills"] for label in row["modes"]} <= {
+        capability["label"] for capability in _manifest(NB)["capabilities"] if "label" in capability
+    }
+
+
+def test_a_skill_the_chat_instruction_follows_cannot_be_removed(client, user_and_token, tmp_curio):
+    """A skill only the Researcher's instruction names as its own: its chat
+    is handed it whatever its list is, so removing it is refused and saved
+    nowhere."""
+    user, token = user_and_token
+    chat_only = [name for name in _chat_own(RS) if name not in _modes_own(RS)]
+    assert chat_only
+    resp = client.delete(f"{_rows_url(RS)}/{chat_only[0]}", headers=_auth(token))
+    assert resp.status_code == 400, resp.get_json()
+    assert "always held by the chat of Researcher" in resp.get_json()["error"]
+    assert not _store().default_store().path(_user_dir_key(user)).exists()
 
 
 def test_add_remove_and_restore_change_only_this_accounts_list(client, user_and_token, tmp_curio):
@@ -234,9 +371,11 @@ def test_add_remove_and_restore_change_only_this_accounts_list(client, user_and_
     removed = client.delete(f"{_rows_url(DF)}/widgets", headers=h).get_json()
     assert "widgets" not in _names(removed) and removed["changed"] is False
 
+    addable = {skill["name"] for skill in client.get(_rows_url(RS), headers=h).get_json()["addable"]}
+    assert "provenance" not in addable
     gone = client.delete(f"{_rows_url(RS)}/provenance", headers=h).get_json()
     assert "provenance" not in _names(gone) and gone["changed"] is True
-    assert {skill["name"] for skill in gone["addable"]} == {"provenance"}
+    assert {skill["name"] for skill in gone["addable"]} == {*addable, "provenance"}
     back = client.post(_rows_url(RS), json={"skill": "provenance"}, headers=h).get_json()
     assert _names(back) == _names(client.get(_rows_url(RS), headers=h).get_json())
     assert back["changed"] is False and _row(back, "provenance")["added"] is False
@@ -303,10 +442,11 @@ def test_a_chat_lists_a_skill_added_to_its_agent_and_never_one_removed(client, u
     _run(client, scripted, pid, finder)
     _run(client, scripted, pid, researcher)
     (finder_system, *_), (researcher_system, *_) = _run_calls()
-    assert _listed(finder_system) == ["catalogs", "map-edits"]
+    assert "map-edits" not in _own(DF)
+    assert _listed(finder_system) == [*_own(DF), "map-edits"]
     assert "provenance" not in _listed(researcher_system) and "map-edits" in _listed(researcher_system)
     pins = _turns(client, scripted, pid, finder)[-1]["execution"]["pins"]
-    assert pins["skills"] == {"catalog": ["catalogs", "map-edits"]}
+    assert pins["skills"] == {"catalog": [*_own(DF), "map-edits"], **_handed_in_chat(DF)}
     assert "skill.read" in pins["tools"]
 
     # Restored, the Researcher lists it again on its next run.
@@ -368,16 +508,18 @@ def test_a_message_that_names_a_skill_hands_it_to_the_run_and_the_conversation_k
 ):
     pid = _project(client, scripted)
     att = _attach(client, scripted, pid, NB)
+    # Its chat on the canvas holds only its instruction's own before the message names one.
+    assert "map-edits" in _own(NB) and "map-edits" not in _chat_own(NB)
     testing_provider.push_reply("Done.")
     payload = _run(client, scripted, pid, att, "/map-edits remove the two tallest towers")
     (system, *rest), = _run_calls()
-    assert _wrapped(system) == ["map-edits"]
+    assert _wrapped(system) == [*_chat_own(NB), "map-edits"]
     assert rest[-1]["content"] == "/map-edits remove the two tallest towers"
     turns = _turns(client, scripted, pid, att)
     assert turns[-2]["text"] == "/map-edits remove the two tallest towers"
     assert turns[-1]["execution"]["pins"]["skills"]["named"] == ["map-edits"]
     # The reply's line reads it from the run's answer as from the saved turn.
-    assert payload["skills"] == {"named": ["map-edits"]} and "skillsLoaded" not in payload
+    assert payload["skills"] == {**_handed_in_chat(NB), "named": ["map-edits"]} and "skillsLoaded" not in payload
 
     # The next turn holds it, and loading it again sends nothing twice.
     testing_provider.reset()
@@ -385,9 +527,9 @@ def test_a_message_that_names_a_skill_hands_it_to_the_run_and_the_conversation_k
     testing_provider.push_reply("Still here.")
     second = _run(client, scripted, pid, att, "and the next one?")
     first_call, second_call = _run_calls()
-    assert _wrapped(first_call[0]) == ["map-edits"]
+    assert _wrapped(first_call[0]) == [*_chat_own(NB), "map-edits"]
     assert "already in this conversation" in second_call[-1]["content"]
-    assert second["skills"] == {"kept": ["map-edits"]}
+    assert second["skills"] == {**_handed_in_chat(NB), "kept": ["map-edits"]}
     assert _turns(client, scripted, pid, att)[-1]["execution"]["pins"]["skills"]["kept"] == ["map-edits"]
 
 
@@ -408,15 +550,17 @@ def test_a_message_names_no_skill_unless_it_starts_with_one_its_run_lists(
     testing_provider.push_reply("Done.")
     payload = _run(client, scripted, pid, att, message)
     (system, *_), = _run_calls()
-    assert _wrapped(system) == []
+    assert _wrapped(system) == _chat_own(NB)
     assert "named" not in _turns(client, scripted, pid, att)[-1]["execution"]["pins"].get("skills", {})
-    assert "skills" not in payload
+    assert payload.get("skills", {}) == _handed_in_chat(NB)
 
     testing_provider.reset()
     testing_provider.push_reply("Done.")
     named = _run(client, scripted, pid, att, f"/provenance {message}")
     (system, *_), = _run_calls()
-    assert _wrapped(system) == ["provenance"] and named["skills"] == {"named": ["provenance"]}
+    assert "provenance" in _own(NB) and "provenance" not in _chat_own(NB)
+    assert _wrapped(system) == [*_chat_own(NB), "provenance"]
+    assert named["skills"] == {**_handed_in_chat(NB), "named": ["provenance"]}
 
 
 def test_the_stream_names_the_skills_its_reply_used_as_the_saved_turn_does(
@@ -441,15 +585,16 @@ def test_the_stream_names_the_skills_its_reply_used_as_the_saved_turn_does(
     testing_provider.push_reply("Done.")
     done = stream("/map-edits remove the two tallest towers")
     record = _turns(client, scripted, pid, att)[-1]["execution"]
-    assert done["skills"] == {"named": ["map-edits"]}
+    assert done["skills"] == {**_handed_in_chat(NB), "named": ["map-edits"]}
     assert done["skills"] == {key: names for key, names in record["pins"]["skills"].items() if key != "catalog"}
     assert "skillsLoaded" not in done
 
     testing_provider.reset()
+    assert "widgets" in _own(NB) and "widgets" not in _chat_own(NB)
     testing_provider.push_reply(_tail({"toolRequest": {"tool": "skill.read", "params": {"name": "widgets"}}}))
     testing_provider.push_reply("Loaded.")
     done = stream("and a widget?")
-    assert done["skills"] == {"kept": ["map-edits"]} and done["skillsLoaded"] == ["widgets"]
+    assert done["skills"] == {**_handed_in_chat(NB), "kept": ["map-edits"]} and done["skillsLoaded"] == ["widgets"]
     assert _turns(client, scripted, pid, att)[-1]["execution"]["skillsLoaded"] == ["widgets"]
 
 
@@ -478,9 +623,12 @@ def test_a_chat_offers_the_skills_its_next_run_lists_marking_those_it_holds(
     offered = client.get(url, headers=scripted).get_json()["skills"]
     from utk_curio.backend.app.agents.domain import builtin
 
-    assert [skill["name"] for skill in offered] == list(builtin.get_builtin_manifest(NB).skills)
+    assert [skill["name"] for skill in offered] == list(builtin.get_builtin_manifest(NB).skills) == _own(NB)
     held = {skill["name"] for skill in offered if skill["held"]}
-    assert held == {"widgets", "selection-chips", "vega-lite-starter", "vega-lite-maps"}
+    # Held: its instruction's own, and those of its list that serve the node's kind.
+    for_the_node = _serving(_template_behavior(VEGA)) & set(_own(NB))
+    assert {"widgets", "vega-lite-starter"} <= for_the_node
+    assert held == for_the_node | set(_chat_own(NB))
     assert all(skill["description"] for skill in offered)
 
     client.delete(f"{_rows_url(NB)}/provenance", headers=scripted)

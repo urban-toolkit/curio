@@ -15,7 +15,12 @@ export interface AgentSkillsSectionProps {
  *  account added it. */
 function rowNote(row: AgentSkillRow): string | null {
   if (row.core) return "Every call";
-  if (row.modes.length > 0) return `Always for ${row.modes.join(", ")}`;
+  const holders = [
+    row.chat ? "in chat" : null,
+    row.modes.length > 0 ? `for ${row.modes.join(", ")}` : null,
+    row.asked ? "when another agent asks" : null,
+  ].filter((holder): holder is string => holder !== null);
+  if (holders.length > 0) return `Always ${holders.join(" and ")}`;
   if (row.added) return "Added by you";
   return null;
 }
@@ -25,12 +30,13 @@ function rowNote(row: AgentSkillRow): string | null {
  * (docs/AGENT-CATALOG.md, "Skills"): what tells it how to do a specific task.
  *
  * The rows are this account's: the core skills its preamble holds, then the
- * skills its manifest names after the account's changes, then those a mode of
- * it always holds. **Add skill** picks one of the skills it does not hold,
- * **Remove** drops one, and **Restore** brings back the list it ships with;
- * each is saved at once and reaches its next run. The core skills and a
- * mode's own show no Remove, and an account that may change none (a hosted
- * guest) sees the list alone.
+ * skills its manifest names after the account's changes, then those its chat
+ * or a mode of it always holds. **Add skill** picks one of the skills it does
+ * not hold, **Remove** drops one, and **Restore** brings back the list it
+ * ships with; each is saved at once and reaches its next run. The core
+ * skills and those its instruction or a mode names as its own show no
+ * Remove, and an account that may change none (a hosted guest) sees the list
+ * alone.
  */
 export const AgentSkillsSection: React.FC<AgentSkillsSectionProps> = ({ coord, agentName, builtIn }) => {
   const [skills, setSkills] = useState<AgentSkills | null>(null);
