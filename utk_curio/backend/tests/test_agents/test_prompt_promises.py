@@ -154,6 +154,51 @@ def test_solves_refusals_offer_a_one_line_answer_on_every_node():
         assert "loads data" not in _sentence(text, words), name
 
 
+#: Words that tell a model to load a skill: the tool, by its id or its native
+#: name, or a verb of loading and a skill in one sentence.
+_LOADS_A_SKILL = re.compile(r"skill\.read|skill__read|\bload(?:s|ed|ing)?\b[^.;\n]*\bskills?\b", re.IGNORECASE)
+
+
+def _loads(text: str) -> list[str]:
+    """The sentences of *text* that tell a model to load a skill."""
+    return [s.strip() for s in re.split(r"(?<=[.!?])\s+|\n", text or "") if _LOADS_A_SKILL.search(s)]
+
+
+def test_a_run_with_no_tools_is_never_told_to_load_a_skill(tmp_curio):
+    """A mode runs as a delegated call with no tools (``delegation`` pins
+    ``"tools": []``), and so does every Solve round: neither can call
+    skill.read, so each is handed the skills it needs
+    (``skill_runs.for_delegated``). So no mode's prompt, no message a check
+    sends back, and no skill a tool-less run is handed tells a model to load
+    a skill. Only skill.read's own answers, which a chat that holds the tool
+    reads, and the catalog's instruction, which only such a chat is given,
+    name it."""
+    from utk_curio.backend.app.agents.application import skill_runs
+    from utk_curio.backend.app.agents.domain import agent_text, builtin
+
+    assert _loads("When a task matches, call the skill.read tool.") and _loads("Load the widgets skill first.")
+    assert not _loads("A widget is a value the node's code reads. Load the dataset by its id.")
+    told = []
+    for m in builtin.list_builtin_manifests():
+        for capability in m.capabilities:
+            if capability.instruction:
+                told += [(m.dir_name, capability.id, said)
+                         for said in _loads(builtin.read_prompt_text(m.dir_name, capability.instruction))]
+    page = agent_text.MESSAGES_PAGE
+    for name, text in agent_text.split_sections(agent_text.page_text(page), page).items():
+        if not name.startswith("skills."):
+            told += [(page, name, said) for said in _loads(text)]
+    preamble = builtin.read_page("default_preamble.md", wanted_by="the test")
+    told += [("default_preamble.md", "", said) for said in _loads(preamble)]
+    for node_type in ("curio.builtin/computation-analysis", "curio.builtin/vis-vega", "curio.builtin/autk-grammar"):
+        run = skill_runs.for_delegated("4242", "p", builtin.get_builtin_manifest(NODE_BUILDER), "node.content.generate",
+                                       {"nodeType": node_type}, None, preamble, refused="document-invalid")
+        assert run.handed, node_type
+        told += [(node_type, "handed", said) for said in _loads(skill_runs.skills_text(run))]
+    assert not told, f"these tell a run with no tools to load a skill: {told}"
+    assert _loads(agent_text.section(builtin.FRAMES_FILE, skill_runs.CATALOG_SECTION))
+
+
 def test_a_research_check_is_told_which_inputs_the_runtime_probes():
     """``delegates._enriched_delegate_inputs`` probes the delegation's ``url``
     or ``endpoint`` input; a URL anywhere else in its inputs is not probed."""

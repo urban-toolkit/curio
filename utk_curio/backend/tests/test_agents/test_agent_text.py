@@ -267,7 +267,7 @@ def test_a_skill_is_placed_as_its_body_and_never_in_itself(tmp_path, monkeypatch
     text = contracts.render_template("Before\n\n{{skill:widgets}}\n\nAfter\n")
     assert text == "Before\n\n" + rendered.rstrip("\n") + "\n\nAfter\n"
     preamble = (BASE / "default_preamble.md").read_text(encoding="utf-8")
-    assert preamble.count("{{skill:widgets}}") == 1 and "{{include:knowledge/" not in preamble
+    assert preamble.count("{{skill:nodes}}") == 1 and "{{include:knowledge/" not in preamble
 
     root = _skills_copy(tmp_path, monkeypatch)
     loop = root / "widgets" / "SKILL.md"
@@ -292,16 +292,16 @@ def test_with_dev_a_skills_edit_shows_on_the_next_read_and_without_it_the_start_
     _agents_copy(tmp_path, monkeypatch)
     root = _skills_copy(tmp_path, monkeypatch)
     agent_text.render_at_start()
-    skill = root / "provenance" / "SKILL.md"
-    before = agent_text.skill_text("provenance")
+    skill = root / "compatibility" / "SKILL.md"
+    before = agent_text.skill_text("compatibility")
     preamble = builtin.read_page("default_preamble.md", wanted_by="the test")
     assert before and before in preamble
     skill.write_text(skill.read_text(encoding="utf-8") + "One more line.\n", encoding="utf-8")
 
-    assert agent_text.skill_text("provenance") == before
+    assert agent_text.skill_text("compatibility") == before
     assert builtin.read_page("default_preamble.md", wanted_by="the test") == preamble
     monkeypatch.setenv("CURIO_DEV", "1")
-    assert agent_text.skill_text("provenance") == before + "\nOne more line."
+    assert agent_text.skill_text("compatibility") == before + "\nOne more line."
     assert before + "\nOne more line." in builtin.read_page("default_preamble.md", wanted_by="the test")
 
 
