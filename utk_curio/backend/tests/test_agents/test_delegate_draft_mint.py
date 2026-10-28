@@ -515,11 +515,20 @@ class TestAuthoringInputEnrichment:
             _enriched_delegate_inputs,
         )
 
+        from utk_curio.backend.app.agents.application import skill_runs
+        from utk_curio.backend.app.agents.domain import builtin
+
+        manifest = builtin.get_builtin_manifest(NODE_BUILDER)
         for capability in ("node.kind.author", "package.build", "package.extend"):
             enriched = _enriched_delegate_inputs(
                 "guest", "p1", {}, capability, {"look": "post-it"})
             assert enriched["buildRequestContract"] == _build_request_contract()
-            assert enriched["buildRequestContract"]["backendContract"]
+            # The package backend contract reaches the run once: as the skill
+            # it is handed, never again in its inputs.
+            assert "backendContract" not in enriched["buildRequestContract"]
+            run = skill_runs.for_delegated("guest", "p1", manifest, capability, {}, None,
+                                           builtin.read_prompt_text(NODE_BUILDER, "system"))
+            assert "package-contract" in [skill.name for skill in run.handed], capability
             assert enriched["look"] == "post-it"
         # The contract counters the observed invention explicitly.
         text = json.dumps(_build_request_contract())
@@ -570,6 +579,18 @@ class TestAuthoringInputEnrichment:
         assert "buildRequestContract" in child_user_msg
         assert "reverse-DNS" in child_user_msg
         assert "registerBehavior" in child_user_msg
+        # The package backend contract, once in the whole call: the skill in
+        # its system turn, and not in its inputs too.
+        from utk_curio.backend.app.agents.domain import agent_text
+
+        contract = agent_text.skill_text("package-contract")
+        opening = "Server-side compute follows ONE backend contract"
+        assert opening in contract
+        system = child_calls[0][0]["content"]
+        assert system.count(contract) == 1
+        assert '<skill_content name="package-contract">' in system
+        assert opening not in child_user_msg
+        assert sum(str(message.get("content", "")).count(opening) for message in child_calls[0]) == 1
 
 
 class TestDecoratedRequestReply:
@@ -1348,16 +1369,31 @@ class TestReuseInsteadOfAuthoring:
         assert _extract_reuse_finding(fenced)["dirName"] == "curio.notes@1"
 
 
+def _held(capability: str | None) -> str:
+    """What a Node Builder run holds of its agent text beyond the preamble:
+    the skills it is handed, each whole, then its prompt. The chat on the
+    canvas when *capability* is None, else a delegated run of *capability*."""
+    from utk_curio.backend.app.agents.application import skill_runs
+    from utk_curio.backend.app.agents.domain import builtin
+
+    m = builtin.get_builtin_manifest(NODE_BUILDER)
+    preamble = builtin.read_prompt_text(NODE_BUILDER, "system")
+    if capability is None:
+        run = skill_runs.for_chat("4242", "p", m, None, {"kind": "canvas"}, preamble, [])
+    else:
+        run = skill_runs.for_delegated("4242", "p", m, capability, {}, None, preamble)
+    prompt = builtin.read_prompt_text(NODE_BUILDER, capability or "instruction")
+    assert prompt, capability
+    return f"{skill_runs.skills_text(run) or ''}\n\n{prompt}"
+
+
 def test_package_writing_reuse_first_is_executable_on_both_paths():
     """A prompt-marker test (the repo's dev/91 pattern): reuse-first must name
     where the evidence comes from on BOTH paths, or it reverts to describing
     a tool-only workflow the delegate cannot run. The writing mode is a
     delegate and reads the existingPackages input; the chat that asks for it
-    holds the catalog tool."""
-    from utk_curio.backend.app.agents.domain import builtin
-
-    text = builtin.read_prompt_text(NODE_BUILDER, "package.build")
-    assert text
+    holds the catalog tool. Both hold it as the reuse-first skill."""
+    text = _held("package.build")
     assert "Reuse first" in text
     assert "existingPackages" in text
     # The reachable outcome and the preferred alternative to duplicating.
@@ -1365,7 +1401,7 @@ def test_package_writing_reuse_first_is_executable_on_both_paths():
     assert 'mode "extend"' in text
     assert "never a duplicate package" in text
     # The other path: the chat reads the catalog before it asks for a package.
-    assert "packages.catalog" in builtin.read_prompt_text(NODE_BUILDER, "instruction")
+    assert "packages.catalog" in _held(None)
 
 
 def test_build_request_contract_teaches_the_reuse_reply():

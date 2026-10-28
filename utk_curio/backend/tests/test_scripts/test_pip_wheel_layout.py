@@ -498,7 +498,7 @@ def test_a_pip_installs_agents_run_the_prompts_a_clone_runs(pip_install):
         page: hashlib.sha256(builtin.read_page(page, wanted_by="the test").encode("utf-8")).hexdigest()
         for page in agent_text.pages()
     }
-    assert {"default_preamble.md", "examples.md", "rules/package_contract.md"} <= set(pages), pages
+    assert {"default_preamble.md", "examples.md", "rules/plan-rules.md"} <= set(pages), pages
     found = _read(pip_install, "agent_text")["pages"]
     assert found == pages, f"a pip install renders the pages {found}, where a clone renders {pages}"
 

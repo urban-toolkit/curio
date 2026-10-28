@@ -1,12 +1,12 @@
 """memo dev/91 commit 6 — the backend-package DOD: the agent lane REFUSES a
 violating draft with the finding in the model's face (the A4 refusal rule),
-the package-writing prompt carries the ONE backend authoring contract
-(and no longer the dev/89 refusal paragraph), and the server-owned
-buildRequestContract teaches the same schema (the A8 lesson — nobody invents
-a schema they were shown). The happy path — mint with real-worker probe →
-card trust edge → Apply promotes + pins → route computes — is pinned by
-``TestBackendDraftEndToEnd`` (commit 4); this suite owns the refusal and
-contract surfaces."""
+a package-writing run holds the ONE backend authoring contract, once, as the
+skill ``package-contract`` it is handed (and no longer the dev/89 refusal
+paragraph), and the server-owned buildRequestContract teaches the draft's
+shape (the A8 lesson — nobody invents a schema they were shown). The happy
+path — mint with real-worker probe → card trust edge → Apply promotes + pins
+→ route computes — is pinned by ``TestBackendDraftEndToEnd`` (commit 4); this
+suite owns the refusal and contract surfaces."""
 
 from __future__ import annotations
 
@@ -28,11 +28,16 @@ _PROMPT_PATH = (
 
 
 def _prompt() -> str:
-    """The package-writing prompt as the Node Builder reads it: its source,
-    rendered."""
-    from utk_curio.backend.app.agents.domain import agent_text
+    """What a package-writing run of the Node Builder holds of its agent
+    text: the skills it is handed, the package backend contract among them,
+    then its prompt's source, rendered."""
+    from utk_curio.backend.app.agents.application import skill_runs
+    from utk_curio.backend.app.agents.domain import agent_text, builtin
 
-    return agent_text.render(_PROMPT_PATH)
+    coord = "agent.curio.node-builder@1"
+    run = skill_runs.for_delegated("4242", "p", builtin.get_builtin_manifest(coord), "package.build", {}, None,
+                                   builtin.read_prompt_text(coord, "system"))
+    return f"{skill_runs.skills_text(run) or ''}\n\n{agent_text.render(_PROMPT_PATH)}"
 
 
 @pytest.fixture(autouse=True)
@@ -131,11 +136,19 @@ class TestPromptCarriesTheBackendContract:
         assert "subprocess/multiprocessing/ctypes" in text
         assert "eval/exec/compile/__import__/importlib" in text
 
-    def test_build_request_contract_teaches_the_backend_keys(self):
+    def test_a_package_writing_run_is_taught_the_backend_keys(self):
         from utk_curio.backend.app.agents.application.turns.delegates import _build_request_contract
 
         contract = _build_request_contract()
-        text = json.dumps(contract)
+        shape = json.dumps(contract["shape"])
+        for marker in ("backend/handler.py", "timeoutClass", "backendHandler"):
+            assert marker in shape, marker
+        # The rest of the backend contract is the skill the run is handed,
+        # not a second copy in its inputs: the run is taught each key by its
+        # system turn and the contract its inputs carry.
+        assert "backendContract" not in contract
+        held = _prompt()
+        taught = f"{held}\n{json.dumps(contract)}"
         for marker in (
             "backend/handler.py",
             "timeoutClass",
@@ -146,26 +159,30 @@ class TestPromptCarriesTheBackendContract:
             "CURIO_PKG_DATA_DIR",
             "Curio activation lifecycle",
         ):
-            assert marker in text, marker
+            assert marker in taught, marker
+        for marker in ("server-code", "server-network", "def handle(payload)", "CURIO_PKG_DATA_DIR",
+                       "Curio activation lifecycle"):
+            assert marker in held, marker
         # The backend contract names the handler grammar and the payload contract.
-        backend = contract["backendContract"]
-        assert '{"content": <the node\'s editor text>, "input": <upstream JSON or null>}' in backend
+        assert held.count('{"content": <the node\'s editor text>, "input": <upstream JSON or null>}') == 1
 
-    def test_the_delegate_and_the_prompt_share_one_backend_contract(self):
+    def test_the_run_holds_the_one_backend_contract_once(self):
         from utk_curio.backend.app.agents.application.turns.delegates import _build_request_contract
-        from utk_curio.backend.app.agents.domain import agent_text, builtin
+        from utk_curio.backend.app.agents.domain import agent_text
 
-        shared = agent_text.render(agent_text.page_file(builtin.PACKAGE_CONTRACT_FILE))
+        shared = agent_text.skill_text("package-contract")
         assert shared.startswith("## Backend contract\n\nServer-side compute follows ONE backend contract")
-        assert _build_request_contract()["backendContract"] == shared
-        assert shared.rstrip("\n") in _prompt()
+        assert "backendContract" not in _build_request_contract()
+        assert _prompt().count(shared) == 1
+        assert shared not in agent_text.render(_PROMPT_PATH)
 
 
 class TestLazyImportContract:
     """dev/97 (Option A): the probe runs before deps install — a
     module-level import of a DECLARED dep refuses naming the lazy-import
     fix in the model's face, and the lazy version of the same draft passes;
-    prompt and buildRequestContract teach the rule in one shared text (A15)."""
+    the one backend contract a package-writing run is handed teaches the
+    rule, once (A15)."""
 
     def _dep_params(self, entry_src: str) -> dict:
         params = TestBackendDraftEndToEnd()._backend_draft_params()
@@ -225,13 +242,11 @@ class TestLazyImportContract:
         assert "totally_undeclared" in refusal
         assert "DECLARED python dependency" not in refusal  # honest: not declared
 
-    def test_prompt_and_contract_teach_the_rule(self):
+    def test_the_run_is_taught_the_rule_once(self):
         from utk_curio.backend.app.agents.application.turns.delegates import _build_request_contract
 
         text = _prompt()
-        assert "Import declared python dependencies INSIDE your handler function" in text
-        assert "fails the probe by construction" in text
-        contract = _build_request_contract()["backendContract"]
-        assert "Import declared python dependencies INSIDE your handler function" in contract
-        assert "isolated overlay" in contract
-        assert "fails the probe by construction" in contract
+        assert text.count("Import declared python dependencies INSIDE your handler function") == 1
+        assert "isolated overlay" in text
+        assert text.count("fails the probe by construction") == 1
+        assert "backendContract" not in _build_request_contract()
