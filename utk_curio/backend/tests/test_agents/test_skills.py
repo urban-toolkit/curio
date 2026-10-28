@@ -216,7 +216,12 @@ def test_lenient_mode_warns_and_reads_the_skill(tmp_path, change, folder, check)
     where = _skill(tmp_path, GOOD.replace(old, new, 1), folder=folder)
     with pytest.raises(skills.SkillError):
         skills.parse(where)
-    skill = skills.parse(where, strict=False)
+    refused = None
+    try:
+        skill = skills.parse(where, strict=False)
+    except skills.SkillError as error:
+        refused = str(error)
+    assert refused is None, f"lenient mode refused a skill it should read: {refused}"
     assert check(skill), skill
     assert skill.warnings and all(warning.startswith(f"{folder}/SKILL.md: ") for warning in skill.warnings)
     assert skill.body == BODY

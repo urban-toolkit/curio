@@ -16,7 +16,6 @@ import json
 from unittest.mock import patch
 
 from utk_curio.backend import config
-from utk_curio.backend.app.agents.repositories import publications
 from utk_curio.backend.app.agents.repositories import storage
 from utk_curio.backend.app.projects.services import _user_dir_key
 from utk_curio.backend.tests._support.agent_routes import _auth
@@ -46,7 +45,10 @@ class _Agent:
 
     @property
     def catalog(self):
-        return publications.AGENTS
+        """The shared catalog of agents, imported where a test runs."""
+        from utk_curio.backend.app.agents.repositories.publications import AGENTS
+
+        return AGENTS
 
     def import_own(self, token, *, text="You help with shared things.", version="1.0.0"):
         return self.client.post("/api/agents/imports/upload", json={
@@ -102,7 +104,10 @@ class _Skill:
 
     @property
     def catalog(self):
-        return publications.SKILLS
+        """The shared catalog of skills, imported where a test runs."""
+        from utk_curio.backend.app.agents.repositories.publications import SKILLS
+
+        return SKILLS
 
     def import_own(self, token, *, text="Count trees by block.", version="1.0.0"):
         md = (f"---\nname: {self.entry}\ndescription: Use this skill when a dataflow counts street trees.\n"
