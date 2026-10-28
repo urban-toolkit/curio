@@ -86,28 +86,39 @@ def shard_of(environ: str) -> int | None:
     return None
 
 
-def anon_maps(pid: str) -> dict:
-    """The [heap] and the biggest anonymous mappings of one process, resident."""
-    text = _text(Path("/proc", pid, "smaps"))
+#: The ``smaps`` fields kept for each anonymous mapping.
+MAP_FIELDS = {"Rss": "rss", "Size": "size", "LazyFree": "lazy"}
+
+
+def anon_maps(pid: str, proc: Path = Path("/proc")) -> dict:
+    """The [heap] and the biggest anonymous mappings of one process: what each
+    holds resident (``biggest``), its size (``biggest_size``), and the bytes
+    freed lazily (``MADV_FREE``), which count as resident until the kernel
+    takes them back under pressure."""
+    text = _text(proc / pid / "smaps")
     if not text:
         return {}
-    heap = 0
-    sizes = []
-    name = None
+    maps, current = [], None
     for line in text.splitlines():
         head = re.match(r"^[0-9a-f]+-[0-9a-f]+ \S+ \S+ \S+ \d+\s*(.*)$", line)
         if head:
             name = head.group(1).strip()
+            current = None
+            if name in ("", "[heap]"):
+                current = {"heap": name == "[heap]", "rss": 0, "size": 0, "lazy": 0}
+                maps.append(current)
             continue
-        if line.startswith("Rss:") and name in ("", "[heap]"):
-            rss = int(line.split()[1]) * 1024
-            if name == "[heap]":
-                heap += rss
-            elif rss:
-                sizes.append(rss)
-    sizes.sort(reverse=True)
-    return {"heap": heap, "anon_maps": len(sizes), "anon_total": sum(sizes),
-            "biggest": sizes[:8], "under_1m": sum(s for s in sizes if s < 1024 ** 2)}
+        field, _, rest = line.partition(":")
+        if current is not None and field in MAP_FIELDS and rest.split():
+            current[MAP_FIELDS[field]] = int(rest.split()[0]) * 1024
+    anon = sorted((m for m in maps if not m["heap"] and m["rss"]),
+                  key=lambda m: m["rss"], reverse=True)
+    return {"heap": sum(m["rss"] for m in maps if m["heap"]), "anon_maps": len(anon),
+            "anon_total": sum(m["rss"] for m in anon),
+            "biggest": [m["rss"] for m in anon[:8]],
+            "biggest_size": [m["size"] for m in anon[:8]],
+            "lazy_free": sum(m["lazy"] for m in maps),
+            "under_1m": sum(m["rss"] for m in anon if m["rss"] < 1024 ** 2)}
 
 
 def processes() -> list[dict]:
@@ -131,7 +142,7 @@ def processes() -> list[dict]:
         }
         record.update(_kib_fields(status, ("VmRSS", "RssAnon", "RssFile", "RssShmem")))
         rollup = _text(entry / "smaps_rollup") or ""
-        record.update(_kib_fields(rollup, ("Pss", "Pss_Anon")))
+        record.update(_kib_fields(rollup, ("Pss", "Pss_Anon", "LazyFree")))
         try:
             record["fds"] = len(os.listdir(entry / "fd"))
         except OSError:
@@ -167,7 +178,9 @@ def roles(procs: list[dict]) -> dict[str, dict]:
                 up = by_pid.get(up["ppid"])
             role = role or proc["kind"]
         proc["role"] = role
-        total = out.setdefault(role, {"n": 0, "rss": 0, "anon": 0, "pss": 0, "threads": 0, "fds": 0})
+        total = out.setdefault(role, {"n": 0, "rss": 0, "anon": 0, "pss": 0, "lazy": 0,
+                                      "threads": 0, "fds": 0})
+        total["lazy"] += proc.get("LazyFree", 0)
         total["n"] += 1
         total["rss"] += proc.get("VmRSS", 0)
         total["anon"] += proc.get("RssAnon", 0)
@@ -201,7 +214,7 @@ def read(_args) -> int:
     by_role = roles(procs)
     big = sorted(procs, key=lambda p: p.get("RssAnon", 0), reverse=True)[:12]
     keep = ("pid", "ppid", "role", "threads", "fds", "VmRSS", "RssAnon", "RssFile",
-            "RssShmem", "Pss", "maps", "cmd")
+            "RssShmem", "Pss", "LazyFree", "maps", "cmd")
     print(json.dumps({"t": int(time.time()), "cgroup": cgroup(), "roles": by_role,
                       "top": [{k: p[k] for k in keep if k in p} for p in big]},
                      separators=(",", ":")))

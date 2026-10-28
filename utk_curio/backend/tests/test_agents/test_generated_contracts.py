@@ -329,9 +329,9 @@ class TestThePromptFacts:
     def test_the_web_call_budget_is_the_egress_policys(self):
         from utk_curio.backend.app.common.egress_policy import MAX_CALLS_PER_RUN
 
-        # The Researcher's chat and its checking mode; the notes mode makes
-        # no web call of its own.
-        for name in ("research_instruction.md", "researcher_instruction.md"):
+        # The Researcher's chat, and the fact-checking skill its chat and its
+        # checking mode are handed; the notes mode makes no web call of its own.
+        for name in ("researcher_instruction.md", "fact-checking/SKILL.md"):
             assert f"at most {MAX_CALLS_PER_RUN} web calls per run" in prompt_text(name), name
 
     def test_the_rows_per_lane_are_the_candidate_cards(self):
@@ -379,18 +379,33 @@ class TestThePromptFacts:
     def test_the_package_contract_is_the_backend_contracts(self):
         from utk_curio.backend.app.packages.domain import backend_contract as bc
 
-        fragment = prompt_text("package_contract.md")
+        fragment = prompt_text("package-contract/SKILL.md")
         assert f'"name": "<a name matching {bc.HANDLER_NAME_RE.pattern}>"' in fragment
         assert '"timeoutClass": ' + "|".join(f'"{c}"' for c in bc.TIMEOUT_CLASSES) + "}]}" in fragment
         assert f"the '{bc.PERMISSION_SERVER_CODE}' permission" in fragment
         assert f"(add '{bc.PERMISSION_SERVER_NETWORK}' if and only if" in fragment
         assert f"rides the {bc.DATA_DIR_ENV} env var" in fragment
 
-    def test_the_package_writing_mode_includes_the_contract_whole(self):
-        fragment = prompt_text("package_contract.md")
+    def test_every_package_writing_run_is_handed_the_contract_whole(self):
+        """The contract is the skill ``package-contract``: each package-writing
+        mode's run is handed it whole, wrapped as a skill, and its prompt no
+        longer carries it."""
+        from utk_curio.backend.app.agents.application import skill_runs
+        from utk_curio.backend.app.agents.domain import builtin
+
+        fragment = prompt_text("package-contract/SKILL.md")
         assert fragment.endswith(".\n") and not fragment.endswith("\n\n")
-        instruction = prompt_text("package_build_instruction.md")
-        assert "\n\n" + fragment.rstrip("\n") + "\n\n" in instruction
+        assert fragment.startswith("## Backend contract\n\nServer-side compute follows ONE backend contract")
+        coord = builtin.builtin_coord("agent.curio.node-builder")
+        manifest = builtin.get_builtin_manifest(coord)
+        preamble = builtin.read_prompt_text(coord, "system")
+        for capability in ("package.build", "package.extend", "node.kind.author"):
+            run = skill_runs.for_delegated("4242", "p", manifest, capability, {}, None, preamble)
+            held = skill_runs.skills_text(run) or ""
+            assert ('<skill_content name="package-contract">\n' + fragment.rstrip("\n") + "\n</skill_content>"
+                    in held), capability
+            assert fragment.rstrip("\n") not in builtin.read_prompt_text(coord, capability), capability
+        assert "{{include:" not in prompt_path("package_build_instruction.md").read_text(encoding="utf-8")
 
     def test_every_vega_lite_schema_url_is_the_one_the_frontend_writes(self):
         import re

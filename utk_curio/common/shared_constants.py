@@ -9,9 +9,11 @@ table both sides must agree on: why a render drew nothing
 what a grammar node calls its inputs and the one view an Autark node draws
 (``autkGrammar.json``), what a visualization node does with its input by
 itself (``visDefaults.json``), the words of a Data Pool's modes and a
-Simple View's image column (``nodeSettings.json``), and the widgets a dashboard's
+Simple View's image column (``nodeSettings.json``), the widgets a dashboard's
 viewer never changes and the header a viewer's run is followed with
-(``dashboardRuns.json``). The frontend imports each file; the backend
+(``dashboardRuns.json``), and the layout of a dataflow's Yjs doc, the place each
+Trill field has in it (``dataflowDoc.json``, which the server's doc mapping,
+``collaboration/doc_mapping.py``, alone reads). The frontend imports each of the others; the backend
 reads it here. The folder sits in the frontend's source, so the Docker image's
 frontend build and the Jest suite, which have no Python, read it where it is;
 a clone, the Docker image and a pip install, whose package carries the

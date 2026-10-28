@@ -104,32 +104,39 @@ def _cap_arenas(env, memory_mb):
 
 
 def server_environment(environ=None):
-    """The sandbox server's environment: its malloc arenas capped as its
-    isolated children's are, from the same budget (``CURIO_EXEC_MEMORY_MB``,
-    4096 MB by default, so 16 arenas).
+    """The sandbox server's environment: its allocators fitted as its isolated
+    children's are. Its malloc arenas are capped from the same budget
+    (``CURIO_EXEC_MEMORY_MB``, 4096 MB by default, so 16 arenas), and Arrow
+    allocates through glibc, in those arenas, unless the environment names
+    another pool.
 
     The server runs node code itself when isolation is off, a local launch's
-    default, and serves every run's outputs either way. glibc gives each thread
-    that allocates an arena of its own, up to eight per core, and a block a
-    thread frees goes back to the top of its arena, which glibc keeps while it
-    is smaller than its trim threshold. That threshold rises with the blocks a
-    process frees, up to 64 MiB. When the server goes idle it hands free memory
-    back (``util/memory_release.py``), but ``malloc_trim`` trims only the main
-    arena's top, so every other arena keeps its top.
+    default, and serves every run's outputs either way. When it goes idle it
+    hands free memory back (``util/memory_release.py``), and two allocators
+    kept what that cannot reach:
 
-    #408 measured this on four cores, 32 arenas at most. A 64-core CI runner
-    allows 512, and a sandbox there runs about 500 threads: its libraries'
-    pools, sized by the cores, and one per request. Each test pass left free
-    memory in more of their arenas: in a repeat run of test-gpu, its six
-    sandboxes grew 3.6 GiB in the second pass and 2.9 in the third, all of it
-    free memory in arenas, while what each held in use stayed at 140 to 190
-    MiB (run 40715721924). With the cap, threads beyond it share the arenas
-    there are, as an isolated child's do; how many threads a library starts
-    is unchanged.
+    * glibc gives each thread that allocates an arena of its own, up to eight
+      per core, and a block a thread frees goes back to the top of its arena,
+      which glibc keeps while it is smaller than its trim threshold. That
+      threshold rises with the blocks a process frees, up to 64 MiB, and
+      ``malloc_trim`` trims only the main arena's top.
+    * Arrow's default pool, mimalloc, kept a region of up to about 500 MiB
+      resident in every sandbox while no Arrow memory was in use.
+
+    #408 measured on four cores, 32 arenas at most. A 64-core CI runner allows
+    512, and a sandbox there runs about 500 threads: its libraries' pools,
+    sized by the cores, and one per request. In a repeat run of test-gpu its
+    six sandboxes grew 3.5 GiB in the second pass and 2.9 in the third, while
+    what glibc held in use stayed at 140 to 190 MiB (run 40715721924). With
+    the arena cap they grew 1.6 and 0.9 (run 40736034556), and with Arrow on
+    glibc as well 0.6 and 0.3, on a 192-core runner (run 40747314481). Threads
+    beyond the cap share the arenas there are, as an isolated child's do; how
+    many threads a library starts is unchanged.
 
     Set in the environment the server starts with, because glibc settles its
-    arena limit once per process. The server's children inherit it, the
-    zygote among them, whose own cap from the same budget is the same number.
+    arena limit, and Arrow its pool, once per process. The server's children
+    inherit both, the zygote among them, whose own settings from the same
+    budget are the same.
     """
     from utk_curio.sandbox.isolation.supervisor import DEFAULT_LIMITS
 
@@ -139,6 +146,8 @@ def server_environment(environ=None):
     except ValueError:
         memory_mb = DEFAULT_LIMITS["memory_mb"]
     _cap_arenas(env, memory_mb)
+    if not env.get("ARROW_DEFAULT_MEMORY_POOL"):
+        env["ARROW_DEFAULT_MEMORY_POOL"] = ARROW_POOL_UNDER_A_CAP
     return env
 
 

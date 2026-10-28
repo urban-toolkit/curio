@@ -20,12 +20,17 @@ altair>=6.1.0
 tqdm>=4.67.3
 pygments>=2.20.0
 
-# Real-time collaboration (opt-in via --collab; imported lazily so installs
-# without ENABLE_COLLAB=1 do not pay for the import).
+# Real-time collaboration: Socket.IO, which every backend serves, and pycrdt,
+# the server's Yjs doc of each open dataflow (collaboration/dataflow_docs.py).
 # ------------------------------------------------------------------------------
 flask-socketio>=5.6.0
 python-socketio>=5.16.2
 python-engineio>=4.13.2
+# The WebSocket transport of python-engineio's threading mode, which
+# python-engineio requires already; named here so its floor is Curio's.
+simple-websocket>=1.1.0
+# Below 0.15: pycrdt is in Beta, and its 0.x minor releases change its API.
+pycrdt>=0.14.10,<0.15
 
 # Process supervision and node-execution isolation
 # ------------------------------------------------------------------------------

@@ -22,6 +22,18 @@ def _prompt(coord: str, key: str = "instruction") -> str:
     return text
 
 
+def _held(coord: str) -> str:
+    """What *coord*'s chat holds of its agent text beyond the preamble, on the
+    canvas: the skills it is handed, among them the procedures its
+    instruction names, then its instruction."""
+    from utk_curio.backend.app.agents.application import skill_runs
+    from utk_curio.backend.app.agents.domain import builtin
+
+    m = builtin.get_builtin_manifest(coord)
+    run = skill_runs.for_chat("4242", "p", m, None, {"kind": "canvas"}, builtin.read_prompt_text(coord, "system"), [])
+    return f"{skill_runs.skills_text(run) or ''}\n\n{_prompt(coord)}"
+
+
 def _sentence(text: str, words: str) -> str:
     """The sentence of *text* that holds *words*."""
     found = [s for s in re.split(r"(?<=[.!?])\s+", text) if words in s]
@@ -77,8 +89,11 @@ def test_the_node_builder_is_not_told_its_chat_starts_discovery():
     """Only Solve asks the Dataset Finder for a node's candidates
     (``grounding._source_resolver``, which calls ``dataset_resolution.initiate``,
     from ``solve/batch.py``, ``node_solve.py`` and ``validate.py``); a chat run
-    that cannot ground a source starts none."""
-    assert "the runtime initiates that discovery itself" not in _prompt(NODE_BUILDER)
+    that cannot ground a source starts none. The chat reads it from its
+    instruction and the data-sources skill it is handed."""
+    held = _held(NODE_BUILDER)
+    assert '"dataset.discover"' in held, "the chat is no longer told how it asks for candidates"
+    assert "the runtime initiates that discovery itself" not in held
 
 
 def test_no_agent_is_told_to_declare_a_synthetic_flag_the_gate_ignores():
@@ -87,7 +102,9 @@ def test_no_agent_is_told_to_declare_a_synthetic_flag_the_gate_ignores():
     source refusal's list of allowed sources asks for one."""
     from utk_curio.backend.app.agents.application.turns import grounding
 
-    assert '"synthetic": true' not in _prompt(NODE_BUILDER)
+    held = _held(NODE_BUILDER)
+    assert "synthetic data ONLY when the user explicitly asked for made-up data in their own words" in held
+    assert '"synthetic": true' not in held
     base = {"catalog_paths": {}, "catalog_ids": {}, "verified": {}, "secrets": {}, "texts": []}
     ctx = grounding._grounding_context("4242", "p-1", {}, node_type="curio.builtin/data-loading", base=base)
     assert not any('"synthetic"' in hint for hint in ctx.hints), ctx.hints
