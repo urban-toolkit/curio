@@ -437,19 +437,6 @@ def _owned(spec: dict) -> dict:
     return doc_mapping.owned(dataflow)
 
 
-def _with_dataflow(spec: dict, dataflow: dict) -> dict:
-    """*spec* with *dataflow* as its dataflow, the sections kept outside the
-    doc taken from *spec*."""
-    out = dict(spec)
-    old = spec.get("dataflow") if isinstance(spec.get("dataflow"), dict) else {}
-    merged = dict(dataflow)
-    for name in sorted(doc_mapping.OUTSIDE_THE_DOC):
-        if name in old:
-            merged[name] = old[name]
-    out["dataflow"] = merged
-    return out
-
-
 def _normalized(dataflow: dict) -> dict:
     """*dataflow* as a doc built from it reads it back."""
     doc = doc_mapping.new_doc()
@@ -768,13 +755,26 @@ def _fields_as_the_file_holds(entry: dict, held: dict, read: dict) -> dict:
     out: dict = {}
     for field, was in held.items():
         if field in entry:
-            out[field] = was if field in read and doc_mapping.same(read[field], entry[field]) else entry[field]
+            out[field] = entry[field] if field not in read else _value_as_the_file_holds(
+                entry[field], was, read[field],
+            )
         elif field not in read:
             out[field] = was
     for field, value in entry.items():
         if field not in out:
             out[field] = value
     return out
+
+
+def _value_as_the_file_holds(value, held, read):
+    """A field's *value* as the file holds it (*held*, read back as *read*)
+    when it reads the same, and an object (a node's ``metadata``) field by
+    field."""
+    if doc_mapping.same(read, value):
+        return held
+    if isinstance(value, dict) and isinstance(held, dict) and isinstance(read, dict):
+        return _fields_as_the_file_holds(value, held, read)
+    return value
 
 
 def _close(entry: _OpenDoc) -> bool:
@@ -895,9 +895,19 @@ def read(user_key: str, project_id: str) -> Optional[dict]:
     try:
         with _held(project_id, user_key) as entry:
             _catch_up(entry, _spec_file(entry))
-            return _with_dataflow(spec, doc_mapping.doc_to_dataflow(entry.doc))
+            return _as_read(spec, entry)
     except (_NoDataflow, doc_mapping.DocMappingError):
         return spec
+
+
+def _as_read(spec: dict, entry: _OpenDoc) -> dict:
+    """*spec*, what the file holds, with the open doc's dataflow as its own,
+    each part of it that reads as the file holds it as the file holds it: a
+    read of an open doc reads as the file the doc will write."""
+    dataflow = _dataflow_of(spec)
+    out = dict(spec)
+    out["dataflow"] = _as_the_file_holds(doc_mapping.doc_to_dataflow(entry.doc), dataflow, dataflow)
+    return out
 
 
 def is_open(project_id: str) -> bool:
@@ -1021,7 +1031,7 @@ def live(user_key: str, project_id: str) -> Optional[Live]:
                 now = _spec_file(entry)
                 if isinstance(now.spec, dict):
                     _catch_up(entry, now)
-                    spec = _with_dataflow(now.spec, doc_mapping.doc_to_dataflow(entry.doc))
+                    spec = _as_read(now.spec, entry)
         except (_NoDataflow, doc_mapping.DocMappingError):
             pass
     return Live(_writable(spec), user_key=user_key, project_id=project_id)
