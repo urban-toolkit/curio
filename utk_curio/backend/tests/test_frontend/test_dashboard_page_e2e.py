@@ -58,6 +58,7 @@ from .utils import (
     allow_guest_login_env,
     api_json,
     assert_vega_canvas_rendered,
+    close_after_routes,
     dismiss_toasts,
     empty_pane_point,
     node_locator,
@@ -343,7 +344,7 @@ def test_a_dashboard_served_as_the_hosted_stacks_serve_it_carries_its_data(
         )
         assert drawn_problem is None, drawn_problem
     finally:
-        visitor_ctx.close()
+        close_after_routes(visitor_ctx)
 
 
 #: The one thing a page served with its data asks when the browser holds a
@@ -441,7 +442,7 @@ def test_the_owner_of_a_dashboard_served_with_its_data_edits_its_layout(
         assert len(checked) == 1, f"the viewer's page asked whether it may edit {len(checked)} times"
         assert asked == [], "the viewer's page asked the server for more: " + ", ".join(asked)
     finally:
-        viewer_ctx.close()
+        close_after_routes(viewer_ctx)
 
 
 def test_the_editor_restores_saved_outputs_on_reload(
@@ -801,7 +802,11 @@ class _Visitor:
             waited += 250
 
     def close(self) -> None:
-        self.ctx.close()
+        """Close the visitor's browser once no call of its routes is still
+        running: a call still reading the backend's answer when the context
+        closes fails, and Playwright raises that at the worker's next call
+        (utils/routes.py)."""
+        close_after_routes(self.ctx)
 
 
 def _step_outputs(visitor: "_Visitor") -> list[dict[str, str]]:

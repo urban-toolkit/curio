@@ -93,6 +93,7 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
   - `db_stubs.py`: `stub_db_user`, `stub_db_login`, `stub_login_and_enter_workflow`, `api_json`.
   - `catalog_clock.py`: `CATALOG_CALENDAR`, the fixed date that tests marked `catalog_calendar` run on (conftest.py).
   - `palettes.py`: tool palettes. `upload.py`: `upload_workflow`. `page.py`: `FrontendPage`.
+  - `routes.py`: `end_routes` and `close_after_routes`, which take a page's or a context's routes off once the calls of them still running have ended (`unroute_all(behavior="wait")`), before the context closes. Closing a context does not wait for them: a call that then reads what its `route.fetch()` was answered fails, and Playwright raises that at the worker's next call, which can be another test's.
   - `canvas_authoring.py`: `drag_to_canvas`, `drag_builtin_to_canvas` (a built-in tile, through the rail's Built-in palette), `drag_to_canvas_with_the_mouse`, `connect_nodes`, `set_node_code`, `play_node`, `run_node_and_wait`.
   - `run_all.py`: Run All state, holding a run open.
   - `node_drawings.py`: `assert_vega_canvas_rendered`, `assert_autark_map_drawn` and the other drawing checks.
