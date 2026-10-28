@@ -1686,7 +1686,11 @@ jobs:
   #   below the ceiling (utk_curio/sandbox/tests/_rerun_memory.py). The unit
   #   suite runs the same replay at 200k.
   # * The stress harness at the tiers a desktop sees (1, 5 and 10 users)
-  #   against the deployment-shaped stack, with nothing OOM-killed.
+  #   against the deployment-shaped stack, with nothing OOM-killed: each user
+  #   runs its dataflow and, in rooms of five, types and drags in a shared
+  #   dataflow through its tab's socket; the report gives the sync times, and
+  #   the backend's threads, memory and doc files the probe reads in the stack's
+  #   container (--probe).
   test-desktop-stress:
     needs: build-image
     if: ${{ !cancelled() && needs.build-image.result == 'success' && !inputs.remint }}
@@ -1764,13 +1768,17 @@ jobs:
         with:
           node-version: "26"
 
+      # The probe reads the backend in its container: the stack's .curio is
+      # its root's alone.
       - name: 🔥 Run the desktop tiers (1, 5, 10 users)
         run: |
+          cid="$(docker compose -p curio-ci-stress ps -q curio | head -n1)"
           python -m utk_curio.backend.tests.stress \
             --backend "http://localhost:5072" \
             --tiers 1,5,10 \
             --out "$GITHUB_WORKSPACE/ci-report/stress" \
-            --stats-log "$GITHUB_WORKSPACE/ci-report/docker-stats.log"
+            --stats-log "$GITHUB_WORKSPACE/ci-report/docker-stats.log" \
+            --probe "docker exec $cid python"
 
       - name: 📈 Stop the container stats sampler
         if: always()
@@ -1819,7 +1827,11 @@ jobs:
   # The two tiers measure different halves of a dataflow. The HTTP tiers drive
   # the backend endpoints the canvas calls -- including the Autark data load,
   # which is compiled to autk-db JavaScript and runs in the sandbox -- and
-  # scale to 100 users because they need no browser. The browser tier is five
+  # scale to 100 users because they need no browser. In rooms of five, each of
+  # those users also opens a tab of a shared dataflow, a pycrdt doc synced over
+  # Socket.IO as the canvas syncs it, and types and drags in it; the report
+  # gives the sync times, and the backend's threads, memory and doc files read
+  # in the stack's container (--probe). The browser tier is five
   # real Chrome contexts rendering Autark on WebGPU, which is the half that
   # cannot be driven any other way and does not scale past a handful on one GPU.
   test-gpu-stress:
@@ -1894,13 +1906,16 @@ jobs:
             done
           '
 
-      - name: 🐍 Set up Python
-        uses: actions/setup-python@v6
+      # The harness and the browser tier run on the packages of the image this
+      # job built, as test-gpu's pytest runs on curio-ci-curio's: they import
+      # the backend, whose requirements a hand-picked install misses as soon
+      # as one is added (PyYAML failed the browser tier's import on 10-28, run
+      # 40710854233), and the runner's own Python keeps whatever earlier jobs
+      # installed. The image also holds pycrdt, python-socketio and
+      # websocket-client, which the users' tabs need.
+      - uses: ./.github/actions/image-env
         with:
-          python-version: "3.12"
-
-      - name: 📦 Install harness dependencies
-        run: python -m pip install --quiet requests "pytest==9.0.3" pytest-playwright allure-pytest
+          image: curio-ci-stress-curio
 
       # Sampled next to the run, not after it: peak memory and PID count are
       # the two numbers that say how close 100 users came to the container's
@@ -1927,13 +1942,17 @@ jobs:
       # With `repeat`, each stage below runs that many times on this one stack,
       # as the three stages already share it; every run signs up users of its
       # own (a fresh --run-id) and writes its own report folder ({run}).
+      # The probe reads the backend in its container: the stack's .curio is
+      # its root's alone.
       - name: 🔥 Run the HTTP tiers (5, 10, 50, 100 users)
         run: |
+          cid="$(docker compose -p curio-ci-stress ps -q curio | head -n1)"
           bash scripts/ci_repeat.sh python -m utk_curio.backend.tests.stress \
             --backend "http://localhost:5072" \
             --tiers 5,10,50,100 \
             --out "$GITHUB_WORKSPACE/stress{run}" \
-            --stats-log "$GITHUB_WORKSPACE/docker-stats.log"
+            --stats-log "$GITHUB_WORKSPACE/docker-stats.log" \
+            --probe "docker exec $cid python"
 
       # The same 100 users, behaving like people rather than a thundering
       # herd: arrivals spread over two minutes and a pause between node runs.
@@ -1946,11 +1965,13 @@ jobs:
       - name: 🚶 Run the session profile (100 users, realistic pacing)
         if: ${{ !cancelled() }}
         run: |
+          cid="$(docker compose -p curio-ci-stress ps -q curio | head -n1)"
           bash scripts/ci_repeat.sh python -m utk_curio.backend.tests.stress \
             --backend "http://localhost:5072" \
             --tiers 100 --profile session \
             --out "$GITHUB_WORKSPACE/stress-session{run}" \
-            --stats-log "$GITHUB_WORKSPACE/docker-stats.log"
+            --stats-log "$GITHUB_WORKSPACE/docker-stats.log" \
+            --probe "docker exec $cid python"
 
       # Separate step so a red HTTP tier does not hide the state of the WebGPU
       # half, and vice versa: they fail for different reasons and get fixed by

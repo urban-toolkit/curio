@@ -3,7 +3,9 @@
 Two outputs: ``report.json`` for later comparison between runs, and a markdown
 summary for the CI step summary. Both answer the same three questions -- what
 broke, how slow did it get, and how close to a resource ceiling did the stack
-come.
+come -- for the users' dataflow runs and for their tabs of the shared
+dataflows: how long an update took to be in every other tab, and the backend's
+threads, memory and doc files on disk.
 """
 
 from __future__ import annotations
@@ -85,8 +87,122 @@ def exec_lock_delta(before: dict | None, after: dict | None) -> dict | None:
     }
 
 
+MIB = 1024 * 1024
+
+
+def distribution(values: list[float], scale: float = 1.0, digits: int = 1) -> dict | None:
+    """The count, total, p50, p95 and max of *values* times *scale*. None for
+    no values, which a reader must not take for zeros."""
+    if not values:
+        return None
+    scaled = [value * scale for value in values]
+    return {
+        "count": len(scaled),
+        "total": round(sum(scaled), digits),
+        "p50": round(percentile(scaled, 50), digits),
+        "p95": round(percentile(scaled, 95), digits),
+        "max": round(max(scaled), digits),
+    }
+
+
+def socket_summary(rooms: list[dict]) -> dict | None:
+    """What a tier's tabs did, from each room's ``sockets.Room.outcome``: the
+    updates they sent, how long each took to be in every other tab of its room
+    (``sync_ms``; None when no room had a second tab), the updates that never
+    were (``unsynced``), the rooms whose tabs ended with different docs, and
+    the size of the doc a tab joining at the end would download. None for a
+    tier with no rooms."""
+    if not rooms:
+        return None
+    seconds = [value for room in rooms for value in room["sync_seconds"]]
+    state = [room["doc_state_bytes"] for room in rooms if room.get("doc_state_bytes") is not None]
+    return {
+        "rooms": len(rooms),
+        "tabs": sum(room["tabs"] for room in rooms),
+        "transports": sorted({name for room in rooms for name in room["transports"]}),
+        "updates": sum(room["updates"] for room in rooms),
+        "keystrokes": sum(room["keystrokes"] for room in rooms),
+        "drags": sum(room["drags"] for room in rooms),
+        "deliveries": sum(room["deliveries"] for room in rooms),
+        "sync_ms": distribution(seconds, 1000.0),
+        "unsynced": sum(room["unsynced"] for room in rooms),
+        "diverged_rooms": sum(1 for room in rooms if room["diverged"]),
+        "doc_state_bytes": {"max": max(state), "total": sum(state)} if state else None,
+        "per_room": [
+            {
+                "room": room["room"], "project_id": room["project_id"], "tabs": room["tabs"],
+                "doc_ids": room["doc_ids"], "updates": room["updates"],
+                "sync_ms": distribution(room["sync_seconds"], 1000.0),
+                "unsynced": room["unsynced"], "diverged": room["diverged"],
+                "doc_state_bytes": room.get("doc_state_bytes"),
+            }
+            for room in rooms
+        ],
+    }
+
+
+def backend_summary(start: dict | None, samples: list[dict], end: dict | None,
+                    every_s: float, problem: str | None = None) -> dict:
+    """The backend's threads and resident memory over a tier, from the probe
+    (``backend_probe.py``): the reading before the tier, the highest of all
+    readings, those taken while it ran (every *every_s* seconds) included, and
+    the reading after it. Not measured, with *problem* as the reason, when the
+    probe read nothing; a missing reading is None, never a zero."""
+    readings = [reading for reading in (start, *samples, end) if reading]
+    if not readings:
+        return {"measured": False, "problem": problem or "the probe read nothing"}
+
+    def track(key: str, scale: float, digits: int | None) -> dict:
+        def value(reading):
+            number = (reading or {}).get(key)
+            if not isinstance(number, (int, float)):
+                return None
+            return round(number * scale, digits) if digits else int(number * scale)
+
+        values = [v for v in (value(reading) for reading in readings) if v is not None]
+        return {"start": value(start), "peak": max(values) if values else None, "end": value(end)}
+
+    return {
+        "measured": True,
+        "pid": (end or start or readings[-1]).get("pid"),
+        "threads": track("threads", 1, None),
+        "rss_mib": track("rss_bytes", 1 / MIB, 1),
+        "samples": len(samples),
+        "every_s": every_s,
+        "problem": problem,
+    }
+
+
+def doc_files_summary(listing: dict | None, problem: str | None = None) -> dict:
+    """A tier's shared dataflows' doc logs on disk, as the probe listed them
+    (``backend_probe.doc_files``): for each doc, each day's checkpoint
+    (``.bin``) and its updates (``.updates``). Not measured, with *problem*
+    as the reason, when the probe listed nothing."""
+    if listing is None:
+        return {"measured": False, "problem": problem or "the probe listed no files"}
+    files = [{"project_id": project_id, **segment}
+             for project_id in sorted(listing) for segment in listing[project_id]]
+
+    def sizes(key: str) -> dict:
+        values = [entry[key] for entry in files if isinstance(entry.get(key), int)]
+        return {"total": sum(values), "max": max(values) if values else 0}
+
+    return {
+        "measured": True,
+        "dataflows": len(listing),
+        "without_log": sorted(project_id for project_id, segments in listing.items() if not segments),
+        "docs": len({(entry["project_id"], entry["doc"]) for entry in files}),
+        "segments": len(files),
+        "bin_bytes": sizes("bin_bytes"),
+        "updates_bytes": sizes("updates_bytes"),
+        "files": files,
+    }
+
+
 def tier_summary(tier: int, results: list[UserResult], seconds: float,
-                 profile: str = "burst", exec_lock: dict | None = None) -> dict:
+                 profile: str = "burst", exec_lock: dict | None = None,
+                 sockets: dict | None = None, backend: dict | None = None,
+                 doc_files: dict | None = None) -> dict:
     failures = [(r, s) for r in results for s in r.failures]
     kinds = {kind: 0 for kind in FAILURE_KINDS}
     for _, sample in failures:
@@ -107,6 +223,9 @@ def tier_summary(tier: int, results: list[UserResult], seconds: float,
         },
         "endpoints": endpoint_stats(results),
         "exec_lock": exec_lock,
+        "sockets": sockets,
+        "backend": backend,
+        "doc_files": doc_files,
         "failures": [
             {
                 "user": result.user,
@@ -123,6 +242,7 @@ def tier_summary(tier: int, results: list[UserResult], seconds: float,
             {
                 "user": r.user, "example": r.example, "completed": r.completed,
                 "seconds": round(r.seconds, 1), "calls": len(r.samples),
+                **({"tab": r.tab} if r.tab else {}),
             }
             for r in sorted(results, key=lambda r: -r.seconds)
         ],
@@ -211,11 +331,13 @@ def peak_container_stats(stats_log: str | None) -> dict | None:
 
 
 def build_report(run_id: str, backend_url: str, tiers: list[dict],
-                 stats_log: str | None = None, profile: str = "burst") -> dict:
+                 stats_log: str | None = None, profile: str = "burst",
+                 room_size: int | None = None) -> dict:
     report = {
         "run_id": run_id,
         "backend_url": backend_url,
         "profile": profile,
+        "room_size": room_size,
         "tiers": tiers,
         "failed": any(t["failure_count"] for t in tiers),
     }
@@ -225,12 +347,79 @@ def build_report(run_id: str, backend_url: str, tiers: list[dict],
     return report
 
 
+def _kib(size: int) -> str:
+    return f"{size / 1024:.1f} KiB"
+
+
+def _three(track: dict, unit: str = "") -> str:
+    """A start / peak / end track, a missing reading as a dash."""
+    return " / ".join("-" if track.get(key) is None else f"{track[key]}" for key in ("start", "peak", "end")) + unit
+
+
+def _tabs_table(tiers: list[dict]) -> list[str]:
+    if not any(tier.get("sockets") for tier in tiers):
+        return []
+    lines = ["", "Tabs: each user's tab of its room's shared dataflow, typing in a "
+                 "node's code and dragging the node. Sync is an update's time "
+                 "from its tab to every other tab of the room; the doc is what "
+                 "a tab joining at the end downloads.", ""]
+    lines.append("| Tier | Rooms | Tabs | Updates | Sync p50 | Sync p95 | Sync max "
+                 "| Doc a tab downloads | Unsynced | Diverged rooms |")
+    lines.append("| ---: | ----: | ---: | ------: | -------: | -------: | -------: "
+                 "| ------------------: | -------: | -------------: |")
+    for tier in tiers:
+        tabs = tier.get("sockets")
+        if not tabs:
+            continue
+        sync = tabs.get("sync_ms")
+        cells = [f"{sync[key]} ms" for key in ("p50", "p95", "max")] if sync else ["no other tab"] * 3
+        state = tabs.get("doc_state_bytes")
+        cells.append(f"{_kib(state['max'])} at most" if state else "-")
+        lines.append(
+            f"| {tier['tier']} | {tabs['rooms']} | {tabs['tabs']} | {tabs['updates']} "
+            f"| {' | '.join(cells)} | {tabs['unsynced']} | {tabs['diverged_rooms']} |"
+        )
+    return lines
+
+
+def _backend_table(tiers: list[dict]) -> list[str]:
+    if not any(tier.get("backend") or tier.get("doc_files") for tier in tiers):
+        return []
+    every = next((tier["backend"].get("every_s") for tier in tiers
+                  if (tier.get("backend") or {}).get("measured")), None)
+    lines = ["", "The backend's process before each tier, at its peak "
+                 + (f"(read every {every:g} s) " if every else "")
+                 + "and after it; and the tier's doc logs on disk, each day's "
+                 "checkpoint (`.bin`) and updates (`.updates`).", ""]
+    lines.append("| Tier | Threads | RSS (MiB) | Doc logs | `.bin` | `.updates` |")
+    lines.append("| ---: | ------: | --------: | -------: | -----: | ---------: |")
+    for tier in tiers:
+        backend = tier.get("backend") or {}
+        files = tier.get("doc_files") or {}
+        if backend.get("measured"):
+            process = [_three(backend["threads"]), _three(backend["rss_mib"])]
+        else:
+            process = [f"not measured: {backend.get('problem') or 'no probe'}", "-"]
+        if files.get("measured"):
+            logs = [f"{files['docs']}", _kib(files["bin_bytes"]["total"]), _kib(files["updates_bytes"]["total"])]
+        else:
+            logs = [f"not measured: {files.get('problem') or 'no probe'}", "-", "-"]
+        lines.append(f"| {tier['tier']} | {' | '.join(process + logs)} |")
+    return lines
+
+
 def markdown(report: dict) -> str:
-    # Artifacts are fetched the way the canvas fetches them, as Arrow. Said
-    # here because a report outlives the run that made it, and a reader
-    # comparing this against an older one needs to know the wire changed.
+    # Artifacts are fetched the way the canvas fetches them, as Arrow, and the
+    # tabs connect over the transport named here. Said here because a report
+    # outlives the run that made it, and a reader comparing this against an
+    # older one needs to know the wire changed.
+    transports = sorted({
+        name for tier in report["tiers"]
+        for name in ((tier.get("sockets") or {}).get("transports") or [])
+    })
+    wire = "arrow artifacts" + (f", tabs over {' and '.join(transports)}" if transports else "")
     lines = [f"## Stress run `{report['run_id']}` "
-             f"({report.get('profile', 'burst')} profile, arrow artifacts)", ""]
+             f"({report.get('profile', 'burst')} profile, {wire})", ""]
     lines.append("| Tier | Users | Completed | Wall | Failures | User p95 |")
     lines.append("| ---: | ----: | --------: | ---: | -------: | -------: |")
     for tier in report["tiers"]:
@@ -253,6 +442,8 @@ def markdown(report: dict) -> str:
             peak_line += (f". Host load peaked at {peaks['peak_host_load']}"
                           + (f" on {cores} cores" if cores else ""))
         lines += ["", peak_line + "."]
+    lines += _tabs_table(report["tiers"])
+    lines += _backend_table(report["tiers"])
 
     for tier in report["tiers"]:
         lines += ["", f"### {tier['tier']} users", ""]

@@ -106,7 +106,7 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
   - Scenes, one module per surface: `provenance.py`, `agent_catalog.py`, `cross_catalog.py`, `account_examples.py`, `robustness.py` (dashboard page, Autark without WebGPU, Run All after a failed node), `layout.py`, `visual_claims.py` (#218 to #227), `dataflow_identity.py`, `catalog_chrome.py`, `column_filter.py`, `agent_chat.py`, `simple_view.py`.
 - Sandbox: `utk_curio/sandbox/tests/` (`conftest.py`).
 - Frontend Jest: `src/tests/` (guide in `src/tests/README.md`); `npm test` and `npm run typecheck` in `utk_curio/frontend/urban-workflows/`.
-- Stress harness: `utk_curio/backend/tests/stress/`.
+- Stress harness: `utk_curio/backend/tests/stress/` (`driver.py`: one user; `sockets.py`: its tab of a shared dataflow, a pycrdt doc over Socket.IO; `backend_probe.py`: the backend's threads, memory and doc files, read where it runs; `report.py`).
 
 ## CI
 
