@@ -38,6 +38,7 @@ from utk_curio.backend.app.agents.domain import dashboards
 from utk_curio.backend.app.agents.domain import failure_text
 from utk_curio.backend.app.agents.domain.counts import count_label
 from utk_curio.backend.app.agents.domain import map_edits
+from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.agents.domain import node_context
 from utk_curio.backend.app.agents.domain.manifest import AgentManifest
 from utk_curio.backend.app.agents.infrastructure import provider_config
@@ -59,6 +60,10 @@ from utk_curio.backend.app.projects import storage as projects_storage
 from utk_curio.backend.app.agents.domain import agent_text
 
 log = logging.getLogger(__name__)
+
+#: Why a node Solve wrote keeps its own code: it took other code, someone's
+#: edit, after the wave read it (``dataflow_docs.write``'s refusal).
+CHANGED_MEANWHILE = "its code changed while Solve worked on it; that code stays"
 
 
 class SolveBatch:
@@ -690,7 +695,7 @@ class SolveBatch:
         every persisted wave in place (DEC-021: nothing replayed; Retry
         continues). The re-read spec is what the next wave runs against."""
         with projects_storage.spec_write_lock(self.user_key, self.project_id):
-            spec_doc = agents_spec_reads._read_spec_or_404(self.user_key, self.project_id)
+            spec_doc = agents_spec_reads._live_spec_or_404(self.user_key, self.project_id)
             record = agents_spec_reads._record_or_404(spec_doc, self.attachment_id)
             session = record.get("builderSession") or {}
             self.apply_contents(spec_doc)
@@ -703,8 +708,26 @@ class SolveBatch:
             if session.get("phase") == "solving":
                 session["solvingSince"] = time.time()
             record["builderSession"] = session
-            projects_storage.write_spec(self.user_key, self.project_id, spec_doc)
+            dataflow_docs.write(
+                self.user_key, self.project_id, spec_doc, self._actor(),
+                on_refused=lambda node_ids: self._changed_meanwhile(node_ids, node_runs),
+            )
         self.current["spec"] = spec_doc
+
+    def _actor(self) -> dataflow_docs.Actor:
+        """Who the batch's writes are by: the agent that writes its content,
+        asked by the account."""
+        return dataflow_docs.by_agent(getattr(self.resolution, "coord", None) or self.coord, self.user_key, "solve")
+
+    def _changed_meanwhile(self, node_ids: tuple, node_runs: dict) -> None:
+        """The nodes whose code the dataflow kept (``dataflow_docs.write``):
+        each took other code after this persist read it, someone's edit, which
+        stays. Each is skipped, as a node that holds content is
+        (:meth:`apply_contents`), and says why."""
+        for node_id in node_ids:
+            self.results[node_id] = {"status": "skipped", "reason": CHANGED_MEANWHILE}
+            if node_id in node_runs:
+                node_runs[node_id] = "skipped"
 
     def finish(self) -> dict:
         # One batched spec write: contents (re-guarded against the CURRENT
@@ -736,14 +759,11 @@ class SolveBatch:
 
     def _finish_persist(self) -> tuple[dict, list]:
         with projects_storage.spec_write_lock(self.user_key, self.project_id):
-            spec = agents_spec_reads._read_spec_or_404(self.user_key, self.project_id)
+            spec = agents_spec_reads._live_spec_or_404(self.user_key, self.project_id)
             record = agents_spec_reads._record_or_404(spec, self.attachment_id)
             session = record.get("builderSession") or {}
             node_runs = session.get("nodeRuns") or {}
             self.apply_contents(spec)
-            applied = [
-                i for i in self.applied_contents if self.results.get(i["nodeId"], {}).get("status") == "solved"
-            ]
             ids_to_ref = {
                 nid: ref for ref, nid in (session.get("nodeIds") or {}).items()
             }
@@ -774,7 +794,13 @@ class SolveBatch:
                     else "applied"
                 )
             record["builderSession"] = session
-            projects_storage.write_spec(self.user_key, self.project_id, spec)
+            dataflow_docs.write(
+                self.user_key, self.project_id, spec, self._actor(),
+                on_refused=lambda node_ids: self._changed_meanwhile(node_ids, node_runs),
+            )
+        applied = [
+            i for i in self.applied_contents if self.results.get(i["nodeId"], {}).get("status") == "solved"
+        ]
         return session, applied
 
     def _transcript_lines(self, cancelled: bool) -> tuple[list[str], list]:

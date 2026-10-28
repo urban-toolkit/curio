@@ -21,6 +21,7 @@ import json
 import logging
 import os
 import shutil
+import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -157,6 +158,10 @@ SPEC_FILE = "spec.trill.json"
 def write_spec(user_key: str, project_id: str, spec: dict) -> Path:
     """Persist *spec* and bump the project's write counter.
 
+    Only ``collaboration/dataflow_docs.py`` calls it: every writer of a
+    dataflow goes through the dataflow's doc, which writes this file
+    (``test_only_the_doc_writes_a_dataflow`` holds it).
+
     Its two history sections go to the project's history logs, not to the
     spec file (:data:`HISTORY_KEYS`): a section *spec* holds becomes the one
     on record, and one it does not hold stays as it is on record, so a writer
@@ -210,6 +215,27 @@ def drop_history(user_key: str, project_id: str) -> None:
             _write_json_atomically(
                 d / SPEC_FILE, {k: v for k, v in spec.items() if k not in HISTORY_KEYS},
             )
+
+
+def write_history(user_key: str, project_id: str, sections: dict) -> bool:
+    """Put *sections*, history sections (:data:`HISTORY_KEYS`) as a spec holds
+    them, on record as the project's history, and write nothing else: not its
+    dataflow, which its doc writes, and not the write counter. A section the
+    spec file still holds, saved before the history moved beside it, leaves
+    the file, which keeps the rest as it is, so the log is what a read finds.
+    A tab bound to the doc saves this way (``services.update_project``).
+    Whether the project has a spec to keep a history beside."""
+    d = project_dir(user_key, project_id)
+    if not (d / SPEC_FILE).is_file():
+        return False
+    sent = {key: sections[key] for key in HISTORY_KEYS if key in sections}
+    with _history_lock(d):
+        for key, value in sent.items():
+            _write_section(d, key, value)
+        if set(_sections_in_spec_file(d)) & set(sent):
+            spec = json.loads((d / SPEC_FILE).read_text(encoding="utf-8"))
+            _write_json_atomically(d / SPEC_FILE, {k: v for k, v in spec.items() if k not in sent})
+    return True
 
 
 def _sections_in_spec_file(folder: Path) -> dict:
@@ -789,7 +815,32 @@ def spec_write_lock(user_key: str, project_id: str):
         namespace=_SPEC_LOCK_NAMESPACE,
         key=f"{user_key}/{project_id}",
     ):
-        yield
+        held = _spec_locks_held()
+        key = (str(user_key), project_id)
+        held.add(key)
+        try:
+            yield
+        finally:
+            held.discard(key)
+
+
+_spec_lock_holder = threading.local()
+
+
+def _spec_locks_held() -> set:
+    """The projects whose spec lock this thread holds."""
+    held = getattr(_spec_lock_holder, "projects", None)
+    if held is None:
+        held = _spec_lock_holder.projects = set()
+    return held
+
+
+def holds_spec_lock(user_key: str, project_id: str) -> bool:
+    """Whether this thread holds the project's spec lock. The lock is not
+    reentrant, so the one writer of a dataflow (``dataflow_docs.write``), which
+    a caller may run under the lock it took for a longer read-modify-write,
+    asks for it only when this thread does not hold it already."""
+    return (str(user_key), project_id) in _spec_locks_held()
 
 
 # ---------------------------------------------------------------------------
@@ -1108,27 +1159,37 @@ def mutate_dataflow_datasets(
     user_key: str,
     project_id: str,
     mutate,
+    *,
+    actor=None,
 ) -> Optional[tuple[dict, bool]]:
     """Atomically read-modify-write ``dataflow.datasets`` (dev/82).
 
     The dataset endpoints' section writer: under the per-project spec lock,
-    re-reads the on-disk spec, hands the dict-filtered current refs to
-    *mutate*, and persists the list it returns — so a concurrent mutation of a
-    DIFFERENT dataset can never be lost to a stale pre-lock read. Only the
-    datasets section is swapped; nodes/edges/agents/packages are untouched.
+    reads the dataflow as it is now (its doc over its file,
+    ``dataflow_docs.live``), hands the dict-filtered current refs to *mutate*,
+    and writes the list it returns through the dataflow's doc, its one writer.
+    So a concurrent mutation of a DIFFERENT dataset can never be lost to a
+    stale pre-lock read, and a tab in the dataflow's room gets the change.
+    Only the datasets section changes; nodes/edges/agents/packages are
+    untouched.
 
     *mutate* runs while the spec lock is held: it must be a pure list
     transform (no project I/O, nothing that re-acquires the lock). Returning
-    ``None`` means "no change" — nothing is written.
+    ``None`` means "no change": nothing is written. *actor* is who changes
+    the refs (``dataflow_docs.Actor``), by default the account.
 
-    Returns ``(spec, changed)``, or ``None`` when the project has no spec.
+    Returns ``(spec, changed)``, the spec without its history, or ``None``
+    when the project has no spec.
     """
+    # The doc writes through this module, so it is imported where it is used.
+    from utk_curio.backend.app.collaboration import dataflow_docs
+
     # Cheap existence check first so we don't create a project dir (and lock
     # file) for a project that doesn't exist.
     if not (project_dir(user_key, project_id) / SPEC_FILE).exists():
         return None
     with spec_write_lock(user_key, project_id):
-        spec = read_spec(user_key, project_id)
+        spec = dataflow_docs.live(user_key, project_id)
         if not spec:
             return None
         dataflow = spec.setdefault("dataflow", {})
@@ -1137,7 +1198,9 @@ def mutate_dataflow_datasets(
         if new_refs is None:
             return spec, False
         dataflow["datasets"] = new_refs
-        write_spec(user_key, project_id, spec)
+        dataflow_docs.write(
+            user_key, project_id, spec, actor or dataflow_docs.person(user_key, "datasets"),
+        )
         return spec, True
 
 
