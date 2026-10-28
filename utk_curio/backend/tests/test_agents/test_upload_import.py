@@ -110,15 +110,21 @@ class TestUploadImport:
             headers=_auth(token),
         )
         assert r.status_code == 200, r.get_data(as_text=True)
+        from utk_curio.backend.app.agents.application import skill_runs
+        from utk_curio.backend.app.agents.application import tools as tools_mod
         from utk_curio.backend.app.agents.domain import content as content_mod
 
-        # dev/39: the runtime-owned structured-tail instruction composes last.
+        # A definition that names no skills lists every skill Curio ships, and
+        # loads one with skill.read, its one tool. dev/39: the runtime-owned
+        # structured-tail instruction composes last.
+        catalog = skill_runs.catalog_text(skill_runs.RunSkills(catalog=tuple(skill_runs.shipped_skills().values())))
+        tail = content_mod.tail_instruction(tools_mod.grant_descriptions(["skill.read"]))
         system = calls[0][0]
         assert (system["role"], system["content"]) == (
-            "system", f"{INSTRUCTION}\n\n{content_mod.tail_instruction()}",
+            "system", f"{catalog}\n\n{INSTRUCTION}\n\n{tail}",
         )
         # An uploaded definition with no system prompt has no preamble slot.
-        assert [slot["kind"] for slot in system["slots"]] == ["instruction", "tool-protocol"]
+        assert [slot["kind"] for slot in system["slots"]] == ["skill-catalog", "instruction", "tool-protocol"]
 
     def test_trust_is_forced_to_imported(self, client, user_and_token, tmp_curio):
         _, token = user_and_token

@@ -1391,7 +1391,7 @@ class SolveBatch:
     def _traced_runner(self, node_id: str):
         # every round traced at the node's home (dev/72), the loop's progress
         # relayed as node_* events, the outcome folded by record_outcome.
-        def _traced(delegate_inputs, _node_id=node_id):
+        def _traced(delegate_inputs, refused=None, _node_id=node_id):
             st, tx, ch, _h = agents_delegates._run_delegate_traced(
                 self.user_key, self.project_id, self.resolution.coord,
                 "node.content.generate", delegate_inputs, self.config,
@@ -1401,6 +1401,7 @@ class SolveBatch:
                 node_id=_node_id,
                 home_create=False,  # workers never write the spec
                 dataflow_block=self._dataflow_block(_node_id),
+                refused=refused,
             )
             return st, tx, ch
 

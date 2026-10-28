@@ -700,6 +700,20 @@ class TestCatalogReadGrants:
             assert self._holders(tool) == {"agent.curio.node-builder"}, tool
             assert tool in self._granted("agent.curio.node-builder"), tool
 
+    def test_every_cards_chat_holds_skill_read_after_its_own_tools(self):
+        """A chat that lists skills is granted skill.read, the last of its
+        tools; no manifest asks for it, since the catalog grants it."""
+        from utk_curio.backend.app.agents.application import skill_runs
+
+        cards = [m for m in builtin.list_builtin_manifests() if m.catalog.listed]
+        assert len(cards) == 4
+        assert self._holders("skill.read") == set()
+        for m in cards:
+            chat = skill_runs.for_chat("4242", "p", m, {"dataflow": {"nodes": []}}, {"kind": "canvas"},
+                                       builtin.read_prompt_text(m.dir_name, "system"), [])
+            assert chat.names, m.agent_id
+            assert skill_runs.grants(self._granted(m.agent_id), chat) == [*self._granted(m.agent_id), "skill.read"]
+
 
 class TestDatasetFinderComposite:
     """The dev/50 roster entry — spec per dev/15 §3.4 + docs/06, minus

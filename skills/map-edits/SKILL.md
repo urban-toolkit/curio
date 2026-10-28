@@ -11,6 +11,8 @@ compatibility: Written for Curio's agents, their tools and node code.
 metadata:
   author: curio
   version: "1.0.0"
+  curio-behaviors: edit-features
+  curio-refusals: map-edits
 ---
 ## {{template.label:curio.builtin/edit-features}}
 

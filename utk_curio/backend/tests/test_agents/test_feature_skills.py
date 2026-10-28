@@ -1,9 +1,11 @@
-"""Every feature an agent builds with is in a skill, and agents read it.
+"""Every feature an agent builds with is in a skill.
 
-``skills/`` holds one skill per feature of Curio, and the preamble every
-agent reads places them (``{{skill:<name>}}``). A skill that reaches no
-agent, a built-in template no page or skill names, a kind of chip none shows
-and a function of node code no skill gives all fail here:
+``skills/`` holds one skill per feature of Curio. The preamble every agent
+reads places the core three (``{{skill:<name>}}``), and the others reach
+agents through their manifests, as ``test_skill_listing.py`` lists, which
+also fails on a skill that reaches no agent. A built-in template no page or
+skill names, a kind of chip none shows and a function of node code no skill
+gives all fail here:
 
 - a built-in template is named when a page of the base entry or a skill names
   it by its marker, ``{{template.label:curio.builtin/<id>}}``, beyond the
@@ -38,8 +40,8 @@ BUILTIN_MANIFEST = REPO_ROOT / "packages" / "curio.builtin@1" / "manifest.json"
 CASES = (REPO_ROOT / "utk_curio" / "frontend" / "urban-workflows" / "src" / "utils" / "references"
          / "codeReferences.cases.json")
 WRAPPER = REPO_ROOT / "utk_curio" / "sandbox" / "util" / "js_wrapper.mjs"
-#: The skills every agent reads in its preamble.
-IN_THE_PREAMBLE = ("node-functions", "catalogs", "selection-chips")
+#: The skills every agent reads in its preamble: the core three.
+IN_THE_PREAMBLE = ("nodes", "node-control", "compatibility")
 _TEMPLATE_MARKER_RE = re.compile(r"\{\{template\.label:curio\.builtin/([a-z0-9-]+)\}\}")
 _SKILL_RE = re.compile(r"\{\{skill:([^{}]+)\}\}")
 
@@ -84,11 +86,12 @@ def _chip_kind(inner: str) -> str | None:
     return parsed["kind"]
 
 
-def test_every_skill_is_shipped_and_reaches_the_agents():
-    """Each folder of ``skills/`` is a skill Curio ships, and a page or prompt
-    an agent reads places it; the functions, catalogs and selection skills
-    ride the preamble, so every agent reads them. No page names a page of
-    the base entry's ``knowledge/``, which holds none."""
+def test_every_skill_is_shipped_and_the_preamble_places_the_core_three():
+    """Each folder of ``skills/`` is a skill Curio ships. The core skills ride
+    the preamble, so every agent reads them, and no page or prompt of
+    ``agents/`` places any other: those reach the runs that need them through
+    the agents' manifests (``test_skill_listing.py``). No page names a page
+    of the base entry's ``knowledge/``, which holds none."""
     from utk_curio.backend.app.agents.domain import agent_text, builtin, skills
 
     on_disk = sorted(path.parent.name for path in SKILLS.glob("*/SKILL.md"))
@@ -97,9 +100,12 @@ def test_every_skill_is_shipped_and_reaches_the_agents():
     listed = json.loads((BASE / "manifest.json").read_text(encoding="utf-8"))["pages"]
     assert not [page for page in listed if page.startswith("knowledge/")], listed
     assert not (BASE / "knowledge").exists()
-    written = [path.read_text(encoding="utf-8") for path in (REPO_ROOT / "agents").rglob("*.md")]
+    # A README is for whoever edits the folder, and no agent reads it.
+    written = [path.read_text(encoding="utf-8") for path in (REPO_ROOT / "agents").rglob("*.md")
+               if path.name != "README.md"]
+    assert len(written) >= 15, len(written)
     placed = {name for text in written for name in _SKILL_RE.findall(text)}
-    assert not [name for name in on_disk if name not in placed], placed
+    assert placed == set(IN_THE_PREAMBLE), placed
     assert not [text for text in written if "{{include:knowledge/" in text]
     preamble = (BASE / "default_preamble.md").read_text(encoding="utf-8")
     for name in IN_THE_PREAMBLE:

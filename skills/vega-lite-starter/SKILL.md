@@ -10,6 +10,8 @@ compatibility: Written for Curio's agents, their tools and node code.
 metadata:
   author: curio
   version: "1.0.0"
+  curio-behaviors: vega
+  curio-refusals: document-invalid
 ---
 ## The starter spec a Vega-Lite node writes for itself
 

@@ -8,6 +8,11 @@
     "listed": false,
     "order": 2
   },
+  "skills": [
+    "interaction-edges",
+    "scenarios",
+    "dashboards"
+  ],
   "roles": [
     "planning",
     "validation"

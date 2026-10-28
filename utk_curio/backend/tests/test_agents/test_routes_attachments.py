@@ -305,15 +305,19 @@ class TestIntent:
             json={"message": "hi"},
             headers=_auth(token),
         )
-        # The edited intent replaces the instruction portion; the preamble
-        # still applies, and the dev/39 tail instruction composes last.
+        # The edited intent replaces the instruction portion; the preamble and
+        # the skills the chat lists still apply, and the dev/39 tail
+        # instruction composes last.
+        from utk_curio.backend.app.agents.application import skill_runs
         from utk_curio.backend.app.agents.domain import builtin
         from utk_curio.backend.app.agents.domain import content as content_mod
 
         preamble = builtin.read_prompt_text("agent.curio.researcher@1", "system")
+        catalog = skill_runs.catalog_text(skill_runs.RunSkills(
+            catalog=skill_runs.agent_skills(builtin.get_builtin_manifest("agent.curio.researcher@1"))))
         assert calls[0][0]["role"] == "system"
         assert calls[0][0]["content"].startswith(
-            f"{preamble}\n\nanswer in one sentence\n\n{content_mod.tail_instruction()}"
+            f"{preamble}\n\n{catalog}\n\nanswer in one sentence\n\n{content_mod.tail_instruction()}"
         )
 
 
