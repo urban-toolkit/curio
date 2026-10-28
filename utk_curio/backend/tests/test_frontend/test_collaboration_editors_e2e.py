@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from .utils import (
+    _wait_for_reactflow_ready,
     api_json,
     drag_builtin_to_canvas,
     node_locator,
@@ -101,12 +102,36 @@ def _open_invite_editors(page, *, frame: bool = False) -> None:
     item.click()
 
 
+#: What a press at a point lands on: "node" on *id*'s card where a drag starts,
+#: else what is there (the top bar over the canvas, say).
+_PRESS_TARGET_JS = """([id, x, y]) => {
+    const hit = document.elementFromPoint(x, y);
+    if (!hit) return 'nothing';
+    const node = hit.closest('.react-flow__node');
+    if (node && node.getAttribute('data-id') === id) {
+        return hit.closest('.nodrag') ? 'a part of the node that does not drag' : 'node';
+    }
+    const named = hit.closest('[data-testid]');
+    if (named) return named.getAttribute('data-testid');
+    return hit.tagName.toLowerCase() + (hit.className ? '.' + String(hit.className).trim().split(/\\s+/).join('.') : '');
+}"""
+
+
 def _drag_node_by(page, node_id: str, dx: float, dy: float) -> None:
     """Drag a node by its header with the mouse, *dx* and *dy* in canvas units,
-    a few pixels at a time, as test_feature_tour_video.py's does."""
+    a few pixels at a time, as test_feature_tour_video.py's does.
+
+    The canvas is fit first, through the app's own fit, and held there: a
+    tab's load fit lands on a timer once its nodes are measured, and the room
+    can answer before it does. Until then the canvas shows its default view,
+    with the node's header under the top bar, and a press there lands on the
+    bar and drags nothing. The press point is checked to be on the node."""
+    _wait_for_reactflow_ready(page)
     zoom = page.evaluate("() => window.__curio_reactFlow.getViewport().zoom")
     box = node_locator(page, node_id).bounding_box()
     x, y = box["x"] + box["width"] / 2, box["y"] + 15 * zoom
+    target = page.evaluate(_PRESS_TARGET_JS, [node_id, x, y])
+    assert target == "node", f"a press on {node_id}'s header at ({x:.0f}, {y:.0f}) lands on {target}"
     page.mouse.move(x, y)
     page.mouse.down()
     for leg_x, leg_y in ((dx * zoom, 0.0), (0.0, dy * zoom)):
@@ -175,6 +200,10 @@ def test_an_invited_editors_move_reaches_the_owner_and_a_watcher_only_watches(
         assert editor.get_by_test_id("shared-view-banner").count() == 0, (
             "an invited editor's canvas opened read-only"
         )
+        # The room can answer before the tab's load fit lands, and the canvas
+        # then still shows its default view, the node's header under the top
+        # bar. The editor's canvas is put there, so every run meets that order.
+        editor.evaluate("() => window.__curio_reactFlow.setViewport({x: 0, y: 0, zoom: 1})")
         before = _position(editor)
         _drag_node_by(editor, NODE, 160, 90)
         moved = _position(editor)
