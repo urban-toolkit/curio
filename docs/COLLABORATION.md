@@ -58,7 +58,7 @@ Open the project URL (`http://<host>:8080/dataflow/<UUID>`) on each collaborator
 
 | Flag | Variable | Default | Purpose |
 |------|----------|---------|---------|
-| `--collab` | `ENABLE_COLLAB` | off | Master switch. When off, the SocketIO server is never instantiated and `flask-socketio` is never imported. |
+| `--collab` | `ENABLE_COLLAB` | off | Shows the collaboration panel, and the page joins the dataflow's room. The backend serves Socket.IO with or without it. |
 | `--collab-origins ORIGINS` | `COLLAB_CORS_ORIGINS` | `*` | Comma-separated allowed origins for the Socket.IO handshake. Use `*` only on a trusted network. |
 | `--collab-namespace NAMESPACE` | `COLLAB_NAMESPACE` | `/collab` | Socket.IO namespace. Change only if you need to coexist with another SocketIO server on the same backend. |
 
@@ -69,17 +69,20 @@ Open the project URL (`http://<host>:8080/dataflow/<UUID>`) on each collaborator
 - **Async mode:** `threading`, which preserves the existing Flask dev-reloader and avoids the eventlet/gevent monkey-patching trap. Acceptable for small teams (<~20 concurrent sockets); production with many concurrent rooms should switch to `eventlet` or `gevent`.
 - **Room key:** `project:<uuid>`. The UUID is the canonical project identifier from the URL (`/dataflow/:id`) and the source of truth in `projectPackagesStore.getCurrentProjectId()`.
 - **Room state:** in-memory dicts in [utk_curio/backend/app/collaboration/room_state.py](../utk_curio/backend/app/collaboration/room_state.py), guarded by a single `threading.RLock`. **Not persisted across restarts.**
+- **Each open dataflow's doc:** a Yjs doc the backend keeps in memory, synced with each tab over the same socket and kept beside the dataflow's spec, so a restart reloads it; see [ARCHITECTURE.md § Each open dataflow's doc](ARCHITECTURE.md#each-open-dataflows-doc). One backend process serves them all.
 
 ### Backend modules
 
 | File | Role |
 |------|------|
-| [extensions.py](../utk_curio/backend/extensions.py) | `init_socketio(app)`, a lazy import of `flask_socketio`. |
-| [app/__init__.py](../utk_curio/backend/app/__init__.py) | Mounts the SocketIO singleton and registers events when `ENABLE_COLLAB=True`. |
+| [extensions.py](../utk_curio/backend/extensions.py) | `init_socketio(app)`: the app's SocketIO server. |
+| [app/__init__.py](../utk_curio/backend/app/__init__.py) | Mounts the SocketIO server and registers its events, on every backend. |
 | [app/collaboration/auth.py](../utk_curio/backend/app/collaboration/auth.py) | Bearer-token handshake; resolves the socket to a real `User` + `UserSession`. |
 | [app/collaboration/room_state.py](../utk_curio/backend/app/collaboration/room_state.py) | All in-memory dicts and helpers. Participants, locks, proposals and votes are keyed by participant id, one per socket. |
 | [app/collaboration/events.py](../utk_curio/backend/app/collaboration/events.py) | Every `@sio.on(...)` handler. Identity is read from `room_state.get_identity(sid)`, populated in the `connect` handler. A join takes the account's role; every change to the room is refused to a watcher. |
 | [app/collaboration/roles.py](../utk_curio/backend/app/collaboration/roles.py) | Tells a room that the owner added or removed an editor (`roles_changed`). |
+| [app/collaboration/dataflow_docs.py](../utk_curio/backend/app/collaboration/dataflow_docs.py) | Each open dataflow's Yjs doc: its sync and awareness (`yjs`), a watcher's changes dropped, its files beside the spec. |
+| [app/collaboration/doc_mapping.py](../utk_curio/backend/app/collaboration/doc_mapping.py) | A dataflow's Trill to its doc and back, on the layout in `src/contracts/dataflowDoc.json`. |
 | [app/projects/access.py](../utk_curio/backend/app/projects/access.py) | The roles, and the editors list behind **Invite editors** (`/api/projects/<id>/editors`). |
 
 ### Frontend modules

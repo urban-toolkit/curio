@@ -65,7 +65,7 @@ curio setup                  # install deps and exit
 | *(none)* | Auto sign-in as shared guest, projects page shown |
 | `--no-project` | Skip both login and projects; open the canvas directly |
 | `--deploy` | Auth **and** projects on, and isolated node execution, which it requires. The only way to turn auth on, so use it locally too when you need the login page |
-| `--collab` | Real-time collaborative editing. Experimental, LAN-only. `--collab-origins` and `--collab-namespace` set the origins it accepts and its Socket.IO namespace; see [COLLABORATION.md](COLLABORATION.md) |
+| `--collab` | Real-time collaborative editing. Experimental, LAN-only. `--collab-origins` and `--collab-namespace` set the origins the backend's Socket.IO accepts and its namespace; see [COLLABORATION.md](COLLABORATION.md) |
 
 **Frontend**
 
@@ -1730,7 +1730,7 @@ provider, publishing, and writing your own, see [docs/AGENT-CATALOG.md](AGENT-CA
 
 ## Real-time collaboration
 
-`curio start --collab` opens an opt-in Socket.IO channel that lets multiple signed-in users edit the same project simultaneously: presence indicators, per-node soft locks, code-change proposals with peer approval, and shared execution output. The feature is disabled by default and needs no rebuild to turn on.
+`curio start --collab` lets multiple signed-in users edit the same project simultaneously: presence indicators, per-node soft locks, code-change proposals with peer approval, and shared execution output. The feature is disabled by default and needs no rebuild to turn on.
 
 The owner decides who edits. **Share → Invite editors**, shown to the owner of a saved dataflow when collaboration is on, adds an account by its username and lists the editors, each with a button that removes it. An editor opens the dataflow's link (**Share → Copy dataflow link**) and edits it with the owner, whose tab saves it. Anyone else signed in who opens the link watches it, read-only, and a guest on a Curio started with `--deploy` only watches.
 

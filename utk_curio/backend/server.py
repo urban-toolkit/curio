@@ -69,7 +69,28 @@ def _run_kwargs():
     }
 
 
-if __name__ == '__main__':
+def _socketio_run_kwargs():
+    """What ``socketio.run`` is handed: ``_run_kwargs``, and the reloader's
+    exclusions, which Flask-SocketIO passes on to Werkzeug's reloader only as
+    ``reloader_options``. Without them a package install, which writes under
+    ``.curio/`` and ``site-packages/``, restarts a dev backend mid-request.
+
+    The Werkzeug server is the one Flask-SocketIO's threading mode runs on (a
+    thread per request and per WebSocket); ``allow_unsafe_werkzeug`` lets it
+    start without a terminal, as the launcher and the Docker image start it.
+    """
+    return {
+        'allow_unsafe_werkzeug': True,
+        'reloader_options': {
+            'exclude_patterns': RELOADER_EXCLUDE_PATTERNS,
+            'reloader_type': DEFAULT_RELOADER_TYPE,
+        },
+        **_run_kwargs(),
+    }
+
+
+def serve():
+    """Serve the backend, Socket.IO included, until it is stopped."""
     # The connection DuckDB 1.x's import opens holds a thread per core and
     # serves nothing here (2.0 opens it on first use only). Imported now, so a
     # later import opens no pool of its own.
@@ -78,18 +99,11 @@ if __name__ == '__main__':
         "[backend]", "so its threads stay idle in this process", import_first=True,
     )
 
-    from utk_curio.backend.config import ENABLE_COLLAB
-    if ENABLE_COLLAB:
-        # SocketIO requires its own .run() so the engineio server can attach.
-        # The Werkzeug dev server is not officially supported but is fine for
-        # local dev; allow_unsafe_werkzeug=True suppresses the refusal.
-        from utk_curio.backend.extensions import socketio
-        socketio.run(app, allow_unsafe_werkzeug=True, **_run_kwargs())
-    else:
-        app.run(
-            threaded=True,
-            exclude_patterns=RELOADER_EXCLUDE_PATTERNS,
-            reloader_type=DEFAULT_RELOADER_TYPE,
-            **_run_kwargs(),
-        )
+    # The app's own SocketIO server (extensions.init_socketio), which
+    # Flask-SocketIO keeps on the app.
+    app.extensions["socketio"].run(app, **_socketio_run_kwargs())
+
+
+if __name__ == '__main__':
+    serve()
 

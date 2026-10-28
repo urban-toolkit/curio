@@ -451,15 +451,15 @@ def main():
     parser.add_argument(
         "--collab-origins", default=None, metavar="ORIGINS",
         help=(
-            "Comma-separated origins whose pages may open a --collab connection, "
-            "or * for any (sets COLLAB_CORS_ORIGINS, default *). Use * only on "
-            "a trusted network."
+            "Comma-separated origins whose pages may open a Socket.IO connection "
+            "to the backend, or * for any (sets COLLAB_CORS_ORIGINS, default *). "
+            "Use * only on a trusted network."
         ),
     )
     parser.add_argument(
         "--collab-namespace", default=None, metavar="NAMESPACE",
         help=(
-            "Socket.IO namespace of --collab (sets COLLAB_NAMESPACE, default "
+            "The backend's Socket.IO namespace (sets COLLAB_NAMESPACE, default "
             "/collab)."
         ),
     )

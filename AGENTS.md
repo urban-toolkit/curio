@@ -55,7 +55,7 @@ Under `utk_curio/backend/app/`:
 - `runs/`: dataflow runs on the server: tables and retention (`models.py`, `repositories.py`), starting, following and cancelling one (`service.py`, `routes.py`), live runs (`jobs.py`), a dashboard viewer's runs, which need no sign-in (`viewer.py`, `viewer_routes.py`), and the outputs kept runs keep by key, for seven days, with their sweep (`kept.py`). The engine is `execution/run_engine.py` with `execution/run_plan.py`; which outputs a run saves is `execution/save_policy.py`.
 - `users/`: accounts, sessions, auth routes, capabilities, connection keys, Data source keys (`source_keys.py`), rate limits.
 - `execution/`: one node run as Play does it (`node_exec.py`, behind `/processPythonCode` and `/processJavaScriptCode`), the sandbox HTTP client (`sandbox_client.py`), headless dataflow runner (`runner.py`), per-node runtime journal, sandbox token.
-- `collaboration/`: real-time co-editing over Socket.IO (`events.py`, `room_state.py`, `roles.py`: a change to the editors told to the room).
+- `collaboration/`: real-time co-editing over Socket.IO, which every backend serves (`events.py`, `room_state.py`, `roles.py`: a change to the editors told to the room; `dataflow_docs.py`: each open dataflow's Yjs doc, its sync and awareness, its files beside the spec, and `read`, the dataflow as it is now; `doc_mapping.py`: Trill to doc and back, on the layout in `src/contracts/dataflowDoc.json`).
 - `monitor/`: monitor page backend: counters, stats, hardware, storage, error log.
 - `notebooks/`: Jupyter notebook import (`analyzer.py`).
 - `api/routes.py`: sandbox proxies, starters, file serving.
@@ -69,7 +69,7 @@ Under `utk_curio/backend/app/`:
 - `src/adapters/node/`: one behavior hook per built-in node kind (`codeNodeBehavior.tsx`, `vegaBehavior.ts`, `autkGrammarBehavior.tsx`, `dataPoolBehavior.tsx`, ...), exported from `index.ts`.
 - `src/components/UniversalNode.tsx`: the component that renders every node.
 - `src/registry/`: node descriptors and behaviors, built from installed package manifests.
-- `src/contracts/`: the constants the frontend shares with the backend, one JSON file each (`renderCauses`, `solveStopReasons`, `agentCategories`, `noteColors`, `autkGrammar`, `visDefaults`, `nodeSettings`, `dashboardRuns`), imported here and read by the backend through `utk_curio/common/shared_constants.py`; `autkGrammar.ts` holds `inputTableName` and `autkOneViewProblem`, with the cases both sides run in `autkGrammar.cases.json`.
+- `src/contracts/`: the constants the frontend shares with the backend, one JSON file each (`renderCauses`, `solveStopReasons`, `agentCategories`, `noteColors`, `autkGrammar`, `visDefaults`, `nodeSettings`, `dashboardRuns`, `dataflowDoc`: the layout of a dataflow's Yjs doc), imported here and read by the backend through `utk_curio/common/shared_constants.py`; `autkGrammar.ts` holds `inputTableName` and `autkOneViewProblem`, with the cases both sides run in `autkGrammar.cases.json`.
 - `src/api/`: REST clients (projects, connection keys, LLM configurations, monitor).
 
 ## Tests

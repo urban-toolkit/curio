@@ -190,6 +190,8 @@ repository in the Discovery Catalog. The manifest format is in
 
 Caddy terminates HTTPS and forwards traffic into the Docker container. The two `handle_path` blocks below split incoming requests by URL prefix: anything under `/curio/api/` goes to the backend on port 5002, everything else under `/curio/` goes to the frontend on port 8080. The `handle_path` directive strips the prefix before forwarding, so your backend code sees normal paths like `/live` and `/upload`.
 
+The backend's WebSocket connections, which collaboration travels over, are at the backend's address plus `/socket.io` (here `/curio/api/socket.io/`). Caddy's `reverse_proxy` passes their upgrade as it is. Another reverse proxy must forward the `Upgrade` and `Connection` headers on that path.
+
 You have two TLS options depending on what your IT department provides. Pick one.
 
 **Path A: Let's Encrypt** (port 80 reachable from the public internet, no institutional cert):
@@ -268,6 +270,8 @@ curl https://lab-name.your-uni.edu/curio/api/live
 ```
 
 Then load `https://lab-name.your-uni.edu/curio/` in a browser. If something looks off, `docker compose logs -f` shows the running container's output.
+
+**Run one backend process.** The backend keeps each open dataflow's live copy, the one everyone editing it shares, in its own memory. So one backend process serves a deployment's data directories: never run a second process, worker or replica on them, where each would keep its own copy of a dataflow and the two would drift apart.
 
 ## Updating
 
