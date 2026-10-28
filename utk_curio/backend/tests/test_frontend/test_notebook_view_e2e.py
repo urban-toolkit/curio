@@ -1089,7 +1089,7 @@ def test_back_on_the_canvas_every_node_is_where_it_was(
 
     # What the owner sees: every node at its own size and on the same spot of
     # the screen as before, not grown to the cell's size over its neighbours.
-    redrawn = _settled_boxes(page)
+    redrawn = _boxes_as_drawn(page, drawn)
     for node_id in CANVAS:
         was, now = drawn[node_id], redrawn[node_id]
         assert was["box"] and now["box"] == was["box"], (
