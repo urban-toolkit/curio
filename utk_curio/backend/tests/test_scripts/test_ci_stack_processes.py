@@ -58,3 +58,43 @@ def test_the_cgroup_reading_keeps_memory_and_processes_apart(tmp_path):
     assert probe.cgroup(tmp_path) == {
         "current": 8000, "peak": 9000, "pids": 612, "anon": 5000, "file": 2000, "active_file": 1500,
     }
+
+
+#: Part of a process's smaps: a file mapping, the brk heap, a large anonymous
+#: mapping with lazily freed pages, an arena-sized one, a guard page and a
+#: small one.
+SMAPS = """\
+55d5c3a4e000-55d5c3a50000 r--p 00000000 08:01 1234 /usr/bin/python3.12
+Size:                  8 kB
+Rss:                   8 kB
+VmFlags: rd mr mw me
+55d5c4000000-55d5c6000000 rw-p 00000000 00:00 0                          [heap]
+Size:              32768 kB
+Rss:               26000 kB
+7f0000000000-7f0040000000 rw-p 00000000 00:00 0
+Size:            1048576 kB
+Rss:              500000 kB
+LazyFree:         120000 kB
+7f1000000000-7f1004000000 rw-p 00000000 00:00 0
+Size:              65536 kB
+Rss:               40000 kB
+7f2000000000-7f2000001000 ---p 00000000 00:00 0
+Size:                  4 kB
+Rss:                   0 kB
+7f3000000000-7f3000080000 rw-p 00000000 00:00 0
+Size:                512 kB
+Rss:                 512 kB
+"""
+
+
+def test_a_processs_anonymous_mappings_are_kept_by_size_and_lazily_freed_bytes(tmp_path):
+    probe = _load()
+    (tmp_path / "123").mkdir()
+    (tmp_path / "123" / "smaps").write_text(SMAPS)
+    kib = 1024
+    assert probe.anon_maps("123", proc=tmp_path) == {
+        "heap": 26000 * kib, "anon_maps": 3, "anon_total": (500000 + 40000 + 512) * kib,
+        "biggest": [500000 * kib, 40000 * kib, 512 * kib],
+        "biggest_size": [1048576 * kib, 65536 * kib, 512 * kib],
+        "lazy_free": 120000 * kib, "under_1m": 512 * kib,
+    }
