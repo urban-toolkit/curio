@@ -400,6 +400,9 @@ def test_a_message_that_names_a_skill_hands_it_to_the_run_and_the_conversation_k
 def test_a_message_names_no_skill_unless_it_starts_with_one_its_run_lists(
     client, user_and_token, tmp_curio, scripted, message,
 ):
+    """A path, a skill the preamble holds, a name the run does not list or a
+    name after the first word hands nothing; the same words after a listed
+    skill's ``/<name>`` hand that skill."""
     pid = _project(client, scripted)
     att = _attach(client, scripted, pid, NB)
     testing_provider.push_reply("Done.")
@@ -408,6 +411,46 @@ def test_a_message_names_no_skill_unless_it_starts_with_one_its_run_lists(
     assert _wrapped(system) == []
     assert "named" not in _turns(client, scripted, pid, att)[-1]["execution"]["pins"].get("skills", {})
     assert "skills" not in payload
+
+    testing_provider.reset()
+    testing_provider.push_reply("Done.")
+    named = _run(client, scripted, pid, att, f"/provenance {message}")
+    (system, *_), = _run_calls()
+    assert _wrapped(system) == ["provenance"] and named["skills"] == {"named": ["provenance"]}
+
+
+def test_the_stream_names_the_skills_its_reply_used_as_the_saved_turn_does(
+    client, user_and_token, tmp_curio, scripted,
+):
+    """The chat panel lands a streamed reply from the stream's ``done``, so it
+    carries the skills the run held and loaded, as the saved turn's record
+    and the blocking answer do."""
+
+    def stream(message: str) -> dict:
+        resp = client.post(f"/api/agents/projects/{pid}/attachments/{att}/run/stream",
+                           json={"message": message}, headers=scripted)
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        events = []
+        for block in resp.get_data(as_text=True).strip().split("\n\n"):
+            lines = dict(line.split(": ", 1) for line in block.splitlines() if ": " in line)
+            events.append((lines["event"], json.loads(lines["data"])))
+        return next(payload for name, payload in events if name == "done")
+
+    pid = _project(client, scripted)
+    att = _attach(client, scripted, pid, NB)
+    testing_provider.push_reply("Done.")
+    done = stream("/map-edits remove the two tallest towers")
+    record = _turns(client, scripted, pid, att)[-1]["execution"]
+    assert done["skills"] == {"named": ["map-edits"]}
+    assert done["skills"] == {key: names for key, names in record["pins"]["skills"].items() if key != "catalog"}
+    assert "skillsLoaded" not in done
+
+    testing_provider.reset()
+    testing_provider.push_reply(_tail({"toolRequest": {"tool": "skill.read", "params": {"name": "widgets"}}}))
+    testing_provider.push_reply("Loaded.")
+    done = stream("and a widget?")
+    assert done["skills"] == {"kept": ["map-edits"]} and done["skillsLoaded"] == ["widgets"]
+    assert _turns(client, scripted, pid, att)[-1]["execution"]["skillsLoaded"] == ["widgets"]
 
 
 def test_a_named_skill_the_chat_holds_already_is_not_handed_twice(client, user_and_token, tmp_curio, scripted):

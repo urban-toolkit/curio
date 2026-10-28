@@ -100,13 +100,21 @@ describe("the line under a reply", () => {
     const second = renderTurn({ role: "agent", text: "Hello." });
     expect(line()).toBeNull();
     second.unmount();
-    renderTurn({
+    const failed = renderTurn({
       role: "agent",
       text: "(error) the run failed",
       error: true,
       execution: { executionId: "e1", usage: null, status: "error", pins: { skills: { handed: ["widgets"] } } },
     });
     expect(line()).toBeNull();
+    failed.unmount();
+    // The same record on a reply that did not fail names the skill.
+    renderTurn({
+      role: "agent",
+      text: "Hello.",
+      execution: { executionId: "e1", usage: null, status: "ok", pins: { skills: { handed: ["widgets"] } } },
+    });
+    expect(line()).toHaveTextContent("Skills: widgets");
   });
 });
 
