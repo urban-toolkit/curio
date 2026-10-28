@@ -275,17 +275,24 @@ PACKAGE_WRITING = ("package.build", "package.extend", "node.kind.author")
 def test_a_package_writing_run_holds_the_backend_contract_once(pinned, client, user_and_token, record_property):
     """The package backend contract reaches each package-writing run once: as
     the skill ``package-contract`` its system turn is handed, not again in its
-    task's inputs. Each run's task turn, the messages after its system turn,
-    is recorded by its size before any check, so a run of this test on any
-    checkout shows what the run carries beside its system turn."""
+    task's inputs. Each run is asked for as a chat delegates it, its inputs
+    enriched as the runtime enriches them (``turns/delegates``: the
+    build-request contract and the packages that exist). Each run's task
+    turn, the messages after its system turn, is recorded by its size before
+    any check, so a run of this test on any checkout shows what the run
+    carries beside its system turn."""
+    from utk_curio.backend.app.agents.application.turns import delegates
+
     user, token = user_and_token
     user_key = _user_dir_key(user)
     project_id = _dataflow(client, token)
     turns = {}
     for capability in PACKAGE_WRITING:
+        inputs = delegates._enriched_delegate_inputs(user_key, project_id, {}, capability, {"intent": TASK})
+        assert "buildRequestContract" in inputs, capability
         _script_endpoint()
         status, text, _record = delegation.run_delegate(
-            user_key, project_id, NODE_BUILDER, capability, {"intent": TASK}, ENDPOINT,
+            user_key, project_id, NODE_BUILDER, capability, inputs, ENDPOINT,
             parent_execution_id="prompt-sizes", parent_coord=PARENT, attachment_id=None,
         )
         calls = testing_provider.captured()
