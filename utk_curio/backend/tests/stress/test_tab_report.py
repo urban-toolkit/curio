@@ -145,8 +145,8 @@ class DocFilesTest(unittest.TestCase):
         self.assertEqual(files["without_log"], ["p3"])
         self.assertEqual({entry["project_id"] for entry in files["files"]}, {"p1", "p2"})
         row = next(line for line in _markdown(_tier(doc_files=files)).splitlines()
-                   if line.startswith("| 5 |"))
-        self.assertIn("| 2 | 5.9 KiB | 5.0 KiB |", row)
+                   if line.startswith("| 5 | not measured"))  # no backend reading given
+        self.assertTrue(row.endswith("| 2 | 5.9 KiB | 5.0 KiB |"), row)
 
 
 class TheReportNamesTheTabsWireTest(unittest.TestCase):
