@@ -16,10 +16,27 @@
  *   frame would otherwise post thousands of times. The server rate-limits too,
  *   but the cheapest request is the one never sent.
  * - **It is installed once.** A second install would double every report.
+ * - **It leaves out the browser's ResizeObserver loop notice**, which is no
+ *   error: see `isResizeObserverLoopNotice`.
  */
 import { postClientError } from "../api/monitorApi";
 
 export const MAX_REPORTS_PER_LOAD = 5;
+
+/**
+ * What the browser says, as a window `error` event with no error object, when
+ * a ResizeObserver callback changes a size it observes, so that the new size
+ * reaches its observer a frame later. Nothing threw, so it is not reported.
+ * webpack.config.js keeps it off the dev server's overlay too.
+ */
+export const RESIZE_OBSERVER_LOOP_NOTICE =
+  "ResizeObserver loop completed with undelivered notifications.";
+
+/** Whether *event* is that notice: its exact words, with no error object.
+ *  An `Error` thrown with the same words is still an error. */
+export function isResizeObserverLoopNotice(event: Pick<ErrorEvent, "message" | "error">): boolean {
+  return event.error == null && event.message === RESIZE_OBSERVER_LOOP_NOTICE;
+}
 
 let installed = false;
 let sent = 0;
@@ -50,6 +67,9 @@ export function installClientErrorReporter(): void {
   installed = true;
 
   window.addEventListener("error", (event: ErrorEvent) => {
+    // Before the count: a page whose layout loops every frame would spend
+    // every report it may send on the notice, and its real errors go unsent.
+    if (isResizeObserverLoopNotice(event)) return;
     const error = event.error;
     report(
       event.message || error?.message || "Unhandled error",
