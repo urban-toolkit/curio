@@ -376,9 +376,13 @@ const FlowProvider = ({
     // and a view drawn again without it empties them (#884).
     const { clearViewTags } = useSelectionTags({ interactions, reactFlow, setNodes, markNodeStaleRef, markDirtyRef });
 
+    // A peer's change that lands here is the dataflow's: the owner's tab, the
+    // one that saves it, marks it Unsaved, so its next save keeps the change.
+    // Assigned once workflowOps exists, as markDirtyRef is.
+    const remoteEditRef = useRef<() => void>(() => {});
     useCollaborationSync({
         collab, applyNewOutput, interactionsCallback, applyNewPropagation, setNodes, setEdges,
-        takeCanvasPosition: notebook.takeCanvasPosition,
+        takeCanvasPosition: notebook.takeCanvasPosition, remoteEditRef,
     });
     // NEW CODE
 
@@ -404,6 +408,9 @@ const FlowProvider = ({
     markNodeStaleRef.current = workflowOps.markNodeStale;
     markNodeErroredRef.current = workflowOps.markNodeErrored ?? (() => {});
     markDirtyRef.current = workflowOps.markDirty;
+    remoteEditRef.current = () => {
+        if (workflowOps.viewerMode === "owner") workflowOps.markDirty();
+    };
     scenariosNowRef.current = () => workflowOps.scenariosRef?.current ?? workflowOps.scenarios ?? [];
 
     useDashboardPinSave({

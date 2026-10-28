@@ -9,6 +9,7 @@ import type { IOutput, IPropagation } from "./flowTypes";
 
 export function useCollaborationSync({
     collab, applyNewOutput, interactionsCallback, applyNewPropagation, setNodes, setEdges, takeCanvasPosition,
+    remoteEditRef,
 }: {
     collab: ReturnType<typeof useCollab>;
     applyNewOutput: (newOutput: IOutput) => void;
@@ -18,6 +19,10 @@ export function useCollaborationSync({
     setEdges: React.Dispatch<React.SetStateAction<Edge[]>>;
     /** The notebook view keeps canvas spots itself; true when it took this one. */
     takeCanvasPosition?: (nodeId: string, position: { x: number; y: number }) => boolean;
+    /** Called after a peer's change lands on this canvas. The owner's tab
+     *  marks the dataflow Unsaved there, so its saves keep an editor's change
+     *  as they keep its own. */
+    remoteEditRef?: React.MutableRefObject<() => void>;
 }) {
     // -----------------------------------------------------------------
     // Collaboration: receive-side graph synchronization.
@@ -38,6 +43,7 @@ export function useCollaborationSync({
     // -----------------------------------------------------------------
     useEffect(() => {
         if (!collab.enabled) return;
+        const landed = () => remoteEditRef?.current();
         const localOutputCallback = (nodeId: string, output: any, options?: SelectionEchoOptions) => {
             applyNewOutput({ nodeId, output, ...options });
         };
@@ -74,6 +80,7 @@ export function useCollaborationSync({
                     data: rebuildNodeData(remote.data || {}),
                 });
             });
+            landed();
         }));
 
         unsubs.push(collab.onRemote("node_removed", (payload: any) => {
@@ -84,6 +91,7 @@ export function useCollaborationSync({
             // sender's view (ReactFlow auto-cascades these on the sender
             // side via its internal node-delete flow).
             setEdges((eds) => eds.filter((e) => e.source !== id && e.target !== id));
+            landed();
         }));
 
         unsubs.push(collab.onRemote("edge_added", (payload: any) => {
@@ -93,12 +101,14 @@ export function useCollaborationSync({
                 if (eds.some((e) => e.id === remote.id)) return eds;
                 return eds.concat(remote);
             });
+            landed();
         }));
 
         unsubs.push(collab.onRemote("edge_removed", (payload: any) => {
             const id = payload?.edgeId;
             if (!id) return;
             setEdges((eds) => eds.filter((e) => e.id !== id));
+            landed();
         }));
 
         // Apply remote node patches (currently just position drags). Routing
@@ -130,8 +140,9 @@ export function useCollaborationSync({
                     return next;
                 }),
             );
+            landed();
         }));
 
         return () => unsubs.forEach((u) => u());
-    }, [collab.enabled, collab.onRemote, setNodes, setEdges, interactionsCallback, takeCanvasPosition]);
+    }, [collab.enabled, collab.onRemote, setNodes, setEdges, interactionsCallback, takeCanvasPosition, remoteEditRef]);
 }

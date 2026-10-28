@@ -133,6 +133,20 @@ class SelectionTest(unittest.TestCase):
         self.assertEqual([i.nodeid for i in first], ["t0", "t1", "t2"])
         self.assertEqual([i.nodeid for i in second], ["long", "short"])
 
+    def test_a_test_that_needs_collaboration_runs_on_the_collab_runner_alone(self):
+        """The one stack with --collab (the e2e-collab job) runs the tests
+        marked needs_collab, and nothing else; the other runners leave them
+        out, whatever their WebGPU."""
+        def collab(group, gpu):
+            return SimpleNamespace(nodeid=group, group=group, gpu=gpu,
+                                   get_closest_marker=lambda name: object() if name == "needs_collab" else None)
+
+        items = self.items(("a", True), ("b", False)) + [collab("c", False), collab("d", True)]
+        picked = {runner: {i.group for i in runner_split.select(items, runner, None)[0]}
+                  for runner in ("utk", "desktop", "collab")}
+        self.assertEqual(picked, {"utk": {"a"}, "desktop": {"b"}, "collab": {"c", "d"}})
+        self.assertEqual({i.group for i in runner_split.select(items, None, None)[0]}, {"a", "b", "c", "d"})
+
     def test_a_bad_setting_is_refused(self):
         with self.assertRaises(ValueError):
             runner_split.select([], "gpu", None)
@@ -230,23 +244,25 @@ class NoTestIsLostTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        # The whole suite, utk's share and every desktop part, several at once
-        # (_support/collection.py).
-        everything, utk, *shards = collection.collect_each(
-            [cls.command(), cls.command(CURIO_E2E_RUNNER="utk")]
+        # The whole suite, utk's share, the collab job's and every desktop
+        # part, several at once (_support/collection.py).
+        everything, utk, collab, *shards = collection.collect_each(
+            [cls.command(), cls.command(CURIO_E2E_RUNNER="utk"), cls.command(CURIO_E2E_RUNNER="collab")]
             + [cls.command(CURIO_E2E_RUNNER="desktop", CURIO_E2E_PART=f"{k}/{cls.SHARDS}")
                for k in range(1, cls.SHARDS + 1)],
             BACKEND)
-        cls.everything, cls.utk, cls.shards = everything, utk, shards
+        cls.everything, cls.utk, cls.collab, cls.shards = everything, utk, collab, shards
 
     def test_every_test_runs_on_exactly_one_runner_and_shard(self):
-        everything, utk, shards = self.everything, self.utk, self.shards
-        placed = utk + [nodeid for shard in shards for nodeid in shard]
+        everything, utk, collab, shards = self.everything, self.utk, self.collab, self.shards
+        placed = utk + collab + [nodeid for shard in shards for nodeid in shard]
         self.assertEqual(sorted(placed), sorted(everything),
                          "the runners and shards do not add up to the whole suite")
         self.assertEqual(len(placed), len(set(placed)), "a test would run twice")
         self.assertTrue(utk, "nothing selected for the GPU runner")
         self.assertTrue(all(shards), "an empty desktop shard")
+        self.assertTrue(any("test_collaboration_editors_e2e.py::" in nodeid for nodeid in collab),
+                        f"the collab runner does not run the collaboration e2e: {collab}")
         # The modules --with-examples adds are in the check.
         self.assertTrue(any("test_shipped_scenario_drops_e2e.py::" in nodeid for nodeid in placed))
 

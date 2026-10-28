@@ -285,6 +285,11 @@ def pytest_configure(config):
     )
     config.addinivalue_line(
         "markers",
+        "needs_collab: needs a stack started with --collab, which only the "
+        "e2e-collab job runs (runner_split.py)",
+    )
+    config.addinivalue_line(
+        "markers",
         "only_workflows(*basenames): a test_workflows test deselected for every "
         "other workflow",
     )

@@ -1,8 +1,11 @@
 /**
  * Collapsible right-docked panel that surfaces real-time collaboration
- * state: connected users, pending code-change proposals, and a recent
- * activity feed. ``CanvasSidePanels`` places it on the canvas's right edge,
- * under the top bar.
+ * state: connected users with their roles, pending code-change proposals,
+ * and a recent activity feed. ``CanvasSidePanels`` places it on the canvas's
+ * right edge, under the top bar.
+ *
+ * Approve and Reject are offered on another participant's proposal to those
+ * who edit the dataflow: a watcher has no vote.
  *
  * Renders nothing when ``--collab`` is off or the panel is closed.
  */
@@ -10,6 +13,7 @@
 import React from "react";
 
 import { useCollab } from "../../providers/CollaborationProvider";
+import { canEditRole, isOwnParticipant } from "../../providers/collab/participants";
 
 const PANEL_WIDTH = 260;
 
@@ -41,9 +45,14 @@ export const CollaborationSidePanel: React.FC = () => {
                     <Empty>Nobody else is here.</Empty>
                 ) : (
                     collab.users.map((u) => (
-                        <Row key={u.sid || u.user_id}>
+                        <Row key={u.participant_id || u.user_id}>
                             <Avatar name={u.name || u.username} />
                             <span>{u.name || u.username}</span>
+                            {u.role && (
+                                <span style={{ color: "#666" }} data-collab-role={u.role}>
+                                    {u.role}
+                                </span>
+                            )}
                         </Row>
                     ))
                 )}
@@ -54,9 +63,8 @@ export const CollaborationSidePanel: React.FC = () => {
                     <Empty>No pending changes.</Empty>
                 ) : (
                     collab.proposals.map((p) => {
-                        const mine =
-                            collab.currentUserId != null &&
-                            p.proposed_by?.user_id === collab.currentUserId;
+                        const mine = isOwnParticipant(collab.participantId, p.proposed_by);
+                        const votes = !mine && canEditRole(collab.role);
                         return (
                             <div
                                 key={p.id}
@@ -80,7 +88,7 @@ export const CollaborationSidePanel: React.FC = () => {
                                     by {p.proposed_by?.username || "?"} ·{" "}
                                     {p.approvals.length} approval(s)
                                 </div>
-                                {!mine && (
+                                {votes && (
                                     <div style={{ display: "flex", gap: 4 }}>
                                         <button
                                             type="button"

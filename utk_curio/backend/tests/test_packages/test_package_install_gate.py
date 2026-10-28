@@ -220,7 +220,12 @@ def _guest_draft() -> dict:
 
 
 @pytest.fixture
-def guest_project(client, shared_guest_token, auth_on):
+def guest_project(client, shared_guest_token, auth_on, monkeypatch):
+    """A dataflow of the shared guest's. A hosted guest saves none: on a
+    deployed Curio its dataflows are the examples the server seeds. So this
+    one is saved as the local guest saves one, with sign-in off, and the
+    test then runs with sign-in on, as a hosted guest."""
+    monkeypatch.setattr(config, "CURIO_NO_AUTH", True)
     resp = client.post(
         "/api/projects",
         json={"name": "guest-proj",
@@ -228,6 +233,7 @@ def guest_project(client, shared_guest_token, auth_on):
               "outputs": []},
         headers=_auth(shared_guest_token),
     )
+    monkeypatch.setattr(config, "CURIO_NO_AUTH", False)
     assert resp.status_code == 201, resp.get_data(as_text=True)
     return resp.get_json()["id"]
 
