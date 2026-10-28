@@ -6,7 +6,7 @@ Curio has six catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you 
 
 This guide is in six parts, plus operator notes:
 
-- [1. What is the Agent Catalog?](#1-what-is-the-agent-catalog): agents, the ones that ship and how each picks what to run, and the storage layers.
+- [1. What is the Agent Catalog?](#1-what-is-the-agent-catalog): agents, the ones that ship, the skills they read and how each picks what to run, and the storage layers.
 - [2. Surfaces and workflows](#2-surfaces-and-workflows): the three places you manage agents, the action matrix, walkthroughs, and catalog settings.
 - [3. Using an agent in a dataflow](#3-using-an-agent-in-a-dataflow): adding, attaching, and the difference between the two.
 - [4. LLM configurations](#4-llm-configurations): which model answers, and where it is set.
@@ -47,36 +47,82 @@ Agents build with Curio's own nodes, [functions](../skills/node-functions/SKILL.
 
 An agent uses only what you have: the code it writes reads your Data Catalog's datasets, runs the models you added and uses the keys you saved, calling only the functions and importing only the modules its node gets.
 
-**Seven agents ship with Curio.** Four of them are the catalog: **Researcher**, **Node Builder**, **Dataflow Builder** and **Dataset Finder**. This guide uses three words for what an agent does:
+**Seven agents ship with Curio.** Four of them are the catalog: **Researcher**, **Node Builder**, **Dataflow Builder** and **Dataset Finder**. This guide uses four words for what an agent does and knows:
 
 - **In chat:** what you can ask an agent where you dropped it.
 - **Tools:** the actions an agent takes during a chat, such as reading the dataflow, searching the web, proposing a node or proposing a package install. Anything that changes your dataflow is a proposal you apply.
 - **Modes:** what another agent, Solve or the agent itself can ask it to do. A mode runs as a separate call with no tools, on evidence Curio gathers for it, and has its own prompt when it needs one. You never chat with a mode. Each mode's capability id and prompt are listed under [Modes](#modes).
+- **Skills:** what tells an agent how to do a specific task, such as writing a Map Editor node's edits. See [Skills](#skills).
 
-| Agent | In chat | Tools | Modes (who asks) |
-|---|---|---|---|
-| **Researcher** | Explains a node or the dataflow, diagnoses errors, helps define what to build, answers web questions as notes, checks facts | Read the dataflow and a node's last run; search and read the web; propose notes as Note nodes; propose a notes package | Notes from search results (Dataflow Builder); Check a fact (Node Builder, Dataset Finder, Dataflow Builder) |
-| **Node Builder** | Builds a node, rewrites a node's content, changes a node's settings, suggests nodes for a connection, finds or writes node types | Read the dataflow, a node's last run and its history; search the Data and Model Catalogs; propose a node, a content change, a settings change, a package install or a package draft | Write a node's content (Node Builder, Dataflow Builder, Solve); Recommend packages (Dataflow Builder); Write a package (Node Builder, Researcher, Dataflow Builder) |
-| **Dataflow Builder** | Plans a whole dataflow, then solves its nodes | Read the dataflow, runs and node histories; search the Scenario Catalog; propose a plan, a node, a settings change or a package draft; read worked examples | None |
-| **Dataset Finder** | Finds datasets in the Data Catalog and in portals | Search the catalog and portals; propose a download | Find datasets (Node Builder, Dataflow Builder, Solve) |
+| Agent | In chat | Tools | Modes (who asks) | Skills |
+|---|---|---|---|---|
+| **Researcher** | Explains a node or the dataflow, diagnoses errors, helps define what to build, answers web questions as notes, checks facts | Read the dataflow and a node's last run; search and read the web; propose notes as Note nodes; propose a notes package | Notes from search results (Dataflow Builder); Check a fact (Node Builder, Dataset Finder, Dataflow Builder) | Every skill but the core three, loaded in chat when a task needs one |
+| **Node Builder** | Builds a node, rewrites a node's content, changes a node's settings, suggests nodes for a connection, finds or writes node types | Read the dataflow, a node's last run and its history; search the Data and Model Catalogs; propose a node, a content change, a settings change, a package install or a package draft | Write a node's content (Node Builder, Dataflow Builder, Solve); Recommend packages (Dataflow Builder); Write a package (Node Builder, Researcher, Dataflow Builder) | Every skill but the core three, loaded in chat; its modes are handed those of what they write |
+| **Dataflow Builder** | Plans a whole dataflow, then solves its nodes | Read the dataflow, runs and node histories; search the Scenario Catalog; propose a plan, a node, a settings change or a package draft; read worked examples | None | Every skill but the core three, loaded in chat |
+| **Dataset Finder** | Finds datasets in the Data Catalog and in portals | Search the catalog and portals; propose a download | Find datasets (Node Builder, Dataflow Builder, Solve) | `catalogs`, loaded in chat and handed to Find datasets |
 
 The other three are helpers. They have modes only, never a chat: they are never listed, added or attached, and a catalog agent asks for their modes without them being added to the dataflow.
 
-| Helper | Modes (who asks) |
-|---|---|
-| **Dataflow Planner** | Plan a follow-up from a node's run (Node Builder); bind the keywords of a description (Dataset Finder); plan a dataflow's tasks, refresh them, check a plan's coherence and extract a description's keywords (no agent asks for these) |
-| **Dataflow Reader** | Explain the whole dataflow (Dataflow Builder); suggest its next steps (Dataset Finder, Dataflow Builder) |
-| **Generated Content Evaluator** | Check generated node content against its goal (Node Builder, Dataflow Builder) |
+| Helper | Modes (who asks) | Skills |
+|---|---|---|
+| **Dataflow Planner** | Plan a follow-up from a node's run (Node Builder); bind the keywords of a description (Dataset Finder); plan a dataflow's tasks, refresh them, check a plan's coherence and extract a description's keywords (no agent asks for these) | Those of the features the dataflow holds, handed to the modes that read it |
+| **Dataflow Reader** | Explain the whole dataflow (Dataflow Builder); suggest its next steps (Dataset Finder, Dataflow Builder) | Those of the dataflow's kinds of node and features |
+| **Generated Content Evaluator** | Check generated node content against its goal (Node Builder, Dataflow Builder) | Those of the kind of node it checks |
 
 Each of the seven is a folder in Curio's [`agents/`](../agents/), `agents/<agentId>@1/`, in the format of an agent you import ([The manifest](#6-the-manifest)). Its manifest's `catalog` says whether it is a catalog agent or a helper, and its place in the order the lists of who asks follow.
 
+### Skills
+
+Each skill is a folder of Curio's [`skills/`](../skills/) that holds a `SKILL.md` in the [Agent Skills format](https://agentskills.io/specification): instructions, procedural knowledge, reference facts and starter templates. A skill does nothing on its own. An **agent** decides and acts, with its own tools, its model and its memory, the conversation of each chat, and reads a skill when a task needs it. One skill serves many agents, and an agent uses many skills.
+
+How a call holds its skills:
+
+- **The core skills,** `nodes`, `node-control` and `compatibility`, are in the preamble every agent Curio ships reads, so every call holds them.
+- **In chat,** an agent lists its other skills, each by its name and description, and loads one with its tool **skill.read** when a task matches it. A chat attached to a node holds the skills of that kind of node from its first message. A skill a chat loaded stays for the rest of its conversation, and is never loaded twice. Loading a skill uses none of a reply's three tool rounds, for up to four skills a reply.
+- **A mode** has no tools, so Curio hands it the skills its task needs, with no extra call: the skills of the node it writes or checks, those of node code when it writes a package or builds a node for another agent, those of the kinds of node and the features of the dataflow when it reads the whole dataflow, and the mode's own. In Solve, the attempt after a check refused the one before is also handed the skill that answers that check: `map-edits` for the Map Editor's check, `vega-lite-starter` or `autark` for the check of a chart's or a map's document, `node-functions` for a function Curio does not give node code, `catalogs` for a source no catalog holds, and `dashboards` for a pinned tile that loads its own data.
+
+An agent's manifest names its skills ([`skills`](#6-the-manifest)). An agent of yours that names none lists every skill Curio ships but those its preamble holds.
+
+**Curio's skills.** A run is handed the skills that serve the node it writes or checks, or, when it reads the whole dataflow, those that serve its nodes and features:
+
+| Skill | It tells an agent how to | It serves |
+|---|---|---|
+| `nodes` | pick node types, knowing what each takes and gives | every call, in the preamble |
+| `node-control` | change a node's content, settings and runs as Curio allows | every call, in the preamble |
+| `compatibility` | connect outputs only to inputs that accept them | every call, in the preamble |
+| `node-functions` | call Curio's `curio_*` functions from node code | nodes whose content is code: Data Loading, Data Transformation, Python, JavaScript, Data Summary, Data Export and Map Editor |
+| `catalogs` | find and load datasets, models and keys from the catalogs | nodes whose content is code |
+| `widgets` | declare, place and set widgets, dataset widgets and values several nodes share | nodes whose content is code, Vega-Lite and Autark nodes |
+| `selection-chips` | read a view's selections through selection tags | nodes whose content is code, Vega-Lite and Autark nodes |
+| `vega-lite-starter` | start a Vega-Lite chart from its node's starter spec | Vega-Lite nodes |
+| `vega-lite-maps` | draw a map with Vega-Lite | Vega-Lite nodes |
+| `autark` | write an Autark document, from the grammar Curio ships | Autark nodes |
+| `autark-starter` | start an Autark map from its node's starter document | Autark nodes |
+| `map-edits` | write a Map Editor node's call and edits, keeping filters in their own node | Map Editor nodes |
+| `interaction-edges` | link views with interaction edges and Data Pools | Data Pools, and dataflows with interaction edges |
+| `scenarios` | work with scenario boxes, their chips and colors | dataflows with scenario boxes |
+| `dashboards` | keep a dataflow's pinned tiles working on its dashboard | dataflows with pinned tiles |
+| `provenance` | read a node's history and the agents' entries in it | nothing: a chat loads it when a task needs it |
+
+**Each agent's skills,** as its manifest names them:
+
+| Agent | Skills | Its modes are handed |
+|---|---|---|
+| **Researcher** | `node-functions`, `catalogs`, `widgets`, `selection-chips`, `autark`, `vega-lite-starter`, `autark-starter`, `vega-lite-maps`, `interaction-edges`, `map-edits`, `scenarios`, `dashboards`, `provenance` | Notes from search results and Check a fact: those of a node their task names |
+| **Node Builder** | `node-functions`, `catalogs`, `widgets`, `selection-chips`, `autark`, `vega-lite-starter`, `autark-starter`, `vega-lite-maps`, `interaction-edges`, `map-edits`, `scenarios`, `dashboards`, `provenance` | Write a node's content, Solve's included: the node's. Write a package, and build a node or a dataset's fetch for the Dataset Finder: those of node code. Recommend packages: none |
+| **Dataflow Builder** | `node-functions`, `catalogs`, `widgets`, `selection-chips`, `autark`, `vega-lite-starter`, `autark-starter`, `vega-lite-maps`, `interaction-edges`, `map-edits`, `scenarios`, `dashboards`, `provenance` | No modes |
+| **Dataset Finder** | `catalogs` | Find datasets: `catalogs` |
+| **Dataflow Planner** | `interaction-edges`, `scenarios`, `dashboards` | The modes that read the dataflow: those of the features it holds |
+| **Dataflow Reader** | `node-functions`, `catalogs`, `widgets`, `selection-chips`, `autark`, `vega-lite-starter`, `autark-starter`, `vega-lite-maps`, `interaction-edges`, `map-edits`, `scenarios`, `dashboards` | Explain and Suggest next steps: those of the dataflow's kinds of node and features |
+| **Generated Content Evaluator** | `node-functions`, `catalogs`, `widgets`, `selection-chips`, `autark`, `vega-lite-starter`, `autark-starter`, `vega-lite-maps`, `map-edits` | Check generated content: those of the node it checks |
+
 ### How an agent picks what to run
 
-- Every model call is the shared preamble plus one instruction, never two combined.
+- Every model call is the shared preamble, the [skills](#skills) the call holds and one instruction, never two instructions combined.
 - A message you type goes to the agent's chat instruction, and the model follows its rules: in the same call that answers you, it decides what you asked for and which tools to use.
 - A mode runs only when another agent, Solve or the agent itself asks for it, as a separate call with no tools.
 - Curio picks the file from what the call is for; the model does not.
-- Curio finds the agent for a job by the capability its manifest declares, never by its name or id (see [Capabilities](#capabilities)). An agent of your own that declares what a shipped one does is picked where the shipped one would be.
+- Curio finds the agent for a task by the capability its manifest declares, never by its name or id (see [Capabilities](#capabilities)). An agent of your own that declares what a shipped one does is picked where the shipped one would be.
 
 Each agent's prompts, by the key its manifest gives them:
 
@@ -176,6 +222,7 @@ Agent state lives in files under `.curio/` and inside each project's spec; the a
 | Layer | On disk | Written by |
 |---|---|---|
 | **Shipped agents**, the seven Curio ships | `agents/<agentId>@<major>/` beside `utk_curio/` (`utk_curio/_shipped/agents/` in a pip install), each a `manifest.json` and `prompts/` | Nothing: Curio reads them. Adding one to a project copies it into your definition store. |
+| **Shipped skills**, the [skills](#skills) agents read | `skills/<name>/SKILL.md` beside `utk_curio/` (`utk_curio/_shipped/skills/` in a pip install) | Nothing: Curio reads them. |
 | **Shared catalog**, published agents | `.curio/agents-catalog/<agentId>@<major>/` | **Publish** adds one; **Unpublish** removes it. |
 | **Definition store**, the agents themselves | `.curio/users/<user-key>/agents/<agentId>@<major>/` (`manifest.json` and `prompts/`) | **Import agent** adds one; adding a built-in or published agent copies it here. |
 | **Per-user list**, the agents in all your projects | `.curio/users/<user-key>/imported-agents.json` | **Add to all projects** and **Import agent** add an entry; **Remove from all projects** drops it. |
@@ -201,7 +248,7 @@ There are three places you work with agents, and as with the Data Catalog they a
 - **The Agent Catalog drawer**, inside the canvas, is the working surface. Open it from the **Agent Catalog** button in the top bar, or from the left Tools panel's **Agent Catalog** dropdown and **Browse Agent Catalog +**. Its tabs are **Browse all** (the default) and **In project**, and everything scoped to the open dataflow happens here, including **Import agent** in its footer.
 - **The Agent palette**, the **Agent Catalog** dropdown in the left Tools panel, holds the agents already added to this dataflow, ready to drag onto a node, a connection, or the canvas. It sits below the **Node Catalog** and **Data Catalog** dropdowns.
 
-**View details**, on any agent card and beside each agent in the palette, opens the agent's details window. Its first three sections use the three words defined in [The agents](#the-agents): **In chat** says what you can ask the agent where you drop it, **Tools** lists the actions it takes in that chat, what it reads before what it proposes, and **Modes (who asks)** lists each mode with the agents, or Solve, that ask for it, and the mode's capability ids beneath it. **Agent info** gives its identifier, version, category, publisher, what it attaches to and the model it runs on. **Prompts** shows each prompt file, labeled by when it runs: every call, a message you type, or the mode that reads it. **Requires** names the agents it cannot work without, and **Export** saves the agent as one file.
+**View details**, on any agent card and beside each agent in the palette, opens the agent's details window. Its first three sections are named by three of the words defined in [The agents](#the-agents): **In chat**; **Tools**, which also says what the agent reads before what it proposes; and **Modes (who asks)**, each mode with the agents, or Solve, that ask for it, and the mode's capability ids beneath it. **Agent info** gives its identifier, version, category, publisher, what it attaches to and the model it runs on. **Prompts** shows each prompt file, labeled by when it runs: every call, a message you type, or the mode that reads it. **Requires** names the agents it cannot work without, and **Export** saves the agent as one file.
 
 ### Action matrix
 
@@ -273,9 +320,9 @@ A reply of Node Builder or Dataflow Builder that carries no review card says **N
 
 ### Required agents
 
-An agent may require others: the agents a job of its own runs without asking the model, such as the Node Builder and the Dataset Finder that the Dataflow Builder's Solve runs. The drawer says so before you click: the button reads **Add to project (+2 required)**, and its tooltip names what else will be added. Adding brings in all of them at once. A required agent that ships with Curio is added at its shipped version; one of your own at the highest version in your imports or the catalog.
+An agent may require others: the agents a task of its own runs without asking the model, such as the Node Builder and the Dataset Finder that the Dataflow Builder's Solve runs. The drawer says so before you click: the button reads **Add to project (+2 required)**, and its tooltip names what else will be added. Adding brings in all of them at once. A required agent that ships with Curio is added at its shipped version; one of your own at the highest version in your imports or the catalog.
 
-The job itself goes to the agent in the dataflow that declares its capability: the one the requiring agent's `delegatesTo` names first, else any other that declares it and that `delegatesTo` does not name. So an agent of your own that requires your own copies of the Node Builder and the Dataset Finder runs them.
+The task itself goes to the agent in the dataflow that declares its capability: the one the requiring agent's `delegatesTo` names first, else any other that declares it and that `delegatesTo` does not name. So an agent of your own that requires your own copies of the Node Builder and the Dataset Finder runs them.
 
 The reverse holds too. Removing an agent that another added agent requires is refused, with a message naming the agent that needs it, so a dataflow never holds a broken reference.
 
@@ -431,7 +478,7 @@ A minimal, complete manifest:
 | `version` | Yes | Semver-style version string. A newer version of the same major replaces an older one. |
 | `name` | Yes | Human-readable name shown in the catalog. |
 | `category` | Yes | One of `data`, `node`, `canvas`, `package`, `evaluate`. See [Categories](#categories). |
-| `capabilities` | Yes | Non-empty list of `{ id, contractVersion }`: the contracts this agent implements. A capability that also names an `instruction` is a mode; see [Modes](#modes). |
+| `capabilities` | Yes | Non-empty list of `{ id, contractVersion }`: the contracts this agent implements. A capability that also names an `instruction` is a mode; see [Modes](#modes). A capability's own `skills` are handed to every run of it, whatever the agent's `skills` are. |
 | `provenance` | Yes | `{ publisher, license?, trust? }`; `trust` is one of `built-in`, `global`, `imported`. |
 | `purpose`, `roles` | | One-line description and display roles. |
 | `delegatesTo` | | Other `agent.` ids this agent may call, in preference order. An entry `{ "id", "capabilities": [...] }` delegates only those capabilities of that agent. An entry may name the agent itself only in that form, with capabilities that are its own [modes](#modes). A preference only: it grants nothing and never adds or imports anything. |
@@ -441,7 +488,8 @@ A minimal, complete manifest:
 | `inputs`, `outputs` | | The context the agent reads (`inputs.reads`), the [catalog settings](#catalog-settings) every run of it receives (`inputs.requiredConfig`), and the named outputs it produces. |
 | `runtime` | | `execution` (`foreground` or `background`) and `reviewPolicy` (`report-only` or `review-before-apply`). |
 | `providerRequirements` | | Provider *capability* requirements such as `structured-output`, as a preference: an agent runs on the configuration chosen for it whatever these say. Credentials and configurations are never in a manifest. |
-| `tools` | | Typed, allowlisted tool **requirements**, not a permission grant. |
+| `tools` | | Typed, allowlisted tool **requirements**, not a permission grant. A chat that lists skills holds **skill.read** whatever this names. |
+| `skills` | | The [skills](#skills) the agent's calls may hold, by name, each a folder of Curio's `skills/`. Its chat lists those its preamble does not hold and loads one when a task needs it; its modes are handed the ones their task needs. Without this field, every skill Curio ships; an empty list, none, and then its chat lists no skills and holds no skill.read. |
 | `settingsDefaults` | | Non-secret seed suggestions. |
 | `catalog` | | `{ listed, order }`, set by the agents Curio ships only: `listed` is `true` for a catalog agent and `false` for a helper, and `order` is the agent's place in the order the lists of who asks follow. No other key is accepted, and an import that sets it is refused. |
 | `workedExamples` | | `true` gives a run of the agent's instruction worked examples, the shipped dataflows closest to its task. A mode says so for itself, with `workedExamples` on its capability. Read for the agents Curio ships. |
@@ -457,7 +505,7 @@ node.output.interpret   dataset.fetch.author       research.verify
 
 Capability ids drive catalog discovery, orchestration and substitution, and are **never** used for authorization. A capability id must not contain a prompt filename, a path separator, an underscore, `.txt` or `.md`: `node.explain` is valid, while `explain_node_prompt` and `prompts/explain.txt` are rejected. A prompt can then be edited or replaced without changing the contract.
 
-Curio finds the agent for each of its own jobs by the capability it declares:
+Curio finds the agent for each of its own tasks by the capability it declares:
 
 | Capability | Curio picks the agent that declares it to |
 |---|---|

@@ -10,6 +10,8 @@ compatibility: Written for Curio's agents, their tools and node code.
 metadata:
   author: curio
   version: "1.0.0"
+  curio-features: pinned-tiles
+  curio-refusals: dashboard-tile
 ---
 ## Dashboards
 

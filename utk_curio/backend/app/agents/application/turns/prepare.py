@@ -24,6 +24,7 @@ from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import catalog as agents_catalog
 from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
 from utk_curio.backend.app.agents.application import lifecycle as agents_lifecycle
+from utk_curio.backend.app.agents.application import skill_runs as agents_skill_runs
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application.turns import examples as agents_examples
 from utk_curio.backend.app.agents.application.turns import policy as agents_policy
@@ -77,14 +78,25 @@ def _prepare_run(
         catalog_settings.configuration_for(user_key, manifest.config_keys())
         if manifest is not None else None
     )
+    session_id = record.get("sessionId")
+    if not isinstance(session_id, str):
+        session_id = None
+    prior = sessions.read_turns(user_key, project_id, session_id) if session_id else []
+    # The skills the run lists, those it is handed for its node, and those its
+    # conversation loaded before (skill_runs).
+    run_skills = agents_skill_runs.for_chat(
+        user_key, project_id, manifest, spec, record.get("target"), preamble, prior,
+    )
     # Grant-less runs keep the T2 tail byte-identical; granted runs get the
     # toolRequest paragraph (memos dev/39/41).
-    granted = tools.resolve_grants(requested_tools)
-    dropped = sorted({req.id for req in requested_tools} - set(granted))
+    resolved = tools.resolve_grants(requested_tools)
+    dropped = sorted({req.id for req in requested_tools} - set(resolved))
     if dropped:
         renamed = any(t.startswith("datalake.") for t in dropped)
         log.warning("Agent %s runs without tools Curio does not have: %s%s", coord, ", ".join(dropped),
                     " (the datalake.* tools are discovery.* now)" if renamed else "")
+    # skill.read exactly when the run lists skills, whatever the manifest asks.
+    granted = agents_skill_runs.grants(resolved, run_skills)
     runtime_blocks = _roster_blocks(user_key, project_id, manifest, granted)
     # Worked examples: the shipped dataflows closest to this run, for an
     # agent that takes them. Chosen per run, so they ride the runtime slot
@@ -99,17 +111,15 @@ def _prepare_run(
         entries = delegation.offered_capability_entries(
             user_key, set(project_agents.project_agents(spec)), manifest,
         )
-    native_tools = _native_tools_for(config, user_key, granted, entries)
+    native_tools = _native_tools_for(config, user_key, granted, entries, run_skills.names)
 
-    fenced_system = _system_content(preamble, instruction, configuration, granted, runtime_blocks, entries, native=False)
+    fenced_system = _system_content(preamble, instruction, configuration, granted, runtime_blocks, entries,
+                                    native=False, run_skills=run_skills)
     system = (
-        _system_content(preamble, instruction, configuration, granted, runtime_blocks, entries, native=True)
+        _system_content(preamble, instruction, configuration, granted, runtime_blocks, entries,
+                        native=True, run_skills=run_skills)
         if native_tools else fenced_system
     )
-    session_id = record.get("sessionId")
-    if not isinstance(session_id, str):
-        session_id = None
-    prior = sessions.read_turns(user_key, project_id, session_id) if session_id else []
     # What the dataflow can use, for a run that can write a node's code: data
     # the run reads beside the canvas context, never a runtime-owned slot. Its
     # datasets are read once a turn, and the turn's delegated runs reuse them.
@@ -129,6 +139,8 @@ def _prepare_run(
     run_policy = agents_policy._run_policy(user_key, project_id, coord, spec, record)
     pins = _run_pins(coord, manifest, record, config, granted, run_policy, configuration,
                      protocol=("native" if native_tools else "fenced") if granted or entries else None)
+    if run_skills.pins():
+        pins["skills"] = run_skills.pins()
     loop_ctx = {
         "granted": granted,
         "target": record.get("target"),
@@ -147,6 +159,8 @@ def _prepare_run(
         # The dataflow's datasets the block was composed with, which the
         # dataflow blocks of this turn's delegated runs reuse (None: not read).
         "dataflow_datasets": dataflow_datasets,
+        # The run's skills: what skill.read loads from and records loading.
+        "skills": run_skills,
     }
     return coord, session_id, messages, run_policy, wants_title, pins, loop_ctx
 
@@ -229,13 +243,16 @@ def _roster_blocks(user_key: str, project_id: str, manifest, granted: list) -> l
 
 
 def _system_content(preamble, instruction, configuration, granted: list, runtime_blocks: list, entries: list,
-                    *, native: bool) -> dict:
-    """The system message for one protocol — the two differ only in how a tool or a delegate is asked for."""
+                    *, native: bool, run_skills=None) -> dict:
+    """The system message for one protocol — the two differ only in how a tool or a delegate is asked for.
+    The run's skills (``skill_runs``) take the slots after the preamble: the catalog, then the skills it holds."""
     blocks = list(runtime_blocks)
     if entries:
         blocks.append(content.delegation_instruction(entries, native_tools=native))
     return contracts.system_message(contracts.compose_system(
         preamble=preamble,
+        skill_catalog=agents_skill_runs.catalog_text(run_skills) if run_skills is not None else None,
+        skills=agents_skill_runs.skills_text(run_skills) if run_skills is not None else None,
         instruction=instruction,
         configuration=configuration,
         tool_protocol=content.tail_instruction(
@@ -290,11 +307,12 @@ def _run_pins(coord: str, manifest, record: dict, config: ProviderConfig, grante
 
 
 def _native_tools_for(
-    config: ProviderConfig, user_key: str, granted: list, entries: list
+    config: ProviderConfig, user_key: str, granted: list, entries: list, skills: list | None = None,
 ) -> list | None:
     """The run's tools and delegates as native tools, when its LLM
     configuration calls tools natively (``chat_capabilities``); None puts the
-    run on the fenced protocol. A run with nothing to call asks nothing."""
+    run on the fenced protocol. A run with nothing to call asks nothing.
+    ``skill.read`` takes the names of *skills*, the skills the run lists."""
     if not granted and not entries:
         return None
     try:
@@ -305,7 +323,7 @@ def _native_tools_for(
         return None
     if protocol != "native":
         return None
-    return tools.native_tools(granted, [capability for capability, _ in entries])
+    return tools.native_tools(granted, [capability for capability, _ in entries], skills=skills)
 
 
 def _persist_exchange(

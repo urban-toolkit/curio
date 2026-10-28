@@ -486,8 +486,9 @@ class TestTheSources:
         }
         assert {path.relative_to(BASE).as_posix() for path in BASE.rglob("*.md")} - {"README.md"} == set(pages)
         # What the agents know of each feature is a skill Curio ships, one
-        # folder of skills/ each, which the preamble places: a skill added or
-        # forgotten fails here.
+        # folder of skills/ each: a skill added or forgotten fails here. The
+        # preamble places the core three, and the agents' manifests name the
+        # others (test_skill_listing.py lists which run holds which).
         skills = sorted(path.parent.name for path in (REPO_ROOT / "skills").glob("*/SKILL.md"))
         assert skills == sorted((
             "nodes", "node-control", "node-functions", "catalogs", "widgets", "selection-chips", "autark",
@@ -495,7 +496,9 @@ class TestTheSources:
             "map-edits", "scenarios", "dashboards", "provenance",
         ))
         preamble = (BASE / "default_preamble.md").read_text(encoding="utf-8")
-        assert sorted(re.findall(r"\{\{skill:([^{}]+)\}\}", preamble)) == skills
+        assert sorted(re.findall(r"\{\{skill:([^{}]+)\}\}", preamble)) == ["compatibility", "node-control", "nodes"]
+        named = {name for path in AGENTS.glob("*/manifest.json") for name in _raw(path.parent).get("skills", [])}
+        assert sorted(named | {"compatibility", "node-control", "nodes"}) == skills
         # No template anywhere: a source is the file the backend renders.
         assert not list(AGENTS.rglob("*.template.md"))
 

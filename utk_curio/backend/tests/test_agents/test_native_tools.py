@@ -215,9 +215,10 @@ class TestTheSystemTurn:
         (system, *_), = _run_calls()
         assert _protocol("native-tools") in system["content"]
         assert '"toolRequest"' not in system["content"]
-        assert [s["kind"] for s in system["slots"]][:2] == ["preamble", "instruction"]
+        # It names no skills, so its chat lists every skill and loads one with skill.read.
+        assert [s["kind"] for s in system["slots"]][:3] == ["preamble", "skill-catalog", "instruction"]
         assert _offered()[0] == {
-            "tools": ["dataflow__read", "node__read", "node__runtime__read"], "toolChoice": "auto",
+            "tools": ["dataflow__read", "node__read", "node__runtime__read", "skill__read"], "toolChoice": "auto",
             "replySchema": None,
         }
         pins = _last_turn(client, headers, project, att)["execution"]["pins"]

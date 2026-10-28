@@ -224,6 +224,19 @@ Propose ONE built node package as a reviewed draft, from the typed build request
 - nodes.content: The node's content.
 - justification: The closest existing templates, and why each is inadequate. Needed when the draft adds a template.
 
+## skill.read
+
+Load the full instructions of one of this run's skills, listed in available_skills, before a task its description matches. Params: {"name": "<skill name>"}. Add "path": "<file path>" for one of the files its instructions name. A skill already in this conversation is not loaded again.
+
+### Native
+
+Load the full instructions of one of this run's skills, listed in available_skills, before a task its description matches. Give a path for one of the files its instructions name. A skill already in this conversation is not loaded again.
+
+### Parameters
+
+- name: The skill's name, as available_skills lists it.
+- path: One of the skill's files, by its path in the skill, as its instructions or its list of files name it. Leave it out for the skill's instructions.
+
 ## delegate
 
 Delegate one specialized capability to the agent that handles it, and receive its result. The capabilities you may delegate, and who handles each, are listed in your instructions.

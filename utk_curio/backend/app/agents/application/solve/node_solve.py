@@ -221,7 +221,7 @@ def _run_node_loop(
         datasets=(grounding_base or {}).get("dataflow_datasets"), user=acting_user,
     )
 
-    def _traced(delegate_inputs):
+    def _traced(delegate_inputs, refused=None):
         st, tx, ch, _h = agents_delegates._run_delegate_traced(
             user_key, project_id, resolution.coord,
             "node.content.generate", delegate_inputs, config,
@@ -231,6 +231,7 @@ def _run_node_loop(
             node_id=node_id,
             home_create=False,
             dataflow_block=dataflow_block,
+            refused=refused,
         )
         return st, tx, ch
 
