@@ -87,13 +87,58 @@ def zygote_environment(limits, environ=None):
     env = dict(os.environ if environ is None else environ)
     memory_mb = (limits or {}).get("memory_mb")
     if memory_mb:
-        cap = malloc_arena_cap(memory_mb)
-        try:
-            current = int(env.get("MALLOC_ARENA_MAX", ""))
-        except ValueError:
-            current = 0
-        env["MALLOC_ARENA_MAX"] = str(min(current, cap) if current > 0 else cap)
+        _cap_arenas(env, memory_mb)
         env["ARROW_DEFAULT_MEMORY_POOL"] = ARROW_POOL_UNDER_A_CAP
+    return env
+
+
+def _cap_arenas(env, memory_mb):
+    """Cap *env*'s malloc arenas for *memory_mb* of budget; a lower
+    ``MALLOC_ARENA_MAX`` already in *env* stands."""
+    cap = malloc_arena_cap(memory_mb)
+    try:
+        current = int(env.get("MALLOC_ARENA_MAX", ""))
+    except ValueError:
+        current = 0
+    env["MALLOC_ARENA_MAX"] = str(min(current, cap) if current > 0 else cap)
+
+
+def server_environment(environ=None):
+    """The sandbox server's environment: its malloc arenas capped as its
+    isolated children's are, from the same budget (``CURIO_EXEC_MEMORY_MB``,
+    4096 MB by default, so 16 arenas).
+
+    The server runs node code itself when isolation is off, a local launch's
+    default, and serves every run's outputs either way. glibc gives each thread
+    that allocates an arena of its own, up to eight per core, and a block a
+    thread frees goes back to the top of its arena, which glibc keeps while it
+    is smaller than its trim threshold. That threshold rises with the blocks a
+    process frees, up to 64 MiB. When the server goes idle it hands free memory
+    back (``util/memory_release.py``), but ``malloc_trim`` trims only the main
+    arena's top, so every other arena keeps its top.
+
+    #408 measured this on four cores, 32 arenas at most. A 64-core CI runner
+    allows 512, and a sandbox there runs about 500 threads: its libraries'
+    pools, sized by the cores, and one per request. Each test pass left free
+    memory in more of their arenas: in a repeat run of test-gpu, its six
+    sandboxes grew 3.6 GiB in the second pass and 2.9 in the third, all of it
+    free memory in arenas, while what each held in use stayed at 140 to 190
+    MiB (run 40715721924). With the cap, threads beyond it share the arenas
+    there are, as an isolated child's do; how many threads a library starts
+    is unchanged.
+
+    Set in the environment the server starts with, because glibc settles its
+    arena limit once per process. The server's children inherit it, the
+    zygote among them, whose own cap from the same budget is the same number.
+    """
+    from utk_curio.sandbox.isolation.supervisor import DEFAULT_LIMITS
+
+    env = dict(os.environ if environ is None else environ)
+    try:
+        memory_mb = int(env.get("CURIO_EXEC_MEMORY_MB") or DEFAULT_LIMITS["memory_mb"])
+    except ValueError:
+        memory_mb = DEFAULT_LIMITS["memory_mb"]
+    _cap_arenas(env, memory_mb)
     return env
 
 

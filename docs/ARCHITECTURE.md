@@ -1258,6 +1258,11 @@ The sandbox runs as a separate Flask process. It:
   request is in flight (`sandbox/util/memory_release.py`): every request runs
   on a thread of its own, and glibc's malloc arenas and pyarrow's pool would
   otherwise keep the pages each run freed.
+- Starts with its malloc arenas capped as its isolated children's are, from the
+  same budget (`MALLOC_ARENA_MAX`, 16 at the default 4096 MB;
+  `sandbox/isolation/lifecycle.py::server_environment`). glibc allows eight
+  arenas a core, and the release above cannot trim the top of any arena but
+  the main one.
 
 > [!WARNING]
 > **By default this is a network boundary, not an execution boundary.** Unless
