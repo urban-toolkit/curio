@@ -416,6 +416,39 @@ describe("what the canvas changes in place, with no new node", () => {
         expect(docNode().metadata.widgets[0].value).toBe(9);
     });
 
+    test("a node's code the doc brought is asked once for the code it replaced", async () => {
+        await open(serverDoc(spec().dataflow));
+        await fromAnotherTab((df) => {
+            df.nodes[0].content = "x = 5\n";
+        });
+        expect(api.dataflowDoc!.codeBefore("n", "x = 4\n")).toBeUndefined();
+        expect(api.dataflowDoc!.codeBefore("n", "x = 5\n")).toBe("x = 1\n");
+        expect(api.dataflowDoc!.codeBefore("n", "x = 5\n")).toBeUndefined();
+    });
+
+    test("a node or a connection added twice with one id is on the canvas once", async () => {
+        await open(serverDoc(spec().dataflow));
+        const node = buildCodeNode(TYPE, nodeMetaFromTrill({ id: "k", type: TYPE, x: 5, y: 5, content: "z = 1\n" }, () => ({ x: 0, y: 0 })), {
+            pythonInterpreter: {}, jsInterpreter: {}, outputCallback: null, interactionsCallback: null,
+            propagationCallback: null, defaultSaveOutputDataset: false, position: () => ({ x: 0, y: 0 }),
+        });
+        // The doc's change and an agent's apply, before the canvas renders.
+        act(() => {
+            api.addNode(node, undefined, false);
+            api.addNode({ ...node }, undefined, false);
+        });
+        await flush();
+        expect(api.nodes.filter((n: any) => n.id === "k")).toHaveLength(1);
+        const edge = { id: "k-m", source: "k", target: "m", sourceHandle: "out", targetHandle: "in", data: {} };
+        act(() => {
+            api.onEdgesChange([{ type: "add", item: edge }] as any);
+            api.onEdgesChange([{ type: "add", item: { ...edge } }] as any);
+        });
+        await flush();
+        expect(api.edges.filter((e: any) => e.id === "k-m")).toHaveLength(1);
+        expect(docToDataflow(provider.doc).nodes.filter((n: any) => n.id === "k")).toHaveLength(1);
+    });
+
     test("a selection tag set in place reaches the doc when its editor says so", async () => {
         const dataflow: any = spec().dataflow;
         dataflow.nodes[0].metadata = { selections: [{ name: "picked", node: "m", column: "id", ids: [1] }] };
