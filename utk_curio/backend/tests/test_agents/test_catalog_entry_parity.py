@@ -18,7 +18,6 @@ from unittest.mock import patch
 from utk_curio.backend import config
 from utk_curio.backend.app.agents.repositories import publications
 from utk_curio.backend.app.agents.repositories import storage
-from utk_curio.backend.app.agents.repositories import user_skills
 from utk_curio.backend.app.projects.services import _user_dir_key
 from utk_curio.backend.tests._support.agent_routes import _auth
 
@@ -41,10 +40,13 @@ class _Agent:
 
     noun = "agent"
     entry = "agent.test.shared-helper@1"
-    catalog = publications.AGENTS
 
     def __init__(self, client):
         self.client = client
+
+    @property
+    def catalog(self):
+        return publications.AGENTS
 
     def import_own(self, token, *, text="You help with shared things."):
         return self.client.post("/api/agents/imports/upload", json={
@@ -88,10 +90,13 @@ class _Skill:
 
     noun = "skill"
     entry = "shared-trees"
-    catalog = publications.SKILLS
 
     def __init__(self, client):
         self.client = client
+
+    @property
+    def catalog(self):
+        return publications.SKILLS
 
     def import_own(self, token, *, text="Count trees by block."):
         md = (f"---\nname: {self.entry}\ndescription: Use this skill when a dataflow counts street trees.\n"
@@ -115,12 +120,19 @@ class _Skill:
         return self.client.post(f"/api/agents/definitions/{DF}/skills", json={"skill": self.entry},
                                 headers=_auth(token))
 
+    @staticmethod
+    def _store():
+        """The account's skill store, imported where a test runs."""
+        from utk_curio.backend.app.agents.repositories import user_skills
+
+        return user_skills
+
     def holds_a_copy(self, user) -> bool:
-        key = _user_dir_key(user)
-        return user_skills.holds(key, self.entry) and user_skills.is_copy(user_skills.skill_dir(key, self.entry))
+        key, store = _user_dir_key(user), self._store()
+        return store.holds(key, self.entry) and store.is_copy(store.skill_dir(key, self.entry))
 
     def holds_any(self, user) -> bool:
-        return user_skills.skills_dir(_user_dir_key(user)).exists()
+        return self._store().skills_dir(_user_dir_key(user)).exists()
 
 
 KINDS = (_Agent, _Skill)

@@ -28,7 +28,6 @@ from utk_curio.backend.app.agents.domain import agent_text
 from utk_curio.backend.app.agents.domain import skills
 from utk_curio.backend.app.agents.infrastructure import agent_skills as agent_skill_store
 from utk_curio.backend.app.agents.infrastructure import testing_provider
-from utk_curio.backend.app.agents.repositories import user_skills
 from utk_curio.backend.app.projects.services import _user_dir_key
 from utk_curio.backend.tests._support.agent_routes import _auth
 from utk_curio.backend.tests.test_agents.test_agent_skills import (  # noqa: F401 - scripted is a fixture
@@ -89,8 +88,20 @@ def _post(client, token, url, form):
                        headers={"Authorization": f"Bearer {token}"})
 
 
+def _user_skills():
+    """The account's skill store, imported where a test runs, so a checkout
+    without it fails each test, never the collection."""
+    from utk_curio.backend.app.agents.repositories import user_skills
+
+    return user_skills
+
+
 def _kept(user, name: str = NAME) -> Path:
-    return user_skills.skill_dir(_user_dir_key(user), name)
+    return _user_skills().skill_dir(_user_dir_key(user), name)
+
+
+def _nothing_kept(user) -> bool:
+    return not _user_skills().skills_dir(_user_dir_key(user)).exists()
 
 
 def _card(client, token, name: str = NAME) -> dict:
@@ -137,7 +148,7 @@ def test_the_review_reads_an_upload_leniently_and_keeps_nothing(client, user_and
     offered = {agent["coord"] for agent in review["agents"]}
     assert {DF, RS, "agent.curio.node-builder@1", "agent.curio.dataflow-builder@1"} <= offered
     assert not any(agent["coord"].startswith("agent.curio.dataflow-planner") for agent in review["agents"])
-    assert not user_skills.skills_dir(_user_dir_key(user)).exists()
+    assert _nothing_kept(user)
 
 
 def test_an_imported_skill_is_kept_in_the_format_and_reaches_the_agents_the_review_picked(
@@ -231,7 +242,7 @@ def test_a_description_the_format_has_no_room_for_is_the_reviews_problem_and_ref
     assert review["rename"] is False
     resp = _post(client, token, IMPORT, _form(upload))
     assert resp.status_code == 400 and resp.get_json()["error"] == review["problem"], resp.get_json()
-    assert not user_skills.skills_dir(_user_dir_key(user)).exists()
+    assert _nothing_kept(user)
 
 
 @pytest.mark.parametrize(("case", "form", "status", "said"), [
@@ -254,7 +265,7 @@ def test_an_upload_the_import_cannot_keep_is_refused_and_nothing_is_kept(
         resp = _post(client, token, url, form())
         assert resp.status_code == status, (url, resp.get_data(as_text=True))
         assert said in resp.get_json()["error"], (url, resp.get_json())
-    assert not user_skills.skills_dir(_user_dir_key(user)).exists()
+    assert _nothing_kept(user)
 
 
 # --- The name ------------------------------------------------------------------------
