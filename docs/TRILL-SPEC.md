@@ -1,6 +1,6 @@
 # The Trill dataflow specification
 
-A Curio dataflow is saved as a single JSON document called a **trill**. This page
+A Curio dataflow is a single JSON document called a **trill**. This page
 describes that format. Every trill is validated against
 [`docs/schemas/trill.v1.json`](schemas/trill.v1.json) (JSON Schema Draft 2020-12),
 and the schema is the source of truth for what fields a dataflow can carry.
@@ -9,7 +9,7 @@ Trills live in two places:
 
 | Where | What |
 |---|---|
-| `.curio/users/<userKey>/projects/<projectId>/spec.trill.json` | a user's saved projects |
+| `.curio/users/<userKey>/projects/<projectId>/` | a user's saved projects: `spec.trill.json`, with `nodeProvenance` and `dataflowProvenance` kept beside it in `history/` |
 | `docs/examples/*.json`, `docs/examples/dataflows/*.json` | the examples shipped in-repo |
 
 ## Structure
