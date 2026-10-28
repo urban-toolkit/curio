@@ -84,11 +84,14 @@ const mockSkills = [
   },
 ];
 
+const mockListImports = jest.fn(() => Promise.resolve({ agents: [] as unknown[] }));
+const mockUploadImport = jest.fn();
 jest.mock("../../services/agents/agentsApi", () => ({
   agentsApi: {
     catalog: jest.fn(() => Promise.resolve({ items: [mockAgent], agents: [mockAgent], facets: null })),
-    listImports: jest.fn(() => Promise.resolve({ agents: [] })),
+    listImports: () => mockListImports(),
     readDefinition: jest.fn(() => Promise.resolve({ manifest: {}, prompts: {} })),
+    uploadImport: (...args: unknown[]) => mockUploadImport(...args),
   },
 }));
 
@@ -101,12 +104,16 @@ const mockRead = jest.fn((name: string) =>
 );
 const mockList = jest.fn(() => Promise.resolve({ skills: mockSkills as unknown[], editable: true, reason: null }));
 const mockRemoveOwn = jest.fn((name: string) => Promise.resolve({ name, removed: true, agents: [] }));
+const mockCheckImport = jest.fn();
+const mockImportSkill = jest.fn();
 jest.mock("../../services/agents/skillsApi", () => ({
   skillsApi: {
     list: () => mockList(),
     read: (name: string) => mockRead(name),
     agentSkills: jest.fn(() => new Promise(() => {})),
     removeOwnSkill: (name: string) => mockRemoveOwn(name),
+    checkImport: (...args: unknown[]) => mockCheckImport(...args),
+    importSkill: (...args: unknown[]) => mockImportSkill(...args),
   },
 }));
 
@@ -341,5 +348,61 @@ describe("the account's own skills", () => {
     const drawer = document.querySelector('[data-curio-browse-drawer="true"]') as HTMLElement;
     expect(within(drawer).queryByRole("button", { name: "Remove from your skills" })).toBeNull();
     expect(within(drawer).getByText("Curio")).toBeInTheDocument();
+  });
+
+  it("open in the drawer once imported, after the skills are read again", async () => {
+    mockCheckImport.mockResolvedValueOnce({
+      name: own.name, givenName: own.name, description: own.description, warnings: [], leftOut: [], files: [],
+      problem: null, rename: false, replaces: false, agents: [],
+    });
+    mockImportSkill.mockResolvedValueOnce({ skill: own, agents: [], replaced: false });
+    await showSkills();
+    // The read after the import is the first to hold it.
+    mockList.mockResolvedValueOnce({ skills: [...mockSkills, own], editable: true, reason: null });
+    fireEvent.click(screen.getByRole("button", { name: "Import skill" }));
+    fireEvent.change(await screen.findByLabelText("Skill files"), {
+      target: { files: [new File(["---\nname: street-trees\n---\n"], "SKILL.md")] },
+    });
+    const importButton = await screen.findByRole("button", { name: "Import" });
+    await waitFor(() => expect(importButton).toBeEnabled());
+    fireEvent.click(importButton);
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Import skill" })).toBeNull());
+    const drawer = document.querySelector('[data-curio-browse-drawer="true"]') as HTMLElement;
+    await waitFor(() => expect(within(drawer).getByRole("heading", { name: "street-trees" })).toBeInTheDocument());
+    expect(document.querySelectorAll("article[data-skill-name]")).toHaveLength(4);
+  });
+});
+
+describe("an imported agent", () => {
+  const mine = {
+    ...mockAgent,
+    dirName: "agent.test.my-agent@1",
+    id: "agent.test.my-agent",
+    name: "My Agent",
+    imported: true,
+    publishable: true,
+    provenance: { publisher: "me", trust: "imported" },
+  };
+
+  beforeEach(() => {
+    mockListImports.mockClear();
+    mockUploadImport.mockReset();
+  });
+
+  it("opens in the drawer once the roster is read again and holds it, as an imported skill does", async () => {
+    mockUploadImport.mockResolvedValueOnce(mine);
+    await renderPage();
+    // The read after the upload is the first to hold it.
+    mockListImports.mockResolvedValueOnce({ agents: [mine] });
+    fireEvent.click(screen.getByRole("button", { name: "Import agent" }));
+    fireEvent.change(await screen.findByLabelText("Package files"), {
+      target: { files: [new File([JSON.stringify({ id: mine.id, version: "1.0.0" })], "manifest.json")] },
+    });
+    const importButton = await screen.findByRole("button", { name: "Import" });
+    await waitFor(() => expect(importButton).toBeEnabled());
+    fireEvent.click(importButton);
+    await waitFor(() => expect(mockUploadImport).toHaveBeenCalledTimes(1));
+    const drawer = document.querySelector('[data-curio-browse-drawer="true"]') as HTMLElement;
+    await waitFor(() => expect(within(drawer).getByRole("heading", { name: "My Agent" })).toBeInTheDocument());
   });
 });
