@@ -38,7 +38,13 @@ jest.mock("@monaco-editor/react", () => {
                 return true;
             }),
             pushUndoStop: () => {},
-            onDidBlurEditorText: () => {},
+            // What leaving the editor runs, which a test fires (`__blur`).
+            __blurs: [] as Array<() => void>,
+            onDidBlurEditorText: (handler: () => void) => {
+                editor.__blurs.push(handler);
+                return { dispose: () => {} };
+            },
+            __blur: () => editor.__blurs.forEach((handler: () => void) => handler()),
             // Ctrl/Cmd+Enter registers through addAction on mount (#223).
             // Captured so a test can assert the binding, and present at all so
             // the mount does not run against a fake missing half the API.
@@ -219,49 +225,56 @@ describe("CodeEditor content sync (dev/70)", () => {
 });
 
 
-describe("a change the room applied, told apart by participant", () => {
-    // ana's change to n1, proposed from the tab the room named `participant`.
-    const applied = (participant: string) => ({
+describe("code is typed together, with no vote", () => {
+    // ana edits n1 in a room where fabio edits too, and fabio's change to n1
+    // is the kind the room used to put to a vote.
+    const fabiosChange = {
         id: "prop-1",
         nodeId: "n1",
         kind: "code",
         oldValue: SAVED_CODE,
         newValue: "x = 2",
-        proposed_by: { user_id: 7, username: "ana", participant_id: participant },
+        proposed_by: { user_id: 8, username: "fabio", participant_id: "p-9" },
         approvals: [],
         rejections: [],
         created_at: 0,
-    });
+    };
 
     beforeEach(() => {
         __editors.length = 0;
         for (const key of Object.keys(mockCollabHandlers)) delete mockCollabHandlers[key];
-        // This tab is ana's second one, p-2: the same account as p-1.
         mockCollab = {
             ...mockCollabOff(),
             enabled: true,
             connected: true,
             participantId: "p-2",
             role: "owner",
-            currentUserId: 7,
+            users: [
+                { user_id: 7, username: "ana", participant_id: "p-2", role: "owner" },
+                { user_id: 8, username: "fabio", participant_id: "p-9", role: "editor" },
+            ],
+            proposals: [fabiosChange],
         };
     });
     afterEach(() => {
         mockCollab = mockCollabOff();
     });
 
-    test("a change ana's other tab proposed is written into this one", () => {
-        renderCodeEditor(SAVED_CODE);
-        act(() => mockCollabHandlers["code_change_applied"](applied("p-1")));
-        expect(lastEditor().getValue()).toBe("x = 2");
-    });
-
-    test("this tab's own change is not written in again", () => {
+    test("leaving the editor after typing proposes nothing", () => {
         renderCodeEditor(SAVED_CODE);
         const editor = lastEditor();
-        act(() => { editor.__type("x = 2 # as typed"); });
-        act(() => mockCollabHandlers["code_change_applied"](applied("p-2")));
-        expect(editor.getValue()).toBe("x = 2 # as typed");
+        act(() => { editor.__type("x = 3"); });
+        act(() => { editor.__blur(); });
+        expect(mockCollab.requestCodeChange).not.toHaveBeenCalled();
+    });
+
+    test("no banner asks anyone to approve or reject a change", () => {
+        const { screen } = require("@testing-library/react");
+        renderCodeEditor(SAVED_CODE);
+        expect(screen.queryByText(/proposed a code change/)).toBeNull();
+        expect(screen.queryByText(/Awaiting approval/)).toBeNull();
+        expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+        expect(screen.queryByRole("button", { name: "Reject" })).toBeNull();
     });
 });
 
