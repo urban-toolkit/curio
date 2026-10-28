@@ -11,6 +11,7 @@ metadata:
   author: curio
   version: "1.0.0"
   curio-behaviors: vega
+  curio-refusals: document-invalid
 ---
 ## The starter spec a Vega-Lite node writes for itself
 

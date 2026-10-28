@@ -12,6 +12,7 @@ metadata:
   author: curio
   version: "1.0.0"
   curio-behaviors: code data-export data-summary edit-features
+  curio-refusals: ungrounded-source
 ---
 ## Catalogs
 

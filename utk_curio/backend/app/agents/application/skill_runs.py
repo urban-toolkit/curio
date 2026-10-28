@@ -16,8 +16,10 @@ clients says (https://agentskills.io/client-implementation/adding-skills-support
 - **Handed skills.** A run is handed, in the same ``<skill_content>``
   wrapping and with no model call, the agent's skills that serve what it
   works on, read from each skill's ``metadata``: ``curio-behaviors`` names
-  the node behaviors it serves (a template's ``behavior``) and
-  ``curio-features`` the features of a dataflow it serves (:data:`FEATURES`).
+  the node behaviors it serves (a template's ``behavior``),
+  ``curio-features`` the features of a dataflow it serves (:data:`FEATURES`)
+  and ``curio-refusals`` the checks whose refusal it answers, by the kind
+  each check records (``map_edits.KIND`` and the like).
 
   - A chat attached to a node, and a delegated run whose inputs name one, get
     the skills of that node's behavior.
@@ -25,8 +27,8 @@ clients says (https://agentskills.io/client-implementation/adding-skills-support
     skills of node code (:data:`CODE_BEHAVIOR`).
   - A delegated run of a mode that reads the dataflow (``dataflowContext``)
     gets the skills of its nodes' behaviors and of its features.
-  - A Solve round after a check refused the round before gets the skills of
-    what that check guards (:data:`GUARDS`).
+  - A Solve round after a check refused the round before gets the skills that
+    answer that check (:func:`answering`).
   - Every run of a capability gets the capability's own ``skills``, whatever
     the agent's are.
 - **Loaded skills.** What ``skill.read`` loads in a chat turn is recorded on
@@ -46,12 +48,10 @@ from dataclasses import dataclass, field
 from xml.sax.saxutils import escape, quoteattr
 
 from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
-from utk_curio.backend.app.agents.application import source_grounding
 from utk_curio.backend.app.agents.application import tools
 from utk_curio.backend.app.agents.domain import agent_text
 from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.domain import dashboards
-from utk_curio.backend.app.agents.domain import map_edits
 from utk_curio.backend.app.agents.domain import plan_topology
 from utk_curio.backend.app.agents.domain import skills as skill_format
 from utk_curio.backend.app.packages import service as packages_services
@@ -64,9 +64,11 @@ TOOL = tools.SKILL_TOOL
 #: one of its tool rounds (``tool_rounds.MAX_TOOL_ROUNDS``).
 FREE_READS = 4
 #: The keys of a skill's ``metadata`` that name what it serves, each a list of
-#: names with a space between each.
+#: names with a space between each: node behaviors, features of a dataflow,
+#: and the checks whose refusal it answers.
 BEHAVIORS_KEY = "curio-behaviors"
 FEATURES_KEY = "curio-features"
+REFUSALS_KEY = "curio-refusals"
 #: The features of a dataflow a skill can serve, by the names its
 #: ``curio-features`` gives them: scenario boxes, interaction edges and nodes
 #: pinned to the dashboard.
@@ -78,20 +80,6 @@ FEATURES = (SCENARIO_BOXES, INTERACTION_EDGES, PINNED_TILES)
 CODE_BEHAVIOR = "code"
 #: What a mode reads when it reads the whole dataflow (a capability's ``reads``).
 DATAFLOW_CONTEXT = "dataflowContext"
-#: The kind a Solve round fails with when the document it wrote is invalid.
-DOCUMENT_KIND = "document-invalid"
-#: In :data:`GUARDS`, the behavior of the node the refused round wrote.
-NODE_BEHAVIOR = "node"
-#: What each check of a Solve round guards, by the kind its refusal records:
-#: ``("behavior", <behavior>)`` or ``("feature", <feature>)``. The next round
-#: is handed the skills serving it.
-GUARDS: Mapping[str, tuple[str, str]] = {
-    map_edits.KIND: ("behavior", map_edits.BEHAVIOR),
-    dashboards.KIND: ("feature", PINNED_TILES),
-    DOCUMENT_KIND: ("behavior", NODE_BEHAVIOR),
-    source_grounding.CODE_KIND: ("behavior", CODE_BEHAVIOR),
-    source_grounding.SOURCE_KIND: ("behavior", CODE_BEHAVIOR),
-}
 #: The sections of ``frames.md`` that hold the catalog's instruction and the
 #: line before a skill's list of files.
 CATALOG_SECTION = "skill-catalog"
@@ -198,6 +186,26 @@ def serving(pool: Iterable[skill_format.Skill], *, behaviors: Iterable[str] = ()
     )
 
 
+def answering(pool: Iterable[skill_format.Skill], kind: str,
+              node_behaviors: Iterable[str] = ()) -> tuple[skill_format.Skill, ...]:
+    """The skills of *pool*, in its order, that answer the check whose
+    refusal recorded *kind* (their ``curio-refusals`` names it). Of those
+    that serve node behaviors, only the ones serving one of *node_behaviors*,
+    the behaviors of the node the refused round wrote, when they are known:
+    the document check is answered by the Autark skill for an Autark node and
+    by the Vega-Lite starter for a chart."""
+    node_behaviors = set(node_behaviors)
+    found = []
+    for skill in pool:
+        if kind not in _named(skill, REFUSALS_KEY):
+            continue
+        serves = _named(skill, BEHAVIORS_KEY)
+        if serves and node_behaviors and not serves & node_behaviors:
+            continue
+        found.append(skill)
+    return tuple(found)
+
+
 def _dataflow(spec) -> dict:
     dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
     return dataflow if isinstance(dataflow, dict) else {}
@@ -270,30 +278,24 @@ def for_delegated(user_key: str, project_id: str, manifest, capability: str, inp
                   preamble: str | None, *, refused: str | None = None) -> RunSkills:
     """The skills a delegated run of *capability* of the agent *manifest*
     defines is handed, with *inputs*, in the dataflow *spec*: those serving
-    what it works on, those serving what the check that refused its last
-    round guards (*refused*, the kind that refusal records), then the
-    capability's own. It lists none: it holds no tool."""
+    what it works on, those answering the check that refused its last round
+    (*refused*, the kind that refusal records), then the capability's own.
+    It lists none: it holds no tool."""
     shipped, placed, pool = _pool(manifest, preamble)
     behaviors: set[str] = set()
     features: set[str] = set()
     node_type = agents_dataflow_block.named_node_type(inputs, lambda: spec)
+    node_behaviors = behaviors_of(user_key, project_id, [node_type]) if node_type else set()
     if node_type:
-        behaviors |= behaviors_of(user_key, project_id, [node_type])
+        behaviors |= node_behaviors
     elif capability in agents_dataflow_block.CODE_CAPABILITIES:
         behaviors.add(CODE_BEHAVIOR)
     elif DATAFLOW_CONTEXT in _reads(manifest, capability):
         behaviors |= behaviors_of(user_key, project_id, [n.get("type") for n in _dicts(_dataflow(spec).get("nodes"))])
         features |= dataflow_features(spec)
-    guard = GUARDS.get(refused) if isinstance(refused, str) else None
-    if guard is not None:
-        key, value = guard
-        if key == "feature":
-            features.add(value)
-        elif value == NODE_BEHAVIOR:
-            behaviors |= behaviors_of(user_key, project_id, [node_type])
-        else:
-            behaviors.add(value)
     handed = list(serving(pool, behaviors=behaviors, features=features))
+    if isinstance(refused, str) and refused:
+        handed += [skill for skill in answering(pool, refused, node_behaviors) if skill not in handed]
     declared = manifest.capability(capability) if manifest is not None else None
     for name in declared.skills if declared is not None else ():
         if name not in shipped:

@@ -120,7 +120,7 @@ class VerifiedRounds:
         self.dataflow_block: str | None = None
         # A runner takes a round's inputs and, as ``refused``, the kind the
         # check that refused the round before recorded, which hands the run
-        # the skills of what that check guards (``skill_runs.GUARDS``).
+        # the skills that answer that check (``skill_runs.answering``).
         self.run_delegate = delegate_runner or (
             lambda inputs, refused=None: delegation.run_delegate(
                 user_key, project_id, resolution.coord,

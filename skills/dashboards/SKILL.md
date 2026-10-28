@@ -11,6 +11,7 @@ metadata:
   author: curio
   version: "1.0.0"
   curio-features: pinned-tiles
+  curio-refusals: dashboard-tile
 ---
 ## Dashboards
 
