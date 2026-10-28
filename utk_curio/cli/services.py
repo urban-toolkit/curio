@@ -304,6 +304,8 @@ def start_backend(host, port, no_server=False):
     # backend_server = os.path.join(script_dir, "backend", "server.py")
     env = os.environ.copy()
     env = {**os.environ, "PYTHONPATH": project_root + os.pathsep + env.get("PYTHONPATH", "")}
+    # Diagnostic branch only: the backend's arenas capped, nothing else.
+    env["MALLOC_ARENA_MAX"] = server_environment(env)["MALLOC_ARENA_MAX"]
 
     process = subprocess.Popen(
         [sys.executable, "-u", "-m", "backend.server"],

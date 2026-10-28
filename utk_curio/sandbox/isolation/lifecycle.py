@@ -139,6 +139,8 @@ def server_environment(environ=None):
     except ValueError:
         memory_mb = DEFAULT_LIMITS["memory_mb"]
     _cap_arenas(env, memory_mb)
+    # Diagnostic branch only: Arrow allocates through glibc, as under a cap.
+    env["ARROW_DEFAULT_MEMORY_POOL"] = ARROW_POOL_UNDER_A_CAP
     return env
 
 
