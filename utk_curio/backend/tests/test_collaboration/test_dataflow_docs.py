@@ -48,19 +48,30 @@ SPEC = {
 }
 
 
+#: What a backend that serves no Socket.IO without --collab fails with.
+NO_SOCKETS = "a backend started without --collab serves no Socket.IO"
+
+
 class _Room:
     """alice's dataflow, with a way to open a tab of it for anyone."""
 
-    def __init__(self, application, socketio, docs, users, tokens, project_id):
+    def __init__(self, application, socketio, users, tokens, project_id):
         self.application = application
         self.socketio = socketio
-        self.docs = docs
         self.users = users
         self.tokens = tokens
         self.project_id = project_id
         self.owner_key = str(users["alice"].id)
 
+    @property
+    def docs(self):
+        """The doc server, imported where a test asks for it."""
+        from utk_curio.backend.app.collaboration import dataflow_docs
+
+        return dataflow_docs
+
     def socket(self, name: str):
+        assert self.socketio is not None, NO_SOCKETS
         socket = connect(self.socketio, self.application, self.tokens[name])
         ack = join(socket, self.project_id)
         assert ack["ok"] is True, ack
@@ -104,7 +115,7 @@ class _Room:
 
 @pytest.fixture()
 def room(doc_app):
-    application, socketio, docs = doc_app
+    application, socketio = doc_app
     from utk_curio.backend.app.projects import storage
 
     users, tokens = {}, {}
@@ -114,7 +125,7 @@ def room(doc_app):
     project_id = make_project(users["alice"])
     invite(project_id, users["alice"], users["bob"])
     storage.write_spec(str(users["alice"].id), project_id, SPEC)
-    return _Room(application, socketio, docs, users, tokens, project_id)
+    return _Room(application, socketio, users, tokens, project_id)
 
 
 def _type(text: str, *, at: int = 0, node: str = "loader"):
@@ -138,8 +149,9 @@ def test_every_backend_serves_the_sockets_without_collab(doc_app):
     syncs on an app started without it."""
     from utk_curio.backend import config
 
-    application, socketio, _docs = doc_app
+    application, socketio = doc_app
     assert config.ENABLE_COLLAB is False
+    assert socketio is not None, NO_SOCKETS
     user, session = make_user("alice")
     project_id = make_project(user)
     socket = connect(socketio, application, session.token)
@@ -207,7 +219,9 @@ def test_a_reload_from_disk_keeps_both_tabs_in_step_with_nothing_doubled(room):
     before = alice.dataflow()
     assert bob.dataflow() == before
     doc_id = alice.doc_id
-    assert "# alice" not in _code(room.on_disk()), "the spec was written: the reload would not be from the doc's files"
+    assert "# alice" not in _code(room.on_disk()["dataflow"]), (
+        "the spec was written: the reload would not be from the doc's files"
+    )
 
     room.docs.reset_for_tests()  # the backend stopped; what it kept is on disk
     for tab in (alice, bob):
@@ -237,7 +251,7 @@ def test_a_doc_out_of_memory_opens_again_as_the_same_doc(room):
     alice.socket.disconnect(namespace=NAMESPACE)
     assert room.docs.close(room.project_id) is True
     assert not room.docs.is_open(room.project_id)
-    assert _code(room.on_disk()) == "# kept\nx = 1\n", "a doc leaves memory written"
+    assert _code(room.on_disk()["dataflow"]) == "# kept\nx = 1\n", "a doc leaves memory written"
 
     alice.socket = room.socket("alice")
     assert alice.sync()["docId"] == doc_id
@@ -397,7 +411,7 @@ def test_the_doc_is_written_after_a_second_with_no_change_or_every_ten_seconds(r
     assert written_at == [111.5], written_at
 
     on_disk = room.on_disk()
-    assert _code(on_disk) == "ax = 1\n" + "b" * 21
+    assert _code(on_disk["dataflow"]) == "ax = 1\n" + "b" * 21
     assert on_disk["dataflow"]["agents"] == SPEC["dataflow"]["agents"], "the doc dropped the agents"
     assert on_disk["nodeProvenance"] == SPEC["nodeProvenance"], "the doc dropped the history"
 
@@ -406,7 +420,7 @@ def test_a_read_of_an_open_dataflow_is_its_doc(room):
     alice = room.tab("alice")
     alice.sync()
     alice.edit(_type("# live\n"))
-    assert _code(room.on_disk()) == "x = 1\n", "the spec was written already"
+    assert _code(room.on_disk()["dataflow"]) == "x = 1\n", "the spec was written already"
 
     live = room.live()
     assert _code(live["dataflow"]) == "# live\nx = 1\n"
@@ -428,7 +442,7 @@ def test_the_doc_never_writes_over_a_spec_someone_else_wrote(room):
     assert room.docs.flush(room.project_id) is False
     on_disk = room.on_disk()
     assert on_disk["dataflow"]["name"] == "Saved elsewhere"
-    assert _code(on_disk) == "x = 1\n"
+    assert _code(on_disk["dataflow"]) == "x = 1\n"
 
 
 def test_a_doc_message_needs_a_join_a_started_sync_and_frames_that_read(room):
@@ -436,6 +450,7 @@ def test_a_doc_message_needs_a_join_a_started_sync_and_frames_that_read(room):
 
     from ._ydoc_client import DocClient
 
+    assert room.socketio is not None, NO_SOCKETS
     stranger = connect(room.socketio, room.application, room.tokens["carol"])
     assert DocClient(stranger, room.project_id).sync()["error"] == "not_joined"
 

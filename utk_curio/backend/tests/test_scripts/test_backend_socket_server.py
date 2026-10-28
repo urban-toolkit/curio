@@ -8,34 +8,41 @@ writes under ``.curio/`` and ``site-packages/``, restarts a dev backend in the
 middle of a request.
 """
 
+import runpy
 import unittest
 from unittest import mock
 
 
 class BackendSocketServerTest(unittest.TestCase):
     def test_the_backend_serves_through_socketio_with_the_reloaders_exclusions(self):
-        from utk_curio.backend import server
+        """The server module run as the launcher runs it, ``python -m
+        backend.server``, up to the point where it would serve."""
+        from flask_socketio import SocketIO
+
         from utk_curio.backend.reloader import DEFAULT_RELOADER_TYPE, RELOADER_EXCLUDE_PATTERNS
 
         seen = {}
+        socketio_run = SocketIO.run
 
-        def run(app, *args, **kwargs):
-            seen.update(kwargs, app=app)
+        def through_socketio(sio, app, *args, **kwargs):
+            seen["socketio"] = kwargs
+            return socketio_run(sio, app, *args, **kwargs)
 
-        debug = server.app.debug
-        try:
-            with mock.patch("flask.Flask.run", run), mock.patch(
-                "utk_curio.sandbox.util.duckdb_threads.release_default_connection",
-                lambda *args, **kwargs: None,
-            ):
-                server.serve()
-        finally:
-            server.app.debug = debug
+        def serving(app, *args, **kwargs):
+            seen["flask"] = kwargs
 
-        self.assertIs(seen.get("app"), server.app, "the backend did not reach Flask.run")
-        self.assertEqual(seen["exclude_patterns"], RELOADER_EXCLUDE_PATTERNS)
-        self.assertEqual(seen["reloader_type"], DEFAULT_RELOADER_TYPE)
-        self.assertIs(seen["threaded"], True)
+        with mock.patch.object(SocketIO, "run", through_socketio), \
+                mock.patch("flask.Flask.run", serving), \
+                mock.patch("utk_curio.sandbox.util.duckdb_threads.release_default_connection",
+                           lambda *args, **kwargs: None):
+            runpy.run_module("utk_curio.backend.server", run_name="__main__")
+
+        self.assertIn("socketio", seen, "the backend serves without Socket.IO")
+        self.assertIn("flask", seen, "the backend never reached Flask.run")
+        self.assertEqual(seen["flask"].get("exclude_patterns"), RELOADER_EXCLUDE_PATTERNS,
+                         "Socket.IO's server dropped the reloader's exclusions")
+        self.assertEqual(seen["flask"].get("reloader_type"), DEFAULT_RELOADER_TYPE)
+        self.assertIs(seen["flask"].get("threaded"), True)
 
     def test_every_backend_mounts_socketio_without_collab(self):
         from utk_curio.backend import config
