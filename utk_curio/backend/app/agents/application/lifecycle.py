@@ -118,25 +118,71 @@ def import_agent(user_key: str, coord: str, *, user=None) -> dict:
     return {"coord": coord, "imported": True, "projects": projects}
 
 
+#: How many dataflows a refusal of Remove from all projects names, before
+#: how many more there are.
+NAMED_DATAFLOWS = 3
+
+
+def _named(entries: list[str]) -> str:
+    """The first :data:`NAMED_DATAFLOWS` of *entries*, then how many more."""
+    shown = entries[:NAMED_DATAFLOWS]
+    more = len(entries) - len(shown)
+    return "; ".join(shown) + (f"; and {more} more" if more else "")
+
+
+def _agent_name(user_key: str, coord: str) -> str:
+    """The name of the agent at *coord*, or *coord* when it names none."""
+    try:
+        m = agents_catalog._resolve_definition(user_key, coord)
+    except (ValueError, PermissionError):  # a coordinate no agent folder can have
+        m = None
+    return m.name if m is not None else coord
+
+
+def _kept_by_dependents(user, user_key: str, coord: str) -> list[str]:
+    """The account's dataflows where another added agent requires *coord*,
+    each as ``<dataflow> (<the agents that require it>)``: the refusal
+    ``uninstall_from_project`` makes, asked of every project before anything
+    is written, as an install resolves its whole closure first (dev/106)."""
+    if user is None:
+        return []
+    from utk_curio.backend.app.projects import repositories as projects_repo
+
+    kept: list[str] = []
+    for project in projects_repo.list_for_user(user.id):
+        spec = dataflow_docs.read(user_key, project.id)
+        current = project_agents.project_agents(spec) if isinstance(spec, dict) else []
+        dependents = delegation.required_by(user_key, current, coord) if coord in current else []
+        if dependents:
+            kept.append(f"{project.name} ({', '.join(_agent_name(user_key, d) for d in dependents)})")
+    return kept
+
+
 def remove_import(user_key: str, coord: str, *, user=None) -> dict:
     """Uninstall *coord* from every project, then drop it from My Imports.
 
-    The account's entry goes only once every project lets the agent go: when
-    one refuses, such as a dataflow whose other agent requires it, the agent
-    stays in My Imports, so "In all projects" stays true and new projects
-    still get it, and a 409 names each dataflow that kept it and why. A
-    hosted guest is refused (:func:`refuse_hosted_guest`)."""
+    Refused with a 409 before anything is written while another added agent
+    requires it in one of the account's dataflows, naming those dataflows
+    and those agents: it stays in every project and in My Imports, so "In all
+    projects" stays true and new projects still get it. A project whose
+    removal fails otherwise keeps it too, and so does My Imports, with a 409
+    naming that project. A hosted guest is refused
+    (:func:`refuse_hosted_guest`)."""
     refuse_hosted_guest(user, "remove agents")
-    projects = _fan_out_imports(user, user_key, coord, install=False)
-    kept = [row for row in projects if not row["ok"]]
+    kept = _kept_by_dependents(user, user_key, coord)
     if kept:
-        m = agents_catalog._resolve_definition(user_key, coord)
-        name = m.name if m is not None else coord
-        where = "; ".join(f"{row['name']}: {row['error']}" for row in kept)
+        name = _agent_name(user_key, coord)
         raise AgentServiceError(
-            f"{name} stays in all your projects, because "
-            + ("a dataflow keeps" if len(kept) == 1 else f"{len(kept)} dataflows keep")
-            + f" it ({where})",
+            f"{name} stays in all your projects, because other agents require it in {_named(kept)}. "
+            f"Remove those agents there first, then remove {name} again.",
+            409,
+        )
+    projects = _fan_out_imports(user, user_key, coord, install=False)
+    failed = [f"{row['name']} ({row['error']})" for row in projects if not row["ok"]]
+    if failed:
+        raise AgentServiceError(
+            f"{_agent_name(user_key, coord)} stays in all your projects, because it could not be removed "
+            f"from {_named(failed)}",
             409,
         )
     imports.remove_imported_agent(user_key, coord)

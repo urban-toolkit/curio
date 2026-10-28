@@ -56,9 +56,11 @@ from utk_curio.backend.app.agents.application import skill_catalog
 from utk_curio.backend.app.agents.application.errors import AgentServiceError
 from utk_curio.backend.app.agents.application.upload_import import SKILL_UPLOAD, check_upload
 from utk_curio.backend.app.agents.domain import agent_text
+from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.domain import skills as skill_format
 from utk_curio.backend.app.agents.domain.manifest import version_order
 from utk_curio.backend.app.agents.infrastructure import agent_skills as agent_skill_store
+from utk_curio.backend.app.agents.repositories import imports
 from utk_curio.backend.app.agents.repositories import publications
 from utk_curio.backend.app.agents.repositories import user_skills
 from utk_curio.backend.app.common import safe_archive
@@ -282,14 +284,20 @@ def _staged(staging: Path, upload: _Upload, text: str) -> skill_format.Skill:
 
 
 def _offered_agents(user_key: str) -> list[dict]:
-    """The agents an import review offers the skill to: those whose skills
-    the account may change, by name, each once."""
-    choosable = [row["id"] for row in catalog.choosable_agents(user_key)]
-    coords: dict[str, tuple[str, str]] = {}
-    for m in skill_catalog._agents(user_key):
-        coords.setdefault(m.agent_id, (m.dir_name, m.name))
-    return [{"id": agent_id, "coord": coords[agent_id][0], "name": coords[agent_id][1]}
-            for agent_id in choosable if agent_id in coords]
+    """The agents an import review offers the skill to: the catalog cards
+    Curio ships and the agents in the account's My Imports, never a
+    published agent the account did not add, each once, by name."""
+    offered: dict[str, dict] = {}
+    for m in builtin.list_builtin_manifests():
+        if not builtin.is_internal(m.dir_name):
+            offered.setdefault(m.agent_id, {"id": m.agent_id, "coord": m.dir_name, "name": m.name})
+    for coord in sorted(imports.load_imported_agents(user_key)):
+        m = None if builtin.is_internal(coord) else catalog._resolve_definition(user_key, coord)
+        if m is not None:
+            offered.setdefault(m.agent_id, {"id": m.agent_id, "coord": m.dir_name, "name": m.name})
+    choosable = {row["id"] for row in catalog.choosable_agents(user_key)}
+    return sorted((row for row in offered.values() if row["id"] in choosable),
+                  key=lambda row: (row["name"].casefold(), row["id"]))
 
 
 def check_import(user, user_key: str, parts: list[tuple[str, bytes]], *, name: str | None = None) -> dict:

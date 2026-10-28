@@ -48,11 +48,11 @@ class _Agent:
     def catalog(self):
         return publications.AGENTS
 
-    def import_own(self, token, *, text="You help with shared things."):
+    def import_own(self, token, *, text="You help with shared things.", version="1.0.0"):
         return self.client.post("/api/agents/imports/upload", json={
             "manifest": {
                 "id": "agent.test.shared-helper", "name": "Shared helper", "category": "canvas",
-                "version": "1.0.0", "capabilities": [{"id": "chat.reply", "contractVersion": "1"}],
+                "version": version, "capabilities": [{"id": "chat.reply", "contractVersion": "1"}],
                 "compatibleTargets": [{"kind": "canvas", "requires": []}],
                 "prompts": {"instruction": {"path": "prompts/instruction.txt", "variables": []}},
                 "provenance": {"publisher": "someone", "trust": "imported"},
@@ -69,10 +69,12 @@ class _Agent:
     def remove(self, token):
         return self.client.delete(f"/api/agents/imports/{self.entry}", headers=_auth(token))
 
-    def add_published(self, token):
-        """Add the published entry where an account uses it: a project of its own."""
+    def add_published(self, token, *, again: bool = False):
+        """Add the published entry where an account uses it: a project of its
+        own, another one when it adds the entry *again*."""
         project = self.client.post("/api/projects", json={
-            "name": "b", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}}, "outputs": [],
+            "name": "c" if again else "b", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}},
+            "outputs": [],
         }, headers=_auth(token)).get_json()["id"]
         return self.client.post(f"/api/agents/projects/{project}/install", json={"coord": self.entry},
                                 headers=_auth(token))
@@ -80,6 +82,10 @@ class _Agent:
     def holds_a_copy(self, user) -> bool:
         m = storage.load_installed_agent_definition(_user_dir_key(user), self.entry)
         return m is not None and m.provenance.trust == "global"
+
+    def held_version(self, user) -> str | None:
+        m = storage.load_installed_agent_definition(_user_dir_key(user), self.entry)
+        return m.version if m is not None else None
 
     def holds_any(self, user) -> bool:
         return storage.user_agents_dir(_user_dir_key(user)).exists()
@@ -98,9 +104,9 @@ class _Skill:
     def catalog(self):
         return publications.SKILLS
 
-    def import_own(self, token, *, text="Count trees by block."):
+    def import_own(self, token, *, text="Count trees by block.", version="1.0.0"):
         md = (f"---\nname: {self.entry}\ndescription: Use this skill when a dataflow counts street trees.\n"
-              f"---\n{text}\n")
+              f"metadata:\n  version: \"{version}\"\n---\n{text}\n")
         return self.client.post("/api/agents/skills/imports", data={
             "files": [(io.BytesIO(md.encode("utf-8")), "SKILL.md")],
             "paths": json.dumps([f"{self.entry}/SKILL.md"]),
@@ -115,9 +121,11 @@ class _Skill:
     def remove(self, token):
         return self.client.delete(f"/api/agents/skills/{self.entry}", headers=_auth(token))
 
-    def add_published(self, token):
-        """Add the published entry where an account uses it: one of its agents."""
-        return self.client.post(f"/api/agents/definitions/{DF}/skills", json={"skill": self.entry},
+    def add_published(self, token, *, again: bool = False):
+        """Add the published entry where an account uses it: one of its
+        agents, another one when it adds the entry *again*."""
+        coord = "agent.curio.researcher@1" if again else DF
+        return self.client.post(f"/api/agents/definitions/{coord}/skills", json={"skill": self.entry},
                                 headers=_auth(token))
 
     @staticmethod
@@ -133,6 +141,12 @@ class _Skill:
 
     def holds_any(self, user) -> bool:
         return self._store().skills_dir(_user_dir_key(user)).exists()
+
+    def held_version(self, user) -> str | None:
+        from utk_curio.backend.app.agents.domain import skills
+
+        folder = self._store().skill_dir(_user_dir_key(user), self.entry)
+        return skills.parse(folder, strict=False).metadata.get("version") if folder.is_dir() else None
 
 
 KINDS = (_Agent, _Skill)
@@ -231,3 +245,26 @@ def test_an_entry_of_either_kind_added_from_the_shared_catalog_outlives_its_unpu
         refused = entry.publish("bob-token")
         assert refused.status_code == 400, (kind.noun, refused.get_data(as_text=True))
         assert not entry.catalog.is_published(entry.entry), kind.noun
+
+
+def test_a_newer_publication_of_either_kind_reaches_an_adders_copy_when_they_add_it_again(
+    client, db, user_and_token, tmp_curio,
+):
+    """An adder's copy is replaced by a newer version its publisher
+    publishes, the next time the adder adds the entry: one version a name."""
+    _, alice = user_and_token
+    bob = _make_user(db, "bob", "bob-token")
+    for kind in KINDS:
+        entry = kind(client)
+        assert entry.import_own(alice, version="1.0.0").status_code == 201, kind.noun
+        assert entry.publish(alice).status_code == 201, kind.noun
+        assert entry.add_published("bob-token").status_code in (200, 201), kind.noun
+        assert entry.held_version(bob) == "1.0.0", kind.noun
+        newer = entry.import_own(alice, text="Newer words.", version="1.1.0")
+        assert newer.status_code == 201, (kind.noun, newer.get_data(as_text=True))
+        assert entry.publish(alice).status_code == 201, kind.noun
+        assert entry.held_version(bob) == "1.0.0", kind.noun
+        added = entry.add_published("bob-token", again=True)
+        assert added.status_code in (200, 201), (kind.noun, added.get_data(as_text=True))
+        assert entry.held_version(bob) == "1.1.0", kind.noun
+        assert entry.holds_a_copy(bob), kind.noun

@@ -110,9 +110,13 @@ def test_a_skill_of_your_own_is_imported_through_its_review_exported_and_removed
     expect(review).to_contain_text("colon")
     expect(review).to_contain_text("author, which the format does not define")
     expect(review).to_contain_text("references/species.md")
+    # The catalog's four cards, each picked: an account with no imports is offered no other agent.
     boxes = review.get_by_role("checkbox")
-    assert boxes.count() >= 4, boxes.count()
-    for index in range(boxes.count()):
+    expect(boxes).to_have_count(4)
+    expect(review.locator("label").filter(has=page.get_by_role("checkbox"))).to_have_text(
+        ["Dataflow Builder", "Dataset Finder", "Node Builder", "Researcher"],
+    )
+    for index in range(4):
         expect(boxes.nth(index)).to_be_checked()
     review.get_by_label("Researcher").uncheck()
     expect(review.get_by_label("Researcher")).not_to_be_checked()

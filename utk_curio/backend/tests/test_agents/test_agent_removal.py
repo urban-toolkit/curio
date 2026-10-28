@@ -84,10 +84,11 @@ def test_removing_an_agent_from_all_projects_deletes_its_transcripts_in_each(cli
 def test_an_agent_one_dataflow_keeps_stays_in_all_projects_and_says_why(client, user_and_token, tmp_curio):
     """The Dataset Finder is in all the account's projects, and one of them
     also holds the Dataflow Builder, which requires it. Remove from all
-    projects takes it out of every other dataflow, answers 409 naming the one
-    that keeps it and why, and the account keeps it: it is still in all its
-    projects. A project with no spec has nothing to remove and keeps
-    nothing. Once the Dataflow Builder is gone, the removal goes through."""
+    projects answers 409 before it writes anything, naming that dataflow and
+    the agents that require it there, and the account keeps the Dataset
+    Finder in all its projects, every one of them. A project with no spec has
+    nothing to remove and keeps nothing. Once the Dataflow Builder and the
+    Node Builder are gone from that dataflow, the removal goes through."""
     user, token = user_and_token
     key = _user_dir_key(user)
     plain = _project(client, token, "Loop shade")
@@ -103,13 +104,14 @@ def test_an_agent_one_dataflow_keeps_stays_in_all_projects_and_says_why(client, 
     resp = client.delete(f"/api/agents/imports/{DF}", headers=_auth(token))
     assert resp.status_code == 409, resp.get_data(as_text=True)
     said = resp.get_json()["error"]
-    assert said.startswith("Dataset Finder stays in all your projects"), said
-    assert "Bike lanes" in said and "Dataflow Builder" in said, said
-    assert "Loop shade" not in said and "Never saved" not in said, said
+    assert said == (
+        "Dataset Finder stays in all your projects, because other agents require it in Bike lanes "
+        "(Dataflow Builder, Node Builder). Remove those agents there first, then remove Dataset Finder again."
+    ), said
     assert DF in imports.load_imported_agents(key)
     listed = client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"]
     assert DF in [card["dirName"] for card in listed]
-    assert DF not in _agents_of(client, token, plain)
+    assert DF in _agents_of(client, token, plain), "a refused removal took the agent out of another dataflow"
     assert DF in _agents_of(client, token, builder)
 
     for coord in (DFB, NB):

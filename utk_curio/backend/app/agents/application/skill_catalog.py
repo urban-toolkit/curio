@@ -45,7 +45,7 @@ from utk_curio.backend.app.agents.application.errors import AgentServiceError
 from utk_curio.backend.app.agents.application.turns import prompts
 from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.domain import skills as skill_format
-from utk_curio.backend.app.agents.domain.manifest import AgentManifest
+from utk_curio.backend.app.agents.domain.manifest import AgentManifest, version_order
 from utk_curio.backend.app.agents.infrastructure import agent_skills as agent_skill_store
 from utk_curio.backend.app.agents.repositories import imports
 from utk_curio.backend.app.agents.repositories import publications
@@ -357,22 +357,41 @@ def agent_skill_rows(user_key: str, coord: str, *, editable: bool = True) -> dic
 def _usable_name(user_key: str, name: object, seen: Seen) -> str:
     """*name*, a skill an agent of the account may hold: Curio's, the
     account's own, or the shared catalog's, which is copied into the
-    account's skills first (:func:`_copy_published`)."""
+    account's skills first (:func:`_copy_published`). The account's copy of
+    one is replaced when the publication's version is newer, as a copy of a
+    published agent is when it is added again."""
     if not isinstance(name, str) or seen.find(name) is None:
         raise AgentServiceError(f"Curio ships no skill named {name}, and you see none by that name", 404)
     if name in seen.published:
         _copy_published(user_key, name)
+    elif name in seen.own and user_skills.is_copy(seen.own[name].folder):
+        held = seen.own[name].metadata.get(VERSION_KEY)
+        if held:
+            _copy_published(user_key, name, newer_than=held)
     return name
 
 
-def _copy_published(user_key: str, name: str) -> None:
+def _copy_published(user_key: str, name: str, *, newer_than: str | None = None) -> None:
     """Copy the shared catalog's skill *name* into the account's skills,
     marked as a copy (``user_skills.is_copy``), as adding a published agent
-    copies it: it keeps working after its publisher unpublishes it, and it is
-    never this account's to publish."""
-    files = user_skills.read_files(publications.SKILLS.entry_dir(name))
+    copies it (``catalog._copy_published``): it keeps working after its
+    publisher unpublishes it, and it is never this account's to publish.
+
+    With *newer_than*, the version of the account's copy, the publication
+    replaces that copy only when its own version is newer."""
+    if not publications.SKILLS.is_published(name):
+        return
+    folder = publications.SKILLS.entry_dir(name)
+    if newer_than is not None:
+        try:
+            version = skill_format.parse(folder, strict=False).metadata.get(VERSION_KEY)
+        except (OSError, ValueError):
+            return
+        if not version or version_order(version) <= version_order(newer_than):
+            return
     try:
-        user_skills.write(user_key, name, files, copied=True)
+        user_skills.write(user_key, name, user_skills.read_files(folder), copied=True,
+                          replace=newer_than is not None)
     except FileExistsError:
         pass  # a concurrent add wrote it first
 

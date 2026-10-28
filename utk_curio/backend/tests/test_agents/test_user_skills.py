@@ -145,9 +145,10 @@ def test_the_review_reads_an_upload_leniently_and_keeps_nothing(client, user_and
     assert review["files"] == ["references/species.md"]
     assert review["problem"] is None and review["rename"] is False and review["replaces"] is False
     assert review["leftOut"] == []
-    offered = {agent["coord"] for agent in review["agents"]}
-    assert {DF, RS, "agent.curio.node-builder@1", "agent.curio.dataflow-builder@1"} <= offered
-    assert not any(agent["coord"].startswith("agent.curio.dataflow-planner") for agent in review["agents"])
+    # The catalog's four cards, by name: an account with no imports adds to no other agent.
+    assert [agent["coord"] for agent in review["agents"]] == [
+        "agent.curio.dataflow-builder@1", DF, "agent.curio.node-builder@1", RS,
+    ]
     assert _nothing_kept(user)
 
 
