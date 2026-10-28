@@ -121,6 +121,13 @@ NODE_DOC_KEYS = frozenset(
     | set(_GROUPS) | {_CONTENT, _NODE_METADATA, WIDGETS_KEY, WIDGET_ORDER_KEY}
 )
 
+#: The Trill ``dataflow`` lists the doc holds entry by entry, and the field
+#: that names each entry.
+KEYED_LISTS = {
+    name: {NODES: _NODE_ID, EDGES: _EDGE_ID, SCENARIOS: _SCENARIO_ID}[place]
+    for name, place in _DATAFLOW.items() if place in (NODES, EDGES, SCENARIOS)
+}
+
 
 class DocMappingError(ValueError):
     """A Trill the layout has no place for."""
@@ -200,6 +207,19 @@ def new_doc() -> Doc:
 def owned(dataflow: dict) -> dict:
     """The part of a Trill ``dataflow`` the doc holds."""
     return {name: value for name, value in dataflow.items() if name not in OUTSIDE_THE_DOC}
+
+
+def mappable(dataflow: Any) -> bool:
+    """Whether the layout has a place for each field of the Trill *dataflow*'s
+    nodes: a node field the table does not name, called as a key the layout
+    gives a node for something else, has none (:class:`DocMappingError`)."""
+    nodes = dataflow.get(_field_of(_DATAFLOW, NODES)) if isinstance(dataflow, dict) else None
+    keyed = _keyed(nodes, _NODE_ID)
+    if keyed is None:
+        return isinstance(dataflow, dict)  # a list that cannot be keyed is held whole
+    return not any(
+        name not in _NODE and name in NODE_DOC_KEYS for _node_id, node in keyed for name in node
+    )
 
 
 def _keyed(entries: Any, key: str) -> Optional[list[tuple[str, dict]]]:

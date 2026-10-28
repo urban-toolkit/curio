@@ -57,16 +57,36 @@ place in the log the spec was last written from, with that write's revision
   times a doc built anew; the old log stays where it is, readable.
 * A doc leaves memory :data:`CLOSE_AFTER_S` after its last tab, written first.
 
+**Writers.** This module is the one writer of ``spec.trill.json``
+(``storage.write_spec``), and every backend writer of a dataflow goes through
+it, so every change reaches the doc's tabs and its log:
+
+* A writer gets the dataflow as it is now as a dict (:func:`live`, or the
+  block :func:`writing`), changes it with no lock held, and hands it to
+  :func:`write`: one short transaction, its :class:`Actor` the origin, applies
+  only what the writer changed. A node's code lands only where the doc still
+  holds the code the writer was handed; otherwise the doc keeps its own and
+  the writer is told (:attr:`Written.refused`). The agents' sections
+  (``doc_mapping.OUTSIDE_THE_DOC``) are written beside the doc, and a change
+  to them alone is written to the file alone.
+* The whole-dataflow PUT is the one deliberate exception (:func:`put`): its
+  transaction makes the doc match the PUT. A dataflow made anew starts through
+  :func:`create`.
+* The file is written at once, from the doc, each part that reads as the file
+  holds it kept as the file holds it.
+
 **Locks**, in this order: the spec lock (``storage.spec_write_lock``), then a
 doc's lock, then this module's own; storage's history lock is a leaf. The spec
 lock is never asked for while a doc's lock is held, and the thread that writes
-the docs touches no database.
+the docs touches no database. A writer under the spec lock already (a
+read-modify-write that must not interleave) is not made to ask for it again.
 
 **Reads**: :func:`read` is the dataflow as it is now, an open doc's over the
 file.
 """
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import os
@@ -75,8 +95,9 @@ import threading
 import time
 import uuid
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import Callable, Iterator, NamedTuple, Optional
 
 from flask import request
 from flask_socketio import join_room
@@ -545,10 +566,17 @@ def _built_anew_if_grown(entry: _OpenDoc) -> None:
 
 @contextmanager
 def _held(project_id: str, user_key: str) -> Iterator[_OpenDoc]:
-    """The open doc of the dataflow, opened if it is not, with its lock held."""
+    """The open doc of the dataflow, opened if it is not, with its lock held.
+    A doc open under the same id for another account is not this dataflow's
+    (only tests reuse an id across accounts): it is dropped, writing nothing."""
+    user_key = str(user_key)
     while True:
         with _lock:
             entry = _docs.get(project_id)
+            if entry is not None and not entry.closed and entry.user_key != user_key:
+                logger.warning("dataflow %s: a doc of another account's dataflow by that id is dropped", project_id)
+                entry.closed = True
+                entry = None
             if entry is None or entry.closed:
                 entry = _docs[project_id] = _OpenDoc(project_id, user_key)
         with entry.lock:
@@ -567,10 +595,16 @@ def _held(project_id: str, user_key: str) -> Iterator[_OpenDoc]:
             return
 
 
-def _open_entry(project_id: str) -> Optional[_OpenDoc]:
+def _open_entry(project_id: str, user_key: Optional[str] = None) -> Optional[_OpenDoc]:
+    """The dataflow's doc, if it is open; with *user_key*, only if it is that
+    account's."""
     with _lock:
         entry = _docs.get(project_id)
-    return entry if entry is not None and not entry.closed else None
+    if entry is None or entry.closed:
+        return None
+    if user_key is not None and entry.user_key != str(user_key):
+        return None
+    return entry
 
 
 def _changed(entry: _OpenDoc) -> None:
@@ -615,7 +649,7 @@ def _flush(entry: _OpenDoc) -> bool:
     if not (folder / storage.SPEC_FILE).is_file():
         _discard(entry)  # the dataflow was deleted: its folder must not come back
         return False
-    with storage.spec_write_lock(entry.user_key, entry.project_id):
+    with _spec_lock(entry.user_key, entry.project_id):
         with entry.lock:
             with _lock:
                 dirty = entry.dirty_since is not None
@@ -626,17 +660,79 @@ def _flush(entry: _OpenDoc) -> bool:
                 _discard(entry)
                 return False
             _catch_up(entry, file)
-            # What the file holds, its dataflow the doc's, and no history: a
-            # section a write leaves out stays on record (write_spec), so no
-            # write of the doc reads or rewrites the history.
-            dataflow = doc_mapping.doc_to_dataflow(entry.doc)
-            kept = {key: value for key, value in file.spec.items() if key not in storage.HISTORY_KEYS}
-            storage.write_spec(entry.user_key, entry.project_id, _with_dataflow(kept, dataflow))
-            entry.revision, entry.base = file.revision + 1, dataflow
-            _mark_written(entry)
-            with _lock:
-                entry.dirty_since = entry.changed_at = None
+            _written(entry, file, file.spec)
             return True
+
+
+def _written(entry: _OpenDoc, file: "storage.SpecFile", spec: dict, *,
+             history: Optional[dict] = None) -> None:
+    """Write ``spec.trill.json`` from the doc, which is then in step with it:
+    *spec*, what the file holds (with a writer's changes beside the doc merged
+    in, :func:`_merged_beside`), its dataflow the doc's. Each part of that
+    dataflow that reads as the file holds it is kept as the file holds it, so a
+    write changes only what changed (:func:`_as_the_file_holds`). The history
+    stays out: a section a write leaves out stays on record (``write_spec``),
+    so no write of the doc reads or rewrites it, but the sections *history*
+    puts on record (the PUT's). Under the spec lock and the doc's."""
+    on_file = file.spec.get("dataflow") if isinstance(file.spec.get("dataflow"), dict) else {}
+    dataflow = _as_the_file_holds(doc_mapping.doc_to_dataflow(entry.doc), doc_mapping.owned(on_file))
+    out = _with_dataflow(_writable(spec), dataflow)
+    if history:
+        out.update(history)
+    storage.write_spec(entry.user_key, entry.project_id, out)
+    entry.revision = storage.spec_revision(entry.user_key, entry.project_id)
+    entry.base = doc_mapping.owned(out["dataflow"])
+    _mark_written(entry)
+    with _lock:
+        entry.dirty_since = entry.changed_at = None
+        if not entry.tabs:
+            entry.idle_since = _clock()  # leaves memory a while after its last write
+
+
+def _as_the_file_holds(dataflow: dict, on_file: dict) -> dict:
+    """*dataflow*, the doc's, each part of it that reads as the file holds it
+    (*on_file*, the file's part the doc holds) taken as the file holds it, and
+    each node, connection and scenario likewise: a node the doc reads back in
+    another form (an empty ``metadata`` left out, its keys in the layout's
+    order) keeps the file's form until it changes, and a list the file leaves
+    out, which the doc reads back empty, stays out."""
+    try:
+        normal = _normalized(on_file)
+    except doc_mapping.DocMappingError:
+        return dataflow
+    out: dict = {}
+    for name, value in dataflow.items():
+        read = normal.get(name, doc_mapping.MISSING)
+        if doc_mapping.same(read, value):
+            if name in on_file:
+                out[name] = on_file[name]
+            continue
+        key = doc_mapping.KEYED_LISTS.get(name)
+        held = on_file.get(name)
+        if key and isinstance(value, list) and isinstance(held, list) and isinstance(read, list):
+            out[name] = _entries_as_the_file_holds(value, held, read, key)
+        else:
+            out[name] = value
+    return out
+
+
+def _entries_as_the_file_holds(entries: list, held: list, read: list, key: str) -> list:
+    """*entries*, each one that reads as the file's entry of its id reads
+    (*held* as the file holds them, *read* as the doc reads them back) taken as
+    the file holds it."""
+
+    def by_key(items: list) -> dict:
+        return {item[key]: item for item in items if isinstance(item, dict) and isinstance(item.get(key), str)}
+
+    theirs, normal = by_key(held), by_key(read)
+    out = []
+    for entry in entries:
+        name = entry.get(key) if isinstance(entry, dict) else None
+        if name in theirs and name in normal and doc_mapping.same(normal[name], entry):
+            out.append(theirs[name])
+        else:
+            out.append(entry)
+    return out
 
 
 def _close(entry: _OpenDoc) -> bool:
@@ -752,7 +848,7 @@ def read(user_key: str, project_id: str) -> Optional[dict]:
     spec = storage.read_spec(user_key, project_id)
     if spec is None:
         return None
-    if _open_entry(project_id) is None and not _behind(user_key, project_id):
+    if _open_entry(project_id, user_key) is None and not _behind(user_key, project_id):
         return spec
     try:
         with _held(project_id, user_key) as entry:
@@ -770,6 +866,401 @@ def doc_id_of(project_id: str) -> Optional[str]:
     """The id of the dataflow's open doc."""
     entry = _open_entry(project_id)
     return entry.doc_id if entry is not None else None
+
+
+# ---------------------------------------------------------------------------
+# Writers
+# ---------------------------------------------------------------------------
+
+#: The kinds of :class:`Actor`.
+PERSON = "person"
+AGENT = "agent"
+CURIO = "curio"
+
+
+@dataclass(frozen=True)
+class Actor:
+    """Who makes a change to a dataflow: the origin of its transaction on the
+    doc, so the change's place in the log can be named after it (Provenance's
+    points). A person's own change names their account; an agent's, the agent
+    and the account that asked it; Curio's own (an example's shipped copy, a
+    dataset moved to its new id), the account it writes for."""
+
+    #: :data:`PERSON`, :data:`AGENT` or :data:`CURIO`.
+    kind: str
+    #: The account: the person who made the change, or who asked the agent.
+    by: str
+    #: The agent that made it, as its manifest's coordinate.
+    agent: Optional[str] = None
+    #: What made it, in a word: ``save``, ``apply``, ``plan``, ``solve``...
+    what: str = ""
+
+
+def person(by, what: str) -> Actor:
+    """A person's own change: *by* is their account."""
+    return Actor(PERSON, str(by), None, what)
+
+
+def by_agent(agent: Optional[str], by, what: str) -> Actor:
+    """An agent's change: *agent* its coordinate, *by* the account that asked."""
+    return Actor(AGENT, str(by), agent or None, what)
+
+
+def by_curio(by, what: str) -> Actor:
+    """Curio's own change to the account *by*'s dataflow."""
+    return Actor(CURIO, str(by), None, what)
+
+
+def _writable(spec) -> dict:
+    """*spec* but its history, which no writer writes."""
+    return {key: value for key, value in spec.items() if key not in storage.HISTORY_KEYS}
+
+
+class Live(dict):
+    """A dataflow's spec as it is now (:func:`live`), handed to one writer,
+    which changes it as a dict and hands it to :func:`write`. It remembers
+    what it was handed, :attr:`base`, so a write applies only what the writer
+    changed since and leaves alone what anyone else changed meanwhile. It holds
+    no history: no writer writes one, and storage keeps it as it is."""
+
+    def __init__(self, spec: dict, *, user_key: str, project_id: str):
+        super().__init__(spec)
+        self.user_key = str(user_key)
+        self.project_id = project_id
+        self.base = copy.deepcopy(_writable(self))
+        #: What the last :func:`write` of it did, or of the block of
+        #: :func:`writing` that handed it.
+        self.written: Optional[Written] = None
+
+
+class Written(NamedTuple):
+    """What a write did."""
+
+    #: Whether ``spec.trill.json`` was written: not when the writer changed
+    #: nothing, nor for a dataflow deleted while it worked.
+    wrote: bool
+    #: The nodes whose code the doc kept: each held other code than the
+    #: writer was handed, so the writer's did not land.
+    refused: tuple = ()
+
+
+def _has_spec(user_key: str, project_id: str) -> bool:
+    try:
+        return (storage.project_dir(user_key, project_id) / storage.SPEC_FILE).is_file()
+    except (OSError, ValueError):
+        return False
+
+
+@contextmanager
+def _spec_lock(user_key: str, project_id: str) -> Iterator[None]:
+    """The dataflow's spec lock, unless this thread holds it already (it is
+    not reentrant): a writer may run under the lock its caller took for a
+    longer read-modify-write."""
+    if storage.holds_spec_lock(user_key, project_id):
+        yield
+        return
+    with storage.spec_write_lock(user_key, project_id):
+        yield
+
+
+def live(user_key: str, project_id: str) -> Optional[Live]:
+    """The dataflow's spec as it is now, for a writer to change and hand to
+    :func:`write`: its open doc's dataflow over what ``spec.trill.json``
+    holds (a doc whose log holds changes the file does not is opened to read
+    them), without the history. ``None`` when the dataflow has no spec."""
+    user_key = str(user_key)
+    file = storage.read_spec_file(user_key, project_id)
+    if not isinstance(file.spec, dict):
+        return None
+    spec = file.spec
+    if _open_entry(project_id, user_key) is not None or _behind(user_key, project_id):
+        try:
+            with _held(project_id, user_key) as entry:
+                now = _spec_file(entry)
+                if isinstance(now.spec, dict):
+                    _catch_up(entry, now)
+                    spec = _with_dataflow(now.spec, doc_mapping.doc_to_dataflow(entry.doc))
+        except (_NoDataflow, doc_mapping.DocMappingError):
+            pass
+    return Live(_writable(spec), user_key=user_key, project_id=project_id)
+
+
+def write(user_key: str, project_id: str, spec: Live, actor: Actor, *,
+          on_refused: Optional[Callable[[tuple], None]] = None) -> Written:
+    """Write what a writer changed in *spec*, which :func:`live` handed it,
+    since then (or since its last write): one short transaction on the
+    dataflow's doc, *actor* its origin, under the spec lock (unless this
+    thread holds it) and then the doc's lock. The change is added to the
+    doc's log and relayed to its tabs, and ``spec.trill.json`` is written at
+    once.
+
+    * A node's code lands only where the doc still holds the code the writer
+      was handed (the check Undo uses). Otherwise the doc keeps its own and the
+      node is in :attr:`Written.refused`; *on_refused*, given, is called with
+      those ids before the file is written, so the writer can say so in the
+      sections it writes beside the doc. Any other change lands as a person's
+      does.
+    * The agents' sections are written beside the doc
+      (:func:`_merged_beside`). A change to them alone is written to the file
+      alone: a tab gets none of it, and the doc reads the file's next
+      revision as one that changed nothing it holds.
+    * Nothing is written when the writer changed nothing, nor for a dataflow
+      deleted meanwhile, whose folder must not come back.
+
+    *spec* then remembers what it holds as written, so its next write applies
+    only what changed after this one."""
+    if not isinstance(spec, Live):
+        raise TypeError("a writer writes the spec dataflow_docs.live handed it")
+    user_key = str(user_key)
+    if (spec.user_key, spec.project_id) != (user_key, project_id):
+        raise ValueError(f"the spec handed to write is not dataflow {project_id}'s")
+    if doc_mapping.same(_writable(spec), spec.base):
+        spec.written = Written(False)
+        return spec.written
+    written = _write(user_key, project_id, spec.base, spec, actor, on_refused=on_refused)
+    spec.base = copy.deepcopy(_writable(spec))
+    spec.written = written
+    return written
+
+
+@contextmanager
+def writing(user_key: str, project_id: str, actor: Actor, *,
+            on_refused: Optional[Callable[[tuple], None]] = None) -> Iterator[Optional[Live]]:
+    """The block form of :func:`live` and :func:`write`: the dataflow as it
+    is now, for the block to change with no lock held, written when the block
+    ends without an exception (what the write did is the spec's
+    :attr:`Live.written`). ``None`` when the dataflow has no spec, and then
+    nothing is written."""
+    spec = live(user_key, project_id)
+    yield spec
+    if spec is not None:
+        write(user_key, project_id, spec, actor, on_refused=on_refused)
+
+
+def put(user_key: str, project_id: str, spec: dict, *, over: Optional[Live], actor: Actor) -> Written:
+    """The whole-dataflow PUT (scripts, tests, the Projects page), the one
+    write that is not a writer's change and so the deliberate exception: one
+    transaction makes the doc match *spec*, from *over*, the dataflow as the
+    PUT read it under the spec lock (:func:`live`), so what changed in the doc
+    since stays wherever *spec* leaves it alone; the history sections *spec*
+    holds go on record. The loss rule is the caller's
+    (``concurrency.assert_save_keeps_server_work``), checked against *over*.
+    A dataflow with no spec, *over* ``None``, is made by it (:func:`create`)."""
+    if over is None:
+        create(user_key, project_id, spec, actor)
+        return Written(True)
+    history = {key: spec[key] for key in storage.HISTORY_KEYS if key in spec}
+    return _write(str(user_key), project_id, over.base, spec, actor, history=history)
+
+
+def create(user_key: str, project_id: str, spec: dict, actor: Actor) -> Live:
+    """Write a dataflow made anew: a new one, or an example's shipped copy
+    written over the copy it replaces. Its doc is built from it when it next
+    opens, with a new id and a new log, beside the log of any doc it replaces.
+    While a doc of it is open, one transaction makes that doc match it
+    instead, so its tabs stay in step. The spec as written, for a writer to
+    change next.
+
+    No spec lock: a create writes before its dataflow's row is committed, and
+    the example seeder holds its database write through its walk (#909); an
+    open doc's lock keeps the doc and the file whole."""
+    user_key = str(user_key)
+    mine = _writable(spec)
+    if _open_entry(project_id, user_key) is not None and doc_mapping.mappable(doc_mapping.owned(_dataflow_of(mine))):
+        try:
+            with _held(project_id, user_key) as entry:
+                file = _spec_file(entry)
+                if isinstance(file.spec, dict):
+                    _catch_up(entry, file)
+                    _roll(entry)
+                    with entry.doc.transaction(origin=actor):
+                        doc_mapping.apply_dataflow(
+                            entry.doc, doc_mapping.doc_to_dataflow(entry.doc), doc_mapping.owned(_dataflow_of(mine)),
+                        )
+                    _commit(entry, skip_sid=None)
+                    _written(entry, file, mine, history={
+                        key: spec[key] for key in storage.HISTORY_KEYS if key in spec
+                    })
+                    return Live(mine, user_key=user_key, project_id=project_id)
+        except (_NoDataflow, doc_mapping.DocMappingError):
+            pass
+    entry = _open_entry(project_id)
+    if entry is not None:
+        _discard(entry)
+    with _lock:
+        # Under this module's lock, so the doc cannot open between the file
+        # and its pointer: it opens built anew from this file.
+        storage.write_spec(user_key, project_id, spec)
+        _drop_pointer(user_key, project_id)
+    return Live(mine, user_key=user_key, project_id=project_id)
+
+
+def _dataflow_of(spec: dict) -> dict:
+    return spec.get("dataflow") if isinstance(spec.get("dataflow"), dict) else {}
+
+
+def _member(source, name: str):
+    """*source*'s member *name*, or ``doc_mapping.MISSING``."""
+    return source[name] if isinstance(source, dict) and name in source else doc_mapping.MISSING
+
+
+def _drop_pointer(user_key: str, project_id: str) -> None:
+    """Forget where the dataflow's log is, so its doc is built anew from
+    ``spec.trill.json`` when it next opens. The log stays where it is."""
+    try:
+        (storage.project_dir(user_key, project_id) / POINTER_FILE).unlink()
+    except (FileNotFoundError, ValueError):
+        pass
+
+
+def _write(user_key: str, project_id: str, base: dict, mine, actor: Actor, *,
+           on_refused: Optional[Callable[[tuple], None]] = None,
+           history: Optional[dict] = None) -> Written:
+    """What :func:`write` and :func:`put` write: the change from *base* to
+    *mine*, under the spec lock."""
+    if not _has_spec(user_key, project_id):
+        return Written(False)
+    with _spec_lock(user_key, project_id):
+        theirs = _writable(mine)
+        if not doc_mapping.mappable(doc_mapping.owned(_dataflow_of(theirs))):
+            return _without_doc(user_key, project_id, base, theirs, history)
+        if doc_mapping.same(doc_mapping.owned(_dataflow_of(base)), doc_mapping.owned(_dataflow_of(theirs))):
+            # Nothing the doc holds: the sections beside it, to the file alone.
+            file = storage.read_spec_file(user_key, project_id)
+            if not isinstance(file.spec, dict):
+                return Written(False)
+            out = _merged_beside(file.spec, base, theirs)
+            if history:
+                out.update(history)
+            storage.write_spec(user_key, project_id, out)
+            return Written(True)
+        try:
+            with _held(project_id, user_key) as entry:
+                file = _spec_file(entry)
+                if not isinstance(file.spec, dict):
+                    _discard(entry)
+                    return Written(False)
+                _catch_up(entry, file)
+                _roll(entry)
+                with entry.doc.transaction(origin=actor):
+                    refused = tuple(doc_mapping.apply_dataflow(
+                        entry.doc, doc_mapping.owned(_dataflow_of(base)), doc_mapping.owned(_dataflow_of(theirs)),
+                    ))
+                _commit(entry, skip_sid=None)
+                if refused:
+                    for node_id in refused:
+                        logger.info("dataflow %s: node %s's code changed while %s worked; the doc's stays",
+                                    project_id, node_id, actor.what or actor.kind)
+                    if on_refused is not None:
+                        on_refused(refused)
+                        theirs = _writable(mine)
+                _written(entry, file, _merged_beside(file.spec, base, theirs), history=history)
+                return Written(True, refused)
+        except _NoDataflow:
+            return Written(False)
+        except doc_mapping.DocMappingError:
+            return _without_doc(user_key, project_id, base, theirs, history)
+
+
+def _without_doc(user_key: str, project_id: str, base: dict, mine: dict, history: Optional[dict]) -> Written:
+    """A write the doc has no place for (``doc_mapping.DocMappingError``),
+    made to the file alone as before the doc: each member the writer changed
+    is the writer's. The doc is forgotten, so it is built anew from the file
+    when it next opens, which says why no tab can sync it."""
+    logger.warning("dataflow %s: a write the doc's layout has no place for is written to the file alone",
+                   project_id)
+    entry = _open_entry(project_id)
+    if entry is not None:
+        _discard(entry)
+    _drop_pointer(user_key, project_id)
+    file = storage.read_spec_file(user_key, project_id)
+    if not isinstance(file.spec, dict):
+        return Written(False)
+    out = _merged_beside(file.spec, base, mine, every_field=True)
+    if history:
+        out.update(history)
+    storage.write_spec(user_key, project_id, out)
+    return Written(True)
+
+
+#: The sections beside the doc whose entries a write merges one by one, and
+#: what keys each entry: an attachment its id, an agent its coordinate.
+_SECTION_KEYS: dict[str, Callable] = {
+    "agentAttachments": lambda entry: entry.get("attachmentId") if isinstance(entry, dict) else None,
+    "agents": lambda entry: entry if isinstance(entry, str) else None,
+}
+
+
+def _merged_beside(on_file: dict, base: dict, mine: dict, *, every_field: bool = False) -> dict:
+    """What the file holds, with what a writer changed from *base* to *mine*
+    outside the doc merged in: each top-level member but the dataflow and the
+    history, and each section of the dataflow kept beside the doc
+    (``doc_mapping.OUTSIDE_THE_DOC``), the agents' attachments one by one. A
+    member the writer changed is the writer's, and one it left alone stays as
+    the file has it. *every_field*: each field of the dataflow is merged so,
+    for a write made without the doc."""
+    out = _writable(on_file)
+    for key in dict.fromkeys([*base, *mine]):
+        if key in storage.HISTORY_KEYS or key == "dataflow":
+            continue
+        before, after = _member(base, key), _member(mine, key)
+        if doc_mapping.same(before, after):
+            continue
+        if after is doc_mapping.MISSING:
+            out.pop(key, None)
+        else:
+            out[key] = after
+    dataflow = dict(_dataflow_of(out))
+    was, now = _dataflow_of(base), _dataflow_of(mine)
+    names = dict.fromkeys([*was, *now]) if every_field else sorted(doc_mapping.OUTSIDE_THE_DOC)
+    for name in names:
+        before, after = _member(was, name), _member(now, name)
+        if doc_mapping.same(before, after):
+            continue
+        if after is doc_mapping.MISSING:
+            dataflow.pop(name, None)
+        else:
+            dataflow[name] = _merged_section(name, before, after, dataflow.get(name, doc_mapping.MISSING))
+    if dataflow or "dataflow" in out or "dataflow" in mine:
+        out["dataflow"] = dataflow
+    return out
+
+
+def _merged_section(name: str, before, after, theirs):
+    """The section *name* beside the doc, a writer having changed it from
+    *before* to *after*, and the file holding *theirs*: an entry the writer
+    added, changed or removed is the writer's, one it left alone stays as the
+    file has it, and one taken out meanwhile stays out. A section whose entries
+    have no keys is the writer's whole."""
+    key_of = _SECTION_KEYS.get(name)
+    if key_of is None or theirs is doc_mapping.MISSING:
+        return after
+    was = {} if before is doc_mapping.MISSING else _keyed_by(before, key_of)
+    now, held = _keyed_by(after, key_of), _keyed_by(theirs, key_of)
+    if was is None or now is None or held is None:
+        return after
+    out = []
+    for key, entry in held.items():
+        if key in now:
+            out.append(entry if key in was and doc_mapping.same(was[key], now[key]) else now[key])
+        elif key not in was:
+            out.append(entry)  # added meanwhile
+    out += [entry for key, entry in now.items() if key not in held and key not in was]
+    return out
+
+
+def _keyed_by(entries, key_of) -> Optional[dict]:
+    """*entries* by their keys, in order, or ``None`` when they cannot each be
+    keyed once."""
+    if not isinstance(entries, list):
+        return None
+    out: dict = {}
+    for entry in entries:
+        key = key_of(entry)
+        if key is None or key in out:
+            return None
+        out[key] = entry
+    return out
 
 
 # ---------------------------------------------------------------------------
