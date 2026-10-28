@@ -14,6 +14,11 @@
  * not present in any one of them. One vocabulary across the three catalogs was
  * judged worth more than that distinction, so the button borrows the label and
  * the intro carries the nuance ("makes it available to all your projects").
+ *
+ * The rail's Skills section lists the skills the agents read in the same
+ * grid, with the same drawer and a details modal of their own. A skill is
+ * added to an agent and removed from one in that agent's details, so a skill's
+ * card and drawer offer only its details.
  */
 import React, { useEffect, useState } from "react";
 
@@ -31,14 +36,31 @@ import { CatalogRail } from "../catalog/CatalogRail";
 import { AgentImportModal } from "../../components/agents/catalog/AgentImportModal";
 import { AgentDetailModal } from "../../components/agents/catalog/AgentDetailModal";
 import { AgentCatalogSettingsModal } from "../../components/agents/catalog/AgentCatalogSettingsModal";
+import { SkillDetailModal } from "../../components/agents/catalog/SkillDetailModal";
 import { CardContextMenu } from "../../components/catalog/CardContextMenu";
 import {
   agentCardActions,
+  skillCardActions,
   type CatalogCardActionId,
 } from "../../components/catalog/catalogCardActions";
+import type { SkillCard } from "../../services/agents";
+import { SkillCatalogBrowseCard } from "./SkillCatalogBrowseCard";
+import { SkillCatalogBrowseDrawer } from "./SkillCatalogBrowseDrawer";
+import { useSkillCatalogBrowse, type SkillBrowseFilter } from "./useSkillCatalogBrowse";
+
+/** What the grid lists: the agents, or, from the rail's Skills section, the
+ *  skills they read. */
+type BrowseView = "agents" | "skills";
 
 export const AgentCatalogBrowse: React.FC = () => {
   const [drawerSlotOpen, setDrawerSlotOpen] = useState(false);
+  const [view, setView] = useState<BrowseView>("agents");
+  const [skillFilter, setSkillFilter] = useState<SkillBrowseFilter>("all");
+  const [skillSearch, setSkillSearch] = useState("");
+  const [detailSkillName, setDetailSkillName] = useState<string | null>(null);
+  const [skillMenu, setSkillMenu] = useState<{ x: number; y: number; skill: SkillCard } | null>(null);
+  const skillBrowse = useSkillCatalogBrowse(skillSearch, skillFilter);
+  const showSkills = view === "skills";
   // Separate from `selectedCoord`, which drives the side drawer. Wiring both to
   // one setter is what made "View details" a no-op: on arrival the drawer is
   // already open on the first card, so the click had nothing left to change
@@ -110,8 +132,17 @@ export const AgentCatalogBrowse: React.FC = () => {
     }
   };
 
+  const runSkillAction = (id: CatalogCardActionId, skill: SkillCard) => {
+    if (id === "view-details") setDetailSkillName(skill.name);
+  };
+
   // From the unfiltered roster on purpose - the modal outlives a filter change.
   const detailAgent = detailCoord ? (agents.find((a) => a.dirName === detailCoord) ?? null) : null;
+  const detailSkill = detailSkillName
+    ? (skillBrowse.skills.find((s) => s.name === detailSkillName) ?? null)
+    : null;
+  // Switching to the agents, by any of their rows, leaves the skills.
+  const showAgents = () => setView("agents");
 
   return (
     <div
@@ -124,8 +155,9 @@ export const AgentCatalogBrowse: React.FC = () => {
         all={{
           label: "All agents",
           count: allCount,
-          active: filter === "all" && categoryFilter === "",
+          active: !showSkills && filter === "all" && categoryFilter === "",
           onClick: () => {
+            showAgents();
             setFilter("all");
             setCategoryFilter(() => "");
           },
@@ -133,8 +165,11 @@ export const AgentCatalogBrowse: React.FC = () => {
         scope={{
           label: "In all projects",
           count: importedCount,
-          active: filter === "imported",
-          onClick: () => setFilter(filter === "imported" ? "all" : "imported"),
+          active: !showSkills && filter === "imported",
+          onClick: () => {
+            showAgents();
+            setFilter(!showSkills && filter === "imported" ? "all" : "imported");
+          },
         }}
         sections={[
           {
@@ -144,11 +179,46 @@ export const AgentCatalogBrowse: React.FC = () => {
               value: cat,
               label: cat,
               count,
-              active: categoryFilter === cat,
-              onClick: () => setCategoryFilter((prev) => (prev === cat ? "" : cat)),
+              active: !showSkills && categoryFilter === cat,
+              onClick: () => {
+                showAgents();
+                setCategoryFilter((prev) => (!showSkills && prev === cat ? "" : cat));
+              },
               // The card strips' palette key for this category.
               dotClassName: browseStyles[`agentDot_${agentCategoryKey(cat)}`] ?? "",
             })),
+          },
+          {
+            // The skills the agents read. Either row lists them in the grid;
+            // the agents' rows above go back to the agents.
+            key: "skills",
+            label: "Skills",
+            entries: [
+              {
+                value: "all-skills",
+                label: "All skills",
+                count: skillBrowse.skills.length,
+                active: showSkills && skillFilter === "all",
+                onClick: () => {
+                  if (showSkills && skillFilter === "all") {
+                    showAgents();
+                    return;
+                  }
+                  setView("skills");
+                  setSkillFilter("all");
+                },
+              },
+              {
+                value: "core",
+                label: "Core",
+                count: skillBrowse.coreCount,
+                active: showSkills && skillFilter === "core",
+                onClick: () => {
+                  setView("skills");
+                  setSkillFilter(showSkills && skillFilter === "core" ? "all" : "core");
+                },
+              },
+            ],
           },
         ]}
       />
@@ -158,33 +228,53 @@ export const AgentCatalogBrowse: React.FC = () => {
           kind="agent"
           iconTitle="Agent catalog"
           title="Agent Catalog"
-          count={filtered.length}
+          count={showSkills ? skillBrowse.filtered.length : filtered.length}
           intro={
-            <>
-              Agents in the shared catalog. Adding one here makes it available to{" "}
-              <strong>all your projects</strong>, present and future; add it to a single project from
-              that project&apos;s Agent Catalog.
-            </>
+            showSkills ? (
+              <>
+                Skills the agents read: each tells an agent how to do one kind of task. Add one to an
+                agent, or remove one, in that agent&apos;s details; the change reaches the agent in{" "}
+                <strong>all your projects</strong>.
+              </>
+            ) : (
+              <>
+                Agents in the shared catalog. Adding one here makes it available to{" "}
+                <strong>all your projects</strong>, present and future; add it to a single project from
+                that project&apos;s Agent Catalog.
+              </>
+            )
           }
           viewTools={
-            <select
-              className={browseStyles.sortSelect}
-              aria-label="Sort agents"
-              value={sort}
-              onChange={(e) => setSort(e.target.value as SortMode)}
-            >
-              <option value="new">Sort: Newest</option>
-              <option value="name">Sort: Name</option>
-            </select>
+            showSkills ? null : (
+              <select
+                className={browseStyles.sortSelect}
+                aria-label="Sort agents"
+                value={sort}
+                onChange={(e) => setSort(e.target.value as SortMode)}
+              >
+                <option value="new">Sort: Newest</option>
+                <option value="name">Sort: Name</option>
+              </select>
+            )
           }
         >
-          <input
-            className={browseStyles.hubSearch}
-            type="search"
-            placeholder="Search agents…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+          {showSkills ? (
+            <input
+              className={browseStyles.hubSearch}
+              type="search"
+              placeholder="Search skills…"
+              value={skillSearch}
+              onChange={(e) => setSkillSearch(e.target.value)}
+            />
+          ) : (
+            <input
+              className={browseStyles.hubSearch}
+              type="search"
+              placeholder="Search agents…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          )}
           {/* No `accept`: an agent package is a manifest plus its prompt
               files, assembled in a modal, not a single archive. */}
           <CatalogHeaderImport
@@ -216,7 +306,30 @@ export const AgentCatalogBrowse: React.FC = () => {
           </div>
         ) : null}
 
-        {loading ? (
+        {showSkills ? (
+          skillBrowse.loading ? (
+            <div className={browseStyles.empty}>Loading skills…</div>
+          ) : skillBrowse.filtered.length === 0 ? (
+            <div className={browseStyles.empty}>No skills match the current filters.</div>
+          ) : (
+            <section className={browseStyles.cardGrid}>
+              {skillBrowse.filtered.map((skill) => (
+                <SkillCatalogBrowseCard
+                  key={skill.name}
+                  skill={skill}
+                  selected={skillBrowse.selectedSkill?.name === skill.name}
+                  onSelect={() => skillBrowse.setSelectedName(skill.name)}
+                  onViewDetails={() => setDetailSkillName(skill.name)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    skillBrowse.setSelectedName(skill.name);
+                    setSkillMenu({ x: e.clientX, y: e.clientY, skill });
+                  }}
+                />
+              ))}
+            </section>
+          )
+        ) : loading ? (
           <div className={browseStyles.empty}>Loading agents…</div>
         ) : filtered.length === 0 ? (
           <div className={browseStyles.empty}>No agents match the current filters.</div>
@@ -245,18 +358,27 @@ export const AgentCatalogBrowse: React.FC = () => {
         )}
       </main>
 
-      <AgentCatalogBrowseDrawer
-        agent={selectedAgent}
-        busyCoord={busyCoord}
-        catalogPublishAllowed={catalogPublishAllowed}
-        onImport={(a) => void onImport(a)}
-        onRemoveImport={(a) => void onRemoveImport(a)}
-        onPublish={(a) => void onPublish(a)}
-        onUnpublish={(a) => void onUnpublish(a)}
-        onViewDetails={(a) => setDetailCoord(a.dirName)}
-        onClose={() => setSelectedCoord(null)}
-        onLayoutChange={setDrawerSlotOpen}
-      />
+      {showSkills ? (
+        <SkillCatalogBrowseDrawer
+          skill={skillBrowse.selectedSkill}
+          onViewDetails={(skill) => setDetailSkillName(skill.name)}
+          onClose={() => skillBrowse.setSelectedName(null)}
+          onLayoutChange={setDrawerSlotOpen}
+        />
+      ) : (
+        <AgentCatalogBrowseDrawer
+          agent={selectedAgent}
+          busyCoord={busyCoord}
+          catalogPublishAllowed={catalogPublishAllowed}
+          onImport={(a) => void onImport(a)}
+          onRemoveImport={(a) => void onRemoveImport(a)}
+          onPublish={(a) => void onPublish(a)}
+          onUnpublish={(a) => void onUnpublish(a)}
+          onViewDetails={(a) => setDetailCoord(a.dirName)}
+          onClose={() => setSelectedCoord(null)}
+          onLayoutChange={setDrawerSlotOpen}
+        />
+      )}
 
       {contextMenu ? (
         <CardContextMenu
@@ -269,9 +391,29 @@ export const AgentCatalogBrowse: React.FC = () => {
         />
       ) : null}
 
-      {detailAgent ? (
-        <AgentDetailModal agent={detailAgent} onClose={() => setDetailCoord(null)} />
+      {skillMenu ? (
+        <CardContextMenu
+          x={skillMenu.x}
+          y={skillMenu.y}
+          ariaLabel="Skill actions"
+          items={skillCardActions()}
+          onSelect={(id) => runSkillAction(id as CatalogCardActionId, skillMenu.skill)}
+          onDismiss={() => setSkillMenu(null)}
+        />
       ) : null}
+
+      {detailAgent ? (
+        <AgentDetailModal
+          agent={detailAgent}
+          onClose={() => {
+            setDetailCoord(null);
+            // A skill added or removed there changes who uses it.
+            void skillBrowse.reload();
+          }}
+        />
+      ) : null}
+
+      {detailSkill ? <SkillDetailModal skill={detailSkill} onClose={() => setDetailSkillName(null)} /> : null}
 
       {settingsOpen ? <AgentCatalogSettingsModal onClose={() => setSettingsOpen(false)} /> : null}
 

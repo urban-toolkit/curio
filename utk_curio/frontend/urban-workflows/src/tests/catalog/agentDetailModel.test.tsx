@@ -24,6 +24,12 @@ jest.mock("../../api/llmConfigsApi", () => ({
   llmConfigsApi: { listing: jest.fn(() => Promise.resolve(mockListing)) },
 }));
 
+// The Skills section reads the agent's skills; agentSkillsSection.test.tsx
+// covers it, so here it stays loading.
+jest.mock("../../services/agents/skillsApi", () => ({
+  skillsApi: { agentSkills: jest.fn(() => new Promise(() => {})) },
+}));
+
 import { AgentDetailModal } from "../../components/agents/catalog/AgentDetailModal";
 import {
   API_SETTINGS_EVENT,

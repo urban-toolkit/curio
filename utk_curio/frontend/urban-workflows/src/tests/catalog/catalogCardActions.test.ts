@@ -15,6 +15,7 @@ import {
   discoverySourceCardActions,
   packageCardActions,
   scenarioCardActions,
+  skillCardActions,
 } from "../../components/catalog/catalogCardActions";
 
 describe("catalog card actions", () => {
@@ -117,6 +118,13 @@ describe("catalog card actions", () => {
     ]);
   });
 
+  test("a skill offers only its details", () => {
+    // It is added to an agent, and removed from one, in that agent's details;
+    // its own drawer has no primary action, so its menu has none either.
+    expect(skillCardActions().map((a) => a.id)).toEqual(["view-details"]);
+    expect(skillCardActions().map((a) => a.label)).toEqual(["View details"]);
+  });
+
   test("publishing is never a menu row", () => {
     // `CatalogPublishPill` puts a confirmation in front of Publish and
     // Unpublish because both write to the whole deployment's catalog. A menu
@@ -131,6 +139,7 @@ describe("catalog card actions", () => {
       ...discoverySourceCardActions({ browsable: true }),
       ...packageCardActions({ isInstalled: true, hasUpdate: false }),
       ...scenarioCardActions(),
+      ...skillCardActions(),
     ];
     // Widened on purpose: the two ids are not in `CatalogCardActionId` at all,
     // which is half the guarantee - the other half is that no builder emits one.
@@ -160,6 +169,7 @@ describe("catalog card actions", () => {
       packageCardActions({ isInstalled: true, hasUpdate: true }),
       packageCardActions({ isInstalled: true, hasUpdate: false }),
       scenarioCardActions(),
+      skillCardActions(),
     ]) {
       expect(list[list.length - 1].id).toBe("view-details");
     }

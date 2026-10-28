@@ -10,6 +10,8 @@
 
 export * from "./types";
 export * from "./agentsApi";
+export * from "./skillsApi";
+export * from "./agentSkills";
 export * from "./agentEvents";
 export * from "./agentDrag";
 export * from "./useAgentCatalog";
