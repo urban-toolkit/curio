@@ -91,9 +91,7 @@ jest.mock('../../ConnectionValidator', () => ({
 }));
 
 import FlowProvider, { useFlowContext } from '../../providers/FlowProvider';
-import { DataflowDocContext } from '../../providers/collab/docContext';
-import { DataflowDocProvider } from '../../providers/collab/docProvider';
-import { dataflowToDoc, docToDataflow } from '../../providers/collab/docMapping';
+import type { DataflowDocProvider } from '../../providers/collab/docProvider';
 import { CURIO_UNIVERSAL_NODE_TYPE, NodeType, SupportedType } from '../../constants';
 import { registerNode } from '../../registry/nodeRegistry';
 import type { NodeDescriptor } from '../../registry/types';
@@ -154,6 +152,16 @@ const PROJECT = 'project-fan-in';
 /** The dataflow's doc, as every other tab reads it, when a test binds the canvas. */
 let held: DataflowDocProvider | null = null;
 
+/** The dataflow's doc and its mapping, required by the tests that bind the
+ *  canvas, the others needing neither. */
+function docModules() {
+  return {
+    ...require('../../providers/collab/docContext'),
+    ...require('../../providers/collab/docProvider'),
+    ...require('../../providers/collab/docMapping'),
+  };
+}
+
 function renderFlow() {
   const flow = (
     <ReactFlowProvider>
@@ -163,6 +171,7 @@ function renderFlow() {
     </ReactFlowProvider>
   );
   if (!held) return render(flow);
+  const { DataflowDocContext } = docModules();
   return render(
     <DataflowDocContext.Provider value={{ provider: held, synced: true }}>{flow}</DataflowDocContext.Provider>,
   );
@@ -171,16 +180,22 @@ function renderFlow() {
 /** Bind the next canvas to a doc the server synced: an empty dataflow,
  *  loaded as such. */
 function bindToDoc() {
+  const { DataflowDocProvider: Provider, dataflowToDoc } = docModules();
   const dataflow = { name: '', nodes: [], edges: [] };
-  held = new DataflowDocProvider(PROJECT, { canWrite: true });
+  held = new Provider(PROJECT, { canWrite: true }) as DataflowDocProvider;
   dataflowToDoc(dataflow, held.doc, 'doc-1');
   held.synced = true;
   mockLoaded.current = { epoch: 1, projectId: PROJECT, dataflow };
 }
 
+/** The dataflow as the doc holds it. */
+function docDataflow(): any {
+  return docModules().docToDataflow(held!.doc);
+}
+
 /** *nodeId*'s code in the doc. */
 function docCode(nodeId: string): string | undefined {
-  return docToDataflow(held!.doc).nodes.find((n: any) => n.id === nodeId)?.content;
+  return docDataflow().nodes.find((n: any) => n.id === nodeId)?.content;
 }
 
 /** Each value *nodeId*'s code takes in the doc from now on, one per change. */
@@ -351,7 +366,7 @@ describe('deleting an edge closes the gap', () => {
     expect(dataOf('t').defaultCode).toBe(rewritten);
     // The other tabs get the moved edge and the new code from here, through
     // the dataflow's doc, the code in one change.
-    const docEdges = docToDataflow(held!.doc).edges;
+    const docEdges = docDataflow().edges;
     expect(docEdges.map((e: any) => [e.source, e.targetHandle]).sort()).toEqual([['a', 'in'], ['c', 'in_1']]);
     expect(codeChanges).toEqual([rewritten]);
   });
@@ -377,7 +392,7 @@ describe('deleting an edge closes the gap', () => {
     expect(dataOf('t').code).toBe('x = [!! input_0 !!]');
     // The other tabs get no change of the code.
     expect(codeChanges).toEqual([]);
-    expect(docToDataflow(held!.doc).edges.map((e: any) => e.source)).toEqual(['a']);
+    expect(docDataflow().edges.map((e: any) => e.source)).toEqual(['a']);
   });
 });
 

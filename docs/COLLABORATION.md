@@ -24,7 +24,7 @@ Every tab that opens a saved dataflow (`/dataflow/<UUID>`) while signed in holds
 - **Everything else, live.** Adding, removing or connecting nodes, a widget's value, a scenario, a node's title, size or settings reach every other tab at once. While someone drags a node, the others see it move; it lands where they drop it.
 - **Kept as it is made.** The server keeps each change the moment it arrives and writes the dataflow a second after the last one. A tab that opens the dataflow later finds every change, the last keystroke included.
 
-A dataflow not saved yet, a hosted guest's canvas and the dashboard page each stay in their own tab.
+A dataflow not saved yet, a hosted guest's canvas of an example, every canvas of a Curio started with `--no-project`, and the dashboard page each stay in their own tab.
 
 Without `--collab`, only the owner's tabs edit, and everyone else's follow the dataflow as it changes. With `--collab`:
 

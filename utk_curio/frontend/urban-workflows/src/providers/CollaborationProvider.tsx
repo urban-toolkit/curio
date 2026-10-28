@@ -25,7 +25,9 @@
  *
  * Once joined, the tab syncs the dataflow's doc, which ``DataflowDocContext``
  * hands the canvas. A change of the tab's role, either way, and a doc the
- * server built anew, start the doc again from the server's.
+ * server built anew, start the doc again from the server's. A Curio with no
+ * sign-in (``curio_no_auth``, or no projects page) starts no doc: each canvas
+ * stays its own there.
  */
 
 import React, {
@@ -197,6 +199,9 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     const namespaceRef = useRef<string>(DEFAULT_NAMESPACE);
     // The flag as the doc's writers read it: read before any socket opens.
     const enabledRef = useRef<boolean>(false);
+    // A Curio with no sign-in (the shared guest signed in for everyone, or no
+    // projects page): each canvas stays its own, bound to no doc.
+    const noSignInRef = useRef<boolean>(false);
     const projectIdRef = useRef<string | undefined>(getCurrentProjectId());
     // The dataflow whose room refused this tab: no socket is opened for it
     // again until another dataflow opens.
@@ -215,6 +220,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
                 if (cancelled) return;
                 namespaceRef.current = cfg.collab_namespace || DEFAULT_NAMESPACE;
                 enabledRef.current = Boolean(cfg.enable_collab);
+                noSignInRef.current = Boolean(cfg.curio_no_auth || cfg.skip_project_page || cfg.curio_no_project);
                 setEnabled(Boolean(cfg.enable_collab));
                 setConfigLoaded(true);
             })
@@ -313,7 +319,9 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
                             setUsers(ack.snapshot.users);
                             setLockedNodes(ack.snapshot.locks);
                             setActivity(ack.snapshot.activity);
-                            if (socketRef.current === socket) startDoc(socket, projectId, ack.role ?? null);
+                            if (socketRef.current === socket && !noSignInRef.current) {
+                                startDoc(socket, projectId, ack.role ?? null);
+                            }
                         } else if (ack && ack.ok === false && socketRef.current === socket) {
                             // Refused: this tab is not in the room, so it keeps
                             // no socket for it. Nothing is retried for the
@@ -425,6 +433,9 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     // clears its presence in the doc, so there is nothing to send first.
     useEffect(() => {
         if (!configLoaded) return;
+        // With no sign-in a tab binds no doc, so without the people panel it
+        // has nothing to join a room for.
+        if (noSignInRef.current && !enabledRef.current) return;
         const reconcile = () => {
             const nextId = getCurrentProjectId();
             const prevId = projectIdRef.current;

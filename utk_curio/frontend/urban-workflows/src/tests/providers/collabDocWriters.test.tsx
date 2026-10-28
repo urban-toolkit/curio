@@ -3,7 +3,8 @@
  * `collab/participants.ts`'s `writesDoc`): the owner's always, an invited
  * editor's only with --collab on, as its canvas watches without it, and a
  * watcher's never. The doc's sync starts on the room's socket once the room
- * has joined the tab, whatever --collab says.
+ * has joined the tab, whatever --collab says, but on a Curio with no sign-in,
+ * where each canvas stays its own.
  */
 import React from "react";
 import { act, render, waitFor } from "@testing-library/react";
@@ -15,11 +16,12 @@ jest.mock("socket.io-client", () => ({
 jest.mock("../../utils/backendUrl", () => ({
   backendUrl: () => "http://localhost:5002",
 }));
-let mockEnableCollab = true;
+/** What /api/config/public answers, as each test sets it. */
+let mockConfig: Record<string, unknown> = {};
 jest.mock("../../utils/authApi", () => ({
   getToken: () => "tok",
   authApi: {
-    getPublicConfig: () => Promise.resolve({ enable_collab: mockEnableCollab, collab_namespace: "/collab" }),
+    getPublicConfig: () => Promise.resolve({ collab_namespace: "/collab", ...mockConfig }),
     getMe: () => Promise.resolve({ id: 7, username: "ana" }),
   },
 }));
@@ -86,20 +88,34 @@ beforeEach(() => {
   });
 });
 
-/** A tab the room joins as *role*, its doc synced with the server's. */
-async function joinedAs(role: string): Promise<FakeSocket> {
+/** The page, its public config read. */
+async function opened(): Promise<void> {
   render(
     <CollaborationProvider>
       <Probe />
     </CollaborationProvider>,
   );
-  await waitFor(() => expect(sockets).toHaveLength(1));
-  const socket = sockets[0];
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
+/** The room joins this tab as *role*. */
+function joinAs(socket: FakeSocket, role: string) {
   socket.fire("connect");
   const join = socket.sent.find((sent) => sent.event === "join_session");
   expect(join).toBeDefined();
   const users = [{ user_id: 7, username: "ana", participant_id: "p-1", role }];
   act(() => join!.ack!({ ok: true, participant_id: "p-1", role, snapshot: { users, locks: {}, activity: [] } }));
+}
+
+/** A tab the room joins as *role*, its doc synced with the server's. */
+async function joinedAs(role: string): Promise<FakeSocket> {
+  await opened();
+  await waitFor(() => expect(sockets).toHaveLength(1));
+  const socket = sockets[0];
+  joinAs(socket, role);
   const start = socket.sent.find((sent) => sent.event === "yjs");
   expect(start).toBeDefined();
   act(() => start!.ack!({ ok: true, docId: "doc-1", role }));
@@ -128,7 +144,7 @@ test.each([
   ["editor", true],
   ["watcher", false],
 ])("with --collab, a tab the room names %s sends its changes: %s", async (role, sends) => {
-  mockEnableCollab = true;
+  mockConfig = { enable_collab: true };
   const socket = await joinedAs(role);
 
   renameOnCanvas();
@@ -142,11 +158,34 @@ test.each([
   ["editor", false],
   ["watcher", false],
 ])("without --collab, a tab the room names %s sends its changes: %s", async (role, sends) => {
-  mockEnableCollab = false;
+  mockConfig = { enable_collab: false };
   const socket = await joinedAs(role);
 
   renameOnCanvas();
 
   expect(binding!.provider.canWrite).toBe(sends);
   expect(updatesSent(socket) > 0).toBe(sends);
+});
+
+test("on a Curio with no sign-in the room joins the owner's tab, and no doc starts", async () => {
+  mockConfig = { enable_collab: true, curio_no_auth: true };
+  await opened();
+  await waitFor(() => expect(sockets).toHaveLength(1));
+
+  joinAs(sockets[0], "owner");
+
+  expect(binding).toBeNull();
+  expect(sockets[0].sent.filter((sent) => sent.event === "yjs")).toEqual([]);
+});
+
+test("on a Curio with no sign-in and no people panel, a tab joins no room", async () => {
+  mockConfig = { enable_collab: false, curio_no_auth: true };
+  await opened();
+  // Time for a socket to open, as one does on a Curio with sign-in.
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+
+  expect(mockIo).not.toHaveBeenCalled();
+  expect(binding).toBeNull();
 });

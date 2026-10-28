@@ -1734,7 +1734,7 @@ provider, publishing, and writing your own, see [docs/AGENT-CATALOG.md](AGENT-CA
 
 ## Real-time collaboration
 
-Every tab that opens a saved dataflow while signed in holds one shared copy of it, which the server keeps as each change is made. A change in one tab shows in every other tab that has the dataflow open: code and specs as they are typed, with each person's cursor, and nodes, connections, widgets, scenarios and drags at once. A tab that opens the dataflow later finds every change.
+Every tab that opens a saved dataflow while signed in holds one shared copy of it, which the server keeps as each change is made. A change in one tab shows in every other tab that has the dataflow open: code and specs as they are typed, with each person's cursor, and nodes, connections, widgets, scenarios and drags at once. A tab that opens the dataflow later finds every change. A hosted guest's canvas of an example, and every canvas of a Curio started with `--no-project`, stay their own.
 
 `curio start --collab` lets the editors the owner invited edit with the owner, and shows who is in the dataflow: the people panel, a lock chip on a node someone is in, and the outputs others run. It needs no rebuild to turn on.
 
