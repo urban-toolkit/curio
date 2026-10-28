@@ -1709,7 +1709,7 @@ def _check_plan_cycles(user_key, project_id, proposal_id, spec: dict, proposal: 
 def _remove_plan_victims(spec: dict, nodes: list, edges: list, remove_node_set: set,
                          remove_edges: list) -> tuple[set, list]:
     """Removals first (dev/59): listed edges + the recomputed cascade of edges incident to removed
-    nodes, then the victims themselves — in place, so unlisted elements are untouched by construction.
+    nodes, then the victims themselves, in place, so unlisted elements are untouched by construction.
     Answers the removed edge ids and the attachments removed with their nodes, whose transcripts the
     caller deletes once its write lands (``sessions.delete_sessions_of``)."""
     removed_edge_ids = set(remove_edges)
