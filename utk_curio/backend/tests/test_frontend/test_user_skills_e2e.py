@@ -96,7 +96,9 @@ def test_a_skill_of_your_own_is_imported_through_its_review_exported_and_removed
     expect(cards).to_have_count(shipped, timeout=20000)
 
     # The review: the skill as the server read it, every agent offered picked.
-    page.get_by_role("button", name="Import skill").click()
+    import_skill = page.get_by_role("button", name="Import skill")
+    expect(import_skill).to_be_visible(timeout=15000)
+    import_skill.click()
     dialog = page.locator(MODAL)
     expect(dialog.get_by_role("heading", name="Import skill")).to_be_visible(timeout=15000)
     with page.expect_response(lambda r: r.url.endswith("/api/agents/skills/imports/check"), timeout=20000) as checked:

@@ -88,6 +88,14 @@ def _post(client, token, url, form):
                        headers={"Authorization": f"Bearer {token}"})
 
 
+def _review(client, token, form) -> dict:
+    """What the import review says of *form*. A review answers 200 even when
+    it names a problem; any other answer fails here, at an assertion."""
+    resp = _post(client, token, CHECK, form)
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    return resp.get_json()
+
+
 def _user_skills():
     """The account's skill store, imported where a test runs, so a checkout
     without it fails each test, never the collection."""
@@ -132,10 +140,8 @@ QUIRKY = _skill_md(
 
 def test_the_review_reads_an_upload_leniently_and_keeps_nothing(client, user_and_token, tmp_curio):
     user, token = user_and_token
-    resp = _post(client, token, CHECK, _form({"SKILL.md": QUIRKY, "references/species.md": "Oak, elm."},
-                                             folder="Street Trees Skill"))
-    assert resp.status_code == 200, resp.get_data(as_text=True)
-    review = resp.get_json()
+    review = _review(client, token, _form({"SKILL.md": QUIRKY, "references/species.md": "Oak, elm."},
+                                          folder="Street Trees Skill"))
     assert review["name"] == NAME and review["givenName"] == NAME
     assert review["description"] == "Use this skill when: a dataflow counts street trees"
     said = " | ".join(review["warnings"])
@@ -217,7 +223,7 @@ def test_a_lenient_import_keeps_what_the_format_refuses_in_the_format(client, us
 
     user, token = user_and_token
     text, folder, warned = LENIENT[case]
-    review = _post(client, token, CHECK, _form({"SKILL.md": text}, folder=folder)).get_json()
+    review = _review(client, token, _form({"SKILL.md": text}, folder=folder))
     assert review["name"] == NAME and review["problem"] is None, review
     if warned is None:
         assert review["warnings"] == [], review
@@ -238,7 +244,7 @@ def test_a_description_the_format_has_no_room_for_is_the_reviews_problem_and_ref
     kept, and the import refuses it."""
     user, token = user_and_token
     upload = {"SKILL.md": _skill_md(description="Use this skill when trees are counted. " + "a" * 1000)}
-    review = _post(client, token, CHECK, _form(upload)).get_json()
+    review = _review(client, token, _form(upload))
     assert review["problem"] == "its description is 1,039 characters, more than 1,024", review
     assert review["rename"] is False
     resp = _post(client, token, IMPORT, _form(upload))
@@ -282,14 +288,14 @@ def test_a_taken_name_is_refused_naming_whose_it_is_and_another_name_keeps_the_s
 ):
     user, token = user_and_token
     upload = {"SKILL.md": _skill_md(name), "references/species.md": "Oak."}
-    review = _post(client, token, CHECK, _form(upload)).get_json()
+    review = _review(client, token, _form(upload))
     assert review["problem"].startswith(said) or said in review["problem"], review
     assert review["rename"] is True
     resp = _post(client, token, IMPORT, _form(upload))
     assert resp.status_code == status and said in resp.get_json()["error"], resp.get_json()
 
     # Renamed in the review: its folder and its name change together.
-    review = _post(client, token, CHECK, _form(upload, name="my-trees")).get_json()
+    review = _review(client, token, _form(upload, name="my-trees"))
     assert review["name"] == "my-trees" and review["problem"] is None, review
     assert _post(client, token, IMPORT, _form(upload, name="my-trees")).status_code == 201
     kept = skills.parse(_kept(user, "my-trees"))
@@ -342,7 +348,7 @@ def test_files_outside_the_skills_folder_are_left_out_and_named(client, user_and
     user, token = user_and_token
     form = _zip_form({"repo/README.md": "A repository.", f"repo/skills/{NAME}/SKILL.md": _skill_md(),
                       f"repo/skills/{NAME}/references/species.md": "Oak."})
-    review = _post(client, token, CHECK, form).get_json()
+    review = _review(client, token, form)
     assert review["leftOut"] == ["repo/README.md, which is outside the skill's folder"], review
     assert review["files"] == ["references/species.md"]
 
@@ -451,7 +457,9 @@ def test_a_skill_an_agent_always_holds_cannot_be_removed(client, user_and_token,
 def test_a_value_is_written_so_every_reader_takes_the_same_text(value, written, tmp_path):
     import skills_ref
 
-    kept, _ = skills.in_the_format(_skill_md(extra=f"metadata:\n  note: {json.dumps(value)}\n"), name=NAME)
+    from utk_curio.backend.app.agents.domain.skills import in_the_format
+
+    kept, _ = in_the_format(_skill_md(extra=f"metadata:\n  note: {json.dumps(value)}\n"), name=NAME)
     assert f"  note: {written}\n" in kept
     folder = tmp_path / NAME
     folder.mkdir()
