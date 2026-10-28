@@ -43,10 +43,12 @@ class SharedCatalog:
     folder per published entry, each named as its kind names an entry and
     holding the file every entry of the kind has."""
 
-    def __init__(self, folder: str, *, is_name: Callable[[str], bool], error: type[Exception],
+    def __init__(self, folder: str, *, noun: str, is_name: Callable[[str], bool], error: type[Exception],
                  what: str, entry_file: str):
         #: The catalog's folder, beside ``.curio/users/``.
         self.folder = folder
+        #: What an entry is, as a message names it: "agent", "skill".
+        self.noun = noun
         self._is_name = is_name
         #: The exception a name no entry can have raises.
         self.error = error
@@ -122,12 +124,12 @@ class SharedCatalog:
 
 #: The agents accounts publish, one ``<agentId>@<major>`` folder each.
 AGENTS = SharedCatalog(
-    "agents-catalog", is_name=lambda name: bool(AGENT_DIR_RE.match(name)), error=AgentManifestError,
-    what="agent directory name", entry_file="manifest.json",
+    "agents-catalog", noun="agent", is_name=lambda name: bool(AGENT_DIR_RE.match(name)),
+    error=AgentManifestError, what="agent directory name", entry_file="manifest.json",
 )
 #: The skills accounts publish, one folder each, named after the skill.
 SKILLS = SharedCatalog(
-    "skills-catalog", is_name=skill_format.is_name, error=skill_format.SkillError,
+    "skills-catalog", noun="skill", is_name=skill_format.is_name, error=skill_format.SkillError,
     what="skill name", entry_file=skill_format.SKILL_FILE,
 )
 

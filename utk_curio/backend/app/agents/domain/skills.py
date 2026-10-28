@@ -198,22 +198,23 @@ def _split(text: str, where: str, strict: bool) -> tuple[str, str, int]:
     return "\n".join(lines[1:end]), "\n".join(lines[start:]), start + 1
 
 
-def _fields(front: str, where: str, strict: bool) -> tuple[dict, list[str]]:
-    """The frontmatter *front* as a mapping, and the fields lenient mode read
-    as quoted text. As agentskills.io's guide for clients advises, lenient
-    mode reads frontmatter that is no YAML only because a plain value holds a
-    colon followed by a space (``description: Use it when: ...``), which
-    other clients' readers take, by reading each such value as quoted text
-    (:func:`_quoted_values`). Raises :class:`SkillError` for frontmatter that
-    is still no YAML mapping."""
+def _fields(front: str, where: str, strict: bool, loader=yaml.SafeLoader) -> tuple[dict, list[str]]:
+    """The frontmatter *front* as a mapping, read with the YAML *loader*, and
+    the fields lenient mode read as quoted text. As agentskills.io's guide for
+    clients advises, lenient mode reads frontmatter that is no YAML only
+    because a plain value holds a colon followed by a space
+    (``description: Use it when: ...``), which other clients' readers take,
+    by reading each such value as quoted text (:func:`_quoted_values`).
+    Raises :class:`SkillError` for frontmatter that is still no YAML
+    mapping."""
     try:
-        return _mapping(yaml.safe_load(front), where), []
+        return _mapping(yaml.load(front, Loader=loader), where), []
     except yaml.YAMLError as exc:
         error = _one_line(exc)
     quoted, keys = (None, []) if strict else _quoted_values(front)
     if quoted is not None:
         try:
-            return _mapping(yaml.safe_load(quoted), where), keys
+            return _mapping(yaml.load(quoted, Loader=loader), where), keys
         except yaml.YAMLError:
             pass
     raise SkillError(f"{where}: its frontmatter is not YAML ({error})")
@@ -395,16 +396,17 @@ def in_the_format(text: str, *, name: str, where: str = SKILL_FILE) -> tuple[str
     """*text*, a ``SKILL.md`` brought from elsewhere, as Curio keeps it under
     the name *name*, and what that left out, one line each.
 
-    *text* is read as lenient mode reads it, and its frontmatter is written
-    anew in the format from what that read gives: *name*; its description;
-    its license and compatibility as text; its ``metadata`` as text by text
-    keys, joined by each field the format does not define that holds one
-    value, under a key the metadata does not hold already; and its
-    ``allowed-tools`` as text, a list of tools joined by spaces. A field the
-    format does not define that holds a list or a mapping, and a value of its
-    metadata that does, is left out. Each value a reader could take as
-    anything but that text is quoted (:func:`_scalar`). The body follows as
-    written.
+    *text* is read as lenient mode reads it, each value as the text it is
+    written as (``yaml.BaseLoader``, as agentskills.io's ``skills-ref``
+    reads it: ``1.10`` stays ``1.10``), and its frontmatter is written anew
+    in the format from what that read gives: *name*; its description; its
+    license and compatibility; its ``metadata``, joined by each field the
+    format does not define that holds one value, under a key the metadata
+    does not hold already; and its ``allowed-tools``, a list of tools joined
+    by spaces. A field the format does not define that holds a list or a
+    mapping, and a value of its metadata that does, is left out. Each value a
+    reader could take as anything but that text is quoted (:func:`_scalar`).
+    The body follows as written.
 
     Raises :class:`SkillError` for a *name* that is no skill's name, for what
     lenient mode refuses, and for what the format holds no room for: a
@@ -414,7 +416,7 @@ def in_the_format(text: str, *, name: str, where: str = SKILL_FILE) -> tuple[str
                          "single hyphens, with no hyphen first or last")
     text = text.replace("\r\n", "\n").replace("\r", "\n").removeprefix("﻿")
     front, body, _ = _split(text, where, False)
-    fields, _ = _fields(front, where, False)
+    fields, _ = _fields(front, where, False, loader=yaml.BaseLoader)
     description = _as_text(fields.get("description"))
     if description is None or not description.strip():
         raise SkillError(f"{where} gives no description, which says when to use it")

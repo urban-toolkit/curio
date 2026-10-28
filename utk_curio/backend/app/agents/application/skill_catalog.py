@@ -1,14 +1,19 @@
 """Skills as the Agent Catalog shows them, and what an account changes of an agent's skills.
 
-The Agent Catalog lists skills beside agents (``routes/skills.py``):
+The Agent Catalog lists skills beside agents (``routes/skills.py``). An
+account sees three kinds (:func:`seen_skills`): the skills Curio ships, those
+it holds of its own (``repositories/user_skills.py``: the ones it imported,
+and its copies of skills it added from the shared catalog), and the skills
+other accounts published to the shared catalog (``publications.SKILLS``) that
+it holds no copy of.
 
-- :func:`skills_listing`: every skill Curio ships, as a card: its name, its
-  description and facts (``license``, ``compatibility``, the author and
+- :func:`skills_listing`: every skill the account sees, as a card: its name,
+  its description and facts (``license``, ``compatibility``, the author and
   version its ``metadata`` gives), its other files, what it serves (the kinds
   of node whose templates name one of its ``curio-behaviors``, and its
   ``curio-features``), whether every call holds it (``core``: the preamble
-  Curio's agents read places it), and the agents that use it, after the
-  account's changes.
+  Curio's agents read places it), whose it is and whether it is published,
+  and the agents that use it, after the account's changes.
 - :func:`skill_text`: one skill's body as an agent reads it, and its files.
 - :func:`agent_skill_rows`: one agent's skills as its details list them: the
   core skills its preamble holds, those its manifest names after the
@@ -17,13 +22,20 @@ The Agent Catalog lists skills beside agents (``routes/skills.py``):
 - :func:`add_skill`, :func:`remove_skill` and :func:`restore_skills`: the
   account's changes (``infrastructure/agent_skills.py``), each checked. A run
   reads them when it starts (``skill_runs.account_choice``), so its catalog
-  and the skills it is handed follow them.
+  and the skills it is handed follow them. Adding a skill of the shared
+  catalog copies it into the account's skills first, as adding a published
+  agent copies it (``catalog._copy_published``), so it keeps working after
+  its publisher unpublishes it.
 - :func:`run_skills`: the skills a chat of one attachment lists, which ``/``
   in its composer offers.
+
+Importing, exporting, publishing and removing an account's own skills is
+``skill_lifecycle.py``'s.
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from utk_curio.backend.app.agents.application import catalog
@@ -31,7 +43,6 @@ from utk_curio.backend.app.agents.application import skill_runs
 from utk_curio.backend.app.agents.application import spec_reads
 from utk_curio.backend.app.agents.application.errors import AgentServiceError
 from utk_curio.backend.app.agents.application.turns import prompts
-from utk_curio.backend.app.agents.domain import agent_text
 from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.domain import skills as skill_format
 from utk_curio.backend.app.agents.domain.manifest import AgentManifest
@@ -39,11 +50,81 @@ from utk_curio.backend.app.agents.infrastructure import agent_skills as agent_sk
 from utk_curio.backend.app.agents.repositories import imports
 from utk_curio.backend.app.agents.repositories import publications
 from utk_curio.backend.app.agents.repositories import sessions
+from utk_curio.backend.app.agents.repositories import user_skills
 from utk_curio.backend.app.packages import service as packages_services
+
+log = logging.getLogger(__name__)
 
 #: The keys of a skill's ``metadata`` that name its author and version.
 AUTHOR_KEY = "author"
 VERSION_KEY = "version"
+#: Whose a skill is, as its card says: Curio's, one the account imported, or
+#: one of the shared catalog's (published, or the account's copy of one).
+CURIO = "curio"
+YOURS = "yours"
+SHARED = "shared"
+
+
+# --- The skills an account sees ------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Seen:
+    """The skills an account sees, by name, each kind in its listing's order."""
+
+    #: The skills Curio ships.
+    shipped: dict
+    #: The skills it holds of its own: those it imported, and its copies of
+    #: the shared catalog's.
+    own: dict
+    #: The shared catalog's skills it holds no copy of.
+    published: dict
+
+    @property
+    def usable(self) -> dict:
+        """The skills an agent of the account may hold: Curio's, then its own."""
+        return {**self.shipped, **self.own}
+
+    def find(self, name) -> skill_format.Skill | None:
+        if not isinstance(name, str):
+            return None
+        return self.shipped.get(name) or self.own.get(name) or self.published.get(name)
+
+
+def published_skills(taken=()) -> dict:
+    """The skills of the shared catalog, read leniently, by name, but those
+    whose names are in *taken*. One that cannot be read, or whose name is not
+    its folder's, is left out and logged."""
+    taken = set(taken)
+    found: dict = {}
+    for name in publications.SKILLS.names():
+        if name in taken:
+            continue
+        folder = publications.SKILLS.entry_dir(name)
+        try:
+            skill = skill_format.parse(folder, strict=False)
+        except (OSError, ValueError) as exc:
+            log.warning("The shared catalog's skill %s cannot be read: %s", name, exc)
+            continue
+        if skill.name == name:
+            found[name] = skill
+    return found
+
+
+def seen_skills(user_key: str | None) -> Seen:
+    """The skills the account *user_key* sees (:class:`Seen`)."""
+    shipped = skill_runs.shipped_skills()
+    own = skill_runs.account_skills(user_key)
+    return Seen(shipped=shipped, own=own, published=published_skills((*shipped, *own)))
+
+
+def _source(seen: Seen, name: str) -> str:
+    """Whose the skill *name* is (:data:`CURIO`, :data:`YOURS`, :data:`SHARED`)."""
+    if name in seen.shipped:
+        return CURIO
+    if name in seen.own and not user_skills.is_copy(seen.own[name].folder):
+        return YOURS
+    return SHARED
 
 
 # --- The agents ----------------------------------------------------------------------
@@ -107,12 +188,15 @@ def _own_modes(m: AgentManifest) -> tuple[dict[str, list[str]], list[str]]:
     return found, asked
 
 
-def _held(user_key: str, m: AgentManifest, shipped: dict) -> _Held:
-    """What the agent *m* holds for the account *user_key* (:class:`_Held`)."""
-    placed = skill_runs.placed_in(prompts._resolve_prompt_text(user_key, m.dir_name, "system"), shipped)
+def held_by(user_key: str, m: AgentManifest, seen: Seen) -> _Held:
+    """What the agent *m* holds for the account *user_key* (:class:`_Held`),
+    of the skills the account sees (*seen*)."""
+    usable = seen.usable
+    placed = skill_runs.placed_in(prompts._resolve_prompt_text(user_key, m.dir_name, "system"), seen.shipped)
     choice = skill_runs.account_choice(user_key, m)
-    own = [skill for skill in skill_runs.agent_skills(m, shipped, choice=choice) if skill.name not in placed]
-    chat = [name for name in dict.fromkeys(m.instruction_skills) if name in shipped and name not in placed]
+    own = [skill for skill in skill_runs.agent_skills(m, seen.shipped, choice=choice, usable=usable)
+           if skill.name not in placed]
+    chat = [name for name in dict.fromkeys(m.instruction_skills) if name in usable and name not in placed]
     modes, asked = _own_modes(m)
     return _Held(placed=placed, own=own, chat=chat, modes=modes, asked=asked)
 
@@ -132,6 +216,16 @@ def _require_changeable(user_key: str, m: AgentManifest) -> None:
         raise AgentServiceError(f"{m.name} is not an agent whose skills you can change", 400)
 
 
+def changeable_agent(user_key: str, coord: object) -> AgentManifest:
+    """The agent at *coord*, refused unless the account may change its
+    skills (an import review's pick is checked so before anything is kept)."""
+    if not isinstance(coord, str):
+        raise AgentServiceError(f"{coord!r} is no agent's coordinate", 400)
+    m = _require_agent(user_key, coord)
+    _require_changeable(user_key, m)
+    return m
+
+
 # --- The skills ----------------------------------------------------------------------
 
 
@@ -148,15 +242,18 @@ def _node_kinds(skill: skill_format.Skill, behaviors_by_template: dict[str, str]
 
 
 def skills_listing(user_key: str) -> list[dict]:
-    """Every skill Curio ships, as the Agent Catalog shows it (the module's
-    docstring says what each card holds), in its folder's order."""
-    shipped = skill_runs.shipped_skills()
-    core = skill_runs.placed_in(builtin.read_page(builtin.PREAMBLE_FILE, wanted_by="the skills listing"), shipped)
+    """Every skill the account sees, as the Agent Catalog shows it (the
+    module's docstring says what each card holds): Curio's in its folder's
+    order, then the account's own, then the shared catalog's, each by name."""
+    seen = seen_skills(user_key)
+    core = skill_runs.placed_in(builtin.read_page(builtin.PREAMBLE_FILE, wanted_by="the skills listing"),
+                                seen.shipped)
     behaviors_by_template = packages_services.catalog_template_behaviors()
     labels = packages_services.catalog_template_labels()
-    users: dict[str, list[dict]] = {name: [] for name in shipped}
+    every = {**seen.shipped, **dict(sorted(seen.own.items())), **dict(sorted(seen.published.items()))}
+    users: dict[str, list[dict]] = {name: [] for name in every}
     for m in _agents(user_key):
-        held = _held(user_key, m, shipped)
+        held = held_by(user_key, m, seen)
         added = set(skill_runs.account_choice(user_key, m).added)
         names = [*sorted(held.placed), *(skill.name for skill in held.own), *held.chat, *held.modes, *held.asked]
         for name in dict.fromkeys(names):
@@ -167,8 +264,12 @@ def skills_listing(user_key: str) -> list[dict]:
                     "added": name in added and name not in held.placed,
                     "always": held.always(name),
                 })
-    return [
-        {
+    cards = []
+    for name, skill in every.items():
+        source = _source(seen, name)
+        published = source != CURIO and publications.SKILLS.is_published(name)
+        published_by_you = published and publications.SKILLS.is_publisher(name, user_key)
+        cards.append({
             "name": skill.name,
             "description": skill.description,
             "license": skill.license,
@@ -180,19 +281,24 @@ def skills_listing(user_key: str) -> list[dict]:
             "features": str(skill.metadata.get(skill_runs.FEATURES_KEY) or "").split(),
             "nodeKinds": _node_kinds(skill, behaviors_by_template, labels),
             "core": name in core,
+            "source": source,
+            "published": published,
+            "publishedByYou": published_by_you,
+            "publishable": source == YOURS and (not published or published_by_you),
+            "removable": name in seen.own,
             "agents": users[name],
-        }
-        for name, skill in shipped.items()
-    ]
+        })
+    return cards
 
 
-def skill_text(name: str) -> dict:
-    """The skill Curio ships as *name*: its body as an agent reads it, its
-    frontmatter left out and its markers filled, and its other files."""
-    shipped = skill_runs.shipped_skills()
-    if name not in shipped:
-        raise AgentServiceError(f"Curio ships no skill named {name}", 404)
-    return {"name": name, "text": agent_text.skill_text(name), "files": list(shipped[name].files)}
+def skill_text(user_key: str | None, name: str) -> dict:
+    """The skill *name* the account sees: its body as an agent reads it,
+    its frontmatter left out (a skill Curio ships with its markers filled,
+    any other as written), and its other files."""
+    skill = seen_skills(user_key).find(name)
+    if skill is None:
+        raise AgentServiceError(f"Curio ships no skill named {name}, and you see none by that name", 404)
+    return {"name": skill.name, "text": skill_runs.text_of(skill), "files": list(skill.files)}
 
 
 # --- One agent's skills ----------------------------------------------------------------
@@ -204,12 +310,14 @@ def agent_skill_rows(user_key: str, coord: str, *, editable: bool = True) -> dic
     (:class:`_Held` says what ``chat``, ``modes`` and ``asked`` are), the
     core skills its preamble holds first, then its own in its order, then
     those only its instruction names, then those only its capabilities name;
-    ``addable``, the skills it does not hold; and ``changed``, whether the
-    account changed them, which Restore undoes. Only a skill its runs hold
-    whatever its skills are is not ``removable``."""
+    ``addable``, the skills it does not hold, Curio's, the account's own,
+    then the shared catalog's; and ``changed``, whether the account changed
+    them, which Restore undoes. Only a skill its runs hold whatever its
+    skills are is not ``removable``."""
     m = _require_agent(user_key, coord)
-    shipped = skill_runs.shipped_skills()
-    held = _held(user_key, m, shipped)
+    seen = seen_skills(user_key)
+    usable = seen.usable
+    held = held_by(user_key, m, seen)
     choice = skill_runs.account_choice(user_key, m)
     changeable = editable and m.agent_id in {row["id"] for row in catalog.choosable_agents(user_key)}
 
@@ -225,30 +333,48 @@ def agent_skill_rows(user_key: str, coord: str, *, editable: bool = True) -> dic
             "removable": changeable and not held.always(skill.name),
         }
 
-    rows = [row(shipped[name], core=True) for name in shipped if name in held.placed]
+    rows = [row(seen.shipped[name], core=True) for name in seen.shipped if name in held.placed]
     rows += [row(skill) for skill in held.own]
     listed = {entry["name"] for entry in rows}
     for name in dict.fromkeys([*held.chat, *held.modes, *held.asked]):
-        if name in shipped and name not in listed:
-            rows.append(row(shipped[name]))
+        if name in usable and name not in listed:
+            rows.append(row(usable[name]))
             listed.add(name)
+    offered = {**usable, **dict(sorted(seen.published.items()))}
     return {
         "coord": m.dir_name,
         "agentId": m.agent_id,
         "skills": rows,
         "addable": [
             {"name": name, "description": skill.description}
-            for name, skill in shipped.items() if changeable and name not in listed
+            for name, skill in offered.items() if changeable and name not in listed
         ],
         "changed": bool(choice),
         "editable": changeable,
     }
 
 
-def _shipped_name(name: object, shipped: dict) -> str:
-    if not isinstance(name, str) or name not in shipped:
-        raise AgentServiceError(f"Curio ships no skill named {name}", 404)
+def _usable_name(user_key: str, name: object, seen: Seen) -> str:
+    """*name*, a skill an agent of the account may hold: Curio's, the
+    account's own, or the shared catalog's, which is copied into the
+    account's skills first (:func:`_copy_published`)."""
+    if not isinstance(name, str) or seen.find(name) is None:
+        raise AgentServiceError(f"Curio ships no skill named {name}, and you see none by that name", 404)
+    if name in seen.published:
+        _copy_published(user_key, name)
     return name
+
+
+def _copy_published(user_key: str, name: str) -> None:
+    """Copy the shared catalog's skill *name* into the account's skills,
+    marked as a copy (``user_skills.is_copy``), as adding a published agent
+    copies it: it keeps working after its publisher unpublishes it, and it is
+    never this account's to publish."""
+    files = user_skills.read_files(publications.SKILLS.entry_dir(name))
+    try:
+        user_skills.write(user_key, name, files, copied=True)
+    except FileExistsError:
+        pass  # a concurrent add wrote it first
 
 
 def add_skill(user_key: str, coord: str, name: object) -> dict:
@@ -257,11 +383,11 @@ def add_skill(user_key: str, coord: str, name: object) -> dict:
     preamble holds is refused; one it holds already changes nothing."""
     m = _require_agent(user_key, coord)
     _require_changeable(user_key, m)
-    shipped = skill_runs.shipped_skills()
-    name = _shipped_name(name, shipped)
-    if name in _held(user_key, m, shipped).placed:
+    seen = seen_skills(user_key)
+    if isinstance(name, str) and name in seen.shipped and name in held_by(user_key, m, seen).placed:
         raise AgentServiceError(f"{m.name} holds {name} in every call already", 400)
-    named = {skill.name for skill in skill_runs.agent_skills(m, shipped)}
+    name = _usable_name(user_key, name, seen)
+    named = {skill.name for skill in skill_runs.agent_skills(m, seen.shipped, usable=seen.usable)}
 
     def change(current: agent_skill_store.SkillChoice) -> agent_skill_store.SkillChoice:
         removed = tuple(skill for skill in current.removed if skill != name)
@@ -278,24 +404,16 @@ def remove_skill(user_key: str, coord: str, name: object) -> dict:
     its own are refused, as is a skill it does not hold."""
     m = _require_agent(user_key, coord)
     _require_changeable(user_key, m)
-    shipped = skill_runs.shipped_skills()
-    name = _shipped_name(name, shipped)
-    held = _held(user_key, m, shipped)
-    if name in held.placed:
-        raise AgentServiceError(f"{name} is in every call of {m.name}, so it cannot be removed", 400)
-    if name in held.chat:
-        raise AgentServiceError(f"{name} is always held by the chat of {m.name}, so it cannot be removed", 400)
-    if name in held.modes:
-        raise AgentServiceError(
-            f"{name} is always held by {', '.join(held.modes[name])} of {m.name}, so it cannot be removed", 400,
-        )
-    if name in held.asked:
-        raise AgentServiceError(
-            f"{name} is always held when another agent asks {m.name} for its work, so it cannot be removed", 400,
-        )
+    seen = seen_skills(user_key)
+    if not isinstance(name, str) or name not in seen.usable:
+        raise AgentServiceError(f"Curio ships no skill named {name}, and you hold none by that name", 404)
+    held = held_by(user_key, m, seen)
+    always = why_always(held, name, m.name)
+    if always:
+        raise AgentServiceError(always, 400)
     if all(skill.name != name for skill in held.own):
         raise AgentServiceError(f"{m.name} has no skill {name}", 404)
-    named = {skill.name for skill in skill_runs.agent_skills(m, shipped)}
+    named = {skill.name for skill in skill_runs.agent_skills(m, seen.shipped, usable=seen.usable)}
 
     def change(current: agent_skill_store.SkillChoice) -> agent_skill_store.SkillChoice:
         added = tuple(skill for skill in current.added if skill != name)
@@ -304,6 +422,20 @@ def remove_skill(user_key: str, coord: str, name: object) -> dict:
 
     _store_update(user_key, m, change)
     return agent_skill_rows(user_key, coord)
+
+
+def why_always(held: _Held, name: str, agent_name: str) -> str | None:
+    """Why the agent *agent_name*, holding *held*, holds the skill *name*
+    whatever its skills are, so it cannot lose it, or None."""
+    if name in held.placed:
+        return f"{name} is in every call of {agent_name}, so it cannot be removed"
+    if name in held.chat:
+        return f"{name} is always held by the chat of {agent_name}, so it cannot be removed"
+    if name in held.modes:
+        return f"{name} is always held by {', '.join(held.modes[name])} of {agent_name}, so it cannot be removed"
+    if name in held.asked:
+        return f"{name} is always held when another agent asks {agent_name} for its work, so it cannot be removed"
+    return None
 
 
 def restore_skills(user_key: str, coord: str) -> dict:

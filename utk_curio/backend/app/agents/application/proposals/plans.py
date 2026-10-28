@@ -985,8 +985,9 @@ def apply_plan_node(
     # The last apply may complete the STRUCTURE (all refs + edges applied),
     # and then removes what the plan removes; content keeps its own lifecycle
     # (dev/71).
-    removals = _complete_plan_if_done(spec, proposal, session)
+    removals, pruned = _complete_plan_if_done(spec, proposal, session)
     dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._agent_actor(user_key, spec, attachment_id, "plan"))
+    sessions.delete_sessions_of(user_key, project_id, pruned)
     if isinstance(session_id, str):
         _log_plan_node_applied(user_key, project_id, session_id, attachment_id, proposal_id,
                                plan, plan_node, node_id, applied_refs, attached)
@@ -1332,21 +1333,22 @@ def _check_plan_completion(user_key, project_id, proposal_id, spec: dict, propos
     _check_plan_cycles(user_key, project_id, proposal_id, spec, proposal, session_id, plan)
 
 
-def _complete_plan_if_done(spec: dict, proposal: dict, session: dict) -> dict | None:
+def _complete_plan_if_done(spec: dict, proposal: dict, session: dict) -> tuple[dict | None, list]:
     """The plan proposal completes when its structure is (``_plan_structure_done``),
     and the call that completes it removes what the plan removes, as Apply plan
     does (``_remove_plan_victims``): the victims leave the runs, and the
     session's phase follows what stays. Answers the removed ids, for the live
-    canvas, or None when the plan is not complete yet. dev/71: the parked plan
-    is KEPT after completion, since the progressive lifecycle (per-row
-    Solve/Run, the driver's validate/approve actions) still reads it; a new
-    plan mint replaces it."""
+    canvas, or None when the plan is not complete yet, and the attachments
+    removed with their nodes, whose transcripts the caller deletes once its
+    write lands. dev/71: the parked plan is KEPT after completion, since the
+    progressive lifecycle (per-row Solve/Run, the driver's validate/approve
+    actions) still reads it; a new plan mint replaces it."""
     if not _plan_structure_done(proposal):
-        return None
+        return None, []
     plan = proposal.get("plan") or {}
     dataflow = spec.setdefault("dataflow", {})
     remove_node_set = set(plan.get("removeNodes", []))
-    removed_edge_ids = _remove_plan_victims(
+    removed_edge_ids, pruned = _remove_plan_victims(
         spec, dataflow.setdefault("nodes", []), dataflow.setdefault("edges", []),
         remove_node_set, plan.get("removeEdges", []),
     )
@@ -1360,7 +1362,7 @@ def _complete_plan_if_done(spec: dict, proposal: dict, session: dict) -> dict | 
     unresolved = any(s in ("pending", "failed") for s in runs.values())
     session["phase"] = "applied" if unresolved else "ready"
     session["appliedPlanId"] = proposal.get("proposalId")
-    return {"removedNodeIds": sorted(remove_node_set), "removedEdgeIds": sorted(removed_edge_ids)}
+    return {"removedNodeIds": sorted(remove_node_set), "removedEdgeIds": sorted(removed_edge_ids)}, pruned
 
 
 def _log_plan_completed(user_key, project_id, session_id, attachment_id, proposal_id, spec: dict,
@@ -1431,8 +1433,9 @@ def apply_plan_edges(
     proposal["baseGraphDigest"] = agents_spec_reads._graph_shape_digest(spec)
     session = record.setdefault("builderSession", {})
     session["edgeStates"] = dict(edge_states)
-    removals = _complete_plan_if_done(spec, proposal, session)
+    removals, pruned = _complete_plan_if_done(spec, proposal, session)
     dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._agent_actor(user_key, spec, attachment_id, "plan"))
+    sessions.delete_sessions_of(user_key, project_id, pruned)
     applied_now = sum(1 for r in results.values() if r["status"] == "applied")
     refused_now = sum(1 for r in results.values() if r["status"] == "refused")
     if isinstance(session_id, str):
@@ -1555,7 +1558,7 @@ def _apply_dataflow_plan(
     nodes = dataflow.setdefault("nodes", [])
     edges = dataflow.setdefault("edges", [])
     remove_node_set = set(remove_nodes)
-    removed_edge_ids = _remove_plan_victims(spec, nodes, edges, remove_node_set, plan.get("removeEdges", []))
+    removed_edge_ids, pruned = _remove_plan_victims(spec, nodes, edges, remove_node_set, plan.get("removeEdges", []))
     starters = _content_starters(user_key, project_id, plan.get("nodes", []))
     declared = _declared_widgets(user_key, project_id, plan.get("nodes", []))
     # The agents every created node may carry, resolved once against the
@@ -1578,6 +1581,7 @@ def _apply_dataflow_plan(
         spec, attachment_id, proposal_id, created_nodes, remove_node_set, ref_to_id, starters,
     )
     dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._agent_actor(user_key, spec, attachment_id, "plan"))
+    sessions.delete_sessions_of(user_key, project_id, pruned)
     _log_plan_applied(user_key, project_id, session_id, attachment_id, proposal_id, spec,
                       created_nodes, created_edges, remove_node_set, removed_edge_ids, node_runs, attached_results,
                       created_scenarios)
@@ -1702,9 +1706,12 @@ def _check_plan_cycles(user_key, project_id, proposal_id, spec: dict, proposal: 
         )
 
 
-def _remove_plan_victims(spec: dict, nodes: list, edges: list, remove_node_set: set, remove_edges: list) -> set:
+def _remove_plan_victims(spec: dict, nodes: list, edges: list, remove_node_set: set,
+                         remove_edges: list) -> tuple[set, list]:
     """Removals first (dev/59): listed edges + the recomputed cascade of edges incident to removed
-    nodes, then the victims themselves — in place, so unlisted elements are untouched by construction."""
+    nodes, then the victims themselves — in place, so unlisted elements are untouched by construction.
+    Answers the removed edge ids and the attachments removed with their nodes, whose transcripts the
+    caller deletes once its write lands (``sessions.delete_sessions_of``)."""
     removed_edge_ids = set(remove_edges)
     for e in edges:
         if isinstance(e, dict) and (
@@ -1713,12 +1720,13 @@ def _remove_plan_victims(spec: dict, nodes: list, edges: list, remove_node_set: 
             removed_edge_ids.add(str(e.get("id")))
     if removed_edge_ids:
         edges[:] = [e for e in edges if str(e.get("id")) not in removed_edge_ids]
+    pruned: list = []
     if remove_node_set:
         nodes[:] = [n for n in nodes if n.get("id") not in remove_node_set]
         # Agent attachments on removed nodes die with them, exactly as manual
-        # canvas deletion (dev/32).
-        attachments.prune_orphaned_attachments(spec)
-    return removed_edge_ids
+        # canvas deletion (dev/32), and so do their transcripts.
+        pruned = attachments.prune_orphaned_attachments(spec)
+    return removed_edge_ids, pruned
 
 
 def _create_plan_nodes(user_key, spec: dict, nodes: list, plan: dict, proposal: dict,
