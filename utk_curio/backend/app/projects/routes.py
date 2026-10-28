@@ -106,6 +106,8 @@ def update_project(project_id: str):
             # Which tab sent this save, and its number among the tab's saves.
             save_tab=_optional_tab(body.get("saveTab", body.get("save_tab"))),
             save_number=_optional_int(body.get("saveNumber", body.get("save_number"))),
+            # A tab bound to the dataflow's doc sends its history, not the dataflow.
+            history=body.get("history"),
         )
     except (ValueError, TypeError) as exc:
         return _error(str(exc))

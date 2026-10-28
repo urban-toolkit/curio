@@ -28,7 +28,7 @@ from utk_curio.backend.app.agents.application.turns import grounding as agents_g
 from utk_curio.backend.app.agents.application.turns import policy as agents_policy
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
 from utk_curio.backend.app.execution import workflow_spec
-from utk_curio.backend.app.projects import storage as projects_storage
+from utk_curio.backend.app.collaboration import dataflow_docs
 
 
 def solve_node_stream(
@@ -283,19 +283,23 @@ def _trail_lines(attempts: list) -> list[str]:
     return trail_lines
 
 
-def _write_empty_node(user_key, project_id, node_id, candidate: str) -> bool:
+def _write_empty_node(user_key, project_id, node_id, candidate: str, *, actor=None) -> bool:
     """An empty node (a plan placeholder solved from its own agent) is written directly on PASS —
-    parity with the Dataflow Builder's Solve; a node that gained content meanwhile is left alone."""
+    parity with the Dataflow Builder's Solve; a node that gained content meanwhile, before this
+    read or before its write (``dataflow_docs.write``'s refusal), is left alone. *actor*: who
+    writes it."""
     try:
-        fresh = agents_spec_reads._read_spec_or_404(user_key, project_id)
+        fresh = agents_spec_reads._live_spec_or_404(user_key, project_id)
         target = next(
             (n for n in (fresh.get("dataflow") or {}).get("nodes") or []
              if isinstance(n, dict) and n.get("id") == node_id), None,
         )
         if target is not None and not str(target.get("content") or "").strip():
             target["content"] = candidate
-            projects_storage.write_spec(user_key, project_id, fresh)
-            return True
+            written = dataflow_docs.write(
+                user_key, project_id, fresh, actor or dataflow_docs.by_agent(None, user_key, "solve"),
+            )
+            return not written.refused
     except Exception:
         return False
     return False
@@ -322,7 +326,10 @@ def _conclude(user_key, project_id, attachment_id, session_id, spec, node, label
     elif verdict == "pass" and not had_content:
         # An empty node (a plan placeholder solved from its own agent) is
         # written directly on PASS — parity with the Dataflow Builder's Solve.
-        written = _write_empty_node(user_key, project_id, node_id, outcome["candidate"])
+        written = _write_empty_node(
+            user_key, project_id, node_id, outcome["candidate"],
+            actor=agents_spec_reads._agent_actor(user_key, spec, attachment_id, "solve"),
+        )
         done["written"] = written
         text = (
             f"Solved {label!r}: the code ran successfully after {rounds} round"

@@ -34,7 +34,7 @@ from utk_curio.backend.app.agents.application.solve import budgets as agents_bud
 from utk_curio.backend.app.agents.application.solve import batch as agents_batch
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
-from utk_curio.backend.app.projects import storage as projects_storage
+from utk_curio.backend.app.collaboration import dataflow_docs
 
 log = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ def _reconcile_solve_session(user_key: str, project_id: str, spec: dict, record:
     if not agent_jobs.reconcile_builder_session(session):
         return False
     record["builderSession"] = session
-    projects_storage.write_spec(user_key, project_id, spec)
+    dataflow_docs.write(user_key, project_id, spec, dataflow_docs.by_curio(user_key, "solve"))
     session_id = record.get("sessionId")
     if isinstance(session_id, str):
         try:
@@ -160,14 +160,14 @@ def request_solve_cancel(user_key: str, project_id: str, attachment_id: str) -> 
     targets revert to ``pending``. Idempotent while a solve runs; 409 when
     nothing is running.
     """
-    spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
+    spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
     record = agents_spec_reads._record_or_404(spec, attachment_id)
     _reconcile_solve_session(user_key, project_id, spec, record)
     session = record.get("builderSession") or {}
     if session.get("phase") != "solving":
         raise AgentServiceError("no solve is running for this attachment", 409)
     session["cancelRequested"] = True
-    projects_storage.write_spec(user_key, project_id, spec)
+    dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._person(user_key, "solve"))
     stop_solve_execution(session.get("solveExecutionId"))
     return {"attachmentId": attachment_id, "cancelRequested": True}
 
@@ -242,7 +242,7 @@ def solve_attachment_stream(
     ``pending`` with the reason. ``verify=False`` keeps the legacy path.
     """
 
-    spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
+    spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
     record = agents_spec_reads._record_or_404(spec, attachment_id)
     # DEC-080 (dev/126): Solve hard-invokes node.content.generate and, for a
     # data-loading node, dataset.discover — both required delegates, completed
@@ -250,7 +250,7 @@ def solve_attachment_stream(
     if agents_lifecycle._repair_required_closure(
         user_key, project_id, record.get("coord", ""), attachment_id=attachment_id
     ):
-        spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
+        spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
         record = agents_spec_reads._record_or_404(spec, attachment_id)
     _reconcile_solve_session(user_key, project_id, spec, record)
     session = record.get("builderSession") or {}
@@ -299,7 +299,7 @@ def solve_attachment_stream(
     session["solvingSince"] = now
     session["solveExecutionId"] = solve_execution_id
     session.pop("cancelRequested", None)
-    projects_storage.write_spec(user_key, project_id, spec)
+    dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._agent_actor(user_key, spec, attachment_id, "solve"))
     stop = threading.Event()
     _SOLVE_CANCEL_EVENTS[solve_execution_id] = stop
     coord = record.get("coord", "")

@@ -508,6 +508,7 @@ def initiate(
     "attachmentId", "candidates", "detail"}``. Never raises into the caller's
     action: an unavailable specialist is reported, not thrown.
     """
+    from utk_curio.backend.app.collaboration import dataflow_docs
     from utk_curio.backend.app.packages import service as packages_services
     from utk_curio.backend.app.projects import storage as projects_storage
 
@@ -537,8 +538,9 @@ def initiate(
     # runs its nodes in a worker pool: under the project's own spec lock, so
     # two data-loading nodes resolving at once cannot lose each other's
     # attachment (dev/124's chokepoint, dev/118's pool).
+    actor = dataflow_docs.by_agent(resolution.coord, user_key, "dataset")
     with projects_storage.spec_write_lock(user_key, project_id):
-        spec = projects_storage.read_spec(user_key, project_id)
+        spec = dataflow_docs.live(user_key, project_id)
         if spec is None:
             return {"status": "unavailable", "attachmentId": None,
                     "detail": "the project spec is unavailable"}
@@ -553,7 +555,7 @@ def initiate(
         if attached.get("status") == "attached":
             # Persist BEFORE the delegate runs: the dev/72 home lookup reads
             # the saved spec, and the trace turns belong in this session.
-            projects_storage.write_spec(user_key, project_id, spec)
+            dataflow_docs.write(user_key, project_id, spec, actor)
     loop_ctx: dict = {
         "attachment_id": parent_attachment_id,
         "manifest": parent_manifest,
@@ -598,10 +600,10 @@ def initiate(
     total = sum(len(rows) for rows in (part.get("lanes") or {}).values())
     _append_candidates_turn(user_key, project_id, attachment_id, part, total)
     with projects_storage.spec_write_lock(user_key, project_id):
-        fresh = projects_storage.read_spec(user_key, project_id)
+        fresh = dataflow_docs.live(user_key, project_id)
         if fresh is not None:
             mark_candidates_pending(fresh, attachment_id, count=total)
-            projects_storage.write_spec(user_key, project_id, fresh)
+            dataflow_docs.write(user_key, project_id, fresh, actor)
     return {"status": "awaiting", "attachmentId": attachment_id,
             "candidates": total,
             "detail": f"{total} candidate(s) awaiting your selection"}

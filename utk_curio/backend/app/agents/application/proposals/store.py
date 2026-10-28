@@ -14,7 +14,7 @@ from utk_curio.backend.app.agents.application import attachments
 from utk_curio.backend.app.agents.application.errors import AgentServiceError
 from utk_curio.backend.app.agents.infrastructure import agent_jobs
 from utk_curio.backend.app.agents.repositories import sessions
-from utk_curio.backend.app.projects import storage as projects_storage
+from utk_curio.backend.app.collaboration import dataflow_docs
 
 
 def _effective_active_proposal(record: dict) -> dict | None:
@@ -72,7 +72,7 @@ def _mark_stale(
 ) -> AgentServiceError:
     """Shared apply-drift path: proposal → ``stale`` in both homes, 409 out."""
     proposal["status"] = "stale"
-    projects_storage.write_spec(user_key, project_id, spec)
+    dataflow_docs.write(user_key, project_id, spec, dataflow_docs.person(user_key, "apply"))
     if isinstance(session_id, str):
         sessions.update_proposal_status(user_key, project_id, session_id, proposal_id, "stale")
     return AgentServiceError(message, 409)
@@ -173,6 +173,7 @@ def _store_proposal(
     # their one-at-a-time supersession (dev/67-9) is untouched.
     proposal["mintSequenceId"] = loop_ctx.setdefault("_mint_sequence_id", uuid.uuid4().hex)
     record = attachments.get_attachment(spec, attachment_id)
+    actor = dataflow_docs.by_agent((record or {}).get("coord"), user_key, "proposal")
     attachments.reconcile_proposal_queue(spec, attachment_id)
     previous = attachments.get_active_proposal(spec, attachment_id)
     if previous is not None and previous.get("status") == "pending":
@@ -193,7 +194,7 @@ def _store_proposal(
             # dev/90 A16: same-reply sibling — jointly pending, applied or
             # dismissed by id in any order, promoted on reconcile.
             record.setdefault("queuedProposals", []).append(proposal)
-            projects_storage.write_spec(user_key, project_id, spec)
+            dataflow_docs.write(user_key, project_id, spec, actor)
             return
         else:
             sessions.update_proposal_status(
@@ -213,4 +214,4 @@ def _store_proposal(
     if proposal.get("tool") == "dataflow.plan.write" and record is not None:
         record.pop("planProposal", None)  # a new plan replaces any parked one
     attachments.set_active_proposal(spec, attachment_id, proposal)
-    projects_storage.write_spec(user_key, project_id, spec)
+    dataflow_docs.write(user_key, project_id, spec, actor)

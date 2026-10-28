@@ -28,7 +28,7 @@ from utk_curio.backend.app.agents.application import spec_reads as agents_spec_r
 from utk_curio.backend.app.execution.workflow_spec import slot_handle_id
 from utk_curio.backend.app.agents.application.proposals import plan_scenarios
 from utk_curio.backend.app.agents.application.proposals import store as agents_store
-from utk_curio.backend.app.projects import storage as projects_storage
+from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.agents.domain import agent_text
 
 log = logging.getLogger(__name__)
@@ -328,7 +328,7 @@ def _mint_dataflow_plan(
     )
     if setting_errors:
         return "refused", "\n- ".join([agent_text.message("plan.node-settings-invalid")] + setting_errors), None
-    spec = projects_storage.read_spec(user_key, project_id)
+    spec = dataflow_docs.live(user_key, project_id)
     if spec is None:
         return "refused", agent_text.message("mint.no-saved-spec"), None
     # Revision validation against the saved spec (dev/59): removal targets and
@@ -676,7 +676,7 @@ def set_plan_goal(
     creation. The PINNED plan bytes stay immutable (the digest model
     survives); the overlay lives on the proposal and rides the mirror so it
     survives reloads. Pending proposals only."""
-    spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
+    spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
     agents_spec_reads._record_or_404(spec, attachment_id)
     proposal = agents_store._pending_plan_proposal(spec, attachment_id, proposal_id)
     refs = {n["ref"] for n in (proposal.get("plan") or {}).get("nodes", [])}
@@ -691,7 +691,7 @@ def set_plan_goal(
         )
     edited = proposal.setdefault("editedGoals", {})
     edited[ref] = goal
-    projects_storage.write_spec(user_key, project_id, spec)
+    dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._person(user_key, "plan"))
     return {
         "attachmentId": attachment_id,
         "proposalId": proposal_id,
@@ -894,7 +894,7 @@ def apply_plan_node(
     verdict (``_complete_plan_if_done``, ``_log_plan_completed``)."""
     from utk_curio.backend.app.packages import service as packages_services
 
-    spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
+    spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
     record = agents_spec_reads._record_or_404(spec, attachment_id)
     proposal = agents_store._pending_plan_proposal(spec, attachment_id, proposal_id)
     plan = proposal.get("plan") or {}
@@ -986,7 +986,7 @@ def apply_plan_node(
     # and then removes what the plan removes; content keeps its own lifecycle
     # (dev/71).
     removals = _complete_plan_if_done(spec, proposal, session)
-    projects_storage.write_spec(user_key, project_id, spec)
+    dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._agent_actor(user_key, spec, attachment_id, "plan"))
     if isinstance(session_id, str):
         _log_plan_node_applied(user_key, project_id, session_id, attachment_id, proposal_id,
                                plan, plan_node, node_id, applied_refs, attached)
@@ -1398,7 +1398,7 @@ def apply_plan_edges(
     a plan of connections only: the apply that completes it removes what the
     plan removes, checked first as Apply plan checks it, and its result ends
     with the Topology verdict."""
-    spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
+    spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
     record = agents_spec_reads._record_or_404(spec, attachment_id)
     proposal = agents_store._pending_plan_proposal(spec, attachment_id, proposal_id)
     plan = proposal.get("plan") or {}
@@ -1432,7 +1432,7 @@ def apply_plan_edges(
     session = record.setdefault("builderSession", {})
     session["edgeStates"] = dict(edge_states)
     removals = _complete_plan_if_done(spec, proposal, session)
-    projects_storage.write_spec(user_key, project_id, spec)
+    dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._agent_actor(user_key, spec, attachment_id, "plan"))
     applied_now = sum(1 for r in results.values() if r["status"] == "applied")
     refused_now = sum(1 for r in results.values() if r["status"] == "refused")
     if isinstance(session_id, str):
@@ -1577,7 +1577,7 @@ def _apply_dataflow_plan(
     record, node_runs = _plan_apply_session(
         spec, attachment_id, proposal_id, created_nodes, remove_node_set, ref_to_id, starters,
     )
-    projects_storage.write_spec(user_key, project_id, spec)
+    dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._agent_actor(user_key, spec, attachment_id, "plan"))
     _log_plan_applied(user_key, project_id, session_id, attachment_id, proposal_id, spec,
                       created_nodes, created_edges, remove_node_set, removed_edge_ids, node_runs, attached_results,
                       created_scenarios)
