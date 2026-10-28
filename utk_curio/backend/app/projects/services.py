@@ -13,6 +13,7 @@ from uuid import uuid4
 logger = logging.getLogger(__name__)
 
 from utk_curio.backend.extensions import db
+from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.projects import concurrency
 from utk_curio.backend.app.projects import repositories as repo
 from utk_curio.backend.app.projects import scenarios
@@ -968,7 +969,8 @@ def save_project(user, data: ProjectCreate, *, sign_in: Optional[str] = None) ->
     scenarios.normalize_spec_scenarios(data.spec)
     _drop_live_output_refs(data.spec)
 
-    storage.write_spec(ukey, project_id, data.spec)
+    actor = dataflow_docs.person(ukey, "create")
+    created = dataflow_docs.create(ukey, project_id, data.spec, actor)
     # The new row is committed once its spec is on disk (a listing drops a row
     # without one), and before anything below asks for a spec lock: seeding
     # the account's default datasets installs them under one, and no thread
@@ -985,7 +987,7 @@ def save_project(user, data: ProjectCreate, *, sign_in: Optional[str] = None) ->
     # Drop dataset refs keyed on visualization/sink nodes (passthrough duplicates).
     effective_spec = _prune_sink_node_dataset_refs(effective_spec, ukey)
     if effective_spec is not data.spec:
-        storage.write_spec(ukey, project_id, effective_spec)
+        dataflow_docs.put(ukey, project_id, effective_spec, over=created, actor=actor)
     # The dataset twin of `seed_spec_with_defaults` above: ids the user put in
     # "all projects" are installed into this brand-new project. Done HERE, after
     # the spec is on disk, and by calling the ordinary install path rather than
@@ -1094,18 +1096,24 @@ def update_project(
     project = _project_to_save(user, project_id, cleanup=cleanup)
     ukey = _user_dir_key(user)
     readable = _readable_sent_outputs(user, data.outputs, sign_in)
+    if data.history is not None:
+        # A tab bound to the dataflow's doc saves its outputs and its history,
+        # never the dataflow, which the doc holds: the doc's changes are
+        # written first, so the save answers with the dataflow as it is.
+        dataflow_docs.flush(project_id)
 
     # Serialize the spec read-modify-write so a concurrent dataset mutation
     # (replace_dataflow_datasets) or Play-All can't clobber freshly-installed
     # refs. Read existing_spec INSIDE the lock so we merge/preserve against
-    # the latest on-disk spec. The project row is written inside it too, and
-    # only once the outputs are installed: the lock comes before any database
-    # write (#909, see ``spec_write_lock``).
+    # the dataflow as it is now (its doc's over the file). The project row is
+    # written inside it too, and only once the outputs are installed: the
+    # lock comes before any database write (#909, see ``spec_write_lock``).
     install_warnings: list = []
     labels = _labels_for_unnamed(ukey, project_id, data.outputs) if data.outputs is not None else None
+    actor = dataflow_docs.person(ukey, "save")
     with storage.spec_write_lock(ukey, project_id):
         _refuse_an_older_save(ukey, project_id, data)
-        existing_spec = storage.read_spec(ukey, project_id)
+        existing_spec = dataflow_docs.live(ukey, project_id)
         effective_spec = data.spec if data.spec is not None else existing_spec
         spec_dirty = False
         # The canvas save (TrillGenerator) does not serialize the backend-owned
@@ -1212,7 +1220,8 @@ def update_project(
         pruned_spec = _prune_sink_node_dataset_refs(effective_spec, ukey)
         if pruned_spec is not effective_spec:
             effective_spec = pruned_spec
-            spec_dirty = True
+            # A save of the history alone writes no spec: the doc holds it.
+            spec_dirty = spec_dirty or data.history is None
 
         # The row just before the spec is written, so its write transaction
         # stays short: it bumps ``spec_revision`` and holds SQLite's write lock
@@ -1252,7 +1261,12 @@ def update_project(
             storage.record_save_number(ukey, project_id, data.save_tab, data.save_number)
 
         if data.spec is not None or spec_dirty:
-            storage.write_spec(ukey, project_id, effective_spec)
+            # The whole-dataflow PUT, the one write that is not a writer's
+            # change: its transaction makes the doc match the PUT, from the
+            # dataflow read above, after the loss rule.
+            dataflow_docs.put(ukey, project_id, effective_spec, over=existing_spec, actor=actor)
+        if data.history is not None:
+            storage.write_history(ukey, project_id, data.history)
 
         # Record only outputs the reload path can restore from a durable source so a
         # swallowed install error can't leave a phantom manifest entry (#144).
@@ -1265,12 +1279,15 @@ def update_project(
             thumbnail_accent=project.thumbnail_accent or "peach",
             produced_at=produced_at,
         )
+        # A save that sends no dataflow answers with the whole document as it
+        # is, its history included, which the dataflow read above leaves out.
+        answered = effective_spec if data.spec is not None else storage.read_spec(ukey, project_id)
 
     db.session.commit()
-    return _to_detail(project, spec=effective_spec, outputs=persisted_refs,
+    return _to_detail(project, spec=answered, outputs=persisted_refs,
                       dataset_install_warnings=install_warnings,
                       spec_revision=storage.spec_revision(ukey, project_id),
-                      categories=_categories(user, project_id, effective_spec))
+                      categories=_categories(user, project_id, answered))
 
 
 def record_node_outputs(
@@ -1420,10 +1437,11 @@ def _saved_outputs(
     that lock. A load that read the manifest without the lock could meet a
     save halfway, the spec of one and the outputs of another (#941). The lock
     comes before any database write (#909), and nothing here writes to the
-    database.
+    database. The spec is the dataflow as it is now, its open doc's over the
+    file (``dataflow_docs.read``), never a file a second behind the doc.
     """
     with storage.spec_write_lock(ukey, project_id):
-        spec = storage.read_spec(ukey, project_id)
+        spec = dataflow_docs.read(ukey, project_id)
         listed = _output_refs_from_manifest(storage.read_manifest(ukey, project_id))
         readable = storage.readable_saved_outputs(ukey, project_id, listed, spec=spec)
     missing = [ref for ref in listed if ref not in readable]

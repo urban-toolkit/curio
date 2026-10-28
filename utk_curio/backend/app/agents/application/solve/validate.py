@@ -27,7 +27,7 @@ from utk_curio.backend.app.agents.application.solve import session as agents_ses
 from utk_curio.backend.app.agents.application.turns import delegates as agents_delegates
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
-from utk_curio.backend.app.projects import storage as projects_storage
+from utk_curio.backend.app.collaboration import dataflow_docs
 
 
 def validate_node_stream(
@@ -55,7 +55,7 @@ def validate_node_stream(
     """
 
     agents_acquire._settle_discovery_acquisitions(user_key, project_id)
-    spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
+    spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
     record = agents_spec_reads._record_or_404(spec, attachment_id)
     session = record.get("builderSession") or {}
     if ref and not node_id:
@@ -99,7 +99,7 @@ def validate_node_stream(
     home_session_id = (home or {}).get("sessionId")
     session["validatingSince"] = now
     record["builderSession"] = session
-    projects_storage.write_spec(user_key, project_id, spec)
+    dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._agent_actor(user_key, spec, attachment_id, "validate"))
     return _validate_events(
         user_key, project_id, attachment_id, config, spec, node, ref,
         resolution, coord, session_id, exec_fn,
@@ -324,7 +324,7 @@ def _mint_validated_review(user_key, project_id, attachment_id, session_id, home
 
 def _settle_node_state(user_key, project_id, attachment_id, ref, verdict: str) -> dict:
     """The per-node ledger: validated / failed; infrastructure untouched. Returns the builder session."""
-    fresh = agents_spec_reads._read_spec_or_404(user_key, project_id)
+    fresh = agents_spec_reads._live_spec_or_404(user_key, project_id)
     fresh_record = agents_spec_reads._record_or_404(fresh, attachment_id)
     fresh_session = fresh_record.get("builderSession") or {}
     if ref and isinstance(fresh_session.get("nodeStates"), dict):
@@ -337,18 +337,21 @@ def _settle_node_state(user_key, project_id, attachment_id, ref, verdict: str) -
             fresh_session["nodeStates"][ref] = "failed"
     fresh_session.pop("validatingSince", None)
     fresh_record["builderSession"] = fresh_session
-    projects_storage.write_spec(user_key, project_id, fresh)
+    dataflow_docs.write(user_key, project_id, fresh, agents_spec_reads._agent_actor(user_key, fresh, attachment_id, "validate"))
     return fresh_session
 
 
 def _clear_validating_guard(user_key, project_id, attachment_id) -> None:
     """Disconnect-safe: the in-flight guard never wedges the attachment."""
     try:
-        cleanup_spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
+        cleanup_spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
         cleanup_record = agents_spec_reads._record_or_404(cleanup_spec, attachment_id)
         cleanup_session = cleanup_record.get("builderSession") or {}
         if cleanup_session.pop("validatingSince", None) is not None:
             cleanup_record["builderSession"] = cleanup_session
-            projects_storage.write_spec(user_key, project_id, cleanup_spec)
+            dataflow_docs.write(
+                user_key, project_id, cleanup_spec,
+                agents_spec_reads._agent_actor(user_key, cleanup_spec, attachment_id, "validate"),
+            )
     except Exception:
         pass
