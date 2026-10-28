@@ -337,6 +337,21 @@ def read_spec_in(folder: Path) -> Optional[dict]:
     return spec
 
 
+def read_spec_file(user_key: str, project_id: str) -> Optional[dict]:
+    """The project's spec file as it is: its document without the history the
+    logs keep, which this does not replay. For a reader that needs only what
+    the file holds, as each open dataflow's doc does
+    (``collaboration/dataflow_docs.py``). ``None`` when there is no spec file.
+
+    The file is replaced whole on each write, so no lock is needed to read it.
+    """
+    try:
+        text = (project_dir(user_key, project_id) / SPEC_FILE).read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    return json.loads(text)
+
+
 def list_project_ids(user_key: str) -> list[str]:
     """Project ids (on-disk folder names) that have a saved spec for *user_key*."""
     base = _users_base() / _user_key_segment(user_key) / "projects"

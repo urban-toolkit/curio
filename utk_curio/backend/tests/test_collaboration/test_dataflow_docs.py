@@ -445,6 +445,35 @@ def test_the_doc_never_writes_over_a_spec_someone_else_wrote(room):
     assert _code(on_disk["dataflow"]) == "x = 1\n"
 
 
+def test_a_doc_hands_over_no_history_and_a_spec_that_held_its_history_keeps_it(room, monkeypatch):
+    """A spec saved before the history moved beside it still holds the
+    history. The doc writes its dataflow and leaves the history out, so every
+    version stays on record, and no write of the doc reads the history."""
+    from utk_curio.backend.app.projects import storage
+
+    storage.drop_history(room.owner_key, room.project_id)
+    (room.folder() / storage.SPEC_FILE).write_text(json.dumps(SPEC), encoding="utf-8")
+    handed = []
+    write_spec = storage.write_spec
+
+    def recorded(user_key, project_id, spec):
+        handed.append(sorted(spec))
+        return write_spec(user_key, project_id, spec)
+
+    monkeypatch.setattr(storage, "write_spec", recorded)
+    alice = room.tab("alice")
+    alice.sync()
+    alice.edit(_type("# doc\n"))
+    assert room.docs.flush(room.project_id) is True
+
+    assert handed and not set(handed[-1]) & set(storage.HISTORY_KEYS), (
+        f"the doc handed write_spec the history: {handed}"
+    )
+    on_disk = room.on_disk()
+    assert _code(on_disk["dataflow"]) == "# doc\nx = 1\n"
+    assert on_disk["nodeProvenance"] == SPEC["nodeProvenance"], "the doc's write erased the history"
+
+
 def test_a_doc_message_needs_a_join_a_started_sync_and_frames_that_read(room):
     from pycrdt import create_update_message
 

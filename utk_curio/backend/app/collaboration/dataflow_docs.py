@@ -40,8 +40,9 @@ room (``join_session``, ``events.py``) takes part.
 After :data:`SAVE_IDLE_S` with no change, or every :data:`SAVE_EVERY_S` of
 steady changes, the doc is written to ``spec.trill.json`` through
 ``storage.write_spec``, then folded. The write carries what the file holds
-with the doc's dataflow, the agents' sections included, and never the history
-storage keeps beside the file, which stays as it is. A doc leaves memory :data:`CLOSE_AFTER_S`
+with the doc's dataflow, the agents' sections included, and leaves the history
+out (``storage.HISTORY_KEYS``): storage keeps a section a write leaves out as
+it is, in ``history/``. A doc leaves memory :data:`CLOSE_AFTER_S`
 after its last tab. A restart reloads the same doc from ``ydoc.bin`` and the
 updates, so tabs that reconnect sync with nothing doubled. When someone else
 wrote the spec since ``ydoc.bin`` was folded (its revision moved), the doc is
@@ -95,8 +96,7 @@ logger = logging.getLogger(__name__)
 
 EVENT = doc_mapping.EVENT
 
-SPEC_FILE = "spec.trill.json"
-#: The files beside it.
+#: The files beside ``spec.trill.json`` (``storage.SPEC_FILE``).
 DOC_FILE = "ydoc.bin"
 UPDATES_FILE = "ydoc.updates"
 REVISION_FILE = "ydoc.rev"
@@ -236,19 +236,14 @@ def _fold(folder: Path, doc, revision: int) -> None:
         pass
 
 
-def _spec_file(folder: Path) -> Optional[dict]:
-    """``spec.trill.json`` as the file holds it. Unlike ``storage.read_spec``,
-    which reads the dataflow's history back from where storage keeps it, so a
-    write of the doc carries what the file holds and no more: the history
-    stays where it is."""
+def _spec_file(entry: "_OpenDoc") -> Optional[dict]:
+    """``spec.trill.json`` as the file holds it (``storage.read_spec_file``):
+    the dataflow, without the history ``storage.read_spec`` replays, which
+    neither building the doc nor writing it needs."""
     try:
-        text = (folder / SPEC_FILE).read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return None
-    try:
-        spec = json.loads(text)
+        spec = storage.read_spec_file(entry.user_key, entry.project_id)
     except ValueError:
-        logger.error("%s does not read as JSON", folder / SPEC_FILE)
+        logger.error("the spec of dataflow %s does not read as JSON", entry.project_id)
         return None
     return spec if isinstance(spec, dict) else None
 
@@ -274,7 +269,7 @@ def _load(entry: _OpenDoc) -> None:
     """Open the doc from its files, or build it from the spec when they are
     missing, unreadable or behind a write someone else made."""
     folder = entry.folder()
-    spec = _spec_file(folder)
+    spec = _spec_file(entry)
     if spec is None:
         raise _NoDataflow(entry.project_id)
     revision = storage.spec_revision(entry.user_key, entry.project_id)
@@ -393,7 +388,7 @@ def _flush(entry: _OpenDoc) -> bool:
         folder = entry.folder()
     except ValueError:
         return False
-    if not (folder / SPEC_FILE).is_file():
+    if not (folder / storage.SPEC_FILE).is_file():
         _discard(entry)  # the dataflow was deleted: its folder must not come back
         return False
     with storage.spec_write_lock(entry.user_key, entry.project_id):
@@ -402,7 +397,7 @@ def _flush(entry: _OpenDoc) -> bool:
                 dirty = entry.dirty_since is not None
             if entry.closed or not entry.loaded or not dirty:
                 return False
-            spec = _spec_file(folder)
+            spec = _spec_file(entry)
             if spec is None:
                 _discard(entry)
                 return False
@@ -415,10 +410,12 @@ def _flush(entry: _OpenDoc) -> bool:
                         "doc was open; the doc does not write over it", entry.project_id,
                     )
             else:
-                # What the file holds, its dataflow the doc's: never the
-                # history storage keeps beside it, which stays as it is.
+                # What the file holds, its dataflow the doc's, and no history:
+                # a section a write leaves out stays on record (write_spec),
+                # so no write of the doc reads or rewrites the history.
                 dataflow = doc_mapping.doc_to_dataflow(entry.doc)
-                storage.write_spec(entry.user_key, entry.project_id, _with_dataflow(spec, dataflow))
+                kept = {key: value for key, value in spec.items() if key not in storage.HISTORY_KEYS}
+                storage.write_spec(entry.user_key, entry.project_id, _with_dataflow(kept, dataflow))
                 entry.revision = storage.spec_revision(entry.user_key, entry.project_id)
                 wrote = True
             _fold(folder, entry.doc, entry.revision)
