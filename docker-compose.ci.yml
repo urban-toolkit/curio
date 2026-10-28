@@ -102,6 +102,9 @@ services:
       - CURIO_DISCOVERY_FIXTURES=/app/utk_curio/backend/tests/test_discovery/fixtures
       # See 4 above.
       - CURIO_SKIP_DEP_INSTALL=1
+      # Diagnostic branch only: utk_curio/common/_diag_heap.py.
+      - CURIO_DIAG_HEAP_DIR=/app/.curio/diag-heap
+      - CURIO_DIAG_HEAP_EVERY=60
     # The job's own host ports, in place of the base file's 5002/8080, which
     # are the production stack's on the runner.
     ports: !override
