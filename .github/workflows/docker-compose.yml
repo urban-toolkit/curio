@@ -748,6 +748,15 @@ jobs:
           nohup python3 scripts/ci_memory_budget.py sample --out ci-report/memory.tsv > /dev/null 2>&1 &
           echo $! > "$RUNNER_TEMP/memory-sampler.pid"
 
+      # What each process in the container holds, every 20 s: the container's
+      # total above cannot say which backend, sandbox or Node run grows
+      # (scripts/ci_stack_processes.py).
+      - name: 📈 Record each process's memory in the CI container
+        run: |
+          nohup python3 scripts/ci_stack_processes.py sample --project curio-ci \
+            --out ci-report/stack-processes.jsonl > "$RUNNER_TEMP/stack-processes.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/stack-processes.pid"
+
       - name: 🧩 Start the extra e2e shards inside the CI container
         shell: bash
         run: |
@@ -891,6 +900,7 @@ jobs:
         shell: bash
         run: |
           kill "$(cat "$RUNNER_TEMP/memory-sampler.pid" 2>/dev/null)" 2>/dev/null || true
+          kill "$(cat "$RUNNER_TEMP/stack-processes.pid" 2>/dev/null)" 2>/dev/null || true
           python3 scripts/ci_memory_budget.py report --samples ci-report/memory.tsv
 
       # Everything the ci-report job builds the run's page from: this job's
