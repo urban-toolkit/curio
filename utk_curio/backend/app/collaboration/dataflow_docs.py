@@ -677,9 +677,10 @@ def _written(entry: _OpenDoc, file: "storage.SpecFile", spec: dict, *,
     stays out: a section a write leaves out stays on record (``write_spec``),
     so no write of the doc reads or rewrites it, but the sections *history*
     puts on record (the PUT's). Under the spec lock and the doc's."""
-    on_file = file.spec.get("dataflow") if isinstance(file.spec.get("dataflow"), dict) else {}
-    dataflow = _as_the_file_holds(doc_mapping.doc_to_dataflow(entry.doc), doc_mapping.owned(on_file))
-    out = _with_dataflow(_writable(spec), dataflow)
+    out = _writable(spec)
+    out["dataflow"] = _as_the_file_holds(
+        doc_mapping.doc_to_dataflow(entry.doc), _dataflow_of(file.spec), _dataflow_of(spec),
+    )
     if history:
         out.update(history)
     storage.write_spec(entry.user_key, entry.project_id, out)
@@ -692,37 +693,56 @@ def _written(entry: _OpenDoc, file: "storage.SpecFile", spec: dict, *,
             entry.idle_since = _clock()  # leaves memory a while after its last write
 
 
-def _as_the_file_holds(dataflow: dict, on_file: dict) -> dict:
-    """*dataflow*, the doc's, each part of it that reads as the file holds it
-    (*on_file*, the file's part the doc holds) taken as the file holds it, and
-    each node, connection and scenario likewise: a node the doc reads back in
-    another form (an empty ``metadata`` left out, its keys in the layout's
-    order) keeps the file's form until it changes, and a list the file leaves
+def _as_the_file_holds(dataflow: dict, on_file: dict, beside: dict) -> dict:
+    """The dataflow to write: *dataflow*, the doc's, as the file holds it
+    (*on_file*, the file's whole dataflow), with the sections *beside* keeps
+    beside the doc. The file's fields stay in its order, each that reads as the
+    file holds it taken as the file holds it, and each node, connection and
+    scenario likewise: a node the doc reads back in another form (an empty
+    ``metadata`` left out, its fields in the layout's order) keeps the file's
+    form until it changes. New fields come after, and a list the file leaves
     out, which the doc reads back empty, stays out."""
+    held = doc_mapping.owned(on_file)
     try:
-        normal = _normalized(on_file)
+        normal = _normalized(held)
     except doc_mapping.DocMappingError:
-        return dataflow
+        normal = None
     out: dict = {}
+    for name in on_file:
+        if name in doc_mapping.OUTSIDE_THE_DOC:
+            if name in beside:
+                out[name] = beside[name]
+        elif name in dataflow:
+            out[name] = dataflow[name] if normal is None else _field_as_the_file_holds(
+                name, dataflow[name], held[name], normal.get(name, doc_mapping.MISSING),
+            )
     for name, value in dataflow.items():
-        read = normal.get(name, doc_mapping.MISSING)
-        if doc_mapping.same(read, value):
-            if name in on_file:
-                out[name] = on_file[name]
-            continue
-        key = doc_mapping.KEYED_LISTS.get(name)
-        held = on_file.get(name)
-        if key and isinstance(value, list) and isinstance(held, list) and isinstance(read, list):
-            out[name] = _entries_as_the_file_holds(value, held, read, key)
-        else:
+        if name not in out and not (
+            name not in held and normal is not None and doc_mapping.same(normal.get(name, doc_mapping.MISSING), value)
+        ):
             out[name] = value
+    for name in sorted(doc_mapping.OUTSIDE_THE_DOC):
+        if name in beside and name not in out:
+            out[name] = beside[name]
     return out
+
+
+def _field_as_the_file_holds(name: str, value, held, read):
+    """The doc's *value* of the dataflow's field *name*: as the file holds it
+    (*held*, read back as *read*) when it reads the same, and a list of nodes,
+    connections or scenarios entry by entry."""
+    if doc_mapping.same(read, value):
+        return held
+    key = doc_mapping.KEYED_LISTS.get(name)
+    if key and isinstance(value, list) and isinstance(held, list) and isinstance(read, list):
+        return _entries_as_the_file_holds(value, held, read, key)
+    return value
 
 
 def _entries_as_the_file_holds(entries: list, held: list, read: list, key: str) -> list:
     """*entries*, each one that reads as the file's entry of its id reads
     (*held* as the file holds them, *read* as the doc reads them back) taken as
-    the file holds it."""
+    the file holds it, and each that changed with its unchanged fields so."""
 
     def by_key(items: list) -> dict:
         return {item[key]: item for item in items if isinstance(item, dict) and isinstance(item.get(key), str)}
@@ -731,10 +751,29 @@ def _entries_as_the_file_holds(entries: list, held: list, read: list, key: str) 
     out = []
     for entry in entries:
         name = entry.get(key) if isinstance(entry, dict) else None
-        if name in theirs and name in normal and doc_mapping.same(normal[name], entry):
+        if name not in theirs or name not in normal or not isinstance(theirs[name], dict):
+            out.append(entry)
+        elif doc_mapping.same(normal[name], entry):
             out.append(theirs[name])
         else:
-            out.append(entry)
+            out.append(_fields_as_the_file_holds(entry, theirs[name], normal[name]))
+    return out
+
+
+def _fields_as_the_file_holds(entry: dict, held: dict, read: dict) -> dict:
+    """*entry*, a changed one, in the order the file holds its fields: each
+    field that reads as the file's (*held*, read back as *read*) taken as the
+    file holds it, each the doc reads back as nothing (an empty ``metadata``)
+    kept, each the doc took out left out, and new ones after."""
+    out: dict = {}
+    for field, was in held.items():
+        if field in entry:
+            out[field] = was if field in read and doc_mapping.same(read[field], entry[field]) else entry[field]
+        elif field not in read:
+            out[field] = was
+    for field, value in entry.items():
+        if field not in out:
+            out[field] = value
     return out
 
 
