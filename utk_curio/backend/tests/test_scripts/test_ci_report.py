@@ -211,6 +211,48 @@ def test_failure_text_is_escaped(tmp_path):
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in page
 
 
+RECORDED = """<?xml version="1.0" encoding="utf-8"?>
+<testsuites><testsuite name="pytest" failures="1" tests="3" time="2.0">
+<testcase classname="tests.test_agents.test_prompt_sizes" name="test_sizes" time="1.5">
+  <properties><property name="agent.curio.node-builder@1 chat" value="{&quot;chars&quot;: 61234}"/>
+  <property name="&lt;b&gt;bold&lt;/b&gt;" value="&lt;script&gt;x&lt;/script&gt;"/></properties>
+</testcase>
+<testcase classname="tests.test_a" name="test_budget" time="0.4">
+  <properties><property name="size" value="12"/></properties>
+  <failure message="past its budget">trace</failure>
+</testcase>
+<testcase classname="tests.test_a" name="test_quiet" time="0.1"/>
+</testsuite></testsuites>
+"""
+
+
+def test_the_values_a_test_recorded_are_on_its_entry(tmp_path):
+    """What a test records with record_property, which its JUnit holds, is
+    shown with the test: in a failure's own entry, and for any other test in
+    an entry of its own, escaped like every other text."""
+    (tmp_path / "unit.xml").write_text(RECORDED, encoding="utf-8")
+    suite = ci_report.read_junit("unit", str(tmp_path / "unit.xml"))
+    by_name = {case.name: case for case in suite.cases}
+    assert by_name["tests.test_agents.test_prompt_sizes::test_sizes"].properties == [
+        ("agent.curio.node-builder@1 chat", '{"chars": 61234}'), ("<b>bold</b>", "<script>x</script>")]
+    assert by_name["tests.test_a::test_budget"].properties == [("size", "12")]
+    assert by_name["tests.test_a::test_quiet"].properties == []
+
+    out = tmp_path / "report.html"
+    assert ci_report.main(["--junit", f"Backend unit tests={tmp_path / 'unit.xml'}", "--out", str(out)]) == 0
+    page = out.read_text(encoding="utf-8")
+    failure = page.index("tests.test_a::test_budget")
+    recorded = page.index('<details class="recorded">')
+    assert failure < recorded
+    assert "<td>size</td><td>12</td>" in page[failure:recorded]
+    assert "Values recorded by 1 test</summary>" in page[recorded:]
+    assert "tests.test_agents.test_prompt_sizes::test_sizes" in page[recorded:]
+    assert "<td>agent.curio.node-builder@1 chat</td><td>{&quot;chars&quot;: 61234}</td>" in page[recorded:]
+    assert "&lt;b&gt;bold&lt;/b&gt;" in page and "&lt;script&gt;x&lt;/script&gt;" in page
+    assert "<b>bold</b>" not in page and "<script>x</script>" not in page
+    assert "test_quiet" not in page
+
+
 def test_comparisons_are_ordered_over_missing_then_near_misses(tmp_path):
     page, _ = _build(tmp_path)
     order = [page.index(f"screenshot_{name}.png") for name in ("c_over", "d_missing", "b_near", "a_pass")]
