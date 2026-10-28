@@ -1,6 +1,7 @@
 """The skill on Map Editor, ``skills/map-edits/SKILL.md``, states the call,
 the edits and their fields as the node's reader takes them, and the words a
-goal names edits by, and every agent Curio ships reads it in its preamble.
+goal names edits by, and every run that writes or checks a Map Editor node's
+code holds it.
 
 The skill's body is read as agents read it, by fixed line shapes, and
 compared with the reader's tables
@@ -43,7 +44,11 @@ def _table_rows(text: str) -> dict[str, list[str]]:
     return rows
 
 
-def test_every_agent_curio_ships_reads_the_page_in_its_preamble():
+def test_every_run_that_writes_or_checks_a_map_editor_node_holds_the_page_whole(tmp_curio):
+    """A run that writes a Map Editor node's code, or checks it, is handed the
+    page whole, once; a chat that lists it loads it whole; the preamble every
+    agent reads leaves it out."""
+    from utk_curio.backend.app.agents.application import skill_runs
     from utk_curio.backend.app.agents.domain import builtin, contracts
 
     page = _page().rstrip("\n")
@@ -51,8 +56,24 @@ def test_every_agent_curio_ships_reads_the_page_in_its_preamble():
     assert page.splitlines()[0] == f"## {label}"
     manifests = builtin.list_builtin_manifests()
     assert len(manifests) >= 7, [m.dir_name for m in manifests]
+    edit = "curio.builtin/edit-features"
+    inputs = {"nodeType": edit, "nodeContext": {"nodeType": edit}}
+    handed = []
     for m in manifests:
-        assert builtin.read_prompt_text(m.dir_name, "system").count(page) == 1, m.dir_name
+        system = builtin.read_prompt_text(m.dir_name, "system")
+        assert page not in system, m.dir_name
+        for capability in ("node.content.generate", "content.quality.evaluate"):
+            if capability in m.capability_ids:
+                run = skill_runs.for_delegated("4242", "p-map-edits", m, capability, inputs,
+                                               {"dataflow": {"nodes": []}}, system)
+                assert (skill_runs.skills_text(run) or "").count(page) == 1, (m.dir_name, capability)
+                handed.append(capability)
+        if SKILL in (m.skills or ()) and m.catalog.listed:
+            chat = skill_runs.for_chat("4242", "p-map-edits", m, {"dataflow": {"nodes": []}}, {"kind": "canvas"},
+                                       system, [])
+            status, loaded = skill_runs.read(chat, {"name": SKILL})
+            assert status == "ok" and loaded.count(page) == 1, m.dir_name
+    assert sorted(handed) == ["content.quality.evaluate", "node.content.generate"]
 
 
 def test_the_page_lists_every_edit_with_the_fields_the_reader_takes():

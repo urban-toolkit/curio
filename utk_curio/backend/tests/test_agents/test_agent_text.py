@@ -3,8 +3,9 @@
 The base entry, ``agents/agent.curio.builtin@1`` (its manifest says ``kind:
 base``), holds the pages every agent Curio ships reads, and each agent's
 folder holds its own prompts. What the agents know of each feature of Curio
-is a skill, ``skills/<name>/SKILL.md``, which the preamble places through
-``{{skill:<name>}}``, its body without its frontmatter. Each is a
+is a skill, ``skills/<name>/SKILL.md``, which a page places through
+``{{skill:<name>}}``, its body without its frontmatter, as the preamble
+places the core skills, or a run holds when its agent names it. Each is a
 hand-written source whose markers the backend fills when it starts
 (``agent_text``). Nothing is generated or committed, and ``utk_curio/`` holds
 none of it. An agent names a page as ``curio:<path>``, and no such path leads

@@ -100,7 +100,10 @@ def test_every_skill_is_shipped_and_the_preamble_places_the_core_three():
     listed = json.loads((BASE / "manifest.json").read_text(encoding="utf-8"))["pages"]
     assert not [page for page in listed if page.startswith("knowledge/")], listed
     assert not (BASE / "knowledge").exists()
-    written = [path.read_text(encoding="utf-8") for path in (REPO_ROOT / "agents").rglob("*.md")]
+    # A README is for whoever edits the folder, and no agent reads it.
+    written = [path.read_text(encoding="utf-8") for path in (REPO_ROOT / "agents").rglob("*.md")
+               if path.name != "README.md"]
+    assert len(written) >= 15, len(written)
     placed = {name for text in written for name in _SKILL_RE.findall(text)}
     assert placed == set(IN_THE_PREAMBLE), placed
     assert not [text for text in written if "{{include:knowledge/" in text]
