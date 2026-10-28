@@ -179,6 +179,121 @@
   color: var(--curio-text-secondary);
 }
 
+/* ── Skills: an agent's, and one skill's details ─────────────────────────── */
+
+.skillList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--curio-text-primary);
+}
+
+.skillRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 30px;
+  padding: 2px 0;
+  border-bottom: 1px solid var(--curio-border);
+}
+
+.skillRow:last-child {
+  border-bottom: 0;
+}
+
+/* A skill's name, in the type the docs give it. */
+.skillName {
+  font-family: var(--curio-font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--curio-text-primary);
+}
+
+/* Why a row has no Remove, or that this account added it. */
+.skillNote {
+  font-size: 12px;
+  color: var(--curio-text-secondary);
+}
+
+/* The light way-out style: a change to this account's list, not a deletion. */
+.skillButton {
+  margin-left: auto;
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--curio-border);
+  border-radius: 6px;
+  background: var(--curio-card-bg);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--curio-text-primary);
+  cursor: pointer;
+}
+
+.skillButton:hover:not(:disabled) {
+  background: var(--curio-surface-muted);
+}
+
+.skillButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.skillActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.skillActions .skillButton {
+  margin-left: 0;
+}
+
+.skillPicker {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--curio-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.skillPick {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--curio-border);
+  background: var(--curio-card-bg);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.skillPicker li:last-child .skillPick {
+  border-bottom: 0;
+}
+
+.skillPick:hover:not(:disabled) {
+  background: var(--curio-surface-muted);
+}
+
+.skillPickText {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--curio-text-secondary);
+}
+
+.skillError {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--curio-danger-strong);
+}
+
 /* "Change in API Settings" beside the Model row: a link in look, a button in
    behaviour (it opens a modal rather than navigating). */
 .inlineLink {

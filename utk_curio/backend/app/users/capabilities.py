@@ -137,6 +137,25 @@ def settings_refusal(user) -> str | None:
     return None
 
 
+def agent_skills_refusal(user) -> str | None:
+    """Why *user* may not add a skill to an agent or remove one, or ``None``.
+
+    The same two parts as :func:`settings_refusal`: a local run always may,
+    and a hosted guest may not, because every guest shares one account and
+    one visitor's change would reach every visitor's agents.
+    """
+    from utk_curio.backend import config
+
+    if config.CURIO_NO_AUTH or user is None:
+        return None
+    if getattr(user, "is_guest", False):
+        return (
+            "Changing an agent's skills is not available for guest users, because "
+            "every guest shares one account. Sign in with an account to change them."
+        )
+    return None
+
+
 def run_refusal(user) -> str | None:
     """Why *user* may not run a dataflow on the server, or ``None``.
 

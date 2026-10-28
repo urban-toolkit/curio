@@ -46,6 +46,15 @@ from utk_curio.backend.app.agents.application.proposals.apply import (
     apply_proposal,
     dismiss_proposal,
 )
+from utk_curio.backend.app.agents.application.skill_catalog import (
+    add_skill,
+    agent_skill_rows,
+    remove_skill,
+    restore_skills,
+    run_skills,
+    skill_text,
+    skills_listing,
+)
 from utk_curio.backend.app.agents.application.proposals.plans import (
     apply_plan_edges,
     apply_plan_node,
@@ -143,6 +152,13 @@ __all__ = [
     "unpublish_agent",
     "apply_proposal",
     "dismiss_proposal",
+    "add_skill",
+    "agent_skill_rows",
+    "remove_skill",
+    "restore_skills",
+    "run_skills",
+    "skill_text",
+    "skills_listing",
     "apply_plan_edges",
     "apply_plan_node",
     "set_plan_goal",

@@ -357,17 +357,19 @@ _CATALOG_FACTS: dict[tuple[str, int], dict[str, dict]] = {}
 def _catalog_facts() -> dict[str, dict]:
     """What the templates of the package catalog's own copies
     (``catalog_root``) declare, by canonical template id: ``flags``, the flags
-    each declares, and ``behaviors``, the behavior each names."""
+    each declares, ``behaviors``, the behavior each names, and ``labels``,
+    the label each shows."""
     root = catalog_root()
     try:
         key = (str(root), root.stat().st_mtime_ns)
     except OSError:
-        return {"flags": {}, "behaviors": {}}
+        return {"flags": {}, "behaviors": {}, "labels": {}}
     cached = _CATALOG_FACTS.get(key)
     if cached is not None:
         return cached
     flags: dict[str, frozenset[str]] = {}
     behaviors: dict[str, str] = {}
+    labels: dict[str, str] = {}
     for package_dir in sorted(root.iterdir()):
         if not package_dir.is_dir():
             continue
@@ -382,7 +384,9 @@ def _catalog_facts() -> dict[str, dict]:
                 flags[canonical] = flags.get(canonical, frozenset()) | declared
             if isinstance(template.behavior, str) and template.behavior:
                 behaviors.setdefault(canonical, template.behavior)
-    facts = {"flags": flags, "behaviors": behaviors}
+            if isinstance(template.label, str) and template.label:
+                labels.setdefault(canonical, template.label)
+    facts = {"flags": flags, "behaviors": behaviors, "labels": labels}
     _CATALOG_FACTS.clear()
     _CATALOG_FACTS[key] = facts
     return facts
@@ -398,6 +402,18 @@ def catalog_template_behaviors() -> dict[str, str]:
     """``{canonical template id: the behavior it names}`` for the templates of
     the package catalog's own copies (``catalog_root``) that name one."""
     return _catalog_facts()["behaviors"]
+
+
+def catalog_template_labels() -> dict[str, str]:
+    """``{canonical template id: its label}`` for the templates of the package
+    catalog's own copies (``catalog_root``), the base package's first, then
+    each other package's in the catalog's order."""
+    labels = _catalog_facts()["labels"]
+    base = f"{BUILTIN_PACKAGE_ID}/"
+    return {
+        **{tid: label for tid, label in labels.items() if tid.startswith(base)},
+        **{tid: label for tid, label in labels.items() if not tid.startswith(base)},
+    }
 
 
 def template_flags(node_type: object, templates: dict | None = None) -> frozenset[str]:

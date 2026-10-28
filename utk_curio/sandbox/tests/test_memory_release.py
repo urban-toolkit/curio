@@ -4,16 +4,21 @@ When the last request in flight has finished, the sandbox returns what its
 allocators keep free to the system (``sandbox/util/memory_release.py``). These
 tests pin the parts: the release runs once the last response has been sent and
 never while one is still being served, the sandbox app is served through it,
-and on glibc the release returns the freed heap memory a request thread left
-behind. ``test_rerun_memory.py`` measures the whole effect on a real sandbox.
+on glibc the release returns the freed heap memory a request thread left
+behind, and on a many-core host what hundreds of threads freed does not stay
+in hundreds of arenas, since the launcher starts the server with its allocators
+fitted as its isolated children's are: arenas capped, Arrow allocating in them.
+``test_rerun_memory.py`` measures the whole effect on a real sandbox.
 """
 
 import ctypes
+import io
 import json
 import os
 import subprocess
 import sys
 import textwrap
+import types
 
 import pytest
 
@@ -151,3 +156,195 @@ def test_a_release_returns_the_heap_memory_a_request_thread_freed():
         f"the release returned {returned:.0f} MB of the {seen['freed']:.0f} MB "
         f"a request thread freed (resident {seen['before']:.0f} MB -> {seen['after']:.0f} MB)"
     )
+
+
+#: In a fresh interpreter: one block bigger than the others is mapped on its
+#: own and freed, which raises glibc's mmap and trim thresholds as a sandbox's
+#: first runs do. Then request threads, all alive at once, take turns to
+#: allocate a block, fill it and free it, so each block goes back to the top of
+#: its thread's arena. Prints the resident anonymous memory before the threads
+#: and after one release, and how many arenas glibc made, as a ``RESULT`` line
+#: of JSON.
+THREADS_FREE_THEN_RELEASE = textwrap.dedent("""
+    import ctypes
+    import json
+    import os
+    import re
+    import tempfile
+    import threading
+
+    from utk_curio.sandbox.util.memory_release import release_free_memory
+
+    libc = ctypes.CDLL(None)
+    libc.malloc.restype = ctypes.c_void_p
+    libc.malloc.argtypes = [ctypes.c_size_t]
+    libc.free.argtypes = [ctypes.c_void_p]
+    libc.memset.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_size_t]
+    libc.fopen.restype = ctypes.c_void_p
+    libc.fopen.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+    libc.fclose.argtypes = [ctypes.c_void_p]
+    libc.malloc_info.argtypes = [ctypes.c_int, ctypes.c_void_p]
+
+    MIB = 2**20
+    PRIMER, BLOCK, THREADS = 9 * MIB, 8 * MIB, 96
+
+    def anon_mib():
+        with open("/proc/self/status") as handle:
+            for line in handle:
+                if line.startswith("RssAnon:"):
+                    return int(line.split()[1]) / 1024
+
+    def arenas():
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, "malloc.xml")
+            stream = libc.fopen(path.encode(), b"w")
+            libc.malloc_info(0, stream)
+            libc.fclose(stream)
+            with open(path) as handle:
+                return len(re.findall(r"<heap nr=", handle.read()))
+
+    primer = libc.malloc(PRIMER)
+    libc.memset(primer, 1, PRIMER)
+    libc.free(primer)
+    release_free_memory()
+    before = anon_mib()
+
+    together = threading.Barrier(THREADS)
+    turn = threading.Lock()
+
+    def request_thread():
+        together.wait()
+        with turn:
+            block = libc.malloc(BLOCK)
+            libc.memset(block, 1, BLOCK)
+            libc.free(block)
+        together.wait()
+
+    threads = [threading.Thread(target=request_thread) for _ in range(THREADS)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    release_free_memory()
+    print("RESULT " + json.dumps({
+        "before": before, "after": anon_mib(), "arenas": arenas(), "threads": THREADS,
+        "block": BLOCK / MIB, "arena_max": os.environ.get("MALLOC_ARENA_MAX"),
+    }))
+""")
+
+
+def _sandbox_launch_environment(monkeypatch):
+    """The environment the launcher starts the sandbox server with
+    (``utk_curio.cli.services.start_sandbox``), no process started."""
+    from utk_curio.cli import services
+
+    started = {}
+
+    class _Started:
+        def __init__(self):
+            self.stdout = io.StringIO("")
+            self.stderr = None
+
+        def poll(self):
+            return 0
+
+    def popen(args, **kwargs):
+        started["env"] = kwargs["env"]
+        return _Started()
+
+    monkeypatch.setattr(services, "subprocess", types.SimpleNamespace(
+        Popen=popen, PIPE=subprocess.PIPE, STDOUT=subprocess.STDOUT))
+    monkeypatch.setattr(services, "_kill_port", lambda port: None)
+    monkeypatch.setattr(services, "_skip_dep_install", lambda: True)
+    services.start_sandbox("127.0.0.1", 2999)
+    return started["env"]
+
+
+@pytest.mark.skipif(
+    not sys.platform.startswith("linux") or not hasattr(ctypes.CDLL(None), "malloc_trim"),
+    reason="malloc_trim is glibc's",
+)
+def test_on_a_many_core_host_the_idle_sandbox_keeps_little_of_what_its_threads_freed(monkeypatch):
+    from utk_curio.sandbox.isolation.lifecycle import malloc_arena_cap
+
+    # glibc's own limit on a 64-core host (eight arenas a core), as on the CI
+    # GPU runners, whatever this runner has.
+    monkeypatch.setenv("MALLOC_ARENA_MAX", "512")
+    monkeypatch.setenv("CURIO_EXEC_MEMORY_MB", "4096")
+    cap = malloc_arena_cap(4096)
+    env = _sandbox_launch_environment(monkeypatch)
+    done = subprocess.run(
+        [sys.executable, "-c", THREADS_FREE_THEN_RELEASE],
+        cwd=REPO_ROOT, env={**env, "PYTHONPATH": REPO_ROOT},
+        capture_output=True, text=True, timeout=300,
+    )
+    lines = [line for line in done.stdout.splitlines() if line.startswith("RESULT ")]
+    assert done.returncode == 0 and lines, (
+        f"exit {done.returncode}\n{done.stdout[-2000:]}\n{done.stderr[-4000:]}"
+    )
+    seen = json.loads(lines[-1][len("RESULT "):])
+    kept = seen["after"] - seen["before"]
+    # One freed block at the top of each arena the cap allows, and some slack.
+    allowed = cap * seen["block"] + 64
+    assert kept <= allowed, (
+        f"after the idle release the sandbox kept {kept:.0f} MiB of what "
+        f"{seen['threads']} request threads freed, in {seen['arenas']} malloc arenas "
+        f"(MALLOC_ARENA_MAX {seen['arena_max']}); at most {allowed:.0f} MiB, with its "
+        f"arenas capped at {cap} as an isolated child's are"
+    )
+    assert seen["arenas"] <= cap, seen
+
+
+#: In a fresh interpreter: the pool Arrow allocates from, as a ``RESULT`` line.
+ARROW_POOL = textwrap.dedent("""
+    import json
+
+    import pyarrow
+
+    print("RESULT " + json.dumps({"pool": pyarrow.default_memory_pool().backend_name}))
+""")
+
+
+def test_the_sandbox_server_allocates_arrow_memory_in_its_capped_arenas(monkeypatch):
+    monkeypatch.delenv("ARROW_DEFAULT_MEMORY_POOL", raising=False)
+    env = _sandbox_launch_environment(monkeypatch)
+    done = subprocess.run(
+        [sys.executable, "-c", ARROW_POOL],
+        cwd=REPO_ROOT, env={**env, "PYTHONPATH": REPO_ROOT},
+        capture_output=True, text=True, timeout=120,
+    )
+    lines = [line for line in done.stdout.splitlines() if line.startswith("RESULT ")]
+    assert done.returncode == 0 and lines, (
+        f"exit {done.returncode}\n{done.stdout[-2000:]}\n{done.stderr[-4000:]}"
+    )
+    pool = json.loads(lines[-1][len("RESULT "):])["pool"]
+    assert pool == "system", (
+        f"the sandbox server's Arrow allocates from {pool}, not from glibc's capped arenas; "
+        "in test-gpu's repeat runs its mimalloc pool kept up to about 500 MiB a sandbox "
+        "that the idle release did not reach"
+    )
+
+
+def test_the_sandbox_server_fits_its_allocators_as_its_isolated_children_do():
+    from utk_curio.sandbox.isolation.lifecycle import (
+        malloc_arena_cap,
+        server_environment,
+        zygote_environment,
+    )
+
+    for budget in (4096, 16384):
+        server = server_environment({"CURIO_EXEC_MEMORY_MB": str(budget), "MALLOC_ARENA_MAX": "512"})
+        assert server["MALLOC_ARENA_MAX"] == str(malloc_arena_cap(budget))
+        assert server["ARROW_DEFAULT_MEMORY_POOL"] == "system"
+        # The zygote inherits the server's environment: its children's cap is
+        # the one their budget gives, not lowered by the server's.
+        children = zygote_environment({"memory_mb": budget}, server)
+        assert children["MALLOC_ARENA_MAX"] == str(malloc_arena_cap(budget))
+        assert children["ARROW_DEFAULT_MEMORY_POOL"] == "system"
+    assert server_environment({})["MALLOC_ARENA_MAX"] == "16", "the default budget, 4096 MB"
+    assert server_environment({"CURIO_EXEC_MEMORY_MB": "oops"})["MALLOC_ARENA_MAX"] == "16"
+    assert server_environment({"MALLOC_ARENA_MAX": "4"})["MALLOC_ARENA_MAX"] == "4", (
+        "an operator's lower cap stands"
+    )
+    assert server_environment({"ARROW_DEFAULT_MEMORY_POOL": "jemalloc"})[
+        "ARROW_DEFAULT_MEMORY_POOL"] == "jemalloc", "an operator's pool stands"

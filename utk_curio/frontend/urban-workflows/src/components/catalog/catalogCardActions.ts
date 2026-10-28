@@ -13,8 +13,8 @@
  * function each rather than one for all: a dataset is added to every project or
  * detached from it, an agent is imported or un-imported, a package (a node
  * package or a model package) is installed and can then be updated, a
- * Discovery Catalog source is browsed, and a scenario opens the project it
- * lives in. Each builder takes the state its drawer
+ * Discovery Catalog source is browsed, a scenario opens the project it
+ * lives in, and a skill has only its details. Each builder takes the state its drawer
  * already computes, so neither surface decides anything the other cannot see.
  *
  * Publish and Unpublish are deliberately absent. They are not plain buttons in
@@ -112,4 +112,10 @@ export function scenarioCardActions(): CatalogCardAction[] {
   // A scenario is read-only here: it changes when its project is edited, so
   // the one thing to do with it is open that project.
   return [{ id: "open-source-project", label: "Open source project" }, VIEW_DETAILS];
+}
+
+export function skillCardActions(): CatalogCardAction[] {
+  // A skill is added to an agent, and removed from one, in that agent's
+  // details, so its own drawer has no primary action and the menu has none.
+  return [VIEW_DETAILS];
 }

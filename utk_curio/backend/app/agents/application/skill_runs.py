@@ -5,7 +5,10 @@ to do a specific task. A run holds its skills as agentskills.io's guide for
 clients says (https://agentskills.io/client-implementation/adding-skills-support):
 
 - **The agent's skills** are the ones its manifest names (``skills``), or
-  every skill Curio ships when it names none. Those its preamble holds
+  every skill Curio ships when it names none, then what the account changed
+  of them in the agent's details (``infrastructure/agent_skills.py``, read at
+  the start of each run as the model chosen for it is): the ones it removed
+  left out, the ones it added after the rest. Those its preamble holds
   already, as the default preamble holds the core skills, are in the system
   turn, so nothing below lists or hands them again.
 - **The packages' skills.** Every run on a dataflow also holds the skills of
@@ -46,10 +49,15 @@ clients says (https://agentskills.io/client-implementation/adding-skills-support
     ``skills`` (``prompts.instruction.skills``), the procedures it follows: its
     chat, from its first message, and each capability with no instruction of
     its own, which runs the instruction.
+- **Named skills.** A chat message that starts with ``/<name>``, a skill of
+  the run's catalog, is handed that skill in its system turn, as the guide has
+  a client do when a person activates a skill (``named``, :func:`named_in`).
+  A skill the run holds already is not handed again.
 - **Loaded skills.** What ``skill.read`` loads in a chat turn is recorded on
   the turn (``skillsLoaded`` in its execution record), and every later run of
   the conversation is handed it again (``kept``), so it outlives the trimming
-  of older turns and is never loaded twice.
+  of older turns and is never loaded twice. A named skill is kept the same
+  way.
 
 A chat run's skills ride its loop context (``skills``), where ``skill.read``
 (:func:`read`) answers from them and records what it loads.
@@ -69,6 +77,7 @@ from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.domain import dashboards
 from utk_curio.backend.app.agents.domain import plan_topology
 from utk_curio.backend.app.agents.domain import skills as skill_format
+from utk_curio.backend.app.agents.infrastructure import agent_skills as agent_skill_store
 from utk_curio.backend.app.packages import service as packages_services
 
 log = logging.getLogger(__name__)
@@ -113,6 +122,8 @@ class RunSkills:
     handed: tuple[skill_format.Skill, ...] = ()
     #: What earlier turns of its conversation loaded, handed again.
     kept: tuple[skill_format.Skill, ...] = ()
+    #: What its message named, ``/<name>``, handed in its system turn.
+    named: tuple[skill_format.Skill, ...] = ()
     #: The skills its preamble holds already, by name.
     placed: frozenset[str] = frozenset()
     #: What ``skill.read`` loaded this turn, by name, in order.
@@ -127,20 +138,22 @@ class RunSkills:
 
     def holds(self, name: str) -> bool:
         """Whether the run's conversation holds the skill *name* already: in
-        its preamble, handed, kept, or loaded this turn."""
+        its preamble, handed, kept, named, or loaded this turn."""
         return (
             name in self.placed or name in self.loaded
-            or any(skill.name == name for skill in (*self.handed, *self.kept))
+            or any(skill.name == name for skill in (*self.handed, *self.kept, *self.named))
         )
 
     def pins(self) -> dict:
         """What the run's system turn held of its skills, for its record:
-        the catalog's names, the skills it was handed and those it kept from
-        earlier turns, each only when there is one."""
+        the catalog's names, the skills it was handed, those it kept from
+        earlier turns and those its message named, each only when there is
+        one."""
         found = {
             "catalog": self.names,
             "handed": [skill.name for skill in self.handed],
             "kept": [skill.name for skill in self.kept],
+            "named": [skill.name for skill in self.named],
         }
         return {key: names for key, names in found.items() if names}
 
@@ -153,20 +166,44 @@ def shipped_skills() -> dict[str, skill_format.Skill]:
     return {skill.name: skill for skill in skill_format.shipped_skills()}
 
 
-def agent_skills(manifest, shipped: Mapping[str, skill_format.Skill] | None = None) -> tuple[skill_format.Skill, ...]:
+def agent_skills(manifest, shipped: Mapping[str, skill_format.Skill] | None = None, *,
+                 choice: agent_skill_store.SkillChoice | None = None) -> tuple[skill_format.Skill, ...]:
     """The skills the agent *manifest* defines may hold, in its order: the
     ones it names, or every skill Curio ships when it names none (and when
     there is no manifest). A name Curio ships no skill by is left out and
-    logged."""
+    logged. With *choice*, what an account changed of them
+    (:func:`account_choice`): the ones it removed are left out, and the ones
+    it added follow the rest, in the order it added them."""
     shipped = shipped_skills() if shipped is None else shipped
     names = getattr(manifest, "skills", None)
     if names is None:
-        return tuple(shipped.values())
-    unknown = [name for name in names if name not in shipped]
-    if unknown:
-        log.warning("Agent %s names skills Curio does not ship, so its runs go without them: %s",
-                    getattr(manifest, "dir_name", "?"), ", ".join(unknown))
-    return tuple(shipped[name] for name in names if name in shipped)
+        found = list(shipped.values())
+    else:
+        unknown = [name for name in names if name not in shipped]
+        if unknown:
+            log.warning("Agent %s names skills Curio does not ship, so its runs go without them: %s",
+                        getattr(manifest, "dir_name", "?"), ", ".join(unknown))
+        found = [shipped[name] for name in names if name in shipped]
+    if choice:
+        found = [skill for skill in found if skill.name not in choice.removed]
+        found += [shipped[name] for name in choice.added
+                  if name in shipped and all(skill.name != name for skill in found)]
+    return tuple(found)
+
+
+def account_choice(user_key: str | None, manifest) -> agent_skill_store.SkillChoice:
+    """What the account *user_key* changed of the skills of the agent
+    *manifest* defines, by its id (``infrastructure/agent_skills.py``). A file
+    that cannot be read changes nothing for a run: it is logged, and the run
+    holds the skills the manifest names."""
+    agent_id = getattr(manifest, "agent_id", None)
+    if not user_key or not isinstance(agent_id, str):
+        return agent_skill_store.SkillChoice()
+    try:
+        return agent_skill_store.default_store().choice(user_key, agent_id)
+    except ValueError as exc:  # AgentSkillsError, or a key no store holds
+        log.warning("Runs of %s hold the skills its manifest names: %s", agent_id, exc)
+        return agent_skill_store.SkillChoice()
 
 
 def placed_in(preamble: str | None, shipped: Mapping[str, skill_format.Skill]) -> frozenset[str]:
@@ -208,12 +245,14 @@ def package_skills(user_key: str | None, spec,
 def _pool(user_key: str | None, manifest, preamble: str | None,
           spec=None) -> tuple[dict, frozenset[str], tuple[skill_format.Skill, ...], dict[str, str]]:
     """Every skill Curio ships, the ones *preamble* holds, the skills a run
-    may hold that it does not (the agent's, then those of the packages the
-    dataflow *spec* uses, :func:`package_skills`), and the package each of
-    those comes from, ``<packageId>@<major>``, by the skill's name."""
+    may hold that it does not (the agent's, after what the account *user_key*
+    changed of them, then those of the packages the dataflow *spec* uses,
+    :func:`package_skills`), and the package each of those comes from,
+    ``<packageId>@<major>``, by the skill's name."""
     shipped = shipped_skills()
     placed = placed_in(preamble, shipped)
-    own = tuple(skill for skill in agent_skills(manifest, shipped) if skill.name not in placed)
+    agents = agent_skills(manifest, shipped, choice=account_choice(user_key, manifest))
+    own = tuple(skill for skill in agents if skill.name not in placed)
     packaged = package_skills(user_key, spec, shipped)
     return shipped, placed, (*own, *(skill for _, skill in packaged)), {
         skill.name: dir_name for dir_name, skill in packaged
@@ -347,13 +386,14 @@ def _instruction_skills(manifest) -> tuple[str, ...]:
 
 
 def for_chat(user_key: str, project_id: str, manifest, spec, target, preamble: str | None,
-             prior_turns) -> RunSkills:
+             prior_turns, *, message: str | None = None) -> RunSkills:
     """The skills of a chat run of the agent *manifest* defines, on the
     dataflow *spec*, attached to *target*, whose preamble is *preamble*,
-    after the turns *prior_turns* of its conversation: the catalog of its
-    skills and of the dataflow's packages, the ones serving the behavior and
-    the template of the node it is attached to, then its instruction's own,
-    and those its conversation loaded before."""
+    after the turns *prior_turns* of its conversation, for its *message*: the
+    catalog of its skills and of the dataflow's packages, the ones serving
+    the behavior and the template of the node it is attached to, then its
+    instruction's own, those its conversation loaded or named before, and
+    those *message* names (:func:`named_in`) that it does not hold already."""
     shipped, placed, pool, packages = _pool(user_key, manifest, preamble, spec)
     node_id = target.get("targetId") if isinstance(target, dict) and target.get("kind") == "node" else None
     node_type = agents_dataflow_block.node_type_of(spec, node_id) if node_id else None
@@ -367,7 +407,26 @@ def for_chat(user_key: str, project_id: str, manifest, spec, target, preamble: s
         by_name[name] for name in loaded_before(prior_turns)
         if name in by_name and all(skill.name != name for skill in handed)
     )
-    return RunSkills(catalog=pool, handed=tuple(handed), kept=kept, placed=placed)
+    held = {skill.name for skill in (*handed, *kept)}
+    named = tuple(by_name[name] for name in named_in(message, by_name) if name not in held)
+    return RunSkills(catalog=pool, handed=tuple(handed), kept=kept, named=named, placed=placed)
+
+
+def named_in(message: str | None, listed: Iterable[str]) -> list[str]:
+    """The skills *message* names before its first other word, ``/<name>``
+    each, as agentskills.io's guide has a person activate a skill: each a
+    name of *listed*, the run's catalog, once, in the message's order. The
+    first word that names no listed skill ends them, so a path such as
+    ``/catalog/agents`` names none."""
+    listed = set(listed)
+    names: list[str] = []
+    for word in (message or "").split():
+        name = word[1:] if word.startswith("/") else None
+        if not skill_format.is_name(name) or name not in listed:
+            break
+        if name not in names:
+            names.append(name)
+    return names
 
 
 def for_delegated(user_key: str, project_id: str, manifest, capability: str, inputs, spec,
@@ -407,14 +466,20 @@ def for_delegated(user_key: str, project_id: str, manifest, capability: str, inp
 
 
 def loaded_before(turns) -> list[str]:
-    """The skills ``skill.read`` loaded in *turns*, a conversation's, oldest
-    first and each once: what each turn's execution record lists as
-    ``skillsLoaded``."""
+    """The skills *turns*, a conversation's, took in for the rest of it,
+    oldest first and each once: of each turn, those its message named
+    (``pins.skills.named`` in its execution record), then those ``skill.read``
+    loaded (``skillsLoaded``)."""
     names: list[str] = []
     for turn in turns or ():
         execution = turn.get("execution") if isinstance(turn, dict) else None
-        loaded = execution.get("skillsLoaded") if isinstance(execution, dict) else None
-        for name in loaded if isinstance(loaded, list) else ():
+        if not isinstance(execution, dict):
+            continue
+        pins = execution.get("pins")
+        held = pins.get("skills") if isinstance(pins, dict) else None
+        named = held.get("named") if isinstance(held, dict) else None
+        loaded = execution.get("skillsLoaded")
+        for name in (*(named if isinstance(named, list) else ()), *(loaded if isinstance(loaded, list) else ())):
             if isinstance(name, str) and name not in names:
                 names.append(name)
     return names
@@ -472,9 +537,9 @@ def content(skill: skill_format.Skill, *, readable: bool) -> str:
 
 def skills_text(run: RunSkills) -> str | None:
     """The skills a run's system turn holds, each wrapped
-    (:func:`content`): those it is handed, then those it kept. None when it
-    holds none."""
-    held = (*run.handed, *run.kept)
+    (:func:`content`): those it is handed, then those it kept, then those its
+    message named. None when it holds none."""
+    held = (*run.handed, *run.kept, *run.named)
     if not held:
         return None
     return "\n\n".join(content(skill, readable=bool(run.catalog)) for skill in held)

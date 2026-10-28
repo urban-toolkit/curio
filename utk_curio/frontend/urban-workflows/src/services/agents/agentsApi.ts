@@ -26,6 +26,7 @@ import type {
   AgentPlanEdgesResult,
   AgentPlanNodeApplyResult,
   AgentProposalStatus,
+  AgentRunSkillPins,
   AgentSession,
   AgentSolveResult,
   AgentTarget,
@@ -314,6 +315,10 @@ export const agentsApi = {
     durationMs?: number;
     /** Typed content parts (memo dev/39); absent on old servers. */
     content?: AgentContentPart[];
+    /** The skills the run's system turn held, as its record keeps them. */
+    skills?: AgentRunSkillPins;
+    /** The skills the run loaded with skill.read. */
+    skillsLoaded?: string[];
   }> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/run`,
@@ -351,12 +356,18 @@ export const agentsApi = {
     /** The run's wall-clock duration (memo dev/80); absent on old servers. */
     durationMs?: number;
     content?: AgentContentPart[];
+    /** The skills the run's system turn held, as its record keeps them. */
+    skills?: AgentRunSkillPins;
+    /** The skills the run loaded with skill.read. */
+    skillsLoaded?: string[];
   }> {
     let reply: string | null = null;
     let executionId: string | undefined;
     let usage: AgentUsage | null | undefined;
     let durationMs: number | undefined;
     let content: AgentContentPart[] | undefined;
+    let skills: AgentRunSkillPins | undefined;
+    let skillsLoaded: string[] | undefined;
 
     await postSseStream(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/run/stream`,
@@ -371,6 +382,8 @@ export const agentsApi = {
           durationMs?: number;
           parts?: AgentContentPart[];
           content?: AgentContentPart[];
+          skills?: AgentRunSkillPins;
+          skillsLoaded?: string[];
         };
         if (event === "delta" && payload.text) onDelta(payload.text);
         else if (event === "execution") executionId = payload.executionId;
@@ -394,11 +407,13 @@ export const agentsApi = {
           usage = payload.usage;
           durationMs = payload.durationMs;
           content = payload.content ?? content;
+          skills = payload.skills;
+          skillsLoaded = payload.skillsLoaded;
         } else if (event === "error") throw new Error(payload.error || "agent run failed");
       }
     );
     if (reply === null) throw new Error("stream ended without a reply");
-    return { reply, executionId, usage, durationMs, content };
+    return { reply, executionId, usage, durationMs, content, skills, skillsLoaded };
   },
 
   /**
