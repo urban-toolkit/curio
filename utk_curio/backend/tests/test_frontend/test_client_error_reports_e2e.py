@@ -4,10 +4,10 @@ Every page sends the monitor each error it leaves uncaught and each promise
 rejection nothing handles (``utils/clientErrorReporter.ts``). The browser's
 notice that a ResizeObserver delivered some sizes a frame late is neither. The
 browser raises it as a window ``error`` event with no error object when an
-observer's callback changes a size it observes. A dashboard's tiles can do
-that for a frame as the page opens and starts a viewer's run, and the report
-of it was a request beyond the dashboard's data (the Crown Heights link's
-dashboard, run 40619435665, 10-28).
+observer's callback changes a size it observes. A visitor's dashboard that
+reports it asks the server for more than its data, which the dashboard tests
+refuse: an unnamed report, sent as the Crown Heights link's dashboard opened,
+failed one that way (run 40619435665, 10-28).
 
 The page here is a visitor's dashboard, served as the hosted stacks serve it.
 The loop is made on purpose, with the browser's own ResizeObserver, kept

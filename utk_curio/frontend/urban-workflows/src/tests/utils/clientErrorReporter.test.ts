@@ -5,10 +5,10 @@
  * The browser raises "ResizeObserver loop completed with undelivered
  * notifications." as a window `error` event with no error object when a
  * ResizeObserver delivers some sizes a frame late. Nothing threw, so it is not
- * reported: on a visitor's dashboard its report was a request beyond the
- * page's data (the Crown Heights dashboard e2e, run 40619435665). An event
- * that only resembles it, any other error and any unhandled rejection are
- * still reported, and the notice spends none of the reports a page may send.
+ * reported, and a visitor's dashboard asks the server for nothing beyond its
+ * data for it. An event that only resembles it, any other error and any
+ * unhandled rejection are still reported, and the notice spends none of the
+ * reports a page may send.
  */
 
 jest.mock("../../api/monitorApi", () => ({ postClientError: jest.fn() }));
