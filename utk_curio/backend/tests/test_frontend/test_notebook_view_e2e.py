@@ -36,6 +36,8 @@ What each test pins:
   shows the view it was left at, not the notebook view's origin, and a
   put-back of the origin still waiting for a frame does not undo it once
   frames come (#996);
+* back on the canvas while Monaco's layout has not run yet, the check waits
+  for every node's own size and editor, not for two reads that agree;
 * in the notebook view while the page draws no animation frame, a fit is put
   back to the origin before the canvas is read (#996);
 * the first save of a new dataflow, which moves the page to the dataflow's
@@ -59,6 +61,7 @@ import re
 import uuid
 from typing import TYPE_CHECKING
 
+import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
@@ -264,6 +267,36 @@ def _settled_boxes(page, *, timeout_ms: int = 15000) -> dict:
             return now
         last = now
     raise AssertionError(f"the nodes kept changing size or place: last read {last}")
+
+
+def _boxes_as_drawn(page, drawn: dict, *, timeout_ms: int = 15000) -> dict:
+    """``_boxes`` once every node is drawn as *drawn* reads (its box, its spot
+    on the screen to a pixel, its editor), read every 100 ms; after
+    *timeout_ms*, the last read, for the checks to name what differs.
+
+    It waits for those boxes themselves, not for any that hold still. A code
+    node's editor takes its size from Monaco's automatic layout, a
+    ResizeObserver callback that runs a frame after its container changes
+    (``CodeEditor.tsx``, #742). Back from the notebook view on a busy runner,
+    the producer's editor kept its cell's size, 1020 by 138, for two reads
+    300 ms apart, which ``_settled_boxes`` took as settled (run 40754068427;
+    #1034's run 39417463646 before it)."""
+    def as_drawn(now: dict) -> bool:
+        for node_id, was in drawn.items():
+            here = now.get(node_id)
+            if not here or here["box"] != was["box"] or here["editor"] != was["editor"]:
+                return False
+            if not here["screen"] or any(abs(a - b) > 1 for a, b in zip(here["screen"], was["screen"])):
+                return False
+        return True
+
+    waited = 0
+    while True:
+        now = _boxes(page)
+        if as_drawn(now) or waited >= timeout_ms:
+            return now
+        page.wait_for_timeout(100)
+        waited += 100
 
 
 def _show(page, view: str, *, count: int = len(CANVAS)) -> None:
@@ -521,6 +554,42 @@ _ASK_FOR_A_FRAME_JS = """() => {
     window.__curioTestFrameRan = false;
     window.requestAnimationFrame(() => { window.__curioTestFrameRan = true; });
 }"""
+
+# Before the app's own scripts, so the ResizeObserver each Monaco editor
+# watches its container with goes through it (CodeEditor.tsx wraps the one it
+# finds, #742). Switched on for *ms*, it keeps the callbacks of an observer
+# that sees an editor's container, as a page that draws no frame does: the
+# editor keeps the size Monaco last gave it. Then it runs them.
+_HOLD_EDITOR_LAYOUT_JS = """(() => {
+    const Original = window.ResizeObserver;
+    if (typeof Original !== 'function') return;
+    let held = null;
+    const holdsAnEditor = (entry) => [...entry.target.children].some(
+        (child) => child.classList.contains('monaco-editor'));
+    const Holding = function (callback) {
+        return new Original((entries, observer) => {
+            if (held && entries.some(holdsAnEditor)) {
+                held.push(() => callback(entries, observer));
+                return;
+            }
+            callback(entries, observer);
+        });
+    };
+    Holding.prototype = Original.prototype;
+    window.ResizeObserver = Holding;
+    window.__curioTestHoldEditorLayout = (ms) => {
+        held = held || [];
+        setTimeout(() => {
+            const deferred = held || [];
+            held = null;
+            deferred.forEach((run) => run());
+        }, ms);
+    };
+})();"""
+
+#: How long the held case keeps Monaco's layout back once the canvas is
+#: picked: past the checks that come before the boxes are read.
+EDITOR_LAYOUT_HOLD_MS = 6000
 
 # What the canvas shows: React Flow's viewport, and the transform the page
 # draws for it.
@@ -966,11 +1035,17 @@ def test_nodes_are_added_on_the_canvas_only(
     assert len(_positions(page)) == count + 1
 
 
+@pytest.mark.parametrize("editor_layout", ["prompt", "held"])
 def test_back_on_the_canvas_every_node_is_where_it_was(
-    app_frontend: "FrontendPage", current_server, page,
+    app_frontend: "FrontendPage", current_server, page, editor_layout,
 ):
+    """*editor_layout* ``held`` keeps Monaco's layout back from the moment the
+    canvas is picked (``_HOLD_EDITOR_LAYOUT_JS``), as a busy runner's missing
+    frames did in run 40754068427."""
     require_project_page()
     require_user_auth()
+    if editor_layout == "held":
+        page.add_init_script(_HOLD_EDITOR_LAYOUT_JS)
     session = _enter(page, app_frontend, current_server, prefix="nbv_back")
     project_id = session["project"]["id"]
     # The load's fit frames these nodes below zoom 1. It can wait for the node
@@ -981,7 +1056,24 @@ def test_back_on_the_canvas_every_node_is_where_it_was(
     drawn = _settled_boxes(page)
 
     _show(page, "notebook")
+    if editor_layout == "held":
+        # The editors lay out for their cells first; the way back is held.
+        page.wait_for_function(
+            """([id, width]) => {
+                const editor = document.querySelector(`.react-flow__node[data-id="${id}"] .monaco-editor`);
+                return !!editor && editor.offsetWidth > width;
+            }""",
+            arg=[PRODUCER, drawn[PRODUCER]["editor"][0]],
+            polling=100,
+            timeout=20000,
+        )
+        page.evaluate("(ms) => window.__curioTestHoldEditorLayout(ms)", EDITOR_LAYOUT_HOLD_MS)
     _show(page, "canvas")
+    if editor_layout == "held":
+        kept = _boxes(page)[PRODUCER]["editor"]
+        assert kept != drawn[PRODUCER]["editor"], (
+            f"the hold did not keep {PRODUCER}'s editor at its cell's size: {kept}"
+        )
     assert "view=" not in page.url, page.url
 
     after = _positions(page)
@@ -997,7 +1089,7 @@ def test_back_on_the_canvas_every_node_is_where_it_was(
 
     # What the owner sees: every node at its own size and on the same spot of
     # the screen as before, not grown to the cell's size over its neighbours.
-    redrawn = _settled_boxes(page)
+    redrawn = _boxes_as_drawn(page, drawn)
     for node_id in CANVAS:
         was, now = drawn[node_id], redrawn[node_id]
         assert was["box"] and now["box"] == was["box"], (
