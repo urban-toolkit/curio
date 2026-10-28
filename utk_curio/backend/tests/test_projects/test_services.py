@@ -136,16 +136,46 @@ def test_ownership_404(app, db, user_and_token, tmp_curio):
         services.load_project(other, detail.id)
 
 
-def test_shared_guest_can_save(app, db, guest_user_and_token, tmp_curio):
+def test_shared_guest_can_save(app, db, guest_user_and_token, tmp_curio, monkeypatch):
+    """Without --deploy the shared guest is the one local user, and saves."""
+    from utk_curio.backend import config
+
+    monkeypatch.setattr(config, "CURIO_NO_AUTH", True)
     user, _ = guest_user_and_token
     user.username = services.CURIO_SHARED_GUEST_USERNAME
     db.session.commit()
 
     first = services.save_project(user, ProjectCreate(name="Shared1", spec=_make_spec()))
     second = services.save_project(user, ProjectCreate(name="Shared2", spec=_make_spec()))
+    updated = services.update_project(user, first.id, ProjectUpdate(name="Renamed"))
 
     assert first.id
     assert second.id
+    assert updated.name == "Renamed"
+
+
+def test_a_hosted_guests_save_is_refused(app, db, guest_user_and_token, tmp_curio, monkeypatch):
+    """With --deploy every visitor is the shared guest, which saves nothing:
+    not a new dataflow, and not the examples it opens as its own. The words are
+    the ones the page shows (useWorkflowOperations.ts)."""
+    from utk_curio.backend import config
+
+    monkeypatch.setattr(config, "CURIO_NO_AUTH", True)
+    user, _ = guest_user_and_token
+    user.username = services.CURIO_SHARED_GUEST_USERNAME
+    db.session.commit()
+    example = services.save_project(user, ProjectCreate(name="Example", spec=_make_spec()))
+
+    monkeypatch.setattr(config, "CURIO_NO_AUTH", False)
+    with pytest.raises(services.ProjectError, match="^Guest users cannot save projects$") as created:
+        services.save_project(user, ProjectCreate(name="Mine", spec=_make_spec()))
+    with pytest.raises(services.ProjectError, match="^Guest users cannot save projects$") as updated:
+        services.update_project(user, example.id, ProjectUpdate(name="Scribbled on"))
+    assert created.value.status == updated.value.status == 403
+    assert services.may_save(user, example.id) is False
+    from utk_curio.backend.app.projects.models import Project
+
+    assert db.session.get(Project, example.id).name == "Example"
 
 
 def test_guest_cannot_create_project(app, db, guest_user_and_token, tmp_curio):

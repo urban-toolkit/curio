@@ -1,8 +1,7 @@
 """Socket.IO event handlers for real-time collaboration.
 
 Mounted on the namespace declared by ``COLLAB_NAMESPACE`` (default
-``/collab``). Every handler enforces two invariants before mutating any
-state:
+``/collab``). Every handler enforces these before it changes any state:
 
 1. The sid has a saved session from the handshake (i.e. the user is
    authenticated). Identity is always read from that saved session,
@@ -10,6 +9,21 @@ state:
 2. For room-scoped events, the sid is a current member of the room it
    targets. This is defence-in-depth on top of Socket.IO's own room
    bookkeeping.
+3. For an event that changes the room (a node or edge relay, a code-change
+   request, a vote, taking a lock, a broadcast output or conflict choice),
+   the participant edits the dataflow: it is the owner or an editor the
+   owner invited (``projects/access.py``). A watcher's is refused with
+   ``read_only``.
+
+A join takes the role the account has on the dataflow when it joins, and a
+change to the editors reaches the room at once (``roles.py``). A join is
+refused for a dataflow that does not exist, and for a hosted guest's join to
+a dataflow a guest owns (the examples every hosted guest opens as its own), so
+each such canvas stays its own.
+
+Each socket is one participant, with an id of its own that its join answers
+with: two tabs of one account, or two hosted guests on the one guest account,
+are told apart by it (``room_state.py``).
 
 The room key is always ``project:<uuid>``; the project UUID matches the
 canonical project identifier surfaced by the frontend
@@ -34,13 +48,26 @@ _UUID_RE = re.compile(
     r"-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 )
 
-
-def _room_for(project_id: str) -> str:
-    return f"project:{project_id}"
+#: What a watcher's edit is answered with.
+READ_ONLY_REFUSAL = (
+    "You are watching this dataflow: only its owner and the editors they "
+    "invited can change it."
+)
+#: What a hosted guest's join to a dataflow a guest owns is answered with.
+GUEST_OWNED_REFUSAL = "A guest's canvas of this dataflow is its own, so it joins no room."
 
 
 def _valid_project_id(value) -> bool:
     return isinstance(value, str) and bool(_UUID_RE.match(value))
+
+
+def _sender(entry: dict) -> dict:
+    """Who sent an event, as its relay names them."""
+    return {
+        "user_id": entry.get("user_id"),
+        "username": entry.get("username"),
+        "participant_id": entry.get("participant_id"),
+    }
 
 
 def register(sio):
@@ -67,10 +94,23 @@ def register(sio):
         project_id = (payload or {}).get("projectId")
         if not _valid_project_id(project_id):
             return None, None, {"ok": False, "error": "invalid_project_id"}
-        room = _room_for(project_id)
+        room = room_state.room_for(project_id)
         if not room_state.is_member(room, request.sid):
             return None, None, {"ok": False, "error": "not_joined"}
         return sess, room, None
+
+    def _editing(payload):
+        """``_gated``, for an event that changes the room: returns (room,
+        participant, ack_err), refusing a watcher's."""
+        _sess, room, err = _gated(payload)
+        if err:
+            return None, None, err
+        me = room_state.participant(room, request.sid)
+        if me is None:
+            return None, None, {"ok": False, "error": "not_joined"}
+        if me.get("role") not in room_state.EDIT_ROLES:
+            return None, None, {"ok": False, "error": "read_only", "message": READ_ONLY_REFUSAL}
+        return room, me, None
 
     # ------------------------------------------------------------------
     # Connection lifecycle
@@ -78,6 +118,8 @@ def register(sio):
 
     @sio.on("connect", namespace=ns)
     def _connect(auth):
+        from utk_curio.backend.app.users.capabilities import is_hosted_guest
+
         try:
             session, user = authenticate_handshake(auth, request.environ)
         except ConnectionRefusedError:
@@ -90,7 +132,9 @@ def register(sio):
             "name": user.name or user.username,
             "profile_image": user.profile_image,
             "is_guest": bool(user.is_guest),
+            "hosted_guest": is_hosted_guest(user),
             "token_session_id": session.id,
+            "participant_id": room_state.new_participant_id(),
         })
 
     @sio.on("disconnect", namespace=ns)
@@ -104,6 +148,7 @@ def register(sio):
                 {
                     "user_id": info.get("user_id"),
                     "username": info.get("username"),
+                    "participant_id": info.get("participant_id"),
                     "released_locks": info.get("released_locks", []),
                     "users": users,
                 },
@@ -120,23 +165,35 @@ def register(sio):
 
     @sio.on("join_session", namespace=ns)
     def _join(payload):
+        from utk_curio.backend.app.projects import access
+        from utk_curio.backend.app.projects.models import Project
+        from utk_curio.backend.extensions import db
+
         sess, _room, err = _gated(payload, require_room=False)
         if err:
             return err
         project_id = (payload or {}).get("projectId")
         if not _valid_project_id(project_id):
             return {"ok": False, "error": "invalid_project_id"}
-        room = _room_for(project_id)
+        project = db.session.get(Project, project_id)
+        if project is None:
+            return {"ok": False, "error": "unknown_project"}
+        if sess.get("hosted_guest") and access.owner_is_guest(project):
+            return {"ok": False, "error": "guest_owned", "message": GUEST_OWNED_REFUSAL}
+        role = access.role_of(sess["user_id"], project)
+        room = room_state.room_for(project_id)
         join_room(room, namespace=ns)
         user_info = {
             "user_id": sess["user_id"],
             "username": sess["username"],
             "name": sess.get("name") or sess["username"],
             "profile_image": sess.get("profile_image"),
+            "participant_id": sess["participant_id"],
+            "role": role,
         }
         room_state.add_user(room, request.sid, user_info)
         room_state.record_activity(room, "user_joined", {
-            "user_id": sess["user_id"], "username": sess["username"],
+            "user_id": sess["user_id"], "username": sess["username"], "role": role,
         })
         snap = room_state.snapshot(room)
         sio.emit(
@@ -144,7 +201,12 @@ def register(sio):
             {**user_info, "users": snap["users"]},
             to=room, skip_sid=request.sid, namespace=ns,
         )
-        return {"ok": True, "snapshot": snap}
+        return {
+            "ok": True,
+            "snapshot": snap,
+            "participant_id": sess["participant_id"],
+            "role": role,
+        }
 
     # ------------------------------------------------------------------
     # Per-node soft locks
@@ -152,18 +214,13 @@ def register(sio):
 
     @sio.on("node_lock", namespace=ns)
     def _node_lock(payload):
-        sess, room, err = _gated(payload)
+        room, me, err = _editing(payload)
         if err:
             return err
         node_id = (payload or {}).get("nodeId")
         if not node_id:
             return {"ok": False, "error": "invalid_payload"}
-        user_info = {
-            "user_id": sess["user_id"],
-            "username": sess["username"],
-            "name": sess.get("name") or sess["username"],
-        }
-        lock = room_state.try_lock(room, node_id, user_info, request.sid)
+        lock = room_state.try_lock(room, node_id, me)
         if lock is None:
             return {"ok": False, "error": "locked_by_other"}
         sio.emit(
@@ -181,7 +238,7 @@ def register(sio):
         node_id = (payload or {}).get("nodeId")
         if not node_id:
             return {"ok": False, "error": "invalid_payload"}
-        released = room_state.release_lock(room, node_id, request.sid)
+        released = room_state.release_lock(room, node_id, sess.get("participant_id"))
         if not released:
             return {"ok": False, "error": "not_lock_owner"}
         sio.emit(
@@ -197,21 +254,18 @@ def register(sio):
 
     def _make_relay(event_name: str, activity_kind: str):
         def _handler(payload):
-            sess, room, err = _gated(payload)
+            room, me, err = _editing(payload)
             if err:
                 return err
             relay_payload = dict(payload or {})
-            relay_payload["from"] = {
-                "user_id": sess["user_id"],
-                "username": sess["username"],
-            }
+            relay_payload["from"] = _sender(me)
             sio.emit(
                 event_name, relay_payload,
                 to=room, skip_sid=request.sid, namespace=ns,
             )
             room_state.bump_version(room)
             activity_payload = {
-                "by": sess["username"],
+                "by": me["username"],
                 "payload": {
                     k: payload.get(k)
                     for k in ("nodeId", "edgeId", "patch")
@@ -234,7 +288,7 @@ def register(sio):
 
     @sio.on("request_code_change", namespace=ns)
     def _request_code_change(payload):
-        sess, room, err = _gated(payload)
+        room, me, err = _editing(payload)
         if err:
             return err
         node_id = payload.get("nodeId")
@@ -246,49 +300,44 @@ def register(sio):
             "kind": kind,
             "oldValue": payload.get("oldValue"),
             "newValue": payload["newValue"],
-            "proposed_by": {
-                "user_id": sess["user_id"],
-                "username": sess["username"],
-                "sid": request.sid,
-            },
+            "proposed_by": _sender(me),
         })
         sio.emit(
             "code_change_proposed", proposal,
             to=room, namespace=ns,
         )
         room_state.record_activity(room, "code_change_proposed", {
-            "nodeId": node_id, "by": sess["username"], "kind": kind,
+            "nodeId": node_id, "by": me["username"], "kind": kind,
         })
         return {"ok": True, "proposal": proposal}
 
     def _vote(payload, approve: bool):
-        sess, room, err = _gated(payload)
+        room, me, err = _editing(payload)
         if err:
             return None, err
         proposal_id = (payload or {}).get("proposalId")
         if not proposal_id:
             return None, {"ok": False, "error": "invalid_payload"}
-        prop = room_state.vote_proposal(room, proposal_id, request.sid, approve)
+        prop = room_state.vote_proposal(room, proposal_id, me["participant_id"], approve)
         if prop is None:
             return None, {"ok": False, "error": "unknown_proposal"}
-        return (room, sess, prop), None
+        return (room, me, prop), None
 
     @sio.on("approve_code_change", namespace=ns)
     def _approve_code_change(payload):
         ctx, err = _vote(payload, True)
         if err:
             return err
-        room, sess, prop = ctx
-        users = room_state.users_in(room)
-        proposer_sid = (prop.get("proposed_by") or {}).get("sid")
-        peer_sids = [u["sid"] for u in users if u["sid"] != proposer_sid]
+        room, me, prop = ctx
+        # Everyone else who edits the dataflow approves; a watcher has no vote.
+        voters = room_state.voters(room, prop)
         approvals = set(prop.get("approvals") or [])
-        all_approved = bool(peer_sids) and all(s in approvals for s in peer_sids)
+        all_approved = bool(voters) and all(v in approvals for v in voters)
         sio.emit(
             "code_change_voted",
             {
                 "proposalId": prop["id"],
-                "by": sess["username"],
+                "by": me["username"],
                 "approve": True,
                 "approvals": list(approvals),
                 "rejections": list(prop.get("rejections") or []),
@@ -311,13 +360,13 @@ def register(sio):
         ctx, err = _vote(payload, False)
         if err:
             return err
-        room, sess, prop = ctx
+        room, me, prop = ctx
         room_state.remove_proposal(room, prop["id"])
         sio.emit(
             "code_change_rejected",
             {
                 "proposalId": prop["id"],
-                "by": sess["username"],
+                "by": me["username"],
                 "proposal": prop,
             },
             to=room, namespace=ns,
@@ -325,7 +374,7 @@ def register(sio):
         room_state.record_activity(room, "code_change_rejected", {
             "nodeId": prop.get("nodeId"),
             "kind": prop.get("kind"),
-            "by": sess["username"],
+            "by": me["username"],
         })
         return {"ok": True}
 
@@ -335,7 +384,7 @@ def register(sio):
 
     @sio.on("output_produced", namespace=ns)
     def _output_produced(payload):
-        sess, room, err = _gated(payload)
+        room, me, err = _editing(payload)
         if err:
             return err
         node_id = (payload or {}).get("nodeId")
@@ -349,10 +398,7 @@ def register(sio):
                 "nodeId": node_id,
                 "nodeType": payload.get("nodeType"),
                 "output": output,
-                "from": {
-                    "user_id": sess["user_id"],
-                    "username": sess["username"],
-                },
+                "from": _sender(me),
             },
             to=room, skip_sid=request.sid, namespace=ns,
         )
@@ -379,22 +425,19 @@ def register(sio):
 
     @sio.on("resolve_conflict", namespace=ns)
     def _resolve_conflict(payload):
-        sess, room, err = _gated(payload)
+        room, me, err = _editing(payload)
         if err:
             return err
         sio.emit(
             "conflict_resolved",
             {
                 **(payload or {}),
-                "by": {
-                    "user_id": sess["user_id"],
-                    "username": sess["username"],
-                },
+                "by": _sender(me),
             },
             to=room, namespace=ns,
         )
         room_state.record_activity(room, "conflict_resolved", {
-            "by": sess["username"],
+            "by": me["username"],
             "choice": (payload or {}).get("choice"),
         })
         return {"ok": True}

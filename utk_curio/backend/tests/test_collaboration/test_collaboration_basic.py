@@ -7,77 +7,18 @@ Covers the contract that every other event handler relies on:
 - disconnecting removes a user from the room and releases their locks,
 - a client cannot spoof another user's identity via payload fields
   (the server-side session is the only source of truth).
+
+A room is a dataflow's, so each test joins one that exists, and whoever takes
+a lock in it edits the dataflow: its owner, or an editor the owner invited
+(``test_collaboration_roles.py`` holds a watcher to the rest).
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-
-import pytest
-
-from utk_curio.backend import config as _config
-from utk_curio.backend import extensions as _ext
-from utk_curio.backend.app import create_app
+from ._support import NAMESPACE, make_project
+from ._support import make_user as _make_user
 
 VALID_PROJECT_ID = "3fd026a7-ef31-4fb6-ac24-2d1b099ff7cf"
-NAMESPACE = "/collab"
-
-
-class _CollabConfig:
-    TESTING = True
-    SQLALCHEMY_DATABASE_URI = "sqlite://"
-    SQLALCHEMY_TRACK_MODIFICATIONS = False
-    SECRET_KEY = "test-secret"
-    WTF_CSRF_ENABLED = False
-
-
-@pytest.fixture()
-def collab_app(monkeypatch):
-    """Build a Flask app with ENABLE_COLLAB=True via a config monkeypatch.
-
-    ``create_app`` re-reads ``ENABLE_COLLAB`` from the config module on
-    every call (the import is inside the function body), so flipping the
-    module attribute before invoking it is enough — no module reload,
-    no double SQLAlchemy registration.
-    """
-    monkeypatch.setattr(_config, "ENABLE_COLLAB", True, raising=True)
-    # Drop any singleton left behind by an earlier test invocation.
-    monkeypatch.setattr(_ext, "socketio", None, raising=True)
-
-    application = create_app(_CollabConfig)
-    socketio = _ext.socketio
-    assert socketio is not None, "init_socketio() was not invoked"
-
-    from utk_curio.backend.app.collaboration import room_state
-
-    with application.app_context():
-        _ext.db.create_all()
-        room_state.reset_for_tests()
-        try:
-            yield application, socketio, room_state
-        finally:
-            room_state.reset_for_tests()
-            _ext.db.session.remove()
-            _ext.db.drop_all()
-
-
-def _make_user(username: str):
-    """Create a User + active UserSession; return ``(user, session)``."""
-    from utk_curio.backend.app.users.models import User, UserSession
-
-    user = User(username=username, name=username.title(), is_guest=False)
-    _ext.db.session.add(user)
-    _ext.db.session.commit()
-    session = UserSession(
-        user_id=user.id,
-        token=f"tok-{username}-{user.id}",
-        expires_at=datetime.now(timezone.utc) + timedelta(days=1),
-        last_seen_at=datetime.now(timezone.utc),
-        active=True,
-    )
-    _ext.db.session.add(session)
-    _ext.db.session.commit()
-    return user, session
 
 
 def test_socket_rejects_missing_token(collab_app):
@@ -100,9 +41,10 @@ def test_socket_rejects_invalid_token(collab_app):
 def test_two_clients_see_each_other(collab_app):
     application, socketio, _ = collab_app
     with application.app_context():
-        _u_a, sess_a = _make_user("alice")
+        u_a, sess_a = _make_user("alice")
         _u_b, sess_b = _make_user("bob")
         token_a, token_b = sess_a.token, sess_b.token
+        make_project(u_a, VALID_PROJECT_ID)
 
     client_a = socketio.test_client(
         application, namespace=NAMESPACE, auth={"token": token_a},
@@ -143,9 +85,10 @@ def test_disconnect_releases_membership_and_locks(collab_app):
     """
     application, socketio, room_state = collab_app
     with application.app_context():
-        _u_a, sess_a = _make_user("alice")
+        u_a, sess_a = _make_user("alice")
         _u_b, sess_b = _make_user("bob")
         token_a, token_b = sess_a.token, sess_b.token
+        make_project(u_a, VALID_PROJECT_ID)
 
     client_a = socketio.test_client(
         application, namespace=NAMESPACE, auth={"token": token_a},
@@ -177,8 +120,16 @@ def test_disconnect_releases_membership_and_locks(collab_app):
     b_events = [e["name"] for e in client_b.get_received(namespace=NAMESPACE)]
     assert "user_left" in b_events, "peers must be told the user is gone"
 
-    # The lock is free again, so bob can take it.
-    relock = client_b.emit(
+    # The lock is free again, so the next tab alice opens can take it: a socket
+    # of its own, which a lock the departed one kept would refuse.
+    client_a2 = socketio.test_client(
+        application, namespace=NAMESPACE, auth={"token": token_a},
+    )
+    assert client_a2.emit(
+        "join_session", {"projectId": VALID_PROJECT_ID},
+        namespace=NAMESPACE, callback=True,
+    )["ok"] is True
+    relock = client_a2.emit(
         "node_lock", {"projectId": VALID_PROJECT_ID, "nodeId": "node-1"},
         namespace=NAMESPACE, callback=True,
     )
@@ -188,9 +139,10 @@ def test_disconnect_releases_membership_and_locks(collab_app):
 def test_spoofed_user_id_does_not_override_auth(collab_app):
     application, socketio, _ = collab_app
     with application.app_context():
-        _u_a, sess_a = _make_user("carol")
+        u_a, sess_a = _make_user("carol")
         _u_b, sess_b = _make_user("dave")
         token_a, token_b = sess_a.token, sess_b.token
+        make_project(u_a, VALID_PROJECT_ID)
 
     client_a = socketio.test_client(
         application, namespace=NAMESPACE, auth={"token": token_a},

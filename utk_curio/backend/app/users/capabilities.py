@@ -31,6 +31,21 @@ def is_shared_guest(user) -> bool:
     )
 
 
+def is_hosted_guest(user) -> bool:
+    """A guest on a Curio started with ``--deploy``, an account every visitor shares.
+
+    The rule the page applies as ``isHostedGuest`` (``useHostedGuest.ts``): a
+    guest, with sign-in on. Such a guest saves no dataflow and edits no other
+    account's dataflow. Without ``--deploy`` the shared guest is the one local
+    user and saves like any account.
+
+    Read at call time so tests and a reloaded config are honoured.
+    """
+    from utk_curio.backend import config
+
+    return bool(user is not None and getattr(user, "is_guest", False)) and not config.CURIO_NO_AUTH
+
+
 def can_manage_shared_catalog(user) -> bool:
     """Whether *user* may publish to, or remove from, a shared catalog tree.
 

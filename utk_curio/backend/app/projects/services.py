@@ -250,9 +250,19 @@ def _owner_user_dir_key(project) -> str:
     return str(project.user_id)
 
 
+#: What a guest who may not save is told, the words the page shows when its
+#: File > Save or Save a copy is refused (``useWorkflowOperations.ts``).
+GUEST_SAVE_REFUSAL = "Guest users cannot save projects"
+
+
 def _assert_guest_can_save(user) -> None:
-    if user.is_guest and not _is_shared_guest(user):
-        raise ProjectError("Guest users cannot save projects", 403)
+    """Refuse a guest's save: a hosted one's (``capabilities.is_hosted_guest``,
+    the page's ``isHostedGuest``), and any guest's but the shared one. Without
+    ``--deploy`` the shared guest is the one local user and saves."""
+    from utk_curio.backend.app.users.capabilities import is_hosted_guest
+
+    if is_hosted_guest(user) or (user.is_guest and not _is_shared_guest(user)):
+        raise ProjectError(GUEST_SAVE_REFUSAL, 403)
 
 
 def _humanize_node_type(node_type: Optional[str]) -> Optional[str]:
@@ -1025,9 +1035,10 @@ def save_project(user, data: ProjectCreate, *, sign_in: Optional[str] = None) ->
 
 
 def _project_to_save(user, project_id: str):
-    """The project *user* may save, or the refusal a save gets: a guest other
-    than the shared one cannot save (403), and a project is saved by its owner
-    alone (``NotFoundError`` for anyone else)."""
+    """The project *user* may save, or the refusal a save gets: a guest who
+    may not save is refused (403, :func:`_assert_guest_can_save`), and a
+    project is saved by its owner alone (``NotFoundError`` for anyone else,
+    its editors included)."""
     _assert_guest_can_save(user)
     return repo.get_for_user(project_id, user.id)
 
