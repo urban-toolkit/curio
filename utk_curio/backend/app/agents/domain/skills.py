@@ -12,7 +12,10 @@ its ``references/``.
 Curio ships its skills in the root ``skills/`` folder, one folder each
 (``utk_curio/shipped.py`` finds it). A skill's body may hold Curio's markers,
 which ``agent_text`` fills when it renders the skill, and
-``{{skill:<name>}}`` puts a rendered body in a page or a prompt.
+``{{skill:<name>}}`` puts a rendered body in a page or a prompt. A package
+ships its own skills in its ``skills/`` folder, laid out the same way
+(:func:`folders_in`); they are read strictly too, and as written, with no
+marker filled.
 
 :func:`parse` reads a skill in one of two modes:
 
@@ -301,16 +304,30 @@ def skills_dir() -> Path:
     return shipped.path(SKILLS_DIR)
 
 
-def shipped_folders() -> tuple[Path, ...]:
-    """Each folder of the skills Curio ships, by name: each folder of
-    ``skills/`` that holds a ``SKILL.md``."""
-    root = skills_dir()
+def folders_in(root) -> tuple[Path, ...]:
+    """The skills a folder of skills holds, by name: each folder of *root*
+    that holds a ``SKILL.md``, hidden ones left out. Curio's ``skills/``
+    holds its skills so, and a package's ``skills/`` its own
+    (``packages/repositories/skills.py``)."""
+    root = Path(root)
     if not root.is_dir():
         return ()
     return tuple(
         folder for folder in sorted(root.iterdir())
         if folder.is_dir() and not folder.name.startswith(".") and (folder / SKILL_FILE).is_file()
     )
+
+
+def shipped_folders() -> tuple[Path, ...]:
+    """Each folder of the skills Curio ships, by name: :func:`folders_in`
+    ``skills/``."""
+    return folders_in(skills_dir())
+
+
+def is_shipped(skill: Skill) -> bool:
+    """Whether *skill* is one Curio ships: its folder is its name's in
+    ``skills/``. A skill a package or a user brings is not."""
+    return Path(skill.folder) == skills_dir() / skill.name
 
 
 def shipped_skills() -> tuple[Skill, ...]:

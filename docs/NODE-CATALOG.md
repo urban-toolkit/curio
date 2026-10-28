@@ -27,7 +27,7 @@ Every node Curio knows about belongs to a **package**, identified by a reverse-d
                                ai.utk.uhvi@1
 ```
 
-A package is a folder with a `manifest.json` (the contract), an optional `sources/` directory (one starter file per node kind, and the Python modules those starters import), and a few small sibling files (`README.md`, `LICENSE`, `integrity.json`). The manifest declares the **kinds** the package provides, and each kind becomes a draggable node in the palette.
+A package is a folder with a `manifest.json` (the contract), an optional `sources/` directory (one starter file per node kind, and the Python modules those starters import), an optional `skills/` directory (what the package tells Curio's agents, see [the manifest](#6-the-manifest)), and a few small sibling files (`README.md`, `LICENSE`, `integrity.json`). The manifest declares the **kinds** the package provides, and each kind becomes a draggable node in the palette.
 
 ### What ships with Curio
 
@@ -36,7 +36,7 @@ A package is a folder with a `manifest.json` (the contract), an optional `source
 | `curio.builtin@1` | The 14 default node kinds (Data Loading, Python/JS Computation, Vega-Lite, Autark, Note, Map Editor, which edits an Autark map's layers on the map, and so on). Installed for every user, **read-only** (you can save edits as a new package but cannot overwrite the originals), and cannot be uninstalled. |
 | `ai.utk.uhvi@1`, `curio.weather@1` | Example packages you can install from the catalog drawer to see the package workflow end to end. Both are plain Python nodes. `curio.weather@1` is also installed for you when Curio starts with `--with-examples`; you can still uninstall it. |
 | `curio.example-ui@1` | A minimal node with its **own interface** rather than a code editor: no API keys and no Python dependencies. The one to read and fork for custom-UI nodes; see [AUTHORING-NODES.md](AUTHORING-NODES.md). |
-| `curio.scout@1` | Scout, SCOUT's nodes: the **Raster Calculator**, one operation over rasters on one grid, cell by cell (such as the difference of two scenarios' rasters) or a raster's statistics as a table of one row ([Rasters](USAGE.md#rasters)); **Rasterize Buildings**, SCOUT's building rasterizer ported from [SCOUT](https://github.com/urban-toolkit/scout), which turns a buildings layer into the height tiles SCOUT's Deep Umbra shadow model reads, side by side in one raster an Autark map draws; and fifteen Vega-Lite charts that compare scenarios, each taking one input per scenario: **Lines with a band**, **Curves by group**, **Bars with error bars**, **Ensemble strips**, **Stacked bars with totals**, **Donuts**, **Weighted matrix**, **Dots with a range**, **Bars**, **Grouped bars**, **Lines**, **Points**, **Pie**, **Lollipops** and **Table**. Each chart reads its inputs stacked, as the dataset its chip `[!! inputs !!]` names, and draws its scenarios in their boxes' colors through its scenario chips, and the columns it plots and how it combines them are widgets ([Comparing scenarios](USAGE.md#comparing-scenarios)). Read-only, depends on `datashader`, `spatialpandas`, `dask`, `rasterio`, `geopandas`, `numpy`, `pandas`, `pillow`, `pyarrow`, `pyproj` and `shapely`, and installed when Curio starts with `--with-examples`. See its [README](../packages/curio.scout@1/README.md). |
+| `curio.scout@1` | Scout, SCOUT's nodes: the **Raster Calculator**, one operation over rasters on one grid, cell by cell (such as the difference of two scenarios' rasters) or a raster's statistics as a table of one row ([Rasters](USAGE.md#rasters)); **Rasterize Buildings**, SCOUT's building rasterizer ported from [SCOUT](https://github.com/urban-toolkit/scout), which turns a buildings layer into the height tiles SCOUT's Deep Umbra shadow model reads, side by side in one raster an Autark map draws; and fifteen Vega-Lite charts that compare scenarios, each taking one input per scenario: **Lines with a band**, **Curves by group**, **Bars with error bars**, **Ensemble strips**, **Stacked bars with totals**, **Donuts**, **Weighted matrix**, **Dots with a range**, **Bars**, **Grouped bars**, **Lines**, **Points**, **Pie**, **Lollipops** and **Table**. Each chart reads its inputs stacked, as the dataset its chip `[!! inputs !!]` names, and draws its scenarios in their boxes' colors through its scenario chips, and the columns it plots and how it combines them are widgets ([Comparing scenarios](USAGE.md#comparing-scenarios)). Read-only, depends on `datashader`, `spatialpandas`, `dask`, `rasterio`, `geopandas`, `numpy`, `pandas`, `pillow`, `pyarrow`, `pyproj` and `shapely`, and installed when Curio starts with `--with-examples`. Its skill, `scout`, tells the agents how to use its nodes. See its [README](../packages/curio.scout@1/README.md). |
 The Node Catalog's drawer and page list node packages only. Model packages (kind `model`), such as the `model.curio.ddrnet23-slim@1`, `model.scout.deep-umbra@1` and `model.scout.weather-gnn@1` that ship with Curio, are the [Model Catalog](MODEL-CATALOG.md)'s: you add, remove and publish them there, the same way. Their nodes are not in the Node Catalog dropdown either: a model's node comes from dropping its card from the Model Catalog drawer onto the canvas.
 
 You can install any number of other packages, your own or archives shared by others.
@@ -116,9 +116,10 @@ Saving into a package you added from the catalog makes that copy your own. Curio
 
 > [!IMPORTANT]
 > **Save as package node cannot produce a custom-UI node.** A new package it
-> builds carries `manifest.json` and `sources/`, never a `scripts/` directory,
-> so **forking a custom-UI package this way drops its interface**. Saving into
-> an existing package keeps every file it already has.
+> builds carries `manifest.json` and `sources/`, never a `scripts/` or
+> `skills/` directory, so **forking a custom-UI package this way drops its
+> interface**, and a fork of a package with skills starts without them.
+> Saving into an existing package keeps every file it already has.
 >
 > To author a node with its own React interface, work from a checkout and build
 > the bundle: see [Authoring nodes](AUTHORING-NODES.md) and
@@ -178,7 +179,7 @@ A package is portable: you can export it, send it, and the recipient can import 
 
 Open the **Node Catalog** dropdown in the Tools panel and click the **download** icon on your package's row (**Export package**). It saves the package as `<packageId>@<major>.curio.zip`.
 
-The archive holds `manifest.json`, `sources/`, `README.md`, `LICENSE`, and `scripts/`, so a custom-UI package's compiled `behaviors.js` travels with it and the recipient needs no build step. `integrity.json` is left out; the recipient's install regenerates it.
+The archive holds `manifest.json`, `sources/`, `skills/`, `README.md`, `LICENSE`, and `scripts/`, so a custom-UI package's compiled `behaviors.js` travels with it and the recipient needs no build step. `integrity.json` is left out; the recipient's install regenerates it.
 
 Files sit at the **root of the zip**, not inside a `<packageId>@<major>/` folder, which matters if you zip a package by hand. The installer ignores the archive's own name and takes the destination from the manifest.
 
@@ -190,7 +191,7 @@ Files sit at the **root of the zip**, not inside a `<packageId>@<major>/` folder
 
 The `/catalog/nodes` page has the same **Import package** button in its header.
 
-The manifest is validated before the package is installed. An archive whose `<packageId>@<major>` you already have is refused, and so is one that ships a Python module another installed package ships ([Modules beside your template](AUTHORING-NODES.md#modules-beside-your-template)).
+The manifest is validated before the package is installed, and so is each of its skills. An archive whose `<packageId>@<major>` you already have is refused, and so is one that ships a Python module another installed package ships ([Modules beside your template](AUTHORING-NODES.md#modules-beside-your-template)) or a skill that breaks the [Agent Skills format](https://agentskills.io/specification); the message names the file and what is wrong with it. **Publish** checks the same.
 
 ### Publishing
 
@@ -240,6 +241,15 @@ A node of the package can import the Python modules those packages ship in their
 
 Agents read a template the way its manifest and its sources describe it. An agent that writes the code of a node of the template reads its whole `description`, its `source` file, the starter a new node opens with, and the functions the node's code can import: every public function of the package's modules and of the modules of the packages in `dependencies.packages`, by its signature and the first paragraph of its docstring. An agent that checks a package before adding it reads the same functions. So the description, the starter and the docstrings are what an agent knows of the template.
 
+A package can also tell the agents how to use its nodes, in **skills**: the folders of its `skills/`, one per skill, each holding a `SKILL.md` in the [Agent Skills format](https://agentskills.io/specification), with any files it reads beside it, such as `references/` ([EXTENDING §9](EXTENDING.md#9-writing-a-skill) says how to write one). Every agent on a dataflow that uses the package reads them. Its chat lists them after the skills its own manifest names, and loads one when a task matches its description. A run that writes one of the package's nodes is handed, from its first message, each skill whose `metadata` names that node's template in `curio-templates`, by the template's `id` in the package's manifest:
+
+```yaml
+metadata:
+  curio-templates: raster-calculator rasterize-buildings
+```
+
+A skill names only its own package's templates, and an agent reads it as its author wrote it. Name your skills after your package: a skill named like one of Curio's, or like one that a package before it in the dataflow's lockfile ships, is left out, with a warning in the backend's log. Scout's skill, [`scout`](../packages/curio.scout@1/skills/scout/SKILL.md), is an example.
+
 A package you save or import lands in your package store:
 
 ```
@@ -247,6 +257,8 @@ A package you save or import lands in your package store:
   manifest.json
   sources/
     <template-id>.{py,js,...}
+  skills/
+    <name>/SKILL.md
   integrity.json                 ← SHA-256 of every shipped file
 ```
 

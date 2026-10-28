@@ -520,6 +520,29 @@ def test_a_pip_installs_agents_read_every_skill_a_clone_reads(pip_install):
     assert found == clone, f"a pip install's agents read the skills {found}, where a clone's read {clone}"
 
 
+def test_a_pip_installs_agents_read_every_skill_a_shipped_package_ships(pip_install):
+    """The pip package carries each shipped package's ``skills/`` with the
+    package, and an agent reads each skill's body as in a clone, as
+    written."""
+    import hashlib
+
+    from utk_curio.backend.app.agents.application import skill_runs
+    from utk_curio.backend.app.agents.domain import skills
+    from utk_curio.backend.app.packages.repositories.skills import skill_folders
+
+    clone = {
+        f"{package.name}/{folder.name}": hashlib.sha256(
+            skill_runs.text_of(skills.parse(folder)).encode("utf-8")).hexdigest()
+        for package in sorted(path for path in (REPO / "packages").iterdir() if path.is_dir())
+        for folder in skill_folders(package)
+    }
+    assert "curio.scout@1/scout" in clone, clone
+    found = _read(pip_install, "package_skills")
+    package = (pip_install.site / "utk_curio").resolve()
+    assert Path(found["root"]).resolve().is_relative_to(package), f"{found['root']} is outside {package}"
+    assert found["skills"] == clone, f"a pip install's agents read the package skills {found}, where a clone's {clone}"
+
+
 def test_a_pip_installs_prompt_fields_read_the_trill_schema(pip_install):
     """The agents' prompt fields (``contracts.py``) of a pip install read the
     Trill schema, and render the shared preamble from its page in the base
