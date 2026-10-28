@@ -44,6 +44,22 @@ def _holds(coord: str, capability: str | None = None) -> str:
     return f"{skill_runs.skills_text(run) or ''}\n\n{text}"
 
 
+def _tools_held(coord: str) -> str:
+    """The tool text a chat of *coord* on the canvas holds: each tool it is
+    granted with its description, as the tail of its system turn carries them
+    (``turns/prepare.py``). How a tool request is written is this text's, not
+    a skill's."""
+    from utk_curio.backend.app.agents.application import skill_runs, tools
+    from utk_curio.backend.app.agents.domain import content
+
+    m = builtin.get_builtin_manifest(coord)
+    preamble = builtin.read_prompt_text(coord, "system")
+    run = skill_runs.for_chat("4242", "p", m, None, {"kind": "canvas"}, preamble, [])
+    granted = skill_runs.grants(tools.resolve_grants(m.tools), run)
+    assert granted, coord
+    return content.tail_instruction(tools.grant_descriptions(granted))
+
+
 def _section(text: str, heading: str) -> str:
     """The text under *heading*, a ``#`` line of *text*, up to the next
     heading of its level or above."""
@@ -1009,12 +1025,18 @@ class TestNodeBuilderPackages:
         rungs = _section(_holds(self.COORD), "### The node type ladder")
         low = rungs.lower()
         assert "proposed for install, not only named" in low
-        assert "one package.install tool request per package" in low
-        assert "dirname from the packages.catalog results" in low
         assert "is stated, not proposed" in low
-        assert "builtin are always present" in low
+        assert "a builtin one among them" in low
         assert "packages.resolve" in rungs and "never force-resolve" in low
-        assert "never present an install as done" in low
+        assert "never present a draft, build, or install as done" in low
+        # How the request is written is the tools' text the chat holds: one
+        # package a request, its dirName from the catalog, a builtin package
+        # never proposed, and nothing installed before the user approves.
+        held = _tools_held(self.COORD).lower()
+        assert "propose installing one node package" in held
+        assert "the versioned dirname, e.g. curio.notes@1, from packages.catalog results" in held
+        assert "builtin packages are always present and are never proposed" in held
+        assert "nothing is installed without their approval" in held
 
     def test_its_chat_climbs_the_node_type_ladder_in_order(self):
         # An existing template, a catalog package to install, and only then a
@@ -1032,7 +1054,9 @@ class TestNodeBuilderPackages:
         assert '"node.kind.author"' in three and "package.draft.apply" in three
         assert "for any new node type" in three
         assert "the closest listed templates you considered and why each is inadequate" in three
-        assert "the user judges the justification" in three
+        assert "drafts the package with that justification" in three
+        # The draft tool's text, which the chat holds, says the user judges it.
+        assert "the justification, which the user judges during review" in _tools_held(self.COORD)
         assert "node.template.create" not in text
         # The procedure sends the model to the ladder.
         procedure = _section(builtin.read_prompt_text(self.COORD, "instruction"), "## Procedure")
@@ -1348,27 +1372,32 @@ class TestResearcher:
         assert "yellow note carrying the user's question" in low
         assert "green note per answer" in low
         assert "as clean markdown" in low
-        # dev/105 D3/S1/S3: the live 2026-08-25 run. The ENLIST rung names the
-        # exact dirName spelling (the model sent the bare id); a REFUSED
+        # dev/105 D3/S1/S3: the live 2026-08-25 run. The exact dirName
+        # spelling is named (the model sent the bare id): the ladder's second
+        # rung rules the bare id out, and the package.install text the chat
+        # holds shows the spelling; a REFUSED
         # request is a correction to act on, distinct from a FAILED build
         # (the old single sentence taught "stop" for both); a refusal is never
         # evidence of absence (the model said "not in the catalog" — false);
         # a canvas node type is not a template choice; no mechanics narration.
-        assert "the versioned dirname, e.g. curio.notes@1" in low
+        tools_text = _tools_held(self.COORD)
+        assert "the versioned dirname, e.g. curio.notes@1" in tools_text.lower()
         assert "never the bare package id" in low
         assert "a correction, not a dead end" in low
         assert "a refused request is not evidence of absence" in low
         assert "is not a note template unless it appears there" in low
         assert "never narrate the request mechanics" in low
-        # dev/105 A2: the REUSE rung names the exact node.create params — and
-        # the tool contract the model reads at the tail admits every one of
-        # them (the second live test's notes were white and headed "Note"
-        # because the contract named only nodeType/content/goal).
-        assert '"title": "<short header>"' in text
-        assert '"appearance": {"backgroundColor"' in text
+        # dev/105 A2: the REUSE rung asks for the title and color a note
+        # takes, and the node.create text the chat holds names those params
+        # (the second live test's notes were white and headed "Note" because
+        # the contract named only nodeType/content/goal).
+        assert '"title": "<short header shown on the node>"' in tools_text
+        assert '"appearance": {"backgroundColor"' in tools_text
+        assert "a note template renders title and backgroundColor, so give both for notes" in tools_text
         # Its notes go on the built-in Note, which every dataflow can hold.
         reuse = low.split("1. reuse.", 1)[1].split("2. enlist.", 1)[0]
         assert '"nodetype": "curio.builtin/note"' in reuse
+        assert "the title and color node.create asks a note for" in reuse
         # dev/105 A3: the ENLIST rung carries the findings like AUTHOR does, so
         # Apply on the install card proceeds to the notes without a second turn.
         assert 'an install request without "notes" enlists a package and places nothing' in low

@@ -68,10 +68,7 @@ USED = [entry for entry in INDEX if entry.section == examples.USED]
 
 #: Words a prompt uses that look like an id but are not one, each with the
 #: reason. An entry no prompt uses any more fails ``test_every_exception_is_still_used``.
-NOT_IDS = {
-    "curio.notes@1": "the notes package the Researcher writes into a user's store, "
-                     "shown as the shape of a versioned dirName",
-}
+NOT_IDS: dict[str, str] = {}
 
 # A tool or capability id, by the manifest's own grammar, standing alone: not
 # part of a longer dotted name, a path, a URL or a call.
