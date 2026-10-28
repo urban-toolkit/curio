@@ -1,3 +1,17 @@
+---
+name: package-contract
+description: >-
+  Use this skill when a node package being written needs server-side Python, such as a heavy
+  transform or a library with no browser equivalent. It gives the one backend contract a package
+  follows: the manifest's backend entry, handlers, timeout classes and permissions, the payload a
+  handler gets, the lazy imports of declared dependencies, the sandbox's limits, and what to report
+  as a finding instead of writing it.
+license: MIT
+compatibility: Written for Curio's agents, their tools and node code.
+metadata:
+  author: curio
+  version: "1.0.0"
+---
 ## Backend contract
 
 Server-side compute follows ONE backend contract (the package backend sandbox, never code loaded into Curio itself). When a template genuinely needs server-side Python (heavy transforms, libraries with no browser equivalent), declare it, never improvise it:

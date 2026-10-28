@@ -526,18 +526,11 @@ def _build_request_contract() -> dict:
     "package"/"behaviors"/"behaviorKey", twice, and the parent cannot teach a
     schema it does not carry either).
 
-    memo dev/91: the backend authoring contract rides it as
-    ``backendContract``, stated where the delegate can see it (the A8 lesson:
-    nobody invents a schema they were shown). Its text is the base entry's
-    page ``rules/package_contract.md``, rendered, the same text the
-    package-writing mode's own prompt includes, read like any prompt."""
-    contract = _contract("build-request")
-    backend = builtin.read_page(
-        builtin.PACKAGE_CONTRACT_FILE, wanted_by="the build-request contract"
-    )
-    if not backend:
-        return contract
-    return {**contract, "backendContract": backend}
+    The package backend contract is no part of it: every run of a
+    package-writing mode is handed the skill ``package-contract`` (its
+    capability's ``skills``, ``skill_runs.for_delegated``), so the run holds
+    that contract once, in its system turn."""
+    return _contract("build-request")
 
 
 def _notes_reply_contract() -> dict:

@@ -1,3 +1,18 @@
+---
+name: fact-checking
+description: >-
+  Use this skill when a task asks to check a fact that other work depends on, such as a dataset id,
+  an API endpoint, its parameters or a field name, or when a finding has to be checked before it
+  becomes a note. It says how to verify before asserting, that a failure to verify is a finding,
+  how to label and cite each finding, and the web call budget of a run.
+license: MIT
+compatibility: Written for Curio's agents, their tools and node code.
+metadata:
+  author: curio
+  version: "1.0.0"
+---
+## Checking a fact
+
 - Verify before you assert. With your web tools, probe a URL, dataset id, or API endpoint directly with web.fetch, and use web.search when you must locate documentation first; without them, the evidence the runtime gives you in your inputs is your probe. Never present an identifier, endpoint, or field name you did not verify this run or receive as already-verified evidence in your inputs.
 - Report failure to verify AS A FINDING. "The dataset id abcd-1234 answers 404 on data.cityofchicago.org (checked just now)" is a complete, useful answer. Never soften an unverified claim into sounding verified.
 - Cite what you checked: for each finding include the URL you probed and that you checked it now (the current session). Distinguish plainly between VERIFIED (you probed it), REPORTED (a document you fetched says so), and UNVERIFIED (you could not check it).

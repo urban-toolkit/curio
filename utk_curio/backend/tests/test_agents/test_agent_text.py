@@ -139,7 +139,7 @@ def test_the_backend_renders_every_page_and_prompt_when_it_starts(tmp_curio, mon
     rendered = agent_text.rendered()
     on_disk = sorted(path.resolve() for path in AGENTS.rglob("*.md") if path != BASE / "README.md")
     skill_files = sorted(path.resolve() for path in SKILLS.glob("*/SKILL.md"))
-    assert len(skill_files) == 16, skill_files
+    assert len(skill_files) == 21, skill_files
     assert sorted(path.resolve() for path in rendered) == sorted(on_disk + skill_files)
     for file, text in rendered.items():
         assert text and "{{" not in text, file
@@ -167,7 +167,7 @@ def test_every_folder_of_skills_holds_a_skill_and_no_page_sits_outside_one():
     from utk_curio.backend.app.agents.domain import skills
 
     folders = sorted(path for path in SKILLS.iterdir() if path.is_dir() and not path.name.startswith("."))
-    assert len(folders) == 16, folders
+    assert len(folders) == 21, folders
     for folder in folders:
         assert (folder / skills.SKILL_FILE).is_file(), f"skills/{folder.name}/ holds no {skills.SKILL_FILE}"
         skill = skills.parse(folder)
@@ -208,40 +208,45 @@ def test_a_marker_no_field_defines_stops_the_start(tmp_path, monkeypatch):
 
     agent_text = _fresh_loader(monkeypatch)
     root = _agents_copy(tmp_path, monkeypatch)
-    page = root / BASE.name / "rules" / "research_notes_rules.md"
+    page = root / BASE.name / "rules" / "plan-rules.md"
     page.write_text(page.read_text(encoding="utf-8") + "{{no.such.field}}\n", encoding="utf-8")
     with pytest.raises(contracts.PromptTemplateError) as refused:
         agent_text.render_at_start()
-    assert "curio:rules/research_notes_rules.md" in str(refused.value)
+    assert "curio:rules/plan-rules.md" in str(refused.value)
     assert "{{no.such.field}}" in str(refused.value)
     assert agent_text.rendered() == {}
 
 
 def test_a_page_includes_another_whole_and_never_itself(tmp_path, monkeypatch):
     """``{{include:<path>}}`` puts a page of the base entry in its place with
-    its own markers filled and without its final line breaks, as the
-    Researcher's prompts include its rules once each. A page that includes
-    itself, a page the base entry does not list and a path out of it are
-    refused."""
+    its own markers filled and without its final line breaks, as both of
+    ``dataflow.plan.write``'s descriptions in ``tools.md`` include the plan
+    rules. A page that includes itself, a page the base entry does not list
+    and a path out of it are refused."""
     from utk_curio.backend.app.agents.domain import builtin, contracts
 
     agent_text = _fresh_loader(monkeypatch)
-    source = (BASE / "rules" / "research_verify_rules.md").read_text(encoding="utf-8")
-    assert "{{" in source, "the rules state a fact from code; this test would not see it filled"
-    rules = agent_text.render(BASE / "rules" / "research_verify_rules.md")
+    rules = agent_text.render(BASE / "rules" / "plan-rules.md")
     assert rules.endswith("\n") and "{{" not in rules
-    text = contracts.render_template("Before\n\n{{include:rules/research_verify_rules.md}}\n\nAfter\n")
+    text = contracts.render_template("Before\n\n{{include:rules/plan-rules.md}}\n\nAfter\n")
     assert text == "Before\n\n" + rules.rstrip("\n") + "\n\nAfter\n"
-    for prompt in ("researcher_instruction.md", "research_instruction.md"):
-        written = (AGENTS / "agent.curio.researcher@1" / "prompts" / prompt).read_text(encoding="utf-8")
-        assert written.count("{{include:rules/research_verify_rules.md}}") == 1, prompt
-    for key in ("instruction", "research.verify"):
-        read = builtin.read_prompt_text("agent.curio.researcher@1", key)
-        assert read.count(rules.rstrip("\n")) == 1, key
+    written = (BASE / builtin.TOOLS_FILE).read_text(encoding="utf-8")
+    assert written.count("{{include:rules/plan-rules.md}}") == 2
+    assert builtin.read_page(builtin.TOOLS_FILE, wanted_by="the test").count(rules.rstrip("\n")) == 2
 
+    # A page an include puts in place has its own markers filled there.
     root = _agents_copy(tmp_path, monkeypatch)
-    loop = root / BASE.name / "rules" / "research_notes_rules.md"
-    loop.write_text("Notes.\n\n{{include:rules/research_notes_rules.md}}\n", encoding="utf-8")
+    manifest = root / BASE.name / "manifest.json"
+    listed = json.loads(manifest.read_text(encoding="utf-8"))
+    listed["pages"].append("rules/marked.md")
+    manifest.write_text(json.dumps(listed), encoding="utf-8")
+    (root / BASE.name / "rules" / "marked.md").write_text(
+        "The {{agent.name:agent.curio.node-builder}} reads these rules.\n", encoding="utf-8")
+    marked = contracts.render_template("Before\n\n{{include:rules/marked.md}}\n\nAfter\n")
+    assert marked == "Before\n\nThe Node Builder reads these rules.\n\nAfter\n"
+
+    loop = root / BASE.name / "rules" / "plan-rules.md"
+    loop.write_text("Plans.\n\n{{include:rules/plan-rules.md}}\n", encoding="utf-8")
     with pytest.raises(contracts.PromptTemplateError, match="cannot include itself"):
         agent_text.render(loop)
     for bad in ("rules/no_such_page.md", "../agent.curio.node-builder@1/prompts/node_build_instruction.md",
@@ -340,7 +345,7 @@ def test_a_curio_path_names_any_page_of_the_base_entry_and_nothing_outside_it(tm
     from utk_curio.backend.app.agents.domain.manifest import AgentManifestError, parse_agent_manifest
 
     listed = json.loads((BASE / "manifest.json").read_text(encoding="utf-8"))["pages"]
-    assert {"default_preamble.md", "examples.md", "rules/research_verify_rules.md"} <= set(listed)
+    assert {"default_preamble.md", "examples.md", "rules/plan-rules.md"} <= set(listed)
     for page in listed:
         system = parse_agent_manifest(_user_manifest(f"curio:{page}")).prompts["system"]
         assert (system.shared, system.file) == (page, f"prompts/{page}")
@@ -349,7 +354,8 @@ def test_a_curio_path_names_any_page_of_the_base_entry_and_nothing_outside_it(tm
         "curio:../agent.curio.node-builder@1/prompts/node_build_instruction.md",
         "curio:rules/../../agent.curio.node-builder@1/prompts/node_build_instruction.md",
         "curio:/etc/passwd",
-        "curio:rules\\research_verify_rules.md",
+        "curio:rules\\plan-rules.md",
+        "curio:rules/research_verify_rules.md",
         "curio:./default_preamble.md",
         "curio:manifest.json",
         "curio:README.md",
