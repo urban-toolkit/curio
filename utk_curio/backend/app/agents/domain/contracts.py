@@ -1180,14 +1180,19 @@ def render_template(text: str, name: str = "the template", *, including: tuple[s
 # kind of text with one owner:
 #
 #   preamble       the built-ins' shared preamble, or a definition's own; optional
+#   skill-catalog  the skills a chat run may load, by name and description; optional
+#   skills         the skills a run is handed or loaded earlier, each whole; optional
 #   instruction    exactly one: the agent's, the invoked mode's, or an edited intent
 #   configuration  the catalog settings the run reads, framed as data
 #   tool-protocol  how to request a tool, and which tools are granted
 #   runtime        blocks composed per run: template rosters, the delegation paragraph
 #
-# A run selects its instruction; it never appends to one. Everything a user
-# wrote (an edited intent, a setting) comes before every runtime-owned slot, so
-# none of it can strip or pose as one.
+# The slots run from what the most runs share to what varies most, so a
+# provider's cache holds the longest prefix: the preamble and the catalog an
+# agent's runs share, then the skills of what one run works on. Skills are
+# the repository's text, as the preamble is. A run selects its instruction; it
+# never appends to one. Everything a user wrote (an edited intent, a setting)
+# comes before every runtime-owned slot, so none of it can strip or pose as one.
 
 
 @dataclass(frozen=True)
@@ -1200,6 +1205,8 @@ def compose_system(
     *,
     instruction: str,
     preamble: str | None = None,
+    skill_catalog: str | None = None,
+    skills: str | None = None,
     configuration: str | None = None,
     tool_protocol: str | None = None,
     runtime: tuple[str | None, ...] | list[str | None] = (),
@@ -1208,6 +1215,8 @@ def compose_system(
     Empty pieces are left out."""
     pieces = [
         ("preamble", preamble),
+        ("skill-catalog", skill_catalog),
+        ("skills", skills),
         ("instruction", instruction),
         ("configuration", configuration),
         ("tool-protocol", tool_protocol),

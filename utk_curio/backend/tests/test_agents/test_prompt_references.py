@@ -44,9 +44,13 @@ from utk_curio.backend.tests._support.prompt_files import prompt_files, prompt_n
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
-#: Every prompt file a built-in agent receives, the shared preamble included.
+#: Every prompt file a built-in agent receives, the shared preamble included,
+#: and every skill its manifest names, which its runs load or are handed
+#: (``<name>/SKILL.md``).
 PROMPT_FILES = sorted({
     asset.file.rsplit("/", 1)[-1] for m in builtin.list_builtin_manifests() for asset in m.prompts.values()
+} | {
+    f"{name}/SKILL.md" for m in builtin.list_builtin_manifests() for name in getattr(m, "skills", None) or ()
 })
 #: Every page of the base entry, every prompt in the shipped agents'
 #: ``prompts/`` and every skill, the included rules and ``examples.md`` too:
@@ -303,17 +307,22 @@ def test_the_checks_find_what_the_prompts_name():
     every_id = {i for name in PROMPT_FILES for i in _ids(name)}
     assert {"catalog.search", "node.content.generate", "dataflow.plan.write"} <= every_id
     corpus = "\n".join(_text(name) for name in PROMPT_FILES)
-    # The preamble names the Autark template by id (the Merge Flow it used to
+    # Every skill an agent names is scanned, the core three in the preamble
+    # and the rest as runs load them.
+    assert len([name for name in PROMPT_FILES if name.endswith("/SKILL.md")]) == 13, PROMPT_FILES
+    # The skills name the Autark template by id (the Merge Flow they used to
     # name here left with #662).
     assert "curio.builtin/autk-grammar" in _TEMPLATE_RE.findall(corpus)
     assert "curio_load_data" in _HELPER_RE.findall(corpus)
     # The dataset calls a run is shown live in the worked examples now, not
     # in a prompt, so this scan must find them there.
     assert DATASET_PATH_CALL_RE.findall("\n".join(_node_text(entry) for entry in USED))
-    preamble_specs = [s for v in _json_values(_text(builtin.PREAMBLE_FILE)) for s in _vega_specs(v)]
-    assert len(preamble_specs) >= 3
-    # The Trill block and the Vega-Lite examples are fenced as json.
-    assert len(_JSON_FENCE_RE.findall(_text(builtin.PREAMBLE_FILE))) >= 3
+    specs = [s for name in PROMPT_FILES for v in _json_values(_text(name)) for s in _vega_specs(v)]
+    assert len(specs) >= 3
+    # The Trill block is fenced as json in the preamble, and the Vega-Lite
+    # examples in the skills.
+    assert _JSON_FENCE_RE.findall(_text(builtin.PREAMBLE_FILE))
+    assert len(_JSON_FENCE_RE.findall(corpus)) >= 3
 
 
 def test_every_exception_is_still_used():

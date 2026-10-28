@@ -56,6 +56,7 @@ from utk_curio.backend.app.agents.domain.tool_names import (
 )
 from utk_curio.backend.app.agents.domain.manifest import ToolRequirement
 from utk_curio.backend.app.agents.domain import dashboards
+from utk_curio.backend.app.agents.domain import skills as skill_format
 from utk_curio.backend.app.common import spatial
 from utk_curio.backend.app.execution.code_references import WIDGET_KINDS
 
@@ -266,6 +267,23 @@ def _simple_vis(say: Say) -> dict:
     }
 
 
+#: The tool a chat run loads a skill with (``skill_runs``).
+SKILL_TOOL = "skill.read"
+
+
+def _skill_read(say: Say) -> dict:
+    """``skill.read``'s params: the name of a skill, one Curio ships unless
+    the run gives its own list (:func:`native_tools`), and one of its files."""
+    names = [folder.name for folder in skill_format.shipped_folders()]
+    return _object(
+        {
+            "name": {"type": "string", "enum": names, "description": say("name")},
+            "path": _text(say("path")),
+        },
+        "name",
+    )
+
+
 def _scenario(say: Say) -> dict:
     """#662: one scenario a plan saves: a selection, or a duplicate of one."""
     return _object(
@@ -458,6 +476,17 @@ REGISTRY: dict[str, ToolContract] = {
         effect="read",
         label="Search the Scenario Catalog",
         parameter_schema=lambda say: _object({"q": _text(say("q"))}),
+    ),
+    # Consumers: every chat run whose system turn lists skills, an agent's
+    # Curio ships or a user's (``skill_runs.grants``): it is granted exactly
+    # then, never by a manifest, and executed against the run's skills
+    # (``skill_runs.read``), never here.
+    SKILL_TOOL: ToolContract(
+        id=SKILL_TOOL,
+        contract_version="1",
+        effect="read",
+        label="Read a skill",
+        parameter_schema=_skill_read,
     ),
     # Discovery Catalog, consumer: the Dataset Finder. Three contracts, not
     # two, and deliberately the same roster/detail/reviewed-mutate shape
@@ -724,19 +753,26 @@ def delegate_tool(capabilities: Iterable[str]) -> dict:
     }
 
 
-def native_tools(granted: Iterable[str], delegate_capabilities: Iterable[str] = ()) -> list[dict]:
+def native_tools(
+    granted: Iterable[str], delegate_capabilities: Iterable[str] = (), skills: Iterable[str] | None = None,
+) -> list[dict]:
     """The run's grants as native tools, ``{name, description, parameters}``
     each, in grant order, then the delegation tool when there is something to
-    delegate. Copies: a provider's conversion never reaches the registry."""
+    delegate. ``skill.read``'s ``name`` takes exactly *skills*, the skills the
+    run lists, when it gives them. Copies: a provider's conversion never
+    reaches the registry."""
     specs: list[dict] = []
     for tool_id in granted:
         contract = REGISTRY.get(tool_id)
         if contract is None:
             continue
+        parameters = copy.deepcopy(contract.parameters)
+        if contract.id == SKILL_TOOL and skills is not None:
+            parameters["properties"]["name"]["enum"] = list(skills)
         specs.append({
             "name": wire_name(contract.id),
             "description": contract.native_description or contract.description,
-            "parameters": copy.deepcopy(contract.parameters),
+            "parameters": parameters,
         })
     capabilities = list(dict.fromkeys(delegate_capabilities))
     if capabilities:

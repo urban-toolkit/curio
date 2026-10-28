@@ -19,6 +19,8 @@ jest.mock("../../utils/authApi", () => ({
   getToken: () => "tok",
   authApi: {
     getPublicConfig: () => Promise.resolve({ enable_collab: true, collab_namespace: "/collab" }),
+    // The account behind the token: ana, user 7, with two tabs in the room.
+    getMe: () => Promise.resolve({ id: 7, username: "ana" }),
   },
 }));
 let mockProjectId = "project-1";

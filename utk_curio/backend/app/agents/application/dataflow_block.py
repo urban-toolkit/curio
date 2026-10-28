@@ -199,21 +199,28 @@ def for_chat_run(
     return compose(user_key, project_id, node_type=node_type_of(spec, node_id), datasets=datasets, tools=granted)
 
 
+def named_node_type(inputs: dict | None, read_spec) -> str | None:
+    """The type of the node a delegated run's *inputs* name: its ``nodeType``,
+    its ``nodeContext.nodeType``, or the type of its ``nodeId`` in the spec
+    *read_spec* returns, read only then. None when they name none."""
+    inputs = inputs if isinstance(inputs, dict) else {}
+    context = inputs.get("nodeContext") if isinstance(inputs.get("nodeContext"), dict) else {}
+    node_type = inputs.get("nodeType") or context.get("nodeType")
+    if not node_type and isinstance(inputs.get("nodeId"), str):
+        node_type = node_type_of(read_spec(), inputs["nodeId"])
+    return node_type if isinstance(node_type, str) and node_type else None
+
+
 def for_delegated_run(
     user_key: str, project_id: str, capability: str, inputs: dict | None, *, datasets=None, user=None,
 ) -> str | None:
     """The block of a delegated run of *capability* with *inputs*, or None for
     a run that writes no code. A run that writes one node's code writes for
-    the node its inputs name (``nodeType``, ``nodeContext.nodeType``, or the
-    type of ``nodeId``). A delegated run holds no tool, so the cut list names
-    none."""
+    the node its inputs name (:func:`named_node_type`). A delegated run holds
+    no tool, so the cut list names none."""
     if capability not in CODE_CAPABILITIES:
         return None
     node_type = None
     if capability == NODE_CAPABILITY:
-        inputs = inputs if isinstance(inputs, dict) else {}
-        context = inputs.get("nodeContext") if isinstance(inputs.get("nodeContext"), dict) else {}
-        node_type = inputs.get("nodeType") or context.get("nodeType")
-        if not node_type and isinstance(inputs.get("nodeId"), str):
-            node_type = node_type_of(projects_storage.read_spec(user_key, project_id), inputs["nodeId"])
+        node_type = named_node_type(inputs, lambda: projects_storage.read_spec(user_key, project_id))
     return compose(user_key, project_id, node_type=node_type, datasets=datasets, user=user)

@@ -16,7 +16,9 @@ VERSIONS = Path(__file__).resolve().parents[2] / "migrations" / "versions"
 
 
 def _module(revision: str):
-    path = next(VERSIONS.glob(f"{revision}_*.py"))
+    found = sorted(VERSIONS.glob(f"{revision}_*.py"))
+    assert len(found) == 1, f"one migration should be revision {revision}, found {found}"
+    path = found[0]
     spec = importlib.util.spec_from_file_location(f"_rev_{path.stem}", path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None

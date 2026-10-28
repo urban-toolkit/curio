@@ -9,6 +9,7 @@ compatibility: Written for Curio's agents, their tools and node code.
 metadata:
   author: curio
   version: "1.0.0"
+  curio-behaviors: vega
 ---
 ## Maps in Vega-Lite
 
