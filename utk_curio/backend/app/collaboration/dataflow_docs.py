@@ -13,7 +13,7 @@ room (``join_session``, ``events.py``) takes part.
 * A tab starts with sync step 1, naming the doc it holds as ``docId`` if it
   holds one. The server answers with step 2, with its own step 1 when the tab
   edits, and with everyone's awareness; the ack is ``{ok, docId, role}``. A tab
-  holding another doc than the server's, one built from Trill since, is told
+  holding another doc than the server's, one built anew since, is told
   ``reload`` and starts again holding none. It sends updates once this ack is
   in: handlers run on threads of their own.
 * The owner's and an editor's step 2 and updates are applied, appended to the
@@ -29,29 +29,38 @@ room (``join_session``, ``events.py``) takes part.
   watcher's state keeps only its presence (:data:`PRESENCE_FIELDS`), never an
   edit; and a socket's states are cleared when it disconnects (:func:`leave`).
 
-**Persistence**, beside ``spec.trill.json`` in the dataflow's folder:
+**The log, the dataflow's one history.** Every change to the doc is appended to
+its update log the moment it lands, and the log is never emptied. It is kept
+beside ``spec.trill.json``, in ``ydoc/<doc id>/``, as a segment a day (UTC):
+``<day>.bin``, the doc's state when the day's first change came, and
+``<day>.updates``, that day's updates, each a length and then the update. So
+the doc at any place in the log is that day's checkpoint and the updates up to
+it (:func:`rebuilt`), and a damaged segment loses that day only. The doc keeps
+garbage collection on, so no tab ever receives text deleted before it joined.
 
-* ``ydoc.updates``: each change, appended as it lands, a length and then the
-  update;
-* ``ydoc.bin``: the doc's whole state, which the updates are folded into;
-* ``ydoc.rev``: the spec revision (``storage.spec_revision``) ``ydoc.bin`` was
-  folded at.
+``ydoc.json`` says where the log is: the doc, its segment of today, and the
+place in the log the spec was last written from, with that write's revision
+(``storage.spec_revision``).
 
-After :data:`SAVE_IDLE_S` with no change, or every :data:`SAVE_EVERY_S` of
-steady changes, the doc is written to ``spec.trill.json`` through
-``storage.write_spec``, then folded. The write carries what the file holds
-with the doc's dataflow, the agents' sections included, and leaves the history
-out (``storage.HISTORY_KEYS``): storage keeps a section a write leaves out as
-it is, in ``history/``. A doc leaves memory :data:`CLOSE_AFTER_S`
-after its last tab. A restart reloads the same doc from ``ydoc.bin`` and the
-updates, so tabs that reconnect sync with nothing doubled. When someone else
-wrote the spec since ``ydoc.bin`` was folded (its revision moved), the doc is
-built again from the file, with a new id; and the doc never writes over such a
-write: until every writer goes through the doc, a write it did not make wins.
+* After :data:`SAVE_IDLE_S` with no change, or every :data:`SAVE_EVERY_S` of
+  steady changes, the doc is written to ``spec.trill.json`` through
+  ``storage.write_spec``. The write carries what the spec file holds with the
+  doc's dataflow, the agents' sections included, and leaves the history out
+  (``storage.HISTORY_KEYS``), which storage keeps as it is.
+* A restart reloads the same doc from its log, so tabs that reconnect sync with
+  nothing doubled.
+* A spec written outside the doc (its revision moved) becomes a transaction on
+  the doc, of what that write changed since the doc last read or wrote the
+  file; what the doc changed meanwhile stays (``doc_mapping.apply_dataflow``).
+* A doc is built anew from Trill, with a new id and a new log, when its state
+  is lost, or when no tab holds it and it has grown to :data:`GROWN_TOO_LARGE`
+  times a doc built anew; the old log stays where it is, readable.
+* A doc leaves memory :data:`CLOSE_AFTER_S` after its last tab, written first.
 
 **Locks**, in this order: the spec lock (``storage.spec_write_lock``), then a
-doc's lock, then this module's own. The spec lock is never asked for while a
-doc's lock is held, and the thread that writes the docs touches no database.
+doc's lock, then this module's own; storage's history lock is a leaf. The spec
+lock is never asked for while a doc's lock is held, and the thread that writes
+the docs touches no database.
 
 **Reads**: :func:`read` is the dataflow as it is now, an open doc's over the
 file.
@@ -61,6 +70,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import threading
 import time
 import uuid
@@ -96,10 +106,12 @@ logger = logging.getLogger(__name__)
 
 EVENT = doc_mapping.EVENT
 
-#: The files beside ``spec.trill.json`` (``storage.SPEC_FILE``).
-DOC_FILE = "ydoc.bin"
-UPDATES_FILE = "ydoc.updates"
-REVISION_FILE = "ydoc.rev"
+#: Beside ``spec.trill.json``: the docs' logs, a folder per doc.
+LOG_DIR = "ydoc"
+#: Where the log is.
+POINTER_FILE = "ydoc.json"
+#: The origin of the transaction that carries a spec written outside the doc.
+SPEC_ORIGIN = "spec"
 
 #: Seconds with no change before the doc is written to ``spec.trill.json``
 #: (JupyterLab's default save delay).
@@ -108,6 +120,11 @@ SAVE_IDLE_S = 1.0
 SAVE_EVERY_S = 10.0
 #: Seconds a doc stays in memory after its last tab leaves (JupyterLab's).
 CLOSE_AFTER_S = 60.0
+#: A doc no tab holds is built anew once its state is this many times the
+#: size of a doc built anew from its Trill...
+GROWN_TOO_LARGE = 4.0
+#: ...and at least this many bytes, which each tab downloads when it joins.
+REBUILD_FLOOR_BYTES = 256 * 1024
 
 #: Whether a thread of this module writes the docs as their times come. Off,
 #: :func:`flush_due` does it when it is called.
@@ -117,6 +134,14 @@ BACKGROUND = True
 USER_FIELD = "user"
 #: The awareness fields a watcher's state keeps: where it is, never an edit.
 PRESENCE_FIELDS = frozenset({"pointer", "selection"})
+
+_DOC_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+_DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _today() -> str:
+    """The day a change is logged under, in UTC."""
+    return time.strftime("%Y-%m-%d", time.gmtime())
 
 
 class _NoDataflow(Exception):
@@ -134,12 +159,16 @@ class _OpenDoc:
         self.doc = None
         self.awareness: Optional[Awareness] = None
         self.doc_id: Optional[str] = None
-        #: The spec revision the doc last read or wrote.
+        #: The spec revision the doc last read or wrote, and the doc's part of
+        #: the dataflow the spec file held then.
         self.revision = 0
+        self.base: dict = {}
+        #: The day of the log's segment changes go to, and the place in the
+        #: log the spec was last written from.
+        self.segment: Optional[str] = None
+        self.folded: dict = {}
         self.loaded = False
         self.closed = False
-        #: Whether someone else wrote the spec while the doc was open.
-        self.diverged = False
         #: The sockets that started a sync: sid -> participant.
         self.tabs: dict[str, dict] = {}
         #: Each awareness client id, and the socket that set it.
@@ -153,6 +182,9 @@ class _OpenDoc:
 
     def folder(self) -> Path:
         return storage.project_dir(self.user_key, self.project_id)
+
+    def log_dir(self) -> Path:
+        return self.folder() / LOG_DIR / self.doc_id
 
     def on_update(self, event) -> None:
         self.updates.append(event.update)
@@ -177,7 +209,7 @@ def _relay_room(project_id: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Files
+# The log
 # ---------------------------------------------------------------------------
 
 def _write_atomically(path: Path, data: bytes) -> None:
@@ -193,17 +225,10 @@ def _write_atomically(path: Path, data: bytes) -> None:
                 pass
 
 
-def _read_revision(folder: Path) -> Optional[int]:
-    try:
-        return int((folder / REVISION_FILE).read_text(encoding="utf-8").strip())
-    except (OSError, ValueError):
-        return None
-
-
-def _records(data: bytes) -> list[bytes]:
-    """The updates in an update log. A record cut short, by a crash in the
-    middle of an append, ends the log."""
-    records: list[bytes] = []
+def _records(data: bytes) -> list[tuple[int, bytes]]:
+    """The updates in a segment, each with the place its record ends at. A
+    record cut short, by a crash in the middle of an append, ends the segment."""
+    records: list[tuple[int, bytes]] = []
     i, end = 0, len(data)
     while i < end:
         length = shift = 0
@@ -217,35 +242,175 @@ def _records(data: bytes) -> list[bytes]:
             if byte < 0x80:
                 break
         if i + length > end:
-            logger.warning("an update log ends with an update cut short; the rest is dropped")
+            logger.warning("a segment of an update log ends with an update cut short; the rest is dropped")
             return records
-        records.append(data[i:i + length])
+        records.append((i + length, data[i:i + length]))
         i += length
     return records
 
 
-def _fold(folder: Path, doc, revision: int) -> None:
-    """Write the doc's whole state as ``ydoc.bin``, folded at *revision*, then
-    empty the update log. A crash in between leaves updates the state already
-    holds, which apply again as nothing."""
-    _write_atomically(folder / DOC_FILE, doc.get_update())
-    _write_atomically(folder / REVISION_FILE, f"{revision}\n".encode("utf-8"))
+def _segment_files(log_dir: Path, day: str) -> tuple[Path, Path]:
+    return log_dir / f"{day}.bin", log_dir / f"{day}.updates"
+
+
+def _rebuild(folder: Path, doc_id: str, day: str, *, upto: Optional[int] = None):
+    """The doc *doc_id* as its log holds it at the end of *day*'s segment, or
+    *upto* bytes into its updates: the day's checkpoint, then its updates."""
+    checkpoint, updates = _segment_files(folder / LOG_DIR / doc_id, day)
+    doc = doc_mapping.new_doc()
+    doc.apply_update(checkpoint.read_bytes())
     try:
-        (folder / UPDATES_FILE).unlink()
+        data = updates.read_bytes()
     except FileNotFoundError:
-        pass
+        data = b""
+    for end, record in _records(data):
+        if upto is not None and end > upto:
+            break
+        try:
+            doc.apply_update(record)
+        except ValueError:
+            logger.warning("the log of doc %s, %s: an update does not apply; the rest is dropped", doc_id, day)
+            break
+    return doc
 
 
-def _spec_file(entry: "_OpenDoc") -> Optional[dict]:
-    """``spec.trill.json`` as the file holds it (``storage.read_spec_file``):
-    the dataflow, without the history ``storage.read_spec`` replays, which
-    neither building the doc nor writing it needs."""
+def segments(user_key: str, project_id: str, doc_id: str) -> list[str]:
+    """The days of a doc's log, oldest first, the docs built anew since
+    included."""
+    log_dir = storage.project_dir(user_key, project_id) / LOG_DIR / doc_id
+    if not _DOC_ID_RE.match(doc_id) or not log_dir.is_dir():
+        return []
+    return sorted(path.stem for path in log_dir.glob("*.bin") if _DAY_RE.match(path.stem))
+
+
+def rebuilt(user_key: str, project_id: str, doc_id: str, day: str, *, upto: Optional[int] = None):
+    """The doc *doc_id* at the end of *day*'s segment of its log, or *upto*
+    bytes into that day's updates: any doc of the dataflow, the ones built anew
+    since included."""
+    if not _DOC_ID_RE.match(doc_id) or not _DAY_RE.match(day):
+        raise ValueError(f"no log {doc_id!r} {day!r}")
+    return _rebuild(storage.project_dir(user_key, project_id), doc_id, day, upto=upto)
+
+
+def logged_updates(user_key: str, project_id: str, doc_id: str, day: str) -> list[bytes]:
+    """The updates of *day*'s segment of a doc's log, in order."""
+    if not _DOC_ID_RE.match(doc_id) or not _DAY_RE.match(day):
+        return []
+    _, updates = _segment_files(storage.project_dir(user_key, project_id) / LOG_DIR / doc_id, day)
     try:
-        spec = storage.read_spec_file(entry.user_key, entry.project_id)
+        return [record for _end, record in _records(updates.read_bytes())]
+    except FileNotFoundError:
+        return []
+
+
+def _read_pointer(folder: Path) -> Optional[dict]:
+    try:
+        pointer = json.loads((folder / POINTER_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    folded = pointer.get("folded") if isinstance(pointer, dict) else None
+    if not (
+        isinstance(folded, dict)
+        and isinstance(pointer.get("doc"), str) and _DOC_ID_RE.match(pointer["doc"])
+        and isinstance(pointer.get("segment"), str) and _DAY_RE.match(pointer["segment"])
+        and isinstance(pointer.get("specRevision"), int)
+        and isinstance(folded.get("segment"), str) and _DAY_RE.match(folded["segment"])
+        and isinstance(folded.get("offset"), int)
+    ):
+        return None
+    return pointer
+
+
+def _write_pointer(entry: _OpenDoc) -> None:
+    _write_atomically(entry.folder() / POINTER_FILE, json.dumps({
+        "doc": entry.doc_id,
+        "segment": entry.segment,
+        "specRevision": entry.revision,
+        "folded": entry.folded,
+    }).encode("utf-8"))
+
+
+def _start_segment(entry: _OpenDoc, day: str) -> None:
+    """Start the log's segment of *day*, the doc's state now its checkpoint."""
+    log_dir = entry.log_dir()
+    log_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint, updates = _segment_files(log_dir, day)
+    _write_atomically(checkpoint, entry.doc.get_update())
+    updates.touch(exist_ok=True)
+    entry.segment = day
+
+
+def _begin_log(entry: _OpenDoc) -> None:
+    """A log for a doc built anew, its first segment today."""
+    _start_segment(entry, _today())
+    entry.folded = {"segment": entry.segment, "offset": 0}
+    _write_pointer(entry)
+
+
+def _roll(entry: _OpenDoc) -> None:
+    """Start today's segment, if the next change is the day's first."""
+    day = _today()
+    if day != entry.segment:
+        _start_segment(entry, day)
+        _write_pointer(entry)
+
+
+def _append(entry: _OpenDoc, updates: list[bytes]) -> None:
+    _, path = _segment_files(entry.log_dir(), entry.segment)
+    with open(path, "ab") as log:
+        for update in updates:
+            log.write(write_message(update))
+
+
+def _mark_written(entry: _OpenDoc) -> None:
+    """The spec now holds the doc as the log holds it here."""
+    _, path = _segment_files(entry.log_dir(), entry.segment)
+    try:
+        offset = path.stat().st_size
+    except FileNotFoundError:
+        offset = 0
+    entry.folded = {"segment": entry.segment, "offset": offset}
+    _write_pointer(entry)
+
+
+def _behind(user_key: str, project_id: str) -> bool:
+    """Whether a doc's log holds changes its spec was not written from, as a
+    stopped backend can leave it."""
+    try:
+        folder = storage.project_dir(user_key, project_id)
+    except ValueError:
+        return False
+    pointer = _read_pointer(folder)
+    if pointer is None:
+        return False
+    _, path = _segment_files(folder / LOG_DIR / pointer["doc"], pointer["segment"])
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return False
+    folded = pointer["folded"]
+    return size > (folded["offset"] if folded["segment"] == pointer["segment"] else 0)
+
+
+# ---------------------------------------------------------------------------
+# The spec beside the doc
+# ---------------------------------------------------------------------------
+
+def _spec_file(entry: _OpenDoc) -> "storage.SpecFile":
+    """``spec.trill.json`` as the file holds it, with its revision
+    (``storage.read_spec_file``): the dataflow, without the history
+    ``storage.read_spec`` replays, which neither building the doc nor writing it
+    needs."""
+    try:
+        return storage.read_spec_file(entry.user_key, entry.project_id)
     except ValueError:
         logger.error("the spec of dataflow %s does not read as JSON", entry.project_id)
-        return None
-    return spec if isinstance(spec, dict) else None
+        return storage.SpecFile(None, storage.spec_revision(entry.user_key, entry.project_id))
+
+
+def _owned(spec: dict) -> dict:
+    dataflow = spec.get("dataflow") if isinstance(spec.get("dataflow"), dict) else {}
+    return doc_mapping.owned(dataflow)
 
 
 def _with_dataflow(spec: dict, dataflow: dict) -> dict:
@@ -261,62 +426,121 @@ def _with_dataflow(spec: dict, dataflow: dict) -> dict:
     return out
 
 
+def _normalized(dataflow: dict) -> dict:
+    """*dataflow* as a doc built from it reads it back."""
+    doc = doc_mapping.new_doc()
+    doc_mapping.dataflow_to_doc(dataflow, doc, doc_id="normalized")
+    return doc_mapping.doc_to_dataflow(doc)
+
+
+def _catch_up(entry: _OpenDoc, file: "storage.SpecFile") -> None:
+    """Carry a spec written outside the doc, since the doc last read or wrote
+    the file, into the doc: one transaction of what that write changed, logged
+    and relayed to every tab like a person's."""
+    if file.revision == entry.revision or not isinstance(file.spec, dict):
+        return
+    theirs = _owned(file.spec)
+    _roll(entry)
+    try:
+        with entry.doc.transaction(origin=SPEC_ORIGIN):
+            refused = doc_mapping.apply_dataflow(entry.doc, entry.base, theirs)
+    except doc_mapping.DocMappingError:
+        logger.error("dataflow %s: a spec written outside its doc has a node field the doc has no "
+                     "place for; the doc keeps its own", entry.project_id, exc_info=True)
+        refused = []
+    for node_id in refused:
+        logger.warning("dataflow %s: node %s's code changed outside its doc and in it; the doc's stays",
+                       entry.project_id, node_id)
+    entry.revision, entry.base = file.revision, theirs
+    _commit(entry, skip_sid=None)
+
+
 # ---------------------------------------------------------------------------
 # Opening, writing and closing a doc
 # ---------------------------------------------------------------------------
 
-def _load(entry: _OpenDoc) -> None:
-    """Open the doc from its files, or build it from the spec when they are
-    missing, unreadable or behind a write someone else made."""
-    folder = entry.folder()
-    spec = _spec_file(entry)
-    if spec is None:
-        raise _NoDataflow(entry.project_id)
-    revision = storage.spec_revision(entry.user_key, entry.project_id)
-    doc, replayed = None, 0
-    if (folder / DOC_FILE).is_file() and _read_revision(folder) == revision:
-        try:
-            candidate = doc_mapping.new_doc()
-            candidate.apply_update((folder / DOC_FILE).read_bytes())
-            if doc_mapping.doc_id(candidate):
-                doc = candidate
-        except (OSError, ValueError, RuntimeError):
-            logger.warning("the doc of dataflow %s could not be read; it is built again from "
-                           "spec.trill.json", entry.project_id, exc_info=True)
-        if doc is not None:
-            try:
-                records = _records((folder / UPDATES_FILE).read_bytes())
-            except FileNotFoundError:
-                records = []
-            for record in records:
-                try:
-                    doc.apply_update(record)
-                except ValueError:
-                    logger.warning("dataflow %s: an update in its log does not apply; "
-                                   "the rest is dropped", entry.project_id)
-                    break
-                replayed += 1
-    if doc is None:
-        dataflow = spec.get("dataflow") if isinstance(spec.get("dataflow"), dict) else {}
-        doc = doc_mapping.new_doc()
-        doc_mapping.dataflow_to_doc(doc_mapping.owned(dataflow), doc, doc_id=uuid.uuid4().hex)
-        _fold(folder, doc, revision)
+def _attach(entry: _OpenDoc, doc) -> None:
     entry.doc = doc
     entry.doc_id = doc_mapping.doc_id(doc)
-    entry.revision = revision
+    entry.updates = []
     entry.awareness = Awareness(doc)
     entry.awareness.set_local_state(None)  # the server is no one in the room
     doc.observe(entry.on_update)
     entry.awareness.observe(entry.on_awareness)
+
+
+def _built_anew(entry: _OpenDoc, dataflow: dict) -> None:
+    """Make the open doc one built anew from *dataflow*, with a new id and a
+    new log; the old doc's log stays where it is."""
+    doc = doc_mapping.new_doc()
+    doc_mapping.dataflow_to_doc(dataflow, doc, doc_id=uuid.uuid4().hex)
+    _attach(entry, doc)
+    _begin_log(entry)
+
+
+def _load(entry: _OpenDoc) -> None:
+    """Open the doc from its log, or build it anew from the spec when its state
+    is lost; then carry in a spec written outside it, and build anew one grown
+    too large."""
+    folder = entry.folder()
+    file = _spec_file(entry)
+    if not isinstance(file.spec, dict):
+        raise _NoDataflow(entry.project_id)
+    pointer = _read_pointer(folder)
+    doc = None
+    if pointer is not None:
+        try:
+            doc = _rebuild(folder, pointer["doc"], pointer["segment"])
+            if doc_mapping.doc_id(doc) != pointer["doc"]:
+                logger.warning("the log of dataflow %s holds another doc than its pointer names", entry.project_id)
+                doc = None
+        except (OSError, ValueError, RuntimeError):
+            logger.warning("the log of dataflow %s could not be read; its doc is built anew",
+                           entry.project_id, exc_info=True)
+            doc = None
+    if doc is not None:
+        _attach(entry, doc)
+        entry.segment, entry.revision, entry.folded = pointer["segment"], pointer["specRevision"], pointer["folded"]
+        if file.revision == entry.revision:
+            entry.base = _owned(file.spec)
+        else:
+            # What the file held when the doc last wrote it: the log at that place.
+            try:
+                entry.base = doc_mapping.doc_to_dataflow(
+                    _rebuild(folder, entry.doc_id, entry.folded["segment"], upto=entry.folded["offset"])
+                )
+            except (OSError, ValueError, RuntimeError):
+                entry.base = doc_mapping.doc_to_dataflow(doc)  # the file's changes take every field
+    else:
+        entry.revision, entry.base = file.revision, _owned(file.spec)
+        _built_anew(entry, entry.base)
     entry.loaded = True
+    _catch_up(entry, file)
+    if not entry.tabs:
+        _built_anew_if_grown(entry)
     with _wake:
         # Idle until a tab starts its sync (a read opens a doc with none).
         entry.idle_since = _clock()
         _wake.notify_all()
-    if replayed:
-        _changed(entry)  # the spec is behind the log
+    if not doc_mapping.same(_normalized(entry.base), doc_mapping.doc_to_dataflow(entry.doc)):
+        _changed(entry)  # the spec is behind the doc
     else:
         _ensure_flusher()
+
+
+def _built_anew_if_grown(entry: _OpenDoc) -> None:
+    """Build anew a doc grown too large: each tab downloads its whole state when
+    it joins, deleted items included."""
+    size = len(entry.doc.get_update())
+    if size <= REBUILD_FLOOR_BYTES:
+        return
+    dataflow = doc_mapping.doc_to_dataflow(entry.doc)
+    fresh = doc_mapping.new_doc()
+    doc_mapping.dataflow_to_doc(dataflow, fresh, doc_id="measure")
+    if size <= GROWN_TOO_LARGE * len(fresh.get_update()):
+        return
+    logger.info("the doc of dataflow %s grew to %d bytes; it is built anew", entry.project_id, size)
+    _built_anew(entry, dataflow)
 
 
 @contextmanager
@@ -382,8 +606,8 @@ def _discard(entry: _OpenDoc) -> None:
 
 
 def _flush(entry: _OpenDoc) -> bool:
-    """Write the doc's changes to ``spec.trill.json`` and fold them into
-    ``ydoc.bin``. Whether it wrote."""
+    """Write the doc's changes to ``spec.trill.json``, a spec written outside
+    the doc carried in first. Whether it wrote."""
     try:
         folder = entry.folder()
     except ValueError:
@@ -397,31 +621,22 @@ def _flush(entry: _OpenDoc) -> bool:
                 dirty = entry.dirty_since is not None
             if entry.closed or not entry.loaded or not dirty:
                 return False
-            spec = _spec_file(entry)
-            if spec is None:
+            file = _spec_file(entry)
+            if not isinstance(file.spec, dict):
                 _discard(entry)
                 return False
-            wrote = False
-            if storage.spec_revision(entry.user_key, entry.project_id) != entry.revision:
-                if not entry.diverged:
-                    entry.diverged = True
-                    logger.warning(
-                        "spec.trill.json of dataflow %s was written by another writer while its "
-                        "doc was open; the doc does not write over it", entry.project_id,
-                    )
-            else:
-                # What the file holds, its dataflow the doc's, and no history:
-                # a section a write leaves out stays on record (write_spec),
-                # so no write of the doc reads or rewrites the history.
-                dataflow = doc_mapping.doc_to_dataflow(entry.doc)
-                kept = {key: value for key, value in spec.items() if key not in storage.HISTORY_KEYS}
-                storage.write_spec(entry.user_key, entry.project_id, _with_dataflow(kept, dataflow))
-                entry.revision = storage.spec_revision(entry.user_key, entry.project_id)
-                wrote = True
-            _fold(folder, entry.doc, entry.revision)
+            _catch_up(entry, file)
+            # What the file holds, its dataflow the doc's, and no history: a
+            # section a write leaves out stays on record (write_spec), so no
+            # write of the doc reads or rewrites the history.
+            dataflow = doc_mapping.doc_to_dataflow(entry.doc)
+            kept = {key: value for key, value in file.spec.items() if key not in storage.HISTORY_KEYS}
+            storage.write_spec(entry.user_key, entry.project_id, _with_dataflow(kept, dataflow))
+            entry.revision, entry.base = file.revision + 1, dataflow
+            _mark_written(entry)
             with _lock:
                 entry.dirty_since = entry.changed_at = None
-            return wrote
+            return True
 
 
 def _close(entry: _OpenDoc) -> bool:
@@ -530,24 +745,18 @@ def reset_for_tests() -> None:
 # Reads
 # ---------------------------------------------------------------------------
 
-def _has_updates(user_key: str, project_id: str) -> bool:
-    try:
-        return (storage.project_dir(user_key, project_id) / UPDATES_FILE).stat().st_size > 0
-    except (OSError, ValueError):
-        return False
-
-
 def read(user_key: str, project_id: str) -> Optional[dict]:
     """The dataflow's spec as it is now: its open doc's dataflow over the file.
-    A doc that is not open but has changes in its log, which a stopped backend
-    left there, is opened to read them."""
+    A doc that is not open but whose log holds changes its spec does not, which
+    a stopped backend can leave, is opened to read them."""
     spec = storage.read_spec(user_key, project_id)
     if spec is None:
         return None
-    if _open_entry(project_id) is None and not _has_updates(user_key, project_id):
+    if _open_entry(project_id) is None and not _behind(user_key, project_id):
         return spec
     try:
         with _held(project_id, user_key) as entry:
+            _catch_up(entry, _spec_file(entry))
             return _with_dataflow(spec, doc_mapping.doc_to_dataflow(entry.doc))
     except (_NoDataflow, doc_mapping.DocMappingError):
         return spec
@@ -555,6 +764,12 @@ def read(user_key: str, project_id: str) -> Optional[dict]:
 
 def is_open(project_id: str) -> bool:
     return _open_entry(project_id) is not None
+
+
+def doc_id_of(project_id: str) -> Optional[str]:
+    """The id of the dataflow's open doc."""
+    entry = _open_entry(project_id)
+    return entry.doc_id if entry is not None else None
 
 
 # ---------------------------------------------------------------------------
@@ -610,9 +825,7 @@ def _commit(entry: _OpenDoc, *, skip_sid: Optional[str]) -> bool:
         return True
     logged = True
     try:
-        with open(entry.folder() / UPDATES_FILE, "ab") as log:
-            for update in updates:
-                log.write(write_message(update))
+        _append(entry, updates)
     except OSError:
         logged = False
         logger.error("dataflow %s: a change could not be added to its update log", entry.project_id,
@@ -702,6 +915,7 @@ def _start(sid: str, me: dict, project_id: str, message: bytes, held_id) -> dict
             if held_id is not None and held_id != entry.doc_id:
                 return _refused("reload", docId=entry.doc_id)
             _framed(message[2:])  # the tab's state, which step 2 answers
+            _catch_up(entry, _spec_file(entry))
             replies = [handle_sync_message(message[1:], entry.doc)]
             if me.get("role") in room_state.EDIT_ROLES:
                 replies.append(create_sync_message(entry.doc))
@@ -742,6 +956,7 @@ def _update(sid: str, me: dict, project_id: str, message: bytes) -> dict:
         if entry.closed or sid not in entry.tabs:
             return _refused("not_synced")
         update = _framed(message[2:])
+        _roll(entry)
         before = _clocks(entry.doc)
         if update != b"\x00\x00":
             with entry.doc.transaction(origin=sid):

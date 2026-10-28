@@ -62,6 +62,8 @@ class _Room:
         self.tokens = tokens
         self.project_id = project_id
         self.owner_key = str(users["alice"].id)
+        #: The day the doc's log files its changes under, which a test moves.
+        self.day = "2026-10-28"
 
     @property
     def docs(self):
@@ -107,6 +109,13 @@ class _Room:
     def live(self) -> dict:
         return self.docs.read(self.owner_key, self.project_id)
 
+    def logged(self, doc_id: str, day: str = None) -> list:
+        """The updates of a day's segment of a doc's log, today's by default."""
+        return self.docs.logged_updates(self.owner_key, self.project_id, doc_id, day or self.day)
+
+    def pointer(self) -> dict:
+        return json.loads((self.folder() / self.docs.POINTER_FILE).read_text(encoding="utf-8"))
+
     def server_doc(self):
         entry = self.docs._open_entry(self.project_id)
         assert entry is not None, "the server holds no doc of the dataflow"
@@ -114,7 +123,7 @@ class _Room:
 
 
 @pytest.fixture()
-def room(doc_app):
+def room(doc_app, monkeypatch):
     application, socketio = doc_app
     from utk_curio.backend.app.projects import storage
 
@@ -125,7 +134,14 @@ def room(doc_app):
     project_id = make_project(users["alice"])
     invite(project_id, users["alice"], users["bob"])
     storage.write_spec(str(users["alice"].id), project_id, SPEC)
-    return _Room(application, socketio, users, tokens, project_id)
+    room = _Room(application, socketio, users, tokens, project_id)
+    try:
+        from utk_curio.backend.app.collaboration import dataflow_docs
+    except ImportError:
+        dataflow_docs = None  # each test fails at its own import or assertion
+    if dataflow_docs is not None:
+        monkeypatch.setattr(dataflow_docs, "_today", lambda: room.day)
+    return room
 
 
 def _type(text: str, *, at: int = 0, node: str = "loader"):
@@ -258,28 +274,33 @@ def test_a_doc_out_of_memory_opens_again_as_the_same_doc(room):
     assert _code(alice.dataflow()) == "# kept\nx = 1\n"
 
 
-def test_a_doc_built_again_from_trill_gets_a_new_id_and_a_tab_holding_the_old_one_reloads(room):
+def test_a_doc_whose_state_is_lost_is_built_anew_with_a_new_log_and_the_old_one_stays(room):
+    """A doc built anew from Trill gets a new id and a new log, a tab holding
+    the old doc reloads, and the old log still rebuilds the old doc."""
     from ._ydoc_client import DocClient
 
     alice = room.tab("alice")
     alice.sync()
     alice.edit(_type("# kept\n"))
     assert room.docs.flush(room.project_id) is True
-    old = alice.doc_id
-    spec = room.on_disk()
-    spec["dataflow"]["name"] = "Renamed elsewhere"
-    room.write_elsewhere(spec)
+    old, day = alice.doc_id, room.docs._today()
+    (room.folder() / room.docs.POINTER_FILE).unlink()  # the doc's state is lost
     room.docs.reset_for_tests()
 
     refused = alice.sync()
     assert refused["ok"] is False and refused["error"] == "reload", refused
-    assert refused["docId"] != old
+    new = refused["docId"]
+    assert new != old and room.pointer()["doc"] == new
 
     fresh = DocClient(alice.socket, room.project_id)
-    assert fresh.sync()["docId"] == refused["docId"]
-    seen = fresh.dataflow()
-    assert seen["name"] == "Renamed elsewhere"
-    assert _code(seen) == "# kept\nx = 1\n"
+    assert fresh.sync()["docId"] == new
+    assert _code(fresh.dataflow()) == "# kept\nx = 1\n", "the doc built anew lost the written code"
+    assert room.docs.segments(room.owner_key, room.project_id, new) == [day]
+    assert room.docs.segments(room.owner_key, room.project_id, old) == [day], "the old log went"
+    old_doc = room.docs.rebuilt(room.owner_key, room.project_id, old, day)
+    from utk_curio.backend.app.collaboration import doc_mapping
+
+    assert _code(doc_mapping.doc_to_dataflow(old_doc)) == "# kept\nx = 1\n", "the old log does not read"
 
 
 def test_a_watchers_update_is_dropped(room):
@@ -300,7 +321,7 @@ def test_a_watchers_update_is_dropped(room):
 
     assert "# carol" not in _code(alice.dataflow())
     assert "# carol" not in _code(room.live()["dataflow"])
-    assert not (room.folder() / room.docs.UPDATES_FILE).exists(), "a watcher's change reached the log"
+    assert room.logged(alice.doc_id) == [], "a watcher's change reached the log"
 
 
 def test_an_editor_taken_off_the_list_has_their_next_update_dropped(room):
@@ -396,7 +417,10 @@ def test_the_doc_is_written_after_a_second_with_no_change_or_every_ten_seconds(r
     now[0] = 101.0
     room.docs.flush_due()
     assert room.revision() == start + 1, "not written a second after the last change"
-    assert not (room.folder() / room.docs.UPDATES_FILE).exists(), "the log was not folded into ydoc.bin"
+    logged = room.logged(alice.doc_id)
+    assert len(logged) == 1, "a write of the spec emptied the log, or the change never reached it"
+    folded = room.pointer()["folded"]
+    assert folded["segment"] == room.docs._today() and folded["offset"] > 0, folded
 
     # Steady typing, a change every half second from 101.5: written once, ten
     # seconds after the first change it holds.
@@ -431,18 +455,143 @@ def test_a_read_of_an_open_dataflow_is_its_doc(room):
     assert _code(room.live()["dataflow"]) == "# live\nx = 1\n", "a read missed what the log holds"
 
 
-def test_the_doc_never_writes_over_a_spec_someone_else_wrote(room):
-    alice = room.tab("alice")
-    alice.sync()
-    alice.edit(_type("# doc\n"))
+def _written_elsewhere(room) -> None:
+    """A writer that is not the doc renames the dataflow and adds a node."""
     spec = room.on_disk()
     spec["dataflow"]["name"] = "Saved elsewhere"
+    spec["dataflow"]["nodes"].append({"id": "extra", "type": "curio.builtin/code", "x": 0, "y": 0,
+                                      "content": "y = 2\n", "out": "DEFAULT", "in": "DEFAULT", "goal": ""})
     room.write_elsewhere(spec)
 
-    assert room.docs.flush(room.project_id) is False
-    on_disk = room.on_disk()
-    assert on_disk["dataflow"]["name"] == "Saved elsewhere"
-    assert _code(on_disk["dataflow"]) == "x = 1\n"
+
+def test_a_spec_written_outside_an_open_doc_becomes_a_transaction_on_it(room):
+    """The write's changes join the doc, which keeps its own, under the same
+    id; every tab gets them, and the next write of the spec holds both."""
+    alice = room.tab("alice")
+    alice.sync()
+    doc_id = alice.doc_id
+    alice.edit(_type("# doc\n"))
+    _written_elsewhere(room)
+
+    assert room.docs.flush(room.project_id) is True
+    on_disk = room.on_disk()["dataflow"]
+    assert on_disk["name"] == "Saved elsewhere" and _code(on_disk) == "# doc\nx = 1\n"
+    assert [node["id"] for node in on_disk["nodes"]] == ["loader", "chart", "extra"]
+    seen = alice.dataflow()
+    assert seen["name"] == "Saved elsewhere" and _code(seen, "extra") == "y = 2\n", (
+        "the tab did not get the outside write's changes"
+    )
+    assert room.docs.doc_id_of(room.project_id) == doc_id, "the outside write made a new doc"
+    assert len(room.logged(doc_id)) == 2, "the outside write's change is not in the log"
+
+
+def test_a_spec_written_while_the_doc_was_closed_is_carried_in_when_it_opens(room):
+    """A doc whose spec was written outside it while it was closed opens as the
+    same doc, the write's changes carried in, so a tab holding it reloads
+    nothing."""
+    alice = room.tab("alice")
+    alice.sync()
+    doc_id = alice.doc_id
+    alice.edit(_type("# doc\n"))
+    room.docs.reset_for_tests()  # stopped before the spec was written
+    _written_elsewhere(room)
+
+    ack = alice.sync()
+    assert ack["ok"] is True and ack["docId"] == doc_id, ack
+    seen = alice.dataflow()
+    assert seen["name"] == "Saved elsewhere" and _code(seen) == "# doc\nx = 1\n"
+    assert [node["id"] for node in seen["nodes"]] == ["loader", "chart", "extra"]
+    assert room.docs.flush(room.project_id) is True
+    assert _code(room.on_disk()["dataflow"]) == "# doc\nx = 1\n", "the doc's own change was lost"
+
+
+def test_the_log_keeps_every_change_in_a_segment_a_day(room):
+    """A write of the spec ends nothing; the first change of a new day starts a
+    segment whose checkpoint is the doc's state before it, and a reload from
+    disk reads every segment's day."""
+    from utk_curio.backend.app.collaboration import doc_mapping
+
+    alice = room.tab("alice")
+    alice.sync()
+    doc_id, first = alice.doc_id, room.day
+    alice.edit(_type("# one\n"))
+    assert room.docs.flush(room.project_id) is True
+    alice.edit(_type("# two\n"))
+    assert len(room.logged(doc_id)) == 2, "a write of the spec emptied the log"
+    end_of_first_day = alice.dataflow()
+
+    room.day = "2026-10-29"
+    alice.edit(_type("# three\n"))
+    assert room.docs.segments(room.owner_key, room.project_id, doc_id) == [first, room.day]
+    assert len(room.logged(doc_id, first)) == 2 and len(room.logged(doc_id)) == 1
+    checkpoint = room.docs.rebuilt(room.owner_key, room.project_id, doc_id, room.day, upto=0)
+    assert doc_mapping.doc_to_dataflow(checkpoint) == end_of_first_day, (
+        "the new day's checkpoint is not the doc as the day before ended"
+    )
+    assert room.pointer()["segment"] == room.day
+
+    room.docs.reset_for_tests()
+    ack = alice.sync()
+    assert ack["ok"] is True and ack["docId"] == doc_id
+    assert _code(room.live()["dataflow"]) == "# three\n# two\n# one\nx = 1\n"
+
+
+def test_text_deleted_before_a_tab_joins_never_reaches_it_and_stays_in_the_log(room):
+    """The doc keeps garbage collection on: a tab that joins gets no deleted
+    text, while the log, the dataflow's history, keeps what was typed."""
+    alice = room.tab("alice")
+    alice.sync()
+    secret = "api-key-0d9f2e"
+    alice.edit(_type(secret))
+
+    def delete(doc):
+        from pycrdt import Map
+
+        del doc.get("nodes", type=Map)["loader"]["content"][0:len(secret)]
+
+    alice.edit(delete)
+    later = room.tab("carol")
+    later.sync()
+    assert _code(later.dataflow()) == "x = 1\n"
+    assert secret.encode() not in later.doc.get_update(), "a tab that joined got the deleted text"
+    assert any(secret.encode() in update for update in room.logged(alice.doc_id)), (
+        "the log does not hold what was typed"
+    )
+
+
+def test_a_doc_grown_too_large_is_built_anew_with_a_new_log(room, monkeypatch):
+    """A doc no tab holds, grown many times a doc built anew, opens built anew:
+    a new id and a new log, the old log kept."""
+    from ._ydoc_client import DocClient
+
+    monkeypatch.setattr(room.docs, "REBUILD_FLOOR_BYTES", 0)
+    monkeypatch.setattr(room.docs, "GROWN_TOO_LARGE", 1.5)
+    socket = room.socket("alice")
+    old = None
+    # Forty sessions, each a tab of its own and so a Yjs client of its own,
+    # each typing a line and taking it out: the doc grows, its Trill does not.
+    for session in range(40):
+        tab = DocClient(socket, room.project_id)
+        assert tab.sync()["ok"] is True
+        old = old or tab.doc_id
+        line = f"# session {session}\n"
+        tab.edit(_type(line))
+
+        def taken_out(doc, line=line):
+            from pycrdt import Map
+
+            del doc.get("nodes", type=Map)["loader"]["content"][0:len(line)]
+
+        tab.edit(taken_out)
+    socket.disconnect(namespace=NAMESPACE)
+    assert room.docs.close(room.project_id) is True
+
+    fresh = room.tab("alice")
+    ack = fresh.sync()
+    assert ack["ok"] is True and ack["docId"] != old, "the grown doc was not built anew"
+    assert _code(fresh.dataflow()) == "x = 1\n"
+    assert room.pointer()["doc"] == ack["docId"]
+    assert room.docs.segments(room.owner_key, room.project_id, old) == [room.day], "the old log went"
 
 
 def test_a_doc_hands_over_no_history_and_a_spec_that_held_its_history_keeps_it(room, monkeypatch):
@@ -452,7 +601,10 @@ def test_a_doc_hands_over_no_history_and_a_spec_that_held_its_history_keeps_it(r
     from utk_curio.backend.app.projects import storage
 
     storage.drop_history(room.owner_key, room.project_id)
-    (room.folder() / storage.SPEC_FILE).write_text(json.dumps(SPEC), encoding="utf-8")
+    marker = "history-entry-5c1e"
+    legacy = dict(SPEC, nodeProvenance={"loader": [{"id": marker}]},
+                  dataflowProvenance={"latest": marker, "versions": {marker: {"dataflow": {}}}})
+    (room.folder() / storage.SPEC_FILE).write_text(json.dumps(legacy), encoding="utf-8")
     handed = []
     write_spec = storage.write_spec
 
@@ -461,8 +613,12 @@ def test_a_doc_hands_over_no_history_and_a_spec_that_held_its_history_keeps_it(r
         return write_spec(user_key, project_id, spec)
 
     monkeypatch.setattr(storage, "write_spec", recorded)
-    alice = room.tab("alice")
+    alice, carol = room.tab("alice"), room.tab("carol")
     alice.sync()
+    carol.sync()
+    # The history never enters the doc, so no tab, a watcher's included, gets it.
+    for tab in (alice, carol):
+        assert marker.encode() not in tab.doc.get_update(), "the doc holds the dataflow's history"
     alice.edit(_type("# doc\n"))
     assert room.docs.flush(room.project_id) is True
 
@@ -471,7 +627,8 @@ def test_a_doc_hands_over_no_history_and_a_spec_that_held_its_history_keeps_it(r
     )
     on_disk = room.on_disk()
     assert _code(on_disk["dataflow"]) == "# doc\nx = 1\n"
-    assert on_disk["nodeProvenance"] == SPEC["nodeProvenance"], "the doc's write erased the history"
+    assert on_disk["nodeProvenance"] == legacy["nodeProvenance"], "the doc's write erased the history"
+    assert on_disk["dataflowProvenance"] == legacy["dataflowProvenance"]
 
 
 def test_a_doc_message_needs_a_join_a_started_sync_and_frames_that_read(room):

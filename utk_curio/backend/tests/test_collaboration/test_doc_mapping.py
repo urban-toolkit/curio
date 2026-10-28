@@ -99,6 +99,100 @@ def test_every_shipped_dataflow_round_trips(shipped):
 
 
 # ---------------------------------------------------------------------------
+# A change between two Trills, made on a doc
+# ---------------------------------------------------------------------------
+
+def _normalized(dataflow: dict) -> dict:
+    return _round_trip(dataflow)[1]
+
+
+@pytest.mark.parametrize(
+    "first", range(len(SHIPPED)) if len(SHIPPED) >= AT_LEAST_SHIPPED else [None],
+    ids=lambda first: (
+        f"{SHIPPED[first].key}->{SHIPPED[(first + 1) % len(SHIPPED)].key}" if first is not None else "too-few-shipped"
+    ),
+)
+def test_a_doc_of_each_shipped_dataflow_changes_into_the_next(first):
+    """What a writer outside the doc changed, as one transaction: a doc made
+    from one shipped dataflow, changed to the next, reads as the next, in its
+    order; a change to what the doc holds writes nothing."""
+    from utk_curio.backend.app.collaboration import doc_mapping
+
+    assert first is not None, f"Curio ships {len(SHIPPED)} dataflows, fewer than {AT_LEAST_SHIPPED}"
+    shipped, then = SHIPPED[first], SHIPPED[(first + 1) % len(SHIPPED)]
+    before = json.loads(shipped.path.read_text(encoding="utf-8"))["dataflow"]
+    after = json.loads(then.path.read_text(encoding="utf-8"))["dataflow"]
+    doc, _back = _round_trip(before)
+    written = []
+    doc.observe(lambda event: written.append(event.update))
+
+    assert doc_mapping.apply_dataflow(doc, before, after) == []
+    got = doc_mapping.doc_to_dataflow(doc)
+    assert _text(got) == _text(_normalized(doc_mapping.owned(after)))
+    assert [node["id"] for node in got["nodes"]] == [node["id"] for node in after["nodes"]]
+    assert [edge["id"] for edge in got["edges"]] == [edge["id"] for edge in after["edges"]]
+    count = len(written)
+    doc_mapping.apply_dataflow(doc, after, after)
+    assert len(written) == count, "a change to what the doc holds already wrote something"
+
+
+def test_a_change_keeps_what_the_doc_changed_meanwhile():
+    """Three ways: what the change changed lands, what the doc changed since
+    stays, and a node's code both changed keeps the doc's, named as refused."""
+    from pycrdt import Map
+
+    from utk_curio.backend.app.collaboration import doc_mapping
+
+    base = {"nodes": [
+        {"id": "a", "type": "t", "x": 0, "y": 0, "content": "a = 1\n",
+         "metadata": {"widgets": [{"name": "w", "type": "number", "default": 1, "value": 1}]}},
+        {"id": "b", "type": "t", "x": 9, "y": 9, "content": "b = 1\n"},
+    ], "edges": [], "name": "base", "task": "base task"}
+    doc, _back = _round_trip(base)
+    with doc.transaction():
+        nodes = doc.get("nodes", type=Map)
+        nodes["a"]["content"].insert(0, "# doc\n")
+        nodes["a"]["widgets"]["w"]["value"] = doc_mapping.encode(2)
+        doc.get("dataflow", type=Map)["task"] = doc_mapping.encode("the doc's task")
+    target = json.loads(json.dumps(base))
+    target["name"] = "theirs"
+    target["nodes"][0]["x"] = 5
+    target["nodes"][0]["content"] = "a = 2\n"
+    target["nodes"][0]["metadata"]["widgets"][0]["default"] = 3
+    target["nodes"][1]["content"] = "b = 2\n"
+
+    assert doc_mapping.apply_dataflow(doc, base, target) == ["a"]
+    got = doc_mapping.doc_to_dataflow(doc)
+    assert got["name"] == "theirs" and got["task"] == "the doc's task"
+    first, second = got["nodes"]
+    assert first["content"] == "# doc\na = 1\n", "the change overwrote the code the doc changed"
+    assert first["x"] == 5 and second["content"] == "b = 2\n"
+    assert first["metadata"]["widgets"] == [{"name": "w", "type": "number", "default": 3, "value": 2}]
+
+
+def test_a_code_change_rewrites_only_what_differs_so_typing_meanwhile_stays():
+    """The change replaces the stretch the two codes differ in, counted in the
+    UTF-8 bytes pycrdt counts places in, so a tab's typing elsewhere in the
+    same code, merged after, stays where it was typed."""
+    from pycrdt import Doc, Map
+
+    from utk_curio.backend.app.collaboration import doc_mapping
+
+    base = {"nodes": [{"id": "n", "type": "t", "content": "héllo wörld 😀\n"}], "edges": []}
+    server, _back = _round_trip(base)
+    tab = Doc()
+    tab.apply_update(server.get_update())
+    content = tab.get("nodes", type=Map)["n"]["content"]
+    content += "# tab\n"
+    typed = tab.get_update(server.get_state())
+    target = {"nodes": [{"id": "n", "type": "t", "content": "HÉLLO wörld 😀\n"}], "edges": []}
+
+    doc_mapping.apply_dataflow(server, base, target)
+    server.apply_update(typed)
+    assert doc_mapping.doc_to_dataflow(server)["nodes"][0]["content"] == "HÉLLO wörld 😀\n# tab\n"
+
+
+# ---------------------------------------------------------------------------
 # Every field generateTrill writes, against the layout
 # ---------------------------------------------------------------------------
 

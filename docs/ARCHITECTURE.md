@@ -2421,7 +2421,7 @@ The server keeps one Yjs doc per open dataflow: a pycrdt `Doc` and an `Awareness
 - **Order.** Trill comes out in the layout's order, then any field the layout does not name, sorted, since a Yjs map has no order of its own; the order arrays give the lists theirs, each id once, then any id they lack.
 - **Lists that cannot be keyed.** A list with an entry that is not an object, or with a missing or repeated id or name, is kept whole, as one value under its Trill name. A node's `metadata`, `widgets` and `widgetOrder` are made with the node, so two tabs never each make one; an empty `metadata` or `metadata.widgets` is not written, as `TrillGenerator.generateTrill` writes neither. A tab edits a list kept whole as one value.
 - **Outside the doc:** `dataflow.agents`, `agentAttachments` and `agentDefaults`, since a watcher receives the doc, and the history (`nodeProvenance`, `dataflowProvenance`). A write of the doc carries the agents' sections as `spec.trill.json` holds them and leaves the history out, which storage keeps as it is ([Where a dataflow is kept](#where-a-dataflow-is-kept)).
-- **The shared cases.** Every dataflow Curio ships goes to a doc and back to itself, directly, through a sync and through the doc's bytes, and every field `generateTrill` writes is a row of the layout (`test_collaboration/test_doc_mapping.py`).
+- **The shared cases.** Every dataflow Curio ships goes to a doc and back to itself, directly, through a sync and through the doc's bytes. A doc of each changes into the next as one transaction (`apply_dataflow`, which writes only what differs), and every field `generateTrill` writes is a row of the layout (`test_collaboration/test_doc_mapping.py`).
 
 **The protocol.** The Yjs sync protocol and awareness travel as bytes in the `message` of a `yjs` event on the collaboration namespace, `{projectId, message}`, framed as y-protocols frames them: sync 0 (step 1 0, step 2 1, update 2) and awareness 1. The server reads and writes them with pycrdt's own functions (`handle_sync_message`, `create_sync_message`, `create_update_message`, `create_awareness_message`) in Flask-SocketIO's threading handlers. Only a socket that joined the room (`join_session`) takes part, and its doc traffic goes to the room `doc:<projectId>`, which a socket enters with its sync step 1.
 
@@ -2431,15 +2431,23 @@ The server keeps one Yjs doc per open dataflow: a pycrdt `Doc` and an `Awareness
 - **Awareness** is relayed to the doc's other tabs and sent whole to a tab that starts. The server writes each state's `user` (`participant_id`, `user_id`, `username`, `name`, `role`), so no state names someone else. A socket sets only client ids that no other account's socket set. A watcher's state keeps only `pointer` and `selection` (`PRESENCE_FIELDS`), never an edit such as a drag. A socket's states are cleared for everyone when it disconnects (`dataflow_docs.leave`, called from the namespace's one disconnect handler in `events.py`).
 - Other refusals: `not_joined`, `not_synced` (an update before step 1), `invalid_message` (a frame that does not read), `unknown_project`, `no_dataflow`, `unmappable` (a node field named like a key the layout gives a node).
 
-**Persistence**, beside `spec.trill.json` in the dataflow's folder:
+**The log, the dataflow's one history**, beside `spec.trill.json` in the dataflow's folder:
 
-- `ydoc.updates`: each change, appended the moment it lands, as a length and the update. A record a crash cut short ends the log.
-- `ydoc.bin`: the doc's whole state, which the updates are folded into, and `ydoc.rev`: the spec revision (`storage.spec_revision`) it was folded at.
-- After 1 s with no change (JupyterLab's save delay), or every 10 s of steady changes (`SAVE_IDLE_S`, `SAVE_EVERY_S`), a thread of the module writes the doc's Trill with `storage.write_spec`, carrying what `spec.trill.json` holds with the doc's dataflow and without the history, then folds the log into `ydoc.bin`. The doc is built from and written over the file itself, never the whole document `storage.read_spec` returns, so no write of the doc reads its history. A doc leaves memory 60 s after its last tab (`CLOSE_AFTER_S`), written first, and a doc whose dataflow is deleted is dropped unwritten.
-- A restart reloads the same doc from `ydoc.bin` and the log, so tabs that reconnect sync with nothing doubled. When the spec's revision moved since the fold, someone else wrote it: the doc is built again from the file, with a new id, and tabs holding the old one reload. While a doc is open it never writes over such a write.
-- Locks, in this order: the spec lock, the doc's lock, then the module's own; the spec lock is never asked for while a doc's lock is held, and the writing thread touches no database.
+- `ydoc/<doc id>/<day>.updates`: each change, appended the moment it lands as a length and the update, and never emptied. Each day (UTC) is a segment whose checkpoint, `<day>.bin`, is the doc's state before the day's first change. So the doc at any place in the log is that day's checkpoint and the updates up to it (`dataflow_docs.rebuilt`, with `segments` and `logged_updates`). A record a crash cut short ends its segment, and a damaged segment loses that day only.
+- `ydoc.json` says where the log is: the doc, today's segment, and the place in the log the spec was last written from, with that write's revision (`storage.spec_revision`).
+- The doc keeps garbage collection on, so a tab that joins gets no text deleted before it joined, while the log keeps what was typed.
+- After 1 s with no change (JupyterLab's save delay), or every 10 s of steady changes (`SAVE_IDLE_S`, `SAVE_EVERY_S`), a thread of the module writes the doc's Trill with `storage.write_spec` and records the place in `ydoc.json`. The write carries what `spec.trill.json` holds with the doc's dataflow and without the history.
+  - The doc is built from, and written over, the spec file alone, read with its revision under the history lock (`storage.read_spec_file`). It never reads the whole document `storage.read_spec` returns, so no write of the doc reads its history.
+- A restart reloads the same doc from its log, so tabs that reconnect sync with nothing doubled.
+- **A spec written outside the doc** (its revision moved) becomes one transaction on the doc, of what that write changed (`doc_mapping.apply_dataflow`, origin `spec`). It is logged and relayed like a person's change.
+  - The change is taken against what the file held when the doc last read or wrote it: the log at the place it was last written from.
+  - What the doc changed meanwhile stays. A node's code that both changed keeps the doc's, and the refusal is logged.
+  - It is checked when a tab starts, on a read and before each write.
+- **A doc is built anew from Trill**, with a new id and a new log, in two cases: when its state is lost (no `ydoc.json`, or a checkpoint that does not read), and when no tab holds it and its state has grown past four times a doc built anew and past 256 KiB (`GROWN_TOO_LARGE`, `REBUILD_FLOOR_BYTES`). The old log stays, readable, and a tab holding the old doc reloads.
+- A doc leaves memory 60 s after its last tab (`CLOSE_AFTER_S`), written first, and a doc whose dataflow is deleted is dropped unwritten.
+- Locks, in this order: the spec lock, the doc's lock, then the module's own; storage's history lock is a leaf. The spec lock is never asked for while a doc's lock is held, and the writing thread touches no database.
 
-**Reads.** `dataflow_docs.read(user_key, project_id)` is the spec as it is now, the open doc's dataflow over the file. A doc that is not open but has changes in its log, which a stopped backend left, is opened to read them.
+**Reads.** `dataflow_docs.read(user_key, project_id)` is the spec as it is now, the open doc's dataflow over the file. A doc that is not open but whose log holds changes its spec does not, which a stopped backend can leave, is opened to read them.
 
 ---
 
