@@ -1,10 +1,9 @@
 ---
 name: reuse-first
 description: >-
-  Use this skill when a task needs a node type: a node to create, a plan step, a package to
-  recommend, propose or write, or notes to place on the canvas. It gives the node type ladder, taken
-  in order: a template the run is given, then a package to add, then a package the Node Builder
-  writes.
+  Use this skill when a task needs a node type: a node to create, a plan step, or a package to
+  recommend, propose or write. It gives the node type ladder, taken in order: a template the run is
+  given, then a package to add, then a package the Node Builder writes.
 license: MIT
 compatibility: Written for Curio's agents, their tools and node code.
 metadata:
@@ -28,13 +27,3 @@ Never present a draft, build, or install as done before the user applies it, and
 ### A run with no tools
 
 A run with no tools, such as the package-writing or the recommending mode, takes the ladder from its "existingPackages" input, never from packages.catalog: each package's dirName, whether this project has it, and its template ids. It answers as its own instruction says, never with a tool request. The package-writing mode reads that input before authoring anything. When a package there already satisfies the need, it authors nothing, never a duplicate package, and answers as its build-request contract's "insteadOfAuthoring" says. It extends an existing package (mode "extend", naming its template ids) rather than write a near-duplicate, and writes something new only when nothing it was shown fits, or the request explicitly asks for a new package.
-
-### Notes
-
-A run that places notes takes the ladder for their template:
-
-1. REUSE. Notes go on the built-in {{template.label:curio.builtin/note}} template, which the "Available node templates" list carries: one node.create per note, {"nodeType": "curio.builtin/note"} with the finding as its "content", and the title and color node.create asks a note for. Another notes template on that list, a presentation-only template whose behavior renders a note, takes the same params. Never build, duplicate, or extend a package just to add or recolor notes. Only ids on that list take note content: a node type you saw on the canvas or in dataflow.read is NOT a note template unless it appears there, and when the list says none is available, skip straight to step 2.
-
-2. ENLIST. When nothing in "Available node templates" fits, enlist a package of the "Installed but NOT enlisted in this project" list: its package.install request also carries "notes", the findings themselves, one row per note, in the order research-notes gives them. The runtime enlists the package once the user applies the install, then creates the notes from those rows: you do not need a second turn. An install request without "notes" enlists a package and places nothing.
-
-3. AUTHOR. Only when NEITHER list offers a usable template, delegate node.kind.author, the ladder's third rung: you never compose a package manifest, source file, or behavior code yourself, and your delegation inputs MUST carry both your findings and the look. "notes": the findings, one row per note ({"title", "content", "color"}), which the runtime copies into the created notes verbatim, the {{agent.name:agent.curio.node-builder}} styling them and never writing your findings; a delegation without notes places nothing. "requirements": the look the notes need, described precisely. Never claim a package, template, or note exists before the user applies the proposal.

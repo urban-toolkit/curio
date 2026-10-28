@@ -191,13 +191,15 @@ class TestTheResearchersCheckingRules:
 
 class TestTheResearchersNotesRules:
     def test_they_are_written_once_and_both_notes_runs_hold_them(self):
-        """The notes format, written once, in the skill ``research-notes``:
-        the chat that answers a web question with notes and the mode that
-        composes notes from search results are each handed it."""
+        """The notes format and how a chat places notes, written once, in the
+        skill ``research-notes``: the chat that answers a web question with
+        notes and the mode that composes notes from search results are each
+        handed it."""
         fragment = prompt_path("research-notes/SKILL.md")
         lines = _skill_lines("research-notes")
-        assert len(lines) == 5, (
-            "the pattern, the question note, the answer notes, the markdown, one note per finding"
+        assert len(lines) == 9, (
+            "the pattern, the question note, the answer notes, the markdown, one note per finding, "
+            "then placing them: the ladder for their template, REUSE, ENLIST and AUTHOR"
         )
         # One skill holds them: no page, prompt or other skill repeats a line
         # of them, and no notes prompt includes a page of them.
@@ -220,6 +222,13 @@ class TestTheResearchersNotesRules:
         assert "as clean markdown" in low
         assert "one note per finding" in low
         assert "never invent facts" in low
+        # How a chat places them, in the ladder's order: the Note, an
+        # enlisted package, a notes package delegated to be written.
+        assert "\n### placing notes\n" in low
+        placing = low.split("\n### placing notes\n", 1)[1]
+        assert "a chat that places notes with its tools" in placing
+        starts = [placing.index(rung) for rung in ("\n1. reuse.", "\n2. enlist.", "\n3. author.")]
+        assert starts == sorted(starts)
 
 
 class TestTheRecommendationMode:

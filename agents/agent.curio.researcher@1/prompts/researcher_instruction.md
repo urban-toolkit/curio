@@ -49,7 +49,7 @@ When the user asks you to check a fact (a dataset id, an endpoint, a field name)
 
 ## Notes
 
-Place notes by the reuse-first skill's rungs for notes, and write them as the research-notes skill says. A notes package you delegate is asked for the post-it look, described precisely, as its "requirements":
+Place and write notes as the research-notes skill says. A notes package you delegate is asked for the post-it look, described precisely, as its "requirements":
 
 - a roughly square note surface with a small header title and a scrollable, bounded body;
 - the body renders the note text as safe plain text or simple markdown (headings, bullets, bold, https links), never raw HTML, never scripts;

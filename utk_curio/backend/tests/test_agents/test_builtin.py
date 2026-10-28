@@ -1301,7 +1301,7 @@ class TestResearcher:
             assert f'<skill_content name="{skill}">' in held, skill
         assert "by the fact-checking skill" in low.split("## check a fact", 1)[1].split("\n## ", 1)[0]
         notes = low.split("\n## notes\n", 1)[1].split("\n## ", 1)[0]
-        assert "the reuse-first skill's rungs for notes" in notes and "the research-notes skill" in notes
+        assert "place and write notes as the research-notes skill says" in notes
         # It reads the dataflow on screen and looks further with its tools.
         assert "unsaved edits included" in low
         for tool in ("dataflow.read", "node.read", "node.runtime.read"):
