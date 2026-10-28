@@ -10,7 +10,8 @@
  * - **Code typed before the bind** (the doc's first sync came after the
  *   editor mounted) goes into the doc first: an editor holding something
  *   else than what was last written into it holds the user's typing.
- * - **A node with no code yet** gets it in the doc at its editor's first
+ * - **A node with no code in the doc** gets what its editor shows (the
+ *   starter of a node just dropped), or, while it shows nothing, its first
  *   change, from a tab that edits the dataflow.
  * - **Focus** is the tab's `editing` presence: removing a node someone else
  *   is editing asks first.
@@ -123,9 +124,20 @@ export function useYMonacoBinding(
 
         const bind = async () => {
             watchNode();
-            const text = textOf();
+            let text = textOf();
             if (current && current.text === text) return;
             unbind();
+            if (!text && canWrite) {
+                // A node with no code in the doc takes what its editor shows,
+                // the starter a palette or a template gave it: the code a save
+                // of this canvas writes.
+                const node = nodes.get(nodeId);
+                const shown = editor.getModel?.()?.getValue?.();
+                if (node instanceof Y.Map && typeof shown === "string" && shown !== "") {
+                    doc.transact(() => node.set(CONTENT, new Y.Text(shown)), CANVAS_ORIGIN);
+                    text = textOf();
+                }
+            }
             if (!text) {
                 awaitFirstChange();
                 return;

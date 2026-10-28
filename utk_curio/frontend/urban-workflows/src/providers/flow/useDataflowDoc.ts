@@ -19,7 +19,10 @@
  * leaves it alone, and nothing is written where the doc holds the value
  * already. The sections the server owns are never written from here:
  * `packages`, `datasets`, and the `timestamp` and `provenance_id` a save
- * stamps.
+ * stamps. Nor is what a node's editor holds: its code reaches the doc from
+ * the editor (`useYMonacoBinding`), and from here only as a writer sets it
+ * (`defaultCode`). A change the canvas makes in place, with no new node (a
+ * widget's value), is written when its maker says so (`noteNodeData`).
  *
  * **Places.** A node being dragged, here or in another tab, is written at the
  * drop: its place is one value. While someone drags, the others see the drag
@@ -120,6 +123,32 @@ export const METADATA_FIELD_DATA: Record<string, readonly string[]> = {
 /** The fields whose change leaves a node out of date. */
 const STALE_WHEN_CHANGED = new Set(["content", "widgets", "selections", "datasetRefs", "modelRefs", "datasetSource"]);
 
+/** What a node's Trill is taken from that the canvas changes in place, with
+ *  no new node: its widgets and selection tags (`NodeEditor`), and its code
+ *  as a writer sets it (`useGraphEdits`' rewrite of its input chips). */
+interface NodeDataKeys {
+    defaultCode: unknown;
+    widgets: unknown;
+    selections: unknown;
+}
+
+interface CachedTrill extends NodeDataKeys {
+    node: Node;
+    trill: Fields;
+}
+
+function nodeDataKeys(node: Node): NodeDataKeys {
+    const data = node.data ?? {};
+    return { defaultCode: data.defaultCode, widgets: data.widgets, selections: data.selections };
+}
+
+/** Whether *node* still holds what its cached Trill was taken from. */
+function sameNodeData(cached: CachedTrill, node: Node): boolean {
+    const now = nodeDataKeys(node);
+    return cached.node === node && cached.defaultCode === now.defaultCode
+        && cached.widgets === now.widgets && cached.selections === now.selections;
+}
+
 /** The Trill fields the doc changed in one node, and the canvas data keys
  *  they touch. */
 export function changedNodeData(was: Fields, now: Fields): { keys: Set<string>; trill: Set<string> } {
@@ -207,6 +236,9 @@ export interface DataflowDocBridge {
     editorsOf(nodeId: string): string[];
     /** Tell the others this tab removes *nodeIds* now. */
     noteRemoval(nodeIds: string[]): void;
+    /** *nodeId*'s data changed in place, with no new node (a widget's value,
+     *  a selection tag): write it now. */
+    noteNodeData(nodeId: string): void;
 }
 
 export interface DataflowDocDeps {
@@ -266,8 +298,8 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
     const loadedCanvasRef = useRef<{ epoch: number; trill: Fields } | null>(null);
     /** The doc's Trill as the canvas last took it. */
     const docStateRef = useRef<DocState | null>(null);
-    /** Each canvas node's last Trill. */
-    const cacheRef = useRef(new Map<string, { node: Node; code: unknown; trill: Fields }>());
+    /** Each canvas node's last Trill, and what it was taken from. */
+    const cacheRef = useRef(new Map<string, CachedTrill>());
     /** Nodes another tab drags now, and those it dropped whose place is due. */
     const remoteDragRef = useRef(new Set<string>());
     const droppedRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
@@ -294,15 +326,21 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
             seen.add(node.id);
             const cached = cache.get(node.id);
             const held = (node as any).dragging || remoteDragRef.current.has(node.id) || droppedRef.current.has(node.id);
-            if (cached && (held || (cached.node === node && cached.code === node.data?.code))) {
+            if (cached && (held || sameNodeData(cached, node))) {
                 trillNodes.push(cached.trill);
                 continue;
             }
             const trill = trillNodeOf(node);
-            // A node's editor holds "" before anything is typed, which the
-            // doc holds as no code: its editor writes the first it gets.
-            if (trill.content === "") delete trill.content;
-            cache.set(node.id, { node, code: node.data?.code, trill });
+            // A node's code reaches the doc from its editor, typed in it or
+            // written into it (y-monaco), or from a writer that sets the
+            // node's code (`defaultCode`: a load, a drop, an agent, a rewrite).
+            // `data.code` is the editor's own mirror of what it holds, which
+            // lags behind the doc and starts as "" or "{}" while the editor
+            // mounts: it is never written from here.
+            const content = node.data?.defaultCode;
+            if (typeof content === "string" && content !== "") trill.content = content;
+            else delete trill.content;
+            cache.set(node.id, { node, ...nodeDataKeys(node), trill });
             trillNodes.push(trill);
         }
         for (const id of Array.from(cache.keys())) if (!seen.has(id)) cache.delete(id);
@@ -469,14 +507,22 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
                 else if ((key === "code" || key === "defaultCode") && editorHasIt) continue;
                 else data[key] = (built.data as Fields)[key];
             }
+            // A place the notebook view takes for its canvas spot: the node
+            // stays in its cell, and a new node object has the view stamp it.
+            let restamp = false;
             if (position) {
                 remoteDragRef.current.delete(id);
                 const due = droppedRef.current.get(id);
                 if (due) clearTimeout(due);
                 droppedRef.current.delete(id);
-                if ((onCanvas as any).dragging || current.takeCanvasPosition?.(id, position) === true) position = undefined;
+                if ((onCanvas as any).dragging) {
+                    position = undefined;
+                } else if (current.takeCanvasPosition?.(id, position) === true) {
+                    position = undefined;
+                    restamp = true;
+                }
             }
-            if (Object.keys(data).length > 0 || position) patches.set(id, { data, position });
+            if (Object.keys(data).length > 0 || position || restamp) patches.set(id, { data, position });
             const stale = [...trill].filter((name) => STALE_WHEN_CHANGED.has(name));
             if (stale.length > 0 && !(stale.length === 1 && stale[0] === CONTENT && editorHasIt)) {
                 current.markNodeStale(id);
@@ -743,5 +789,10 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
         },
         editorsOf: (nodeId: string) => editorsOf(boundRef.current?.provider.awareness, nodeId),
         noteRemoval: (nodeIds: string[]) => noteRemoval(boundRef.current?.provider.awareness, nodeIds),
+        noteNodeData: (nodeId: string) => {
+            if (!boundRef.current) return;
+            cacheRef.current.delete(nodeId);
+            write();
+        },
     };
 }

@@ -616,6 +616,7 @@ const FlowProvider = ({
                     editorsOf: dataflowDoc.editorsOf,
                     noteRemoval: dataflowDoc.noteRemoval,
                     askBeforeRemoving: removal.ask,
+                    noteNodeData: dataflowDoc.noteNodeData,
                 },
                 // A project switch must not inherit a run in flight: the guard
                 // is provider state, and the provider outlives the dataflow

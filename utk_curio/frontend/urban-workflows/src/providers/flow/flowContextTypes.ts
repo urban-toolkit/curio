@@ -215,6 +215,9 @@ export interface FlowContextProps {
         /** Run *proceed*, which removes *nodeIds*, once asked if anyone
          *  else is editing one of them. */
         askBeforeRemoving(nodeIds: readonly string[], proceed: () => void): void;
+        /** A node's data changed in place, with no new node (a widget's
+         *  value, a selection tag): the doc takes it now. */
+        noteNodeData(nodeId: string): void;
     };
 }
 

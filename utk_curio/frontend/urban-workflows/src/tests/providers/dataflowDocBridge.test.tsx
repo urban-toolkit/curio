@@ -71,6 +71,22 @@ const NODE_SAMPLES: Record<string, [unknown, unknown]> = {
     title: ["Renamed", "Renamed again"],
 };
 
+/** Fields a save writes only beside their partner: the dashboard's place and
+ *  size (`generateTrill`, and a load reads them so). A change to one comes
+ *  with the other. */
+const PARTNERS: Record<string, string> = {
+    dashboardX: "dashboardY",
+    dashboardY: "dashboardX",
+    dashboardWidth: "dashboardHeight",
+    dashboardHeight: "dashboardWidth",
+};
+
+/** Flags a save writes only when they are on. */
+const ONLY_WHEN_ON = new Set(["minimized", "dashboardPinned"]);
+
+/** What a save writes for *field* set to *value*. */
+const asSaved = (field: string, value: unknown) => (ONLY_WHEN_ON.has(field) && value === false ? undefined : value);
+
 /** The same for each `metadata` setting. */
 const METADATA_SAMPLES: Record<string, [unknown, unknown]> = {
     keywords: [[3, 4], [5]],
@@ -228,6 +244,8 @@ describe("another tab's change to a node's field reaches this canvas", () => {
         const [value] = NODE_SAMPLES[field];
         await fromAnotherTab((df) => {
             df.nodes[0][field] = value;
+            const partner = PARTNERS[field];
+            if (partner && df.nodes[0][partner] === undefined) df.nodes[0][partner] = NODE_SAMPLES[partner][0];
         });
         expect(trillNodeOf(canvasNode())[field]).toEqual(value);
     });
@@ -260,10 +278,14 @@ describe("a change made on this canvas to a node's field reaches the doc", () =>
             return;
         }
         const trill = trillNodeOf(node);
+        const partner = metadata ? undefined : PARTNERS[trillField];
+        const withPartner = partner && trill[partner] === undefined ? { [partner]: NODE_SAMPLES[partner][0] } : {};
         const changed = metadata
             ? { ...trill, metadata: { ...(trill.metadata ?? {}), [trillField]: value } }
-            : { ...trill, [trillField]: value };
-        const keys = metadata ? METADATA_FIELD_DATA[trillField] : NODE_FIELD_DATA[trillField];
+            : { ...trill, [trillField]: value, ...withPartner };
+        const keys = metadata
+            ? METADATA_FIELD_DATA[trillField]
+            : [...NODE_FIELD_DATA[trillField], ...(partner ? NODE_FIELD_DATA[partner] : [])];
         act(() => api.updateDataNode("n", { ...node.data, ...canvasDataFor(changed, keys) }));
         await flush();
     };
@@ -275,7 +297,9 @@ describe("a change made on this canvas to a node's field reaches the doc", () =>
         // From a value the doc holds to another, so each is a change.
         await setOnCanvas(field, first);
         await setOnCanvas(field, value);
-        expect(docNode()[field]).toEqual(value);
+        // The doc holds what a save of this canvas writes.
+        expect(trillNodeOf(canvasNode())[field]).toEqual(asSaved(field, value));
+        expect(docNode()[field]).toEqual(asSaved(field, value));
     });
 
     test.each(Object.keys(METADATA_SAMPLES))("metadata.%s", async (setting) => {
@@ -359,6 +383,48 @@ describe("the dataflow's own fields, connections and scenarios", () => {
         const df = docToDataflow(provider.doc);
         expect(df.nodes.map((n: any) => n.id)).toEqual(["n"]);
         expect(df.edges).toEqual([]);
+    });
+});
+
+describe("what the canvas changes in place, with no new node", () => {
+    test("an editor's own copy of its code never reaches the doc, and a writer's code does", async () => {
+        await open(serverDoc(spec().dataflow));
+        // What a spec editor floats while it mounts, before its spec lands,
+        // and what any editor's copy holds of the code it shows: never the doc's.
+        canvasNode().data.code = "{}";
+        act(() => api.updateDataNode("m", { ...canvasNode("m").data, title: "A later change" }));
+        await flush();
+        expect(docNode("m").title).toBe("A later change");
+        expect(docNode().content).toBe("x = 1\n");
+
+        // A writer of the node's code (a drop, an agent, a rewrite) sets it as
+        // the node's code, which the doc takes.
+        act(() => api.updateDefaultCode("n", "x = 2\n"));
+        await flush();
+        expect(docNode().content).toBe("x = 2\n");
+    });
+
+    test("a widget's value set in place reaches the doc when its editor says so", async () => {
+        const dataflow: any = spec().dataflow;
+        dataflow.nodes[0].metadata = { widgets: [{ name: "rows", type: "number", default: 5, value: 5 }] };
+        await open(serverDoc(dataflow), { dataflow } as any);
+        const data = canvasNode().data;
+        // As the node's Widgets tab sets a value (`NodeEditor.updateWidgets`).
+        data.widgets = data.widgets.map((widget: any) => ({ ...widget, value: 9 }));
+        act(() => api.dataflowDoc!.noteNodeData("n"));
+        await flush();
+        expect(docNode().metadata.widgets[0].value).toBe(9);
+    });
+
+    test("a selection tag set in place reaches the doc when its editor says so", async () => {
+        const dataflow: any = spec().dataflow;
+        dataflow.nodes[0].metadata = { selections: [{ name: "picked", node: "m", column: "id", ids: [1] }] };
+        await open(serverDoc(dataflow), { dataflow } as any);
+        const data = canvasNode().data;
+        data.selections = data.selections.map((tag: any) => ({ ...tag, ids: [1, 2] }));
+        act(() => api.dataflowDoc!.noteNodeData("n"));
+        await flush();
+        expect(docNode().metadata.selections[0].ids).toEqual([1, 2]);
     });
 });
 
