@@ -111,6 +111,16 @@
       "default": false,
       "description": "Whether a run of the agent under its instruction, or a prompt run in its place, is given worked examples: the shipped dataflows closest to its task, in its runtime slot. A mode says so for itself (capabilities[].workedExamples). Read for the agents Curio ships."
     },
+    "skills": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "maxLength": 64,
+        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+      },
+      "description": "The skills the agent's runs may hold, by name (a folder of Curio's skills/). Its chat lists them, beyond those its preamble holds, and loads one with skill.read when a task needs it; a run with no tools is handed the ones its task needs. Without this field, every skill Curio ships; an empty list, none."
+    },
     "roles": {
       "type": "array",
       "items": {
@@ -167,6 +177,16 @@
           "workedExamples": {
             "type": "boolean",
             "description": "Whether a run of this mode is given worked examples. Only a mode, a capability with an 'instruction', takes it; any other run follows the agent's workedExamples. Read for the agents Curio ships."
+          },
+          "skills": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+            },
+            "description": "The skills every run of this capability is handed, by name: its own procedures, whatever the agent's skills are."
           }
         }
       }

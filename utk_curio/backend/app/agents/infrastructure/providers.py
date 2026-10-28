@@ -230,21 +230,37 @@ def _system_parts(messages: list) -> list[tuple[str, str]]:
     return parts
 
 
+#: The slots a system turn opens with that an agent's runs share
+#: (``contracts.compose_system``): the end of the last is the first place
+#: Anthropic caches the turn up to.
+_SHARED_SLOTS = ("preamble", "skill-catalog")
+#: The slot of the skills a run is handed: the end of it is the second place.
+_SKILLS_SLOT = "skills"
+
+
+def _cache_breakpoints(kinds: list[str]) -> list[int]:
+    """Which of the system turn's blocks, by their slots' *kinds*, end a part
+    Anthropic caches: the last of the slots an agent's runs share, the
+    longest part every run of the agent repeats, and the skills a run is
+    handed, which every run on the same kind of node repeats."""
+    shared = [at for at, kind in enumerate(kinds) if kind in _SHARED_SLOTS]
+    handed = [at for at, kind in enumerate(kinds) if kind == _SKILLS_SLOT]
+    return sorted({*shared[-1:], *handed[-1:]})
+
+
 def _anthropic_system(messages: list, not_given):
-    """Anthropic's ``system``: a text block per slot, the preamble marked
-    cacheable (it is the longest part, and every run of the agent repeats it);
-    without slots, the joined text as before."""
+    """Anthropic's ``system``: a text block per slot, with a cache breakpoint
+    after the slots an agent's runs share and a second after the skills a run
+    is handed (:func:`_cache_breakpoints`); without slots, the joined text as
+    before."""
     parts = _system_parts(messages)
     if not parts:
         return not_given
     if not _has_slots(messages):
         return "\n".join(text for _, text in parts)
-    blocks = []
-    for kind, text in parts:
-        block = {"type": "text", "text": text}
-        if kind == "preamble":
-            block["cache_control"] = {"type": "ephemeral"}
-        blocks.append(block)
+    blocks = [{"type": "text", "text": text} for _, text in parts]
+    for at in _cache_breakpoints([kind for kind, _ in parts]):
+        blocks[at]["cache_control"] = {"type": "ephemeral"}
     return blocks
 
 

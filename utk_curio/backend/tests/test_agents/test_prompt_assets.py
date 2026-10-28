@@ -46,15 +46,19 @@ class TestPromptFilesResolve:
 
     def test_every_skill_the_preamble_places_is_a_skill_curio_ships(self):
         """Each ``{{skill:<name>}}`` of the preamble names a folder of
-        ``skills/`` whose ``SKILL.md`` is there, and an agent reads its body."""
+        ``skills/`` whose ``SKILL.md`` is there, and an agent reads its body:
+        the preamble places the core three, and the agents' manifests name
+        every other skill Curio ships."""
         from utk_curio.backend.app.agents.domain import skills
 
         written = agent_text.page_file(builtin.PREAMBLE_FILE).read_text(encoding="utf-8")
         placed = re.findall(r"\{\{skill:([^{}]+)\}\}", written)
-        assert len(placed) == 16, placed
+        assert sorted(placed) == ["compatibility", "node-control", "nodes"], placed
         shipped = [folder.name for folder in skills.shipped_folders()]
-        assert sorted(placed) == shipped
-        for name in placed:
+        assert len(shipped) == 16, shipped
+        named = {name for m in builtin.list_builtin_manifests() for name in (m.skills or ())}
+        assert sorted(set(placed) | named) == shipped
+        for name in shipped:
             assert skills.shipped_skill_file(name).is_file(), name
             assert agent_text.skill_text(name).startswith("## "), name
 

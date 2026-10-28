@@ -109,9 +109,12 @@ def _budget(size: int) -> int:
 
 
 def _system(message: dict, name: str) -> tuple[str, dict]:
-    """A system turn's text and its characters per slot kind, in the turn's order."""
+    """A system turn's text and its characters per slot kind, in the turn's
+    order: the preamble, the skills a chat lists and those a run holds, when
+    it has them, then the instruction."""
     kinds = [slot["kind"] for slot in message["slots"]]
-    assert kinds[:2] == ["preamble", "instruction"], f"{name} starts with {kinds[:2]}"
+    opening = ["preamble", *(kind for kind in ("skill-catalog", "skills") if kind in kinds), "instruction"]
+    assert kinds[:len(opening)] == opening, f"{name} starts with {kinds[:len(opening)]}"
     slots: dict[str, int] = {}
     for slot in message["slots"]:
         slots[slot["kind"]] = slots.get(slot["kind"], 0) + len(slot["text"])
@@ -144,6 +147,8 @@ def _chat(client, token, user_key: str, coord: str) -> dict:
     )
     tools = loop_ctx["native_tools"]
     assert tools, f"{coord}'s chat offers no native tools, so its native turn would go unmeasured"
+    for system in (loop_ctx["fenced_system"], messages[0]):
+        assert "skill-catalog" in [slot["kind"] for slot in system["slots"]], f"{coord}'s chat lists no skills"
     return {
         f"{coord} chat": _system(loop_ctx["fenced_system"], f"{coord} chat"),
         f"{coord} chat, native tools": _system(messages[0], f"{coord} chat, native tools"),

@@ -63,6 +63,7 @@ def _execution_record(
     delegations: list | None = None,
     refused_rounds: int = 0,
     retry_of: str | None = None,
+    skills_loaded: list | None = None,
 ) -> dict:
     """Assemble the per-run execution record persisted on the agent turn.
 
@@ -71,7 +72,10 @@ def _execution_record(
     records what executed. There is no ``costUsd``: Curio ships no price
     table, so a USD figure would be invented. ``delegations`` lists the run's
     child execution records, each with its own pins, usage, and
-    ``parentExecutionId`` back-link."""
+    ``parentExecutionId`` back-link. ``skillsLoaded`` names the skills
+    ``skill.read`` loaded, which the conversation's later runs are handed
+    again; the skills the run listed and was handed are its pins'
+    (``pins.skills``)."""
     record = {
         "executionId": execution_id,
         "pins": pins,
@@ -92,6 +96,8 @@ def _execution_record(
         # dev/115 (DEC-021): a retry after an interruption is a NEW execution
         # linked to the one that expired — nothing was replayed.
         record["retryOf"] = retry_of
+    if skills_loaded:
+        record["skillsLoaded"] = list(skills_loaded)
     return record
 
 

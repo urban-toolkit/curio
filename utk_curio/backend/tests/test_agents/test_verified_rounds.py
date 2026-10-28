@@ -95,7 +95,7 @@ def _rounds(app, node, *, replies, exec_fn, start_from_current=False, spec=None,
     delegate_inputs: list[dict] = []
     script = list(replies)
 
-    def _delegate(inputs):
+    def _delegate(inputs, refused=None):
         delegate_inputs.append(inputs)
         reply = script.pop(0) if script else "df = input_0[0]\nreturn df"
         return "ok", reply, {"executionId": f"child-{len(delegate_inputs)}"}
@@ -219,7 +219,7 @@ class TestVerifiedRounds:
                 KEY, PID, spec=_spec(node), node=node, resolution=_Resolution(), config=None,
                 parent_execution_id="e", parent_coord="c", attachment_id=None, exec_fn=_Exec(),
                 grounding_loop_ctx={"granted": [], "manifest": None},
-                delegate_runner=lambda inputs: ("error", "provider unavailable", None),
+                delegate_runner=lambda inputs, refused=None: ("error", "provider unavailable", None),
             )
             _, outcome = _drive(gen)
         assert outcome["verdict"] == "fail"
@@ -570,7 +570,8 @@ class TestConnectionKeys:
                 KEY, PID, spec=_spec(node), node=node, resolution=_Resolution(), config=None,
                 parent_execution_id="e", parent_coord="agent.curio.dataflow-builder@1",
                 attachment_id="att-1", exec_fn=exec_fn, grounding_loop_ctx=shared_ctx,
-                delegate_runner=lambda inputs: ("ok", replies[min(len(probes) // 2, 2)], {"executionId": "c"}),
+                delegate_runner=lambda inputs, refused=None: (
+                    "ok", replies[min(len(probes) // 2, 2)], {"executionId": "c"}),
             )
             _events, outcome = _drive(gen)
         assert outcome["verdict"] == "fail" and outcome["rounds"] == 3
