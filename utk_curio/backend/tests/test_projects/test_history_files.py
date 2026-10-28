@@ -493,6 +493,25 @@ def test_a_spec_that_still_holds_its_history_is_split_on_its_first_write(tmp_cur
     assert _text(storage.read_spec("1", "saved-before")) == _text(expected)
 
 
+def test_a_write_that_leaves_the_history_out_keeps_what_a_spec_file_held(tmp_curio):
+    """A spec file saved with its history inside, before any log, then a write
+    that hands over the dataflow alone, as the server's doc writes it: the
+    history the file held is moved into its logs, not lost with the file."""
+    doc = _fixture()
+    folder = storage.ensure_project_dir("1", "saved-before")
+    (folder / "spec.trill.json").write_text(json.dumps(doc, indent=2), encoding="utf-8")
+    live = json.loads(json.dumps({key: value for key, value in doc.items() if key not in HISTORY}))
+    live["dataflow"]["nodes"][0]["content"] = "return 2"
+
+    storage.write_spec("1", "saved-before", live)
+
+    read = storage.read_spec("1", "saved-before")
+    for key in HISTORY:
+        assert read.get(key) == doc[key], f"the write lost the {key} its spec file held"
+    _assert_split(folder, doc)
+    assert _text(read) == _text({**live, **{key: doc[key] for key in HISTORY}})
+
+
 def test_a_loaded_file_a_duplicate_and_a_saved_copy_keep_the_history(client, user_and_token, db, tmp_curio):
     """File > Load saves a dataflow file with its history as a new dataflow;
     the Projects page's Duplicate and another account's Save a copy of the
@@ -532,7 +551,8 @@ def test_a_loaded_file_a_duplicate_and_a_saved_copy_keep_the_history(client, use
 
 def test_an_example_put_back_to_its_shipped_copy_keeps_no_history(app, db, tmp_curio):
     """The shared guest's examples are put back to their shipped copies at
-    every start: one saved with a history comes back with none."""
+    every start: one saved with a history comes back with none, whether its
+    history is in its logs or still inside a spec file saved before them."""
     from utk_curio.backend.app.projects import seed
     from utk_curio.backend.app.users.models import User
     from utk_curio.backend.config import CURIO_SHARED_GUEST_USERNAME
@@ -552,6 +572,13 @@ def test_an_example_put_back_to_its_shipped_copy_keeps_no_history(app, db, tmp_c
     assert seed.seed_example_projects(guest, only_keys=[example.key]) == 1
     back = storage.read_spec(user_key, project_id)
     assert [key for key in HISTORY if key in back] == [], "the example came back with its old history"
+    assert back == shipped
+
+    folder = storage.project_dir(user_key, project_id)
+    (folder / "spec.trill.json").write_text(json.dumps(saved, indent=2), encoding="utf-8")
+    assert seed.seed_example_projects(guest, only_keys=[example.key]) == 1
+    back = storage.read_spec(user_key, project_id)
+    assert [key for key in HISTORY if key in back] == [], "the example came back with the history its file held"
     assert back == shipped
 
 

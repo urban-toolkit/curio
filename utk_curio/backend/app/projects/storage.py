@@ -161,6 +161,9 @@ def write_spec(user_key: str, project_id: str, spec: dict) -> Path:
     spec file (:data:`HISTORY_KEYS`): a section *spec* holds becomes the one
     on record, and one it does not hold stays as it is on record, so a writer
     that leaves the history out never erases it (:func:`drop_history` does).
+    A section the spec file on disk still holds, saved before the history
+    moved beside it, is on record there: a write that leaves it out moves it
+    into its log before the spec file is replaced.
     The logs are written first, then the spec file, so a crash between the
     two leaves the history on disk, and a spec file that still holds it is
     read as it is (:func:`read_spec_in`). All of it under the history lock,
@@ -177,9 +180,13 @@ def write_spec(user_key: str, project_id: str, spec: dict) -> Path:
         _bump_spec_revision(d)
         live = spec
         if isinstance(spec, dict):
+            left_out = [key for key in HISTORY_KEYS if key not in spec]
+            in_file = _sections_in_spec_file(d) if left_out else {}
             for key in HISTORY_KEYS:
                 if key in spec:
                     _write_section(d, key, spec[key])
+                elif key in in_file:
+                    _write_section(d, key, in_file[key])
             live = {k: v for k, v in spec.items() if k not in HISTORY_KEYS}
         p = d / SPEC_FILE
         _write_json_atomically(p, live)
@@ -187,15 +194,41 @@ def write_spec(user_key: str, project_id: str, spec: dict) -> Path:
 
 
 def drop_history(user_key: str, project_id: str) -> None:
-    """Remove the project's history logs, so its document holds no history
-    until a write gives it one. The seeder calls it before it writes an
-    example's shipped copy, which keeps no history of the copy it replaces."""
+    """Remove the project's history, from its logs and from a spec file that
+    still holds it, so its document holds no history until a write gives it
+    one. The seeder calls it before it writes an example's shipped copy,
+    which keeps no history of the copy it replaces. The write counter stays
+    as it is: the seeder's write follows."""
     d = project_dir(user_key, project_id)
-    if not (d / HISTORY_DIR).is_dir():
+    if not d.is_dir():
         return
     with _history_lock(d):
         for key in HISTORY_KEYS:
             _drop_section(d, key)
+        if _sections_in_spec_file(d):
+            spec = json.loads((d / SPEC_FILE).read_text(encoding="utf-8"))
+            _write_json_atomically(
+                d / SPEC_FILE, {k: v for k, v in spec.items() if k not in HISTORY_KEYS},
+            )
+
+
+def _sections_in_spec_file(folder: Path) -> dict:
+    """The history sections the spec file in *folder* still holds, saved
+    before the history moved beside it: none for a file written since, or
+    for none at all. A file that names neither section is not parsed."""
+    try:
+        data = (folder / SPEC_FILE).read_bytes()
+    except FileNotFoundError:
+        return {}
+    if not any(f'"{key}"'.encode("ascii") in data for key in HISTORY_KEYS):
+        return {}
+    try:
+        spec = json.loads(data)
+    except ValueError:
+        return {}
+    if not isinstance(spec, dict):
+        return {}
+    return {key: spec[key] for key in HISTORY_KEYS if key in spec}
 
 
 def _bump_spec_revision(project_dir_path: Path) -> int:
