@@ -22,6 +22,9 @@ from utk_curio.backend.app.projects.shipped import shipped_dataflows
 REPO = Path(__file__).resolve().parents[4]
 FRONTEND = REPO / "utk_curio" / "frontend" / "urban-workflows" / "src"
 SHIPPED = shipped_dataflows()
+#: Fewer than these would mean the shipped dataflows were read wrong: the round
+#: trip then runs once, to fail on that, rather than pass on what it found.
+AT_LEAST_SHIPPED = 50
 
 
 def _text(value) -> str:
@@ -63,16 +66,19 @@ def _round_trip(dataflow: dict):
     return doc, doc_mapping.doc_to_dataflow(doc)
 
 
-def test_curio_ships_dataflows_for_the_round_trip():
-    assert len(SHIPPED) >= 50, [shipped.key for shipped in SHIPPED]
-
-
-@pytest.mark.parametrize("shipped", SHIPPED, ids=lambda shipped: shipped.key)
+@pytest.mark.parametrize(
+    "shipped", SHIPPED if len(SHIPPED) >= AT_LEAST_SHIPPED else [None],
+    ids=lambda shipped: shipped.key if shipped is not None else "too-few-shipped",
+)
 def test_every_shipped_dataflow_round_trips(shipped):
     from pycrdt import Doc, create_sync_message, handle_sync_message
 
     from utk_curio.backend.app.collaboration import doc_mapping
 
+    assert shipped is not None, (
+        f"Curio ships {len(SHIPPED)} dataflows, fewer than {AT_LEAST_SHIPPED}: "
+        f"{[found.key for found in SHIPPED]}"
+    )
     dataflow = json.loads(shipped.path.read_text(encoding="utf-8"))["dataflow"]
     doc, back = _round_trip(dataflow)
     assert _text(back) == _text(doc_mapping.owned(dataflow))
@@ -156,9 +162,11 @@ _AT_LEAST = {"dataflow": 12, "node": 19, "metadata": 14, "edge": 7, "scenario": 
 
 
 def test_every_field_generate_trill_writes_has_its_place_in_the_doc():
-    from utk_curio.common import shared_constants
+    """The layout the mapping reads (``src/contracts/dataflowDoc.json``), against
+    the TypeScript that writes Trill."""
+    from utk_curio.backend.app.collaboration import doc_mapping
 
-    layout = shared_constants.read("dataflowDoc")
+    layout = doc_mapping.LAYOUT
     written = _written_by_generate_trill()
     for level, fields in written.items():
         assert len(set(fields)) >= _AT_LEAST[level], (level, fields)
@@ -212,6 +220,14 @@ def test_absent_and_empty_stay_apart():
     for dataflow in cases:
         _doc, back = _round_trip(dataflow)
         assert _text(back) == _text(dataflow), dataflow["name"]
+
+    # An empty metadata, or empty widgets, is written as none: generateTrill
+    # writes neither.
+    _doc, back = _round_trip({"nodes": [
+        {"id": "a", "type": "t", "metadata": {}},
+        {"id": "b", "type": "t", "metadata": {"widgets": []}},
+    ], "edges": []})
+    assert back["nodes"] == [{"id": "a", "type": "t"}, {"id": "b", "type": "t"}]
 
 
 def test_numbers_and_key_orders_keep_the_form_they_were_written_in():
