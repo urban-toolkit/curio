@@ -146,6 +146,31 @@ class TheCpuReadingsTest(unittest.TestCase):
         _burn_cpu()
         self.assertGreater(harness_cpu_seconds(), before)
 
+    def test_the_harness_cpu_counts_its_worker_processes(self):
+        """The users run in worker processes: a running one is read as it
+        runs, an ended one by what it reported."""
+        import os
+
+        from utk_curio.backend.tests.stress.backend_probe import (
+            forget_worker, harness_cpu_seconds, process_cpu_seconds, track_worker, worker_finished,
+        )
+
+        ended = 2 ** 22 + 7  # a pid no process holds here
+        before = harness_cpu_seconds()
+        track_worker(ended)
+        worker_finished(ended, 5.0)
+        try:
+            self.assertGreaterEqual(harness_cpu_seconds() - before, 5.0)
+            self.assertLess(harness_cpu_seconds() - before, 5.0 + 1.0)
+        finally:
+            forget_worker(ended)
+        # A running worker, read through psutil: this very process, counted twice.
+        track_worker(os.getpid())
+        try:
+            self.assertGreaterEqual(harness_cpu_seconds(), 2 * process_cpu_seconds() - 0.05)
+        finally:
+            forget_worker(os.getpid())
+
     def test_without_a_probe_the_sampler_reads_the_harness_alone(self):
         import time
 

@@ -147,7 +147,9 @@ comment lines into a node's code, a keystroke a transaction, and drags the node
 every 15 keystrokes, at five keys a second in the burst profile and at a
 person's pace in the session profile. Once every tab of the room has typed, the
 tabs check they hold the same code and places, and each stays open until its
-user's dataflow work is done. The report adds, per tier:
+user's dataflow work is done. A tier's users run in harness processes of at
+most ten, two whole rooms each, behind one start gate, so no one process
+carries every tab. The report adds, per tier:
 
 - sync times, p50, p95 and max: how long an update took from its tab to every
   other tab of the room, known by its sender's client id and clock, as Yjs
@@ -156,9 +158,9 @@ user's dataflow work is done. The report adds, per tier:
   then differ from the room's first tab's is a `diverged` one;
 - the backend's threads and resident memory before the tier, at their peak (read
   every second while it runs) and after it;
-- the CPU, user plus system, of the backend's process and of the harness's own,
-  which drives every user's calls and tab: the seconds each ran, and the cores
-  that kept busy over the tier and at most over one reading;
+- the CPU, user plus system, of the backend's process and of the harness's
+  processes, which drive every user's calls and tab: the seconds each ran, and
+  the cores that kept busy over the tier and at most over one reading;
 - the doc logs the tier's dataflows left on disk, each day's checkpoint
   (`ydoc/<doc id>/<day>.bin`) and updates (`<day>.updates`), and the size of
   the doc a tab joining at the end downloads.

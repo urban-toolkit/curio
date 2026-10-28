@@ -19,7 +19,8 @@ JSON object:
 
 The rest of the file is the harness's side: :class:`BackendProbe` runs the
 script, :func:`reading_now` stamps a reading with when it was taken and the
-harness's own CPU seconds (``resource.getrusage``), and :class:`Sampler`
+harness's CPU seconds (``resource.getrusage``, its worker processes counted),
+and :class:`Sampler`
 takes one every second or so while a tier runs.
 """
 
@@ -183,13 +184,57 @@ class BackendProbe:
             raise ProbeError(str(reading.get("error") if isinstance(reading, dict) else reading))
         return reading
 
-def harness_cpu_seconds() -> float:
-    """This process's CPU seconds, user plus system, of all its threads: the
-    harness's own, its users' tabs and HTTP calls included."""
+#: The harness's worker processes, each running some of a tier's users: pid ->
+#: its own CPU seconds once it reported them at its end, None while it runs.
+_workers: dict = {}
+_workers_lock = threading.Lock()
+
+
+def process_cpu_seconds() -> float:
+    """This process's CPU seconds, user plus system, of all its threads."""
     import resource
 
     usage = resource.getrusage(resource.RUSAGE_SELF)
     return usage.ru_utime + usage.ru_stime
+
+
+def track_worker(pid: int) -> None:
+    """Count the worker process *pid* in the harness's CPU from now on."""
+    with _workers_lock:
+        _workers[pid] = None
+
+
+def worker_finished(pid: int, cpu_seconds: float) -> None:
+    """The worker *pid* ended having run *cpu_seconds*, which it read itself."""
+    with _workers_lock:
+        _workers[pid] = cpu_seconds
+
+
+def forget_worker(pid: int) -> None:
+    with _workers_lock:
+        _workers.pop(pid, None)
+
+
+def harness_cpu_seconds() -> float:
+    """The harness's CPU seconds, user plus system: this process's and its
+    worker processes', every user's dataflow calls and tab among them. A
+    running worker is read through psutil, an ended one by what it reported;
+    the probe's own commands are not counted."""
+    total = process_cpu_seconds()
+    with _workers_lock:
+        workers = dict(_workers)
+    for pid, final in workers.items():
+        if final is not None:
+            total += final
+            continue
+        try:
+            import psutil
+
+            times = psutil.Process(pid).cpu_times()
+            total += times.user + times.system
+        except Exception:  # noqa: BLE001 - ended before it reported: counted once it does
+            pass
+    return total
 
 
 def reading_now(probe, project_ids=(), started=None) -> tuple:

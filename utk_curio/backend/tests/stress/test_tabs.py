@@ -205,6 +205,25 @@ class WhereATabConnectsAndWorksTest(unittest.TestCase):
             self.assertGreater(pacing.key_gap(), 0)
             self.assertGreater(pacing.pause(), 0)
 
+    def test_a_tier_runs_in_processes_of_whole_rooms_ten_users_at_most(self):
+        """One process carrying every tab of a 50-user burst measured itself;
+        a room's tabs share their ledger and phases, so a room stays whole."""
+        from utk_curio.backend.tests.stress.run import USERS_PER_PROCESS, tier_slices
+
+        self.assertEqual(USERS_PER_PROCESS, 10)
+        slices = tier_slices(100, 5)
+        self.assertEqual(len(slices), 10)
+        self.assertEqual(sorted(i for part in slices for i in part), list(range(100)))
+        for part in slices:
+            self.assertLessEqual(len(part), 10)
+            self.assertEqual(part, list(range(part[0], part[0] + len(part))))
+            for room in {i // 5 for i in part}:
+                self.assertLessEqual(set(range(room * 5, room * 5 + 5)), set(part), f"room {room} is split")
+        self.assertEqual(tier_slices(12, 5), [list(range(10)), [10, 11]])
+        self.assertEqual(tier_slices(1, 5), [[0]])
+        self.assertEqual(tier_slices(25, 0), [list(range(10)), list(range(10, 20)), list(range(20, 25))])
+        self.assertEqual(tier_slices(7, 12), [list(range(7))], "a room larger than a process stays whole")
+
     def test_a_tier_is_put_in_rooms_of_the_room_size(self):
         from utk_curio.backend.tests.stress.run import build_rooms
 

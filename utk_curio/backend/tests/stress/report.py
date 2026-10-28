@@ -167,9 +167,9 @@ def cpu_track(readings: list, seconds_key: str, at_key: str) -> dict | None:
 
 
 def harness_summary(start: dict | None, samples: list[dict], end: dict | None) -> dict:
-    """The harness's own CPU over a tier (``backend_probe.reading_now``): one
-    process drives every user's dataflow calls and tab, so beside the
-    backend's it says which of the two was busy."""
+    """The harness's CPU over a tier (``backend_probe.reading_now``), its
+    processes together, which drive every user's dataflow calls and tab: beside
+    the backend's, it says which side was busy."""
     return {"cpu": cpu_track([start, *samples, end], "harness_cpu_seconds", "harness_at")}
 
 
@@ -458,7 +458,7 @@ def _cpu_table(tiers: list[dict]) -> list[str]:
                for tier in tiers):
         return []
     lines = ["", "CPU over each tier, user plus system: the seconds the backend's process "
-                 "and the harness's (every user's calls and tab) ran, and the cores that "
+                 "and the harness's processes (every user's calls and tab) ran, and the cores that "
                  "kept busy over the tier and at most over one reading.", ""]
     lines.append("| Tier | Backend CPU | Backend cores (tier / peak) | Harness CPU | Harness cores (tier / peak) |")
     lines.append("| ---: | ----------: | --------------------------: | ----------: | --------------------------: |")
