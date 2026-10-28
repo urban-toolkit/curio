@@ -7,9 +7,9 @@ that chat offers it, ``/<name>`` hands it to the run with the message, and the
 reply names the skills its run used, in a line under it. The run's system turn
 is read back from the scripted provider, since the page cannot show it.
 
-Frames for the owner: the Skills rail's grid and drawer, a skill's details, the
-agent's Skills section after the add, the chat's ``/`` list, and the reply's
-line of skills.
+Frames for the owner: the Skills rail's grid and drawer, ``map-edits``' details,
+the agent's Skills section after the add, the chat's ``/`` list, and the
+reply's line of skills.
 
 Run::
 
@@ -46,6 +46,8 @@ STEM = "agent-skills"
 FINDER = "agent.curio.dataset-finder@1"
 #: The skill the test adds to the Dataset Finder, which its manifest leaves out.
 ADDED = "node-functions"
+#: The skill whose details the test frames: it serves one base node kind.
+DETAILED = "map-edits"
 MODAL = '[data-curio-modal-shell="true"]'
 BROWSE_DRAWER = '[data-curio-browse-drawer="true"]'
 
@@ -76,7 +78,9 @@ def _the_catalog_page_lists_the_skills(page, frontend: str) -> None:
 
 
 def _a_skills_details_open_in_a_modal(page) -> None:
-    card = page.locator(f'article[data-skill-name="{ADDED}"]')
+    """``map-edits``' details: it serves the base package's one Map Editor,
+    so no package or template added later moves this frame."""
+    card = page.locator(f'article[data-skill-name="{DETAILED}"]')
     card.scroll_into_view_if_needed()
     card.get_by_role("button", name="View details").click()
     dialog = page.get_by_role("dialog", name="Skill details")
@@ -88,7 +92,7 @@ def _a_skills_details_open_in_a_modal(page) -> None:
     expect(dialog.locator("summary")).to_have_text("What an agent reads · SKILL.md", timeout=15000)
     assert dialog.locator("details").first.get_attribute("open") is None
     serves = dialog.locator("section").filter(has=page.get_by_role("heading", name="Serves", exact=True))
-    expect(serves.get_by_text("Data Loading", exact=True)).to_be_visible()
+    expect(serves.get_by_role("listitem")).to_have_text(["Map Editor"])
     save_workflow_test_screenshot(page, STEM, test_name="skill-details", fit_reactflow=False, clip_selector=MODAL)
     page.keyboard.press("Escape")
     expect(dialog).to_have_count(0, timeout=10000)
