@@ -14,6 +14,34 @@
   "endpoint": "agents_api.read_definition"
  },
  {
+  "rule": "/api/agents/definitions/<coord>/skills",
+  "methods": [
+   "DELETE"
+  ],
+  "endpoint": "agents_api.restore_agent_skills"
+ },
+ {
+  "rule": "/api/agents/definitions/<coord>/skills",
+  "methods": [
+   "GET"
+  ],
+  "endpoint": "agents_api.list_agent_skills"
+ },
+ {
+  "rule": "/api/agents/definitions/<coord>/skills",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.add_agent_skill"
+ },
+ {
+  "rule": "/api/agents/definitions/<coord>/skills/<name>",
+  "methods": [
+   "DELETE"
+  ],
+  "endpoint": "agents_api.remove_agent_skill"
+ },
+ {
   "rule": "/api/agents/imports",
   "methods": [
    "GET"
@@ -231,6 +259,13 @@
   "endpoint": "agents_api.cancel_simulate"
  },
  {
+  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/skills",
+  "methods": [
+   "GET"
+  ],
+  "endpoint": "agents_api.list_attachment_skills"
+ },
+ {
   "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/solve",
   "methods": [
    "POST"
@@ -306,5 +341,19 @@
    "PUT"
   ],
   "endpoint": "agents_api.put_catalog_settings"
+ },
+ {
+  "rule": "/api/agents/skills",
+  "methods": [
+   "GET"
+  ],
+  "endpoint": "agents_api.list_skills"
+ },
+ {
+  "rule": "/api/agents/skills/<name>",
+  "methods": [
+   "GET"
+  ],
+  "endpoint": "agents_api.read_skill"
  }
 ]
