@@ -48,6 +48,7 @@ import { openDataflowFile } from "../../../utils/openedDataflowFile";
 import { LEAVE_DATAFLOW, useLeaveGuard } from "../../../hook/useLeaveGuard";
 import { useSharedView } from "../../../hook/useSharedView";
 import ShareMenu from "./ShareMenu";
+import InviteEditorsDialog from "../../collab/InviteEditorsDialog";
 import DataflowCategoryInput from "../../projects/DataflowCategoryInput";
 import { projectsApi, type ProjectSummary } from "../../../api/projectsApi";
 import { SHARE_UUID_RE } from "../../../utils/shareLinks";
@@ -58,10 +59,11 @@ export default function UpMenu() {
     const [librariesOpen, setLibrariesOpen] = useState(false);
     const [activeMenu, setActiveMenu] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
+    const [inviteOpen, setInviteOpen] = useState(false);
 
     const loadTrillInputRef = useRef<HTMLInputElement>(null);
     const navigate = useNavigate();
-    const { skipProjectPage } = useUserContext();
+    const { skipProjectPage, user } = useUserContext();
     const {
         workflowNameRef,
         projectId,
@@ -85,6 +87,7 @@ export default function UpMenu() {
         autoRun,
         setAutoRun,
         autoRunAvailable,
+        viewerMode,
     } = useFlowContext();
 
     /** Run *action* now, or ask first when there is unsaved work to lose.
@@ -93,11 +96,17 @@ export default function UpMenu() {
     const leaveWithGuard = (body: string, action: () => void) => guardLeave(action, body);
 
     const collab = useCollab();
-    // The ``isSharedView`` gate MainCanvas reads: when collab is on, peers
-    // loaded via the shared endpoint are full editors (their edits sync over
-    // the socket to the owner), so the read-only banner / gating must stand
-    // down.
+    // The ``isSharedView`` gate MainCanvas reads: a watcher's canvas is
+    // read-only, and an editor the owner invited edits it, so the read-only
+    // banner and the editing items stand down for them.
     const isSharedView = useSharedView();
+    // Saving is the owner's: an editor, like a watcher, saves a copy, and has
+    // no save status of their own.
+    const savesHere = viewerMode !== "shared";
+    // Share > Invite editors, for the owner of a saved dataflow with
+    // collaboration on. A guest invites nobody: the shared guest owns the
+    // examples every hosted guest opens.
+    const canInviteEditors = collab.enabled && savesHere && Boolean(projectId) && !user?.is_guest;
     const {
         workflowName,
         setWorkflowName,
@@ -400,12 +409,12 @@ export default function UpMenu() {
                         Load dataflow
                     </HeaderMenuItem>
                     <HeaderMenuDivider />
-                    {!skipProjectPage && !isSharedView && (
+                    {!skipProjectPage && savesHere && (
                         <HeaderMenuItem icon={faFloppyDisk} onClick={handleSave} disabled={saving}>
                             {saving ? "Saving..." : "Save dataflow"}
                         </HeaderMenuItem>
                     )}
-                    {isSharedView && (
+                    {!savesHere && (
                         <HeaderMenuItem icon={faFloppyDisk} onClick={handleSaveCopy} disabled={saving}>
                             {saving ? "Saving..." : "Save dataflow"}
                         </HeaderMenuItem>
@@ -548,6 +557,7 @@ export default function UpMenu() {
                     onToggle={() => toggleMenu("share")}
                     onClose={closeShare}
                     projectDirty={projectDirty}
+                    onInviteEditors={canInviteEditors ? () => setInviteOpen(true) : undefined}
                 />
 
                 {/* Real-time collaboration side panel toggle. Only rendered
@@ -584,8 +594,9 @@ export default function UpMenu() {
                     same as a dirty one; "Saved" means, and only means, "what
                     you see is on disk". The word says it as well as the
                     colour, so the state does not rest on telling two hues
-                    apart. Hidden for a shared viewer, who has nothing to save. */}
-                {!isSharedView && (
+                    apart. Hidden on a tab that does not save the dataflow, a
+                    watcher's or an editor's: its owner's tab saves it. */}
+                {savesHere && (
                     <button
                         type="button"
                         className={clsx(headerStyles.barButton, styles.saveStatus)}
@@ -685,6 +696,9 @@ export default function UpMenu() {
                 open={librariesOpen}
                 closeModal={() => setLibrariesOpen(false)}
             />
+            {inviteOpen && projectId && (
+                <InviteEditorsDialog projectId={projectId} onClose={() => setInviteOpen(false)} />
+            )}
             {leaveDialog}
         </>
     );

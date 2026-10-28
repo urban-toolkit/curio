@@ -1,13 +1,13 @@
 import React from "react";
 import { useHref } from "react-router-dom";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faLink, faTableColumns } from "@fortawesome/free-solid-svg-icons";
+import { faLink, faTableColumns, faUserPlus } from "@fortawesome/free-solid-svg-icons";
 
 import { useToastContext } from "../../../providers/ToastProvider";
 import { copyText } from "../../../utils/clipboard";
 import { absoluteUrl, dashboardPath, dataflowPath } from "../../../utils/shareLinks";
 import menuStyles from "../darkMenu.module.css";
-import { HeaderMenu, HeaderMenuItem } from "./HeaderMenu";
+import { HeaderMenu, HeaderMenuDivider, HeaderMenuItem } from "./HeaderMenu";
 
 export const SAVE_FIRST_MESSAGE = "Save the dataflow first to share it.";
 export const STALE_DASHBOARD_MESSAGE =
@@ -23,6 +23,9 @@ export interface ShareMenuProps {
   onClose: () => void;
   /** Unsaved edits are not in what a visitor would open. */
   projectDirty?: boolean;
+  /** Opens the dataflow's editors, for its owner with collaboration on. The
+   *  item is not offered without it. */
+  onInviteEditors?: () => void;
 }
 
 /**
@@ -33,7 +36,8 @@ export interface ShareMenuProps {
  * bars must not drift over what "share this" means.
  *
  * Both links are ordinary URLs into this app. A dataflow link opens the canvas,
- * read-only for anyone but the owner; a dashboard link opens the pinned tiles.
+ * read-only for anyone but the owner and the editors the owner invited (Invite
+ * editors, with collaboration on); a dashboard link opens the pinned tiles.
  * Neither mints a token or changes what the project already grants.
  */
 export function ShareMenu({
@@ -43,6 +47,7 @@ export function ShareMenu({
   onToggle,
   onClose,
   projectDirty = false,
+  onInviteEditors,
 }: ShareMenuProps) {
   const { showToast } = useToastContext();
   // ``useHref`` applies the router's basename, which a hand-built path would
@@ -104,6 +109,21 @@ export function ShareMenu({
       >
         Copy dataflow link
       </HeaderMenuItem>
+      {onInviteEditors && (
+        <>
+          <HeaderMenuDivider />
+          <HeaderMenuItem
+            icon={faUserPlus}
+            testId="invite-editors-menu-item"
+            onClick={() => {
+              onClose();
+              onInviteEditors();
+            }}
+          >
+            Invite editors
+          </HeaderMenuItem>
+        </>
+      )}
     </HeaderMenu>
   );
 }

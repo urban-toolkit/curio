@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import Editor, { Monaco } from "@monaco-editor/react";
 import { ICodeData } from "../../types";
 import { useCollab, CodeProposal } from "../../providers/CollaborationProvider";
+import { canEditRole, isOwnParticipant, otherEditors } from "../../providers/collab/participants";
 import { useMonacoExternalValue } from "../../hook/useMonacoExternalValue";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { registerRunNodeAction } from "./runNodeMonacoAction";
@@ -124,7 +125,9 @@ export default function GrammarEditor({
     const proposeOnBlur = () => {
         const c = collabRef.current;
         if (!c.enabled || !c.connected) return;
-        if (c.users.length <= 1) return;
+        // As in the code editor: a watcher proposes nothing, and a change
+        // waits for the others who edit.
+        if (!canEditRole(c.role) || otherEditors(c.users, c.participantId).length === 0) return;
         const local = grammarRef.current;
         const baseline = baselineRef.current;
         if (local === baseline) return;
@@ -187,8 +190,7 @@ export default function GrammarEditor({
         const unsub = collab.onRemote("code_change_applied", (payload) => {
             const prop = payload as CodeProposal;
             if (!prop || prop.nodeId !== nodeId || prop.kind !== "grammar") return;
-            if (collab.currentUserId != null &&
-                prop.proposed_by?.user_id === collab.currentUserId) {
+            if (isOwnParticipant(collab.participantId, prop.proposed_by)) {
                 baselineRef.current = prop.newValue;
                 return;
             }
@@ -196,14 +198,13 @@ export default function GrammarEditor({
             setGrammar(prop.newValue);
         });
         return unsub;
-    }, [collab.enabled, collab.onRemote, collab.currentUserId, nodeId]);
+    }, [collab.enabled, collab.onRemote, collab.participantId, nodeId]);
 
     const pendingProposal = collab.proposals.find(
         (p) => p.nodeId === nodeId && p.kind === "grammar",
     );
     const proposalIsMine = Boolean(
-        pendingProposal && collab.currentUserId != null &&
-        pendingProposal.proposed_by?.user_id === collab.currentUserId,
+        pendingProposal && isOwnParticipant(collab.participantId, pendingProposal.proposed_by),
     );
 
     useEffect(() => {
