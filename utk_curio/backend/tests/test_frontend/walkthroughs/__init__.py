@@ -34,7 +34,7 @@ from .framework import (  # noqa: F401
     Walkthrough,
     WALKTHROUGHS,
 )
-from .steps import load_example_spec  # noqa: F401
+from .steps import load_example_spec, opening_spec, opens_on_nodes  # noqa: F401
 
 # Importing a scene module registers its scenes in WALKTHROUGHS, in the order the
 # module defines them. So the order of these imports is the order of the
@@ -52,6 +52,7 @@ from . import (  # noqa: F401
     column_filter,
     agent_chat,
     simple_view,
+    crown_heights,
 )
 
 from .provenance import PROVENANCE_EXAMPLE  # noqa: F401

@@ -18,7 +18,10 @@ So, on a fresh dataflow at the default 1280x720 viewport:
 * each catalog button opens its own drawer over the dataflow;
 * Monitor and API Settings open as drawers over the dataflow, which stays
   where it was;
-* the dataflow's title and the left rail start below the bar.
+* the dataflow's title and the left rail start below the bar;
+* a title long enough to reach the dock of canvas agents, centered beside
+  it, never runs under the dock, also while it is renamed, and a title with
+  room leaves the dock where it always was.
 
 Run::
 
@@ -31,13 +34,18 @@ import uuid
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
+from utk_curio.backend.app.agents.domain import builtin
+
 from .utils import (
+    api_json,
     require_owner_view,
     require_project_page,
     require_user_auth,
     signup_e2e_user,
+    stub_login_and_enter_workflow,
     wait_for_drawer_closed,
     wait_for_projects_page,
 )
@@ -211,6 +219,91 @@ def test_the_canvas_wears_the_shared_bar_with_the_catalogs_in_it(
     if rail_top < m["bottom"]:
         failures.append(f"the left rail starts at y={rail_top}, under the bar (y={m['bottom']})")
     assert not failures, "\n".join(failures)
+
+
+#: The Crown Heights example's name: at 1280 wide, long enough to reach the
+#: dock of canvas agents centered beside it.
+LONG_TITLE = "Crown Heights shade from 1550 Bedford Avenue"
+
+DOCK = '[role="toolbar"][aria-label="Canvas agents"]'
+
+#: The title as shown (its name, or the name's input while renaming) and the
+#: dock, each as [left, top, right, bottom], whether they meet, and the
+#: dock's own style attribute.
+_TITLE_AND_DOCK = """(dock) => {
+  const name = document.querySelector('[data-curio-canvas-title]').firstElementChild;
+  const box = (el) => { const r = el.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; };
+  const [a, b] = [box(name), box(document.querySelector(dock))];
+  const meet = a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+  return { title: a, dock: b, meet, style: document.querySelector(dock).getAttribute('style') };
+}"""
+
+
+def _title_clear_of_dock(page, what: str) -> None:
+    """The title and the dock come apart within a moment of *what*: the dock
+    moves once fonts and sizes settle."""
+    try:
+        page.wait_for_function(f"(dock) => !({_TITLE_AND_DOCK})(dock).meet", arg=DOCK, timeout=5000)
+    except PlaywrightTimeoutError:
+        shown = page.evaluate(_TITLE_AND_DOCK, DOCK)
+        raise AssertionError(
+            f"{what}: the title {shown['title']} runs under the agents' dock {shown['dock']}"
+        ) from None
+
+
+def test_a_long_title_never_runs_under_the_agents_dock(
+    app_frontend: "FrontendPage", current_server: str, page
+):
+    require_user_auth()
+    require_project_page()
+
+    spec = {
+        "name": LONG_TITLE,
+        "dataflow": {"name": LONG_TITLE, "nodes": [], "edges": [], "task": "", "timestamp": 0},
+    }
+    session = stub_login_and_enter_workflow(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name="Title Tester",
+        username=f"title_{uuid.uuid4().hex[:10]}",
+        project_name=LONG_TITLE,
+        project_spec=spec,
+    )
+    require_owner_view(page)
+    # A canvas agent puts the dock on the canvas.
+    builder = next(m for m in builtin.list_builtin_manifests() if m.agent_id == "agent.curio.dataflow-builder")
+    base = f"{current_server}/api/agents/projects/{session['project']['id']}"
+    api_json(f"{base}/install", session["token"], method="POST", payload={"coord": builder.dir_name})
+    api_json(
+        f"{base}/attachments", session["token"], method="POST",
+        payload={"coord": builder.dir_name, "target": {"kind": "canvas"}},
+    )
+    page.reload()
+    expect(page.locator(DOCK)).to_be_visible(timeout=45000)
+    name = page.locator("[data-curio-canvas-title] h1")
+    expect(name).to_have_text(LONG_TITLE, timeout=20000)
+    page.evaluate("() => document.fonts.ready.then(() => true)")
+    _title_clear_of_dock(page, "the dataflow opened")
+
+    # Renamed, the title is an input, and still clear of the dock.
+    name.click()
+    field = page.locator("[data-curio-canvas-title] input")
+    expect(field).to_be_visible()
+    _title_clear_of_dock(page, "the title opened for renaming")
+
+    # A short name leaves the dock where its stylesheet centers it: no style
+    # of its own (React leaves an empty one once it drops a style).
+    field.fill("Short")
+    field.press("Enter")
+    expect(name).to_have_text("Short", timeout=10000)
+    try:
+        page.wait_for_function(
+            f"(dock) => !({_TITLE_AND_DOCK})(dock).style", arg=DOCK, timeout=5000,
+        )
+    except PlaywrightTimeoutError:
+        shown = page.evaluate(_TITLE_AND_DOCK, DOCK)
+        raise AssertionError(f"with a short title the dock is moved: style {shown['style']!r}") from None
 
 
 def test_each_catalog_button_opens_its_own_drawer(

@@ -325,5 +325,31 @@ export function useConnect({
         [reactFlow.getNodes, reactFlow.getEdges]
     );
 
-    return { onConnect, isValidConnection };
+    // Edges an agent's apply adds reach the canvas as they are, not through
+    // onConnect. Each still hands what its source holds to its own target and
+    // leaves the target stale, as a drawn connection does above, so a node a
+    // plan wires to results the canvas already holds gets them. Each edge
+    // joins the graph as it stands plus the added edges before it.
+    const handOverAlongEdges = useCallback(
+        (added: Edge[]) => {
+            const addedIds = new Set(added.map((edge) => edge.id));
+            const joined: Edge[] = reactFlow.getEdges().filter((edge) => !addedIds.has(edge.id));
+            for (const edge of added) {
+                const target = reactFlow.getNodes().find((node) => node.id === edge.target);
+                markNodeStaleRef.current(edge.target);
+                applyOutput(
+                    (target ? getUnversionedFlowNodeType(target) : undefined) as NodeType,
+                    edge.target,
+                    edge.source,
+                    edge.sourceHandle ?? "out",
+                    edge.targetHandle ?? "in",
+                    joined,
+                );
+                joined.push(edge);
+            }
+        },
+        [reactFlow, applyOutput, markNodeStaleRef],
+    );
+
+    return { onConnect, isValidConnection, handOverAlongEdges };
 }

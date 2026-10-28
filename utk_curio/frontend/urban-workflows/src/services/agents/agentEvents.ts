@@ -40,9 +40,12 @@ export type AgentCreatedNode = {
    * widgets and, on a copy, its lineage (``data.widgets``, ``data.copiedFrom``),
    * for a Spatial Join its operation and output (``data.spatialJoin``), for a
    * Data Pool its modes (``data.dataPool``) and for a Simple View its image
-   * column (``data.simpleVis``). */
+   * column (``data.simpleVis``). #412: its renamed header, which a plan's
+   * node carries as the shipped examples' nodes do
+   * (``data.packageTemplateLabel``). */
   metadata?: {
     appearance?: { backgroundColor?: string };
+    packageTemplateLabel?: string;
     widgets?: AgentPlanWidget[];
     copiedFrom?: string[];
     spatialJoin?: AgentSpatialJoinSetting;

@@ -176,6 +176,23 @@ describe('apply→canvas bridge integration (dev/48 §3.3 / dev/51 regression)',
     expect(api.nodes.filter((n: any) => n.id === CREATED.id)).toHaveLength(1);
   });
 
+  it('a node a plan names lands with that name as its header (#412), as a load reads it', async () => {
+    renderCanvas();
+    await flush();
+    const name = 'Load existing buildings';
+    await act(async () => {
+      notifyAgentCanvasMutation({
+        kind: 'graph-created',
+        planId: 'plan-names-its-nodes',
+        nodes: [{ ...CREATED, title: name, metadata: { packageTemplateLabel: name } }],
+        edges: [],
+      });
+    });
+    await flush();
+    const inserted = api.nodes.find((n: any) => n.id === CREATED.id);
+    expect(inserted?.data?.packageTemplateLabel).toBe(name);
+  });
+
   it('node-content-applied updates the live node data.code (the dev/41 clobber fix)', async () => {
     renderCanvas();
     await flush();
@@ -223,5 +240,69 @@ describe('apply→canvas bridge integration (dev/48 §3.3 / dev/51 regression)',
     expect(data.code).toBe("print('new')");
     // A widget's new value leaves its node out of date, as the Widgets tab's does.
     expect(mockMarkNodeStale).toHaveBeenCalledWith(CREATED.id);
+  });
+});
+
+// A node that already ran, and a node an agent then wires to it.
+const PLANNED = {
+  id: 'planned-node-id',
+  type: 'curio.builtin/computation-analysis',
+  content: '',
+  goal: 'Plot it',
+  x: 900,
+  y: 60,
+};
+const RESULT = 'ran/its-result.parquet';
+
+/** The canvas with CREATED on it, holding its result as a run leaves it. */
+async function canvasWithARunNode() {
+  renderCanvas();
+  await flush();
+  await act(async () => {
+    notifyAgentCanvasMutation({ kind: 'node-created', node: CREATED });
+  });
+  await flush();
+  await act(async () => {
+    api.setOutputs(() => [{ nodeId: CREATED.id, output: RESULT }]);
+  });
+  await flush();
+}
+
+describe('edges an agent applies hand over what their sources hold, as a drawn connection does', () => {
+  it('a node a whole applied plan wires to a node that already ran gets its result', async () => {
+    mockMarkNodeStale.mockClear();
+    await canvasWithARunNode();
+    await act(async () => {
+      notifyAgentCanvasMutation({
+        kind: 'graph-created',
+        planId: 'plan-reads-a-result',
+        nodes: [PLANNED],
+        edges: [{ id: 'e-reads', source: CREATED.id, target: PLANNED.id }],
+      });
+    });
+    await flush();
+    const planned = api.nodes.find((n: any) => n.id === PLANNED.id);
+    expect(planned?.data?.input).toEqual({ path: RESULT });
+    expect(planned?.data?.source).toBe(CREATED.id);
+    expect(mockMarkNodeStale).toHaveBeenCalledWith(PLANNED.id);
+  });
+
+  it('a node a plan created gets its result when the plan\'s edges are applied one review at a time', async () => {
+    await canvasWithARunNode();
+    await act(async () => {
+      notifyAgentCanvasMutation({ kind: 'node-created', node: PLANNED });
+    });
+    await flush();
+    await act(async () => {
+      notifyAgentCanvasMutation({
+        kind: 'edges-created',
+        batchId: 'batch-reads-a-result',
+        edges: [{ id: 'e-reads-later', source: CREATED.id, target: PLANNED.id }],
+      });
+    });
+    await flush();
+    const planned = api.nodes.find((n: any) => n.id === PLANNED.id);
+    expect(planned?.data?.input).toEqual({ path: RESULT });
+    expect(planned?.data?.source).toBe(CREATED.id);
   });
 });

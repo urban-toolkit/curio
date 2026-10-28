@@ -1059,7 +1059,19 @@ def _created_plan_node(proposal: dict, plan_node: dict, ref: str, nodes: list,
     )
     if metadata:
         created["metadata"] = metadata
+    _name_as_planned(created, plan_node)
     return created
+
+
+def _name_as_planned(created: dict, plan_node: dict) -> None:
+    """Name a node a plan creates as the plan names it, the way the shipped
+    examples name their nodes: its title, and its header (#412,
+    ``metadata.packageTemplateLabel``), which the canvas shows in place of its
+    template's name."""
+    title = plan_node.get("title")
+    if title:
+        created["title"] = title
+        created.setdefault("metadata", {})["packageTemplateLabel"] = title
 
 
 def _log_plan_node_applied(user_key, project_id, session_id, attachment_id, proposal_id,
@@ -1773,6 +1785,7 @@ def _create_plan_nodes(user_key, spec: dict, nodes: list, plan: dict, proposal: 
         )
         if metadata:
             created["metadata"] = metadata
+        _name_as_planned(created, plan_node)
         nodes.append(created)
         created_nodes.append(created)
         # dev/126: the whole-plan apply gives every created node its agents,

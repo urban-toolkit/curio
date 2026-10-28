@@ -10,7 +10,7 @@ import re
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from ..utils import REPO_ROOT, frame_node, wait_for_drawer_closed
-from .framework import Ctx
+from .framework import Ctx, Walkthrough
 
 
 EXAMPLES_DIR = os.path.join(REPO_ROOT, "docs", "examples")
@@ -24,6 +24,20 @@ def load_example_spec(name: str) -> dict:
     """One of the curated example dataflows, as a project spec."""
     with open(os.path.join(EXAMPLES_DIR, name), encoding="utf-8") as fh:
         return json.load(fh)
+
+
+def opening_spec(walk: Walkthrough) -> dict | None:
+    """The spec *walk* opens on: its example, cut back by its ``start`` when it
+    has one, or ``None`` for an empty dataflow."""
+    if not walk.example:
+        return None
+    spec = load_example_spec(walk.example)
+    return walk.start(spec) if walk.start else spec
+
+
+def opens_on_nodes(spec: dict | None) -> bool:
+    """Whether a journey opening on *spec* has nodes on its canvas to wait for."""
+    return bool(spec and (spec.get("dataflow") or {}).get("nodes"))
 
 
 def first_node_of_type(example: str, node_type: str, *, containing: str = "") -> str:

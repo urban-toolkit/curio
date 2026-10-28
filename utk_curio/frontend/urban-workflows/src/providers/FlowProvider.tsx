@@ -79,6 +79,7 @@ export const FlowContext = createContext<FlowContextProps>({
     onNodesChange: () => { },
     onEdgesChange: () => { },
     onConnect: () => { },
+    handOverAlongEdges: () => { },
     isValidConnection: () => true,
     onEdgesDelete: () => { },
     onNodesDelete: () => { },
@@ -353,7 +354,7 @@ const FlowProvider = ({
         nodeEditProv, markDirtyRef,
     });
 
-    const { onConnect, isValidConnection } = useConnect({
+    const { onConnect, isValidConnection, handOverAlongEdges } = useConnect({
         markDirtyRef, reactFlow, showToast, markNodeStaleRef, applyOutput, setEdges,
         workflowNameRef, collabRef, outputsRef,
     });
@@ -529,6 +530,7 @@ const FlowProvider = ({
                 onNodesChange,
                 onEdgesChange,
                 onConnect,
+                handOverAlongEdges,
                 isValidConnection,
                 onEdgesDelete,
                 onNodesDelete,

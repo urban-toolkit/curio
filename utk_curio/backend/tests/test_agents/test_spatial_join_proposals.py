@@ -109,7 +109,10 @@ class TestAPlannedJoin:
         body = routes.TestPerNodePlanApply()._apply_node(
             client, token, alice_project, att_id, proposal["proposalId"], "join",
         ).get_json()
-        assert body["createdNode"]["metadata"] == {"spatialJoin": {"predicate": "nearest"}}
+        # Beside the header the plan names it with.
+        assert body["createdNode"]["metadata"] == {
+            "spatialJoin": {"predicate": "nearest"}, "packageTemplateLabel": "Labels per neighborhood",
+        }
 
     def test_an_operation_the_join_has_not_is_refused_in_its_own_words(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch

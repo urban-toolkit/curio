@@ -127,9 +127,10 @@ class TestAPlannedPoolAndView:
         )
         apply_node = routes.TestPerNodePlanApply()._apply_node
         pool = apply_node(client, token, alice_project, att_id, proposal["proposalId"], "pool").get_json()
-        assert pool["createdNode"]["metadata"] == {"dataPool": both}
+        # Beside the header the plan names it with.
+        assert pool["createdNode"]["metadata"] == {"dataPool": both, "packageTemplateLabel": "Picked photos"}
         view = apply_node(client, token, alice_project, att_id, proposal["proposalId"], "view").get_json()
-        assert view["createdNode"]["metadata"] == {"simpleVis": OVERLAYS}
+        assert view["createdNode"]["metadata"] == {"simpleVis": OVERLAYS, "packageTemplateLabel": "Overlays"}
 
     def test_an_explicit_overwrite_is_the_pools_default_and_sets_nothing(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
