@@ -541,6 +541,9 @@ def test_a_chat_on_a_node_is_handed_its_nodes_skills_and_still_lists_the_rest(
     (NB, "package.extend", {}, CODE_SKILLS),
     (NB, "node.kind.author", {}, CODE_SKILLS),
     (NB, "package.recommend", {"mission": "count"}, []),
+    (NB, "node.build", {"nodeIntent": "count the rows"}, CODE_SKILLS),
+    (NB, "node.build", {"nodeId": "chart"}, [*VEGA_SKILLS, "node-functions", "catalogs"]),
+    (NB, "dataset.fetch.author", {"nodeIntent": "fetch the stations"}, CODE_SKILLS),
     (DF, "dataset.discover", {"mission": "air quality"}, ["catalogs"]),
     (DF, "dataset.discover", {"nodeContext": {"nodeType": "curio.builtin/data-loading"}}, ["catalogs"]),
     (DF, "dataset.select", {}, []),
@@ -558,7 +561,9 @@ def test_a_run_with_no_tools_is_handed_the_skills_its_task_needs(tmp_curio, coor
     """A run that writes or checks a node, the node's; a run that writes
     code for no node, node code's; a mode that reads the dataflow, those of
     its nodes and features; and a capability's own, here the Dataset Finder's
-    ``catalogs``. Never a skill the agent does not name."""
+    ``catalogs`` and node code's for the Node Builder's runs that build a node
+    for another agent, after the named node's. Never a skill the agent does
+    not name."""
     skill_runs = _skill_runs()
     spec = {"dataflow": {
         "nodes": [

@@ -79,8 +79,8 @@ LISTING = {
     "agent.curio.node-builder@1": {
         "chat": FEATURES,
         "chat on a node": BY_KIND,
-        "node.build": [],
-        "dataset.fetch.author": [],
+        "node.build": CODE,
+        "dataset.fetch.author": CODE,
         "node.content.generate": BY_KIND,
         "package.recommend": [],
         "package.build": CODE,
@@ -222,10 +222,21 @@ def test_each_agent_names_only_skills_curio_ships_and_each_card_chat_loads_them(
     from utk_curio.backend.app.agents.domain import builtin, skills
 
     shipped = {folder.name for folder in skills.shipped_folders()}
+    own = {}
     for m in builtin.list_builtin_manifests():
         assert m.skills is not None and set(m.skills) <= shipped - set(CORE), m.dir_name
         for capability in m.capabilities:
-            assert set(capability.skills) <= shipped, (m.dir_name, capability.id)
+            assert set(capability.skills) <= set(m.skills), (m.dir_name, capability.id)
+            if capability.skills:
+                own[f"{m.dir_name} {capability.id}"] = list(capability.skills)
+    # The capabilities that write node code for another agent with no node
+    # named, and the Dataset Finder's search, name their own.
+    assert own == {
+        "agent.curio.node-builder@1 node.build": CODE,
+        "agent.curio.node-builder@1 dataset.fetch.author": CODE,
+        "agent.curio.dataset-finder@1 dataset.discover": ["catalogs"],
+    }
+    for m in builtin.list_builtin_manifests():
         assert "skill.read" not in [tool.id for tool in m.tools], "skill.read is granted by the catalog, not asked for"
         if m.catalog.listed:
             chat = skill_runs.for_chat(KEY, PID, m, _spec(), {"kind": "canvas"},

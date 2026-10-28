@@ -101,5 +101,7 @@ test("the guide defines each of its four words once and never says job", () => {
     for (const word of ["In chat", "Tools", "Modes", "Skills"]) {
         expect({ word, definitions: doc.split(`- **${word}:**`).length - 1 }).toEqual({ word, definitions: 1 });
     }
+    // The skill's definition, in the words of agentskills.io, is said once.
+    expect(doc.split("tells an agent how to do a specific task").length - 1).toBe(1);
     expect(doc).not.toMatch(/\bjobs?\b/i);
 });

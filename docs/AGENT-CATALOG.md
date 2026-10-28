@@ -52,7 +52,7 @@ An agent uses only what you have: the code it writes reads your Data Catalog's d
 - **In chat:** what you can ask an agent where you dropped it.
 - **Tools:** the actions an agent takes during a chat, such as reading the dataflow, searching the web, proposing a node or proposing a package install. Anything that changes your dataflow is a proposal you apply.
 - **Modes:** what another agent, Solve or the agent itself can ask it to do. A mode runs as a separate call with no tools, on evidence Curio gathers for it, and has its own prompt when it needs one. You never chat with a mode. Each mode's capability id and prompt are listed under [Modes](#modes).
-- **Skills:** what tells an agent how to do a specific task, such as writing a Map Editor node's edits. An agent decides and acts; a skill informs it. See [Skills](#skills).
+- **Skills:** what tells an agent how to do a specific task, such as writing a Map Editor node's edits. See [Skills](#skills).
 
 | Agent | In chat | Tools | Modes (who asks) | Skills |
 |---|---|---|---|---|
@@ -73,13 +73,13 @@ Each of the seven is a folder in Curio's [`agents/`](../agents/), `agents/<agent
 
 ### Skills
 
-A **skill** tells an agent how to do a specific task: instructions, procedural knowledge, reference facts and starter templates, in a folder of Curio's [`skills/`](../skills/) that holds a `SKILL.md` in the [Agent Skills format](https://agentskills.io/specification). A skill does nothing on its own. An **agent** decides and acts, with its own tools, its model and its memory, the conversation of each chat, and reads a skill when a task needs it. One skill serves many agents, and an agent uses many skills.
+Each skill is a folder of Curio's [`skills/`](../skills/) that holds a `SKILL.md` in the [Agent Skills format](https://agentskills.io/specification): instructions, procedural knowledge, reference facts and starter templates. A skill does nothing on its own. An **agent** decides and acts, with its own tools, its model and its memory, the conversation of each chat, and reads a skill when a task needs it. One skill serves many agents, and an agent uses many skills.
 
 How a call holds its skills:
 
 - **The core skills,** `nodes`, `node-control` and `compatibility`, are in the preamble every agent Curio ships reads, so every call holds them.
 - **In chat,** an agent lists its other skills, each by its name and description, and loads one with its tool **skill.read** when a task matches it. A chat attached to a node holds the skills of that kind of node from its first message. A skill a chat loaded stays for the rest of its conversation, and is never loaded twice. Loading a skill uses none of a reply's three tool rounds, for up to four skills a reply.
-- **A mode** has no tools, so Curio hands it the skills its task needs, with no extra call: the skills of the node it writes or checks, those of node code when it writes a package, those of the kinds of node and the features of the dataflow when it reads the whole dataflow, and the mode's own. In Solve, the attempt after a check refused the one before is also handed the skill that answers that check: `map-edits` for the Map Editor's check, `vega-lite-starter` or `autark` for the check of a chart's or a map's document, `node-functions` for a function Curio does not give node code, `catalogs` for a source no catalog holds, and `dashboards` for a pinned tile that loads its own data.
+- **A mode** has no tools, so Curio hands it the skills its task needs, with no extra call: the skills of the node it writes or checks, those of node code when it writes a package or builds a node for another agent, those of the kinds of node and the features of the dataflow when it reads the whole dataflow, and the mode's own. In Solve, the attempt after a check refused the one before is also handed the skill that answers that check: `map-edits` for the Map Editor's check, `vega-lite-starter` or `autark` for the check of a chart's or a map's document, `node-functions` for a function Curio does not give node code, `catalogs` for a source no catalog holds, and `dashboards` for a pinned tile that loads its own data.
 
 An agent's manifest names its skills ([`skills`](#6-the-manifest)). An agent of yours that names none lists every skill Curio ships but those its preamble holds.
 
@@ -109,7 +109,7 @@ An agent's manifest names its skills ([`skills`](#6-the-manifest)). An agent of 
 | Agent | Skills | Its modes are handed |
 |---|---|---|
 | **Researcher** | `node-functions`, `catalogs`, `widgets`, `selection-chips`, `autark`, `vega-lite-starter`, `autark-starter`, `vega-lite-maps`, `interaction-edges`, `map-edits`, `scenarios`, `dashboards`, `provenance` | Notes from search results and Check a fact: those of a node their task names |
-| **Node Builder** | `node-functions`, `catalogs`, `widgets`, `selection-chips`, `autark`, `vega-lite-starter`, `autark-starter`, `vega-lite-maps`, `interaction-edges`, `map-edits`, `scenarios`, `dashboards`, `provenance` | Write a node's content, Solve's included: the node's. Write a package: those of node code. Recommend packages: none |
+| **Node Builder** | `node-functions`, `catalogs`, `widgets`, `selection-chips`, `autark`, `vega-lite-starter`, `autark-starter`, `vega-lite-maps`, `interaction-edges`, `map-edits`, `scenarios`, `dashboards`, `provenance` | Write a node's content, Solve's included: the node's. Write a package, and build a node or a dataset's fetch for the Dataset Finder: those of node code. Recommend packages: none |
 | **Dataflow Builder** | `node-functions`, `catalogs`, `widgets`, `selection-chips`, `autark`, `vega-lite-starter`, `autark-starter`, `vega-lite-maps`, `interaction-edges`, `map-edits`, `scenarios`, `dashboards`, `provenance` | No modes |
 | **Dataset Finder** | `catalogs` | Find datasets: `catalogs` |
 | **Dataflow Planner** | `interaction-edges`, `scenarios`, `dashboards` | The modes that read the dataflow: those of the features it holds |
@@ -248,7 +248,7 @@ There are three places you work with agents, and as with the Data Catalog they a
 - **The Agent Catalog drawer**, inside the canvas, is the working surface. Open it from the **Agent Catalog** button in the top bar, or from the left Tools panel's **Agent Catalog** dropdown and **Browse Agent Catalog +**. Its tabs are **Browse all** (the default) and **In project**, and everything scoped to the open dataflow happens here, including **Import agent** in its footer.
 - **The Agent palette**, the **Agent Catalog** dropdown in the left Tools panel, holds the agents already added to this dataflow, ready to drag onto a node, a connection, or the canvas. It sits below the **Node Catalog** and **Data Catalog** dropdowns.
 
-**View details**, on any agent card and beside each agent in the palette, opens the agent's details window. Its first three sections use the three words defined in [The agents](#the-agents): **In chat** says what you can ask the agent where you drop it, **Tools** lists the actions it takes in that chat, what it reads before what it proposes, and **Modes (who asks)** lists each mode with the agents, or Solve, that ask for it, and the mode's capability ids beneath it. **Agent info** gives its identifier, version, category, publisher, what it attaches to and the model it runs on. **Prompts** shows each prompt file, labeled by when it runs: every call, a message you type, or the mode that reads it. **Requires** names the agents it cannot work without, and **Export** saves the agent as one file.
+**View details**, on any agent card and beside each agent in the palette, opens the agent's details window. Its first three sections are named by three of the words defined in [The agents](#the-agents): **In chat**; **Tools**, which also says what the agent reads before what it proposes; and **Modes (who asks)**, each mode with the agents, or Solve, that ask for it, and the mode's capability ids beneath it. **Agent info** gives its identifier, version, category, publisher, what it attaches to and the model it runs on. **Prompts** shows each prompt file, labeled by when it runs: every call, a message you type, or the mode that reads it. **Requires** names the agents it cannot work without, and **Export** saves the agent as one file.
 
 ### Action matrix
 
