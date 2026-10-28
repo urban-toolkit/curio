@@ -127,10 +127,11 @@ def parse(folder, *, strict: bool = True, text: str | None = None) -> Skill:
         if not file.is_file():
             raise SkillError(f"{folder} holds no {SKILL_FILE}")
         text = file.read_text(encoding="utf-8")
-    if strict and "\r" in text:
-        raise SkillError(f"{where} holds a carriage return; its lines end in a line break alone")
+    # Lines end as a checkout writes them, in a line break alone or after a
+    # carriage return; either mode reads the line break alone.
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     if not strict:
-        text = text.removeprefix("﻿").replace("\r\n", "\n").replace("\r", "\n")
+        text = text.removeprefix("﻿")
     front, body, body_line = _split(text, where, strict)
     try:
         fields = yaml.safe_load(front)

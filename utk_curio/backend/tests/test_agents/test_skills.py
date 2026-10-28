@@ -144,8 +144,8 @@ def test_strict_mode_refuses_each_break_of_the_specifications_rules(tmp_path, fo
     ("---\nname: [street-trees\n---\n", "its frontmatter is not YAML"),
     ("---\n- name\n- description\n---\n", "is no YAML mapping"),
     ("---\n---\n## Street trees\n", "is no YAML mapping"),
-    ("---\r\n" + GOOD.replace("\n", "\r\n") + "---\r\n" + BODY, "holds a carriage return"),
     ("--- \n" + GOOD + "---\n" + BODY, "starts with its frontmatter, a --- line"),
+    ("﻿---\n" + GOOD + "---\n" + BODY, "starts with its frontmatter, a --- line"),
 ])
 def test_strict_mode_refuses_a_file_that_is_no_frontmatter_and_body(tmp_path, text, said):
     skills = _skills()
@@ -154,10 +154,25 @@ def test_strict_mode_refuses_a_file_that_is_no_frontmatter_and_body(tmp_path, te
     assert said in str(refused.value)
 
 
+def test_either_mode_reads_a_skill_whose_lines_end_in_a_carriage_return_and_a_line_break(tmp_path):
+    """A checkout on Windows writes each line's end as a carriage return and a
+    line break; the skill reads as its twin whose lines end in a line break."""
+    skills = _skills()
+    twin = skills.parse(_skill(tmp_path / "twin"))
+    text = f"---\n{GOOD}---\n{BODY}".replace("\n", "\r\n")
+    for strict in (True, False):
+        for skill in (skills.parse(_write(tmp_path / f"crlf-{strict}", "street-trees", text), strict=strict),
+                      skills.parse(tmp_path / "twin" / "street-trees", strict=strict, text=text)):
+            assert (skill.name, skill.description, skill.body, skill.body_line) == (
+                twin.name, twin.description, twin.body, twin.body_line,
+            ), strict
+            assert "\r" not in skill.body and skill.warnings == ()
+
+
 def test_strict_mode_refuses_a_skill_of_500_lines_or_more(tmp_path):
     skills = _skills()
     lines = 2 + GOOD.count("\n") + 2
-    under = skills.parse(_skill(tmp_path, body="## Street trees\n" + "Line.\n" * (500 - lines), folder="under"))
+    under = skills.parse(_skill(tmp_path / "under", body="## Street trees\n" + "Line.\n" * (500 - lines)))
     assert under.body.count("\n") == 500 - lines + 1
     over = _skill(tmp_path, body="## Street trees\n" + "Line.\n" * (500 - lines + 1), folder="street-trees")
     with pytest.raises(skills.SkillError, match="it is 500 lines, where a SKILL.md holds fewer than 500"):
