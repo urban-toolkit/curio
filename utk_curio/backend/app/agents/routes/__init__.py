@@ -1,6 +1,6 @@
 """HTTP endpoints for the Agents Catalog — ``/api/agents`` (memo dev/142, B4; re-derived on enh/agent-catalog).
 
-One blueprint, registered from the resource modules that import it: ``attachments``, ``catalog``, ``lifecycle``, ``llm``, ``proposals``, ``solve``, ``turns``. Handler bodies are the ones ``routes.py`` had; ``routes/common.py`` holds the blueprint and the shared helpers.
+One blueprint, registered from the resource modules that import it: ``attachments``, ``catalog``, ``lifecycle``, ``llm``, ``proposals``, ``skills``, ``solve``, ``turns``. Handler bodies are the ones ``routes.py`` had; ``routes/common.py`` holds the blueprint and the shared helpers.
 """
 
 from utk_curio.backend.app.agents.routes.common import (
@@ -17,6 +17,7 @@ from utk_curio.backend.app.agents.routes import (
     lifecycle,
     llm,
     proposals,
+    skills,
     solve,
     turns,
 )

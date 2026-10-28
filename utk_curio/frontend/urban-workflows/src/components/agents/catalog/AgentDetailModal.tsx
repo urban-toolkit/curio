@@ -5,6 +5,7 @@ import { agentsApi, type AgentCard } from "../../../services/agents";
 import { llmConfigsApi } from "../../../api/llmConfigsApi";
 import { requestAgentModel } from "../../apiSettings/apiSettingsRequest";
 import { triggerBlobDownload } from "../../../services/packages";
+import { AgentSkillsSection } from "./AgentSkillsSection";
 import styles from "./AgentDetailModal.module.css";
 
 export interface AgentDetailModalProps {
@@ -183,9 +184,9 @@ export const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClo
       />
 
       <div className={styles.body}>
-        {/* The docs' three words (docs/AGENT-CATALOG.md, "The agents"): what
+        {/* The docs' four words (docs/AGENT-CATALOG.md, "The agents"): what
             you ask the agent where you dropped it, the tools it uses in that
-            chat, and its modes, each with who asks for it. */}
+            chat, its modes, each with who asks for it, and its skills. */}
         {agent.purpose ? (
           <section className={styles.section}>
             <h3 className={styles.sectionLabel}>In chat</h3>
@@ -234,6 +235,12 @@ export const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClo
             <p className={styles.sectionText}>None</p>
           )}
         </section>
+
+        <AgentSkillsSection
+          coord={agent.dirName}
+          agentName={agent.name}
+          builtIn={(agent.provenance?.trust ?? "built-in") === "built-in"}
+        />
 
         <section className={styles.section}>
           <h3 className={styles.sectionLabel}>Agent info</h3>

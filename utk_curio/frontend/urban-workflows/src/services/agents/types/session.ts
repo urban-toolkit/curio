@@ -6,6 +6,7 @@
 
 import type { AgentDatasetCandidateRow, AgentRemedy } from "./evidence";
 import type { AgentDataflowPlanPart, AgentProposalPart } from "./proposal";
+import type { AgentRunSkillPins } from "./skills";
 import type { AgentSolveAttemptsPart } from "./solve";
 
 /** Actual provider-reported token usage (memo dev/37) — never an estimate. */
@@ -46,12 +47,16 @@ export interface AgentExecution {
     /** The LLM configuration that answered: never its key. */
     llm?: { configId: string | null; label: string; baseUrlHost: string; source: string };
     policy?: Record<string, number | null>;
+    /** The skills its system turn held, each list only when it holds one. */
+    skills?: AgentRunSkillPins;
   };
   usage: AgentUsage | null;
   durationMs?: number;
   status: "ok" | "error";
   /** The tool calls the run made, in order; absent when it made none. */
   toolCalls?: AgentToolCall[];
+  /** The skills skill.read loaded during the run; absent when it loaded none. */
+  skillsLoaded?: string[];
 }
 
 /**

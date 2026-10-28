@@ -6,7 +6,7 @@ import { AgentDock } from "./AgentDock";
 import { AgentChatPanel } from "./AgentChatPanel";
 import type { AgentAttachment } from "../../../services/agents";
 import { useAgentAttachmentsContext } from "../../../providers/agents";
-import { composeAgentRunContext } from "../../../services/agents";
+import { composeAgentRunContext, skillsApi } from "../../../services/agents";
 import { useAgentCanvasMutations } from "./useAgentCanvasMutations";
 import { useFlowContext } from "../../../providers/FlowProvider";
 import { useSlideDrawerPresentation } from "../../../hook/useSlideDrawerPresentation";
@@ -21,7 +21,7 @@ export const AgentDockOverlay: React.FC = () => {
   const ctx = useAgentAttachmentsContext();
   // dev/129 (porting dev/111): `outputs` rides along so nodeContext's
   // current_output can name the artifact a node produced.
-  const { workflowGoal, setWorkflowGoal, workflowNameRef, outputs, scenarios } =
+  const { workflowGoal, setWorkflowGoal, workflowNameRef, outputs, scenarios, projectId } =
     useFlowContext();
   const { getNodes, getEdges } = useReactFlow();
   // The apply→canvas bridge listener (dev/48 §3.3): applied node creations
@@ -259,6 +259,12 @@ export const AgentDockOverlay: React.FC = () => {
               onSaveIntent={(intent) => ctx.saveIntent(shown.attachmentId, intent)}
               onSaveTitle={(title) => ctx.saveTitle(shown.attachmentId, title)}
               onClearConversation={() => ctx.clearConversation(shown.attachmentId)}
+              // What `/` offers: the skills this chat's next run lists.
+              loadSkills={
+                projectId
+                  ? async () => (await skillsApi.runSkills(projectId, shown.attachmentId)).skills
+                  : undefined
+              }
             />,
             document.body,
           )
