@@ -35,7 +35,8 @@ A list whose entries cannot each be keyed (an entry that is not an object, or a
 missing or repeated id or name) is kept whole, as one value under its Trill
 name in the map that would hold its entries. A node's ``metadata``, ``widgets``
 and ``widgetOrder`` are made with the node, so two tabs never each make one; an
-empty ``metadata`` is written as none, as ``generateTrill`` writes none.
+empty ``metadata``, or an empty ``metadata.widgets``, is written as none, as
+``generateTrill`` writes neither.
 
 Trill comes out in the table's order, then the fields the table does not name,
 sorted: a Yjs map has no order of its own, so the same doc always gives the

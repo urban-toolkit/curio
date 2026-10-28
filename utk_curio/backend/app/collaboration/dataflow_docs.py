@@ -79,7 +79,6 @@ from pycrdt import (
     create_sync_message,
     create_update_message,
     handle_sync_message,
-    read_message,
     write_message,
 )
 
@@ -488,10 +487,12 @@ def _ensure_flusher() -> None:
 def _run_flusher() -> None:
     global _flusher
     while True:
+        failed = False
         try:
             flush_due()
         except Exception:  # noqa: BLE001 - a failed write must not stop the next ones
             logger.exception("writing the open dataflows' docs failed")
+            failed = True
         with _wake:
             if not _docs or not BACKGROUND:
                 if _flusher is threading.current_thread():
@@ -500,6 +501,8 @@ def _run_flusher() -> None:
             dues = [due for entry in _docs.values()
                     for due in (_save_due(entry), _close_due(entry)) if due is not None]
             wait = max(0.0, min(dues) - _clock()) if dues else CLOSE_AFTER_S
+            if failed:
+                wait = max(wait, SAVE_IDLE_S)  # a write that fails is tried again, not in a spin
             _wake.wait(timeout=wait)
 
 
@@ -581,6 +584,15 @@ def _emit(message: bytes, project_id: str, *, to: str, skip_sid: Optional[str] =
     if sio is not None:
         sio.emit(EVENT, {"projectId": project_id, "message": message},
                  to=to, skip_sid=skip_sid, namespace=COLLAB_NAMESPACE)
+
+
+def _framed(data: bytes) -> bytes:
+    """What a y-protocols frame carries after its type bytes: a length, then
+    that many bytes."""
+    payload = Decoder(data).read_message() if data else None
+    if payload is None:
+        raise ValueError("a frame with nothing in it")
+    return payload
 
 
 def _clocks(doc) -> dict[int, int]:
@@ -692,6 +704,7 @@ def _start(sid: str, me: dict, project_id: str, message: bytes, held_id) -> dict
         with _held(project_id, _owner_user_dir_key(project)) as entry:
             if held_id is not None and held_id != entry.doc_id:
                 return _refused("reload", docId=entry.doc_id)
+            _framed(message[2:])  # the tab's state, which step 2 answers
             replies = [handle_sync_message(message[1:], entry.doc)]
             if me.get("role") in room_state.EDIT_ROLES:
                 replies.append(create_sync_message(entry.doc))
@@ -731,7 +744,7 @@ def _update(sid: str, me: dict, project_id: str, message: bytes) -> dict:
     with entry.lock:
         if entry.closed or sid not in entry.tabs:
             return _refused("not_synced")
-        update = read_message(message[2:])
+        update = _framed(message[2:])
         before = _clocks(entry.doc)
         if update != b"\x00\x00":
             with entry.doc.transaction(origin=sid):
@@ -751,7 +764,7 @@ def _awareness(sid: str, me: dict, project_id: str, message: bytes) -> dict:
     with entry.lock:
         if entry.closed or sid not in entry.tabs:
             return _refused("not_synced")
-        accepted = _accepted_awareness(entry, sid, me, read_message(message[1:]))
+        accepted = _accepted_awareness(entry, sid, me, _framed(message[1:]))
         entry.awareness.apply_awareness_update(accepted, sid)
         _relay_awareness(entry, skip_sid=sid)
     return {"ok": True}
@@ -782,7 +795,7 @@ def receive(sid: str, payload) -> dict:
                 return _update(sid, me, project_id, message)
         elif message[0] == YMessageType.AWARENESS:
             return _awareness(sid, me, project_id, message)
-    except (ValueError, RuntimeError, IndexError):
+    except (ValueError, RuntimeError, IndexError, AssertionError):
         logger.info("a yjs message from %s for dataflow %s does not read", sid, project_id, exc_info=True)
     return _refused("invalid_message")
 

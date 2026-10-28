@@ -442,6 +442,6 @@ def test_a_doc_message_needs_a_join_a_started_sync_and_frames_that_read(room):
     alice = room.tab("alice")
     assert alice.send(create_update_message(b"\x00\x00"))["error"] == "not_synced"
     alice.sync()
-    assert alice.send(b"\x07\x01")["error"] == "invalid_message"
-    assert alice.send(create_update_message(b"\x01\x02\x03"))["error"] == "invalid_message"
+    for frame in (b"\x07\x01", b"\x00", b"\x00\x02", b"\x01", create_update_message(b"\x01\x02\x03")):
+        assert alice.send(frame)["error"] == "invalid_message", frame
     assert alice.edit(_type("# still fine\n"))[0]["ok"] is True

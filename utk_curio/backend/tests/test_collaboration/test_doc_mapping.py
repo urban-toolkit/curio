@@ -213,6 +213,14 @@ def test_absent_and_empty_stay_apart():
         _doc, back = _round_trip(dataflow)
         assert _text(back) == _text(dataflow), dataflow["name"]
 
+    # An empty metadata, or empty widgets, is written as none: generateTrill
+    # writes neither.
+    _doc, back = _round_trip({"nodes": [
+        {"id": "a", "type": "t", "metadata": {}},
+        {"id": "b", "type": "t", "metadata": {"widgets": []}},
+    ], "edges": []})
+    assert back["nodes"] == [{"id": "a", "type": "t"}, {"id": "b", "type": "t"}]
+
 
 def test_numbers_and_key_orders_keep_the_form_they_were_written_in():
     dataflow = {
