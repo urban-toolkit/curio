@@ -30,6 +30,7 @@ from utk_curio.backend.app.agents.domain import document_validation
 from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
 from utk_curio.backend.app.datasets.domain.constants import is_layer_group_id, layer_group_kind
 from utk_curio.backend.app.datasets.domain.layer_group import group_base_title, ids_read, layer_group_formats
+from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.execution import workflow_spec
 from utk_curio.backend.app.projects import storage as projects_storage
 from utk_curio.backend.app.agents.domain import agent_text
@@ -329,11 +330,11 @@ def _source_resolver(
             skip_literal = literal or project_literal
             if skip_literal and state.get("attachmentId"):
                 with projects_storage.spec_write_lock(user_key, project_id):
-                    fresh = projects_storage.read_spec(user_key, project_id)
+                    fresh = dataflow_docs.live(user_key, project_id)
                     if fresh is not None and agents_dataset_resolution.mark_skipped(
                         fresh, state["attachmentId"], literal=skip_literal
                     ):
-                        projects_storage.write_spec(user_key, project_id, fresh)
+                        dataflow_docs.write(user_key, project_id, fresh, dataflow_docs.by_curio(user_key, "dataset"))
             return {
                 "state": "resolved",
                 "detail": state["detail"] or (skip_literal or ""),

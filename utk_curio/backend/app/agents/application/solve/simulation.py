@@ -23,7 +23,7 @@ from utk_curio.backend.app.agents.application.proposals import store as agents_s
 from utk_curio.backend.app.agents.application.solve import budgets as agents_budgets
 from utk_curio.backend.app.agents.application.solve import run_node as agents_run_node
 from utk_curio.backend.app.agents.application.solve import session as agents_session
-from utk_curio.backend.app.projects import storage as projects_storage
+from utk_curio.backend.app.collaboration import dataflow_docs
 
 
 _SIMULATE_CANCEL_EVENTS: dict[str, object] = {}
@@ -73,13 +73,13 @@ def request_simulate_cancel(user_key: str, project_id: str, attachment_id: str) 
     """Cancel a running simulation (dev/67-9): both dev/63 signals — the
     durable session flag plus the in-process event; the run stops at the next
     action boundary with everything already done persisted."""
-    spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
+    spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
     record = agents_spec_reads._record_or_404(spec, attachment_id)
     session = record.get("builderSession") or {}
     if not session.get("simulatingSince"):
         raise AgentServiceError("no simulation is running for this attachment", 409)
     session["simulateCancelRequested"] = True
-    projects_storage.write_spec(user_key, project_id, spec)
+    dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._person(user_key, "simulate"))
     event = _SIMULATE_CANCEL_EVENTS.get(str(session.get("simulateExecutionId") or ""))
     if event is not None:
         event.set()  # type: ignore[attr-defined]
@@ -108,7 +108,7 @@ def simulate_stream(
 
     if mode not in ("step", "auto"):
         raise AgentServiceError("mode must be 'step' or 'auto'", 422)
-    spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
+    spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
     record = agents_spec_reads._record_or_404(spec, attachment_id)
     session = record.get("builderSession") or {}
     plan_proposal_id = session.get("planProposalId")
@@ -138,7 +138,7 @@ def simulate_stream(
     session.pop("simulateCancelRequested", None)
     session.pop("pauseReason", None)
     record["builderSession"] = session
-    projects_storage.write_spec(user_key, project_id, spec)
+    dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._agent_actor(user_key, spec, attachment_id, "simulate"))
     stop = threading.Event()
     _SIMULATE_CANCEL_EVENTS[simulate_execution_id] = stop
     return _simulate_events(
@@ -186,7 +186,7 @@ class SimulationDriver:
 
     # ── state ────────────────────────────────────────────────────────────────
     def _fresh(self):
-        spec = agents_spec_reads._read_spec_or_404(self.user_key, self.project_id)
+        spec = agents_spec_reads._live_spec_or_404(self.user_key, self.project_id)
         record = agents_spec_reads._record_or_404(spec, self.attachment_id)
         session = record.get("builderSession") or {}
         # dev/71: the plan stays readable after its structure completes —
@@ -194,11 +194,18 @@ class SimulationDriver:
         proposal = agents_store._plan_proposal_any(spec, self.attachment_id, self.plan_proposal_id)
         return spec, record, session, proposal
 
+    def _write(self, spec) -> None:
+        """Write *spec*, a fresh state this driver changed, as the attachment's agent."""
+        dataflow_docs.write(
+            self.user_key, self.project_id, spec,
+            agents_spec_reads._agent_actor(self.user_key, spec, self.attachment_id, "simulate"),
+        )
+
     def _write_session(self, mutate) -> dict:
         spec, record, session, _ = self._fresh()
         mutate(session)
         record["builderSession"] = session
-        projects_storage.write_spec(self.user_key, self.project_id, spec)
+        self._write(spec)
         return session
 
     def _pause(self, reason: dict) -> dict:
@@ -310,7 +317,7 @@ class SimulationDriver:
             session.pop("simulateCancelRequested", None)
             session.pop("currentRef", None)
             record["builderSession"] = session
-            projects_storage.write_spec(self.user_key, self.project_id, spec)
+            self._write(spec)
         except Exception:
             pass
 
@@ -414,7 +421,7 @@ class SimulationDriver:
         approved = attachments.get_active_proposal(spec3, proposal_attachment_id)
         if approved is not None and approved.get("proposalId") == content_proposal_id:
             approved["approvedBy"] = "simulation-auto"
-            projects_storage.write_spec(self.user_key, self.project_id, spec3)
+            self._write(spec3)
         applied_content = apply_result.get("appliedContent")
         if applied_content:
             yield "node_content_applied", applied_content

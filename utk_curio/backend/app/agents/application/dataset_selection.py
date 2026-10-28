@@ -26,6 +26,7 @@ from utk_curio.backend.app.agents.application.solve import node_solve as agents_
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
 from utk_curio.backend.app.agents.infrastructure import agent_jobs as agents_agent_jobs
+from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.projects import storage as projects_storage
 
 log = logging.getLogger(__name__)
@@ -111,11 +112,11 @@ def record_dataset_selection(
     # recorded as the catalog pick it becomes.
     acquisitions = agents_acquire._acquire_confirmed_picks(rows)
     with projects_storage.spec_write_lock(user_key, project_id):
-        fresh = agents_spec_reads._read_spec_or_404(user_key, project_id)
+        fresh = agents_spec_reads._live_spec_or_404(user_key, project_id)
         state = agents_dataset_resolution.record_selection(fresh, attachment_id, rows)
         if state is None:
             raise AgentServiceError(f"attachment {attachment_id!r} not found", 404)
-        projects_storage.write_spec(user_key, project_id, fresh)
+        dataflow_docs.write(user_key, project_id, fresh, agents_spec_reads._person(user_key, "dataset"))
     if isinstance(session_id, str):
         try:
             names = ", ".join(str(r.get("name") or r.get("datasetId") or r.get("url")) for r in rows)

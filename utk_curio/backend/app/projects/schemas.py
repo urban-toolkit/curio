@@ -83,10 +83,22 @@ class ProjectUpdate:
     #: checked.
     save_tab: Optional[str] = None
     save_number: Optional[int] = None
+    #: The dataflow's history alone, its sections as a spec holds them
+    #: (``nodeProvenance``, ``dataflowProvenance``): what a tab bound to the
+    #: dataflow's doc saves beside its outputs, never the dataflow, which the
+    #: doc holds. Sent without a spec.
+    history: Optional[dict] = None
 
     def __post_init__(self):
         if self.spec is not None:
             _refuse_scenario_conflicts(self.spec)
+        if self.history is not None:
+            from utk_curio.backend.app.projects.storage import HISTORY_KEYS
+
+            if self.spec is not None:
+                raise ValueError("send the history inside the spec, or the history alone")
+            if not isinstance(self.history, dict) or not set(self.history) <= set(HISTORY_KEYS):
+                raise ValueError(f"history holds only {' and '.join(HISTORY_KEYS)}")
         if self.thumbnail_accent and self.thumbnail_accent not in VALID_ACCENTS:
             self.thumbnail_accent = None
         if self.categories is not None:
