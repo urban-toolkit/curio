@@ -118,14 +118,18 @@ class VerifiedRounds:
         self.result_summary_fn = result_summary_fn
         self.grounding_base = grounding_base
         self.dataflow_block: str | None = None
+        # A runner takes a round's inputs and, as ``refused``, the kind the
+        # check that refused the round before recorded, which hands the run
+        # the skills of what that check guards (``skill_runs.GUARDS``).
         self.run_delegate = delegate_runner or (
-            lambda inputs: delegation.run_delegate(
+            lambda inputs, refused=None: delegation.run_delegate(
                 user_key, project_id, resolution.coord,
                 "node.content.generate", inputs, config,
                 parent_execution_id=parent_execution_id,
                 parent_coord=parent_coord,
                 attachment_id=attachment_id,
                 dataflow_block=self._dataflow_block(),
+                refused=refused,
             )
         )
         self.node_id = node.get("id")
@@ -144,6 +148,8 @@ class VerifiedRounds:
         self.attempts: list[dict] = []
         self.previous_attempt: str | None = None
         self.previous_error: str | None = None
+        # The kind of the refusal the next round answers, when a check refused.
+        self.refused: str | None = None
         self.url_evidence: list[dict] = []
         self.confirmed_source: dict | None = None
         self.stopped_by: str | None = None  # dev/127: which bound ended the loop
@@ -269,6 +275,7 @@ class VerifiedRounds:
                 str(carry_forward.get("code") or "")[:6000] or self.previous_attempt
             )
             self.previous_error = str(carry_forward["error"])[-2000:]
+            self.refused = str(carry_forward.get("kind") or "") or None
             self.rounds_trace.append(
                 "carrying forward the previous attempt's error: "
                 + failure_text.summary(
@@ -303,7 +310,7 @@ class VerifiedRounds:
             if self.use_current:
                 self.candidate = str(self.node.get("content") or "")
             else:
-                status, text, child = self.run_delegate(self._generation_inputs())
+                status, text, child = self.run_delegate(self._generation_inputs(), refused=self.refused)
                 self.delegations.append(child)
                 if status != "ok":
                     self._generation_failed(text)
@@ -417,6 +424,7 @@ class VerifiedRounds:
     def _carry(self, error: str) -> None:
         self.previous_attempt = self.candidate
         self.previous_error = error
+        self.refused = ((self.verdict_result or {}).get("evidence") or {}).get("kind")
         self.url_evidence = []
 
     # ── stages: gates before the sandbox ────────────────────────────────────
@@ -927,6 +935,7 @@ class VerifiedRounds:
             return BREAK
         self.previous_attempt = self.candidate
         self.previous_error = round_evidence.get("stderrTail") or round_evidence.get("detail") or ""
+        self.refused = round_evidence.get("kind")
         self.url_evidence = agents_rounds._correction_url_evidence(
             self.candidate, self.previous_error, self.grounding_ctx)
         if self.url_evidence:
