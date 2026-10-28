@@ -23,7 +23,7 @@ from utk_curio.backend.app.agents.application.proposals import store as agents_s
 from utk_curio.backend.app.agents.application.solve import session as agents_session
 from utk_curio.backend.app.agents.application.turns import prompts as agents_prompts
 from utk_curio.backend.app.agents.domain import content
-from utk_curio.backend.app.projects import storage as projects_storage
+from utk_curio.backend.app.collaboration import dataflow_docs
 
 
 def _node_build_delegate(user_key: str, m) -> str | None:
@@ -85,7 +85,7 @@ def _attachment_card(spec: dict, record: dict, user_key: str) -> dict:
 
 
 def list_project_attachments(user_key: str, project_id: str) -> list[dict]:
-    spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
+    spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
     records = attachments.list_attachments(spec)
     # dev/115 (DEC-021): a session left "solving" by a process that is gone is
     # reconciled to "interrupted" the first time anyone reads it.
@@ -97,7 +97,7 @@ def list_project_attachments(user_key: str, project_id: str) -> list[dict]:
 def attach_agent(user_key: str, project_id: str, coord: str, target: object) -> dict:
     """Attach an installed template to a target. Requires the template installed
     in this project (no auto-install), and a valid target."""
-    spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
+    spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
     if coord not in project_agents.project_agents(spec):
         raise AgentServiceError(
             "install the agent in this project before attaching it", 400
@@ -105,7 +105,7 @@ def attach_agent(user_key: str, project_id: str, coord: str, target: object) -> 
     # DEC-080 (dev/126): attaching is acting on this agent — complete its
     # declared closure before it can run.
     if agents_lifecycle._repair_required_closure(user_key, project_id, coord):
-        spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
+        spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
     # Enforce the agent's declared compatibility: a canvas-only agent can only
     # attach to the canvas, a node-only agent only to nodes, a dual-compatible
     # agent to either. (attachments.attach still validates the target exists.)
@@ -148,16 +148,16 @@ def attach_agent(user_key: str, project_id: str, coord: str, target: object) -> 
         )
     except AttachmentError as exc:
         raise AgentServiceError(str(exc), 400) from exc
-    projects_storage.write_spec(user_key, project_id, spec)
+    dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._person(user_key, "attachment"))
     return _attachment_card(spec, record, user_key)
 
 
 def detach_agent(user_key: str, project_id: str, attachment_id: str) -> dict:
-    spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
+    spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
     record = attachments.get_attachment(spec, attachment_id)
     removed = attachments.detach(spec, attachment_id)
     if removed:
-        projects_storage.write_spec(user_key, project_id, spec)
+        dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._person(user_key, "attachment"))
         # A transcript lives exactly as long as its attachment (dev/20).
         session_id = (record or {}).get("sessionId")
         if isinstance(session_id, str):
@@ -169,14 +169,14 @@ def update_attachment_intent(
     user_key: str, project_id: str, attachment_id: str, intent: str | None
 ) -> dict:
     """Set/clear the attachment's intent override; empty falls back to the prompt source."""
-    spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
+    spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
     try:
         record = attachments.set_intent(spec, attachment_id, intent)
     except AttachmentError as exc:
         raise AgentServiceError(str(exc), 400) from exc
     if record is None:
         raise AgentServiceError(f"attachment {attachment_id!r} not found", 404)
-    projects_storage.write_spec(user_key, project_id, spec)
+    dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._person(user_key, "attachment"))
     return _attachment_card(spec, record, user_key)
 
 
@@ -185,14 +185,14 @@ def update_attachment_title(
 ) -> dict:
     """Manually rename the conversation (memo dev/25). A manual title always
     wins over auto-generation and survives conversation clears."""
-    spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
+    spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
     try:
         record = attachments.set_title(spec, attachment_id, title, edited=True)
     except AttachmentError as exc:
         raise AgentServiceError(str(exc), 400) from exc
     if record is None:
         raise AgentServiceError(f"attachment {attachment_id!r} not found", 404)
-    projects_storage.write_spec(user_key, project_id, spec)
+    dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._person(user_key, "attachment"))
     return _attachment_card(spec, record, user_key)
 
 
@@ -211,7 +211,7 @@ def get_attachment_session(user_key: str, project_id: str, attachment_id: str) -
 
 def clear_attachment_session(user_key: str, project_id: str, attachment_id: str) -> dict:
     """Clear the transcript (keeps the attachment and its session id)."""
-    spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
+    spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
     record = agents_spec_reads._record_or_404(spec, attachment_id)
     session_id = record.get("sessionId")
     if isinstance(session_id, str):
@@ -221,5 +221,5 @@ def clear_attachment_session(user_key: str, project_id: str, attachment_id: str)
     # the user's deliberate name for the instance and is kept (memo dev/25).
     if record.get("title") and not record.get("titleEdited"):
         attachments.set_title(spec, attachment_id, None, edited=False)
-        projects_storage.write_spec(user_key, project_id, spec)
+        dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._person(user_key, "attachment"))
     return {"attachmentId": attachment_id, "sessionId": session_id, "turns": []}

@@ -17,6 +17,7 @@ from utk_curio.backend.app.agents.application.errors import AgentServiceError
 from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.domain.manifest import AgentManifest
 from utk_curio.backend.app.agents.repositories import project_agents as agents_project_agents
+from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.projects import storage as projects_storage
 
 
@@ -26,6 +27,29 @@ def _read_spec_or_404(user_key: str, project_id: str) -> dict:
     if spec is None:
         raise AgentServiceError(f"project {project_id!r} has no spec", 404)
     return spec
+
+
+def _live_spec_or_404(user_key: str, project_id: str) -> dataflow_docs.Live:
+    """The dataflow as it is now, for a use case that writes it: the spec it
+    changes and hands to ``dataflow_docs.write``, which applies only what it
+    changed. It holds no history."""
+    spec = dataflow_docs.live(user_key, project_id)
+    if spec is None:
+        raise AgentServiceError(f"project {project_id!r} has no spec", 404)
+    return spec
+
+
+def _agent_actor(user_key: str, spec: dict | None, attachment_id: str | None, what: str) -> dataflow_docs.Actor:
+    """Who a change an attachment's agent writes is by: the agent the
+    attachment binds, asked by the account (the origin of its transaction on
+    the dataflow's doc)."""
+    record = attachments.get_attachment(spec, attachment_id) if spec and attachment_id else None
+    return dataflow_docs.by_agent(str((record or {}).get("coord") or "") or None, user_key, what)
+
+
+def _person(user_key: str, what: str) -> dataflow_docs.Actor:
+    """Who a change the account makes itself, through the agents' panels, is by."""
+    return dataflow_docs.person(user_key, what)
 
 
 def _record_or_404(spec: dict, attachment_id: str) -> dict:

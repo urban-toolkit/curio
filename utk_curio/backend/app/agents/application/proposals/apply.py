@@ -8,6 +8,7 @@ and import order between siblings cannot matter.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import uuid
 
@@ -27,8 +28,8 @@ from utk_curio.backend.app.agents.application.turns import roster as agents_rost
 from utk_curio.backend.app.agents.domain import node_settings
 from utk_curio.backend.app.agents.domain import widget_grammar
 from utk_curio.backend.app.agents.infrastructure import testing_provider
+from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.execution.code_references import normalize_widgets
-from utk_curio.backend.app.projects import storage as projects_storage
 
 
 # ── review-before-apply (memo dev/41) ────────────────────────────────────────
@@ -46,14 +47,14 @@ def apply_proposal(
     path, logs a result-card turn (docs/08 — results are logged as chat
     turns), and consumes no quota (deterministic, no provider work). No
     model/tool/user *text* can reach this path — only this endpoint."""
-    spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
+    spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
     record = agents_spec_reads._record_or_404(spec, attachment_id)
     # DEC-080 (dev/126): a plan apply attaches the plan-node agents, so the
     # closure is completed BEFORE the apply reads the lockfile it consults.
     if agents_lifecycle._repair_required_closure(
         user_key, project_id, record.get("coord", ""), attachment_id=attachment_id
     ):
-        spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
+        spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
         record = agents_spec_reads._record_or_404(spec, attachment_id)
     # dev/90 A16: settle the same-reply queue first, then address the
     # proposal by id in EITHER pending home — active slot or queue.
@@ -145,6 +146,7 @@ def _apply_node_content_write(
             session = ledger_session
             ref = candidate_ref
             break
+    reviewed = copy.deepcopy(session)
     if ref is not None:
         (session.get("nodeStates") or {})[ref] = "approved"
         runs = session.get("nodeRuns")
@@ -155,7 +157,20 @@ def _apply_node_content_write(
         if session.get("phase") in ("applied", "simulating") and isinstance(runs, dict):
             if not any(st in ("pending", "failed") for st in runs.values()):
                 session["phase"] = "ready"
-    projects_storage.write_spec(user_key, project_id, spec)
+
+    def _changed_meanwhile(_refused: tuple) -> None:
+        # The node took other code after the review read it: nothing applied.
+        proposal["status"] = "stale"
+        session.clear()
+        session.update(reviewed)
+
+    if dataflow_docs.write(
+        user_key, project_id, spec, _applied_by(user_key, spec, attachment_id), on_refused=_changed_meanwhile,
+    ).refused:
+        raise agents_store._mark_stale(
+            user_key, project_id, proposal_id, spec, proposal, session_id,
+            "the node changed since this was proposed — ask the agent to propose again",
+        )
     # A proposal minted before #506 carries no name; its id is all there is.
     node_name = proposal.get("nodeName") or f"node {node_id}"
     agents_store._log_applied_turn(
@@ -179,6 +194,12 @@ def _apply_node_content_write(
         # node too, so the next canvas save can't clobber the mutation.
         "appliedContent": applied,
     }
+
+
+def _applied_by(user_key: str, spec: dict, attachment_id: str) -> dataflow_docs.Actor:
+    """Who an applied proposal's change is by: the agent of the attachment
+    that proposed it, asked by the account that applied it."""
+    return agents_spec_reads._agent_actor(user_key, spec, attachment_id, "apply")
 
 
 def _writer_name(user_key: str, spec: dict, attachment_id: str) -> str | None:
@@ -230,7 +251,7 @@ def _apply_node_settings_write(
     else:
         node.pop("metadata", None)
     proposal["status"] = "applied"
-    projects_storage.write_spec(user_key, project_id, spec)
+    dataflow_docs.write(user_key, project_id, spec, _applied_by(user_key, spec, attachment_id))
     node_name = proposal.get("nodeName") or f"node {node_id}"
     agents_store._log_applied_turn(
         user_key, project_id, session_id, attachment_id, proposal_id,
@@ -292,14 +313,14 @@ def _apply_dataset_install(
         ) from exc
     # The install wrote the spec (dataset refs); re-read so the proposal
     # mirror update below does not clobber the new entries.
-    spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
+    spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
     proposal = attachments.find_proposal(spec, attachment_id, proposal_id) or proposal
     proposal["status"] = "applied"
     # dev/126: a node that was waiting for exactly this dataset is resolved by
     # this install — the reviewed lane is what "awaiting-install" waited for.
 
     resolved_nodes = agents_dataset_resolution.mark_dataset_installed(spec, dataset_id)
-    projects_storage.write_spec(user_key, project_id, spec)
+    dataflow_docs.write(user_key, project_id, spec, _applied_by(user_key, spec, attachment_id))
     name = str(item.get("title") or dataset_id)
     agents_store._log_applied_turn(
         user_key, project_id, session_id, attachment_id, proposal_id,
@@ -368,10 +389,10 @@ def _apply_package_install(
     broken_line = _broken_library_line(install.get("importErrors"))
     # The install wrote the spec (the package lockfile); re-read so the
     # proposal mirror update below does not clobber the new entry.
-    spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
+    spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
     proposal = attachments.find_proposal(spec, attachment_id, proposal_id) or proposal
     proposal["status"] = "applied"
-    projects_storage.write_spec(user_key, project_id, spec)
+    dataflow_docs.write(user_key, project_id, spec, _applied_by(user_key, spec, attachment_id))
     name = str(proposal.get("packageName") or dir_name)
     # dev/105 A3: the findings that rode the request become the A16 sequence
     # of node.create cards BELOW this one — minted pending, applied one at a
@@ -540,7 +561,7 @@ def _apply_package_draft(
 
     # The promotion wrote the spec (project lockfile); re-read so the node
     # insertions and proposal mirror below never clobber it.
-    spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
+    spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
     proposal = attachments.find_proposal(spec, attachment_id, proposal_id) or proposal
 
     try:
@@ -565,14 +586,16 @@ def _apply_package_draft(
             )
             created_nodes.append(created)
         proposal["status"] = "applied"
-        projects_storage.write_spec(user_key, project_id, spec)
+        dataflow_docs.write(user_key, project_id, spec, _applied_by(user_key, spec, attachment_id))
     except Exception as exc:
         rolled = build_promotion.rollback(
             user_key, artifact_digest, f"node insertion failed: {exc}")
+        # The dataflow without the nodes inserted above, and its proposal: the
+        # stale mark lands on the proposal of the spec it writes.
+        unchanged = agents_spec_reads._live_spec_or_404(user_key, project_id)
         raise agents_store._mark_stale(
-            user_key, project_id, proposal_id,
-            agents_spec_reads._read_spec_or_404(user_key, project_id),
-            attachments.find_proposal(spec, attachment_id, proposal_id) or proposal,
+            user_key, project_id, proposal_id, unchanged,
+            attachments.find_proposal(unchanged, attachment_id, proposal_id) or proposal,
             session_id,
             f"the package installed but its nodes could not be created ({exc}); "
             f"the prior state was {rolled['rollback']['status']} — ask the agent "
@@ -663,10 +686,10 @@ def _apply_project_install(
             ) from exc
         # The install wrote the spec; re-read so the mirror update below
         # does not clobber the new template entry.
-        spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
+        spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
         proposal = attachments.find_proposal(spec, attachment_id, proposal_id) or proposal
     proposal["status"] = "applied"
-    projects_storage.write_spec(user_key, project_id, spec)
+    dataflow_docs.write(user_key, project_id, spec, _applied_by(user_key, spec, attachment_id))
     agents_store._log_applied_turn(
         user_key, project_id, session_id, attachment_id, proposal_id,
         f"Applied: {coord} installed in this project.",
@@ -771,7 +794,7 @@ def _apply_node_create(
         settings=node_settings.of(proposal),  # a join's operation, a pool's modes, a view's image column
     )
     proposal["status"] = "applied"
-    projects_storage.write_spec(user_key, project_id, spec)
+    dataflow_docs.write(user_key, project_id, spec, _applied_by(user_key, spec, attachment_id))
     agents_store._log_applied_turn(
         user_key, project_id, session_id, attachment_id, proposal_id,
         f"Applied: node created ({created['id']}).",
@@ -793,7 +816,7 @@ def dismiss_proposal(
     user_key: str, project_id: str, attachment_id: str, proposal_id: str
 ) -> dict:
     """Dismiss a pending proposal (keeps its outcome visible on the card)."""
-    spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
+    spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
     record = agents_spec_reads._record_or_404(spec, attachment_id)
     # dev/90 A16: a queued same-reply sibling is dismissible by id too.
     attachments.reconcile_proposal_queue(spec, attachment_id)
@@ -813,7 +836,7 @@ def dismiss_proposal(
         session["phase"] = "applied" if session.get("appliedPlanId") else "idle"
         session.pop("planProposalId", None)
         record["builderSession"] = session
-    projects_storage.write_spec(user_key, project_id, spec)
+    dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._person(user_key, "dismiss"))
     session_id = record.get("sessionId")
     if isinstance(session_id, str):
         sessions.update_proposal_status(

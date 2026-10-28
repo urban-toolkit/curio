@@ -29,6 +29,7 @@ from utk_curio.backend.app.agents.application.turns import delegates as agents_d
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
 from utk_curio.backend.app.execution.code_references import normalize_widgets
+from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.execution.workflow_spec import CONTENT_KIND_NONE
 from utk_curio.backend.app.projects import storage as projects_storage
 from utk_curio.backend.app.agents.domain import agent_text
@@ -76,7 +77,7 @@ def _mint_dataset_install(
             agent_text.message("mint.dataset-already-installed", title=repr(item.get('title'))),
             None,
         )
-    spec = projects_storage.read_spec(user_key, project_id)
+    spec = dataflow_docs.live(user_key, project_id)
     if spec is None:
         return "refused", agent_text.message("mint.no-saved-spec"), None
     dataset_id = str(params.get("datasetId")).strip()
@@ -212,7 +213,7 @@ def _mint_package_install(
         return agents_tool_rounds._refuse_params(
             agent_text.message("mint.package-already-installed", name=repr(row['name']))
         )
-    spec = projects_storage.read_spec(user_key, project_id)
+    spec = dataflow_docs.live(user_key, project_id)
     if spec is None:
         return "refused", agent_text.message("mint.no-saved-spec"), None
     reason = params.get("reason")
@@ -428,7 +429,7 @@ def _mint_package_draft_apply(
     )
     if refusal is not None:
         return refusal
-    spec = projects_storage.read_spec(user_key, project_id)
+    spec = dataflow_docs.live(user_key, project_id)
     if spec is None:
         return "refused", agent_text.message("mint.no-saved-spec"), None
     try:
@@ -615,7 +616,7 @@ def _mint_node_content_write(
         return "refused", agent_text.message("mint.content-required"), None
     if len(proposed) > content.PROPOSAL_CONTENT_MAX_CHARS:
         return "refused", agent_text.message("mint.content-too-large"), None
-    spec = projects_storage.read_spec(user_key, project_id)
+    spec = dataflow_docs.live(user_key, project_id)
     if spec is None:
         return "refused", agent_text.message("mint.no-saved-spec"), None
     nodes = (spec.get("dataflow") or {}).get("nodes") or []
@@ -722,7 +723,7 @@ def _mint_node_settings_write(
     node_id = _target_node_id(loop_ctx, params)
     if not node_id:
         return "refused", agent_text.message("tools.no-node-id"), None
-    spec = projects_storage.read_spec(user_key, project_id)
+    spec = dataflow_docs.live(user_key, project_id)
     if spec is None:
         return "refused", agent_text.message("mint.no-saved-spec"), None
     nodes = (spec.get("dataflow") or {}).get("nodes") or []
@@ -929,7 +930,7 @@ def _mint_node_create(
         appearance = node_appearance.normalize_appearance(raw_appearance, NOTE_PALETTE)
     except node_appearance.AppearanceError as exc:
         return agents_tool_rounds._refuse_params(agent_text.message("mint.appearance-invalid", exc=exc))
-    spec = projects_storage.read_spec(user_key, project_id)
+    spec = dataflow_docs.live(user_key, project_id)
     if spec is None:
         return "refused", agent_text.message("mint.no-saved-spec"), None
     proposal_id = uuid.uuid4().hex
@@ -1012,7 +1013,7 @@ def _mint_project_install(
             agent_text.message("mint.specialist-no-conversation", coord=coord),
             None,
         )
-    spec = projects_storage.read_spec(user_key, project_id)
+    spec = dataflow_docs.live(user_key, project_id)
     if spec is None:
         return "refused", agent_text.message("mint.no-saved-spec"), None
     proposal_id = uuid.uuid4().hex

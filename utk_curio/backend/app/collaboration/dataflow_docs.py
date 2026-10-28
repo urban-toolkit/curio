@@ -80,6 +80,9 @@ doc's lock, then this module's own; storage's history lock is a leaf. The spec
 lock is never asked for while a doc's lock is held, and the thread that writes
 the docs touches no database. A writer under the spec lock already (a
 read-modify-write that must not interleave) is not made to ask for it again.
+No holder of a doc's lock touches the database, so a thread holding a
+database write may wait for one: the PUT writes its row before its spec, and a
+create comes before its row is committed (#909).
 
 **Reads**: :func:`read` is the dataflow as it is now, an open doc's over the
 file.
@@ -1087,11 +1090,10 @@ def create(user_key: str, project_id: str, spec: dict, actor: Actor) -> Live:
     entry = _open_entry(project_id)
     if entry is not None:
         _discard(entry)
-    with _lock:
-        # Under this module's lock, so the doc cannot open between the file
-        # and its pointer: it opens built anew from this file.
-        storage.write_spec(user_key, project_id, spec)
-        _drop_pointer(user_key, project_id)
+    storage.write_spec(user_key, project_id, spec)
+    # A doc that opens before its pointer goes reads this file's revision as a
+    # write outside it and catches up to it (:func:`_catch_up`).
+    _drop_pointer(user_key, project_id)
     return Live(mine, user_key=user_key, project_id=project_id)
 
 
