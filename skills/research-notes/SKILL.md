@@ -1,3 +1,18 @@
+---
+name: research-notes
+description: >-
+  Use this skill when findings become notes on the dataflow, such as the answer to a question from
+  the web or the findings of a search. It gives the order the notes follow, a yellow note with the
+  question and then a green note per answer, the markdown their content is written in, and the rule
+  of one note per finding, written faithfully.
+license: MIT
+compatibility: Written for Curio's agents, their tools and node code.
+metadata:
+  author: curio
+  version: "1.0.0"
+---
+## Notes from findings
+
 Follow the reference conversation pattern for every answered question. The notes mirror the exchange, in sequence:
 
 1. FIRST a yellow note carrying the user's question verbatim (title "Question", content the question text).

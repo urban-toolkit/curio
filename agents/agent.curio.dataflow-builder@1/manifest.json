@@ -22,7 +22,9 @@
     "map-edits",
     "scenarios",
     "dashboards",
-    "provenance"
+    "provenance",
+    "reuse-first",
+    "data-sources"
   ],
   "roles": [
     "orchestration"
@@ -40,7 +42,10 @@
     },
     "instruction": {
       "path": "prompts/orchestration_instruction.md",
-      "variables": []
+      "variables": [],
+      "skills": [
+        "reuse-first"
+      ]
     }
   },
   "compatibleTargets": [
