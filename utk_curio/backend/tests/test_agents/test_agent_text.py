@@ -139,7 +139,7 @@ def test_the_backend_renders_every_page_and_prompt_when_it_starts(tmp_curio, mon
     rendered = agent_text.rendered()
     on_disk = sorted(path.resolve() for path in AGENTS.rglob("*.md") if path != BASE / "README.md")
     skill_files = sorted(path.resolve() for path in SKILLS.glob("*/SKILL.md"))
-    assert len(skill_files) == 16, skill_files
+    assert len(skill_files) == 21, skill_files
     assert sorted(path.resolve() for path in rendered) == sorted(on_disk + skill_files)
     for file, text in rendered.items():
         assert text and "{{" not in text, file
@@ -167,7 +167,7 @@ def test_every_folder_of_skills_holds_a_skill_and_no_page_sits_outside_one():
     from utk_curio.backend.app.agents.domain import skills
 
     folders = sorted(path for path in SKILLS.iterdir() if path.is_dir() and not path.name.startswith("."))
-    assert len(folders) == 16, folders
+    assert len(folders) == 21, folders
     for folder in folders:
         assert (folder / skills.SKILL_FILE).is_file(), f"skills/{folder.name}/ holds no {skills.SKILL_FILE}"
         skill = skills.parse(folder)

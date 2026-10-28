@@ -646,13 +646,18 @@ def test_a_refused_round_is_handed_the_skills_that_answer_the_check(tmp_curio, i
     skills, those whose ``curio-refusals`` names that check's kind; of those
     serving a node's behavior, only its node's: the document check is
     answered by Autark's skill for an Autark node and the Vega-Lite starter
-    for a chart."""
+    for a chart. They come after the node's skills and before the mode's
+    own procedures, which close every round's list."""
     skill_runs = _skill_runs()
     manifest = _manifest(NB)
+    own = list(manifest.capability("node.content.generate").skills)
+    assert own == ["data-sources"]
     before = skill_runs.for_delegated(KEY, PID, manifest, "node.content.generate", inputs, None, _preamble(NB))
     after = skill_runs.for_delegated(KEY, PID, manifest, "node.content.generate", inputs, None, _preamble(NB),
                                      refused=refused)
-    assert _names(after.handed) == _names(before.handed) + added
+    node = _names(before.handed)[:-len(own)]
+    assert _names(before.handed) == [*node, *own]
+    assert _names(after.handed) == [*node, *added, *own]
 
 
 def test_every_refusal_a_skill_answers_is_a_kind_a_check_of_solve_records():
@@ -671,10 +676,11 @@ def test_every_refusal_a_skill_answers_is_a_kind_a_check_of_solve_records():
 
 
 def test_a_solve_round_is_handed_the_skill_the_refusal_before_it_names(app, tmp_curio):
-    """A node whose template names no behavior is handed no skill. The
-    grounding gate refuses its first round for a function Curio does not give
-    node code, and the round after it, run by the real delegation, is handed
-    the functions skill, which answers that check."""
+    """A node whose template names no behavior is handed no skill of a
+    node's, only the mode's own procedure, ``data-sources``. The grounding
+    gate refuses its first round for a function Curio does not give node
+    code, and the round after it, run by the real delegation, is handed the
+    functions skill, which answers that check, before the mode's own."""
     from utk_curio.backend.app.agents.application.solve import rounds
     from utk_curio.backend.tests.test_agents.test_routes_proposals import TestNodeCreate
     from utk_curio.backend.tests.test_agents.test_verified_rounds import _drive, _Exec, _Resolution
@@ -698,9 +704,9 @@ def test_a_solve_round_is_handed_the_skill_the_refusal_before_it_names(app, tmp_
         testing_provider.reset()
     assert [attempt["kind"] for attempt in outcome["attempts"]][:1] == ["ungrounded-code"], outcome["attempts"]
     first, second = generations
-    assert "skills" not in _kinds(first), _kinds(first)
-    assert _wrapped(_slot(second, "skills")) == ["node-functions"]
-    assert outcome["delegations"][1]["pins"]["skills"] == {"handed": ["node-functions"]}
+    assert _wrapped(_slot(first, "skills")) == ["data-sources"], _kinds(first)
+    assert _wrapped(_slot(second, "skills")) == ["node-functions", "data-sources"]
+    assert outcome["delegations"][1]["pins"]["skills"] == {"handed": ["node-functions", "data-sources"]}
 
 
 def test_the_loop_hands_the_round_after_the_map_editor_refused_that_check_s_kind(app, tmp_curio):
@@ -782,7 +788,8 @@ def test_a_manifest_names_its_skills_and_a_capability_its_own():
     assert _parse().capability("conversation.respond").skills == ()
     # The instruction names the skills every run of it is handed.
     m = _parse(prompts={"instruction": {"path": "prompts/chat.md", "skills": ["reuse-first", "catalogs"]}})
-    assert m.instruction_skills == m.prompts["instruction"].skills == ("reuse-first", "catalogs")
+    assert getattr(m, "instruction_skills", None) == ("reuse-first", "catalogs")
+    assert m.prompts["instruction"].skills == ("reuse-first", "catalogs")
     assert _parse(prompts={"instruction": {"path": "prompts/chat.md"}}).instruction_skills == ()
     assert _parse().instruction_skills == (), "a manifest with no instruction names none"
 
@@ -858,8 +865,10 @@ def test_the_schema_declares_skills_by_the_specifications_names():
 
     schema = json.loads((Path(__file__).resolve().parents[4] / "docs" / "schemas" / "agent-package.v1.json")
                         .read_text(encoding="utf-8"))
+    prompt_entry = schema["properties"]["prompts"]["additionalProperties"]["properties"]
+    assert "skills" in prompt_entry, "the schema declares no skills for a prompt, the instruction's"
     for field in (schema["properties"]["skills"], schema["properties"]["capabilities"]["items"]["properties"]["skills"],
-                  schema["properties"]["prompts"]["additionalProperties"]["properties"]["skills"]):
+                  prompt_entry["skills"]):
         assert field["type"] == "array" and field["uniqueItems"] is True
         assert field["items"]["maxLength"] == skills.NAME_MAX
         pattern = re.compile(field["items"]["pattern"])

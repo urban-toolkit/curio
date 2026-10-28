@@ -168,8 +168,9 @@ class TestPromptCarriesTheBackendContract:
 
     def test_the_run_holds_the_one_backend_contract_once(self):
         from utk_curio.backend.app.agents.application.turns.delegates import _build_request_contract
-        from utk_curio.backend.app.agents.domain import agent_text
+        from utk_curio.backend.app.agents.domain import agent_text, skills
 
+        assert "package-contract" in [folder.name for folder in skills.shipped_folders()]
         shared = agent_text.skill_text("package-contract")
         assert shared.startswith("## Backend contract\n\nServer-side compute follows ONE backend contract")
         assert "backendContract" not in _build_request_contract()

@@ -581,8 +581,9 @@ class TestAuthoringInputEnrichment:
         assert "registerBehavior" in child_user_msg
         # The package backend contract, once in the whole call: the skill in
         # its system turn, and not in its inputs too.
-        from utk_curio.backend.app.agents.domain import agent_text
+        from utk_curio.backend.app.agents.domain import agent_text, skills
 
+        assert "package-contract" in [folder.name for folder in skills.shipped_folders()]
         contract = agent_text.skill_text("package-contract")
         opening = "Server-side compute follows ONE backend contract"
         assert opening in contract

@@ -48,6 +48,7 @@ def _section(text: str, heading: str) -> str:
     """The text under *heading*, a ``#`` line of *text*, up to the next
     heading of its level or above."""
     level = heading.split(" ", 1)[0]
+    assert f"\n{heading}\n" in text, f"the text holds no section {heading!r}"
     after = text.split(f"\n{heading}\n", 1)[1]
     ends = [at for at in (after.find(f"\n{'#' * n} ") for n in range(2, len(level) + 1)) if at >= 0]
     return after[:min(ends)] if ends else after
