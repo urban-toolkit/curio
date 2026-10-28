@@ -222,20 +222,35 @@ def test_both_builders_are_told_to_change_an_existing_nodes_setting_in_place():
     assert "propose node.settings.write with just that change" in builtin.read_prompt_text(NB, "instruction")
 
 
-def test_every_agent_reads_how_an_existing_nodes_settings_change():
-    """The pages the preamble includes say it of each setting where they
-    describe it: the pool's modes, the view's column, the join's operation and
-    output, and widget values."""
-    from utk_curio.backend.app.agents.domain import builtin
+def test_every_agent_reads_how_an_existing_nodes_settings_change(tmp_curio):
+    """The skills say it of each setting where they describe it: the core
+    skills the preamble places, of the view's column and the join's operation
+    and output; the pool's skill, of its modes, and the widgets' skill, of
+    widget values, which both builders' chats list and a chat on such a node
+    is handed."""
+    from utk_curio.backend.app.agents.application import skill_runs
+    from utk_curio.backend.app.agents.domain import agent_text, builtin
 
     preamble = builtin.read_prompt_text(DFB, "system")
     for words in (
-        "A pool already on the canvas changes its modes through node.settings.write",
         "A view already on the canvas changes its column through node.settings.write",
         "one already on the canvas changes them through node.settings.write",
-        "A node already on the canvas takes new widget values through node.settings.write",
     ):
         assert words in preamble, words
+    spec = {"dataflow": {"nodes": [{"id": "pool", "type": "curio.builtin/data-pool"},
+                                   {"id": "chart", "type": "curio.builtin/vis-vega"}]}}
+    for skill, node, words in (
+        ("interaction-edges", "pool", "A pool already on the canvas changes its modes through node.settings.write"),
+        ("widgets", "chart", "A node already on the canvas takes new widget values through node.settings.write"),
+    ):
+        assert words in agent_text.skill_text(skill) and words not in preamble, skill
+        for coord in (DFB, NB):
+            chat = skill_runs.for_chat("4242", "p-settings", builtin.get_builtin_manifest(coord), spec,
+                                       {"kind": "canvas"}, builtin.read_prompt_text(coord, "system"), [])
+            assert skill in chat.names, (coord, skill)
+        on_node = skill_runs.for_chat("4242", "p-settings", builtin.get_builtin_manifest(NB), spec,
+                                      {"kind": "node", "targetId": node}, builtin.read_prompt_text(NB, "system"), [])
+        assert skill in [handed.name for handed in on_node.handed], (node, skill)
 
 
 class TestAChangeReachesTheCardAndTheNode:

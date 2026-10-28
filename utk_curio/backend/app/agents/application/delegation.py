@@ -38,6 +38,7 @@ from utk_curio.backend.app.agents.infrastructure.providers import (
 )
 from utk_curio.backend.app.agents.application import catalog
 from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
+from utk_curio.backend.app.agents.application import skill_runs
 from utk_curio.backend.app.agents.application.turns import examples as worked_examples
 from utk_curio.backend.app.agents.application.turns import policy
 from utk_curio.backend.app.agents.application.turns import prompts
@@ -300,6 +301,7 @@ def run_delegate(
     parent_coord: str,
     attachment_id: str | None,
     dataflow_block: str | None = None,
+    refused: str | None = None,
 ) -> tuple[str, str, dict]:
     """One synchronous, depth-1 child run (DEC-046 — direct provider-port code).
 
@@ -311,6 +313,11 @@ def run_delegate(
     (``application/dataflow_block.py``), rides a message of its own before the
     task, as a chat run's does before its canvas context. The caller composes
     it, so nothing in *inputs*, which a model may write, becomes it.
+
+    The child is handed the skills its task needs (``skill_runs.for_delegated``),
+    and *refused*, the kind a check recorded when it refused the round before
+    (a Solve round's), adds the skills of what that check guards. Only the
+    runtime passes it, as it does *dataflow_block*.
 
     Returns ``(status, result_text, child_record)``: ``status`` is
     ``"ok"``/``"error"``, ``result_text`` is the bounded child reply (or the
@@ -339,7 +346,7 @@ def run_delegate(
                   "llm": provider_config.llm_pin(config)}
     try:
         child = _prepare_child(user_key, project_id, coord, capability, inputs, config,
-                               attachment_id=attachment_id, child_id=child_id)
+                               attachment_id=attachment_id, child_id=child_id, refused=refused)
     except _NoInstruction:
         return (
             "error",
@@ -393,12 +400,12 @@ class _ChildRun:
 
 
 def _prepare_child(user_key: str, project_id: str, coord: str, capability: str, inputs: dict, config,
-                   *, attachment_id: str | None, child_id: str) -> _ChildRun:
+                   *, attachment_id: str | None, child_id: str, refused: str | None = None) -> _ChildRun:
     """Resolve the child: its definition and instruction (the capability is the mode: a merged
-    agent runs that capability's own instruction), the reply schema when the document has one
-    and the provider takes it, the effective policy, the DEC-031 pins, and the ledger
-    reservation under the child's own policy. Raises what the caller records as
-    "could not start"; :class:`_NoInstruction` when the prompt is not materialized."""
+    agent runs that capability's own instruction), the skills it is handed, the reply schema
+    when the document has one and the provider takes it, the effective policy, the DEC-031
+    pins, and the ledger reservation under the child's own policy. Raises what the caller
+    records as "could not start"; :class:`_NoInstruction` when the prompt is not materialized."""
     manifest = catalog._resolve_definition(user_key, coord)
     instruction = prompts._resolve_instruction_text(user_key, coord, capability=capability)
     if instruction is None:
@@ -410,6 +417,11 @@ def _prepare_child(user_key: str, project_id: str, coord: str, capability: str, 
     preamble = prompts._resolve_prompt_text(user_key, coord, "system")
     spec = projects_storage.read_spec(user_key, project_id)
     examples_block = worked_examples.delegated_block(coord, capability, spec, inputs)
+    # What the task needs, handed: a tool-less run cannot load a skill.
+    run_skills = skill_runs.for_delegated(
+        user_key, project_id, manifest, capability, inputs, spec, preamble, refused=refused,
+    )
+    handed = skill_runs.skills_text(run_skills)
 
     def _system(text: str) -> dict:
         # Depth-1 structurally: the delegate's own prompts and
@@ -417,7 +429,7 @@ def _prepare_child(user_key: str, project_id: str, coord: str, capability: str, 
         # worked examples, for a mode that takes them, under whichever
         # instruction it runs.
         return contracts.system_message(contracts.compose_system(
-            preamble=preamble, instruction=text, configuration=configuration,
+            preamble=preamble, skills=handed, instruction=text, configuration=configuration,
             runtime=(examples_block,),
         ))
 
@@ -447,6 +459,7 @@ def _prepare_child(user_key: str, project_id: str, coord: str, capability: str, 
         "tools": [],  # structurally tool-less (DEC-046)
         "policy": run_policy["policy_pins"],
         **prompts._configuration_pin(configuration),
+        **({"skills": run_skills.pins()} if run_skills.pins() else {}),
     }
     if reply is not None:
         asset = manifest.prompts.get(reply_schemas.AUTK_PROMPT_KEY)

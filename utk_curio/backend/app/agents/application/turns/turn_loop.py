@@ -32,6 +32,7 @@ from utk_curio.backend.app.agents.infrastructure.providers import NativeToolsRef
 from utk_curio.backend.app.agents.infrastructure.providers import ToolCall
 from utk_curio.backend.app.agents.repositories import ledger
 from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
+from utk_curio.backend.app.agents.application import skill_runs as agents_skill_runs
 from utk_curio.backend.app.agents.application import tool_rounds as agents_tool_rounds
 from utk_curio.backend.app.agents.application.turns import delegates as agents_delegates
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
@@ -89,6 +90,7 @@ class AttachmentTurn:
         self.conversation = _RunConversation(messages, self.loop_ctx)
         self.rounds_used = 0
         self.refusals_used = 0  # dev/105 D2: free parameter corrections taken
+        self.skill_reads = 0  # skill.read calls, free up to skill_runs.FREE_READS a turn
         self.started = time.monotonic()
 
     def _emit(self, name: str, payload):
@@ -533,7 +535,9 @@ class AttachmentTurn:
         record = self.tool_calls[-1]
         extra = {key: record[key] for key in ("reason", "egress") if key in record}
         yield from self._emit("tool_result", {"tool": req["tool"], "status": status, **extra})
-        if isinstance(text, ParamRefusal) and self.refusals_used < agents_tool_rounds.MAX_REFUSED_ROUNDS:
+        if req["tool"] == agents_skill_runs.TOOL and self.skill_reads < agents_skill_runs.FREE_READS:
+            self.skill_reads += 1  # loading a skill is no round, up to FREE_READS a turn
+        elif isinstance(text, ParamRefusal) and self.refusals_used < agents_tool_rounds.MAX_REFUSED_ROUNDS:
             self.refusals_used += 1  # dev/105 D2: a free correction, not a round
         else:
             self.rounds_used += 1
@@ -561,8 +565,14 @@ class AttachmentTurn:
             execution=agents_policy._execution_record(
                 self.execution_id, self.pins, self.usage_total, self.started, "error", self.tool_calls,
                 delegations=self.delegations,
+                skills_loaded=self._skills_loaded(),
             ),
         )
+
+    def _skills_loaded(self) -> list[str]:
+        """What skill.read loaded this turn, which later turns are handed again."""
+        run_skills = self.loop_ctx.get("skills")
+        return list(run_skills.loaded) if run_skills is not None else []
 
     def settle_ok(self) -> dict:
         """Settle the reservation, persist both turns, title the conversation
@@ -574,6 +584,7 @@ class AttachmentTurn:
             self.execution_id, self.pins, self.usage_total, self.started, "ok", self.tool_calls,
             delegations=self.delegations,
             refused_rounds=self.refusals_used,
+            skills_loaded=self._skills_loaded(),
         )
         agents_prepare._persist_exchange(
             self.user_key,

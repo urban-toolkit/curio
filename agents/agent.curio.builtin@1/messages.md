@@ -141,6 +141,22 @@ the saved dataflow holds no history of node {node_id}: no run of it or edit to i
 
 node {node_id} has no history entry {entry_id}: call node.history.read without entryId to list its entries
 
+## skills.not-listed
+
+{name} is not one of this run's skills; skill.read loads one of these: {names}
+
+## skills.already-loaded
+
+the skill {name} is already in this conversation: follow its instructions above instead of loading it again
+
+## skills.no-such-file
+
+the skill {name} has no file {path}; its files are: {files}
+
+## skills.file-already-read
+
+{path} of the skill {name} is already in this conversation, above
+
 ## mint.dataset-id-required
 
 params.datasetId must be a non-empty dataset id string

@@ -1,7 +1,7 @@
 """The functions Curio gives node code, read from their skill.
 
 ``skills/node-functions/SKILL.md`` lists every function a node's code calls
-by name, and the preamble places it whole (``{{skill:node-functions}}``). The
+by name, and a run that writes a node's code holds it whole (``skill_runs``). The
 lines of its body, the page after its frontmatter, have fixed shapes, which
 :func:`parse` reads and refuses anything else:
 
