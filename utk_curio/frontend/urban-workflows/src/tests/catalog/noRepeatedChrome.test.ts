@@ -105,6 +105,7 @@ describe("every catalog card root carries its identity attribute", () => {
     ["model drawer", "components/packages/publishing/PackageCard.tsx", "data-model-id"],
     ["scenario browse", "pages/scenarios/ScenarioCatalogBrowseCard.tsx", "data-scenario-key"],
     ["scenario drawer", "components/scenarios/catalog/ScenarioCard.tsx", "data-scenario-key"],
+    ["skill browse", "pages/agents/SkillCatalogBrowseCard.tsx", "data-skill-name"],
   ];
 
   test.each(CARDS)("the %s card exposes %s", (_kind, file, attr) => {

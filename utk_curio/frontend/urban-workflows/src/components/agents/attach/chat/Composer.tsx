@@ -64,16 +64,22 @@ export const Composer: React.FC<{
 
   const pick = (name: string) => {
     const next = withSlashCommand(value, name);
+    // Just after `/<name> `, where the rest of the message starts.
+    const at = name.length + 2;
     onChange(next);
-    setCaret(next.length);
+    setCaret(at);
     setDismissedAt(null);
     const textarea = textareaRef.current;
     if (textarea) {
       textarea.focus();
-      // After React writes the new value, the caret goes after the space.
-      window.setTimeout(() => textarea.setSelectionRange(next.length, next.length), 0);
+      // After React writes the new value, which puts the caret at its end.
+      window.setTimeout(() => textarea.setSelectionRange(at, at), 0);
     }
   };
+
+  // Where the caret is decides whether the first word is being typed.
+  const syncCaret = (e: React.SyntheticEvent<HTMLTextAreaElement>) =>
+    setCaret(e.currentTarget.selectionStart ?? 0);
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (open && e.key === "Escape") {
@@ -157,7 +163,9 @@ export const Composer: React.FC<{
           onChange(e.target.value);
           setCaret(e.target.selectionStart ?? e.target.value.length);
         }}
-        onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
+        onSelect={syncCaret}
+        onKeyUp={syncCaret}
+        onMouseUp={syncCaret}
         onKeyDown={onKeyDown}
       />
       <button
