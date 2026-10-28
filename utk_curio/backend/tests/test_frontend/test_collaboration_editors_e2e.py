@@ -72,7 +72,10 @@ def _open_as(page, base: str, project_id: str, role: str) -> None:
     the collaboration panel lists everyone with theirs."""
     page.goto(f"{base}/dataflow/{project_id}", timeout=120000)
     node_locator(page, NODE).wait_for(timeout=30000)
-    page.locator(f'[data-collab-role="{role}"]').first.wait_for(timeout=30000)
+    try:
+        page.locator(f'[data-collab-role="{role}"]').first.wait_for(timeout=30000)
+    except Exception as exc:  # noqa: BLE001 - said in the test's words
+        raise AssertionError(f"the collaboration panel never named a {role} on this tab") from exc
 
 
 def _position(page, node_id: str = NODE):
