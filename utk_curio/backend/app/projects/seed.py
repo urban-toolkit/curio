@@ -238,6 +238,7 @@ def seed_example_projects(
                         # Theirs now. Repair a missing spec file (the row without
                         # its spec is unopenable) and otherwise leave it alone.
                         if storage.read_spec(ukey, project_id) is None:
+                            storage.drop_history(ukey, project_id)
                             storage.write_spec(ukey, project_id, spec)
                         continue
                     if existing is not None and existing.user_id == user.id:
@@ -263,6 +264,9 @@ def seed_example_projects(
                         db.session.add(project)
                         db.session.flush()
 
+                    # The shipped copy as the whole document: an example put
+                    # back to it keeps none of the history of what it replaces.
+                    storage.drop_history(ukey, project_id)
                     storage.write_spec(ukey, project_id, spec)
                     storage.write_manifest(
                         ukey,
