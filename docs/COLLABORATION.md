@@ -66,7 +66,7 @@ Open the project URL (`http://<host>:8080/dataflow/<UUID>`) on each collaborator
 
 - **Namespace:** `/collab`, or the one `--collab-namespace` sets; the page reads it from `/api/config/public`.
 - **Transport:** Socket.IO over WebSocket (with polling fallback).
-- **Async mode:** `threading`, which preserves the existing Flask dev-reloader and avoids the eventlet/gevent monkey-patching trap. Acceptable for small teams (<~20 concurrent sockets); production with many concurrent rooms should switch to `eventlet` or `gevent`.
+- **Async mode:** `threading`, which preserves the existing Flask dev-reloader and avoids the eventlet/gevent monkey-patching trap. Each socket's events are handled one at a time, in the order the socket sent them, on the thread that reads it. Acceptable for small teams (<~20 concurrent sockets); production with many concurrent rooms should switch to `eventlet` or `gevent`.
 - **Room key:** `project:<uuid>`. The UUID is the canonical project identifier from the URL (`/dataflow/:id`) and the source of truth in `projectPackagesStore.getCurrentProjectId()`.
 - **Room state:** in-memory dicts in [utk_curio/backend/app/collaboration/room_state.py](../utk_curio/backend/app/collaboration/room_state.py), guarded by a single `threading.RLock`. **Not persisted across restarts.**
 - **Each open dataflow's doc:** a Yjs doc the backend keeps in memory, synced with each tab over the same socket and kept beside the dataflow's spec, so a restart reloads it; see [ARCHITECTURE.md § Each open dataflow's doc](ARCHITECTURE.md#each-open-dataflows-doc). One backend process serves them all.
