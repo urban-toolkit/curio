@@ -55,7 +55,7 @@ class TestPromptFilesResolve:
         placed = re.findall(r"\{\{skill:([^{}]+)\}\}", written)
         assert sorted(placed) == ["compatibility", "node-control", "nodes"], placed
         shipped = [folder.name for folder in skills.shipped_folders()]
-        assert len(shipped) == 16, shipped
+        assert len(shipped) == 21, shipped
         named = {name for m in builtin.list_builtin_manifests() for name in (m.skills or ())}
         assert sorted(set(placed) | named) == shipped
         for name in shipped:
@@ -122,29 +122,58 @@ class TestWhichPromptRuns:
         assert holders == {"agent.curio.node-builder"}
 
 
+def _held(coord: str, capability: str | None = None) -> str:
+    """What a run of *coord* holds of its agent text beyond the preamble: the
+    skills it is handed, each wrapped as its system turn carries them, then
+    its instruction. The chat on the canvas when *capability* is None, else
+    a delegated run of *capability*."""
+    from utk_curio.backend.app.agents.application import skill_runs
+
+    m = builtin.get_builtin_manifest(coord)
+    preamble = builtin.read_prompt_text(coord, "system")
+    if capability is None:
+        run = skill_runs.for_chat(_KEY, "p", m, None, {"kind": "canvas"}, preamble, [])
+        key = "instruction"
+    else:
+        run = skill_runs.for_delegated(_KEY, "p", m, capability, {}, None, preamble)
+        key = m.capability(capability).instruction or "instruction"
+    instruction = builtin.read_prompt_text(coord, key)
+    assert instruction, (coord, key)
+    return f"{skill_runs.skills_text(run) or ''}\n\n{instruction}"
+
+
+def _skill_lines(name: str) -> list[str]:
+    """The lines of the skill *name*'s body as written, its headings and
+    blank lines left out."""
+    from utk_curio.backend.app.agents.domain import skills
+
+    body = skills.parse(skills.skills_dir() / name).body
+    return [line for line in body.splitlines() if line.strip() and not line.startswith("#")]
+
+
 class TestTheResearchersCheckingRules:
-    def test_they_are_written_once_and_ride_both_researcher_prompts(self):
+    def test_they_are_written_once_and_both_researcher_runs_hold_them(self):
         from utk_curio.backend.app.common.egress_policy import MAX_CALLS_PER_RUN
 
-        fragment = prompt_path("research_verify_rules.md")
-        lines = [line for line in fragment.read_text(encoding="utf-8").splitlines() if line.strip()]
+        fragment = prompt_path("fact-checking/SKILL.md")
+        lines = _skill_lines("fact-checking")
         assert len(lines) == 4, "verify first, a failure is a finding, the labels, the budget"
-        # One page holds them: no other page, prompt or skill repeats a line
-        # of them, and each Researcher prompt includes the page, once.
+        # One skill holds them: no page, prompt or other skill repeats a line
+        # of them, and no Researcher prompt includes a page of them.
         for path in prompt_files("*.md"):
             if path != fragment:
                 text = path.read_text(encoding="utf-8")
                 assert not [line for line in lines if line in text], prompt_name(path)
         for prompt in ("research_instruction.md", "researcher_instruction.md"):
-            text = prompt_path(prompt).read_text(encoding="utf-8")
-            assert text.count("{{include:rules/research_verify_rules.md}}") == 1, prompt
-        # Both prompts carry them whole, as read: the chat and the mode.
-        rules = prompt_text("research_verify_rules.md").rstrip("\n")
+            assert "{{include:" not in prompt_path(prompt).read_text(encoding="utf-8"), prompt
+        # Both runs hold them whole, once, as read: the chat and the mode are
+        # each handed the skill.
+        rules = prompt_text("fact-checking/SKILL.md").rstrip("\n")
         coord = builtin.builtin_coord("agent.curio.researcher")
-        chat = builtin.read_prompt_text(coord, "instruction")
-        mode = builtin.read_prompt_text(coord, "research.verify")
-        assert chat and chat.count(rules) == 1
-        assert mode and mode.count(rules) == 1
+        chat = _held(coord)
+        mode = _held(coord, "research.verify")
+        assert chat.count(rules) == 1
+        assert mode.count(rules) == 1
         low = rules.lower()
         assert "verify before you assert" in low
         assert "report failure to verify as a finding" in low
@@ -156,37 +185,35 @@ class TestTheResearchersCheckingRules:
         assert "findings first, one per line" in mode.lower()
         assert "findings first, one per line" not in chat.lower()
         # The notes mode checks nothing, so it carries none of them.
-        notes = builtin.read_prompt_text(coord, "research.notes.compose")
+        notes = _held(coord, "research.notes.compose")
         assert notes and rules not in notes
 
 
 class TestTheResearchersNotesRules:
-    def test_they_are_written_once_and_ride_both_notes_prompts(self):
-        """The notes format, written once: the chat that answers a web
-        question with notes and the mode that composes notes from search
-        results include the same page,
-        ``{{include:rules/research_notes_rules.md}}``."""
-        fragment = prompt_path("research_notes_rules.md")
-        lines = [line for line in fragment.read_text(encoding="utf-8").splitlines() if line.strip()]
+    def test_they_are_written_once_and_both_notes_runs_hold_them(self):
+        """The notes format, written once, in the skill ``research-notes``:
+        the chat that answers a web question with notes and the mode that
+        composes notes from search results are each handed it."""
+        fragment = prompt_path("research-notes/SKILL.md")
+        lines = _skill_lines("research-notes")
         assert len(lines) == 5, (
             "the pattern, the question note, the answer notes, the markdown, one note per finding"
         )
-        # One page holds them: no other page, prompt or skill repeats a line
-        # of them, and each notes prompt includes the page, once.
+        # One skill holds them: no page, prompt or other skill repeats a line
+        # of them, and no notes prompt includes a page of them.
         for path in prompt_files("*.md"):
             if path != fragment:
                 text = path.read_text(encoding="utf-8")
                 assert not [line for line in lines if line in text], prompt_name(path)
         for prompt in ("researcher_instruction.md", "researcher_notes_instruction.md"):
-            text = prompt_path(prompt).read_text(encoding="utf-8")
-            assert text.count("{{include:rules/research_notes_rules.md}}") == 1, prompt
-        # Both prompts carry them whole, as read.
-        rules = prompt_text("research_notes_rules.md").rstrip("\n")
+            assert "{{include:" not in prompt_path(prompt).read_text(encoding="utf-8"), prompt
+        # Both runs hold them whole, once, as read.
+        rules = prompt_text("research-notes/SKILL.md").rstrip("\n")
         coord = builtin.builtin_coord("agent.curio.researcher")
-        chat = builtin.read_prompt_text(coord, "instruction")
-        mode = builtin.read_prompt_text(coord, "research.notes.compose")
-        assert chat and chat.count(rules) == 1
-        assert mode and mode.count(rules) == 1
+        chat = _held(coord)
+        mode = _held(coord, "research.notes.compose")
+        assert chat.count(rules) == 1
+        assert mode.count(rules) == 1
         low = rules.lower()
         assert "yellow note carrying the user's question verbatim" in low
         assert "one green note per answer" in low

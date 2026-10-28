@@ -63,7 +63,7 @@ def test_skills_ref_validates_every_skill_curio_ships():
 
     assert skills_ref.__version__ == "0.1.1"
     folders = skills.shipped_folders()
-    assert len(folders) == 16, folders
+    assert len(folders) == 21, folders
     problems = {folder.name: skills_ref.validate(folder) for folder in folders}
     assert problems == {folder.name: [] for folder in folders}
     for folder in folders:
