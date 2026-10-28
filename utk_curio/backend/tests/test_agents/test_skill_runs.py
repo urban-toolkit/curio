@@ -34,6 +34,7 @@ from utk_curio.backend.tests._support.agent_routes import _auth
 NB = "agent.curio.node-builder@1"
 DF = "agent.curio.dataset-finder@1"
 RS = "agent.curio.researcher@1"
+DFB = "agent.curio.dataflow-builder@1"
 READER = "agent.curio.dataflow-reader@1"
 PLANNER = "agent.curio.dataflow-planner@1"
 EVALUATOR = "agent.curio.generated-content-evaluator@1"
@@ -46,12 +47,17 @@ POOL = "curio.builtin/data-pool"
 UNKNOWN = "acme.tools/clip"
 #: The skills the default preamble holds, every agent's core.
 CORE = ("compatibility", "node-control", "nodes")
-#: The feature skills the three card chats list, in their manifests' order.
+#: The feature skills the three card chats list first, in their manifests' order.
 FEATURE_SKILLS = [
     "node-functions", "catalogs", "widgets", "selection-chips", "autark", "vega-lite-starter",
     "autark-starter", "vega-lite-maps", "interaction-edges", "map-edits", "scenarios", "dashboards",
     "provenance",
 ]
+#: The Node Builder's skills: the feature skills, then the procedures its runs follow.
+NB_SKILLS = [*FEATURE_SKILLS, "reuse-first", "data-sources", "package-contract"]
+#: The skills the Node Builder's instruction names: its chat is handed them,
+#: and so is each of its capabilities with no instruction of its own.
+NB_INSTRUCTION = ["reuse-first", "data-sources"]
 CODE_SKILLS = ["node-functions", "catalogs", "widgets", "selection-chips"]
 VEGA_SKILLS = ["widgets", "selection-chips", "vega-lite-starter", "vega-lite-maps"]
 AUTK_SKILLS = ["widgets", "selection-chips", "autark", "autark-starter"]
@@ -196,7 +202,8 @@ def test_a_chat_lists_its_agents_skills_under_the_guides_instruction_and_holds_s
 ):
     """The Node Builder's chat lists the skills its manifest names, none of
     the core three its preamble holds, in a slot of its own after the
-    preamble, and is granted skill.read, last among its tools."""
+    preamble, and is granted skill.read, last among its tools. On the canvas
+    it is handed only the skills its instruction names."""
     from utk_curio.backend.app.agents.domain import agent_text, builtin
 
     skill_runs = _skill_runs()
@@ -205,16 +212,17 @@ def test_a_chat_lists_its_agents_skills_under_the_guides_instruction_and_holds_s
     testing_provider.push_reply("Hello.")
     _run(client, scripted, pid, att)
     (system, *_), = _run_calls()
-    assert _kinds(system)[:3] == ["preamble", "skill-catalog", "instruction"], _kinds(system)
+    assert _kinds(system)[:4] == ["preamble", "skill-catalog", "skills", "instruction"], _kinds(system)
     catalog = _slot(system, "skill-catalog")
     assert catalog.startswith(agent_text.section(builtin.FRAMES_FILE, "skill-catalog") + "\n\n<available_skills>\n")
     assert catalog.endswith("\n</available_skills>")
-    assert _listed(catalog) == list(_manifest(NB).skills) == FEATURE_SKILLS
+    assert _listed(catalog) == list(_manifest(NB).skills) == NB_SKILLS
     assert not set(_listed(catalog)) & set(CORE)
+    assert _wrapped(_slot(system, "skills")) == list(_manifest(NB).instruction_skills) == NB_INSTRUCTION
     assert "- skill.read:" in _slot(system, "tool-protocol")
     pins = _turns(client, scripted, pid, att)[-1]["execution"]["pins"]
     assert pins["tools"][-1] == "skill.read" and pins["tools"].count("skill.read") == 1, pins["tools"]
-    assert pins["skills"] == {"catalog": FEATURE_SKILLS}
+    assert pins["skills"] == {"catalog": NB_SKILLS, "handed": NB_INSTRUCTION}
     assert skill_runs.TOOL == "skill.read"
 
 
@@ -276,7 +284,7 @@ def test_a_user_agent_that_names_no_skills_lists_every_skill_its_preamble_does_n
 
     user, _ = user_and_token
     shipped = [folder.name for folder in skills.shipped_folders()]
-    assert len(shipped) == 16 and set(CORE) <= set(shipped)
+    assert len(shipped) == 21 and set(CORE) <= set(shipped)
     pid = _project(client, scripted)
     for coord, preamble, listed in (
         ("agent.test.curio-preamble@1", "curio:default_preamble.md", [n for n in shipped if n not in CORE]),
@@ -301,7 +309,7 @@ def test_a_native_run_is_offered_skill_read_with_its_skills_as_the_only_names(
     user, _ = user_and_token
     testing_provider.script_chat_capabilities(tools=True)
     pid = _project(client, scripted)
-    for coord, listed in ((NB, FEATURE_SKILLS), (DF, ["catalogs"])):
+    for coord, listed in ((NB, NB_SKILLS), (DF, ["catalogs", "data-sources"])):
         att = _attach(client, scripted, pid, coord)
         *_rest, loop_ctx = prepare._prepare_run(_user_dir_key(user), pid, att, "go", ENDPOINT)
         (spec,) = [tool for tool in loop_ctx["native_tools"] if tool["name"] == tools.wire_name("skill.read")]
@@ -313,7 +321,7 @@ def test_a_native_run_is_offered_skill_read_with_its_skills_as_the_only_names(
         assert len(spec["description"]) <= 1024
     # The registry's own schema names every skill Curio ships; a run gives its own.
     names = tools.REGISTRY["skill.read"].parameters["properties"]["name"]["enum"]
-    assert len(names) == 16 and set(FEATURE_SKILLS) <= set(names)
+    assert len(names) == 21 and set(NB_SKILLS) <= set(names)
 
 
 # --- skill.read ------------------------------------------------------------------------
@@ -403,8 +411,9 @@ def test_a_skill_a_chat_loads_is_kept_for_the_conversation_and_never_sent_twice(
     client, user_and_token, tmp_curio, scripted, native,
 ):
     """Turn one loads ``widgets``: its result is the skill, and the turn
-    records it. Turn two is handed it in its system turn, and loading it again
-    answers that it is in the conversation already."""
+    records it; its system turn holds only the skills the instruction names.
+    Turn two is handed it in its system turn, after those, and loading it
+    again answers that it is in the conversation already."""
     from utk_curio.backend.app.agents.domain import agent_text
 
     if native:
@@ -418,7 +427,7 @@ def test_a_skill_a_chat_loads_is_kept_for_the_conversation_and_never_sent_twice(
     result = first[1][-1]
     assert result["role"] == ("tool" if native else "user"), result
     assert _wrapped(result["content"]) == ["widgets"], result["content"][:200]
-    assert "skills" not in _kinds(first[0][0])
+    assert _wrapped(_slot(first[0][0], "skills")) == NB_INSTRUCTION
     record = _turns(client, scripted, pid, att)[-1]["execution"]
     assert record["skillsLoaded"] == ["widgets"]
     assert [c["tool"] for c in record["toolCalls"]] == ["skill.read"]
@@ -429,7 +438,7 @@ def test_a_skill_a_chat_loads_is_kept_for_the_conversation_and_never_sent_twice(
     testing_provider.push_replies(call if native else _read("widgets"), "Done again.")
     _run(client, scripted, pid, att, "and again")
     second = _run_calls()
-    assert _wrapped(_slot(second[0][0], "skills")) == ["widgets"]
+    assert _wrapped(_slot(second[0][0], "skills")) == [*NB_INSTRUCTION, "widgets"]
     again = second[1][-1]["content"]
     assert agent_text.message("skills.already-loaded", name="widgets") in again and not _wrapped(again)
     record = _turns(client, scripted, pid, att)[-1]["execution"]
@@ -459,7 +468,7 @@ def test_a_loaded_skill_is_kept_when_its_turn_is_trimmed_from_the_context(
     _run(client, scripted, pid, att, "anything new?")
     (system, *context) = _run_calls()[0]
     assert not any("map-edits" in str(m.get("content")) for m in context), "the loading turn is still in context"
-    assert _wrapped(_slot(system, "skills")) == ["map-edits"]
+    assert _wrapped(_slot(system, "skills")) == [*NB_INSTRUCTION, "map-edits"]
 
 
 def test_loading_a_skill_spends_no_tool_round_up_to_four_a_turn(client, user_and_token, tmp_curio, scripted):
@@ -498,7 +507,8 @@ def test_a_refused_load_is_a_correction_the_model_can_make(client, user_and_toke
     body = _run(client, scripted, pid, att)
     assert body["reply"].endswith("Found it.")
     calls = _run_calls()
-    assert agent_text.message("skills.not-listed", name="'widgets'", names="catalogs") in calls[1][-1]["content"]
+    assert agent_text.message(
+        "skills.not-listed", name="'widgets'", names="catalogs, data-sources") in calls[1][-1]["content"]
     assert _wrapped(calls[2][-1]["content"]) == ["catalogs"]
     record = _turns(client, scripted, pid, att)[-1]["execution"]
     assert [(c["tool"], c["status"]) for c in record["toolCalls"]] == [("skill.read", "refused"), ("skill.read", "ok")]
@@ -520,36 +530,37 @@ def test_a_chat_on_a_node_is_handed_its_nodes_skills_and_still_lists_the_rest(
     calls = _run_calls()
     system = calls[0][0]
     assert _kinds(system)[:4] == ["preamble", "skill-catalog", "skills", "instruction"], _kinds(system)
-    assert _wrapped(_slot(system, "skills")) == VEGA_SKILLS
+    assert _wrapped(_slot(system, "skills")) == [*VEGA_SKILLS, *NB_INSTRUCTION]
     assert "<skill_resources>" not in _slot(system, "skills"), "the shipped skills hold no other files"
-    assert _listed(_slot(system, "skill-catalog")) == FEATURE_SKILLS
+    assert _listed(_slot(system, "skill-catalog")) == NB_SKILLS
     assert agent_text.message("skills.already-loaded", name="vega-lite-maps") in calls[1][-1]["content"]
     record = _turns(client, scripted, pid, att)[-1]["execution"]
-    assert record["pins"]["skills"] == {"catalog": FEATURE_SKILLS, "handed": VEGA_SKILLS}
+    assert record["pins"]["skills"] == {"catalog": NB_SKILLS, "handed": [*VEGA_SKILLS, *NB_INSTRUCTION]}
     assert "skillsLoaded" not in record
 
 
 @pytest.mark.parametrize("coord, capability, inputs, handed", [
-    (NB, "node.content.generate", {"nodeType": CA}, CODE_SKILLS),
-    (NB, "node.content.generate", {"nodeType": VEGA}, VEGA_SKILLS),
-    (NB, "node.content.generate", {"nodeContext": {"nodeType": AUTK}}, AUTK_SKILLS),
-    (NB, "node.content.generate", {"nodeId": "tile"}, AUTK_SKILLS),
-    (NB, "node.content.generate", {"nodeType": EDIT}, [*CODE_SKILLS, "map-edits"]),
-    (NB, "node.content.generate", {"nodeType": POOL}, ["interaction-edges"]),
-    (NB, "node.content.generate", {"nodeType": UNKNOWN}, []),
-    (NB, "package.build", {"packageIntent": "a counter"}, CODE_SKILLS),
-    (NB, "package.extend", {}, CODE_SKILLS),
-    (NB, "node.kind.author", {}, CODE_SKILLS),
-    (NB, "package.recommend", {"mission": "count"}, []),
-    (NB, "node.build", {"nodeIntent": "count the rows"}, CODE_SKILLS),
-    (NB, "node.build", {"nodeId": "chart"}, [*VEGA_SKILLS, "node-functions", "catalogs"]),
-    (NB, "dataset.fetch.author", {"nodeIntent": "fetch the stations"}, CODE_SKILLS),
+    (NB, "node.content.generate", {"nodeType": CA}, [*CODE_SKILLS, "data-sources"]),
+    (NB, "node.content.generate", {"nodeType": VEGA}, [*VEGA_SKILLS, "data-sources"]),
+    (NB, "node.content.generate", {"nodeContext": {"nodeType": AUTK}}, [*AUTK_SKILLS, "data-sources"]),
+    (NB, "node.content.generate", {"nodeId": "tile"}, [*AUTK_SKILLS, "data-sources"]),
+    (NB, "node.content.generate", {"nodeType": EDIT}, [*CODE_SKILLS, "map-edits", "data-sources"]),
+    (NB, "node.content.generate", {"nodeType": POOL}, ["interaction-edges", "data-sources"]),
+    (NB, "node.content.generate", {"nodeType": UNKNOWN}, ["data-sources"]),
+    (NB, "package.build", {"packageIntent": "a counter"}, [*CODE_SKILLS, "package-contract", "reuse-first"]),
+    (NB, "package.extend", {}, [*CODE_SKILLS, "package-contract", "reuse-first"]),
+    (NB, "node.kind.author", {}, [*CODE_SKILLS, "package-contract", "reuse-first"]),
+    (NB, "package.recommend", {"mission": "count"}, ["reuse-first"]),
+    (NB, "node.build", {"nodeIntent": "count the rows"}, [*CODE_SKILLS, *NB_INSTRUCTION]),
+    (NB, "node.build", {"nodeId": "chart"}, [*VEGA_SKILLS, "node-functions", "catalogs", *NB_INSTRUCTION]),
+    (NB, "dataset.fetch.author", {"nodeIntent": "fetch the stations"}, [*CODE_SKILLS, *NB_INSTRUCTION]),
     (DF, "dataset.discover", {"mission": "air quality"}, ["catalogs"]),
     (DF, "dataset.discover", {"nodeContext": {"nodeType": "curio.builtin/data-loading"}}, ["catalogs"]),
     (DF, "dataset.select", {}, []),
-    (RS, "research.verify", {"url": "https://example.org"}, []),
-    (RS, "research.notes.compose", {"question": "why"}, []),
-    (NB, "node.content.generate", {"intent": "a node for no node"}, CODE_SKILLS),
+    (RS, "research.verify", {"url": "https://example.org"}, ["fact-checking"]),
+    (RS, "research.notes.compose", {"question": "why"}, ["research-notes"]),
+    (DFB, "dataflow.orchestrate", {"mission": "chart the stations"}, []),
+    (NB, "node.content.generate", {"intent": "a node for no node"}, [*CODE_SKILLS, "data-sources"]),
     (READER, "dataflow.explain", {}, [*CODE_SKILLS, "autark", "vega-lite-starter", "autark-starter",
                                        "vega-lite-maps", "interaction-edges", "scenarios", "dashboards"]),
     (PLANNER, "workflow.plan.create", {}, ["interaction-edges", "scenarios", "dashboards"]),
@@ -561,9 +572,12 @@ def test_a_run_with_no_tools_is_handed_the_skills_its_task_needs(tmp_curio, coor
     """A run that writes or checks a node, the node's; a run that writes
     code for no node, node code's; a mode that reads the dataflow, those of
     its nodes and features; and a capability's own, here the Dataset Finder's
-    ``catalogs`` and node code's for the Node Builder's runs that build a node
-    for another agent, after the named node's. Never a skill the agent does
-    not name."""
+    ``catalogs``, node code's for the Node Builder's runs that build a node
+    for another agent, after the named node's, and the procedures of each
+    mode, last. A capability with no instruction of its own runs the agent's
+    instruction, so it is also handed the instruction's skills, as the Node
+    Builder's runs that build a node are; the Dataflow Builder's instruction
+    names none. Never a skill the agent does not name."""
     skill_runs = _skill_runs()
     spec = {"dataflow": {
         "nodes": [
@@ -592,13 +606,14 @@ def test_a_delegated_run_carries_its_skills_after_its_preamble_and_pins_them(cli
     user, token = user_and_token
     key = _user_dir_key(user)
     pid = _project(client, _auth(token), nodes=[{"id": "chart", "type": VEGA, "content": "{}", "x": 0, "y": 0}])
-    for capability, inputs, handed in (
-        ("node.content.generate", {"nodeType": VEGA, "intent": "a chart"}, VEGA_SKILLS),
-        ("package.recommend", {"mission": "count the trees"}, []),
+    for coord, capability, inputs, handed in (
+        (NB, "node.content.generate", {"nodeType": VEGA, "intent": "a chart"}, [*VEGA_SKILLS, "data-sources"]),
+        (NB, "package.recommend", {"mission": "count the trees"}, ["reuse-first"]),
+        (DF, "dataset.select", {"mission": "count the trees"}, []),
     ):
         testing_provider.reset()
         status, _text, record = delegation.run_delegate(
-            key, pid, NB, capability, inputs, ENDPOINT,
+            key, pid, coord, capability, inputs, ENDPOINT,
             parent_execution_id="p", parent_coord="agent.curio.dataflow-builder@1", attachment_id=None,
         )
         assert status == "ok"
@@ -631,13 +646,18 @@ def test_a_refused_round_is_handed_the_skills_that_answer_the_check(tmp_curio, i
     skills, those whose ``curio-refusals`` names that check's kind; of those
     serving a node's behavior, only its node's: the document check is
     answered by Autark's skill for an Autark node and the Vega-Lite starter
-    for a chart."""
+    for a chart. They come after the node's skills and before the mode's
+    own procedures, which close every round's list."""
     skill_runs = _skill_runs()
     manifest = _manifest(NB)
+    own = list(manifest.capability("node.content.generate").skills)
+    assert own == ["data-sources"]
     before = skill_runs.for_delegated(KEY, PID, manifest, "node.content.generate", inputs, None, _preamble(NB))
     after = skill_runs.for_delegated(KEY, PID, manifest, "node.content.generate", inputs, None, _preamble(NB),
                                      refused=refused)
-    assert _names(after.handed) == _names(before.handed) + added
+    node = _names(before.handed)[:-len(own)]
+    assert _names(before.handed) == [*node, *own]
+    assert _names(after.handed) == [*node, *added, *own]
 
 
 def test_every_refusal_a_skill_answers_is_a_kind_a_check_of_solve_records():
@@ -656,10 +676,11 @@ def test_every_refusal_a_skill_answers_is_a_kind_a_check_of_solve_records():
 
 
 def test_a_solve_round_is_handed_the_skill_the_refusal_before_it_names(app, tmp_curio):
-    """A node whose template names no behavior is handed no skill. The
-    grounding gate refuses its first round for a function Curio does not give
-    node code, and the round after it, run by the real delegation, is handed
-    the functions skill, which answers that check."""
+    """A node whose template names no behavior is handed no skill of a
+    node's, only the mode's own procedure, ``data-sources``. The grounding
+    gate refuses its first round for a function Curio does not give node
+    code, and the round after it, run by the real delegation, is handed the
+    functions skill, which answers that check, before the mode's own."""
     from utk_curio.backend.app.agents.application.solve import rounds
     from utk_curio.backend.tests.test_agents.test_routes_proposals import TestNodeCreate
     from utk_curio.backend.tests.test_agents.test_verified_rounds import _drive, _Exec, _Resolution
@@ -683,9 +704,9 @@ def test_a_solve_round_is_handed_the_skill_the_refusal_before_it_names(app, tmp_
         testing_provider.reset()
     assert [attempt["kind"] for attempt in outcome["attempts"]][:1] == ["ungrounded-code"], outcome["attempts"]
     first, second = generations
-    assert "skills" not in _kinds(first), _kinds(first)
-    assert _wrapped(_slot(second, "skills")) == ["node-functions"]
-    assert outcome["delegations"][1]["pins"]["skills"] == {"handed": ["node-functions"]}
+    assert _wrapped(_slot(first, "skills")) == ["data-sources"], _kinds(first)
+    assert _wrapped(_slot(second, "skills")) == ["node-functions", "data-sources"]
+    assert outcome["delegations"][1]["pins"]["skills"] == {"handed": ["node-functions", "data-sources"]}
 
 
 def test_the_loop_hands_the_round_after_the_map_editor_refused_that_check_s_kind(app, tmp_curio):
@@ -765,6 +786,59 @@ def test_a_manifest_names_its_skills_and_a_capability_its_own():
     m = _parse(capabilities=[{"id": "conversation.respond", "contractVersion": "1", "skills": ["catalogs"]}])
     assert m.capability("conversation.respond").skills == ("catalogs",)
     assert _parse().capability("conversation.respond").skills == ()
+    # The instruction names the skills every run of it is handed.
+    m = _parse(prompts={"instruction": {"path": "prompts/chat.md", "skills": ["reuse-first", "catalogs"]}})
+    assert getattr(m, "instruction_skills", None) == ("reuse-first", "catalogs")
+    assert m.prompts["instruction"].skills == ("reuse-first", "catalogs")
+    assert _parse(prompts={"instruction": {"path": "prompts/chat.md"}}).instruction_skills == ()
+    assert _parse().instruction_skills == (), "a manifest with no instruction names none"
+
+
+@pytest.mark.parametrize("prompts, capability, named", [
+    ({"system": {"path": "curio:default_preamble.md", "skills": ["catalogs"]}}, {}, "system"),
+    ({"respond": {"path": "prompts/respond.md", "skills": ["catalogs"]}}, {"instruction": "respond"}, "respond"),
+    ({"autk-grammar": {"path": "prompts/autk.md", "runs": "Write an Autark document", "skills": ["autark"]}},
+     {}, "autk-grammar"),
+])
+def test_only_the_instruction_names_the_skills_its_runs_are_handed(prompts, capability, named):
+    """The preamble, a mode's prompt and a prompt run in a mode's place name
+    no skills: a mode's own are its capability's ``skills``."""
+    from utk_curio.backend.app.agents.domain.manifest import AgentManifestError
+
+    capabilities = [{"id": "conversation.respond", "contractVersion": "1", **capability}]
+    with pytest.raises(AgentManifestError, match=re.escape(f"prompts.{named}.skills: only the instruction")):
+        _parse(prompts={"instruction": {"path": "prompts/chat.md"}, **prompts}, capabilities=capabilities)
+
+
+def test_every_run_of_the_instruction_is_handed_its_skills_and_a_modes_run_is_not(tmp_curio, caplog):
+    """An agent's chat, on the canvas or on a node, and a delegated run of a
+    capability with no instruction of its own run the instruction, so each is
+    handed the skills it names, after the ones that serve its node, whatever
+    the agent's ``skills`` are. A mode runs its own prompt and is handed its
+    capability's. A name Curio ships no skill by is left out and logged."""
+    skill_runs = _skill_runs()
+    m = _parse(
+        skills=["widgets"],
+        prompts={"system": {"path": "curio:default_preamble.md"},
+                 "instruction": {"path": "prompts/chat.md", "skills": ["reuse-first", "no-such-skill", "nodes"]},
+                 "respond": {"path": "prompts/respond.md"}},
+        capabilities=[{"id": "node.build", "contractVersion": "1"},
+                      {"id": "notes.compose", "contractVersion": "1", "instruction": "respond",
+                       "skills": ["research-notes"]}],
+    )
+    preamble = _preamble(NB)
+    spec = {"dataflow": {"nodes": [{"id": "chart", "type": VEGA, "content": "{}"}], "edges": []}}
+    with caplog.at_level("WARNING"):
+        canvas = skill_runs.for_chat(KEY, PID, m, spec, {"kind": "canvas"}, preamble, [])
+        on_a_chart = skill_runs.for_chat(KEY, PID, m, spec, {"kind": "node", "targetId": "chart"}, preamble, [])
+        built = skill_runs.for_delegated(KEY, PID, m, "node.build", {"intent": "a node"}, spec, preamble)
+        mode = skill_runs.for_delegated(KEY, PID, m, "notes.compose", {"question": "why"}, spec, preamble)
+    # The core skill is in the preamble already, so no run holds it twice.
+    assert _names(canvas.handed) == ["reuse-first"] and _names(canvas.catalog) == ["widgets"]
+    assert _names(on_a_chart.handed) == ["widgets", "reuse-first"]
+    assert _names(built.handed) == ["reuse-first"]
+    assert _names(mode.handed) == ["research-notes"]
+    assert "no-such-skill" in caplog.text and "names a skill Curio does not ship" in caplog.text
 
 
 @pytest.mark.parametrize("skills_field, said", [
@@ -782,6 +856,8 @@ def test_a_manifest_that_names_a_skill_wrongly_is_refused(skills_field, said):
         _parse(skills=skills_field)
     with pytest.raises(AgentManifestError, match=re.escape(said)):
         _parse(capabilities=[{"id": "conversation.respond", "contractVersion": "1", "skills": skills_field}])
+    with pytest.raises(AgentManifestError, match=re.escape(said)):
+        _parse(prompts={"instruction": {"path": "prompts/chat.md", "skills": skills_field}})
 
 
 def test_the_schema_declares_skills_by_the_specifications_names():
@@ -789,7 +865,10 @@ def test_the_schema_declares_skills_by_the_specifications_names():
 
     schema = json.loads((Path(__file__).resolve().parents[4] / "docs" / "schemas" / "agent-package.v1.json")
                         .read_text(encoding="utf-8"))
-    for field in (schema["properties"]["skills"], schema["properties"]["capabilities"]["items"]["properties"]["skills"]):
+    prompt_entry = schema["properties"]["prompts"]["additionalProperties"]["properties"]
+    assert "skills" in prompt_entry, "the schema declares no skills for a prompt, the instruction's"
+    for field in (schema["properties"]["skills"], schema["properties"]["capabilities"]["items"]["properties"]["skills"],
+                  prompt_entry["skills"]):
         assert field["type"] == "array" and field["uniqueItems"] is True
         assert field["items"]["maxLength"] == skills.NAME_MAX
         pattern = re.compile(field["items"]["pattern"])

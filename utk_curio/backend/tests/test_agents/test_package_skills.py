@@ -32,8 +32,9 @@ from utk_curio.backend.tests.test_agents.test_skill_runs import (  # noqa: F401 
     CODE_SKILLS,
     DF,
     ENDPOINT,
-    FEATURE_SKILLS,
     NB,
+    NB_INSTRUCTION,
+    NB_SKILLS,
     READER,
     VEGA_SKILLS,
     _attach,
@@ -156,10 +157,10 @@ def test_a_chat_on_a_scout_dataflow_lists_scout_after_its_agents_skills_and_load
     calls = _run_calls()
     listed = _listed(_slot(calls[0][0], "skill-catalog"))
     record_property("a chat's catalog on a Scout dataflow", json.dumps(listed))
-    assert listed == [*FEATURE_SKILLS, "scout"]
+    assert listed == [*NB_SKILLS, "scout"]
     assert _scout_held() in calls[1][-1]["content"]
     record = _turns(client, scripted, with_scout, att)[-1]["execution"]
-    assert record["pins"]["skills"] == {"catalog": [*FEATURE_SKILLS, "scout"]}
+    assert record["pins"]["skills"] == {"catalog": [*NB_SKILLS, "scout"], "handed": NB_INSTRUCTION}
     assert record["skillsLoaded"] == ["scout"]
 
     testing_provider.reset()
@@ -168,7 +169,7 @@ def test_a_chat_on_a_scout_dataflow_lists_scout_after_its_agents_skills_and_load
     testing_provider.push_reply("Hello.")
     _run(client, scripted, without, att)
     (system, *_), = _run_calls()
-    assert _listed(_slot(system, "skill-catalog")) == FEATURE_SKILLS
+    assert _listed(_slot(system, "skill-catalog")) == NB_SKILLS
     assert '<name>scout</name>' not in system["content"]
 
 
@@ -177,10 +178,11 @@ def test_a_run_writing_a_scout_node_is_handed_scout_and_one_writing_curios_pytho
 ):
     """On a dataflow that uses Scout, a delegated run that writes the Raster
     Calculator, or a Scout chart named by its node, is handed Scout's skill
-    after the skills of the node's behavior, and its record names it; a run
-    that writes Curio's Python node there is handed the skills of node code
+    after the skills of the node's behavior, then the mode's own
+    ``data-sources``, and its record names it; a run that writes Curio's
+    Python node there is handed the skills of node code and the mode's own
     alone. A chat attached to the Raster Calculator holds it from its first
-    message."""
+    message, before the procedures its instruction names."""
     from utk_curio.backend.app.agents.application import delegation
 
     user, _ = user_and_token
@@ -188,9 +190,9 @@ def test_a_run_writing_a_scout_node_is_handed_scout_and_one_writing_curios_pytho
     _store_scout(key)
     pid = _project(client, scripted, packages=[SCOUT], nodes=SCOUT_NODES)
     for inputs, handed in (
-        ({"nodeType": CALC, "intent": "how much the flood depth changed"}, [*CODE_SKILLS, "scout"]),
-        ({"nodeId": "chart", "intent": "compare the scenarios' costs"}, [*VEGA_SKILLS, "scout"]),
-        ({"nodeType": CA, "intent": "count the rows"}, CODE_SKILLS),
+        ({"nodeType": CALC, "intent": "how much the flood depth changed"}, [*CODE_SKILLS, "scout", "data-sources"]),
+        ({"nodeId": "chart", "intent": "compare the scenarios' costs"}, [*VEGA_SKILLS, "scout", "data-sources"]),
+        ({"nodeType": CA, "intent": "count the rows"}, [*CODE_SKILLS, "data-sources"]),
     ):
         testing_provider.reset()
         status, _text, record = delegation.run_delegate(
@@ -210,8 +212,8 @@ def test_a_run_writing_a_scout_node_is_handed_scout_and_one_writing_curios_pytho
     testing_provider.push_reply("Done.")
     _run(client, scripted, pid, att)
     (system, *_), = _run_calls()
-    assert _wrapped(_slot(system, "skills")) == [*CODE_SKILLS, "scout"]
-    assert _listed(_slot(system, "skill-catalog")) == [*FEATURE_SKILLS, "scout"]
+    assert _wrapped(_slot(system, "skills")) == [*CODE_SKILLS, "scout", *NB_INSTRUCTION]
+    assert _listed(_slot(system, "skill-catalog")) == [*NB_SKILLS, "scout"]
 
 
 def test_every_scout_template_is_handed_scout_and_every_agent_on_its_dataflow_lists_it(tmp_curio):
@@ -219,7 +221,7 @@ def test_every_scout_template_is_handed_scout_and_every_agent_on_its_dataflow_li
     skill; so is a mode that reads a dataflow holding Scout's nodes. A
     dataflow that uses Scout with none of its nodes hands it to no reader,
     and every agent's chat lists it there, the Dataset Finder's too, after
-    the one skill its manifest names."""
+    the skills its manifest names."""
     skill_runs = _skill_runs()
     _store_scout(KEY)
     manifest = json.loads((SCOUT_DIR / "manifest.json").read_text(encoding="utf-8"))
@@ -242,7 +244,7 @@ def test_every_scout_template_is_handed_scout_and_every_agent_on_its_dataflow_li
                                       _preamble(READER))
     assert "scout" not in _names(reader.handed)
     finder = skill_runs.for_chat(KEY, PID, _manifest(DF), no_scout_nodes, {"kind": "canvas"}, _preamble(DF), [])
-    assert finder.names == ["catalogs", "scout"]
+    assert finder.names == ["catalogs", "data-sources", "scout"]
     assert skill_runs.grants([], finder) == ["skill.read"]
 
 
@@ -267,8 +269,8 @@ def test_a_package_skill_named_as_curios_or_an_earlier_packages_is_listed_once_w
     with caplog.at_level(logging.WARNING, logger=SKILL_LOGGER):
         chat = skill_runs.for_chat(KEY, PID, _manifest(NB), spec, {"kind": "canvas"}, _preamble(NB), [])
         finder = skill_runs.for_chat(KEY, PID, _manifest(DF), spec, {"kind": "canvas"}, _preamble(DF), [])
-    assert chat.names == [*FEATURE_SKILLS, "street-trees", "park-shade"]
-    assert finder.names == ["catalogs", "street-trees", "park-shade"]
+    assert chat.names == [*NB_SKILLS, "street-trees", "park-shade"]
+    assert finder.names == ["catalogs", "data-sources", "street-trees", "park-shade"]
     by_name = {skill.name: skill for skill in chat.catalog}
     assert skills.is_shipped(by_name["widgets"])
     assert by_name["street-trees"].folder.parent.parent.name == first
@@ -315,9 +317,9 @@ def test_a_package_skill_serves_its_own_packages_templates_and_no_others(tmp_cur
             KEY, PID, _manifest(NB), "node.content.generate", inputs, spec, _preamble(NB),
         ).handed)
 
-    assert handed({"nodeType": "acme.trees/tree-count"}) == [*CODE_SKILLS, "street-trees"]
-    assert handed({"nodeId": "t"}) == [*CODE_SKILLS, "street-trees"]
-    assert handed({"nodeType": CA}) == CODE_SKILLS
+    assert handed({"nodeType": "acme.trees/tree-count"}) == [*CODE_SKILLS, "street-trees", "data-sources"]
+    assert handed({"nodeId": "t"}) == [*CODE_SKILLS, "street-trees", "data-sources"]
+    assert handed({"nodeType": CA}) == [*CODE_SKILLS, "data-sources"]
     chat = skill_runs.for_chat(KEY, PID, _manifest(NB), spec, {"kind": "canvas"}, _preamble(NB), [])
     by_name = {skill.name: skill for skill in chat.catalog}
     assert "street-trees" in by_name, chat.names
@@ -338,7 +340,7 @@ def test_a_package_skill_that_cannot_be_read_is_left_out_and_logged(tmp_curio, c
     spec = {"dataflow": {"packages": [mixed], "nodes": [], "edges": []}}
     with caplog.at_level(logging.WARNING, logger=SKILL_LOGGER):
         chat = skill_runs.for_chat(KEY, PID, _manifest(NB), spec, {"kind": "canvas"}, _preamble(NB), [])
-    assert chat.names == [*FEATURE_SKILLS, "park-shade"]
+    assert chat.names == [*NB_SKILLS, "park-shade"]
     warned = _warnings(caplog)
     assert any(mixed in line and "bad-name/SKILL.md" in line for line in warned), warned
 

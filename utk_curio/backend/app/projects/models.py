@@ -41,6 +41,39 @@ class Project(db.Model):
         return f"<Project {self.id!r} {self.name!r}>"
 
 
+class ProjectEditor(db.Model):
+    """An account the owner invited to edit a dataflow (``projects/access.py``).
+
+    Everyone else who opens the dataflow's link watches it. Deleting the
+    project deletes its editors: the backref cascades through the ORM, as a
+    project's runs do, because SQLite does not enforce foreign keys here.
+    """
+
+    __tablename__ = "project_editor"
+
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.String(36), db.ForeignKey("project.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    added_by = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    added_at = db.Column(db.DateTime, default=_now, nullable=False)
+
+    project = db.relationship(
+        "Project",
+        backref=db.backref("editors", cascade="all, delete-orphan"),
+    )
+    user = db.relationship("User", foreign_keys=[user_id])
+
+    # Mirrors migration f4a5b6c7d8e9. The unique pair's own index serves
+    # lookups by project; this one serves a user's.
+    __table_args__ = (
+        db.UniqueConstraint("project_id", "user_id", name="uq_project_editor_project_user"),
+        db.Index("ix_project_editor_user", "user_id"),
+    )
+
+    def __repr__(self):
+        return f"<ProjectEditor {self.project_id!r} {self.user_id!r}>"
+
+
 class ExecCacheEntry(db.Model):
     __tablename__ = "exec_cache_entry"
 

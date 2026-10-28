@@ -1,14 +1,15 @@
 /**
- * The handle at a node's bottom-right corner resizes the node, and only an
- * owner resizes: a read-only canvas (`useSharedView`, the rule MainCanvas and
- * the top bar read) keeps every node at its size. There the handle is not
- * drawn, nothing listens for a drag, and a drag at the corner changes nothing.
+ * The handle at a node's bottom-right corner resizes the node, and only the
+ * owner or an editor they invited resizes: a read-only canvas (`useSharedView`,
+ * the rule MainCanvas and the top bar read) keeps every node at its size. There
+ * the handle is not drawn, nothing listens for a drag, and a drag at the corner
+ * changes nothing.
  */
 import React, { useRef } from "react";
 import { render } from "@testing-library/react";
 
 const mockFlow: { viewerMode: "owner" | "shared" } = { viewerMode: "owner" };
-const mockCollab = { enabled: false };
+const mockCollab: { enabled: boolean; role: "owner" | "editor" | "watcher" | null } = { enabled: false, role: null };
 
 jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => mockFlow,
@@ -58,6 +59,7 @@ const size = (box: HTMLElement) => [box.style.width, box.style.height];
 afterEach(() => {
   mockFlow.viewerMode = "owner";
   mockCollab.enabled = false;
+  mockCollab.role = null;
 });
 
 describe("a node's corner handle", () => {
@@ -95,13 +97,29 @@ describe("a node's corner handle", () => {
     expect(onResizeEnd).not.toHaveBeenCalled();
   });
 
-  test("with collaboration on, another user's dataflow is not read-only, and the handle resizes", () => {
+  test("with collaboration on, an editor the owner invited is not read-only on their dataflow, and the handle resizes", () => {
     mockFlow.viewerMode = "shared";
     mockCollab.enabled = true;
+    mockCollab.role = "editor";
     const { box, onResizeEnd, handle } = draw();
     expect(handle()).not.toBeNull();
     dragFrom(handle() as HTMLElement);
     expect(size(box)).toEqual(["645px", "430px"]);
     expect(onResizeEnd).toHaveBeenCalledWith(645, 430);
   });
+
+  test.each([["watcher"], [null]] as const)(
+    "with collaboration on, a %s on another user's dataflow is read-only: no handle, and a drag changes no size",
+    (role) => {
+      mockFlow.viewerMode = "shared";
+      mockCollab.enabled = true;
+      mockCollab.role = role;
+      const { box, onResize, onResizeEnd, handle } = draw();
+      expect(handle()).toBeNull();
+      dragFrom(box);
+      expect(size(box)).toEqual(["525px", "350px"]);
+      expect(onResize).not.toHaveBeenCalled();
+      expect(onResizeEnd).not.toHaveBeenCalled();
+    },
+  );
 });

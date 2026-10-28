@@ -23,6 +23,53 @@ def _modes(m: AgentManifest) -> list:
     return [c for c in m.capabilities if c.instruction]
 
 
+def _holds(coord: str, capability: str | None = None) -> str:
+    """What a run of *coord* holds of its agent text beyond the preamble: the
+    skills it is handed, each whole, then its prompt. Its chat on the canvas
+    when *capability* is None, else a delegated run of *capability*, which
+    reads the capability's own prompt, or the instruction. The procedures its
+    prompts shared are skills the run is handed (``skill_runs``)."""
+    from utk_curio.backend.app.agents.application import skill_runs
+
+    m = builtin.get_builtin_manifest(coord)
+    preamble = builtin.read_prompt_text(coord, "system")
+    if capability is None:
+        run = skill_runs.for_chat("4242", "p", m, None, {"kind": "canvas"}, preamble, [])
+        key = "instruction"
+    else:
+        run = skill_runs.for_delegated("4242", "p", m, capability, {}, None, preamble)
+        key = m.capability(capability).instruction or "instruction"
+    text = builtin.read_prompt_text(coord, key)
+    assert text, (coord, key)
+    return f"{skill_runs.skills_text(run) or ''}\n\n{text}"
+
+
+def _tools_held(coord: str) -> str:
+    """The tool text a chat of *coord* on the canvas holds: each tool it is
+    granted with its description, as the tail of its system turn carries them
+    (``turns/prepare.py``). How a tool request is written is this text's, not
+    a skill's."""
+    from utk_curio.backend.app.agents.application import skill_runs, tools
+    from utk_curio.backend.app.agents.domain import content
+
+    m = builtin.get_builtin_manifest(coord)
+    preamble = builtin.read_prompt_text(coord, "system")
+    run = skill_runs.for_chat("4242", "p", m, None, {"kind": "canvas"}, preamble, [])
+    granted = skill_runs.grants(tools.resolve_grants(m.tools), run)
+    assert granted, coord
+    return content.tail_instruction(tools.grant_descriptions(granted))
+
+
+def _section(text: str, heading: str) -> str:
+    """The text under *heading*, a ``#`` line of *text*, up to the next
+    heading of its level or above."""
+    level = heading.split(" ", 1)[0]
+    assert f"\n{heading}\n" in text, f"the text holds no section {heading!r}"
+    after = text.split(f"\n{heading}\n", 1)[1]
+    ends = [at for at in (after.find(f"\n{'#' * n} ") for n in range(2, len(level) + 1)) if at >= 0]
+    return after[:min(ends)] if ends else after
+
+
 #: Every built-in, in roster order (the catalog lists the cards in this
 #: order): the instruction its chat runs, which for an internal agent is its
 #: first mode's, and its capabilities in order.
@@ -623,8 +670,11 @@ class TestNodeBuilderComposite:
     def test_instruction_teaches_the_source_ladder(self):
         # dev/114 (DEC-072): the ladder the runtime gate enforces — user path,
         # catalog.search loader line, runtime-verified URL via dataset.discover,
-        # synthetic only when asked — and the two-turn rule.
-        text = builtin.read_prompt_text(self.COORD, "instruction")
+        # synthetic only when asked — and the two-turn rule. The chat holds it
+        # in the data-sources skill its instruction names, from its first
+        # message.
+        text = _holds(self.COORD)
+        assert '<skill_content name="data-sources">' in text
         assert "catalog.search" in text
         assert 'curio_data_path("<id>")' in text
         assert '"dataset.discover"' in text
@@ -913,8 +963,14 @@ class TestNodeBuilderPackages:
         assert "never install, author, or publish" in low
         assert "delegated task from" in low
         assert "a need no row meets is a finding" in low
-        chat = builtin.read_prompt_text(self.COORD, "instruction")
+        # The chat proposes the installs, by the ladder it holds.
+        chat = _holds(self.COORD)
         assert "packages.catalog" in chat and "package.install" in chat
+        # The mode holds the ladder too, read from its evidence, never a tool.
+        mode = _holds(self.COORD, "package.recommend")
+        ladder = _section(mode, "### A run with no tools").lower()
+        assert '"existingpackages" input, never from packages.catalog' in ladder
+        assert "never with a tool request" in ladder
         assert builtin.read_prompt_text(self.COORD, "system")  # default preamble
 
     def test_delegation_wiring(self):
@@ -939,8 +995,9 @@ class TestNodeBuilderPackages:
             assert caps.index("package.recommend") < caps.index(writing)
 
     def test_the_writing_mode_carries_the_contract(self):
-        text = builtin.read_prompt_text(self.COORD, "package.build")
-        assert text
+        # The mode's run holds its prompt and the skills it is handed: the
+        # reuse ladder and the package backend contract among them.
+        text = _holds(self.COORD, "package.build")
         low = text.lower()
         # Reuse-first posture and the two ways to write a package.
         assert "reuse first" in low
@@ -950,35 +1007,43 @@ class TestNodeBuilderPackages:
         assert "read-only" in low
         # Backend generation stays out of scope (dev/89 Follow-up A).
         assert "backend sandbox" in low
-        # The three writing capabilities read the one prompt.
+        # The three writing capabilities read the one prompt, and hold the same.
+        prompt = builtin.read_prompt_text(self.COORD, "package.build")
         for capability in ("package.extend", "node.kind.author"):
-            assert builtin.read_prompt_text(self.COORD, capability) == text, capability
+            assert builtin.read_prompt_text(self.COORD, capability) == prompt, capability
+            assert _holds(self.COORD, capability) == text, capability
         # The draft reaches review through the chat's one draft tool, and the
         # chat never pretends a package was built before then.
-        chat = builtin.read_prompt_text(self.COORD, "instruction")
+        chat = _holds(self.COORD)
         assert "package.draft.apply" in chat
         assert "never pretend" in chat.lower()
 
     def test_its_chat_proposes_installing_a_package_that_fits(self):
         # The dev/84 install rules, on the ladder's second rung: a fitting
-        # package is proposed for install there, not only named.
-        text = builtin.read_prompt_text(self.COORD, "instruction")
-        rungs = text.split("## Node types and packages", 1)[1].split("\n## ", 1)[0]
+        # package is proposed for install there, not only named. The ladder is
+        # the reuse-first skill, which the chat is handed.
+        rungs = _section(_holds(self.COORD), "### The node type ladder")
         low = rungs.lower()
         assert "proposed for install, not only named" in low
-        assert "one package.install tool request per package" in low
-        assert "dirname from the packages.catalog results" in low
         assert "is stated, not proposed" in low
-        assert "builtin are always present" in low
+        assert "a builtin one among them" in low
         assert "packages.resolve" in rungs and "never force-resolve" in low
-        assert "never present an install as done" in low
+        assert "never present a draft, build, or install as done" in low
+        # How the request is written is the tools' text the chat holds: one
+        # package a request, its dirName from the catalog, a builtin package
+        # never proposed, and nothing installed before the user approves.
+        held = _tools_held(self.COORD).lower()
+        assert "propose installing one node package" in held
+        assert "the versioned dirname, e.g. curio.notes@1, from packages.catalog results" in held
+        assert "builtin packages are always present and are never proposed" in held
+        assert "nothing is installed without their approval" in held
 
     def test_its_chat_climbs_the_node_type_ladder_in_order(self):
         # An existing template, a catalog package to install, and only then a
         # package written by its writing mode: the one way it makes a node
         # type, with the justification the user judges.
-        text = builtin.read_prompt_text(self.COORD, "instruction")
-        rungs = text.split("## Node types and packages", 1)[1].split("\n## ", 1)[0]
+        text = _holds(self.COORD)
+        rungs = _section(text, "### The node type ladder")
         starts = [rungs.index(f"\n{n}. ") for n in (1, 2, 3)]
         assert starts == sorted(starts)
         assert "\n4. " not in rungs
@@ -989,10 +1054,12 @@ class TestNodeBuilderPackages:
         assert '"node.kind.author"' in three and "package.draft.apply" in three
         assert "for any new node type" in three
         assert "the closest listed templates you considered and why each is inadequate" in three
-        assert "the user judges the justification" in three
+        assert "drafts the package with that justification" in three
+        # The draft tool's text, which the chat holds, says the user judges it.
+        assert "the justification, which the user judges during review" in _tools_held(self.COORD)
         assert "node.template.create" not in text
         # The procedure sends the model to the ladder.
-        procedure = text.split("## Procedure", 1)[1].split("\n## ", 1)[0]
+        procedure = _section(builtin.read_prompt_text(self.COORD, "instruction"), "## Procedure")
         assert "node type ladder" in procedure
 
     def test_the_writing_mode_justifies_each_node_type_it_adds(self):
@@ -1015,8 +1082,9 @@ class TestNodeBuilderPackages:
     def test_the_writing_mode_teaches_the_generic_authoring_contract(self):
         # dev/90 commit 2: ONE authoring contract for every custom look:
         # hook shape, registration, externals, safe rendering, appearance,
-        # self-containment, with the gates named as the enforcement.
-        text = builtin.read_prompt_text(self.COORD, "package.build")
+        # self-containment, with the gates named as the enforcement. Read as
+        # the mode's run holds it: its prompt and the skills it is handed.
+        text = _holds(self.COORD, "package.build")
         low = text.lower()
         assert "registerBehavior" in text
         assert "contentComponent" in text
@@ -1041,7 +1109,8 @@ class TestNodeBuilderPackages:
         assert "buildRequestContract" in text
         assert "behaviorKey" in text
         # No scenario content: looks come from CALLERS (dev/90: the post-it
-        # recipe lives with the Researcher, never with the writing mode).
+        # recipe lives with the Researcher, never with the writing mode, nor
+        # with a skill the mode is handed).
         assert "post-it" not in low
         assert "carr" in low and "no built-in looks" in low
 
@@ -1220,10 +1289,19 @@ class TestResearcher:
         assert "a fact to check" in route and "labeled findings" in route
         # The sections the routes name, in this order.
         headings = ["## explain", "## debug", "## define a task", "## gather findings",
-                    "## check a fact", "## reuse first", "## notes", "## failures",
-                    "## changes to the dataflow"]
+                    "## check a fact", "## notes", "## failures", "## changes to the dataflow"]
         at = [low.index("\n" + heading + "\n") for heading in headings]
         assert at == sorted(at)
+        assert "as the sections gather findings and notes say" in route
+        # The reuse ladder, checking a fact and the notes format are the
+        # skills its instruction names, which its chat holds from its first
+        # message.
+        held = _holds(self.COORD)
+        for skill in ("reuse-first", "fact-checking", "research-notes"):
+            assert f'<skill_content name="{skill}">' in held, skill
+        assert "by the fact-checking skill" in low.split("## check a fact", 1)[1].split("\n## ", 1)[0]
+        notes = low.split("\n## notes\n", 1)[1].split("\n## ", 1)[0]
+        assert "place and write notes as the research-notes skill says" in notes
         # It reads the dataflow on screen and looks further with its tools.
         assert "unsaved edits included" in low
         for tool in ("dataflow.read", "node.read", "node.runtime.read"):
@@ -1242,8 +1320,9 @@ class TestResearcher:
         assert "the node builder creates or changes one node" in changes
 
     def test_its_chat_carries_the_recipe(self):
-        text = builtin.read_prompt_text(self.COORD, "instruction")
-        assert text
+        # What the chat holds: its instruction and the skills it names, the
+        # reuse ladder, checking a fact and the notes format.
+        text = _holds(self.COORD)
         low = text.lower()
         # The post-it recipe as REQUIREMENTS (dev/90 §3).
         assert "post-it" in low
@@ -1293,27 +1372,32 @@ class TestResearcher:
         assert "yellow note carrying the user's question" in low
         assert "green note per answer" in low
         assert "as clean markdown" in low
-        # dev/105 D3/S1/S3: the live 2026-08-25 run. The ENLIST rung names the
-        # exact dirName spelling (the model sent the bare id); a REFUSED
+        # dev/105 D3/S1/S3: the live 2026-08-25 run. The exact dirName
+        # spelling is named (the model sent the bare id): the ladder's second
+        # rung rules the bare id out, and the package.install text the chat
+        # holds shows the spelling; a REFUSED
         # request is a correction to act on, distinct from a FAILED build
         # (the old single sentence taught "stop" for both); a refusal is never
         # evidence of absence (the model said "not in the catalog" — false);
         # a canvas node type is not a template choice; no mechanics narration.
-        assert "the versioned dirname, e.g. curio.notes@1" in low
+        tools_text = _tools_held(self.COORD)
+        assert "the versioned dirname, e.g. curio.notes@1" in tools_text.lower()
         assert "never the bare package id" in low
         assert "a correction, not a dead end" in low
         assert "a refused request is not evidence of absence" in low
         assert "is not a note template unless it appears there" in low
         assert "never narrate the request mechanics" in low
-        # dev/105 A2: the REUSE rung names the exact node.create params — and
-        # the tool contract the model reads at the tail admits every one of
-        # them (the second live test's notes were white and headed "Note"
-        # because the contract named only nodeType/content/goal).
-        assert '"title": "<short header>"' in text
-        assert '"appearance": {"backgroundColor"' in text
+        # dev/105 A2: the REUSE rung asks for the title and color a note
+        # takes, and the node.create text the chat holds names those params
+        # (the second live test's notes were white and headed "Note" because
+        # the contract named only nodeType/content/goal).
+        assert '"title": "<short header shown on the node>"' in tools_text
+        assert '"appearance": {"backgroundColor"' in tools_text
+        assert "a note template renders title and backgroundColor, so give both for notes" in tools_text
         # Its notes go on the built-in Note, which every dataflow can hold.
         reuse = low.split("1. reuse.", 1)[1].split("2. enlist.", 1)[0]
         assert '"nodetype": "curio.builtin/note"' in reuse
+        assert "the title and color node.create asks a note for" in reuse
         # dev/105 A3: the ENLIST rung carries the findings like AUTHOR does, so
         # Apply on the install card proceeds to the notes without a second turn.
         assert 'an install request without "notes" enlists a package and places nothing' in low

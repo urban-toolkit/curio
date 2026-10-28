@@ -292,7 +292,7 @@ def test_every_skill_curio_ships_carries_curios_frontmatter():
     skills = _skills()
     shipped = skills.shipped_skills()
     assert [skill.name for skill in shipped] == sorted(path.parent.name for path in SKILLS.glob("*/SKILL.md"))
-    assert len(shipped) == 16
+    assert len(shipped) == 21
     for skill in shipped:
         assert skill.description.startswith("Use this skill when "), skill.name
         assert len(skill.description) <= skills.DESCRIPTION_MAX, skill.name

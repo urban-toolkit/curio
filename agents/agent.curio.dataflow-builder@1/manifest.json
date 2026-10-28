@@ -22,7 +22,9 @@
     "map-edits",
     "scenarios",
     "dashboards",
-    "provenance"
+    "provenance",
+    "reuse-first",
+    "data-sources"
   ],
   "roles": [
     "orchestration"

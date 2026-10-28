@@ -421,7 +421,7 @@ jobs:
             e2e-desktop-6 e2e-desktop-7 e2e-desktop-8 e2e-desktop-9 e2e-desktop-10 \
             e2e-desktop-11 e2e-desktop-12 e2e-desktop-13 e2e-desktop-14 \
             unit-backend-1 unit-backend-2 unit-backend-3 unit-backend-4 \
-            test-exec-user
+            e2e-collab test-exec-user
 
   test-gpu:
     # Runs on a GPU runner: an arcade one while one is free, utk-gpu otherwise
@@ -1212,6 +1212,130 @@ jobs:
         with:
           project: curio-ci
 
+  # The e2e tests marked needs_collab (runner_split.py), on the one stack
+  # started with --collab (CURIO_E2E_STACK_ARGS, docker-compose.ci.yml): two or
+  # three browsers in one dataflow's room. Every other stack starts without it,
+  # so no other canvas shows the collaboration panel. A re-mint runs it too,
+  # for its frames.
+  e2e-collab:
+    needs: [pick-runners, build-image]
+    if: ${{ !cancelled() && needs.pick-runners.result == 'success' && needs.build-image.result == 'success' }}
+    runs-on: ${{ fromJSON(needs.build-image.outputs.runners)['e2e-collab'] }}
+    timeout-minutes: ${{ inputs.repeat > 1 && 350 || 45 }}
+    permissions:
+      contents: read
+      packages: read
+    env:
+      CURIO_CI_FRESH_STACK: curio-ci-collab
+      COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
+      CURIO_E2E_STACK_ARGS: --collab
+      CURIO_E2E_RUNNER: collab
+      CURIO_E2E_FAILURE_DIR: ${{ github.workspace }}/ci-report/failures
+      CURIO_E2E_TRACE: "1"
+      CURIO_E2E_COMPARE_DIR: ${{ github.workspace }}/ci-report/comparisons
+      CURIO_REMINT: ${{ inputs.remint && '1' || '' }}
+      CURIO_REMINT_FILTER: ${{ inputs.remint_filter }}
+      CURIO_REMINT_FORCE: ${{ inputs.remint_force }}
+      CURIO_REMINT_GPU_KIND: ${{ inputs.remint_gpu_kind }}
+      # Ports of its own, beside the stacks docker-compose.ci-stress.yml lists.
+      CURIO_E2E_BACKEND_URL: "http://localhost:5082"
+      CURIO_E2E_HOST: localhost
+      CURIO_E2E_BACKEND_PORT: "5082"
+      CURIO_E2E_SANDBOX_PORT: "2080"
+      CURIO_E2E_FRONTEND_PORT: "8160"
+      FLASK_SANDBOX_HOST: localhost
+      FLASK_SANDBOX_PORT: "2080"
+      CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
+    steps:
+      - *reclaim
+
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v6
+
+      # runner-env: as in e2e-desktop.
+      - uses: ./.github/actions/start-stack
+        with:
+          image: ${{ needs.build-image.outputs.image }}
+          project: curio-ci-collab
+          token: ${{ secrets.GITHUB_TOKEN }}
+          runner-env: "true"
+
+      - name: 🔧 Give .curio/ permissions for host-side tests
+        run: |
+          docker run --rm -v "$PWD/.curio:/c" alpine chmod -R a+rwx /c \
+            || mkdir -p .curio/playwright/expected
+
+      # The point of the job: a stack whose page opens a collaboration socket.
+      - name: 🔒 Assert the stack came up with collaboration on
+        shell: bash
+        run: |
+          set -euo pipefail
+          on="$(curl -sf "http://localhost:${CURIO_E2E_BACKEND_PORT}/api/config/public" \
+                | python3 -c 'import json,sys; print(json.load(sys.stdin).get("enable_collab"))')"
+          if [ "$on" != "True" ]; then
+            echo "::error::the stack came up without --collab (enable_collab=${on:-nothing})" >&2
+            exit 1
+          fi
+          echo "OK: collaboration is on"
+
+      - name: 🎭 Run the collaboration e2e tests
+        env:
+          # ci_repeat.sh fills in {run}.
+          PYTEST_ADDOPTS: --junitxml=${{ github.workspace }}/ci-report/e2e{run}.xml
+        shell: bash
+        run: |
+          set -euo pipefail
+          extra=()
+          if [ "${CURIO_REMINT:-}" = 1 ]; then
+            if [ -z "${CURIO_REMINT_GPU_KIND:-}" ]; then
+              PYTEST_ADDOPTS="$PYTEST_ADDOPTS --remint-baselines"
+            fi
+            if [ -n "${CURIO_REMINT_FILTER:-}" ]; then
+              printf -v quoted '%q' "$CURIO_REMINT_FILTER"
+              PYTEST_ADDOPTS="$PYTEST_ADDOPTS -k $quoted"
+              # A filter may name only tests other jobs run.
+              extra+=(--allow-empty)
+            fi
+            if [ -n "${CURIO_REMINT_FORCE:-}" ] && [ -z "${CURIO_REMINT_GPU_KIND:-}" ]; then
+              printf -v quoted '%q' "$CURIO_REMINT_FORCE"
+              PYTEST_ADDOPTS="$PYTEST_ADDOPTS --remint-force $quoted"
+            fi
+            export PYTEST_ADDOPTS
+          fi
+          bash scripts/ci_repeat.sh bash scripts/test.sh --e2e-only --use-existing --skip-setup "${extra[@]}"
+
+      - name: 📦 Collect the re-minted baselines
+        if: always() && env.CURIO_REMINT == '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-report/reminted-baselines
+          git ls-files --modified --others --exclude-standard \
+            -- docs/examples/dataflows/expected_outputs \
+            | { grep -E '\.png$' || true; } > reminted-list.txt
+          while IFS= read -r f; do cp "$f" ci-report/reminted-baselines/; done < reminted-list.txt
+
+      - name: 📋 Capture the stack's logs
+        if: always()
+        run: |
+          docker compose -p curio-ci-collab logs --no-color --tail=8000 > ci-report/container-logs.txt 2>&1 || true
+          docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
+            'cat .curio/messages.log 2>/dev/null' > ci-report/curio-messages.txt 2>&1 || true
+
+      - name: 📤 Upload the results for the CI report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ci-inputs-e2e-collab
+          path: ci-report/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - uses: ./.github/actions/stop-stack
+        if: always()
+        with:
+          project: curio-ci-collab
+
   # The isolated stack (CURIO_ISOLATION=fork), running the Python-node
   # workflows. None of them draws with WebGPU, so it runs here, beside test-gpu,
   # rather than after it. See docker-compose.ci-isolated.yml for why this stack
@@ -1921,7 +2045,7 @@ jobs:
   # (test_e2e_runner_split.py); what only a run can show is a test that went to
   # a CPU runner and then skipped because it wanted WebGPU after all.
   ci-report:
-    needs: [pick-runners, test-gpu, unit, jest, e2e-desktop, test-isolated, test-exec-user, preview-runner, test-desktop-stress]
+    needs: [pick-runners, test-gpu, unit, jest, e2e-desktop, e2e-collab, test-isolated, test-exec-user, preview-runner, test-desktop-stress]
     if: ${{ !cancelled() && needs.pick-runners.result == 'success' }}
     runs-on: ${{ fromJSON(needs.pick-runners.outputs.runners)['ci-report'] }}
     timeout-minutes: 30
@@ -1976,7 +2100,7 @@ jobs:
         shell: bash
         run: |
           python3 scripts/ci_never_run.py inputs unit-backend-{1..4} unit-sandbox \
-            test-gpu test-isolated test-exec-user preview-runner e2e-desktop-{1..14}
+            test-gpu test-isolated test-exec-user preview-runner e2e-desktop-{1..14} e2e-collab
 
       - name: 📤 Upload the re-minted baselines
         if: always() && inputs.remint
@@ -2021,6 +2145,7 @@ jobs:
             args+=(--junit "End-to-end tests, desktop part $k=${part}e2e.xml")
           done
           args+=(
+            --junit "End-to-end tests, collaboration=inputs/ci-inputs-e2e-collab/e2e.xml"
             --junit "Isolated workflows=inputs/ci-inputs-test-isolated/e2e.xml"
             --junit "Execution-user boundary=inputs/ci-inputs-test-exec-user/exec-user.xml"
             --junit "Reference preview runner=inputs/ci-inputs-preview-runner/preview-runner.xml"

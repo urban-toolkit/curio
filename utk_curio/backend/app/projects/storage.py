@@ -25,7 +25,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, NamedTuple, Optional
 
 from utk_curio.backend.app.common.file_locks import exclusive_lock
 
@@ -335,6 +335,35 @@ def read_spec_in(folder: Path) -> Optional[dict]:
             if value is not _ABSENT:
                 spec[key] = value
     return spec
+
+
+class SpecFile(NamedTuple):
+    """A project's spec file as it is (``None`` when it has none), and the
+    revision (:func:`spec_revision`) it was written at."""
+
+    spec: Optional[dict]
+    revision: int
+
+
+def read_spec_file(user_key: str, project_id: str) -> SpecFile:
+    """The project's spec file as it is, its document without the history the
+    logs keep, which this does not replay, with its revision. For a reader that
+    needs only what the file holds, as each open dataflow's doc does
+    (``collaboration/dataflow_docs.py``).
+
+    The two are read under the history lock, which every write holds around
+    its revision bump and its file, so they belong to one write.
+    """
+    folder = project_dir(user_key, project_id)
+    if not folder.is_dir():
+        return SpecFile(None, 0)
+    with _history_lock(folder):
+        try:
+            text = (folder / SPEC_FILE).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            text = None
+        revision = spec_revision(user_key, project_id)
+    return SpecFile(None if text is None else json.loads(text), revision)
 
 
 def list_project_ids(user_key: str) -> list[str]:

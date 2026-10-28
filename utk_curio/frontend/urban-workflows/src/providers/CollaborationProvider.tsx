@@ -14,6 +14,15 @@
  * Identity is anchored in the backend Bearer token sent through the
  * Socket.IO ``auth`` handshake. We never trust user-supplied identity
  * fields in event payloads.
+ *
+ * The join answers with this tab's participant id and the role its account
+ * has on the dataflow: owner, editor (invited by the owner) or watcher. The
+ * room's user list carries every participant's role, and this tab's own role
+ * is read from its own entry there, so a change the owner makes to the
+ * editors reaches it with the list (``roles_changed``). Every "is this me?"
+ * compares participant ids (``collab/participants.ts``). A join the server
+ * refuses (a hosted guest's to an example) closes the socket for that
+ * dataflow.
  */
 
 import React, {
@@ -34,6 +43,9 @@ import {
 } from "../registry/projectPackagesStore";
 import { backendUrl } from "../utils/backendUrl";
 import { collabSocketTarget } from "../utils/collabSocketTarget";
+import { roleIn, type RoomRole } from "./collab/participants";
+
+export type { RoomRole } from "./collab/participants";
 
 const BACKEND_URL = backendUrl();
 // The backend's --collab-namespace, until /api/config/public reports it.
@@ -44,14 +56,17 @@ export interface CollabUser {
     username: string;
     name?: string;
     profile_image?: string | null;
-    sid?: string;
+    /** This participant's id in the room: one per tab. */
+    participant_id?: string;
+    role?: RoomRole;
 }
 
 export interface NodeLock {
     user_id: number;
     username: string;
     name?: string;
-    sid: string;
+    /** The participant that holds the lock. */
+    participant_id?: string;
     since: number;
 }
 
@@ -61,7 +76,8 @@ export interface CodeProposal {
     kind: "code" | "grammar";
     oldValue: string | null;
     newValue: string;
-    proposed_by: { user_id: number; username: string; sid: string };
+    proposed_by: { user_id: number; username: string; participant_id?: string };
+    /** The participants that approved or rejected it. */
     approvals: string[];
     rejections: string[];
     created_at: number;
@@ -85,7 +101,11 @@ export type RemoteHandler<T = unknown> = (payload: T) => void;
 export interface CollabContextValue {
     enabled: boolean;
     connected: boolean;
-    currentUserId: number | null;
+    /** This tab's participant id in the room, once its join answered. */
+    participantId: string | null;
+    /** This tab's role on the dataflow, from its own entry in `users`; null
+     *  until it has joined. */
+    role: RoomRole | null;
     users: CollabUser[];
     lockedNodes: Record<string, NodeLock>;
     proposals: CodeProposal[];
@@ -130,7 +150,8 @@ export interface CollabContextValue {
 const NOOP_VALUE: CollabContextValue = {
     enabled: false,
     connected: false,
-    currentUserId: null,
+    participantId: null,
+    role: null,
     users: [],
     lockedNodes: {},
     proposals: [],
@@ -172,6 +193,7 @@ export function useCollab(): CollabContextValue {
 const REMOTE_EVENTS = [
     "user_joined",
     "user_left",
+    "roles_changed",
     "node_locked",
     "node_unlocked",
     "node_added",
@@ -197,14 +219,20 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     const [lockedNodes, setLockedNodes] = useState<Record<string, NodeLock>>({});
     const [proposals, setProposals] = useState<CodeProposal[]>([]);
     const [activity, setActivity] = useState<ActivityEntry[]>([]);
-    const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+    const [participantId, setParticipantId] = useState<string | null>(null);
     // Panel visibility is owned by the provider so the UpMenu trigger can
     // toggle it without prop-drilling through MainCanvas.
     const [panelOpen, setPanelOpen] = useState<boolean>(true);
+    // This tab's role is its own entry's in the room's list, so every list
+    // the server sends (a join, a leave, a change of editors) keeps it current.
+    const role = useMemo(() => roleIn(users, participantId), [users, participantId]);
 
     const socketRef = useRef<Socket | null>(null);
     const namespaceRef = useRef<string>(DEFAULT_NAMESPACE);
     const projectIdRef = useRef<string | undefined>(getCurrentProjectId());
+    // The dataflow whose room refused this tab: no socket is opened for it
+    // again until another dataflow opens.
+    const refusedProjectRef = useRef<string | undefined>(undefined);
     const remoteHandlersRef = useRef<Map<string, Set<RemoteHandler>>>(new Map());
 
     // ------------------------------------------------------------------
@@ -239,6 +267,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
         }
         socketRef.current = null;
         setConnected(false);
+        setParticipantId(null);
         setUsers([]);
         setLockedNodes({});
         setProposals([]);
@@ -256,6 +285,9 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
                     { projectId },
                     (ack: {
                         ok: boolean;
+                        error?: string;
+                        participant_id?: string;
+                        role?: RoomRole;
                         snapshot?: {
                             users: CollabUser[];
                             locks: Record<string, NodeLock>;
@@ -264,15 +296,26 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
                         };
                     }) => {
                         if (ack && ack.ok && ack.snapshot) {
+                            setParticipantId(ack.participant_id ?? null);
                             setUsers(ack.snapshot.users);
                             setLockedNodes(ack.snapshot.locks);
                             setProposals(ack.snapshot.proposals);
                             setActivity(ack.snapshot.activity);
+                        } else if (ack && ack.ok === false && socketRef.current === socket) {
+                            // Refused: this tab is not in the room, so it keeps
+                            // no socket for it. Nothing is retried for the
+                            // same dataflow.
+                            refusedProjectRef.current = projectId;
+                            closeSocket();
                         }
                     },
                 );
             });
-            socket.on("disconnect", () => setConnected(false));
+            socket.on("disconnect", () => {
+                setConnected(false);
+                // A reconnected socket is a new participant, named by its next join.
+                setParticipantId(null);
+            });
             socket.on("connect_error", () => setConnected(false));
 
             // Presence
@@ -282,6 +325,13 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
                 }
             });
             socket.on("user_left", (payload: { users: CollabUser[] }) => {
+                if (payload && Array.isArray(payload.users)) {
+                    setUsers(payload.users);
+                }
+            });
+            // The owner invited or removed an editor: everyone's roles, this
+            // tab's among them.
+            socket.on("roles_changed", (payload: { users: CollabUser[] }) => {
                 if (payload && Array.isArray(payload.users)) {
                     setUsers(payload.users);
                 }
@@ -370,7 +420,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
                 });
             }
         },
-        [],
+        [closeSocket],
     );
 
     const connectFor = useCallback(
@@ -408,11 +458,14 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
             const nextId = getCurrentProjectId();
             const prevId = projectIdRef.current;
             projectIdRef.current = nextId;
+            if (nextId !== prevId) refusedProjectRef.current = undefined;
             if (nextId === prevId && socketRef.current) return;
             if (!nextId) {
                 closeSocket();
                 return;
             }
+            // The room refused this tab: it stays out until another dataflow opens.
+            if (nextId === refusedProjectRef.current) return;
             connectFor(nextId);
         };
         const unsub = subscribeProject(reconcile);
@@ -422,24 +475,6 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
             closeSocket();
         };
     }, [enabled, closeSocket, connectFor]);
-
-    // Resolve the local user's id from /api/auth/me once after enabling.
-    useEffect(() => {
-        if (!enabled) {
-            setCurrentUserId(null);
-            return;
-        }
-        let cancelled = false;
-        authApi
-            .getMe()
-            .then((me) => {
-                if (!cancelled) setCurrentUserId(me.id);
-            })
-            .catch(() => undefined);
-        return () => {
-            cancelled = true;
-        };
-    }, [enabled]);
 
     // ------------------------------------------------------------------
     // Outbound helpers (no-op when not connected; safe to call from any
@@ -544,7 +579,8 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
         () => ({
             enabled,
             connected,
-            currentUserId,
+            participantId,
+            role,
             users,
             lockedNodes,
             proposals,
@@ -573,7 +609,8 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
         [
             enabled,
             connected,
-            currentUserId,
+            participantId,
+            role,
             users,
             lockedNodes,
             proposals,
