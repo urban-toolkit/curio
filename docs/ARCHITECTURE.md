@@ -2351,7 +2351,7 @@ The user-facing model is in [SCENARIO-CATALOG.md](SCENARIO-CATALOG.md) and the r
 
 ## Real-time collaboration
 
-The user-facing model, setup and modules are in [COLLABORATION.md](COLLABORATION.md). It runs behind `--collab`: the backend serves Socket.IO on its namespace, and one process holds every room in memory (`collaboration/room_state.py`).
+The user-facing model, setup and modules are in [COLLABORATION.md](COLLABORATION.md). Every backend serves Socket.IO on its namespace (`extensions.init_socketio`, `server.serve`), and `--collab` tells the page to show the collaboration panel and join the room. One process holds every room and every open dataflow's doc in memory (`collaboration/room_state.py`, `collaboration/dataflow_docs.py`).
 
 ### Who edits: the access list and the roles
 
@@ -2373,6 +2373,42 @@ Each socket is one participant, with an id `connect` gives it (`room_state.new_p
 ### Hosted guests
 
 A hosted guest is a guest with sign-in on (`capabilities.is_hosted_guest`, the backend's twin of the page's `isHostedGuest`). Its save is refused on the server (`services._assert_guest_can_save`, "Guest users cannot save projects": a create, an update, a duplicate and a run's recorded outputs), and so is a non-shared guest's anywhere; without `--deploy` the shared guest saves. The one dataflow write its account makes through `update_project` is a cleanup for another action: a removed dataset's bindings cleared out of the dataflows that held it (`cleanup=True`, `datasets/repositories/installed.py`), as its Data Catalog actions write their dataset sections. Its join to a room of a dataflow a guest owns is refused, so each guest's canvas of an example stays its own, and a room it does join gives it the watcher's role. A guest is never an editor and manages no editors.
+
+### Each open dataflow's doc
+
+The server keeps one Yjs doc per open dataflow: a pycrdt `Doc` and an `Awareness`, in the backend's memory, each dataflow's behind a lock of its own (`collaboration/dataflow_docs.py`). Its layout is `src/contracts/dataflowDoc.json`, which `collaboration/doc_mapping.py` reads to make a doc from Trill and Trill from a doc:
+
+| In the doc | Holds | Trill |
+|---|---|---|
+| `meta` (map) | the doc's `id`, the `layout` it was built with (1), and `scenariosListed` when the Trill lists its scenarios, even none | none |
+| `dataflow` (map) | each field of `dataflow` but its three lists and the agents' sections | `dataflow.*` |
+| `nodes` (map by id, each a map) and `nodeOrder` (array of ids) | `type`; `place` {x, y}, `size` {width, height} and `pin` {pinned, x, y, width, height}, each one value; `content`, a text; `metadata`, a map with each setting as its own key; `widgets` (map by name, each with its `definition` and its `value`) and `widgetOrder`; every other field as its own key | `nodes[]` |
+| `edges` (map by id) and `edgeOrder` | each edge whole, as one value | `edges[]` |
+| `scenarios` (map by id, each a map) and `scenarioOrder` | each scenario's fields, each as its own key | `dataflow.scenarios` |
+
+- **Values.** A map's keys and the order arrays' items are plain strings: ids and widget names. Every other value that is not a shared type is the JSON text of its value, plain strings included, so a number keeps its form (`5` stays an int, `5.0` a float) and an object the order of its keys; a Yjs map keeps neither. A value read without its JSON text is taken as it is.
+- **Order.** Trill comes out in the layout's order, then any field the layout does not name, sorted, since a Yjs map has no order of its own; the order arrays give the lists theirs, each id once, then any id they lack.
+- **Lists that cannot be keyed.** A list with an entry that is not an object, or with a missing or repeated id or name, is kept whole, as one value under its Trill name. A node's `metadata`, `widgets` and `widgetOrder` are made with the node, so two tabs never each make one; an empty `metadata` is not written, as `TrillGenerator.generateTrill` writes none.
+- **Outside the doc:** `dataflow.agents`, `agentAttachments` and `agentDefaults`, since a watcher receives the doc, and the history. A write of the doc carries them as `spec.trill.json` holds them.
+- **The shared cases.** Every dataflow Curio ships goes to a doc and back to itself, directly, through a sync and through the doc's bytes, and every field `generateTrill` writes is a row of the layout (`test_collaboration/test_doc_mapping.py`).
+
+**The protocol.** The Yjs sync protocol and awareness travel as bytes in the `message` of a `yjs` event on the collaboration namespace, `{projectId, message}`, framed as y-protocols frames them: sync 0 (step 1 0, step 2 1, update 2) and awareness 1. The server reads and writes them with pycrdt's own functions (`handle_sync_message`, `create_sync_message`, `create_update_message`, `create_awareness_message`) in Flask-SocketIO's threading handlers. Only a socket that joined the room (`join_session`) takes part, and its doc traffic goes to the room `doc:<projectId>`, which a socket enters with its sync step 1.
+
+- A tab starts with sync step 1, naming the doc it holds as `docId` when it holds one. The server answers with step 2, then with its own step 1 to the owner's and an editor's tab, then with every awareness state; the ack is `{ok, docId, role}`. A tab holding another doc than the server's is answered `{ok: false, error: "reload", docId}` and starts again holding none. Handlers run on threads of their own, so a tab sends its updates once this ack is in.
+- An owner's or editor's step 2 or update is applied, appended to the update log and relayed to the doc's other tabs; its ack is `{ok, kept}`, each client the update brought changes of with the clock the doc now holds for it.
+- **Roles.** A watcher gets the doc, its updates and its awareness, and the server drops the watcher's own step 2 and updates (`{ok: false, error: "read_only"}`), applying and relaying nothing. The role is the room's (`room_state.participant`), which `roles.set_user_role` changes as the owner adds or removes an editor, so a removed editor's next update is dropped.
+- **Awareness** is relayed to the doc's other tabs and sent whole to a tab that starts. The server writes each state's `user` (`participant_id`, `user_id`, `username`, `name`, `role`), so no state names someone else. A socket sets only client ids that no other account's socket set. A watcher's state keeps only `pointer` and `selection` (`PRESENCE_FIELDS`), never an edit such as a drag. A socket's states are cleared for everyone when it disconnects (`dataflow_docs.leave`, called from the namespace's one disconnect handler in `events.py`).
+- Other refusals: `not_joined`, `not_synced` (an update before step 1), `invalid_message` (a frame that does not read), `unknown_project`, `no_dataflow`, `unmappable` (a node field named like a key the layout gives a node).
+
+**Persistence**, beside `spec.trill.json` in the dataflow's folder:
+
+- `ydoc.updates`: each change, appended the moment it lands, as a length and the update. A record a crash cut short ends the log.
+- `ydoc.bin`: the doc's whole state, which the updates are folded into, and `ydoc.rev`: the spec revision (`storage.spec_revision`) it was folded at.
+- After 1 s with no change (JupyterLab's save delay), or every 10 s of steady changes (`SAVE_IDLE_S`, `SAVE_EVERY_S`), a thread of the module writes the doc's Trill with `storage.write_spec`, carrying what `spec.trill.json` holds with the doc's dataflow, then folds the log into `ydoc.bin`. A doc leaves memory 60 s after its last tab (`CLOSE_AFTER_S`), written first, and a doc whose dataflow is deleted is dropped unwritten.
+- A restart reloads the same doc from `ydoc.bin` and the log, so tabs that reconnect sync with nothing doubled. When the spec's revision moved since the fold, someone else wrote it: the doc is built again from the file, with a new id, and tabs holding the old one reload. While a doc is open it never writes over such a write.
+- Locks, in this order: the spec lock, the doc's lock, then the module's own; the spec lock is never asked for while a doc's lock is held, and the writing thread touches no database.
+
+**Reads.** `dataflow_docs.read(user_key, project_id)` is the spec as it is now, the open doc's dataflow over the file. A doc that is not open but has changes in its log, which a stopped backend left, is opened to read them.
 
 ---
 

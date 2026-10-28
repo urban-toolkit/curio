@@ -99,8 +99,9 @@ def serve():
         "[backend]", "so its threads stay idle in this process", import_first=True,
     )
 
-    from utk_curio.backend.extensions import socketio
-    socketio.run(app, **_socketio_run_kwargs())
+    # The app's own SocketIO server (extensions.init_socketio), which
+    # Flask-SocketIO keeps on the app.
+    app.extensions["socketio"].run(app, **_socketio_run_kwargs())
 
 
 if __name__ == '__main__':

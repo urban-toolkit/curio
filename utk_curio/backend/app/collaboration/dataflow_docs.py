@@ -38,8 +38,10 @@ room (``join_session``, ``events.py``) takes part.
   folded at.
 
 After :data:`SAVE_IDLE_S` with no change, or every :data:`SAVE_EVERY_S` of
-steady changes, the doc is written to ``spec.trill.json`` (the file's sections
-outside the doc kept), then folded. A doc leaves memory :data:`CLOSE_AFTER_S`
+steady changes, the doc is written to ``spec.trill.json`` through
+``storage.write_spec``, then folded. The write carries what the file holds
+with the doc's dataflow, the agents' sections included, and never the history
+storage keeps beside the file, which stays as it is. A doc leaves memory :data:`CLOSE_AFTER_S`
 after its last tab. A restart reloads the same doc from ``ydoc.bin`` and the
 updates, so tabs that reconnect sync with nothing doubled. When someone else
 wrote the spec since ``ydoc.bin`` was folded (its revision moved), the doc is
@@ -94,7 +96,8 @@ logger = logging.getLogger(__name__)
 
 EVENT = doc_mapping.EVENT
 
-#: The files beside ``spec.trill.json``.
+SPEC_FILE = "spec.trill.json"
+#: The files beside it.
 DOC_FILE = "ydoc.bin"
 UPDATES_FILE = "ydoc.updates"
 REVISION_FILE = "ydoc.rev"
@@ -234,6 +237,23 @@ def _fold(folder: Path, doc, revision: int) -> None:
         pass
 
 
+def _spec_file(folder: Path) -> Optional[dict]:
+    """``spec.trill.json`` as the file holds it. Unlike ``storage.read_spec``,
+    which reads the dataflow's history back from where storage keeps it, so a
+    write of the doc carries what the file holds and no more: the history
+    stays where it is."""
+    try:
+        text = (folder / SPEC_FILE).read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    try:
+        spec = json.loads(text)
+    except ValueError:
+        logger.error("%s does not read as JSON", folder / SPEC_FILE)
+        return None
+    return spec if isinstance(spec, dict) else None
+
+
 def _with_dataflow(spec: dict, dataflow: dict) -> dict:
     """*spec* with *dataflow* as its dataflow, the sections kept outside the
     doc taken from *spec*."""
@@ -254,10 +274,10 @@ def _with_dataflow(spec: dict, dataflow: dict) -> dict:
 def _load(entry: _OpenDoc) -> None:
     """Open the doc from its files, or build it from the spec when they are
     missing, unreadable or behind a write someone else made."""
-    spec = storage.read_spec(entry.user_key, entry.project_id)
+    folder = entry.folder()
+    spec = _spec_file(folder)
     if spec is None:
         raise _NoDataflow(entry.project_id)
-    folder = entry.folder()
     revision = storage.spec_revision(entry.user_key, entry.project_id)
     doc, replayed = None, 0
     if (folder / DOC_FILE).is_file() and _read_revision(folder) == revision:
@@ -371,10 +391,10 @@ def _flush(entry: _OpenDoc) -> bool:
     """Write the doc's changes to ``spec.trill.json`` and fold them into
     ``ydoc.bin``. Whether it wrote."""
     try:
-        spec_file = entry.folder() / "spec.trill.json"
+        folder = entry.folder()
     except ValueError:
         return False
-    if not spec_file.is_file():
+    if not (folder / SPEC_FILE).is_file():
         _discard(entry)  # the dataflow was deleted: its folder must not come back
         return False
     with storage.spec_write_lock(entry.user_key, entry.project_id):
@@ -383,7 +403,7 @@ def _flush(entry: _OpenDoc) -> bool:
                 dirty = entry.dirty_since is not None
             if entry.closed or not entry.loaded or not dirty:
                 return False
-            spec = storage.read_spec(entry.user_key, entry.project_id)
+            spec = _spec_file(folder)
             if spec is None:
                 _discard(entry)
                 return False
@@ -396,11 +416,13 @@ def _flush(entry: _OpenDoc) -> bool:
                         "doc was open; the doc does not write over it", entry.project_id,
                     )
             else:
+                # What the file holds, its dataflow the doc's: never the
+                # history storage keeps beside it, which stays as it is.
                 dataflow = doc_mapping.doc_to_dataflow(entry.doc)
                 storage.write_spec(entry.user_key, entry.project_id, _with_dataflow(spec, dataflow))
                 entry.revision = storage.spec_revision(entry.user_key, entry.project_id)
                 wrote = True
-            _fold(entry.folder(), entry.doc, entry.revision)
+            _fold(folder, entry.doc, entry.revision)
             with _lock:
                 entry.dirty_since = entry.changed_at = None
             return wrote
@@ -543,10 +565,19 @@ def _refused(error: str, **extra) -> dict:
     return {"ok": False, "error": error, **extra}
 
 
-def _emit(message: bytes, project_id: str, *, to: str, skip_sid: Optional[str] = None) -> None:
+def _socketio():
+    """The SocketIO server of the app at hand, else the backend's."""
+    from flask import current_app, has_app_context
+
     from utk_curio.backend import extensions
 
-    sio = extensions.socketio
+    if has_app_context() and current_app.extensions.get("socketio") is not None:
+        return current_app.extensions["socketio"]
+    return extensions.socketio
+
+
+def _emit(message: bytes, project_id: str, *, to: str, skip_sid: Optional[str] = None) -> None:
+    sio = _socketio()
     if sio is not None:
         sio.emit(EVENT, {"projectId": project_id, "message": message},
                  to=to, skip_sid=skip_sid, namespace=COLLAB_NAMESPACE)
