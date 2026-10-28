@@ -1260,6 +1260,13 @@ The sandbox runs as a separate Flask process. It:
   request is in flight (`sandbox/util/memory_release.py`): every request runs
   on a thread of its own, and glibc's malloc arenas and pyarrow's pool would
   otherwise keep the pages each run freed.
+- Starts with its allocators fitted as its isolated children's are
+  (`sandbox/isolation/lifecycle.py::server_environment`): its malloc arenas
+  capped from the same budget (`MALLOC_ARENA_MAX`, 16 at the default 4096 MB),
+  and Arrow allocating in them (`ARROW_DEFAULT_MEMORY_POOL=system`) unless the
+  environment names another pool. glibc allows eight arenas a core, the release
+  above cannot trim the top of any arena but the main one, and Arrow's default
+  pool kept what it freed.
 
 > [!WARNING]
 > **By default this is a network boundary, not an execution boundary.** Unless
