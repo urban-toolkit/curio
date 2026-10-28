@@ -121,17 +121,11 @@ def _drag_node_by(page, node_id: str, dx: float, dy: float) -> None:
     """Drag a node by its header with the mouse, *dx* and *dy* in canvas units,
     a few pixels at a time, as test_feature_tour_video.py's does.
 
-    The canvas is fit first, through the app's own fit, and held there: a
-    tab's load fit lands on a timer once its nodes are measured, and the room
-    can answer before it does. Until then the canvas shows its default view,
-    with the node's header under the top bar, and a press there lands on the
-    bar and drags nothing. The press point is checked to be on the node."""
-    _wait_for_reactflow_ready(page)
+    Before-run: the helper as it was when run 40713502116 failed, with no
+    fit and no check of where the press lands."""
     zoom = page.evaluate("() => window.__curio_reactFlow.getViewport().zoom")
     box = node_locator(page, node_id).bounding_box()
     x, y = box["x"] + box["width"] / 2, box["y"] + 15 * zoom
-    target = page.evaluate(_PRESS_TARGET_JS, [node_id, x, y])
-    assert target == "node", f"a press on {node_id}'s header at ({x:.0f}, {y:.0f}) lands on {target}"
     page.mouse.move(x, y)
     page.mouse.down()
     for leg_x, leg_y in ((dx * zoom, 0.0), (0.0, dy * zoom)):
