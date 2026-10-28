@@ -173,6 +173,7 @@ describe("collapsing changes nothing but the drawing", () => {
     const spec = TrillGenerator.generateTrill(nodes, edges, "06", "", [], "", [], {}, scenarios);
     const rest = { ...spec.dataflow };
     delete rest.scenarios;
+    delete rest.scenarioSets;
     return rest;
   }
 
@@ -180,6 +181,7 @@ describe("collapsing changes nothing but the drawing", () => {
     const context = composeAgentRunContext(reader, { nodes, edges, workflowName: "06", workflowGoal: "", scenarios });
     const trill = JSON.parse(String(context).replace(/^Current Trill: /, ""));
     delete trill.dataflow.scenarios;
+    delete trill.dataflow.scenarioSets;
     return trill;
   }
 
@@ -201,6 +203,7 @@ describe("collapsing changes nothing but the drawing", () => {
   test("the saved scenario says whether it is collapsed, and that is all that differs", () => {
     const view = scenarioCanvasView(NODES, EDGES, collapsed);
     const spec = TrillGenerator.generateTrill(view.nodes, view.edges, "06", "", [], "", [], {}, collapsed);
-    expect(spec.dataflow.scenarios).toEqual(collapsed);
+    expect(spec.dataflow.scenarios).toEqual(collapsed.map((s) => expect.objectContaining(s)));
+    expect(spec.dataflow.scenarios[0].collapsed).toBe(true);
   });
 });

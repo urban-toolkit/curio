@@ -205,12 +205,15 @@ class TestThePlanApply:
         assert shadows["metadata"]["widgets"] == [FACTOR]
         assert copy["metadata"] == {"widgets": [{**FACTOR, "value": 2}], "copiedFrom": [shadows["id"]]}
         assert copy["goal"] == shadows["goal"]
-        assert spec["dataflow"]["scenarios"] == [
+        keep = ("id", "name", "color", "description", "nodes")
+        assert [{k: s[k] for k in keep if k in s} for s in spec["dataflow"]["scenarios"]] == [
             {"id": body["appliedGraph"]["scenarios"][0]["id"], "name": "Real heights", "color": "#3567c7",
              "description": "the heights as mapped", "nodes": [shadows["id"]]},
             {"id": body["appliedGraph"]["scenarios"][1]["id"], "name": "Twice as tall", "color": "#e86a3c",
              "nodes": [copy["id"]]},
         ]
+        # Both in one set: they read the same buildings and feed one comparison.
+        assert len({s["set"] for s in spec["dataflow"]["scenarios"]}) == 1
         assert body["appliedGraph"]["scenarios"] == spec["dataflow"]["scenarios"]
         assert scenario_problems(spec) == []
         # The copy reads the same context, and the comparison reads both on circles of its own.

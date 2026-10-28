@@ -141,6 +141,7 @@ export const FlowContext = createContext<FlowContextProps>({
     workflowCategories: {},
     serverCategories: {},
     scenarios: [],
+    scenarioSets: [],
     autoRun: false,
     renameDataflow: () => false,
     updateDataflowCategories: () => {},

@@ -18,7 +18,8 @@ import { dataPoolToSpec } from "./utils/dataPoolSpec";
 import { normalizeWidgets } from "./utils/widgets/widgetModel";
 import { datasetWidgetBindings } from "./utils/widgets/datasetWidgets";
 import { normalizeSelections } from "./utils/references/selectionTags";
-import { normalizeScenarios, type Scenario } from "./utils/scenarios/scenarioModel";
+import { normalizeScenarios, type Scenario, type ScenarioSet } from "./utils/scenarios/scenarioModel";
+import { normalizeScenarioSets } from "./utils/scenarios/scenarioSets";
 import { registeredCategory } from "./utils/graphPreviewCategories";
 
 export class TrillGenerator {
@@ -37,11 +38,15 @@ export class TrillGenerator {
      * flow's `setScenarios` keeps this current; `reset` clears it. */
     static scenarios: Scenario[] = [];
 
+    /** The canvas's scenario sets (`dataflow.scenarioSets`), kept beside `scenarios`. */
+    static scenarioSets: ScenarioSet[] = [];
+
     static reset() {
         this.provenanceJSON = { id: "", nodes: [], edges: [] };
         this.latestTrill = "";
         this.list_of_trills = {};
         this.scenarios = [];
+        this.scenarioSets = [];
     }
 
     /** The plain-box graph a version is drawn with, each node in its
@@ -114,6 +119,8 @@ export class TrillGenerator {
         let new_trill = this.generateTrill(
             nodes, edges, name, task, undefined, undefined, undefined, undefined,
             this.scenarios.length > 0 ? this.scenarios : undefined,
+            undefined,
+            this.scenarioSets,
         );
         
         console.log("new_trill", new_trill);
@@ -188,12 +195,15 @@ export class TrillGenerator {
      *
      * *scenarios* (`dataflow.scenarios`, #662) follow the same rule: a save
      * passes the canvas's list and `[]` clears them. Their members are kept
-     * only when they are among *nodes*.
+     * only when they are among *nodes*. *scenarioSets* go with them: each
+     * scenario is written in a set with its context and outcomes, filled in
+     * the way the backend fills them (`normalizeScenarioSets`), and the sets
+     * are written only when there are scenarios.
      *
      * *autoRun* (`dataflow.autoRun`, #845) too: a save passes the toggle, on
      * or off.
      */
-    static generateTrill(nodes: any, edges: any, name: string, task: string = "", packages: string[] = [], description: string = "", datasets: any[] = [], categories?: HandCategories, scenarios?: Scenario[], autoRun?: boolean){
+    static generateTrill(nodes: any, edges: any, name: string, task: string = "", packages: string[] = [], description: string = "", datasets: any[] = [], categories?: HandCategories, scenarios?: Scenario[], autoRun?: boolean, scenarioSets?: ScenarioSet[]){
 
         let trill: any = {
             dataflow: {
@@ -463,10 +473,15 @@ export class TrillGenerator {
         }
 
         if (scenarios) {
-            trill.dataflow.scenarios = normalizeScenarios(
-                scenarios,
-                trill.dataflow.nodes.map((n: any) => n.id),
-            );
+            const nodeIds: string[] = trill.dataflow.nodes.map((n: any) => n.id);
+            const kept = normalizeScenarios(scenarios, nodeIds);
+            if (kept.length > 0) {
+                const sets = normalizeScenarioSets(kept, scenarioSets ?? [], nodeIds, trill.dataflow.edges, name);
+                trill.dataflow.scenarios = sets.scenarios;
+                trill.dataflow.scenarioSets = sets.sets;
+            } else {
+                trill.dataflow.scenarios = kept;
+            }
         }
 
         return trill

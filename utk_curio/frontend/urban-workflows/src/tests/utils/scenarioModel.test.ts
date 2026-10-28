@@ -27,22 +27,34 @@ const NODES = [node("a"), node("b")];
 const BASELINE: Scenario = { id: "s1", name: "Baseline", color: "#2a9d8f", nodes: ["a"] };
 const TALL: Scenario = { id: "s2", name: "Twice as tall", color: "#e76f51", nodes: ["b", "deleted"] };
 
+/** *s* as a save keeps it: in a set of its own (these dataflows have no
+ * edges, so no two scenarios share a node), with no context or outcomes. */
+const kept = (s: Scenario, extra: Partial<Scenario> = {}): Scenario => ({
+  ...s, set: `set-${s.id}`, context: [], outcomes: [], ...extra,
+});
+
 describe("generateTrill and scenarios", () => {
   beforeEach(() => TrillGenerator.reset());
 
   test("writes them, keeping only the members it writes as nodes", () => {
     const spec = TrillGenerator.generateTrill(NODES, [], "wf", "", [], "", [], {}, [BASELINE, TALL]);
-    expect(spec.dataflow.scenarios).toEqual([BASELINE, { ...TALL, nodes: ["b"] }]);
+    expect(spec.dataflow.scenarios).toEqual([kept(BASELINE), kept(TALL, { nodes: ["b"] })]);
+    expect(spec.dataflow.scenarioSets).toEqual([
+      { id: "set-s1", name: "Baseline" },
+      { id: "set-s2", name: "Twice as tall" },
+    ]);
   });
 
   test("a scenario whose nodes are all gone keeps its name and color", () => {
     const spec = TrillGenerator.generateTrill([node("a")], [], "wf", "", [], "", [], {}, [TALL]);
-    expect(spec.dataflow.scenarios).toEqual([{ ...TALL, nodes: [] }]);
+    expect(spec.dataflow.scenarios).toEqual([kept(TALL, { nodes: [] })]);
+    expect(spec.dataflow.scenarioSets).toEqual([{ id: "set-s2", name: "wf" }]);
   });
 
   test("an empty list is written, so a save clears them", () => {
     const spec = TrillGenerator.generateTrill(NODES, [], "wf", "", [], "", [], {}, []);
     expect(spec.dataflow.scenarios).toEqual([]);
+    expect("scenarioSets" in spec.dataflow).toBe(false);
   });
 
   test("left out, no key is written, so the server keeps what it has", () => {
@@ -56,7 +68,7 @@ describe("generateTrill and scenarios", () => {
     TrillGenerator.addNewVersionProvenance(NODES, [], "wf", "", "one");
     const [first, second] = Object.values(TrillGenerator.list_of_trills) as any[];
     expect("scenarios" in first.dataflow).toBe(false);
-    expect(second.dataflow.scenarios).toEqual([BASELINE]);
+    expect(second.dataflow.scenarios).toEqual([kept(BASELINE)]);
   });
 
   test("reset clears them", () => {
@@ -89,7 +101,7 @@ describe("an agent's view of the dataflow", () => {
     const context = composeAgentRunContext(reader, {
       nodes: NODES, edges: [], workflowName: "wf", workflowGoal: "", scenarios: [BASELINE],
     });
-    expect(trillOf(context).dataflow.scenarios).toEqual([BASELINE]);
+    expect(trillOf(context).dataflow.scenarios).toEqual([kept(BASELINE)]);
   });
 
   test("has no scenarios key when there are none", () => {

@@ -25,7 +25,8 @@
     "categories": "categories",
     "autoRun": "autoRun",
     "datasets": "datasets",
-    "scenarios": "@scenarios"
+    "scenarios": "@scenarios",
+    "scenarioSets": "scenarioSets"
   },
   "node": {
     "id": "@key",
@@ -87,6 +88,9 @@
     "color": "color",
     "nodes": "nodes",
     "description": "description",
+    "set": "set",
+    "context": "context",
+    "outcomes": "outcomes",
     "collapsed": "collapsed",
     "box": "box",
     "source": "source"

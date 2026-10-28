@@ -89,9 +89,8 @@ export function normalizeScenarios(raw: unknown, nodeIds: Iterable<string>): Sce
     const scenario: Scenario = { id: entry.id, name: entry.name, color: entry.color, nodes: kept };
     if (nonEmpty(entry.description)) scenario.description = entry.description;
     if (nonEmpty(entry.set)) scenario.set = entry.set;
-    for (const key of ["context", "outcomes"] as const) {
-      if (Array.isArray(entry[key])) scenario[key] = members(entry, key).filter((id) => nodes.has(id));
-    }
+    if (Array.isArray(entry.context)) scenario.context = members(entry, "context").filter((id) => nodes.has(id));
+    if (Array.isArray(entry.outcomes)) scenario.outcomes = members(entry, "outcomes").filter((id) => nodes.has(id));
     if (typeof entry.collapsed === "boolean") scenario.collapsed = entry.collapsed;
     const box = entry.box as Record<string, unknown> | undefined;
     if (box && typeof box === "object" && isNumber(box.x) && isNumber(box.y)) {

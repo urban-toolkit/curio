@@ -26,7 +26,7 @@ import uuid
 
 from utk_curio.backend.app.agents.domain import node_settings
 from utk_curio.backend.app.execution.code_references import normalize_widgets
-from utk_curio.backend.app.projects.scenarios import next_scenario_color, normalize_scenarios
+from utk_curio.backend.app.projects.scenarios import next_scenario_color, normalize_scenarios, normalize_spec_scenarios
 from utk_curio.backend.app.scenario_catalog.domain.duplicate import lineage_of
 from utk_curio.backend.app.agents.domain import agent_text
 
@@ -232,6 +232,10 @@ def apply_scenarios(spec: dict, proposal: dict, ref_to_id: dict, *, final: bool)
         created.append(entry)
     if created:
         dataflow["scenarios"] = current
+        # Each in a set, with its context and outcomes, as a save keeps them.
+        normalize_spec_scenarios(spec)
+        made = {entry["id"] for entry in created}
+        created = [s for s in dataflow.get("scenarios") or [] if s["id"] in made]
     return created
 
 
