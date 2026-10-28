@@ -552,7 +552,9 @@ jobs:
 
       # Six workers fill a desktop's memory and an RTX 3070's video memory,
       # and the container's limit has to be set before it starts. Read once,
-      # before the build, while nothing of this job holds memory yet.
+      # before the build, while nothing of this job holds memory yet. A
+      # runner that holds one worker (utk-desktop-02) runs one, beside a
+      # second shard for test_shard_isolation_e2e.
       - name: 📏 Size this job to the runner's free memory
         run: |
           python3 scripts/ci_memory_budget.py --github-env --workers-max "$CURIO_E2E_MAX_PARALLEL" \
@@ -768,7 +770,11 @@ jobs:
           # under /app/.curio/shards/k, which the bind mount shares with the host
           # worker that will drive it. `umask 000` for the same reason the base
           # command has it: root-created files the host-side pytest must write.
-          for k in $(seq 1 $((CURIO_E2E_PARALLEL - 1))); do
+          # A runner that holds one worker still gets a second shard, which
+          # only test_shard_isolation_e2e calls (CURIO_E2E_SHARDS, written by
+          # scripts/ci_memory_budget.py only when shards outnumber workers).
+          shards="${CURIO_E2E_SHARDS:-$CURIO_E2E_PARALLEL}"
+          for k in $(seq 1 $((shards - 1))); do
             echo "==> starting shard $k"
             docker compose -p curio-ci exec -d -T curio sh -c '
               umask 000
@@ -799,7 +805,7 @@ jobs:
             ' sh "$k"
           done
           # Same shape as the base health gate: poll /live on each host port.
-          for k in $(seq 1 $((CURIO_E2E_PARALLEL - 1))); do
+          for k in $(seq 1 $((shards - 1))); do
             for port in $((CURIO_E2E_BACKEND_PORT + k)) $((CURIO_E2E_SANDBOX_PORT + k)); do
               echo "==> waiting for shard $k on :$port"
               timeout 240 bash -c "until curl -sf http://localhost:$port/live >/dev/null; do sleep 2; done" \
@@ -849,6 +855,9 @@ jobs:
             export PYTEST_ADDOPTS
             echo "Re-minting with PYTEST_ADDOPTS=$PYTEST_ADDOPTS"
           fi
+          # One worker runs without xdist, and finds the second shard from
+          # CURIO_E2E_SHARDS (tests/shards.py shard_count); xdist workers
+          # count theirs from PYTEST_XDIST_WORKER_COUNT.
           bash scripts/ci_repeat.sh bash scripts/test.sh --e2e-only --use-existing --skip-setup "${extra[@]}" \
             --parallel "$CURIO_E2E_PARALLEL"
 
