@@ -177,20 +177,22 @@ def roles(procs: list[dict]) -> dict[str, dict]:
     return out
 
 
-def cgroup() -> dict:
+#: Single-number cgroup files and the key each one is recorded under.
+CGROUP_NUMBERS = {"memory.current": "current", "memory.peak": "peak", "pids.current": "pids"}
+
+
+def cgroup(root: Path = CGROUP) -> dict:
+    """The container cgroup's memory in bytes, and its process count."""
     found = {}
-    current = _text(CGROUP / "memory.current")
-    if current and current.strip().isdigit():
-        found["current"] = int(current)
-    stat = _text(CGROUP / "memory.stat") or ""
+    for name, key in CGROUP_NUMBERS.items():
+        value = _text(root / name)
+        if value and value.strip().isdigit():
+            found[key] = int(value)
+    stat = _text(root / "memory.stat") or ""
     for line in stat.splitlines():
         key, _, value = line.partition(" ")
         if key in STAT_KEYS and value.strip().isdigit():
             found[key] = int(value)
-    for name in ("memory.peak", "pids.current"):
-        value = _text(CGROUP / name)
-        if value and value.strip().isdigit():
-            found[name.split(".", 1)[1]] = int(value)
     return found
 
 
