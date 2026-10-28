@@ -1686,6 +1686,13 @@
         "description": "Counts on weekdays.",
         "nodes": [
           "12966e12-1bef-594c-952a-7ae727386ab3"
+        ],
+        "set": "set-weekday",
+        "context": [
+          "0ea4f04f-637d-5e99-b121-dea0a3f11df5"
+        ],
+        "outcomes": [
+          "0a41219e-76c1-5e6c-bf83-a3b1c6a5b62f"
         ]
       },
       {
@@ -1695,6 +1702,13 @@
         "description": "Counts on weekends.",
         "nodes": [
           "a1b065fc-187d-5052-9458-e514b0a1bfcc"
+        ],
+        "set": "set-weekday",
+        "context": [
+          "0ea4f04f-637d-5e99-b121-dea0a3f11df5"
+        ],
+        "outcomes": [
+          "0a41219e-76c1-5e6c-bf83-a3b1c6a5b62f"
         ]
       },
       {
@@ -1704,6 +1718,13 @@
         "description": "The house as it was built.",
         "nodes": [
           "2bf52afd-8076-515d-8c6d-d3992fcf8133"
+        ],
+        "set": "set-as-built",
+        "context": [
+          "60148ae9-8410-5e48-989b-187bf4d01176"
+        ],
+        "outcomes": [
+          "551a2c72-12f1-5d1f-9fa0-3d23d49c0e9d"
         ]
       },
       {
@@ -1713,6 +1734,13 @@
         "description": "The house with a raised floor and flood vents.",
         "nodes": [
           "3b35a741-b4ed-5b4a-9a19-d797b6afc56d"
+        ],
+        "set": "set-as-built",
+        "context": [
+          "60148ae9-8410-5e48-989b-187bf4d01176"
+        ],
+        "outcomes": [
+          "551a2c72-12f1-5d1f-9fa0-3d23d49c0e9d"
         ]
       },
       {
@@ -1723,6 +1751,15 @@
         "nodes": [
           "8d4274fa-96a4-54ce-bc6f-4abd4a67ab8e",
           "d4d81b71-ed00-591d-af5e-0007a08c7073"
+        ],
+        "set": "set-storm-10-year",
+        "context": [
+          "f406a5e1-c3aa-5745-8adf-b059e0e6211b",
+          "8c0cb116-3a80-5674-a359-0c71c7a9be0a"
+        ],
+        "outcomes": [
+          "63edc3b0-fe44-5cc7-88d0-614a9949d706",
+          "2fbccfb0-f2cd-5547-b32c-07aa0df4e1ea"
         ]
       },
       {
@@ -1733,6 +1770,15 @@
         "nodes": [
           "d3d87ea8-da7f-5ea5-a99d-2cbbb7359a62",
           "903b70c7-fd6d-5425-863a-02c38136c912"
+        ],
+        "set": "set-storm-10-year",
+        "context": [
+          "f406a5e1-c3aa-5745-8adf-b059e0e6211b",
+          "8c0cb116-3a80-5674-a359-0c71c7a9be0a"
+        ],
+        "outcomes": [
+          "63edc3b0-fe44-5cc7-88d0-614a9949d706",
+          "2fbccfb0-f2cd-5547-b32c-07aa0df4e1ea"
         ]
       },
       {
@@ -1743,6 +1789,15 @@
         "nodes": [
           "5029ab15-57f4-5435-887b-3f5b77f12f7d",
           "00f08ae3-36c9-5686-9600-d2228d8bc2f2"
+        ],
+        "set": "set-storm-10-year",
+        "context": [
+          "f406a5e1-c3aa-5745-8adf-b059e0e6211b",
+          "8c0cb116-3a80-5674-a359-0c71c7a9be0a"
+        ],
+        "outcomes": [
+          "63edc3b0-fe44-5cc7-88d0-614a9949d706",
+          "2fbccfb0-f2cd-5547-b32c-07aa0df4e1ea"
         ]
       },
       {
@@ -1752,6 +1807,13 @@
         "description": "The streets as they are.",
         "nodes": [
           "3859810a-f0ef-51fd-ac8f-061d874d95ed"
+        ],
+        "set": "set-today",
+        "context": [
+          "b818e81e-79fd-5fba-a721-13f4d35e3209"
+        ],
+        "outcomes": [
+          "1e10a2ff-779d-52ef-844c-32ceef88d028"
         ]
       },
       {
@@ -1761,6 +1823,13 @@
         "description": "Bus lanes on the main streets.",
         "nodes": [
           "cfe2284f-10ff-522d-86c8-9642b21b0311"
+        ],
+        "set": "set-today",
+        "context": [
+          "b818e81e-79fd-5fba-a721-13f4d35e3209"
+        ],
+        "outcomes": [
+          "1e10a2ff-779d-52ef-844c-32ceef88d028"
         ]
       },
       {
@@ -1770,6 +1839,13 @@
         "description": "A connected network of protected bike lanes.",
         "nodes": [
           "6a97b972-f553-54d0-8b4f-26316c9d2c2b"
+        ],
+        "set": "set-today",
+        "context": [
+          "b818e81e-79fd-5fba-a721-13f4d35e3209"
+        ],
+        "outcomes": [
+          "1e10a2ff-779d-52ef-844c-32ceef88d028"
         ]
       },
       {
@@ -1779,6 +1855,13 @@
         "description": "No cars in the city center.",
         "nodes": [
           "01472302-d892-5564-b553-d0930ae10ab8"
+        ],
+        "set": "set-today",
+        "context": [
+          "b818e81e-79fd-5fba-a721-13f4d35e3209"
+        ],
+        "outcomes": [
+          "1e10a2ff-779d-52ef-844c-32ceef88d028"
         ]
       },
       {
@@ -1788,6 +1871,13 @@
         "description": "The building with a concrete frame.",
         "nodes": [
           "73b3ca51-979d-5828-ae8a-bd259347458f"
+        ],
+        "set": "set-concrete-frame",
+        "context": [
+          "2555add2-d76a-578b-a9e4-c59e94cb579e"
+        ],
+        "outcomes": [
+          "e4752aac-78c0-59c5-b95f-2f350fdc06dc"
         ]
       },
       {
@@ -1797,6 +1887,13 @@
         "description": "The building with a timber frame.",
         "nodes": [
           "aa3b54f0-d52c-5512-b269-083a70bd256c"
+        ],
+        "set": "set-concrete-frame",
+        "context": [
+          "2555add2-d76a-578b-a9e4-c59e94cb579e"
+        ],
+        "outcomes": [
+          "e4752aac-78c0-59c5-b95f-2f350fdc06dc"
         ]
       },
       {
@@ -1806,6 +1903,13 @@
         "description": "A park of open lawn with a few trees.",
         "nodes": [
           "fd5ce06e-4d57-592f-972a-53cb9f1cfe0f"
+        ],
+        "set": "set-open-lawn",
+        "context": [
+          "970f4ba4-4a40-5eb1-b099-31860a744cd8"
+        ],
+        "outcomes": [
+          "dda36433-f7da-516a-86b0-f4ed6c3a224c"
         ]
       },
       {
@@ -1815,6 +1919,13 @@
         "description": "A park under a canopy of trees.",
         "nodes": [
           "e81e1508-6097-5f65-b0be-9c22aefc8d2f"
+        ],
+        "set": "set-open-lawn",
+        "context": [
+          "970f4ba4-4a40-5eb1-b099-31860a744cd8"
+        ],
+        "outcomes": [
+          "dda36433-f7da-516a-86b0-f4ed6c3a224c"
         ]
       },
       {
@@ -1824,6 +1935,13 @@
         "description": "The shortest route, on busy streets.",
         "nodes": [
           "50cdd541-d71b-5799-a63f-0ea593f969ae"
+        ],
+        "set": "set-route-a",
+        "context": [
+          "1ea395cb-6d43-52f2-9e50-735e1f3e0fb5"
+        ],
+        "outcomes": [
+          "65eaf95d-46aa-50e8-af79-741d17e9d35c"
         ]
       },
       {
@@ -1833,6 +1951,13 @@
         "description": "A longer route through quiet, shaded streets.",
         "nodes": [
           "16883e88-37dc-5135-97db-51aefaa54e74"
+        ],
+        "set": "set-route-a",
+        "context": [
+          "1ea395cb-6d43-52f2-9e50-735e1f3e0fb5"
+        ],
+        "outcomes": [
+          "65eaf95d-46aa-50e8-af79-741d17e9d35c"
         ]
       },
       {
@@ -1842,6 +1967,13 @@
         "description": "A route along the river.",
         "nodes": [
           "9387eb51-380f-56b5-a099-7ac9d29138f4"
+        ],
+        "set": "set-route-a",
+        "context": [
+          "1ea395cb-6d43-52f2-9e50-735e1f3e0fb5"
+        ],
+        "outcomes": [
+          "65eaf95d-46aa-50e8-af79-741d17e9d35c"
         ]
       },
       {
@@ -1851,6 +1983,13 @@
         "description": "A thin layer of soil and sedum.",
         "nodes": [
           "0f7a3acb-545c-53b2-9226-65b2610c1190"
+        ],
+        "set": "set-extensive-roof",
+        "context": [
+          "99e637ae-8529-513f-8433-25cb6747df43"
+        ],
+        "outcomes": [
+          "c985c9fd-221b-55c1-8199-7284de02d2d8"
         ]
       },
       {
@@ -1860,6 +1999,13 @@
         "description": "Deeper soil with grasses and shrubs.",
         "nodes": [
           "7ed1b26c-6aef-5d45-bff5-06fec2599a84"
+        ],
+        "set": "set-extensive-roof",
+        "context": [
+          "99e637ae-8529-513f-8433-25cb6747df43"
+        ],
+        "outcomes": [
+          "c985c9fd-221b-55c1-8199-7284de02d2d8"
         ]
       },
       {
@@ -1869,6 +2015,13 @@
         "description": "A roof garden with deep soil and small trees.",
         "nodes": [
           "efca0e7f-2f73-5ca4-82a8-0ed946610742"
+        ],
+        "set": "set-extensive-roof",
+        "context": [
+          "99e637ae-8529-513f-8433-25cb6747df43"
+        ],
+        "outcomes": [
+          "c985c9fd-221b-55c1-8199-7284de02d2d8"
         ]
       }
     ],
@@ -1953,6 +2106,40 @@
     "description": "Nine example tables, each charted a different way to compare its scenarios: lines with a band, curves by state, bars with error bars, ensemble strips, grouped bars, stacked bars with totals, donuts, a weighted matrix and a table. In each row a Data Transformation node per scenario keeps its rows, and a chart of the Scout package takes each scenario's node on an input of its own.",
     "task": "",
     "timestamp": 1792195200000,
-    "provenance_id": "scenario-comparison-charts"
+    "provenance_id": "scenario-comparison-charts",
+    "scenarioSets": [
+      {
+        "id": "set-weekday",
+        "name": "Weekday vs Weekend"
+      },
+      {
+        "id": "set-as-built",
+        "name": "As built vs Floodproofed"
+      },
+      {
+        "id": "set-storm-10-year",
+        "name": "10-year storm vs 50-year storm vs 100-year storm"
+      },
+      {
+        "id": "set-today",
+        "name": "Today vs Bus lanes vs Bike network vs Car-free center"
+      },
+      {
+        "id": "set-concrete-frame",
+        "name": "Concrete frame vs Timber frame"
+      },
+      {
+        "id": "set-open-lawn",
+        "name": "Open lawn vs Tree canopy"
+      },
+      {
+        "id": "set-route-a",
+        "name": "Route A vs Route B vs Route C"
+      },
+      {
+        "id": "set-extensive-roof",
+        "name": "Extensive roof vs Semi-intensive roof vs Intensive roof"
+      }
+    ]
   }
 }

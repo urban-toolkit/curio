@@ -176,6 +176,14 @@
         "nodes": [
           "a1e7c3d2-6b5f-4e8a-9c10-2f3d4e5a6b71",
           "c3f9e1a4-2d7b-4c6e-8a91-5b0d2e3f4a82"
+        ],
+        "set": "set-4c2e6a80-1b3d-4f57-9a8e-0d1c2b3a4f51",
+        "context": [
+          "5b0c2f1e-8a43-4d6e-9f21-3c7a1d9e4b60"
+        ],
+        "outcomes": [
+          "f6c0d4e8-3a1b-4c5f-8d94-8e3a2b1cadb5",
+          "a7d1e5f9-4b2c-4d6a-9ea5-9f4b3c2dbec6"
         ]
       },
       {
@@ -186,6 +194,14 @@
         "nodes": [
           "d4a8b2c6-1e9f-4a3d-8b72-6c1e0f9a8b93",
           "e5b9c3d7-2f0a-4b4e-9c83-7d2f1a0b9ca4"
+        ],
+        "set": "set-4c2e6a80-1b3d-4f57-9a8e-0d1c2b3a4f51",
+        "context": [
+          "5b0c2f1e-8a43-4d6e-9f21-3c7a1d9e4b60"
+        ],
+        "outcomes": [
+          "f6c0d4e8-3a1b-4c5f-8d94-8e3a2b1cadb5",
+          "a7d1e5f9-4b2c-4d6a-9ea5-9f4b3c2dbec6"
         ]
       }
     ],
@@ -193,6 +209,12 @@
     "task": "",
     "timestamp": 1791158400000,
     "provenance_id": "scenarios",
-    "packages": []
+    "packages": [],
+    "scenarioSets": [
+      {
+        "id": "set-4c2e6a80-1b3d-4f57-9a8e-0d1c2b3a4f51",
+        "name": "Building heights"
+      }
+    ]
   }
 }

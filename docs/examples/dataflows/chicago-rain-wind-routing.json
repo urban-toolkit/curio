@@ -505,6 +505,18 @@
         "nodes": [
           "7b3f9d2a-5e8c-4b17-9d4a-1e6f3c8b2a05",
           "c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36"
+        ],
+        "set": "set-fastest",
+        "context": [
+          "5d2b8e1a-4c7f-4a36-9b0e-2f6c8a1d3e57",
+          "2e7c4a9d-6b1f-4d58-8a3e-7f0b2c5d9e61"
+        ],
+        "outcomes": [
+          "6c0e8a4d-3b9f-4d21-a7e5-9f2b6d1c8e40",
+          "1f8b6d2c-4e9a-4b53-9c7f-2a5e8d0b3f16",
+          "4d9a7f3e-8c2b-4e16-a5d0-7b3f1e9c6a82",
+          "a2e6c9f4-5b1d-4f38-8d7a-0c4e9b2f5d67",
+          "b7f3a1d8-6e4c-4a29-9b2e-5d8a0f3c7e14"
         ]
       },
       {
@@ -514,6 +526,18 @@
         "nodes": [
           "3a6c2e8f-7d1b-4f45-a9c3-6b8e0d2f5a74",
           "e9b5d3a1-2f8c-4a76-8e1d-4c7b9f0a6e23"
+        ],
+        "set": "set-fastest",
+        "context": [
+          "5d2b8e1a-4c7f-4a36-9b0e-2f6c8a1d3e57",
+          "2e7c4a9d-6b1f-4d58-8a3e-7f0b2c5d9e61"
+        ],
+        "outcomes": [
+          "6c0e8a4d-3b9f-4d21-a7e5-9f2b6d1c8e40",
+          "1f8b6d2c-4e9a-4b53-9c7f-2a5e8d0b3f16",
+          "4d9a7f3e-8c2b-4e16-a5d0-7b3f1e9c6a82",
+          "a2e6c9f4-5b1d-4f38-8d7a-0c4e9b2f5d67",
+          "b7f3a1d8-6e4c-4a29-9b2e-5d8a0f3c7e14"
         ]
       }
     ],
@@ -566,6 +590,12 @@
     "name": "Routing around rain and wind in downtown Chicago",
     "task": "",
     "timestamp": 1791158400000,
-    "provenance_id": "Routing around rain and wind in downtown Chicago"
+    "provenance_id": "Routing around rain and wind in downtown Chicago",
+    "scenarioSets": [
+      {
+        "id": "set-fastest",
+        "name": "Routing around rain and wind"
+      }
+    ]
   }
 }

@@ -53,10 +53,14 @@ same file.
 from __future__ import annotations
 
 import json
+import sys
 import uuid
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from migrate_scenario_sets import with_sets  # noqa: E402
 OUT = REPO / "docs" / "examples" / "dataflows" / "crown-heights-1550-bedford-shadow.json"
 NAME = "Crown Heights shade from 1550 Bedford Avenue"
 NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, f"https://curio.dev/examples/{NAME}")
@@ -1074,7 +1078,7 @@ def build() -> dict:
         scenarios.append({"id": scenario["id"], "name": scenario["name"], "color": scenario["color"],
                           "description": scenario["description"],
                           "nodes": [nid(key) for key in levers + [scenario["prefix"] + k for k in CHAIN]]})
-    return {"dataflow": {
+    spec = {"dataflow": {
         "categories": {"complexity": ["Beginner"]},
         "nodes": nodes,
         "edges": edges,
@@ -1087,6 +1091,8 @@ def build() -> dict:
         "timestamp": TIMESTAMP,
         "provenance_id": NAME,
     }}
+    # Both scenarios in one set, each with the context and outcomes it uses.
+    return with_sets(spec, "1550 Bedford Avenue shade")
 
 
 def main() -> None:

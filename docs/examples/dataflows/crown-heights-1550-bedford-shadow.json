@@ -1027,6 +1027,25 @@
           "95b43de1-57a0-507a-8770-4c476dd1f4ec",
           "6336c9a7-c75a-527f-9b35-254eb952b512",
           "58433a36-c808-5c66-98dc-1b82661d8944"
+        ],
+        "set": "set-without",
+        "context": [
+          "e6bf2bc2-e88b-570d-8b5c-b121a93e5f42",
+          "f621df4f-9471-5b08-b29f-cd7fd34b22fa",
+          "6f07cb25-d7cc-5fe5-abf4-cfadafdffb59",
+          "3c72fe30-65b0-5a65-a3a6-3ee0d55ca00b",
+          "8f8b8c77-6778-56b8-a500-39601670fee7",
+          "e891762d-1198-5a8c-b43a-b41b22582249",
+          "2be9fdd4-c902-5a3e-af89-e0ad66f45a2c"
+        ],
+        "outcomes": [
+          "d0649118-6943-5803-86a0-e9f3e56c8fb6",
+          "93f86091-2454-52f6-920a-dd11f6e39cda",
+          "90e511a7-098e-5cbf-b7c3-759e11ef6439",
+          "2b37c095-3ed8-5653-847f-28f3850733ee",
+          "756ef4b8-cbed-5c42-abc5-f3bac5ee294b",
+          "6920455d-0912-512e-8c3e-97d0ed207152",
+          "cc1be78d-9348-5650-9a91-d98f08959fcd"
         ]
       },
       {
@@ -1045,12 +1064,37 @@
           "cb9f7863-af5c-5ace-a1f3-52027f8bf6f4",
           "d89f7440-724b-578f-b68f-896974b76ade",
           "6cb649f2-b091-5fcc-8214-1e76ee7b94e4"
+        ],
+        "set": "set-without",
+        "context": [
+          "e6bf2bc2-e88b-570d-8b5c-b121a93e5f42",
+          "f621df4f-9471-5b08-b29f-cd7fd34b22fa",
+          "6f07cb25-d7cc-5fe5-abf4-cfadafdffb59",
+          "3c72fe30-65b0-5a65-a3a6-3ee0d55ca00b",
+          "8f8b8c77-6778-56b8-a500-39601670fee7",
+          "e891762d-1198-5a8c-b43a-b41b22582249",
+          "2be9fdd4-c902-5a3e-af89-e0ad66f45a2c"
+        ],
+        "outcomes": [
+          "d0649118-6943-5803-86a0-e9f3e56c8fb6",
+          "93f86091-2454-52f6-920a-dd11f6e39cda",
+          "90e511a7-098e-5cbf-b7c3-759e11ef6439",
+          "2b37c095-3ed8-5653-847f-28f3850733ee",
+          "756ef4b8-cbed-5c42-abc5-f3bac5ee294b",
+          "6920455d-0912-512e-8c3e-97d0ed207152",
+          "cc1be78d-9348-5650-9a91-d98f08959fcd"
         ]
       }
     ],
     "name": "Crown Heights shade from 1550 Bedford Avenue",
     "task": "",
     "timestamp": 1792627200000,
-    "provenance_id": "Crown Heights shade from 1550 Bedford Avenue"
+    "provenance_id": "Crown Heights shade from 1550 Bedford Avenue",
+    "scenarioSets": [
+      {
+        "id": "set-without",
+        "name": "1550 Bedford Avenue shade"
+      }
+    ]
   }
 }

@@ -973,6 +973,24 @@
           "park-shade-existing-shade",
           "park-shade-existing-buildings-map",
           "park-shade-existing-shadow-map"
+        ],
+        "set": "set-existing",
+        "context": [
+          "park-shade-layers",
+          "755abf58-59e0-5e25-ad1c-9a0a2e654c0e",
+          "park-shade-heights",
+          "park-shade-parks"
+        ],
+        "outcomes": [
+          "park-shade-chart",
+          "park-shade-removed-change",
+          "park-shade-removed-change-map",
+          "park-shade-removed-park-change",
+          "park-shade-removed-park-change-map",
+          "park-shade-capped-change",
+          "park-shade-capped-change-map",
+          "park-shade-capped-park-change",
+          "park-shade-capped-park-change-map"
         ]
       },
       {
@@ -987,6 +1005,21 @@
           "park-shade-removed-shade",
           "park-shade-removed-buildings-map",
           "park-shade-removed-shadow-map"
+        ],
+        "set": "set-existing",
+        "context": [
+          "park-shade-layers",
+          "755abf58-59e0-5e25-ad1c-9a0a2e654c0e",
+          "park-shade-heights",
+          "park-shade-parks",
+          "park-shade-around"
+        ],
+        "outcomes": [
+          "park-shade-chart",
+          "park-shade-removed-change",
+          "park-shade-removed-change-map",
+          "park-shade-removed-park-change",
+          "park-shade-removed-park-change-map"
         ]
       },
       {
@@ -1001,6 +1034,21 @@
           "park-shade-capped-shade",
           "park-shade-capped-buildings-map",
           "park-shade-capped-shadow-map"
+        ],
+        "set": "set-existing",
+        "context": [
+          "park-shade-layers",
+          "755abf58-59e0-5e25-ad1c-9a0a2e654c0e",
+          "park-shade-heights",
+          "park-shade-parks",
+          "park-shade-around"
+        ],
+        "outcomes": [
+          "park-shade-chart",
+          "park-shade-capped-change",
+          "park-shade-capped-change-map",
+          "park-shade-capped-park-change",
+          "park-shade-capped-park-change-map"
         ]
       }
     ],
@@ -1011,6 +1059,12 @@
     "name": "Lower Manhattan park shade with towers removed or capped",
     "task": "",
     "timestamp": 1792195200000,
-    "provenance_id": "lower-manhattan-park-shade"
+    "provenance_id": "lower-manhattan-park-shade",
+    "scenarioSets": [
+      {
+        "id": "set-existing",
+        "name": "Lower Manhattan park shade"
+      }
+    ]
   }
 }

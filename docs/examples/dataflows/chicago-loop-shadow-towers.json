@@ -485,6 +485,16 @@
           "f7786d1f-9f64-5bbe-b007-dff18db386c6",
           "74e0af5a-c06e-52ae-94ad-94acc2de1642",
           "83fc7c29-f196-5f7d-9fe0-a412936dc4b8"
+        ],
+        "set": "set-existing",
+        "context": [
+          "f120f6c9-aa89-538f-9ada-55c866fb2e3c",
+          "44d857bc-c25f-5c9b-8945-c43d60ba6301"
+        ],
+        "outcomes": [
+          "d0e547ba-e7d6-52e1-9c0e-f047443b715c",
+          "608c35fc-5b51-546f-8305-7612a680f16a",
+          "f09ef56c-42c4-56b6-ab30-cf7d3c752e6b"
         ]
       },
       {
@@ -498,6 +508,16 @@
           "a2c5b8ed-658d-52ea-8e5b-18041d9385de",
           "ac470b24-69c3-5242-8d07-cc969e868e54",
           "4d8f9df6-6320-538d-9d58-ec45cb2af5f4"
+        ],
+        "set": "set-existing",
+        "context": [
+          "f120f6c9-aa89-538f-9ada-55c866fb2e3c",
+          "44d857bc-c25f-5c9b-8945-c43d60ba6301"
+        ],
+        "outcomes": [
+          "d0e547ba-e7d6-52e1-9c0e-f047443b715c",
+          "608c35fc-5b51-546f-8305-7612a680f16a",
+          "f09ef56c-42c4-56b6-ab30-cf7d3c752e6b"
         ]
       }
     ],
@@ -518,6 +538,12 @@
     "name": "Chicago Loop shadow with towers removed or edited",
     "task": "",
     "timestamp": 1791244800000,
-    "provenance_id": "Chicago Loop shadow with towers removed or edited"
+    "provenance_id": "Chicago Loop shadow with towers removed or edited",
+    "scenarioSets": [
+      {
+        "id": "set-existing",
+        "name": "Chicago Loop shadow"
+      }
+    ]
   }
 }
