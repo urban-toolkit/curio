@@ -35,6 +35,7 @@ This document describes the internal architecture of Curio for contributors who 
 * [Interactions and Propagation](#interactions-and-propagation)
 * [Provenance Tracking](#provenance-tracking)
 * [The Trill Dataflow Format](#the-trill-dataflow-format)
+  * [Where a dataflow is kept](#where-a-dataflow-is-kept)
 * [Shared Constants](#shared-constants)
 * [Agent text](#agent-text)
   * [The Autark Schema](#the-autark-schema)
@@ -1635,17 +1636,35 @@ Curio records a per-node history (start/end time, source code, input/output type
 - **Entries.** An entry is a run (`nodeExecProv`) or an edit (`nodeEditProv`), which ran nothing: a change made in a Map Editor node's body, or an agent's change the user applied. A node whose code is its state registers a writer (`utils/nodeCodeWriters.ts`) and files an agent's change as its own changes; for any other node `useGraphEdits.applyNodeContent` writes the code and files the edit, named after the agent the apply names (`appliedContent.agent`), with the code it replaced (`before`), and leaves the dataflow Unsaved (`markDirty`), as the Map Editor writer does, so the next save keeps the entry; it files nothing when the code stays as it was. A node an agent proposed with its code starts with such an edit (`useAgentCanvasMutations`): a `node.create` or package draft apply names the agent on the nodes it hands the canvas (`createdNode.agent`, `createdNodes[].agent`), never on the saved node. A plan's nodes start with none, even one whose template's starter is its code, since a plan apply names no agent on them; the code later written into one is its first edit.
 - **Agents.** `node.history.read` ([`agents/application/tools.py`](../utk_curio/backend/app/agents/application/tools.py)) reads the saved spec's `nodeProvenance`, keyed by node id as a load keys it: `utils/nodeProvenanceKeys.ts` and its twin [`projects/node_provenance.py`](../utk_curio/backend/app/projects/node_provenance.py) both run `nodeProvenanceKeys.cases.json`. It lists a node's entries newest first, or gives one entry's code and the code an edit replaced, each cut to the tool's bounds with what was left out counted (`entriesElided`, `codeElided`). The Node Builder and the Dataflow Builder are granted it; the Dataflow Reader is not, since it runs only as delegated modes, which run with no tools. The skill `skills/provenance/SKILL.md`, which the preamble places, says what an entry is and that putting one back is the user's action. An entry filed since the last save is not in what it reads.
 
-The dataflow's own version history is `TrillGenerator`'s (`provenanceJSON`, one version per node or connection added or removed), saved as `dataflowProvenance`. The provenance drawer shows it (see [The provenance drawer](#the-provenance-drawer)).
+The dataflow's own version history is `TrillGenerator`'s (`provenanceJSON`, one version per node or connection added or removed), saved as `dataflowProvenance`. The provenance drawer shows it (see [The provenance drawer](#the-provenance-drawer)). The server keeps both sections beside the spec file, in logs a save adds to ([Where a dataflow is kept](#where-a-dataflow-is-kept)).
 
 ---
 
 ## The Trill Dataflow Format
 
-A saved dataflow is one JSON document, a **trill**, written to `.curio/users/<userKey>/projects/<projectId>/spec.trill.json`. It holds the graph (`dataflow.nodes`, `dataflow.edges`), the dependency lockfiles (`dataflow.packages`, `dataflow.datasets`, `dataflow.agents`), and the two provenance sections described above.
+A saved dataflow is one JSON document, a **trill**. It holds the graph (`dataflow.nodes`, `dataflow.edges`), the dependency lockfiles (`dataflow.packages`, `dataflow.datasets`, `dataflow.agents`), and the two provenance sections described above. Every reader and writer of a saved dataflow handles the whole document, which the server keeps in `.curio/users/<userKey>/projects/<projectId>/` ([Where a dataflow is kept](#where-a-dataflow-is-kept)).
 
 Every trill is validated against [`docs/schemas/trill.v1.json`](schemas/trill.v1.json) (JSON Schema Draft 2020-12). The schema is the source of truth for what fields a dataflow can carry. Note what it deliberately does *not* decide: a node's `type` is a coordinate into a package manifest's `templates[].id`, so which templates exist, which handles are legal, and whether a node has code at all are manifest questions that depend on the installed packages. [`projects/storage.py`](../utk_curio/backend/app/projects/storage.py) performs no validation of its own - it reads and writes the spec as opaque JSON - so the schema and the tests around it are the only enforcement.
 
 Full field reference, ownership rules, and the CLI for checking your own projects: [`docs/TRILL-SPEC.md`](TRILL-SPEC.md).
+
+### Where a dataflow is kept
+
+[`projects/storage.py`](../utk_curio/backend/app/projects/storage.py) keeps a dataflow's document in its project folder in two parts, behind `read_spec` and `write_spec`, so every caller hands over and gets back the whole document.
+
+- **`spec.trill.json`** holds the document without its two provenance sections. Each version in `dataflowProvenance` is a whole copy of the dataflow, so the sections outgrow the dataflow: Crown Heights' load records 90 versions, about 5.7 MiB, beside an 87 KiB dataflow.
+- **`history/entries.jsonl`** holds `nodeProvenance`, and **`history/versions.jsonl`** holds `dataflowProvenance`. Each is a log of JSON lines, one record a line, that a reader replays in order:
+  - `["node", id, value]` puts a node's value in place, `[]` for a list its entries then fill, and `["entry", id, entry]` adds one entry at the end of that list;
+  - `["version", key, trill]` adds a version, and `["graphNode", node]` and `["graphEdge", edge]` add to the graph that orders the versions;
+  - `["field", name, value]` and `["graphField", name, value]` set any other member of the section or of its graph, `latest` among them, and put the `{}` or `[]` in place that the records above fill;
+  - `["whole", value]` holds a section that is no object;
+  - `["end"]` closes the lines one write added. A reader applies them only once it follows them, so a write cut short reads as not made, and the next write starts where the last whole one ended.
+- **A write** (`write_spec`) compares each section it is handed with the one on record as parsed JSON, so a page that sends back what it loaded, with its members sorted and its numbers written its own way, writes nothing for it. What a section gained is added to its log: a node's new entries, a version with its node and edge in the graph, `latest` moved. A section whose entries or versions were removed or changed is written anew and swapped in whole. The logs are written and flushed to disk before the spec file, so a crash between the two leaves the history on disk.
+- **A section the document leaves out** stays as it is on record, so a writer that hands over the dataflow alone never erases its history. `drop_history` removes it; the seeder calls it before it puts an example back to its shipped copy.
+- **A read** (`read_spec`, or `read_spec_in` for a project folder, which `scripts/validate_trill.py` uses) puts the document back: the spec file, then each section the file does not hold, replayed from its log. A spec file that still holds a section is read as it is, and its next write moves the section into the log, so a dataflow saved with its history inside needs no migration.
+- **Locks.** Every write takes the project's history lock (`.history.lock`) around the revision bump, the logs and the spec file, and so does every read once the project has logs. So a reader gets a write whole or not at all, and two writers that do not hold the spec lock cannot add one entry twice. The history lock holds nothing else: it is taken inside the spec lock, and by a thread holding an uncommitted database write, which the spec lock refuses (#909). A writer under the spec lock holds the logs with the spec file, and a load reads both under it (`services._saved_outputs`).
+
+So an edit writes the spec file and what the history gained: an edit to Crown Heights, with its 90 versions, writes its spec file and nothing in its logs (`test_projects/test_history_files.py`).
 
 ---
 
