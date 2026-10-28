@@ -305,19 +305,25 @@ class TestIntent:
             json={"message": "hi"},
             headers=_auth(token),
         )
-        # The edited intent replaces the instruction portion; the preamble and
-        # the skills the chat lists still apply, and the dev/39 tail
-        # instruction composes last.
+        # The edited intent replaces the instruction portion; the preamble, the
+        # skills the chat lists and the procedures its instruction names, which
+        # it is handed, still apply, and the dev/39 tail instruction composes
+        # last.
         from utk_curio.backend.app.agents.application import skill_runs
         from utk_curio.backend.app.agents.domain import builtin
         from utk_curio.backend.app.agents.domain import content as content_mod
 
+        manifest = builtin.get_builtin_manifest("agent.curio.researcher@1")
         preamble = builtin.read_prompt_text("agent.curio.researcher@1", "system")
-        catalog = skill_runs.catalog_text(skill_runs.RunSkills(
-            catalog=skill_runs.agent_skills(builtin.get_builtin_manifest("agent.curio.researcher@1"))))
+        listed = skill_runs.agent_skills(manifest)
+        catalog = skill_runs.catalog_text(skill_runs.RunSkills(catalog=listed))
+        named = getattr(manifest, "instruction_skills", ())
+        handed = skill_runs.skills_text(skill_runs.RunSkills(
+            catalog=listed, handed=tuple(skill_runs.shipped_skills()[name] for name in named)))
+        assert handed and '<skill_content name="fact-checking">' in handed
         assert calls[0][0]["role"] == "system"
         assert calls[0][0]["content"].startswith(
-            f"{preamble}\n\n{catalog}\n\nanswer in one sentence\n\n{content_mod.tail_instruction()}"
+            f"{preamble}\n\n{catalog}\n\n{handed}\n\nanswer in one sentence\n\n{content_mod.tail_instruction()}"
         )
 
 
