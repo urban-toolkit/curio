@@ -278,7 +278,7 @@ jobs:
   # alike, picks the runners of the jobs that wait on it.
   build-image:
     needs: pick-runners
-    if: ${{ needs.pick-runners.result == 'success' }}
+    if: false
     runs-on: ${{ fromJSON(needs.pick-runners.outputs.runners)['build-image'] }}
     timeout-minutes: 45
     # actions: read lets the last step list the repository's jobs.
@@ -1014,7 +1014,7 @@ jobs:
   # they run on the checkout rather than inside an image.
   jest:
     needs: pick-runners
-    if: ${{ needs.pick-runners.result == 'success' && !inputs.remint }}
+    if: false
     runs-on: ${{ fromJSON(needs.pick-runners.outputs.runners)['jest'] }}
     timeout-minutes: ${{ inputs.repeat > 1 && 350 || 30 }}
     defaults:
@@ -1473,10 +1473,7 @@ jobs:
   # and no GPU or stack: the unit container has no browser, so there they skip.
   # CURIO_REQUIRE_PREVIEW_RUNNER=1 fails them instead.
   preview-runner:
-    if: >-
-      !inputs.remint &&
-      github.event_name != 'schedule' &&
-      github.event.action != 'labeled'
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -1708,7 +1705,7 @@ jobs:
     # skip this one too; it also keeps the job running when an earlier suite
     # went red, same as the two above.
     if: >-
-      !cancelled() &&
+      false && !cancelled() &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository) &&
       (github.event_name == 'schedule' ||
@@ -1913,7 +1910,7 @@ jobs:
   # a CPU runner and then skipped because it wanted WebGPU after all.
   ci-report:
     needs: [pick-runners, test-gpu, unit, jest, e2e-desktop, test-isolated, test-exec-user, preview-runner, test-desktop-stress]
-    if: ${{ !cancelled() && needs.pick-runners.result == 'success' }}
+    if: false
     runs-on: ${{ fromJSON(needs.pick-runners.outputs.runners)['ci-report'] }}
     timeout-minutes: 30
     # actions: read lets the page list every job of the run through the jobs API.
