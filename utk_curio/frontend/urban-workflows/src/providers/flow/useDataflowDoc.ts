@@ -540,6 +540,20 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
             }
         }
 
+        // What the doc changed on this canvas, in the page's log: what a
+        // collaborator, an agent or the server did shows there by node.
+        if (patches.size || addedNodes.length || removedNodes.length || newEdges.length || goneEdges.length
+            || Object.keys(fields).length) {
+            console.log("[curio-doc] the dataflow's doc changed this canvas: " + JSON.stringify({
+                nodes: Array.from(patches.entries()).map(([id, patch]) =>
+                    `${id}: ${[...Object.keys(patch.data), ...(patch.position ? ["position"] : [])].join(", ") || "its place"}`),
+                added: addedNodes.map((node) => node.id),
+                removed: removedNodes,
+                connections: { added: newEdges.map((edge) => edge.id), removed: goneEdges.map((edge) => edge.id) },
+                fields: Object.keys(fields),
+            }));
+        }
+
         // What the canvas loses: connections first, as the Delete key sends them.
         const gone = new Set(removedNodes);
         for (const edge of current.edges) {
