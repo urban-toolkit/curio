@@ -9,6 +9,21 @@
     "order": 6
   },
   "workedExamples": true,
+  "skills": [
+    "node-functions",
+    "catalogs",
+    "widgets",
+    "selection-chips",
+    "autark",
+    "vega-lite-starter",
+    "autark-starter",
+    "vega-lite-maps",
+    "interaction-edges",
+    "map-edits",
+    "scenarios",
+    "dashboards",
+    "provenance"
+  ],
   "roles": [
     "orchestration"
   ],

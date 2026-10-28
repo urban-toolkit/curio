@@ -11,6 +11,7 @@ compatibility: Written for Curio's agents, their tools and node code.
 metadata:
   author: curio
   version: "1.0.0"
+  curio-behaviors: code data-export data-summary edit-features
 ---
 ## Functions node code calls
 
