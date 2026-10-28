@@ -1,7 +1,7 @@
 """Where the folders Curio ships beside its code are on this machine.
 
 The repository keeps them beside ``utk_curio/``: the Agent Catalog's agents
-(``agents/``), the Data Catalog's datasets
+(``agents/``), the skills they read (``skills/``), the Data Catalog's datasets
 (``datasets/``), the Discovery Catalog's sources (``discovery/``), the
 packages of the Node and Model Catalogs (``packages/``, a model package with
 its weights), the scripts (``scripts/``) and DuckDB's extensions (``vendor/``), and
@@ -42,7 +42,7 @@ CODE_ROOT = Path(__file__).resolve().parents[1]
 IN_THE_PACKAGE = PurePosixPath("utk_curio", "_shipped")
 
 #: The folders Curio ships beside its code, by their name in the repository.
-FOLDERS = ("agents", "datasets", "discovery", "docs", "packages", "scripts", "vendor")
+FOLDERS = ("agents", "datasets", "discovery", "docs", "packages", "scripts", "skills", "vendor")
 
 #: The manifest field that names, by their paths in the folder of a dataset or
 #: model package, the files the pip package leaves out.

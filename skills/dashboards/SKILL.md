@@ -1,3 +1,16 @@
+---
+name: dashboards
+description: >-
+  Use this skill when a dataflow has nodes pinned to its dashboard, or when a task changes or
+  removes a pinned node or writes its spec. It says what a tile draws and runs, which widget
+  values viewers can change and what such a run keeps, the two cases a dashboard refuses to open
+  and how to fix each, and that only the user pins and unpins.
+license: MIT
+compatibility: Written for Curio's agents, their tools and node code.
+metadata:
+  author: curio
+  version: "1.0.0"
+---
 ## Dashboards
 
 A dataflow's dashboard is a page of its own that shows the nodes pinned to it, each as a tile, and anyone with its link can open it. A tile draws from the outputs saved with the dataflow: a chart or a map draws the saved output of the nodes that feed it, and a tile whose nodes have no saved output runs them on the server when the page opens. In `dataflow.read`, the row of a pinned node says "pinned": true; a node whose row does not say so is not on the dashboard.

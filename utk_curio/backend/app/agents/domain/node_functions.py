@@ -1,8 +1,9 @@
-"""The functions Curio gives node code, read from their page in the base entry.
+"""The functions Curio gives node code, read from their skill.
 
-``agents/agent.curio.builtin@1/knowledge/node-functions.md`` lists every
-function a node's code calls by name, and the preamble includes it whole. Its
-lines have fixed shapes, which :func:`parse` reads and refuses anything else:
+``skills/node-functions/SKILL.md`` lists every function a node's code calls
+by name, and the preamble places it whole (``{{skill:node-functions}}``). The
+lines of its body, the page after its frontmatter, have fixed shapes, which
+:func:`parse` reads and refuses anything else:
 
 - the page's title, ``## <title>``, then paragraphs of prose;
 - per function, its call, ``### curio_<name>(<arguments>)``, written as a
@@ -27,9 +28,13 @@ from __future__ import annotations
 import ast
 import re
 from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
 
-#: The page, by its path in the base entry (``curio:knowledge/node-functions.md``).
-PAGE = "knowledge/node-functions.md"
+#: The skill that gives them, by its name.
+SKILL = "node-functions"
+#: Its file, as an error names it.
+PAGE = f"skills/{SKILL}/SKILL.md"
 #: The engines a node's code runs in, as a template names its ``engine``.
 ENGINES = ("python", "javascript")
 #: What an argument that names an item of a catalog says it is, and the kind
@@ -95,7 +100,8 @@ class NodeFunction:
     #: What it does: one line.
     does: str
     arguments: tuple[Argument, ...]
-    #: The line of its call on the page, counted from 1.
+    #: The line of its call on the page, counted from the page's first line
+    #: (1, unless :func:`parse` was told another).
     line: int
 
     @property
@@ -158,23 +164,28 @@ def _engines(text: str, where: str) -> tuple[str, ...]:
     return tuple(engine for engine in ENGINES if engine in engines)
 
 
-def _lines(text: str) -> list[tuple[int, str]]:
+def _lines(text: str, first_line: int) -> list[tuple[int, str]]:
     if not text.endswith("\n") or "\r" in text:
         raise NodeFunctionsError(f"{PAGE} ends in a line break and holds no carriage return")
-    return list(enumerate(text[:-1].split("\n"), 1))
+    return list(enumerate(text[:-1].split("\n"), first_line))
 
 
-def parse(text: str) -> tuple[NodeFunction, ...]:
-    """Every function the page *text* gives, in its order.
+def parse(text: str, first_line: int = 1) -> tuple[NodeFunction, ...]:
+    """Every function the page *text* gives, in its order. *first_line* is
+    the line of its file the page starts on, which an error and each
+    function's ``line`` count from: the skill's body starts below its
+    frontmatter.
 
     Raises :class:`NodeFunctionsError` on a line of no shape the page may
     have, naming its line: a call that is no signature, an engine that is
     none, an argument bullet with no argument of its call or out of its
     order, a catalog phrase not in :data:`CATALOG_PHRASES`, an argument with
     no bullet, a part missing, and a function stated twice."""
-    lines = _lines(text)
+    lines = _lines(text, first_line)
     if not _TITLE_RE.match(lines[0][1]) or len(lines) < 2 or lines[1][1] != "":
-        raise NodeFunctionsError(f"{PAGE}, line 1: the page starts with its title, ## <title>, and a blank line")
+        raise NodeFunctionsError(
+            f"{PAGE}, line {lines[0][0]}: the page starts with its title, ## <title>, and a blank line"
+        )
     at = 2
     while at < len(lines) and not lines[at][1].startswith("### "):
         number, line = lines[at]
@@ -259,10 +270,23 @@ def parse(text: str) -> tuple[NodeFunction, ...]:
 
 
 def read() -> tuple[NodeFunction, ...]:
-    """Every function the page Curio ships gives, as the agents read it."""
-    from utk_curio.backend.app.agents.domain import agent_text
+    """Every function the page Curio ships gives, as the agents read it: its
+    skill's body, rendered (``agent_text.read``), each line counted as its
+    file counts it."""
+    from utk_curio.backend.app.agents.domain import agent_text, skills
 
-    return parse(agent_text.read(agent_text.page_file(PAGE)))
+    file = skills.shipped_skill_file(SKILL)
+    return _parse_shipped(agent_text.read(file), file)
+
+
+@lru_cache(maxsize=4)
+def _parse_shipped(text: str, file: Path) -> tuple[NodeFunction, ...]:
+    """:func:`parse` of *text*, the body of the skill in *file* as the agents
+    read it, kept by that text, so the file is read again only when the text
+    changes, as it can under ``curio.py start --dev``."""
+    from utk_curio.backend.app.agents.domain import skills
+
+    return parse(text, skills.parse(file.parent).body_line)
 
 
 def for_engine(engine: str, functions: tuple[NodeFunction, ...] | None = None) -> tuple[NodeFunction, ...]:

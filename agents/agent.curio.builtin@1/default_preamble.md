@@ -6,34 +6,34 @@ Act like an assistant for users of a system for building visual analytics datafl
 {{trill.schema}}
 ```
 
-{{include:knowledge/nodes.md}}
+{{skill:nodes}}
 
-{{include:knowledge/node-control.md}}
+{{skill:node-control}}
 
-{{include:knowledge/node-functions.md}}
+{{skill:node-functions}}
 
-{{include:knowledge/catalogs.md}}
+{{skill:catalogs}}
 
-{{include:knowledge/widgets.md}}
+{{skill:widgets}}
 
-{{include:knowledge/selection-chips.md}}
+{{skill:selection-chips}}
 
-{{include:knowledge/autark.md}}
+{{skill:autark}}
 
-{{include:knowledge/compatibility.md}}
+{{skill:compatibility}}
 
-{{include:knowledge/vega-lite-starter.md}}
+{{skill:vega-lite-starter}}
 
-{{include:knowledge/autark-starter.md}}
+{{skill:autark-starter}}
 
-{{include:knowledge/vega-lite-maps.md}}
+{{skill:vega-lite-maps}}
 
-{{include:knowledge/interaction-edges.md}}
+{{skill:interaction-edges}}
 
-{{include:knowledge/map-edits.md}}
+{{skill:map-edits}}
 
-{{include:knowledge/scenarios.md}}
+{{skill:scenarios}}
 
-{{include:knowledge/dashboards.md}}
+{{skill:dashboards}}
 
-{{include:knowledge/provenance.md}}
+{{skill:provenance}}

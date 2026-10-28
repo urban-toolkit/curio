@@ -67,6 +67,7 @@ on:
       - 'curio.py'
       - 'scripts/**'
       - 'agents/**'
+      - 'skills/**'
       - 'packages/**'
       - 'datasets/**'
       - 'discovery/**'

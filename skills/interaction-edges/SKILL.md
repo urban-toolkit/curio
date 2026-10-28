@@ -1,3 +1,17 @@
+---
+name: interaction-edges
+description: >-
+  Use this skill when linking views so a selection in one shows in another, when a table or
+  several views must show a selection, or when selections must be merged. It says when two views
+  link directly by an Interaction edge and when a Data Pool goes between them, how a pool combines
+  selections, how a chart shows the rows it receives as selected, and how a point or an interval
+  selection matches rows.
+license: MIT
+compatibility: Written for Curio's agents, their tools and node code.
+metadata:
+  author: curio
+  version: "1.0.0"
+---
 ## Interactions
 
 An edge of type: "Interaction" (in the Trill specification) carries selections between two visualizations, never data. Link two visualizations directly when at least one of them is a {{template.label:curio.builtin/vis-vega}} or an {{template.label:curio.builtin/autk-grammar}} node: each of those highlights the rows the other one selects, and a {{template.label:curio.builtin/vis-vega}} node marks them in a column called "interacted", "1" for a selected row and "0" otherwise.
