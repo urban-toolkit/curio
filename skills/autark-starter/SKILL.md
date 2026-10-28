@@ -1,3 +1,16 @@
+---
+name: autark-starter
+description: >-
+  Use this skill when writing an Autark document for a node whose input has already run. It gives
+  the ladder Curio follows to write a starter document from the input's layers and their columns,
+  so the document agrees with what the node would draw unless the user asks for something else,
+  and says which inputs a map can draw.
+license: MIT
+compatibility: Written for Curio's agents, their tools and node code.
+metadata:
+  author: curio
+  version: "1.0.0"
+---
 ## The starter document an Autark node writes for itself
 
 When an Autark node is connected to a node that has already run, and its

@@ -7,7 +7,7 @@ load keys it (the shared cases, ``nodeProvenanceKeys.cases.json``). It lists a
 node's entries, newest first, and gives one entry's code; a cut list or code
 says how much it left out, as the other read tools do; a node with no history
 and an entry the node does not have each answer in their own words. The Node
-Builder and the Dataflow Builder are granted it, and the knowledge page every
+Builder and the Dataflow Builder are granted it, and the provenance skill every
 agent reads says what an entry is.
 
 New names are read inside each test, so this module imports on a checkout
@@ -190,13 +190,13 @@ def test_the_node_builder_and_the_dataflow_builder_are_granted_it():
     assert spec["parameters"]["properties"]["entryId"]["type"] == "integer"
 
 
-def test_the_provenance_page_reaches_every_agent():
-    """The page says what an entry is, that an agent's applied change is an
+def test_the_provenance_skill_reaches_every_agent():
+    """The skill says what an entry is, that an agent's applied change is an
     edit named after the agent, and that putting an entry back is the user's
-    action; every agent's preamble includes it once."""
+    action; every agent's preamble places it once."""
     from utk_curio.backend.app.agents.domain import agent_text, builtin
 
-    page = agent_text.read(agent_text.page_file("knowledge/provenance.md")).rstrip("\n")
+    page = agent_text.skill_text("provenance")
     for words in ("a run or an edit", "named after the agent", "the user's action", TOOL):
         assert words in page, words
     for manifest in builtin.list_builtin_manifests():

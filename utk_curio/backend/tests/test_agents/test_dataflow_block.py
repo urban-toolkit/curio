@@ -621,18 +621,24 @@ def test_the_preamble_names_no_packages_templates_or_functions():
     from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
     from utk_curio.backend.app.packages.repositories.python_modules import module_files
 
+    # The pages the preamble includes and the skills it places, and theirs.
     preamble = agent_text.page_file("default_preamble.md")
-    pages = {"default_preamble.md"}
+    files = {preamble}
     queue = [preamble.read_text(encoding="utf-8")]
     while queue:
-        for page in re.findall(r"\{\{include:([^{}]+)\}\}", queue.pop()):
-            if page not in pages:
-                pages.add(page)
-                queue.append((BASE / page).read_text(encoding="utf-8"))
-    assert "knowledge/scenarios.md" in pages and "knowledge/node-functions.md" in pages, sorted(pages)
-    for page in sorted(pages):
-        named = set(re.findall(r"\{\{template\.label:([^/{}]+)/", (BASE / page).read_text(encoding="utf-8")))
-        assert named <= {"curio.builtin"}, f"{page} names templates of {sorted(named - {'curio.builtin'})}"
+        text = queue.pop()
+        found = [BASE / page for page in re.findall(r"\{\{include:([^{}]+)\}\}", text)]
+        found += [REPO_ROOT / "skills" / name / "SKILL.md" for name in re.findall(r"\{\{skill:([^{}]+)\}\}", text)]
+        for file in found:
+            if file not in files:
+                files.add(file)
+                queue.append(file.read_text(encoding="utf-8"))
+    names = {file.relative_to(REPO_ROOT).as_posix() for file in files}
+    assert {"skills/scenarios/SKILL.md", "skills/node-functions/SKILL.md"} <= names, sorted(names)
+    assert len([name for name in names if name.startswith("skills/")]) == 16, sorted(names)
+    for file in sorted(files):
+        named = set(re.findall(r"\{\{template\.label:([^/{}]+)/", file.read_text(encoding="utf-8")))
+        assert named <= {"curio.builtin"}, f"{file.name} names templates of {sorted(named - {'curio.builtin'})}"
     rendered = agent_text.render(preamble)
     for package_id in _shipped_package_ids():
         assert not re.search(rf"(?<![\w.]){re.escape(package_id)}(?![\w-])", rendered), package_id

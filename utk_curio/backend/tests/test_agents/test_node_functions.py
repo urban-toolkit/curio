@@ -1,11 +1,11 @@
 """The page of the functions node code calls, its strict reader, and the pin to the catalogs.
 
-``agents/agent.curio.builtin@1/knowledge/node-functions.md`` lists every
-function Curio gives a node's code: its call, the engines whose code has it,
-what it does and each of its arguments, an argument that names a catalog's
-item saying which. ``node_functions.parse`` reads it line by line and refuses
-any line of another shape, so the agents' checks can read from it which
-arguments name a dataset, a collection, a model or a key.
+``skills/node-functions/SKILL.md`` lists every function Curio gives a node's
+code: its call, the engines whose code has it, what it does and each of its
+arguments, an argument that names a catalog's item saying which.
+``node_functions.parse`` reads its body, the page after its frontmatter, line
+by line and refuses any line of another shape, so the agents' checks can read
+from it which arguments name a dataset, a collection, a model or a key.
 
 The pin: the arguments the page says name a Data Catalog item are the first
 arguments of exactly the three loaders the backend resolves ids from
@@ -27,7 +27,8 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 BASE = REPO_ROOT / "agents" / "agent.curio.builtin@1"
-PAGE = BASE / "knowledge" / "node-functions.md"
+#: The skill that gives the functions.
+SKILL = REPO_ROOT / "skills" / "node-functions"
 #: The loaders whose first argument the backend reads a Data Catalog id from.
 LOADERS = {"curio_load_data", "curio_data_path", "curio_load_collection"}
 
@@ -116,20 +117,38 @@ def test_a_function_stated_twice_or_a_gap_between_functions_is_refused():
         node_functions.parse(GOOD + "\n")
 
 
-def test_the_page_curio_ships_reads_and_the_preamble_includes_it():
-    """Every function it gives, with its engines; the preamble every agent
-    reads includes the page whole, and the user guides link to it."""
-    from utk_curio.backend.app.agents.domain import agent_text, builtin, node_functions
+def test_lines_count_from_the_line_the_page_starts_on():
+    """The skill's body starts below its frontmatter, so a function's line
+    and an error's count from the line of the file the page starts on."""
+    from utk_curio.backend.app.agents.domain import node_functions
 
+    (function,) = node_functions.parse(GOOD, first_line=15)
+    assert function.line == 19
+    with pytest.raises(node_functions.NodeFunctionsError, match=r"SKILL\.md, line 15: the page starts with its title"):
+        node_functions.parse(GOOD.replace("## Functions", "# Functions", 1), first_line=15)
+    with pytest.raises(node_functions.NodeFunctionsError, match=r"SKILL\.md, line 21: Engines:"):
+        node_functions.parse(GOOD.replace("Engines: python, javascript.", "Engines: Python.", 1), first_line=15)
+
+
+def test_the_page_curio_ships_reads_and_the_preamble_includes_it():
+    """Every function it gives, with its engines, read from the skill's body
+    as written and each on the line of the file it is on; the preamble every
+    agent reads places the skill whole, and the user guides link to it."""
+    from utk_curio.backend.app.agents.domain import agent_text, builtin, node_functions, skills
+
+    skill = skills.parse(SKILL)
+    assert node_functions.PAGE == "skills/node-functions/SKILL.md" and skill.name == node_functions.SKILL
     functions = node_functions.read()
-    assert functions == node_functions.parse(PAGE.read_text(encoding="utf-8"))
+    assert functions == node_functions.parse(skill.body, first_line=skill.body_line)
+    lines = (SKILL / "SKILL.md").read_text(encoding="utf-8").split("\n")
+    assert [lines[function.line - 1] for function in functions] == [f"### {function.call}" for function in functions]
     engines = {function.name: function.engines for function in functions}
     assert engines["curio_layer"] == ("python", "javascript")
     assert {name for name, have in engines.items() if have == ("python",)} == set(engines) - {"curio_layer"}
     assert [f.name for f in node_functions.for_engine("javascript", functions)] == ["curio_layer"]
     preamble = (BASE / "default_preamble.md").read_text(encoding="utf-8")
-    assert preamble.count("{{include:" + node_functions.PAGE + "}}") == 1
-    page = agent_text.read(agent_text.page_file(node_functions.PAGE)).rstrip("\n")
+    assert preamble.count("{{skill:" + node_functions.SKILL + "}}") == 1
+    page = agent_text.skill_text(node_functions.SKILL)
     for m in builtin.list_builtin_manifests():
         assert builtin.read_prompt_text(m.dir_name, "system").count(page) == 1, m.agent_id
 

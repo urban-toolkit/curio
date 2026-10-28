@@ -1,3 +1,16 @@
+---
+name: widgets
+description: >-
+  Use this skill when a node declares, places or changes a widget, such as a threshold, a year or
+  a dataset the user sets without editing code, or when several nodes share one value. It says how
+  a node declares its widgets, how its code or spec places each by its reference, what a dataset
+  widget holds, and how new values reach a node already on the canvas.
+license: MIT
+compatibility: Written for Curio's agents, their tools and node code.
+metadata:
+  author: curio
+  version: "1.0.0"
+---
 ## Widgets
 
 A widget is a value a node's code reads that the user sets in the node's Widgets tab without editing the code: a threshold, a factor, a season, a list of years. A node declares its widgets in "metadata"."widgets", shaped as the Trill schema above shows. Each has a "name" (letters, digits and underscores), a "type" ({{widgets.kinds}}), a "label", a "default", and "options" where its type takes them: "choices" for a choice, a checkbox group or a multi-select, and "min", "max", "step" and "units" for a number or a slider, which needs "min" and "max".

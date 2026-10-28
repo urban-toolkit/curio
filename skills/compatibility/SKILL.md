@@ -1,3 +1,15 @@
+---
+name: compatibility
+description: >-
+  Use this skill when connecting nodes or planning which node feeds which. It lists the data types
+  each node accepts and returns, how many connections each takes into its inputs and how many
+  outputs it gives, and how to hand a node several values in one tuple.
+license: MIT
+compatibility: Written for Curio's agents, their tools and node code.
+metadata:
+  author: curio
+  version: "1.0.0"
+---
 ## Compatibility between nodes
 
 Data input and output compatilibity table for the nodes:

@@ -1,8 +1,9 @@
-"""Every shipped agent's prompt files exist and are packaged.
+"""Every shipped agent's prompt files and skills exist and are packaged.
 
 The agents Curio ships read their prompts from files in ``agents/``: each
 agent's own in its folder, ``agents/<id>@<major>/prompts/``, and the pages
-they share from the base entry, ``agents/agent.curio.builtin@1/``.
+they share from the base entry, ``agents/agent.curio.builtin@1/``. The
+preamble places the skills Curio ships, ``skills/<name>/SKILL.md``.
 ``read_prompt_text`` returns ``None`` for a missing file, so a rename or a
 packaging gap costs an agent its entire system and task prompt with no
 symptom except worse answers and a logged error.
@@ -21,7 +22,7 @@ from pathlib import Path
 import pytest
 
 from utk_curio.backend.app.agents.domain import agent_text, builtin
-from utk_curio.backend.tests._support.prompt_files import prompt_files, prompt_path, prompt_text
+from utk_curio.backend.tests._support.prompt_files import prompt_files, prompt_name, prompt_path, prompt_text
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
@@ -42,6 +43,20 @@ class TestPromptFilesResolve:
         for name in m.prompts:
             text = builtin.read_prompt_text(coord, name)
             assert text, f"{coord} resolved no {name} prompt"
+
+    def test_every_skill_the_preamble_places_is_a_skill_curio_ships(self):
+        """Each ``{{skill:<name>}}`` of the preamble names a folder of
+        ``skills/`` whose ``SKILL.md`` is there, and an agent reads its body."""
+        from utk_curio.backend.app.agents.domain import skills
+
+        written = agent_text.page_file(builtin.PREAMBLE_FILE).read_text(encoding="utf-8")
+        placed = re.findall(r"\{\{skill:([^{}]+)\}\}", written)
+        assert len(placed) == 16, placed
+        shipped = [folder.name for folder in skills.shipped_folders()]
+        assert sorted(placed) == shipped
+        for name in placed:
+            assert skills.shipped_skill_file(name).is_file(), name
+            assert agent_text.skill_text(name).startswith("## "), name
 
 
 #: Which instruction a call of each card that took other agents over reads:
@@ -110,12 +125,12 @@ class TestTheResearchersCheckingRules:
         fragment = prompt_path("research_verify_rules.md")
         lines = [line for line in fragment.read_text(encoding="utf-8").splitlines() if line.strip()]
         assert len(lines) == 4, "verify first, a failure is a finding, the labels, the budget"
-        # One page holds them: no other page or prompt repeats a line of them,
-        # and each Researcher prompt includes the page, once.
+        # One page holds them: no other page, prompt or skill repeats a line
+        # of them, and each Researcher prompt includes the page, once.
         for path in prompt_files("*.md"):
             if path != fragment:
                 text = path.read_text(encoding="utf-8")
-                assert not [line for line in lines if line in text], path.name
+                assert not [line for line in lines if line in text], prompt_name(path)
         for prompt in ("research_instruction.md", "researcher_instruction.md"):
             text = prompt_path(prompt).read_text(encoding="utf-8")
             assert text.count("{{include:rules/research_verify_rules.md}}") == 1, prompt
@@ -152,12 +167,12 @@ class TestTheResearchersNotesRules:
         assert len(lines) == 5, (
             "the pattern, the question note, the answer notes, the markdown, one note per finding"
         )
-        # One page holds them: no other page or prompt repeats a line of them,
-        # and each notes prompt includes the page, once.
+        # One page holds them: no other page, prompt or skill repeats a line
+        # of them, and each notes prompt includes the page, once.
         for path in prompt_files("*.md"):
             if path != fragment:
                 text = path.read_text(encoding="utf-8")
-                assert not [line for line in lines if line in text], path.name
+                assert not [line for line in lines if line in text], prompt_name(path)
         for prompt in ("researcher_instruction.md", "researcher_notes_instruction.md"):
             text = prompt_path(prompt).read_text(encoding="utf-8")
             assert text.count("{{include:rules/research_notes_rules.md}}") == 1, prompt
@@ -235,36 +250,43 @@ class TestUserOwnedValuesStayOutOfPrompts:
         files = prompt_files("*.md")
         assert home in files
         for path in files:
-            for how, text in (("as written", path.read_text(encoding="utf-8")), ("as read", prompt_text(path.name))):
+            name = prompt_name(path)
+            for how, text in (("as written", path.read_text(encoding="utf-8")), ("as read", prompt_text(name))):
                 found = lines & set(text.splitlines())
-                assert not found, f"{path.name}, {how}, carries keyword types: {sorted(found)[:2]}"
+                assert not found, f"{name}, {how}, carries keyword types: {sorted(found)[:2]}"
                 carried = [description for description in descriptions if description in text]
-                assert path == home or not carried, f"{path.name}, {how}, carries keyword types: {carried[:2]}"
+                assert path == home or not carried, f"{name}, {how}, carries keyword types: {carried[:2]}"
 
 
 class TestPromptsArePackaged:
-    """The declarations that carry ``agents/``, every page and prompt the
-    agents read, its nested folders included, into a built distribution.
+    """The declarations that carry ``agents/`` and ``skills/``, every page,
+    prompt and skill the agents read, their nested folders included, into a
+    built distribution and the image.
 
     Asserted against the packaging config, which keeps this quick;
     ``test_scripts/test_pip_wheel_layout.py`` builds the sdist and the wheel
-    and reads every page and prompt from an install.
+    and reads every page, prompt and skill from an install.
     """
 
-    def test_manifest_in_includes_the_prompts(self):
+    @pytest.mark.parametrize("folder", ["agents", "skills"])
+    def test_manifest_in_includes_the_prompts(self, folder):
         manifest = (REPO_ROOT / "MANIFEST.in").read_text(encoding="utf-8")
-        assert re.search(r"^recursive-include\s+agents\s+\*\s*$", manifest, re.MULTILINE), (
-            "MANIFEST.in must carry agents/, every file in every folder of it, into the sdist"
+        assert re.search(rf"^recursive-include\s+{folder}\s+\*\s*$", manifest, re.MULTILINE), (
+            f"MANIFEST.in must carry {folder}/, every file in every folder of it, into the sdist"
         )
 
-    def test_the_wheel_carries_them(self):
+    @pytest.mark.parametrize("folder", ["agents", "skills"])
+    def test_the_wheel_carries_them(self, folder):
+        from utk_curio import shipped
+
         setup = (REPO_ROOT / "setup.py").read_text(encoding="utf-8")
-        assert re.search(r"^SHIPPED_FOLDERS = \([^)]*\"agents\"", setup, re.MULTILINE), (
-            "setup.py must put agents/ in the wheel, or it ships without it even when the sdist has it"
+        assert re.search(rf"^SHIPPED_FOLDERS = \([^)]*\"{folder}\"", setup, re.MULTILINE), (
+            f"setup.py must put {folder}/ in the wheel, or it ships without it even when the sdist has it"
         )
+        assert folder in shipped.FOLDERS, f"utk_curio/shipped.py must find {folder}/ beside the code or in the wheel"
         pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
         assert re.search(r"^include-package-data\s*=\s*true\s*$", pyproject, re.MULTILINE), (
-            "the wheel takes agents/'s files from the sdist as package data"
+            f"the wheel takes {folder}/'s files from the sdist as package data"
         )
 
 

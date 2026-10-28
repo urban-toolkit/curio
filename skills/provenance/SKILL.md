@@ -1,3 +1,16 @@
+---
+name: provenance
+description: >-
+  Use this skill when a task asks what changed in a node, when it changed or who changed it, or
+  asks to bring back earlier code. It says what a node's history holds, the runs and edits in it,
+  the entry an agent's applied change makes, how to read and compare entries, and that putting an
+  entry back is the user's action.
+license: MIT
+compatibility: Written for Curio's agents, their tools and node code.
+metadata:
+  author: curio
+  version: "1.0.0"
+---
 ## Provenance
 
 Every node keeps a history, which its Provenance drawer lists and the dataflow saves. Each entry is a run or an edit, and holds the node's code as the entry left it.

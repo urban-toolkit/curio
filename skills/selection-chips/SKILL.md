@@ -1,3 +1,16 @@
+---
+name: selection-chips
+description: >-
+  Use this skill when a node's code works on the rows a user selects in a view, by a brush or a
+  click in a Vega-Lite chart or by a pick or a brush in an Autark map or plot. It says how a
+  selection tag names its view and the column that identifies its rows, how dataflow.read lists
+  the tags, and how code places a tag's reference to read the selected ids.
+license: MIT
+compatibility: Written for Curio's agents, their tools and node code.
+metadata:
+  author: curio
+  version: "1.0.0"
+---
 ## Selection tags
 
 A selection tag gives a node's code the rows selected in a view: a brush or a click in a {{template.label:curio.builtin/vis-vega}} chart, or a pick or a brush in an {{template.label:curio.builtin/autk-grammar}} map or plot. A tag belongs to the node whose code reads it, and names the view and the column whose values identify the view's rows, such as osm_id or building_id. The user adds it in that node's Widgets tab. dataflow.read lists each node's tags under "selections", each with its view, its column and how many ids it holds.
