@@ -16,6 +16,12 @@ back: ``malloc_trim(0)`` returns the free pages of every glibc arena, and
 pyarrow's pool releases what it keeps cached. That takes a few milliseconds,
 and no running request waits for it. Without glibc (macOS, Windows, musl) only
 the pyarrow part runs.
+
+``malloc_trim`` trims the top of glibc's main arena only, so what the other
+arenas keep at their tops stays. On a host with many cores that adds up over
+hundreds of arenas, and Arrow's default pool, mimalloc, kept freed memory this
+release did not reach either. So the server starts with its arenas capped and
+Arrow allocating in them (``isolation/lifecycle.server_environment``).
 """
 
 from __future__ import annotations

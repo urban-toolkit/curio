@@ -14,7 +14,7 @@ from utk_curio.backend.app.agents.infrastructure.providers import ChatTurn
 from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 from utk_curio.backend.app.agents.repositories import ledger
 from utk_curio.backend.app.agents.infrastructure import providers as agents_providers
-from utk_curio.backend.app.projects import storage as projects_storage
+from utk_curio.backend.app.collaboration import dataflow_docs
 
 
 # ── conversation titles (memo dev/25) ────────────────────────────────────────
@@ -81,13 +81,13 @@ def _generate_conversation_title(
         title = sanitize_title(raw)
         if title is None:
             return
-        spec = projects_storage.read_spec(user_key, project_id)
+        spec = dataflow_docs.live(user_key, project_id)
         if spec is None:
             return
         record = attachments.get_attachment(spec, attachment_id)
         if record is None or record.get("title") or record.get("titleEdited"):
             return
         attachments.set_title(spec, attachment_id, title, edited=False)
-        projects_storage.write_spec(user_key, project_id, spec)
+        dataflow_docs.write(user_key, project_id, spec, dataflow_docs.by_agent(record.get("coord"), user_key, "title"))
     except Exception:
         pass  # a missing title is a cosmetic gap, never a run error

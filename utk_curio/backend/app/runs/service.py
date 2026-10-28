@@ -249,6 +249,7 @@ def start_run(
     saved one, while the dataflow already runs, and past the account's cap."""
     from flask import current_app
 
+    from utk_curio.backend.app.collaboration import dataflow_docs
     from utk_curio.backend.app.execution.node_names import template_labels
     from utk_curio.backend.app.execution.run_engine import PlanError, plan_run
     from utk_curio.backend.app.packages.service import roster_templates
@@ -266,7 +267,9 @@ def start_run(
     except projects_repo.NotFoundError as exc:
         raise RunError("Dataflow not found.", 404) from exc
     ukey = _user_dir_key(user)
-    spec = storage.read_spec(ukey, project_id)
+    # The dataflow as it is now, its open doc's over the file: the run never
+    # starts from a file a second behind the doc.
+    spec = dataflow_docs.read(ukey, project_id)
     if spec is None:
         raise RunError("Dataflow not found.", 404)
     current = storage.spec_revision(ukey, project_id)

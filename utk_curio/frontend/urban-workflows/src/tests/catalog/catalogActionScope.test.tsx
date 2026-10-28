@@ -146,6 +146,7 @@ describe("the browse cards are informational, and the drawer acts", () => {
     // A model package's card is the package card.
     ["model", "pages/catalog/PackageBrowseCard.tsx"],
     ["scenario", "pages/scenarios/ScenarioCatalogBrowseCard.tsx"],
+    ["skill", "pages/agents/SkillCatalogBrowseCard.tsx"],
   ])("the %s card offers View details and a status, the same shape", (_kind, rel) => {
     const src = read(rel);
     expect(src).toContain("View details");
@@ -1300,6 +1301,12 @@ describe("user-facing catalog copy uses sentences, not dashes", () => {
     "pages/scenarios/ScenarioCatalogBrowse.tsx",
     "pages/scenarios/ScenarioCatalogBrowseCard.tsx",
     "pages/scenarios/ScenarioCatalogBrowseDrawer.tsx",
+    // Skills, on the Agent Catalog page and in an agent's details.
+    "pages/agents/AgentCatalogBrowse.tsx",
+    "pages/agents/SkillCatalogBrowseCard.tsx",
+    "pages/agents/SkillCatalogBrowseDrawer.tsx",
+    "components/agents/catalog/SkillDetailModal.tsx",
+    "components/agents/catalog/AgentSkillsSection.tsx",
   ];
 
   test.each(SURFACES)("%s has no dash inside a quoted tooltip or label", (rel) => {

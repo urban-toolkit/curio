@@ -34,6 +34,7 @@ from utk_curio.backend.app.agents.application.proposals import mint as agents_mi
 from utk_curio.backend.app.agents.application.proposals import plans as agents_plans
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
+from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.projects import storage as projects_storage
 
 log = logging.getLogger(__name__)
@@ -268,7 +269,7 @@ def _run_delegate_traced(
     home_attachment_id: str | None = None
     home_session_id: str | None = None
     try:
-        spec = projects_storage.read_spec(user_key, project_id)
+        spec = dataflow_docs.live(user_key, project_id)
         if spec is not None and not _is_own_mode_without_a_node(coord, parent_coord, inputs, node_id):
             home, created = _delegation_home(
                 spec, coord, capability, inputs, node_id=node_id, create=home_create,
@@ -278,7 +279,7 @@ def _run_delegate_traced(
                 home_attachment_id = home.get("attachmentId")
                 home_session_id = home.get("sessionId")
                 if created:
-                    projects_storage.write_spec(user_key, project_id, spec)
+                    dataflow_docs.write(user_key, project_id, spec, dataflow_docs.by_agent(coord, user_key, "delegate"))
     except Exception:
         home_attachment_id = home_session_id = None
     # Without a name, the id's last segment: my-helper for agent.acme.my-helper.

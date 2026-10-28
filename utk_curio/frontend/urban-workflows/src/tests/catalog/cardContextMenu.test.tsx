@@ -38,6 +38,7 @@ const CARDS = [
   "pages/catalog/PackageBrowseCard.tsx",
   "pages/dataCatalog/DataCatalogBrowseCard.tsx",
   "pages/agents/AgentCatalogBrowseCard.tsx",
+  "pages/agents/SkillCatalogBrowseCard.tsx",
   "pages/scenarios/ScenarioCatalogBrowseCard.tsx",
 ];
 

@@ -10,6 +10,7 @@ import {
   type AgentAttachment,
   type AgentSessionTurn,
   type AgentRunStatus,
+  type RunSkill,
 } from "../../../services/agents";
 import { agentCategoryKey } from "../../menus/nodes/agentsPalette/agentCategoryStyle";
 import { AgentBuilderStrip } from "./AgentBuilderStrip";
@@ -169,6 +170,9 @@ export const AgentChatPanel: React.FC<{
    * title is a plain, non-editable label. */
   onSaveTitle?: (title: string) => Promise<void>;
   onClearConversation?: () => Promise<void>;
+  /** The skills this chat's next run lists, which `/` in the composer offers;
+   * read each time that list opens. Omitted → `/` is a plain character. */
+  loadSkills?: () => Promise<RunSkill[]>;
 }> = ({
   attachment,
   turns,
@@ -217,6 +221,7 @@ export const AgentChatPanel: React.FC<{
   onSaveIntent,
   onSaveTitle,
   onClearConversation,
+  loadSkills,
 }) => {
   // A link the agent writes to another Curio page leaves this dataflow, so it
   // asks first when there is unsaved work, like every other way out of it.
@@ -530,7 +535,14 @@ export const AgentChatPanel: React.FC<{
         </div>
       ) : null}
 
-      <Composer value={input} onChange={setInput} onSend={() => void send()} busy={sendBusy} textareaRef={composerRef} />
+      <Composer
+        value={input}
+        onChange={setInput}
+        onSend={() => void send()}
+        busy={sendBusy}
+        textareaRef={composerRef}
+        loadSkills={loadSkills}
+      />
       {leaveDialog}
     </div>
   );

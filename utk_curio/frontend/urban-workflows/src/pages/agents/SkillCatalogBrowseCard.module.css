@@ -1,0 +1,16 @@
+/*
+ * The parts of the skill browse card keyed off its kind.
+ *
+ * The layout itself is ../catalog/CatalogBrowseLayout.module.css, shared with
+ * the other browse pages. One key, as the scenario cards have: every skill
+ * card wears the same strip, the top bar's own dark, so a skill reads as the
+ * agents' instructions and never as an agent of some category.
+ */
+
+.strip_skill { background: var(--curio-top-bar-bg); }
+
+/* Declared here so `.cardActive.card_skill` is a valid compound selector
+   within this module; the shared `.cardActive` sets the same raised shadow. */
+.cardActive { box-shadow: var(--curio-shadow-browse-card-raised); }
+
+.cardActive.card_skill { border-color: var(--curio-top-bar-bg); }

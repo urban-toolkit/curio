@@ -20,7 +20,7 @@ from utk_curio.backend.app.agents.application import spec_reads as agents_spec_r
 from utk_curio.backend.app.agents.application.solve import budgets as agents_budgets
 from utk_curio.backend.app.agents.application.solve import validate as agents_validate
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
-from utk_curio.backend.app.projects import storage as projects_storage
+from utk_curio.backend.app.collaboration import dataflow_docs
 
 
 def _validate_node_inline(
@@ -55,7 +55,7 @@ def run_node_stream(
     ``done {ok, nodes, blocker, error}``; a result card joins the transcript.
     """
 
-    spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
+    spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
     record = agents_spec_reads._record_or_404(spec, attachment_id)
     session = record.get("builderSession") or {}
     if ref and not node_id:
@@ -73,7 +73,7 @@ def run_node_stream(
         raise AgentServiceError("a run is already in progress for this attachment", 409)
     session["runningSince"] = now
     record["builderSession"] = session
-    projects_storage.write_spec(user_key, project_id, spec)
+    dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._agent_actor(user_key, spec, attachment_id, "run"))
     session_id = record.get("sessionId")
     return _run_node_events(
         user_key, project_id, attachment_id, spec, node, session_id, exec_fn
@@ -208,11 +208,14 @@ def _run_node_events(
     finally:
         # Disconnect-safe: the in-flight guard never wedges the attachment.
         try:
-            cleanup_spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
+            cleanup_spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
             cleanup_record = agents_spec_reads._record_or_404(cleanup_spec, attachment_id)
             cleanup_session = cleanup_record.get("builderSession") or {}
             if cleanup_session.pop("runningSince", None) is not None:
                 cleanup_record["builderSession"] = cleanup_session
-                projects_storage.write_spec(user_key, project_id, cleanup_spec)
+                dataflow_docs.write(
+                    user_key, project_id, cleanup_spec,
+                    agents_spec_reads._agent_actor(user_key, cleanup_spec, attachment_id, "run"),
+                )
         except Exception:
             pass

@@ -121,3 +121,34 @@ class DocClient:
 def raw_order(doc: Doc, name: str) -> list:
     """An order array as the doc holds it, repeats included."""
     return list(doc.get(name, type=Array))
+
+
+def synced_tab(application, token: str, project_id: str) -> DocClient:
+    """A tab of *project_id* on *application*, signed in with *token*: joined
+    to the dataflow's room and synced with its doc, as the canvas is."""
+    from ._support import connect, join
+
+    socketio = application.extensions.get("socketio")
+    assert socketio is not None, "the app serves no Socket.IO"
+    socket = connect(socketio, application, token)
+    assert join(socket, project_id)["ok"] is True
+    socket.get_received(namespace=NAMESPACE)
+    tab = DocClient(socket, project_id)
+    ack = tab.sync()
+    assert ack["ok"] is True, ack
+    return tab
+
+
+class Origins:
+    """The origin of each transaction that changes a root of the server's doc
+    of a dataflow, the doc open, in order."""
+
+    def __init__(self, project_id: str, root: str = "nodes"):
+        from utk_curio.backend.app.collaboration import dataflow_docs
+
+        entry = dataflow_docs._open_entry(project_id)
+        assert entry is not None, "the server holds no doc of the dataflow"
+        self.seen: list = []
+        self._subscription = entry.doc.get(root, type=Map).observe_deep(
+            lambda events: self.seen.append(events[0].transaction.origin)
+        )

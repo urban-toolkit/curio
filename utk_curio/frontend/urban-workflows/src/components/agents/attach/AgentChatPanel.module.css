@@ -428,6 +428,17 @@
   overflow-wrap: anywhere;
 }
 
+/* The skills a reply's run held or loaded: the quietest of the lines under a
+   reply, each name in the type the docs give a skill's name. */
+.turnSkills {
+  color: var(--curio-text-muted, var(--curio-text-meta));
+}
+
+.turnSkill {
+  font-family: var(--curio-font-mono, ui-monospace, monospace);
+  font-size: 10.5px;
+}
+
 .agentRowAvatar {
   flex: none;
   width: 22px;
@@ -490,6 +501,8 @@
 
 /* ── footer: pill input + circular accent send ── */
 .footer {
+  /* The anchor of the list `/` opens above the composer. */
+  position: relative;
   display: flex;
   gap: 8px;
   /* Bottom-anchored so the send button stays beside the last line as the
@@ -498,6 +511,65 @@
   padding: 12px 16px;
   background: var(--curio-card-bg, var(--curio-card-bg));
   border-top: 1px solid var(--curio-border);
+}
+
+/* The skills `/` lists, above the composer, as wide as its row. */
+.skillMenu {
+  composes: thinScrollbar from "../../../styles/scrollbars.module.css";
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: calc(100% + 4px);
+  z-index: 2;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--curio-card-bg);
+  border: 1px solid var(--curio-border);
+  border-radius: 10px;
+  box-shadow: var(--curio-shadow-context-menu);
+}
+
+.skillMenuNote {
+  padding: 8px 10px;
+  font-size: 11.5px;
+  color: var(--curio-text-secondary, var(--curio-text-meta));
+}
+
+.skillOption {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.skillOptionActive {
+  background: var(--curio-surface-muted);
+}
+
+.skillOptionName {
+  font-family: var(--curio-font-mono, ui-monospace, monospace);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--curio-text-primary);
+}
+
+.skillOptionHeld {
+  font-family: var(--curio-font-family);
+  font-weight: 400;
+  color: var(--curio-text-muted, var(--curio-text-meta));
+}
+
+.skillOptionText {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--curio-text-secondary, var(--curio-text-meta));
 }
 
 .input {

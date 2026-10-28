@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { agentsApi } from "./agentsApi";
 import { AGENT_DOCK_REFRESH_EVENT, notifyAgentDockRefresh } from "./agentEvents";
-import type { AgentAttachment, AgentContentPart, AgentTarget, AgentUsage } from "./types";
+import type { AgentAttachment, AgentContentPart, AgentRunSkillPins, AgentTarget, AgentUsage } from "./types";
 
 /**
  * Self-contained hook for a project's agent attachments: the dock reads them,
@@ -26,6 +26,10 @@ export interface AgentAttachmentsState {
     /** The run's wall-clock duration (memo dev/80); absent on old servers. */
     durationMs?: number;
     content?: AgentContentPart[];
+    /** The skills the run's system turn held, as its record keeps them. */
+    skills?: AgentRunSkillPins;
+    /** The skills the run loaded with skill.read. */
+    skillsLoaded?: string[];
   }>;
 }
 
