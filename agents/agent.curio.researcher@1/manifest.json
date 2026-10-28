@@ -21,7 +21,10 @@
     "map-edits",
     "scenarios",
     "dashboards",
-    "provenance"
+    "provenance",
+    "reuse-first",
+    "fact-checking",
+    "research-notes"
   ],
   "roles": [
     "authoring"
@@ -37,7 +40,10 @@
         "notesTemplates"
       ],
       "requiredConfig": [],
-      "label": "Notes from search results"
+      "label": "Notes from search results",
+      "skills": [
+        "research-notes"
+      ]
     },
     {
       "id": "research.verify",
@@ -48,7 +54,10 @@
         "nodeContext"
       ],
       "requiredConfig": [],
-      "label": "Check a fact"
+      "label": "Check a fact",
+      "skills": [
+        "fact-checking"
+      ]
     }
   ],
   "prompts": {
@@ -58,7 +67,12 @@
     },
     "instruction": {
       "path": "prompts/researcher_instruction.md",
-      "variables": []
+      "variables": [],
+      "skills": [
+        "reuse-first",
+        "fact-checking",
+        "research-notes"
+      ]
     },
     "research.notes.compose": {
       "path": "prompts/researcher_notes_instruction.md",
