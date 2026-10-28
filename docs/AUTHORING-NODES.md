@@ -260,6 +260,54 @@ the page already lists, such as Rasters, files the dataflow there; a new name,
 such as Hydrology, adds an entry. A list holds up to 20 names, each up to 40
 characters.
 
+### Skills for the agents
+
+Curio's agents know each of your nodes by its manifest, its starter and its
+modules' docstrings. To tell them how to do a task with your nodes, such as which
+node does what and the rules its code follows, add a skill: a folder of the
+package's `skills/`, named as the skill, that holds a `SKILL.md`.
+
+```
+packages/me.flood@1/
+├── manifest.json
+├── sources/
+└── skills/
+    └── flood/
+        └── SKILL.md
+```
+
+```markdown
+---
+name: flood
+description: >-
+  Use this skill when a task writes or wires a flood-depth node, such as the
+  depth of a flood under each scenario's rainfall.
+license: MIT
+metadata:
+  author: me
+  version: "1.0.0"
+  curio-templates: flood-depth
+---
+## Flood depth
+
+A flood-depth node takes ...
+```
+
+- The file is in the [Agent Skills format](https://agentskills.io/specification):
+  `name`, the folder's name, and `description`, which says when to use the
+  skill, then the body the agents read, as you wrote it.
+  [EXTENDING §9](EXTENDING.md#9-writing-a-skill) has every rule.
+- Every agent on a dataflow that uses your package lists your skills, and
+  loads one when a task matches its description.
+- `curio-templates` names your templates, by their `id`: a run that writes a
+  node of one of them is handed the skill.
+- Name a skill after your package: a skill whose name one of Curio's skills
+  already has is left out.
+- An import of a package whose skill breaks the format is refused, and the
+  message names the file. After editing a skill in place, run
+  `python scripts/regen_integrity.py packages/me.flood@1`, as after any other
+  file.
+
 ---
 
 ## Tier 2: a node with its own interface
