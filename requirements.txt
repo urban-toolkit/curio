@@ -71,7 +71,11 @@ PyYAML>=6.0
 
 # Testing
 # ------------------------------------------------------------------------------
-pytest>=9.0.3
+# Below 9.2: pytest 9.2 reads a test's nodeid from its structured id, so
+# pytest-xdist 3.8's --dist loadgroup can no longer add the group to it, and
+# the tests marked xdist_group stop sharing a worker (test-gpu runs that way;
+# test_e2e_durations.py fails without the group).
+pytest>=9.0.3,<9.2
 pytest-cov>=7.1.0
 pytest-playwright>=0.7.2
 pytest-xdist>=3.8.0
