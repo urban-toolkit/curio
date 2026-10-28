@@ -227,8 +227,8 @@ def agent_skills(manifest, shipped: Mapping[str, skill_format.Skill] | None = No
     else:
         unknown = [name for name in names if name not in usable]
         if unknown:
-            log.warning("Agent %s names skills neither Curio nor its account holds, so its runs go without them: %s",
-                        getattr(manifest, "dir_name", "?"), ", ".join(unknown))
+            log.warning("Agent %s names skills Curio does not ship and its account does not hold, so its runs go "
+                        "without them: %s", getattr(manifest, "dir_name", "?"), ", ".join(unknown))
         found = [usable[name] for name in names if name in usable]
     if choice:
         found = [skill for skill in found if skill.name not in choice.removed]
@@ -428,8 +428,8 @@ def _own(names: Iterable[str], usable: Mapping[str, skill_format.Skill], placed:
     found: list[skill_format.Skill] = []
     for name in names:
         if name not in usable:
-            log.warning("%s names a skill neither Curio nor the account holds, %s, so its runs go without it",
-                        whose, name)
+            log.warning("%s names a skill Curio does not ship and the account does not hold, %s, so its runs go "
+                        "without it", whose, name)
         elif name not in placed and all(skill.name != name for skill in (*handed, *found)):
             found.append(usable[name])
     return found

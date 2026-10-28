@@ -436,27 +436,28 @@ export const AgentCatalogBrowse: React.FC = () => {
       {settingsOpen ? <AgentCatalogSettingsModal onClose={() => setSettingsOpen(false)} /> : null}
 
       {/* An imported skill joins the account's skills and the agents its
-          review picked, so the skills, and who uses each, are read again. */}
+          review picked, so the skills, and who uses each, are read again.
+          It is selected once they are: a selection the list does not hold
+          yet falls back to the first row. */}
       {skillImportOpen ? (
         <SkillImportModal
           onClose={() => setSkillImportOpen(false)}
           onImported={(name) => {
             setSkillImportOpen(false);
-            skillBrowse.setSelectedName(name);
-            void skillBrowse.reload();
+            void skillBrowse.reload().then(() => skillBrowse.setSelectedName(name));
           }}
         />
       ) : null}
 
       {/* The same modal the drawer's footer opens. Uploading writes a new
-          definition into the account, so the roster has to be re-read. */}
+          definition into the account, so the roster is read again, and the
+          new agent is selected once it holds it, as an imported skill is. */}
       {importOpen ? (
         <AgentImportModal
           onClose={() => setImportOpen(false)}
           onImported={(dirName) => {
             setImportOpen(false);
-            setSelectedCoord(dirName);
-            void reload();
+            void reload().then(() => setSelectedCoord(dirName));
           }}
         />
       ) : null}
