@@ -134,6 +134,12 @@ describe("the / list", () => {
     type("use /widgets here");
     expect(screen.queryByRole("listbox")).toBeNull();
     expect(loadSkills).not.toHaveBeenCalled();
+    // The same composer offers the list once the message starts with the slash.
+    type("/widgets here");
+    box().setSelectionRange(2, 2);
+    fireEvent.keyUp(box(), { key: "ArrowLeft" });
+    await waitFor(() => expect(options()).toEqual(["/widgets · in this chat"]));
+    expect(loadSkills).toHaveBeenCalledTimes(1);
   });
 
   it("says so when the agent lists no skills, or they could not be read", async () => {

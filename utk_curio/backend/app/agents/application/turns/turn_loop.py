@@ -671,5 +671,8 @@ class AttachmentTurn:
                 # persisted execution record.
                 "durationMs": payload["durationMs"],
                 "content": payload["content"],
+                # The skills the reply's line names, as the blocking answer
+                # carries them.
+                **{key: payload[key] for key in ("skills", "skillsLoaded") if key in payload},
             },
         )
