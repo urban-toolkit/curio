@@ -25,6 +25,7 @@ import { liveScenarios, scenarioParts } from "../../utils/scenarios/scenarioPart
 // The context's own module, not the provider's: the provider mounts the
 // drawer, whose In project tab runs these commands.
 import { useScenarioCatalogDrawer } from "../../providers/scenarioCatalog/scenarioCatalogDrawerContext";
+import { useScenarioUi } from "./scenarioUi";
 
 /** Room left between a selection and its duplicate, below it. */
 const DUPLICATE_GAP = 80;
@@ -46,7 +47,8 @@ export function useScenarioActions() {
   const { loadTrill } = useCode();
   const reactFlow = useReactFlow();
   const { showToast } = useToastContext();
-  const { openScenarioCatalogDrawer } = useScenarioCatalogDrawer();
+  const { openScenarioCatalogDrawer, closeScenarioCatalogDrawer } = useScenarioCatalogDrawer();
+  const { setDefine } = useScenarioUi();
   const showInProject = useCallback(
     () => openScenarioCatalogDrawer({ tab: "installed" }),
     [openScenarioCatalogDrawer],
@@ -70,12 +72,30 @@ export function useScenarioActions() {
     [setScenarios, showToast],
   );
 
+  /**
+   * Step 1 of defining a scenario done: the nodes unique to it are selected.
+   * Opens the define panel beside the canvas, which chooses its set and
+   * finalizes its context and outcomes; nothing is saved until its Save.
+   */
   const saveSelectionAsScenario = useCallback(() => {
-    const edit = createScenario(scenarios, selectedIds(), { id: uuid() });
-    if (apply(edit, edit.scenarios ? `Saved the selection as "${edit.scenarios.at(-1)!.name}".` : undefined)) {
-      showInProject();
+    const ids = selectedIds();
+    const edit = createScenario(scenarios, ids, { id: "draft" });
+    if (edit.error !== undefined) {
+      showToast(edit.error, "warning");
+      return;
     }
-  }, [scenarios, selectedIds, apply, showInProject]);
+    closeScenarioCatalogDrawer();
+    setDefine({ mode: "new", nodes: [...new Set(ids)] });
+  }, [scenarios, selectedIds, showToast, closeScenarioCatalogDrawer, setDefine]);
+
+  /** Opens the define panel on a scenario, to edit its context and outcomes. */
+  const editContextAndOutcomes = useCallback(
+    (id: string) => {
+      closeScenarioCatalogDrawer();
+      setDefine({ mode: "edit", scenarioId: id });
+    },
+    [closeScenarioCatalogDrawer, setDefine],
+  );
 
   const saveDataflowAsScenario = useCallback(() => {
     const all = reactFlow.getNodes().map((n) => n.id);
@@ -194,6 +214,7 @@ export function useScenarioActions() {
 
   return {
     saveSelectionAsScenario,
+    editContextAndOutcomes,
     saveDataflowAsScenario,
     duplicate,
     runScenario,

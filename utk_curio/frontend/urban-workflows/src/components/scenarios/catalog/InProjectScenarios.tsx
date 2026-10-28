@@ -10,6 +10,7 @@ import { useScenarioActions } from "../useScenarioActions";
 import { ScenarioCard } from "./ScenarioCard";
 import { ScenarioDetailModal } from "./ScenarioDetailModal";
 import { inProjectDetails, inProjectRow, liveGraphPreview, type LiveProject } from "./inProjectRows";
+import { scenarioCount } from "./scenarioFacts";
 import shell from "../../packages/publishing/CatalogDrawerShell.module.css";
 import buttons from "../../packages/publishing/PackageCard.module.css";
 import styles from "./ScenarioCatalogDrawer.module.css";
@@ -36,7 +37,7 @@ type ScenarioActions = ReturnType<typeof useScenarioActions>;
  * canvas. A shared viewer reads them and changes nothing.
  */
 export function InProjectScenarios({ scenarios, search, sort, presented }: InProjectScenariosProps) {
-  const { nodes, edges, projectId, notebookOn, workflowNameRef } = useFlowContext();
+  const { nodes, edges, projectId, notebookOn, workflowNameRef, scenarioSets } = useFlowContext();
   const shared = useSharedView();
   const actions = useScenarioActions();
   const { setHighlighted } = useScenarioUi();
@@ -70,6 +71,19 @@ export function InProjectScenarios({ scenarios, search, sort, presented }: InPro
       ? [...matching].sort((a, b) => a.scenario.name.localeCompare(b.scenario.name))
       : matching;
   }, [cards, query, sort]);
+
+  // Under a heading per set, in the dataflow's order of sets; a scenario in no
+  // set yet (made before its first save) under its own.
+  const groups = useMemo(() => {
+    const sets = scenarioSets ?? [];
+    const known = new Set(sets.map((x) => x.id));
+    const out = sets
+      .map((set) => ({ id: set.id, name: set.name, items: shown.filter(({ scenario }) => scenario.set === set.id) }))
+      .filter((g) => g.items.length > 0);
+    const loose = shown.filter(({ scenario }) => !scenario.set || !known.has(scenario.set));
+    if (loose.length > 0) out.push({ id: "", name: "Not in a set yet", items: loose });
+    return out;
+  }, [scenarioSets, shown]);
 
   const detail = cards.find(({ scenario }) => scenario.id === detailId) ?? null;
 
@@ -105,23 +119,31 @@ export function InProjectScenarios({ scenarios, search, sort, presented }: InPro
       ) : shown.length === 0 ? (
         <div className={shell.empty}>No scenarios match the current search.</div>
       ) : (
-        <div className={shell.cardList}>
-          {shown.map(({ scenario, parts }) => (
-            <ScenarioCard
-              key={scenario.id}
-              scenario={inProjectRow(scenario, parts, project, preview)}
-              testId={`scenario-card-${scenario.id}`}
-              highlight={{ color: scenario.color, members: parts.levers, context: parts.context }}
-              onOpenDetails={() => setDetailId(scenario.id)}
-              onPoint={(on) => setHighlighted(on ? scenario.id : null)}
-              controls={
-                shared ? undefined : (
-                  <ScenarioControls scenario={scenario} parts={parts} actions={actions} onDelete={remove} />
-                )
-              }
-            />
-          ))}
-        </div>
+        groups.map((group) => (
+          <section key={group.id || "loose"} aria-label={group.name} data-scenario-set={group.id}>
+            <h3 className={styles.groupHeading}>
+              <span className={styles.groupName}>{group.name}</span>{" "}
+              <span className={styles.groupCount}>{scenarioCount(group.items.length)}</span>
+            </h3>
+            <div className={shell.cardList}>
+              {group.items.map(({ scenario, parts }) => (
+                <ScenarioCard
+                  key={scenario.id}
+                  scenario={inProjectRow(scenario, parts, project, preview)}
+                  testId={`scenario-card-${scenario.id}`}
+                  highlight={{ color: scenario.color, members: parts.levers, context: scenario.context ?? parts.context }}
+                  onOpenDetails={() => setDetailId(scenario.id)}
+                  onPoint={(on) => setHighlighted(on ? scenario.id : null)}
+                  controls={
+                    shared ? undefined : (
+                      <ScenarioControls scenario={scenario} parts={parts} actions={actions} onDelete={remove} />
+                    )
+                  }
+                />
+              ))}
+            </div>
+          </section>
+        ))
       )}
 
       {detail ? (
@@ -171,6 +193,14 @@ function ScenarioControls({
         disabled={empty}
       >
         {scenario.collapsed ? "Expand" : "Collapse"}
+      </button>
+      <button
+        type="button"
+        className={buttons.btnInstall}
+        onClick={() => actions.editContextAndOutcomes(scenario.id)}
+        disabled={empty}
+      >
+        Edit context &amp; outcomes
       </button>
       <button type="button" className={buttons.btnInstall} onClick={() => actions.addSelected(scenario.id)}>
         Add selected

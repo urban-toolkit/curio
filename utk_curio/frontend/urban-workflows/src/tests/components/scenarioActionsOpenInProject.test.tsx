@@ -1,8 +1,8 @@
 /**
- * The three scenario commands that opened the Scenarios panel, Save selection
- * as scenario, Save dataflow as scenario and Duplicate as scenario, now open
- * the Scenario Catalog drawer on its In project tab, where the new scenario is
- * listed. A command that is refused opens nothing.
+ * Save dataflow as scenario and Duplicate as scenario open the Scenario
+ * Catalog drawer on its In project tab, where the new scenario is listed.
+ * Save selection as scenario opens the define panel instead, which saves
+ * nothing until its Save. A command that is refused opens nothing.
  *
  * The real `useScenarioActions` and the real drawer provider; the flow, the
  * canvas store, the loader and the copy are mocked.
@@ -113,6 +113,7 @@ beforeEach(() => {
     projectDirty: true,
     projectId: null,
     scenarios: [],
+    scenarioSets: [],
     nodes: mockCanvas.nodes,
     edges: [],
     notebookOn: false,
@@ -126,13 +127,12 @@ beforeEach(() => {
 });
 
 describe("the scenario commands open the In project tab", () => {
-  test("Save selection as scenario", async () => {
+  test("Save selection as scenario opens the define panel and saves nothing yet", async () => {
     renderCommands();
     fireEvent.click(screen.getByRole("button", { name: "save the selection" }));
-    expect(mockFlow.setScenarios).toHaveBeenCalledWith([
-      expect.objectContaining({ nodes: ["scale"] }),
-    ]);
-    await expectInProjectOpen();
+    expect(await screen.findByTestId("scenario-define-panel")).toBeInTheDocument();
+    expect(mockFlow.setScenarios).not.toHaveBeenCalled();
+    expect(document.querySelector(DRAWER)).toBeNull();
   });
 
   test("Save dataflow as scenario", async () => {

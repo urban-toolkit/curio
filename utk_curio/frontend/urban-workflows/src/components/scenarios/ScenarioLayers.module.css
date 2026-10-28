@@ -207,3 +207,26 @@
 .portOut {
   right: -6px;
 }
+
+/* A shared node's scenario circles, under it: one per scenario of its set,
+   filled when that scenario uses the node, a ring when it does not. */
+.dots {
+  position: absolute;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 4px;
+  padding: 3px 5px;
+  border-radius: 999px;
+  background: var(--curio-card-bg);
+  box-shadow: 0 0 0 1px var(--curio-border);
+  pointer-events: auto;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 2px solid currentColor;
+  background: var(--curio-card-bg);
+}

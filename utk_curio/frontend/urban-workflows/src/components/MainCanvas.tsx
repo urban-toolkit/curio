@@ -142,7 +142,7 @@ export function MainCanvas() {
 
     // The scenario pointed at in the Scenario Catalog drawer's In project tab
     // (#662), whose fixed context the canvas marks. Never saved.
-    const { highlighted: highlightedScenario } = useScenarioUi();
+    const { highlighted: highlightedScenario, preview: scenarioPreview } = useScenarioUi();
 
     // What React Flow draws: the flow's own nodes and edges, with collapsed
     // scenarios hidden and their members marked, plus the boxes, frames and
@@ -151,8 +151,11 @@ export function MainCanvas() {
     // as a cell: a hidden member would leave an empty slot, and the boxes and
     // frames are placed by canvas positions the cells do not have.
     const scenarioView = useMemo(
-        () => scenarioCanvasView(nodes, edges, notebookOn ? [] : scenarios ?? [], { fixedFor: highlightedScenario }),
-        [nodes, edges, scenarios, highlightedScenario, notebookOn],
+        () => scenarioCanvasView(nodes, edges, notebookOn ? [] : scenarios ?? [], {
+            fixedFor: highlightedScenario,
+            preview: notebookOn ? null : scenarioPreview,
+        }),
+        [nodes, edges, scenarios, highlightedScenario, scenarioPreview, notebookOn],
     );
 
     // How far the viewport may pan, tracking the nodes rather than a fixed box

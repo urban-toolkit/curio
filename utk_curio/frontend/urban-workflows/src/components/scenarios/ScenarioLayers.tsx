@@ -17,6 +17,8 @@ const BOX_ROW = 24;
 const BOX_PAD = 8;
 /** Room a frame leaves around its scenario's nodes. */
 const FRAME_PAD = 18;
+/** How far below a shared node its scenario circles sit. */
+const DOTS_GAP = 6;
 /** How far above its frame a frame's header sits. */
 const FRAME_HEADER_OFFSET = 28;
 /** Room above a scenario's top node that its frame and header take. */
@@ -145,6 +147,15 @@ export function ScenarioLayers({ view, labelOf, statusOf, onExpand, onCollapse, 
     };
   };
 
+  // Under each shared node, its set's circles, centered on its bottom edge.
+  const dotRows = (view.dots ?? [])
+    .map((row) => {
+      const geo = geometryOf(internals, row.node);
+      if (!geo || geo.width <= 0) return null;
+      return { row, left: geo.x + geo.width / 2, top: geo.y + geo.height + DOTS_GAP };
+    })
+    .filter((d): d is NonNullable<typeof d> => !!d);
+
   const paths = view.standIns
     .map((edge) => {
       const a = endPoint(edge.source, "source");
@@ -182,7 +193,7 @@ export function ScenarioLayers({ view, labelOf, statusOf, onExpand, onCollapse, 
     setDrag(null);
   };
 
-  if (view.boxes.length === 0 && view.frames.length === 0) return null;
+  if (view.boxes.length === 0 && view.frames.length === 0 && dotRows.length === 0) return null;
 
   return (
     <>
@@ -212,6 +223,28 @@ export function ScenarioLayers({ view, labelOf, statusOf, onExpand, onCollapse, 
       </div>
       <div className={styles.front}>
         <div className={styles.plane} style={plane}>
+          {dotRows.map(({ row, left, top }) => {
+            const uses = row.dots.filter((d) => d.member).map((d) => d.name);
+            return (
+              <div
+                key={`dots-${row.node}`}
+                className={styles.dots}
+                data-scenario-dots={row.node}
+                data-tooltip={`Used by ${uses.join(", ")}`}
+                style={{ left, top }}
+              >
+                {row.dots.map((d) => (
+                  <span
+                    key={d.scenario}
+                    className={styles.dot}
+                    data-member={d.member ? "true" : "false"}
+                    data-scenario={d.scenario}
+                    style={d.member ? { background: d.color, borderColor: d.color } : { borderColor: d.color }}
+                  />
+                ))}
+              </div>
+            );
+          })}
           {frames.map((f) => (
             <div
               key={f.scenario.id}
@@ -298,7 +331,7 @@ const NOTHING = () => {};
  */
 export function DashboardScenarioLayers({ frames }: { frames: ScenarioFrame[] }) {
   const view = useMemo(
-    () => ({ nodes: [], edges: [], boxes: [], frames, standIns: [] }),
+    () => ({ nodes: [], edges: [], boxes: [], frames, standIns: [], dots: [] }),
     [frames],
   );
   return (

@@ -28,6 +28,7 @@ const view = (over: Partial<ScenarioCanvasView<any, any>> = {}): ScenarioCanvasV
   boxes: [box],
   frames: [],
   standIns: [],
+  dots: [],
   ...over,
 });
 

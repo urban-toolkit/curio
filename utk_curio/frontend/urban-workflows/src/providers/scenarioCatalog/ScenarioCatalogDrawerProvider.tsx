@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { ScenarioCatalogDrawer } from "../../components/scenarios/catalog";
+import { ScenarioDefinePanel } from "../../components/scenarios/define/ScenarioDefinePanel";
+import { useScenarioUi } from "../../components/scenarios/scenarioUi";
 import { useSlideDrawerPresentation } from "../../hook/useSlideDrawerPresentation";
 import type { DrawerTab } from "../../services/packages";
 import {
@@ -24,6 +26,9 @@ export function ScenarioCatalogDrawerProvider({ children }: { children: React.Re
     finishExit: finishClose,
   } = useSlideDrawerPresentation();
   const [tab, setTab] = useState<DrawerTab>("browse");
+  // The define panel, beside the canvas rather than over it: a scenario
+  // being made, or one whose context and outcomes are edited.
+  const { define } = useScenarioUi();
 
   const openScenarioCatalogDrawer = useCallback(
     (options?: OpenScenarioCatalogDrawerOptions) => {
@@ -72,6 +77,14 @@ export function ScenarioCatalogDrawerProvider({ children }: { children: React.Re
     <ScenarioCatalogDrawerContext.Provider value={ctx}>
       {children}
       {drawer}
+      {define &&
+        createPortal(
+          <ScenarioDefinePanel
+            key={define.mode === "edit" ? `edit-${define.scenarioId}` : `new-${define.nodes.join(",")}`}
+            define={define}
+          />,
+          document.body,
+        )}
     </ScenarioCatalogDrawerContext.Provider>
   );
 }
