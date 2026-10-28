@@ -22,7 +22,10 @@
     "map-edits",
     "scenarios",
     "dashboards",
-    "provenance"
+    "provenance",
+    "reuse-first",
+    "data-sources",
+    "package-contract"
   ],
   "roles": [
     "authoring"
@@ -60,7 +63,10 @@
       ],
       "requiredConfig": [],
       "label": "Write a node's content",
-      "workedExamples": true
+      "workedExamples": true,
+      "skills": [
+        "data-sources"
+      ]
     },
     {
       "id": "package.recommend",
@@ -72,7 +78,10 @@
         "existingPackages"
       ],
       "requiredConfig": [],
-      "label": "Recommend packages"
+      "label": "Recommend packages",
+      "skills": [
+        "reuse-first"
+      ]
     },
     {
       "id": "package.build",
@@ -84,7 +93,11 @@
         "existingPackages"
       ],
       "requiredConfig": [],
-      "label": "Write a package"
+      "label": "Write a package",
+      "skills": [
+        "package-contract",
+        "reuse-first"
+      ]
     },
     {
       "id": "package.extend",
@@ -96,7 +109,11 @@
         "existingPackages"
       ],
       "requiredConfig": [],
-      "label": "Write a package"
+      "label": "Write a package",
+      "skills": [
+        "package-contract",
+        "reuse-first"
+      ]
     },
     {
       "id": "node.kind.author",
@@ -108,7 +125,11 @@
         "existingPackages"
       ],
       "requiredConfig": [],
-      "label": "Write a package"
+      "label": "Write a package",
+      "skills": [
+        "package-contract",
+        "reuse-first"
+      ]
     }
   ],
   "prompts": {
@@ -118,7 +139,11 @@
     },
     "instruction": {
       "path": "prompts/node_build_instruction.md",
-      "variables": []
+      "variables": [],
+      "skills": [
+        "reuse-first",
+        "data-sources"
+      ]
     },
     "node.content.generate": {
       "path": "prompts/new_content_prompt.md",

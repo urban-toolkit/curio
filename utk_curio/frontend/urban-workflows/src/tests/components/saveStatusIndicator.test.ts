@@ -47,7 +47,10 @@ describe("the save status indicator", () => {
   });
 
   it("is shown to anyone who can save", () => {
-    expect(saveBlock()).toContain("{!isSharedView && (");
+    // The owner's tab: another account's dataflow, a watcher's or an
+    // editor's, is saved by its owner's tab.
+    expect(saveBlock()).toContain("{savesHere && (");
+    expect(UP_MENU).toContain('const savesHere = viewerMode !== "shared";');
   });
 
   it("treats a never-saved dataflow as unsaved", () => {

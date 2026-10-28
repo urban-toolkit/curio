@@ -22,6 +22,7 @@ import { MIN_PROGRESS_MS, readInstallResponse } from "../../utils/libraryInstall
 import { resolveNodeDisplayLabel } from "../../utils/palettePackageFactoryDraft";
 import { useProvenanceContext } from "../../providers/ProvenanceProvider";
 import { useCollab, CodeProposal } from "../../providers/CollaborationProvider";
+import { canEditRole, isOwnParticipant, otherEditors } from "../../providers/collab/participants";
 import { useMonacoExternalValue } from "../../hook/useMonacoExternalValue";
 import { CredentialHint } from "./CredentialHint";
 import {
@@ -276,7 +277,9 @@ function CodeEditor({
     const proposeOnBlur = () => {
         const c = collabRef.current;
         if (!c.enabled || !c.connected) return;
-        if (c.users.length <= 1) return; // No peers — nothing to propose to.
+        // A watcher proposes nothing, and with no one else who edits there
+        // is nobody to approve.
+        if (!canEditRole(c.role) || otherEditors(c.users, c.participantId).length === 0) return;
         const local = codeRef.current;
         const baseline = baselineCodeRef.current;
         if (local === baseline) return;
@@ -352,9 +355,9 @@ function CodeEditor({
         const unsub = collab.onRemote("code_change_applied", (payload) => {
             const prop = payload as CodeProposal;
             if (!prop || prop.nodeId !== data.nodeId || prop.kind !== "code") return;
-            // Skip if WE were the proposer — our local code already matches.
-            if (collab.currentUserId != null &&
-                prop.proposed_by?.user_id === collab.currentUserId) {
+            // Skip if this tab proposed it: its local code already matches.
+            // Another tab of the same account still takes the change.
+            if (isOwnParticipant(collab.participantId, prop.proposed_by)) {
                 baselineCodeRef.current = prop.newValue;
                 return;
             }
@@ -362,14 +365,13 @@ function CodeEditor({
             setCode(prop.newValue);
         });
         return unsub;
-    }, [collab.enabled, collab.onRemote, collab.currentUserId, data.nodeId]);
+    }, [collab.enabled, collab.onRemote, collab.participantId, data.nodeId]);
 
     const pendingProposal = collab.proposals.find(
         (p) => p.nodeId === data.nodeId && p.kind === "code",
     );
     const proposalIsMine = Boolean(
-        pendingProposal && collab.currentUserId != null &&
-        pendingProposal.proposed_by?.user_id === collab.currentUserId,
+        pendingProposal && isOwnParticipant(collab.participantId, pendingProposal.proposed_by),
     );
 
     useEffect(() => {

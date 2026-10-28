@@ -29,6 +29,10 @@ What a prompt could take from its surroundings is fixed here: the scripted
 endpoint, the account's package store (seeded from the catalog Curio ships,
 with the built-in package only) and new dataflows. Every prompt is composed
 twice, in two new dataflows, and must come out the same.
+
+Beside them, each of the Node Builder's package-writing runs records its task
+turn, the messages after its system turn, and holds the package backend
+contract once in the whole call: in the skill its system turn is handed.
 """
 
 from __future__ import annotations
@@ -260,3 +264,53 @@ def test_every_prompt_is_recorded_and_stays_within_its_budget(pinned, client, us
     if gone:
         problems.append(f"{BUDGETS.name} budgets prompts this test no longer measures; remove them: {gone}")
     assert not problems, "\n\n".join(problems)
+
+
+#: The Node Builder's package-writing modes, which the package backend
+#: contract reaches.
+NODE_BUILDER = "agent.curio.node-builder@1"
+PACKAGE_WRITING = ("package.build", "package.extend", "node.kind.author")
+
+
+def test_a_package_writing_run_holds_the_backend_contract_once(pinned, client, user_and_token, record_property):
+    """The package backend contract reaches each package-writing run once: as
+    the skill ``package-contract`` its system turn is handed, not again in its
+    task's inputs. Each run is asked for as a chat delegates it, its inputs
+    enriched as the runtime enriches them (``turns/delegates``: the
+    build-request contract and the packages that exist). Each run's task
+    turn, the messages after its system turn, is recorded by its size before
+    any check, so a run of this test on any checkout shows what the run
+    carries beside its system turn."""
+    from utk_curio.backend.app.agents.application.turns import delegates
+
+    user, token = user_and_token
+    user_key = _user_dir_key(user)
+    project_id = _dataflow(client, token)
+    turns = {}
+    for capability in PACKAGE_WRITING:
+        inputs = delegates._enriched_delegate_inputs(user_key, project_id, {}, capability, {"intent": TASK})
+        assert "buildRequestContract" in inputs, capability
+        _script_endpoint()
+        status, text, _record = delegation.run_delegate(
+            user_key, project_id, NODE_BUILDER, capability, inputs, ENDPOINT,
+            parent_execution_id="prompt-sizes", parent_coord=PARENT, attachment_id=None,
+        )
+        calls = testing_provider.captured()
+        assert status == "ok" and len(calls) == 1, f"{capability} made {len(calls)} calls: {status}, {text}"
+        system, *task = calls[0]
+        task_text = "\n\n".join(str(message.get("content") or "") for message in task)
+        record_property(f"{NODE_BUILDER} {capability}, task turn",
+                        json.dumps({"chars": len(task_text), "sha256": _sha256(task_text)}))
+        turns[capability] = (system["content"], task_text)
+
+    from utk_curio.backend.app.agents.domain import agent_text, skills
+
+    assert "package-contract" in [folder.name for folder in skills.shipped_folders()], "Curio ships no package-contract"
+    contract = agent_text.skill_text("package-contract")
+    opening = "Server-side compute follows ONE backend contract"
+    assert contract.startswith(f"## Backend contract\n\n{opening}")
+    for capability, (system, task) in turns.items():
+        held = system.count(contract)
+        assert held == 1, f"{capability}'s system turn holds the contract {held} times"
+        assert '<skill_content name="package-contract">' in system, capability
+        assert opening not in task, f"{capability}'s task turn still carries the package backend contract"

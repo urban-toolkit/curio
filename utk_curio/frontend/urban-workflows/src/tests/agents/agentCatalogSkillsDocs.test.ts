@@ -64,7 +64,7 @@ const doc = read(GUIDE);
 
 test("the guide's table of skills lists every skill Curio ships, once", () => {
     const listed = tableRows(doc, SKILLS_TABLE).map((row) => codeNames(row[0])[0]);
-    expect(shippedSkills()).toHaveLength(16);
+    expect(shippedSkills()).toHaveLength(21);
     expect(new Set(listed).size).toBe(listed.length);
     expect([...listed].sort()).toEqual(shippedSkills());
 });

@@ -470,16 +470,16 @@ class TestTheSources:
                     marked.add(source.name)
         # Eleven state facts the code owns, each through a marker.
         assert len(marked) == 11, sorted(marked)
-        # The shared preamble, the rules other prompts include, the text the
+        # The shared preamble, the plan rules the tools include, the text the
         # runtime composes a run's turns from, the words of the dataflow
         # block, the words of the preamble's Autark section and the messages
         # the checks send are the pages of the base entry, each listed once
-        # and each a file there: a page added or forgotten fails here.
+        # and each a file there: a page added or forgotten fails here. The
+        # procedures the prompts shared are skills.
         pages = _raw(BASE)["pages"]
         assert len(pages) == len(set(pages)), pages
         assert set(pages) == {
-            "default_preamble.md", "examples.md", "dataflow-block.md", "rules/package_contract.md",
-            "rules/research_notes_rules.md", "rules/research_verify_rules.md",
+            "default_preamble.md", "examples.md", "dataflow-block.md",
             "tools.md", "rules/plan-rules.md", "protocol.md", "frames.md",
             "delegate-contracts.md", "conversation-title.md", "keyword-types.md", "messages.md",
             "autark-grammar.md",
@@ -494,6 +494,7 @@ class TestTheSources:
             "nodes", "node-control", "node-functions", "catalogs", "widgets", "selection-chips", "autark",
             "compatibility", "vega-lite-starter", "autark-starter", "vega-lite-maps", "interaction-edges",
             "map-edits", "scenarios", "dashboards", "provenance",
+            "reuse-first", "data-sources", "package-contract", "fact-checking", "research-notes",
         ))
         preamble = (BASE / "default_preamble.md").read_text(encoding="utf-8")
         assert sorted(re.findall(r"\{\{skill:([^{}]+)\}\}", preamble)) == ["compatibility", "node-control", "nodes"]

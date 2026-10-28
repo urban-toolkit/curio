@@ -136,6 +136,7 @@ export function MainCanvas() {
         revealNodes,
         scenarios,
         packages: dataflowPackages,
+        viewerMode,
     } = useFlowContext();
     const hostedGuest = useHostedGuest();
 
@@ -319,14 +320,14 @@ export function MainCanvas() {
     // Ctrl/Cmd+Enter on a selected node (#223).
     useRunSelectedNodeShortcut();
 
-    // A read-only canvas: another user's dataflow, with collaboration off.
-    // When real-time collaboration is on, a peer opening the owner's URL
-    // lands in ``viewerMode === "shared"`` (loadSharedProject was the only
-    // way to bypass the owner-only /api/projects/<id> 404). For collab to
-    // be useful peers must be able to *edit*; their edits flow over the
-    // socket to the owner, who persists. Without this gate, peers see the
-    // canvas as read-only and the lock/proposal flow does nothing.
+    // A read-only canvas: a watcher's, on another account's dataflow opened
+    // from its link (``viewerMode === "shared"``). With collaboration on, an
+    // editor the owner invited edits it: their changes go over the socket to
+    // the owner's tab, which saves them (useSharedView).
     const isSharedView = useSharedView();
+    // The dataflow's agents are its owner's: an editor works with the canvas,
+    // not with them.
+    const ownersCanvas = !isSharedView && viewerMode !== "shared";
     // Nodes are added (dropped), connected and deleted, and connections
     // removed, on the canvas only, by whoever edits it; the notebook view
     // changes no graph. A node's Delete node tool reads the same rule.
@@ -717,7 +718,7 @@ export function MainCanvas() {
     }
 
     return (
-        <AgentAttachmentsProvider enabled={!isSharedView}>
+        <AgentAttachmentsProvider enabled={ownersCanvas}>
         {!loading ? <div
             style={{ width: "100vw", height: "100vh", backgroundColor: "#f0f0f0" }}
         >
@@ -796,7 +797,7 @@ export function MainCanvas() {
             </ReactFlow>
             </div>
             </div>
-            {!isSharedView ? <AgentDockOverlay /> : null}
+            {ownersCanvas ? <AgentDockOverlay /> : null}
             </div>
 
         </div> : loadingAnimation() }

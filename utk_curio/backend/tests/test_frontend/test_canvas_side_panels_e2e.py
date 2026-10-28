@@ -27,6 +27,7 @@ import re
 from typing import TYPE_CHECKING
 
 from .utils import (
+    end_routes,
     require_project_page,
     require_user_auth,
     stub_login_and_enter_workflow,
@@ -99,27 +100,33 @@ def test_the_collaboration_panel_opens_under_the_top_bar_and_its_button_toggles_
     require_project_page()
     require_user_auth()
     page.route("**/api/config/public", _collaboration_on)
-    stub_login_and_enter_workflow(
-        page,
-        frontend_url=app_frontend.base_url,
-        backend_url=current_server,
-        name="Side Panels",
-        username="side_panels_e2e",
-        project_name="Side panels",
-    )
+    try:
+        stub_login_and_enter_workflow(
+            page,
+            frontend_url=app_frontend.base_url,
+            backend_url=current_server,
+            name="Side Panels",
+            username="side_panels_e2e",
+            project_name="Side panels",
+        )
 
-    # The collaboration panel opens by itself.
-    collaboration = _collaboration_panel(page)
-    collaboration.wait_for(state="visible", timeout=30000)
-    first = _assert_in_place(page, collaboration)
+        # The collaboration panel opens by itself.
+        collaboration = _collaboration_panel(page)
+        collaboration.wait_for(state="visible", timeout=30000)
+        first = _assert_in_place(page, collaboration)
 
-    # Its bar button closes it, and opens it again where it was.
-    toggle = page.get_by_role("button", name="Collaboration", exact=True)
-    toggle.click()
-    collaboration.wait_for(state="hidden", timeout=10000)
-    toggle.click()
-    collaboration.wait_for(state="visible", timeout=10000)
-    again = _assert_in_place(page, collaboration)
-    assert abs(again["y"] - first["y"]) <= 0.5 and abs(again["x"] - first["x"]) <= 0.5, (
-        f"the collaboration panel opened again at {again}, not where it was, {first}"
-    )
+        # Its bar button closes it, and opens it again where it was.
+        toggle = page.get_by_role("button", name="Collaboration", exact=True)
+        toggle.click()
+        collaboration.wait_for(state="hidden", timeout=10000)
+        toggle.click()
+        collaboration.wait_for(state="visible", timeout=10000)
+        again = _assert_in_place(page, collaboration)
+        assert abs(again["y"] - first["y"]) <= 0.5 and abs(again["x"] - first["x"]) <= 0.5, (
+            f"the collaboration panel opened again at {again}, not where it was, {first}"
+        )
+    finally:
+        # The page's context closes after the test, and a call of the route
+        # still reading the backend's answer then would fail at this worker's
+        # next Playwright call (utils/routes.py).
+        end_routes(page)

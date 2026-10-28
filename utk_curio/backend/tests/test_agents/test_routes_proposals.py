@@ -2872,12 +2872,17 @@ class TestNewNodeTypesInADraft:
         db.session.flush()
         db.session.add(UserSession(user_id=guest.id, token="guest-token"))
         db.session.commit()
+        # A hosted guest saves no dataflow: on a deployed Curio its dataflows
+        # are the examples the server seeds. This one is saved as the local
+        # guest saves one, with sign-in off, before the hosted guest's turn.
+        monkeypatch.setattr(config, "CURIO_NO_AUTH", True)
         project = client.post(
             "/api/projects",
             json={"name": "p", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}},
                   "outputs": []},
             headers=_auth("guest-token"),
         ).get_json()["id"]
+        monkeypatch.setattr(config, "CURIO_NO_AUTH", False)
         params = TestPackageBuilderTools()._draft_params()
         params["dependencies"] = {"python": {"weather-sdk": "1.2.0"}}
         att_id, parts, _ = self._mint(client, "guest-token", project, monkeypatch, params)

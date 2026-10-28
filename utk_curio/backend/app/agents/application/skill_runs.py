@@ -42,6 +42,10 @@ clients says (https://agentskills.io/client-implementation/adding-skills-support
     answer that check (:func:`answering`).
   - Every run of a capability gets the capability's own ``skills``, whatever
     the agent's are.
+  - Every run of the agent's instruction gets the instruction's own
+    ``skills`` (``prompts.instruction.skills``), the procedures it follows: its
+    chat, from its first message, and each capability with no instruction of
+    its own, which runs the instruction.
 - **Loaded skills.** What ``skill.read`` loads in a chat turn is recorded on
   the turn (``skillsLoaded`` in its execution record), and every later run of
   the conversation is handed it again (``kept``), so it outlives the trimming
@@ -323,26 +327,47 @@ def _reads(manifest, capability: str) -> tuple[str, ...]:
 # --- A run's skills ------------------------------------------------------------------
 
 
+def _own(names: Iterable[str], shipped: Mapping[str, skill_format.Skill], placed: frozenset[str],
+         handed: list[skill_format.Skill], whose: str) -> list[skill_format.Skill]:
+    """The skills *names* names, a capability's or an instruction's own, that
+    *handed* and the preamble (*placed*) do not hold already, from every skill
+    Curio ships. A name Curio ships no skill by is left out and logged."""
+    found: list[skill_format.Skill] = []
+    for name in names:
+        if name not in shipped:
+            log.warning("%s names a skill Curio does not ship, %s, so its runs go without it", whose, name)
+        elif name not in placed and all(skill.name != name for skill in (*handed, *found)):
+            found.append(shipped[name])
+    return found
+
+
+def _instruction_skills(manifest) -> tuple[str, ...]:
+    """The skills every run of the agent's instruction is handed (``prompts.instruction.skills``)."""
+    return tuple(getattr(manifest, "instruction_skills", None) or ())
+
+
 def for_chat(user_key: str, project_id: str, manifest, spec, target, preamble: str | None,
              prior_turns) -> RunSkills:
     """The skills of a chat run of the agent *manifest* defines, on the
     dataflow *spec*, attached to *target*, whose preamble is *preamble*,
     after the turns *prior_turns* of its conversation: the catalog of its
     skills and of the dataflow's packages, the ones serving the behavior and
-    the template of the node it is attached to, and those its conversation
-    loaded before."""
-    _shipped, placed, pool, packages = _pool(user_key, manifest, preamble, spec)
+    the template of the node it is attached to, then its instruction's own,
+    and those its conversation loaded before."""
+    shipped, placed, pool, packages = _pool(user_key, manifest, preamble, spec)
     node_id = target.get("targetId") if isinstance(target, dict) and target.get("kind") == "node" else None
     node_type = agents_dataflow_block.node_type_of(spec, node_id) if node_id else None
-    handed = serving(
+    handed = list(serving(
         pool, behaviors=behaviors_of(user_key, project_id, [node_type]), templates=[node_type], packages=packages,
-    ) if node_type else ()
+    ) if node_type else ())
+    handed += _own(_instruction_skills(manifest), shipped, placed, handed,
+                   f"The instruction of agent {getattr(manifest, 'dir_name', '?')}")
     by_name = {skill.name: skill for skill in pool}
     kept = tuple(
         by_name[name] for name in loaded_before(prior_turns)
         if name in by_name and all(skill.name != name for skill in handed)
     )
-    return RunSkills(catalog=pool, handed=handed, kept=kept, placed=placed)
+    return RunSkills(catalog=pool, handed=tuple(handed), kept=kept, placed=placed)
 
 
 def for_delegated(user_key: str, project_id: str, manifest, capability: str, inputs, spec,
@@ -351,8 +376,9 @@ def for_delegated(user_key: str, project_id: str, manifest, capability: str, inp
     defines is handed, with *inputs*, in the dataflow *spec*: those serving
     what it works on, of its agent and of the dataflow's packages, those
     answering the check that refused its last round (*refused*, the kind that
-    refusal records), then the capability's own. It lists none: it holds no
-    tool."""
+    refusal records), then the capability's own, then, for a capability with
+    no instruction of its own, which runs the agent's instruction, the
+    instruction's. It lists none: it holds no tool."""
     shipped, placed, pool, packages = _pool(user_key, manifest, preamble, spec)
     behaviors: set[str] = set()
     features: set[str] = set()
@@ -372,12 +398,11 @@ def for_delegated(user_key: str, project_id: str, manifest, capability: str, inp
     if isinstance(refused, str) and refused:
         handed += [skill for skill in answering(pool, refused, node_behaviors) if skill not in handed]
     declared = manifest.capability(capability) if manifest is not None else None
-    for name in declared.skills if declared is not None else ():
-        if name not in shipped:
-            log.warning("Capability %s names a skill Curio does not ship, %s, so its runs go without it",
-                        capability, name)
-        elif name not in placed and all(skill.name != name for skill in handed):
-            handed.append(shipped[name])
+    handed += _own(declared.skills if declared is not None else (), shipped, placed, handed,
+                   f"Capability {capability}")
+    if declared is None or not declared.instruction:
+        handed += _own(_instruction_skills(manifest), shipped, placed, handed,
+                       f"The instruction of agent {getattr(manifest, 'dir_name', '?')}")
     return RunSkills(handed=tuple(handed), placed=placed)
 
 

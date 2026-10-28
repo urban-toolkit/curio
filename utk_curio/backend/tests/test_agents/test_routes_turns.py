@@ -67,18 +67,24 @@ class TestRun:
         assert msgs[0]["role"] == "system"
         # dev/06 parity: the system turn composes the preamble + instruction,
         # exactly as every legacy call site did, and between them the skills
-        # the agent's chat lists, to load with skill.read.
+        # the agent's chat lists, to load with skill.read, then the procedures
+        # its instruction names, which it is handed whole.
         preamble = builtin.read_prompt_text("agent.curio.researcher@1", "system")
         instruction = builtin.read_instruction_text("agent.curio.researcher@1")
         from utk_curio.backend.app.agents.application import skill_runs
         from utk_curio.backend.app.agents.domain import content as content_mod
 
-        catalog = skill_runs.catalog_text(skill_runs.RunSkills(
-            catalog=skill_runs.agent_skills(builtin.get_builtin_manifest("agent.curio.researcher@1"))))
+        manifest = builtin.get_builtin_manifest("agent.curio.researcher@1")
+        listed = skill_runs.agent_skills(manifest)
+        catalog = skill_runs.catalog_text(skill_runs.RunSkills(catalog=listed))
+        named = getattr(manifest, "instruction_skills", ())
+        handed = skill_runs.skills_text(skill_runs.RunSkills(
+            catalog=listed, handed=tuple(skill_runs.shipped_skills()[name] for name in named)))
+        assert handed and '<skill_content name="reuse-first">' in handed
         # dev/39: the runtime-owned structured-tail instruction composes last,
         # followed by the tools the agent is granted, the read tools first.
         assert msgs[0]["content"].startswith(
-            f"{preamble}\n\n{catalog}\n\n{instruction}\n\n{content_mod.tail_instruction()}"
+            f"{preamble}\n\n{catalog}\n\n{handed}\n\n{instruction}\n\n{content_mod.tail_instruction()}"
         )
         assert "- dataflow.read:" in msgs[0]["content"]
         assert msgs[1] == {"role": "user", "content": "explain this node"}

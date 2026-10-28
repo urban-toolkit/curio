@@ -89,19 +89,28 @@ jest.mock("../../../providers/FlowProvider", () => ({
 jest.mock("../../../providers/ProvenanceProvider", () => ({
     useProvenanceContext: () => ({ nodeExecProv: jest.fn() }),
 }));
+// Collaboration off, unless a test turns it on: `onRemote` then keeps each
+// handler, which the test fires as the room would.
+const mockCollabHandlers: Record<string, (payload: any) => void> = {};
+const mockCollabOff = () => ({
+    enabled: false,
+    connected: false,
+    users: [],
+    proposals: [],
+    participantId: null,
+    role: null,
+    lockedNodes: {},
+    onRemote: (event: string, handler: (payload: any) => void) => {
+        mockCollabHandlers[event] = handler;
+        return () => undefined;
+    },
+    requestCodeChange: jest.fn(),
+    approveCodeChange: jest.fn(),
+    rejectCodeChange: jest.fn(),
+});
+let mockCollab: any = mockCollabOff();
 jest.mock("../../../providers/CollaborationProvider", () => ({
-    useCollab: () => ({
-        enabled: false,
-        connected: false,
-        users: [],
-        proposals: [],
-        currentUserId: null,
-        lockedNodes: {},
-        onRemote: () => () => undefined,
-        requestCodeChange: jest.fn(),
-        approveCodeChange: jest.fn(),
-        rejectCodeChange: jest.fn(),
-    }),
+    useCollab: () => mockCollab,
 }));
 jest.mock("../../../utils/saveOutputDataset", () => ({
     resolveSaveOutputDataset: () => false,
@@ -206,6 +215,53 @@ describe("CodeEditor content sync (dev/70)", () => {
         const editor = lastEditor();
         act(() => { editor.__type("x = 1"); });
         expect(mockMarkNodeStale).toHaveBeenCalledWith("n1");
+    });
+});
+
+
+describe("a change the room applied, told apart by participant", () => {
+    // ana's change to n1, proposed from the tab the room named `participant`.
+    const applied = (participant: string) => ({
+        id: "prop-1",
+        nodeId: "n1",
+        kind: "code",
+        oldValue: SAVED_CODE,
+        newValue: "x = 2",
+        proposed_by: { user_id: 7, username: "ana", participant_id: participant },
+        approvals: [],
+        rejections: [],
+        created_at: 0,
+    });
+
+    beforeEach(() => {
+        __editors.length = 0;
+        for (const key of Object.keys(mockCollabHandlers)) delete mockCollabHandlers[key];
+        // This tab is ana's second one, p-2: the same account as p-1.
+        mockCollab = {
+            ...mockCollabOff(),
+            enabled: true,
+            connected: true,
+            participantId: "p-2",
+            role: "owner",
+            currentUserId: 7,
+        };
+    });
+    afterEach(() => {
+        mockCollab = mockCollabOff();
+    });
+
+    test("a change ana's other tab proposed is written into this one", () => {
+        renderCodeEditor(SAVED_CODE);
+        act(() => mockCollabHandlers["code_change_applied"](applied("p-1")));
+        expect(lastEditor().getValue()).toBe("x = 2");
+    });
+
+    test("this tab's own change is not written in again", () => {
+        renderCodeEditor(SAVED_CODE);
+        const editor = lastEditor();
+        act(() => { editor.__type("x = 2 # as typed"); });
+        act(() => mockCollabHandlers["code_change_applied"](applied("p-2")));
+        expect(editor.getValue()).toBe("x = 2 # as typed");
     });
 });
 
