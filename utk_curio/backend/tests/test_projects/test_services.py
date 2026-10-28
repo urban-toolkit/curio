@@ -176,6 +176,10 @@ def test_a_hosted_guests_save_is_refused(app, db, guest_user_and_token, tmp_curi
     from utk_curio.backend.app.projects.models import Project
 
     assert db.session.get(Project, example.id).name == "Example"
+    # The one write the account still makes: the cleanup a dataset's removal
+    # does in the dataflows that bound it, as its dataset actions do.
+    cleaned = services.update_project(user, example.id, ProjectUpdate(name="Cleaned"), cleanup=True)
+    assert cleaned.name == "Cleaned"
 
 
 def test_guest_cannot_create_project(app, db, guest_user_and_token, tmp_curio):

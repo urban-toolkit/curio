@@ -79,6 +79,25 @@ def _position(page, node_id: str = NODE):
     return page.evaluate(_POSITION_JS, node_id)
 
 
+def _save(page) -> None:
+    """Save from the top bar's save status, and wait until it reads Saved."""
+    page.locator("[data-curio-save-state]").click()
+    page.locator('[data-curio-save-state="saved"]').wait_for(timeout=30000)
+
+
+def _open_invite_editors(page, *, frame: bool = False) -> None:
+    """Share > Invite editors; with *frame*, the menu's frame on the way."""
+    page.get_by_test_id("share-menu-btn").click()
+    item = page.get_by_test_id("invite-editors-menu-item")
+    item.wait_for(timeout=10000)
+    if frame:
+        save_workflow_test_screenshot(
+            page, FRAMES, test_name="share-menu-invite-editors",
+            clip_selector='[data-testid="share-menu-btn"] + div', fit_reactflow=False,
+        )
+    item.click()
+
+
 def _drag_node_by(page, node_id: str, dx: float, dy: float) -> None:
     """Drag a node by its header with the mouse, *dx* and *dy* in canvas units,
     a few pixels at a time, as test_feature_tour_video.py's does."""
@@ -137,25 +156,16 @@ def test_an_invited_editors_move_reaches_the_owner_and_a_watcher_only_watches(
 
         # The owner invites the editor from the Share menu.
         _open_as(owner, base, project_id, "owner")
-        owner.get_by_test_id("share-menu-btn").click()
-        owner.get_by_test_id("invite-editors-menu-item").wait_for(timeout=10000)
-        save_workflow_test_screenshot(
-            owner, FRAMES, test_name="share-menu-invite-editors",
-            clip_selector='[data-testid="share-menu-btn"] + div', fit_reactflow=False,
-        )
-        owner.get_by_test_id("invite-editors-menu-item").click()
+        _open_invite_editors(owner)
         dialog = owner.get_by_test_id("invite-editors-dialog")
         dialog.get_by_text("No editors yet.").wait_for(timeout=10000)
         dialog.get_by_label("Username").fill(EDITOR)
         dialog.get_by_role("button", name="Add").click()
         dialog.locator(f'[data-editor="{EDITOR}"]').wait_for(timeout=10000)
-        save_workflow_test_screenshot(
-            owner, FRAMES, test_name="invite-editors-dialog",
-            clip_selector='[data-testid="invite-editors-dialog"]', fit_reactflow=False,
-        )
         dialog.get_by_role("button", name="Done").click()
         dialog.wait_for(state="detached", timeout=10000)
-        owner.locator('[data-curio-save-state="saved"]').wait_for(timeout=15000)
+        # What is on disk, so that Unsaved below is the editor's change alone.
+        _save(owner)
 
         # The editor's canvas is editable, and their move reaches the owner.
         _open_as(editor, base, project_id, "editor")
@@ -171,10 +181,8 @@ def test_an_invited_editors_move_reaches_the_owner_and_a_watcher_only_watches(
         _wait_for_position(owner, moved, what="the editor's move never reached the owner")
         # The owner's tab keeps it: the dataflow reads Unsaved, and its save
         # writes the editor's position.
-        save = owner.locator('[data-curio-save-state="unsaved"]')
-        save.wait_for(timeout=15000)
-        save.click()
-        owner.locator('[data-curio-save-state="saved"]').wait_for(timeout=30000)
+        owner.locator('[data-curio-save-state="unsaved"]').wait_for(timeout=15000)
+        _save(owner)
         saved = api_json(f"{current_server}/api/projects/{project_id}", owner_token)["spec"]
         node = next(n for n in saved["dataflow"]["nodes"] if n["id"] == NODE)
         assert (node["x"], node["y"]) == pytest.approx(tuple(moved), abs=0.5), (
@@ -196,6 +204,16 @@ def test_an_invited_editors_move_reaches_the_owner_and_a_watcher_only_watches(
         added = drag_builtin_to_canvas(editor, "#tile-computation-analysis", at=(200, 450))
         node_locator(owner, added).wait_for(timeout=15000)
         node_locator(watcher, added).wait_for(timeout=15000)
+
+        # The frames, last: the Share menu with Invite editors, and its dialog
+        # listing the editor.
+        _open_invite_editors(owner, frame=True)
+        dialog = owner.get_by_test_id("invite-editors-dialog")
+        dialog.locator(f'[data-editor="{EDITOR}"]').wait_for(timeout=10000)
+        save_workflow_test_screenshot(
+            owner, FRAMES, test_name="invite-editors-dialog",
+            clip_selector='[data-testid="invite-editors-dialog"]', fit_reactflow=False,
+        )
     finally:
         owner_ctx.close()
         editor_ctx.close()

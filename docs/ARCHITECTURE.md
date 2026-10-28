@@ -2371,7 +2371,7 @@ Each socket is one participant, with an id `connect` gives it (`room_state.new_p
 
 ### Hosted guests
 
-A hosted guest is a guest with sign-in on (`capabilities.is_hosted_guest`, the backend's twin of the page's `isHostedGuest`). Its save is refused on the server (`services._assert_guest_can_save`, "Guest users cannot save projects"), and so is a non-shared guest's anywhere; without `--deploy` the shared guest saves. Its join to a room of a dataflow a guest owns is refused, so each guest's canvas of an example stays its own, and a room it does join gives it the watcher's role. A guest is never an editor and manages no editors.
+A hosted guest is a guest with sign-in on (`capabilities.is_hosted_guest`, the backend's twin of the page's `isHostedGuest`). Its save is refused on the server (`services._assert_guest_can_save`, "Guest users cannot save projects": a create, an update, a duplicate and a run's recorded outputs), and so is a non-shared guest's anywhere; without `--deploy` the shared guest saves. The one dataflow write its account makes through `update_project` is a cleanup for another action: a removed dataset's bindings cleared out of the dataflows that held it (`cleanup=True`, `datasets/repositories/installed.py`), as its Data Catalog actions write their dataset sections. Its join to a room of a dataflow a guest owns is refused, so each guest's canvas of an example stays its own, and a room it does join gives it the watcher's role. A guest is never an editor and manages no editors.
 
 ---
 
