@@ -4,7 +4,8 @@
 library the specification names for validation) is pinned in
 ``requirements.txt`` for the tests alone: its README says it is for
 demonstration, so no module of Curio imports it. Here it validates every
-skill Curio ships, and it reads small skill folders made from the
+skill Curio ships and every skill a package Curio ships ships, and it reads
+small skill folders made from the
 specification's own examples, valid and invalid, beside ``skills.parse`` in
 strict mode: the two give the same verdict on each.
 
@@ -72,6 +73,30 @@ def test_skills_ref_validates_every_skill_curio_ships():
         assert (read.name, read.description, read.license, read.compatibility, read.metadata) == (
             ours.name, ours.description, ours.license, ours.compatibility, dict(ours.metadata),
         ), folder.name
+
+
+def test_skills_ref_validates_every_skill_a_shipped_package_ships():
+    """A package's skills, each a folder of its ``skills/``, pass the
+    reference validator, and Curio's strict reader reads each as it does."""
+    import skills_ref
+
+    from utk_curio.backend.app.agents.domain import skills
+    from utk_curio.backend.app.packages.repositories.skills import skill_folders
+
+    folders = {
+        f"{root.name}/{folder.name}": folder
+        for root in sorted((REPO_ROOT / "packages").iterdir()) if root.is_dir()
+        for folder in skill_folders(root)
+    }
+    assert list(folders) == ["curio.scout@1/scout"], list(folders)
+    problems = {name: skills_ref.validate(folder) for name, folder in folders.items()}
+    assert problems == {name: [] for name in folders}
+    for name, folder in folders.items():
+        read = skills_ref.read_properties(folder)
+        ours = skills.parse(folder)
+        assert (read.name, read.description, read.license, read.compatibility, read.metadata) == (
+            ours.name, ours.description, ours.license, ours.compatibility, dict(ours.metadata),
+        ), name
 
 
 @pytest.mark.parametrize("folder, front, valid", CASES, ids=[case[0][:24] for case in CASES])
