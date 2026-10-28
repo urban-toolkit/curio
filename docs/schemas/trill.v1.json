@@ -45,9 +45,20 @@
       "maxItems": 20,
       "items": { "type": "string", "minLength": 1, "maxLength": 40 }
     },
+    "scenarioSet": {
+      "type": "object",
+      "description": "One scenario set: the scenarios that answer one question.",
+      "required": ["id", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "description": "Unique among the dataflow's scenario sets." },
+        "name": { "type": "string", "minLength": 1, "description": "What the canvas and the Scenario Catalog call it." },
+        "description": { "type": "string", "description": "The question its scenarios answer. Emitted only when non-empty." }
+      }
+    },
     "scenario": {
       "type": "object",
-      "description": "One scenario (#662): a named selection of the dataflow's nodes. What enters it from outside is its fixed context, its nodes are its levers, and the outputs of its last nodes are its outcomes.",
+      "description": "One scenario (#662): a named selection of the dataflow's own nodes for it. It belongs to one scenario set, and keeps the shared context it uses (nodes upstream of it) and the outcomes it feeds (nodes downstream of it), both outside every scenario's box.",
       "required": ["id", "name", "color", "nodes"],
       "additionalProperties": false,
       "properties": {
@@ -60,6 +71,19 @@
           "uniqueItems": true,
           "items": { "type": "string", "minLength": 1 },
           "description": "The ids of its nodes. Empty once its last node is deleted, until the scenario is deleted too."
+        },
+        "set": { "type": "string", "minLength": 1, "description": "The id of its scenario set, in `scenarioSets`." },
+        "context": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Its shared context: the nodes upstream of it, outside every box, that it uses. Curio infers them by walking the edges up from its nodes; the person finalizes them."
+        },
+        "outcomes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Its outcomes: the nodes downstream of it, outside every box, that it feeds. Curio infers them by walking the edges down from its nodes; the person finalizes them."
         },
         "collapsed": { "type": "boolean", "description": "Drawn as one box on the canvas. Emitted only when set." },
         "box": {
@@ -142,6 +166,11 @@
           "type": "array",
           "description": "The dataflow's scenarios (#662): named selections of its nodes, each a lever set compared against the others over the context outside it. A node belongs to at most one scenario, which the backend checks on save (projects/scenarios.py) because this schema cannot say it. A save drops member ids that are not nodes of the dataflow, so deleting a node removes it from its scenario. Written by TrillGenerator.generateTrill when the canvas saves, an empty list clearing them; the backend drops an empty list and keeps the on-disk value when a writer omits the key. Version snapshots and agent views carry it only when there are scenarios.",
           "items": { "$ref": "#/$defs/scenario" }
+        },
+        "scenarioSets": {
+          "type": "array",
+          "description": "The dataflow's scenario sets: each groups the scenarios that answer one question, compared on the same shared context and outcomes; scenarios of different sets never mix. Every scenario names one in its `set`. The backend fills them in on save for scenarios written without one (projects/scenario_sets.py), and drops a set no scenario names. Present exactly when `scenarios` is.",
+          "items": { "$ref": "#/$defs/scenarioSet" }
         },
         "autoRun": {
           "type": "boolean",

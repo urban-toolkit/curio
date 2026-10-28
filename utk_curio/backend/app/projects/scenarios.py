@@ -1,8 +1,11 @@
 """A dataflow's scenarios (#662), at ``dataflow.scenarios``.
 
 A scenario is a named selection of the dataflow's nodes. Each one is
-``{id, name, color, description?, nodes, collapsed?, box?, source?}``, and a
-node belongs to at most one.
+``{id, name, color, description?, nodes, set?, context?, outcomes?,
+collapsed?, box?, source?}``, and a node belongs to at most one scenario's
+``nodes``. ``set``, ``context`` and ``outcomes`` are its scenario set and the
+nodes outside every box it uses and feeds (``scenario_sets.py``); a spec keeps
+all three once :func:`normalize_spec_scenarios` has run.
 
 * :func:`scenario_conflicts` is what a writer may not send: a node in two
   scenarios, or two scenarios with one id. A save that sends either is refused.
@@ -20,6 +23,8 @@ from __future__ import annotations
 
 import re
 from typing import Iterable
+
+from utk_curio.backend.app.projects import scenario_sets
 
 #: A scenario's color: a CSS hex color. Kept in sync with
 #: ``$defs.scenario.properties.color`` in ``docs/schemas/trill.v1.json``.
@@ -80,6 +85,29 @@ def _node_ids(spec: object) -> set[str]:
     return {n["id"] for n in nodes or [] if isinstance(n, dict) and isinstance(n.get("id"), str)}
 
 
+def _node_order(spec: object) -> list[str]:
+    dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
+    nodes = dataflow.get("nodes") if isinstance(dataflow, dict) else None
+    return [n["id"] for n in nodes or [] if isinstance(n, dict) and isinstance(n.get("id"), str)]
+
+
+def _edges(spec: object) -> list[dict]:
+    dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
+    edges = dataflow.get("edges") if isinstance(dataflow, dict) else None
+    return [
+        e for e in edges or []
+        if isinstance(e, dict) and isinstance(e.get("source"), str) and isinstance(e.get("target"), str)
+    ]
+
+
+def _id_list(raw: object) -> list[str]:
+    out: list[str] = []
+    for node_id in raw if isinstance(raw, list) else []:
+        if isinstance(node_id, str) and node_id and node_id not in out:
+            out.append(node_id)
+    return out
+
+
 def _raw_scenarios(spec: object) -> list:
     dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
     raw = dataflow.get("scenarios") if isinstance(dataflow, dict) else None
@@ -111,16 +139,32 @@ def scenario_conflicts(spec: object) -> list[str]:
 
 
 def scenario_problems(spec: object) -> list[str]:
-    """:func:`scenario_conflicts`, and each member that is not a node of the
-    dataflow."""
+    """:func:`scenario_conflicts`, each member that is not a node of the
+    dataflow, and what a committed spec's sets must hold: every scenario in a
+    set of ``dataflow.scenarioSets``, with context and outcomes of nodes it
+    has, outside every box."""
     problems = scenario_conflicts(spec)
     nodes = _node_ids(spec)
-    for entry in _raw_scenarios(spec):
-        if not _well_formed(entry):
-            continue
+    dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
+    raw_sets = dataflow.get("scenarioSets") if isinstance(dataflow, dict) else None
+    set_ids = {x["id"] for x in scenario_sets._sets(raw_sets)}
+    entries = [e for e in _raw_scenarios(spec) if _well_formed(e)]
+    boxed = {n for e in entries for n in _members(e)}
+    for entry in entries:
         for node_id in _members(entry):
             if node_id not in nodes:
                 problems.append(f"Scenario {entry['name']} names node {node_id}, which the dataflow does not have.")
+        if entry.get("set") not in set_ids:
+            problems.append(f"Scenario {entry['name']} is in no set of dataflow.scenarioSets.")
+        for key in ("context", "outcomes"):
+            if not isinstance(entry.get(key), list):
+                problems.append(f"Scenario {entry['name']} has no {key} list.")
+                continue
+            for node_id in _id_list(entry[key]):
+                if node_id not in nodes:
+                    problems.append(f"Scenario {entry['name']}'s {key} names node {node_id}, which the dataflow does not have.")
+                elif node_id in boxed:
+                    problems.append(f"Scenario {entry['name']}'s {key} names node {node_id}, which is in a scenario's box.")
     return problems
 
 
@@ -146,6 +190,11 @@ def normalize_scenarios(raw: object, node_ids: Iterable[str]) -> list[dict]:
         if isinstance(entry.get("description"), str) and entry["description"]:
             scenario["description"] = entry["description"]
         scenario["nodes"] = members
+        if isinstance(entry.get("set"), str) and entry["set"]:
+            scenario["set"] = entry["set"]
+        for key in ("context", "outcomes"):
+            if isinstance(entry.get(key), list):
+                scenario[key] = [n for n in _id_list(entry[key]) if n in nodes]
         if isinstance(entry.get("collapsed"), bool):
             scenario["collapsed"] = entry["collapsed"]
         box = entry.get("box")
@@ -163,16 +212,26 @@ def normalize_scenarios(raw: object, node_ids: Iterable[str]) -> list[dict]:
 
 
 def normalize_spec_scenarios(spec: object) -> None:
-    """Clean ``dataflow.scenarios`` in place, against the spec's own nodes; an
-    empty list is dropped, so a dataflow without scenarios has no key."""
+    """Clean ``dataflow.scenarios`` and ``dataflow.scenarioSets`` in place,
+    against the spec's own nodes and edges: every scenario gets a set, a
+    context and outcomes (``scenario_sets.normalize_scenario_sets``). An
+    empty list is dropped, so a dataflow without scenarios has neither key."""
     dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
-    if not isinstance(dataflow, dict) or "scenarios" not in dataflow:
+    if not isinstance(dataflow, dict):
+        return
+    if "scenarios" not in dataflow:
+        dataflow.pop("scenarioSets", None)
         return
     kept = normalize_scenarios(dataflow["scenarios"], _node_ids(spec))
-    if kept:
-        dataflow["scenarios"] = kept
-    else:
+    if not kept:
         del dataflow["scenarios"]
+        dataflow.pop("scenarioSets", None)
+        return
+    kept, sets = scenario_sets.normalize_scenario_sets(
+        kept, dataflow.get("scenarioSets"), _node_order(spec), _edges(spec), dataflow.get("name"),
+    )
+    dataflow["scenarios"] = kept
+    dataflow["scenarioSets"] = sets
 
 
 def carry_scenarios(new_spec: object, old_spec: object) -> None:
@@ -185,12 +244,14 @@ def carry_scenarios(new_spec: object, old_spec: object) -> None:
         return
     if "scenarios" not in new_df and "scenarios" in old_df:
         new_df["scenarios"] = old_df["scenarios"]
+        if "scenarioSets" in old_df and "scenarioSets" not in new_df:
+            new_df["scenarioSets"] = old_df["scenarioSets"]
 
 
 def scenario_summaries(spec: object) -> list[dict]:
     """The scenarios a project summary lists: each one's id, name, color,
-    description and members."""
-    keep = ("id", "name", "color", "description", "nodes")
+    description, members and set."""
+    keep = ("id", "name", "color", "description", "nodes", "set")
     return [
         {k: s[k] for k in keep if k in s}
         for s in normalize_scenarios(_raw_scenarios(spec), _node_ids(spec))

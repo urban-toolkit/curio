@@ -1,0 +1,710 @@
+{
+  "about": "Scenario sets: each scenario's inferred or given context and outcomes, and the set it is grouped into. Nodes are ids in the dataflow's order. Read by src/tests/utils/scenarioSets.cases.test.ts and utk_curio/backend/tests/test_projects/test_scenario_sets.py, so the canvas and the backend keep a spec's sets the same way.",
+  "cases": [
+    {
+      "name": "three scenarios share a loader, one reads a node the others don't, and pairs feed change nodes",
+      "dataflowName": "Park shade",
+      "nodes": [
+        "load",
+        "heights",
+        "around",
+        "e",
+        "t",
+        "c",
+        "chart",
+        "changeT",
+        "changeTmap",
+        "changeC"
+      ],
+      "edges": [
+        {
+          "source": "load",
+          "target": "heights"
+        },
+        {
+          "source": "heights",
+          "target": "e"
+        },
+        {
+          "source": "heights",
+          "target": "around"
+        },
+        {
+          "source": "around",
+          "target": "t"
+        },
+        {
+          "source": "around",
+          "target": "c"
+        },
+        {
+          "source": "e",
+          "target": "chart"
+        },
+        {
+          "source": "t",
+          "target": "chart"
+        },
+        {
+          "source": "c",
+          "target": "chart"
+        },
+        {
+          "source": "e",
+          "target": "changeT"
+        },
+        {
+          "source": "t",
+          "target": "changeT"
+        },
+        {
+          "source": "changeT",
+          "target": "changeTmap"
+        },
+        {
+          "source": "e",
+          "target": "changeC"
+        },
+        {
+          "source": "c",
+          "target": "changeC"
+        }
+      ],
+      "scenarios": [
+        {
+          "id": "existing",
+          "name": "Existing",
+          "color": "#2a9d8f",
+          "nodes": [
+            "e"
+          ]
+        },
+        {
+          "id": "towers",
+          "name": "Towers removed",
+          "color": "#2a9d8f",
+          "nodes": [
+            "t"
+          ]
+        },
+        {
+          "id": "cap",
+          "name": "Height cap",
+          "color": "#2a9d8f",
+          "nodes": [
+            "c"
+          ]
+        }
+      ],
+      "expected": {
+        "scenarioSets": [
+          {
+            "id": "set-existing",
+            "name": "Park shade"
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "existing",
+            "name": "Existing",
+            "color": "#2a9d8f",
+            "nodes": [
+              "e"
+            ],
+            "set": "set-existing",
+            "context": [
+              "load",
+              "heights"
+            ],
+            "outcomes": [
+              "chart",
+              "changeT",
+              "changeTmap",
+              "changeC"
+            ]
+          },
+          {
+            "id": "towers",
+            "name": "Towers removed",
+            "color": "#2a9d8f",
+            "nodes": [
+              "t"
+            ],
+            "set": "set-existing",
+            "context": [
+              "load",
+              "heights",
+              "around"
+            ],
+            "outcomes": [
+              "chart",
+              "changeT",
+              "changeTmap"
+            ]
+          },
+          {
+            "id": "cap",
+            "name": "Height cap",
+            "color": "#2a9d8f",
+            "nodes": [
+              "c"
+            ],
+            "set": "set-existing",
+            "context": [
+              "load",
+              "heights",
+              "around"
+            ],
+            "outcomes": [
+              "chart",
+              "changeC"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "a walk stops at another scenario's box",
+      "nodes": [
+        "load",
+        "a",
+        "b",
+        "chart"
+      ],
+      "edges": [
+        {
+          "source": "load",
+          "target": "a"
+        },
+        {
+          "source": "a",
+          "target": "b"
+        },
+        {
+          "source": "b",
+          "target": "chart"
+        }
+      ],
+      "scenarios": [
+        {
+          "id": "s1",
+          "name": "First",
+          "color": "#2a9d8f",
+          "nodes": [
+            "a"
+          ]
+        },
+        {
+          "id": "s2",
+          "name": "Second",
+          "color": "#2a9d8f",
+          "nodes": [
+            "b"
+          ]
+        }
+      ],
+      "expected": {
+        "scenarioSets": [
+          {
+            "id": "set-s1",
+            "name": "First"
+          },
+          {
+            "id": "set-s2",
+            "name": "Second"
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "s1",
+            "name": "First",
+            "color": "#2a9d8f",
+            "nodes": [
+              "a"
+            ],
+            "set": "set-s1",
+            "context": [
+              "load"
+            ],
+            "outcomes": []
+          },
+          {
+            "id": "s2",
+            "name": "Second",
+            "color": "#2a9d8f",
+            "nodes": [
+              "b"
+            ],
+            "set": "set-s2",
+            "context": [],
+            "outcomes": [
+              "chart"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "an Interaction link is not followed",
+      "dataflowName": "Linked views",
+      "nodes": [
+        "load",
+        "a",
+        "map",
+        "view"
+      ],
+      "edges": [
+        {
+          "source": "load",
+          "target": "a"
+        },
+        {
+          "source": "a",
+          "target": "map"
+        },
+        {
+          "source": "map",
+          "target": "view",
+          "type": "Interaction"
+        },
+        {
+          "source": "view",
+          "target": "map",
+          "sourceHandle": "in/out",
+          "targetHandle": "in/out"
+        }
+      ],
+      "scenarios": [
+        {
+          "id": "s1",
+          "name": "Only",
+          "color": "#2a9d8f",
+          "nodes": [
+            "a"
+          ]
+        }
+      ],
+      "expected": {
+        "scenarioSets": [
+          {
+            "id": "set-s1",
+            "name": "Linked views"
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "s1",
+            "name": "Only",
+            "color": "#2a9d8f",
+            "nodes": [
+              "a"
+            ],
+            "set": "set-s1",
+            "context": [
+              "load"
+            ],
+            "outcomes": [
+              "map"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "given lists are kept, cut to nodes outside every box, in the dataflow's order",
+      "nodes": [
+        "load",
+        "prep",
+        "a",
+        "b",
+        "chart"
+      ],
+      "edges": [
+        {
+          "source": "load",
+          "target": "prep"
+        },
+        {
+          "source": "prep",
+          "target": "a"
+        },
+        {
+          "source": "prep",
+          "target": "b"
+        },
+        {
+          "source": "a",
+          "target": "chart"
+        },
+        {
+          "source": "b",
+          "target": "chart"
+        }
+      ],
+      "sets": [
+        {
+          "id": "set1",
+          "name": "Kept",
+          "description": "Hand named"
+        }
+      ],
+      "scenarios": [
+        {
+          "id": "s1",
+          "name": "A",
+          "color": "#2a9d8f",
+          "nodes": [
+            "a"
+          ],
+          "set": "set1",
+          "context": [
+            "prep",
+            "b",
+            "gone"
+          ],
+          "outcomes": []
+        },
+        {
+          "id": "s2",
+          "name": "B",
+          "color": "#2a9d8f",
+          "nodes": [
+            "b"
+          ],
+          "set": "set1"
+        }
+      ],
+      "expected": {
+        "scenarioSets": [
+          {
+            "id": "set1",
+            "name": "Kept",
+            "description": "Hand named"
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "s1",
+            "name": "A",
+            "color": "#2a9d8f",
+            "nodes": [
+              "a"
+            ],
+            "set": "set1",
+            "context": [
+              "prep"
+            ],
+            "outcomes": []
+          },
+          {
+            "id": "s2",
+            "name": "B",
+            "color": "#2a9d8f",
+            "nodes": [
+              "b"
+            ],
+            "set": "set1",
+            "context": [
+              "load",
+              "prep"
+            ],
+            "outcomes": [
+              "chart"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "two unrelated comparisons become two sets",
+      "dataflowName": "Charts",
+      "nodes": [
+        "l1",
+        "w1",
+        "w2",
+        "c1",
+        "l2",
+        "r1",
+        "r2",
+        "c2"
+      ],
+      "edges": [
+        {
+          "source": "l1",
+          "target": "w1"
+        },
+        {
+          "source": "l1",
+          "target": "w2"
+        },
+        {
+          "source": "w1",
+          "target": "c1"
+        },
+        {
+          "source": "w2",
+          "target": "c1"
+        },
+        {
+          "source": "l2",
+          "target": "r1"
+        },
+        {
+          "source": "l2",
+          "target": "r2"
+        },
+        {
+          "source": "r1",
+          "target": "c2"
+        },
+        {
+          "source": "r2",
+          "target": "c2"
+        }
+      ],
+      "scenarios": [
+        {
+          "id": "wd",
+          "name": "Weekday",
+          "color": "#2a9d8f",
+          "nodes": [
+            "w1"
+          ]
+        },
+        {
+          "id": "we",
+          "name": "Weekend",
+          "color": "#2a9d8f",
+          "nodes": [
+            "w2"
+          ]
+        },
+        {
+          "id": "ra",
+          "name": "Route A",
+          "color": "#2a9d8f",
+          "nodes": [
+            "r1"
+          ]
+        },
+        {
+          "id": "rb",
+          "name": "Route B",
+          "color": "#2a9d8f",
+          "nodes": [
+            "r2"
+          ]
+        }
+      ],
+      "expected": {
+        "scenarioSets": [
+          {
+            "id": "set-wd",
+            "name": "Weekday vs Weekend"
+          },
+          {
+            "id": "set-ra",
+            "name": "Route A vs Route B"
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "wd",
+            "name": "Weekday",
+            "color": "#2a9d8f",
+            "nodes": [
+              "w1"
+            ],
+            "set": "set-wd",
+            "context": [
+              "l1"
+            ],
+            "outcomes": [
+              "c1"
+            ]
+          },
+          {
+            "id": "we",
+            "name": "Weekend",
+            "color": "#2a9d8f",
+            "nodes": [
+              "w2"
+            ],
+            "set": "set-wd",
+            "context": [
+              "l1"
+            ],
+            "outcomes": [
+              "c1"
+            ]
+          },
+          {
+            "id": "ra",
+            "name": "Route A",
+            "color": "#2a9d8f",
+            "nodes": [
+              "r1"
+            ],
+            "set": "set-ra",
+            "context": [
+              "l2"
+            ],
+            "outcomes": [
+              "c2"
+            ]
+          },
+          {
+            "id": "rb",
+            "name": "Route B",
+            "color": "#2a9d8f",
+            "nodes": [
+              "r2"
+            ],
+            "set": "set-ra",
+            "context": [
+              "l2"
+            ],
+            "outcomes": [
+              "c2"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "a scenario naming an unknown set is grouped anew, and a set no scenario names is dropped",
+      "nodes": [
+        "load",
+        "a",
+        "b"
+      ],
+      "edges": [
+        {
+          "source": "load",
+          "target": "a"
+        },
+        {
+          "source": "load",
+          "target": "b"
+        }
+      ],
+      "sets": [
+        {
+          "id": "set-a",
+          "name": "Taken id"
+        },
+        {
+          "id": "empty",
+          "name": "Unused"
+        }
+      ],
+      "scenarios": [
+        {
+          "id": "a",
+          "name": "A",
+          "color": "#2a9d8f",
+          "nodes": [
+            "a"
+          ],
+          "set": "missing"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "color": "#2a9d8f",
+          "nodes": [
+            "b"
+          ],
+          "set": "set-a"
+        }
+      ],
+      "expected": {
+        "scenarioSets": [
+          {
+            "id": "set-a",
+            "name": "Taken id"
+          },
+          {
+            "id": "set-a-2",
+            "name": "A"
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "a",
+            "name": "A",
+            "color": "#2a9d8f",
+            "nodes": [
+              "a"
+            ],
+            "set": "set-a-2",
+            "context": [
+              "load"
+            ],
+            "outcomes": []
+          },
+          {
+            "id": "b",
+            "name": "B",
+            "color": "#2a9d8f",
+            "nodes": [
+              "b"
+            ],
+            "set": "set-a",
+            "context": [
+              "load"
+            ],
+            "outcomes": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "a whole-dataflow scenario has no context or outcomes",
+      "dataflowName": "Whole",
+      "nodes": [
+        "load",
+        "a"
+      ],
+      "edges": [
+        {
+          "source": "load",
+          "target": "a"
+        }
+      ],
+      "scenarios": [
+        {
+          "id": "all",
+          "name": "Everything",
+          "color": "#2a9d8f",
+          "nodes": [
+            "load",
+            "a"
+          ]
+        }
+      ],
+      "expected": {
+        "scenarioSets": [
+          {
+            "id": "set-all",
+            "name": "Whole"
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "all",
+            "name": "Everything",
+            "color": "#2a9d8f",
+            "nodes": [
+              "load",
+              "a"
+            ],
+            "set": "set-all",
+            "context": [],
+            "outcomes": []
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -3,6 +3,10 @@
  * its nodes. What enters a scenario from outside is its fixed context, its
  * nodes are its levers, and the outputs of its last nodes are its outcomes.
  *
+ * A node belongs to at most one scenario's `nodes`. Its set, context and
+ * outcomes are kept as given here; `normalizeScenarioSets` (`scenarioSets.ts`)
+ * fills and checks them against the edges.
+ *
  * A node belongs to at most one scenario. The backend refuses a save that
  * puts one node in two; `normalizeScenarios` keeps it with the first, so a
  * canvas never holds such a list. It is the twin of `normalize_scenarios` in
@@ -18,11 +22,24 @@ export interface Scenario {
   description?: string;
   /** Its nodes' ids. Empty once its last node is deleted. */
   nodes: string[];
+  /** The id of its scenario set, in `dataflow.scenarioSets` (`scenarioSets.ts`). */
+  set?: string;
+  /** The nodes upstream of it, outside every box, that it uses: its shared context. */
+  context?: string[];
+  /** The nodes downstream of it, outside every box, that it feeds: its outcomes. */
+  outcomes?: string[];
   collapsed?: boolean;
   /** Where its collapsed box sits on the canvas. */
   box?: { x: number; y: number };
   /** The project and scenario it was dragged in from. */
   source?: { project: string; scenario: string };
+}
+
+/** A scenario set: the scenarios that answer one question (`scenarioSets.ts`). */
+export interface ScenarioSet {
+  id: string;
+  name: string;
+  description?: string;
 }
 
 /** Kept in sync with `COLOR_RE` in `scenarios.py`. */
@@ -43,10 +60,11 @@ function wellFormed(entry: unknown): entry is Record<string, unknown> & { id: st
   );
 }
 
-function members(entry: Record<string, unknown>): string[] {
+function members(entry: Record<string, unknown>, key = "nodes"): string[] {
   const out: string[] = [];
-  if (!Array.isArray(entry.nodes)) return out;
-  for (const id of entry.nodes) {
+  const list = entry[key];
+  if (!Array.isArray(list)) return out;
+  for (const id of list) {
     if (nonEmpty(id) && !out.includes(id)) out.push(id);
   }
   return out;
@@ -70,6 +88,10 @@ export function normalizeScenarios(raw: unknown, nodeIds: Iterable<string>): Sce
     kept.forEach((id) => claimed.add(id));
     const scenario: Scenario = { id: entry.id, name: entry.name, color: entry.color, nodes: kept };
     if (nonEmpty(entry.description)) scenario.description = entry.description;
+    if (nonEmpty(entry.set)) scenario.set = entry.set;
+    for (const key of ["context", "outcomes"] as const) {
+      if (Array.isArray(entry[key])) scenario[key] = members(entry, key).filter((id) => nodes.has(id));
+    }
     if (typeof entry.collapsed === "boolean") scenario.collapsed = entry.collapsed;
     const box = entry.box as Record<string, unknown> | undefined;
     if (box && typeof box === "object" && isNumber(box.x) && isNumber(box.y)) {

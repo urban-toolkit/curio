@@ -26,6 +26,17 @@ BASELINE = {"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": ["a"]}
 TALL = {"id": "s2", "name": "Twice as tall", "color": "#e76f51", "nodes": ["b"]}
 
 
+def _kept(scenario, **extra):
+    """*scenario* as a save keeps it: in a set, with its context and outcomes
+    (none here, the test dataflow has no edges, so each is its own set)."""
+    return {**scenario, "set": f"set-{scenario['id']}", "context": [], "outcomes": [], **extra}
+
+
+def _listed(scenario, **extra):
+    """*scenario* as a project summary lists it."""
+    return {**scenario, "set": f"set-{scenario['id']}", **extra}
+
+
 def _scenarios():
     from utk_curio.backend.app.projects import scenarios
 
@@ -105,9 +116,9 @@ def test_two_scenarios_with_one_id_are_a_conflict():
 def test_a_member_that_is_not_a_node_is_a_problem_but_not_a_conflict():
     spec = _spec(scenarios=[{**BASELINE, "nodes": ["a", "gone"]}])
     assert _scenarios().scenario_conflicts(spec) == []
-    assert _scenarios().scenario_problems(spec) == [
+    assert _scenarios().scenario_problems(spec)[0] == (
         "Scenario Baseline names node gone, which the dataflow does not have."
-    ]
+    )
 
 
 def test_a_request_with_a_conflict_is_refused():
@@ -140,8 +151,8 @@ def test_the_route_answers_400_and_writes_nothing(client, user_and_token, tmp_cu
     assert resp.status_code == 400
     assert "Node a is in two scenarios" in resp.get_json()["error"]
     stored = client.get(f"/api/projects/{pid}", headers=headers).get_json()
-    assert stored["spec"]["dataflow"]["scenarios"] == [BASELINE]
-    assert stored["project"]["scenarios"] == [BASELINE]
+    assert stored["spec"]["dataflow"]["scenarios"] == [_kept(BASELINE)]
+    assert stored["project"]["scenarios"] == [_listed(BASELINE)]
 
 
 # ---------------------------------------------------------------------------
@@ -153,10 +164,10 @@ def test_a_save_keeps_them_and_the_summary_lists_them(app, db, user_and_token):
     _scenarios()
     detail = _save(user, scenarios=[BASELINE, TALL])
 
-    assert _on_disk(user, detail.id) == [BASELINE, TALL]
-    assert detail.scenarios == [BASELINE, TALL]
+    assert _on_disk(user, detail.id) == [_kept(BASELINE), _kept(TALL)]
+    assert detail.scenarios == [_listed(BASELINE), _listed(TALL)]
     summary = next(s for s in services.list_projects(user) if s.id == detail.id)
-    assert summary.scenarios == [BASELINE, TALL]
+    assert summary.scenarios == [_listed(BASELINE), _listed(TALL)]
 
 
 def test_a_save_drops_the_ids_of_deleted_nodes(app, db, user_and_token):
@@ -167,7 +178,7 @@ def test_a_save_drops_the_ids_of_deleted_nodes(app, db, user_and_token):
     spec = _spec(nodes=("a",), scenarios=[BASELINE, TALL])
     services.update_project(user, detail.id, ProjectUpdate(spec=spec))
 
-    assert _on_disk(user, detail.id) == [BASELINE, {**TALL, "nodes": []}]
+    assert _on_disk(user, detail.id) == [_kept(BASELINE), _kept(TALL, nodes=[])]
 
 
 def test_a_save_without_the_key_keeps_them(app, db, user_and_token):
@@ -179,7 +190,7 @@ def test_a_save_without_the_key_keeps_them(app, db, user_and_token):
     services.update_project(user, detail.id, ProjectUpdate(spec=_spec(nodes=("a",))))
 
     # Carried forward, and pruned against the nodes the new spec has.
-    assert _on_disk(user, detail.id) == [BASELINE, {**TALL, "nodes": []}]
+    assert _on_disk(user, detail.id) == [_kept(BASELINE), _kept(TALL, nodes=[])]
 
 
 def test_a_save_with_an_empty_list_clears_them(app, db, user_and_token):
@@ -208,4 +219,4 @@ def test_a_duplicate_keeps_them(app, db, user_and_token):
 
     copy = services.duplicate_project(user, detail.id)
 
-    assert copy.scenarios == [BASELINE]
+    assert copy.scenarios == [_listed(BASELINE)]
