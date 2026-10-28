@@ -153,6 +153,11 @@ def register(sio):
 
     @sio.on("disconnect", namespace=ns)
     def _disconnect():
+        # The one disconnect handler of the namespace: the socket's tab also
+        # leaves each dataflow doc it synced, and its awareness is cleared.
+        from utk_curio.backend.app.collaboration import dataflow_docs
+
+        dataflow_docs.leave(request.sid)
         rooms_left = room_state.release_all_for_sid(request.sid)
         room_state.drop_identity(request.sid)
         for room, info in rooms_left.items():

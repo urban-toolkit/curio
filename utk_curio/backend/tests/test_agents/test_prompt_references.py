@@ -46,11 +46,14 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 
 #: Every prompt file a built-in agent receives, the shared preamble included,
 #: and every skill its manifest names, which its runs load or are handed
-#: (``<name>/SKILL.md``).
+#: (``<name>/SKILL.md``): the agent's, its capabilities' own and its
+#: instruction's.
 PROMPT_FILES = sorted({
     asset.file.rsplit("/", 1)[-1] for m in builtin.list_builtin_manifests() for asset in m.prompts.values()
 } | {
-    f"{name}/SKILL.md" for m in builtin.list_builtin_manifests() for name in getattr(m, "skills", None) or ()
+    f"{name}/SKILL.md" for m in builtin.list_builtin_manifests()
+    for name in (*(getattr(m, "skills", None) or ()), *(name for c in m.capabilities for name in c.skills),
+                 *getattr(m, "instruction_skills", ()))
 })
 #: Every page of the base entry, every prompt in the shipped agents'
 #: ``prompts/`` and every skill, the included rules and ``examples.md`` too:
@@ -65,10 +68,7 @@ USED = [entry for entry in INDEX if entry.section == examples.USED]
 
 #: Words a prompt uses that look like an id but are not one, each with the
 #: reason. An entry no prompt uses any more fails ``test_every_exception_is_still_used``.
-NOT_IDS = {
-    "curio.notes@1": "the notes package the Researcher writes into a user's store, "
-                     "shown as the shape of a versioned dirName",
-}
+NOT_IDS: dict[str, str] = {}
 
 # A tool or capability id, by the manifest's own grammar, standing alone: not
 # part of a longer dotted name, a path, a URL or a call.
@@ -308,8 +308,12 @@ def test_the_checks_find_what_the_prompts_name():
     assert {"catalog.search", "node.content.generate", "dataflow.plan.write"} <= every_id
     corpus = "\n".join(_text(name) for name in PROMPT_FILES)
     # Every skill an agent names is scanned, the core three in the preamble
-    # and the rest as runs load them.
-    assert len([name for name in PROMPT_FILES if name.endswith("/SKILL.md")]) == 13, PROMPT_FILES
+    # and the rest as runs load them or are handed them, the procedures among
+    # them.
+    skill_files = [name for name in PROMPT_FILES if name.endswith("/SKILL.md")]
+    assert len(skill_files) == 18, PROMPT_FILES
+    for procedure in ("reuse-first", "data-sources", "package-contract", "fact-checking", "research-notes"):
+        assert f"{procedure}/SKILL.md" in skill_files, procedure
     # The skills name the Autark template by id (the Merge Flow they used to
     # name here left with #662).
     assert "curio.builtin/autk-grammar" in _TEMPLATE_RE.findall(corpus)

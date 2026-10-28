@@ -31,6 +31,10 @@ dependencies = [
   "flask-socketio>=5.6.0",
   "python-socketio>=5.16.2",
   "python-engineio>=4.13.2",
+  # Socket.IO's WebSocket transport, and the server's Yjs doc of each open
+  # dataflow. See requirements.txt.
+  "simple-websocket>=1.1.0",
+  "pycrdt>=0.14.10,<0.15",
   # Validates manifests and dataflow specs against docs/schemas/*.json, and
   # Autark documents against the vendored autk-grammar schema.
   # See requirements.txt for why this is a floor and not an exact pin.

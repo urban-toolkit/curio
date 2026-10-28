@@ -53,7 +53,7 @@ def _sources() -> dict[str, str]:
     pages = {page: (BASE / page).read_text(encoding="utf-8") for page in listed}
     found = {f"skills/{path.parent.name}/SKILL.md": path.read_text(encoding="utf-8")
              for path in sorted(SKILLS.glob("*/SKILL.md"))}
-    assert len(found) == 16, sorted(found)
+    assert len(found) == 21, sorted(found)
     return {**pages, **found}
 
 
@@ -66,7 +66,7 @@ def _rendered() -> dict[str, str]:
     pages = {page: agent_text.read(agent_text.page_file(page)) for page in agent_text.pages()}
     found = {f"skills/{folder.name}/SKILL.md": agent_text.read(folder / skills.SKILL_FILE)
              for folder in skills.shipped_folders()}
-    assert len(found) == 16, sorted(found)
+    assert len(found) == 21, sorted(found)
     return {**pages, **found}
 
 
