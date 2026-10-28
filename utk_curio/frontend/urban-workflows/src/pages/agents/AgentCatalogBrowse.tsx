@@ -17,8 +17,10 @@
  *
  * The rail's Skills section lists the skills the agents read in the same
  * grid, with the same drawer and a details modal of their own. A skill is
- * added to an agent and removed from one in that agent's details, so a skill's
- * card and drawer offer only its details.
+ * added to an agent and removed from one in that agent's details. The
+ * account's own skills come in through **Import skill**, as its agents come
+ * in through **Import agent**, and the skill's drawer removes or publishes
+ * one, as an agent's drawer does.
  */
 import React, { useEffect, useState } from "react";
 
@@ -37,6 +39,7 @@ import { AgentImportModal } from "../../components/agents/catalog/AgentImportMod
 import { AgentDetailModal } from "../../components/agents/catalog/AgentDetailModal";
 import { AgentCatalogSettingsModal } from "../../components/agents/catalog/AgentCatalogSettingsModal";
 import { SkillDetailModal } from "../../components/agents/catalog/SkillDetailModal";
+import { SkillImportModal } from "../../components/agents/catalog/SkillImportModal";
 import { CardContextMenu } from "../../components/catalog/CardContextMenu";
 import {
   agentCardActions,
@@ -67,6 +70,7 @@ export const AgentCatalogBrowse: React.FC = () => {
   // (#189). The Data Catalog keeps the same two surfaces apart.
   const [detailCoord, setDetailCoord] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [skillImportOpen, setSkillImportOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Right-click. The card reports the event, the grid owns the menu - the same
   // division the projects page has used all along (#285).
@@ -276,12 +280,21 @@ export const AgentCatalogBrowse: React.FC = () => {
             />
           )}
           {/* No `accept`: an agent package is a manifest plus its prompt
-              files, assembled in a modal, not a single archive. */}
-          <CatalogHeaderImport
-            label="Import agent"
-            onClick={() => setImportOpen(true)}
-            title="Upload your own agent definition"
-          />
+              files, and a skill a folder, its files or a zip, each assembled
+              and reviewed in a modal. */}
+          {showSkills ? (
+            <CatalogHeaderImport
+              label="Import skill"
+              onClick={() => setSkillImportOpen(true)}
+              title="Bring in a skill: its folder, its files or a zip of it"
+            />
+          ) : (
+            <CatalogHeaderImport
+              label="Import agent"
+              onClick={() => setImportOpen(true)}
+              title="Upload your own agent definition"
+            />
+          )}
           <button
             type="button"
             className={browseStyles.publishButton}
@@ -292,14 +305,14 @@ export const AgentCatalogBrowse: React.FC = () => {
           </button>
         </CatalogPageHeader>
 
-        {actionError ? (
+        {(showSkills ? skillBrowse.actionError : actionError) ? (
           <div className={browseStyles.browseBanner} role="alert">
-            <span>{actionError}</span>
+            <span>{showSkills ? skillBrowse.actionError : actionError}</span>
             <button
               type="button"
               className={browseStyles.browseBannerDismiss}
               aria-label="Dismiss"
-              onClick={dismissActionError}
+              onClick={showSkills ? skillBrowse.dismissActionError : dismissActionError}
             >
               ×
             </button>
@@ -361,7 +374,12 @@ export const AgentCatalogBrowse: React.FC = () => {
       {showSkills ? (
         <SkillCatalogBrowseDrawer
           skill={skillBrowse.selectedSkill}
+          busyName={skillBrowse.busyName}
+          catalogPublishAllowed={catalogPublishAllowed}
           onViewDetails={(skill) => setDetailSkillName(skill.name)}
+          onPublish={(skill) => void skillBrowse.onPublish(skill)}
+          onUnpublish={(skill) => void skillBrowse.onUnpublish(skill)}
+          onRemove={(skill) => void skillBrowse.onRemove(skill)}
           onClose={() => skillBrowse.setSelectedName(null)}
           onLayoutChange={setDrawerSlotOpen}
         />
@@ -416,6 +434,19 @@ export const AgentCatalogBrowse: React.FC = () => {
       {detailSkill ? <SkillDetailModal skill={detailSkill} onClose={() => setDetailSkillName(null)} /> : null}
 
       {settingsOpen ? <AgentCatalogSettingsModal onClose={() => setSettingsOpen(false)} /> : null}
+
+      {/* An imported skill joins the account's skills and the agents its
+          review picked, so the skills, and who uses each, are read again. */}
+      {skillImportOpen ? (
+        <SkillImportModal
+          onClose={() => setSkillImportOpen(false)}
+          onImported={(name) => {
+            setSkillImportOpen(false);
+            skillBrowse.setSelectedName(name);
+            void skillBrowse.reload();
+          }}
+        />
+      ) : null}
 
       {/* The same modal the drawer's footer opens. Uploading writes a new
           definition into the account, so the roster has to be re-read. */}

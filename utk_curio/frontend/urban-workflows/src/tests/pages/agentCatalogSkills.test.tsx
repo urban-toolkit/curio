@@ -99,11 +99,14 @@ const mockRead = jest.fn((name: string) =>
     files: mockSkills.find((skill) => skill.name === name)?.files ?? [],
   }),
 );
+const mockList = jest.fn(() => Promise.resolve({ skills: mockSkills as unknown[], editable: true, reason: null }));
+const mockRemoveOwn = jest.fn((name: string) => Promise.resolve({ name, removed: true, agents: [] }));
 jest.mock("../../services/agents/skillsApi", () => ({
   skillsApi: {
-    list: jest.fn(() => Promise.resolve({ skills: mockSkills, editable: true, reason: null })),
+    list: () => mockList(),
     read: (name: string) => mockRead(name),
     agentSkills: jest.fn(() => new Promise(() => {})),
+    removeOwnSkill: (name: string) => mockRemoveOwn(name),
   },
 }));
 
@@ -273,5 +276,70 @@ describe("a skill's details", () => {
   it("says a core skill serves every call", async () => {
     const dialog = await openDetails("nodes");
     expect(section(dialog, "Serves").getByText("Every call of every agent: the preamble holds it.")).toBeInTheDocument();
+  });
+
+  it("exports the skill from its header, as an agent's details export the agent", async () => {
+    const dialog = await openDetails("widgets");
+    expect(within(dialog).getByRole("button", { name: "Export" })).toBeEnabled();
+  });
+});
+
+describe("the account's own skills", () => {
+  const own = {
+    ...mockSkills[2],
+    name: "street-trees",
+    description: "Use this skill when a dataflow counts street trees.",
+    author: null,
+    version: null,
+    core: false,
+    source: "yours",
+    published: false,
+    publishedByYou: false,
+    publishable: true,
+    removable: true,
+    agents: [],
+  };
+
+  beforeEach(() => {
+    mockList.mockClear();
+    mockRemoveOwn.mockClear();
+  });
+
+  it("are imported from the skills' own Import skill, in place of Import agent", async () => {
+    await showSkills();
+    expect(screen.queryByRole("button", { name: "Import agent" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Import skill" }));
+    expect(await screen.findByRole("heading", { name: "Import skill" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Skill folder")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Import skill" })).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: /^All agents/ }));
+    expect(await screen.findByRole("button", { name: "Import agent" })).toBeInTheDocument();
+  });
+
+  it("say whose they are, and one held is removed from the account's skills from its drawer", async () => {
+    mockList.mockResolvedValueOnce({ skills: [...mockSkills, own], editable: true, reason: null });
+    await renderPage();
+    fireEvent.click(railRow("skills", "all-skills"));
+    await waitFor(() => expect(document.querySelectorAll("article[data-skill-name]")).toHaveLength(4));
+    const card = document.querySelector('article[data-skill-name="street-trees"]') as HTMLElement;
+    expect(within(card).getByText("you")).toBeInTheDocument();
+    expect(within(card).getByText("yours")).toBeInTheDocument();
+    fireEvent.click(card);
+    const drawer = document.querySelector('[data-curio-browse-drawer="true"]') as HTMLElement;
+    await waitFor(() => expect(within(drawer).getByRole("heading", { name: "street-trees" })).toBeInTheDocument());
+    expect(within(drawer).getByText("✓ In your skills")).toBeInTheDocument();
+    expect(within(drawer).getByText("You imported it")).toBeInTheDocument();
+    fireEvent.click(within(drawer).getByRole("button", { name: "Remove from your skills" }));
+    await waitFor(() => expect(mockRemoveOwn).toHaveBeenCalledWith("street-trees"));
+    // The skills are read again, without it.
+    await waitFor(() => expect(document.querySelectorAll("article[data-skill-name]")).toHaveLength(3));
+  });
+
+  it("offer no removal for a skill Curio ships", async () => {
+    await showSkills();
+    const drawer = document.querySelector('[data-curio-browse-drawer="true"]') as HTMLElement;
+    expect(within(drawer).queryByRole("button", { name: "Remove from your skills" })).toBeNull();
+    expect(within(drawer).getByText("Curio")).toBeInTheDocument();
   });
 });
