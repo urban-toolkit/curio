@@ -65,7 +65,7 @@ describe("CI's image and the deploy's", () => {
         const onTheRunner = Array.from(jobs()).filter(
             ([, job]) => /scripts\/test\.sh[^\n]*--skip-setup/.test(job) && !/exec -T[^\n]*\\\n[\s\S]*?scripts\/test\.sh/.test(job),
         );
-        expect(onTheRunner.map(([name]) => name).sort()).toEqual(["e2e-desktop", "test-gpu", "test-isolated"]);
+        expect(onTheRunner.map(([name]) => name).sort()).toEqual(["e2e-collab", "e2e-desktop", "test-gpu", "test-isolated"]);
         const without = onTheRunner
             .filter(([, job]) => !/runner-env: "true"|uses: \.\/\.github\/actions\/image-env/.test(job))
             .map(([name]) => name);
@@ -91,6 +91,7 @@ describe("Removing CI images on self-hosted runners", () => {
     test("every job that ends with stop-stack says when it has an image of its own", () => {
         const stopping = Array.from(jobs()).filter(([, job]) => job.includes("uses: ./.github/actions/stop-stack"));
         expect(stopping.map(([name]) => name).sort()).toEqual([
+            "e2e-collab",
             "e2e-desktop",
             "test-exec-user",
             "test-gpu",
