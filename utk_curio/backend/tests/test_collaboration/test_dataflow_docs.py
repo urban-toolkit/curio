@@ -646,3 +646,71 @@ def test_a_doc_message_needs_a_join_a_started_sync_and_frames_that_read(room):
     for frame in (b"\x07\x01", b"\x00", b"\x00\x02", b"\x01", create_update_message(b"\x01\x02\x03")):
         assert alice.send(frame)["error"] == "invalid_message", frame
     assert alice.edit(_type("# still fine\n"))[0]["ok"] is True
+
+
+# ---------------------------------------------------------------------------
+# The merge rule for a connection to a removed node
+# ---------------------------------------------------------------------------
+
+#: alice's new connection, from the loader to the chart.
+NEW_EDGE = {"id": "e2", "source": "loader", "target": "chart", "sourceHandle": "out", "targetHandle": "in_1"}
+
+
+def _connect_to_chart(doc):
+    from pycrdt import Array, Map
+
+    from utk_curio.backend.app.collaboration import doc_mapping
+
+    doc.get("edges", type=Map)["e2"] = doc_mapping.encode(NEW_EDGE)
+    doc.get("edgeOrder", type=Array).append("e2")
+
+
+def _remove_chart(doc):
+    from pycrdt import Map
+
+    del doc.get("nodes", type=Map)["chart"]
+    del doc.get("edges", type=Map)["e1"]
+
+
+def _dropped(tab) -> list:
+    tab.pump()
+    return [event["args"][0] for event in tab.events if event["name"] == "connection_dropped"]
+
+
+def test_a_connection_drawn_to_a_node_removed_meanwhile_is_dropped_and_its_drawer_told(room):
+    """bob removes the chart; alice, who has not seen that yet, connects the
+    loader to it. The connection points nowhere once both changes merge: the
+    server takes it out for every tab and tells alice who removed the node."""
+    alice, bob = room.tab("alice"), room.tab("bob")
+    alice.sync()
+    bob.sync()
+
+    assert bob.edit(_remove_chart)[0]["ok"] is True
+    assert alice.edit(_connect_to_chart)[0]["ok"] is True
+
+    for tab in (alice, bob):
+        seen = tab.dataflow()
+        assert [node["id"] for node in seen["nodes"]] == ["loader"]
+        assert seen["edges"] == [], "a connection to a removed node was kept"
+    assert room.live()["dataflow"]["edges"] == []
+    [notice] = _dropped(alice)
+    assert notice["edgeIds"] == ["e2"] and notice["projectId"] == room.project_id
+    assert notice["by"]["username"] == "bob" and notice["by"]["name"] == "Bob"
+    assert _dropped(bob) == [], "the tab that removed the node was told of a connection it never drew"
+
+
+def test_a_node_removed_after_a_connection_to_it_was_drawn_drops_it_too(room):
+    """The other order: alice's connection lands first, then bob, who has not
+    seen it, removes the chart and the one connection he knew of."""
+    alice, bob = room.tab("alice"), room.tab("bob")
+    alice.sync()
+    bob.sync()
+
+    assert alice.edit(_connect_to_chart)[0]["ok"] is True
+    assert bob.edit(_remove_chart)[0]["ok"] is True
+
+    for tab in (alice, bob):
+        assert tab.dataflow()["edges"] == []
+    [notice] = _dropped(alice)
+    assert notice["edgeIds"] == ["e2"] and notice["by"]["username"] == "bob"
+    assert _dropped(bob) == []
