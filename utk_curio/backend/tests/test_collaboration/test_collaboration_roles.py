@@ -144,6 +144,7 @@ def test_two_participants_of_one_account_are_told_apart(collab_app):
         project_id = make_project(alice)
     first, second = connect(socketio, application, token), connect(socketio, application, token)
     one, two = join(first, project_id), join(second, project_id)
+    assert one.get("participant_id") and two.get("participant_id"), (one, two)
     assert one["participant_id"] != two["participant_id"]
     assert one["role"] == two["role"] == "owner"
 
@@ -200,7 +201,7 @@ def test_without_deploy_the_shared_guest_edits_its_own_dataflows(collab_app, mon
     local = connect(socketio, application, token)
 
     ack = join(local, project_id)
-    assert ack["ok"] is True and ack["role"] == "owner"
+    assert ack["ok"] is True and ack.get("role") == "owner", ack
 
 
 def test_a_removed_editor_watches_at_once_and_on_their_next_join(collab_app):
