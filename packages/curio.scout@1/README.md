@@ -224,6 +224,16 @@ The test dataflow
 draws nine example tables with nine of the charts, each taking its scenarios'
 nodes on its circles.
 
+## Skills
+
+The package ships one skill for Curio's agents,
+[`skills/scout/SKILL.md`](skills/scout/SKILL.md): which of its nodes does what,
+the Raster Calculator's calls and its rules on grids, masks and zones, what
+Rasterize Buildings writes, and how a chart reads its stacked inputs and colors
+its scenarios. Every agent on a dataflow that uses Scout lists it, and a run that
+writes one of Scout's seventeen nodes is handed it
+([a package's skills](../../docs/NODE-CATALOG.md#6-the-manifest)).
+
 ## Setup
 
 Curio installs the package's Python libraries with it: `datashader`,

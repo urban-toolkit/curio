@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v4.json",
   "title": "Curio Node Package Manifest (v4)",
-  "description": "Schema for a Curio node-package manifest.json. A package ships in a directory named '<packageId>@<major>' containing this manifest, an optional README.md / LICENSE, an optional sources/ directory with one starter file per kind, and (after install) an integrity.json with SHA-256 hashes of every shipped file. The pre-installed 'curio.builtin' package ships with the app and provides the default 14 node kinds; third-party packages install via the catalog drawer or by importing a `.curio.zip` archive. A package of kind 'model' also ships its weights under models/ and says how to run them in 'model'.",
+  "description": "Schema for a Curio node-package manifest.json. A package ships in a directory named '<packageId>@<major>' containing this manifest, an optional README.md / LICENSE, an optional sources/ directory with one starter file per kind, an optional skills/ directory with one folder per skill for Curio's agents (skills/<name>/SKILL.md, in the Agent Skills format: https://agentskills.io/specification), and (after install) an integrity.json with SHA-256 hashes of every shipped file. The pre-installed 'curio.builtin' package ships with the app and provides the default 14 node kinds; third-party packages install via the catalog drawer or by importing a `.curio.zip` archive. A package of kind 'model' also ships its weights under models/ and says how to run them in 'model'.",
   "type": "object",
   "required": ["id", "version", "name", "publisher", "compatibility", "templates"],
   "additionalProperties": true,
