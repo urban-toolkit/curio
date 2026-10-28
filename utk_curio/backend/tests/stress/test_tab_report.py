@@ -129,6 +129,62 @@ class BackendProcessTest(unittest.TestCase):
         self.assertNotIn("| 0 |", row)
 
 
+class CpuTest(unittest.TestCase):
+    """Which process was busy: the backend's, or the harness's, which drives
+    every user's calls and tab. Seconds of user plus system time, and the
+    cores that kept busy over the tier and at most over one reading."""
+
+    MIB = 1024 * 1024
+
+    def _readings(self):
+        def reading(threads, cpu, harness, at):
+            return {"threads": threads, "rss_bytes": self.MIB, "cpu_seconds": cpu, "at": at,
+                    "harness_cpu_seconds": harness, "harness_at": at}
+
+        start = reading(10, 100.0, 50.0, 1000.0)
+        samples = [reading(20, 101.0, 50.5, 1001.0), reading(30, 102.5, 50.8, 1002.0)]
+        end = reading(12, 104.0, 51.0, 1004.0)
+        return start, samples, end
+
+    def test_cpu_is_seconds_and_cores_busy_over_the_tier_and_at_its_peak(self):
+        from utk_curio.backend.tests.stress.report import backend_summary, harness_summary
+
+        start, samples, end = self._readings()
+        backend = backend_summary(start, samples, end, 1.0)
+        self.assertEqual(backend["cpu"], {"seconds": 4.0, "over_s": 4.0, "cores_busy": 1.0, "peak_cores_busy": 1.5})
+        harness = harness_summary(start, samples, end)
+        self.assertEqual(harness["cpu"], {"seconds": 1.0, "over_s": 4.0, "cores_busy": 0.25, "peak_cores_busy": 0.5})
+        row = next(line for line in _markdown(_tier(backend=backend, harness=harness)).splitlines()
+                   if line.startswith("| 5 | 4.0 s"))
+        self.assertEqual(row, "| 5 | 4.0 s | 1.0 / 1.5 | 1.0 s | 0.25 / 0.5 |")
+
+    def test_a_step_under_half_a_second_is_no_peak(self):
+        """Two readings a moment apart would make any small gain look like
+        many cores."""
+        from utk_curio.backend.tests.stress.report import cpu_track
+
+        points = [{"c": 0.0, "at": 0.0}, {"c": 0.05, "at": 0.01}, {"c": 1.0, "at": 2.0}]
+        self.assertEqual(cpu_track(points, "c", "at")["peak_cores_busy"], 0.48)
+
+    def test_a_cpu_read_fewer_than_twice_is_none_and_never_zero(self):
+        from utk_curio.backend.tests.stress.report import backend_summary, harness_summary
+
+        backend = backend_summary({"threads": 5, "rss_bytes": 0}, [], {"threads": 6, "rss_bytes": 0}, 1.0)
+        self.assertIsNone(backend["cpu"])
+        self.assertEqual(harness_summary(None, [], None), {"cpu": None})
+        self.assertNotIn("Harness CPU", _markdown(_tier(backend=backend, harness={"cpu": None})))
+
+    def test_a_backend_never_read_shows_as_not_measured_beside_the_harness(self):
+        from utk_curio.backend.tests.stress.report import backend_summary, harness_summary
+
+        start, samples, end = self._readings()
+        harness = harness_summary(start, samples, end)
+        backend = backend_summary(None, [], None, 1.0, "after the tier: exit 1: No such container")
+        row = next(line for line in _markdown(_tier(backend=backend, harness=harness)).splitlines()
+                   if line.startswith("| 5 | not measured | - |"))
+        self.assertTrue(row.endswith("| 1.0 s | 0.25 / 0.5 |"), row)
+
+
 class DocFilesTest(unittest.TestCase):
     def test_the_doc_files_add_up_per_tier(self):
         from utk_curio.backend.tests.stress.report import doc_files_summary

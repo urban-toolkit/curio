@@ -36,7 +36,7 @@ from ..test_frontend.workflow_spec import parse_workflow
 from . import report as reporting
 from . import sockets
 from .autk import compile_autk_data
-from .backend_probe import BackendProbe, ProbeError
+from .backend_probe import BackendProbe, Sampler, reading_now
 from .driver import BURST, Pacing, VirtualUser, new_user_name
 
 REPO_ROOT = os.path.abspath(
@@ -267,39 +267,36 @@ def make_probe(args) -> BackendProbe | None:
 
 
 def probe_tier(probe: BackendProbe | None, run):
-    """Run *run* (a tier) between two readings of the backend, sampling it
-    while it runs; ``(what run returned, backend summary, doc files summary)``.
-    *run* returns its rooms last, whose dataflows' doc files are listed."""
-    if probe is None:
-        outcome = run()
-        why = "not asked for (--no-probe)"
-        return (outcome, reporting.backend_summary(None, [], None, PROBE_EVERY_S, why),
-                reporting.doc_files_summary(None, why))
+    """Run *run* (a tier) between two readings, sampling while it runs:
+    ``(what run returned, backend summary, doc files summary, harness
+    summary)``. The backend is read through *probe*; the harness's own CPU is
+    read whatever the probe. *run* returns its rooms last, whose dataflows'
+    doc files are listed."""
     problems = []
-    try:
-        start = probe.read()
-    except ProbeError as exc:
-        start = None
-        problems.append(f"before the tier: {exc}")
-    sampler = probe.sampler(PROBE_EVERY_S).start()
+    start, problem = reading_now(probe)
+    if problem:
+        problems.append(f"before the tier: {problem}")
+    sampler = Sampler(probe, PROBE_EVERY_S).start()
     try:
         outcome = run()
     finally:
         samples = sampler.stop()
     if sampler.problem:
         problems.append(f"while it ran: {sampler.problem}")
-    time.sleep(PROBE_END_WAIT_S)
+    if probe is not None:
+        time.sleep(PROBE_END_WAIT_S)
     project_ids = [room.project_id for room in outcome[-1] if room.project_id]
-    try:
-        end = probe.read(project_ids)
-    except ProbeError as exc:
-        end = None
-        problems.append(f"after the tier: {exc}")
+    end, problem = reading_now(probe, project_ids)
+    if problem:
+        problems.append(f"after the tier: {problem}")
+    if probe is None:
+        problems = ["not asked for (--no-probe)"]
     problem = "; ".join(problems) or None
-    listing = (end or {}).get("docs") if project_ids else {}
+    listing = end.get("docs") if project_ids else {}
     return (outcome,
             reporting.backend_summary(start, samples, end, PROBE_EVERY_S, problem),
-            reporting.doc_files_summary(listing, problem))
+            reporting.doc_files_summary(listing, problem),
+            reporting.harness_summary(start, samples, end))
 
 
 def tier_lines(summary: dict) -> list[str]:
@@ -326,6 +323,14 @@ def tier_lines(summary: dict) -> list[str]:
         )
     elif backend:
         lines.append(f"backend not measured: {backend.get('problem')}")
+    cpu = []
+    for name, track in (("backend", backend.get("cpu")),
+                        ("harness", (summary.get("harness") or {}).get("cpu"))):
+        if track:
+            cpu.append(f"{name} {track['seconds']} s, {track['cores_busy']} cores "
+                       f"(peak {track['peak_cores_busy']})")
+    if cpu:
+        lines.append("CPU: " + "; ".join(cpu))
     files = summary.get("doc_files") or {}
     if files.get("measured"):
         lines.append(
@@ -391,7 +396,7 @@ def main(argv: list[str] | None = None) -> int:
         # Bracketing the tier, because the counters are cumulative since the
         # sandbox started and the baseline runs before the first tier.
         lock_before = read_exec_lock(backend_url)
-        (results, seconds, rooms), backend, doc_files = probe_tier(probe, lambda: run_tier(
+        (results, seconds, rooms), backend, doc_files, harness = probe_tier(probe, lambda: run_tier(
             backend_url, args.run_id, tier, examples, baselines,
             args.register_concurrency, args.profile, label=f"{tier}x{position}",
             room_size=room_size, namespace=namespace,
@@ -401,7 +406,8 @@ def main(argv: list[str] | None = None) -> int:
         tabs = reporting.socket_summary([room.outcome() for room in rooms])
         summary = reporting.tier_summary(tier, results, seconds, args.profile,
                                          exec_lock=lock, sockets=tabs,
-                                         backend=backend, doc_files=doc_files)
+                                         backend=backend, doc_files=doc_files,
+                                         harness=harness)
         tier_reports.append(summary)
         print(f"[stress] tier {tier}: {summary['completed']}/{tier} completed in "
               f"{seconds:.1f}s, {summary['failure_count']} failure(s)", flush=True)

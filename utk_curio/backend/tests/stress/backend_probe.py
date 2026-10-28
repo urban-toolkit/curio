@@ -7,9 +7,10 @@ this machine's Python for a stack started here. So the script imports only the
 standard library and psutil, which the backend itself requires, and prints one
 JSON object:
 
-* ``pid``, ``threads`` and ``rss_bytes``: the backend's process, the one that
-  serves ``-m backend.server`` (``cli/services.py``), the reloader's child
-  when there is one;
+* ``pid``, ``threads``, ``rss_bytes`` and ``cpu_seconds`` (user plus system,
+  which psutil reads from ``/proc/<pid>/stat`` on Linux): the backend's
+  process, the one that serves ``-m backend.server`` (``cli/services.py``),
+  the reloader's child when there is one;
 * ``docs``, for each dataflow id it is given: the segments of each of its
   docs' logs, ``ydoc/<doc id>/<day>.bin`` and ``<day>.updates``
   (``collaboration/dataflow_docs.py``), with their sizes, under the backend's
@@ -17,7 +18,9 @@ JSON object:
 * or ``error``, saying why it read nothing.
 
 The rest of the file is the harness's side: :class:`BackendProbe` runs the
-script, and :class:`Sampler` runs it every second or so while a tier runs.
+script, :func:`reading_now` stamps a reading with when it was taken and the
+harness's own CPU seconds (``resource.getrusage``), and :class:`Sampler`
+takes one every second or so while a tier runs.
 """
 
 from __future__ import annotations
@@ -99,6 +102,16 @@ def doc_files(roots: list, project_ids: list) -> dict:
     return found
 
 
+def process_reading(process) -> dict:
+    """A psutil process's pid, threads, resident bytes, and CPU seconds, user
+    plus system, of all its threads."""
+    with process.oneshot():
+        times = process.cpu_times()
+        return {"pid": process.pid, "threads": process.num_threads(),
+                "rss_bytes": process.memory_info().rss,
+                "cpu_seconds": round(times.user + times.system, 3)}
+
+
 def read(project_ids: list) -> dict:
     """One reading of the backend, here."""
     try:
@@ -114,11 +127,9 @@ def read(project_ids: list) -> dict:
         return {"error": "no process here serves -m backend.server"}
     try:
         backend = psutil.Process(pid)
-        with backend.oneshot():
-            reading = {"pid": pid, "threads": backend.num_threads(),
-                       "rss_bytes": backend.memory_info().rss}
-            if project_ids:
-                environ, cwd = backend.environ(), backend.cwd()
+        reading = process_reading(backend)
+        if project_ids:
+            environ, cwd = backend.environ(), backend.cwd()
     except psutil.Error as exc:
         return {"error": f"the backend (pid {pid}) could not be read: {type(exc).__name__}: {exc}"}
     if project_ids:
@@ -172,16 +183,46 @@ class BackendProbe:
             raise ProbeError(str(reading.get("error") if isinstance(reading, dict) else reading))
         return reading
 
-    def sampler(self, every_s: float) -> "Sampler":
-        return Sampler(self, every_s)
+def harness_cpu_seconds() -> float:
+    """This process's CPU seconds, user plus system, of all its threads: the
+    harness's own, its users' tabs and HTTP calls included."""
+    import resource
+
+    usage = resource.getrusage(resource.RUSAGE_SELF)
+    return usage.ru_utime + usage.ru_stime
+
+
+def reading_now(probe, project_ids=(), started=None) -> tuple:
+    """A reading of the backend through *probe*, or none without one, stamped
+    with the moment it was taken (``at``, the middle of the call, on this
+    process's monotonic clock) and with this process's own CPU seconds
+    (``harness_cpu_seconds``, at ``harness_at``); and why the backend could
+    not be read, or None. *started* adds ``t``, seconds since then."""
+    began = time.monotonic()
+    reading, problem = {}, None
+    if probe is not None:
+        try:
+            reading = dict(probe.read(project_ids))
+        except ProbeError as exc:
+            problem = str(exc)
+    ended = time.monotonic()
+    if reading:
+        reading["at"] = (began + ended) / 2
+    reading["harness_at"] = ended
+    reading["harness_cpu_seconds"] = harness_cpu_seconds()
+    if started is not None:
+        reading["t"] = round(began - started, 2)
+    return reading, problem
 
 
 class Sampler:
-    """Reads the backend every *every_s* seconds on a thread of its own, from
-    :meth:`start` to :meth:`stop`: how its threads and memory moved while a
-    tier ran. A reading that fails is skipped, and the first reason kept."""
+    """Takes a reading every *every_s* seconds on a thread of its own, from
+    :meth:`start` to :meth:`stop`: how the backend's threads, memory and CPU,
+    and the harness's own CPU, moved while a tier ran. Without a probe it
+    reads the harness alone. A backend reading that fails is left out, and
+    the first reason kept."""
 
-    def __init__(self, probe: BackendProbe, every_s: float):
+    def __init__(self, probe, every_s: float):
         self.probe = probe
         self.every_s = every_s
         self.samples: list = []
@@ -198,22 +239,17 @@ class Sampler:
     def _run(self) -> None:
         while not self._stop.is_set():
             began = time.monotonic()
-            try:
-                reading = self.probe.read()
-            except ProbeError as exc:
-                self.problem = self.problem or str(exc)
-            else:
-                self.samples.append({
-                    "t": round(began - self._started, 2),
-                    "threads": reading.get("threads"),
-                    "rss_bytes": reading.get("rss_bytes"),
-                })
+            reading, problem = reading_now(self.probe, started=self._started)
+            if problem:
+                self.problem = self.problem or problem
+            self.samples.append(reading)
             self._stop.wait(max(0.0, self.every_s - (time.monotonic() - began)))
 
     def stop(self) -> list:
         self._stop.set()
         if self._thread.is_alive():
-            self._thread.join(timeout=self.probe.timeout + 5)
+            timeout = self.probe.timeout if self.probe is not None else PROBE_TIMEOUT_S
+            self._thread.join(timeout=timeout + 5)
         return list(self.samples)
 
 

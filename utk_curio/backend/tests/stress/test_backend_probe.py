@@ -89,6 +89,77 @@ class TheDocFilesTest(unittest.TestCase):
         })
 
 
+def _burn_cpu() -> None:
+    """Run Python for a few tenths of a second: more than the clock tick CPU
+    times are counted in."""
+    total = 0
+    for value in range(3_000_000):
+        total += value * value
+
+
+class TheCpuReadingsTest(unittest.TestCase):
+    def test_a_process_reading_has_its_cpu_seconds_user_plus_system(self):
+        """As the probe reads the backend: here, this very process."""
+        import psutil
+
+        from utk_curio.backend.tests.stress.backend_probe import process_reading
+
+        before = process_reading(psutil.Process())
+        _burn_cpu()
+        after = process_reading(psutil.Process())
+        self.assertEqual(set(before), {"pid", "threads", "rss_bytes", "cpu_seconds"})
+        self.assertGreater(after["cpu_seconds"], before["cpu_seconds"])
+        times = psutil.Process().cpu_times()
+        self.assertLessEqual(after["cpu_seconds"], round(times.user + times.system, 3))
+
+    def test_each_reading_carries_the_harness_cpu_with_or_without_a_backend(self):
+        import time
+
+        from utk_curio.backend.tests.stress.backend_probe import (
+            ProbeError, harness_cpu_seconds, reading_now,
+        )
+
+        class Up:
+            def read(self, project_ids=()):
+                return {"threads": 3, "rss_bytes": 1, "cpu_seconds": 2.0}
+
+        class Down:
+            def read(self, project_ids=()):
+                raise ProbeError("no process here serves -m backend.server")
+
+        began = time.monotonic()
+        reading, problem = reading_now(Up())
+        ended = time.monotonic()
+        self.assertIsNone(problem)
+        self.assertTrue(began <= reading["at"] <= reading["harness_at"] <= ended, reading)
+        self.assertEqual(reading["cpu_seconds"], 2.0)
+
+        reading, problem = reading_now(Down())
+        self.assertIn("no process", problem)
+        self.assertEqual(set(reading), {"harness_at", "harness_cpu_seconds"})
+
+        reading, problem = reading_now(None, started=time.monotonic())
+        self.assertIsNone(problem)
+        self.assertEqual(set(reading), {"harness_at", "harness_cpu_seconds", "t"})
+
+        before = harness_cpu_seconds()
+        _burn_cpu()
+        self.assertGreater(harness_cpu_seconds(), before)
+
+    def test_without_a_probe_the_sampler_reads_the_harness_alone(self):
+        import time
+
+        from utk_curio.backend.tests.stress.backend_probe import Sampler
+
+        sampler = Sampler(None, 0.05).start()
+        time.sleep(0.3)
+        samples = sampler.stop()
+        self.assertGreaterEqual(len(samples), 2)
+        for sample in samples:
+            self.assertEqual(set(sample), {"harness_at", "harness_cpu_seconds", "t"})
+        self.assertIsNone(sampler.problem)
+
+
 class TheProbeRunsAsAScriptTest(unittest.TestCase):
     def test_its_source_runs_alone_with_python_c_and_prints_one_reading(self):
         """As ``docker exec <container> python -c`` runs it: nothing of

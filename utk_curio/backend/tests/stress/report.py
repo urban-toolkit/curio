@@ -141,16 +141,51 @@ def socket_summary(rooms: list[dict]) -> dict | None:
     }
 
 
+def cpu_track(readings: list, seconds_key: str, at_key: str) -> dict | None:
+    """A process's CPU over the *readings* that carry its CPU seconds
+    (*seconds_key*) and the moment each was read (*at_key*): the seconds it
+    ran, user plus system, from the first to the last; the cores that kept
+    busy over that span; and the most over one step between two readings of
+    at least half a second (about the sampler's second). None with fewer than
+    two such readings, which a reader must not take for an idle process."""
+    points = sorted(
+        (reading[at_key], reading[seconds_key]) for reading in readings
+        if reading and isinstance(reading.get(seconds_key), (int, float))
+        and isinstance(reading.get(at_key), (int, float))
+    )
+    if len(points) < 2 or points[-1][0] <= points[0][0]:
+        return None
+    (first_at, first), (last_at, last) = points[0], points[-1]
+    steps = [(b_cpu - a_cpu) / (b_at - a_at)
+             for (a_at, a_cpu), (b_at, b_cpu) in zip(points, points[1:]) if b_at - a_at >= 0.5]
+    return {
+        "seconds": round(last - first, 1),
+        "over_s": round(last_at - first_at, 1),
+        "cores_busy": round((last - first) / (last_at - first_at), 2),
+        "peak_cores_busy": round(max(steps), 2) if steps else None,
+    }
+
+
+def harness_summary(start: dict | None, samples: list[dict], end: dict | None) -> dict:
+    """The harness's own CPU over a tier (``backend_probe.reading_now``): one
+    process drives every user's dataflow calls and tab, so beside the
+    backend's it says which of the two was busy."""
+    return {"cpu": cpu_track([start, *samples, end], "harness_cpu_seconds", "harness_at")}
+
+
 def backend_summary(start: dict | None, samples: list[dict], end: dict | None,
                     every_s: float, problem: str | None = None) -> dict:
-    """The backend's threads and resident memory over a tier, from the probe
-    (``backend_probe.py``): the reading before the tier, the highest of all
-    readings, those taken while it ran (every *every_s* seconds) included, and
-    the reading after it. Not measured, with *problem* as the reason, when the
+    """The backend's threads, resident memory and CPU over a tier, from the
+    probe (``backend_probe.py``): the reading before the tier, the highest of
+    all readings, those taken while it ran (every *every_s* seconds) included,
+    and the reading after it; and the CPU it ran over the tier
+    (:func:`cpu_track`). Not measured, with *problem* as the reason, when the
     probe read nothing; a missing reading is None, never a zero."""
-    readings = [reading for reading in (start, *samples, end) if reading]
+    readings = [reading for reading in (start, *samples, end) if reading and "threads" in reading]
     if not readings:
         return {"measured": False, "problem": problem or "the probe read nothing"}
+    start = start if start and "threads" in start else None
+    end = end if end and "threads" in end else None
 
     def track(key: str, scale: float, digits: int | None) -> dict:
         def value(reading):
@@ -167,7 +202,8 @@ def backend_summary(start: dict | None, samples: list[dict], end: dict | None,
         "pid": (end or start or readings[-1]).get("pid"),
         "threads": track("threads", 1, None),
         "rss_mib": track("rss_bytes", 1 / MIB, 1),
-        "samples": len(samples),
+        "cpu": cpu_track(readings, "cpu_seconds", "at"),
+        "samples": sum(1 for sample in samples if sample and "threads" in sample),
         "every_s": every_s,
         "problem": problem,
     }
@@ -202,7 +238,7 @@ def doc_files_summary(listing: dict | None, problem: str | None = None) -> dict:
 def tier_summary(tier: int, results: list[UserResult], seconds: float,
                  profile: str = "burst", exec_lock: dict | None = None,
                  sockets: dict | None = None, backend: dict | None = None,
-                 doc_files: dict | None = None) -> dict:
+                 doc_files: dict | None = None, harness: dict | None = None) -> dict:
     failures = [(r, s) for r in results for s in r.failures]
     kinds = {kind: 0 for kind in FAILURE_KINDS}
     for _, sample in failures:
@@ -226,6 +262,7 @@ def tier_summary(tier: int, results: list[UserResult], seconds: float,
         "sockets": sockets,
         "backend": backend,
         "doc_files": doc_files,
+        "harness": harness,
         "failures": [
             {
                 "user": result.user,
@@ -408,6 +445,32 @@ def _backend_table(tiers: list[dict]) -> list[str]:
     return lines
 
 
+def _cpu_cells(track: dict | None, missing: str) -> list[str]:
+    """A CPU track's seconds, and its cores busy over the tier and at the peak."""
+    if not track:
+        return [missing, "-"]
+    peak = "-" if track.get("peak_cores_busy") is None else track["peak_cores_busy"]
+    return [f"{track['seconds']} s", f"{track['cores_busy']} / {peak}"]
+
+
+def _cpu_table(tiers: list[dict]) -> list[str]:
+    if not any((tier.get("backend") or {}).get("cpu") or (tier.get("harness") or {}).get("cpu")
+               for tier in tiers):
+        return []
+    lines = ["", "CPU over each tier, user plus system: the seconds the backend's process "
+                 "and the harness's (every user's calls and tab) ran, and the cores that "
+                 "kept busy over the tier and at most over one reading.", ""]
+    lines.append("| Tier | Backend CPU | Backend cores (tier / peak) | Harness CPU | Harness cores (tier / peak) |")
+    lines.append("| ---: | ----------: | --------------------------: | ----------: | --------------------------: |")
+    for tier in tiers:
+        backend = tier.get("backend") or {}
+        missing = "not measured" if not backend.get("measured") else "-"
+        cells = (_cpu_cells(backend.get("cpu"), missing)
+                 + _cpu_cells((tier.get("harness") or {}).get("cpu"), "not measured"))
+        lines.append(f"| {tier['tier']} | {' | '.join(cells)} |")
+    return lines
+
+
 def markdown(report: dict) -> str:
     # Artifacts are fetched the way the canvas fetches them, as Arrow, and the
     # tabs connect over the transport named here. Said here because a report
@@ -444,6 +507,7 @@ def markdown(report: dict) -> str:
         lines += ["", peak_line + "."]
     lines += _tabs_table(report["tiers"])
     lines += _backend_table(report["tiers"])
+    lines += _cpu_table(report["tiers"])
 
     for tier in report["tiers"]:
         lines += ["", f"### {tier['tier']} users", ""]

@@ -156,6 +156,9 @@ user's dataflow work is done. The report adds, per tier:
   then differ from the room's first tab's is a `diverged` one;
 - the backend's threads and resident memory before the tier, at their peak (read
   every second while it runs) and after it;
+- the CPU, user plus system, of the backend's process and of the harness's own,
+  which drives every user's calls and tab: the seconds each ran, and the cores
+  that kept busy over the tier and at most over one reading;
 - the doc logs the tier's dataflows left on disk, each day's checkpoint
   (`ydoc/<doc id>/<day>.bin`) and updates (`<day>.updates`), and the size of
   the doc a tab joining at the end downloads.
