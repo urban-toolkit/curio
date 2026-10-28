@@ -296,8 +296,9 @@ def test_a_package_writing_run_holds_the_backend_contract_once(pinned, client, u
                         json.dumps({"chars": len(task_text), "sha256": _sha256(task_text)}))
         turns[capability] = (system["content"], task_text)
 
-    from utk_curio.backend.app.agents.domain import agent_text
+    from utk_curio.backend.app.agents.domain import agent_text, skills
 
+    assert "package-contract" in [folder.name for folder in skills.shipped_folders()], "Curio ships no package-contract"
     contract = agent_text.skill_text("package-contract")
     opening = "Server-side compute follows ONE backend contract"
     assert contract.startswith(f"## Backend contract\n\n{opening}")

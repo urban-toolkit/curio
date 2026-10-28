@@ -273,9 +273,11 @@ def test_each_agent_names_only_skills_curio_ships_and_each_card_chat_loads_them(
             assert set(capability.skills) <= set(m.skills), (m.dir_name, capability.id)
             if capability.skills:
                 own[f"{m.dir_name} {capability.id}"] = list(capability.skills)
-        assert set(m.instruction_skills) <= set(m.skills), m.dir_name
-        if m.instruction_skills:
-            instructions[m.dir_name] = list(m.instruction_skills)
+        named_by_instruction = getattr(m, "instruction_skills", None)
+        assert named_by_instruction is not None, f"{m.dir_name}'s manifest reads no instruction skills"
+        assert set(named_by_instruction) <= set(m.skills), m.dir_name
+        if named_by_instruction:
+            instructions[m.dir_name] = list(named_by_instruction)
     # The capabilities that write node code for another agent with no node
     # named, the Dataset Finder's search and the modes whose prompts held a
     # procedure name their own.

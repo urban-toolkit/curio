@@ -638,7 +638,7 @@ def test_the_preamble_and_curios_skills_name_no_packages_templates_or_functions(
                 queue.append(file.read_text(encoding="utf-8"))
     names = {file.relative_to(REPO_ROOT).as_posix() for file in files}
     assert {"skills/scenarios/SKILL.md", "skills/node-functions/SKILL.md"} <= names, sorted(names)
-    assert len([name for name in names if name.startswith("skills/")]) == 16, sorted(names)
+    assert len([name for name in names if name.startswith("skills/")]) == 21, sorted(names)
     for file in sorted(files):
         named = set(re.findall(r"\{\{template\.label:([^/{}]+)/", file.read_text(encoding="utf-8")))
         assert named <= {"curio.builtin"}, f"{file.name} names templates of {sorted(named - {'curio.builtin'})}"
