@@ -80,8 +80,13 @@ How a call holds its skills:
 - **The core skills,** `nodes`, `node-control` and `compatibility`, are in the preamble every agent Curio ships reads, so every call holds them.
 - **In chat,** an agent lists its other skills, each by its name and description, and loads one with its tool **skill.read** when a task matches it. A chat attached to a node holds the skills of that kind of node from its first message. A skill a chat loaded stays for the rest of its conversation, and is never loaded twice. Loading a skill uses none of a reply's three tool rounds, for up to four skills a reply.
 - **A mode** has no tools, so Curio hands it the skills its task needs, with no extra call: the skills of the node it writes or checks, those of node code when it writes a package or builds a node for another agent, those of the kinds of node and the features of the dataflow when it reads the whole dataflow, and the mode's own. In Solve, the attempt after a check refused the one before is also handed the skill that answers that check: `map-edits` for the Map Editor's check, `vega-lite-starter` or `autark` for the check of a chart's or a map's document, `node-functions` for a function Curio does not give node code, `catalogs` for a source no catalog holds, and `dashboards` for a pinned tile that loads its own data.
+- **Named in your message,** `/<name>` at the start of a message hands that skill to the chat's run with the message, and the rest of the conversation keeps it, as it keeps a skill the chat loaded. Type `/` at the start of a message to list the chat's skills, then pick one or keep typing its name: `/map-edits remove the two tallest towers`. A skill the chat holds already is not handed again.
 
 An agent's manifest names its skills ([`skills`](#6-the-manifest)). An agent of yours that names none lists every skill Curio ships but those its preamble holds.
+
+**Your changes.** In an agent's details, **Add skill** gives it one of the skills it does not hold, and **Remove** takes one away, for your account: in every project, its chat lists what you added and never what you removed, and its modes are handed them the same way, from its next run. **Restore** brings back the list the agent ships with, Curio's for an agent Curio ships. The core skills, and a skill one of its modes names as its own, have no **Remove**, since that mode holds the skill whatever the agent's list is: the Dataset Finder's `catalogs` is its Find datasets mode's. A guest on a hosted Curio sees an agent's skills and changes none.
+
+**The skills a reply used.** A line under each chat reply names the skills its run held or loaded: those it was handed for the node the chat is on, those your message named, those earlier turns of the conversation took in, then those it loaded. Hovering a name says which. The core skills, which every call holds, are not named.
 
 **Curio's skills.** A run is handed the skills that serve the node it writes or checks, or, when it reads the whole dataflow, those that serve its nodes and features:
 
@@ -227,6 +232,7 @@ Agent state lives in files under `.curio/` and inside each project's spec; the a
 | **Definition store**, the agents themselves | `.curio/users/<user-key>/agents/<agentId>@<major>/` (`manifest.json` and `prompts/`) | **Import agent** adds one; adding a built-in or published agent copies it here. |
 | **Per-user list**, the agents in all your projects | `.curio/users/<user-key>/imported-agents.json` | **Add to all projects** and **Import agent** add an entry; **Remove from all projects** drops it. |
 | **Catalog settings**, values you own | `.curio/users/<user-key>/catalog-settings.json` | **Settings** on `/catalog/agents` saves a setting you changed; **Restore default** removes it. See [Catalog settings](#catalog-settings). |
+| **Agent skills**, the skills you changed on an agent | `.curio/users/<user-key>/agent-skills.json`, by agent id, so one change covers every version of the agent and every project | **Add skill** and **Remove** in an agent's details change its entry; **Restore** removes it. See [Skills](#skills). |
 | **Per-dataflow lockfile**, the agents one dataflow has | `dataflow.agents` in the project's `spec.trill.json` | **Add to project** and **Remove from project** in the drawer. **Add to all projects** and **Remove from all projects** change every project. |
 | **Attachments**, private instances bound to a target | `dataflow.agentAttachments` in the project's `spec.trill.json` | Attaching (dragging an agent onto a node, a connection, or the canvas) creates one. **Detach** deletes it and its transcript, and **Remove from project** deletes every attachment of that agent. |
 | **Usage record** | `.curio/users/<user-key>/agents/ledger/<date>.jsonl` | Every run appends to it. It is not editable and not shown in the interface. |
@@ -244,11 +250,13 @@ Agent state lives in files under `.curio/` and inside each project's spec; the a
 
 There are three places you work with agents, and as with the Data Catalog they are **not** interchangeable:
 
-- **The `/catalog/agents` page** is the account-level library. Reach it from `/projects` and the **Agent Catalog** tab. It lists the built-in agents, every published one, and the ones you imported yourself. Filter by status (**All agents**, **In all projects**) and by category, search, and read an agent's full details. **Add to all projects**, **Publish**, **Unpublish**, **Settings** and **Import agent** live here. You cannot add an agent to just one dataflow from this page: the drawer does that.
+- **The `/catalog/agents` page** is the account-level library. Reach it from `/projects` and the **Agent Catalog** tab. It lists the built-in agents, every published one, and the ones you imported yourself. Filter by status (**All agents**, **In all projects**) and by category, search, and read an agent's full details. **Add to all projects**, **Publish**, **Unpublish**, **Settings** and **Import agent** live here. You cannot add an agent to just one dataflow from this page: the drawer does that. The rail's **Skills** section lists the [skills](#skills) the agents read in the same grid: **All skills**, or **Core** for the three every call holds. A skill's card says what it is for, what it serves and how many agents use it, and its drawer names those agents.
 - **The Agent Catalog drawer**, inside the canvas, is the working surface. Open it from the **Agent Catalog** button in the top bar, or from the left Tools panel's **Agent Catalog** dropdown and **Browse Agent Catalog +**. Its tabs are **Browse all** (the default) and **In project**, and everything scoped to the open dataflow happens here, including **Import agent** in its footer.
 - **The Agent palette**, the **Agent Catalog** dropdown in the left Tools panel, holds the agents already added to this dataflow, ready to drag onto a node, a connection, or the canvas. It sits below the **Node Catalog** and **Data Catalog** dropdowns.
 
-**View details**, on any agent card and beside each agent in the palette, opens the agent's details window. Its first three sections are named by three of the words defined in [The agents](#the-agents): **In chat**; **Tools**, which also says what the agent reads before what it proposes; and **Modes (who asks)**, each mode with the agents, or Solve, that ask for it, and the mode's capability ids beneath it. **Agent info** gives its identifier, version, category, publisher, what it attaches to and the model it runs on. **Prompts** shows each prompt file, labeled by when it runs: every call, a message you type, or the mode that reads it. **Requires** names the agents it cannot work without, and **Export** saves the agent as one file.
+**View details**, on any agent card and beside each agent in the palette, opens the agent's details window. Its first four sections are named by the four words defined in [The agents](#the-agents): **In chat**; **Tools**, which also says what the agent reads before what it proposes; **Modes (who asks)**, each mode with the agents, or Solve, that ask for it, and the mode's capability ids beneath it; and **Skills**, the core skills first, then its own and those a mode of it always holds, with **Add skill**, **Remove** and **Restore** (see [Skills](#skills)). **Agent info** gives its identifier, version, category, publisher, what it attaches to and the model it runs on. **Prompts** shows each prompt file, labeled by when it runs: every call, a message you type, or the mode that reads it. **Requires** names the agents it cannot work without, and **Export** saves the agent as one file.
+
+**View details** on a skill's card, in its drawer or in its right-click menu opens the skill's details window: its description, what it serves (the kinds of node whose templates its `curio-behaviors` name, and the features of a dataflow its `curio-features` name), the agents that use it, its version, author, license and compatibility, its text as an agent reads it, collapsed until you open it, and its other files.
 
 ### Action matrix
 
@@ -263,6 +271,9 @@ There are three places you work with agents, and as with the Data Catalog they a
 | **Unpublish** | `/catalog/agents` drawer | Shared catalog | It leaves the shared catalog. Other users who added it keep their copy. |
 | **Attach** | Drag a palette row onto a node, a connection, or the canvas | Attachments | A private instance with its own chat panel. The agent must be added first. |
 | **Detach** | The attachment's own control | Attachments | The instance and its transcript are deleted. The agent stays added. |
+| **Add skill** | An agent's details | Your agent skills | The agent's runs hold the skill in every project, from its next run: its chat lists it, and its modes are handed it when their task needs it. |
+| **Remove** (a skill) | An agent's details | Your agent skills | The agent's runs go without the skill in every project, and a conversation that loaded it stops holding it. Not offered for the core skills or a mode's own. |
+| **Restore** (skills) | An agent's details | Your agent skills | The agent holds the skills it ships with again. |
 
 Nothing in this table deletes an agent definition from disk.
 
@@ -275,6 +286,12 @@ Nothing in this table deletes an agent definition from disk.
 **I want to browse without opening a dataflow.** Go to `/projects` and pick the **Agent Catalog** tab. Filter by status or category in the left rail, and click **View details** on a card to read everything about it.
 
 **I want to write my own agent.** Author a `manifest.json` and its prompt files ([part 6](#6-the-manifest)), then use **Import agent** in the drawer's footer. It is listed on `/catalog/agents` beside the built-in and published agents, where **Publish** offers it to everyone on the install. Adding it to a dataflow and publishing it are separate actions.
+
+**I want to read what a skill says.** On `/catalog/agents`, click **All skills** in the rail, then **View details** on the skill. Its details open on what it is for, what it serves and the agents that use it, and its **Text** section holds what an agent reads, collapsed until you open it.
+
+**I want an agent to use a skill it does not have.** On `/catalog/agents`, click **View details** on the agent, then **Add skill** in its **Skills** section and pick the skill. The agent's next chat lists it, in every project. **Remove** takes a skill away, and **Restore** brings back the agent's own list.
+
+**I want an agent to use a skill for one message.** In its chat, type `/` at the start of the message and pick the skill, then write the rest: `/map-edits remove the two tallest towers`. The line under the reply names the skills its run used.
 
 ### Catalog settings
 
@@ -316,7 +333,7 @@ When an agent proposes a change to your dataflow, it does not apply it. The prop
 
 Once you apply a change an agent made to a node's code, the change is an entry of the node's [Provenance](USAGE.md#provenance) drawer, named after the agent, with the code it left, and the dataflow reads **Unsaved** until it is saved with the entry. A node an agent proposes with its code starts its history with one once you apply it. You open the entry and put its code back as you would a run's; an agent never does that for you. The Node Builder and the Dataflow Builder read a node's history as the dataflow was last saved, so you can ask either what changed in a node since a run.
 
-A reply of Node Builder or Dataflow Builder that carries no review card says **No changes were made to the canvas** under it. A web address the egress policy refused shows its reason under the reply. So does any other tool call that failed, unless a later call of the same tool in that reply succeeded.
+A reply of Node Builder or Dataflow Builder that carries no review card says **No changes were made to the canvas** under it. A web address the egress policy refused shows its reason under the reply. So does any other tool call that failed, unless a later call of the same tool in that reply succeeded. A last, quieter line names the [skills](#skills) the reply's run used.
 
 ### Required agents
 

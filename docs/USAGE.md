@@ -1655,8 +1655,10 @@ Agents are AI assistants you attach to your dataflow. The catalog lists four:
 - **Dataflow Builder**: plans a whole dataflow, then solves its nodes.
 - **Dataset Finder**: finds datasets in the Data Catalog and in portals.
 
-What each does in chat, the tools it uses and the modes other agents ask it
-for are in [AGENT-CATALOG.md](AGENT-CATALOG.md#the-agents). Each agent answers
+What each does in chat, the tools it uses, the modes other agents ask it for
+and the skills it reads are in [AGENT-CATALOG.md](AGENT-CATALOG.md#the-agents).
+In an agent's details you add a skill to it or remove one, for your account.
+Each agent answers
 with the LLM configuration chosen for it on the **Agent configuration** tab of
 **API Settings** (above), else your default.
 
@@ -1697,6 +1699,13 @@ conversation, clear it, cycle through every attached agent with the ‹ › arro
 and edit the initial intent the agent starts from. Agents that propose changes
 (new nodes, edges, node content, packages) put them up for review first: nothing
 lands on your canvas until you apply it.
+
+Type `/` at the start of a message to list the agent's
+[skills](AGENT-CATALOG.md#skills). Pick one with the arrow keys and Enter, or a
+click, or keep typing its name, then write the rest of your message: the skill
+goes to the agent with it, as in `/map-edits remove the two tallest towers`.
+Escape closes the list. A line under each reply names the skills its run used;
+hover a name to see how the run came to hold it.
 
 The **Dataflow Builder** is the composite agent that plans a whole dataflow. Its
 strip adds planning phases, per-node progress, and **Solve**, which fills in the
