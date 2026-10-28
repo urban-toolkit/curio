@@ -170,9 +170,12 @@ def test_a_package_node_in_the_accounts_store_gets_its_category_in_the_listing(a
     assert _listed_preview(user, NODES) == CATEGORIES
 
 
-def test_the_shared_guest_reads_the_guest_store(app, db, shared_guest):
+def test_the_shared_guest_reads_the_guest_store(app, db, shared_guest, monkeypatch):
+    from utk_curio.backend import config
     from utk_curio.backend.app.common.user_storage import GUEST_KEY
 
+    # The shared guest saves where it is the one local user, without --deploy.
+    monkeypatch.setattr(config, "CURIO_NO_AUTH", True)
     _install(GUEST_KEY)
 
     assert _listed_preview(shared_guest, NODES) == CATEGORIES
