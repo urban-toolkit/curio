@@ -1167,15 +1167,15 @@ def mutate_dataflow_datasets(
     The dataset endpoints' section writer: under the per-project spec lock,
     reads the dataflow as it is now (its doc over its file,
     ``dataflow_docs.live``), hands the dict-filtered current refs to *mutate*,
-    and writes the list it returns through the dataflow's doc, its one writer
-    — so a concurrent mutation of a DIFFERENT dataset can never be lost to a
+    and writes the list it returns through the dataflow's doc, its one writer.
+    So a concurrent mutation of a DIFFERENT dataset can never be lost to a
     stale pre-lock read, and a tab in the dataflow's room gets the change.
     Only the datasets section changes; nodes/edges/agents/packages are
     untouched.
 
     *mutate* runs while the spec lock is held: it must be a pure list
     transform (no project I/O, nothing that re-acquires the lock). Returning
-    ``None`` means "no change" — nothing is written. *actor* is who changes
+    ``None`` means "no change": nothing is written. *actor* is who changes
     the refs (``dataflow_docs.Actor``), by default the account.
 
     Returns ``(spec, changed)``, the spec without its history, or ``None``

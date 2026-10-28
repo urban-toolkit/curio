@@ -32,6 +32,11 @@ from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.execution.code_references import normalize_widgets
 
 
+#: What an Apply of a node's new code says when the node changed since the
+#: proposal: before the Apply read it, or before its write landed.
+NODE_CHANGED = "the node changed since this was proposed; ask the agent to propose again"
+
+
 # ── review-before-apply (memo dev/41) ────────────────────────────────────────
 def apply_proposal(
     user_key: str, project_id: str, attachment_id: str, proposal_id: str
@@ -125,7 +130,7 @@ def _apply_node_content_write(
     if node is None or basis != proposal.get("contentSha256"):
         raise agents_store._mark_stale(
             user_key, project_id, proposal_id, spec, proposal, session_id,
-            "the node changed since this was proposed — ask the agent to propose again",
+            NODE_CHANGED,
         )
     # The domain-owned mutation (ADR-AG-007): one node's content, nothing else.
     node["content"] = proposal.get("content", "")
@@ -168,8 +173,7 @@ def _apply_node_content_write(
         user_key, project_id, spec, _applied_by(user_key, spec, attachment_id), on_refused=_changed_meanwhile,
     ).refused:
         raise agents_store._mark_stale(
-            user_key, project_id, proposal_id, spec, proposal, session_id,
-            "the node changed since this was proposed — ask the agent to propose again",
+            user_key, project_id, proposal_id, spec, proposal, session_id, NODE_CHANGED,
         )
     # A proposal minted before #506 carries no name; its id is all there is.
     node_name = proposal.get("nodeName") or f"node {node_id}"
