@@ -11,25 +11,36 @@ clients says (https://agentskills.io/client-implementation/adding-skills-support
   left out, the ones it added after the rest. Those its preamble holds
   already, as the default preamble holds the core skills, are in the system
   turn, so nothing below lists or hands them again.
-- **The catalog.** A chat run lists the agent's other skills, each by its
-  name and description, under the guide's short instruction (the section
+- **The packages' skills.** Every run on a dataflow also holds the skills of
+  the packages the dataflow uses (``dataflow.packages``), each package's
+  ``skills/`` (``packages.dataflow_skill_folders``), whatever its agent
+  names, after the agent's own (:func:`package_skills`). They are read
+  strictly, as the skills Curio ships are, and held as written: no marker of
+  theirs is filled. A name shows once: Curio's skill, then the first
+  package's, and a warning names each skill left out for it.
+- **The catalog.** A chat run lists those skills, each by its name and
+  description, under the guide's short instruction (the section
   ``skill-catalog`` of ``frames.md``), and is granted ``skill.read`` to load
   one when a task needs it (:func:`grants`). A run with nothing to list gets
   neither.
 - **Handed skills.** A run is handed, in the same ``<skill_content>``
-  wrapping and with no model call, the agent's skills that serve what it
-  works on, read from each skill's ``metadata``: ``curio-behaviors`` names
-  the node behaviors it serves (a template's ``behavior``),
-  ``curio-features`` the features of a dataflow it serves (:data:`FEATURES`)
-  and ``curio-refusals`` the checks whose refusal it answers, by the kind
-  each check records (``map_edits.KIND`` and the like).
+  wrapping and with no model call, the skills that serve what it works on,
+  read from each skill's ``metadata``: ``curio-behaviors`` names the node
+  behaviors it serves (a template's ``behavior``), ``curio-features`` the
+  features of a dataflow it serves (:data:`FEATURES`), ``curio-refusals`` the
+  checks whose refusal it answers, by the kind each check records
+  (``map_edits.KIND`` and the like), and ``curio-templates``, in a package's
+  skill, the templates of that package it serves, by their ids in its
+  manifest (:func:`templates_served`), for a package whose templates share
+  their behaviors with Curio's own.
 
   - A chat attached to a node, and a delegated run whose inputs name one, get
-    the skills of that node's behavior.
+    the skills of that node's behavior and of its template.
   - A delegated run that writes code for no node, a package's, gets the
     skills of node code (:data:`CODE_BEHAVIOR`).
   - A delegated run of a mode that reads the dataflow (``dataflowContext``)
-    gets the skills of its nodes' behaviors and of its features.
+    gets the skills of its nodes' behaviors and templates and of its
+    features.
   - A Solve round after a check refused the round before gets the skills that
     answer that check (:func:`answering`).
   - Every run of a capability gets the capability's own ``skills``, whatever
@@ -74,10 +85,12 @@ TOOL = tools.SKILL_TOOL
 FREE_READS = 4
 #: The keys of a skill's ``metadata`` that name what it serves, each a list of
 #: names with a space between each: node behaviors, features of a dataflow,
-#: and the checks whose refusal it answers.
+#: the checks whose refusal it answers, and, in a package's skill, templates
+#: of its package.
 BEHAVIORS_KEY = "curio-behaviors"
 FEATURES_KEY = "curio-features"
 REFUSALS_KEY = "curio-refusals"
+TEMPLATES_KEY = "curio-templates"
 #: The features of a dataflow a skill can serve, by the names its
 #: ``curio-features`` gives them: scenario boxes, interaction edges and nodes
 #: pinned to the dashboard.
@@ -197,14 +210,49 @@ def placed_in(preamble: str | None, shipped: Mapping[str, skill_format.Skill]) -
     return frozenset(name for name in shipped if agent_text.skill_text(name) in preamble)
 
 
-def _pool(user_key: str | None, manifest,
-          preamble: str | None) -> tuple[dict, frozenset[str], tuple[skill_format.Skill, ...]]:
-    """Every skill Curio ships, the ones *preamble* holds, and the agent's
-    skills it does not, after what the account *user_key* changed of them."""
+def package_skills(user_key: str | None, spec,
+                   shipped: Mapping[str, skill_format.Skill]) -> tuple[tuple[str, skill_format.Skill], ...]:
+    """The skills of the packages the dataflow *spec* uses, as
+    ``(<packageId>@<major>, skill)``: the packages in the lockfile's order,
+    each one's skills by name (``packages.dataflow_skill_folders``), each
+    read strictly, as the skills Curio ships are. A name shows once: a skill
+    with the name of one Curio ships (*shipped*), or of one an earlier
+    package ships, is left out, and a warning names it, its package and who
+    ships the skill runs hold by that name. One that cannot be read is left
+    out and logged."""
+    found: dict[str, tuple[str, skill_format.Skill]] = {}
+    for dir_name, folder in packages_services.dataflow_skill_folders(user_key, spec):
+        try:
+            skill = skill_format.parse(folder)
+        except (OSError, ValueError) as exc:  # a SkillError, or a file that is not UTF-8
+            log.warning("Runs on this dataflow go without a skill of %s, which cannot be read: %s", dir_name, exc)
+            continue
+        if skill.name in shipped:
+            log.warning("The skill %s of %s is left out of runs: its name is a skill Curio ships, which they hold",
+                        skill.name, dir_name)
+        elif skill.name in found:
+            log.warning("The skill %s of %s is left out of runs: %s ships a skill of that name, which they hold",
+                        skill.name, dir_name, found[skill.name][0])
+        else:
+            found[skill.name] = (dir_name, skill)
+    return tuple(found.values())
+
+
+def _pool(user_key: str | None, manifest, preamble: str | None,
+          spec=None) -> tuple[dict, frozenset[str], tuple[skill_format.Skill, ...], dict[str, str]]:
+    """Every skill Curio ships, the ones *preamble* holds, the skills a run
+    may hold that it does not (the agent's, after what the account *user_key*
+    changed of them, then those of the packages the dataflow *spec* uses,
+    :func:`package_skills`), and the package each of those comes from,
+    ``<packageId>@<major>``, by the skill's name."""
     shipped = shipped_skills()
     placed = placed_in(preamble, shipped)
     agents = agent_skills(manifest, shipped, choice=account_choice(user_key, manifest))
-    return shipped, placed, tuple(skill for skill in agents if skill.name not in placed)
+    own = tuple(skill for skill in agents if skill.name not in placed)
+    packaged = package_skills(user_key, spec, shipped)
+    return shipped, placed, (*own, *(skill for _, skill in packaged)), {
+        skill.name: dir_name for dir_name, skill in packaged
+    }
 
 
 # --- What serves what ---------------------------------------------------------------
@@ -215,14 +263,34 @@ def _named(skill: skill_format.Skill, key: str) -> set[str]:
 
 
 def serving(pool: Iterable[skill_format.Skill], *, behaviors: Iterable[str] = (),
-            features: Iterable[str] = ()) -> tuple[skill_format.Skill, ...]:
+            features: Iterable[str] = (), templates: Iterable[object] = (),
+            packages: Mapping[str, str] | None = None) -> tuple[skill_format.Skill, ...]:
     """The skills of *pool*, in its order, whose metadata names one of
-    *behaviors* (``curio-behaviors``) or of *features* (``curio-features``)."""
+    *behaviors* (``curio-behaviors``) or of *features* (``curio-features``),
+    or, for a skill a package ships (*packages* names the package of each by
+    the skill's name), the template of one of the node types *templates*
+    (:func:`templates_served`)."""
     behaviors, features = set(behaviors), set(features)
+    node_types = {packages_services.canonical_template_id(t) for t in templates if isinstance(t, str) and t}
+    packages = packages or {}
     return tuple(
         skill for skill in pool
         if _named(skill, BEHAVIORS_KEY) & behaviors or _named(skill, FEATURES_KEY) & features
+        or templates_served(skill, packages.get(skill.name)) & node_types
     )
+
+
+def templates_served(skill: skill_format.Skill, package: str | None) -> set[str]:
+    """The templates *skill* serves, as canonical node types
+    (``<packageId>/<templateId>``), when the package *package*
+    (``<packageId>@<major>``) ships it: the templates its ``curio-templates``
+    names, by their ids in that package's manifest. None for a skill no
+    package ships, so a package's skill serves its own package's nodes and
+    no other's."""
+    if not package:
+        return set()
+    package_id = package.rsplit("@", 1)[0]
+    return {f"{package_id}/{template}" for template in _named(skill, TEMPLATES_KEY)}
 
 
 def answering(pool: Iterable[skill_format.Skill], kind: str,
@@ -296,16 +364,19 @@ def _reads(manifest, capability: str) -> tuple[str, ...]:
 
 def for_chat(user_key: str, project_id: str, manifest, spec, target, preamble: str | None,
              prior_turns, *, message: str | None = None) -> RunSkills:
-    """The skills of a chat run of the agent *manifest* defines, attached to
-    *target*, whose preamble is *preamble*, after the turns *prior_turns* of
-    its conversation, for its *message*: the catalog of its skills, the ones
-    serving the behavior of the node it is attached to, those its
+    """The skills of a chat run of the agent *manifest* defines, on the
+    dataflow *spec*, attached to *target*, whose preamble is *preamble*,
+    after the turns *prior_turns* of its conversation, for its *message*: the
+    catalog of its skills and of the dataflow's packages, the ones serving
+    the behavior and the template of the node it is attached to, those its
     conversation loaded or named before, and those *message* names
     (:func:`named_in`) that it does not hold already."""
-    _shipped, placed, pool = _pool(user_key, manifest, preamble)
+    _shipped, placed, pool, packages = _pool(user_key, manifest, preamble, spec)
     node_id = target.get("targetId") if isinstance(target, dict) and target.get("kind") == "node" else None
     node_type = agents_dataflow_block.node_type_of(spec, node_id) if node_id else None
-    handed = serving(pool, behaviors=behaviors_of(user_key, project_id, [node_type])) if node_type else ()
+    handed = serving(
+        pool, behaviors=behaviors_of(user_key, project_id, [node_type]), templates=[node_type], packages=packages,
+    ) if node_type else ()
     by_name = {skill.name: skill for skill in pool}
     kept = tuple(
         by_name[name] for name in loaded_before(prior_turns)
@@ -337,22 +408,26 @@ def for_delegated(user_key: str, project_id: str, manifest, capability: str, inp
                   preamble: str | None, *, refused: str | None = None) -> RunSkills:
     """The skills a delegated run of *capability* of the agent *manifest*
     defines is handed, with *inputs*, in the dataflow *spec*: those serving
-    what it works on, those answering the check that refused its last round
-    (*refused*, the kind that refusal records), then the capability's own.
-    It lists none: it holds no tool."""
-    shipped, placed, pool = _pool(user_key, manifest, preamble)
+    what it works on, of its agent and of the dataflow's packages, those
+    answering the check that refused its last round (*refused*, the kind that
+    refusal records), then the capability's own. It lists none: it holds no
+    tool."""
+    shipped, placed, pool, packages = _pool(user_key, manifest, preamble, spec)
     behaviors: set[str] = set()
     features: set[str] = set()
+    templates: list[object] = []
     node_type = agents_dataflow_block.named_node_type(inputs, lambda: spec)
     node_behaviors = behaviors_of(user_key, project_id, [node_type]) if node_type else set()
     if node_type:
         behaviors |= node_behaviors
+        templates.append(node_type)
     elif capability in agents_dataflow_block.CODE_CAPABILITIES:
         behaviors.add(CODE_BEHAVIOR)
     elif DATAFLOW_CONTEXT in _reads(manifest, capability):
-        behaviors |= behaviors_of(user_key, project_id, [n.get("type") for n in _dicts(_dataflow(spec).get("nodes"))])
+        templates = [n.get("type") for n in _dicts(_dataflow(spec).get("nodes"))]
+        behaviors |= behaviors_of(user_key, project_id, templates)
         features |= dataflow_features(spec)
-    handed = list(serving(pool, behaviors=behaviors, features=features))
+    handed = list(serving(pool, behaviors=behaviors, features=features, templates=templates, packages=packages))
     if isinstance(refused, str) and refused:
         handed += [skill for skill in answering(pool, refused, node_behaviors) if skill not in handed]
     declared = manifest.capability(capability) if manifest is not None else None
@@ -411,12 +486,22 @@ def catalog_text(run: RunSkills) -> str | None:
     return f"{instruction}\n\n<available_skills>\n{entries}\n</available_skills>"
 
 
+def text_of(skill: skill_format.Skill) -> str:
+    """*skill*'s body as an agent reads it, without its final line breaks: a
+    skill Curio ships rendered, its markers filled (``agent_text.skill_text``),
+    and any other, a package's, as written."""
+    if skill_format.is_shipped(skill):
+        return agent_text.skill_text(skill.name)
+    return skill.body.rstrip("\n")
+
+
 def content(skill: skill_format.Skill, *, readable: bool) -> str:
-    """*skill* as a run holds it: its body as an agent reads it, its
-    frontmatter left out, wrapped as ``<skill_content name="...">``. A run
-    that can read the skill's files (*readable*) also gets their list,
-    ``<skill_resources>``, without their text."""
-    parts = [f"<skill_content name={quoteattr(skill.name)}>", agent_text.skill_text(skill.name)]
+    """*skill* as a run holds it: its body as an agent reads it
+    (:func:`text_of`), its frontmatter left out, wrapped as
+    ``<skill_content name="...">``. A run that can read the skill's files
+    (*readable*) also gets their list, ``<skill_resources>``, without their
+    text."""
+    parts = [f"<skill_content name={quoteattr(skill.name)}>", text_of(skill)]
     if readable and skill.files:
         files = "\n".join(f"  <file>{escape(path)}</file>" for path in skill.files)
         parts += ["", agent_text.section(builtin.FRAMES_FILE, FILES_SECTION),
