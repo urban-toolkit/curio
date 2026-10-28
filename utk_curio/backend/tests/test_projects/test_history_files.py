@@ -603,6 +603,52 @@ def test_two_writers_that_do_not_hold_the_spec_lock_add_an_entry_once(tmp_curio,
     assert listed == [1, 2, 7]
 
 
+def test_two_writes_of_one_spec_at_once_both_land(tmp_curio, monkeypatch):
+    """Two threads of one process writing one project's spec at once write it
+    under the same temporary name, then swap that file in. With nothing
+    between them, the second swap finds the file gone and its write fails:
+    the history lock lets the second write start only once the first ended."""
+    doc = _fixture()
+    storage.write_spec("1", "two-at-once", doc)
+    revision = storage.spec_revision("1", "two-at-once")
+    real = storage.os.replace
+    both_swap = threading.Barrier(2, timeout=1.0)
+
+    def replace(source, target):
+        # Each writer waits here for the other, so both have written the
+        # temporary file before either swaps it in. A writer kept out by the
+        # lock never comes, and the wait ends after a second.
+        if threading.current_thread().name.startswith("writer") and str(target).endswith("spec.trill.json"):
+            try:
+                both_swap.wait()
+            except threading.BrokenBarrierError:
+                pass
+        return real(source, target)
+
+    monkeypatch.setattr(storage.os, "replace", replace)
+    failures: list = []
+    sent = []
+    for n in (1, 2):
+        edited = json.loads(json.dumps(doc))
+        edited["dataflow"]["nodes"][0]["content"] = f"return {n}"
+        sent.append(edited)
+
+    def write(edited: dict) -> None:
+        try:
+            storage.write_spec("1", "two-at-once", edited)
+        except Exception as exc:  # noqa: BLE001 - reported below
+            failures.append(repr(exc))
+
+    writers = [threading.Thread(target=write, args=(edited,), name=f"writer-{n}") for n, edited in enumerate(sent)]
+    for writer in writers:
+        writer.start()
+    for writer in writers:
+        writer.join(timeout=30)
+    assert not failures, failures
+    assert storage.spec_revision("1", "two-at-once") == revision + 2
+    assert _text(storage.read_spec("1", "two-at-once")) in {_text(edited) for edited in sent}
+
+
 def test_a_read_during_a_write_gets_all_of_it_or_none(tmp_curio, monkeypatch):
     """A write puts the history in its log, then the spec file. A reader that
     comes between them waits for the write, so it never gets the new history
