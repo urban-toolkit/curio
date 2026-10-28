@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import Editor, { Monaco } from "@monaco-editor/react";
 import { ICodeData } from "../../types";
-import { useCollab, CodeProposal } from "../../providers/CollaborationProvider";
-import { canEditRole, isOwnParticipant, otherEditors } from "../../providers/collab/participants";
 import { useMonacoExternalValue } from "../../hook/useMonacoExternalValue";
+import { useYMonacoBinding } from "./useYMonacoBinding";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { registerRunNodeAction } from "./runNodeMonacoAction";
 import { describeError } from "../../adapters/node/autkRunSettlement";
@@ -86,10 +85,6 @@ export default function GrammarEditor({
 
     const replacedCodeDirtyBypass = useRef(false);
 
-    const collab = useCollab();
-    const collabRef = useRef(collab);
-    collabRef.current = collab;
-
     // The Monaco model is the source of truth while the user types; `grammar`
     // only mirrors it. Content flows INTO the editor exclusively through this
     // hook: `defaultValue` is applied only when a genuinely new external
@@ -97,7 +92,8 @@ export default function GrammarEditor({
     // unconditional `setGrammar(defaultValue)` effect is what reset a fresh
     // Autark node to the default spec while typing. That subsumes the older
     // `!= undefined` guard this effect used to carry (#157). `baselineRef` is
-    // the as-loaded grammar the collab blur-diff compares against.
+    // the as-loaded grammar: an editor holding something else holds the
+    // user's typing.
     const { baselineRef, applyValue, attachEditor } = useMonacoExternalValue({
         externalValue: defaultValue,
         initialContent: "{}",
@@ -121,18 +117,12 @@ export default function GrammarEditor({
         sendCodeToWidgets(restoredCode.code);
     }, [restoredCode]);
 
-    // Collaboration: propose grammar change on blur, receive applied changes.
-    const proposeOnBlur = () => {
-        const c = collabRef.current;
-        if (!c.enabled || !c.connected) return;
-        // As in the code editor: a watcher proposes nothing, and a change
-        // waits for the others who edit.
-        if (!canEditRole(c.role) || otherEditors(c.users, c.participantId).length === 0) return;
-        const local = grammarRef.current;
-        const baseline = baselineRef.current;
-        if (local === baseline) return;
-        c.requestCodeChange(nodeId, baseline, local, "grammar");
-    };
+    // The node's spec in the dataflow's doc, typed together, as in the code
+    // editor.
+    useYMonacoBinding(widgetEditor?.editor, widgetEditor?.monaco, nodeId, {
+        canWrite: !readOnly,
+        baselineRef,
+    });
 
     // onMount fires once, so the action reads the CURRENT play function through
     // a ref rather than capturing the first render's (#223).
@@ -179,33 +169,10 @@ export default function GrammarEditor({
         attachEditor(editor);
         setWidgetEditor({ editor, monaco });
         editorHeight.attach(editor, monaco);
-        editor.onDidBlurEditorText(proposeOnBlur);
         // Same chord as the code editor, so a grammar node runs the way a
         // Python one does (#223).
         registerRunNodeAction(editor, monaco, () => runNodeRef.current);
     };
-
-    useEffect(() => {
-        if (!collab.enabled) return;
-        const unsub = collab.onRemote("code_change_applied", (payload) => {
-            const prop = payload as CodeProposal;
-            if (!prop || prop.nodeId !== nodeId || prop.kind !== "grammar") return;
-            if (isOwnParticipant(collab.participantId, prop.proposed_by)) {
-                baselineRef.current = prop.newValue;
-                return;
-            }
-            applyValue(prop.newValue); // editor + baseline (cursor-preserving)
-            setGrammar(prop.newValue);
-        });
-        return unsub;
-    }, [collab.enabled, collab.onRemote, collab.participantId, nodeId]);
-
-    const pendingProposal = collab.proposals.find(
-        (p) => p.nodeId === nodeId && p.kind === "grammar",
-    );
-    const proposalIsMine = Boolean(
-        pendingProposal && isOwnParticipant(collab.participantId, pendingProposal.proposed_by),
-    );
 
     useEffect(() => {
         // Strings only: floating a non-string (the old reset chain produced
@@ -249,43 +216,6 @@ export default function GrammarEditor({
             className="my-editor nowheel nodrag"
             style={{ height: editorHeight.inCell ? "auto" : "100%", display: "flex", flexDirection: "column" }}
         >
-            {pendingProposal && (
-                <div
-                    style={{
-                        padding: "4px 8px",
-                        background: proposalIsMine ? "#fff8e1" : "#e3f2fd",
-                        borderBottom: "1px solid #ccc",
-                        fontSize: 11,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6,
-                    }}
-                >
-                    <span style={{ flex: 1 }}>
-                        {proposalIsMine
-                            ? `Awaiting approval (${pendingProposal.approvals.length}).`
-                            : `${pendingProposal.proposed_by?.username || "Peer"} proposed a grammar change.`}
-                    </span>
-                    {!proposalIsMine && (
-                        <>
-                            <button
-                                type="button"
-                                onClick={() => collab.approveCodeChange(pendingProposal.id)}
-                                style={{ padding: "1px 8px", fontSize: 11 }}
-                            >
-                                Approve
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => collab.rejectCodeChange(pendingProposal.id)}
-                                style={{ padding: "1px 8px", fontSize: 11 }}
-                            >
-                                Reject
-                            </button>
-                        </>
-                    )}
-                </div>
-            )}
             <ReferenceStrip
                 nodeId={nodeId}
                 widgets={references.widgets}

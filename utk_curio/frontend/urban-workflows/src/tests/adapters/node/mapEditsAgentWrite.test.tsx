@@ -87,7 +87,6 @@ function mount() {
       setEdges: jest.fn() as unknown as React.Dispatch<React.SetStateAction<Edge[]>>,
       reactFlow: { getNodes: () => nodes, getEdges: () => EDGES } as unknown as ReactFlowInstance,
       workflowNameRef: { current: "wf" },
-      collabRef: { current: { broadcastNodeAdded: jest.fn() } } as any,
       outputsRef: { current: [] },
       markNodeStaleRef: { current: markNodeStale },
       setOutputs: jest.fn(),

@@ -215,10 +215,12 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     collab.unlockNode(data.nodeId);
   };
 
-  // Peer lock detection. This tab's own lock is suppressed so the user sees
-  // no chip over their own node. Told apart by participant: another tab of
-  // the same account, or another guest, holds a lock of its own.
-  const lockInfo = collab.lockedNodes[data.nodeId];
+  // Peer lock detection: the chip that says someone else is in this node.
+  // This tab's own lock is suppressed so the user sees no chip over their own
+  // node. Told apart by participant: another tab of the same account, or
+  // another guest, holds a lock of its own. It never stops anyone typing:
+  // code is typed together.
+  const lockInfo = collab.lockedNodes?.[data.nodeId];
   const lockedByOther = Boolean(lockInfo && !isOwnParticipant(collab.participantId, lockInfo));
 
   useEffect(() => {
@@ -601,7 +603,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
             applyGrammar={behavior.applyGrammar}
             customWidgetsCallback={behavior.customWidgetsCallback}
             defaultValue={defaultValue}
-            readOnly={readOnly || lockedByOther}
+            readOnly={readOnly}
             floatCode={nodeState.setCode}
             contentComponent={behavior.contentComponent}
             controlsComponent={behavior.controlsComponent}

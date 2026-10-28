@@ -28,7 +28,9 @@ export interface FlowContextProps {
     onEdgesChange: (changes: EdgeChange[]) => void;
     onConnect: (connection: Connection, custom_nodes?: any, custom_edges?: any, custom_workflow?: string, provenance?: boolean, skipValidation?: boolean, sourceAddedByLoad?: boolean) => void;
     isValidConnection: (connection: Connection) => boolean;
-    onEdgesDelete: (connections: Edge[]) => void;
+    /** Remove *connections* from the canvas; `remote`: the dataflow's doc
+     *  removed them, and the tab that did rewrote what their removal changes. */
+    onEdgesDelete: (connections: Edge[], options?: { remote?: boolean }) => void;
     onNodesDelete: (changes: NodeChange[]) => void;
     setPinForDashboard: (nodeId: string, value: boolean) => void;
     /** True while the tree is rendering the dashboard page rather than the canvas. */
@@ -196,6 +198,24 @@ export interface FlowContextProps {
     /** In the notebook view, scroll the first of these nodes' cells into view
      *  (with `ifMoved`, only if the change under way moves it); false on the canvas. */
     revealNodes: (nodeIds: string[], options?: { ifMoved?: boolean }) => boolean;
+
+    /** Note the dataflow the canvas holds now, as a load or a create leaves
+     *  it, for the canvas's binding to the dataflow's doc (`useDataflowDoc`). */
+    noteLoadedDataflow?: (dataflow: any, projectId?: string | null) => void;
+    /** The canvas's binding to the dataflow's doc. */
+    dataflowDoc?: {
+        /** Whether the canvas is bound to the doc. */
+        bound(): boolean;
+        /** This tab's drag, which the others see live. */
+        noteDrag(changes: NodeChange[]): void;
+        /** Who else is editing a node's code. */
+        editorsOf(nodeId: string): string[];
+        /** Tell the others this tab removes these nodes now. */
+        noteRemoval(nodeIds: string[]): void;
+        /** Run *proceed*, which removes *nodeIds*, once asked if anyone
+         *  else is editing one of them. */
+        askBeforeRemoving(nodeIds: readonly string[], proceed: () => void): void;
+    };
 }
 
 // Stable context for NodeContainer — only updates when goal/minimized change, NOT on node drag

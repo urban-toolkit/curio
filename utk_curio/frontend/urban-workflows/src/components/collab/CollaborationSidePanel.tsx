@@ -1,11 +1,8 @@
 /**
  * Collapsible right-docked panel that surfaces real-time collaboration
- * state: connected users with their roles, pending code-change proposals,
- * and a recent activity feed. ``CanvasSidePanels`` places it on the canvas's
- * right edge, under the top bar.
- *
- * Approve and Reject are offered on another participant's proposal to those
- * who edit the dataflow: a watcher has no vote.
+ * state: connected users with their roles, and a recent activity feed.
+ * ``CanvasSidePanels`` places it on the canvas's right edge, under the top
+ * bar. Code is typed together in the node's editor, with no vote.
  *
  * Renders nothing when ``--collab`` is off or the panel is closed.
  */
@@ -13,7 +10,6 @@
 import React from "react";
 
 import { useCollab } from "../../providers/CollaborationProvider";
-import { canEditRole, isOwnParticipant } from "../../providers/collab/participants";
 
 const PANEL_WIDTH = 260;
 
@@ -55,60 +51,6 @@ export const CollaborationSidePanel: React.FC = () => {
                             )}
                         </Row>
                     ))
-                )}
-            </Section>
-
-            <Section title={`Proposals (${collab.proposals.length})`}>
-                {collab.proposals.length === 0 ? (
-                    <Empty>No pending changes.</Empty>
-                ) : (
-                    collab.proposals.map((p) => {
-                        const mine = isOwnParticipant(collab.participantId, p.proposed_by);
-                        const votes = !mine && canEditRole(collab.role);
-                        return (
-                            <div
-                                key={p.id}
-                                style={{
-                                    background: "#fff",
-                                    border: "1px solid #e0e0e0",
-                                    borderRadius: 4,
-                                    padding: 6,
-                                    display: "flex",
-                                    flexDirection: "column",
-                                    gap: 4,
-                                }}
-                            >
-                                <div style={{ fontWeight: 600 }}>
-                                    {p.kind === "grammar" ? "Grammar" : "Code"} change ·{" "}
-                                    <span style={{ color: "#666", fontWeight: 400 }}>
-                                        {p.nodeId.slice(0, 8)}
-                                    </span>
-                                </div>
-                                <div style={{ color: "#666", fontSize: 11 }}>
-                                    by {p.proposed_by?.username || "?"} ·{" "}
-                                    {p.approvals.length} approval(s)
-                                </div>
-                                {votes && (
-                                    <div style={{ display: "flex", gap: 4 }}>
-                                        <button
-                                            type="button"
-                                            onClick={() => collab.approveCodeChange(p.id)}
-                                            style={{ flex: 1, padding: "2px 4px", fontSize: 11 }}
-                                        >
-                                            Approve
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => collab.rejectCodeChange(p.id)}
-                                            style={{ flex: 1, padding: "2px 4px", fontSize: 11 }}
-                                        >
-                                            Reject
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                        );
-                    })
                 )}
             </Section>
 
