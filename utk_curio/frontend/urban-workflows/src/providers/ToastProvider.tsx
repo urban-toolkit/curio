@@ -12,6 +12,9 @@ export interface ToastAction {
 
 export interface ToastOptions {
     action?: ToastAction;
+    /** Stays until it is dismissed, as an error does: what someone else did
+     *  to what this person was working on, which they must see and may undo. */
+    stay?: boolean;
 }
 
 interface ToastItem {
@@ -90,7 +93,7 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
                 : prev.reduce((highest, t) => Math.max(highest, t.seq), -1) + 1;
             return [...prev, { id, seq, message, variant, action: options.action }];
         });
-        const after = AUTO_DISMISS_MS[variant];
+        const after = options.stay ? undefined : AUTO_DISMISS_MS[variant];
         if (after !== undefined) {
             setTimeout(() => {
                 setToasts((prev) => prev.filter((t) => t.id !== id));

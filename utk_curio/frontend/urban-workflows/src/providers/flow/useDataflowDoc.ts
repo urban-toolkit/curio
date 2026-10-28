@@ -417,7 +417,7 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
             latest.current.showToast(
                 `${who ?? "Someone"} removed this node while you were editing it.`,
                 "warning",
-                { action: { label: "Put it back", onClick: () => putBack(node, attached) } },
+                { action: { label: "Put it back", onClick: () => putBack(node, attached) }, stay: true },
             );
         };
         const named = removerOf(awareness, node.id);

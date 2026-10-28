@@ -440,7 +440,7 @@ const FlowProvider = ({
         if (typeof collab.onRemote !== "function") return;
         return collab.onRemote(CONNECTION_DROPPED_EVENT, (payload: any) => {
             const who = payload?.by?.name || payload?.by?.username || "Someone";
-            showToast(`${who} removed that node, so this connection was not kept.`, "warning");
+            showToast(`${who} removed that node, so this connection was not kept.`, "warning", { stay: true });
         });
     }, [collab.onRemote, showToast]);
     // Removing a node someone else is editing asks first.

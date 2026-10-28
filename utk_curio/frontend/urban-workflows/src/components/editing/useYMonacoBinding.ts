@@ -48,10 +48,23 @@ function takeUndo(editor: any, monaco: any): { manager: Y.UndoManager | null } {
         editor.trigger?.("keyboard", redo ? "redo" : "undo", null);
     };
     const { KeyMod, KeyCode } = monaco ?? {};
-    if (typeof editor.addCommand === "function" && KeyMod && KeyCode) {
-        editor.addCommand(KeyMod.CtrlCmd | KeyCode.KeyZ, () => run(false));
-        editor.addCommand(KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyZ, () => run(true));
-        editor.addCommand(KeyMod.CtrlCmd | KeyCode.KeyY, () => run(true));
+    // Actions of this editor's own: a command (`addCommand`) is bound for every
+    // editor on the page, the last one bound winning, so Ctrl+Z in one node
+    // ran another's undo; and an action outranks Monaco's own binding of the
+    // chord (runNodeMonacoAction.ts).
+    if (typeof editor.addAction === "function" && KeyMod && KeyCode) {
+        editor.addAction({
+            id: "curio.undoOwnTyping",
+            label: "Undo",
+            keybindings: [KeyMod.CtrlCmd | KeyCode.KeyZ],
+            run: () => run(false),
+        });
+        editor.addAction({
+            id: "curio.redoOwnTyping",
+            label: "Redo",
+            keybindings: [KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyZ, KeyMod.CtrlCmd | KeyCode.KeyY],
+            run: () => run(true),
+        });
     }
     return slot;
 }
