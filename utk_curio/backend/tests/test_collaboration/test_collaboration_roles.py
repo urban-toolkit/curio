@@ -20,17 +20,19 @@ EDGE = {"id": "e1", "source": "n1", "target": "n2"}
 
 def _room(collab_app, *invited):
     """alice owns a dataflow, *invited* edit it, and carol watches; everyone
-    has joined. Returns the dataflow's id and each one's socket and ack."""
+    has joined, in that order, so carol's join answer lists the whole room.
+    Returns the dataflow's id and each one's socket and ack."""
     application, socketio, _ = collab_app
     with application.app_context():
         alice, a_tok = make_user("alice")
-        carol, c_tok = make_user("carol")
-        tokens = {"alice": a_tok.token, "carol": c_tok.token}
+        tokens = {"alice": a_tok.token}
         project_id = make_project(alice)
         for name in invited:
             user, tok = make_user(name)
             tokens[name] = tok.token
             invite(project_id, alice, user)
+        _carol, c_tok = make_user("carol")
+        tokens["carol"] = c_tok.token
     sockets, acks = {}, {}
     for name, token in tokens.items():
         sockets[name] = connect(socketio, application, token)
@@ -138,8 +140,9 @@ def test_two_participants_of_one_account_are_told_apart(collab_app):
     application, socketio, _ = collab_app
     with application.app_context():
         alice, tok = make_user("alice")
+        token = tok.token
         project_id = make_project(alice)
-    first, second = connect(socketio, application, tok.token), connect(socketio, application, tok.token)
+    first, second = connect(socketio, application, token), connect(socketio, application, token)
     one, two = join(first, project_id), join(second, project_id)
     assert one["participant_id"] != two["participant_id"]
     assert one["role"] == two["role"] == "owner"
@@ -169,10 +172,11 @@ def test_a_hosted_guest_joins_no_room_of_a_dataflow_a_guest_owns(collab_app, mon
     application, socketio, _ = collab_app
     with application.app_context():
         guest, g_tok = make_user(config.CURIO_SHARED_GUEST_USERNAME, is_guest=True)
+        token = g_tok.token
         alice, _a_tok = make_user("alice")
         example = make_project(guest)
         alices = make_project(alice)
-    visitor = connect(socketio, application, g_tok.token)
+    visitor = connect(socketio, application, token)
 
     assert join(visitor, example) == {"ok": False, "error": "guest_owned", "message": GUEST_OWNED_REFUSAL}
     watching = join(visitor, alices)
@@ -191,8 +195,9 @@ def test_without_deploy_the_shared_guest_edits_its_own_dataflows(collab_app, mon
     application, socketio, _ = collab_app
     with application.app_context():
         guest, g_tok = make_user(config.CURIO_SHARED_GUEST_USERNAME, is_guest=True)
+        token = g_tok.token
         project_id = make_project(guest)
-    local = connect(socketio, application, g_tok.token)
+    local = connect(socketio, application, token)
 
     ack = join(local, project_id)
     assert ack["ok"] is True and ack["role"] == "owner"
@@ -248,6 +253,7 @@ def test_a_join_to_a_dataflow_that_does_not_exist_is_refused(collab_app):
     application, socketio, _ = collab_app
     with application.app_context():
         _alice, tok = make_user("alice")
-    client = connect(socketio, application, tok.token)
+        token = tok.token
+    client = connect(socketio, application, token)
 
     assert join(client, "3fd026a7-ef31-4fb6-ac24-2d1b099ff7cf") == {"ok": False, "error": "unknown_project"}
