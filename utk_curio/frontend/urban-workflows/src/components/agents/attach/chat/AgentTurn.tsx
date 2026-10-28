@@ -6,6 +6,8 @@ import {
   DATASET_SELECT_CAPABILITY,
   declaresCapability,
   NODE_BUILD_CAPABILITY,
+  SKILL_USE_WORDS,
+  skillsUsedBy,
   type AgentAttachment,
   type AgentCardPart,
   type AgentDatasetCandidatesPart,
@@ -74,6 +76,7 @@ export const AgentTurn: React.FC<{
     declaresCapability(attachment, DATASET_SELECT_CAPABILITY) && attachment.target.kind === "node";
   // #447: the failed tool calls that keep their reason under the reply.
   const failedCalls = lastingToolFailures(t);
+  const usedSkills = t.error ? [] : skillsUsedBy(t.execution);
   return (
     <div className={styles.agentRow}>
       <span className={`${styles.agentRowAvatar} ${tint}`} aria-hidden="true">
@@ -166,6 +169,21 @@ export const AgentTurn: React.FC<{
           </div>
         ))}
         {canvasUnchanged ? <div className={styles.turnNote}>No changes were made to the canvas</div> : null}
+        {/* The skills this reply's run held or loaded, from its record: each
+            name says on hover how the run came to hold it. */}
+        {usedSkills.length > 0 ? (
+          <div className={`${styles.turnNote} ${styles.turnSkills}`} data-curio-reply-skills="true">
+            Skills:{" "}
+            {usedSkills.map((skill, j) => (
+              <React.Fragment key={skill.name}>
+                {j > 0 ? ", " : null}
+                <span className={styles.turnSkill} data-tooltip={SKILL_USE_WORDS[skill.use]}>
+                  {skill.name}
+                </span>
+              </React.Fragment>
+            ))}
+          </div>
+        ) : null}
         {/* Per-reply execution status (dev/80 amendment): running while THIS
             reply streams, then its own duration + tokens. */}
         {meta ? (

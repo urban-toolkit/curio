@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { AgentRemedy } from "../../services/agents";
 import { agentsApi, type AgentAttachmentsState } from "../../services/agents";
-import type { AgentSessionTurn, AgentToolCall, AgentUsage } from "../../services/agents/types";
+import type { AgentRunSkillPins, AgentSessionTurn, AgentToolCall, AgentUsage } from "../../services/agents/types";
 import type { AgentRunStatus } from "../../services/agents/agentRunStatus";
 
 export interface AgentSessionSlice {
@@ -182,13 +182,16 @@ export function useAgentSession(
           usage?: AgentUsage | null;
           durationMs?: number;
           content?: AgentSessionTurn["content"];
+          skills?: AgentRunSkillPins;
+          skillsLoaded?: string[];
         },
         calls: AgentToolCall[],
       ) => {
         // The finalized turn keeps the run's execution identity + Actual usage
         // (memo dev/37), its duration (dev/80), its tool calls with the reason
-        // any of them failed (#447), and its typed content parts (memo dev/39)
-        // so the local transcript matches the persisted one.
+        // any of them failed (#447), the skills it held and loaded, and its
+        // typed content parts (memo dev/39) so the local transcript matches
+        // the persisted one.
         const durationMs = result.durationMs ?? Date.now() - startedAt;
         const execution = result.executionId
           ? {
@@ -197,6 +200,8 @@ export function useAgentSession(
               status: "ok" as const,
               durationMs,
               ...(calls.length ? { toolCalls: [...calls] } : {}),
+              ...(result.skills ? { pins: { skills: result.skills } } : {}),
+              ...(result.skillsLoaded?.length ? { skillsLoaded: [...result.skillsLoaded] } : {}),
             }
           : undefined;
         const content = result.content && result.content.length ? result.content : undefined;

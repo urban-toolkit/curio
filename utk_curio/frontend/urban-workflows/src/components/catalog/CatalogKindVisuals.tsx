@@ -2,6 +2,7 @@ import React from "react";
 import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
+  faBookOpen,
   faBrain,
   faCloudArrowDown,
   faCube,
@@ -12,7 +13,15 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import styles from "./CatalogKindVisuals.module.css";
 
-export type CatalogItemKind = "dataset" | "package" | "dataflow" | "agent" | "source" | "model" | "scenario";
+export type CatalogItemKind =
+  | "dataset"
+  | "package"
+  | "dataflow"
+  | "agent"
+  | "skill"
+  | "source"
+  | "model"
+  | "scenario";
 
 export interface CatalogKindMeta {
   icon: IconDefinition;
@@ -40,6 +49,13 @@ export const CATALOG_KIND_META: Record<CatalogItemKind, CatalogKindMeta> = {
     icon: faRobot,
     label: "Agent",
     shortLabel: "Agent",
+  },
+  // An Agent Catalog SKILL: what tells an agent how to do a specific task. The
+  // open book is the instructions it holds, beside the agent that reads them.
+  skill: {
+    icon: faBookOpen,
+    label: "Skill",
+    shortLabel: "Skill",
   },
   // A Discovery Catalog SOURCE: a portal you pull from. The download arrow says what
   // you do with one, which is more use than a drop of water would be - and it

@@ -61,6 +61,7 @@ export function CatalogButtons({
     model: openModelCatalogDrawer,
     scenario: openScenarioCatalogDrawer,
     dataflow: undefined,
+    skill: undefined,
   };
 
   return (

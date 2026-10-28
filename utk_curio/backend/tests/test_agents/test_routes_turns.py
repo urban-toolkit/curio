@@ -159,11 +159,19 @@ class TestStreamRun:
         assert events[1:3] == [("delta", {"text": "hel"}), ("delta", {"text": "lo"})]
         # No provider-reported usage → no interim usage event (dev/80): the
         # done frame follows the deltas directly, now carrying durationMs.
+        # It names the skills the run held, as its saved record does: the
+        # Researcher's chat is handed its instruction's own from its first
+        # message (``prompts.instruction.skills``).
+        from utk_curio.backend.app.agents.domain import builtin
+
+        handed = list(builtin.get_builtin_manifest("agent.curio.researcher@1").instruction_skills)
+        assert handed
         done_name, done_payload = events[3]
         assert done_name == "done"
         assert done_payload.pop("durationMs") >= 0
         assert done_payload == {
             "reply": "hello", "executionId": execution_id, "usage": None, "content": [],
+            "skills": {"handed": handed},
         }
         turns = client.get(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",

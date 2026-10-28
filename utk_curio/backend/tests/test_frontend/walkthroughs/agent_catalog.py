@@ -335,13 +335,15 @@ def agent_catalog_action_labels_fit(ctx: Ctx) -> None:
 
 @walkthrough(
     slug="agent-details-use-the-docs-words",
-    title="An agent's details use the docs' three words",
+    title="An agent's details use the docs' four words",
     premise="Open the Node Builder's details on the Agent Catalog page and read them.",
     note="The window listed the agent's capability ids under Capabilities and its "
          "prompts by file name. It now says what you ask the agent in chat, the "
-         "tools it uses there and its modes, each with who asks for it, in the "
-         "words of docs/AGENT-CATALOG.md, and each prompt says when it runs.",
+         "tools it uses there, its modes, each with who asks for it, and its "
+         "skills, in the words of docs/AGENT-CATALOG.md, and each prompt says "
+         "when it runs.",
     tests=["src/tests/catalog/agentDetailModel.test.tsx",
+           "src/tests/catalog/agentSkillsSection.test.tsx",
            "backend/tests/test_agents/test_agent_details.py",
            "test_frontend/test_walkthrough_baselines.py"],
     clip_selector='[data-curio-modal-shell="true"]',
@@ -364,7 +366,7 @@ def agent_details_use_the_docs_words(ctx: Ctx) -> None:
     dialog = page.get_by_role("dialog", name="Agent details")
     expect(dialog).to_be_visible(timeout=15000)
     expect(dialog.get_by_role("heading", level=3)).to_have_text(
-        ["In chat", "Tools", "Modes (who asks)", "Agent info", re.compile(r"^Prompts"),
+        ["In chat", "Tools", "Modes (who asks)", "Skills", "Agent info", re.compile(r"^Prompts"),
          "Requires"],
         timeout=15000,
     )
@@ -374,11 +376,17 @@ def agent_details_use_the_docs_words(ctx: Ctx) -> None:
     expect(modes.get_by_text(
         "Write a node's content: asked by Node Builder, Dataflow Builder, Solve", exact=True,
     )).to_be_visible(timeout=15000)
-    # The prompts and the model arrive after the window opens: wait for both,
-    # so the frame catches neither loading.
+    # The prompts, the model and the skills arrive after the window opens:
+    # wait for all three, so the frame catches none of them loading.
     expect(dialog.get_by_text("every call", exact=True)).to_be_visible(timeout=15000)
     expect(dialog.get_by_text("…", exact=True)).to_have_count(0, timeout=15000)
+    expect(dialog.locator('[data-curio-agent-skills="true"] [data-curio-skill-row]')).not_to_have_count(
+        0, timeout=15000,
+    )
+    expect(dialog.locator('[data-curio-agent-skills="true"]').get_by_text("Loading…")).to_have_count(
+        0, timeout=15000,
+    )
 
     ctx.focus(modes, hold=900)
-    ctx.say("In chat, tools and modes",
-            "The docs' three words, and who asks for each mode.")
+    ctx.say("In chat, tools, modes and skills",
+            "The docs' four words, and who asks for each mode.")
