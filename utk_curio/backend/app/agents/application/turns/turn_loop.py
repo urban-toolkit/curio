@@ -602,6 +602,10 @@ class AttachmentTurn:
             agents_titles._generate_conversation_title(
                 self.user_key, self.project_id, self.attachment_id, self.message, self.config
             )
+        # The skills the reply's line under it names, as the persisted record
+        # holds them: those its system turn held (pins.skills, its catalog
+        # left out) and those it loaded (skillsLoaded).
+        held = {key: names for key, names in (self.pins.get("skills") or {}).items() if key != "catalog"}
         return {
             "attachmentId": self.attachment_id,
             "coord": self.coord,
@@ -611,6 +615,8 @@ class AttachmentTurn:
             # dev/80: the run's wall-clock duration — matches the persisted record.
             "durationMs": execution["durationMs"],
             "content": run_parts,
+            **({"skills": held} if held else {}),
+            **({"skillsLoaded": execution["skillsLoaded"]} if execution.get("skillsLoaded") else {}),
         }
 
     # ── the streaming envelope ──────────────────────────────────────────────

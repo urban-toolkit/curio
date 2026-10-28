@@ -72,6 +72,7 @@ from utk_curio.backend.app.packages.application.templates import (
     roster_templates,
     TEMPLATE_FLAGS,
     catalog_template_behaviors,
+    catalog_template_labels,
     template_content_kind,
     template_flags,
     template_is_executable,

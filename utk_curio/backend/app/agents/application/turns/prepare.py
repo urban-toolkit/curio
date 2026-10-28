@@ -82,10 +82,11 @@ def _prepare_run(
     if not isinstance(session_id, str):
         session_id = None
     prior = sessions.read_turns(user_key, project_id, session_id) if session_id else []
-    # The skills the run lists, those it is handed for its node, and those its
-    # conversation loaded before (skill_runs).
+    # The skills the run lists, those it is handed for its node, those its
+    # conversation loaded before, and those the message names, /<name> each
+    # (skill_runs).
     run_skills = agents_skill_runs.for_chat(
-        user_key, project_id, manifest, spec, record.get("target"), preamble, prior,
+        user_key, project_id, manifest, spec, record.get("target"), preamble, prior, message=message,
     )
     # Grant-less runs keep the T2 tail byte-identical; granted runs get the
     # toolRequest paragraph (memos dev/39/41).
