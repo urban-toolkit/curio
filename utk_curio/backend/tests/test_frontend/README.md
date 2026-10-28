@@ -882,6 +882,16 @@ through the real routes rather than deleting files - for libraries that matters,
 because the route runs in the backend process, the only interpreter guaranteed to
 match the sandbox's.
 
+A `page.route` handler that does more than answer, abort or continue its route
+(one that calls `route.fetch()` and reads the answer) comes off before its
+context closes. Closing a context does not wait for the calls of a route still
+running: one that reads its answer after the close fails with "Response has
+been disposed", and Playwright raises that at the worker's next call, which can
+be the next test's. Close a context the test opened with
+`close_after_routes(context)`, and end the routes of pytest-playwright's `page`
+in a `finally` with `end_routes(page)` (`utils/routes.py`). Both wait for the
+calls still running, so release any route a test parks unanswered first.
+
 ## Feature-tour screencast
 
 `test_feature_tour_video.py` is not a test. It borrows this harness - the stack
