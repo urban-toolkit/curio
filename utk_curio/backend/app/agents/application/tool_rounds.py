@@ -21,6 +21,7 @@ from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 from utk_curio.backend.app.agents.infrastructure.providers import ToolCall
 from utk_curio.backend.app.agents.application.proposals import mint as agents_mint
 from utk_curio.backend.app.agents.application.proposals import plans as agents_plans
+from utk_curio.backend.app.agents.application import skill_runs as agents_skill_runs
 from utk_curio.backend.app.agents.domain import agent_text
 
 
@@ -350,6 +351,12 @@ def _execute_tool_request(
         contract = tools.REGISTRY.get(tool_id)
         if contract is None:
             status, text = "refused", agent_text.message("tool-round.not-available", tool=repr(tool_id))
+        elif tool_id == agents_skill_runs.TOOL and loop_ctx.get("skills") is not None:
+            # A skill, from the run's own list, recorded as loaded; a name or
+            # a path the model can fix is a parameter refusal.
+            status, text = agents_skill_runs.read(loop_ctx["skills"], req.get("params") or {})
+            if status == "refused":
+                text = ParamRefusal(text)
         elif contract.effect == "mutate":
             status, text, part = agents_mint._mint_proposal(user_key, project_id, loop_ctx, req)
             if part is not None:

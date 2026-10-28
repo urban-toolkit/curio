@@ -15,8 +15,9 @@ And a spec names the dataset its inputs are stacked in by its chip,
 bare name draws the same, so only reading the specs as written finds it.
 
 The specs are read from the example dataflows, their walkthroughs, the default
-preamble as agents read it, and the worked examples the builder agents are
-shown (the base entry's ``examples.md``), which include example 09's scatter. A
+preamble and the skills Curio ships as agents read them, and the worked
+examples the builder agents are shown (the base entry's ``examples.md``),
+which include example 09's scatter. A
 dataflow's chart is a Vega-Lite node, or a node of a shipped template that
 draws with the Vega-Lite grammar, as Scout's charts do.
 """
@@ -30,7 +31,7 @@ from pathlib import Path
 import pytest
 
 from utk_curio.backend.app.agents.application.turns import examples as worked_examples
-from utk_curio.backend.app.agents.domain import builtin
+from utk_curio.backend.app.agents.domain import agent_text, builtin, skills
 from utk_curio.backend.app.agents.evaluation.fixtures import EXAMPLES_ROOT, example_paths
 
 VEGA = "curio.builtin/vis-vega"
@@ -99,6 +100,8 @@ def _shipped_specs():
     for path in sorted(Path(EXAMPLES_ROOT).glob("*.md")):
         yield from _block_specs(path.read_text(encoding="utf-8"), path.name)
     yield from _block_specs(builtin.read_page(builtin.PREAMBLE_FILE, wanted_by="the Vega-Lite spec test"), "default preamble")
+    for skill in skills.shipped_skills():
+        yield from _block_specs(agent_text.skill_text(skill.name), f"skill {skill.name}")
     for example in worked_examples.used_examples():
         yield from _node_specs(_flow_of(example.spec), f"worked example {example.key}")
 
@@ -162,7 +165,7 @@ class TestHollowPoints:
         assert {
             "09-heterogeneous-data-linked-views.json",
             "09-heterogeneous-data-linked-views.md",
-            "default preamble",
+            "skill interaction-edges",
             "worked example 09-heterogeneous-data-linked-views",
         } <= brushed_points
 

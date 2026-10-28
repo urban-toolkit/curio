@@ -610,21 +610,24 @@ def _shipped_package_ids() -> list[str]:
     return ids
 
 
-def test_the_preamble_names_no_packages_templates_or_functions():
-    """The preamble every agent reads is Curio's own: of the templates it names,
-    each is the built-in package's, and it names no other package Curio ships
+def test_the_preamble_and_curios_skills_name_no_packages_templates_or_functions():
+    """The preamble every agent reads, and every skill Curio ships, which a
+    run lists or is handed, are Curio's own: of the templates they name, each
+    is the built-in package's, and they name no other package Curio ships
     and no function a package's modules define. A package's templates and
     functions reach a run that writes one of its nodes through the dataflow
     block, from its manifest and its modules."""
-    from utk_curio.backend.app.agents.domain import agent_text
+    from utk_curio.backend.app.agents.domain import agent_text, skills
     from utk_curio.backend.app.packages.domain.function_nodes import read_functions
     from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
     from utk_curio.backend.app.packages.repositories.python_modules import module_files
 
-    # The pages the preamble includes and the skills it places, and theirs.
+    # The preamble and every skill, the pages they include and the skills
+    # they place, and theirs.
     preamble = agent_text.page_file("default_preamble.md")
-    files = {preamble}
-    queue = [preamble.read_text(encoding="utf-8")]
+    every_skill = [folder / skills.SKILL_FILE for folder in skills.shipped_folders()]
+    files = {preamble, *every_skill}
+    queue = [file.read_text(encoding="utf-8") for file in files]
     while queue:
         text = queue.pop()
         found = [BASE / page for page in re.findall(r"\{\{include:([^{}]+)\}\}", text)]
@@ -639,7 +642,7 @@ def test_the_preamble_names_no_packages_templates_or_functions():
     for file in sorted(files):
         named = set(re.findall(r"\{\{template\.label:([^/{}]+)/", file.read_text(encoding="utf-8")))
         assert named <= {"curio.builtin"}, f"{file.name} names templates of {sorted(named - {'curio.builtin'})}"
-    rendered = agent_text.render(preamble)
+    rendered = "\n\n".join([agent_text.render(preamble), *(agent_text.render(file) for file in every_skill)])
     for package_id in _shipped_package_ids():
         assert not re.search(rf"(?<![\w.]){re.escape(package_id)}(?![\w-])", rendered), package_id
     for folder in sorted(path.parent for path in (REPO_ROOT / "packages").glob("*/manifest.json")):

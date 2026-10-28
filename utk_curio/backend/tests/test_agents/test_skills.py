@@ -285,7 +285,10 @@ def test_every_skill_curio_ships_carries_curios_frontmatter():
     """Each skill Curio ships is read strictly with no warning, says when to
     use it in a description that starts as agentskills.io's examples do, and
     carries the license, the compatibility and the metadata Curio gives its
-    skills: their author and their version, as strings."""
+    skills: their author and their version, and what each serves
+    (``curio-behaviors``, ``curio-features``, ``curio-refusals``, which
+    ``test_skill_listing.py`` and ``test_skill_runs.py`` hold to the code), as
+    strings."""
     skills = _skills()
     shipped = skills.shipped_skills()
     assert [skill.name for skill in shipped] == sorted(path.parent.name for path in SKILLS.glob("*/SKILL.md"))
@@ -296,6 +299,12 @@ def test_every_skill_curio_ships_carries_curios_frontmatter():
         assert (skill.license, skill.compatibility, skill.allowed_tools) == (
             "MIT", "Written for Curio's agents, their tools and node code.", None,
         ), skill.name
-        assert dict(skill.metadata) == {"author": "curio", "version": "1.0.0"}, skill.name
+        assert {key: skill.metadata[key] for key in ("author", "version")} == {
+            "author": "curio", "version": "1.0.0",
+        }, skill.name
+        assert set(skill.metadata) - {"author", "version"} <= {
+            "curio-behaviors", "curio-features", "curio-refusals",
+        }, skill.name
+        assert all(value == " ".join(value.split()) and value for value in skill.metadata.values()), skill.name
         assert skill.files == () and skill.warnings == (), skill.name
         assert skill.body.startswith("## ") and skill.body.endswith("\n"), skill.name

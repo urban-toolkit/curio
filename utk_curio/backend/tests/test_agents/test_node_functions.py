@@ -130,10 +130,13 @@ def test_lines_count_from_the_line_the_page_starts_on():
         node_functions.parse(GOOD.replace("Engines: python, javascript.", "Engines: Python.", 1), first_line=15)
 
 
-def test_the_page_curio_ships_reads_and_the_preamble_includes_it():
+def test_the_page_curio_ships_reads_and_every_run_that_writes_node_code_holds_it(tmp_curio):
     """Every function it gives, with its engines, read from the skill's body
-    as written and each on the line of the file it is on; the preamble every
-    agent reads places the skill whole, and the user guides link to it."""
+    as written and each on the line of the file it is on. The preamble leaves
+    it out: a run that writes a node's code is handed it whole, a chat loads it
+    whole, the agents that write or read node code name it, and the user
+    guides link to it."""
+    from utk_curio.backend.app.agents.application import skill_runs
     from utk_curio.backend.app.agents.domain import agent_text, builtin, node_functions, skills
 
     skill = skills.parse(SKILL)
@@ -147,10 +150,30 @@ def test_the_page_curio_ships_reads_and_the_preamble_includes_it():
     assert {name for name, have in engines.items() if have == ("python",)} == set(engines) - {"curio_layer"}
     assert [f.name for f in node_functions.for_engine("javascript", functions)] == ["curio_layer"]
     preamble = (BASE / "default_preamble.md").read_text(encoding="utf-8")
-    assert preamble.count("{{skill:" + node_functions.SKILL + "}}") == 1
+    assert "{{skill:" + node_functions.SKILL + "}}" not in preamble
     page = agent_text.skill_text(node_functions.SKILL)
+    naming = []
     for m in builtin.list_builtin_manifests():
-        assert builtin.read_prompt_text(m.dir_name, "system").count(page) == 1, m.agent_id
+        system = builtin.read_prompt_text(m.dir_name, "system")
+        assert page not in system, m.agent_id
+        if node_functions.SKILL in (m.skills or ()):
+            naming.append(m.agent_id)
+    assert sorted(naming) == [
+        "agent.curio.dataflow-builder", "agent.curio.dataflow-reader", "agent.curio.generated-content-evaluator",
+        "agent.curio.node-builder", "agent.curio.researcher",
+    ]
+    builder = builtin.get_builtin_manifest("agent.curio.node-builder@1")
+    system = builtin.read_prompt_text(builder.dir_name, "system")
+    python = "curio.builtin/computation-analysis"
+    written = skill_runs.for_delegated("4242", "p-functions", builder, "node.content.generate",
+                                       {"nodeType": python, "nodeContext": {"nodeType": python}},
+                                       {"dataflow": {"nodes": []}}, system)
+    assert skill_runs.skills_text(written).count(page) == 1
+    chat = skill_runs.for_chat("4242", "p-functions", builder, {"dataflow": {"nodes": []}}, {"kind": "canvas"},
+                               system, [])
+    assert node_functions.SKILL in chat.names
+    status, loaded = skill_runs.read(chat, {"name": node_functions.SKILL})
+    assert status == "ok" and loaded.count(page) == 1
 
 
 def test_map_edits_call_is_the_one_its_step_defines():

@@ -37,6 +37,7 @@ class TestRegistry:
             "examples.read",  # the worked examples
             "node.settings.write",  # an existing node's settings and widget values
             "scenarios.search",  # the Scenario Catalog
+            "skill.read",  # a skill a chat lists, loaded when a task needs it
         }
         assert tools.REGISTRY["dataflow.read"].effect == "read"
         assert tools.REGISTRY["node.read"].effect == "read"
@@ -63,6 +64,7 @@ class TestRegistry:
         assert tools.REGISTRY["models.search"].effect == "read"
         assert tools.REGISTRY["examples.read"].effect == "read"
         assert tools.REGISTRY["scenarios.search"].effect == "read"
+        assert tools.REGISTRY["skill.read"].effect == "read"
 
     def test_contract_validates_effect(self):
         with pytest.raises(ValueError):
