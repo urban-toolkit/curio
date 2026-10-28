@@ -46,7 +46,7 @@ import {
 } from "../registry/projectPackagesStore";
 import { backendUrl } from "../utils/backendUrl";
 import { collabSocketTarget } from "../utils/collabSocketTarget";
-import { canEditRole, roleIn, type RoomRole } from "./collab/participants";
+import { roleIn, writesDoc, type RoomRole } from "./collab/participants";
 import { DataflowDocProvider } from "./collab/docProvider";
 import { CONNECTION_DROPPED_EVENT, DataflowDocContext, type DocBinding } from "./collab/docContext";
 import { remoteCursorStyle } from "./collab/presence";
@@ -195,6 +195,8 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
 
     const socketRef = useRef<Socket | null>(null);
     const namespaceRef = useRef<string>(DEFAULT_NAMESPACE);
+    // The flag as the doc's writers read it: read before any socket opens.
+    const enabledRef = useRef<boolean>(false);
     const projectIdRef = useRef<string | undefined>(getCurrentProjectId());
     // The dataflow whose room refused this tab: no socket is opened for it
     // again until another dataflow opens.
@@ -212,6 +214,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
             .then((cfg) => {
                 if (cancelled) return;
                 namespaceRef.current = cfg.collab_namespace || DEFAULT_NAMESPACE;
+                enabledRef.current = Boolean(cfg.enable_collab);
                 setEnabled(Boolean(cfg.enable_collab));
                 setConfigLoaded(true);
             })
@@ -235,16 +238,17 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
 
     /** Start the dataflow's doc on *socket*, joined to *projectId*'s room, as a
      *  tab with *role*: the doc the tab holds, synced again, unless *fresh*
-     *  or the tab's role changed whether it writes. */
+     *  or the tab's role changed whether it writes (`writesDoc`). */
     const startDoc = useCallback((socket: Socket, projectId: string, role: RoomRole | null, fresh = false) => {
         const prior = docProviderRef.current;
-        if (!fresh && prior && prior.projectId === projectId && prior.canWrite === canEditRole(role)) {
+        const writes = writesDoc(role, enabledRef.current);
+        if (!fresh && prior && prior.projectId === projectId && prior.canWrite === writes) {
             prior.attach(socket);
             return;
         }
         dropDoc();
         const provider: DataflowDocProvider = new DataflowDocProvider(projectId, {
-            canWrite: canEditRole(role),
+            canWrite: writes,
             onSynced: () => {
                 if (docProviderRef.current === provider) setDocBinding({ provider, synced: true });
             },
@@ -450,7 +454,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
         const provider = docProviderRef.current;
         const socket = socketRef.current;
         if (!provider || !socket || !role) return;
-        if (provider.canWrite !== canEditRole(role)) startDoc(socket, provider.projectId, role, true);
+        if (provider.canWrite !== writesDoc(role, enabledRef.current)) startDoc(socket, provider.projectId, role, true);
     }, [role, startDoc]);
 
     // Everyone else's cursor in the code editors, in their color.

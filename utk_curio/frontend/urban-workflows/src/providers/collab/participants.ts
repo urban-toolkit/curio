@@ -56,6 +56,14 @@ export function canvasRole(
   return collab.enabled && canEditRole(collab.role) ? "editor" : "watcher";
 }
 
+/** Whether a tab in the room sends its changes to the dataflow's doc: the
+ *  rule `canvasRole` keeps for the canvas, on the room's role. The owner's
+ *  tab does; an editor's only with collaboration on, as its canvas watches
+ *  without it; a watcher's never does. */
+export function writesDoc(role: RoomRole | null | undefined, enabled: boolean): boolean {
+  return role === "owner" || (enabled && role === "editor");
+}
+
 /** The role `participantId` has among `users`, the room's list, or null when
  *  it is not in it. */
 export function roleIn(
