@@ -39,6 +39,9 @@ dependencies = [
   # UTF-8. See requirements.txt for why this is declared and not left
   # transitive.
   "charset-normalizer>=3.3",
+  # Reads each skill's frontmatter (agents/domain/skills.py). See
+  # requirements.txt.
+  "PyYAML>=6.0",
   "psutil>=5.9",
   "pyseccomp>=0.1.2; sys_platform == 'linux'",
   # Below 9.2, for pytest-xdist's --dist loadgroup. See requirements.txt.

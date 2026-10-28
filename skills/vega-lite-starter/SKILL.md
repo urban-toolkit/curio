@@ -1,3 +1,16 @@
+---
+name: vega-lite-starter
+description: >-
+  Use this skill when writing a Vega-Lite spec for a node whose input has already run. It gives
+  the ladder Curio follows to write a starter spec from the input's column types, so the spec
+  agrees with what the node would draw unless the user asks for something else, and the rules on
+  aggregates and identifier columns.
+license: MIT
+compatibility: Written for Curio's agents, their tools and node code.
+metadata:
+  author: curio
+  version: "1.0.0"
+---
 ## The starter spec a Vega-Lite node writes for itself
 
 When a Vega-Lite node is connected to a node that has already run, and its editor

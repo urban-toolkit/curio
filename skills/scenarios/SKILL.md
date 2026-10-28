@@ -1,3 +1,17 @@
+---
+name: scenarios
+description: >-
+  Use this skill when a dataflow compares alternatives as scenarios, or when a task makes, reads
+  or compares one. It says what a scenario's boundary, levers, fixed context and outcomes are, how
+  a copy pairs with the scenario it comes from, how a chart stacks each scenario's outcome and
+  colors it with the scenario chips, and how a scenario dragged in from another project names
+  where it came from.
+license: MIT
+compatibility: Written for Curio's agents, their tools and node code.
+metadata:
+  author: curio
+  version: "1.0.0"
+---
 ## Scenarios
 
 A scenario is a named selection of a dataflow's nodes, in "dataflow"."scenarios", used to compare alternatives: the same analysis with buildings twice as tall, say. Its boundary splits the dataflow into three parts. Its fixed context is the nodes outside it that it reads, through an edge into it. Its levers are its own nodes: what an alternative changes, such as a widget value, a line of code or a spec. Its outcomes are the outputs of its last nodes: what gets compared. A node belongs to one scenario at most, so a node two alternatives share sits outside both, as their common context. An alternative is usually a copy of another scenario's nodes that reads the same context, with a lever changed; each copy names the nodes it descends from in "metadata"."copiedFrom", which is how the levers of two scenarios pair.

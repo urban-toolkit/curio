@@ -1,10 +1,11 @@
 """Every fact the agents' text states from code is read from that code.
 
-The pages and prompts in ``agents/`` state facts the code owns through
-markers that ``contracts.PROMPT_FIELDS`` fills when the backend renders them
-(``agent_text``). These tests read each one as written and as an agent reads
-it (``prompt_text``). The tables the frontend shares, which several markers
-read, are held to their files in ``test_shared_constants.py``.
+The pages and prompts in ``agents/`` and the skills in ``skills/`` state
+facts the code owns through markers that ``contracts.PROMPT_FIELDS`` fills
+when the backend renders them (``agent_text``). These tests read each one as
+written and as an agent reads it (``prompt_text``). The tables the frontend
+shares, which several markers read, are held to their files in
+``test_shared_constants.py``.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from pathlib import Path
 import pytest
 
 from utk_curio.backend.app.agents.domain import agent_text, contracts
-from utk_curio.backend.tests._support.prompt_files import prompt_files, prompt_path, prompt_text
+from utk_curio.backend.tests._support.prompt_files import prompt_files, prompt_name, prompt_path, prompt_text
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
@@ -82,7 +83,7 @@ class TestRenderPrompt:
         marker = "{{agent.name:agent.curio.dataflow-builder}}"
         naming = [path for path in prompt_files() if marker in path.read_text(encoding="utf-8")]
         assert len(naming) >= 2, naming
-        rendered = {path.name: agent_text.render(path) for path in naming}
+        rendered = {prompt_name(path): agent_text.render(path) for path in naming}
         for name, text in rendered.items():
             assert "Flow Architect" in text and "Dataflow Builder" not in text, name
         assert any(
@@ -128,10 +129,10 @@ class TestRenderPrompt:
         A run that writes one of them reads that description and its starter
         in the dataflow block (``test_dataflow_block.py``). Compare Scenarios
         is gone, and the section names it nowhere. The section is the
-        knowledge page the preamble includes, read here as written."""
+        scenarios skill the preamble places, read here as written."""
         preamble = prompt_path("default_preamble.md").read_text(encoding="utf-8")
-        assert preamble.count("{{include:knowledge/scenarios.md}}") == 1
-        template = prompt_path("scenarios.md").read_text(encoding="utf-8")
+        assert preamble.count("{{skill:scenarios}}") == 1
+        template = prompt_path("scenarios/SKILL.md").read_text(encoding="utf-8")
         section = template.split("## Scenarios", 1)[1]
         manifest = json.loads((REPO_ROOT / "packages" / "curio.scout@1" / "manifest.json").read_text(
             encoding="utf-8"))
@@ -285,9 +286,10 @@ class TestThePromptFacts:
         assert "`[!! threshold !!]` for the widget named threshold" in prompt_text("node_build_instruction.md")
         # No page or prompt teaches the old marker form, or a shared tag, any more.
         for path in prompt_files():
-            assert "$TYPE$" not in prompt_text(path.name), path.name
-            assert "[!! @" not in prompt_text(path.name), path.name
-            assert '"sharedTags"' not in prompt_text(path.name), path.name
+            name = prompt_name(path)
+            assert "$TYPE$" not in prompt_text(name), name
+            assert "[!! @" not in prompt_text(name), name
+            assert '"sharedTags"' not in prompt_text(name), name
 
     def test_no_marker_names_a_shared_tag(self):
         """A widget's value reaches another node by an edge, so no prompt field
@@ -301,7 +303,7 @@ class TestThePromptFacts:
         with pytest.raises(contracts.PromptTemplateError, match="has no labelled template 'curio.builtin/parameter'"):
             contracts.render_template("{{template.label:curio.builtin/parameter}}")
         for path in prompt_files():
-            assert "curio.builtin/parameter" not in path.read_text(encoding="utf-8"), path.name
+            assert "curio.builtin/parameter" not in path.read_text(encoding="utf-8"), prompt_name(path)
 
     def test_a_widget_name_that_ends_in_a_line_break_is_refused(self):
         """A marker's argument may hold a line break, and a widget name is read
@@ -363,8 +365,8 @@ class TestThePromptFacts:
         files = prompt_files("*.md")
         texts = {}
         for path in files:
-            texts[f"{path.name}, as written"] = path.read_text(encoding="utf-8")
-            texts[f"{path.name}, as read"] = prompt_text(path.name)
+            texts[f"{prompt_name(path)}, as written"] = path.read_text(encoding="utf-8")
+            texts[f"{prompt_name(path)}, as read"] = prompt_text(prompt_name(path))
         assert files and len(texts) == 2 * len(files)
         for name, rendered in texts.items():
             assert not re.search(r"(?<![\w.$])arg(?![\w$])", rendered), name
@@ -392,12 +394,12 @@ class TestThePromptFacts:
         assert contracts.render_template("{{vega.schema_url}}") == contracts.VEGA_SCHEMA_URL
         urls = re.findall(r"https://vega\.github\.io/schema/vega-lite/[^\"\\\s]+", prompt_text("default_preamble.md"))
         assert urls and set(urls) == {contracts.VEGA_SCHEMA_URL}
-        # No page or prompt writes the URL by hand, the pages the preamble
-        # includes among them: each names it by its marker.
-        written = [path.name for path in prompt_files("*.md")
+        # No page, prompt or skill writes the URL by hand, the skills the
+        # preamble places among them: each names it by its marker.
+        written = [prompt_name(path) for path in prompt_files("*.md")
                    if "vega.github.io/schema" in path.read_text(encoding="utf-8")]
         assert not written, written
-        assert "{{vega.schema_url}}" in prompt_path("node-control.md").read_text(encoding="utf-8")
+        assert "{{vega.schema_url}}" in prompt_path("node-control/SKILL.md").read_text(encoding="utf-8")
 
     @pytest.mark.parametrize("field, ladder", [
         ("vega.starter_ladder", "VEGA_STARTER_LADDER"),
@@ -602,9 +604,10 @@ class TestThePreambleVocabulary:
         files = prompt_files("*.md")
         assert files
         for path in files:
-            for how, text in (("as written", path.read_text(encoding="utf-8")), ("as read", prompt_text(path.name))):
+            name = prompt_name(path)
+            for how, text in (("as written", path.read_text(encoding="utf-8")), ("as read", prompt_text(name))):
                 found = re.findall(r"\b(" + "|".join(_LEGACY_NAMES) + r")\b", text)
-                assert not found, f"{path.name}, {how}, names {sorted(set(found))}"
+                assert not found, f"{name}, {how}, names {sorted(set(found))}"
 
 
 class TestTheTrillBlock:

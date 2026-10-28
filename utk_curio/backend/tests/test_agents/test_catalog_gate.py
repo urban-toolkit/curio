@@ -1,9 +1,9 @@
 """What node code an agent writes may name, call and import: the catalog ids gate.
 
-The page of the functions Curio gives node code
-(``agents/agent.curio.builtin@1/knowledge/node-functions.md``) says which
-argument of each function names an item of a catalog, and which engines have
-the function. The grounding gate reads both from it:
+The page of the functions Curio gives node code, the body of
+``skills/node-functions/SKILL.md``, says which argument of each function
+names an item of a catalog, and which engines have the function. The
+grounding gate reads both from it:
 
 - a Data Catalog dataset or collection, a Model Catalog model and a Node code
   key are ones the account has, each written as a string in the call: a model
@@ -37,7 +37,15 @@ from utk_curio.backend.tests.test_agents import test_verified_rounds as verified
 
 REPO = Path(__file__).resolve().parents[4]
 PACKAGES = REPO / "packages"
-PAGE = REPO / "agents" / "agent.curio.builtin@1" / "knowledge" / "node-functions.md"
+#: The skill that gives the functions Curio gives node code.
+SKILL = REPO / "skills" / "node-functions"
+
+
+def _page() -> str:
+    """The functions page as written: the skill's body, after its frontmatter."""
+    from utk_curio.backend.app.agents.domain import skills
+
+    return skills.parse(SKILL).body
 
 USER = "4343"
 PROJECT = "p-gate"
@@ -271,7 +279,7 @@ class TestThePage:
     def test_each_argument_that_names_a_catalog_item_is_read_from_the_page(self, tmp_curio, monkeypatch):
         from utk_curio.backend.app.agents.domain import node_functions
 
-        functions = node_functions.parse(PAGE.read_text(encoding="utf-8") + MORE_FUNCTIONS)
+        functions = node_functions.parse(_page() + MORE_FUNCTIONS)
         monkeypatch.setattr(node_functions, "read", lambda: functions)
         secrets = {"census": CENSUS}
         assert _gate(f't = curio_open_table("{HEAT}")\nreturn t', catalog_ids=[HEAT]) is None
@@ -317,7 +325,7 @@ class TestThePage:
             assert f'{name}("<id>")' in rule, (name, rule)
             assert _gate(f'x = {name}("{HEAT}")\nreturn x', catalog_ids=[HEAT]) is None, name
         # It follows the page.
-        functions = node_functions.parse(PAGE.read_text(encoding="utf-8") + MORE_FUNCTIONS)
+        functions = node_functions.parse(_page() + MORE_FUNCTIONS)
         monkeypatch.setattr(node_functions, "read", lambda: functions)
         rule = grounding._source_grounding_inputs(ctx)["rule"]
         assert 'curio_open_table("<id>")' in rule and 'curio_open_photos("<id>")' in rule, rule

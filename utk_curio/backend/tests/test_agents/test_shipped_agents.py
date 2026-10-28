@@ -470,12 +470,11 @@ class TestTheSources:
                     marked.add(source.name)
         # Eleven state facts the code owns, each through a marker.
         assert len(marked) == 11, sorted(marked)
-        # The shared preamble, the knowledge pages it includes, one per
-        # feature, the rules other prompts include, the text the runtime
-        # composes a run's turns from, the words of the dataflow block, the
-        # words of the preamble's Autark section and the messages the checks
-        # send are the pages of the base entry, each listed once and each a
-        # file there: a page added or forgotten fails here.
+        # The shared preamble, the rules other prompts include, the text the
+        # runtime composes a run's turns from, the words of the dataflow
+        # block, the words of the preamble's Autark section and the messages
+        # the checks send are the pages of the base entry, each listed once
+        # and each a file there: a page added or forgotten fails here.
         pages = _raw(BASE)["pages"]
         assert len(pages) == len(set(pages)), pages
         assert set(pages) == {
@@ -484,13 +483,19 @@ class TestTheSources:
             "tools.md", "rules/plan-rules.md", "protocol.md", "frames.md",
             "delegate-contracts.md", "conversation-title.md", "keyword-types.md", "messages.md",
             "autark-grammar.md",
-            *(f"knowledge/{name}.md" for name in (
-                "nodes", "node-control", "node-functions", "catalogs", "widgets", "selection-chips", "autark",
-                "compatibility", "vega-lite-starter", "autark-starter", "vega-lite-maps", "interaction-edges",
-                "map-edits", "scenarios", "dashboards", "provenance",
-            )),
         }
         assert {path.relative_to(BASE).as_posix() for path in BASE.rglob("*.md")} - {"README.md"} == set(pages)
+        # What the agents know of each feature is a skill Curio ships, one
+        # folder of skills/ each, which the preamble places: a skill added or
+        # forgotten fails here.
+        skills = sorted(path.parent.name for path in (REPO_ROOT / "skills").glob("*/SKILL.md"))
+        assert skills == sorted((
+            "nodes", "node-control", "node-functions", "catalogs", "widgets", "selection-chips", "autark",
+            "compatibility", "vega-lite-starter", "autark-starter", "vega-lite-maps", "interaction-edges",
+            "map-edits", "scenarios", "dashboards", "provenance",
+        ))
+        preamble = (BASE / "default_preamble.md").read_text(encoding="utf-8")
+        assert sorted(re.findall(r"\{\{skill:([^{}]+)\}\}", preamble)) == skills
         # No template anywhere: a source is the file the backend renders.
         assert not list(AGENTS.rglob("*.template.md"))
 

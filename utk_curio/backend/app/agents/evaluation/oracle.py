@@ -147,8 +147,8 @@ def plan_for(
     ``edit_goals`` (``{ref: goal}``, :func:`edit_goals_for`) are the edits a
     planned Map Editor node is to hold, said as its example's goal says them:
     Solve makes edits in an empty Map Editor node only when its goal names
-    them, so a plan names them in the node's intent, as the knowledge page on
-    Map Editor asks of a planner.
+    them, so a plan names them in the node's intent, as the map-edits skill
+    asks of a planner.
 
     Raises :class:`Unrepresentable` for an edge kind the grammar cannot carry.
     """

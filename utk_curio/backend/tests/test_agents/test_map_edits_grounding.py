@@ -574,8 +574,8 @@ class TestAnEmptyMapEditsNodeIsFilledOnlyWhenItsGoalNamesEdits:
         assert {holds for _id, _names, holds in seen} == {True, False}, seen
 
     def test_the_words_a_goal_names_edits_by(self):
-        """The words the rule reads, which the knowledge page on Map Editor names
-        for agents: what each of the node's edits does, as its list says it,
+        """The words the rule reads, which the map-edits skill names for
+        agents: what each of the node's edits does, as its list says it,
         and the plain words for the same."""
         from utk_curio.backend.app.agents.domain import map_edits
 

@@ -1,12 +1,15 @@
-"""Everything an agent reads lives in agents/, and the backend renders it when it starts.
+"""Everything an agent reads lives in agents/ and skills/, and the backend renders it when it starts.
 
 The base entry, ``agents/agent.curio.builtin@1`` (its manifest says ``kind:
 base``), holds the pages every agent Curio ships reads, and each agent's
-folder holds its own prompts. Each is a hand-written source whose markers the
-backend fills when it starts (``agent_text``). Nothing is generated or
-committed, and ``utk_curio/`` holds none of it. An agent names a page as
-``curio:<path>``, and no such path leads out of the base entry. The base
-entry is no agent: no roster, catalog, palette or delegation lists it.
+folder holds its own prompts. What the agents know of each feature of Curio
+is a skill, ``skills/<name>/SKILL.md``, which the preamble places through
+``{{skill:<name>}}``, its body without its frontmatter. Each is a
+hand-written source whose markers the backend fills when it starts
+(``agent_text``). Nothing is generated or committed, and ``utk_curio/`` holds
+none of it. An agent names a page as ``curio:<path>``, and no such path leads
+out of the base entry. The base entry is no agent: no roster, catalog, palette
+or delegation lists it.
 
 New names are read inside each test, so this module imports on a checkout
 without them and each test fails on its own.
@@ -16,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 
@@ -26,6 +30,8 @@ AGENTS = REPO_ROOT / "agents"
 #: The base entry: the pages every agent Curio ships reads.
 BASE = AGENTS / "agent.curio.builtin@1"
 BASE_ID = "agent.curio.builtin"
+#: The skills Curio ships, one folder each.
+SKILLS = REPO_ROOT / "skills"
 #: Any account key: ``tmp_curio`` gives it a store of its own.
 UKEY = "11"
 
@@ -50,6 +56,16 @@ def _agents_copy(tmp_path, monkeypatch) -> Path:
     shutil.copytree(AGENTS, root)
     monkeypatch.setattr(builtin, "agents_dir", lambda: root)
     monkeypatch.setattr(agent_text, "base_dir", lambda: root / BASE.name)
+    return root
+
+
+def _skills_copy(tmp_path, monkeypatch) -> Path:
+    """A copy of ``skills/`` the test may edit, which the skills are read from."""
+    from utk_curio.backend.app.agents.domain import skills
+
+    root = tmp_path / "skills"
+    shutil.copytree(SKILLS, root)
+    monkeypatch.setattr(skills, "skills_dir", lambda: root)
     return root
 
 
@@ -107,28 +123,57 @@ def test_no_prompt_is_generated():
 
 
 def test_the_backend_renders_every_page_and_prompt_when_it_starts(tmp_curio, monkeypatch):
-    """Starting the backend renders each page the base entry lists and each
-    prompt each agent names, once: every file in ``agents/`` but the base
-    entry's README, no marker left in any. A run reads those renders and no
-    file, and each is its source rendered."""
+    """Starting the backend renders each page the base entry lists, each
+    skill Curio ships and each prompt each agent names, once: every file in
+    ``agents/`` but the base entry's README, and every ``SKILL.md`` in
+    ``skills/``, no marker left in any. A skill renders as its body, without
+    its frontmatter. A run reads those renders and no file, and each is its
+    source rendered."""
     from utk_curio.backend.app import create_app
-    from utk_curio.backend.app.agents.domain import builtin
+    from utk_curio.backend.app.agents.domain import builtin, skills
     from utk_curio.backend.tests._unit_fixtures import TestConfig
 
     agent_text = _fresh_loader(monkeypatch)
     create_app(TestConfig)
     rendered = agent_text.rendered()
     on_disk = sorted(path.resolve() for path in AGENTS.rglob("*.md") if path != BASE / "README.md")
-    assert sorted(path.resolve() for path in rendered) == on_disk
+    skill_files = sorted(path.resolve() for path in SKILLS.glob("*/SKILL.md"))
+    assert len(skill_files) == 16, skill_files
+    assert sorted(path.resolve() for path in rendered) == sorted(on_disk + skill_files)
     for file, text in rendered.items():
         assert text and "{{" not in text, file
         assert text == agent_text.render(file), file
+    by_file = {file.resolve(): text for file, text in rendered.items()}
+    for file in skill_files:
+        skill = skills.parse(file.parent)
+        text = by_file[file]
+        assert text.startswith("## ") and not text.startswith(skills.DELIMITER), file
+        assert skill.description not in text and f"name: {skill.name}\n" not in text, file
     reads = []
     monkeypatch.setattr(agent_text, "_source", lambda file: reads.append(file) or "")
     for m in builtin.list_builtin_manifests():
         for key in m.prompts:
             assert builtin.read_prompt_text(m.dir_name, key) in rendered.values(), (m.dir_name, key)
+    for file in skill_files:
+        assert agent_text.skill_text(file.parent.name) == by_file[file].rstrip("\n"), file
     assert reads == [], f"a run read {reads} again"
+
+
+def test_every_folder_of_skills_holds_a_skill_and_no_page_sits_outside_one():
+    """``skills/`` holds one folder per skill, each with a ``SKILL.md`` the
+    strict reader takes, named as its folder, and no Markdown file of its
+    own: a loose page there is no skill and no agent reads it."""
+    from utk_curio.backend.app.agents.domain import skills
+
+    folders = sorted(path for path in SKILLS.iterdir() if path.is_dir() and not path.name.startswith("."))
+    assert len(folders) == 16, folders
+    for folder in folders:
+        assert (folder / skills.SKILL_FILE).is_file(), f"skills/{folder.name}/ holds no {skills.SKILL_FILE}"
+        skill = skills.parse(folder)
+        assert skill.name == folder.name and skill.warnings == (), folder.name
+    loose = sorted(path.name for path in SKILLS.iterdir() if path.is_file() and path.suffix == ".md")
+    assert not loose, f"skills/ holds pages outside a skill's folder: {loose}"
+    assert [skill.folder for skill in skills.shipped_skills()] == folders
 
 
 def test_with_dev_an_edit_shows_on_the_next_read_and_without_it_the_start_up_render_stays(tmp_path, monkeypatch):
@@ -199,9 +244,90 @@ def test_a_page_includes_another_whole_and_never_itself(tmp_path, monkeypatch):
     with pytest.raises(contracts.PromptTemplateError, match="cannot include itself"):
         agent_text.render(loop)
     for bad in ("rules/no_such_page.md", "../agent.curio.node-builder@1/prompts/node_build_instruction.md",
-                "/etc/passwd.md", "rules/../default_preamble.md"):
+                "/etc/passwd.md", "rules/../default_preamble.md", "knowledge/nodes.md"):
         with pytest.raises(contracts.PromptTemplateError, match="include"):
             contracts.render_template("{{include:" + bad + "}}")
+
+
+def test_a_skill_is_placed_as_its_body_and_never_in_itself(tmp_path, monkeypatch):
+    """``{{skill:<name>}}`` puts the body of a skill Curio ships in its place,
+    its frontmatter left out, its markers filled and without its final line
+    breaks, as ``{{include:<path>}}`` puts a page. A skill that places
+    itself, a name of no skill Curio ships, and a name that is no skill's
+    are refused."""
+    from utk_curio.backend.app.agents.domain import contracts, skills
+
+    agent_text = _fresh_loader(monkeypatch)
+    written = (SKILLS / "widgets" / "SKILL.md").read_text(encoding="utf-8")
+    body = skills.parse(SKILLS / "widgets").body
+    assert written.endswith(body) and written.startswith(skills.DELIMITER + "\n")
+    assert "{{" in body, "the widgets skill states facts from code; this test would not see them filled"
+    rendered = agent_text.render(SKILLS / "widgets" / "SKILL.md")
+    assert rendered == contracts.render_template(body) and rendered.startswith("## Widgets\n")
+    text = contracts.render_template("Before\n\n{{skill:widgets}}\n\nAfter\n")
+    assert text == "Before\n\n" + rendered.rstrip("\n") + "\n\nAfter\n"
+    preamble = (BASE / "default_preamble.md").read_text(encoding="utf-8")
+    assert preamble.count("{{skill:widgets}}") == 1 and "{{include:knowledge/" not in preamble
+
+    root = _skills_copy(tmp_path, monkeypatch)
+    loop = root / "widgets" / "SKILL.md"
+    loop.write_text(written.replace("## Widgets\n", "## Widgets\n\n{{skill:widgets}}\n", 1), encoding="utf-8")
+    with pytest.raises(contracts.PromptTemplateError, match="cannot include itself"):
+        agent_text.render(loop)
+    for bad, said in (("no-such-skill", "Curio ships no skill named no-such-skill"),
+                      *((name, "names no skill") for name in ("Widgets", "../widgets", "widgets/SKILL.md",
+                                                              "-widgets", "wid--gets", "a" * 65))):
+        with pytest.raises(contracts.PromptTemplateError, match=re.escape(said)):
+            contracts.render_template("{{skill:" + bad + "}}")
+
+
+def test_with_dev_a_skills_edit_shows_on_the_next_read_and_without_it_the_start_up_render_stays(
+        tmp_path, monkeypatch):
+    """A skill's render is kept as a page's is: under ``curio.py start --dev``
+    an edit to its body shows on the next read, in the skill and in the
+    preamble that places it; otherwise both stay as the start rendered them."""
+    from utk_curio.backend.app.agents.domain import builtin
+
+    agent_text = _fresh_loader(monkeypatch)
+    _agents_copy(tmp_path, monkeypatch)
+    root = _skills_copy(tmp_path, monkeypatch)
+    agent_text.render_at_start()
+    skill = root / "provenance" / "SKILL.md"
+    before = agent_text.skill_text("provenance")
+    preamble = builtin.read_page("default_preamble.md", wanted_by="the test")
+    assert before and before in preamble
+    skill.write_text(skill.read_text(encoding="utf-8") + "One more line.\n", encoding="utf-8")
+
+    assert agent_text.skill_text("provenance") == before
+    assert builtin.read_page("default_preamble.md", wanted_by="the test") == preamble
+    monkeypatch.setenv("CURIO_DEV", "1")
+    assert agent_text.skill_text("provenance") == before + "\nOne more line."
+    assert before + "\nOne more line." in builtin.read_page("default_preamble.md", wanted_by="the test")
+
+
+@pytest.mark.parametrize("change, said", [
+    (("## Provenance\n", "## Provenance\n\n{{no.such.field}}\n"), "{{no.such.field}}"),
+    (("name: provenance\n", "name: history\n"), "is not its folder's name"),
+    (("license: MIT\n", "license: MIT\nauthor: curio\n"), "which the format does not define"),
+])
+def test_a_skill_that_breaks_a_rule_stops_the_start(tmp_path, monkeypatch, change, said):
+    """A skill whose body names a marker no field defines, or whose
+    frontmatter breaks the format's rules, fails the start-up render, naming
+    the skill's file and the problem, and nothing of the start is kept."""
+    from utk_curio.backend.app.agents.domain import contracts
+
+    agent_text = _fresh_loader(monkeypatch)
+    _agents_copy(tmp_path, monkeypatch)
+    root = _skills_copy(tmp_path, monkeypatch)
+    skill = root / "provenance" / "SKILL.md"
+    old, new = change
+    written = skill.read_text(encoding="utf-8")
+    assert old in written
+    skill.write_text(written.replace(old, new, 1), encoding="utf-8")
+    with pytest.raises(contracts.PromptTemplateError) as refused:
+        agent_text.render_at_start()
+    assert "skills/provenance/SKILL.md" in str(refused.value) and said in str(refused.value)
+    assert agent_text.rendered() == {}
 
 
 def test_a_curio_path_names_any_page_of_the_base_entry_and_nothing_outside_it(tmp_path, monkeypatch, caplog):
@@ -228,6 +354,8 @@ def test_a_curio_path_names_any_page_of_the_base_entry_and_nothing_outside_it(tm
         "curio:README.md",
         "curio:rules",
         "curio:",
+        "curio:knowledge/nodes.md",
+        "curio:knowledge/node-functions.md",
     ):
         with pytest.raises(AgentManifestError, match="curio"):
             parse_agent_manifest(_user_manifest(bad))
