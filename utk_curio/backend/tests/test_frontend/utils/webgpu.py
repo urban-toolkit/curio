@@ -20,9 +20,13 @@ The start can outlast the probe's 10 s (#1017). A freshly launched Chrome on a
 busy GPU runner drew nothing for 13 to 15 s, so the probe asked while the GPU
 process was still starting, and the switch dropped that request after the 3 s
 of retries, or past the 8 s. The app keeps its 10 s, since a hidden tab draws
-no frame and would wait all of it. A test's page is not hidden, so when the
-probe says the page drew no frame and found no adapter, the helper runs the
-probe again, for up to a minute, until a probe asks after a drawn frame.
+no frame and would wait all of it. A probe whose wait ran out and that found
+no adapter with every request made before the page drew waits for a frame
+once more, and asks again if one comes ("drew no frame in 10000 ms, then a
+frame at 13600 ms"): a dashboard runs its GPU steps on the app's own answer,
+which no helper can ask again for it. When the page drew nothing through that
+wait either, the helper runs the probe again, for up to a minute, until a
+probe asks after a drawn frame.
 
 A browser that answers null for the whole 3 s has no adapter for the app
 either.
@@ -64,6 +68,11 @@ ASK_AGAIN_FOR_S = 60
 #: frame in 10000 ms" (``WebGpuSupport.frame`` in webgpuSupport.ts).
 _NO_FRAME = "drew no frame"
 
+#: How the record goes on when a frame came in the probe's wait once more,
+#: after which it asked again: "drew no frame in 10000 ms, then a frame at
+#: 13600 ms".
+_THEN_A_FRAME = ", then a frame"
+
 
 class WebGpuAdapterRetried(UserWarning):
     """The adapter came after a null, or after a probe whose page drew no
@@ -76,8 +85,9 @@ class WebGpuAnswer:
 
     adapter: bool
     answers: tuple[str, ...]
-    #: "drew a frame at 33 ms" or "drew no frame in 10000 ms"; None when the
-    #: page had drawn already.
+    #: "drew a frame at 33 ms" or "drew no frame in 10000 ms", and after the
+    #: latter and no adapter, the wait once more (", then a frame at 13600 ms"
+    #: or ", nor by 23050 ms"); None when the page had drawn already.
     frame: str | None = None
     #: Why not, in the app's words, when no request gave an adapter.
     reason: str | None = None
@@ -90,8 +100,9 @@ class WebGpuAnswer:
 
     @property
     def drew_no_frame(self) -> bool:
-        """Whether the probe's wait for a drawn frame ran out before it asked."""
-        return bool(self.frame and self.frame.startswith(_NO_FRAME))
+        """Whether the probe's wait for a drawn frame ran out before it asked,
+        and no frame came for it to ask again after."""
+        return bool(self.frame and self.frame.startswith(_NO_FRAME) and _THEN_A_FRAME not in self.frame)
 
     def __str__(self) -> str:
         if self.answers:
@@ -129,8 +140,10 @@ def webgpu_adapter(page) -> WebGpuAnswer:
     While the page has drawn no frame and no adapter came, the probe runs
     again, for up to ``ASK_AGAIN_FOR_S``: Chrome's switch to software
     compositing, which comes before the page's first frame, may have dropped
-    its request. When the adapter came after a null or after such a probe, a
-    ``WebGpuAdapterRetried`` warning says so in the run's warnings summary.
+    its request. A probe that asked again itself, once the page drew, is not
+    run again: that answer is the browser's. When the adapter came after a
+    null or after such a probe, a ``WebGpuAdapterRetried`` warning says so in
+    the run's warnings summary.
     """
     wait_for_probe(page)
     deadline = time.monotonic() + ASK_AGAIN_FOR_S
