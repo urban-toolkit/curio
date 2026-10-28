@@ -43,6 +43,39 @@ def _invite(client, project_id, token, username):
                        data=json.dumps({"username": username}), headers=_auth(token))
 
 
+def test_room_role_is_the_one_rule_of_who_edits(db, dataflow, monkeypatch):
+    """``access.room_role``: the owner, an editor the owner invited, and anyone
+    else watching; a hosted guest watches even what its account owns, and the
+    shared guest of a clone without --deploy owns its dataflows."""
+    from utk_curio.backend import config
+    from utk_curio.backend.app.projects import access
+    from utk_curio.backend.app.projects.models import Project
+
+    project_id, alice, token = dataflow
+    bob, _ = _account(db, "bob")
+    carol, _ = _account(db, "carol")
+    access.add_editor(alice, project_id, "bob")
+    project = db.session.get(Project, project_id)
+
+    assert [access.room_role(u, project) for u in (alice, bob, carol, None)] == [
+        "owner", "editor", "watcher", "watcher",
+    ]
+    access.remove_editor(alice, project_id, bob.id)
+    assert access.room_role(bob, project) == "watcher"
+
+    monkeypatch.setattr(config, "CURIO_NO_AUTH", True)
+    guest, _ = _account(db, config.CURIO_SHARED_GUEST_USERNAME, is_guest=True)
+    example = db.session.get(Project, services.save_project(
+        guest, ProjectCreate(name="Example", spec={"dataflow": {"name": "Example"}})).id)
+    assert access.room_role(guest, example) == "owner"
+    assert access.joins_room(guest, example) is True
+    monkeypatch.setattr(config, "CURIO_NO_AUTH", False)
+    assert access.room_role(guest, example) == "watcher"
+    assert access.joins_room(guest, example) is False
+    assert access.room_role(guest, project) == "watcher"
+    assert access.joins_room(guest, project) is True
+
+
 def test_the_owner_invites_lists_and_removes_an_editor(client, db, dataflow):
     project_id, _alice, token = dataflow
     bob, _ = _account(db, "bob")

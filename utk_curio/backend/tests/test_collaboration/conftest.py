@@ -23,7 +23,7 @@ def collab_app(monkeypatch):
 
     ``create_app`` re-reads ``ENABLE_COLLAB`` from the config module on
     every call (the import is inside the function body), so flipping the
-    module attribute before invoking it is enough — no module reload,
+    module attribute before invoking it is enough: no module reload,
     no double SQLAlchemy registration.
     """
     monkeypatch.setattr(_config, "ENABLE_COLLAB", True, raising=True)

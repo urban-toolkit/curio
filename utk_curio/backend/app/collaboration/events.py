@@ -11,15 +11,15 @@ Mounted on the namespace declared by ``COLLAB_NAMESPACE`` (default
    bookkeeping.
 3. For an event that changes the room (a node or edge relay, a code-change
    request, a vote, taking a lock, a broadcast output or conflict choice),
-   the participant edits the dataflow: it is the owner or an editor the
-   owner invited (``projects/access.py``). A watcher's is refused with
-   ``read_only``.
+   the participant edits the dataflow: ``access.room_role``, asked again for
+   each such event, says owner or editor (an account the owner invited). A
+   watcher's is refused with ``read_only``.
 
-A join takes the role the account has on the dataflow when it joins, and a
-change to the editors reaches the room at once (``roles.py``). A join is
-refused for a dataflow that does not exist, and for a hosted guest's join to
-a dataflow a guest owns (the examples every hosted guest opens as its own), so
-each such canvas stays its own.
+A join takes the same ``room_role``, which the room's list shows, and a change
+to the editors reaches the room at once (``roles.py``). A join is refused for
+a dataflow that does not exist, and for a hosted guest's join to a dataflow a
+guest owns (``access.joins_room``: the examples every hosted guest opens as
+its own), so each such canvas stays its own.
 
 Each socket is one participant, with an id of its own that its join answers
 with: two tabs of one account, or two hosted guests on the one guest account,
@@ -33,6 +33,7 @@ canonical project identifier surfaced by the frontend
 from __future__ import annotations
 
 import re
+from types import SimpleNamespace
 from typing import Optional
 
 from flask import request
@@ -70,6 +71,18 @@ def _sender(entry: dict) -> dict:
     }
 
 
+def _account(sess: dict):
+    """The socket's account, as ``access.room_role`` reads one."""
+    return SimpleNamespace(id=sess.get("user_id"), is_guest=bool(sess.get("is_guest")))
+
+
+def _project(project_id: str):
+    from utk_curio.backend.app.projects.models import Project
+    from utk_curio.backend.extensions import db
+
+    return db.session.get(Project, project_id)
+
+
 def register(sio):
     """Attach every collaboration handler to the SocketIO singleton."""
     ns = COLLAB_NAMESPACE
@@ -101,14 +114,18 @@ def register(sio):
 
     def _editing(payload):
         """``_gated``, for an event that changes the room: returns (room,
-        participant, ack_err), refusing a watcher's."""
-        _sess, room, err = _gated(payload)
+        participant, ack_err), refusing a watcher's. The role is asked again
+        here (``access.room_role``), not taken from the join."""
+        from utk_curio.backend.app.projects import access
+
+        sess, room, err = _gated(payload)
         if err:
             return None, None, err
         me = room_state.participant(room, request.sid)
         if me is None:
             return None, None, {"ok": False, "error": "not_joined"}
-        if me.get("role") not in room_state.EDIT_ROLES:
+        role = access.room_role(_account(sess), _project(payload["projectId"]))
+        if role not in access.EDIT_ROLES:
             return None, None, {"ok": False, "error": "read_only", "message": READ_ONLY_REFUSAL}
         return room, me, None
 
@@ -118,8 +135,6 @@ def register(sio):
 
     @sio.on("connect", namespace=ns)
     def _connect(auth):
-        from utk_curio.backend.app.users.capabilities import is_hosted_guest
-
         try:
             session, user = authenticate_handshake(auth, request.environ)
         except ConnectionRefusedError:
@@ -132,7 +147,6 @@ def register(sio):
             "name": user.name or user.username,
             "profile_image": user.profile_image,
             "is_guest": bool(user.is_guest),
-            "hosted_guest": is_hosted_guest(user),
             "token_session_id": session.id,
             "participant_id": room_state.new_participant_id(),
         })
@@ -166,8 +180,6 @@ def register(sio):
     @sio.on("join_session", namespace=ns)
     def _join(payload):
         from utk_curio.backend.app.projects import access
-        from utk_curio.backend.app.projects.models import Project
-        from utk_curio.backend.extensions import db
 
         sess, _room, err = _gated(payload, require_room=False)
         if err:
@@ -175,12 +187,13 @@ def register(sio):
         project_id = (payload or {}).get("projectId")
         if not _valid_project_id(project_id):
             return {"ok": False, "error": "invalid_project_id"}
-        project = db.session.get(Project, project_id)
+        project = _project(project_id)
         if project is None:
             return {"ok": False, "error": "unknown_project"}
-        if sess.get("hosted_guest") and access.owner_is_guest(project):
+        account = _account(sess)
+        if not access.joins_room(account, project):
             return {"ok": False, "error": "guest_owned", "message": GUEST_OWNED_REFUSAL}
-        role = access.role_of(sess["user_id"], project)
+        role = access.room_role(account, project)
         room = room_state.room_for(project_id)
         join_room(room, namespace=ns)
         user_info = {

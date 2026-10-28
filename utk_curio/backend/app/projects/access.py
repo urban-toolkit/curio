@@ -8,18 +8,20 @@ Three roles, decided on the server:
   by username from the Share menu;
 * a **watcher** is anyone else who opens the dataflow's link.
 
-A collaboration room gives each participant the role of its account when it
-joins (``collaboration/events.py``), and refuses a watcher's every edit. A
-change to the list reaches the room at once (:func:`_tell_the_room`).
+:func:`room_role` is the one rule: a collaboration room asks it when a
+participant joins and again for each change the participant sends
+(``collaboration/events.py``), and refuses a watcher's. A change to the list
+reaches the room at once (:func:`_tell_the_room`).
 
 Only the owner manages the list, and no guest does: the shared guest owns the
 examples every hosted guest opens, so a check on ownership alone would let any
-visitor invite editors to them. A guest is never an editor either.
+visitor invite editors to them. A guest is never an editor either, and a
+hosted guest only watches.
 """
 from __future__ import annotations
 
 import logging
-from typing import List, Optional
+from typing import List
 
 from utk_curio.backend.extensions import db
 from utk_curio.backend.app.projects import repositories as repo
@@ -39,20 +41,35 @@ GUEST_INVITEE = "A guest cannot edit a dataflow. Invite an account."
 OWNER_INVITEE = "You own this dataflow, so you edit it already."
 
 
-def role_of(user_id: Optional[int], project) -> str:
-    """The role *user_id* has on *project*."""
-    if user_id is not None and project.user_id == user_id:
+def room_role(user, project) -> str:
+    """The role *user* has in *project*'s room: ``owner``, ``editor`` or
+    ``watcher``, read from the database each time it is asked.
+
+    *user* is an account, or anything with its ``id`` and ``is_guest``. A
+    hosted guest watches whatever it opens (``capabilities.is_hosted_guest``):
+    every visitor shares its account, which owns the examples. Without
+    ``--deploy`` the shared guest is the one local user and owns its dataflows.
+    """
+    from utk_curio.backend.app.users.capabilities import is_hosted_guest
+
+    user_id = getattr(user, "id", None)
+    if user_id is None or project is None or is_hosted_guest(user):
+        return WATCHER
+    if project.user_id == user_id:
         return OWNER
-    if user_id is not None and repo.editor_row(project.id, user_id) is not None:
+    if repo.editor_row(project.id, user_id) is not None:
         return EDITOR
     return WATCHER
 
 
-def owner_is_guest(project) -> bool:
-    """Whether a guest owns *project*: the shared guest's examples, the
-    dataflows every hosted guest opens as theirs."""
+def joins_room(user, project) -> bool:
+    """Whether *user* joins *project*'s room at all: everyone does but a hosted
+    guest on a dataflow a guest owns (an example), whose canvas of it stays
+    its own."""
+    from utk_curio.backend.app.users.capabilities import is_hosted_guest
+
     owner = getattr(project, "owner", None)
-    return bool(owner is not None and owner.is_guest)
+    return not (is_hosted_guest(user) and owner is not None and owner.is_guest)
 
 
 def _entry(row) -> dict:
