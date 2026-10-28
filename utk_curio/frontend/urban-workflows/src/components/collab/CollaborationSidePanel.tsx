@@ -23,6 +23,7 @@ export const CollaborationSidePanel: React.FC = () => {
     // Placed, and given its share of the height, by CanvasSidePanels.
     return (
         <div
+            data-testid="collaboration-panel"
             style={{
                 width: PANEL_WIDTH,
                 overflowY: "auto",

@@ -32,6 +32,7 @@ from .utils import (
     read_node_code,
     require_project_page,
     require_user_auth,
+    save_workflow_test_screenshot,
     set_node_code,
     stub_db_login,
 )
@@ -42,6 +43,9 @@ if TYPE_CHECKING:
 
 pytestmark = pytest.mark.needs_collab
 
+FRAMES = "collaboration-doc"
+#: A warning toast saying *words*: the merge rules' messages.
+_TOAST = '[aria-label="Notifications"] [role="status"]:has-text("{}")'
 CODE_NODE = "doc-code"
 SPEC_NODE = "doc-other"
 TYPE = "curio.builtin/computation-analysis"
@@ -350,12 +354,16 @@ def test_removing_a_node_someone_is_editing_asks_first_and_they_can_put_it_back(
     dialog = owner.get_by_role("dialog")
     dialog.wait_for(timeout=10000)
     assert "Doc Editor is editing this node. Remove it anyway?" in dialog.inner_text()
+    save_workflow_test_screenshot(owner, FRAMES, test_name="removal-question",
+                                  clip_selector='[role="dialog"]', fit_reactflow=False)
     dialog.get_by_role("button", name="Remove").click()
     node_locator(owner, CODE_NODE).wait_for(state="detached", timeout=10000)
 
     # The editor is told who removed it, and puts it back.
     toast = editor.get_by_text("Doc Owner removed this node while you were editing it.")
     toast.wait_for(timeout=15000)
+    save_workflow_test_screenshot(editor, FRAMES, test_name="removed-while-editing",
+                                  clip_selector=_TOAST.format("removed this node"), fit_reactflow=False)
     editor.get_by_role("button", name="Put it back").click()
     node_locator(editor, CODE_NODE).wait_for(timeout=15000)
     node_locator(owner, CODE_NODE).wait_for(timeout=15000)
@@ -406,6 +414,8 @@ def test_a_connection_drawn_to_a_node_removed_meanwhile_is_dropped_and_its_drawe
         server.send(message)
 
     editor.get_by_text("Doc Owner removed that node, so this connection was not kept.").wait_for(timeout=15000)
+    save_workflow_test_screenshot(editor, FRAMES, test_name="connection-not-kept",
+                                  clip_selector=_TOAST.format("connection was not kept"), fit_reactflow=False)
     deadline = time.time() + 15
     while time.time() < deadline and room.saved()["edges"]:
         time.sleep(0.5)

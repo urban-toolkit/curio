@@ -31,6 +31,7 @@ from .utils import (
     end_routes,
     require_project_page,
     require_user_auth,
+    save_workflow_test_screenshot,
     stub_login_and_enter_workflow,
 )
 
@@ -119,6 +120,12 @@ def test_the_collaboration_panel_opens_under_the_top_bar_and_its_button_toggles_
         collaboration = _collaboration_panel(page)
         collaboration.wait_for(state="visible", timeout=30000)
         first = _assert_in_place(page, collaboration)
+        # Its frame once the room has named this tab: Users and Activity.
+        page.locator('[data-testid="collaboration-panel"] [data-collab-role="owner"]').wait_for(timeout=30000)
+        save_workflow_test_screenshot(
+            page, "canvas-side-panels", test_name="collaboration-panel",
+            clip_selector='[data-testid="collaboration-panel"]', fit_reactflow=False,
+        )
 
         # Its bar button closes it, and opens it again where it was.
         toggle = page.get_by_role("button", name="Collaboration", exact=True)
