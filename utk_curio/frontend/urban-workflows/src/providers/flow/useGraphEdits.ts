@@ -36,9 +36,18 @@ function withSlotValues(node: Node, slots: number[], value: unknown, sourceId: s
     };
 }
 
+/** What an agent's applied code asks of the dataflow's doc the canvas is
+ *  bound to (`useDataflowDoc`). */
+export interface AppliedCodeDoc {
+    /** Whether the canvas is bound to the doc. */
+    bound(): boolean;
+    /** The code *code* replaced, when the doc brought *code* to the node. */
+    codeBefore(nodeId: string, code: string): string | undefined;
+}
+
 export function useGraphEdits({
     setNodes, setEdges, reactFlow, workflowNameRef, outputsRef, markNodeStaleRef, setOutputs,
-    nodeEditProv, markDirtyRef,
+    nodeEditProv, markDirtyRef, codeDocRef,
 }: {
     setNodes: React.Dispatch<React.SetStateAction<Node[]>>;
     setEdges: React.Dispatch<React.SetStateAction<Edge[]>>;
@@ -55,6 +64,11 @@ export function useGraphEdits({
     nodeEditProv?: (nodeId: string, code: string, label: string, before?: string) => void;
     /** Leaves the dataflow Unsaved, so the next save writes what changed: an entry filed here among it. */
     markDirtyRef?: React.MutableRefObject<() => void>;
+    /**
+     * The dataflow's doc this canvas is bound to (`useDataflowDoc`): an
+     * agent's applied code is already the doc's there, written by the server.
+     */
+    codeDocRef?: React.MutableRefObject<AppliedCodeDoc | null>;
 }) {
     // The bridge's content path (dev/51): both fields, one provider-state
     // update — ``defaultCode`` drives the Monaco editor's value and ``code``
@@ -69,6 +83,23 @@ export function useGraphEdits({
     const applyNodeContent = useCallback(
         (nodeId: string, content: string, author?: string) => {
             const label = author || "Agent";
+            const doc = codeDocRef?.current;
+            if (doc?.bound()) {
+                // The server wrote the agent's code into the dataflow's doc,
+                // which brings it to every tab, this one too: written here as
+                // well, the two writes of one text would merge into two
+                // copies. Only the change's entry is this tab's to file, with
+                // the code it replaced: the canvas's, or, when the doc brought
+                // the code first, the doc's before it.
+                const live = reactFlow.getNodes().find((n) => n.id === nodeId);
+                if (!live) return;
+                const shown = nodeCode(live.data);
+                const before = content === shown ? doc.codeBefore(nodeId, content) : shown;
+                if (before === undefined || before === content) return;
+                nodeEditProv?.(nodeId, content, label, before);
+                markDirtyRef?.current();
+                return;
+            }
             const writer = nodeCodeWriter(nodeId);
             if (writer) {
                 writer(content, label);
@@ -88,13 +119,15 @@ export function useGraphEdits({
             nodeEditProv?.(nodeId, content, label, before);
             markDirtyRef?.current();
         },
-        [setNodes, reactFlow, nodeEditProv, markDirtyRef],
+        [setNodes, reactFlow, nodeEditProv, markDirtyRef, codeDocRef],
     );
 
     const addNode = useCallback(
         (node: Node, customWorkflowName?: string, provenance?: boolean) => {
             console.log("add node");
-            setNodes((prev: any) => prev.concat(node));
+            // A node the canvas holds already is not added again: the doc and
+            // an agent's apply can both bring one before the canvas renders.
+            setNodes((prev: any) => (prev.some((n: Node) => n.id === node.id) ? prev : prev.concat(node)));
 
             if (provenance) {
                 TrillGenerator.addNewVersionProvenance(

@@ -239,6 +239,10 @@ export interface DataflowDocBridge {
     /** *nodeId*'s data changed in place, with no new node (a widget's value,
      *  a selection tag): write it now. */
     noteNodeData(nodeId: string): void;
+    /** The code *code* replaced in *nodeId*, when the server or another tab
+     *  brought *code* through the doc (an agent's applied change can land
+     *  before its apply answers); asked once. */
+    codeBefore(nodeId: string, code: string): string | undefined;
 }
 
 export interface DataflowDocDeps {
@@ -300,6 +304,9 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
     const docStateRef = useRef<DocState | null>(null);
     /** Each canvas node's last Trill, and what it was taken from. */
     const cacheRef = useRef(new Map<string, CachedTrill>());
+    /** The code the server or another tab last brought to each node, and the
+     *  code it replaced there. */
+    const broughtCodeRef = useRef(new Map<string, { before: string; after: string }>());
     /** Nodes another tab drags now, and those it dropped whose place is due. */
     const remoteDragRef = useRef(new Set<string>());
     const droppedRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
@@ -651,6 +658,16 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
             }
             docStateRef.current = next;
             if (transaction.origin === CANVAS_ORIGIN) return;
+            if (transaction.origin === held) {
+                // What the server or another tab changed in a node's code.
+                for (const id of wasWhole ? next.nodes.keys() : changed.nodes) {
+                    const before = state.nodes.get(id)?.[CONTENT];
+                    const after = next.nodes.get(id)?.[CONTENT];
+                    if (typeof before === "string" && typeof after === "string" && before !== after) {
+                        broughtCodeRef.current.set(id, { before, after });
+                    }
+                }
+            }
             applyToCanvas(state, next, wasWhole ? undefined : changed);
         };
 
@@ -706,6 +723,7 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
         docStateRef.current = null;
         writerBaseRef.current = null;
         cacheRef.current.clear();
+        broughtCodeRef.current.clear();
         remoteDragRef.current.clear();
         droppedRef.current.forEach((timer) => clearTimeout(timer));
         droppedRef.current.clear();
@@ -793,6 +811,12 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
             if (!boundRef.current) return;
             cacheRef.current.delete(nodeId);
             write();
+        },
+        codeBefore: (nodeId: string, code: string) => {
+            const brought = broughtCodeRef.current.get(nodeId);
+            if (!brought || brought.after !== code) return undefined;
+            broughtCodeRef.current.delete(nodeId);
+            return brought.before;
         },
     };
 }

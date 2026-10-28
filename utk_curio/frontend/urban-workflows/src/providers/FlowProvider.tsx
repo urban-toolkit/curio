@@ -9,14 +9,16 @@ import React, {
     useEffect,
 } from "react";
 import {
+    applyEdgeChanges,
     useNodesState,
     useEdgesState,
     useReactFlow,
+    type EdgeChange,
     type NodeRemoveChange,
 } from "reactflow";
 import { useInRouterContext } from "react-router-dom";
 import { useConnect } from "./flow/useConnect";
-import { useGraphEdits } from "./flow/useGraphEdits";
+import { useGraphEdits, type AppliedCodeDoc } from "./flow/useGraphEdits";
 import { useDashboardPins, useDashboardPinSave } from "./flow/useDashboardPins";
 import { usePlayAll } from "./flow/usePlayAll";
 import type { PlayAllState } from "./flow/usePlayAll";
@@ -205,7 +207,15 @@ const FlowProvider = ({
     const { user, enableUserAuth, skipProjectPage } = useUserContext();
     const hostedGuest = isHostedGuest(user, enableUserAuth);
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
-    const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+    const [edges, setEdges] = useEdgesState([]);
+    // An edge added with an id the canvas holds is not added again: the doc
+    // and an agent's apply can both bring one before the canvas renders.
+    const onEdgesChange = useCallback((changes: EdgeChange[]) => {
+        setEdges((eds) => applyEdgeChanges(
+            changes.filter((change) => change.type !== "add" || !eds.some((edge) => edge.id === change.item.id)),
+            eds,
+        ));
+    }, [setEdges]);
     const [outputs, _setOutputs] = useState<IOutput[]>([]);
     const outputsRef = useRef<IOutput[]>([]);
     const playAllStateRef = useRef<PlayAllState | null>(null);
@@ -346,11 +356,13 @@ const FlowProvider = ({
     // agent's applied change to a node's code.
     const { nodeExecProv, nodeEditProv } = useProvenanceContext();
 
+    // The doc an agent's applied code is the server's in, once the canvas binds.
+    const codeDocRef = useRef<AppliedCodeDoc | null>(null);
     const {
         applyNodeContent, addNode, propagateDownstreamInputs, applyOutput, onEdgesDelete, onNodesDelete,
     } = useGraphEdits({
         setNodes, setEdges, reactFlow, workflowNameRef, outputsRef, markNodeStaleRef, setOutputs,
-        nodeEditProv, markDirtyRef,
+        nodeEditProv, markDirtyRef, codeDocRef,
     });
 
     const { onConnect, isValidConnection } = useConnect({
@@ -421,6 +433,7 @@ const FlowProvider = ({
         takeCanvasPosition: notebook.takeCanvasPosition, setDashboardPins, showToast,
     });
     docBridgeRef.current = dataflowDoc;
+    codeDocRef.current = dataflowDoc;
     // A connection this tab drew to a node someone removed meanwhile: the
     // server took it out, and says who removed the node.
     useEffect(() => {
@@ -617,6 +630,7 @@ const FlowProvider = ({
                     noteRemoval: dataflowDoc.noteRemoval,
                     askBeforeRemoving: removal.ask,
                     noteNodeData: dataflowDoc.noteNodeData,
+                    codeBefore: dataflowDoc.codeBefore,
                 },
                 // A project switch must not inherit a run in flight: the guard
                 // is provider state, and the provider outlives the dataflow
