@@ -454,9 +454,11 @@ def _truncate(path: Path, committed: int) -> None:
 
 
 def _rewrite(path: Path, records: list) -> None:
-    """Write the log anew, swapped in whole as the spec file is. It is flushed
-    to disk before the swap: it may hold the only copy of a history a spec
-    file held until this write."""
+    """Write the log anew, swapped in whole as the spec file is. The log and
+    its place in the folder are flushed to disk before the spec file is
+    written: the log may hold the only copy of a history a spec file held
+    until this write."""
+    made = not path.parent.is_dir()
     path.parent.mkdir(exist_ok=True)
     tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     try:
@@ -471,6 +473,25 @@ def _rewrite(path: Path, records: list) -> None:
                 tmp.unlink()
             except OSError:
                 pass
+    _flush_folder(path.parent)
+    if made:
+        _flush_folder(path.parent.parent)
+
+
+def _flush_folder(folder: Path) -> None:
+    """Flush *folder*'s entries to disk, so a file swapped or made in it stays
+    after a power loss. Where a folder cannot be opened (Windows), the swap
+    stands as the spec file's does."""
+    try:
+        descriptor = os.open(folder, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(descriptor)
+    except OSError:
+        pass
+    finally:
+        os.close(descriptor)
 
 
 def _same(a, b) -> bool:
