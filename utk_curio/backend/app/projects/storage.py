@@ -151,8 +151,21 @@ def _write_json_atomically(path: Path, payload: dict) -> None:
                 pass
 
 
+SPEC_FILE = "spec.trill.json"
+
+
 def write_spec(user_key: str, project_id: str, spec: dict) -> Path:
     """Persist *spec* and bump the project's write counter.
+
+    Its two history sections go to the project's history logs, not to the
+    spec file (:data:`HISTORY_KEYS`): a section *spec* holds becomes the one
+    on record, and one it does not hold stays as it is on record, so a writer
+    that leaves the history out never erases it (:func:`drop_history` does).
+    The logs are written first, then the spec file, so a crash between the
+    two leaves the history on disk, and a spec file that still holds it is
+    read as it is (:func:`read_spec_in`). All of it under the history lock,
+    so two writers that do not hold the spec lock cannot leave one's spec
+    beside the other's history.
 
     The counter is bumped BEFORE the spec is written, so a crash between the
     two leaves it ahead rather than behind: a client is then told its basis is
@@ -160,10 +173,29 @@ def write_spec(user_key: str, project_id: str, spec: dict) -> Path:
     let it silently overwrite the write that did land.
     """
     d = ensure_project_dir(user_key, project_id)
-    _bump_spec_revision(d)
-    p = d / "spec.trill.json"
-    _write_json_atomically(p, spec)
+    with _history_lock(d):
+        _bump_spec_revision(d)
+        live = spec
+        if isinstance(spec, dict):
+            for key in HISTORY_KEYS:
+                if key in spec:
+                    _write_section(d, key, spec[key])
+            live = {k: v for k, v in spec.items() if k not in HISTORY_KEYS}
+        p = d / SPEC_FILE
+        _write_json_atomically(p, live)
     return p
+
+
+def drop_history(user_key: str, project_id: str) -> None:
+    """Remove the project's history logs, so its document holds no history
+    until a write gives it one. The seeder calls it before it writes an
+    example's shipped copy, which keeps no history of the copy it replaces."""
+    d = project_dir(user_key, project_id)
+    if not (d / HISTORY_DIR).is_dir():
+        return
+    with _history_lock(d):
+        for key in HISTORY_KEYS:
+            _drop_section(d, key)
 
 
 def _bump_spec_revision(project_dir_path: Path) -> int:
@@ -239,11 +271,37 @@ def record_save_number(user_key: str, project_id: str, tab: str, number: int) ->
 
 
 def read_spec(user_key: str, project_id: str) -> Optional[dict]:
-    d = project_dir(user_key, project_id)
-    p = d / "spec.trill.json"
+    """The project's whole document, its history put back (:func:`read_spec_in`),
+    or ``None`` when it has no spec."""
+    return read_spec_in(project_dir(user_key, project_id))
+
+
+def read_spec_in(folder: Path) -> Optional[dict]:
+    """The whole document of the project in *folder*: its spec file, and each
+    history section the file does not hold, read back from its log. A spec
+    file that still holds a section is read as it is; its next write moves
+    the section into the log. ``None`` when there is no spec file.
+
+    The files are read under the history lock, so a write is seen whole or
+    not at all, and parsed once it is released.
+    """
+    p = folder / SPEC_FILE
     if not p.exists():
         return None
-    return json.loads(p.read_text(encoding="utf-8"))
+    if not (folder / HISTORY_DIR).is_dir():
+        return json.loads(p.read_text(encoding="utf-8"))
+    with _history_lock(folder):
+        text = p.read_text(encoding="utf-8")
+        logs = {key: _read_log_bytes(folder, key) for key in HISTORY_KEYS}
+    spec = json.loads(text)
+    if isinstance(spec, dict):
+        for key in HISTORY_KEYS:
+            if key in spec or logs[key] is None:
+                continue
+            value, _committed = _replay(logs[key], _SECTIONS[key])
+            if value is not _ABSENT:
+                spec[key] = value
+    return spec
 
 
 def list_project_ids(user_key: str) -> list[str]:
@@ -253,9 +311,361 @@ def list_project_ids(user_key: str) -> list[str]:
         return []
     ids: list[str] = []
     for entry in sorted(base.iterdir()):
-        if entry.is_dir() and (entry / "spec.trill.json").is_file():
+        if entry.is_dir() and (entry / SPEC_FILE).is_file():
             ids.append(entry.name)
     return ids
+
+
+# ---------------------------------------------------------------------------
+# History: the nodes' entries and the dataflow's versions, beside the spec
+# ---------------------------------------------------------------------------
+
+#: The two sections of a dataflow that hold its history: each node's runs and
+#: edits, and the dataflow's own versions, every one a whole copy of the
+#: dataflow. They stay out of the spec file, each in a log of its own in
+#: ``history/``, so a write adds what the history gained instead of writing
+#: every version again.
+HISTORY_KEYS = ("nodeProvenance", "dataflowProvenance")
+HISTORY_DIR = "history"
+HISTORY_FILES = {"nodeProvenance": "entries.jsonl", "dataflowProvenance": "versions.jsonl"}
+
+#: Closes the lines one write added to a log. A reader applies a write's lines
+#: only once this one follows them, so a write cut short reads as not made,
+#: and the next write starts where the last whole one ended.
+_END = ["end"]
+
+_HISTORY_LOCK_FILE = ".history.lock"
+_HISTORY_LOCK_NAMESPACE = "history"
+
+#: A section no log holds.
+_ABSENT = object()
+
+
+@contextmanager
+def _history_lock(folder: Path):
+    """The lock every write of a project's spec and history logs takes, and
+    every read of them once the project has logs.
+
+    It holds nothing else: inside it no other lock is asked for and the
+    database is never written, so it is taken under the spec lock and by a
+    thread holding an uncommitted database write alike, which the spec lock
+    refuses (#909). Its thread lock is not reentrant, and nothing in it calls
+    a function that takes it again.
+    """
+    with exclusive_lock(
+        folder / _HISTORY_LOCK_FILE,
+        namespace=_HISTORY_LOCK_NAMESPACE,
+        key=str(folder),
+    ):
+        yield
+
+
+def _log_path(folder: Path, key: str) -> Path:
+    return folder / HISTORY_DIR / HISTORY_FILES[key]
+
+
+def _read_log_bytes(folder: Path, key: str) -> Optional[bytes]:
+    try:
+        return _log_path(folder, key).read_bytes()
+    except FileNotFoundError:
+        return None
+
+
+def _line(record: list) -> bytes:
+    """One record as the log writes it: compact JSON on one line, ASCII only,
+    as the spec file escapes what is not."""
+    return json.dumps(record, separators=(",", ":")).encode("ascii") + b"\n"
+
+
+def _replay(data: bytes, section) -> tuple:
+    """The section *data*, a log's bytes, holds, and how many of its bytes
+    the writes that ended hold: ``(value, committed)``, the value
+    :data:`_ABSENT` when no write ended. A line cut short (a crash mid write)
+    or damaged ends the reading there."""
+    value = section.empty()
+    present = False
+    pending: list = []
+    committed = 0
+    offset = 0
+    for raw in data.split(b"\n")[:-1]:
+        end = offset + len(raw) + 1
+        try:
+            record = json.loads(raw)
+        except ValueError:
+            logger.warning("A history log holds a line that cannot be read; what follows it is not read")
+            break
+        if not isinstance(record, list) or not record or not isinstance(record[0], str):
+            logger.warning("A history log holds a line that is no record; what follows it is not read")
+            break
+        if record == _END:
+            for pending_record in pending:
+                value = section.apply(value, pending_record)
+            pending = []
+            present = True
+            committed = end
+        else:
+            pending.append(record)
+        offset = end
+    return (value if present else _ABSENT), committed
+
+
+def _write_section(folder: Path, key: str, value) -> None:
+    """Make *value* the section *key* the project's log holds: the lines that
+    take what is on record to it, added to the log, or, when no line does
+    (an entry or a version removed or changed), the log written again."""
+    section = _SECTIONS[key]
+    path = _log_path(folder, key)
+    data = _read_log_bytes(folder, key)
+    if data is not None:
+        stored, committed = _replay(data, section)
+        if stored is not _ABSENT:
+            records = section.diff(stored, value)
+            if records is not None:
+                if records:
+                    _append(path, committed, records)
+                elif committed < len(data):
+                    _truncate(path, committed)
+                return
+    _rewrite(path, section.records(value))
+
+
+def _drop_section(folder: Path, key: str) -> None:
+    try:
+        _log_path(folder, key).unlink()
+    except FileNotFoundError:
+        pass
+
+
+def _append(path: Path, committed: int, records: list) -> None:
+    """Add *records* and the end of their write after the *committed* bytes,
+    dropping anything a write cut short left beyond them."""
+    data = b"".join(_line(record) for record in records) + _line(_END)
+    with open(path, "r+b") as handle:
+        handle.seek(committed)
+        handle.truncate()
+        handle.write(data)
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def _truncate(path: Path, committed: int) -> None:
+    with open(path, "r+b") as handle:
+        handle.truncate(committed)
+
+
+def _rewrite(path: Path, records: list) -> None:
+    """Write the log anew, swapped in whole as the spec file is. It is flushed
+    to disk before the swap: it may hold the only copy of a history a spec
+    file held until this write."""
+    path.parent.mkdir(exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        with open(tmp, "wb") as handle:
+            handle.write(b"".join(_line(record) for record in records) + _line(_END))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+    finally:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+
+
+def _same(a, b) -> bool:
+    """Whether a section's part on record and the one a write sends are the
+    same, as Python compares parsed JSON: an object's members in any order,
+    and a number written ``1`` or ``1.0``. A page that sends back what it
+    loaded writes numbers its own way, so its history is still the one on
+    record. ``true`` and ``1`` also compare equal; no writer turns one into
+    the other in a history it was handed."""
+    return a == b
+
+
+def _extends(stored: list, sent: list) -> bool:
+    """Whether the list *sent* is the list on record with items added at its end."""
+    return len(stored) <= len(sent) and sent[: len(stored)] == stored
+
+
+class _NodeEntries:
+    """``nodeProvenance``: each node's entries, by node id, in ``entries.jsonl``.
+
+    ``["node", id, value]`` puts a node's value in place, ``[]`` for a list
+    its entries then fill, and ``["entry", id, entry]`` adds one entry at the
+    end of its list. ``["whole", value]`` holds a section that is no object.
+    """
+
+    @staticmethod
+    def empty():
+        return {}
+
+    @staticmethod
+    def records(value) -> list:
+        if not isinstance(value, dict):
+            return [["whole", value]]
+        out: list = []
+        for node_id, held in value.items():
+            if isinstance(held, list):
+                out.append(["node", node_id, []])
+                out.extend(["entry", node_id, entry] for entry in held)
+            else:
+                out.append(["node", node_id, held])
+        return out
+
+    @staticmethod
+    def apply(value, record):
+        kind = record[0]
+        if kind == "whole" and len(record) == 2:
+            return record[1]
+        if not isinstance(value, dict) or len(record) != 3:
+            return value
+        if kind == "node":
+            value[record[1]] = record[2]
+        elif kind == "entry":
+            held = value.get(record[1])
+            if isinstance(held, list):
+                held.append(record[2])
+        return value
+
+    @staticmethod
+    def diff(stored, sent) -> Optional[list]:
+        """The records that take *stored* to *sent*, or ``None`` when only
+        writing the log again does: a node's history gone, or one of its
+        entries removed or changed."""
+        if not (isinstance(stored, dict) and isinstance(sent, dict)):
+            return [] if _same(stored, sent) else None
+        if any(node_id not in sent for node_id in stored):
+            return None
+        out: list = []
+        for node_id, held in sent.items():
+            before = stored.get(node_id, _ABSENT)
+            if isinstance(held, list):
+                if isinstance(before, list):
+                    if not _extends(before, held):
+                        return None
+                    out.extend(["entry", node_id, entry] for entry in held[len(before):])
+                else:
+                    out.append(["node", node_id, []])
+                    out.extend(["entry", node_id, entry] for entry in held)
+            elif before is _ABSENT or not _same(before, held):
+                out.append(["node", node_id, held])
+        return out
+
+
+#: The two lists of the version graph, and the record that adds to each.
+_GRAPH_LISTS = {"nodes": "graphNode", "edges": "graphEdge"}
+
+
+class _Versions:
+    """``dataflowProvenance``: the dataflow's versions, in ``versions.jsonl``.
+
+    ``["version", key, trill]`` adds a version, and ``["graphNode", node]``
+    and ``["graphEdge", edge]`` add to the graph that orders them.
+    ``["field", name, value]`` and ``["graphField", name, value]`` set any
+    other member of the section or of its graph (``latest`` among them), and
+    put ``{}`` or ``[]`` in place for the records above to fill.
+    ``["whole", value]`` holds a section that is no object.
+    """
+
+    @staticmethod
+    def empty():
+        return {}
+
+    @staticmethod
+    def _graph_records(graph: dict) -> list:
+        out: list = [["field", "graph", {}]]
+        for name, held in graph.items():
+            if name in _GRAPH_LISTS and isinstance(held, list):
+                out.append(["graphField", name, []])
+                out.extend([_GRAPH_LISTS[name], item] for item in held)
+            else:
+                out.append(["graphField", name, held])
+        return out
+
+    @classmethod
+    def records(cls, value) -> list:
+        if not isinstance(value, dict):
+            return [["whole", value]]
+        out: list = []
+        for name, held in value.items():
+            if name == "versions" and isinstance(held, dict):
+                out.append(["field", "versions", {}])
+                out.extend(["version", key, trill] for key, trill in held.items())
+            elif name == "graph" and isinstance(held, dict):
+                out.extend(cls._graph_records(held))
+            else:
+                out.append(["field", name, held])
+        return out
+
+    @staticmethod
+    def apply(value, record):
+        kind = record[0]
+        if kind == "whole" and len(record) == 2:
+            return record[1]
+        if not isinstance(value, dict):
+            return value
+        graph = value.get("graph")
+        if kind == "field" and len(record) == 3:
+            value[record[1]] = record[2]
+        elif kind == "version" and len(record) == 3:
+            versions = value.get("versions")
+            if isinstance(versions, dict):
+                versions[record[1]] = record[2]
+        elif kind == "graphField" and len(record) == 3:
+            if isinstance(graph, dict):
+                graph[record[1]] = record[2]
+        elif kind in ("graphNode", "graphEdge") and len(record) == 2:
+            name = "nodes" if kind == "graphNode" else "edges"
+            held = graph.get(name) if isinstance(graph, dict) else None
+            if isinstance(held, list):
+                held.append(record[1])
+        return value
+
+    @classmethod
+    def diff(cls, stored, sent) -> Optional[list]:
+        """The records that take *stored* to *sent*, or ``None`` when only
+        writing the log again does: a member gone, or a version, a graph node
+        or a graph edge removed or changed."""
+        if not (isinstance(stored, dict) and isinstance(sent, dict)):
+            return [] if _same(stored, sent) else None
+        if any(name not in sent for name in stored):
+            return None
+        out: list = []
+        for name, held in sent.items():
+            before = stored.get(name, _ABSENT)
+            if name == "versions" and isinstance(held, dict):
+                if isinstance(before, dict):
+                    if any(key not in held or not _same(held[key], trill) for key, trill in before.items()):
+                        return None
+                    out.extend(["version", key, trill] for key, trill in held.items() if key not in before)
+                else:
+                    out.append(["field", "versions", {}])
+                    out.extend(["version", key, trill] for key, trill in held.items())
+            elif name == "graph" and isinstance(held, dict):
+                if not isinstance(before, dict):
+                    out.extend(cls._graph_records(held))
+                    continue
+                if any(part not in held for part in before):
+                    return None
+                for part, items in held.items():
+                    had = before.get(part, _ABSENT)
+                    if part in _GRAPH_LISTS and isinstance(items, list):
+                        if isinstance(had, list):
+                            if not _extends(had, items):
+                                return None
+                            out.extend([_GRAPH_LISTS[part], item] for item in items[len(had):])
+                        else:
+                            out.append(["graphField", part, []])
+                            out.extend([_GRAPH_LISTS[part], item] for item in items)
+                    elif had is _ABSENT or not _same(had, items):
+                        out.append(["graphField", part, items])
+            elif before is _ABSENT or not _same(before, held):
+                out.append(["field", name, held])
+        return out
+
+
+_SECTIONS = {"nodeProvenance": _NodeEntries, "dataflowProvenance": _Versions}
 
 
 class SpecLockOrderError(RuntimeError):
@@ -632,7 +1042,7 @@ def mutate_dataflow_datasets(
     """
     # Cheap existence check first so we don't create a project dir (and lock
     # file) for a project that doesn't exist.
-    if not (project_dir(user_key, project_id) / "spec.trill.json").exists():
+    if not (project_dir(user_key, project_id) / SPEC_FILE).exists():
         return None
     with spec_write_lock(user_key, project_id):
         spec = read_spec(user_key, project_id)
