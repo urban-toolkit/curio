@@ -32,6 +32,16 @@
  * is spent, so an Autark node that mounts with a restored input keeps its map
  * undrawn until Play. The page draws its first frame only after the switch,
  * so the probe waits for a drawn frame, up to a limit, before it asks.
+ *
+ * Nor is a "no" the last word when every request went before the page drew
+ * (#1017). On a GPU that several test jobs share, a freshly launched Chrome
+ * can draw nothing for longer than that limit, so the probe asks while the GPU
+ * process is still starting, and the switch drops the request after the
+ * retries or past the timeout. A dashboard runs its GPU steps on the probe's
+ * answer as it opens, with no Play to press, so that answer left every one of
+ * them unrun. The page draws right after the switch, so a probe whose wait for
+ * a frame ran out, and that found no adapter with every request made before
+ * the page drew, waits for a frame once more, and asks again if one comes.
  */
 
 export type WebGpuUnsupportedReason =
@@ -53,8 +63,11 @@ export interface WebGpuSupport {
   /** Why not, for code and tests. Absent when supported. */
   reasonCode?: WebGpuUnsupportedReason;
   /** The frame wait, timed from the start of the probe: "drew a frame at
-   *  33 ms", or "drew no frame in 10000 ms". Absent when the page had drawn
-   *  already. For logs and the e2e tests, like `answers`. */
+   *  33 ms", or "drew no frame in 10000 ms". When that wait ran out and no
+   *  adapter came, the wait once more: "drew no frame in 10000 ms, then a
+   *  frame at 13600 ms", or "drew no frame in 10000 ms, nor by 23050 ms".
+   *  Absent when the page had drawn already. For logs and the e2e tests,
+   *  like `answers`. */
   frame?: string;
   /** Every adapter request's answer, timed from the start of the probe:
    *  "null at 33 ms", "an adapter at 183 ms". */
@@ -93,6 +106,12 @@ export const WEBGPU_ADAPTER_RETRY_BUDGET_MS = 3_000;
  * this long has nothing on screen to hold up. A hidden tab draws no frames, so
  * its first probe waits all of this before it asks; showing the tab draws a
  * frame and ends the wait.
+ *
+ * A probe whose wait ran out, and that found no adapter with every request
+ * made before the page drew, waits this long once more, and asks again only
+ * if a frame comes (#1017): a GPU process slower than the wait drops the
+ * request made at its end. A page that still draws nothing keeps the first
+ * answer.
  */
 export const WEBGPU_FRAME_WAIT_MS = 10_000;
 
@@ -151,22 +170,19 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Resolve once the page has drawn a frame, or after WEBGPU_FRAME_WAIT_MS, with
- * the probe's note on it. A frame is drawn once the next one starts: the first
+ * Resolve true once the page has drawn a frame, or false after
+ * WEBGPU_FRAME_WAIT_MS. A frame is drawn once the next one starts: the first
  * animation frame callback runs while its frame is still being made, and the
  * switch to software compositing can land just after it.
  */
-function waitForADrawnFrame(started: number): Promise<string> {
+function waitForADrawnFrame(): Promise<boolean> {
   return new Promise((resolve) => {
-    const timer = setTimeout(
-      () => resolve(`drew no frame in ${WEBGPU_FRAME_WAIT_MS} ms`),
-      WEBGPU_FRAME_WAIT_MS,
-    );
+    const timer = setTimeout(() => resolve(false), WEBGPU_FRAME_WAIT_MS);
     window.requestAnimationFrame(() => {
       window.requestAnimationFrame(() => {
         frameDrawn = true;
         clearTimeout(timer);
-        resolve(`drew a frame at ${Date.now() - started} ms`);
+        resolve(true);
       });
     });
   });
@@ -207,6 +223,33 @@ async function requestAdapterUntil(
   }
 }
 
+/**
+ * One round of adapter requests, counted from its first request: asked again
+ * after a null until the retry budget is spent, and given up when no request
+ * has answered in WEBGPU_PROBE_TIMEOUT_MS.
+ */
+async function askForAnAdapter(
+  gpu: GpuLike,
+  note: (answer: string) => void,
+  answers: string[],
+): Promise<WebGpuSupport> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const timeout = new Promise<WebGpuSupport>((resolve) => {
+    timer = setTimeout(() => {
+      answers.push(`no answer in ${WEBGPU_PROBE_TIMEOUT_MS} ms`);
+      resolve(unsupported("timed-out"));
+    }, WEBGPU_PROBE_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([
+      requestAdapterUntil(gpu, Date.now() + adapterRetryBudgetMs, note),
+      timeout,
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function probe(): Promise<WebGpuSupport> {
   let gpu: GpuLike | undefined;
   try {
@@ -228,33 +271,42 @@ async function probe(): Promise<WebGpuSupport> {
   }
 
   const started = Date.now();
+  const since = () => Date.now() - started;
   const answers: string[] = [];
   const note = (answer: string) => {
-    answers.push(`${answer} at ${Date.now() - started} ms`);
+    answers.push(`${answer} at ${since()} ms`);
   };
   // Once a frame has been drawn there is nothing to wait for, not even a
   // promise tick. Without animation frames (no window) there is no frame to
   // wait for either.
   const canWait = typeof window !== "undefined" && typeof window.requestAnimationFrame === "function";
-  const frame = frameDrawn || !canWait ? undefined : await waitForADrawnFrame(started);
-
-  // The retry budget and the timeout count from the first request.
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  const timeout = new Promise<WebGpuSupport>((resolve) => {
-    timer = setTimeout(() => {
-      answers.push(`no answer in ${WEBGPU_PROBE_TIMEOUT_MS} ms`);
-      resolve(unsupported("timed-out"));
-    }, WEBGPU_PROBE_TIMEOUT_MS);
-  });
-  try {
-    const result = await Promise.race([
-      requestAdapterUntil(gpu, Date.now() + adapterRetryBudgetMs, note),
-      timeout,
-    ]);
-    return { ...result, ...(frame ? { frame } : {}), answers: [...answers] };
-  } finally {
-    if (timer) clearTimeout(timer);
+  let frame = "";
+  let waitRanOut = false;
+  if (!frameDrawn && canWait) {
+    waitRanOut = !(await waitForADrawnFrame());
+    frame = waitRanOut ? `drew no frame in ${WEBGPU_FRAME_WAIT_MS} ms` : `drew a frame at ${since()} ms`;
   }
+
+  // Whether a request went once the page had drawn: its answer is the browser's.
+  const browserGpu = gpu;
+  let askedOnceDrawn = false;
+  const asking: GpuLike = {
+    requestAdapter: () => {
+      if (frameDrawn) askedOnceDrawn = true;
+      return browserGpu.requestAdapter!();
+    },
+  };
+  // The retry budget and the timeout count from the first request.
+  let result = await askForAnAdapter(asking, note, answers);
+  // Every request went while the page drew nothing, so the answer can be the
+  // switch's drop rather than the browser's (#1017). The page draws right
+  // after the switch: wait for a frame once more, and ask again if one comes.
+  if (waitRanOut && !askedOnceDrawn && (result.reasonCode === "no-adapter" || result.reasonCode === "timed-out")) {
+    const drawn = await waitForADrawnFrame();
+    frame += drawn ? `, then a frame at ${since()} ms` : `, nor by ${since()} ms`;
+    if (drawn) result = await askForAnAdapter(browserGpu, note, answers);
+  }
+  return { ...result, ...(frame ? { frame } : {}), answers: [...answers] };
 }
 
 export function detectWebGpuSupport(): Promise<WebGpuSupport> {

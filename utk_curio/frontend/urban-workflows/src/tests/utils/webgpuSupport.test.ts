@@ -10,7 +10,9 @@
  *
  * The cases at the end are about what comes before the first request: the
  * probe waits until the page has drawn a frame, because Chrome's switch to
- * software compositing drops a request made before it.
+ * software compositing drops a request made before it. When that wait runs
+ * out and every request went before the page drew, a "no" waits for a frame
+ * once more and is asked again if one comes.
  */
 import fs from "fs";
 import path from "path";
@@ -346,17 +348,22 @@ describe("before its first request, the probe waits until the page has drawn a f
   });
 
   test("a request that never answers is given up 8 s after it was made, not 8 s after the wait began", async () => {
-    gpuWith(jest.fn(() => new Promise(() => undefined)));
+    const requestAdapter = gpuWith(jest.fn(() => new Promise(() => undefined)));
 
     const pending = detectWebGpuSupport();
     let answered = false;
     void pending.then(() => { answered = true; });
-    await jest.advanceTimersByTimeAsync(WEBGPU_FRAME_WAIT_MS + WEBGPU_PROBE_TIMEOUT_MS - 1);
+    // Given up 8 s after it was made, the probe waits for a frame once more
+    // (#1017), and a page that still draws nothing keeps that answer.
+    await jest.advanceTimersByTimeAsync(2 * WEBGPU_FRAME_WAIT_MS + WEBGPU_PROBE_TIMEOUT_MS - 1);
     expect(answered).toBe(false);
 
     await jest.advanceTimersByTimeAsync(1);
     expect(answered).toBe(true);
-    expect((await pending).reasonCode).toBe("timed-out");
+    const result = await pending;
+    expect(result.reasonCode).toBe("timed-out");
+    expect(result.answers).toEqual([`no answer in ${WEBGPU_PROBE_TIMEOUT_MS} ms`]);
+    expect(requestAdapter).toHaveBeenCalledTimes(1);
   });
 
   test("once the page has drawn a frame, later probes ask at once", async () => {
@@ -399,14 +406,141 @@ describe("before its first request, the probe waits until the page has drawn a f
     gpuWith(jest.fn(() => new Promise(() => undefined)));
 
     const pending = detectWebGpuSupport();
-    await jest.advanceTimersByTimeAsync(WEBGPU_FRAME_WAIT_MS + WEBGPU_PROBE_TIMEOUT_MS);
+    await jest.advanceTimersByTimeAsync(2 * WEBGPU_FRAME_WAIT_MS + WEBGPU_PROBE_TIMEOUT_MS);
 
     expect(await pending).toMatchObject({
       supported: false,
       reasonCode: "timed-out",
-      frame: `drew no frame in ${WEBGPU_FRAME_WAIT_MS} ms`,
+      frame: `drew no frame in ${WEBGPU_FRAME_WAIT_MS} ms, nor by ${2 * WEBGPU_FRAME_WAIT_MS + WEBGPU_PROBE_TIMEOUT_MS} ms`,
       answers: [`no answer in ${WEBGPU_PROBE_TIMEOUT_MS} ms`],
     });
+  });
+});
+
+/**
+ * A freshly launched Chrome on a GPU that several test jobs share can draw
+ * nothing for longer than the probe's wait (#1017). The probe then asks while
+ * the GPU process is still starting, and the switch to software compositing
+ * answers that request null after the 3 s of retries, or past the 8 s the
+ * probe gives it. The page draws right after the switch. A dashboard runs its
+ * GPU steps on the probe's answer as it opens, so that answer left all of them
+ * unrun (run 40777113421). A probe whose wait ran out and that found no
+ * adapter waits for a frame once more, and asks again if one comes.
+ */
+describe("a probe that asked while the page drew nothing asks again once it draws", () => {
+  /** When the switch answered the dropped request in run 40777113421: 3562 ms
+   *  after it, past the 3 s of retries. */
+  const SWITCH_AFTER_MS = 3_562;
+
+  beforeEach(() => {
+    pageFrames.held = true;
+  });
+
+  /**
+   * A requestAdapter whose first request waits for the switch, which answers
+   * it null when `dropped` is called; every later request answers *later*,
+   * and each request's time is kept.
+   */
+  function droppedThen(later: unknown) {
+    const askedAt: number[] = [];
+    let answerTheSwitch: (value: null) => void = () => undefined;
+    const requestAdapter = gpuWith(jest.fn(() => {
+      askedAt.push(Date.now());
+      if (askedAt.length === 1) return new Promise((resolve) => { answerTheSwitch = resolve; });
+      return Promise.resolve(later);
+    }));
+    return { requestAdapter, askedAt, dropped: () => answerTheSwitch(null) };
+  }
+
+  /** The page draws: the frame the wait asked for, then the next one. */
+  async function draws() {
+    drawFrame();
+    await flush();
+    drawFrame();
+    await flush();
+  }
+
+  test("a request the switch answers null after the retries is asked again once the page draws", async () => {
+    const { requestAdapter, askedAt, dropped } = droppedThen(ADAPTER);
+
+    const pending = detectWebGpuSupport();
+    await jest.advanceTimersByTimeAsync(WEBGPU_FRAME_WAIT_MS + SWITCH_AFTER_MS);
+    dropped();
+    await jest.advanceTimersByTimeAsync(0);
+    // The retry budget is spent, and nothing is asked while the page draws nothing.
+    expect(requestAdapter).toHaveBeenCalledTimes(1);
+    await jest.advanceTimersByTimeAsync(1_000);
+    expect(requestAdapter).toHaveBeenCalledTimes(1);
+
+    await draws();
+
+    const at = WEBGPU_FRAME_WAIT_MS + SWITCH_AFTER_MS + 1_000;
+    expect(await pending).toEqual({
+      supported: true,
+      frame: `drew no frame in ${WEBGPU_FRAME_WAIT_MS} ms, then a frame at ${at} ms`,
+      answers: [`null at ${WEBGPU_FRAME_WAIT_MS + SWITCH_AFTER_MS} ms`, `an adapter at ${at} ms`],
+    });
+    expect(askedAt.map((time) => time - askedAt[0])).toEqual([0, SWITCH_AFTER_MS + 1_000]);
+  });
+
+  test("a request the switch answers only after the probe gave up on it is asked again once the page draws", async () => {
+    const { requestAdapter, dropped } = droppedThen(ADAPTER);
+
+    const pending = detectWebGpuSupport();
+    await jest.advanceTimersByTimeAsync(WEBGPU_FRAME_WAIT_MS + WEBGPU_PROBE_TIMEOUT_MS);
+    expect(requestAdapter).toHaveBeenCalledTimes(1);
+    // The switch, 9 s after the request, as in main's run 39072275174.
+    await jest.advanceTimersByTimeAsync(1_000);
+    dropped();
+    await draws();
+
+    const at = WEBGPU_FRAME_WAIT_MS + WEBGPU_PROBE_TIMEOUT_MS + 1_000;
+    expect(await pending).toEqual({
+      supported: true,
+      frame: `drew no frame in ${WEBGPU_FRAME_WAIT_MS} ms, then a frame at ${at} ms`,
+      answers: [`no answer in ${WEBGPU_PROBE_TIMEOUT_MS} ms`, `null at ${at} ms`, `an adapter at ${at} ms`],
+    });
+    expect(requestAdapter).toHaveBeenCalledTimes(2);
+  });
+
+  test("a browser with no adapter still has none once its page draws, after one more round of the retry rule", async () => {
+    const { askedAt, dropped } = droppedThen(null);
+
+    const pending = detectWebGpuSupport();
+    await jest.advanceTimersByTimeAsync(WEBGPU_FRAME_WAIT_MS + SWITCH_AFTER_MS);
+    dropped();
+    await jest.advanceTimersByTimeAsync(0);
+    await draws();
+    await jest.advanceTimersByTimeAsync(30_000);
+    const result = await pending;
+
+    expect(result).toMatchObject({
+      supported: false,
+      reasonCode: "no-adapter",
+      frame: `drew no frame in ${WEBGPU_FRAME_WAIT_MS} ms, then a frame at ${WEBGPU_FRAME_WAIT_MS + SWITCH_AFTER_MS} ms`,
+    });
+    // The dropped request, then 150 ms, doubling to 1 s, for 3 s from the
+    // first request made once the page drew.
+    expect(askedAt.map((time) => time - askedAt[1])).toEqual([-SWITCH_AFTER_MS, 0, 150, 450, 1050, 2050]);
+  });
+
+  test("a page that draws before the answer is not waited for again", async () => {
+    const { requestAdapter, askedAt, dropped } = droppedThen(null);
+
+    const pending = detectWebGpuSupport();
+    await jest.advanceTimersByTimeAsync(WEBGPU_FRAME_WAIT_MS);
+    // The page draws while the request waits for the switch, which answers it
+    // null within the retries: the next request goes 150 ms later, as ever.
+    await draws();
+    await jest.advanceTimersByTimeAsync(500);
+    dropped();
+    await jest.advanceTimersByTimeAsync(30_000);
+    const result = await pending;
+
+    expect(result.reasonCode).toBe("no-adapter");
+    expect(result.frame).toBe(`drew no frame in ${WEBGPU_FRAME_WAIT_MS} ms`);
+    expect(askedAt.map((time) => time - askedAt[0])).toEqual([0, 650, 950, 1550, 2550]);
+    expect(requestAdapter).toHaveBeenCalledTimes(5);
   });
 });
 
