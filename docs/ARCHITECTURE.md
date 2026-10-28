@@ -127,7 +127,7 @@ Per dataflow route, in `DataflowProviders` (`src/components/DataflowProviders.ts
 which `MainCanvasRoute` and `DashboardRoute` in `src/index.tsx` both render:
 
 1. `DialogProvider`: modal dialogs
-2. `CollaborationProvider`: presence, locks, proposals; left out on the dashboard
+2. `CollaborationProvider`: the room's socket, presence, locks, and the dataflow's doc (`DataflowDocContext`); left out on the dashboard
 3. `FlowProvider`: nodes, edges, outputs, interactions. The primary state
 4. `CanvasDatasetDetailsProvider`: a dataset's details, opened from any drawer or palette
 5. `ApiSettingsDrawerProvider`: API Settings as a drawer (see [API Settings and the Monitor](#api-settings-and-the-monitor))
@@ -149,9 +149,9 @@ which `MainCanvasRoute` and `DashboardRoute` in `src/index.tsx` both render:
 
 Two of these orderings are load-bearing rather than incidental:
 
-- `CollaborationProvider` must wrap `FlowProvider`. Outside it, FlowProvider's
-  mutation paths get the no-op default context and silently drop every peer
-  edit.
+- `CollaborationProvider` must wrap `FlowProvider`. Outside it, FlowProvider
+  gets no doc: its canvas binds to none, so no change reaches the server's doc
+  and none from another tab reaches the canvas.
 - The catalog drawer providers must sit inside `FlowProvider`, because a
   drawer's Install writes to the open dataflow. Outside it, `useFlowContext`
   returns no-op defaults and Install appears to succeed while doing nothing.
@@ -259,7 +259,7 @@ moves nodes the way the dashboard page does:
   `position` holds the cell's slot. The hook owns a map from node id to canvas spot and
   writes every stamp from it on each change of the node list, so an update that rebuilt a
   node's data without its stamp is repaired before a save reads the store. A
-  collaborator's drag goes to the map (`useCollaborationSync`'s `takeCanvasPosition`).
+  place the doc gives a node goes to the map (`useDataflowDoc`'s `takeCanvasPosition`).
   Leaving the view restores every position from the map and deletes every stamp; the
   canvas viewport saved on entry is restored after the canvas props are live.
 - **Order and geometry.** Cells follow `utils/dataflowOrder.ts`, the order Export as
@@ -2384,24 +2384,24 @@ The user-facing model is in [SCENARIO-CATALOG.md](SCENARIO-CATALOG.md) and the r
 
 ## Real-time collaboration
 
-The user-facing model, setup and modules are in [COLLABORATION.md](COLLABORATION.md). Every backend serves Socket.IO on its namespace (`extensions.init_socketio`, `server.serve`), and `--collab` tells the page to show the collaboration panel and join the room. One process holds every room and every open dataflow's doc in memory (`collaboration/room_state.py`, `collaboration/dataflow_docs.py`).
+The user-facing model, setup and modules are in [COLLABORATION.md](COLLABORATION.md). Every backend serves Socket.IO on its namespace (`extensions.init_socketio`, `server.serve`). Every signed-in tab of a saved dataflow joins its room and binds its canvas to the dataflow's doc, whatever `--collab` says; `--collab` lets invited editors edit and tells the page to show the people panel. One process holds every room and every open dataflow's doc in memory (`collaboration/room_state.py`, `collaboration/dataflow_docs.py`).
 
 ### Who edits: the access list and the roles
 
 - **The access list** is the `project_editor` table (`ProjectEditor` in `projects/models.py`, migration `f4a5b6c7d8e9`): one row per dataflow and invited account, with who added it and when. Deleting a dataflow deletes its rows through the ORM, as its runs go; a duplicate or a saved copy starts with none.
 - **The roles** are one function, `room_role` in `projects/access.py`: `owner` for `Project.user_id`, `editor` for an account with a row, and `watcher` for anyone else and for a hosted guest whatever it opens. It reads the database each time it is asked. The editors routes (`GET`/`POST /api/projects/<id>/editors`, `DELETE .../editors/<userId>`) answer the owner alone: anyone else gets 404, as the other owner routes give, and a guest 403, since the shared guest owns the examples. An invite names an account by username, never a guest's or the owner's, and each route answers with the list after it.
 - **On a join**, `events.py` asks `room_role` and puts the answer in the room's list. A join to a dataflow that does not exist is refused (`unknown_project`), and so is a hosted guest's join to a dataflow a guest owns (`access.joins_room`, `guest_owned`).
-- **On every change to the room** (`_editing`: the node and edge relays, `request_code_change`, the votes, `node_lock`, `output_produced`, `resolve_conflict`), `room_role` is asked again, and a watcher's event is answered `{ok: false, error: "read_only"}` and relays nothing. A proposal applies once every other participant with an edit role approves (`room_state.voters`).
+- **On every change to the room** (`_editing`: `node_lock`, `output_produced`, `resolve_conflict`), `room_role` is asked again, and a watcher's event is answered `{ok: false, error: "read_only"}` and relays nothing. The room relays no node or connection and takes no vote: the dataflow's changes are its doc's ([Each open dataflow's doc](#each-open-dataflows-doc)).
 - **A change to the list** reaches the room at once: `access.add_editor` and `remove_editor` call `collaboration/roles.py`, which sets the role of the account's participants, releases the locks a removed editor held, and emits `roles_changed` with the room's list.
-- **Saving stays the owner's.** An editor's save is refused as anyone's but the owner's is (`services._project_to_save`). On the canvas, a peer's node or edge change that lands in the owner's tab marks the dataflow Unsaved (`useCollaborationSync`'s `remoteEditRef`), so its next save keeps it.
+- **Saving stays the owner's.** An editor's save is refused as anyone's but the owner's is (`services._project_to_save`). Every change, an editor's included, is kept by the server as it lands in the doc, so the owner's save carries only the history and the outputs ([The canvas bound to its doc](#the-canvas-bound-to-its-doc)).
 
 ### Participants
 
-Each socket is one participant, with an id `connect` gives it (`room_state.new_participant_id`), which the join answers with. Locks, proposals and votes name the participant, and the room's list carries each one's `participant_id` and `role`; socket ids stay on the server. On the page, every "is this me?" goes through `providers/collab/participants.ts` (`isOwnParticipant`): the lock chip in `UniversalNode`, a proposal's buttons in `CollaborationSidePanel`, and an applied change's skip in `CodeEditor` and `GrammarEditor`. Two tabs of one account, or two hosted guests on the shared guest account, are two participants.
+Each socket is one participant, with an id `connect` gives it (`room_state.new_participant_id`), which the join answers with. Locks name the participant, and the room's list carries each one's `participant_id` and `role`; socket ids stay on the server. On the page, every "is this me?" goes through `providers/collab/participants.ts` (`isOwnParticipant`), the lock chip in `UniversalNode` among them. Two tabs of one account, or two hosted guests on the shared guest account, are two participants.
 
 ### Read-only follows the role
 
-`useSharedView` (`hook/useSharedView.ts`) is the one rule every editing gate reads: `MainCanvas`, the top bar, a node's resize handle, notes, scenario actions and the Map Editor (`editFeaturesBehavior.tsx`, `EditFeaturesBody.tsx`). Its `canvasRole` is `owner` off a shared view, and on one (`viewerMode` `"shared"`) `editor` only with collaboration on and a room role that edits; otherwise `watcher`, the read-only canvas, until the join answers too. The save gates read `viewerMode` itself: only the owner's tab saves, auto-saves, saves a pin or runs on the server, so the top bar gives an editor **Save a copy** and no save status. The dataflow's agents stay the owner's (`MainCanvas`'s `ownersCanvas`).
+`useSharedView` (`hook/useSharedView.ts`) is the one rule every editing gate reads: `MainCanvas`, the top bar, a node's resize handle, notes, scenario actions and the Map Editor (`editFeaturesBehavior.tsx`, `EditFeaturesBody.tsx`). Its `canvasRole` is `owner` off a shared view, and on one (`viewerMode` `"shared"`) `editor` only with collaboration on and a room role that edits; otherwise `watcher`, the read-only canvas, until the join answers too. The save gates read `viewerMode` itself: only the owner's tab saves, auto-saves, saves a pin or runs on the server, so the top bar gives an editor **Save a copy** and no save status. The dataflow's agents stay the owner's (`MainCanvas`'s `ownersCanvas`). Whether a tab sends its changes to the doc is the same rule on the room's role (`participants.writesDoc`): the owner's tab does, an editor's only with collaboration on, a watcher's never.
 
 ### Hosted guests
 
@@ -2450,6 +2450,34 @@ The server keeps one Yjs doc per open dataflow: a pycrdt `Doc` and an `Awareness
 - Locks, in this order: the spec lock, the doc's lock, then the module's own; storage's history lock is a leaf. The spec lock is never asked for while a doc's lock is held, and the writing thread touches no database.
 
 **Reads.** `dataflow_docs.read(user_key, project_id)` is the spec as it is now, the open doc's dataflow over the file. A doc that is not open but whose log holds changes its spec does not, which a stopped backend can leave, is opened to read them.
+
+**The rules the server applies.** After each update a tab sends, `_drop_dangling_connections` (called from `_update`) removes every connection whose node at either end the doc no longer holds, with its `edgeOrder` entry, as one transaction of origin `rules`, logged and relayed to every tab. The tab that drew it is told `connection_dropped`, `{projectId, edgeIds, by}`, `by` naming whoever removed the node.
+
+### The canvas bound to its doc
+
+**Who binds.** `CollaborationProvider` opens the room's socket for a signed-in tab whose canvas holds a saved dataflow, whatever `--collab` says, and once the room joins the tab it starts the doc (`providers/collab/docProvider.ts`) and hands it out through `DataflowDocContext`. A dataflow never saved has no room, a hosted guest's join to an example is refused, and the dashboard has no `CollaborationProvider`, so those canvases stay their own. The provider sends this tab's changes only on `participants.writesDoc`: the owner's tab, and an editor's with collaboration on. A change of the tab's role either way, and a `read_only` or `reload` answer, start the doc again from the server's.
+
+**The provider** speaks the server's protocol on the room's socket: sync step 1 naming the doc it holds, then the server's answers. The tab's changes wait for the start's ack, merged into one update (`Y.mergeUpdates`), and each update's ack, `{ok, kept}`, counts it kept; `whenKept` resolves once every one sent is, or after `KEPT_WAIT_MS`. A `not_synced` answer starts the sync again. Awareness is sent after the sync and at each change of the tab's own state; a dropped socket clears everyone else's.
+
+**The apply path** is `providers/flow/useDataflowDoc.ts`, which `FlowProvider` runs with the doc once its first sync is done:
+
+- **The doc to the canvas.** The doc's observers carry every change to the canvas, whoever made it: another tab, the server's rules, this tab's Ctrl+Z, this tab's typing. They skip only the changes this tab's canvas wrote (`CANVAS_ORIGIN`). A node is built as a load builds it (`hook/codeNodes.ts`), a connection is made through `onConnect`, and a removal goes through the canvas's own removal, so a change from the doc looks on the canvas as the same change made in this tab. A change to a node's code, widgets, selections, datasets or models marks the node stale.
+- **The canvas to the doc.** After each commit, in a layout effect so no message from the server lands between a commit and its write, the canvas is serialized as `TrillGenerator.generateTrill` writes it, node by node (a node that did not change keeps its last Trill), and what changed since the last commit is written as one transaction (`docMapping.applyDataflow`), which leaves alone whatever the doc changed meanwhile that the canvas did not. The server's sections (`packages`, `datasets`) and what a save stamps (`timestamp`, `provenance_id`) are never written from a tab, and neither is a node's empty code.
+- **Binding** happens once the canvas holds the dataflow its load put there (`loadedDataflowRef`, with the load's epoch). The base of the observers is the dataflow as the load got it, so what the doc changed since then (someone typing meanwhile) reaches the canvas, and what the load itself made of a node (a place out of another's way, a default) is not written until that node changes. A load of another dataflow, or a canvas cleared by File > New, is a new epoch, and nothing of it is written into the old doc.
+- **Drags.** A drag is this tab's awareness `drag`, sent every `DRAG_EVERY_MS`; the others move the node live and write nothing. The drop writes the node's place, one value. A node another tab dropped waits up to `DROP_WAIT_MS` for its place in the doc, then goes back to the doc's.
+
+**Code** is typed together through y-monaco (`components/editing/useYMonacoBinding.ts`, imported when an editor binds): a node's editor is bound to its `content` text, with the doc's awareness, so each person's cursor shows in the others' editors, colored by `presence.remoteCursorStyle` from their participant id. Ctrl+Z and redo run a Yjs `UndoManager` on that text that tracks this tab's binding and its canvas origin, so it never undoes another tab's typing. A value written into an editor from outside its typing (a dataset dropped on the node, a run's code put back) is applied as the smallest edit (`useMonacoExternalValue`, `utils/textStretch.ts`), which the binding carries into the text. Typing before the doc's first sync goes into the doc when the editor binds, and a node with no code in the doc gets the editor's at its first change. An editor's focus is the tab's awareness `editing`.
+
+**The merge rules:**
+
+| Case | Rule |
+|------|------|
+| Removing a node someone else is editing | The node is not deletable on the canvas while another state's `editing` names it (`useEditedByOthers`); the Delete key and the node's delete ask through `useRemovalAsk`. A removal says so first in the remover's awareness (`removed`, `presence.noteRemoval`). |
+| A node removed while this tab edits it | The observer takes it off and says who removed it, read from the remover's note (waiting up to `REMOVER_WAIT_MS` for it), with **Put it back**, which adds the node with this tab's code and its connections whose other end remains. |
+| A connection to a node removed at the same moment | Dropped on the server (above); the drawer's tab says who removed the node. |
+| A widget, a node's place, size or pin | Each is one value, so the last write wins in every tab. |
+
+**Saves.** A bound canvas's save waits for `whenKept`, then sends only `history` (`nodeProvenance`, `dataflowProvenance`), the outputs it keeps and the name; the dataflow is the doc's, flushed by the server before the save writes the history.
 
 ---
 
