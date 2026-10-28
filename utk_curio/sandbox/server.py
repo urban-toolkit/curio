@@ -185,6 +185,9 @@ if __name__ == '__main__':
     from utk_curio.sandbox.util.duckdb_threads import release_default_connection
     release_default_connection("[sandbox]", "so its threads stay idle in this process")
 
+    from utk_curio.common._diag_heap import start_if_asked
+    start_if_asked("sandbox")
+
     app.run(
         host=os.getenv('FLASK_SANDBOX_HOST', '127.0.0.1'),
         port=int(os.getenv('FLASK_SANDBOX_PORT', 2000)),

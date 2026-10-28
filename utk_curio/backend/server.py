@@ -78,6 +78,9 @@ if __name__ == '__main__':
         "[backend]", "so its threads stay idle in this process", import_first=True,
     )
 
+    from utk_curio.common._diag_heap import start_if_asked
+    start_if_asked("backend")
+
     from utk_curio.backend.config import ENABLE_COLLAB
     if ENABLE_COLLAB:
         # SocketIO requires its own .run() so the engineio server can attach.

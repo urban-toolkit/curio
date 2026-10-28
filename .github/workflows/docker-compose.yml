@@ -910,6 +910,7 @@ jobs:
         run: |
           kill "$(cat "$RUNNER_TEMP/memory-sampler.pid" 2>/dev/null)" 2>/dev/null || true
           kill "$(cat "$RUNNER_TEMP/stack-processes.pid" 2>/dev/null)" 2>/dev/null || true
+          cp -r .curio/diag-heap ci-report/ 2>/dev/null || ls -la .curio || true
           python3 scripts/ci_memory_budget.py report --samples ci-report/memory.tsv
 
       # Everything the ci-report job builds the run's page from: this job's
