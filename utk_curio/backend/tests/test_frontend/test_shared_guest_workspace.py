@@ -1,8 +1,16 @@
-"""Playwright E2E: the shared guest workspace is visible across sessions."""
+"""Playwright E2E: the shared guest workspace is visible across sessions.
+
+Every guest session is the one shared guest, so two sessions list the same
+dataflows. Without sign-in that guest is the one local user and saves: a
+dataflow one session saves is listed in the other. With sign-in, a hosted
+guest saves nothing: the server refuses with the words the page shows, and the
+two sessions list the same dataflows, the examples the shared guest owns.
+"""
 
 from __future__ import annotations
 
 import json
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
@@ -10,6 +18,7 @@ import pytest
 
 from .utils import (
     allow_guest_login_env,
+    api_json,
     auth_enabled_env,
     project_card,
     require_project_page,
@@ -44,7 +53,8 @@ def _session_token(page) -> str:
     raise AssertionError("session_token cookie was not set")
 
 
-def _create_project(backend_url: str, token: str, project_name: str) -> dict:
+def _create_project(backend_url: str, token: str, project_name: str) -> tuple[int, dict]:
+    """POST a new dataflow as the guest: the status and the body it answers."""
     payload = {
         "name": project_name,
         "spec": {"dataflow": {"name": project_name, "nodes": [], "edges": []}},
@@ -59,13 +69,21 @@ def _create_project(backend_url: str, token: str, project_name: str) -> dict:
         },
         method="POST",
     )
-    with urlopen(req, timeout=10.0) as resp:  # noqa: S310 (trusted local URL)
-        assert resp.status == 201
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        with urlopen(req, timeout=10.0) as resp:  # noqa: S310 (trusted local URL)
+            return resp.status, json.loads(resp.read().decode("utf-8"))
+    except HTTPError as exc:
+        return exc.code, json.loads(exc.read().decode("utf-8") or "{}")
+
+
+def _listed(backend_url: str, token: str) -> list[tuple[str, str]]:
+    return sorted((p["id"], p["name"]) for p in api_json(f"{backend_url}/api/projects", token))
 
 
 def test_guest_workspace_shared_across_sessions(app_frontend, current_server, browser):
-    """A project created by one guest session should be visible to another."""
+    """Two guest sessions list the same dataflows: one saved by the first
+    session without sign-in, and with sign-in none, since a hosted guest's
+    save is refused."""
     require_project_page()
     if _auth_enabled() and not _allow_guest_login():
         pytest.skip("Guest login is disabled for this session")
@@ -81,14 +99,23 @@ def test_guest_workspace_shared_across_sessions(app_frontend, current_server, br
         _enter_guest_workspace(first_page, base)
         token = _session_token(first_page)
         project_name = f"Shared Guest {uuid4().hex[:8]}"
-        _create_project(current_server, token, project_name)
-
-        first_page.goto(f"{base}/projects")
-        project_card(first_page, project_name).first.wait_for(timeout=10000)
+        status, body = _create_project(current_server, token, project_name)
+        if _auth_enabled():
+            assert (status, body) == (403, {"error": "Guest users cannot save projects"}), (
+                "a hosted guest saved a dataflow"
+            )
+        else:
+            assert status == 201, body
 
         _enter_guest_workspace(second_page, base)
-        second_page.goto(f"{base}/projects")
-        project_card(second_page, project_name).first.wait_for(timeout=10000)
+        first, second = _listed(current_server, token), _listed(current_server, _session_token(second_page))
+        assert first == second, "two guest sessions list different dataflows"
+        assert (project_name in {name for _id, name in second}) == (not _auth_enabled())
+
+        shown = project_name if not _auth_enabled() else (second[0][1] if second else None)
+        if shown is not None:
+            second_page.goto(f"{base}/projects")
+            project_card(second_page, shown).first.wait_for(timeout=10000)
     finally:
         first_context.close()
         second_context.close()

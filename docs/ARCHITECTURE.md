@@ -44,6 +44,7 @@ This document describes the internal architecture of Curio for contributors who 
 * [Python Dependencies](#python-dependencies)
 * [Discovery Catalog](#discovery-catalog)
 * [Model Catalog](#model-catalog)
+* [Real-time collaboration](#real-time-collaboration)
 * [Backend API Reference](#backend-api-reference)
 * [Key Files at a Glance](#key-files-at-a-glance)
 
@@ -2344,6 +2345,33 @@ The user-facing model is in [SCENARIO-CATALOG.md](SCENARIO-CATALOG.md) and the r
   5. The canvas refreshes the package registry, builds the loaders with `buildDatasetLoaderNodeOptions`, loads everything with `loadTrill(..., "none", ..., restored)` as Duplicate selection does, and applies the restored outputs with `utils/restoredOutputs.ts`, which `ProjectLoader` uses too.
 
   A copy's dataset id is `computed.<targetId>.<nodeId>`, so a reload of the target restores it as that node's output (`_durable_source_for`), and a later run of the source rewrites only the source's.
+
+---
+
+## Real-time collaboration
+
+The user-facing model, setup and modules are in [COLLABORATION.md](COLLABORATION.md). It runs behind `--collab`: the backend serves Socket.IO on its namespace, and one process holds every room in memory (`collaboration/room_state.py`).
+
+### Who edits: the access list and the roles
+
+- **The access list** is the `project_editor` table (`ProjectEditor` in `projects/models.py`, migration `f4a5b6c7d8e9`): one row per dataflow and invited account, with who added it and when. Deleting a dataflow deletes its rows through the ORM, as its runs go; a duplicate or a saved copy starts with none.
+- **The roles** are one function, `room_role` in `projects/access.py`: `owner` for `Project.user_id`, `editor` for an account with a row, and `watcher` for anyone else and for a hosted guest whatever it opens. It reads the database each time it is asked. The editors routes (`GET`/`POST /api/projects/<id>/editors`, `DELETE .../editors/<userId>`) answer the owner alone: anyone else gets 404, as the other owner routes give, and a guest 403, since the shared guest owns the examples. An invite names an account by username, never a guest's or the owner's, and each route answers with the list after it.
+- **On a join**, `events.py` asks `room_role` and puts the answer in the room's list. A join to a dataflow that does not exist is refused (`unknown_project`), and so is a hosted guest's join to a dataflow a guest owns (`access.joins_room`, `guest_owned`).
+- **On every change to the room** (`_editing`: the node and edge relays, `request_code_change`, the votes, `node_lock`, `output_produced`, `resolve_conflict`), `room_role` is asked again, and a watcher's event is answered `{ok: false, error: "read_only"}` and relays nothing. A proposal applies once every other participant with an edit role approves (`room_state.voters`).
+- **A change to the list** reaches the room at once: `access.add_editor` and `remove_editor` call `collaboration/roles.py`, which sets the role of the account's participants, releases the locks a removed editor held, and emits `roles_changed` with the room's list.
+- **Saving stays the owner's.** An editor's save is refused as anyone's but the owner's is (`services._project_to_save`). On the canvas, a peer's node or edge change that lands in the owner's tab marks the dataflow Unsaved (`useCollaborationSync`'s `remoteEditRef`), so its next save keeps it.
+
+### Participants
+
+Each socket is one participant, with an id `connect` gives it (`room_state.new_participant_id`), which the join answers with. Locks, proposals and votes name the participant, and the room's list carries each one's `participant_id` and `role`; socket ids stay on the server. On the page, every "is this me?" goes through `providers/collab/participants.ts` (`isOwnParticipant`): the lock chip in `UniversalNode`, a proposal's buttons in `CollaborationSidePanel`, and an applied change's skip in `CodeEditor` and `GrammarEditor`. Two tabs of one account, or two hosted guests on the shared guest account, are two participants.
+
+### Read-only follows the role
+
+`useSharedView` (`hook/useSharedView.ts`) is the one rule every editing gate reads: `MainCanvas`, the top bar, a node's resize handle, notes, scenario actions and the Map Editor (`editFeaturesBehavior.tsx`, `EditFeaturesBody.tsx`). Its `canvasRole` is `owner` off a shared view, and on one (`viewerMode` `"shared"`) `editor` only with collaboration on and a room role that edits; otherwise `watcher`, the read-only canvas, until the join answers too. The save gates read `viewerMode` itself: only the owner's tab saves, auto-saves, saves a pin or runs on the server, so the top bar gives an editor **Save a copy** and no save status. The dataflow's agents stay the owner's (`MainCanvas`'s `ownersCanvas`).
+
+### Hosted guests
+
+A hosted guest is a guest with sign-in on (`capabilities.is_hosted_guest`, the backend's twin of the page's `isHostedGuest`). Its save is refused on the server (`services._assert_guest_can_save`, "Guest users cannot save projects"), and so is a non-shared guest's anywhere; without `--deploy` the shared guest saves. Its join to a room of a dataflow a guest owns is refused, so each guest's canvas of an example stays its own, and a room it does join gives it the watcher's role. A guest is never an editor and manages no editors.
 
 ---
 

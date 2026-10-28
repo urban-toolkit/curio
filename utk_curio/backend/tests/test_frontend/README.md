@@ -57,13 +57,17 @@ browser runs WebGPU: a `test_workflows.py` case whose dataflow has an Autark nod
 walkthrough scene whose example or script drives Autark or the GPU, and any
 other module whose source mentions Autark or WebGPU. Such tests carry the
 `webgpu` marker. A test that needs the sibling backends of `--parallel` is
-marked `needs_parallel` and runs on `utk` too. Everything else runs on the
-CPU runners. Two variables select a share, and a run with neither runs
-everything:
+marked `needs_parallel` and runs on `utk` too. A test that needs real-time
+collaboration is marked `needs_collab` and runs on the `collab` share alone,
+CI's `e2e-collab` job, the one stack started with `--collab`; locally, set
+`CURIO_E2E_COLLAB=1` so the harness starts its stack with `--collab`.
+Everything else runs on the CPU runners. Two variables select a share, and a
+run with neither runs everything:
 
 ```bash
 CURIO_E2E_RUNNER=utk pytest utk_curio/backend/tests/test_frontend/       # the webgpu share
 CURIO_E2E_RUNNER=desktop CURIO_E2E_PART=3/14 pytest ...                  # one of fourteen desktop parts
+CURIO_E2E_COLLAB=1 CURIO_E2E_RUNNER=collab pytest ...                    # the collaboration share
 ```
 
 CI runs `E2E_DESKTOP_PARTS` desktop parts (`tests/parts.py`; a Jest test
