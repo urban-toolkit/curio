@@ -286,12 +286,13 @@ def test_a_package_skill_is_held_as_written_where_curios_is_rendered(tmp_curio):
     notes = _store_package(KEY, "acme.notes", {"edit-notes": _skill("edit-notes", marked)})
     spec = {"dataflow": {"packages": [notes], "nodes": [], "edges": []}}
     chat = skill_runs.for_chat(KEY, PID, _manifest(NB), spec, {"kind": "canvas"}, _preamble(NB), [])
-    note = next(skill for skill in chat.catalog if skill.name == "edit-notes")
+    by_name = {skill.name: skill for skill in chat.catalog}
+    assert {"edit-notes", "map-edits"} <= set(by_name), chat.names
     held = f'<skill_content name="edit-notes">\n{marked.rstrip()}\n</skill_content>'
-    assert skill_runs.content(note, readable=True) == held
+    assert skill_runs.content(by_name["edit-notes"], readable=True) == held
     status, text = skill_runs.read(chat, {"name": "edit-notes"})
     assert status == "ok" and marked.rstrip() in text
-    map_edits = skill_runs.content(next(skill for skill in chat.catalog if skill.name == "map-edits"), readable=True)
+    map_edits = skill_runs.content(by_name["map-edits"], readable=True)
     assert "{{" not in map_edits and "## Map Editor" in map_edits
 
 
@@ -317,8 +318,10 @@ def test_a_package_skill_serves_its_own_packages_templates_and_no_others(tmp_cur
     assert handed({"nodeType": "acme.trees/tree-count"}) == [*CODE_SKILLS, "street-trees"]
     assert handed({"nodeId": "t"}) == [*CODE_SKILLS, "street-trees"]
     assert handed({"nodeType": CA}) == CODE_SKILLS
-    skill = next(skill for skill in skill_runs.for_chat(
-        KEY, PID, _manifest(NB), spec, {"kind": "canvas"}, _preamble(NB), []).catalog if skill.name == "street-trees")
+    chat = skill_runs.for_chat(KEY, PID, _manifest(NB), spec, {"kind": "canvas"}, _preamble(NB), [])
+    by_name = {skill.name: skill for skill in chat.catalog}
+    assert "street-trees" in by_name, chat.names
+    skill = by_name["street-trees"]
     assert skill_runs.templates_served(skill, trees) == {"acme.trees/tree-count", "acme.trees/computation-analysis"}
     assert skill_runs.templates_served(skill, None) == set()
 

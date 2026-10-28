@@ -62,6 +62,18 @@ def _archive(make_archive, files: dict[str, str]) -> bytes:
     return make_archive(extra_files={path: text.encode("utf-8") for path, text in files.items()})
 
 
+def _accepted(call):
+    """What *call*, an install or a publish, returns. One that refuses the
+    package fails here, at an assertion that says why."""
+    from utk_curio.backend.app.packages.repositories.archive import InstallerError
+
+    try:
+        return call()
+    except InstallerError as exc:
+        refused = str(exc)
+    assert not refused, f"Curio refused a package that ships skills: {refused}"
+
+
 def test_import_export_publish_and_add_keep_a_packages_skills(tmp_curio, tmp_path, monkeypatch, make_archive):
     """An import installs the package's skill and its reference where the
     archive has them, and the store copy's integrity map covers both; the
@@ -78,7 +90,8 @@ def test_import_export_publish_and_add_keep_a_packages_skills(tmp_curio, tmp_pat
     monkeypatch.setenv("CURIO_PACKAGES_ROOT", str(tmp_path / "catalog"))
     hashes = {path: _sha256(text) for path, text in FILES.items()}
 
-    install_package_from_archive("guest", _archive(make_archive, FILES))
+    archive = _archive(make_archive, FILES)
+    _accepted(lambda: install_package_from_archive("guest", archive))
     installed = package_dir("guest", DIR)
     assert _skill_files(installed) == FILES
     assert _covered(installed) == hashes
@@ -87,12 +100,12 @@ def test_import_export_publish_and_add_keep_a_packages_skills(tmp_curio, tmp_pat
         exported = {name: zf.read(name).decode("utf-8") for name in zf.namelist() if name.startswith("skills/")}
     assert exported == FILES
 
-    _result, published = publish_installed_to_catalog("guest", DIR, replace=False)
+    _result, published = _accepted(lambda: publish_installed_to_catalog("guest", DIR, replace=False))
     assert published.resolve() == (tmp_path / "catalog" / DIR).resolve()
     assert _skill_files(published) == FILES
     assert _covered(published) == hashes
 
-    install_package_from_directory("7", published)
+    _accepted(lambda: install_package_from_directory("7", published))
     added = package_dir("7", DIR)
     assert _skill_files(added) == FILES
     assert _covered(added) == hashes
