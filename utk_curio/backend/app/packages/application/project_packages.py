@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Iterable
 
+from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
 from utk_curio.backend.app.projects import storage as projects_storage
 from utk_curio.backend.app.packages.domain.package_id import PACKAGE_DIR_RE
@@ -49,13 +50,14 @@ def _lockfile_or_empty(user_key: str, project_id: str) -> set[str]:
 def _write_lockfile(user_key: str, project_id: str, dirs: Iterable[str]) -> dict:
     # Hold the per-project spec lock across the read-modify-write so a concurrent
     # dataset mutation (replace_dataflow_datasets) or project save can't
-    # clobber the package lockfile (or vice versa).
+    # clobber the package lockfile (or vice versa). The lockfile is written
+    # through the dataflow's doc, its one writer, so a tab in its room gets it.
     with projects_storage.spec_write_lock(user_key, project_id):
-        spec = projects_storage.read_spec(user_key, project_id)
+        spec = dataflow_docs.live(user_key, project_id)
         if spec is None:
             raise PackageServiceError(f"project {project_id} has no spec", 404)
         set_project_packages(spec, dirs)
-        projects_storage.write_spec(user_key, project_id, spec)
+        dataflow_docs.write(user_key, project_id, spec, dataflow_docs.person(user_key, "packages"))
         return spec
 
 
