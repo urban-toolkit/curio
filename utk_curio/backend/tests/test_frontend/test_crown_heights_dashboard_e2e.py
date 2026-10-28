@@ -89,9 +89,11 @@ from utk_curio.common import shared_constants
 
 from . import diagnostics
 from .test_dashboard_page_e2e import (
+    CLIENT_ERROR_PATH,
     _NODES_STANDING_JS,
     _Visitor,
     _catalog_ids,
+    _client_error_report,
     _enter,
     _files_read,
     _not_a_viewer_route,
@@ -378,15 +380,16 @@ def _day_reads(outputs: dict[str, str], ids: dict[str, str], row: dict) -> dict[
     return shares
 
 
-def _page_story(page, console: list[str]) -> str:
-    """Where each node of *page* stands and what the page logged last, for a
-    failure to report."""
+def _page_story(page, console: list[str], reported: list[str]) -> str:
+    """Where each node of *page* stands, every browser error it reported to
+    the monitor and what it logged last, for a failure to report."""
     try:
         standing = page.evaluate(_NODES_STANDING_JS)
     except Exception as exc:  # noqa: BLE001 - the story is told with what can be read
         standing = [f"could not be read: {exc}"]
     return (
         "\nThe page's nodes:\n  " + "\n  ".join(standing or ["none"])
+        + "\nWhat the page reported to the monitor as browser errors:\n  " + "\n  ".join(reported or ["nothing"])
         + "\nThe page's last messages:\n  " + "\n  ".join(console[-40:] or ["none"])
     )
 
@@ -1133,6 +1136,12 @@ def test_a_visitor_in_a_private_window_goes_through_the_four_days(
         page.on("pageerror", lambda error: errors.append(str(error)))
         console: list[str] = []
         page.on("console", lambda message: console.append(f"[{message.type}] {message.text}"[:300]))
+        reported: list[str] = []
+        page.on("request", lambda request: (
+            reported.append(_client_error_report(request.post_data))
+            if request.method == "POST" and urlsplit(request.url).path.endswith(CLIENT_ERROR_PATH)
+            else None
+        ))
         starts: list = []
         page.on("response", lambda response: (
             starts.append(response)
@@ -1198,7 +1207,7 @@ def test_a_visitor_in_a_private_window_goes_through_the_four_days(
                 page, os.path.join(diagnostics.failure_dir(request.node.nodeid), "private-window"),
             )
             answered = any(path.endswith("screenshot.png") for path in written)
-            story = _page_story(page, console) if answered else "\nThe page did not answer a screenshot."
+            story = _page_story(page, console, reported) if answered else "\nThe page did not answer a screenshot."
             if isinstance(failure, AssertionError):
                 raise AssertionError(f"{failure}{story}") from failure
             print(story)
