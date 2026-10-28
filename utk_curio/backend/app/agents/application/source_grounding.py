@@ -27,7 +27,7 @@ The rules (all runtime-enforced; prompt wording only teaches them):
   request) and is labeled synthetic — inline invented values are the same
   fabrication class as an invented filename;
 - a **catalog item** a function names (the functions page,
-  ``knowledge/node-functions.md``, says which argument names a Data Catalog
+  ``skills/node-functions/SKILL.md``, says which argument names a Data Catalog
   dataset or collection, a Model Catalog model or a Node code key) is one the
   account has, written as a string in the call, since the runtime reads it
   from the code before the node runs; a chip there is read as the run writes

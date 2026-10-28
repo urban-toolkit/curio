@@ -1,3 +1,15 @@
+---
+name: vega-lite-maps
+description: >-
+  Use this skill when a Vega-Lite chart draws a map of a GeoDataFrame. It says to return the frame
+  as it is and use a geoshape mark, that Curio fills in the shape encoding and a fitted
+  projection, and how a layer draws a geometry column other than the active one.
+license: MIT
+compatibility: Written for Curio's agents, their tools and node code.
+metadata:
+  author: curio
+  version: "1.0.0"
+---
 ## Maps in Vega-Lite
 
 A node that returns a GeoDataFrame can be charted as a map directly. Do NOT

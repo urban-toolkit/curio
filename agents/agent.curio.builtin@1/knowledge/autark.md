@@ -1,3 +1,0 @@
-## Autark documents
-
-{{autk.grammar}}

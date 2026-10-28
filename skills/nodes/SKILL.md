@@ -1,3 +1,17 @@
+---
+name: nodes
+description: >-
+  Use this skill when choosing the type of a node to place or plan, or when a task relies on what
+  a built-in node does. It lists Curio's built-in templates, says how a node takes several
+  connections on numbered input circles, and says what Data Loading, Data Transformation, Data
+  Summary, JS Computation, Data Export, Spatial Join, Simple View, Data Pool and Note nodes read,
+  hold, show and hand on, such as the image columns a Simple View shows as cards.
+license: MIT
+compatibility: Written for Curio's agents, their tools and node code.
+metadata:
+  author: curio
+  version: "1.0.0"
+---
 ## Nodes
 
 Nodes in these dataflows either process data or visualize it. Each type of node has a different role.

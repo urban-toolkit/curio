@@ -4,7 +4,7 @@ A node pinned to its dataflow's dashboard is a tile of a page anyone with its
 link can open. The page draws from the outputs saved with the dataflow and
 refuses a pinned Autark tile whose spec loads its own data
 (``projects/dashboard_payload.py``). Agents learn the dashboard from its
-knowledge page and read which nodes are tiles in ``dataflow.read``. A spec an
+skill and read which nodes are tiles in ``dataflow.read``. A spec an
 agent writes for a pinned tile is held to the dashboard's own check: the
 ``node.content.write`` mint sends it back, and Solve, verified or not, ends
 the node on it, since the fix is a node upstream that Solve cannot add. A
@@ -35,7 +35,7 @@ DFB = "agent.curio.dataflow-builder@1"
 AUTK = "curio.builtin/autk-grammar"
 VEGA = "curio.builtin/vis-vega"
 CA = "curio.builtin/computation-analysis"
-PAGE = "knowledge/dashboards.md"
+SKILL = "dashboards"
 MESSAGE = "dashboards.tile-loads-own-data"
 #: The account and the dataflow the check is asked about directly.
 KEY = "4242"
@@ -76,13 +76,13 @@ def _message() -> str:
 
 
 class TestTheDashboardsPage:
-    """``knowledge/dashboards.md`` in the base entry says what a pin does, what
-    the dashboard refuses and who pins, and every agent Curio ships reads it."""
+    """The skill ``skills/dashboards/SKILL.md`` says what a pin does, what the
+    dashboard refuses and who pins, and every agent Curio ships reads it."""
 
     def _page(self) -> str:
         from utk_curio.backend.app.agents.domain import agent_text
 
-        return agent_text.read(agent_text.page_file(PAGE))
+        return agent_text.skill_text(SKILL)
 
     def test_every_agent_curio_ships_reads_it_in_its_preamble(self):
         from utk_curio.backend.app.agents.domain import builtin

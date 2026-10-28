@@ -1,8 +1,9 @@
 """Every built-in prompt names only things that exist.
 
-The pages of the base entry (``agents/agent.curio.builtin@1/``) and the
-prompts in each shipped agent's folder (``agents/<id>@<major>/prompts/``),
-as an agent reads them, name tools, capabilities, node
+The pages of the base entry (``agents/agent.curio.builtin@1/``), the
+prompts in each shipped agent's folder (``agents/<id>@<major>/prompts/``)
+and the skills Curio ships (``skills/<name>/SKILL.md``), as an agent reads
+them, name tools, capabilities, node
 templates, package folders, sandbox helpers and Data Catalog datasets, and they
 carry Vega-Lite examples. Each of those is defined somewhere else: the tool
 registry, the built-in agents, the shipped manifests, the sandbox, the shipped
@@ -39,7 +40,7 @@ from utk_curio.backend.app.datasets.domain.code_refs import (
     MODEL_CALL_RE,
 )
 from utk_curio.backend.app.projects.shipped import shipped_dataflows
-from utk_curio.backend.tests._support.prompt_files import prompt_files, prompt_path, prompt_text
+from utk_curio.backend.tests._support.prompt_files import prompt_files, prompt_name, prompt_path, prompt_text
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
@@ -47,11 +48,12 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 PROMPT_FILES = sorted({
     asset.file.rsplit("/", 1)[-1] for m in builtin.list_builtin_manifests() for asset in m.prompts.values()
 })
-#: Every page of the base entry and every prompt in the shipped agents'
-#: ``prompts/``, the included rules and ``examples.md`` too: each a source an
-#: agent reads rendered. A source's fence can hold a ``{{field}}`` marker, not
-#: JSON, so the checks of the text sent read the render.
-ALL_PROMPTS = sorted(path.name for path in prompt_files("*.md"))
+#: Every page of the base entry, every prompt in the shipped agents'
+#: ``prompts/`` and every skill, the included rules and ``examples.md`` too:
+#: each a source an agent reads rendered, a skill's file without its
+#: frontmatter. A source's fence can hold a ``{{field}}`` marker, not JSON, so
+#: the checks of the text sent read the render.
+ALL_PROMPTS = sorted(prompt_name(path) for path in prompt_files("*.md"))
 
 #: The worked-examples index, and the dataflows in its "Used" section.
 INDEX = examples.read_index()

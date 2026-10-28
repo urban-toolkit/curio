@@ -1,3 +1,17 @@
+---
+name: node-control
+description: >-
+  Use this skill when writing or changing what a node runs. It says whether a node is controlled
+  through code, through grammar or not at all, how Python code returns data to pass it on, how
+  code reads each input through an input chip, a column chip or a layer chip, how a tuple hands on
+  several values, and how a grammar node such as Vega-Lite receives the table of the node before
+  it, with no data field in its spec.
+license: MIT
+compatibility: Written for Curio's agents, their tools and node code.
+metadata:
+  author: curio
+  version: "1.0.0"
+---
 ## How nodes are controlled
 
 Nodes are uncontrollable, controllable through code (python or JavaScript) or controllable through grammar:

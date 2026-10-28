@@ -12,13 +12,18 @@ Catalog's folder:
 - Each agent Curio ships keeps its own prompts in its folder,
   ``agents/<id>@<major>/prompts/``, named by its manifest.
 
+What the agents know of each feature of Curio is a skill, in the root
+``skills/`` folder (``skills.py`` reads them): a skill's text is its
+``SKILL.md`` without its frontmatter, its body.
+
 Each file is a hand-written source. A fact the code owns is a marker in it,
 ``{{field}}`` or ``{{field:argument}}``, which ``contracts.render_template``
 fills from ``contracts.PROMPT_FIELDS``. ``{{include:<path>}}`` puts another
-page of the base entry there whole. Nothing is generated or committed.
+page of the base entry there whole, and ``{{skill:<name>}}`` the body of a
+skill Curio ships. Nothing is generated or committed.
 
 When the backend starts (``create_app``), :func:`render_at_start` renders
-every page and every prompt once, and a read returns that render. Under
+every page, skill and prompt once, and a read returns that render. Under
 ``curio.py start --dev`` (``CURIO_DEV=1``) a read renders the file again, so an
 edit shows on the next run.
 
@@ -48,7 +53,7 @@ from pathlib import Path
 from types import MappingProxyType
 
 from utk_curio import shipped
-from utk_curio.backend.app.agents.domain import contracts
+from utk_curio.backend.app.agents.domain import contracts, skills
 
 log = logging.getLogger(__name__)
 
@@ -61,6 +66,9 @@ KIND_BASE = "base"
 PAGES_FIELD = "pages"
 #: How a manifest names a page of the base entry: this, then the page's path.
 PAGE_PREFIX = "curio:"
+#: How the renders around a marker name a skill being rendered: this, then
+#: its name, as ``{{skill:<name>}}`` names it.
+SKILL_PREFIX = "skill:"
 #: A page's path in the base entry: segments of letters, digits, ``_``, ``.``
 #: and ``-``, none starting with a dot, ending in a ``.md`` file.
 _PAGE_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]*(?:/[A-Za-z0-9_][A-Za-z0-9_.-]*)*\.md$")
@@ -189,6 +197,25 @@ def _page_of(file: Path) -> str | None:
         return None
 
 
+def _skill_of(file: Path) -> str | None:
+    """The name of the skill Curio ships whose ``SKILL.md`` *file* is, else None."""
+    file = Path(file)
+    if file.name != skills.SKILL_FILE or file.parent.parent != skills.skills_dir():
+        return None
+    return file.parent.name
+
+
+def _skill_where(name: str) -> str:
+    """How an error names the skill Curio ships as *name*: its file's path."""
+    return f"{skills.SKILLS_DIR}/{name}/{skills.SKILL_FILE}"
+
+
+def _named(entry: str) -> str:
+    """An entry of the renders around a marker as an error names it: a skill
+    as ``skill:<name>``, a page as ``curio:<path>``."""
+    return entry if entry.startswith(SKILL_PREFIX) else PAGE_PREFIX + entry
+
+
 # --- Rendering -----------------------------------------------------------------
 
 
@@ -198,24 +225,42 @@ def _source(file: Path) -> str:
 
 
 def render(file: Path) -> str:
-    """*file*, a page of the base entry or a prompt of an agent Curio ships,
-    rendered now: every marker filled (``contracts.render_template``).
+    """*file*, a page of the base entry, a skill Curio ships or a prompt of an
+    agent Curio ships, rendered now: every marker filled
+    (``contracts.render_template``). A skill renders as its body, without its
+    frontmatter.
 
-    Raises ``contracts.PromptTemplateError`` on a marker no field defines and
-    on a page that includes itself."""
+    Raises ``contracts.PromptTemplateError`` on a marker no field defines, on
+    a page or a skill that includes itself, and on a skill whose ``SKILL.md``
+    breaks the format's rules (``skills.parse``)."""
     page = _page_of(file)
-    if page is None:
-        return contracts.render_template(_source(file), str(file))
-    return contracts.render_template(_source(file), PAGE_PREFIX + page, including=(page,))
+    if page is not None:
+        return contracts.render_template(_source(file), PAGE_PREFIX + page, including=(page,))
+    skill = _skill_of(file)
+    if skill is not None:
+        return _render_skill(Path(file), ())
+    return contracts.render_template(_source(file), str(file))
+
+
+def _render_skill(file: Path, including: tuple[str, ...]) -> str:
+    """The body of the skill whose ``SKILL.md`` is *file*, read strictly and
+    rendered, its final line breaks kept. *including* holds the pages and
+    skills being rendered around it, outermost first."""
+    name = file.parent.name
+    try:
+        skill = skills.parse(file.parent, text=_source(file))
+    except (skills.SkillError, OSError) as exc:
+        raise contracts.PromptTemplateError(f"{_skill_where(name)} cannot be read: {exc}") from None
+    return contracts.render_template(skill.body, _skill_where(name), including=(*including, SKILL_PREFIX + name))
 
 
 def include(page: str, including: tuple[str, ...]) -> str:
     """The page *page* names, rendered, without its final line breaks: what
-    ``{{include:<page>}}`` puts in place. *including* holds the pages being
-    rendered around it, outermost first, so a page that includes itself
-    raises ``contracts.PromptTemplateError``."""
+    ``{{include:<page>}}`` puts in place. *including* holds the pages and
+    skills being rendered around it, outermost first, so a page that
+    includes itself raises ``contracts.PromptTemplateError``."""
     if page in including:
-        chain = " includes ".join(PAGE_PREFIX + name for name in (*including, page))
+        chain = " includes ".join(_named(name) for name in (*including, page))
         raise contracts.PromptTemplateError(f"{chain}: a page cannot include itself")
     try:
         file = page_file(page)
@@ -225,11 +270,37 @@ def include(page: str, including: tuple[str, ...]) -> str:
     return contracts.render_template(text, PAGE_PREFIX + page, including=(*including, page)).rstrip("\n")
 
 
+def skill_text(name: str, including: tuple[str, ...] = ()) -> str:
+    """The skill Curio ships as *name* as an agent reads it, without its final
+    line breaks: what ``{{skill:<name>}}`` puts in place. It is the skill's
+    body, its frontmatter left out, rendered once and kept, as a page is
+    (:func:`read`), and under ``curio.py start --dev`` rendered at each read.
+    *including* holds the pages and skills being rendered around it,
+    outermost first, so a skill that includes itself raises
+    ``contracts.PromptTemplateError``, as does a name of no skill Curio
+    ships."""
+    entry = SKILL_PREFIX + name
+    if entry in including:
+        chain = " includes ".join(_named(item) for item in (*including, entry))
+        raise contracts.PromptTemplateError(f"{chain}: a skill cannot include itself")
+    try:
+        file = skills.shipped_skill_file(name)
+    except skills.SkillError as exc:
+        raise contracts.PromptTemplateError(f"{{{{skill:{name}}}}} cannot be read: {exc}") from None
+    if os.environ.get(_DEV_ENV) == "1":
+        return _render_skill(file, including).rstrip("\n")
+    text = _TEXTS.get(file)
+    if text is None:
+        text = _TEXTS[file] = _render_skill(file, including)
+    return text.rstrip("\n")
+
+
 def read(file: Path) -> str:
-    """What an agent reads of *file*, a page of the base entry or a prompt of
-    an agent Curio ships: its start-up render. Under ``curio.py start --dev``
-    it is rendered at each read, so an edit shows on the next run. A file the
-    start-up render did not cover is rendered now and kept."""
+    """What an agent reads of *file*, a page of the base entry, a skill Curio
+    ships or a prompt of an agent Curio ships: its start-up render. Under
+    ``curio.py start --dev`` it is rendered at each read, so an edit shows on
+    the next run. A file the start-up render did not cover is rendered now
+    and kept."""
     if os.environ.get(_DEV_ENV) == "1":
         return render(file)
     text = _TEXTS.get(file)
@@ -341,14 +412,15 @@ def json_block(text: str, where: str):
 
 def shipped_files() -> list[Path]:
     """Every file :func:`render_at_start` renders: each page the base entry
-    lists, then each prompt each agent Curio ships names in its own folder,
-    each once. A listed file that is missing is left out and logged, as a read
-    of it is."""
+    lists, each skill Curio ships, then each prompt each agent Curio ships
+    names in its own folder, each once. A listed file that is missing is left
+    out and logged, as a read of it is."""
     from utk_curio.backend.app.agents.domain import builtin
 
     files: list[Path] = []
     if base_dir() is not None:
         files += [page_file(page) for page in pages()]
+    files += [folder / skills.SKILL_FILE for folder in skills.shipped_folders()]
     for m in builtin.list_builtin_manifests():
         folder = builtin.agents_dir() / m.dir_name
         files += [folder / asset.path for asset in m.prompts.values() if asset.shared is None]
@@ -365,13 +437,15 @@ def shipped_files() -> list[Path]:
 
 
 def render_at_start() -> dict[Path, str]:
-    """Render every page of the base entry and every prompt of every agent
-    Curio ships, and keep the renders for every read: the backend calls this
-    when it starts. Once per process: another app in the same process reads
-    the same renders. Raises ``contracts.PromptTemplateError`` on a marker no
-    field defines, so broken text stops the start, not a run, and keeps none
-    of the start's renders: not even a page another page read while it
-    rendered, as the preamble's Autark section reads ``autark-grammar.md``."""
+    """Render every page of the base entry, every skill Curio ships and every
+    prompt of every agent Curio ships, and keep the renders for every read:
+    the backend calls this when it starts. Once per process: another app in
+    the same process reads the same renders. Raises
+    ``contracts.PromptTemplateError`` on a marker no field defines or a skill
+    that breaks the format's rules, so broken text stops the start, not a
+    run, and keeps none of the start's renders: not even a page or a skill
+    another page read while it rendered, as the preamble's Autark section
+    reads ``autark-grammar.md`` and the preamble its skills."""
     global _STARTED
     if not _STARTED:
         before = dict(_TEXTS)

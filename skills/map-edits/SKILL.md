@@ -1,3 +1,17 @@
+---
+name: map-edits
+description: >-
+  Use this skill when a task changes an Autark map's features as a what-if in a Map Editor node,
+  such as removing buildings, capping heights, reshaping or moving features, or drawing new ones
+  and adding layers. It gives the node's one curio_edit_features call, each edit with its fields,
+  the areas a map can draw, the words that make Solve write edits, and the rule that an analysis
+  filter stays in the node that computes it.
+license: MIT
+compatibility: Written for Curio's agents, their tools and node code.
+metadata:
+  author: curio
+  version: "1.0.0"
+---
 ## {{template.label:curio.builtin/edit-features}}
 
 A {{template.label:curio.builtin/edit-features}} node edits an Autark map's layers, as a what-if: it removes features, puts them back, changes their values, reshapes or moves them, draws new ones, and adds properties and layers. Its code is its only state: one call of `curio_edit_features`, which the node writes from its list of edits and reads back. Code of another shape still runs, but the node cannot read it, list it or edit it on the map, and Curio refuses it from an agent.
