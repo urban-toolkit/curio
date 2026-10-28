@@ -92,8 +92,10 @@ export function inProjectDetails(
   };
   return {
     ...inProjectRow(scenario, parts, project, preview),
-    context: parts.context.map(entry),
+    // What it keeps; a scenario that feeds nothing outside it shows its own
+    // last nodes, as the catalog does.
+    context: (scenario.context ?? parts.context).filter((id) => byId.has(id)).map(entry),
     levers: parts.levers.map(entry),
-    outcomes: parts.outcomes.map(entry),
+    outcomes: (scenario.outcomes?.length ? scenario.outcomes : parts.outcomes).filter((id) => byId.has(id)).map(entry),
   };
 }

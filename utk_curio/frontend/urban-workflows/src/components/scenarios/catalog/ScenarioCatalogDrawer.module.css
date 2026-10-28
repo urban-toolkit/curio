@@ -39,6 +39,20 @@
   white-space: nowrap;
 }
 
+/* Shows a set's shared context and outcomes under its heading. */
+.setToggle {
+  margin-left: auto;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: var(--curio-font-size-xs);
+  font-weight: 600;
+  color: var(--curio-text-secondary);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 /* The avatar square holds the project graph instead of a glyph. */
 .avatarThumb {
   overflow: hidden;

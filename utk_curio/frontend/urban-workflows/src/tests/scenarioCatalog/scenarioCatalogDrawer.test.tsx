@@ -195,7 +195,7 @@ describe("the canvas Scenario Catalog drawer", () => {
     await within(root()).findByText("Cool roofs");
     fireEvent.click(screen.getByRole("button", { name: "View Cool roofs (Heat study) details" }));
     const modal = await screen.findByRole("dialog", { name: "Scenario details" });
-    expect(await within(modal).findByRole("region", { name: "Levers" })).toBeInTheDocument();
+    expect(await within(modal).findByRole("region", { name: "Scenario nodes" })).toBeInTheDocument();
     expect(api.getScenario).toHaveBeenCalledWith("p-heat", "s-cool");
   });
 

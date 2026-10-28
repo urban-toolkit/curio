@@ -302,8 +302,8 @@ describe("the Scenario Catalog drawer's In project tab", () => {
     expect(modal.getByLabelText("Color of Doubled")).toHaveValue("#e86a3c");
     expect(modal.getByLabelText("Scenario description")).toHaveValue("Every height twice.");
     const region = (name: string) => within(modal.getByRole("region", { name }));
-    expect(region("Fixed context").getByText("Load parcels")).toBeInTheDocument();
-    expect(region("Levers").getByText("Scale heights")).toBeInTheDocument();
+    expect(region("Shared context").getByText("Load parcels")).toBeInTheDocument();
+    expect(region("Scenario nodes").getByText("Scale heights")).toBeInTheDocument();
     expect(region("Outcomes").getByText("Scale heights")).toBeInTheDocument();
     // Read off the canvas: no saved-output lines, and no request.
     expect(modal.queryByText("No saved output")).toBeNull();
@@ -344,7 +344,7 @@ describe("the Scenario Catalog drawer's In project tab", () => {
     fireEvent.click(tab("In project"));
     fireEvent.click(await within(root()).findByRole("button", { name: "View Gone (Heights) details" }));
     const modal = within(await screen.findByRole("dialog", { name: "Scenario details" }));
-    expect(within(modal.getByRole("region", { name: "Levers" })).getByText("No nodes: add some, or delete it.")).toBeInTheDocument();
+    expect(within(modal.getByRole("region", { name: "Scenario nodes" })).getByText("No nodes: add some, or delete it.")).toBeInTheDocument();
   });
 
   test("a shared viewer's details only read", async () => {
@@ -357,7 +357,7 @@ describe("the Scenario Catalog drawer's In project tab", () => {
     expect(modal.queryByLabelText("Scenario name")).toBeNull();
     expect(modal.queryByLabelText("Color of Doubled")).toBeNull();
     expect(modal.queryByLabelText("Scenario description")).toBeNull();
-    expect(within(modal.getByRole("region", { name: "Fixed context" })).getByText("Load parcels")).toBeInTheDocument();
+    expect(within(modal.getByRole("region", { name: "Shared context" })).getByText("Load parcels")).toBeInTheDocument();
   });
 
   test("opened on In project, the drawer shows that tab; opened from the bar, Browse all", async () => {

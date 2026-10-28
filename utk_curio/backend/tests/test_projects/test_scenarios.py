@@ -32,9 +32,9 @@ def _kept(scenario, **extra):
     return {**scenario, "set": f"set-{scenario['id']}", "context": [], "outcomes": [], **extra}
 
 
-def _listed(scenario, **extra):
-    """*scenario* as a project summary lists it."""
-    return {**scenario, "set": f"set-{scenario['id']}", **extra}
+def _listed(scenario, set_name, **extra):
+    """*scenario* as a project summary lists it, in the set *set_name*."""
+    return {**scenario, "set": f"set-{scenario['id']}", "setName": set_name, **extra}
 
 
 def _scenarios():
@@ -152,7 +152,7 @@ def test_the_route_answers_400_and_writes_nothing(client, user_and_token, tmp_cu
     assert "Node a is in two scenarios" in resp.get_json()["error"]
     stored = client.get(f"/api/projects/{pid}", headers=headers).get_json()
     assert stored["spec"]["dataflow"]["scenarios"] == [_kept(BASELINE)]
-    assert stored["project"]["scenarios"] == [_listed(BASELINE)]
+    assert stored["project"]["scenarios"] == [_listed(BASELINE, "Mine")]
 
 
 # ---------------------------------------------------------------------------
@@ -165,9 +165,9 @@ def test_a_save_keeps_them_and_the_summary_lists_them(app, db, user_and_token):
     detail = _save(user, scenarios=[BASELINE, TALL])
 
     assert _on_disk(user, detail.id) == [_kept(BASELINE), _kept(TALL)]
-    assert detail.scenarios == [_listed(BASELINE), _listed(TALL)]
+    assert detail.scenarios == [_listed(BASELINE, "Baseline"), _listed(TALL, "Twice as tall")]
     summary = next(s for s in services.list_projects(user) if s.id == detail.id)
-    assert summary.scenarios == [_listed(BASELINE), _listed(TALL)]
+    assert summary.scenarios == [_listed(BASELINE, "Baseline"), _listed(TALL, "Twice as tall")]
 
 
 def test_a_save_drops_the_ids_of_deleted_nodes(app, db, user_and_token):
@@ -219,4 +219,4 @@ def test_a_duplicate_keeps_them(app, db, user_and_token):
 
     copy = services.duplicate_project(user, detail.id)
 
-    assert copy.scenarios == [_listed(BASELINE)]
+    assert copy.scenarios == [_listed(BASELINE, "Mine")]

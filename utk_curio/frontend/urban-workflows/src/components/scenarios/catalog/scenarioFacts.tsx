@@ -101,7 +101,7 @@ export function scenarioResultLine(result: ScenarioResult): string {
 }
 
 /** The rows the browse drawer and the details view both list. The counts of
- *  the fixed context and the outcomes need the scenario's details. A scenario
+ *  the shared context and the outcomes need the scenario's details. A scenario
  *  of the open dataflow (`origin: false`) has no origin to tell: the canvas
  *  does not know whether its dataflow came from an example. */
 export function scenarioInfoRows(
@@ -112,8 +112,9 @@ export function scenarioInfoRows(
   const rows: (ScenarioFact | null)[] = [
     { label: "Project", value: row.project.name },
     origin ? { label: "Origin", value: scenarioOriginLabel(row) } : null,
-    { label: "Levers", value: String(row.nodeCount) },
-    details ? { label: "Fixed context", value: String(details.context.length) } : null,
+    row.set?.name ? { label: "Set", value: row.set.name } : null,
+    { label: "Scenario nodes", value: String(row.nodeCount) },
+    details ? { label: "Shared context", value: String(details.context.length) } : null,
     details ? { label: "Outcomes", value: String(details.outcomes.length) } : null,
   ];
   return rows.filter((fact): fact is ScenarioFact => fact != null);

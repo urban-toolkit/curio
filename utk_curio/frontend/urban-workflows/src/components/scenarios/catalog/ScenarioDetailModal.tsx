@@ -164,16 +164,16 @@ export const ScenarioDetailModal: React.FC<ScenarioDetailModalProps> = ({
 
             {details ? (
               <>
-                <section className={styles.section} aria-label="Fixed context">
-                  <h3 className={styles.sectionLabel}>Fixed context</h3>
+                <section className={styles.section} aria-label="Shared context">
+                  <h3 className={styles.sectionLabel}>Shared context</h3>
                   <ScenarioNodeList
                     entries={details.context}
                     results={!inProject}
                     empty={inProject && details.levers.length > 0 ? "None: everything it reads is in it." : "None."}
                   />
                 </section>
-                <section className={styles.section} aria-label="Levers">
-                  <h3 className={styles.sectionLabel}>Levers</h3>
+                <section className={styles.section} aria-label="Scenario nodes">
+                  <h3 className={styles.sectionLabel}>Scenario nodes</h3>
                   <ScenarioNodeList
                     entries={details.levers}
                     results={!inProject}

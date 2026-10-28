@@ -234,7 +234,10 @@ class TestThePlanApply:
         )
         read = {s["name"]: s for s in json.loads(text)["scenarios"]}
         assert read["Twice as tall"]["context"] == [buildings["id"]]
-        assert read["Twice as tall"]["levers"] == read["Twice as tall"]["outcomes"] == [copy["id"]]
+        assert read["Twice as tall"]["levers"] == [copy["id"]]
+        # What it feeds: the comparison, which reads both scenarios.
+        assert read["Twice as tall"]["outcomes"] == read["Real heights"]["outcomes"] == [compare["id"]]
+        assert read["Twice as tall"]["set"] == read["Real heights"]["set"]
 
     def test_a_scenario_whose_node_was_taken_since_the_mint_is_not_saved(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch

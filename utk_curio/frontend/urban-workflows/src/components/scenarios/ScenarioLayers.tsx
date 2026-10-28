@@ -288,7 +288,7 @@ export function ScenarioLayers({ view, labelOf, statusOf, onExpand, onCollapse, 
               </div>
               {layout.contextTitle !== undefined && (
                 <div className={styles.section} style={{ top: layout.contextTitle }}>
-                  Fixed context
+                  Shared context
                 </div>
               )}
               {[...layout.context].map(([id, top]) => (

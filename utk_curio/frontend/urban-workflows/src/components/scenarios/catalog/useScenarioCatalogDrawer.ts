@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState, type DragEvent } from "react
 import {
   beginScenarioDrag,
   endScenarioDrag,
-  groupScenariosByProject,
+  groupScenariosBySet,
   sortScenarios,
   useScenarioCatalog,
   writeScenarioDragData,
@@ -46,7 +46,7 @@ export function useScenarioCatalogDrawer(presented: boolean) {
   const catalog = useScenarioCatalog({ q: debouncedSearch, enabled: presented });
   const items = useMemo(() => sortScenarios(catalog.data.items, sort), [catalog.data.items, sort]);
   // Browse all lists each project's scenarios under its name.
-  const groups = useMemo(() => groupScenariosByProject(items), [items]);
+  const groups = useMemo(() => groupScenariosBySet(items), [items]);
 
   return {
     search,

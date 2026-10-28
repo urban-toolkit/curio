@@ -17,8 +17,10 @@ export interface ScenarioRow {
   name: string;
   color: string;
   description: string;
-  /** How many nodes it holds: its levers. */
+  /** How many nodes it holds: its own nodes. */
   nodeCount: number;
+  /** The scenario set it is in, in its project. */
+  set?: { id: string; name: string };
   project: ScenarioProjectRef;
   /** Its project's graph, drawn as plain boxes with its own nodes marked. */
   preview: GraphPreview | null;
@@ -59,6 +61,22 @@ export interface ScenarioDetails extends ScenarioRow {
   context: ScenarioNodeEntry[];
   levers: ScenarioNodeEntry[];
   outcomes: ScenarioNodeEntry[];
+}
+
+/** A shared context or outcome node of a set, with the set's scenarios that use it. */
+export interface ScenarioSetNodeEntry extends ScenarioNodeEntry {
+  scenarios: string[];
+}
+
+/** One scenario set as `GET /api/scenarios/sets/<project>/<set>` describes it. */
+export interface ScenarioSetDetails {
+  set: { id: string; name: string; description?: string };
+  /** `<projectId>/<setId>`. */
+  key: string;
+  project: ScenarioProjectRef;
+  scenarios: ScenarioRow[];
+  context: ScenarioSetNodeEntry[];
+  outcomes: ScenarioSetNodeEntry[];
 }
 
 /** A node of a saved spec, as a copy plan carries it. */
@@ -175,4 +193,30 @@ export function groupScenariosByProject(items: readonly ScenarioRow[]): Scenario
     }
   }
   return Array.from(byProject.values());
+}
+
+/** One scenario set's scenarios, as Browse all lists them under its name. */
+export interface ScenarioSetGroup {
+  /** `<projectId>/<setId>`. */
+  key: string;
+  set: { id: string; name: string };
+  project: ScenarioProjectRef;
+  items: ScenarioRow[];
+}
+
+/**
+ * *items*, already sorted, under their scenario sets: a group per set of a
+ * project, placed where its first scenario is. A row from before sets is in
+ * a set named after its project.
+ */
+export function groupScenariosBySet(items: readonly ScenarioRow[]): ScenarioSetGroup[] {
+  const bySet = new Map<string, ScenarioSetGroup>();
+  for (const row of items) {
+    const set = row.set?.id ? row.set : { id: "", name: row.project.name };
+    const key = `${row.project.id}/${set.id}`;
+    const group = bySet.get(key);
+    if (group) group.items.push(row);
+    else bySet.set(key, { key, set: { id: set.id, name: set.name || row.project.name }, project: row.project, items: [row] });
+  }
+  return Array.from(bySet.values());
 }

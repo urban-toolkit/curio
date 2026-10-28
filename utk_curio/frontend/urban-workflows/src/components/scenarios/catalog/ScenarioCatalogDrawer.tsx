@@ -15,6 +15,7 @@ import { liveScenarios } from "../../../utils/scenarios/scenarioParts";
 import { InProjectScenarios } from "./InProjectScenarios";
 import { ScenarioCard } from "./ScenarioCard";
 import { ScenarioDetailModal } from "./ScenarioDetailModal";
+import { ScenarioSetSummary } from "./ScenarioSetSummary";
 import { scenarioCount, scenarioProjectPath } from "./scenarioFacts";
 import { useScenarioCatalogDrawer } from "./useScenarioCatalogDrawer";
 import styles from "./ScenarioCatalogDrawer.module.css";
@@ -34,10 +35,12 @@ export interface ScenarioCatalogDrawerProps {
  * The Scenario Catalog on the canvas, in two tabs as the other catalogs are.
  *
  * Browse all is every scenario saved in this account's projects, each a card
- * with its project's graph, under a heading per project: its name and how
- * many of the scenarios listed it holds. The groups keep the sort: each sits
- * where its first scenario would, with its scenarios in the sort's order
- * (`groupScenariosByProject`). A scenario lives in its project and is edited
+ * with its project's graph, under a heading per scenario set: its name, its
+ * project and how many of the scenarios listed it holds, and a button that
+ * shows the set's shared context and outcomes with the scenarios that use
+ * each (`ScenarioSetSummary`). The groups keep the sort: each sits where its
+ * first scenario would, with its scenarios in the sort's order
+ * (`groupScenariosBySet`). A scenario lives in its project and is edited
  * there, so such a card changes nothing in it. It offers its details, the way
  * to its project, which asks first when this dataflow has unsaved changes, and
  * a drag onto the canvas, which brings a copy of the scenario into this
@@ -61,6 +64,8 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
   const navigate = useNavigate();
   const { projectDirty, projectId, scenarios, nodes } = useFlowContext();
   const [ownTab, setOwnTab] = useState<DrawerTab>("browse");
+  // The set whose shared context and outcomes are shown, as `<project>/<set>`.
+  const [openSet, setOpenSet] = useState<string | null>(null);
   const tab = heldTab ?? ownTab;
   const setTab = onTabChange ?? setOwnTab;
   // This dataflow's scenarios, with members deleted since the last save left
@@ -202,16 +207,33 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
                 ) : null}
                 {groups.map((group, index) => (
                   <section
-                    key={group.project.id}
+                    key={group.key}
                     aria-labelledby={`${groupIds}-${index}`}
                     data-scenario-group={group.project.id}
+                    data-scenario-set={group.set.id}
                   >
                     <h3 className={styles.groupHeading}>
                       <span id={`${groupIds}-${index}`} className={styles.groupName}>
-                        {group.project.name}
+                        {group.set.name}
                       </span>{" "}
-                      <span className={styles.groupCount}>{scenarioCount(group.items.length)}</span>
+                      <span className={styles.groupCount}>
+                        {group.set.name !== group.project.name ? `in ${group.project.name} · ` : ""}
+                        {scenarioCount(group.items.length)}
+                      </span>
+                      {group.set.id ? (
+                        <button
+                          type="button"
+                          className={styles.setToggle}
+                          aria-expanded={openSet === group.key}
+                          onClick={() => setOpenSet(openSet === group.key ? null : group.key)}
+                        >
+                          {openSet === group.key ? "Hide context & outcomes" : "Context & outcomes"}
+                        </button>
+                      ) : null}
                     </h3>
+                    {openSet === group.key ? (
+                      <ScenarioSetSummary projectId={group.project.id} setId={group.set.id} />
+                    ) : null}
                     <div className={shell.cardList}>
                       {group.items.map((scenario) => (
                         <ScenarioCard

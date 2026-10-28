@@ -1083,17 +1083,17 @@ def _node_row(node: dict, goal_cap: int) -> dict:
 
 def _scenario_rows(stripped: dict) -> list[dict]:
     """#662: the dataflow's scenarios, each with what it is made of: its
-    levers (its nodes), its fixed context (the nodes outside it that it reads)
-    and its outcomes (what gets compared). The parts are read by the rule the
-    canvas and the Scenario Catalog read them by (``scenarioParts``). A
-    scenario dragged in from another project also names where it came from
-    (:func:`_scenario_sources`)."""
-    from utk_curio.backend.app.projects.scenarios import normalize_scenarios
+    levers (its nodes), its set, its shared context (the nodes upstream of it
+    that it uses) and its outcomes (the nodes downstream of it that it feeds),
+    as the scenario keeps them, or as a save would fill them in for a
+    dataflow from before sets. A scenario dragged in from another project
+    also names where it came from (:func:`_scenario_sources`)."""
+    from utk_curio.backend.app.projects.scenarios import kept_scenarios
     from utk_curio.backend.app.scenario_catalog.domain.parts import scenario_parts, spec_nodes_and_edges
 
     nodes, edges = spec_nodes_and_edges(stripped)
-    raw = (stripped.get("dataflow") or {}).get("scenarios")
-    scenarios = normalize_scenarios(raw, [n["id"] for n in nodes])
+    scenarios, sets = kept_scenarios(stripped)
+    set_names = {x["id"]: x["name"] for x in sets}
     sources = _scenario_sources([scenario["source"] for scenario in scenarios if "source" in scenario])
     rows = []
     for scenario in scenarios:
@@ -1101,7 +1101,15 @@ def _scenario_rows(stripped: dict) -> list[dict]:
         row = {"id": scenario["id"], "name": scenario["name"], "color": scenario["color"]}
         if scenario.get("description"):
             row["description"] = scenario["description"]
-        row = {**row, "levers": parts["levers"], "context": parts["context"], "outcomes": parts["outcomes"]}
+        row = {
+            **row,
+            "set": set_names.get(scenario.get("set"), ""),
+            "levers": parts["levers"],
+            "context": scenario.get("context", []),
+            # One that feeds nothing outside it: its own last nodes, as the
+            # Scenario Catalog shows it.
+            "outcomes": scenario.get("outcomes") or parts["outcomes"],
+        }
         source = scenario.get("source")
         if source is not None and (source["project"], source["scenario"]) in sources:
             row["source"] = sources[(source["project"], source["scenario"])]

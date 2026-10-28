@@ -1,17 +1,19 @@
 """The Scenario Catalog (#662): every scenario in the account's projects.
 
 Scenarios live in projects, so the catalog has no storage of its own. A
-listing reads the project summaries, which carry each project's scenarios; a
-scenario's details read its project's spec for its fixed context, levers and
-outcomes, and the Data Catalog for the outputs the project saved. Editing a
-project changes its scenarios here; deleting it takes them away.
+listing reads the project summaries, which carry each project's scenarios
+and the set each is in; a scenario's details, and a set's, read its
+project's spec for the shared context and outcomes each scenario keeps, and
+the Data Catalog for the outputs the project saved. Editing a project
+changes its scenarios here; deleting it takes them away.
 """
 from __future__ import annotations
 
 import re
 from typing import Any
 
-from utk_curio.backend.app.projects.scenarios import scenario_summaries
+from utk_curio.backend.app.projects.scenario_sets import set_membership
+from utk_curio.backend.app.projects.scenarios import kept_scenarios, scenario_summaries
 from utk_curio.backend.app.scenario_catalog.domain.copy import copy_plan, node_label, requirements
 from utk_curio.backend.app.scenario_catalog.domain.parts import (
     saved_sources,
@@ -48,6 +50,7 @@ def scenario_row(scenario: dict, project: dict, preview: dict | None) -> dict[st
         "color": scenario["color"],
         "description": scenario.get("description", ""),
         "nodeCount": len(scenario.get("nodes") or []),
+        "set": {"id": scenario.get("set", ""), "name": scenario.get("setName", "")},
         "project": project,
         "preview": preview,
     }
@@ -122,14 +125,11 @@ class ScenarioCatalogService:
             raise ScenarioCatalogError(f"{row.name} has no scenario {scenario_id}", 404)
         return row, spec, is_example, scenario
 
-    def get_scenario(self, project_id: str, scenario_id: str) -> dict[str, Any]:
-        """One scenario: its fixed context, levers and outcomes, each with the
-        outputs its project saved for it."""
-        row, spec, is_example, scenario = self._scenario(project_id, scenario_id)
-
+    def _entries(self, project_id: str, spec: dict):
+        """A function from a node id to its entry: the node, with the outputs
+        its project saved for it."""
         nodes, edges = spec_nodes_and_edges(spec)
         by_id = {n["id"]: n for n in nodes}
-        parts = scenario_parts(scenario, nodes, edges)
         outputs = projects.saved_outputs(self.user, project_id)
         packages = self._packages()
 
@@ -141,17 +141,63 @@ class ScenarioCatalogService:
                     results.append(_result_row(item, source_id))
             return _node_entry(by_id[node_id], results)
 
-        project = {
+        return entry, by_id
+
+    @staticmethod
+    def _project_of(row, is_example: bool) -> dict[str, Any]:
+        return {
             "id": row.id,
             "name": row.name,
             "isExample": is_example,
             "updatedAt": row.updated_at.isoformat() if row.updated_at else "",
         }
+
+    def get_scenario(self, project_id: str, scenario_id: str) -> dict[str, Any]:
+        """One scenario: its shared context, its own nodes ("levers") and its
+        outcomes, each with the outputs its project saved for it. The context
+        and outcomes are those the scenario keeps; a scenario that feeds
+        nothing outside it shows its own last nodes as its outcomes."""
+        row, spec, is_example, scenario = self._scenario(project_id, scenario_id)
+        nodes, edges = spec_nodes_and_edges(spec)
+        parts = scenario_parts(scenario, nodes, edges)
+        kept = next((s for s in kept_scenarios(spec)[0] if s["id"] == scenario_id), {})
+        entry, by_id = self._entries(project_id, spec)
         return {
-            **scenario_row(scenario, project, projects.graph_preview(self.user, spec)),
-            "context": [entry(i) for i in parts["context"]],
+            **scenario_row(scenario, self._project_of(row, is_example), projects.graph_preview(self.user, spec)),
+            "context": [entry(i) for i in kept.get("context", parts["context"]) if i in by_id],
             "levers": [entry(i) for i in parts["levers"]],
-            "outcomes": [entry(i) for i in parts["outcomes"]],
+            "outcomes": [entry(i) for i in kept.get("outcomes") or parts["outcomes"] if i in by_id],
+        }
+
+    def get_set(self, project_id: str, set_id: str) -> dict[str, Any]:
+        """One scenario set: its scenarios, and its shared context and
+        outcomes, each node with the outputs its project saved and the ids of
+        the set's scenarios that use it."""
+        row, spec, is_example = self._project(project_id)
+        kept, sets = kept_scenarios(spec)
+        found = next((x for x in sets if x["id"] == set_id), None)
+        if found is None:
+            raise ScenarioCatalogError(f"{row.name} has no scenario set {set_id}", 404)
+        project = self._project_of(row, is_example)
+        member = set_membership(kept, set_id)
+        entry, by_id = self._entries(project_id, spec)
+        summaries = {s["id"]: s for s in scenario_summaries(spec)}
+        preview = projects.graph_preview(self.user, spec)
+
+        def listed(part: str) -> list[dict[str, Any]]:
+            order = [n["id"] for n in spec_nodes_and_edges(spec)[0]]
+            return [
+                {**entry(node_id), "scenarios": member[part][node_id]}
+                for node_id in order if node_id in member[part] and node_id in by_id
+            ]
+
+        return {
+            "set": found,
+            "key": scenario_key(project_id, set_id),
+            "project": project,
+            "scenarios": [scenario_row(summaries[i], project, preview) for i in member["scenarios"]],
+            "context": listed("context"),
+            "outcomes": listed("outcomes"),
         }
 
     # -- Dragging a scenario into another dataflow --------------------------

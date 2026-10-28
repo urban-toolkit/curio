@@ -211,8 +211,8 @@ describe("ScenarioCatalogBrowse", () => {
     fireEvent.click(within(card("p-heat/s-cool")).getByRole("button", { name: "View details" }));
     const modal = within(details() as HTMLElement);
     expect(modal.getByRole("heading", { name: "Cool roofs" })).toBeInTheDocument();
-    expect(await modal.findByRole("region", { name: "Levers" })).toBeInTheDocument();
-    expect(modal.getByRole("region", { name: "Fixed context" })).toBeInTheDocument();
+    expect(await modal.findByRole("region", { name: "Scenario nodes" })).toBeInTheDocument();
+    expect(modal.getByRole("region", { name: "Shared context" })).toBeInTheDocument();
     expect(modal.getByRole("region", { name: "Outcomes" })).toBeInTheDocument();
     // Nothing navigated: details are a modal over the page.
     expect(location).toBe("/catalog/scenarios");

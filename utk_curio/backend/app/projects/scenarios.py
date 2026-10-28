@@ -21,6 +21,7 @@ members, until it is deleted itself.
 """
 from __future__ import annotations
 
+import copy
 import re
 from typing import Iterable
 
@@ -248,11 +249,28 @@ def carry_scenarios(new_spec: object, old_spec: object) -> None:
             new_df["scenarioSets"] = old_df["scenarioSets"]
 
 
+def kept_scenarios(spec: object) -> tuple[list[dict], list[dict]]:
+    """``(scenarios, sets)`` as a save would keep them, *spec* untouched: a
+    project saved before sets reads with its scenarios grouped and their
+    context and outcomes inferred."""
+    dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
+    if not isinstance(dataflow, dict):
+        return [], []
+    copied = {"dataflow": {
+        k: copy.deepcopy(dataflow.get(k)) for k in ("name", "nodes", "edges", "scenarios", "scenarioSets")
+        if k in dataflow
+    }}
+    normalize_spec_scenarios(copied)
+    return copied["dataflow"].get("scenarios") or [], copied["dataflow"].get("scenarioSets") or []
+
+
 def scenario_summaries(spec: object) -> list[dict]:
     """The scenarios a project summary lists: each one's id, name, color,
-    description, members and set."""
+    description, members, and set with its name."""
     keep = ("id", "name", "color", "description", "nodes", "set")
+    kept, sets = kept_scenarios(spec)
+    names = {x["id"]: x["name"] for x in sets}
     return [
-        {k: s[k] for k in keep if k in s}
-        for s in normalize_scenarios(_raw_scenarios(spec), _node_ids(spec))
+        {**{k: s[k] for k in keep if k in s}, "setName": names.get(s.get("set"), "")}
+        for s in kept
     ]

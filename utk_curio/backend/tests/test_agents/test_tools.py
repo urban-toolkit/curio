@@ -358,7 +358,7 @@ class TestDataflowReadProjection:
         payload = json.loads(text)
         assert payload["scenarios"] == [{
             "id": "s1", "name": "Real heights", "color": "#3567c7", "description": "as mapped",
-            "levers": ["a", "b"], "context": ["load", "p"], "outcomes": ["b"],
+            "set": "Real heights", "levers": ["a", "b"], "context": ["load", "p"], "outcomes": ["b"],
         }]
         rows = {n["id"]: n for n in payload["nodes"]}
         assert rows["a"]["widgets"] == [{"name": "factor", "type": "number", "value": 2}]

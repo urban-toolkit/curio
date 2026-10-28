@@ -6,6 +6,7 @@ import type {
   ScenarioCopyPlan,
   ScenarioCopyResult,
   ScenarioDetails,
+  ScenarioSetDetails,
 } from "./scenarioCatalogTypes";
 
 function query(params: ScenarioCatalogQuery): string {
@@ -31,6 +32,13 @@ export const scenarioCatalogApi = {
 
   getScenario(projectId: string, scenarioId: string): Promise<ScenarioDetails> {
     return apiFetch<ScenarioDetails>(scenarioPath(projectId, scenarioId));
+  },
+
+  /** A scenario set: its scenarios, and which of them use each shared node. */
+  getSet(projectId: string, setId: string): Promise<ScenarioSetDetails> {
+    return apiFetch<ScenarioSetDetails>(
+      `/api/scenarios/sets/${encodeURIComponent(projectId)}/${encodeURIComponent(setId)}`,
+    );
   },
 
   /** What dropping the scenario into *targetProjectId* copies. Changes nothing. */

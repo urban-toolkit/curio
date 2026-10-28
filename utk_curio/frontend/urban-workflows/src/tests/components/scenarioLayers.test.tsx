@@ -56,7 +56,7 @@ describe("a collapsed scenario's box", () => {
     const el = screen.getByTestId("scenario-box-tall");
     expect(el.textContent).toContain("Twice as tall");
     expect(el.textContent).toContain("2 nodes");
-    expect(el.textContent).toContain("Fixed context");
+    expect(el.textContent).toContain("Shared context");
     expect(el.textContent).toContain("Data Pool");
     expect(el.textContent).toContain("Season");
     const outcome = el.querySelector('[data-scenario-outcome="map"]')!;

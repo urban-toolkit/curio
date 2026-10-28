@@ -34,6 +34,14 @@ def list_scenarios():
     return jsonify(_service().list_catalog(q=request.args.get("q") or None)), 200
 
 
+@scenarios_bp.route("/sets/<project_id>/<set_id>", methods=["GET"])
+@require_auth
+@_errors
+def get_set(project_id: str, set_id: str):
+    """One scenario set: its scenarios, shared context and outcomes."""
+    return jsonify(_service().get_set(project_id, set_id)), 200
+
+
 @scenarios_bp.route("/<project_id>/<scenario_id>", methods=["GET"])
 @require_auth
 @_errors
