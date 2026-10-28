@@ -42,10 +42,7 @@
     },
     "instruction": {
       "path": "prompts/orchestration_instruction.md",
-      "variables": [],
-      "skills": [
-        "reuse-first"
-      ]
+      "variables": []
     }
   },
   "compatibleTargets": [

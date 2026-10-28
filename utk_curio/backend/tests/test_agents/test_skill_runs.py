@@ -559,7 +559,7 @@ def test_a_chat_on_a_node_is_handed_its_nodes_skills_and_still_lists_the_rest(
     (DF, "dataset.select", {}, []),
     (RS, "research.verify", {"url": "https://example.org"}, ["fact-checking"]),
     (RS, "research.notes.compose", {"question": "why"}, ["research-notes"]),
-    (DFB, "dataflow.orchestrate", {"mission": "chart the stations"}, ["reuse-first"]),
+    (DFB, "dataflow.orchestrate", {"mission": "chart the stations"}, []),
     (NB, "node.content.generate", {"intent": "a node for no node"}, [*CODE_SKILLS, "data-sources"]),
     (READER, "dataflow.explain", {}, [*CODE_SKILLS, "autark", "vega-lite-starter", "autark-starter",
                                        "vega-lite-maps", "interaction-edges", "scenarios", "dashboards"]),
@@ -575,9 +575,9 @@ def test_a_run_with_no_tools_is_handed_the_skills_its_task_needs(tmp_curio, coor
     ``catalogs``, node code's for the Node Builder's runs that build a node
     for another agent, after the named node's, and the procedures of each
     mode, last. A capability with no instruction of its own runs the agent's
-    instruction, so it is also handed the instruction's skills: the Node
-    Builder's runs that build a node, and the Dataflow Builder's
-    ``reuse-first``. Never a skill the agent does not name."""
+    instruction, so it is also handed the instruction's skills, as the Node
+    Builder's runs that build a node are; the Dataflow Builder's instruction
+    names none. Never a skill the agent does not name."""
     skill_runs = _skill_runs()
     spec = {"dataflow": {
         "nodes": [

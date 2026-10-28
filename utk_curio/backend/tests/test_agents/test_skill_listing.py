@@ -116,8 +116,8 @@ LISTING = {
     },
     "agent.curio.dataflow-builder@1": {
         "chat": [*FEATURES, "reuse-first", "data-sources"],
-        "chat, handed": ["reuse-first"],
-        "dataflow.orchestrate": ["reuse-first"],
+        "chat, handed": [],
+        "dataflow.orchestrate": [],
     },
     "agent.curio.generated-content-evaluator@1": {
         "content.quality.evaluate": {**{kind: skills for kind, skills in BY_KIND.items()},
@@ -291,12 +291,12 @@ def test_each_agent_names_only_skills_curio_ships_and_each_card_chat_loads_them(
         "agent.curio.researcher@1 research.verify": ["fact-checking"],
         "agent.curio.dataset-finder@1 dataset.discover": ["catalogs"],
     }
-    # The instructions that held a procedure, and the Dataflow Builder's,
-    # whose plans take the ladder's first rung, name theirs.
+    # The instructions whose text held a procedure name theirs. The Dataflow
+    # Builder's held none: its chat lists the ladder and the data sources,
+    # and loads them when a task needs them.
     assert instructions == {
         "agent.curio.node-builder@1": NODE_BUILDER_OWN,
         "agent.curio.researcher@1": RESEARCHER_OWN,
-        "agent.curio.dataflow-builder@1": ["reuse-first"],
     }
     for m in builtin.list_builtin_manifests():
         assert "skill.read" not in [tool.id for tool in m.tools], "skill.read is granted by the catalog, not asked for"
