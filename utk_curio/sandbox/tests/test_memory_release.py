@@ -6,9 +6,9 @@ tests pin the parts: the release runs once the last response has been sent and
 never while one is still being served, the sandbox app is served through it,
 on glibc the release returns the freed heap memory a request thread left
 behind, and on a many-core host what hundreds of threads freed does not stay
-in hundreds of arenas, since the launcher caps the server's arenas as its
-isolated children's are. ``test_rerun_memory.py`` measures the whole effect on
-a real sandbox.
+in hundreds of arenas, since the launcher starts the server with its allocators
+fitted as its isolated children's are: arenas capped, Arrow allocating in them.
+``test_rerun_memory.py`` measures the whole effect on a real sandbox.
 """
 
 import ctypes
@@ -295,7 +295,37 @@ def test_on_a_many_core_host_the_idle_sandbox_keeps_little_of_what_its_threads_f
     assert seen["arenas"] <= cap, seen
 
 
-def test_the_sandbox_server_caps_its_arenas_as_its_isolated_children_do():
+#: In a fresh interpreter: the pool Arrow allocates from, as a ``RESULT`` line.
+ARROW_POOL = textwrap.dedent("""
+    import json
+
+    import pyarrow
+
+    print("RESULT " + json.dumps({"pool": pyarrow.default_memory_pool().backend_name}))
+""")
+
+
+def test_the_sandbox_server_allocates_arrow_memory_in_its_capped_arenas(monkeypatch):
+    monkeypatch.delenv("ARROW_DEFAULT_MEMORY_POOL", raising=False)
+    env = _sandbox_launch_environment(monkeypatch)
+    done = subprocess.run(
+        [sys.executable, "-c", ARROW_POOL],
+        cwd=REPO_ROOT, env={**env, "PYTHONPATH": REPO_ROOT},
+        capture_output=True, text=True, timeout=120,
+    )
+    lines = [line for line in done.stdout.splitlines() if line.startswith("RESULT ")]
+    assert done.returncode == 0 and lines, (
+        f"exit {done.returncode}\n{done.stdout[-2000:]}\n{done.stderr[-4000:]}"
+    )
+    pool = json.loads(lines[-1][len("RESULT "):])["pool"]
+    assert pool == "system", (
+        f"the sandbox server's Arrow allocates from {pool}, not from glibc's capped arenas; "
+        "in test-gpu's repeat runs its mimalloc pool kept up to about 500 MiB a sandbox "
+        "that the idle release did not reach"
+    )
+
+
+def test_the_sandbox_server_fits_its_allocators_as_its_isolated_children_do():
     from utk_curio.sandbox.isolation.lifecycle import (
         malloc_arena_cap,
         server_environment,
@@ -305,12 +335,16 @@ def test_the_sandbox_server_caps_its_arenas_as_its_isolated_children_do():
     for budget in (4096, 16384):
         server = server_environment({"CURIO_EXEC_MEMORY_MB": str(budget), "MALLOC_ARENA_MAX": "512"})
         assert server["MALLOC_ARENA_MAX"] == str(malloc_arena_cap(budget))
+        assert server["ARROW_DEFAULT_MEMORY_POOL"] == "system"
         # The zygote inherits the server's environment: its children's cap is
         # the one their budget gives, not lowered by the server's.
         children = zygote_environment({"memory_mb": budget}, server)
         assert children["MALLOC_ARENA_MAX"] == str(malloc_arena_cap(budget))
+        assert children["ARROW_DEFAULT_MEMORY_POOL"] == "system"
     assert server_environment({})["MALLOC_ARENA_MAX"] == "16", "the default budget, 4096 MB"
     assert server_environment({"CURIO_EXEC_MEMORY_MB": "oops"})["MALLOC_ARENA_MAX"] == "16"
     assert server_environment({"MALLOC_ARENA_MAX": "4"})["MALLOC_ARENA_MAX"] == "4", (
         "an operator's lower cap stands"
     )
+    assert server_environment({"ARROW_DEFAULT_MEMORY_POOL": "jemalloc"})[
+        "ARROW_DEFAULT_MEMORY_POOL"] == "jemalloc", "an operator's pool stands"

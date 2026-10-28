@@ -328,8 +328,8 @@ def start_sandbox(host, port):
     # sandbox_server = os.path.join(script_dir, "sandbox", "server.py")
     env = os.environ.copy()
     env = {**os.environ, "PYTHONPATH": project_root + os.pathsep + env.get("PYTHONPATH", "")}
-    # Its malloc arenas capped as its isolated children's are, before it
-    # starts: glibc settles the limit once per process (isolation/lifecycle.py).
+    # Its allocators fitted as its isolated children's are, before it starts:
+    # glibc and Arrow settle theirs once per process (isolation/lifecycle.py).
     env = server_environment(env)
 
     process = subprocess.Popen(
