@@ -18,8 +18,9 @@ Each catalog lists folders, one per item, each with a `manifest.json` that decla
 | Data | [`datasets/`](../datasets/) | [`dataset.v1.json`](schemas/dataset.v1.json) | [DATA-CATALOG §7](DATA-CATALOG.md#7-the-manifest) |
 | Discovery | [`discovery/`](../discovery/) | [`discovery-source.v1.json`](schemas/discovery-source.v1.json) | [DISCOVERY-CATALOG §8](DISCOVERY-CATALOG.md#8-the-manifest) |
 | Agent | [`agents/`](../agents/) | [`agent-package.v1.json`](schemas/agent-package.v1.json) | [AGENT-CATALOG §6](AGENT-CATALOG.md#6-the-manifest) |
+| Skills the agents read | [`skills/`](../skills/) | The frontmatter of the [Agent Skills format](https://agentskills.io/specification) | [§9 Writing a skill](#9-writing-a-skill) |
 
-The Scenario Catalog has no manifests: it lists the scenarios saved in your projects.
+The Scenario Catalog has no manifests: it lists the scenarios saved in your projects. A skill's folder holds a `SKILL.md` in place of a `manifest.json`, and its frontmatter says what the skill is.
 
 Curio's code names no artifact these folders ship: it reads what each one brings off its manifest, so yours gets what Curio's own get. [`test_no_artifact_ids_in_core.py`](../utk_curio/backend/tests/test_no_artifact_ids_in_core.py) fails on a shipped id in Curio's code, outside its short list of exceptions.
 
@@ -350,7 +351,7 @@ classes = None  # every class the model names
 return curio_segment(input_0, model, classes)
 ```
 
-These helpers are in the sandbox's namespace for every Python node, with the other functions node code calls, each given with its arguments in [`node-functions.md`](../agents/agent.curio.builtin@1/knowledge/node-functions.md):
+These helpers are in the sandbox's namespace for every Python node, with the other functions node code calls, each given with its arguments in [the functions page](../skills/node-functions/SKILL.md):
 
 - `curio_load_model("<model id>")` ([`sandbox/util/catalog_helpers.py`](../utk_curio/sandbox/util/catalog_helpers.py)) loads a model package's model: its `folder`, its `manifest`, its `labels`, the `runner` that labels an image's pixels, opened on first use, and `run`, which feeds an ONNX graph the arrays a node prepared. Before the run the backend resolves every id a node's code names to the folder of a model package in the account's store (`resolve_models` in [`execution/node_exec.py`](../utk_curio/backend/app/execution/node_exec.py), over `packages.service.resolve_model_dirs`); a model the store does not hold gets none, and the call says to add it. Models ship as model packages under [`packages/`](../packages/), or are added from the Discovery Catalog's Hugging Face models source (§3).
 - `curio_segment(images, model, classes=None, *, overlays=True)` ([`sandbox/util/vision.py`](../utk_curio/sandbox/util/vision.py)) runs a loaded segmentation model the way its manifest describes (a `runtime` of `onnx` on onnxruntime, `transformers` on Transformers) over every row's `path`, and returns the rows with `dominant_class`, `dominant_pct`, a `<class>_pct` per class, `overlay_url` and `segment_error` first. With `overlays`, each overlay is written with `curio_derived_file` (kind `"image"`, [`sandbox/util/collections.py`](../utk_curio/sandbox/util/collections.py)) and served back by the media route (§3.6).
@@ -373,7 +374,7 @@ This one belongs in `curio.builtin@1`, not in a model package, because it's reus
 
 The agents' prompts describe every `curio.builtin@1` template from this manifest: the shared preamble gives its label, description, control, port types, how many connections its inputs accept, and interaction support, and other prompts name templates by label. The backend reads them from the manifest when it starts, so those lists follow a built-in template you add or change with no other edit (see [CONTRIBUTING.md, Agent Text](CONTRIBUTING.md#agent-text)).
 
-A new feature of Curio, a built-in template among them, also gets its page in the base entry of the agents, [`agents/agent.curio.builtin@1/knowledge/`](../agents/agent.curio.builtin@1/knowledge/), in the same change: what the feature does, written for the agents, in a page the preamble includes. A built-in template is on a page when a page names it as `{{template.label:curio.builtin/<id>}}`, a kind of chip when a page shows one through its marker, and a function node code calls when [`node-functions.md`](../agents/agent.curio.builtin@1/knowledge/node-functions.md) gives it, in that page's fixed line shapes (`agents/domain/node_functions.py` reads them). `test_knowledge_pages.py` fails while one is on no page, and `test_node_functions_sandbox.py` while the functions page and what node code gets in each engine differ.
+A new feature of Curio, a built-in template among them, also gets a skill in [`skills/`](../skills/), in the same change: what the feature does, written for the agents, in a skill the preamble places ([§9](#9-writing-a-skill)). A built-in template is in a skill when a skill names it as `{{template.label:curio.builtin/<id>}}`, a kind of chip when a skill shows one through its marker, and a function node code calls when [the functions page](../skills/node-functions/SKILL.md) gives it, in that page's fixed line shapes (`agents/domain/node_functions.py` reads them). `test_feature_skills.py` fails while one is in no skill, and `test_node_functions_sandbox.py` while the functions page and what node code gets in each engine differ.
 
 ### 4.4 Behavior hooks
 
@@ -720,3 +721,34 @@ quarantined for 120s with an honest 503 (handler-level errors never count; a rei
 it immediately). **Resident services, background jobs, and secret mediation remain out of
 scope** - and a draft
 needing them is refused with a finding naming exactly that.
+
+## 9. Writing a skill
+
+A skill tells Curio's agents how to do a specific task: instructions, procedural knowledge and reference facts, written for an agent. Curio's skills are in [`skills/`](../skills/), one folder each, in the open [Agent Skills format](https://agentskills.io/specification).
+
+**The folder.** A skill is `skills/<name>/SKILL.md`, in a folder named as the skill: YAML frontmatter between two `---` lines, then the body, the Markdown an agent reads. Files a skill keeps beside its `SKILL.md`, such as `references/REFERENCE.md`, sit one level below its folder, as the format asks; the preamble places the body of `SKILL.md` alone.
+
+**The frontmatter** holds the format's fields and no other:
+
+```yaml
+---
+name: widgets
+description: >-
+  Use this skill when a node declares, places or changes a widget, such as a threshold, a year or
+  a dataset the user sets without editing code, or when several nodes share one value.
+license: MIT
+compatibility: Written for Curio's agents, their tools and node code.
+metadata:
+  author: curio
+  version: "1.0.0"
+---
+```
+
+- `name`: the folder's name, 1 to 64 lowercase letters, digits and hyphens, with no hyphen first or last and none twice in a row.
+- `description`: when to use the skill, in 1 to 1,024 characters. Start it with "Use this skill when", name the task in the words a user or a node's goal uses for it, and say what the skill gives. In the format, the description is what an agent reads of a skill before it loads it, so it says when to use the skill, not only what the skill is.
+- `license`, `compatibility` (at most 500 characters) and `metadata`, strings by string keys, which holds Curio's facts about the skill: Curio's skills give `MIT`, the compatibility above, and `author` and `version`, the version quoted so YAML reads it as a string. The format's `allowed-tools` is allowed too, and Curio's skills leave it out.
+- A value that holds `: ` or ` #` goes in a folded block (`>-`), as the description above does, or in quotes: YAML reads those as a field's end and a comment.
+
+**The body** starts on the line after the closing `---`. It may hold Curio's markers wherever it states a fact the code owns, as the pages of the base entry do ([its README](../agents/agent.curio.builtin@1/README.md#editing-a-page)), and the backend fills them when it starts. A page or a prompt places a skill as `{{skill:<name>}}`, its body rendered without its frontmatter; the preamble places each of Curio's skills, so every agent reads them. Keep `SKILL.md` under 500 lines.
+
+**The checks.** The backend reads each skill in `skills/` strictly when it starts ([`agents/domain/skills.py`](../utk_curio/backend/app/agents/domain/skills.py)), so a skill that breaks the format's rules, or names a marker no field defines, stops the start and names its file. In the backend suite, `test_skills.py` and `test_agent_text.py` hold every skill to the format's rules, `test_skills_ref.py` runs agentskills.io's reference validator on each, and `test_feature_skills.py` fails on a skill no page or prompt places. To run the validator yourself, `pip install skills-ref==0.1.1`, then `agentskills validate skills/<name>`.

@@ -429,18 +429,20 @@ FLASK_APP=server.py flask db upgrade
 
 ### Agent Text
 
-Everything the agents read is hand-written Markdown in `agents/`: each agent's
-prompts in its folder, and the pages they share in the base entry,
-[`agents/agent.curio.builtin@1/`](../agents/agent.curio.builtin@1/): the
-preamble and the knowledge pages it includes, one per feature of Curio, the
-worked examples' index and the rules prompts include. A new feature, such as a
-built-in template, a function node code calls or a kind of chip, gets its
-lines on a knowledge page in the same change: `test_knowledge_pages.py` fails
-while one is on no page. Where a
-page or prompt states a fact the code owns (an agent's name, a template's
-label, the Trill block), it holds a marker, `{{field}}`, which the backend
-fills from `contracts.PROMPT_FIELDS` when it starts; `{{include:<path>}}` puts
-another page in its place. To change agent text, edit its file and restart the
+Everything the agents read is hand-written Markdown in `agents/` and
+`skills/`: each agent's prompts in its folder, the pages they share in the
+base entry, [`agents/agent.curio.builtin@1/`](../agents/agent.curio.builtin@1/)
+(the preamble, the worked examples' index and the rules prompts include), and
+Curio's skills, [`skills/`](../skills/), one per feature of Curio, which the
+preamble places. A new feature, such as a built-in template, a function node
+code calls or a kind of chip, gets its lines in a skill in the same change:
+`test_feature_skills.py` fails while one is in no skill.
+[EXTENDING §9](EXTENDING.md#9-writing-a-skill) says how to write a skill. Where a
+page, prompt or skill states a fact the code owns (an agent's name, a
+template's label, the Trill block), it holds a marker, `{{field}}`, which the
+backend fills from `contracts.PROMPT_FIELDS` when it starts;
+`{{include:<path>}}` puts another page in its place, and `{{skill:<name>}}` a
+skill's body. To change agent text, edit its file and restart the
 backend, or run `python curio.py start --dev`, which renders a file again on
 every read. The base entry's README walks through it. The backend suite
 renders every file (`test_agent_text.py`) and fails on a marker no field

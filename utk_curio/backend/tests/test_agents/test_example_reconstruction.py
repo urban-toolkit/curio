@@ -96,7 +96,7 @@ class TestReachability:
         """Solve makes edits in an empty Map Editor node only when its goal
         names them, and a planned node's goal is its intent, so the oracle's
         plan names the edits each example Map Editor node holds, as the
-        knowledge page on Map Editor asks a planner to. Without that, the
+        map-edits skill asks a planner to. Without that, the
         reachability above would rebuild such a node as its call with no
         edits and still find content there."""
         from utk_curio.backend.app.agents.domain import map_edits

@@ -86,7 +86,7 @@ built-in nodes, with nothing extra to declare.
 Your code calls Curio's functions by name, with no import: `curio_load_data("<id>")`
 reads a dataset of your Data Catalog, `curio_load_model("<id>")` loads a model of
 your Model Catalog, and `curio_secret("<name>")` gives a key you saved for node
-code. [Functions node code calls](../agents/agent.curio.builtin@1/knowledge/node-functions.md)
+code. [Functions node code calls](../skills/node-functions/SKILL.md)
 lists every one, with its arguments.
 
 Your package lands in your user store, not in the repo:
