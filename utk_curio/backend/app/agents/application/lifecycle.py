@@ -21,6 +21,7 @@ from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.repositories import storage
 from utk_curio.backend.app.agents.application import catalog as agents_catalog
 from utk_curio.backend.app.agents.repositories import project_agents as agents_project_agents
+from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.projects import storage as projects_storage
 
 log = logging.getLogger(__name__)
@@ -149,7 +150,7 @@ def install_in_project(user_key: str, project_id: str, coord: str) -> dict:
             + " not available in the catalog or your imports — nothing was installed",
             409,
         )
-    spec = projects_storage.read_spec(user_key, project_id)
+    spec = dataflow_docs.live(user_key, project_id)
     if spec is None:
         raise AgentServiceError(f"project {project_id!r} has no spec", 404)
     for c in [coord, *required]:
@@ -164,7 +165,7 @@ def install_in_project(user_key: str, project_id: str, coord: str) -> dict:
         project_agents.set_project_agents(spec, current + added)
         dirty = True
     if dirty:
-        projects_storage.write_spec(user_key, project_id, spec)
+        dataflow_docs.write(user_key, project_id, spec, dataflow_docs.person(user_key, "agents"))
     return {
         "agents": project_agents.project_agents(spec),
         "installed": added,
@@ -263,7 +264,7 @@ def uninstall_from_project(user_key: str, project_id: str, coord: str) -> dict:
 
     dev/106: refused (409) while another INSTALLED template lists *coord*'s
     agent in ``requiresAgents`` — the dependents are named. No cascade."""
-    spec = projects_storage.read_spec(user_key, project_id)
+    spec = dataflow_docs.live(user_key, project_id)
     if spec is None:
         raise AgentServiceError(f"project {project_id!r} has no spec", 404)
     current = project_agents.project_agents(spec)
@@ -289,7 +290,7 @@ def uninstall_from_project(user_key: str, project_id: str, coord: str) -> dict:
     if detached:
         dirty = True
     if dirty:
-        projects_storage.write_spec(user_key, project_id, spec)
+        dataflow_docs.write(user_key, project_id, spec, dataflow_docs.person(user_key, "agents"))
     return {
         "agents": project_agents.project_agents(spec),
         "detached": [r.get("attachmentId") for r in detached],

@@ -34,6 +34,7 @@ from utk_curio.backend.app.agents.application.proposals import mint as agents_mi
 from utk_curio.backend.app.agents.application.proposals import plans as agents_plans
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
+from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.projects import storage as projects_storage
 
 log = logging.getLogger(__name__)
@@ -268,7 +269,7 @@ def _run_delegate_traced(
     home_attachment_id: str | None = None
     home_session_id: str | None = None
     try:
-        spec = projects_storage.read_spec(user_key, project_id)
+        spec = dataflow_docs.live(user_key, project_id)
         if spec is not None and not _is_own_mode_without_a_node(coord, parent_coord, inputs, node_id):
             home, created = _delegation_home(
                 spec, coord, capability, inputs, node_id=node_id, create=home_create,
@@ -278,7 +279,7 @@ def _run_delegate_traced(
                 home_attachment_id = home.get("attachmentId")
                 home_session_id = home.get("sessionId")
                 if created:
-                    projects_storage.write_spec(user_key, project_id, spec)
+                    dataflow_docs.write(user_key, project_id, spec, dataflow_docs.by_agent(coord, user_key, "delegate"))
     except Exception:
         home_attachment_id = home_session_id = None
     # Without a name, the id's last segment: my-helper for agent.acme.my-helper.
@@ -525,18 +526,11 @@ def _build_request_contract() -> dict:
     "package"/"behaviors"/"behaviorKey", twice, and the parent cannot teach a
     schema it does not carry either).
 
-    memo dev/91: the backend authoring contract rides it as
-    ``backendContract``, stated where the delegate can see it (the A8 lesson:
-    nobody invents a schema they were shown). Its text is the base entry's
-    page ``rules/package_contract.md``, rendered, the same text the
-    package-writing mode's own prompt includes, read like any prompt."""
-    contract = _contract("build-request")
-    backend = builtin.read_page(
-        builtin.PACKAGE_CONTRACT_FILE, wanted_by="the build-request contract"
-    )
-    if not backend:
-        return contract
-    return {**contract, "backendContract": backend}
+    The package backend contract is no part of it: every run of a
+    package-writing mode is handed the skill ``package-contract`` (its
+    capability's ``skills``, ``skill_runs.for_delegated``), so the run holds
+    that contract once, in its system turn."""
+    return _contract("build-request")
 
 
 def _notes_reply_contract() -> dict:

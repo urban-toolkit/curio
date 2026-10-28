@@ -180,6 +180,28 @@ def _reset_computed_id_migration_guard():
 
 
 @pytest.fixture(autouse=True)
+def _no_open_dataflow_docs(monkeypatch):
+    """Start and end every test with no dataflow doc open, and none written
+    by a thread of its own.
+
+    Every backend writer of a dataflow opens its doc
+    (``collaboration/dataflow_docs.py``), which stays in this process's memory
+    keyed by the dataflow's id alone, and tests reuse ids (``proj-1``) across
+    their own state folders: a doc left open by one test would be another
+    test's, and its writing thread could write it into that test's folder.
+    """
+    try:
+        from utk_curio.backend.app.collaboration import dataflow_docs
+    except ImportError:  # a checkout without pycrdt fails its doc tests one by one
+        yield
+        return
+    monkeypatch.setattr(dataflow_docs, "BACKGROUND", False)
+    dataflow_docs.reset_for_tests()
+    yield
+    dataflow_docs.reset_for_tests()
+
+
+@pytest.fixture(autouse=True)
 def _no_external_network(request):
     """Refuse outbound network access for the duration of every test.
 

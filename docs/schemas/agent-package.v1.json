@@ -69,7 +69,7 @@
       },
       "minItems": 1,
       "uniqueItems": true,
-      "description": "A base entry's pages, each a .md file by its path in its folder, such as 'default_preamble.md' or 'rules/package_contract.md'. Any agent names one as 'curio:<path>'. The backend renders each when it starts."
+      "description": "A base entry's pages, each a .md file by its path in its folder, such as 'default_preamble.md' or 'rules/plan-rules.md'. Any agent names one as 'curio:<path>'. The backend renders each when it starts."
     },
     "category": {
       "type": "string",
@@ -255,6 +255,16 @@
             "type": "string",
             "minLength": 1,
             "description": "When this prompt runs, in the words the agent details window shows, for a prompt that is neither 'system', 'instruction' nor a mode's instruction, such as the Node Builder's 'autk-grammar'. Read for the agents Curio ships."
+          },
+          "skills": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+            },
+            "description": "The skills every run of this prompt is handed, by name: the procedures it follows, whatever the agent's skills are. Only 'instruction' names them, and they reach its chat from its first message and each capability with no instruction of its own; a mode's own are its capability's skills."
           },
           "sha256": {
             "type": "string",

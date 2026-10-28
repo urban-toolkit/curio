@@ -9,7 +9,8 @@
     "order": 5
   },
   "skills": [
-    "catalogs"
+    "catalogs",
+    "data-sources"
   ],
   "roles": [
     "discovery",
