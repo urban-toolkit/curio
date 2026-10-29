@@ -51,7 +51,7 @@ Each backend feature's `service.py` is its public entry point for routes and oth
 
 Under `utk_curio/backend/app/`:
 
-- `projects/`: dataflows: routes, services, storage, seeding, categories, dashboard payload, and who edits one (`access.py`: `room_role`, the editors list behind Share > Invite editors).
+- `projects/`: dataflows: routes, services, storage, seeding, categories, dashboard payload, who edits one (`access.py`: `room_role`, the editors list behind Share > Invite editors), and a hosted guest's own copy of a dataflow, which its agents work on (`visitor_copies.py`).
 - `runs/`: dataflow runs on the server: tables and retention (`models.py`, `repositories.py`), starting, following and cancelling one (`service.py`, `routes.py`), live runs (`jobs.py`), a dashboard viewer's runs, which need no sign-in (`viewer.py`, `viewer_routes.py`), and the outputs kept runs keep by key, for seven days, with their sweep (`kept.py`). The engine is `execution/run_engine.py` with `execution/run_plan.py`; which outputs a run saves is `execution/save_policy.py`.
 - `users/`: accounts, sessions, auth routes, capabilities, connection keys, Data source keys (`source_keys.py`), rate limits.
 - `execution/`: one node run as Play does it (`node_exec.py`, behind `/processPythonCode` and `/processJavaScriptCode`), the sandbox HTTP client (`sandbox_client.py`), headless dataflow runner (`runner.py`), per-node runtime journal, sandbox token.

@@ -13,6 +13,7 @@ from flask import request
 from utk_curio.backend.app.agents import service as agents_services
 from utk_curio.backend.app.agents.routes.common import _error
 from utk_curio.backend.app.agents.routes.common import _svc_error
+from utk_curio.backend.app.agents.routes.common import _working_dataflow
 from utk_curio.backend.app.agents.routes.common import agents_bp
 from utk_curio.backend.app.agents.service import AgentServiceError
 from utk_curio.backend.app.projects import repositories as projects_repo
@@ -32,6 +33,7 @@ def apply_proposal(project_id: str, attachment_id: str, proposal_id: str):
     409 and marks the proposal stale. Consumes no quota."""
     try:
         projects_repo.get_for_user(project_id, g.user.id)
+        project_id = _working_dataflow(project_id)
         payload = agents_services.apply_proposal(
             _user_dir_key(g.user), project_id, attachment_id, proposal_id
         )
@@ -58,6 +60,7 @@ def apply_plan_node(project_id: str, attachment_id: str, proposal_id: str):
         return _error("body must include a non-empty 'ref'")
     try:
         projects_repo.get_for_user(project_id, g.user.id)
+        project_id = _working_dataflow(project_id)
         payload = agents_services.apply_plan_node(
             _user_dir_key(g.user), project_id, attachment_id, proposal_id, ref.strip()
         )
@@ -86,6 +89,7 @@ def apply_plan_edges(project_id: str, attachment_id: str, proposal_id: str):
         return _error("'edges' must be a list of integer indices when present")
     try:
         projects_repo.get_for_user(project_id, g.user.id)
+        project_id = _working_dataflow(project_id)
         payload = agents_services.apply_plan_edges(
             _user_dir_key(g.user), project_id, attachment_id, proposal_id, indices
         )
@@ -114,6 +118,7 @@ def set_plan_goal(project_id: str, attachment_id: str, proposal_id: str):
         return _error("body must include a 'goal' string")
     try:
         projects_repo.get_for_user(project_id, g.user.id)
+        project_id = _working_dataflow(project_id)
         payload = agents_services.set_plan_goal(
             _user_dir_key(g.user), project_id, attachment_id, proposal_id,
             ref.strip(), goal,
@@ -134,6 +139,7 @@ def dismiss_proposal(project_id: str, attachment_id: str, proposal_id: str):
     """Dismiss a pending review proposal without applying it."""
     try:
         projects_repo.get_for_user(project_id, g.user.id)
+        project_id = _working_dataflow(project_id)
         payload = agents_services.dismiss_proposal(
             _user_dir_key(g.user), project_id, attachment_id, proposal_id
         )
