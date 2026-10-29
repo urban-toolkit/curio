@@ -706,7 +706,15 @@ def _wait_for_new_outcome(page, node_id: str, before: str, *, node_type: str, ti
 def _commit(page, edit_id: str, saved: list[str], drawn: list[str], *, below: int) -> None:
     """Commit edits, from the foot of the node's list, which says how many
     nodes below lack the edits: each of *saved* runs again, its output saved to
-    a new file, each map of *drawn* ends done, and the foot says committed."""
+    a new file, each map of *drawn* draws again in the run and ends done, and
+    the foot says committed.
+
+    A map draws in the run's browser part, which starts only once the server's
+    part has ended (``finish`` in useServerRun.ts). Until then the map shows
+    the Done of its last drawing, so a wait for Done can return before the run
+    reaches it, and a second read can then find it running (run 40873036116:
+    "ended 'running'"). Each map is watched from the click and read once the
+    run the click started has ended, by the run guard."""
     frame_nodes(page, [edit_id])
     box = node_locator(page, edit_id)
     foot = box.get_by_test_id("interaction-commit")
@@ -720,6 +728,8 @@ def _commit(page, edit_id: str, saved: list[str], drawn: list[str], *, below: in
     expect(button).to_have_text("Commit edits")
     saved_to = {node_id: page.evaluate(_OUTPUT_ARTIFACT_JS, node_id) for node_id in saved}
     assert all(saved_to.values()), f"a node shows no saved output before Commit edits: {saved_to}"
+    for node_id in drawn:
+        watch_node_run(page, node_id)
     button.click()
     for node_id in saved:
         outcome = _wait_for_new_outcome(page, node_id, saved_to[node_id], node_type=node_id, timeout_ms=RUN_MS)
@@ -727,9 +737,10 @@ def _commit(page, edit_id: str, saved: list[str], drawn: list[str], *, below: in
         assert (outcome, status) == ("success", "done"), (
             f"{node_id} ran again and ended {outcome}, {status}: {read_node_error_text(node_locator(page, node_id))}"
         )
-    for node_id in drawn:
-        _done(page, node_id, MAP_TYPE)
     wait_for_run_guard_released(page, timeout_ms=RUN_MS)
+    for node_id in drawn:
+        status = wait_for_node_run_to_end(page, node_id, node_type=MAP_TYPE, timeout_ms=60000)
+        assert status == "done", f"{node_id} ended {status!r}: {read_node_error_text(node_locator(page, node_id))}"
     expect(foot).to_have_attribute("data-commit-state", "done", timeout=60000)
     expect(foot).to_contain_text("Edits committed")
 
