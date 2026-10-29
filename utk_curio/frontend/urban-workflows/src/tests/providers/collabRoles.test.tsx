@@ -3,7 +3,8 @@
  * with the tab's participant id, and the tab's role is its own entry's in the
  * room's list, so a change the owner makes to the editors reaches it with the
  * list. A join the room refuses (a hosted guest's to an example) closes the
- * socket, and none opens again for that dataflow.
+ * socket, and none opens again for that dataflow. The room's Activity is what
+ * the join brought, then each join, leave and change of role as it comes.
  */
 import React from "react";
 import { act, render, waitFor } from "@testing-library/react";
@@ -18,7 +19,7 @@ jest.mock("../../utils/backendUrl", () => ({
 jest.mock("../../utils/authApi", () => ({
   getToken: () => "tok",
   authApi: {
-    getPublicConfig: () => Promise.resolve({ enable_collab: true, collab_namespace: "/collab" }),
+    getPublicConfig: () => Promise.resolve({ collab_namespace: "/collab" }),
     // The account behind the token: ana, user 7, with two tabs in the room.
     getMe: () => Promise.resolve({ id: 7, username: "ana" }),
   },
@@ -33,7 +34,7 @@ jest.mock("../../registry/projectPackagesStore", () => ({
   },
 }));
 
-import { CollaborationProvider, useCollab } from "../../providers/CollaborationProvider";
+import { CollaborationProvider, roleChanges, useCollab } from "../../providers/CollaborationProvider";
 
 type Handler = (payload?: any) => void;
 interface FakeSocket {
@@ -89,7 +90,7 @@ const USERS = [
   { user_id: 7, username: "ana", participant_id: "p-1", role: "owner" },
   { user_id: 7, username: "ana", participant_id: "p-2", role: "editor" },
 ];
-const SNAPSHOT = { users: USERS, locks: {}, proposals: [], activity: [] };
+const SNAPSHOT = { users: USERS, locks: {}, activity: [] };
 
 beforeEach(() => {
   sockets = [];
@@ -153,4 +154,37 @@ test("a refused join closes the socket, and no other opens for that dataflow", a
   mockProjectId = "project-2";
   act(() => mockStoreListeners.forEach((listener) => listener()));
   expect(mockIo).toHaveBeenCalledTimes(2);
+});
+
+// Someone else, who joins as a watcher with two tabs.
+const BEN = { user_id: 9, username: "ben", name: "Ben", participant_id: "p-3", role: "watcher" };
+const BENS_OTHER_TAB = { ...BEN, participant_id: "p-4" };
+
+test("the room's Activity is what the join brought, then each join, leave and change of role as it comes", async () => {
+  const socket = await joined();
+  const brought = { kind: "user_joined", ts: 1, payload: { user_id: 7, username: "ana", role: "editor" } };
+  joinAnswer(socket, { ok: true, participant_id: "p-2", role: "editor", snapshot: { ...SNAPSHOT, activity: [brought] } });
+  expect(seen.activity).toEqual([brought]);
+
+  fire(socket, "user_joined", { ...BEN, users: [...USERS, BEN] });
+  fire(socket, "roles_changed", { users: [...USERS, { ...BEN, role: "editor" }] });
+  fire(socket, "user_left", { user_id: 9, username: "ben", participant_id: "p-3", released_locks: [], users: USERS });
+
+  expect(seen.activity.map(({ kind, payload }) => [kind, payload])).toEqual([
+    ["user_joined", { user_id: 7, username: "ana", role: "editor" }],
+    ["user_joined", { user_id: 9, username: "ben", name: "Ben", role: "watcher" }],
+    ["role_changed", { user_id: 9, username: "ben", name: "Ben", role: "editor" }],
+    ["user_left", { user_id: 9, username: "ben" }],
+  ]);
+});
+
+test("a change to the editors is one event for each account whose role changed, however many tabs it has", () => {
+  const before = [...USERS, BEN, BENS_OTHER_TAB];
+  const after = [...USERS, { ...BEN, role: "editor" }, { ...BENS_OTHER_TAB, role: "editor" }];
+  expect(roleChanges(before as any, after as any)).toEqual([
+    { user_id: 9, username: "ben", name: "Ben", role: "editor" },
+  ]);
+  expect(roleChanges(after as any, after as any)).toEqual([]);
+  // A participant the list did not hold yet joined: that is not a change of role.
+  expect(roleChanges(USERS as any, [...USERS, BEN] as any)).toEqual([]);
 });

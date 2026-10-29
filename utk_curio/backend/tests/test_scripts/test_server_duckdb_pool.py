@@ -20,7 +20,7 @@ class BackendServerDuckdbPoolTest(unittest.TestCase):
     def test_the_backend_serves_without_duckdbs_import_time_pool(self):
         seen, log = serve_once(
             "utk_curio.backend.server", "utk_curio.backend.app",
-            ENABLE_COLLAB="0", CURIO_SEED_EXAMPLES="0", FLASK_USE_RELOADER="0",
+            CURIO_SEED_EXAMPLES="0", FLASK_USE_RELOADER="0",
         )
         assert_serves_without_the_pool(self, seen, log, "backend")
 

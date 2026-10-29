@@ -1,10 +1,9 @@
 /**
  * Which tabs send their changes to the dataflow's doc (`CollaborationProvider`,
- * `collab/participants.ts`'s `writesDoc`): the owner's always, an invited
- * editor's only with --collab on, as its canvas watches without it, and a
- * watcher's never. The doc's sync starts on the room's socket once the room
- * has joined the tab, whatever --collab says, and on a Curio with no sign-in
- * (where the shared guest is signed in for everyone) as on one with it.
+ * `collab/participants.ts`'s `writesDoc`): the owner's and an invited
+ * editor's, and a watcher's never. The doc's sync starts on the room's socket
+ * once the room has joined the tab, and on a Curio with no sign-in (where the
+ * shared guest is signed in for everyone) as on one with it.
  */
 import React from "react";
 import { act, render, waitFor } from "@testing-library/react";
@@ -143,8 +142,8 @@ test.each([
   ["owner", true],
   ["editor", true],
   ["watcher", false],
-])("with --collab, a tab the room names %s sends its changes: %s", async (role, sends) => {
-  mockConfig = { enable_collab: true };
+])("a tab the room names %s sends its changes: %s", async (role, sends) => {
+  mockConfig = {};
   const socket = await joinedAs(role);
 
   renameOnCanvas();
@@ -154,27 +153,13 @@ test.each([
 });
 
 test.each([
-  ["owner", true],
-  ["editor", false],
-  ["watcher", false],
-])("without --collab, a tab the room names %s sends its changes: %s", async (role, sends) => {
-  mockConfig = { enable_collab: false };
-  const socket = await joinedAs(role);
-
-  renameOnCanvas();
-
-  expect(binding!.provider.canWrite).toBe(sends);
-  expect(updatesSent(socket) > 0).toBe(sends);
-});
-
-test.each([
-  ["with --collab", { enable_collab: true, curio_no_auth: true }],
-  ["without --collab", { enable_collab: false, curio_no_auth: true }],
-  ["with no projects page", { enable_collab: false, curio_no_auth: true, curio_no_project: true, skip_project_page: true }],
-])("on a Curio with no sign-in, %s, the owner's tab syncs its dataflow's doc and sends its changes", async (_how, config) => {
+  ["curio_no_auth"],
+  ["skip_project_page"],
+  ["curio_no_project"],
+])("on a Curio with no sign-in (%s), the owner's tab syncs its dataflow's doc and sends its changes", async (setting) => {
   // The shared guest is signed in for everyone there and owns every dataflow,
   // so its tab binds as a signed-in owner's does, and no tab saves.
-  mockConfig = config;
+  mockConfig = { [setting]: true };
   const socket = await joinedAs("owner");
 
   renameOnCanvas();

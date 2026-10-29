@@ -2679,15 +2679,11 @@ def scene_quickstart(ctx: Ctx) -> None:
 def scene_collaboration(ctx: Ctx) -> None:
     """Two people in one dataflow, seen from the owner's screen.
 
-    Needs a stack started with ``--collab`` (``CURIO_E2E_COLLAB=1``). The second
-    person drives a context of their own that is not recorded: the video shows
-    what the owner sees when someone joins, adds a node and types in a node's
-    code.
+    The second person drives a context of their own that is not recorded: the
+    video shows what the owner sees when someone joins, adds a node and types
+    in a node's code.
     """
     page, tour = ctx.page, ctx.tour
-    if os.environ.get("CURIO_E2E_COLLAB", "0").strip().lower() not in ("1", "true", "yes", "on"):
-        _log("[tour] collaboration needs a --collab stack (CURIO_E2E_COLLAB=1); skipped")
-        return
     if "/dataflow/" in page.url:
         _new_dataflow_from_menu(ctx)
     else:
@@ -2707,9 +2703,8 @@ def scene_collaboration(ctx: Ctx) -> None:
         tour.click(page.locator("[data-curio-save-state]").first, force=True)
     page.wait_for_url(re.compile(r".*/dataflow/[0-9a-f-]{36}"), timeout=30000)
     project_id = re.search(r"/dataflow/([0-9a-f-]{36})", page.url).group(1)
-    # Only rendered when the server runs with --collab.
-    people = page.locator('button[data-tooltip^="Collaboration"]')
-    people.wait_for(state="visible", timeout=30000)
+    # Ben's chip, in the dock at the top of the canvas, once he is here.
+    ben = page.locator('[role="group"][aria-label="People here"] button[aria-label^="Ben Planner"]')
 
     other = page.context.browser.new_context(viewport=VIDEO_SIZE)
     try:
@@ -2721,18 +2716,13 @@ def scene_collaboration(ctx: Ctx) -> None:
         )
         page2.goto(f"{ctx.frontend}/dataflow/{project_id}")
         page2.wait_for_selector(".react-flow__node", timeout=45000)
-        expect(people).to_have_attribute("data-tooltip", "Collaboration (2 online)", timeout=30000)
+        ben.wait_for(state="visible", timeout=30000)
         tour.say(
             "Someone else opens the same dataflow",
-            "The people icon counts who is here; the panel lists them.",
+            "Their chip joins the row at the top of the canvas.",
             hold=2400,
         )
-        # The panel opens with the canvas; the icon only toggles it.
-        listed = page.get_by_text("Users (2)", exact=True)
-        if listed.is_visible():
-            tour.focus(listed, hold=1400)
-        else:
-            tour.click(people, hold=1400)
+        tour.focus(ben, hold=1400)
         tour.still("collaboration-users")
 
         # Ben adds a node, and it appears on this canvas.
@@ -2957,8 +2947,6 @@ SCENES: list[tuple[str, Callable[[Ctx], None]]] = [
     ("catalogpages", scene_catalog_pages),
     ("discovery", scene_data_discovery),
     ("monitor", scene_monitor),
-    # Needs a --collab stack (CURIO_E2E_COLLAB=1), so the full tour skips it
-    # unless that is set; see scene_collaboration.
     ("collaboration", scene_collaboration),
     ("outro", scene_outro),
 ]

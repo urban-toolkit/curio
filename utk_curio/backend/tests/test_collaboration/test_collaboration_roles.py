@@ -16,7 +16,8 @@ import pytest
 from ._support import NAMESPACE, connect, drain, invite, join, make_project, make_user, received
 
 #: The events the room took before the dataflow became its doc: a node's or
-#: a connection's change relayed, and the votes on a code change.
+#: a connection's change relayed, the votes on a code change, and a run's
+#: output, its running state and a conflict's choice relayed.
 GONE_EVENTS = [
     ("node_added", {"nodeId": "n9", "node": {"id": "n9", "position": {"x": 1, "y": 2}, "data": {}}}),
     ("node_updated", {"nodeId": "n1", "patch": {"position": {"x": 1, "y": 2}}}),
@@ -26,6 +27,9 @@ GONE_EVENTS = [
     ("request_code_change", {"nodeId": "n1", "kind": "code", "oldValue": "a", "newValue": "b"}),
     ("approve_code_change", {"proposalId": "p1"}),
     ("reject_code_change", {"proposalId": "p1"}),
+    ("output_produced", {"nodeId": "n1", "output": {"code": "success", "content": "x"}}),
+    ("node_exec_display", {"nodeId": "n1"}),
+    ("resolve_conflict", {"choice": "mine"}),
 ]
 
 
@@ -75,8 +79,6 @@ def test_a_watchers_edit_is_refused_and_an_invited_editors_is_relayed(collab_app
 
 @pytest.mark.parametrize("event,extra", [
     ("node_lock", {"nodeId": "n1"}),
-    ("output_produced", {"nodeId": "n1", "output": {"code": "success", "content": "x"}}),
-    ("resolve_conflict", {"choice": "mine"}),
 ])
 def test_a_watcher_is_refused_every_change_to_the_room(collab_app, event, extra):
     project_id, s, _acks = _room(collab_app)
@@ -90,10 +92,10 @@ def test_a_watcher_is_refused_every_change_to_the_room(collab_app, event, extra)
 
 
 @pytest.mark.parametrize("event,extra", GONE_EVENTS, ids=[event for event, _ in GONE_EVENTS])
-def test_the_room_takes_no_vote_and_relays_no_node_or_connection(collab_app, event, extra):
-    """Code is typed together in the dataflow's doc, with no vote, and the doc
-    carries every node and connection: the room takes none of these from an
-    editor, and they reach nobody."""
+def test_the_room_answers_none_of_the_events_it_took_before_the_doc(collab_app, event, extra):
+    """Code is typed together in the dataflow's doc, with no vote, the doc
+    carries every node and connection, and each tab runs its own nodes: the
+    room takes none of these from an editor, and they reach nobody."""
     project_id, s, _acks = _room(collab_app, "bob")
     if event in ("approve_code_change", "reject_code_change"):
         # A vote on a change alice asked for, as a room with votes kept one.

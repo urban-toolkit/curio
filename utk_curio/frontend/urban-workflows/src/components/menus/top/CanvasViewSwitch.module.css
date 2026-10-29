@@ -50,16 +50,9 @@
 
 /* The words take about 110px more than the icons, so they go first when the
    bar's slot runs short, before the catalogs' labels do (UpMenu.module.css).
-   The slot's controls need about 900px with them, and about 40px more with
-   the collaboration button. */
+   The slot's controls need about 900px with them. */
 @container (max-width: 910px) {
   .label {
-    display: none;
-  }
-}
-
-@container (max-width: 950px) {
-  .switchCrowded .label {
     display: none;
   }
 }

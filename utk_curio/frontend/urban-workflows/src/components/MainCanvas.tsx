@@ -50,8 +50,6 @@ import { ToolsMenu, UpMenu } from "components/menus";
 import UniDirectionalEdge from "./edges/UniDirectionalEdge";
 import "./MainCanvas.css";
 import VersionBadge from "./VersionBadge";
-import { CollaborationSidePanel } from "./collab/CollaborationSidePanel";
-import { CanvasSidePanels } from "./layout/CanvasSidePanels";
 import {
     buildDatasetLoaderNodeOptions,
     buildDatasetWidgetNodeOptions,
@@ -90,10 +88,13 @@ import {
 import { clearAgentDropHover, setAgentDropHoverEdgeId } from "../utils/agentDropHover";
 import { attachAgentOnDrop } from "../utils/agentDropAttach";
 import { AgentDockOverlay } from "./agents/attach/AgentDockOverlay";
-import { AgentAttachmentsProvider } from "../providers/agents";
+import { AgentDock } from "./agents/attach/AgentDock";
+import { AgentAttachmentsProvider, useAgentsDataflowId } from "../providers/agents";
 import { isDrawnHidden } from "../utils/hiddenNodes";
 import { isNodeDragRegion, keepPaneOffNodes } from "../utils/nodeDragRegion";
 import { useSharedView } from "../hook/useSharedView";
+import { useCollab } from "../providers/CollaborationProvider";
+import { useDocBinding } from "../providers/collab/docContext";
 import { frameNodesInView, revealRectInView } from "../utils/focusDatasetNodes";
 import { scenarioCanvasView } from "../utils/scenarios/scenarioCanvasView";
 import { BOX_WIDTH, boxLayout } from "./scenarios/ScenarioLayers";
@@ -120,7 +121,6 @@ export function MainCanvas() {
         nodes,
         edges,
         loading,
-        projectId,
         onNodesChange,
         onEdgesChange,
         onConnect,
@@ -322,18 +322,35 @@ export function MainCanvas() {
         };
     }, [reactFlow, flowStore]);
 
+    // Test hook, as the one above: this tab's presence in the dataflow's room
+    // (its doc's awareness), so Playwright can read what reached it and say
+    // where this tab points, as another tab's canvas would.
+    const awareness = useDocBinding()?.provider.awareness ?? null;
+    useEffect(() => {
+        if (!awareness) return;
+        (window as any).__curio_awareness = awareness;
+        return () => {
+            if ((window as any).__curio_awareness === awareness) delete (window as any).__curio_awareness;
+        };
+    }, [awareness]);
+
     // Ctrl/Cmd+Enter on a selected node (#223).
     useRunSelectedNodeShortcut();
 
     // A read-only canvas: a watcher's, on another account's dataflow opened
-    // from its link (``viewerMode === "shared"``). With collaboration on, an
-    // editor the owner invited edits it: their changes go over the socket to
-    // the owner's tab, which saves them (useSharedView).
+    // from its link (``viewerMode === "shared"``). An editor the owner
+    // invited edits it: their changes reach the dataflow's doc, which the
+    // server keeps (useSharedView).
     const isSharedView = useSharedView();
     // The owner and the editors the owner invited work with the dataflow's
     // agents, and a watcher with none; on an editor's canvas an install an
     // agent proposes waits for the owner's review.
     const agents = agentsOnCanvas(isSharedView ? "watcher" : viewerMode === "shared" ? "editor" : "owner");
+    // The dataflow whose agents they work with: on an editor's canvas, the
+    // one its link opened, since the flow state names none there.
+    const agentsDataflow = useAgentsDataflowId();
+    // The role the dataflow's room gives this tab, once its join answered.
+    const { role: roomRole } = useCollab();
     // Nodes are added (dropped), connected and deleted, and connections
     // removed, on the canvas only, by whoever edits it; the notebook view
     // changes no graph. A node's Delete node tool reads the same rule.
@@ -613,7 +630,7 @@ export function MainCanvas() {
             // node before the attach is checked against the dataflow:
             // otherwise the attach 400s. See attachAgentOnDrop.
             attachAgentOnDrop({
-                projectId,
+                projectId: agentsDataflow,
                 target,
                 agentCoord,
                 keepDataflow: ensureProjectId,
@@ -640,7 +657,7 @@ export function MainCanvas() {
         const position = dropPosition(event);
         revealCreated(createCodeNode(type, { position }));
         markDirty();
-    }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleFileCanvasDrop, handleModelCanvasDrop, handlePackageCardCanvasDrop, handleScenarioCanvasDrop, projectId, showToast, ensureProjectId, whenChangesKept, reactFlow, hostedGuest, viewerMode]);
+    }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleFileCanvasDrop, handleModelCanvasDrop, handlePackageCardCanvasDrop, handleScenarioCanvasDrop, agentsDataflow, showToast, ensureProjectId, whenChangesKept, reactFlow, hostedGuest, viewerMode]);
 
     // The Delete key reaches these through React Flow, which sends the
     // selected edges plus every edge attached to a deleted node first, then
@@ -747,14 +764,12 @@ export function MainCanvas() {
         <AgentAttachmentsProvider enabled={agents.drives} installsWaitForOwner={agents.installsWaitForOwner}>
         {!loading ? <div
             style={{ width: "100vw", height: "100vh", backgroundColor: "#f0f0f0" }}
+            data-curio-room-role={roomRole ?? undefined}
         >
             {/* The notebook view adds no nodes, so it has no rail, only the
                 rail's Run all. */}
             {!notebookOn ? <ToolsMenu /> : <NotebookRunAll />}
             <UpMenu />
-            <CanvasSidePanels>
-                <CollaborationSidePanel />
-            </CanvasSidePanels>
             <div
                 className="curio-canvas-drop-target"
                 style={{ width: "100%", height: "100%" }}
@@ -823,7 +838,10 @@ export function MainCanvas() {
             </ReactFlow>
             </div>
             </div>
-            {agents.drives ? <AgentDockOverlay /> : null}
+            {/* Who is here: on the canvas of whoever drives the dataflow's
+                agents, the owner's or an editor's, with the agents and their
+                chats; on a watcher's only the people. */}
+            {agents.drives ? <AgentDockOverlay /> : <AgentDock belowBanner={isSharedView} />}
             </div>
 
         </div> : loadingAnimation() }

@@ -21,7 +21,7 @@ jest.mock("../../utils/backendUrl", () => ({
 jest.mock("../../utils/authApi", () => ({
   getToken: () => "tok",
   authApi: {
-    getPublicConfig: () => Promise.resolve({ collab_namespace: "/collab", enable_collab: false }),
+    getPublicConfig: () => Promise.resolve({ collab_namespace: "/collab" }),
     getMe: () => Promise.resolve({ id: 7, username: "ana" }),
   },
 }));

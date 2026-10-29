@@ -120,7 +120,6 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
 - `unit`: backend pytest in four parts, plus the sandbox suite.
 - `jest`: Jest and `npm run typecheck`.
 - `e2e-desktop`: e2e tests without WebGPU, split over CPU runners.
-- `e2e-collab`: the e2e tests marked `needs_collab`, on a stack started with `--collab` (`CURIO_E2E_STACK_ARGS`, `docker-compose.ci.yml`).
 - `test-isolated`: Python-node workflows on the fork-isolated stack (`docker-compose.ci-isolated.yml`).
 - `test-exec-user`: isolation with an execution account (`docker-compose.ci-exec-user.yml`).
 - `preview-runner`: preview runner tests (`utk_curio/tools/preview_runner.py`) in headless Chromium.

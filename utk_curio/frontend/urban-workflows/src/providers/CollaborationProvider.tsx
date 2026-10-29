@@ -5,11 +5,9 @@
  * ``projectPackagesStore.subscribe``, opening one socket per project id once a
  * tab is signed in, emitting ``join_session`` on connect, and tearing the
  * socket down when the user navigates to a different project (or away from
- * the canvas), once the server has the tab's last change on it. Every backend
- * serves the socket: the dataflow's Yjs doc
- * travels on it (``collab/docProvider.ts``), whatever ``--collab`` says. With
- * ``enable_collab=false`` from ``/api/config/public`` the room's own controls,
- * the people panel and its button, stay hidden (``enabled``).
+ * the canvas), once the server has the tab's last change on it. Every
+ * backend serves the socket, and the dataflow's Yjs doc travels on it
+ * (``collab/docProvider.ts``).
  *
  * Identity is anchored in the backend Bearer token sent through the
  * Socket.IO ``auth`` handshake. We never trust user-supplied identity
@@ -29,6 +27,9 @@
  * server built anew, start the doc again from the server's. A Curio with no
  * sign-in (``curio_no_auth``, where the shared guest is signed in for
  * everyone) syncs its saved dataflows' docs as any signed-in tab does.
+ *
+ * The room's events, the join's and each one after it, are its Activity
+ * (``activity``), which the canvas's dock lists.
  */
 
 import React, {
@@ -97,6 +98,9 @@ function retire(socket: Socket | null, provider: DataflowDocProvider | null, own
 }
 /** The style element that colors everyone else's cursor in the code editors. */
 const CURSOR_STYLE_ID = "curio-remote-cursors";
+/** How many of the room's events a tab keeps, as the server does
+ *  (``room_state.ACTIVITY_CAP``). */
+const ACTIVITY_CAP = 200;
 
 export interface CollabUser {
     user_id: number;
@@ -123,19 +127,25 @@ export interface ActivityEntry {
     payload: Record<string, unknown>;
 }
 
-export interface OutputBroadcast {
-    nodeId: string;
-    nodeType?: string;
-    output: { code: string; content: unknown; [k: string]: unknown };
-}
-
 /** Listener callback for "a peer applied a remote change" events. */
 export type RemoteHandler<T = unknown> = (payload: T) => void;
 
+/** The room's events a change to the editors makes: one for each account
+ *  whose role changed, as the server records it (``roles.py``). */
+export function roleChanges(before: ReadonlyArray<CollabUser>, after: ReadonlyArray<CollabUser>): Array<Record<string, unknown>> {
+    const keyOf = (user: CollabUser) => user.participant_id ?? `user:${user.user_id}`;
+    const was = new Map(before.map((user) => [keyOf(user), user.role]));
+    const told = new Set<number>();
+    const changes: Array<Record<string, unknown>> = [];
+    for (const user of after) {
+        if (!was.has(keyOf(user)) || was.get(keyOf(user)) === user.role || told.has(user.user_id)) continue;
+        told.add(user.user_id);
+        changes.push({ user_id: user.user_id, username: user.username, name: user.name, role: user.role });
+    }
+    return changes;
+}
+
 export interface CollabContextValue {
-    /** Whether collaboration's own controls show: the people panel, its
-     *  button, the editors' lock chips (`--collab`). */
-    enabled: boolean;
     connected: boolean;
     /** This tab's participant id in the room, once its join answered. */
     participantId: string | null;
@@ -144,32 +154,23 @@ export interface CollabContextValue {
     role: RoomRole | null;
     users: CollabUser[];
     lockedNodes: Record<string, NodeLock>;
+    /** The room's events, oldest first: those the join brought, then each as
+     *  it comes. */
     activity: ActivityEntry[];
-
-    /** Whether the right-docked side panel is currently visible. */
-    panelOpen: boolean;
-    /** Toggle the side panel from anywhere in the tree (UpMenu trigger). */
-    setPanelOpen: (open: boolean) => void;
 
     lockNode: (nodeId: string) => void;
     unlockNode: (nodeId: string) => void;
-    resolveConflict: (payload: Record<string, unknown>) => void;
-
-    broadcastOutputProduced: (payload: OutputBroadcast) => void;
-    signalExecDisplay: (nodeId: string) => void;
 
     /**
      * Subscribe to incoming remote events. Returns an unsubscribe fn.
-     * Event names mirror the backend's outgoing events: ``output_produced``,
-     * ``conflict_resolved``, ``node_exec_display`` (``events.py``),
-     * ``connection_dropped`` (``dataflow_docs.py``) and ``history_changed``
-     * (``history.py``).
+     * Event names mirror the backend's outgoing events: the room's
+     * (``events.py``, ``roles.py``), ``connection_dropped``
+     * (``dataflow_docs.py``) and ``history_changed`` (``history.py``).
      */
     onRemote: (event: string, handler: RemoteHandler) => () => void;
 }
 
 const NOOP_VALUE: CollabContextValue = {
-    enabled: false,
     connected: false,
     participantId: null,
     role: null,
@@ -177,15 +178,8 @@ const NOOP_VALUE: CollabContextValue = {
     lockedNodes: {},
     activity: [],
 
-    panelOpen: false,
-    setPanelOpen: () => undefined,
-
     lockNode: () => undefined,
     unlockNode: () => undefined,
-    resolveConflict: () => undefined,
-
-    broadcastOutputProduced: () => undefined,
-    signalExecDisplay: () => undefined,
 
     onRemote: () => () => undefined,
 };
@@ -194,9 +188,8 @@ const CollabContext = createContext<CollabContextValue>(NOOP_VALUE);
 
 /**
  * Hook for any component that wants to talk to the collaboration layer.
- * Safe to call without a provider mounted — returns a no-op value so
- * the rest of the app keeps working off-canvas, in tests, and when
- * collaboration is disabled.
+ * Safe to call without a provider mounted: it returns a no-op value, so the
+ * rest of the app keeps working off the canvas (the dashboard) and in tests.
  */
 export function useCollab(): CollabContextValue {
     return useContext(CollabContext);
@@ -208,9 +201,6 @@ const REMOTE_EVENTS = [
     "roles_changed",
     "node_locked",
     "node_unlocked",
-    "output_produced",
-    "node_exec_display",
-    "conflict_resolved",
     CONNECTION_DROPPED_EVENT,
     HISTORY_CHANGED_EVENT,
 ] as const;
@@ -219,15 +209,11 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     children,
 }) => {
     const [configLoaded, setConfigLoaded] = useState<boolean>(false);
-    const [enabled, setEnabled] = useState<boolean>(false);
     const [connected, setConnected] = useState<boolean>(false);
     const [users, setUsers] = useState<CollabUser[]>([]);
     const [lockedNodes, setLockedNodes] = useState<Record<string, NodeLock>>({});
     const [activity, setActivity] = useState<ActivityEntry[]>([]);
     const [participantId, setParticipantId] = useState<string | null>(null);
-    // Panel visibility is owned by the provider so the UpMenu trigger can
-    // toggle it without prop-drilling through MainCanvas.
-    const [panelOpen, setPanelOpen] = useState<boolean>(true);
     // This tab's role is its own entry's in the room's list, so every list
     // the server sends (a join, a leave, a change of editors) keeps it current.
     const role = useMemo(() => roleIn(users, participantId), [users, participantId]);
@@ -242,8 +228,9 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
 
     const socketRef = useRef<Socket | null>(null);
     const namespaceRef = useRef<string>(DEFAULT_NAMESPACE);
-    // The flag as the doc's writers read it: read before any socket opens.
-    const enabledRef = useRef<boolean>(false);
+    // The room's list as this tab last drew it, which a change to the editors
+    // is read against.
+    const usersRef = useRef<CollabUser[]>([]);
     const projectIdRef = useRef<string | undefined>(getCurrentProjectId());
     // The dataflow whose room refused this tab: no socket is opened for it
     // again until another dataflow opens.
@@ -252,7 +239,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     const docProviderRef = useRef<DataflowDocProvider | null>(null);
 
     // ------------------------------------------------------------------
-    // Read the flag and the namespace once.
+    // Read the namespace once.
     // ------------------------------------------------------------------
     useEffect(() => {
         let cancelled = false;
@@ -261,13 +248,10 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
             .then((cfg) => {
                 if (cancelled) return;
                 namespaceRef.current = cfg.collab_namespace || DEFAULT_NAMESPACE;
-                enabledRef.current = Boolean(cfg.enable_collab);
-                setEnabled(Boolean(cfg.enable_collab));
                 setConfigLoaded(true);
             })
             .catch(() => {
                 if (cancelled) return;
-                setEnabled(false);
                 setConfigLoaded(true);
             });
         return () => {
@@ -288,7 +272,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
      *  or the tab's role changed whether it writes (`writesDoc`). */
     const startDoc = useCallback((socket: Socket, projectId: string, role: RoomRole | null, fresh = false) => {
         const prior = docProviderRef.current;
-        const writes = writesDoc(role, enabledRef.current);
+        const writes = writesDoc(role);
         if (!fresh && prior && prior.projectId === projectId && prior.canWrite === writes) {
             prior.attach(socket);
             return;
@@ -376,21 +360,35 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
             });
             socket.on("connect_error", () => setConnected(false));
 
+            // Activity: the room's events as they come, after those the join
+            // brought, as the server records them (``events.py``).
+            const recordActivity = (kind: string, payload: Record<string, unknown> = {}) =>
+                setActivity((prev) =>
+                    [...prev, { kind, ts: Date.now() / 1000, payload }].slice(-ACTIVITY_CAP),
+                );
+
             // Presence
-            socket.on("user_joined", (payload: { users: CollabUser[] }) => {
+            socket.on("user_joined", (payload: CollabUser & { users: CollabUser[] }) => {
                 if (payload && Array.isArray(payload.users)) {
                     setUsers(payload.users);
+                    recordActivity("user_joined", {
+                        user_id: payload.user_id, username: payload.username, name: payload.name, role: payload.role,
+                    });
                 }
             });
-            socket.on("user_left", (payload: { users: CollabUser[] }) => {
+            socket.on("user_left", (payload: CollabUser & { users: CollabUser[] }) => {
                 if (payload && Array.isArray(payload.users)) {
                     setUsers(payload.users);
+                    recordActivity("user_left", { user_id: payload.user_id, username: payload.username });
                 }
             });
             // The owner invited or removed an editor: everyone's roles, this
             // tab's among them.
             socket.on("roles_changed", (payload: { users: CollabUser[] }) => {
                 if (payload && Array.isArray(payload.users)) {
+                    for (const change of roleChanges(usersRef.current, payload.users)) {
+                        recordActivity("role_changed", change);
+                    }
                     setUsers(payload.users);
                 }
             });
@@ -412,16 +410,6 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
                     return next;
                 });
             });
-
-            // Activity log: every relayed event also bumps the activity feed.
-            const recordActivity = (kind: string) =>
-                setActivity((prev) =>
-                    [
-                        ...prev,
-                        { kind, ts: Date.now() / 1000, payload: {} },
-                    ].slice(-200),
-                );
-            socket.on("conflict_resolved", () => recordActivity("conflict_resolved"));
 
             // Fan-out to consumer-registered handlers.
             for (const ev of REMOTE_EVENTS) {
@@ -499,8 +487,12 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
         const provider = docProviderRef.current;
         const socket = socketRef.current;
         if (!provider || !socket || !role) return;
-        if (provider.canWrite !== writesDoc(role, enabledRef.current)) startDoc(socket, provider.projectId, role, true);
+        if (provider.canWrite !== writesDoc(role)) startDoc(socket, provider.projectId, role, true);
     }, [role, startDoc]);
+
+    useEffect(() => {
+        usersRef.current = users;
+    }, [users]);
 
     // Everyone else's cursor in the code editors, in their color. The style
     // is written only when it changes: a pointer moving on someone's canvas
@@ -549,19 +541,6 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
         (nodeId: string) => _emit("node_unlock", { nodeId }),
         [_emit],
     );
-    const resolveConflict = useCallback(
-        (payload: Record<string, unknown>) => _emit("resolve_conflict", payload),
-        [_emit],
-    );
-    const broadcastOutputProduced = useCallback(
-        (payload: OutputBroadcast) =>
-            _emit("output_produced", payload as unknown as Record<string, unknown>),
-        [_emit],
-    );
-    const signalExecDisplay = useCallback(
-        (nodeId: string) => _emit("node_exec_display", { nodeId }),
-        [_emit],
-    );
 
     const onRemote = useCallback(
         (event: string, handler: RemoteHandler) => {
@@ -584,7 +563,6 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
 
     const value: CollabContextValue = useMemo(
         () => ({
-            enabled,
             connected,
             participantId,
             role,
@@ -592,32 +570,20 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
             lockedNodes,
             activity,
 
-            panelOpen,
-            setPanelOpen,
-
             lockNode,
             unlockNode,
-            resolveConflict,
-
-            broadcastOutputProduced,
-            signalExecDisplay,
 
             onRemote,
         }),
         [
-            enabled,
             connected,
             participantId,
             role,
             users,
             lockedNodes,
             activity,
-            panelOpen,
             lockNode,
             unlockNode,
-            resolveConflict,
-            broadcastOutputProduced,
-            signalExecDisplay,
             onRemote,
         ],
     );

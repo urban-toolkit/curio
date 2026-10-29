@@ -56,7 +56,6 @@ def _isolate_env(monkeypatch, tmp_path):
         "CURIO_RESEED_PACKAGES",
         "CURIO_NO_AUTH",
         "CURIO_NO_PROJECT",
-        "ENABLE_COLLAB",
         "BACKEND_URL",
         "CURIO_ISOLATION",
         "CURIO_EXEC_USER",
@@ -409,6 +408,33 @@ def test_the_models_root_flag_is_gone_with_no_alias(tmp_path):
     with pytest.raises(TypeError):
         set_environment_variables(**BASE, models_root=str(tmp_path))
     assert "CURIO_MODELS_ROOT" not in os.environ
+
+
+def test_the_collab_flag_is_gone_with_no_alias(monkeypatch):
+    """There is no ``--collab`` (nor ``ENABLE_COLLAB``): every backend serves
+    collaboration. Its two settings stay, and ``--collab`` is no shorthand
+    for either of them, which argparse would take a unique prefix as."""
+    import inspect
+
+    from utk_curio import main as launcher
+
+    assert "--collab" not in _parser_flags()
+    assert {"--collab-origins", "--collab-namespace"} <= _parser_flags()
+    assert "ENABLE_COLLAB" not in inspect.getsource(launcher)
+    assert "collab" not in inspect.signature(set_environment_variables).parameters
+    with pytest.raises(TypeError):
+        set_environment_variables(**BASE, collab=True)
+    # A start writes no such variable, whatever the shell held.
+    monkeypatch.delenv("ENABLE_COLLAB", raising=False)
+    set_environment_variables(**BASE)
+    assert "ENABLE_COLLAB" not in os.environ
+
+    monkeypatch.setattr("sys.argv", ["curio.py", "start", "--collab"])
+    # The launcher's shutdown handlers stay out of the test process.
+    monkeypatch.setattr(signal, "signal", lambda *args, **kwargs: None)
+    with pytest.raises(SystemExit) as exited:
+        launcher.main()
+    assert exited.value.code == 2, "curio.py start --collab did not stop at its arguments"
 
 
 @pytest.mark.parametrize("env_name", ["CURIO_DISCOVERY_ROOT", "CURIO_PACKAGES_ROOT"])

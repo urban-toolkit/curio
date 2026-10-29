@@ -1,6 +1,6 @@
 /**
- * #629: with collaboration on, a selection made on a node that arrived from a
- * collaborator reaches the nodes linked to it, as it does without collaboration.
+ * #629: a selection made on a node that arrived from a collaborator reaches
+ * the nodes linked to it, as it does on a node made in this tab.
  *
  * Drives the REAL FlowProvider bound to the dataflow's doc. Another tab adds a
  * chart, a Data Pool and the interaction edge between them through the doc;
@@ -64,17 +64,9 @@ const mockHandlers: Record<string, (payload: any) => void> = {};
 const mockNoop = () => undefined;
 // One object for every render: the receive effect depends on `onRemote`.
 const mockCollab = {
-  enabled: true,
   lockedNodes: {},
-  currentUserId: null,
   lockNode: mockNoop,
   unlockNode: mockNoop,
-  signalExecDisplay: mockNoop,
-  broadcastOutputProduced: mockNoop,
-  broadcastNodeAdded: mockNoop,
-  broadcastNodeRemoved: mockNoop,
-  broadcastEdgeAdded: mockNoop,
-  broadcastEdgeRemoved: mockNoop,
   onRemote: (event: string, handler: (payload: any) => void) => {
     mockHandlers[event] = handler;
     return () => {
