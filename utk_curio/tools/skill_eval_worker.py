@@ -29,12 +29,14 @@ runs, so no sandbox either.
   sent; a trigger run's chat listed it and was not handed it, judged by the
   chat's own system turn (a run the chat delegates to may be handed it, as
   Curio hands it). A run that breaks this is an error, and counts nowhere.
-- **A trigger run** stops once its chat loads the skill, or delegates its work
-  before loading it, as agentskills.io's guide suggests: the agent consulted
-  the skill or went to work without it, so the outcome is known, and the
-  delegated run, which Curio may hand the skill, never starts.
-  ``--full-trigger-runs`` lets it finish; a delegated run handed the skill
-  before the chat loaded it then makes it an error.
+- **A trigger run** stops once its chat loads the skill, as agentskills.io's
+  guide suggests, or once it delegates its work, before loading it, to a run
+  Curio hands the skill (a node's content writer, say): the chat handed the
+  work to the skill without consulting it, which counts as not loading it,
+  and that run never starts. Any other delegation runs on, and the chat may
+  still load the skill after it. ``--full-trigger-runs`` lets every run
+  finish; a delegated run handed the skill before the chat loaded it then
+  makes the run an error.
 - **Retried:** a run whose model call the server failed (a 5xx, a lost
   connection) runs again on a fresh dataflow, after :data:`RETRY_WAITS_S`;
   the grader waits the same. Its record counts the attempts.
@@ -111,9 +113,10 @@ class _Loaded(BaseException):
 
 
 class _HandedOff(BaseException):
-    """A trigger run's chat delegated its work before it loaded the skill: it
-    went to work without consulting the skill, so its outcome is known too.
-    The delegated run, which Curio may hand the skill, never starts."""
+    """A trigger run's chat delegated its work, before it loaded the skill, to
+    a run Curio hands the skill: it handed the work to the skill without
+    consulting it, so its outcome is known too. The delegated run never
+    starts."""
 
 
 #: What only a chat's system turn holds: the list of skills it may load.
@@ -177,9 +180,11 @@ class _Seams:
 
         def _for_delegated(*args, **kwargs):
             capability = args[3] if len(args) > 3 else kwargs.get("capability")
-            stop = bool(seams.watch and seams.stop_at_hand_off)
-            run = _record(for_delegated(*args, **kwargs), "delegated", capability=capability,
-                          loadedBefore=list(seams.loaded), started=not stop)
+            run = for_delegated(*args, **kwargs)
+            holds = bool(seams.watch) and (seams.watch in run.placed
+                                           or any(skill.name == seams.watch for skill in run.handed))
+            stop = holds and seams.stop_at_hand_off
+            _record(run, "delegated", capability=capability, loadedBefore=list(seams.loaded), started=not stop)
             if stop:
                 seams.handed_off = str(capability)
                 raise _HandedOff()

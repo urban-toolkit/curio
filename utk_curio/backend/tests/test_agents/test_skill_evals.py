@@ -234,8 +234,9 @@ def test_a_file_that_breaks_the_format_is_refused_naming_each_problem(tmp_path):
 def test_trigger_rates_and_the_benchmark_count_as_agentskills_io_says(tmp_path):
     """A query passes on a trigger rate above one half when it should
     trigger, below it when it should not, and a run that failed counts in
-    neither. A run whose chat delegated its work before it loaded the skill
-    did not load it, and is counted as handed off. The benchmark holds each
+    neither. A run whose chat delegated its work, before it loaded the skill,
+    to a run Curio hands the skill did not load it, and is counted as handed
+    off. The benchmark holds each
     condition's mean pass rate over its
     graded runs, the difference, and the runs with the skill split by
     whether the skill reached the model."""
