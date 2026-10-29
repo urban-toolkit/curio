@@ -35,7 +35,10 @@ jest.mock("../../providers/StarterProvider", () => ({ useStarterContext: () => (
 jest.mock("../../providers/modelCatalog", () => ({
   useModelCatalogDrawer: () => ({ openModelCatalogDrawer: jest.fn() }),
 }));
-jest.mock("../../providers/agents", () => ({ AgentAttachmentsProvider: ({ children }: any) => <>{children}</> }));
+jest.mock("../../providers/agents", () => ({
+  AgentAttachmentsProvider: ({ children }: any) => <>{children}</>,
+  useAgentsDataflowId: () => null,
+}));
 jest.mock("../../components/datasets/catalog/datasetDetailsContext", () => ({
   useDatasetDetails: () => ({ openDatasetDetails: jest.fn() }),
   viewDatasetDetailsToast: jest.fn(),
@@ -57,9 +60,8 @@ jest.mock("../../components/edges/UniDirectionalEdge", () => ({ __esModule: true
 jest.mock("../../components/VersionBadge", () => ({ __esModule: true, default: () => null }));
 jest.mock("../../components/menus", () => ({ ToolsMenu: () => null, UpMenu: () => null }));
 jest.mock("../../components/notebook/NotebookRunAll", () => ({ NotebookRunAll: () => null }));
-jest.mock("../../components/collab/CollaborationSidePanel", () => ({ CollaborationSidePanel: () => null }));
-jest.mock("../../components/layout/CanvasSidePanels", () => ({ CanvasSidePanels: () => null }));
 jest.mock("../../components/agents/attach/AgentDockOverlay", () => ({ AgentDockOverlay: () => null }));
+jest.mock("../../components/agents/attach/AgentDock", () => ({ AgentDock: () => null }));
 jest.mock("../../components/scenarios/useScenarioDrop", () => ({ useScenarioDrop: () => mockDropScenario }));
 jest.mock("../../components/scenarios/ScenarioLayers", () => ({ BOX_WIDTH: 0, boxLayout: () => ({ height: 0 }) }));
 jest.mock("../../components/scenarios/CanvasScenarioLayers", () => ({ CanvasScenarioLayers: () => null }));

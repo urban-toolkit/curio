@@ -31,6 +31,20 @@ export function agentsOnCanvas(role: "owner" | "editor" | "watcher"): {
   return { drives: role !== "watcher", installsWaitForOwner: role === "editor" };
 }
 
+/** The dataflow whose agents a canvas drives, by the role the tab has on the
+ * dataflow (`canvasRole`). The owner's tab drives those of the dataflow it
+ * saves, *saved* (the flow state's `projectId`). An invited editor's tab saves
+ * no dataflow, so its `projectId` is null: it drives those of the dataflow its
+ * link opened, *opened*. A watcher drives none. */
+export function agentsDataflowId(
+  role: "owner" | "editor" | "watcher",
+  saved: string | null | undefined,
+  opened: string | null | undefined,
+): string | null {
+  if (role === "watcher") return null;
+  return (role === "editor" ? opened : saved) ?? null;
+}
+
 /** Whether a message *by* names was written by someone other than the
  * viewer, the account *viewerAccount*: the chat names its writer then. A
  * message that names no writer is the viewer's own: one from before writers

@@ -95,11 +95,10 @@ jest.mock("../../../providers/FlowProvider", () => ({
 jest.mock("../../../providers/ProvenanceProvider", () => ({
     useProvenanceContext: () => ({ nodeExecProv: jest.fn() }),
 }));
-// Collaboration off, unless a test turns it on: `onRemote` then keeps each
-// handler, which the test fires as the room would.
+// In no room, unless a test joins one: `onRemote` keeps each handler, which
+// the test fires as the room would.
 const mockCollabHandlers: Record<string, (payload: any) => void> = {};
 const mockCollabOff = () => ({
-    enabled: false,
     connected: false,
     users: [],
     proposals: [],
@@ -253,7 +252,6 @@ describe("code is typed together, with no vote", () => {
         for (const key of Object.keys(mockCollabHandlers)) delete mockCollabHandlers[key];
         mockCollab = {
             ...mockCollabOff(),
-            enabled: true,
             connected: true,
             participantId: "p-2",
             role: "owner",

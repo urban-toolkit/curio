@@ -32,9 +32,4 @@ describe("the canvas view switch", () => {
     fireEvent.click(screen.getByRole("radio", { name: "Notebook view" }));
     expect(onChange).not.toHaveBeenCalled();
   });
-
-  test("gives way sooner next to the collaboration button", () => {
-    render(<CanvasViewSwitch value="canvas" onChange={() => {}} crowded />);
-    expect(screen.getByRole("radiogroup")).toHaveClass("switchCrowded");
-  });
 });

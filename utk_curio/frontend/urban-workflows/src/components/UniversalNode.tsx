@@ -203,12 +203,11 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const drawSeqRef = useRef(0);
 
   // Lock-on-focus / unlock-on-blur. Safe to call always: useCollab()
-  // returns no-op handlers when collaboration is disabled.
+  // returns no-op handlers off the canvas, and the room refuses a watcher's.
   const handleNodeFocus = () => {
-    if (collab.enabled) collab.lockNode(data.nodeId);
+    collab.lockNode(data.nodeId);
   };
   const handleNodeBlur = (e: React.FocusEvent<HTMLDivElement>) => {
-    if (!collab.enabled) return;
     // Only release when focus leaves the entire node subtree — clicks
     // between buttons / handles inside the node shouldn't toggle the lock.
     if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
@@ -236,7 +235,6 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     lastRenderedInputRef.current = data.input;
     drawnValuesRef.current = widgetValues;
     drawSeqRef.current += 1;
-    if (collab.enabled) collab.signalExecDisplay(data.nodeId);
   }, [data.triggerExec]);
 
   // A run that stopped above this node: a node feeding it failed, so the run
@@ -436,13 +434,6 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     if (output?.code === "error" || output?.code === "success") {
       // A failure stops the run below this node (#603).
       signalNodeExecDone(data.nodeId, { failed: output.code === "error" });
-      if (collab.enabled && output) {
-        collab.broadcastOutputProduced({
-          nodeId: data.nodeId,
-          nodeType: data.nodeType,
-          output: output as { code: string; content: unknown },
-        });
-      }
     }
     // Keyed on the OBJECT, not `output?.code`: a node that errors twice in a
     // row (e.g. a node re-triggered by Play with inputs still missing) keeps
