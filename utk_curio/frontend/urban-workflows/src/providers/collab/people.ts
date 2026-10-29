@@ -10,18 +10,13 @@
  *
  * Each state's `user` is the server's (`dataflow_docs._user`). `editing` is the
  * node whose code the participant edits, and `pointer` where they point on the
- * canvas, `{x, y, t}` in flow coordinates, or null off the canvas: a field the
- * server keeps in a watcher's state too (`PRESENCE_FIELDS`).
+ * canvas, as `cursors.ts` sends and reads it: a field the server keeps in a
+ * watcher's state too (`PRESENCE_FIELDS`).
  */
 import type { Awareness } from "y-protocols/awareness";
 
-import { nameOf, participantColor, type PresenceState } from "./presence";
-
-/** A point on the canvas, in flow coordinates. */
-export interface CanvasPoint {
-    x: number;
-    y: number;
-}
+import { pointerOf } from "./cursors";
+import { nameOf, personColor, type CanvasPointer, type PresenceState } from "./presence";
 
 export interface Person {
     /** One per participant: its id, else its awareness client's. */
@@ -31,7 +26,8 @@ export interface Person {
     userId: number | null;
     name: string;
     initials: string;
-    /** Their color, the one their cursor takes in the code editors. */
+    /** Their color, from their account: their cursor's on the canvas and in
+     *  the code editors. */
     color: string;
     /** Owner, editor or watcher; the room's list is newer than a state's. */
     role: string | null;
@@ -52,16 +48,6 @@ export function initialsOf(name: string): string {
     const first = Array.from(words[0])[0] ?? "";
     const last = words.length > 1 ? Array.from(words[words.length - 1])[0] ?? "" : "";
     return (first + last).toUpperCase();
-}
-
-/** Where a state points on the canvas, or null: no pointer, a null one, or
- *  not a point. */
-export function pointerOf(state: unknown): CanvasPoint | null {
-    const pointer = (state as { pointer?: unknown } | null | undefined)?.pointer;
-    if (!pointer || typeof pointer !== "object") return null;
-    const { x, y } = pointer as { x?: unknown; y?: unknown };
-    if (typeof x !== "number" || typeof y !== "number" || !Number.isFinite(x) || !Number.isFinite(y)) return null;
-    return { x, y };
 }
 
 type Named = { clientId: number; state: PresenceState; key: string; at: number };
@@ -104,7 +90,7 @@ export function peopleOf(
             userId: typeof user.user_id === "number" ? user.user_id : null,
             name,
             initials: initialsOf(name),
-            color: participantColor(participantId ?? String(clientId)),
+            color: personColor(user, String(clientId)),
             role: (participantId ? roles?.get(participantId) : null) ?? user.role ?? null,
             editing: typeof state.editing === "string" ? state.editing : null,
         });
@@ -118,7 +104,7 @@ export function pointerOfPerson(
     awareness: Awareness | null | undefined,
     own: OwnParticipant,
     person: Pick<Person, "key">,
-): CanvasPoint | null {
+): CanvasPointer | null {
     if (!awareness) return null;
     const named = freshest(awareness, own).get(person.key);
     return named ? pointerOf(named.state) : null;

@@ -6,7 +6,8 @@ import { faListUl } from "@fortawesome/free-solid-svg-icons";
 
 import { useCollab, type ActivityEntry, type CollabUser } from "../../../providers/CollaborationProvider";
 import { useNotebookViewContext } from "../../../providers/flow/notebookViewContext";
-import type { CanvasPoint, Person } from "../../../providers/collab/people";
+import type { Person } from "../../../providers/collab/people";
+import type { CanvasPointer } from "../../../providers/collab/presence";
 import { resolveNodeDisplayLabel } from "../../../utils/palettePackageFactoryDraft";
 import badgeStyles from "./AgentAvatarBadge.module.css";
 import styles from "./AgentDock.module.css";
@@ -161,7 +162,7 @@ export function PeopleHere({
   pointerOf,
 }: {
   people: Person[];
-  pointerOf: (person: Person) => CanvasPoint | null;
+  pointerOf: (person: Person) => CanvasPointer | null;
 }) {
   const { setCenter, getZoom } = useReactFlow();
   const notebook = useNotebookViewContext();
