@@ -160,7 +160,7 @@ class CatalogListing:
             # two by id (the ref row wins ``installed=True``).
             items.extend(self.user_store.list_items())
         if dataflow_id:
-            items.extend(self.installed.list_items(dataflow_id))
+            items.extend(self._ref_paths_in_the_read_roots(self.installed.list_items(dataflow_id)))
             items.extend(self.computed.list_items(
                 manifest=self._paths._project_manifest(dataflow_id),
                 live_outputs=live_outputs,
@@ -410,6 +410,25 @@ class CatalogListing:
 
         return {"items": items, "facets": facets}
 
+    def _ref_paths_in_the_read_roots(self, refs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """A dataflow's dataset refs as listed (*refs*), each path that no
+        read root holds dropped. A ref with no folder carries its file's path
+        in the dataflow's spec, which a client may have written, so such a
+        path is never listed, nor read or published from where it points: the
+        rule the computed items below follow for a live output's path. A ref
+        to a live output (``curio://outputs/``) is left to that check."""
+        for item in refs:
+            path_value = str(item.get("path") or "")
+            if (
+                not path_value
+                or path_value.startswith("curio://")
+                or str(item.get("uri") or "").startswith("curio://outputs/")
+            ):
+                continue
+            if self._paths._contained_path(path_value) is None:
+                item["path"] = None
+        return refs
+
     def _prefer_user_store_computed_title(
         self, items: list[dict[str, Any]], user_key: str
     ) -> None:
@@ -544,7 +563,8 @@ class CatalogListing:
         case (a loader node reading an imported or computed dataset) costs a
         keyed lookup instead of a full catalog listing on every node execution.
         Anything the index doesn't know - hub, workspace files, live outputs -
-        falls back to the listing below.
+        falls back to the listing below. A listing that fails, logged, leaves
+        those ids out and keeps the ones the index resolved.
 
         A layer group's id (an OSM extract, a GeoPackage of several layers)
         names no file: it resolves to its layers, each id to its own path,
@@ -561,7 +581,15 @@ class CatalogListing:
         if not pending:
             return resolved
 
-        result = self._owner.list_catalog(dataflow_id=dataflow_id, include_hub=True)
+        try:
+            result = self._owner.list_catalog(dataflow_id=dataflow_id, include_hub=True)
+        except Exception:  # noqa: BLE001 - what the index resolved still runs
+            logger.warning(
+                "Could not list the Data Catalog of dataflow %s to resolve datasets %s; "
+                "the run gets the %d the dataset index resolved",
+                dataflow_id, pending, len(resolved), exc_info=True,
+            )
+            return resolved
         items = [item for item in result["items"] if item.get("id")]
         by_id = {item["id"]: item for item in items}
 
