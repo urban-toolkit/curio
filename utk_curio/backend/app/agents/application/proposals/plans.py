@@ -1,13 +1,14 @@
-"""Dataflow plans: minting, fan-in validation, goal edits, per-node and per-edge apply, node-agent attachment, and layout.
+"""Dataflow plans: minting, fan-in validation, landing whole and its Undo, node-agent attachment, and layout.
 
 Application layer of the agents package (memo dev/142, B2; re-derived on enh/agent-catalog): cut from
-``services.py`` by responsibility; every function keeps its name and body. Sibling modules are reached
+``services.py`` by responsibility. Sibling modules are reached
 module-qualified (``agents_<module>.name``) so a test that patches the owner is seen by every caller,
 and import order between siblings cannot matter.
 """
 
 from __future__ import annotations
 
+import copy
 import logging
 import hashlib
 import re as _re
@@ -26,9 +27,11 @@ from utk_curio.backend.app.agents.repositories import project_agents
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.execution.workflow_spec import slot_handle_id
+from utk_curio.backend.app.agents.application.proposals import changes as agents_changes
 from utk_curio.backend.app.agents.application.proposals import plan_scenarios
-from utk_curio.backend.app.agents.application.proposals import store as agents_store
 from utk_curio.backend.app.collaboration import dataflow_docs
+from utk_curio.backend.app.collaboration import doc_mapping
+from utk_curio.backend.app.collaboration import history
 from utk_curio.backend.app.agents.domain import agent_text
 
 log = logging.getLogger(__name__)
@@ -367,39 +370,181 @@ def _mint_dataflow_plan(
         return "refused", refusal, None
     cascade_edge_ids = _plan_cascade_edge_ids(existing_edges, remove_node_set, remove_edges)
     positions = _plan_positions(plan, existing_nodes)
-    digest, pins = _plan_pins(spec, plan, existing_nodes)
-    proposal_id = uuid.uuid4().hex
-    n_edges = len(plan["edges"])
+    _digest, pins = _plan_pins(spec, plan, existing_nodes)
+    plan_id = uuid.uuid4().hex
     summary = _plan_summary(plan)
-    part = _plan_review_part(proposal_id, plan, existing_nodes, existing_edges, pins, summary, cascade_edge_ids)
-    _enter_plan_review(spec, loop_ctx, proposal_id, plan)
-    agents_store._store_proposal(
-        user_key,
-        project_id,
-        spec,
-        loop_ctx,
-        {
-            "proposalId": proposal_id,
-            "tool": "dataflow.plan.write",
-            "plan": plan,
-            "baseGraphDigest": digest,
-            # dev/67-5: per-node application state + the mint-time layout.
-            "positions": positions,
-            "editedGoals": {},
-            "appliedRefs": [],
-            "appliedNodeIds": {},
-            # DEC-049.1: the apply re-checks each victim against this mirror.
-            **(
-                {"removeContentSha256": pins["removeContentSha256"]}
-                if "removeContentSha256" in pins
-                else {}
-            ),
-            "summary": summary,
-            "status": "pending",
-        },
-        part,
+    part = _plan_review_part(plan_id, plan, existing_nodes, existing_edges, pins, summary, cascade_edge_ids)
+    landing = {
+        "proposalId": plan_id,
+        "tool": "dataflow.plan.write",
+        "plan": plan,
+        # The mint-time layout of the plan's nodes.
+        "positions": positions,
+        # DEC-049.1: each node it removes, held to the code the mint read.
+        **({"removeContentSha256": pins["removeContentSha256"]} if "removeContentSha256" in pins else {}),
+        "summary": summary,
+    }
+    return agents_changes.land(user_key, project_id, loop_ctx, spec, landing, part)
+
+
+def _victims_changed(user_key: str, project_id: str, plan: dict, landing: dict) -> str | None:
+    """Why the plan cannot land when a node it removes holds other code than
+    the mint read (DEC-049.1), as after waiting for a person in it; None when
+    each holds what it did."""
+    if not plan.get("removeNodes"):
+        return None
+    pins = landing.get("removeContentSha256") or {}
+    fresh = dataflow_docs.live(user_key, project_id) or {}
+    nodes = {n.get("id"): n for n in (fresh.get("dataflow") or {}).get("nodes") or [] if isinstance(n, dict)}
+    for node_id in plan["removeNodes"]:
+        victim = nodes.get(node_id)
+        digest = hashlib.sha256(((victim or {}).get("content") or "").encode("utf-8")).hexdigest()
+        if victim is None or digest != pins.get(node_id):
+            label = ((victim or {}).get("goal") or node_id)[:60]
+            return agent_text.message("change.plan-victim-changed", label=label)
+    return None
+
+
+def _land_dataflow_plan(user_key: str, project_id: str, loop_ctx: dict, spec: dict, landing: dict, part: dict):
+    """A dataflow plan, landed whole and at once (dev/52, dev/59), as the
+    agent's change: its removals and the connections they cascade to, its
+    nodes (at the mint-time layout, each with its template's starter or no
+    code, and its agents, dev/126), its connections and its scenarios, in ONE
+    write, so one transaction of the doc. Unlisted nodes keep their ids,
+    places and code by construction. The planner's session then holds the
+    plan, whose nodes Build & validate and Solve fill."""
+    attachment_id = loop_ctx.get("attachment_id")
+    plan = landing["plan"]
+    plan_id = landing["proposalId"]
+    refusal = _victims_changed(user_key, project_id, plan, landing)
+    if refusal:
+        return "refused", refusal, None
+    dataflow = spec.setdefault("dataflow", {})
+    nodes = dataflow.setdefault("nodes", [])
+    edges = dataflow.setdefault("edges", [])
+    spec_nodes_by_id = {n.get("id"): n for n in nodes if isinstance(n, dict)}
+    remove_node_set = set(plan.get("removeNodes", []))
+    planner = attachments.get_attachment(spec, attachment_id) or {}
+    session_before = copy.deepcopy(planner.get("builderSession") or {})
+    removed_edge_ids, pruned = _remove_plan_victims(spec, nodes, edges, remove_node_set, plan.get("removeEdges", []))
+    starters = _content_starters(user_key, project_id, plan.get("nodes", []))
+    declared = _declared_widgets(user_key, project_id, plan.get("nodes", []))
+    plan_agents = _plan_node_agents(user_key, spec, agents_spec_reads._definition(user_key, planner.get("coord", "")))
+    created_nodes, attached_results, ref_to_id = _create_plan_nodes(
+        user_key, spec, nodes, plan, landing, starters,
+        agents=plan_agents, templates=_roster_templates(user_key, project_id), declared=declared,
     )
-    return "proposed", "", part
+    created_edges = _create_plan_edges(
+        user_key, project_id, plan_id, spec, landing, loop_ctx.get("session_id"), plan, nodes, edges, ref_to_id,
+        spec_nodes_by_id,
+    )
+    created_scenarios = plan_scenarios.apply_scenarios(spec, landing, ref_to_id, final=True)
+    record, node_runs = _plan_apply_session(
+        spec, attachment_id, plan_id, created_nodes, remove_node_set, ref_to_id, starters,
+    )
+    if record is not None:
+        # Build & validate and the rows' Solve and Run work on this plan.
+        record["builderSession"]["planProposalId"] = plan_id
+        record["planProposal"] = {**landing, "status": "applied", "appliedNodeIds": dict(ref_to_id)}
+    change = agents_changes.new_change(
+        "dataflow.plan.write", landing["summary"], planId=plan_id,
+        nodeIds=[n["id"] for n in created_nodes], edgeIds=[str(e["id"]) for e in created_edges],
+        removedNodeIds=sorted(remove_node_set), removedEdgeIds=sorted(removed_edge_ids),
+        scenarioIds=[s.get("id") for s in created_scenarios if isinstance(s, dict) and s.get("id")],
+        session=session_before,
+    )
+    agents_changes.keep(spec, attachment_id, change)
+    dataflow_docs.write(user_key, project_id, spec, agents_changes.actor(user_key, spec, loop_ctx, "plan"),
+                        point={"kind": history.AGENT, "what": "", "change": change["changeId"]})
+    sessions.delete_sessions_of(user_key, project_id, pruned)
+    agents_changes.landed(loop_ctx, change, {
+        "kind": "graph-created", "planId": plan_id, "nodes": created_nodes, "edges": created_edges,
+        "removedNodeIds": sorted(remove_node_set), "removedEdgeIds": sorted(removed_edge_ids),
+        **({"scenarios": created_scenarios} if created_scenarios else {}),
+    })
+    text, lines = _plan_landed_lines(spec, created_nodes, created_edges, remove_node_set, removed_edge_ids,
+                                     node_runs, attached_results, created_scenarios)
+    return (agents_changes.LANDED, agent_text.message("change.plan-landed", result=text),
+            agents_changes.card(part, change, lines))
+
+
+def _normal(value):
+    """*value*, each number a float: two reads of one dataflow are compared
+    whatever form each gives a number."""
+    if isinstance(value, bool) or value is None:
+        return value
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, dict):
+        return {key: _normal(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_normal(item) for item in value]
+    return value
+
+
+def _outside_the_plan(dataflow: dict, change: dict) -> dict:
+    """What the doc holds of *dataflow* but the plan's own: its nodes, the
+    connections it drew or that touch its nodes, its scenarios."""
+    own = set(change.get("nodeIds") or [])
+    own_edges = set(change.get("edgeIds") or [])
+    own_scenarios = set(change.get("scenarioIds") or [])
+    flow = doc_mapping.owned(dataflow)
+    out = {key: value for key, value in flow.items() if key not in ("nodes", "edges", "scenarios")}
+    out["nodes"] = {n.get("id"): n for n in flow.get("nodes") or [] if isinstance(n, dict) and n.get("id") not in own}
+    out["edges"] = {
+        str(e.get("id")): e for e in flow.get("edges") or []
+        if isinstance(e, dict) and str(e.get("id")) not in own_edges
+        and e.get("source") not in own and e.get("target") not in own
+    }
+    out["scenarios"] = [s for s in flow.get("scenarios") or [] if not (isinstance(s, dict) and s.get("id") in own_scenarios)]
+    return _normal(out)
+
+
+def _undo_plan(user_key: str, project_id: str, attachment_id: str, change: dict, by: dict) -> list[dict]:
+    """Undo a plan an agent landed: put back the version the dataflow had
+    before it (``history.put_back``), for every tab, so what it removed comes
+    back with its connections and what it added goes. Refused, with nothing
+    changed, unless the dataflow outside the plan's own nodes is still what
+    the plan left: a put-back would erase what a person did after. The
+    planner's session goes back to what it was."""
+    from utk_curio.backend.app.projects import storage as projects_storage
+
+    with projects_storage.spec_write_lock(user_key, project_id):
+        points = history.points(user_key, project_id)
+        index = next((i for i, p in enumerate(points) if p.get("change") == change["changeId"]), None)
+        if index is None or not points[index].get("parent"):
+            raise AgentServiceError("This plan is not in the dataflow's history; nothing was undone.", 409)
+        then = history.dataflow_at(user_key, project_id, points[index]["id"])
+        before = history.dataflow_at(user_key, project_id, points[index]["parent"])
+        now = dataflow_docs.live(user_key, project_id)
+        if then is None or before is None or now is None:
+            raise AgentServiceError("This plan's version can no longer be rebuilt; nothing was undone.", 409)
+        if _outside_the_plan(then, change) != _outside_the_plan(now.get("dataflow") or {}, change):
+            later = next((p.get("by") for p in points[index + 1:] if (p.get("by") or {}).get("name")), None)
+            name = (later or {}).get("name") or "Someone"
+            raise AgentServiceError(f"{name} changed this dataflow after; nothing was undone.", 409)
+        try:
+            history.put_back(user_key, project_id, points[index]["parent"], by)
+        except history.HistoryError as exc:
+            raise AgentServiceError(str(exc), exc.status) from exc
+    spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
+    record = attachments.get_attachment(spec, attachment_id)
+    if record is not None:
+        record["builderSession"] = copy.deepcopy(change.get("session") or {})
+        if (record.get("planProposal") or {}).get("proposalId") == change.get("planId"):
+            record.pop("planProposal", None)
+    pruned = attachments.prune_orphaned_attachments(spec)
+    dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._person(user_key, "undo"))
+    sessions.delete_sessions_of(user_key, project_id, pruned)
+    removed = set(change.get("removedNodeIds") or [])
+    removed_edges = set(change.get("removedEdgeIds") or [])
+    return [{
+        "kind": "graph-created", "planId": f"undo:{change['changeId']}",
+        "nodes": [n for n in before.get("nodes") or [] if isinstance(n, dict) and n.get("id") in removed],
+        "edges": [e for e in before.get("edges") or [] if isinstance(e, dict) and str(e.get("id")) in removed_edges],
+        "removedNodeIds": list(change.get("nodeIds") or []),
+        "removedEdgeIds": list(change.get("edgeIds") or []),
+    }]
 
 
 def _plan_revision_errors(plan: dict, existing_nodes: dict, existing_edges: list) -> list[str]:
@@ -646,61 +791,6 @@ def _plan_review_part(proposal_id: str, plan: dict, existing_nodes: dict, existi
     return part
 
 
-def _enter_plan_review(spec: dict, loop_ctx: dict, proposal_id: str, plan: dict) -> None:
-    """The builder session (DR-2) transitions on the SAME spec write: the attachment record is rule-9
-    share-stripped and save-preserved already."""
-    record = attachments.get_attachment(spec, loop_ctx["attachment_id"])
-    if record is not None:
-        session = record.setdefault("builderSession", {})
-        session["phase"] = "plan_review"
-        session["planProposalId"] = proposal_id
-        # dev/67-5: the per-node Simulation Mode ledger — reset per plan.
-        session["nodeStates"] = {n["ref"]: "planned" for n in plan["nodes"]}
-        session["nodeIds"] = {}
-
-
-
-# dev/67-5: review-stage goal edits are bounded like plan intents.
-_PLAN_GOAL_EDIT_MAX_CHARS = 300
-
-
-def set_plan_goal(
-    user_key: str,
-    project_id: str,
-    attachment_id: str,
-    proposal_id: str,
-    ref: str,
-    goal: str,
-) -> dict:
-    """dev/67-5: review-stage goal editing — an audited overlay applied at
-    creation. The PINNED plan bytes stay immutable (the digest model
-    survives); the overlay lives on the proposal and rides the mirror so it
-    survives reloads. Pending proposals only."""
-    spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
-    agents_spec_reads._record_or_404(spec, attachment_id)
-    proposal = agents_store._pending_plan_proposal(spec, attachment_id, proposal_id)
-    refs = {n["ref"] for n in (proposal.get("plan") or {}).get("nodes", [])}
-    if ref not in refs:
-        raise AgentServiceError(f"ref {ref!r} is not a node in this plan", 404)
-    if not isinstance(goal, str) or not goal.strip():
-        raise AgentServiceError("goal must be a non-empty string", 422)
-    goal = goal.strip()
-    if len(goal) > _PLAN_GOAL_EDIT_MAX_CHARS:
-        raise AgentServiceError(
-            f"goal exceeds {_PLAN_GOAL_EDIT_MAX_CHARS} characters", 422
-        )
-    edited = proposal.setdefault("editedGoals", {})
-    edited[ref] = goal
-    dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._person(user_key, "plan"))
-    return {
-        "attachmentId": attachment_id,
-        "proposalId": proposal_id,
-        "ref": ref,
-        "goal": goal,
-        "editedGoals": dict(edited),
-    }
-
-
 def _attach_node_agent(
     user_key: str | None, spec: dict, agent_id: str, node_id: str, node_type: object,
     *, templates: dict | None = None,
@@ -877,220 +967,6 @@ def _attach_node_builder(spec: dict, node_id: str, *, user_key: str | None = Non
     return row.get("attachmentId")
 
 
-def apply_plan_node(
-    user_key: str, project_id: str, attachment_id: str, proposal_id: str, ref: str
-) -> dict:
-    """dev/67-5: apply ONE planned node — the per-node narrowing of the plan
-    apply (Simulation Mode: create). Edges are the connection stage's concern
-    (67-8); the proposal STAYS pending until every ref is applied or it is
-    dismissed. A pure node ADD is drift-safe, so the whole-graph digest is not
-    re-checked here — the ref's slice of the apply contract is: proposal
-    pending (a stale/dismissed one refuses at the status gate) + the template
-    still available. Creation uses the mint-time position and the (possibly
-    edited) goal; the created node joins ``nodeRuns`` as ``pending`` so Solve
-    and the 67-6/67-7 stages pick it up. The apply that completes the plan
-    removes what the plan removes, checked first as Apply plan checks it
-    (``_check_plan_completion``), and its result ends with the Topology
-    verdict (``_complete_plan_if_done``, ``_log_plan_completed``)."""
-    from utk_curio.backend.app.packages import service as packages_services
-
-    spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
-    record = agents_spec_reads._record_or_404(spec, attachment_id)
-    proposal = agents_store._pending_plan_proposal(spec, attachment_id, proposal_id)
-    plan = proposal.get("plan") or {}
-    plan_node = next((n for n in plan.get("nodes", []) if n["ref"] == ref), None)
-    if plan_node is None:
-        raise AgentServiceError(f"ref {ref!r} is not a node in this plan", 404)
-    applied_refs = proposal.setdefault("appliedRefs", [])
-    applied_ids = proposal.setdefault("appliedNodeIds", {})
-    session_id = record.get("sessionId")
-    if ref in applied_refs:
-        return _already_applied(attachment_id, proposal_id, ref, applied_ids.get(ref), applied_refs, record)
-    try:
-        available = {t["id"] for t in packages_services.available_templates(user_key, project_id)}
-    except Exception as exc:
-        raise agents_store._mark_stale(
-            user_key, project_id, proposal_id, spec, proposal, session_id,
-            f"the node template registry is unavailable: {exc}",
-        ) from exc
-    # dev/93 D3: canonicalise the COMPARISON, never the stored value — a
-    # proposal minted before the parse-boundary change may hold a raw
-    # versioned string whose shape digest was computed over exactly that
-    # string, so rewriting it here would mark an in-flight proposal stale.
-    if packages_services.canonical_template_id(plan_node["nodeType"]) not in available:
-        raise agents_store._mark_stale(
-            user_key, project_id, proposal_id, spec, proposal, session_id,
-            f"node type {plan_node['nodeType']!r} is no longer available — "
-            "ask the agent to replan",
-        )
-    blocked = plan_scenarios.copy_blocker(plan, plan_node, applied_ids)
-    if blocked:
-        raise AgentServiceError(blocked, 409)
-    # The last row of a plan that removes: checked as Apply plan checks one,
-    # before this row writes anything.
-    _check_plan_completion(
-        user_key, project_id, proposal_id, spec, proposal, session_id, plan, {*applied_refs, ref},
-    )
-    dataflow = spec.setdefault("dataflow", {})
-    starters = _content_starters(user_key, project_id, [plan_node])
-    declared = _declared_widgets(user_key, project_id, [plan_node]).get(ref)
-    created = _created_plan_node(proposal, plan_node, ref, dataflow.setdefault("nodes", []), starters.get(ref), declared)
-    node_id = created["id"]
-    dataflow["nodes"].append(created)
-    applied_refs.append(ref)
-    applied_ids[ref] = node_id
-    # dev/71: attach the node's content agent to the created node (best-effort,
-    # idempotent: creation never fails over it); it operates as the node's
-    # creation/content orchestration agent (67-6 modify-existing posture).
-    # dev/126: and the dataset agent when the node's template loads a dataset,
-    # through the helper the whole-plan apply uses, so the two paths cannot
-    # produce different graphs from the same plan.
-    attached = _attach_plan_node_agents(
-        user_key, spec, node_id, plan_node["nodeType"],
-        parent=agents_spec_reads._definition(user_key, record.get("coord", "")),
-        templates=_roster_templates(user_key, project_id),
-    )
-    attached_agent_id = attached["byCapability"].get("node.content.generate")
-    # dev/71: PROGRESSIVE CONNECTION — apply every plan edge whose other
-    # endpoint already exists (created refs or existing canvas nodes), through
-    # the 67-8 per-edge policy. The graph grows connected, not as islands;
-    # topology refusals are recorded per edge and never block the node.
-    ctx = _plan_edge_context(user_key, project_id, spec, proposal)
-    edge_results: dict = {}
-    created_edges: list[dict] = []
-    for index in range(len(ctx["plan_edges"])):
-        if ctx["edge_states"].get(str(index)) == "applied":
-            continue
-        result_row, created_edge = _apply_one_plan_edge(ctx, index, record_missing=False)
-        if result_row is not None:
-            edge_results[str(index)] = result_row
-        if created_edge is not None:
-            created_edges.append(created_edge)
-    # #662: a scenario is saved once the last of its nodes exists, as an edge
-    # is connected once both of its ends do.
-    created_scenarios = plan_scenarios.apply_scenarios(spec, proposal, applied_ids, final=False)
-    # Re-pin the shape digest to the spec THIS apply produced: the plan's own
-    # per-node progress is legitimate drift for a later whole-plan apply;
-    # foreign edits between applies still 409 + stale.
-    proposal["baseGraphDigest"] = agents_spec_reads._graph_shape_digest(spec)
-    session = record.setdefault("builderSession", {})
-    session["phase"] = "simulating"
-    session["appliedPlanId"] = proposal_id
-    session.setdefault("nodeStates", {})[ref] = _created_state(ref, starters)
-    session.setdefault("nodeIds", {})[ref] = node_id
-    runs = session.setdefault("nodeRuns", {})
-    if _awaits_solve(created):
-        runs[node_id] = "pending"
-    session["edgeStates"] = dict(ctx["edge_states"])
-    # The last apply may complete the STRUCTURE (all refs + edges applied),
-    # and then removes what the plan removes; content keeps its own lifecycle
-    # (dev/71).
-    removals, pruned = _complete_plan_if_done(spec, proposal, session)
-    dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._agent_actor(user_key, spec, attachment_id, "plan"))
-    sessions.delete_sessions_of(user_key, project_id, pruned)
-    if isinstance(session_id, str):
-        _log_plan_node_applied(user_key, project_id, session_id, attachment_id, proposal_id,
-                               plan, plan_node, node_id, applied_refs, attached)
-        if removals is not None:
-            _log_plan_completed(user_key, project_id, session_id, attachment_id, proposal_id,
-                                spec, proposal, session, removals)
-    return {
-        "attachmentId": attachment_id,
-        "proposalId": proposal_id,
-        "status": proposal.get("status", "pending"),
-        "ref": ref,
-        # The bridge's node-created payload shape (dev/48 §3.3).
-        "createdNode": dict(created),
-        "appliedRefs": list(applied_refs),
-        # dev/71: the progressive sweep's outcomes + the bridge payload.
-        "createdEdges": created_edges,
-        "edgeResults": edge_results,
-        "edgeStates": dict(ctx["edge_states"]),
-        # #662: the scenarios this node completed, for the live canvas.
-        **({"createdScenarios": created_scenarios} if created_scenarios else {}),
-        **({"scenarioStates": dict(proposal["scenarioStates"])} if proposal.get("scenarioStates") else {}),
-        "attachedAgentId": attached_agent_id,
-        # dev/126: every agent this apply gave the node, and anything it could
-        # not — the apply SAYS what it attached instead of dropping it.
-        "attachedAgents": attached["attached"],
-        "skippedAgents": attached["skipped"],
-        "builderSession": session,
-        # What left the dataflow when this apply completed the plan, for the
-        # live canvas.
-        **(removals or {}),
-    }
-
-
-def _already_applied(attachment_id: str, proposal_id: str, ref: str, node_id: str | None,
-                     applied_refs: list, record: dict) -> dict:
-    """What applying a ref again answers. Idempotent: the node exists; say so honestly, change
-    nothing."""
-    return {
-        "attachmentId": attachment_id,
-        "proposalId": proposal_id,
-        "status": "already-applied",
-        "ref": ref,
-        "nodeId": node_id,
-        "appliedRefs": list(applied_refs),
-        "builderSession": record.get("builderSession"),
-    }
-
-
-def _created_plan_node(proposal: dict, plan_node: dict, ref: str, nodes: list,
-                       starter: dict | None = None, declared: list | None = None) -> dict:
-    """The canvas node one plan ref becomes: the mint-time position and the (possibly edited) goal,
-    and #662's widgets, its template's declared ones (*declared*) among them, and lineage
-    (``plan_scenarios.created_node_metadata``, as the whole-plan apply writes them). Empty, for
-    Solve to write, unless its template's starter is its whole content (*starter*), which it
-    starts with."""
-    pos = (proposal.get("positions") or {}).get(ref) or {}
-    goal_text = (proposal.get("editedGoals") or {}).get(ref) or (
-        f"{plan_node['title']} — {plan_node['intent']}"
-    )
-    created = {
-        "id": str(uuid.uuid4()),
-        "type": plan_node["nodeType"],
-        "content": starter["content"] if starter else "",
-        "goal": goal_text,
-        "x": float(pos.get("x", 80.0)),
-        "y": float(pos.get("y", 80.0)),
-    }
-    metadata = plan_scenarios.created_node_metadata(
-        plan_node, proposal.get("appliedNodeIds") or {}, nodes, starter, declared,
-    )
-    if metadata:
-        created["metadata"] = metadata
-    return created
-
-
-def _log_plan_node_applied(user_key, project_id, session_id, attachment_id, proposal_id,
-                           plan: dict, plan_node: dict, node_id: str, applied_refs: list, attached: dict) -> None:
-    """A result card WITHOUT flipping the proposal part: it stays pending for the remaining refs
-    (unlike ``_log_applied_turn``'s applied flip)."""
-    sessions.append_turns(
-        user_key, project_id, session_id, attachment_id,
-        [
-            sessions.make_turn(
-                "agent",
-                f"Applied: created node {plan_node['title']!r} from the plan "
-                f"({len(applied_refs)} of {len(plan.get('nodes', []))}).",
-                content=[{
-                    "type": "card",
-                    "kind": "result",
-                    "title": "Applied: plan node created",
-                    "lines": [
-                        f"{plan_node['title']} · {plan_node['nodeType']}",
-                        f"node {node_id[:8]}",
-                        f"{len(applied_refs)} of {len(plan.get('nodes', []))} plan nodes created",
-                        *_attached_agent_lines(attached),
-                        f"proposal {proposal_id[:8]}",
-                    ],
-                }],
-            )
-        ],
-    )
-
-
 def _plan_endpoint_label(endpoint: str, plan: dict, existing_nodes: dict) -> str:
     """A human label for one plan-edge endpoint: the plan node's title, or the
     existing node's goal (id as the last resort). #662: a planned node in a
@@ -1101,63 +977,6 @@ def _plan_endpoint_label(endpoint: str, plan: dict, existing_nodes: dict) -> str
             return node["title"][:60] + (f" ({scenario})" if scenario else "")
     existing = existing_nodes.get(endpoint) or {}
     return str(existing.get("goal") or endpoint)[:60]
-
-
-def _plan_edge_context(
-    user_key: str, project_id: str, spec: dict, proposal: dict
-) -> dict:
-    """Shared lookups + mutable state for per-edge application (dev/71 —
-    ONE validation policy for the connect stage and the progressive sweep)."""
-    from utk_curio.backend.app.packages import service as packages_services
-
-    plan = proposal.get("plan") or {}
-    dataflow = spec.setdefault("dataflow", {})
-    nodes = dataflow.setdefault("nodes", [])
-    edges = dataflow.setdefault("edges", [])
-    try:
-        available = {
-            t["id"]: t
-            for t in packages_services.available_templates(user_key, project_id)
-        }
-    except Exception:
-        available = {}  # arity metadata unavailable: fan-in fails open
-    types_by_id = {
-        n.get("id"): _strip_type_version(str(n.get("type") or ""))
-        for n in nodes
-        if isinstance(n, dict)
-    }
-    # The edges the plan removes, its own and those of the nodes it removes:
-    # they leave when the plan completes, so its edges are checked against
-    # the dataflow the plan leaves, as its mint checked them. A feed that
-    # replaces a removed one takes its circle, and is not refused for it.
-    doomed = plan_topology.removal_cascade(
-        edges, set(plan.get("removeNodes", [])), set(plan.get("removeEdges", [])),
-    )
-    circles_taken: dict[str, set[str]] = {}
-    incoming_count: dict[str, int] = {}
-    for e in edges:
-        if not isinstance(e, dict) or str(e.get("id")) in doomed:
-            continue
-        target = e.get("target")
-        if str(e.get("type") or "") == "Interaction":
-            continue
-        incoming_count[target] = incoming_count.get(target, 0) + 1
-        if _takes_circles(available.get(types_by_id.get(target))):
-            circles_taken.setdefault(target, set()).add(e.get("targetHandle") or "in")
-    return {
-        "plan": plan,
-        "plan_edges": plan.get("edges", []),
-        "plan_refs": {n["ref"] for n in plan.get("nodes", [])},
-        "edge_states": proposal.setdefault("edgeStates", {}),
-        "applied_ids": proposal.get("appliedNodeIds") or {},
-        "nodes_by_id": {n.get("id"): n for n in nodes if isinstance(n, dict)},
-        "edges": edges,
-        "doomed": doomed,
-        "available": available,
-        "types_by_id": types_by_id,
-        "circles_taken": circles_taken,
-        "incoming_count": incoming_count,
-    }
 
 
 def _existing_plan_edge(edges: list, plan_edges: list, index: int, source: str, target: str,
@@ -1190,290 +1009,6 @@ def _existing_plan_edge(edges: list, plan_edges: list, index: int, source: str, 
         if interaction or (circle == named if named else circle not in taken):
             return e
     return None
-
-
-def _apply_one_plan_edge(ctx: dict, index: int, *, record_missing: bool = True):
-    """Apply ONE plan edge against the CURRENT spec (the 67-8 policy: endpoint
-    resolution, already-connected no-op, DEC-051 fan-in, input circles).
-    Returns ``(result_row | None, created_edge | None)`` — ``None`` result when
-    an endpoint is missing and ``record_missing`` is False (the progressive
-    sweep skips not-yet-created endpoints silently; the explicit connect
-    stage names them)."""
-    plan = ctx["plan"]
-    plan_edge = ctx["plan_edges"][index]
-    edge_states = ctx["edge_states"]
-    nodes_by_id = ctx["nodes_by_id"]
-    key = str(index)
-    row = {
-        "from": plan_edge["from"],
-        "to": plan_edge["to"],
-        "fromLabel": _plan_endpoint_label(plan_edge["from"], plan, nodes_by_id),
-        "toLabel": _plan_endpoint_label(plan_edge["to"], plan, nodes_by_id),
-    }
-    if edge_states.get(key) == "applied":
-        return {**row, "status": "already-applied"}, None
-
-    def _resolve_endpoint(endpoint: str):
-        if endpoint in ctx["plan_refs"]:
-            node_id = ctx["applied_ids"].get(endpoint)
-            if not node_id:
-                title = _plan_endpoint_label(endpoint, plan, nodes_by_id)
-                return None, f"create {title!r} first"
-            if node_id not in nodes_by_id:
-                return None, f"node {node_id!r} was deleted from the canvas"
-            return node_id, None
-        if endpoint in nodes_by_id:
-            return endpoint, None
-        return None, f"node {endpoint!r} is no longer in the dataflow"
-
-    source, source_err = _resolve_endpoint(plan_edge["from"])
-    target, target_err = _resolve_endpoint(plan_edge["to"])
-    if source_err or target_err:
-        if not record_missing:
-            return None, None  # progressive sweep: endpoint not created yet
-        reason = source_err or target_err
-        edge_states[key] = "refused"
-        return {**row, "status": "refused", "reason": reason}, None
-    wants_interaction = plan_topology.is_interaction_edge(plan_edge)
-    doomed = ctx["doomed"]
-    already = _existing_plan_edge(ctx["edges"], ctx["plan_edges"], index, source, target, doomed)
-    if already is not None:
-        edge_states[key] = "applied"
-        return {
-            **row, "status": "applied", "edgeId": already.get("id"),
-            "note": "already connected",
-        }, None
-    if wants_interaction:
-        # dev/112: feedback edge: no input port, no input circle, no cycle
-        # question (interaction edges never carry data flow).
-        edge = _interaction_spec_edge(source, target)
-        ctx["edges"].append(edge)
-        edge_states[key] = "applied"
-        return {**row, "status": "applied", "edgeId": edge["id"], "kind": "interaction"}, edge
-    # dev/112: a data edge that would close a cycle in the CURRENT graph is
-    # refused per edge, named — the same predicate the mint applies.
-    current_pairs = [
-        (str(e.get("source")), str(e.get("target")))
-        for e in ctx["edges"]
-        if isinstance(e, dict) and not plan_topology.is_interaction_edge(e) and str(e.get("id")) not in doomed
-    ]
-    closing = plan_topology.closing_plan_edges(current_pairs, {"edges": [{"from": source, "to": target}]})
-    if closing:
-        _, _, path = closing[0]
-        labels = {nid: (n.get("goal") or nid) for nid, n in nodes_by_id.items()}
-        edge_states[key] = "refused"
-        return {
-            **row, "status": "refused",
-            "reason": "closes a cycle: " + plan_topology.format_cycle(path, lambda x: labels.get(x, x)),
-        }, None
-    # Fan-in against the CURRENT spec (DEC-051 capacity).
-    target_type = ctx["types_by_id"].get(target, "")
-    entry = ctx["available"].get(target_type)
-    max_in = entry.get("maxIncomingEdges") if entry else None
-    incoming = ctx["incoming_count"]
-    if max_in is not None and incoming.get(target, 0) + 1 > max_in:
-        reason = (
-            f"{row['toLabel']!r} accepts "
-            + ("no inputs" if max_in == 0 else f"at most {max_in} input{'s' if max_in != 1 else ''}")
-            + f" and already has {incoming.get(target, 0)}"
-        )
-        edge_states[key] = "refused"
-        return {**row, "status": "refused", "reason": reason}, None
-    target_handle = plan_edge.get("toHandle") or "in"
-    if _takes_circles(entry):
-        taken = ctx["circles_taken"].setdefault(target, set())
-        target_handle = _free_circle(taken, plan_edge.get("toHandle"))
-        taken.add(target_handle)
-    edge = {
-        "id": str(uuid.uuid4()),
-        "source": source,
-        "target": target,
-        "sourceHandle": "out",
-        "targetHandle": target_handle,
-    }
-    ctx["edges"].append(edge)
-    incoming[target] = incoming.get(target, 0) + 1
-    edge_states[key] = "applied"
-    return {
-        **row, "status": "applied", "edgeId": edge["id"],
-        "targetHandle": target_handle,
-    }, edge
-
-
-def _plan_structure_done(proposal: dict) -> bool:
-    """Whether every ref, every edge and every scenario of the plan exists: the
-    reviewed STRUCTURE is materialized (content has its own lifecycle). A plan
-    with no nodes is done once its connections are."""
-    plan = proposal.get("plan") or {}
-    plan_refs = {n["ref"] for n in plan.get("nodes", [])}
-    edge_states = proposal.get("edgeStates") or {}
-    return (
-        plan_refs == set(proposal.get("appliedRefs") or [])
-        and all(edge_states.get(str(i)) == "applied" for i in range(len(plan.get("edges", []))))
-        # #662: and every scenario the plan saves.
-        and plan_scenarios.all_saved(proposal)
-    )
-
-
-def _plan_removes(plan: dict) -> bool:
-    return bool(plan.get("removeNodes") or plan.get("removeEdges"))
-
-
-def _check_plan_completion(user_key, project_id, proposal_id, spec: dict, proposal: dict, session_id,
-                           plan: dict, refs_after: set) -> None:
-    """The checks of Apply plan that a plan applied a row at a time keeps, run
-    before the row or Connect all that can complete it writes anything: each
-    victim as it was reviewed, and no cycle closed through edges drawn since.
-    Not the shape digest, which the plan's own rows changed. Only for a plan
-    that removes, and only when *refs_after*, the refs applied once this call
-    lands, are all of the plan's."""
-    if not _plan_removes(plan) or {n["ref"] for n in plan.get("nodes", [])} != refs_after:
-        return
-    _check_plan_victims(user_key, project_id, proposal_id, spec, proposal, session_id, plan)
-    _check_plan_cycles(user_key, project_id, proposal_id, spec, proposal, session_id, plan)
-
-
-def _complete_plan_if_done(spec: dict, proposal: dict, session: dict) -> tuple[dict | None, list]:
-    """The plan proposal completes when its structure is (``_plan_structure_done``),
-    and the call that completes it removes what the plan removes, as Apply plan
-    does (``_remove_plan_victims``): the victims leave the runs, and the
-    session's phase follows what stays. Answers the removed ids, for the live
-    canvas, or None when the plan is not complete yet, and the attachments
-    removed with their nodes, whose transcripts the caller deletes once its
-    write lands. dev/71: the parked plan is KEPT after completion, since the
-    progressive lifecycle (per-row Solve/Run, the driver's validate/approve
-    actions) still reads it; a new plan mint replaces it."""
-    if not _plan_structure_done(proposal):
-        return None, []
-    plan = proposal.get("plan") or {}
-    dataflow = spec.setdefault("dataflow", {})
-    remove_node_set = set(plan.get("removeNodes", []))
-    removed_edge_ids, pruned = _remove_plan_victims(
-        spec, dataflow.setdefault("nodes", []), dataflow.setdefault("edges", []),
-        remove_node_set, plan.get("removeEdges", []),
-    )
-    runs = {
-        node_id: status
-        for node_id, status in (session.get("nodeRuns") or {}).items()
-        if node_id not in remove_node_set
-    }
-    session["nodeRuns"] = runs
-    proposal["status"] = "applied"
-    unresolved = any(s in ("pending", "failed") for s in runs.values())
-    session["phase"] = "applied" if unresolved else "ready"
-    session["appliedPlanId"] = proposal.get("proposalId")
-    return {"removedNodeIds": sorted(remove_node_set), "removedEdgeIds": sorted(removed_edge_ids)}, pruned
-
-
-def _log_plan_completed(user_key, project_id, session_id, attachment_id, proposal_id, spec: dict,
-                        proposal: dict, session: dict, removals: dict) -> None:
-    """The result of a plan whose last row or Connect all completed it: Apply
-    plan's (``_log_plan_applied``), for the whole plan, so it ends with the
-    Topology verdict and marks the card applied."""
-    plan = proposal.get("plan") or {}
-    saved = set((proposal.get("appliedScenarioIds") or {}).values())
-    _log_plan_applied(
-        user_key, project_id, session_id, attachment_id, proposal_id, spec,
-        list((proposal.get("appliedNodeIds") or {}).values()), plan.get("edges", []),
-        set(removals["removedNodeIds"]), set(removals["removedEdgeIds"]),
-        session.get("nodeRuns") or {}, [],
-        [s for s in plan_scenarios.existing_scenarios(spec) if s["id"] in saved],
-    )
-
-
-def apply_plan_edges(
-    user_key: str,
-    project_id: str,
-    attachment_id: str,
-    proposal_id: str,
-    indices: list[int] | None = None,
-) -> dict:
-    """Apply plan edges — the connection review stage (memo dev/67-8,
-    Simulation Mode: connect; per-edge core shared with the dev/71
-    progressive sweep).
-
-    All not-yet-applied edges by default, or the given subset (index-stable —
-    the pinned plan's order). Each edge validates against the CURRENT spec at
-    apply time; refusals are PER EDGE and named — partial success is normal
-    and honest. An edge the user already drew manually applies as a no-op.
-    When every ref and every edge is applied, the proposal completes, as with
-    a plan of connections only: the apply that completes it removes what the
-    plan removes, checked first as Apply plan checks it, and its result ends
-    with the Topology verdict."""
-    spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
-    record = agents_spec_reads._record_or_404(spec, attachment_id)
-    proposal = agents_store._pending_plan_proposal(spec, attachment_id, proposal_id)
-    plan = proposal.get("plan") or {}
-    plan_edges = plan.get("edges", [])
-    if indices is not None:
-        bad = [i for i in indices if not isinstance(i, int) or not (0 <= i < len(plan_edges))]
-        if bad:
-            raise AgentServiceError(f"edge indices out of range: {bad}", 422)
-    session_id = record.get("sessionId")
-    # Connections are what is left of a plan whose nodes all exist: checked
-    # as Apply plan checks one that removes, before any of them is written.
-    _check_plan_completion(
-        user_key, project_id, proposal_id, spec, proposal, session_id, plan,
-        set(proposal.get("appliedRefs") or []),
-    )
-    ctx = _plan_edge_context(user_key, project_id, spec, proposal)
-    edge_states = ctx["edge_states"]
-    wanted = indices if indices is not None else [
-        i for i in range(len(plan_edges)) if edge_states.get(str(i)) != "applied"
-    ]
-    results: dict = {}
-    created_edges: list[dict] = []
-    for index in wanted:
-        result_row, created = _apply_one_plan_edge(ctx, index)
-        if result_row is not None:
-            results[str(index)] = result_row
-        if created is not None:
-            created_edges.append(created)
-    # dev/67-5 semantics: the plan's own progress re-pins the shape digest.
-    proposal["baseGraphDigest"] = agents_spec_reads._graph_shape_digest(spec)
-    session = record.setdefault("builderSession", {})
-    session["edgeStates"] = dict(edge_states)
-    removals, pruned = _complete_plan_if_done(spec, proposal, session)
-    dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._agent_actor(user_key, spec, attachment_id, "plan"))
-    sessions.delete_sessions_of(user_key, project_id, pruned)
-    applied_now = sum(1 for r in results.values() if r["status"] == "applied")
-    refused_now = sum(1 for r in results.values() if r["status"] == "refused")
-    if isinstance(session_id, str):
-        if removals is not None:
-            # The result Apply plan writes, for the whole plan.
-            _log_plan_completed(user_key, project_id, session_id, attachment_id, proposal_id,
-                                spec, proposal, session, removals)
-        elif applied_now or refused_now:
-            sessions.append_turns(
-                user_key, project_id, session_id, attachment_id,
-                [sessions.make_turn(
-                    "agent",
-                    f"Applied {applied_now} connection{'s' if applied_now != 1 else ''}"
-                    + (f"; {refused_now} refused — see the card." if refused_now else "."),
-                    content=[{
-                        "type": "card",
-                        "kind": "result",
-                        "title": "Applied: plan connections",
-                        "lines": [
-                            f"{r['fromLabel']} → {r['toLabel']} · {r['status']}"
-                            + (f" — {r['reason']}" if r.get("reason") else "")
-                            for r in list(results.values())[:10]
-                        ],
-                    }],
-                )],
-            )
-    return {
-        "attachmentId": attachment_id,
-        "proposalId": proposal_id,
-        "status": proposal.get("status"),
-        "results": results,
-        "edgeStates": dict(edge_states),
-        # The bridge inserts these into the LIVE canvas (dev/67-8).
-        "createdEdges": created_edges,
-        "builderSession": session,
-        # What left the dataflow when this apply completed the plan.
-        **(removals or {}),
-    }
 
 
 # A node's box as the canvas draws it when the node sets no size of its own
@@ -1528,182 +1063,6 @@ def _plan_depths(nodes: list[dict], edges: list[dict]) -> dict[str, int]:
     for r in refs:
         depth_of(r, frozenset())
     return depths
-
-
-def _apply_dataflow_plan(
-    user_key: str,
-    project_id: str,
-    attachment_id: str,
-    proposal_id: str,
-    spec: dict,
-    proposal: dict,
-    session_id: object,
-) -> dict:
-    """The dev/52 apply, extended by dev/59 revisions: atomically remove the
-    plan's listed victims (+ their edge cascade) and insert the new graph.
-
-    Revision safety both ways: the pinned shape digest (node-id + edge-id
-    sets) catches structural drift, and every removal victim is pinned by its
-    content at mint (DEC-049.1) — editing a doomed node between mint and
-    apply 409s + ``stale`` naming it, so user work never dies to a stale
-    review. Templates re-validated; server-minted ids for every new node; the
-    apply touches ONLY listed elements — unlisted nodes keep their ids,
-    positions, and content by construction."""
-
-    plan = proposal.get("plan") or {}
-    spec_nodes_by_id, remove_nodes = _check_plan_apply_preconditions(
-        user_key, project_id, proposal_id, spec, proposal, session_id, plan,
-    )
-    dataflow = spec.setdefault("dataflow", {})
-    nodes = dataflow.setdefault("nodes", [])
-    edges = dataflow.setdefault("edges", [])
-    remove_node_set = set(remove_nodes)
-    removed_edge_ids, pruned = _remove_plan_victims(spec, nodes, edges, remove_node_set, plan.get("removeEdges", []))
-    starters = _content_starters(user_key, project_id, plan.get("nodes", []))
-    declared = _declared_widgets(user_key, project_id, plan.get("nodes", []))
-    # The agents every created node may carry, resolved once against the
-    # planning agent's own delegations (dev/126).
-    planner = attachments.get_attachment(spec, attachment_id) or {}
-    plan_agents = _plan_node_agents(
-        user_key, spec, agents_spec_reads._definition(user_key, planner.get("coord", "")),
-    )
-    created_nodes, attached_results, ref_to_id = _create_plan_nodes(
-        user_key, spec, nodes, plan, proposal, starters,
-        agents=plan_agents, templates=_roster_templates(user_key, project_id), declared=declared,
-    )
-    created_edges = _create_plan_edges(
-        user_key, project_id, proposal_id, spec, proposal, session_id, plan, nodes, edges, ref_to_id, spec_nodes_by_id,
-    )
-    # #662: the plan's scenarios, checked again against the dataflow's own.
-    created_scenarios = plan_scenarios.apply_scenarios(spec, proposal, ref_to_id, final=True)
-    proposal["status"] = "applied"
-    record, node_runs = _plan_apply_session(
-        spec, attachment_id, proposal_id, created_nodes, remove_node_set, ref_to_id, starters,
-    )
-    dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._agent_actor(user_key, spec, attachment_id, "plan"))
-    sessions.delete_sessions_of(user_key, project_id, pruned)
-    _log_plan_applied(user_key, project_id, session_id, attachment_id, proposal_id, spec,
-                      created_nodes, created_edges, remove_node_set, removed_edge_ids, node_runs, attached_results,
-                      created_scenarios)
-    return {
-        "attachmentId": attachment_id,
-        "proposalId": proposal_id,
-        "status": "applied",
-        "mutationApplied": True,
-        # Consumed by the frontend bridge (dev/52; removals per dev/59).
-        "appliedGraph": {
-            "nodes": created_nodes,
-            "edges": created_edges,
-            "removedNodeIds": sorted(remove_node_set),
-            "removedEdgeIds": sorted(removed_edge_ids),
-            # #662: present only when the plan saved scenarios.
-            **({"scenarios": created_scenarios} if created_scenarios else {}),
-        },
-        # dev/126: as the per-node apply — what each created node was given.
-        "attachedAgents": [row for r in attached_results for row in r["attached"]],
-        "skippedAgents": [row for r in attached_results for row in r["skipped"]],
-        "builderSession": record.get("builderSession") if record else None,
-    }
-
-
-def _check_plan_apply_preconditions(user_key, project_id, proposal_id, spec: dict, proposal: dict, session_id,
-                                    plan: dict) -> tuple[dict, list]:
-    """Everything that must hold BEFORE anything mutates — the pinned shape digest, every removal
-    victim's content pin (DEC-049.1), the templates, and the topology against the CURRENT spec
-    (dev/112, DEC-070: ``_mark_stale`` persists the spec, so a later raise would persist the
-    removals). Answers the spec's nodes by id and the removal list."""
-    from utk_curio.backend.app.packages import service as packages_services
-
-    if agents_spec_reads._graph_shape_digest(spec) != proposal.get("baseGraphDigest"):
-        raise agents_store._mark_stale(
-            user_key, project_id, proposal_id, spec, proposal, session_id,
-            "the canvas changed since this plan was proposed — ask the agent to replan",
-        )
-    spec_nodes_by_id, remove_nodes = _check_plan_victims(
-        user_key, project_id, proposal_id, spec, proposal, session_id, plan,
-    )
-    try:
-        available = {t["id"] for t in packages_services.available_templates(user_key, project_id)}
-    except Exception as exc:
-        raise agents_store._mark_stale(
-            user_key, project_id, proposal_id, spec, proposal, session_id,
-            f"the node template registry is unavailable: {exc}",
-        ) from exc
-    # Canonicalised comparison, stored value untouched — see the per-node
-    # apply above for why (dev/93 D3, in-flight proposals keep their digest).
-    missing = [
-        n["nodeType"] for n in plan.get("nodes", [])
-        if packages_services.canonical_template_id(n["nodeType"]) not in available
-    ]
-    if missing:
-        raise agents_store._mark_stale(
-            user_key, project_id, proposal_id, spec, proposal, session_id,
-            f"plan node type(s) no longer available: {', '.join(sorted(set(missing)))} — "
-            "ask the agent to replan",
-        )
-    _check_plan_cycles(user_key, project_id, proposal_id, spec, proposal, session_id, plan)
-    return spec_nodes_by_id, remove_nodes
-
-
-def _check_plan_victims(user_key, project_id, proposal_id, spec: dict, proposal: dict, session_id,
-                        plan: dict) -> tuple[dict, list]:
-    """DEC-049.1: every removal victim pinned by its content at mint. One
-    edited since, or gone, makes the plan stale (409) before anything mutates.
-    Answers the spec's nodes by id and the removal list."""
-    remove_nodes = plan.get("removeNodes", [])
-    victim_pins = proposal.get("removeContentSha256") or {}
-    spec_nodes_by_id = {
-        n.get("id"): n
-        for n in (spec.get("dataflow") or {}).get("nodes") or []
-        if isinstance(n, dict)
-    }
-    for node_id in remove_nodes:
-        victim = spec_nodes_by_id.get(node_id)
-        current = hashlib.sha256(
-            ((victim or {}).get("content") or "").encode("utf-8")
-        ).hexdigest()
-        if victim is None or current != victim_pins.get(node_id):
-            label = ((victim or {}).get("goal") or node_id)[:60]
-            raise agents_store._mark_stale(
-                user_key, project_id, proposal_id, spec, proposal, session_id,
-                f"the node you were about to remove changed ({label}): "
-                "ask the agent to replan",
-            )
-    return spec_nodes_by_id, remove_nodes
-
-
-def _check_plan_cycles(user_key, project_id, proposal_id, spec: dict, proposal: dict, session_id,
-                       plan: dict) -> None:
-    """dev/112 (DEC-070): the plan's data edges against the CURRENT spec, net
-    of its removals, with the refs applied so far at their nodes. One that
-    would close a cycle through edges drawn since the review makes the plan
-    stale (409) before anything mutates."""
-    nodes = (spec.get("dataflow") or {}).get("nodes") or []
-    edges = (spec.get("dataflow") or {}).get("edges") or []
-    # dev/112 (DEC-070): topology re-checked against the CURRENT spec BEFORE
-    # anything mutates (``_mark_stale`` persists the spec, so a later raise
-    # would persist the removals). The shape digest already catches most
-    # drift; this names the one case it cannot — a plan minted acyclic whose
-    # edges now close a loop through edges the user drew since.
-    pre_ref_to_id: dict[str, str] = dict(proposal.get("appliedNodeIds") or {})
-    closing = plan_topology.closing_plan_edges(
-        plan_topology.net_data_edges(
-            edges, plan, set(plan.get("removeNodes", [])),
-            set(plan.get("removeEdges", [])), pre_ref_to_id,
-        ),
-        plan, pre_ref_to_id,
-    )
-    if closing:
-        u, v, path = closing[0]
-        labels = {n.get("id"): (n.get("goal") or n.get("id")) for n in nodes if isinstance(n, dict)}
-        plan_titles = {n["ref"]: n["title"] for n in plan.get("nodes", [])}
-        def _lbl(x):  # noqa: E306
-            return plan_titles.get(x) or labels.get(x) or x
-        raise agents_store._mark_stale(
-            user_key, project_id, proposal_id, spec, proposal, session_id,
-            "the canvas changed since this plan was proposed — applying it would now "
-            f"close a cycle ({plan_topology.format_cycle(path, _lbl)}) — ask the agent to replan",
-        )
 
 
 def _remove_plan_victims(spec: dict, nodes: list, edges: list, remove_node_set: set,
@@ -1897,14 +1256,12 @@ def _plan_apply_session(spec: dict, attachment_id: str, proposal_id: str, create
     return record, node_runs
 
 
-def _log_plan_applied(user_key, project_id, session_id, attachment_id, proposal_id, spec: dict,
-                      created_nodes: list, created_edges: list, remove_node_set: set, removed_edge_ids: set,
-                      node_runs: dict, attached_results: list, created_scenarios: list = ()) -> None:
-    """The applied turn: truthful for edges (dev/112) plus the post-apply topology verdict the agent
-    needs to confirm a fix instead of asserting one; #662: and the scenarios it saved."""
-    # dev/112: truthful for edges (the old copy said "removed 0 nodes" after an
-    # edge-only removal), plus the post-apply topology verdict the agent needs
-    # to confirm a fix instead of asserting one.
+def _plan_landed_lines(spec: dict, created_nodes: list, created_edges: list, remove_node_set: set,
+                       removed_edge_ids: set, node_runs: dict, attached_results: list,
+                       created_scenarios: list = ()) -> tuple[str, list[str]]:
+    """What a landed plan did, for the model and for its card: truthful for
+    connections (dev/112), the topology verdict the agent needs to confirm a
+    fix instead of asserting one, and the scenarios it saved (#662)."""
     removed_summary = _removal_phrase(len(remove_node_set), len(removed_edge_ids))
     topology = _topology_clause(spec)
     scenario_summary = (
@@ -1912,20 +1269,18 @@ def _log_plan_applied(user_key, project_id, session_id, attachment_id, proposal_
         + ", ".join(s["name"] for s in created_scenarios) + "."
         if created_scenarios else ""
     )
-    agents_store._log_applied_turn(
-        user_key, project_id, session_id, attachment_id, proposal_id,
-        f"Applied: plan added {count_label(len(created_nodes), 'node')} and "
-        f"{count_label(len(created_edges), 'connection')}{removed_summary}.{scenario_summary} {topology}",
-        "Applied: dataflow plan",
-        [
-            f"+{count_label(len(created_nodes), 'node')} · +{count_label(len(created_edges), 'connection')}"
-            + (f" · +{count_label(len(created_scenarios), 'scenario')}" if created_scenarios else "")
-            + (f" · −{count_label(len(remove_node_set), 'node')}" if remove_node_set else "")
-            + (f" · −{count_label(len(removed_edge_ids), 'connection')}" if removed_edge_ids else ""),
-            f"{sum(1 for s in node_runs.values() if s == 'pending')} pending for Solve",
-            *_attached_agent_lines(*attached_results),
-            topology,
-            f"proposal {proposal_id[:8]}",
-        ],
+    text = (
+        f"the plan added {count_label(len(created_nodes), 'node')} and "
+        f"{count_label(len(created_edges), 'connection')}{removed_summary}.{scenario_summary} {topology}"
     )
+    lines = [
+        f"+{count_label(len(created_nodes), 'node')} · +{count_label(len(created_edges), 'connection')}"
+        + (f" · +{count_label(len(created_scenarios), 'scenario')}" if created_scenarios else "")
+        + (f" · −{count_label(len(remove_node_set), 'node')}" if remove_node_set else "")
+        + (f" · −{count_label(len(removed_edge_ids), 'connection')}" if removed_edge_ids else ""),
+        f"{sum(1 for s in node_runs.values() if s == 'pending')} pending for Build & validate or Solve",
+        *_attached_agent_lines(*attached_results),
+        topology,
+    ]
+    return text, lines
 

@@ -86,8 +86,6 @@ class SolveBatch:
         stop,
         *,
         spec: dict | None = None,
-        mode: str = "write",
-        return_phase: str | None = None,
         verify: bool = True,
         grounding_base: dict | None = None,
         dataset_paths: dict | None = None,
@@ -107,8 +105,6 @@ class SolveBatch:
         self.solve_execution_id = solve_execution_id
         self.stop = stop
         self.spec = spec
-        self.mode = mode
-        self.return_phase = return_phase
         self.verify = verify
         self.retry_of = retry_of
         self.catalog_rows = catalog_rows
@@ -280,7 +276,7 @@ class SolveBatch:
         # record is merged: a result carrying attempts always wins; one without
         # them keeps the earlier trail and updates only the reason.
         previous = dict(self.results.get(node_id) or {})
-        if previous.get("status") in ("solved", "proposed") and status != "verified":
+        if previous.get("status") == "solved" and status != "verified":
             # dev/131: a session NEVER un-solves a node. A later pass exists to
             # pick up work that became possible, not to downgrade a node whose
             # content already landed (a slice bound or a cancellation arriving
@@ -632,8 +628,8 @@ class SolveBatch:
     def _unwritten_answer(self, node: dict, text_out: str) -> str | None:
         """The error a node fails with when the builder answered in one line
         instead of writing its code, or None. The verified loop reports that
-        line, and so do the paths that write or propose content without
-        running it: it is never written, or offered for review, as code."""
+        line, and so does the path that writes content without running it: it
+        is never written as code."""
         if self.content_kind(node) != workflow_spec.CONTENT_KIND_CODE:
             return None
         answered = agents_rounds._one_line_answer(text_out, data_loading=self.is_data_loading(node))
@@ -740,9 +736,8 @@ class SolveBatch:
         cancelled = self.stop.is_set()
         session, applied = self._finish_persist()
         solved = sum(1 for r in self.results.values() if r["status"] == "solved")
-        proposed = sum(1 for r in self.results.values() if r["status"] == "proposed")
         if isinstance(self.session_id, str):
-            self._append_transcript_card(solved, proposed, cancelled)
+            self._append_transcript_card(solved, cancelled)
         self.payload_out.update({
             "attachmentId": self.attachment_id,
             "executionId": self.solve_execution_id,
@@ -751,7 +746,6 @@ class SolveBatch:
             "builderSession": session,
             "cancelled": cancelled,
             "notAttempted": sorted(self.unstarted),
-            "mode": self.mode,
         })
         if self.batch_reason:
             self.payload_out["reason"] = self.batch_reason
@@ -764,35 +758,18 @@ class SolveBatch:
             session = record.get("builderSession") or {}
             node_runs = session.get("nodeRuns") or {}
             self.apply_contents(spec)
-            ids_to_ref = {
-                nid: ref for ref, nid in (session.get("nodeIds") or {}).items()
-            }
-            node_states = session.get("nodeStates")
             for node_id, outcome in self.results.items():
-                if outcome["status"] == "proposed":
-                    # dev/67-6: nothing was written — the node stays pending
-                    # until the user applies the content proposal; the plan row
-                    # advances to "solving" (a review awaits).
-                    ref = ids_to_ref.get(node_id)
-                    if node_states is not None and ref is not None:
-                        node_states[ref] = "solving"
-                    continue
                 if node_id in node_runs:
                     node_runs[node_id] = outcome["status"] if outcome["status"] != "skipped" else "skipped"
             session["nodeRuns"] = node_runs
             session.pop("solvingSince", None)
             session.pop("solveExecutionId", None)
             session.pop("cancelRequested", None)
-            if self.mode == "propose" and self.return_phase not in (None, "", "solving"):
-                # The propose batch resolved nothing — the session returns to the
-                # phase the solve interrupted (typically "simulating").
-                session["phase"] = self.return_phase
-            else:
-                session["phase"] = (
-                    "ready"
-                    if all(s not in ("pending", "failed") for s in node_runs.values())
-                    else "applied"
-                )
+            session["phase"] = (
+                "ready"
+                if all(s not in ("pending", "failed") for s in node_runs.values())
+                else "applied"
+            )
             record["builderSession"] = session
             dataflow_docs.write(
                 self.user_key, self.project_id, spec, self._actor(),
@@ -852,7 +829,7 @@ class SolveBatch:
             lines.append(f"reason: {self.batch_reason}")
         return lines, attempt_parts
 
-    def _append_transcript_card(self, solved: int, proposed: int, cancelled: bool) -> None:
+    def _append_transcript_card(self, solved: int, cancelled: bool) -> None:
         lines, attempt_parts = self._transcript_lines(cancelled)
         config = self.config
         sessions.append_turns(
@@ -860,11 +837,7 @@ class SolveBatch:
             [
                 sessions.make_turn(
                     "agent",
-                    (
-                        f"Proposed content for {proposed} of {len(self.targets)} plan nodes."
-                        if self.mode == "propose"
-                        else f"Solved {solved} of {len(self.targets)} plan nodes."
-                    )
+                    f"Solved {solved} of {len(self.targets)} plan nodes."
                     + (f" Cancelled: {len(self.unstarted)} not attempted." if cancelled else ""),
                     content=[{
                         "type": "card",
@@ -1148,165 +1121,9 @@ class SolveBatch:
                     yield event_name, {"nodeId": node_id, **progress}
                 continue
             remaining -= 1
-            if self.mode == "propose" and status == "verified":
-                yield from self._propose_from_verified(node_id, text)
-                continue
-            if self.mode == "propose" and status == "solved":
-                yield from self._propose_from_solved(node_id, text, child)
-                continue
             event = self.record_outcome(node_id, status, text, child)
             if event is not None:
                 yield "node_result", event
-
-    def _propose_from_verified(self, node_id: str, outcome: dict):
-        # dev/115: an EXECUTED review — the validation block
-        # (verdict, rounds, attempts) rides the part, PASS or
-        # FAIL (dev/67-7's labeled choice); a sandbox outage
-        # mints nothing and the node stays pending.
-        if agents_rounds._ended_on_an_answer(outcome) or (outcome.get("evidence") or {}).get("kind") == dashboards.KIND:
-            # The builder's one-line answer is no content, and a pinned tile's
-            # spec that loads its own data is refused: nothing is minted for
-            # Apply anyway to write, and the node fails as it does when Solve
-            # writes (a refused tile then waits for the user).
-            event = self.record_outcome(node_id, "verified", outcome, None)
-            if event is not None:
-                yield "node_result", event
-            return
-        for c in outcome.get("delegations") or []:
-            if c is not None:
-                self.delegations.append(c)
-        if outcome.get("verdict") == "infrastructure":
-            event = self.record_outcome(node_id, "verified", outcome, None)
-            if event is not None:
-                yield "node_result", event
-            return
-        validation_block = {
-            "verdict": outcome.get("verdict"),
-            "rounds": outcome.get("rounds"),
-            "evidence": outcome.get("evidence") or {},
-            "attempts": outcome.get("attempts") or [],
-        }
-        part, home_att, mint_text = agents_delegates._mint_content_review_from_delegate(
-            self.user_key, self.project_id,
-            node_id=node_id,
-            generated_text=outcome.get("candidate") or "",
-            parent_attachment_id=self.attachment_id,
-            parent_session_id=self.session_id,
-            local_turn=True,
-            validation=validation_block,
-            grounding_base=self.solve_ground,
-            delegate_coord=getattr(self.resolution, "coord", None),
-        )
-        if part is not None:
-            self.results[node_id] = {
-                "status": "proposed",
-                "proposalId": part["proposalId"],
-                "proposalAttachmentId": home_att,
-                "verdict": validation_block["verdict"],
-                "rounds": validation_block["rounds"],
-                "attempts": validation_block["attempts"],
-            }
-            yield "node_result", {
-                "nodeId": node_id,
-                "status": "proposed",
-                "proposalId": part["proposalId"],
-                "proposalAttachmentId": home_att,
-                "verdict": validation_block["verdict"],
-                "rounds": validation_block["rounds"],
-            }
-        else:
-            self.results[node_id] = {"status": "failed", "error": mint_text[:300]}
-            yield "node_result", {
-                "nodeId": node_id, "status": "failed", "error": mint_text[:300],
-            }
-
-    def _propose_from_solved(self, node_id: str, text, child):
-        # dev/67-6 (Simulation Mode: solve): nothing is
-        # written — the child's content mints a reviewed
-        # node.content.write proposal through the EXISTING
-        # machinery (digest-pinned against the current
-        # content). dev/72: the review lives with the node's
-        # agent when one exists (find-only — the drain never
-        # writes the spec beyond the mint's own write).
-        if child is not None:
-            self.delegations.append(child)
-        # dev/114: the gate runs on the batch base BEFORE the
-        # mint so the node's failure names the source.
-        text_out = content.extract_node_content(text)
-        node = self.nodes_by_id.get(node_id) or {}
-        err = self._gate_unverified(node_id, text_out)
-        if not err:
-            # A pinned tile's spec that loads its own data is refused before
-            # the mint, and the node waits for the user, as when Solve writes.
-            unpublishable = dashboards.refusal(self.user_key, self.project_id, node, text_out)
-            if unpublishable:
-                failed = {"status": "failed", "error": unpublishable[:300], "remedy": dashboards.remedy(node_id)}
-                self.results[node_id] = failed
-                yield "node_result", {"nodeId": node_id, **failed}
-                return
-            err = self._unwritten_answer(node, text_out)
-        if err:
-            self.results[node_id] = {"status": "failed", "error": err[:300]}
-            yield "node_result", {"nodeId": node_id, "status": "failed", "error": err[:300]}
-            return
-        # dev/73: the shared content→review sequence (also the
-        # chat loops' — one mint policy, three callers).
-        part, home_att, mint_text = agents_delegates._mint_content_review_from_delegate(
-            self.user_key, self.project_id,
-            node_id=node_id,
-            generated_text=text,
-            parent_attachment_id=self.attachment_id,
-            parent_session_id=self.session_id,
-            local_turn=True,
-            # #880: a job thread cannot list the Data Catalog, so the mint's
-            # gate grounds against the batch's listing, as the verified path does.
-            grounding_base=self.solve_ground,
-            delegate_coord=getattr(self.resolution, "coord", None),
-        )
-        if part is not None:
-            self.results[node_id] = {
-                "status": "proposed",
-                "proposalId": part["proposalId"],
-                "proposalAttachmentId": home_att,
-            }
-            node = self.nodes_by_id.get(node_id) or {}
-            node_label = (node.get('goal') or node_id)[:60]
-            if home_att != self.attachment_id and isinstance(self.session_id, str):
-                # The agent that wrote it, as its manifest names it.
-                delegate = getattr(self.resolution, "manifest", None)
-                delegate_coord = getattr(self.resolution, "coord", None) or ""
-                delegate_name = getattr(delegate, "name", None) or delegate_coord
-                sessions.append_turns(
-                    self.user_key, self.project_id, self.session_id, self.attachment_id,
-                    [sessions.make_turn(
-                        "agent",
-                        f"Proposed content for {node_label!r}: "
-                        f"the review lives in the node's {delegate_name}.",
-                        content=[content.make_delegation_part(
-                            capability="node.content.generate",
-                            coord=delegate_coord,
-                            name=delegate_name,
-                            category=getattr(delegate, "category", "") or "",
-                            attachment_id=home_att,
-                            status="ok",
-                            summary=f"content proposed for {node_label!r}",
-                        )],
-                    )],
-                )
-            yield "node_result", {
-                "nodeId": node_id,
-                "status": "proposed",
-                "proposalId": part["proposalId"],
-                "proposalAttachmentId": home_att,
-            }
-        else:
-            self.results[node_id] = {
-                "status": "failed", "error": mint_text[:300]
-            }
-            yield "node_result", {
-                "nodeId": node_id, "status": "failed",
-                "error": mint_text[:300],
-            }
 
     # ── the worker (runs on the pool) ───────────────────────────────────────
 

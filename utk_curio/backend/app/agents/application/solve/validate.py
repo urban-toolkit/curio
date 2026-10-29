@@ -19,6 +19,7 @@ from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import catalog as agents_catalog
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application.proposals import acquire as agents_acquire
+from utk_curio.backend.app.agents.application.proposals import changes as agents_changes
 from utk_curio.backend.app.agents.application.proposals import mint as agents_mint
 from utk_curio.backend.app.agents.application.solve import budgets as agents_budgets
 from utk_curio.backend.app.agents.application.solve import node_solve as agents_node_solve
@@ -40,18 +41,20 @@ def validate_node_stream(
     node_id: str | None = None,
     exec_fn=None,
 ):
-    """Generate → execute-through → validate → self-correct → propose, for
-    ONE node (memo dev/67-7 — Simulation Mode: validate).
+    """Generate, execute through, validate, self-correct, and write, for ONE
+    node of a plan (memo dev/67-7: a row's Solve, and Build & validate's
+    validate step).
 
     Eager validation (409s stay JSON); the returned generator yields
-    ``validation_started`` → per round: ``generation_round`` →
-    ``node_executed`` per upstream execution → ``round_verdict`` → … →
-    ``done {verdict, evidence, rounds, proposalId?, builderSession}``.
-    The saved spec is never mutated: the candidate runs as an overlay and
-    lands as a reviewed ``node.content.write`` proposal carrying the
-    validation block — PASS or FAIL, the user decides ("Apply anyway" is a
-    labeled choice, never a hidden one). An ``infrastructure`` verdict mints
-    nothing and leaves the node's state untouched.
+    ``validation_started``, then per round ``generation_round``,
+    ``node_executed`` per upstream execution and ``round_verdict``, then a
+    ``change`` when the code lands, and ``done {verdict, evidence, rounds,
+    changeId?, builderSession}``. The candidate runs as an overlay, and code
+    that passed its check lands in the node as the agent's change, carrying
+    the validation block, with its Undo. Code that failed it is not written:
+    its attempts, each with its code, stay in the node's agent chat. An
+    ``infrastructure`` verdict writes nothing and leaves the node's state
+    untouched.
     """
 
     agents_acquire._settle_discovery_acquisitions(user_key, project_id)
@@ -173,15 +176,21 @@ def _validate_events(
             "attempts": outcome["attempts"],
         }
         if agents_rounds._ended_on_an_answer(outcome):
-            # The builder's one-line answer is no content: no review is minted
-            # for Apply anyway to write into the node.
+            # The builder's one-line answer is no content: nothing is written
+            # into the node.
             _say_the_answer(user_key, project_id, attachment_id, session_id,
                             home_attachment_id, home_session_id, spec, node, label, outcome)
-        elif done["verdict"] in ("pass", "fail", "not-executable") and candidate:
-            _mint_validated_review(user_key, project_id, attachment_id, session_id,
-                                   home_attachment_id, home_session_id,
-                                   node_id, label, candidate, done, rounds_used, rounds_trace,
-                                   resolution=resolution)
+        elif candidate and _writes(done):
+            yield from _land_validated(user_key, project_id, attachment_id, session_id,
+                                       home_attachment_id, home_session_id,
+                                       node_id, label, candidate, done, rounds_used, rounds_trace,
+                                       resolution=resolution)
+        elif candidate and done["verdict"] in ("fail", "not-executable"):
+            # Code that failed its check is not written: its attempts, each
+            # with the code it ran, stay in the node's agent chat.
+            done["verdict"] = "fail"
+            _say_it_failed(user_key, project_id, attachment_id, session_id, home_attachment_id, home_session_id,
+                           spec, node, label, outcome, rounds_trace)
         done["builderSession"] = _settle_node_state(user_key, project_id, attachment_id, ref, done["verdict"])
         yield "done", done
     finally:
@@ -209,10 +218,9 @@ def _announce_delegated_solve(user_key, project_id, home_attachment_id, home_ses
 def _say_the_answer(user_key, project_id, attachment_id, session_id, home_attachment_id, home_session_id,
                     spec, node, label, outcome: dict) -> None:
     """The builder answered in one line instead of writing code, or a loader's
-    builder declined. That line is no content, so nothing is minted for Apply
-    anyway to write into the node. The node's agent says it the way Solve this
-    node does, with every attempt below it, and the agent the Solve was asked
-    of says it too."""
+    builder declined. That line is no content, so nothing is written into the
+    node. The node's agent says it the way Solve this node does, with every
+    attempt below it, and the agent the Solve was asked of says it too."""
     text = agents_node_solve._not_fixed(label, outcome, {})
     trail = agents_rounds._solve_attempts_part(
         spec, node.get("id"), str(node.get("goal") or node.get("id"))[:120],
@@ -234,92 +242,129 @@ def _say_the_answer(user_key, project_id, attachment_id, session_id, home_attach
         )
 
 
-def _mint_validated_review(user_key, project_id, attachment_id, session_id, home_attachment_id, home_session_id,
-                           node_id, label, candidate, done: dict, rounds_used: int, rounds_trace: list,
-                           *, resolution=None) -> None:
-    """PASS or FAIL, the user decides — the proposal carries the validation block so the review is
-    informed, never gatekept (dev/118: NOT-EXECUTABLE is proposed too, labeled; dev/72: the review
-    lives with the NODE's agent when it exists). Writes the proposal ids, or the mint error, into *done*."""
-    # PASS or FAIL, the user decides — the proposal carries the
-    # validation block so the review is informed, never gatekept.
-    # dev/118: NOT-EXECUTABLE (a browser-rendered kind) is proposed
-    # too, labeled — nothing ran, and the block says so.
-    # dev/72: the review lives with the NODE's agent when it exists —
-    # per-node proposals stop contending for the builder's one slot.
-    mint_attachment = home_attachment_id or attachment_id
-    mint_session = home_session_id or session_id
-    p_status, p_error, part = agents_mint._mint_node_content_write(
-        user_key, project_id,
-        {"attachment_id": mint_attachment, "session_id": mint_session},
-        {"tool": "node.content.write",
-         "params": {"nodeId": node_id, "content": candidate}},
+def _writes(done: dict) -> bool:
+    """Whether a validation's code is written into its node: code that
+    passed its check, and a browser-rendered kind's document that its check
+    could read (dev/118, dev/129: the rule Solve writes by)."""
+    if done["verdict"] == "pass":
+        return True
+    evidence = done.get("evidence") or {}
+    return done["verdict"] == "not-executable" and not (
+        evidence.get("documentUnchecked") and not evidence.get("documentPassive")
     )
-    if part is not None:
-        part["validation"] = {
-            "verdict": done["verdict"],
-            "rounds": rounds_used,
-            "evidence": done["evidence"],
-            # dev/115: the attempt trail — every round's error and
-            # fix, rendered as a collapsed list on the card.
-            "attempts": done["attempts"],
-        }
-        done["proposalId"] = part["proposalId"]
-        done["proposalAttachmentId"] = mint_attachment
-        trace_card = {
-            "type": "card",
-            "kind": "result" if done["verdict"] in ("pass", "not-executable") else "error",
-            "title": f"Solve trace · {done['verdict'].upper()}",
-            "lines": (
-                [f"dependencies executed: {len(done['evidence'].get('executedNodes') or [])} node(s)"]
-                + rounds_trace
-                + [f"outcome: {done['verdict']} after {rounds_used} round{'s' if rounds_used != 1 else ''}"]
-            )[:10],
-        }
-        if isinstance(mint_session, str):
-            sessions.append_turns(
-                user_key, project_id, mint_session, mint_attachment,
-                [sessions.make_turn(
-                    "agent",
-                    f"Validated content for {label!r}: "
-                    f"{done['verdict'].upper()} after {rounds_used} "
-                    f"round{'s' if rounds_used != 1 else ''} — review below.",
-                    content=[trace_card, part],
+
+
+def _trace_card(done: dict, rounds_used: int, rounds_trace: list) -> dict:
+    return {
+        "type": "card",
+        "kind": "result" if done["verdict"] in ("pass", "not-executable") else "error",
+        "title": f"Solve trace · {done['verdict'].upper()}",
+        "lines": (
+            [f"dependencies executed: {len(done['evidence'].get('executedNodes') or [])} node(s)"]
+            + rounds_trace
+            + [f"outcome: {done['verdict']} after {rounds_used} round{'s' if rounds_used != 1 else ''}"]
+        )[:10],
+    }
+
+
+def _land_validated(user_key, project_id, attachment_id, session_id, home_attachment_id, home_session_id,
+                    node_id, label, candidate, done: dict, rounds_used: int, rounds_trace: list,
+                    *, resolution=None):
+    """Write the code that passed its check into its node, as the agent's
+    change with its Undo, through the ``node.content.write`` mint and its
+    checks, at the NODE's agent when it exists (dev/72). Its card carries the
+    validation block (verdict, rounds, attempts). Yields its ``change``
+    event; writes the change's id, or why it did not land, into *done*."""
+    change_attachment = home_attachment_id or attachment_id
+    change_session = home_session_id or session_id
+    ctx = {"attachment_id": change_attachment, "session_id": change_session}
+    status, text, part = agents_mint._mint_node_content_write(
+        user_key, project_id, ctx,
+        {"tool": "node.content.write", "params": {"nodeId": node_id, "content": candidate}},
+    )
+    for landed in agents_changes.take_landed(ctx):
+        yield "change", landed
+    if part is None:
+        done["verdict"] = "fail"
+        done["evidence"] = {**done["evidence"], "mintError": (text or "")[:300]}
+        return
+    part["validation"] = {
+        "verdict": done["verdict"],
+        "rounds": rounds_used,
+        "evidence": done["evidence"],
+        # dev/115: the attempt trail, every round's error and fix, rendered
+        # as a collapsed list on the card.
+        "attempts": done["attempts"],
+    }
+    done["changeId"] = part["changeId"]
+    done["changeAttachmentId"] = change_attachment
+    if isinstance(change_session, str):
+        sessions.append_turns(
+            user_key, project_id, change_session, change_attachment,
+            [sessions.make_turn(
+                "agent",
+                f"Validated content for {label!r}: {done['verdict'].upper()} after {rounds_used} "
+                f"round{'s' if rounds_used != 1 else ''}, written into the node.",
+                content=[_trace_card(done, rounds_used, rounds_trace), part],
+            )],
+        )
+    if home_attachment_id and home_attachment_id != attachment_id and isinstance(session_id, str):
+        # The parent references and LINKS; the story lives at home. The agent
+        # that wrote it is named as its manifest names it.
+        delegate = getattr(resolution, "manifest", None)
+        delegate_coord = getattr(resolution, "coord", None) or ""
+        delegate_name = getattr(delegate, "name", None) or delegate_coord
+        sessions.append_turns(
+            user_key, project_id, session_id, attachment_id,
+            [sessions.make_turn(
+                "agent",
+                f"Solved {label!r}: {done['verdict'].upper()} after "
+                f"{rounds_used} round{'s' if rounds_used != 1 else ''}: "
+                f"the trace and the change live in the node's {delegate_name}.",
+                content=[content.make_delegation_part(
+                    capability="node.content.generate",
+                    coord=delegate_coord,
+                    name=delegate_name,
+                    category=getattr(delegate, "category", "") or "",
+                    attachment_id=home_attachment_id,
+                    status="ok",
+                    summary=f"Solve {label!r}: {done['verdict']} "
+                    f"({rounds_used} round{'s' if rounds_used != 1 else ''})",
                 )],
-            )
-        if (
-            home_attachment_id
-            and home_attachment_id != attachment_id
-            and isinstance(session_id, str)
-        ):
-            # The parent references and LINKS; the story lives at home. The
-            # agent that wrote it is named as its manifest names it.
-            delegate = getattr(resolution, "manifest", None)
-            delegate_coord = getattr(resolution, "coord", None) or ""
-            delegate_name = getattr(delegate, "name", None) or delegate_coord
-            sessions.append_turns(
-                user_key, project_id, session_id, attachment_id,
-                [sessions.make_turn(
-                    "agent",
-                    f"Solved {label!r}: {done['verdict'].upper()} after "
-                    f"{rounds_used} round{'s' if rounds_used != 1 else ''}: "
-                    f"the trace and content review live in the node's {delegate_name}.",
-                    content=[content.make_delegation_part(
-                        capability="node.content.generate",
-                        coord=delegate_coord,
-                        name=delegate_name,
-                        category=getattr(delegate, "category", "") or "",
-                        attachment_id=home_attachment_id,
-                        status="ok" if done["verdict"] in ("pass", "not-executable") else "failed",
-                        summary=f"Solve {label!r}: {done['verdict']} "
-                        f"({rounds_used} round{'s' if rounds_used != 1 else ''})",
-                    )],
-                )],
-            )
-    else:
-        done["evidence"] = {
-            **done["evidence"],
-            "mintError": (p_error or "")[:300],
-        }
+            )],
+        )
+
+
+def _say_it_failed(user_key, project_id, attachment_id, session_id, home_attachment_id, home_session_id,
+                   spec, node, label, outcome: dict, rounds_trace: list) -> None:
+    """Code that failed its check is not written. The node's agent says so,
+    with the trace and every attempt below it, each with the code it ran, so
+    a person can take one from there; the agent the Solve was asked of says
+    it too."""
+    done = {"verdict": "fail", "evidence": outcome.get("evidence") or {}}
+    rounds_used = outcome["rounds"]
+    text = (f"Validated content for {label!r}: FAIL after {rounds_used} "
+            f"round{'s' if rounds_used != 1 else ''}; nothing was written. Each attempt's code is below.")
+    trail = agents_rounds._solve_attempts_part(
+        spec, node.get("id"), str(node.get("goal") or node.get("id"))[:120],
+        {"attempts": outcome["attempts"], "rounds": rounds_used,
+         "verdict": "fail", "stoppedBy": outcome.get("stoppedBy")},
+        user_key=user_key,
+    )
+    home_attachment = home_attachment_id or attachment_id
+    home_session = home_session_id or session_id
+    if isinstance(home_session, str):
+        sessions.append_turns(
+            user_key, project_id, home_session, home_attachment,
+            [sessions.make_turn("agent", text, error=True,
+                                content=[_trace_card(done, rounds_used, rounds_trace)]
+                                + ([trail] if trail is not None else []))],
+        )
+    if home_attachment != attachment_id and isinstance(session_id, str):
+        sessions.append_turns(
+            user_key, project_id, session_id, attachment_id,
+            [sessions.make_turn("agent", text, error=True)],
+        )
 
 
 def _settle_node_state(user_key, project_id, attachment_id, ref, verdict: str) -> dict:

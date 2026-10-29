@@ -1,7 +1,7 @@
-"""Plan simulation: ordered actions, the stream, and cancel.
+"""Build & validate over a plan that landed: ordered actions, the stream, and cancel.
 
 Application layer of the agents package (memo dev/142, B2; re-derived on enh/agent-catalog): cut from
-``services.py`` by responsibility; every function keeps its name and body. Sibling modules are reached
+``services.py`` by responsibility. Sibling modules are reached
 module-qualified (``agents_<module>.name``) so a test that patches the owner is seen by every caller,
 and import order between siblings cannot matter.
 """
@@ -17,7 +17,6 @@ from utk_curio.backend.app.agents.application.errors import AgentServiceError
 from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 from utk_curio.backend.app.agents.application import catalog as agents_catalog
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
-from utk_curio.backend.app.agents.application.proposals import apply as agents_apply
 from utk_curio.backend.app.agents.application.proposals import plans as agents_plans
 from utk_curio.backend.app.agents.application.proposals import store as agents_store
 from utk_curio.backend.app.agents.application.solve import budgets as agents_budgets
@@ -44,28 +43,22 @@ def _ordered_plan_refs(plan: dict) -> list[str]:
 
 def _next_simulation_action(plan: dict, proposal: dict, session: dict) -> dict | None:
     """THE transition function (step and auto share it): the next single
-    action for the persisted state, or None when the plan is complete.
+    action for the persisted state, or None when every node of the landed
+    plan is approved.
 
-    Per ref, in topological order: planned → create; created/failed →
-    validate (a failed ref re-validates on resume — the pause happened when
-    it FIRST failed); validated → approve (apply its content proposal);
-    solving → pause (a content review outside the driver's own loop awaits);
-    approved → next ref. All refs approved → connect (the edges stage; with
-    zero edges it simply completes the proposal)."""
+    Per ref, in topological order: created/failed → validate (a failed ref
+    validates again on resume: the pause happened when it FIRST failed);
+    validated → approve (its code landed when it passed; approving records
+    it); approved → next ref. The plan's nodes and connections landed with
+    it, so nothing is created or connected here."""
     node_states = session.get("nodeStates") or {}
     for ref in _ordered_plan_refs(plan):
-        state = node_states.get(ref, "planned")
-        if state == "planned":
-            return {"action": "create", "ref": ref}
+        state = node_states.get(ref, "created")
         if state in ("created", "failed"):
             return {"action": "validate", "ref": ref}
         if state == "validated":
             return {"action": "approve", "ref": ref}
-        if state == "solving":
-            return {"action": "await-review", "ref": ref}
         # "approved" → continue to the next ref.
-    if proposal.get("status") == "pending":
-        return {"action": "connect"}
     return None
 
 
@@ -95,14 +88,14 @@ def simulate_stream(
     mode: str = "step",
     exec_fn=None,
 ):
-    """The Simulation Mode driver (memo dev/67-9, DEC-054).
+    """Build & validate (memo dev/67-9, DEC-054) over a plan that landed.
 
-    ``step`` performs exactly the NEXT action and returns; ``auto`` (the
-    re-targeted Apply Plan) chains the same actions — create → validate →
-    auto-approve on PASS — per node in topological order, then the connection
-    stage, PAUSING on any failure with the reason and the pending review
-    (nothing downstream of a failure is generated). Every transition persists
-    to ``builderSession`` BEFORE it is emitted, so a reload resumes exactly;
+    ``step`` performs exactly the NEXT action and returns; ``auto`` chains
+    the same actions, validate then approve, per node in topological order,
+    PAUSING at the first failure with the reason (nothing downstream of a
+    failure is written). Code that passes its check lands as the agent's
+    change when it is validated. Every transition persists to
+    ``builderSession`` BEFORE it is emitted, so a reload resumes exactly;
     resume = calling this endpoint again.
     """
 
@@ -113,17 +106,13 @@ def simulate_stream(
     session = record.get("builderSession") or {}
     plan_proposal_id = session.get("planProposalId")
     if not isinstance(plan_proposal_id, str):
-        raise AgentServiceError("no plan to simulate — ask for a plan first", 409)
+        raise AgentServiceError("no plan to build: ask for a plan first", 409)
     proposal = agents_store._plan_proposal_any(spec, attachment_id, plan_proposal_id)
     if proposal is None:
-        raise AgentServiceError("the plan is no longer available — nothing to simulate", 409)
-    if proposal.get("status") not in ("pending", "applied"):
-        raise AgentServiceError(
-            f"the plan is {proposal.get('status')!r} — nothing to simulate", 409
-        )
+        raise AgentServiceError("the plan is no longer available: nothing to build", 409)
     if _next_simulation_action(proposal.get("plan") or {}, proposal, session) is None:
         raise AgentServiceError(
-            "the plan is complete — nothing to simulate", 409
+            "the plan is complete: nothing to build", 409
         )
     now = _time.time()
     if session.get("simulatingSince") and now - float(session.get("simulatingSince") or 0) < agents_budgets._SIMULATE_STALE_SECONDS:
@@ -158,10 +147,10 @@ def _simulate_events(
     stop,
     exec_fn,
 ):
-    """The driver body: read fresh state → one action → persist → emit —
-    repeated in auto until completion, a pause, or cancellation. Canvas
-    mutations ride the stream (``node_created`` / ``node_content_applied`` /
-    ``edges_created`` / ``plan_removals``) so the frontend applies them live."""
+    """The driver body: read fresh state, one action, persist, emit,
+    repeated in auto until completion, a pause, or cancellation. Each code
+    that lands rides the stream as a ``change`` event, so a canvas no doc
+    binds applies it live."""
     yield from SimulationDriver(
         user_key, project_id, attachment_id, config, plan_proposal_id, simulate_execution_id, mode, stop, exec_fn,
     ).events()
@@ -261,12 +250,6 @@ class SimulationDriver:
                     break
                 ref = action.get("ref")
                 yield "stage", {**action, "label": agents_plans._plan_endpoint_label(ref, plan, {}) if ref else None}
-                if action["action"] == "await-review":
-                    done = self._pause({
-                        "kind": "content-review-pending", "ref": ref,
-                        "message": "review the pending content proposal first, then continue",
-                    })
-                    break
                 self._set_current(ref)
                 stopped = yield from self._perform(action, ref)
                 if stopped is not None:
@@ -287,14 +270,10 @@ class SimulationDriver:
     def _perform(self, action: dict, ref):
         """One action; a returned dict is the done payload that stops the loop."""
         kind = action["action"]
-        if kind == "create":
-            return (yield from self._create(ref))
         if kind == "validate":
             return (yield from self._validate(ref))
         if kind == "approve":
             return (yield from self._approve(ref))
-        if kind == "connect":
-            return (yield from self._connect())
         return None
 
     def _stepped(self) -> dict:
@@ -322,39 +301,11 @@ class SimulationDriver:
             pass
 
     # ── the actions ──────────────────────────────────────────────────────────
-    def _refused(self, exc: AgentServiceError) -> dict:
-        """An apply the plan's own checks refused (a node it removes was
-        edited since the review, say): the run pauses with the reason."""
-        return self._pause({"kind": "apply-refused", "message": str(exc)})
-
-    def _removals(self, result: dict):
-        """What left the dataflow when this apply completed the plan, for the
-        live canvas, whose next save would otherwise put it back. Ahead of the
-        apply's own nodes and edges, as a whole applied plan's removals are."""
-        if result.get("removedNodeIds") or result.get("removedEdgeIds"):
-            yield "plan_removals", {
-                "proposalId": self.plan_proposal_id,
-                "removedNodeIds": result.get("removedNodeIds") or [],
-                "removedEdgeIds": result.get("removedEdgeIds") or [],
-            }
-
-    def _create(self, ref):
-        try:
-            result = agents_plans.apply_plan_node(
-                self.user_key, self.project_id, self.attachment_id, self.plan_proposal_id, ref
-            )
-        except AgentServiceError as exc:
-            return self._refused(exc)
-        yield from self._removals(result)
-        if result.get("createdNode"):
-            yield "node_created", {"createdNode": result["createdNode"]}
-        if result.get("createdEdges"):
-            # dev/71: the progressive sweep connected what it could.
-            yield "edges_created", {"createdEdges": result["createdEdges"]}
-        yield "action_result", {"action": "create", "ref": ref, "outcome": "created"}
-        return None
-
     def _validate(self, ref):
+        """Validate one node (``validate.py``): code that passes its check
+        lands as the agent's change, and its ``change`` event rides this
+        stream. A failure pauses the run: nothing downstream is written, and
+        the attempts, each with its code, are in the node's agent chat."""
         validate_done: dict | None = None
         for kind, payload in agents_run_node._validate_node_inline(
             self.user_key, self.project_id, self.attachment_id, self.config, ref, self.exec_fn
@@ -364,96 +315,51 @@ class SimulationDriver:
             else:
                 yield kind, payload
         verdict = (validate_done or {}).get("verdict", "fail")
-        proposal_id = (validate_done or {}).get("proposalId")
-        if proposal_id:
-            # The resume/apply linkage (67-6's deferred nodeProposals;
-            # dev/72: the proposal may live on the node's agent).
+        change_id = (validate_done or {}).get("changeId")
+        if change_id:
+            # Where the node's change lives (dev/72: with the node's agent).
             def _mutate(session2):
-                session2.setdefault("nodeProposals", {})[ref] = {
-                    "proposalId": proposal_id,
-                    "attachmentId": (validate_done or {}).get("proposalAttachmentId")
-                    or self.attachment_id,
+                session2.setdefault("nodeChanges", {})[ref] = {
+                    "changeId": change_id,
+                    "attachmentId": (validate_done or {}).get("changeAttachmentId") or self.attachment_id,
                 }
 
             self._write_session(_mutate)
         yield "action_result", {
             "action": "validate", "ref": ref, "outcome": verdict,
-            **({"proposalId": proposal_id} if proposal_id else {}),
+            **({"changeId": change_id} if change_id else {}),
         }
         if verdict == "infrastructure":
             return self._pause({
                 "kind": "infrastructure", "ref": ref,
                 "message": (validate_done or {}).get("evidence", {}).get("detail")
-                or "the sandbox is unreachable — retry when it is back",
+                or "the sandbox is unreachable: retry when it is back",
             })
         if verdict == "fail":
             return self._pause({
                 "kind": "validation-failed", "ref": ref,
-                "proposalId": proposal_id,
-                # Without a proposal (the builder answered in one line instead
-                # of writing code) there is nothing to review or apply.
-                "message": "validation failed — review the proposed content "
-                "(Apply anyway or edit), then continue" if proposal_id else
-                "validation failed and nothing was proposed: edit the node or its inputs, then continue",
+                "message": "validation failed and nothing was written: each attempt's code is in the "
+                "node's agent chat; edit the node or its inputs, then continue",
             })
         return None
 
     def _approve(self, ref):
+        """Approve one validated node: its code landed when it passed, so
+        approving records it, on its change (DEC-054: an approval is
+        recorded, never silent) and in the plan's ledger."""
         _, _, session, _ = self._fresh()
-        entry = (session.get("nodeProposals") or {}).get(ref)
-        # dev/72 shape {proposalId, attachmentId}; old string tolerated.
-        if isinstance(entry, dict):
-            content_proposal_id = entry.get("proposalId")
-            proposal_attachment_id = entry.get("attachmentId") or self.attachment_id
-        else:
-            content_proposal_id = entry
-            proposal_attachment_id = self.attachment_id
-        if not content_proposal_id:
-            return self._pause({
-                "kind": "content-review-pending", "ref": ref,
-                "message": "the validated proposal is not addressable — review it manually",
-            })
-        apply_result = agents_apply.apply_proposal(
-            self.user_key, self.project_id, proposal_attachment_id, content_proposal_id
-        )
-        # DEC-054: auto-approval is recorded, never silent.
-        spec3, _, _, _ = self._fresh()
-        approved = attachments.get_active_proposal(spec3, proposal_attachment_id)
-        if approved is not None and approved.get("proposalId") == content_proposal_id:
-            approved["approvedBy"] = "simulation-auto"
-            self._write(spec3)
-        applied_content = apply_result.get("appliedContent")
-        if applied_content:
-            yield "node_content_applied", applied_content
+        entry = (session.get("nodeChanges") or {}).get(ref) or {}
+        change_attachment = entry.get("attachmentId") or self.attachment_id
+        spec, _, _, _ = self._fresh()
+        home = attachments.get_attachment(spec, change_attachment)
+        for change in (home or {}).get("changes") or []:
+            if isinstance(change, dict) and change.get("changeId") == entry.get("changeId"):
+                change["approvedBy"] = "simulation-auto"
+        record = attachments.get_attachment(spec, self.attachment_id)
+        if record is not None:
+            ledger = record.get("builderSession") or {}
+            ledger.setdefault("nodeStates", {})[ref] = "approved"
+            record["builderSession"] = ledger
+        self._write(spec)
         yield "action_result", {"action": "approve", "ref": ref, "outcome": "approved"}
         return None
-
-    def _connect(self):
-        try:
-            edges_result = agents_plans.apply_plan_edges(
-                self.user_key, self.project_id, self.attachment_id, self.plan_proposal_id, None
-            )
-        except AgentServiceError as exc:
-            return self._refused(exc)
-        yield from self._removals(edges_result)
-        if edges_result.get("createdEdges"):
-            yield "edges_created", {"createdEdges": edges_result["createdEdges"]}
-        refused = {
-            idx: row for idx, row in (edges_result.get("results") or {}).items()
-            if row.get("status") == "refused"
-        }
-        yield "action_result", {
-            "action": "connect",
-            "outcome": "refused" if refused else "connected",
-            "refused": {i: r.get("reason") for i, r in refused.items()},
-        }
-        if refused:
-            return self._pause({
-                "kind": "connection-refused",
-                "message": "; ".join(
-                    f"{r.get('fromLabel')} → {r.get('toLabel')}: {r.get('reason')}"
-                    for r in list(refused.values())[:3]
-                ),
-            })
-        return None
-

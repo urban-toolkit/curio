@@ -115,14 +115,29 @@ def update_proposal_status(
     dismiss/supersede update the part in place (the one sanctioned turn edit —
     it changes proposal state, never text). Returns True when a part was
     updated; a missing session/part is False, never an error."""
+    return _set_part_status(user_key, project_id, session_id, "proposal", "proposalId", proposal_id, status)
+
+
+def update_change_status(
+    user_key: str, project_id: str, session_id: str, change_id: str, status: str
+) -> bool:
+    """Set the status of one persisted change part: an agent's change, undone
+    from the chat. Returns True when a part was updated."""
+    return _set_part_status(user_key, project_id, session_id, "change", "changeId", change_id, status)
+
+
+def _set_part_status(user_key: str, project_id: str, session_id: str, kind: str, key: str,
+                     part_id: str, status: str) -> bool:
+    """Set *status* on the transcript's parts of type *kind* whose *key* is
+    *part_id*; whether any changed."""
     turns = read_turns(user_key, project_id, session_id)
     changed = False
     for turn in turns:
         for part in turn.get("content") or []:
             if (
                 isinstance(part, dict)
-                and part.get("type") == "proposal"
-                and part.get("proposalId") == proposal_id
+                and part.get("type") == kind
+                and part.get(key) == part_id
                 and part.get("status") != status
             ):
                 part["status"] = status
@@ -182,7 +197,9 @@ def context_messages(turns: list[dict], limit: int = CONTEXT_WINDOW_TURNS) -> li
     """Map the last ``limit`` non-error turns to OpenAI-style chat messages.
 
     Error markers are display-only history and are excluded from provider
-    context.
+    context. An agent turn's changes follow its text, each as its card says
+    what it did and whether it was undone, so a later run knows what landed:
+    a plan's topology verdict among it.
     """
     usable = [
         t
@@ -193,4 +210,16 @@ def context_messages(turns: list[dict], limit: int = CONTEXT_WINDOW_TURNS) -> li
         and not t.get("error")
     ]
     role_map = {"user": "user", "agent": "assistant"}
-    return [{"role": role_map[t["role"]], "content": t["text"]} for t in usable[-limit:]]
+    return [{"role": role_map[t["role"]], "content": t["text"] + _changes_said(t)} for t in usable[-limit:]]
+
+
+def _changes_said(turn: dict) -> str:
+    """The changes *turn* holds, each in one bracketed line."""
+    said = []
+    for part in turn.get("content") or []:
+        if not (isinstance(part, dict) and part.get("type") == "change"):
+            continue
+        lines = "; ".join(str(line) for line in part.get("lines") or [])
+        undone = " (undone)" if part.get("status") == "undone" else ""
+        said.append(f"[{part.get('summary')}{undone}{': ' + lines if lines else ''}]")
+    return ("\n\n" + "\n".join(said)) if said else ""
