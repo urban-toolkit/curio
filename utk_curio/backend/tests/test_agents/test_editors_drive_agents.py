@@ -311,10 +311,27 @@ def test_an_editors_run_resolves_no_key_of_the_owners(app, people, flow):
     assert own.secret_values(["alices-census"]) == {"alices-census": ALICE_KEY[2]}
 
 
+def _alices_dataset(people, flow, *, in_her_dataflow: bool, name: str = "heat.csv",
+                    body: bytes = b"tract,heat\nA,31\n") -> str:
+    """A dataset of alice's Data Catalog, added to her dataflow as Add to
+    project adds one when *in_her_dataflow*; its id."""
+    from utk_curio.backend.app.datasets.install.installer import install_imported_file
+    from utk_curio.backend.app.datasets.service import DatasetCatalogService
+
+    dataset_id = install_imported_file(flow.owner_key, body, name, "csv").manifest.id
+    if in_her_dataflow:
+        DatasetCatalogService(people.alice).install_dataset(flow.pid, dataset_id)
+    return dataset_id
+
+
 def test_a_solve_job_keeps_the_keys_of_whoever_started_it(app, people, flow):
     """A Solve's job holds no request, so its grounding base keeps the keys
     of the request that started it: a job bob started lists and resolves
-    bob's keys, never alice's, on the thread where no one is signed in."""
+    bob's keys, never alice's, on the thread where no one is signed in. It
+    grounds sources in the datasets alice's dataflow lists, which its block
+    lists and its runs load."""
+    from pathlib import Path
+
     from flask import g
 
     from utk_curio.backend.app.agents.application import dataflow_block
@@ -322,10 +339,12 @@ def test_a_solve_job_keeps_the_keys_of_whoever_started_it(app, people, flow):
 
     _save_key(people.alice, *ALICE_KEY)
     _save_key(people.bob, *BOB_KEY)
+    dataset_id = _alices_dataset(people, flow, in_her_dataflow=True)
     spec = {"dataflow": {"nodes": [{"id": "n1", "content": "print(1)"}], "edges": []}}
     with app.test_request_context():
         g.user = people.bob
         base = grounding._solve_grounding_base(flow.owner_key, flow.pid, spec, {}, [])
+        paths = grounding._resolve_catalog_execution_paths(flow.pid, [dataset_id])
     assert base.get("keys") == str(people.bob.id)
     assert sorted(base["secrets"]) == ["bobs-weather"]
     # The job's thread: no request, no one signed in.
@@ -336,6 +355,34 @@ def test_a_solve_job_keeps_the_keys_of_whoever_started_it(app, people, flow):
     assert resolver(['k = curio_secret("alices-census")']) == {}
     block = dataflow_block.compose(flow.owner_key, flow.pid, datasets=(), keys=grounding._keys_of(base, flow.owner_key))
     assert "bobs-weather" in block and "alices-census" not in block
+    # The dataset alice's dataflow lists, from her Data Catalog.
+    assert dataset_id in base["catalog_ids"], sorted(base["catalog_ids"])
+    assert [dataset.id for dataset in base["dataflow_datasets"]] == [dataset_id]
+    assert Path(paths[dataset_id]).read_bytes() == b"tract,heat\nA,31\n"
+
+
+def test_an_editors_chat_reads_the_datasets_the_dataflow_lists_and_no_other_of_the_owners(app, people, flow):
+    """In bob's chat, catalog.search and the dataflow block an agent that
+    writes code is given list the dataset alice's dataflow lists, and not the
+    one she keeps out of it."""
+    from flask import g
+
+    from utk_curio.backend.app.agents.application import dataflow_block, tools
+
+    listed = _alices_dataset(people, flow, in_her_dataflow=True, name="tract_heat.csv")
+    kept_out = _alices_dataset(people, flow, in_her_dataflow=False, name="tract_pay.csv", body=b"name,pay\nA,1\n")
+    with app.test_request_context():
+        g.user = people.bob
+        # A search both of alice's datasets match, so only her list keeps one out.
+        status, text = tools.execute_read_tool(
+            "catalog.search", user_key=flow.owner_key, project_id=flow.pid, target=None, params={"q": "tract_"},
+        )
+        datasets = dataflow_block.read_datasets(flow.pid)
+    assert status == "ok", text
+    found = {row["id"]: row for row in json.loads(text)["datasets"]}
+    assert listed in found and found[listed]["installed"] is True and found[listed]["path"]
+    assert kept_out not in found
+    assert [dataset.id for dataset in datasets] == [listed]
 
 
 # ---------------------------------------------------------------------------
