@@ -81,6 +81,7 @@ jest.mock("../../services/scenarioCatalog/scenarioDrag", () => ({
 }));
 jest.mock("../../services/agents", () => ({
   agentsApi: {},
+  agentsOnCanvas: jest.requireActual("../../services/agents/agentEditors").agentsOnCanvas,
   readAgentDragCoord: () => null,
   notifyAgentDockRefresh: jest.fn(),
   resolveAgentDropTarget: jest.fn(),

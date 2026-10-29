@@ -80,6 +80,7 @@ import { useStarterContext } from "../providers/StarterProvider";
 import { tryGetNodeDescriptor } from "../registry/nodeRegistry";
 import {
   agentsApi,
+  agentsOnCanvas,
   readAgentDragCoord,
   notifyAgentDockRefresh,
   resolveAgentDropTarget,
@@ -328,9 +329,10 @@ export function MainCanvas() {
     // editor the owner invited edits it: their changes go over the socket to
     // the owner's tab, which saves them (useSharedView).
     const isSharedView = useSharedView();
-    // The dataflow's agents are its owner's: an editor works with the canvas,
-    // not with them.
-    const ownersCanvas = !isSharedView && viewerMode !== "shared";
+    // The owner and the editors the owner invited work with the dataflow's
+    // agents, and a watcher with none; on an editor's canvas an install an
+    // agent proposes waits for the owner's review.
+    const agents = agentsOnCanvas(isSharedView ? "watcher" : viewerMode === "shared" ? "editor" : "owner");
     // Nodes are added (dropped), connected and deleted, and connections
     // removed, on the canvas only, by whoever edits it; the notebook view
     // changes no graph. A node's Delete node tool reads the same rule.
@@ -739,7 +741,7 @@ export function MainCanvas() {
     }
 
     return (
-        <AgentAttachmentsProvider enabled={ownersCanvas}>
+        <AgentAttachmentsProvider enabled={agents.drives} installsWaitForOwner={agents.installsWaitForOwner}>
         {!loading ? <div
             style={{ width: "100vw", height: "100vh", backgroundColor: "#f0f0f0" }}
         >
@@ -818,7 +820,7 @@ export function MainCanvas() {
             </ReactFlow>
             </div>
             </div>
-            {ownersCanvas ? <AgentDockOverlay /> : null}
+            {agents.drives ? <AgentDockOverlay /> : null}
             </div>
 
         </div> : loadingAnimation() }

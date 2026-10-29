@@ -11,6 +11,7 @@ import fs from "fs";
 import path from "path";
 
 import { stoppedByPhrase } from "../../components/agents/content/AgentSolveAttemptsCard";
+import { ACCOUNT_INSTALL_TOOLS, installsIntoAccount } from "../../services/agents/agentEditors";
 import {
   AGENT_CATEGORY_KEYS,
   agentCategoryKey,
@@ -34,6 +35,7 @@ const FILES = [
   "visDefaults",
   "nodeSettings",
   "dashboardRuns",
+  "agentInstalls",
 ];
 
 /** A shared file, read when a test runs, so a checkout without it fails each test on its own. */
@@ -146,6 +148,18 @@ describe("what a visualization node does by itself", () => {
       }));
     expect(resolveImageColumns(rows(least))).toEqual(["photo"]);
     expect(resolveImageColumns(rows(least - 1))).toEqual([]);
+  });
+});
+
+describe("the installs a dataflow's owner reviews", () => {
+  test("a proposal installs into an account exactly when the file names its tool", () => {
+    const { tools } = shared("agentInstalls");
+    expect(tools.length).toBeGreaterThan(0);
+    for (const tool of tools) expect(installsIntoAccount(tool)).toBe(true);
+    expect([...ACCOUNT_INSTALL_TOOLS].sort()).toEqual([...tools].sort());
+    for (const tool of ["node.create", "node.content.write", "dataflow.plan.write", "project.install"]) {
+      expect(installsIntoAccount(tool)).toBe(false);
+    }
   });
 });
 

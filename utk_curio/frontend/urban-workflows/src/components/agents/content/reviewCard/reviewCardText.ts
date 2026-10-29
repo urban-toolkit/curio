@@ -75,6 +75,10 @@ export const OUTCOME_LABEL: Record<string, string> = {
   stale: "The target changed since this was proposed; ask the agent to propose again",
 };
 
+/** What a pending install says on an invited editor's chat, in place of
+ * Apply and Dismiss: the dataflow's owner reviews it. */
+export const WAITS_FOR_OWNER = "Waits for the dataflow's owner to review it: an install changes their account.";
+
 /** What one Apply click does, per proposal kind — stated on the card. */
 /**
  * dev/119 (DEC-076): can the sandbox run a node.create's kind? The roster's
