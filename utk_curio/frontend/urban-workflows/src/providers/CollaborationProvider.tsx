@@ -480,7 +480,10 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
         usersRef.current = users;
     }, [users]);
 
-    // Everyone else's cursor in the code editors, in their color.
+    // Everyone else's cursor in the code editors, in their color. The style
+    // is written only when it changes: a pointer moving on someone's canvas
+    // changes their state about 20 times a second, and a style written again
+    // has the page work out every element's style again.
     useEffect(() => {
         const awareness = docBinding?.provider.awareness;
         if (!awareness || typeof document === "undefined") return;
@@ -491,7 +494,8 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
             document.head.appendChild(style);
         }
         const paint = () => {
-            if (style) style.textContent = remoteCursorStyle(awareness);
+            const rules = remoteCursorStyle(awareness);
+            if (style && style.textContent !== rules) style.textContent = rules;
         };
         paint();
         awareness.on("change", paint);

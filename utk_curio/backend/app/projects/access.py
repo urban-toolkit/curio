@@ -11,7 +11,9 @@ Three roles, decided on the server:
 :func:`room_role` is the one rule: a collaboration room asks it when a
 participant joins and again for each change the participant sends
 (``collaboration/events.py``), and refuses a watcher's. A change to the list
-reaches the room at once (:func:`_tell_the_room`).
+reaches the room at once (:func:`_tell_the_room`). The dataflow's agents ask
+it too (:func:`agents_role`): the owner and the editors drive them, and a
+watcher is refused.
 
 Only the owner manages the list, and no guest does: the shared guest owns the
 examples every hosted guest opens, so a check on ownership alone would let any
@@ -39,6 +41,9 @@ GUEST_INVITE_REFUSAL = "Guests cannot invite editors. Sign in with an account to
 NO_USERNAME = "Name the account to invite by its username."
 GUEST_INVITEE = "A guest cannot edit a dataflow. Invite an account."
 OWNER_INVITEE = "You own this dataflow, so you edit it already."
+#: What anyone but the owner and the editors the owner invited is told who
+#: asks the dataflow's agents for anything.
+AGENTS_WATCHER_REFUSAL = "Only the owner and the editors the owner invited work with this dataflow's agents."
 
 
 def room_role(user, project) -> str:
@@ -60,6 +65,21 @@ def room_role(user, project) -> str:
     if repo.editor_row(project.id, user_id) is not None:
         return EDITOR
     return WATCHER
+
+
+def agents_role(user, project) -> str:
+    """The role *user* has with *project*'s agents: ``owner`` for the account
+    that owns the dataflow, ``editor`` for an account the owner invited, and
+    ``watcher`` for anyone else, whom the agents' routes refuse.
+
+    The owner is told by account before :func:`room_role`, which has every
+    hosted guest watch: the hosted guests share the account that owns the
+    examples, and each works with an example's agents as with its own. A
+    hosted guest on another account's dataflow watches."""
+    user_id = getattr(user, "id", None)
+    if project is not None and user_id is not None and project.user_id == user_id:
+        return OWNER
+    return room_role(user, project)
 
 
 def joins_room(user, project) -> bool:

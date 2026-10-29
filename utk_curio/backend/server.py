@@ -19,6 +19,11 @@ with app.app_context():
             reconcile_guest_projects,
         )
         guest = _shared_guest_user()
+        # The hosted guests' copies go, as their examples are put back.
+        from utk_curio.backend.app.projects import visitor_copies
+        dropped = visitor_copies.drop_all()
+        if dropped:
+            app.logger.info("Dropped %d hosted guest copy(ies) of dataflows", dropped)
         n = reconcile_guest_projects(guest)
         if n:
             app.logger.info("Reconciled %d guest project(s) from filesystem", n)
