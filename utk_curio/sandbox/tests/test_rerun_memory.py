@@ -16,9 +16,19 @@ MALLOC_ARENA_MAX=2):
   and pyarrow's pool kept the pages a run had freed, which left the sandbox
   1.1 to 1.5 times the largest single request above idle at 200k polygons.
   The sandbox returns that memory whenever it goes idle
-  (``util/memory_release.py``), and settles at 0.55 to 0.85 of one request.
-  The two retention tests below hold that line: re-runs do not grow it, and
-  at rest it is at most one request.
+  (``util/memory_release.py``). The two retention tests below hold that
+  line over ten re-runs, with the allocator settings a launch gives the
+  sandbox (``isolation/lifecycle.server_environment``): re-runs do not grow
+  it, and at rest it is at most one request.
+* Through ten re-runs (ubuntu-latest, kernel 7.0, 4 cores, 200k polygons),
+  what stays at rest is free memory; what the sandbox holds live stays the
+  same: glibc's 36 MB in use, nothing in Arrow's pool, about 1 MB of DuckDB,
+  no frame (diagnostic runs on ``tmp/rerun-memory-probe``). With glibc's
+  thresholds left to rise by themselves, its arenas kept a run's freed
+  columns. After ten re-runs that was 1.06 to 1.75 of one request at rest
+  with the launch's arena cap and Arrow on glibc, and 1.11 to 1.38, about
+  20 MB more each re-run, with neither. With the thresholds held fixed, as
+  the launch now holds them, it is 0.25 to 0.35.
 * A re-run's peak comes from **serving** its outputs, not computing them. The
   canvas fetches every output at once, and each full fetch held the artifact
   three times over (the Arrow table, the IPC stream, a ``bytes`` copy of it):
@@ -45,7 +55,10 @@ import pytest
 from utk_curio.sandbox.tests import _rerun_memory
 
 ROWS = int(os.environ.get("CURIO_RERUN_ROWS", "200000"))
-CYCLES = int(os.environ.get("CURIO_RERUN_CYCLES", "3"))
+# Ten: what an idle sandbox keeps can grow a little each re-run, and three
+# re-runs were too few to tell that from one run's noise (#408's case is a
+# dataflow re-run again and again).
+CYCLES = int(os.environ.get("CURIO_RERUN_CYCLES", "10"))
 
 
 @pytest.fixture(scope="module")
