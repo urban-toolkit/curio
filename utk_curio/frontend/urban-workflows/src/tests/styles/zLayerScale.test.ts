@@ -39,6 +39,8 @@ describe("overlay / layering scale (curioTokens.css)", () => {
         "modal-base-backdrop",
         // High band: anything that can stack over the canvas.
         "agent-drawer",
+        // An agent's drag on the canvas, from the rail or a drawer's card.
+        "agent-drags",
         "dataset-drawer",
         "header-drawer",
         "dialog",
@@ -96,6 +98,15 @@ describe("overlay / layering scale (curioTokens.css)", () => {
     expect(layers["header-drawer"]).toBeLessThan(layers["modal-backdrop"]);
     expect(layers["modal-backdrop"]).toBeLessThan(layers["modal"]);
     expect(layers["modal"]).toBeLessThan(layers["dialog"]);
+  });
+
+  it("keeps an agent's drag over the catalog drawers and under API Settings", () => {
+    // A drag starts at a drawer's card or in the tool rail, so its cursor and
+    // ghost draw over both; API Settings and every modal still cover it.
+    for (const drawer of ["node-drawer", "dataset-drawer", "agent-drawer"]) {
+      expect(layers["agent-drags"]).toBeGreaterThan(layers[drawer]);
+    }
+    expect(layers["agent-drags"]).toBeLessThan(layers["header-drawer"]);
   });
 
   it("keeps the tooltip above every other tier, toasts included", () => {

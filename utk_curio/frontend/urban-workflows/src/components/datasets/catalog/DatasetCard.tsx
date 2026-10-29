@@ -16,6 +16,7 @@ import {
   relativeTimeOrEmpty as relativeTime,
 } from "./datasetDetailHelpers";
 import { DatasetConnectionBadge } from "./DatasetConnectionBadge";
+import { paletteItemAttrs } from "../../menus/nodes/toolsPaletteDismiss";
 import styles from "../../packages/publishing/PackageCard.module.css";
 
 // ── Version helper ───────────────────────────────────────────────────────────
@@ -108,6 +109,7 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
       /* Same attribute the palette rows carry (DatasetPaletteRows), so a
          card and its palette row share one identifier across surfaces. */
       data-dataset-id={dataset.id}
+      {...paletteItemAttrs("datasets", dataset.id)}
       draggable={draggable}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}

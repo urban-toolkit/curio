@@ -4,6 +4,7 @@ import { useReactFlow } from "reactflow";
 import { NODE_CATEGORY_SHORT_LABEL } from "../../../../constants/nodeCategoryShortLabels";
 import { NodeDescriptor } from "../../../../registry/types";
 import { getFlowNodeCanonicalType } from "../../../../utils/flowNodeCanonicalType";
+import { paletteItemAttrs } from "../toolsPaletteDismiss";
 import packageStyles from "./ToolsMenuPackagePalette.module.css";
 
 export const PackageTemplateRow = memo(function PackageTemplateRow({
@@ -37,6 +38,7 @@ export const PackageTemplateRow = memo(function PackageTemplateRow({
             <div
                 className={packageStyles.packageKindRowDrag}
                 data-pkg-template-id={String(desc.id)}
+                {...paletteItemAttrs("packages", String(desc.id))}
                 draggable
                 onDragStart={(event) => {
                     event.dataTransfer.setData("application/reactflow", String(desc.id));
