@@ -2,23 +2,15 @@
  * "Is this me?" in a collaboration room is asked of the participant, never of
  * the account (`providers/collab/participants.ts`). Two tabs of one account,
  * or two hosted guests on the one guest account, share a user id and are two
- * people: each sees the other's lock. Code is typed together in the node's
- * editor, so the room's panel lists people and activity and holds no vote.
+ * participants: each sees the other's lock. The people in the canvas's dock
+ * are `peopleInTheDock.test.tsx`'s.
  */
-import React from "react";
-import { render, screen } from "@testing-library/react";
-
-let mockCollab: any;
-jest.mock("../../../providers/CollaborationProvider", () => ({
-  useCollab: () => mockCollab,
-}));
-
 import {
   canEditRole,
   isOwnParticipant,
   roleIn,
+  writesDoc,
 } from "../../../providers/collab/participants";
-import { CollaborationSidePanel } from "../../../components/collab/CollaborationSidePanel";
 
 // Two tabs of the same account (user 7), and someone watching.
 const FIRST_TAB = { user_id: 7, username: "ana", participant_id: "p-1", role: "owner" as const };
@@ -48,34 +40,9 @@ describe("participants are told apart by participant id", () => {
     expect([canEditRole("owner"), canEditRole("editor"), canEditRole("watcher"), canEditRole(null)])
       .toEqual([true, true, false, false]);
   });
-});
 
-describe("the collaboration panel", () => {
-  const panel = (participantId: string, role: string) => {
-    mockCollab = {
-      enabled: true,
-      panelOpen: true,
-      users: [FIRST_TAB, SECOND_TAB, WATCHER],
-      activity: [],
-      proposals: [],
-      participantId,
-      role,
-    };
-    return render(<CollaborationSidePanel />);
-  };
-
-  test("holds no proposals and asks nobody to vote", () => {
-    panel("p-2", "owner");
-    expect(screen.queryByText(/Proposals/)).toBeNull();
-    expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Reject" })).toBeNull();
-    expect(screen.getByText(/Users \(3\)/)).toBeTruthy();
-    expect(screen.getByText(/Activity \(0\)/)).toBeTruthy();
-  });
-
-  test("the users list names each participant's role", () => {
-    const { container } = panel("p-2", "owner");
-    const roles = Array.from(container.querySelectorAll("[data-collab-role]")).map((el) => el.textContent);
-    expect(roles).toEqual(["owner", "owner", "watcher"]);
+  test("the owner's tab and an editor's send their changes to the doc, a watcher's never", () => {
+    expect([writesDoc("owner"), writesDoc("editor"), writesDoc("watcher"), writesDoc(null)])
+      .toEqual([true, true, false, false]);
   });
 });

@@ -8,8 +8,7 @@ the owner's tab too: the server keeps a watcher's awareness ``pointer``. A
 pointer that rests fades and is drawn whole again when it moves; one that
 leaves the canvas goes.
 
-A watcher is in the dataflow's room on any stack with sign-in, so this needs no
-``--collab``.
+A watcher is in the dataflow's room on any stack with sign-in.
 """
 
 from __future__ import annotations

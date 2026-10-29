@@ -57,9 +57,8 @@ jest.mock("../../components/edges/UniDirectionalEdge", () => ({ __esModule: true
 jest.mock("../../components/VersionBadge", () => ({ __esModule: true, default: () => null }));
 jest.mock("../../components/menus", () => ({ ToolsMenu: () => null, UpMenu: () => null }));
 jest.mock("../../components/notebook/NotebookRunAll", () => ({ NotebookRunAll: () => null }));
-jest.mock("../../components/collab/CollaborationSidePanel", () => ({ CollaborationSidePanel: () => null }));
-jest.mock("../../components/layout/CanvasSidePanels", () => ({ CanvasSidePanels: () => null }));
 jest.mock("../../components/agents/attach/AgentDockOverlay", () => ({ AgentDockOverlay: () => null }));
+jest.mock("../../components/agents/attach/AgentDock", () => ({ AgentDock: () => null }));
 jest.mock("../../components/scenarios/useScenarioDrop", () => ({ useScenarioDrop: () => mockDropScenario }));
 jest.mock("../../components/scenarios/ScenarioLayers", () => ({ BOX_WIDTH: 0, boxLayout: () => ({ height: 0 }) }));
 jest.mock("../../components/scenarios/CanvasScenarioLayers", () => ({ CanvasScenarioLayers: () => null }));
