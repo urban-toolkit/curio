@@ -21,7 +21,7 @@ import pytest
 
 from utk_curio.backend.tests._support.agent_routes import _auth
 from utk_curio.backend.tests.test_agents.test_map_edits_grounding import _project, _seed_builtin, _write_tail
-from utk_curio.backend.tests.test_agents.test_routes_proposals import _changes, _landed_plan
+from utk_curio.backend.tests.test_agents.test_routes_proposals import _landed_plan, _the_change
 from utk_curio.backend.tests.test_agents.test_source_grounding_routes import (
     _attach,
     _install,
@@ -196,7 +196,7 @@ class TestTheMintSendsTheSpecBack:
         refused, landed = _tool_results(calls[-1], "node.content.write")
         assert "refused" in refused.split("\n", 1)[0] and _message() in refused, refused
         assert landed.startswith("[tool result] node.content.write: applied"), landed
-        [card] = _changes(body)
+        card = _the_change(body)
         assert card["preview"] == MAP_STYLED
         from utk_curio.backend.app.projects.services import _user_dir_key
 

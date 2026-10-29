@@ -136,11 +136,12 @@ def test_code_typed_while_the_agent_writes_stays_and_the_write_is_refused(
     the doc keeps what she typed, the write lands nothing and the agent is
     told the node took other code."""
     from utk_curio.backend.app.agents.application.proposals import apply as agents_apply
+    # The landing's step between its read and its write, which main lacks.
+    from utk_curio.backend.app.agents.application.proposals.apply import _resolve_plan_ledger as resolve
 
     user, token = user_and_token
     _att_id, calls, run = _code_writer(client, token, alice_project, monkeypatch)
     tab = _tab(app, token, alice_project)
-    resolve = agents_apply._resolve_plan_ledger
     typed = []
 
     def typed_meanwhile(spec, node_id):

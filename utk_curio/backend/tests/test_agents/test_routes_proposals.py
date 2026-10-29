@@ -25,13 +25,23 @@ def _changes(body) -> list[dict]:
     return [p for p in body["content"] if p["type"] == "change"]
 
 
+def _the_change(body) -> dict:
+    """The turn's one change card; the parts it holds instead when it has none."""
+    cards = _changes(body)
+    assert len(cards) == 1, [p["type"] for p in body["content"]]
+    return cards[0]
+
+
 def _landed_plan(body) -> dict:
     """The plan that landed with the turn: its change card, with ``canvas``,
     the nodes and connections a tab no doc binds puts on its canvas."""
     assert not [p for p in body["content"] if p["type"] == "proposal"], "a plan waited for review"
-    [card] = [p for p in _changes(body) if p.get("kind") == "plan"]
-    [landed] = [c for c in body.get("changes") or [] if c["changeId"] == card["changeId"]]
-    return {**card, "canvas": landed["canvas"]}
+    plans = [p for p in _changes(body) if p.get("kind") == "plan"]
+    assert len(plans) == 1, [p["type"] for p in body["content"]]
+    [card] = plans
+    landed = [c for c in body.get("changes") or [] if c["changeId"] == card["changeId"]]
+    assert len(landed) == 1, body.get("changes")
+    return {**card, "canvas": landed[0]["canvas"]}
 
 
 class TestReviewProposals:
@@ -146,7 +156,7 @@ class TestReviewProposals:
         assert r.status_code == 200
         body = r.get_json()
         assert not [p for p in body["content"] if p["type"] == "proposal"]
-        [card] = _changes(body)
+        card = _the_change(body)
         assert (card["status"], card["nodeId"], card["preview"]) == ("applied", "n1", "print(2)")
         # The node holds it at once, and the model was told so, with the Undo.
         assert self._spec_node_content(user, alice_project) == "print(2)"
@@ -211,7 +221,7 @@ class TestReviewProposals:
             json={"name": "p", "spec": {"dataflow": {"nodes": [node], "edges": [], "packages": []}}, "outputs": []},
             headers=_auth(token),
         )
-        [card] = _changes(self._run(client, token, alice_project, att_id).get_json())
+        card = _the_change(self._run(client, token, alice_project, att_id).get_json())
         assert card["summary"] == "Replaced the content of the Python Computation node · Word counts"
         assert card["lines"] == ["Python Computation node · Word counts"]
         assert card["nodeId"] == "n1"  # the id stays where the Undo finds the node
@@ -224,7 +234,7 @@ class TestReviewProposals:
     def test_undo_puts_the_code_back_once_and_runs_no_model(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         att_id, calls = self._setup(client, token, alice_project, monkeypatch)
-        [card] = _changes(self._run(client, token, alice_project, att_id).get_json())
+        card = _the_change(self._run(client, token, alice_project, att_id).get_json())
         runs_before = ledger.aggregates(_user_dir_key(user))["runs"]
         model_calls = len(calls)
         undo = f"/api/agents/projects/{alice_project}/attachments/{att_id}/changes/{card['changeId']}/undo"
@@ -588,7 +598,7 @@ class TestNodeCreate:
         user, token = user_and_token
         att_id, calls = self._setup(client, token=token, user=user, project_id=alice_project, monkeypatch=monkeypatch)
         body = self._run(client, token, alice_project, att_id).get_json()
-        [card] = _changes(body)
+        card = _the_change(body)
         assert (card["kind"], card["status"]) == ("node", "applied")
         # dev/119 (DEC-076): the roster's executability rides the card as display.
         assert (card["nodeType"], card["executable"]) == ("curio.builtin/computation-analysis", True)

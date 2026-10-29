@@ -141,13 +141,21 @@ def _changes(body):
     return [p for p in body["content"] if p["type"] == "change"]
 
 
+def _the_change(body) -> dict:
+    """The reply's one change card; the parts it holds instead when it has none."""
+    cards = _changes(body)
+    assert len(cards) == 1, [p["type"] for p in body["content"]]
+    return cards[0]
+
+
 def _landed_plan(body) -> dict:
     """The plan that landed with a blocking run's reply, shaped as an apply's
     answer was: its graph (``appliedGraph``) is the canvas mutation the reply
     carries for a canvas no doc binds."""
     assert not _proposals(body), "a plan waited for review"
-    [landed] = [c for c in body.get("changes") or [] if c["tool"] == "dataflow.plan.write"]
-    return {"appliedGraph": landed["canvas"]}
+    landed = [c for c in body.get("changes") or [] if c["tool"] == "dataflow.plan.write"]
+    assert len(landed) == 1, body.get("changes")
+    return {"appliedGraph": landed[0]["canvas"]}
 
 
 def _fake_probe(monkeypatch, verdicts: dict, counter: list | None = None):
@@ -243,7 +251,7 @@ class TestCatalogGrounding:
             "Proposed.",
         ])
         body = _run(client, token, project, att, "load my file data/tracts.geojson into a node")
-        [proposal] = _changes(body)
+        proposal = _the_change(body)
         assert proposal["source"]["kind"] == "user-path"
         assert proposal["source"]["refs"][0]["value"] == "data/tracts.geojson"
 
@@ -290,7 +298,7 @@ class TestCatalogGrounding:
             "Proposed.",
         ])
         body = _run(client, token, project, att, f"Build a data-loading node for {asked}.")
-        [proposal] = _changes(body)
+        proposal = _the_change(body)
         assert {ref["datasetId"] for ref in proposal["source"]["refs"]} == {asked, boundary}
 
     def _two_turns(self, client, token, project, monkeypatch, asked, loaded):
@@ -330,7 +338,7 @@ class TestCatalogGrounding:
         asked = seed(user, filename="building_footprints.csv")
         seed(user, filename="cook_buildings_2022.csv")
         body, _calls = self._two_turns(client, token, project, monkeypatch, asked, asked)
-        [proposal] = _changes(body)
+        proposal = _the_change(body)
         assert [ref["datasetId"] for ref in proposal["source"]["refs"]] == [asked]
 
 
@@ -465,7 +473,7 @@ class TestExternalDiscovery:
             "Proposed — review above.",
         ])
         body = _run(client, token, project, att, "Build the data-loading node from NOAA Climate Data API")
-        [proposal] = _changes(body)
+        proposal = _the_change(body)
         assert proposal["source"]["kind"] == "external"
         assert proposal["source"]["refs"][0]["value"] == NOAA
         assert proposal["source"]["refs"][0]["verification"]["status"] == "verified"
@@ -512,7 +520,7 @@ class TestExternalDiscovery:
         att = _attach(client, token, project, NB)
         _fake_probe(monkeypatch, {NOAA: {"status": "unreachable", "httpStatus": 401, "detail": "the endpoint answered 401"}})
         _script(monkeypatch, [_create_tail(f'import requests\nreturn requests.get("{NOAA}").json()'), "Proposed."])
-        [proposal] = _changes(_run(client, token, project, att))
+        proposal = _the_change(_run(client, token, project, att))
         assert proposal["source"]["refs"][0]["requirement"] == "credential-gated"
         assert "credential-gated" in proposal["source"]["label"]
 
@@ -669,7 +677,7 @@ class TestSyntheticData:
         _install(client, token, project, NB)
         att = _attach(client, token, project, NB)
         _script(monkeypatch, [_create_tail(self.INLINE, goal="synthetic sample", synthetic=True), "Proposed."])
-        [proposal] = _changes(_run(client, token, project, att, "generate synthetic sample data for 5 tracts"))
+        proposal = _the_change(_run(client, token, project, att, "generate synthetic sample data for 5 tracts"))
         assert proposal["source"]["kind"] == "synthetic"
         assert "no external source" in proposal["source"]["label"]
 
@@ -687,7 +695,7 @@ class TestSyntheticData:
         _install(client, token, project, NB)
         att = _attach(client, token, project, NB)
         _script(monkeypatch, [_create_tail("df = input_0[0]\nreturn df.describe()", node_type=CA), "Proposed."])
-        [proposal] = _changes(_run(client, token, project, att, "summarize the upstream frame"))
+        proposal = _the_change(_run(client, token, project, att, "summarize the upstream frame"))
         assert "source" not in proposal
 
 

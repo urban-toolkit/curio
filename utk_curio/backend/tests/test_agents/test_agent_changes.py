@@ -85,6 +85,13 @@ def _cards(body) -> list[dict]:
     return [p for p in body["content"] if p["type"] == "change"]
 
 
+def _the_card(body) -> dict:
+    """The turn's one change card; the parts it holds instead when it has none."""
+    cards = _cards(body)
+    assert len(cards) == 1, [p["type"] for p in body["content"]]
+    return cards[0]
+
+
 def _proposals(body) -> list[dict]:
     return [p for p in body["content"] if p["type"] == "proposal"]
 
@@ -126,7 +133,7 @@ class TestEachFamilyLandsAtOnce:
         body, calls = _ask(client, token, project, att, monkeypatch,
                            [_write_tail("sum", "return input_0.sum()"), "Written."])
         assert _proposals(body) == []
-        [card] = _cards(body)
+        card = _the_card(body)
         assert (card["kind"], card["status"], card["nodeId"]) == ("content", "applied", "sum")
         assert card["preview"] == "return input_0.sum()"
         assert _by_id(_saved(client, token, project))["sum"]["content"] == "return input_0.sum()"
@@ -144,7 +151,7 @@ class TestEachFamilyLandsAtOnce:
         project, att = _setup(client, user, token)
         body, _ = _ask(client, token, project, att, monkeypatch,
                        [_tail("node.create", nodeType=CA, content="return 2"), "Added."])
-        [card] = _cards(body)
+        card = _the_card(body)
         assert card["kind"] == "node"
         [landed] = body["changes"]
         assert landed["canvas"]["kind"] == "node-created"
@@ -174,7 +181,7 @@ class TestEachFamilyLandsAtOnce:
         }
         body, calls = _ask(client, token, project, att, monkeypatch, ["Here.\n" + _plan_tail(plan)])
         assert _proposals(body) == []
-        [card] = _cards(body)
+        card = _the_card(body)
         assert card["kind"] == "plan" and card["planId"]
         flow = _saved(client, token, project)
         ids = _by_id(flow)
@@ -217,7 +224,7 @@ class TestUndoByKind:
         project, att = _setup(client, user, token, target={"kind": "node", "targetId": "sum"})
         body, _ = _ask(client, token, project, att, monkeypatch,
                        [_write_tail("sum", "return input_0.sum()"), "Written."])
-        [card] = _cards(body)
+        card = _the_card(body)
         return project, att, card
 
     def test_undo_gives_a_nodes_code_its_before_back(self, client, user_and_token, tmp_curio, monkeypatch):
@@ -249,7 +256,7 @@ class TestUndoByKind:
         project, att = _setup(client, user, token)
         body, _ = _ask(client, token, project, att, monkeypatch,
                        [_tail("node.create", nodeType=CA, content="return 2"), "Added."])
-        [card] = _cards(body)
+        card = _the_card(body)
         new_id = body["changes"][0]["canvas"]["node"]["id"]
         flow = _saved(client, token, project)
         # The person connects it before the Undo.
@@ -270,7 +277,7 @@ class TestUndoByKind:
         project, att = _setup(client, user, token)
         body, _ = _ask(client, token, project, att, monkeypatch,
                        [_tail("node.create", nodeType=CA, content="return 2"), "Added."])
-        [card] = _cards(body)
+        card = _the_card(body)
         new_id = body["changes"][0]["canvas"]["node"]["id"]
         flow = _saved(client, token, project)
         for node in flow["nodes"]:
@@ -291,7 +298,7 @@ class TestUndoByKind:
             "removeNodes": ["load"],
         }
         body, _ = _ask(client, token, project, att, monkeypatch, ["Here.\n" + _plan_tail(plan)])
-        [card] = _cards(body)
+        card = _the_card(body)
         return project, att, card
 
     def test_undo_of_a_plan_puts_back_the_version_before_it_removed_nodes_and_their_connections_included(
@@ -333,9 +340,9 @@ class TestUndoByKind:
         first = {"goal": "one", "nodes": [{"ref": "a", "nodeType": CA, "title": "A", "intent": "a"}], "edges": []}
         second = {"goal": "two", "nodes": [{"ref": "b", "nodeType": CA, "title": "B", "intent": "b"}], "edges": []}
         body, _ = _ask(client, token, project, att, monkeypatch, ["One.\n" + _plan_tail(first)])
-        [card_one] = _cards(body)
+        card_one = _the_card(body)
         body, _ = _ask(client, token, project, att, monkeypatch, ["Two.\n" + _plan_tail(second)])
-        [card_two] = _cards(body)
+        card_two = _the_card(body)
         assert _undo(client, token, project, att, card_two["changeId"]).status_code == 200
         assert _listing(client, token, project, att)["planProposal"]["proposalId"] == card_one["planId"]
 
@@ -512,7 +519,7 @@ class TestAChangeWaitsForAPersonInTheNode:
 
         monkeypatch.setattr(changes, "time", SimpleNamespace(monotonic=real_time.monotonic, sleep=_sleep))
         body, _ = _ask(client, token, project, att, monkeypatch, [_write_tail("sum", "return input_0.sum()"), "Written."])
-        [card] = _cards(body)
+        card = _the_card(body)
         assert card["status"] == "applied"
         assert len(waits) == 3, waits
         assert _by_id(_saved(client, token, project))["sum"]["content"] == "return input_0.sum()"
@@ -580,7 +587,7 @@ class TestAChangeWaitsForAPersonInTheNode:
         state = self._hold(monkeypatch, (str(user.id), "Me"))
         body, _ = _ask(client, token, project, att, monkeypatch,
                        [_write_tail("sum", "return input_0.sum()"), "Written."])
-        [card] = _cards(body)
+        card = _the_card(body)
         assert card["status"] == "applied"
         assert state["held"] is True
 

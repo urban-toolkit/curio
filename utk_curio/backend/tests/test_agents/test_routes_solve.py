@@ -806,7 +806,9 @@ class TestALandedPlan:
         _block_closure_repair(monkeypatch)
         r = helper._run(client, token, alice_project, att_id)
         assert r.status_code == 200, r.get_json()
-        card = next(p for p in r.get_json()["content"] if p["type"] == "change")
+        changes = [p for p in r.get_json()["content"] if p["type"] == "change"]
+        assert changes, [p["type"] for p in r.get_json()["content"]]
+        card = changes[0]
         cards = client.get(f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)).get_json()["attachments"]
         ids = next(c for c in cards if c["attachmentId"] == att_id)["builderSession"]["nodeIds"]
         assert len(ids) == 2

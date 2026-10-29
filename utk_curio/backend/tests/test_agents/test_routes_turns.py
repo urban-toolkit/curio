@@ -1174,7 +1174,9 @@ class TestToolLoop:
             json={"message": "q"}, headers=_auth(token),
         )
         assert r.status_code == 200
-        [card] = [p for p in r.get_json()["content"] if p["type"] == "change"]
+        cards = [p for p in r.get_json()["content"] if p["type"] == "change"]
+        assert len(cards) == 1, [p["type"] for p in r.get_json()["content"]]
+        card = cards[0]
         assert (card["tool"], card["nodeId"], card["status"]) == ("node.content.write", "n1", "applied")
         spec = projects_storage.read_spec(_user_dir_key(user), alice_project)
         assert spec["dataflow"]["nodes"][0]["content"] == "pwned"
@@ -3053,6 +3055,7 @@ class TestToolRequestRecovery:
         # The invalid tail never streamed as text.
         text = "".join(p.get("text", "") for k, p in events if k == "delta")
         assert "curio.v1" not in text and "toolRequest" not in text
+        assert "change" in kinds, kinds
         assert kinds.index("tool_revision") < kinds.index("change") < kinds.index("done")
         done = events[-1][1]
         assert any(p["type"] == "change" and p.get("kind") == "node" for p in done["content"])
