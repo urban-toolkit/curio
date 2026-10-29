@@ -56,6 +56,9 @@ place in the log the spec was last written from, with that write's revision
   is lost, or when no tab holds it and it has grown to :data:`GROWN_TOO_LARGE`
   times a doc built anew; the old log stays where it is, readable.
 * A doc leaves memory :data:`CLOSE_AFTER_S` after its last tab, written first.
+* While the server records the history (``history.RECORDING``), each change
+  :func:`_commit` logs is a point of it, named after the change's origin, and
+  a dataflow's first open gives it its first points (``history.py``).
 
 **Writers.** This module is the one writer of ``spec.trill.json``
 (``storage.write_spec``), and every backend writer of a dataflow goes through
@@ -117,7 +120,7 @@ from pycrdt import (
     write_message,
 )
 
-from utk_curio.backend.app.collaboration import doc_mapping, room_state
+from utk_curio.backend.app.collaboration import doc_mapping, history, room_state
 from utk_curio.backend.app.collaboration.events import (
     READ_ONLY_REFUSAL,
     _project,
@@ -199,6 +202,11 @@ class _OpenDoc:
         self.awareness_owners: dict[int, str] = {}
         self.updates: list[bytes] = []
         self.awareness_changed: list[int] = []
+        #: What the doc's last transaction added, removed and typed, and the
+        #: history's own state of this doc (``history.py``), while the history
+        #: records (``history.RECORDING``).
+        self.touched = None
+        self.history = None
         # Guarded by this module's lock.
         self.changed_at: Optional[float] = None
         self.dirty_since: Optional[float] = None
@@ -372,18 +380,95 @@ def _begin_log(entry: _OpenDoc) -> None:
 
 
 def _roll(entry: _OpenDoc) -> None:
-    """Start today's segment, if the next change is the day's first."""
+    """Start today's segment, if the next change is the day's first. The
+    history's typing points end with the day they began in."""
     day = _today()
     if day != entry.segment:
+        if history.RECORDING:
+            history.close_typing(entry)
         _start_segment(entry, day)
         _write_pointer(entry)
 
 
-def _append(entry: _OpenDoc, updates: list[bytes]) -> None:
+def _append(entry: _OpenDoc, updates: list[bytes]) -> tuple[int, int]:
+    """Add *updates* to the log's segment; where in it they start and end."""
     _, path = _segment_files(entry.log_dir(), entry.segment)
     with open(path, "ab") as log:
+        start = log.seek(0, os.SEEK_END)
         for update in updates:
             log.write(write_message(update))
+        return start, log.tell()
+
+
+def log_end(entry: _OpenDoc) -> tuple[str, str, int]:
+    """Where the open doc's log ends now: its doc, its segment and the place
+    in the segment's updates, a point of the history (``history.py``)."""
+    _, path = _segment_files(entry.log_dir(), entry.segment)
+    try:
+        return entry.doc_id, entry.segment, path.stat().st_size
+    except FileNotFoundError:
+        return entry.doc_id, entry.segment, 0
+
+
+def segment_in(folder: Path, doc_id: str, day: str) -> tuple[bytes, list[tuple[int, bytes]]]:
+    """*day*'s segment of the log of doc *doc_id* in the dataflow folder
+    *folder*: its checkpoint, and its updates, each with the place its record
+    ends at."""
+    if not _DOC_ID_RE.match(doc_id) or not _DAY_RE.match(day):
+        raise ValueError(f"no log {doc_id!r} {day!r}")
+    checkpoint, updates = _segment_files(folder / LOG_DIR / doc_id, day)
+    data = checkpoint.read_bytes()
+    try:
+        records = _records(updates.read_bytes())
+    except FileNotFoundError:
+        records = []
+    return data, records
+
+
+def write_segment(folder: Path, doc_id: str, day: str, checkpoint: bytes, updates: bytes) -> None:
+    """Write *day*'s segment of the log of doc *doc_id* in *folder*: its
+    checkpoint, then its updates, records as the log writes them."""
+    if not _DOC_ID_RE.match(doc_id) or not _DAY_RE.match(day):
+        raise ValueError(f"no log {doc_id!r} {day!r}")
+    log_dir = folder / LOG_DIR / doc_id
+    log_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_path, updates_path = _segment_files(log_dir, day)
+    _write_atomically(checkpoint_path, checkpoint)
+    _write_atomically(updates_path, updates)
+
+
+def doc_ids_in(folder: Path) -> list[str]:
+    """The docs whose logs the dataflow folder *folder* holds."""
+    try:
+        return sorted(path.name for path in (folder / LOG_DIR).iterdir()
+                      if path.is_dir() and _DOC_ID_RE.match(path.name))
+    except FileNotFoundError:
+        return []
+
+
+def live_doc_id(folder: Path) -> Optional[str]:
+    """The doc the dataflow folder *folder*'s pointer names: the one its next
+    open loads."""
+    pointer = _read_pointer(folder)
+    return pointer["doc"] if pointer is not None else None
+
+
+def restart_log(entry: _OpenDoc) -> None:
+    """Start the open doc's log again, today's segment its first, from the
+    doc as it is now: its earlier segments go. The doc keeps its id, so its
+    tabs sync on. Under the doc's lock, its spec written first."""
+    log_dir = entry.log_dir()
+    day = _today()
+    log_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint, updates = _segment_files(log_dir, day)
+    _write_atomically(checkpoint, entry.doc.get_update())
+    _write_atomically(updates, b"")
+    entry.segment = day
+    entry.folded = {"segment": day, "offset": 0}
+    _write_pointer(entry)
+    for path in list(log_dir.glob("*.bin")) + list(log_dir.glob("*.updates")):
+        if path.stem != day:
+            path.unlink(missing_ok=True)
 
 
 def _mark_written(entry: _OpenDoc) -> None:
@@ -463,7 +548,7 @@ def _catch_up(entry: _OpenDoc, file: "storage.SpecFile") -> None:
         logger.warning("dataflow %s: node %s's code changed outside its doc and in it; the doc's stays",
                        entry.project_id, node_id)
     entry.revision, entry.base = file.revision, theirs
-    _commit(entry, skip_sid=None)
+    _commit(entry, skip_sid=None, origin=SPEC_ORIGIN)
 
 
 # ---------------------------------------------------------------------------
@@ -478,6 +563,8 @@ def _attach(entry: _OpenDoc, doc) -> None:
     entry.awareness.set_local_state(None)  # the server is no one in the room
     doc.observe(entry.on_update)
     entry.awareness.observe(entry.on_awareness)
+    if history.RECORDING:
+        history.observe(entry)
 
 
 def _built_anew(entry: _OpenDoc, dataflow: dict) -> None:
@@ -526,6 +613,10 @@ def _load(entry: _OpenDoc) -> None:
         entry.revision, entry.base = file.revision, _owned(file.spec)
         _built_anew(entry, entry.base)
     entry.loaded = True
+    if history.RECORDING:
+        # Before anything this open changes: the dataflow's first points are
+        # the history it carries, or the dataflow as its doc holds it.
+        history.first_points(entry)
     _catch_up(entry, file)
     if not entry.tabs:
         _built_anew_if_grown(entry)
@@ -782,6 +873,8 @@ def _close(entry: _OpenDoc) -> bool:
     if entry.dirty_since is not None:
         _flush(entry)
     with entry.lock:
+        if history.RECORDING and not entry.closed:
+            history.close_typing(entry)
         with _lock:
             if entry.closed or entry.tabs or entry.dirty_since is not None or entry.idle_since is None:
                 return False
@@ -817,6 +910,11 @@ def flush_due(now: Optional[float] = None) -> None:
     for entry in entries:
         with _lock:
             close_due, save_due = _close_due(entry), _save_due(entry)
+        typing_due = history.next_due(entry) if history.RECORDING else None
+        if typing_due is not None and now >= typing_due:
+            with entry.lock:
+                if not entry.closed:
+                    history.typing_due(entry, now)
         if close_due is not None and now >= close_due:
             _close(entry)
         elif save_due is not None and now >= save_due:
@@ -849,7 +947,9 @@ def _run_flusher() -> None:
                     _flusher = None
                 return
             dues = [due for entry in _docs.values()
-                    for due in (_save_due(entry), _close_due(entry)) if due is not None]
+                    for due in (_save_due(entry), _close_due(entry),
+                                history.next_due(entry) if history.RECORDING else None)
+                    if due is not None]
             wait = max(0.0, min(dues) - _clock()) if dues else CLOSE_AFTER_S
             if failed:
                 wait = max(wait, SAVE_IDLE_S)  # a write that fails is tried again, not in a spin
@@ -864,6 +964,8 @@ def close_all() -> None:
         if entry.dirty_since is not None:
             _flush(entry)
         with entry.lock:
+            if history.RECORDING and not entry.closed:
+                history.close_typing(entry)
             entry.closed = True
     with _lock:
         _docs.clear()
@@ -1038,7 +1140,8 @@ def live(user_key: str, project_id: str) -> Optional[Live]:
 
 
 def write(user_key: str, project_id: str, spec: Live, actor: Actor, *,
-          on_refused: Optional[Callable[[tuple], None]] = None) -> Written:
+          on_refused: Optional[Callable[[tuple], None]] = None,
+          point: Optional[dict] = None) -> Written:
     """Write what a writer changed in *spec*, which :func:`live` handed it,
     since then (or since its last write): one short transaction on the
     dataflow's doc, *actor* its origin, under the spec lock (unless this
@@ -1058,6 +1161,9 @@ def write(user_key: str, project_id: str, spec: Live, actor: Actor, *,
       revision as one that changed nothing it holds.
     * Nothing is written when the writer changed nothing, nor for a dataflow
       deleted meanwhile, whose folder must not come back.
+    * *point*, given, is the history's point the change is (``history.py``):
+      its kind, what it is and whose, in place of the point the history names
+      a writer's change by.
 
     *spec* then remembers what it holds as written, so its next write applies
     only what changed after this one."""
@@ -1069,7 +1175,7 @@ def write(user_key: str, project_id: str, spec: Live, actor: Actor, *,
     if doc_mapping.same(_writable(spec), spec.base):
         spec.written = Written(False)
         return spec.written
-    written = _write(user_key, project_id, spec.base, spec, actor, on_refused=on_refused)
+    written = _write(user_key, project_id, spec.base, spec, actor, on_refused=on_refused, point=point)
     spec.base = copy.deepcopy(_writable(spec))
     spec.written = written
     return written
@@ -1129,7 +1235,7 @@ def create(user_key: str, project_id: str, spec: dict, actor: Actor) -> Live:
                         doc_mapping.apply_dataflow(
                             entry.doc, doc_mapping.doc_to_dataflow(entry.doc), doc_mapping.owned(_dataflow_of(mine)),
                         )
-                    _commit(entry, skip_sid=None)
+                    _commit(entry, skip_sid=None, origin=actor)
                     _written(entry, file, mine, history={
                         key: spec[key] for key in storage.HISTORY_KEYS if key in spec
                     })
@@ -1166,7 +1272,7 @@ def _drop_pointer(user_key: str, project_id: str) -> None:
 
 def _write(user_key: str, project_id: str, base: dict, mine, actor: Actor, *,
            on_refused: Optional[Callable[[tuple], None]] = None,
-           history: Optional[dict] = None) -> Written:
+           history: Optional[dict] = None, point: Optional[dict] = None) -> Written:
     """What :func:`write` and :func:`put` write: the change from *base* to
     *mine*, under the spec lock."""
     if not _has_spec(user_key, project_id):
@@ -1197,7 +1303,7 @@ def _write(user_key: str, project_id: str, base: dict, mine, actor: Actor, *,
                     refused = tuple(doc_mapping.apply_dataflow(
                         entry.doc, doc_mapping.owned(_dataflow_of(base)), doc_mapping.owned(_dataflow_of(theirs)),
                     ))
-                _commit(entry, skip_sid=None)
+                _commit(entry, skip_sid=None, origin=actor, point=point)
                 if refused:
                     for node_id in refused:
                         logger.info("dataflow %s: node %s's code changed while %s worked; the doc's stays",
@@ -1359,15 +1465,21 @@ def _clocks(doc) -> dict[int, int]:
     return clocks
 
 
-def _commit(entry: _OpenDoc, *, skip_sid: Optional[str]) -> bool:
-    """Log and relay what the doc's last transaction changed. Whether the
-    log has it."""
+def _commit(entry: _OpenDoc, *, skip_sid: Optional[str], origin=None,
+            point: Optional[dict] = None) -> bool:
+    """Log and relay what the doc's last transaction changed, *origin* its
+    origin: the tab whose update it applied (``history.Tab``), a writer's
+    :class:`Actor`, :data:`SPEC_ORIGIN`. While the history records, the change
+    is a point of it, or *point*, as the writer names it (``history.py``).
+    Whether the log has it."""
     updates, entry.updates = entry.updates, []
+    touched = history.take_touched(entry)
     if not updates:
         return True
     logged = True
+    span = None
     try:
-        _append(entry, updates)
+        span = _append(entry, updates)
     except OSError:
         logged = False
         logger.error("dataflow %s: a change could not be added to its update log", entry.project_id,
@@ -1376,6 +1488,8 @@ def _commit(entry: _OpenDoc, *, skip_sid: Optional[str]) -> bool:
         _emit(create_update_message(update), entry.project_id,
               to=_relay_room(entry.project_id), skip_sid=skip_sid)
     _changed(entry)
+    if history.RECORDING and span is not None:
+        history.recorded(entry, [history.Change(origin, span[0], span[1], touched)], point=point)
     return logged
 
 
@@ -1505,7 +1619,7 @@ def _update(sid: str, me: dict, project_id: str, message: bytes) -> dict:
                 entry.doc.apply_update(update)
         kept = {str(client): clock for client, clock in _clocks(entry.doc).items()
                 if before.get(client) != clock}
-        logged = _commit(entry, skip_sid=sid)
+        logged = _commit(entry, skip_sid=sid, origin=history.Tab(sid, me))
     if not logged:
         return _refused("not_kept")
     return {"ok": True, "kept": kept}
@@ -1519,8 +1633,12 @@ def _awareness(sid: str, me: dict, project_id: str, message: bytes) -> dict:
         if entry.closed or sid not in entry.tabs:
             return _refused("not_synced")
         accepted = _accepted_awareness(entry, sid, me, _framed(message[1:]))
+        editing = history.editing(entry, sid) if history.RECORDING else None
         entry.awareness.apply_awareness_update(accepted, sid)
         _relay_awareness(entry, skip_sid=sid)
+        if editing is not None:
+            # A person who leaves a node's editor ends their typing point.
+            history.left_editors(entry, sid, me, editing)
     return {"ok": True}
 
 
@@ -1566,6 +1684,8 @@ def leave(sid: str) -> None:
         with entry.lock:
             if entry.closed:
                 continue
+            if history.RECORDING:
+                history.close_typing(entry, sid=sid)
             entry.tabs.pop(sid, None)
             ids = [client for client, owner in entry.awareness_owners.items() if owner == sid]
             for client in ids:
