@@ -86,9 +86,10 @@ function anaIs(state: PresenceState | null) {
     });
 }
 
+/** Ana watches: the server keeps a watcher's `pointer`. */
 const anaAt = (x: number, y: number): PresenceState => ({
     user: { participant_id: "p-ana", name: "Ana", role: "watcher" },
-    cursor: { x, y, t: Date.now() },
+    pointer: { x, y, t: Date.now() },
 });
 
 function pointer(type: "pointermove" | "pointerleave", x = 0, y = 0) {
@@ -98,7 +99,7 @@ function pointer(type: "pointermove" | "pointerleave", x = 0, y = 0) {
 }
 
 const drawn = () => Array.from(document.querySelectorAll<HTMLElement>("[data-canvas-cursor]"));
-const myCursor = () => (mine.getLocalState() as PresenceState | null)?.cursor;
+const myCursor = () => (mine.getLocalState() as PresenceState | null)?.pointer;
 
 function cssColor(color: string): string {
     const probe = document.createElement("div");
@@ -202,7 +203,7 @@ describe("everyone else's pointer", () => {
         renderCanvas();
         anaIs(anaAt(100, 100));
         expect(drawn()).toHaveLength(1);
-        anaIs({ ...anaAt(0, 0), cursor: null });
+        anaIs({ ...anaAt(0, 0), pointer: null });
         expect(drawn()).toHaveLength(0);
 
         anaIs(anaAt(100, 100));

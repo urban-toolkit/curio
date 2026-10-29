@@ -1,5 +1,5 @@
 /**
- * Each tab's pointer on the canvas, as its awareness carries it
+ * Each tab's pointer on the canvas, as its awareness carries it, `pointer`
  * (`providers/collab/cursors.ts`): read in flow coordinates, sent about 20
  * times a second at most and only when it moved on the dataflow, its last
  * place always sent, cleared at once when it leaves; and everyone else's,
@@ -13,8 +13,8 @@ import {
     CURSOR_IDLE_MS,
     CursorSender,
     CursorTracker,
-    cursorOf,
     flowPointOf,
+    pointerOf,
     type Point,
 } from "../../../providers/collab/cursors";
 import { participantColor, type PresenceState } from "../../../providers/collab/presence";
@@ -34,16 +34,18 @@ afterEach(() => {
     jest.useRealTimers();
 });
 
-/** What the sender put into the awareness as `cursor`, in order. */
-function watchCursor(): unknown[] {
+/** What the sender put into the awareness as `pointer`, in order. */
+function watchPointer(): unknown[] {
     const sent: unknown[] = [];
     const set = awareness.setLocalStateField.bind(awareness);
     jest.spyOn(awareness, "setLocalStateField").mockImplementation((field: string, value: unknown) => {
-        if (field === "cursor") sent.push(value);
+        if (field === "pointer") sent.push(value);
         set(field, value);
     });
     return sent;
 }
+
+const sentPointer = () => (awareness.getLocalState() as PresenceState).pointer;
 
 describe("where a pointer is on the dataflow", () => {
     test("is the point React Flow's view draws under it, however the view is panned or zoomed", () => {
@@ -61,7 +63,7 @@ describe("where a pointer is on the dataflow", () => {
 
 describe("a tab's pointer", () => {
     test("goes at once, then at most once every 50 ms while it moves: about 20 a second, the last place included", () => {
-        const sent = watchCursor() as Array<{ x: number; y: number; t: number }>;
+        const sent = watchPointer() as Array<{ x: number; y: number; t: number }>;
         let at: Point = { x: 0, y: 0 };
         const sender = new CursorSender(awareness, () => at);
         // A second of moves from a 250 Hz mouse.
@@ -79,11 +81,11 @@ describe("a tab's pointer", () => {
             expect(sent[i].t - sent[i - 1].t).toBeGreaterThanOrEqual(CURSOR_EVERY_MS);
         }
         expect(sent[sent.length - 1]).toMatchObject({ x: 250, y: 500 });
-        expect((awareness.getLocalState() as PresenceState).cursor).toMatchObject({ x: 250, y: 500 });
+        expect(sentPointer()).toMatchObject({ x: 250, y: 500 });
     });
 
     test("sends nothing while it rests on one point of the dataflow", () => {
-        const sent = watchCursor();
+        const sent = watchPointer();
         let at: Point = { x: 12, y: 34 };
         const sender = new CursorSender(awareness, () => at);
         sender.moved();
@@ -100,14 +102,14 @@ describe("a tab's pointer", () => {
     });
 
     test("is sent to a tenth of a flow unit, with the time it went", () => {
-        const sent = watchCursor();
+        const sent = watchPointer();
         const sender = new CursorSender(awareness, () => ({ x: 10.04, y: -3.06 }));
         sender.moved();
         expect(sent).toEqual([{ x: 10, y: -3.1, t: NOW }]);
     });
 
     test("leaving the canvas clears it at once, and a place still on its way never lands", () => {
-        const sent = watchCursor();
+        const sent = watchPointer();
         let at: Point = { x: 1, y: 1 };
         const sender = new CursorSender(awareness, () => at);
         sender.moved();
@@ -115,16 +117,16 @@ describe("a tab's pointer", () => {
         at = { x: 2, y: 2 };
         sender.moved(); // held for the rest of the 50 ms
         sender.left();
-        expect((awareness.getLocalState() as PresenceState).cursor).toBeNull();
+        expect(sentPointer()).toBeNull();
         jest.advanceTimersByTime(CURSOR_EVERY_MS * 4);
-        expect((awareness.getLocalState() as PresenceState).cursor).toBeNull();
+        expect(sentPointer()).toBeNull();
         // One message to clear it, and none for a pointer already off.
         sender.left();
         expect(sent).toEqual([{ x: 1, y: 1, t: NOW }, null]);
     });
 
     test("a pointer that comes back after leaving is sent again, even on the point it left from", () => {
-        const sent = watchCursor();
+        const sent = watchPointer();
         const sender = new CursorSender(awareness, () => ({ x: 5, y: 5 }));
         sender.moved();
         sender.left();
@@ -137,8 +139,8 @@ describe("a tab's pointer", () => {
         ]);
     });
 
-    test("a stopped sender clears the cursor and sends no more", () => {
-        const sent = watchCursor();
+    test("a stopped sender clears the pointer and sends no more", () => {
+        const sent = watchPointer();
         let at: Point = { x: 1, y: 1 };
         const sender = new CursorSender(awareness, () => at);
         sender.moved();
@@ -151,24 +153,35 @@ describe("a tab's pointer", () => {
 });
 
 describe("everyone else's cursors", () => {
-    const ana = (cursor: unknown): PresenceState => ({
+    const ana = (pointer: unknown): PresenceState => ({
         user: { participant_id: "p-ana", name: "Ana" },
-        cursor: cursor as PresenceState["cursor"],
+        pointer: pointer as PresenceState["pointer"],
     });
 
     test("are drawn in their participant's color with their name; a state with no point is not", () => {
         const tracker = new CursorTracker();
         const drawn = tracker.read([
             [7, ana({ x: 10, y: 20, t: NOW })],
-            [8, { user: { participant_id: "p-bea", username: "bea" }, cursor: null }],
-            [9, { user: { participant_id: "p-cy", name: "Cy" }, cursor: { x: "10", y: 20 } as any }],
-            [10, { user: { participant_id: "p-di", name: "Di" }, cursor: { x: Number.NaN, y: 1, t: NOW } }],
+            [8, { user: { participant_id: "p-bea", username: "bea" }, pointer: null }],
+            [9, { user: { participant_id: "p-cy", name: "Cy" }, pointer: { x: "10", y: 20 } as any }],
+            [10, { user: { participant_id: "p-di", name: "Di" }, pointer: { x: Number.NaN, y: 1, t: NOW } }],
             [11, { user: { participant_id: "p-ed", name: "Ed" } }],
         ], NOW);
         expect(drawn).toEqual([
             { clientId: 7, x: 10, y: 20, name: "Ana", color: participantColor("p-ana"), idle: false },
         ]);
-        expect(cursorOf({ cursor: { x: 1, y: 2 } as any })).toEqual({ x: 1, y: 2, t: 0 });
+        expect(pointerOf({ pointer: { x: 1, y: 2 } as any })).toEqual({ x: 1, y: 2, t: 0 });
+    });
+
+    test("a watcher's pointer is drawn as anyone's is", () => {
+        const tracker = new CursorTracker();
+        const watcher: PresenceState = {
+            user: { participant_id: "p-wes", name: "Wes", role: "watcher" },
+            pointer: { x: -5, y: 7.5, t: NOW },
+        };
+        expect(tracker.read([[12, watcher]], NOW)).toEqual([
+            { clientId: 12, x: -5, y: 7.5, name: "Wes", color: participantColor("p-wes"), idle: false },
+        ]);
     });
 
     test("fade once they rest for CURSOR_IDLE_MS, and are drawn whole again when they move", () => {
@@ -185,7 +198,7 @@ describe("everyone else's cursors", () => {
         expect(tracker.nextFadeAt(later)).toBe(later + CURSOR_IDLE_MS);
     });
 
-    test("rest by this tab's clock: a cursor sent by a clock an hour behind is not faded when it arrives", () => {
+    test("rest by this tab's clock: a pointer sent by a clock an hour behind is not faded when it arrives", () => {
         const tracker = new CursorTracker();
         const sentAnHourAgo = ana({ x: 10, y: 20, t: NOW - 3_600_000 });
         expect(tracker.read([[7, sentAnHourAgo]], NOW)[0].idle).toBe(false);
