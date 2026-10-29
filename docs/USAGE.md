@@ -482,9 +482,8 @@ opens them again.
 **Run All** runs every node. A node's **Play** button, or Ctrl+Enter (Cmd+Enter
 on a Mac), runs that node and the nodes above it whose output is out of date.
 
-On your own dataflow, a run saves the dataflow first and then runs on the
-server, so it goes on when you close the tab. A dataflow you never saved is
-saved under its title by its first run.
+On your own dataflow, a run is made on the server, so it goes on when you close
+the tab. A dataflow you never saved is saved under its title by its first run.
 
 - Charts, maps and the other nodes that draw in the browser draw while the
   dataflow is open.
@@ -1551,13 +1550,11 @@ saved with the dataflow, and a tile with none runs the nodes before it on the se
 the page opens.
 
 - **Pin** the nodes to show, with the pin control in each node's header. Pinning saves
-  the dataflow, and saves the outputs feeding those nodes to your Data Catalog, which is
-  what the page draws from later.
+  the outputs feeding those nodes to your Data Catalog, which is what the page draws
+  from later.
 - **Open** it from **Share → Open dashboard**, which opens a new tab. The same menu
   copies either link, and invites editors to the dataflow
   ([Real-time collaboration](#real-time-collaboration)).
-- **Save the dataflow** after changing anything else the page shows, such as a chart's
-  spec: the page shows what is on disk.
 - **Controls**: a pinned node's widgets show on its tile, above a chart or map and in
   place of a code node's code, and anyone viewing the page can change them. A chart or
   map draws again with a new value of its own widget.
@@ -1619,7 +1616,8 @@ dataset (a GeoTIFF gives Rasters), and the tags and data types its packages, mod
 datasets declare in their manifests' `dataflowCategories` (SCOUT's give SCOUT). A package
 or dataset of your own can declare them too ([Authoring nodes](AUTHORING-NODES.md#tags-and-data-types),
 [Data Catalog](DATA-CATALOG.md#7-the-manifest)), and a new name adds an entry to the
-rail. They change when you save, and cannot be removed by hand. Add a tag, a
+rail. They follow the dataflow's changes within a few seconds, in every tab that has it
+open, and cannot be removed by hand. Add a tag, a
 city, a topic or a complexity with **+ Category** under the dataflow's title on the
 canvas, which saves with the dataflow, or with **Edit categories** on the Projects page.
 
@@ -1768,7 +1766,7 @@ provider, publishing, and writing your own, see [docs/AGENT-CATALOG.md](AGENT-CA
 
 ## Real-time collaboration
 
-Every tab that opens a saved dataflow while signed in holds one shared copy of it, which the server keeps as each change is made. A change in one tab shows in every other tab that has the dataflow open: code and specs as they are typed, with each person's cursor, and nodes, connections, widgets, scenarios and drags at once. Each person's pointer shows on the others' canvases too, in their color with their name, and fades while it rests. A tab that opens the dataflow later finds every change. A hosted guest's canvas of an example, and every canvas of a Curio started without `--deploy` or with `--no-project`, stay their own.
+Every tab that opens a saved dataflow while signed in holds one shared copy of it, which the server keeps as each change is made. A change in one tab shows in every other tab that has the dataflow open: code and specs as they are typed, with each person's cursor, and nodes, connections, widgets, scenarios and drags at once. Each person's pointer shows on the others' canvases too, in their color with their name, and fades while it rests. A tab that opens the dataflow later finds every change. A hosted guest's canvas of an example stays its own.
 
 Who is here shows in the dock at the top of the canvas, beside the canvas agents: a chip for each other person, with their initials in their color. Hover one for their name, their role and the node they are editing, and click it to move your view to where they point on the canvas. The **Activity** button at the end of the row lists who joined, who left and whose role changed. A node someone is in shows their initials in its corner.
 

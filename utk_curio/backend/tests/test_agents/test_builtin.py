@@ -1212,8 +1212,8 @@ class TestResearcher:
             "agent.curio.node-builder": ("package.build", "package.extend", "node.kind.author"),
         }
         assert [t.kind for t in m.compatible_targets] == ["node", "canvas"]
-        # It reads the dataflow as it is on screen, unsaved edits included,
-        # beside what it is attached to (on a node, that node's last run).
+        # It reads the dataflow as it is on screen, beside what it is
+        # attached to (on a node, that node's last run).
         assert list(m.inputs_reads) == [
             "mission", "targetContext", "installedTemplates", "dataflowContext",
         ]
@@ -1306,7 +1306,9 @@ class TestResearcher:
         notes = low.split("\n## notes\n", 1)[1].split("\n## ", 1)[0]
         assert "place and write notes as the research-notes skill says" in notes
         # It reads the dataflow on screen and looks further with its tools.
-        assert "unsaved edits included" in low
+        # No tab holds edits apart from its dataflow, so none are named.
+        assert "with each message you receive the dataflow as it is on screen: its nodes" in low
+        assert "unsaved" not in low
         for tool in ("dataflow.read", "node.read", "node.runtime.read"):
             assert tool in text, tool
         # A finished task definition ends in the fixed summary, and nothing

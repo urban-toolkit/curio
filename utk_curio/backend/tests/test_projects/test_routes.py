@@ -244,6 +244,13 @@ def test_duplicate_project(client, user_and_token, tmp_curio):
     resp = client.post(f"/api/projects/{pid}/duplicate", headers=_auth(token))
     assert resp.status_code == 201
     assert resp.get_json()["name"] == "Dup (copy)"
+    # The copy opens under the name the Projects page lists for it.
+    copy_id = resp.get_json()["id"]
+    opened = client.get(f"/api/projects/{copy_id}", headers=_auth(token)).get_json()
+    assert opened["project"]["name"] == "Dup (copy)"
+    assert opened["spec"]["dataflow"]["name"] == "Dup (copy)", (
+        "the copy's canvas is titled as the dataflow it copies, while its Projects card reads 'Dup (copy)'"
+    )
 
 
 def test_auth_required(client, tmp_curio):
@@ -302,7 +309,11 @@ def test_get_shared_project_no_auth(client, user_and_token, tmp_curio):
     assert resp.status_code == 200
     body = resp.get_json()
     assert body["project"]["name"] == "Shared"
-    assert body["spec"] == _spec()
+    # The spec as created: the one sent, named as its row (the create names
+    # the dataflow it makes, services.save_project).
+    expected = _spec()
+    expected["dataflow"]["name"] = "Shared"
+    assert body["spec"] == expected
     # folder_path is internal — don't leak FS layout to anonymous visitors.
     assert body["project"].get("folder_path") == ""
 

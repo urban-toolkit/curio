@@ -384,7 +384,7 @@ exactly that.
 Pass `sweep_toasts=True` when capturing anything that follows a node run.
 Toasts are bottom-right, up to 360px wide, and land exactly where canvas content
 usually is - and a node reaching "Done" does not mean its follow-up work has
-finished: the dataset install-save is debounced 500 ms past it and answers
+finished: the record of its output is debounced 500 ms past it and answers
 seconds later, so any toast it raises lands well after the status flips. The
 helper sweeps, waits for a quiet window, and sweeps again, right before the
 shutter.

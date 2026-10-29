@@ -77,12 +77,6 @@ class ProjectUpdate:
     #: The hand-set categories (``categories.HAND_SECTIONS``), written into
     #: ``dataflow.categories``. ``None`` leaves them as they are.
     categories: Optional[dict] = None
-    #: The tab this save comes from and its number among that tab's saves
-    #: (``storage.SAVE_ORDER_FILE``). A number lower than one already applied
-    #: from the same tab is refused; with either one missing, nothing is
-    #: checked.
-    save_tab: Optional[str] = None
-    save_number: Optional[int] = None
     #: The dataflow's history alone, its sections as a spec holds them
     #: (``nodeProvenance``, ``dataflowProvenance``): what a tab bound to the
     #: dataflow's doc saves beside its outputs, never the dataflow, which the

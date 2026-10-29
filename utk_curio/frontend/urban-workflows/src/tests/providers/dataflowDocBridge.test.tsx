@@ -471,6 +471,49 @@ describe("binding", () => {
         expect(canvasNode().data.code).toBe("x = 1\n# typed meanwhile\n");
     });
 
+    test("what this canvas changed before its doc was there reaches the doc at the bind", async () => {
+        // The room joins the tab a moment after the dataflow opens. The canvas
+        // took its load only once the doc was there, so a change made before
+        // was part of the load the bind compared with, and never reached the
+        // doc; no save carries it now.
+        const held = serverDoc(spec().dataflow);
+        provider = held;
+        setCurrentProject(PROJECT, []);
+        let joined!: (binding: DocBinding) => void;
+        const Room: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+            const [binding, setBinding] = React.useState<DocBinding | null>(null);
+            joined = setBinding;
+            return <DataflowDocContext.Provider value={binding}>{children}</DataflowDocContext.Provider>;
+        };
+        render(
+            <Room>
+                <ReactFlowProvider>
+                    <FlowProvider>
+                        <Bridge />
+                    </FlowProvider>
+                </ReactFlowProvider>
+            </Room>,
+        );
+        await flush();
+        act(() => {
+            code.loadTrill(spec());
+        });
+        await flush();
+        await flush();
+        act(() => api.updateDataNode("n", { ...canvasNode().data, title: "Named before the doc was there" }));
+        await flush();
+        expect(docNode().title).toBeUndefined();
+
+        act(() => joined({ provider: held, synced: true }));
+        await flush();
+        await flush();
+
+        expect(docNode().title).toBe("Named before the doc was there");
+        expect(canvasNode().data.title).toBe("Named before the doc was there");
+        // Bound now, the canvas holds nothing the doc does not keep.
+        expect(api.projectDirty).toBe(false);
+    });
+
     test("a bound canvas's history is the server's: the versions its load recorded go, and its edits record none", async () => {
         await open(serverDoc(spec().dataflow));
         const history = serverHistory();

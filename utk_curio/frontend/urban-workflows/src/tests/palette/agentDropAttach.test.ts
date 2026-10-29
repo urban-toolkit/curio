@@ -4,11 +4,11 @@ import path from "path";
 import { attachAgentOnDrop } from "../../utils/agentDropAttach";
 
 describe("attachAgentOnDrop", () => {
-  it("saves the graph before attaching to a node, using the saved project id", async () => {
+  it("waits for the server to hold the graph before attaching to a node, using the dataflow's id", async () => {
     const calls: string[] = [];
-    const saveProject = jest.fn(async () => {
-      calls.push("save");
-      return { id: "proj-9" };
+    const keepDataflow = jest.fn(async () => {
+      calls.push("keep");
+      return "proj-9";
     });
     const attach = jest.fn(async () => {
       calls.push("attach");
@@ -17,74 +17,100 @@ describe("attachAgentOnDrop", () => {
       projectId: "proj-9",
       target: { kind: "node", targetId: "n1" },
       agentCoord: "agent.test.x@1",
-      saveProject,
+      keepDataflow,
       attach,
     });
-    // Save must run BEFORE attach so the node is on disk when validated.
-    expect(calls).toEqual(["save", "attach"]);
+    // The wait runs BEFORE attach, so the node is the server's when validated.
+    expect(calls).toEqual(["keep", "attach"]);
     expect(attach).toHaveBeenCalledWith("proj-9", "agent.test.x@1", { kind: "node", targetId: "n1" });
   });
 
-  it("an invited editor's drop on a node or a connection attaches with no save first", async () => {
-    // The editor's tab saves nothing: its canvas is bound to the dataflow's
-    // doc on the server, which the attach reads.
+  it("an invited editor's drop on a node or a connection makes nothing, and waits for the editor's last change", async () => {
+    // The editor's tab makes no dataflow: its canvas is bound to the
+    // dataflow's doc on the server, which the attach reads, so the node the
+    // editor just added reaches the server first, as the owner's does.
     for (const target of [
       { kind: "node" as const, targetId: "n1" },
       { kind: "connection" as const, targetId: "e1" },
     ]) {
-      const saveProject = jest.fn(async () => ({ id: "owners-proj" }));
-      const attach = jest.fn(async () => undefined);
+      const calls: string[] = [];
+      const keepDataflow = jest.fn(async () => "owners-proj");
+      const whenKept = jest.fn(async () => {
+        calls.push("kept");
+        return true;
+      });
+      const attach = jest.fn(async () => {
+        calls.push("attach");
+      });
       await attachAgentOnDrop({
         projectId: "owners-proj",
         target,
         agentCoord: "agent.test.x@1",
-        saveProject,
+        keepDataflow,
         attach,
         savesHere: false,
+        whenKept,
       });
-      expect(saveProject).not.toHaveBeenCalled();
+      expect(keepDataflow).not.toHaveBeenCalled();
+      expect(calls).toEqual(["kept", "attach"]);
       expect(attach).toHaveBeenCalledWith("owners-proj", "agent.test.x@1", target);
     }
   });
 
-  it("attaches to a node of a never-saved project using the id from the save", async () => {
-    const saveProject = jest.fn(async () => ({ id: "new-proj" }));
+  it("an invited editor's drop on the canvas waits for nothing", async () => {
+    const whenKept = jest.fn(async () => true);
+    const attach = jest.fn(async () => undefined);
+    await attachAgentOnDrop({
+      projectId: "owners-proj",
+      target: { kind: "canvas" },
+      agentCoord: "agent.test.x@1",
+      keepDataflow: jest.fn(),
+      attach,
+      savesHere: false,
+      whenKept,
+    });
+    expect(whenKept).not.toHaveBeenCalled();
+    expect(attach).toHaveBeenCalledWith("owners-proj", "agent.test.x@1", { kind: "canvas" });
+  });
+
+  it("attaches to a node of a never-saved project using the id of the dataflow made for it", async () => {
+    const keepDataflow = jest.fn(async () => "new-proj");
     const attach = jest.fn(async () => undefined);
     await attachAgentOnDrop({
       projectId: undefined,
       target: { kind: "node", targetId: "n1" },
       agentCoord: "agent.test.x@1",
-      saveProject,
+      keepDataflow,
       attach,
     });
-    expect(saveProject).toHaveBeenCalledTimes(1);
+    expect(keepDataflow).toHaveBeenCalledTimes(1);
     expect(attach).toHaveBeenCalledWith("new-proj", "agent.test.x@1", { kind: "node", targetId: "n1" });
   });
 
-  it("falls back to the existing projectId when the save returns no id", async () => {
-    const saveProject = jest.fn(async () => null);
+  it("falls back to the existing projectId when the wait returns no id", async () => {
+    const keepDataflow = jest.fn(async () => null);
     const attach = jest.fn(async () => undefined);
     await attachAgentOnDrop({
       projectId: "proj-1",
       target: { kind: "node", targetId: "n1" },
       agentCoord: "agent.test.x@1",
-      saveProject,
+      keepDataflow,
       attach,
     });
     expect(attach).toHaveBeenCalledWith("proj-1", "agent.test.x@1", { kind: "node", targetId: "n1" });
   });
 
-  it("does NOT pre-save for a canvas target", async () => {
-    const saveProject = jest.fn(async () => ({ id: "proj-1" }));
+  it("does NOT wait for a canvas target", async () => {
+    const keepDataflow = jest.fn(async () => "proj-1");
     const attach = jest.fn(async () => undefined);
     await attachAgentOnDrop({
       projectId: "proj-1",
       target: { kind: "canvas" },
       agentCoord: "agent.test.x@1",
-      saveProject,
+      keepDataflow,
       attach,
     });
-    expect(saveProject).not.toHaveBeenCalled();
+    expect(keepDataflow).not.toHaveBeenCalled();
     expect(attach).toHaveBeenCalledWith("proj-1", "agent.test.x@1", { kind: "canvas" });
   });
 
@@ -95,21 +121,21 @@ describe("attachAgentOnDrop", () => {
         projectId: undefined,
         target: { kind: "canvas" },
         agentCoord: "agent.test.x@1",
-        saveProject: jest.fn(),
+        keepDataflow: jest.fn(),
         attach,
       }),
     ).rejects.toThrow(/Save the project/i);
     expect(attach).not.toHaveBeenCalled();
   });
 
-  it("propagates a save failure and does not attach", async () => {
+  it("propagates a failure of the wait and does not attach", async () => {
     const attach = jest.fn(async () => undefined);
     await expect(
       attachAgentOnDrop({
         projectId: "proj-1",
         target: { kind: "node", targetId: "n1" },
         agentCoord: "agent.test.x@1",
-        saveProject: jest.fn(async () => {
+        keepDataflow: jest.fn(async () => {
           throw new Error("Guest users cannot save projects");
         }),
         attach,
@@ -117,15 +143,24 @@ describe("attachAgentOnDrop", () => {
     ).rejects.toThrow(/cannot save/i);
     expect(attach).not.toHaveBeenCalled();
   });
+
+  it("is handed the canvas's wait for the server, never a save", () => {
+    const src = fs.readFileSync(path.resolve(__dirname, "../../components/MainCanvas.tsx"), "utf8");
+    expect(src).toMatch(/attachAgentOnDrop\(\{[^}]*\bkeepDataflow:\s*ensureProjectId\b[^}]*\}\)/);
+    // An editor's drop waits for the editor's last change the same way.
+    expect(src).toMatch(/attachAgentOnDrop\(\{[^}]*\bwhenKept:\s*whenChangesKept\b[^}]*\}\)/);
+    expect(src).not.toMatch(/requestProjectSave/);
+  });
 });
 
 /**
  * A hosted guest (`isHostedGuest`: a guest on a Curio started with --deploy)
- * cannot save the dataflow. A drop on a node or a connection saves first, on
- * a saved dataflow too, and a drop on the canvas needs a dataflow that was
- * saved, so those drops tell it to sign in, before any save or attach. A drop
- * on the canvas of a dataflow it has attaches as before. The deps are built
- * as variables so the hostedGuest field type-checks before it exists.
+ * cannot save the dataflow. A drop on a node or a connection needs the server
+ * to hold the graph, on a saved dataflow too, and a drop on the canvas needs a
+ * dataflow that was saved, so those drops tell it to sign in, before anything
+ * is sent. A drop on the canvas of a dataflow it has attaches as before. The
+ * deps are built as variables so the hostedGuest field type-checks before it
+ * exists.
  */
 describe("attachAgentOnDrop for a hosted guest", () => {
   const SIGN_IN = "Sign in to attach agents.";
@@ -133,55 +168,55 @@ describe("attachAgentOnDrop for a hosted guest", () => {
   it.each([
     ["a node", { kind: "node", targetId: "n1" }],
     ["a connection", { kind: "connection", edgeId: "e1" }],
-  ])("is told to sign in when it drops on %s, and nothing is saved or attached", async (_where, target) => {
-    const saveProject = jest.fn(async () => ({ id: "proj-1" }));
+  ])("is told to sign in when it drops on %s, and nothing is sent or attached", async (_where, target) => {
+    const keepDataflow = jest.fn(async () => "proj-1");
     const attach = jest.fn(async () => undefined);
     const deps = {
       projectId: "proj-1",
       target: target as never,
       agentCoord: "agent.test.x@1",
-      saveProject,
+      keepDataflow,
       attach,
       hostedGuest: true,
     };
 
     await expect(attachAgentOnDrop(deps)).rejects.toThrow(SIGN_IN);
-    expect(saveProject).not.toHaveBeenCalled();
+    expect(keepDataflow).not.toHaveBeenCalled();
     expect(attach).not.toHaveBeenCalled();
   });
 
   it("is told to sign in when it drops on the canvas of a dataflow it never saved", async () => {
-    const saveProject = jest.fn(async () => ({ id: "proj-1" }));
+    const keepDataflow = jest.fn(async () => "proj-1");
     const attach = jest.fn(async () => undefined);
     const deps = {
       projectId: undefined,
       target: { kind: "canvas" } as never,
       agentCoord: "agent.test.x@1",
-      saveProject,
+      keepDataflow,
       attach,
       hostedGuest: true,
     };
 
     await expect(attachAgentOnDrop(deps)).rejects.toThrow(SIGN_IN);
-    expect(saveProject).not.toHaveBeenCalled();
+    expect(keepDataflow).not.toHaveBeenCalled();
     expect(attach).not.toHaveBeenCalled();
   });
 
   it("attaches to the canvas of a dataflow it has, as before", async () => {
-    const saveProject = jest.fn(async () => ({ id: "proj-1" }));
+    const keepDataflow = jest.fn(async () => "proj-1");
     const attach = jest.fn(async () => undefined);
     const deps = {
       projectId: "proj-1",
       target: { kind: "canvas" } as never,
       agentCoord: "agent.test.x@1",
-      saveProject,
+      keepDataflow,
       attach,
       hostedGuest: true,
     };
 
     await attachAgentOnDrop(deps);
 
-    expect(saveProject).not.toHaveBeenCalled();
+    expect(keepDataflow).not.toHaveBeenCalled();
     expect(attach).toHaveBeenCalledWith("proj-1", "agent.test.x@1", { kind: "canvas" });
   });
 
@@ -196,7 +231,7 @@ describe("attachAgentOnDrop for a hosted guest", () => {
       projectId: "proj-1",
       target: { kind: "node", targetId: "n1" } as never,
       agentCoord: "agent.test.x@1",
-      saveProject: jest.fn(async () => ({ id: "proj-1" })),
+      keepDataflow: jest.fn(async () => "proj-1"),
       attach: jest.fn(async () => undefined),
       hostedGuest: true,
     };

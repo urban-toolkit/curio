@@ -178,6 +178,45 @@ def test_resolution_failure_is_fail_open(client, user_and_token, monkeypatch):
     assert captured["body"]["dataset_paths"] == {}
 
 
+def test_a_listing_that_fails_keeps_the_ids_the_index_resolved(
+    client, user_and_token, tmp_path, monkeypatch, caplog
+):
+    """The code names a dataset of the account, which the dataset index
+    resolves, and one the index does not hold, which only the catalog listing
+    could. A listing that fails leaves that one out and logs why; the run still
+    gets the dataset the index resolved, and how to read it."""
+    import logging
+
+    from utk_curio.backend.app.datasets.application import listing as listing_mod
+
+    _, token = user_and_token
+    monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
+    imported = _import_csv(client, token, filename="kept.csv")
+    captured = _capture_sandbox(monkeypatch)
+
+    def failing_listing(self, *args, **kwargs):
+        raise RuntimeError("the listing failed")
+
+    monkeypatch.setattr(listing_mod.CatalogListing, "list_catalog", failing_listing)
+    code = (
+        f'    df = curio_load_data("{imported["id"]}")\n'
+        '    other = curio_load_data("imported.xnotinthestore")\n'
+        "    return df\n"
+    )
+    with caplog.at_level(logging.WARNING):
+        resp = _exec_code(client, token, code)
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+
+    body = captured["body"]
+    assert set(body["dataset_paths"]) == {imported["id"]}
+    assert body["dataset_paths"][imported["id"]].endswith("kept.csv")
+    assert body["dataset_formats"] == {imported["id"]: {"format": "csv"}}
+    assert any(
+        record.exc_info and "the listing failed" in str(record.exc_info[1])
+        for record in caplog.records
+    ), "the failed listing was not logged"
+
+
 def test_resolve_execution_paths_service(app, client, user_and_token, tmp_path, monkeypatch):
     """Service-level contract: resolvable ids map to on-disk files, unknown ids
     are omitted, and an empty request costs nothing."""

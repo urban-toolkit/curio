@@ -129,7 +129,9 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
 
   // The drawer is *per-project*: Install/Uninstall write to the current
   // project's lockfile (see docs/NODE-CATALOG.md).
-  const { projectId, projectName, packages: projectPackages, requestProjectSave, projectDirty, nodes } = useFlowContext();
+  const {
+    projectId, projectName, packages: projectPackages, ensureProjectId: keepDataflow, projectDirty, whenChangesKept, nodes,
+  } = useFlowContext();
   const { showToast } = useToastContext();
   const hostedGuest = useHostedGuest();
 
@@ -148,21 +150,19 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
 
   /**
    * A dataflow is created on its FIRST SAVE, so every lockfile write (Install,
-   * Remove, Import) saves first when there is no id (#220); the hook owns the
-   * sequencing and reports a refused save. Mirrors ``useDatasetCatalogDrawer``.
-   * Through the save queue: this save creates the project, and beside a create
-   * already out (an install save after a run) it would make a second dataflow.
-   * A hosted guest cannot save one, so it is told to sign in instead, in the
-   * words of the action that asked.
+   * Remove, Import) makes it first when there is no id (#220); the hook owns
+   * the sequencing and reports a refusal. Mirrors ``useDatasetCatalogDrawer``.
+   * One create at a time: beside one already out (after a run) it would make
+   * a second dataflow. A hosted guest cannot save one, so it is told to sign
+   * in instead, in the words of the action that asked.
    */
   const onEnsureProject = useCallback(async (action: ProjectSaveAction = "add") => {
     if (hostedGuest) {
       showToast(hostedGuestSignInNote(`${action} ${copy.items}`), "warning");
       return null;
     }
-    const detail = await requestProjectSave();
-    return (detail as { id?: string } | undefined)?.id ?? null;
-  }, [requestProjectSave, hostedGuest, showToast, copy.items]);
+    return keepDataflow();
+  }, [keepDataflow, hostedGuest, showToast, copy.items]);
 
   /** memo dev/101: when the backend's lockfile differs from the mirror, the
    *  palette/registry must follow — not only the drawer's pill. */
@@ -596,6 +596,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
           pkg={detailPkg}
           isPublished={catalogPublishedDirs.has(detailPkg.dirName)}
           unsavedChanges={projectDirty}
+          whenChangesKept={whenChangesKept}
           onClose={() => setDetailPkg(null)}
         />
       ) : null}
