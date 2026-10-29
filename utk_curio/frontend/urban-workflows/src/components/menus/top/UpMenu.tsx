@@ -507,7 +507,7 @@ export default function UpMenu() {
                                 icon={faObjectGroup}
                                 onClick={scenarioItem(scenarioActions.saveSelectionAsScenario)}
                             >
-                                Save selection as scenario
+                                Define scenario
                             </HeaderMenuItem>
                             {/* Duplicating adds nodes, which happens on the
                                 canvas only. */}

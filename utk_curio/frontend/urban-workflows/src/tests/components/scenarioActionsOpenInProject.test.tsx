@@ -1,7 +1,7 @@
 /**
  * Save dataflow as scenario and Duplicate as scenario open the Scenario
  * Catalog drawer on its In project tab, where the new scenario is listed.
- * Save selection as scenario opens the define panel instead, which saves
+ * Define scenario opens the define panel instead, which saves
  * nothing until its Save. A command that is refused opens nothing.
  *
  * The real `useScenarioActions` and the real drawer provider; the flow, the
@@ -47,6 +47,9 @@ jest.mock("reactflow", () => ({
     getNodes: () => mockCanvas.nodes,
     getEdges: () => [],
   }),
+  // The define panel reads the selection from React Flow's store.
+  useStore: (selector: (s: any) => unknown) =>
+    selector({ nodeInternals: new Map(mockCanvas.nodes.map((n: any) => [n.id, n])) }),
 }));
 
 jest.mock("../../TrillGenerator", () => ({
@@ -127,7 +130,7 @@ beforeEach(() => {
 });
 
 describe("the scenario commands open the In project tab", () => {
-  test("Save selection as scenario opens the define panel and saves nothing yet", async () => {
+  test("Define scenario opens the define panel and saves nothing yet", async () => {
     renderCommands();
     fireEvent.click(screen.getByRole("button", { name: "save the selection" }));
     expect(await screen.findByTestId("scenario-define-panel")).toBeInTheDocument();
@@ -158,9 +161,9 @@ describe("the scenario commands open the In project tab", () => {
     mockCanvas.nodes = [node("load", false), node("scale", false)];
     mockFlow.nodes = mockCanvas.nodes;
     renderCommands();
-    fireEvent.click(screen.getByRole("button", { name: "save the selection" }));
+    fireEvent.click(screen.getByRole("button", { name: "duplicate as a scenario" }));
     expect(mockShowToast).toHaveBeenCalledWith(
-      "Select the nodes the scenario holds first (Shift and drag).",
+      "Select the nodes to duplicate first (Shift and drag).",
       "warning",
     );
     expect(mockFlow.setScenarios).not.toHaveBeenCalled();

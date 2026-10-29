@@ -283,3 +283,38 @@
   text-decoration: underline;
   cursor: pointer;
 }
+
+.question {
+  margin: 0;
+  padding: 0;
+  font-size: var(--curio-font-size-md);
+  font-weight: 700;
+  color: var(--curio-text-primary);
+}
+
+/* Step 1, before anything is selected. */
+.waiting {
+  margin: 0;
+  padding: 14px 12px;
+  border: 1px dashed var(--curio-border-strong);
+  border-radius: var(--curio-radius-md);
+  font-size: var(--curio-font-size-sm);
+  color: var(--curio-text-secondary);
+  text-align: center;
+}
+
+.member {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 8px;
+}
+
+.dots {
+  flex-wrap: wrap;
+}
+
+.primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

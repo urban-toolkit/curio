@@ -251,7 +251,7 @@ def scenario_cards_wear_one_kind_color(ctx: Ctx) -> None:
         expect(drawer.get_by_role("heading", name="Cool roofs", level=2)).to_be_visible(
             timeout=30000
         )
-        expect(drawer.get_by_text("Fixed context", exact=True)).to_be_visible(timeout=30000)
+        expect(drawer.get_by_text("Shared context", exact=True)).to_be_visible(timeout=30000)
         page.wait_for_load_state("networkidle")
         painted = page.evaluate(_CARD_PAINT)
 

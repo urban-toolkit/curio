@@ -130,3 +130,15 @@
   text-decoration: underline;
   cursor: pointer;
 }
+
+/* A set's heading, and its Context & outcomes beside it. */
+.groupHead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.groupHead .groupHeading {
+  flex: 1;
+  min-width: 0;
+}

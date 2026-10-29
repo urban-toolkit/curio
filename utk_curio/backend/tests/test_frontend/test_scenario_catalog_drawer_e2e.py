@@ -60,7 +60,8 @@ def _node(node_id: str, x: int) -> dict:
 
 def _spec(name: str, scenarios: list[tuple[str, str]]) -> dict:
     """A chain of code nodes, a loader and then one step per scenario, each
-    scenario holding its step."""
+    scenario holding its step, all in one scenario set named after the
+    dataflow."""
     steps = [f"step{i}" for i in range(len(scenarios))]
     chain = ["load", *steps]
     return {
@@ -71,8 +72,9 @@ def _spec(name: str, scenarios: list[tuple[str, str]]) -> dict:
                 {"id": f"e-{a}-{b}", "source": a, "target": b, "sourceHandle": "out", "targetHandle": "in"}
                 for a, b in zip(chain, chain[1:])
             ],
+            "scenarioSets": [{"id": "set", "name": name}],
             "scenarios": [
-                {"id": f"s{i}", "name": scenario, "color": color, "nodes": [steps[i]]}
+                {"id": f"s{i}", "name": scenario, "color": color, "nodes": [steps[i]], "set": "set"}
                 for i, (scenario, color) in enumerate(scenarios)
             ],
         }

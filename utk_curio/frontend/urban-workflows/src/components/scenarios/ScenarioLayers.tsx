@@ -98,6 +98,8 @@ export interface ScenarioLayersProps {
   onMoveBox: (id: string, at: { x: number; y: number }) => void;
   /** False in a read-only view: boxes stay where they are. */
   editable: boolean;
+  /** The name of the scenario set *id*, shown before a scenario's name. */
+  setNameOf?: (id: string | undefined) => string | undefined;
 }
 
 /**
@@ -105,7 +107,16 @@ export interface ScenarioLayersProps {
  * in its coordinates: frames and stand-in edges behind the nodes, boxes and the
  * frames' headers in front. None of it is in React Flow's store.
  */
-export function ScenarioLayers({ view, labelOf, statusOf, onExpand, onCollapse, onMoveBox, editable }: ScenarioLayersProps) {
+export function ScenarioLayers({
+  view,
+  labelOf,
+  statusOf,
+  onExpand,
+  onCollapse,
+  onMoveBox,
+  editable,
+  setNameOf,
+}: ScenarioLayersProps) {
   const [tx, ty, zoom] = useStore(transformOf);
   const internals = useStore(internalsOf);
   const [drag, setDrag] = useState<{ id: string; dx: number; dy: number } | null>(null);
@@ -252,6 +263,11 @@ export function ScenarioLayers({ view, labelOf, statusOf, onExpand, onCollapse, 
               data-scenario-header={f.scenario.id}
               style={{ left: f.left, top: f.top - FRAME_HEADER_OFFSET }}
             >
+              {setNameOf?.(f.scenario.set) ? (
+                <span className={styles.setTag} data-scenario-set-name={f.scenario.set}>
+                  {setNameOf(f.scenario.set)} ›
+                </span>
+              ) : null}
               <span className={styles.chip} style={{ background: f.scenario.color }}>
                 {f.scenario.name}
               </span>
@@ -281,7 +297,10 @@ export function ScenarioLayers({ view, labelOf, statusOf, onExpand, onCollapse, 
               onPointerUp={endDrag(box)}
             >
               <div className={styles.boxHeader} style={{ background: box.scenario.color }}>
-                <span className={styles.boxName}>{box.scenario.name}</span>
+                <span className={styles.boxName}>
+                  {setNameOf?.(box.scenario.set) ? `${setNameOf(box.scenario.set)} › ` : ""}
+                  {box.scenario.name}
+                </span>
                 <span className={styles.boxCount}>
                   {box.parts.levers.length} node{box.parts.levers.length === 1 ? "" : "s"}
                 </span>

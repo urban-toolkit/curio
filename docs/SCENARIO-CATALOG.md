@@ -32,10 +32,13 @@ Scenarios live in their projects. The catalog lists them; it keeps no copy. Edit
 
 ### Defining a scenario
 
-1. **Select the nodes unique to it** on the canvas (Shift and drag), and choose **Save selection as scenario**.
-2. **Choose a set:** a new one, named after the dataflow unless you name it, or one of this dataflow's sets.
-3. **Review its shared context and outcomes:** the panel lists what Curio found, split into what the set already has and what is new to it, and the canvas marks them. Remove a node with **×**, or select one on the canvas and click **+ Add selected node**.
-4. **Save scenario.** Nothing is written before.
+Choose **View → Define scenario**, or **Define scenario** in the drawer's **In project** tab. A panel opens beside the canvas, in three steps:
+
+1. **Scenario nodes:** select on the canvas the nodes unique to the scenario (click one, or Shift and drag a box). The panel lists them as you select. Nodes already in a scenario are left out.
+2. **Context & outcomes:** Curio follows the edges from them and lists the shared context and the outcomes, and the canvas marks them. Confirm them, remove a node with **×**, or select one on the canvas and click **+ Add selected node**. Joining a set that has scenarios already, each list says what the set has and what is new to it.
+3. **Name & set:** name the scenario, and put it in one of this dataflow's scenario sets or create a new one, named after the dataflow unless you name it. **Save scenario** writes it; nothing is written before.
+
+On the canvas, each scenario's frame shows its set's name before its own.
 
 A saved scenario's context and outcomes are changed with **Edit context & outcomes** on its card in the drawer's **In project** tab. A dataflow from before scenario sets is read with its scenarios grouped by the nodes they share and their lists inferred, the way its next save keeps them.
 

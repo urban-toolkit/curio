@@ -80,7 +80,7 @@ export function ScenarioCatalogDrawerProvider({ children }: { children: React.Re
       {define &&
         createPortal(
           <ScenarioDefinePanel
-            key={define.mode === "edit" ? `edit-${define.scenarioId}` : `new-${define.nodes.join(",")}`}
+            key={define.mode === "edit" ? `edit-${define.scenarioId}` : `new-${(define.nodes ?? []).join(",")}`}
             define={define}
           />,
           document.body,

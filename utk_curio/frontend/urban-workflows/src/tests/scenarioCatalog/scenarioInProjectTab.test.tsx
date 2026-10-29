@@ -210,9 +210,9 @@ describe("the Scenario Catalog drawer's In project tab", () => {
     expect(button("s-gone", "Delete")).toBeEnabled();
   });
 
-  test("on top of the tab, Save selection as scenario and Duplicate as scenario", async () => {
+  test("on top of the tab, Define scenario and Duplicate as scenario", async () => {
     await openInProject();
-    fireEvent.click(within(root()).getByRole("button", { name: "Save selection as scenario" }));
+    fireEvent.click(within(root()).getByRole("button", { name: "Define scenario" }));
     expect(mockActions.saveSelectionAsScenario).toHaveBeenCalledTimes(1);
     fireEvent.click(within(root()).getByRole("button", { name: "Duplicate as scenario" }));
     expect(mockActions.duplicate).toHaveBeenCalledWith(true);
@@ -222,7 +222,7 @@ describe("the Scenario Catalog drawer's In project tab", () => {
     mockFlow.notebookOn = true;
     await openInProject();
     expect(within(root()).getByRole("button", { name: "Duplicate as scenario" })).toBeDisabled();
-    expect(within(root()).getByRole("button", { name: "Save selection as scenario" })).toBeEnabled();
+    expect(within(root()).getByRole("button", { name: "Define scenario" })).toBeEnabled();
   });
 
   test("a shared viewer reads the scenarios and finds no editing control", async () => {
@@ -232,7 +232,7 @@ describe("the Scenario Catalog drawer's In project tab", () => {
     for (const name of ["Run scenario", "Collapse", "Expand", "Add selected", "Remove selected", "Delete"]) {
       expect(within(root()).queryByRole("button", { name })).toBeNull();
     }
-    expect(within(root()).queryByRole("button", { name: "Save selection as scenario" })).toBeNull();
+    expect(within(root()).queryByRole("button", { name: "Define scenario" })).toBeNull();
     expect(within(root()).queryByRole("button", { name: "Duplicate as scenario" })).toBeNull();
   });
 

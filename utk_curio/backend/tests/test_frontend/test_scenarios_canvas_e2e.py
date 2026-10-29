@@ -227,7 +227,7 @@ def test_a_branch_duplicated_as_a_scenario_collapses_runs_and_expands(
     # Each one's details list the shared loader as its fixed context.
     open_in_project_tab(page)
     for scenario_id in (original_id, copy_id):
-        context = scenario_part(open_scenario_details(page, scenario_id), "Fixed context")
+        context = scenario_part(open_scenario_details(page, scenario_id), "Shared context")
         assert "Data Loading" in context, f"scenario {scenario_id} lists {context!r} as its fixed context"
         close_scenario_details(page)
 

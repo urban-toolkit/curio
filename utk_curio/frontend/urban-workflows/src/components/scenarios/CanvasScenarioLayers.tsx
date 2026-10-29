@@ -8,7 +8,8 @@ import { useScenarioActions } from "./useScenarioActions";
 
 /** The layers on the canvas, reading the flow for labels and outputs. */
 export function CanvasScenarioLayers({ view, editable }: { view: ScenarioCanvasView<any, any>; editable: boolean }) {
-  const { nodes, nodeExecStatus } = useFlowContext();
+  const { nodes, nodeExecStatus, scenarioSets } = useFlowContext();
+  const setNames = useMemo(() => new Map((scenarioSets ?? []).map((s) => [s.id, s.name])), [scenarioSets]);
   const actions = useScenarioActions();
   const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
   return (
@@ -20,6 +21,7 @@ export function CanvasScenarioLayers({ view, editable }: { view: ScenarioCanvasV
       onExpand={(id) => actions.setCollapsed(id, false)}
       onCollapse={(id) => actions.setCollapsed(id, true)}
       onMoveBox={actions.moveBox}
+      setNameOf={(id) => (id ? setNames.get(id) : undefined)}
     />
   );
 }

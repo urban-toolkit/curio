@@ -73,20 +73,17 @@ export function useScenarioActions() {
   );
 
   /**
-   * Step 1 of defining a scenario done: the nodes unique to it are selected.
-   * Opens the define panel beside the canvas, which chooses its set and
-   * finalizes its context and outcomes; nothing is saved until its Save.
+   * Define scenario: opens the define panel beside the canvas, which asks for
+   * the nodes unique to the scenario, then has its context and outcomes
+   * confirmed and its set chosen; nothing is saved until its Save. Nodes
+   * selected already, and in no scenario, are its first selection.
    */
   const saveSelectionAsScenario = useCallback(() => {
-    const ids = selectedIds();
-    const edit = createScenario(scenarios, ids, { id: "draft" });
-    if (edit.error !== undefined) {
-      showToast(edit.error, "warning");
-      return;
-    }
+    const boxed = new Set(scenarios.flatMap((s) => s.nodes));
+    const ids = [...new Set(selectedIds())].filter((id) => !boxed.has(id));
     closeScenarioCatalogDrawer();
-    setDefine({ mode: "new", nodes: [...new Set(ids)] });
-  }, [scenarios, selectedIds, showToast, closeScenarioCatalogDrawer, setDefine]);
+    setDefine({ mode: "new", nodes: ids });
+  }, [scenarios, selectedIds, closeScenarioCatalogDrawer, setDefine]);
 
   /** Opens the define panel on a scenario, to edit its context and outcomes. */
   const editContextAndOutcomes = useCallback(

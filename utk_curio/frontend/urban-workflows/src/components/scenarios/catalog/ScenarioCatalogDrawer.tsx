@@ -202,7 +202,7 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
                   <div className={shell.empty}>
                     {searching
                       ? "No scenarios match the current search."
-                      : "No scenarios yet. Select nodes on a canvas and choose View > Save selection as scenario."}
+                      : "No scenarios yet. On a canvas, choose View > Define scenario."}
                   </div>
                 ) : null}
                 {groups.map((group, index) => (
@@ -212,6 +212,7 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
                     data-scenario-group={group.project.id}
                     data-scenario-set={group.set.id}
                   >
+                    <div className={styles.groupHead}>
                     <h3 className={styles.groupHeading}>
                       <span id={`${groupIds}-${index}`} className={styles.groupName}>
                         {group.set.name}
@@ -220,6 +221,7 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
                         {group.set.name !== group.project.name ? `in ${group.project.name} · ` : ""}
                         {scenarioCount(group.items.length)}
                       </span>
+                    </h3>
                       {group.set.id ? (
                         <button
                           type="button"
@@ -230,7 +232,7 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
                           {openSet === group.key ? "Hide context & outcomes" : "Context & outcomes"}
                         </button>
                       ) : null}
-                    </h3>
+                    </div>
                     {openSet === group.key ? (
                       <ScenarioSetSummary projectId={group.project.id} setId={group.set.id} />
                     ) : null}

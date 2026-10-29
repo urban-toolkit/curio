@@ -230,3 +230,18 @@
   border: 2px solid currentColor;
   background: var(--curio-card-bg);
 }
+
+/* The scenario set a scenario is in, before its name over its frame. */
+.setTag {
+  padding: 0 8px;
+  line-height: 20px;
+  border-radius: var(--curio-radius-pill);
+  background: var(--curio-card-bg);
+  box-shadow: 0 0 0 1px var(--curio-border);
+  font-family: var(--curio-font-family);
+  font-size: var(--curio-font-size-xs);
+  font-weight: 600;
+  color: var(--curio-text-secondary);
+  white-space: nowrap;
+  pointer-events: auto;
+}

@@ -97,7 +97,7 @@ export function InProjectScenarios({ scenarios, search, sort, presented }: InPro
       {!shared ? (
         <div className={styles.inProjectActions}>
           <button type="button" className={buttons.btnInstall} onClick={actions.saveSelectionAsScenario}>
-            Save selection as scenario
+            Define scenario
           </button>
           {/* Duplicating adds nodes, which happens on the canvas only. */}
           <button

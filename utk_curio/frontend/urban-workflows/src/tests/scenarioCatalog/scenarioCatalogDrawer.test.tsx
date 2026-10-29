@@ -173,7 +173,7 @@ describe("the canvas Scenario Catalog drawer", () => {
     renderDrawer();
     expect(
       await screen.findByText(
-        "No scenarios yet. Select nodes on a canvas and choose View > Save selection as scenario.",
+        "No scenarios yet. On a canvas, choose View > Define scenario.",
       ),
     ).toBeInTheDocument();
   });

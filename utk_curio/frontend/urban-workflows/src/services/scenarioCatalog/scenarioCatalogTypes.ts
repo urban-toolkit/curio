@@ -205,18 +205,23 @@ export interface ScenarioSetGroup {
 }
 
 /**
- * *items*, already sorted, under their scenario sets: a group per set of a
- * project, placed where its first scenario is. A row from before sets is in
- * a set named after its project.
+ * *items*, already sorted, under their scenario sets: a project's sets
+ * together, where its first scenario is (`groupScenariosByProject`), each set
+ * where its first scenario is within them. A row from before sets is in a set
+ * named after its project.
  */
 export function groupScenariosBySet(items: readonly ScenarioRow[]): ScenarioSetGroup[] {
-  const bySet = new Map<string, ScenarioSetGroup>();
-  for (const row of items) {
-    const set = row.set?.id ? row.set : { id: "", name: row.project.name };
-    const key = `${row.project.id}/${set.id}`;
-    const group = bySet.get(key);
-    if (group) group.items.push(row);
-    else bySet.set(key, { key, set: { id: set.id, name: set.name || row.project.name }, project: row.project, items: [row] });
+  const out: ScenarioSetGroup[] = [];
+  for (const project of groupScenariosByProject(items)) {
+    const bySet = new Map<string, ScenarioSetGroup>();
+    for (const row of project.items) {
+      const set = row.set?.id ? row.set : { id: "", name: row.project.name };
+      const key = `${row.project.id}/${set.id}`;
+      const group = bySet.get(key);
+      if (group) group.items.push(row);
+      else bySet.set(key, { key, set: { id: set.id, name: set.name || row.project.name }, project: row.project, items: [row] });
+    }
+    out.push(...bySet.values());
   }
-  return Array.from(bySet.values());
+  return out;
 }

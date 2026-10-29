@@ -30,7 +30,7 @@ describe("the scenario commands", () => {
     expect(UP_MENU).not.toMatch(/<HeaderMenu\s+label="Scenarios"/);
   });
 
-  test.each(["Save selection as scenario", "Duplicate selection", "Duplicate as scenario"])(
+  test.each(["Define scenario", "Duplicate selection", "Duplicate as scenario"])(
     "View offers %s, to an editor only",
     (item) => {
       const view = menuSource("View", "</HeaderMenu>");

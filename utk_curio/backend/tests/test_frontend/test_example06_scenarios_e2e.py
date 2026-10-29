@@ -552,7 +552,7 @@ def _assert_cards(page) -> None:
         details = open_scenario_details(page, scenario_id)
         assert details.get_by_label("Scenario name").input_value() == name
         assert details.get_by_label(f"Color of {name}").input_value().lower() == COLORS[scenario_id]
-        context = scenario_part(details, "Fixed context")
+        context = scenario_part(details, "Shared context")
         assert "Data Pool" in context, f"{name} lists {context!r} as its fixed context"
         close_scenario_details(page)
     close_scenario_drawer(page)

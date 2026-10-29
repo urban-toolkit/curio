@@ -801,13 +801,15 @@ context.
 
 To make one:
 
-1. Select its own nodes: hold Shift and drag a box around them.
-2. Choose **View → Save selection as scenario**. A panel opens beside the canvas:
-   choose a set, a new one or one of this dataflow's, then review the shared
-   context and outcomes Curio found by following the edges. Remove a node with
-   **×**, or select one on the canvas and click **+ Add selected node**, then
-   **Save scenario**. Nothing changes before. **File → Save dataflow as
-   scenario** saves the whole dataflow as one.
+1. Choose **View → Define scenario**. A panel opens beside the canvas and asks
+   for the nodes unique to the scenario: select them on the canvas (click one,
+   or hold Shift and drag a box around several).
+2. **Next** lists the shared context and outcomes Curio found by following the
+   edges, marked on the canvas. Confirm them, remove a node with **×**, or
+   select one on the canvas and click **+ Add selected node**.
+3. **Next** asks for its name and its scenario set: one of this dataflow's, or a
+   new one. **Save scenario** saves it; nothing changes before. **File → Save
+   dataflow as scenario** saves the whole dataflow as one.
 3. To build an alternative, choose **View → Duplicate as scenario**. The
    selected nodes are copied below themselves with the edges between them, every
    edge entering the selection feeds the copy too, and the selection and the copy
@@ -820,7 +822,7 @@ the node it was copied from.
 The dataflow's scenarios are in the Scenario Catalog drawer's **In project** tab:
 click **Scenario** in the top bar, then **In project**, which shows how many the
 dataflow has. Saving a selection or duplicating it as a scenario opens that tab.
-On top of it are **Save selection as scenario** and **Duplicate as scenario**,
+On top of it are **Define scenario** and **Duplicate as scenario**,
 and each scenario's card offers:
 
 - **Run scenario**: run its nodes, and of the nodes feeding it only those that

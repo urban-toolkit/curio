@@ -1,13 +1,15 @@
 /**
- * The define panel: a scenario is its own nodes, selected first; then a set,
- * new or one of this dataflow's; then the shared context and outcomes Curio
- * proposes from the edges, which the person edits; Save writes it all, and
- * nothing is written before.
+ * Define scenario, in three steps: the nodes unique to the scenario, selected
+ * on the canvas; the shared context and outcomes Curio infers from them, which
+ * the person confirms or edits; then its name and its scenario set, an
+ * existing one or a new one. Save scenario writes it all, and nothing is
+ * written before.
  *
- * The real panel and ScenarioUi; the flow and the toasts are mocked.
+ * The real panel and ScenarioUi; the flow, the canvas selection and the
+ * toasts are mocked.
  */
 import React from "react";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import "@testing-library/jest-dom";
 
 import { ScenarioDefinePanel } from "../../components/scenarios/define/ScenarioDefinePanel";
@@ -22,16 +24,40 @@ jest.mock("../../providers/ToastProvider", () => ({
   useToastContext: () => ({ showToast: mockShowToast }),
 }));
 
-const node = (id: string, selected = false) => ({
+// The canvas selection, as React Flow's store holds it.
+const mockSelection: { ids: string[]; listeners: Set<() => void> } = { ids: [], listeners: new Set() };
+jest.mock("reactflow", () => {
+  const React = jest.requireActual("react");
+  return {
+    useStore: (selector: (s: any) => unknown) => {
+      const [, bump] = React.useReducer((n: number) => n + 1, 0);
+      React.useEffect(() => {
+        mockSelection.listeners.add(bump);
+        return () => mockSelection.listeners.delete(bump);
+      }, []);
+      return selector({
+        nodeInternals: new Map(mockSelection.ids.map((id) => [id, { id, selected: true, hidden: false }])),
+      });
+    },
+  };
+});
+
+function select(...ids: string[]) {
+  act(() => {
+    mockSelection.ids = ids;
+    mockSelection.listeners.forEach((f) => f());
+  });
+}
+
+const node = (id: string) => ({
   id,
   type: "universal",
-  selected,
   position: { x: 0, y: 0 },
   data: { nodeType: "curio.builtin/computation-analysis@1", title: id },
 });
 
 // load → heights → existing ─┐
-//                 heights → around → towers ─┤→ chart
+//                 heights → around → towers ─┤→ chart, change
 const EDGES = [
   { source: "load", target: "heights" },
   { source: "heights", target: "existing" },
@@ -64,42 +90,58 @@ function ui(over: Partial<ScenarioUi> = {}): ScenarioUi {
   };
 }
 
-function renderPanel(define: ScenarioUi["define"], value = ui()) {
+function renderPanel(define: NonNullable<ScenarioUi["define"]>, value = ui()) {
   render(
     <ScenarioUiContext.Provider value={{ ...value, define }}>
-      <ScenarioDefinePanel define={define!} />
+      <ScenarioDefinePanel define={define} />
     </ScenarioUiContext.Provider>,
   );
   return value;
 }
 
 const part = (name: string) => within(screen.getByRole("region", { name }));
+const click = (name: string) => fireEvent.click(screen.getByRole("button", { name }));
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockSelection.ids = [];
   for (const key of Object.keys(mockFlow)) delete mockFlow[key];
   Object.assign(mockFlow, {
     scenarios: [],
     scenarioSets: [],
-    nodes: ["load", "heights", "around", "existing", "towers", "chart", "change"].map((id) => node(id)),
+    nodes: ["load", "heights", "around", "existing", "towers", "chart", "change"].map(node),
     edges: EDGES,
     setScenarios: jest.fn(),
     workflowNameRef: { current: "Park shade" },
   });
 });
 
-describe("a new scenario", () => {
-  test("goes in a new set named after the dataflow, with what Curio found upstream and downstream", () => {
-    const value = renderPanel({ mode: "new", nodes: ["existing"] });
-    expect(screen.getByRole("listitem", { current: "step" })).toHaveTextContent("Choose a set");
-    expect(screen.getByTestId("scenario-define-set-name")).toHaveValue("Park shade");
-    fireEvent.click(screen.getByRole("button", { name: "Next: review context & outcomes" }));
+describe("defining a scenario", () => {
+  test("asks for the scenario's nodes first, and lists them as they are selected", () => {
+    renderPanel({ mode: "new" });
+    expect(screen.getByRole("heading", { name: "Which nodes are unique to this scenario?" })).toBeInTheDocument();
+    expect(screen.getByTestId("scenario-define-waiting")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next: context & outcomes" })).toBeDisabled();
+    select("existing");
+    expect(part("Scenario nodes").getByText("existing")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next: context & outcomes" })).toBeEnabled();
+  });
 
+  test("infers its context and outcomes, then puts it in a new set named after the dataflow", () => {
+    const value = renderPanel({ mode: "new" });
+    select("existing");
+    click("Next: context & outcomes");
+    expect(screen.getByRole("listitem", { current: "step" })).toHaveTextContent("Context & outcomes");
     expect(part("Shared context").getByText("load")).toBeInTheDocument();
     expect(part("Shared context").getByText("heights")).toBeInTheDocument();
     expect(part("Shared context").queryByText("around")).toBeNull();
     expect(part("Outcomes").getByText("chart")).toBeInTheDocument();
-    expect(part("Outcomes").getByText("change")).toBeInTheDocument();
+    expect(value.setPreview).toHaveBeenLastCalledWith({ context: ["load", "heights"], outcomes: ["chart", "change"] });
+
+    click("Next: name & set");
+    expect(screen.getByRole("radio", { name: /Create a new scenario set/ })).toBeChecked();
+    expect(screen.getByTestId("scenario-define-set-name")).toHaveValue("Park shade");
+    fireEvent.change(screen.getByTestId("scenario-define-name"), { target: { value: "Existing" } });
     expect(mockFlow.setScenarios).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByTestId("scenario-define-save"));
@@ -107,6 +149,7 @@ describe("a new scenario", () => {
     expect(sets).toEqual([{ id: expect.stringMatching(/^set-/), name: "Park shade" }]);
     expect(scenarios).toEqual([
       expect.objectContaining({
+        name: "Existing",
         nodes: ["existing"],
         set: sets[0].id,
         context: ["load", "heights"],
@@ -118,7 +161,7 @@ describe("a new scenario", () => {
 
   test("Cancel writes nothing", () => {
     const value = renderPanel({ mode: "new", nodes: ["existing"] });
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    click("Cancel");
     expect(mockFlow.setScenarios).not.toHaveBeenCalled();
     expect(value.setDefine).toHaveBeenCalledWith(null);
   });
@@ -126,14 +169,15 @@ describe("a new scenario", () => {
   test("joins an existing set, telling what the set has from what is new to it", () => {
     mockFlow.scenarios = [EXISTING];
     mockFlow.scenarioSets = [{ id: "park", name: "Park shade" }];
-    renderPanel({ mode: "new", nodes: ["towers"] });
-    expect(screen.getByRole("radio", { name: /Park shade/ })).toBeChecked();
-    fireEvent.click(screen.getByRole("button", { name: "Next: review context & outcomes" }));
-
+    renderPanel({ mode: "new" });
+    select("towers");
+    click("Next: context & outcomes");
     const context = screen.getByRole("region", { name: "Shared context" });
     expect(within(context).getByText("Already in the set").parentElement).toHaveTextContent("load");
     expect(within(context).getByText("New to the set").parentElement).toHaveTextContent("around");
 
+    click("Next: name & set");
+    expect(screen.getByRole("radio", { name: /Park shade/ })).toBeChecked();
     fireEvent.click(screen.getByTestId("scenario-define-save"));
     const [scenarios, sets] = mockFlow.setScenarios.mock.calls[0];
     expect(sets).toEqual([{ id: "park", name: "Park shade" }]);
@@ -142,12 +186,21 @@ describe("a new scenario", () => {
     );
   });
 
+  test("a node already in a scenario cannot be one of its nodes", () => {
+    mockFlow.scenarios = [EXISTING];
+    mockFlow.scenarioSets = [{ id: "park", name: "Park shade" }];
+    renderPanel({ mode: "new" });
+    select("existing");
+    expect(screen.getByTestId("scenario-define-waiting")).toBeInTheDocument();
+  });
+
   test("a node is removed with ×, and a selected one is added", () => {
-    mockFlow.nodes = mockFlow.nodes.map((n: any) => (n.id === "around" ? { ...n, selected: true } : n));
     renderPanel({ mode: "new", nodes: ["existing"] });
-    fireEvent.click(screen.getByRole("button", { name: "Next: review context & outcomes" }));
-    fireEvent.click(screen.getByRole("button", { name: "Remove change" }));
+    click("Next: context & outcomes");
+    click("Remove change");
+    select("around");
     fireEvent.click(part("Shared context").getByRole("button", { name: "+ Add selected node" }));
+    click("Next: name & set");
     fireEvent.click(screen.getByTestId("scenario-define-save"));
     const [scenarios] = mockFlow.setScenarios.mock.calls[0];
     // In the dataflow's order.
@@ -155,9 +208,13 @@ describe("a new scenario", () => {
     expect(scenarios[0].outcomes).toEqual(["chart"]);
   });
 
-  test("the canvas marks what the panel holds", () => {
-    const value = renderPanel({ mode: "new", nodes: ["existing"] });
-    expect(value.setPreview).toHaveBeenCalledWith({ context: ["load", "heights"], outcomes: ["chart", "change"] });
+  test("Back keeps the edits made", () => {
+    renderPanel({ mode: "new", nodes: ["existing"] });
+    click("Next: context & outcomes");
+    click("Remove change");
+    click("Next: name & set");
+    click("Back");
+    expect(part("Outcomes").queryByText("change")).toBeNull();
   });
 });
 
@@ -167,10 +224,8 @@ describe("editing a scenario's context and outcomes", () => {
     mockFlow.scenarioSets = [{ id: "park", name: "Park shade" }];
     renderPanel({ mode: "edit", scenarioId: "e" });
     expect(part("Outcomes").queryByText("change")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Remove heights" }));
+    click("Remove heights");
     fireEvent.click(screen.getByTestId("scenario-define-save"));
-    expect(mockFlow.setScenarios).toHaveBeenCalledWith([
-      { ...EXISTING, context: ["load"], outcomes: ["chart"] },
-    ]);
+    expect(mockFlow.setScenarios).toHaveBeenCalledWith([{ ...EXISTING, context: ["load"], outcomes: ["chart"] }]);
   });
 });

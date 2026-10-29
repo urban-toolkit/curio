@@ -264,7 +264,7 @@ export const ScenarioCatalogBrowse: React.FC = () => {
           <div className={browseStyles.empty}>
             {filtered
               ? "No scenarios match the current filters."
-              : "No scenarios yet. Select nodes on a canvas and choose View > Save selection as scenario."}
+              : "No scenarios yet. On a canvas, choose View > Define scenario."}
           </div>
         ) : (
           <div

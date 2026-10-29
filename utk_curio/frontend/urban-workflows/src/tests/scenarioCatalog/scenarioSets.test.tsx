@@ -20,7 +20,7 @@ const row = (id: string, color: string, set?: { id: string; name: string }, p = 
   key: `${p.id}/${id}`, id, name: id, color, description: "", nodeCount: 1, set, project: p, preview: null,
 });
 
-test("Browse all groups scenarios under their set, each set of its project", () => {
+test("Browse all groups scenarios under their set, a project's sets together", () => {
   const park = { id: "park", name: "Lower Manhattan park shade" };
   const other = { ...project, id: "p2", name: "Routing" };
   const groups = groupScenariosBySet([
@@ -31,8 +31,8 @@ test("Browse all groups scenarios under their set, each set of its project", () 
   ]);
   expect(groups.map((g) => [g.set.name, g.items.map((i) => i.id)])).toEqual([
     ["Lower Manhattan park shade", ["Existing", "Towers removed"]],
-    ["Routing around rain and wind", ["Fastest"]],
     ["Park shade", ["Old"]],
+    ["Routing around rain and wind", ["Fastest"]],
   ]);
 });
 
