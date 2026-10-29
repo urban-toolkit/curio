@@ -91,10 +91,13 @@ def _ensure_dataflow_identity(spec: Optional[dict], name: Optional[str]) -> bool
     interpolates it into every provenance version key, which is where the
     ``undefined_1787609706100`` keys in older projects came from.
 
-    Only absent fields are filled. The spec's own name always wins - deriving it
-    from the project instead is #148, where seeding turned ``Vega-Lite chained
-    transforms`` into ``Vega lite chained transforms`` (see
-    ``_name_from_spec`` in projects/seed.py). Returns True when anything changed.
+    Only absent fields are filled; a backfill never overwrites. Deriving the
+    spec's name from elsewhere was #148, where seeding turned ``Vega-Lite
+    chained transforms`` into ``Vega lite chained transforms`` (the seeder now
+    names an example's row from its spec, ``_name_from_spec`` in
+    projects/seed.py). Naming a new dataflow after the row it is made under is
+    the create's own step (:func:`save_project`, through
+    :func:`_sync_dataflow_name`). Returns True when anything changed.
     """
     if not isinstance(spec, dict):
         return False
@@ -136,8 +139,11 @@ def _sync_dataflow_name(spec: Optional[dict], name: Optional[str]) -> bool:
     PUT (what the Projects list's rename sends) never enters the spec block at all.
 
     Unlike :func:`_ensure_dataflow_identity` - a backfill that must never overwrite
-    a spec's own name (#148) - this runs ONLY when the caller explicitly sent
-    ``name``, i.e. actually asked for a rename.
+    a spec's own name (#148) - this runs ONLY when the caller named the
+    dataflow: a save that explicitly sent ``name``, i.e. actually asked for a
+    rename, and a create (:func:`save_project`), which always names the row it
+    makes, so a copy opens under its own name and not the one it was copied
+    from.
 
     ``provenance_id`` is deliberately left alone: already-recorded provenance
     versions are keyed on the old name, and rewriting it here would orphan them.
@@ -965,6 +971,12 @@ def save_project(user, data: ProjectCreate, *, sign_in: Optional[str] = None) ->
     # A spec that does not name itself is a spec the canvas reloads with an
     # undefined workflow name; fill what the client left out (never overwrite).
     _ensure_dataflow_identity(data.spec, data.name)
+    # Then the dataflow takes the name its row is made under, before its doc
+    # is built from it. The canvas titles a dataflow with the spec's name and
+    # the Projects page lists the row's, so a create whose spec names another
+    # (Duplicate's "X (copy)", Save a copy, a notebook named after its file)
+    # opened under the name it was copied from until a save renamed it.
+    _sync_dataflow_name(data.spec, data.name)
     _normalize_spec_categories(data.spec)
     scenarios.normalize_spec_scenarios(data.spec)
     _drop_live_output_refs(data.spec)
