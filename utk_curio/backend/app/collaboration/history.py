@@ -93,6 +93,12 @@ RUN = "run"
 HEAD = "head"
 #: The points that are no version of the dataflow.
 UNLISTED = frozenset({RUN, IMPORTED_ENTRY, HEAD})
+#: What a version put back leaves as the dataflow holds it: its name, its
+#: hand-set categories and auto-run, and the packages and datasets installed
+#: in it. The rest is the version's: its nodes, connections, goal,
+#: description and scenarios.
+KEPT_BY_A_PUT_BACK = frozenset({"name", "provenance_id", "timestamp", "categories", "autoRun",
+                                "packages", "datasets"})
 
 #: How many dataflows rebuilt at points are kept in memory.
 CACHE_SIZE = 512
@@ -1287,9 +1293,10 @@ def saved(user_key: str, project_id: str, by: dict) -> dict:
 
 def put_back(user_key: str, project_id: str, point_id: str, by: dict) -> dict:
     """Put the version *point_id* back: one transaction makes the doc hold
-    it, for every tab, and a version named after it, its parent the version
-    put back. ``refused``: the nodes whose code someone changed while it was
-    being put back, which keep theirs."""
+    it, but for what :data:`KEPT_BY_A_PUT_BACK` names, for every tab, and a
+    version named after it, its parent the version put back. ``refused``: the
+    nodes whose code someone changed while it was being put back, which keep
+    theirs."""
     folder = _folder(user_key, project_id)
     point = next((p for p in _read_points(folder) if p["id"] == point_id and _listed(p)), None)
     if point is None:
@@ -1301,8 +1308,9 @@ def put_back(user_key: str, project_id: str, point_id: str, by: dict) -> dict:
     if spec is None:
         raise HistoryError("This dataflow has no saved spec.", 404)
     flow = spec.get("dataflow") if isinstance(spec.get("dataflow"), dict) else {}
-    spec["dataflow"] = {**{name: value for name, value in flow.items() if name in doc_mapping.OUTSIDE_THE_DOC},
-                        **target}
+    kept = doc_mapping.OUTSIDE_THE_DOC | KEPT_BY_A_PUT_BACK
+    spec["dataflow"] = {**{name: value for name, value in target.items() if name not in kept},
+                        **{name: value for name, value in flow.items() if name in kept}}
     made = {"kind": PUT_BACK, "what": "Put back", "restores": point_id, "parent": point_id, "by": by}
     written = dataflow_docs.write(user_key, project_id, spec, dataflow_docs.person(_account(by), "putBack"),
                                   point=made)

@@ -38,8 +38,10 @@ Run::
 """
 from __future__ import annotations
 
+import json
 import re
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 from playwright.sync_api import expect
 
@@ -76,16 +78,23 @@ SETTLE_MS = 4000
 
 
 def _install_save_response(project_id: str, node_id: str):
-    """Match the record of outputs that carries this node's output ref
-    (``POST /api/projects/<id>/outputs``). A run's start names the node too,
-    and answers with no install warnings at all, so only the record will do."""
+    """Match the record of outputs that carries this node's output ref: a POST
+    of ``/api/projects/<id>/outputs`` whose ``outputs`` hold a ref of the node.
+    Not a request to another of the dataflow's routes that names the node
+    otherwise (a server run of it, a run in its history), whose answer carries
+    no install warnings at all, nor a record made before the run."""
 
     def predicate(response) -> bool:
         if response.request.method != "POST":
             return False
-        if not response.url.split("?", 1)[0].endswith(f"/api/projects/{project_id}/outputs"):
+        if urlparse(response.url).path.rstrip("/") != f"/api/projects/{project_id}/outputs":
             return False
-        return node_id in (response.request.post_data or "")
+        try:
+            body = json.loads(response.request.post_data or "{}")
+        except ValueError:
+            return False
+        outputs = body.get("outputs") if isinstance(body, dict) else None
+        return any(isinstance(ref, dict) and ref.get("node_id") == node_id for ref in outputs or [])
 
     return predicate
 

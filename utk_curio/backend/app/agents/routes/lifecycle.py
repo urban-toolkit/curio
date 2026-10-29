@@ -6,17 +6,16 @@ of ``routes.py`` by resource, bodies verbatim, registered on the one ``agents_bp
 
 from __future__ import annotations
 
-from flask import g
 from flask import jsonify
 from flask import request
 
 from utk_curio.backend.app.agents import service as agents_services
+from utk_curio.backend.app.agents.routes.common import _dataflow
 from utk_curio.backend.app.agents.routes.common import _error
 from utk_curio.backend.app.agents.routes.common import _svc_error
 from utk_curio.backend.app.agents.routes.common import agents_bp
 from utk_curio.backend.app.agents.service import AgentServiceError
 from utk_curio.backend.app.projects import repositories as projects_repo
-from utk_curio.backend.app.projects.services import _user_dir_key
 from utk_curio.backend.app.users.dependencies import require_auth
 
 
@@ -25,8 +24,8 @@ from utk_curio.backend.app.users.dependencies import require_auth
 @require_auth
 def list_project_agents(project_id: str):
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        agents = agents_services.list_installed_in_project(_user_dir_key(g.user), project_id)
+        flow = _dataflow(project_id, make=False)
+        agents = agents_services.list_installed_in_project(flow.key, flow.project_id)
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
     except AgentServiceError as exc:
@@ -42,8 +41,8 @@ def install_in_project(project_id: str):
     if not isinstance(coord, str):
         return _error("body must include 'coord'")
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        payload = agents_services.install_in_project(_user_dir_key(g.user), project_id, coord)
+        flow = _dataflow(project_id)
+        payload = agents_services.install_in_project(flow.key, flow.project_id, coord)
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
     except AgentServiceError as exc:
@@ -55,8 +54,8 @@ def install_in_project(project_id: str):
 @require_auth
 def uninstall_from_project(project_id: str, coord: str):
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        payload = agents_services.uninstall_from_project(_user_dir_key(g.user), project_id, coord)
+        flow = _dataflow(project_id)
+        payload = agents_services.uninstall_from_project(flow.key, flow.project_id, coord)
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
     except AgentServiceError as exc:

@@ -6,6 +6,7 @@ from flask import Blueprint, current_app, g, jsonify, request
 
 from utk_curio.backend.app.users.dependencies import get_current_token, require_auth
 from utk_curio.backend.app.projects import services
+from utk_curio.backend.app.projects import visitor_copies
 from utk_curio.backend.app.projects.repositories import NotFoundError
 from utk_curio.backend.app.projects.schemas import (
     OutputRef,
@@ -192,9 +193,15 @@ def get_project(project_id: str):
     except ProjectError as exc:
         return _error(str(exc), exc.status)
 
+    # A hosted guest's canvas opens the copy its agents work on, once they
+    # have written one (visitor_copies.py).
+    project, spec = result["project"], result["spec"]
+    own = visitor_copies.canvas_spec(g.user, project_id)
+    if own is not None:
+        project, spec = visitor_copies.with_spec(project, own), own
     return jsonify({
-        "project": asdict(result["project"]),
-        "spec": result["spec"],
+        "project": asdict(project),
+        "spec": spec,
         "outputs": result["outputs"],
     }), 200
 

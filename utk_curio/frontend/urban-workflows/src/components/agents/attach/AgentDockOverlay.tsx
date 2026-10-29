@@ -9,6 +9,7 @@ import { useAgentAttachmentsContext } from "../../../providers/agents";
 import { composeAgentRunContext, skillsApi } from "../../../services/agents";
 import { useAgentCanvasMutations } from "./useAgentCanvasMutations";
 import { useFlowContext } from "../../../providers/FlowProvider";
+import { useUserContext } from "../../../providers/userContext";
 import { useSlideDrawerPresentation } from "../../../hook/useSlideDrawerPresentation";
 
 /**
@@ -23,6 +24,9 @@ export const AgentDockOverlay: React.FC = () => {
   // current_output can name the artifact a node produced.
   const { workflowGoal, setWorkflowGoal, workflowNameRef, outputs, scenarios, projectId } =
     useFlowContext();
+  // Whose messages the chat names the writer of: everyone's but this account's.
+  const { user } = useUserContext();
+  const viewerAccount = user?.id != null ? String(user.id) : null;
   const { getNodes, getEdges } = useReactFlow();
   // The apply→canvas bridge listener (dev/48 §3.3): applied node creations
   // and content writes land on the LIVE canvas from here, where React Flow
@@ -175,6 +179,8 @@ export const AgentDockOverlay: React.FC = () => {
               onPrev={prev ? () => ctx.openChat(prev.attachmentId) : undefined}
               onNext={next ? () => ctx.openChat(next.attachmentId) : undefined}
               turns={ctx.transcripts[shown.attachmentId] ?? []}
+              viewerAccount={viewerAccount}
+              installsWaitForOwner={ctx.installsWaitForOwner}
               loadingHistory={ctx.hydratingId === shown.attachmentId}
               historyError={ctx.hydrateErrors[shown.attachmentId] ?? null}
               onRetryHistory={() => ctx.hydrateSession(shown.attachmentId)}

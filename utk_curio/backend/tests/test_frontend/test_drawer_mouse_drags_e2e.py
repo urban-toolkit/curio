@@ -25,8 +25,10 @@ Run::
 """
 from __future__ import annotations
 
+import json
 import uuid
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 from playwright.sync_api import expect
 
@@ -100,6 +102,16 @@ PRODUCER_CODE = (
     "import pandas as pd\n"
     'return pd.DataFrame({"tree": ["oak", "elm", "ash"], "height": [12, 9, 15]})\n'
 )
+
+
+def _sent_outputs(post_data) -> list:
+    """The output refs a record of outputs sent: its body's ``outputs``, each a dict."""
+    try:
+        body = json.loads(post_data or "{}")
+    except ValueError:
+        return []
+    outputs = body.get("outputs") if isinstance(body, dict) else None
+    return [ref for ref in outputs or [] if isinstance(ref, dict)]
 
 _WHAT_IS_AT_JS = """([[x, y], drawer]) => {
     const hit = document.elementFromPoint(x, y);
@@ -259,12 +271,13 @@ def test_a_saved_output_dragged_from_the_data_palette_becomes_a_data_loading_nod
     # Run the producer with its save-output toggle on, so its output is saved
     # to the Data Catalog as this dataflow's.
     enable_save_output(page, PRODUCER)
-    # The record of the outputs that carries the producer's: its run's start
-    # names it too, so the route tells them apart.
+    # The record of the outputs whose refs hold the producer's, not a request
+    # to another of the dataflow's routes that names the producer otherwise (a
+    # server run of it, a run in its history).
     with page.expect_response(
-        lambda r: r.url.split("?", 1)[0].endswith(f"/api/projects/{project_id}/outputs")
-        and r.request.method == "POST"
-        and PRODUCER in (r.request.post_data or ""),
+        lambda r: r.request.method == "POST"
+        and urlparse(r.url).path.rstrip("/") == f"/api/projects/{project_id}/outputs"
+        and any(ref.get("node_id") == PRODUCER for ref in _sent_outputs(r.request.post_data)),
         timeout=180000,
     ) as saved:
         run_node_and_wait(page, PRODUCER, node_type=ANALYSIS_TYPE)

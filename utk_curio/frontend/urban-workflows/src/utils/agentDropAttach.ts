@@ -22,6 +22,11 @@ export interface AgentDropAttachDeps {
   attach: (projectId: string, coord: string, target: AgentDropTarget) => Promise<unknown>;
   /** A hosted guest (`isHostedGuest`), who cannot save the dataflow. */
   hostedGuest?: boolean;
+  /** Whether this is the owner's tab, whose drop waits for `keepDataflow`.
+   * An editor the owner invited makes no dataflow and records nothing: the
+   * editor's canvas is bound to the dataflow's doc on the server, which the
+   * attach reads, so the editor attaches at once. */
+  savesHere?: boolean;
 }
 
 /**
@@ -41,7 +46,7 @@ export async function attachAgentOnDrop(deps: AgentDropAttachDeps): Promise<{ ta
   if (deps.hostedGuest && (keepsFirst || !projectId)) {
     throw Object.assign(new Error(hostedGuestSignInNote("attach agents")), { toastVariant: "warning" as const });
   }
-  if (keepsFirst) {
+  if (keepsFirst && deps.savesHere !== false) {
     // The just-dropped-on element reaches the server before the attach is
     // checked against the dataflow. Also covers a never-saved one (made now).
     projectId = (await deps.keepDataflow()) ?? projectId;

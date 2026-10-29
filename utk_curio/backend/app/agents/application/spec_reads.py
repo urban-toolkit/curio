@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json as _json
 
+from utk_curio.backend.app.agents.application import askers as agents_askers
 from utk_curio.backend.app.agents.application import attachments
 from utk_curio.backend.app.agents.application import catalog as agents_catalog
 from utk_curio.backend.app.agents.application.errors import AgentServiceError
@@ -41,15 +42,19 @@ def _live_spec_or_404(user_key: str, project_id: str) -> dataflow_docs.Live:
 
 def _agent_actor(user_key: str, spec: dict | None, attachment_id: str | None, what: str) -> dataflow_docs.Actor:
     """Who a change an attachment's agent writes is by: the agent the
-    attachment binds, asked by the account (the origin of its transaction on
-    the dataflow's doc)."""
+    attachment binds, asked by the person who asked, an editor the owner
+    invited among them (``askers.account``), the origin of its transaction on
+    the dataflow's doc."""
     record = attachments.get_attachment(spec, attachment_id) if spec and attachment_id else None
-    return dataflow_docs.by_agent(str((record or {}).get("coord") or "") or None, user_key, what)
+    return dataflow_docs.by_agent(
+        str((record or {}).get("coord") or "") or None, agents_askers.account(user_key), what,
+    )
 
 
 def _person(user_key: str, what: str) -> dataflow_docs.Actor:
-    """Who a change the account makes itself, through the agents' panels, is by."""
-    return dataflow_docs.person(user_key, what)
+    """Who a change a person makes through the agents' panels is by: the
+    request's account, the owner's or an invited editor's (``askers.account``)."""
+    return dataflow_docs.person(agents_askers.account(user_key), what)
 
 
 def _record_or_404(spec: dict, attachment_id: str) -> dict:
@@ -198,12 +203,7 @@ def _acting_user():
     """The user object the request is acting as, or None — captured at a job's
     ENTRY so the detached thread can still reach the datasets domain (which is
     user-object keyed, unlike the key-based agents store)."""
-    try:
-        from flask import g, has_request_context
-
-        return getattr(g, "user", None) if has_request_context() else None
-    except Exception:  # noqa: BLE001 — not under Flask
-        return None
+    return agents_askers.person()
 
 
 def _acting_token():
