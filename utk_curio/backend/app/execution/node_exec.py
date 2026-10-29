@@ -454,6 +454,26 @@ def _kept_run(user, run: NodeRun, names: list[str], saved_inputs: dict) -> _Kept
     return _KeptRun(session_id=new_session_id(), private=private)
 
 
+def _writes_dataflow_id(user, run: NodeRun) -> str | None:
+    """The dataflow *run*'s output joins the Data Catalog of, and its outcome
+    the runtime journal of, in *user*'s store: the run's, unless another
+    account owns that dataflow, as :func:`_kept_run` tells an owner. The run
+    of an editor the owner invited reads the dataflow's saved outputs and
+    datasets, and writes neither, as a run that names no dataflow."""
+    if user is None or not run.dataflow_id:
+        return run.dataflow_id
+    from utk_curio.backend.app.projects.models import Project
+    from utk_curio.backend.extensions import db
+
+    try:
+        project = db.session.get(Project, run.dataflow_id)
+    except Exception:  # noqa: BLE001 - a run never fails on this lookup
+        return run.dataflow_id
+    if project is not None and project.user_id != getattr(user, "id", None):
+        return None
+    return run.dataflow_id
+
+
 def _forget_kept_run(kept_run: _KeptRun | None) -> None:
     """Forget what a kept run that failed made, if it made anything."""
     if kept_run is not None:
@@ -637,6 +657,9 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
     # Auto-install into the user store (not the public Data Catalog).
     from utk_curio.backend.app.datasets.application.auto_install import auto_install_node_output
 
+    # The dataflow the run's writes are of: none for another account's
+    # (:func:`_writes_dataflow_id`).
+    own_dataflow_id = _writes_dataflow_id(user, run)
     installed_dataset = None
     dataset_diagnostic = None
     if run.save_output_dataset and isinstance(output, dict) and run.node_id:
@@ -644,7 +667,7 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
             user=user,
             node_id=run.node_id,
             sandbox_output=output,
-            dataflow_id=run.dataflow_id,
+            dataflow_id=own_dataflow_id,
             node_name=run.node_name,
             node_type=run.node_type,
         )
@@ -665,7 +688,7 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
     record_runtime_outcome(
         user,
         node_id=run.node_id,
-        dataflow_id=run.dataflow_id,
+        dataflow_id=own_dataflow_id,
         code=run.code, stdout=stdout, stderr=stderr, output=output,
         duration_ms=(time.perf_counter() - t0) * 1000.0,
     )
@@ -714,8 +737,8 @@ def _unavailable_reply(user, run: NodeRun, input_ref: dict, unavailable: dict, *
     output = {'path': '', 'dataType': 'str'}
     duration_ms = (time.perf_counter() - started) * 1000.0
     record_runtime_outcome(
-        user, node_id=run.node_id, dataflow_id=run.dataflow_id, code=run.code,
-        stdout=[], stderr=stderr, output=output, duration_ms=duration_ms,
+        user, node_id=run.node_id, dataflow_id=_writes_dataflow_id(user, run),
+        code=run.code, stdout=[], stderr=stderr, output=output, duration_ms=duration_ms,
     )
     _monitor_counters.record_execution(
         language="python", node_type=run.node_type, ok=False, duration_ms=duration_ms,

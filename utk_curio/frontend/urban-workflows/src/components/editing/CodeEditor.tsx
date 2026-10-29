@@ -13,6 +13,10 @@ import { unversionedNodeType } from "../../utils/flowNodeCanonicalType";
 // Editor
 import Editor, { Monaco } from "@monaco-editor/react";
 import { useFlowContext } from "../../providers/FlowProvider";
+import { useCollab } from "../../providers/CollaborationProvider";
+import { canvasRole } from "../../providers/collab/participants";
+import { getCurrentProjectId } from "../../registry/projectPackagesStore";
+import { agentsDataflowId } from "../../services/agents/agentEditors";
 import { shouldSaveOutputOnRun } from "../../utils/saveOutputDataset";
 import { executionResultOutput } from "../../utils/executionResult";
 import { runKeyOf } from "../../utils/references/runKeys";
@@ -162,6 +166,7 @@ function CodeEditor({
         markNodeErrored,
         signalNodeExecDone,
         projectId,
+        viewerMode,
         defaultSaveOutputDataset,
         isDashboardSource,
         playNodesUpTo,
@@ -169,6 +174,7 @@ function CodeEditor({
         edges,
         dashboardOn,
     } = useFlowContext();
+    const collab = useCollab();
     // The wired circles: the value on circle k is the code's input_k. A ref,
     // since the run effect below is keyed on the resolved code alone.
     const wiredSlotsRef = useRef<number[]>([]);
@@ -414,6 +420,11 @@ function CodeEditor({
         const interpreter = (isJsNode && data.jsInterpreter)
             ? data.jsInterpreter
             : data.pythonInterpreter;
+        // The dataflow the run is of, by the rule its agents follow
+        // (useAgentsDataflowId): the one the owner's canvas saves, the one an
+        // invited editor's route opened, and none on a watcher's canvas. The
+        // run then reads the dataflow's datasets and saved outputs.
+        const runDataflowId = agentsDataflowId(canvasRole(viewerMode, collab), projectId, getCurrentProjectId());
         interpreter.interpretCode(
             code,
             replacedCode,
@@ -424,7 +435,7 @@ function CodeEditor({
             data.nodeId,
             workflowNameRef.current,
             nodeExecProv,
-            projectId,
+            runDataflowId,
             // A node feeding a pinned dashboard tile saves its output whatever
             // its own toggle says: that saved dataset is what lets the tile draw
             // when someone opens the dashboard later.

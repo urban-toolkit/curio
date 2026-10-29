@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
+from utk_curio.backend.app.common.safe_paths import is_within
 from utk_curio.backend.app.datasets.domain.catalog_item import (
     autark_layer_type,
     base_item,
@@ -18,39 +20,78 @@ from utk_curio.backend.app.datasets.domain.errors import DatasetCatalogError
 class InstalledDatasetRepository:
     def __init__(self, user: Any | None):
         self.user = user
+        #: The folders, in another account's store, of the datasets the
+        #: dataflows read here list: an editor the dataflow's owner invited
+        #: reads those of the owner's store, and no other
+        #: (``PathResolver._allowed_read_roots``).
+        self.listed_folders: list[Path] = []
 
-    def _project_spec_and_manifest(self, dataflow_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    def _dataflow_store(self, dataflow_id: str) -> tuple[Any, str]:
+        """The dataflow *dataflow_id* and the key of its owner's store, which
+        holds its spec and the datasets it lists, for its owner and for an
+        editor the owner invited. ``access.agents_role`` says which: it tells
+        the owner by account first, as the agents' routes do, so a hosted
+        guest keeps the examples its account owns. Anyone else is told the
+        dataflow is not found."""
         if self.user is None:
             raise DatasetCatalogError("Authorization required", 401)
-        from utk_curio.backend.app.projects import repositories as projects_repo
-        from utk_curio.backend.app.projects import storage
-        from utk_curio.backend.app.projects.services import _user_dir_key
+        from utk_curio.backend.app.projects import access
+        from utk_curio.backend.app.projects.models import Project
+        from utk_curio.backend.app.projects.repositories import NotFoundError
+        from utk_curio.backend.app.projects.services import _owner_user_dir_key
+        from utk_curio.backend.extensions import db
 
-        project = projects_repo.get_for_user(dataflow_id, self.user.id)
-        user_key = _user_dir_key(self.user)
-        spec = storage.read_spec(user_key, project.id) or {}
-        manifest = storage.read_manifest(user_key, project.id) or {}
+        project = db.session.get(Project, dataflow_id)
+        if project is None or access.agents_role(self.user, project) not in access.EDIT_ROLES:
+            raise NotFoundError(f"Project {dataflow_id} not found")
+        return project, _owner_user_dir_key(project)
+
+    def _project_spec_and_manifest(self, dataflow_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
+        from utk_curio.backend.app.projects import storage
+
+        project, store_key = self._dataflow_store(dataflow_id)
+        spec = storage.read_spec(store_key, project.id) or {}
+        manifest = storage.read_manifest(store_key, project.id) or {}
         return spec, manifest
+
+    def _dataflow_refs(self, dataflow_id: str) -> tuple[str, list[dict[str, Any]]]:
+        """The key of the store the dataflow's datasets are in, and the refs
+        its spec lists."""
+        from utk_curio.backend.app.projects import storage
+
+        project, store_key = self._dataflow_store(dataflow_id)
+        spec = storage.read_spec(store_key, project.id) or {}
+        dataflow = spec.get("dataflow") if isinstance(spec, dict) else {}
+        refs = dataflow.get("datasets", []) if isinstance(dataflow, dict) else []
+        return store_key, [r for r in refs if isinstance(r, dict)]
 
     def list_refs(self, dataflow_id: str | None) -> list[dict[str, Any]]:
         if not dataflow_id:
             return []
-        spec, _manifest = self._project_spec_and_manifest(dataflow_id)
-        dataflow = spec.get("dataflow") if isinstance(spec, dict) else {}
-        refs = dataflow.get("datasets", []) if isinstance(dataflow, dict) else []
-        return [r for r in refs if isinstance(r, dict)]
+        return self._dataflow_refs(dataflow_id)[1]
+
+    def in_listed_folder(self, path: str | Path) -> bool:
+        """Whether *path* is in one of :attr:`listed_folders`: a dataset of a
+        dataflow's owner, which an editor of the dataflow reads."""
+        return any(is_within(Path(path), folder) for folder in self.listed_folders)
 
     def list_items(self, dataflow_id: str | None) -> list[dict[str, Any]]:
-        refs = self.list_refs(dataflow_id)
+        if not dataflow_id:
+            return []
+        store_key, refs = self._dataflow_refs(dataflow_id)
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        # The refs of a dataflow the reader does not own name folders of its
+        # owner's store: the reader's catalog may read those, and only those.
+        listed_for_an_editor = store_key != _user_dir_key(self.user)
         # One index read for the whole project's refs, so hydrating them costs a
         # single query instead of a manifest parse each. ``{}`` when the index is
         # unavailable, which falls back to parsing exactly as before.
         rows: dict[str, Any] = {}
-        if refs and self.user is not None:
+        if refs:
             from utk_curio.backend.app.datasets.repositories import index as index_repo
-            from utk_curio.backend.app.projects.services import _user_dir_key
 
-            rows = index_repo.safe_sync_rows_by_dir(_user_dir_key(self.user))
+            rows = index_repo.safe_sync_rows_by_dir(store_key)
 
         items: list[dict[str, Any]] = []
         for ref in refs:
@@ -69,11 +110,11 @@ class InstalledDatasetRepository:
                     load_dataset_manifest,
                 )
                 from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
-                from utk_curio.backend.app.projects.services import _user_dir_key
 
-                user_key = _user_dir_key(self.user)
                 try:
-                    installed_dir = dataset_dir(user_key, dir_name)
+                    installed_dir = dataset_dir(store_key, dir_name)
+                    if listed_for_an_editor and installed_dir not in self.listed_folders:
+                        self.listed_folders.append(installed_dir)
                     row = rows.get(dir_name)
                     if row is not None:
                         from utk_curio.backend.app.datasets.repositories import (
@@ -83,7 +124,7 @@ class InstalledDatasetRepository:
                         manifest = index_repo.manifest_from_row(row)
                     else:
                         manifest = load_dataset_manifest(installed_dir)
-                    data_path = resolve_installed_data_path(user_key, manifest)
+                    data_path = resolve_installed_data_path(store_key, manifest)
                     item = item_from_manifest(
                         manifest, installed_dir, origin=origin_from_dataflow_ref(ref)
                     )

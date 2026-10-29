@@ -43,6 +43,10 @@ logger = logging.getLogger(__name__)
 #: Catalog resource, or the link it was downloaded from.
 _CLIENT_DISCOVERY_KEYS = ("sourceId", "sourceName", "resourceId", "resourceUrl")
 
+#: What an editor is told who would publish a dataset of the dataflow's owner,
+#: one the dataflow lists and the editor reads.
+OWNERS_DATASET_PUBLISH_REFUSAL = "Only the dataflow's owner can publish this dataset."
+
 
 def remote_provenance(raw: object, file_bytes: bytes) -> dict[str, Any] | None:
     """The ``discoverySource`` block for a file a person downloaded themselves, or
@@ -554,6 +558,10 @@ class CatalogMutations:
             p = Path(path_value)
             if p.is_file():
                 local_path = p
+        # A dataset an editor reads from the dataflow owner's store, one the
+        # dataflow lists, is the owner's to publish.
+        if local_path is not None and self.installed.in_listed_folder(local_path):
+            raise DatasetCatalogError(OWNERS_DATASET_PUBLISH_REFUSAL, 403)
 
         if local_path is not None:
             fmt = item.get("format", "")
