@@ -113,7 +113,33 @@ def _sets(raw: object) -> list[dict]:
         kept = {"id": set_id, "name": name}
         if isinstance(entry.get("description"), str) and entry["description"]:
             kept["description"] = entry["description"]
+        shared = _shared(entry.get("shared"))
+        if shared:
+            kept["shared"] = shared
         out.append(kept)
+    return out
+
+
+def _number(value: object) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _shared(raw: object) -> dict:
+    """How the set's shared context and outcomes are drawn: collapsed or not,
+    and where the collapsed box sits. Only what is set and well formed."""
+    out: dict = {}
+    for kind in ("context", "outcomes"):
+        entry = raw.get(kind) if isinstance(raw, dict) else None
+        if not isinstance(entry, dict):
+            continue
+        kept: dict = {}
+        if entry.get("collapsed") is True:
+            kept["collapsed"] = True
+        box = entry.get("box")
+        if isinstance(box, dict) and _number(box.get("x")) and _number(box.get("y")):
+            kept["box"] = {"x": box["x"], "y": box["y"]}
+        if kept:
+            out[kind] = kept
     return out
 
 

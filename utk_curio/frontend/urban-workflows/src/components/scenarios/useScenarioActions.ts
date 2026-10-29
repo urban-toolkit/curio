@@ -7,7 +7,8 @@ import { useToastContext } from "../../providers/ToastProvider";
 import { useCode } from "../../hook/useCode";
 import { TrillGenerator } from "../../TrillGenerator";
 import { isDrawnHidden } from "../../utils/hiddenNodes";
-import type { Scenario } from "../../utils/scenarios/scenarioModel";
+import type { Scenario, SharedKind } from "../../utils/scenarios/scenarioModel";
+import { updateSharedLook } from "../../utils/scenarios/scenarioSets";
 import { duplicateSelection } from "../../utils/scenarios/duplicateSelection";
 import {
   addNodesToScenario,
@@ -39,8 +40,16 @@ const DUPLICATE_GAP = 80;
  * scenario is listed.
  */
 export function useScenarioActions() {
-  const { scenarios: saved, nodes, setScenarios, playNodesUpTo, markDirty, workflowNameRef, workflowGoal } =
-    useFlowContext();
+  const {
+    scenarios: saved,
+    scenarioSets,
+    nodes,
+    setScenarios,
+    playNodesUpTo,
+    markDirty,
+    workflowNameRef,
+    workflowGoal,
+  } = useFlowContext();
   // Every edit reads, and writes, the members still on the canvas: the list
   // keeps a deleted node until the next save.
   const scenarios = useMemo(() => liveScenarios(saved, nodes), [saved, nodes]);
@@ -187,6 +196,19 @@ export function useScenarioActions() {
 
   const moveBox = useCallback((id: string, box: { x: number; y: number }) => update(id, { box }), [update]);
 
+  /** Collapse or expand the shared context or shared outcomes of the set *setId*. */
+  const setSharedCollapsed = useCallback(
+    (setId: string, kind: SharedKind, collapsed: boolean) =>
+      setScenarios(saved, updateSharedLook(scenarioSets ?? [], setId, kind, { collapsed })),
+    [saved, scenarioSets, setScenarios],
+  );
+
+  const moveSharedBox = useCallback(
+    (setId: string, kind: SharedKind, box: { x: number; y: number }) =>
+      setScenarios(saved, updateSharedLook(scenarioSets ?? [], setId, kind, { box })),
+    [saved, scenarioSets, setScenarios],
+  );
+
   const addSelected = useCallback(
     (id: string) => apply(addNodesToScenario(scenarios, id, selectedIds())),
     [scenarios, selectedIds, apply],
@@ -218,6 +240,8 @@ export function useScenarioActions() {
     update,
     setCollapsed,
     moveBox,
+    setSharedCollapsed,
+    moveSharedBox,
     addSelected,
     removeSelected,
     remove,

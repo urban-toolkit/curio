@@ -635,7 +635,7 @@ def test_example_06_compares_its_three_scenarios_in_the_canvas(
         for outcome in OUTCOMES[scenario_id]:
             page.wait_for_function(
                 """([box, node]) => {
-                    const row = document.querySelector(`[data-scenario-box="${box}"] [data-scenario-outcome="${node}"]`);
+                    const row = document.querySelector(`[data-scenario-box="${box}"] [data-scenario-row="${node}"]`);
                     return !!row && row.textContent.includes("Done");
                 }""",
                 arg=[scenario_id, outcome],

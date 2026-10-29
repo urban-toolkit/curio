@@ -705,6 +705,95 @@
           }
         ]
       }
+    },
+    {
+      "name": "a set keeps how its shared groups are drawn, and drops what is malformed",
+      "dataflowName": "Drawn",
+      "nodes": [
+        "load",
+        "a",
+        "chart"
+      ],
+      "edges": [
+        {
+          "source": "load",
+          "target": "a"
+        },
+        {
+          "source": "a",
+          "target": "chart"
+        }
+      ],
+      "sets": [
+        {
+          "id": "s",
+          "name": "Drawn",
+          "shared": {
+            "context": {
+              "collapsed": true,
+              "box": {
+                "x": 10,
+                "y": -20
+              }
+            },
+            "outcomes": {
+              "collapsed": "yes",
+              "box": {
+                "x": "1",
+                "y": 2
+              }
+            },
+            "levers": {
+              "collapsed": true
+            }
+          }
+        }
+      ],
+      "scenarios": [
+        {
+          "id": "a",
+          "name": "A",
+          "color": "#2a9d8f",
+          "nodes": [
+            "a"
+          ],
+          "set": "s"
+        }
+      ],
+      "expected": {
+        "scenarioSets": [
+          {
+            "id": "s",
+            "name": "Drawn",
+            "shared": {
+              "context": {
+                "collapsed": true,
+                "box": {
+                  "x": 10,
+                  "y": -20
+                }
+              }
+            }
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "a",
+            "name": "A",
+            "color": "#2a9d8f",
+            "nodes": [
+              "a"
+            ],
+            "set": "s",
+            "context": [
+              "load"
+            ],
+            "outcomes": [
+              "chart"
+            ]
+          }
+        ]
+      }
     }
   ]
 }

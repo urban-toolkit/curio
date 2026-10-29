@@ -95,7 +95,7 @@ import { isNodeDragRegion, keepPaneOffNodes } from "../utils/nodeDragRegion";
 import { useSharedView } from "../hook/useSharedView";
 import { frameNodesInView, revealRectInView } from "../utils/focusDatasetNodes";
 import { scenarioCanvasView } from "../utils/scenarios/scenarioCanvasView";
-import { BOX_WIDTH, boxLayout } from "./scenarios/ScenarioLayers";
+import { BOX_WIDTH, boxLayout, groupBoxLayout } from "./scenarios/ScenarioLayers";
 import { CanvasScenarioLayers } from "./scenarios/CanvasScenarioLayers";
 import { useScenarioUi } from "./scenarios/scenarioUi";
 
@@ -135,6 +135,7 @@ export function MainCanvas() {
         registerNotebookScroller,
         revealNodes,
         scenarios,
+        scenarioSets,
         packages: dataflowPackages,
         viewerMode,
     } = useFlowContext();
@@ -154,8 +155,9 @@ export function MainCanvas() {
         () => scenarioCanvasView(nodes, edges, notebookOn ? [] : scenarios ?? [], {
             fixedFor: highlightedScenario,
             preview: notebookOn ? null : scenarioPreview,
+            sets: scenarioSets,
         }),
-        [nodes, edges, scenarios, highlightedScenario, scenarioPreview, notebookOn],
+        [nodes, edges, scenarios, scenarioSets, highlightedScenario, scenarioPreview, notebookOn],
     );
 
     // How far the viewport may pan, tracking the nodes rather than a fixed box
@@ -164,21 +166,28 @@ export function MainCanvas() {
     // array every render would call `d3Zoom.translateExtent()` on every frame
     // of a drag. `computeTranslateExtent` rounds to a coarse grid, and keying
     // the tuple on those four numbers keeps the identity stable until a node
-    // actually crosses a boundary. A collapsed scenario's box counts as a node.
+    // actually crosses a boundary. A collapsed box, a scenario's or a shared
+    // group's, counts as a node.
     const [extentMinX, extentMinY, extentMaxX, extentMaxY] = useMemo(() => {
-        const boxes = scenarioView.boxes.map((box) => ({
-            id: box.scenario.id,
-            position: { x: box.x, y: box.y },
-            positionAbsolute: { x: box.x, y: box.y },
+        const asNode = (id: string, x: number, y: number, height: number) => ({
+            id,
+            position: { x, y },
+            positionAbsolute: { x, y },
             width: BOX_WIDTH,
-            height: boxLayout(box).height,
+            height,
             data: {},
-        }));
+        });
+        const boxes = [
+            ...scenarioView.boxes.map((box) => asNode(box.scenario.id, box.x, box.y, boxLayout(box).height)),
+            ...(scenarioView.groups ?? [])
+                .filter((group) => group.collapsed)
+                .map((group) => asNode(group.key, group.x, group.y, groupBoxLayout(group).height)),
+        ];
         const [[minX, minY], [maxX, maxY]] = computeTranslateExtent(
             boxes.length > 0 ? [...nodes, ...boxes] : nodes,
         );
         return [minX, minY, maxX, maxY];
-    }, [nodes, scenarioView.boxes]);
+    }, [nodes, scenarioView.boxes, scenarioView.groups]);
     const translateExtent = useMemo(
         () =>
             [

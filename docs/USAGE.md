@@ -840,17 +840,22 @@ under their sets. In a dataflow someone shares with you,
 the tab lists the scenarios without these controls.
 
 On the canvas, an expanded scenario's nodes wear its color inside a frame, with its
-name and a **Collapse** button above. A collapsed scenario is one box in its color
-that lists the nodes feeding it and those it feeds, with their latest output. The edges
-into and out of the scenario are drawn to the box, and dragging the box moves it.
-Double-click the box to expand it. A collapsed scenario's nodes still run with
-**Run All**, and the context they share runs once.
+name and a **Collapse** button above. A collapsed scenario is one box tinted in its
+color, with a card for each of its nodes: the node's kind, its title and its latest
+output. The edges into and out of the scenario are drawn to the cards they enter and
+leave, and dragging the box moves it. Double-click the box to expand it. A collapsed
+scenario's nodes still run with **Run All**, and the context they share runs once.
+
+Each scenario set's shared context and shared outcomes are framed in gray, under a
+**Shared context** or **Shared outcomes** pill with a **Collapse** button. Collapsed,
+a group is one gray box with a card for each node and the set's circles on it, and
+**Expand** or a double-click opens it again.
 
 Defining a scenario saves the outputs of the nodes feeding it and its last nodes to your Data
 Catalog, whatever their **Save output** setting, as pinning a dashboard tile does. A
 chart or a Data Pool saves nothing itself: the node feeding it does. Scenarios and
 their sets, colors, descriptions, context and outcomes, collapsed state and box
-positions are saved with the dataflow. Deleting a node removes it from its scenario.
+positions, and those of each set's shared groups, are saved with the dataflow. Deleting a node removes it from its scenario.
 
 ### The Map Editor node
 

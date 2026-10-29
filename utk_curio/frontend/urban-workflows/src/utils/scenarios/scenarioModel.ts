@@ -40,6 +40,17 @@ export interface ScenarioSet {
   id: string;
   name: string;
   description?: string;
+  /** How its shared context and shared outcomes are drawn on the canvas. */
+  shared?: Partial<Record<SharedKind, SharedLook>>;
+}
+
+export type SharedKind = "context" | "outcomes";
+export const SHARED_KINDS: readonly SharedKind[] = ["context", "outcomes"];
+
+/** A shared group drawn as one box, and where that box sits. */
+export interface SharedLook {
+  collapsed?: true;
+  box?: { x: number; y: number };
 }
 
 /** Kept in sync with `COLOR_RE` in `scenarios.py`. */

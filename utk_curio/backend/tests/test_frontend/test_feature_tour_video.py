@@ -2251,7 +2251,7 @@ def scene_scenarios(ctx: Ctx) -> None:
     collapsed.wait_for(state="visible", timeout=10000)
     page.wait_for_function(
         """(id) => {
-            const rows = document.querySelectorAll(`[data-scenario-box="${id}"] [data-scenario-outcome]`);
+            const rows = document.querySelectorAll(`[data-scenario-box="${id}"] [data-scenario-row]`);
             return rows.length > 0 && [...rows].every((row) => row.textContent.includes("Done"));
         }""",
         arg=WHATIF_BASELINE,
@@ -2335,7 +2335,7 @@ def scene_scenario_drop(ctx: Ctx) -> None:
     box.wait_for(state="visible", timeout=15000)
     page.wait_for_function(
         """() => {
-            const rows = document.querySelectorAll('[data-scenario-box] [data-scenario-outcome]');
+            const rows = document.querySelectorAll('[data-scenario-box] [data-scenario-row]');
             return rows.length > 0 && [...rows].every((row) => row.textContent.includes("Done"));
         }""",
         timeout=15000,

@@ -8,7 +8,8 @@
    scenario; the scenario's own nodes, selected on the canvas; the shared
    context and outcomes Curio found, confirmed; a name and a new scenario set,
    then Save scenario; then the second one into the same set. The saved spec holds the set, each scenario's context and
-   outcomes, and the shared nodes carry both scenarios' circles.
+   outcomes, and the shared nodes carry both scenarios' circles. Collapsing
+   the shared outcomes makes one box of cards, which the set keeps.
 
 Nothing here runs a node, so neither test needs WebGPU.
 
@@ -190,3 +191,25 @@ def test_two_scenarios_defined_step_by_step_share_one_set(
     ids = [s["id"] for s in saved["scenarios"]]
     assert _circles(page, "load") == [(ids[0], True), (ids[1], True)]
     assert _circles(page, "chart") == [(ids[0], True), (ids[1], True)]
+
+    # 3. Collapse the shared outcomes: one gray box with a card per node, the
+    # set's circles on it, and the node hidden. The set keeps it collapsed.
+    frame_nodes(page, ["chart"])
+    page.get_by_test_id(f"shared-collapse-{set_id}-outcomes").click()
+    box = page.get_by_test_id(f"shared-box-{set_id}-outcomes")
+    box.wait_for(state="visible", timeout=10000)
+    card = box.locator('[data-shared-row="chart"]')
+    assert "Compare shade" in card.inner_text()
+    assert [d.get_attribute("data-member") for d in card.locator("[data-scenario]").all()] == ["true", "true"]
+    assert not node_locator(page, "chart").is_visible()
+    save_dataflow(page)
+    saved = api_json(f"{current_server}/api/projects/{project_id}", session["token"])["spec"]["dataflow"]
+    assert saved["scenarioSets"][0].get("shared") == {"outcomes": {"collapsed": True}}
+
+    # Reopened, it is still collapsed; Expand shows the node again.
+    page.reload()
+    box.wait_for(state="visible", timeout=45000)
+    # The reopened view fits the nodes that show, which can leave the box out.
+    page.get_by_test_id(f"shared-expand-{set_id}-outcomes").dispatch_event("click")
+    node_locator(page, "chart").wait_for(state="visible", timeout=10000)
+    assert page.locator(f'[data-shared-header="group:{set_id}:outcomes"]').inner_text().startswith("Shared outcomes")

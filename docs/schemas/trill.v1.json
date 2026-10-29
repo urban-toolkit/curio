@@ -53,7 +53,30 @@
       "properties": {
         "id": { "type": "string", "minLength": 1, "description": "Unique among the dataflow's scenario sets." },
         "name": { "type": "string", "minLength": 1, "description": "What the canvas and the Scenario Catalog call it." },
-        "description": { "type": "string", "description": "The question its scenarios answer. Emitted only when non-empty." }
+        "description": { "type": "string", "description": "The question its scenarios answer. Emitted only when non-empty." },
+        "shared": {
+          "type": "object",
+          "description": "How the canvas draws the set's shared context and shared outcomes. Emitted only when one is collapsed or its box was moved.",
+          "additionalProperties": false,
+          "properties": {
+            "context": { "$ref": "#/$defs/sharedLook" },
+            "outcomes": { "$ref": "#/$defs/sharedLook" }
+          }
+        }
+      }
+    },
+    "sharedLook": {
+      "type": "object",
+      "description": "One shared group of a scenario set: drawn as one box when collapsed, where `box` puts it.",
+      "additionalProperties": false,
+      "properties": {
+        "collapsed": { "const": true },
+        "box": {
+          "type": "object",
+          "required": ["x", "y"],
+          "additionalProperties": false,
+          "properties": { "x": { "type": "number" }, "y": { "type": "number" } }
+        }
       }
     },
     "scenario": {

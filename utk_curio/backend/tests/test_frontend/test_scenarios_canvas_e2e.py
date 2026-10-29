@@ -240,8 +240,8 @@ def test_a_branch_duplicated_as_a_scenario_collapses_runs_and_expands(
         member.wait_for(state="attached", timeout=10000)
         assert not member.is_visible(), f"{node_id} still shows inside a collapsed scenario"
     assert node_locator(page, SCALE).is_visible()
-    # Its fixed context and its outcome are listed on it.
-    assert box.locator(f'[data-scenario-outcome="{map_copy}"]').count() == 1
+    # Its nodes are listed on it, a card each.
+    assert box.locator(f'[data-scenario-row="{map_copy}"]').count() == 1
 
     # Dragging the box moves it.
     before = box.bounding_box()
@@ -265,7 +265,7 @@ def test_a_branch_duplicated_as_a_scenario_collapses_runs_and_expands(
         assert status == "done", f"{node_id} did not draw: {detail}"
     page.wait_for_function(
         """([box, node]) => {
-            const row = document.querySelector(`[data-scenario-box="${box}"] [data-scenario-outcome="${node}"]`);
+            const row = document.querySelector(`[data-scenario-box="${box}"] [data-scenario-row="${node}"]`);
             return !!row && row.textContent.includes("Done");
         }""",
         arg=[copy_id, map_copy],

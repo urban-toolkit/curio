@@ -28,6 +28,8 @@ Every scenario belongs to one **scenario set**: the scenarios that answer one qu
 
 Curio infers a scenario's context and outcomes by following the edges up and down from its nodes, never into another scenario's box and never along an Interaction link. You finalize them when you define the scenario, and edit them later (see [Defining a scenario](#defining-a-scenario)); a scenario keeps what you finalized.
 
+On the canvas, each set's shared context and shared outcomes are framed in gray under their name, and each collapses into one box of cards, as a scenario does; the set keeps them collapsed.
+
 Scenarios live in their projects. The catalog lists them; it keeps no copy. Editing a project changes its scenarios in the catalog, and deleting a project removes them.
 
 ### Defining a scenario

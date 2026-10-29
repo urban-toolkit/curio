@@ -33,6 +33,29 @@
   border-radius: var(--curio-radius-lg);
 }
 
+/* A scenario set: one outline around its scenarios and the context and
+   outcomes they share, its title set into the top edge. */
+.setOutline {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px solid var(--curio-text-primary);
+  border-radius: 14px;
+}
+
+.setTitle {
+  position: absolute;
+  transform: translateY(-50%);
+  padding: 0 8px;
+  background: var(--curio-page-bg);
+  font-family: var(--curio-font-family);
+  font-size: var(--curio-font-size-sm);
+  font-weight: 700;
+  line-height: 20px;
+  color: var(--curio-text-primary);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .edges {
   position: absolute;
   left: 0;
@@ -104,64 +127,136 @@
 
 .boxHeader {
   position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  height: 40px;
+  left: 12px;
+  right: 12px;
+  top: 10px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
-  padding: 0 10px;
-  color: #fff;
-  border-radius: 5px 5px 0 0;
+}
+
+.boxDot {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
 }
 
 .boxName {
   font-size: var(--curio-font-size-lg);
-  font-weight: 600;
+  font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.boxCount {
+.boxHint {
+  position: absolute;
+  left: 12px;
+  top: 34px;
   font-size: var(--curio-font-size-xs);
-  opacity: 0.85;
+  color: var(--curio-text-secondary);
   white-space: nowrap;
 }
 
-.section {
+/* A node in a collapsed box: its kind, what it shows, and its title. */
+.card {
   position: absolute;
   left: 10px;
   right: 10px;
-  height: 22px;
-  line-height: 22px;
-  font-size: var(--curio-font-size-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--curio-text-secondary);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 6px 10px 7px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: var(--curio-radius-md);
+  background: var(--curio-card-bg);
 }
 
-.row {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 24px;
+.cardTop {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 6px;
-  padding: 0 14px;
-  font-size: var(--curio-font-size-sm);
+  min-height: 18px;
 }
 
-.rowLabel {
-  flex: 1;
-  min-width: 0;
+.cardKind {
+  padding: 0 6px;
+  line-height: 18px;
+  border-radius: var(--curio-radius-sm);
+  background: var(--curio-surface-muted);
+  font-family: var(--curio-font-mono, monospace);
+  font-size: var(--curio-font-size-xs);
+  font-weight: 600;
+  color: var(--curio-text-primary);
+  white-space: nowrap;
+}
+
+.cardTitle {
+  font-size: var(--curio-font-size-sm);
+  font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.cardDots {
+  display: flex;
+  gap: 4px;
+}
+
+.cardDot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 2px solid;
+  background: var(--curio-card-bg);
+}
+
+/* A scenario set's shared context or shared outcomes: gray where a scenario
+   wears its color, framed when expanded, a box of cards when collapsed. */
+.groupFrame {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px dashed var(--curio-text-secondary);
+  border-radius: var(--curio-radius-lg);
+  background: color-mix(in srgb, var(--curio-text-secondary) 9%, transparent);
+}
+
+.groupChip {
+  color: #fff;
+  background: var(--curio-text-secondary);
+  font-family: var(--curio-font-family);
+  font-size: var(--curio-font-size-sm);
+  font-weight: 600;
+  line-height: 20px;
+  padding: 0 10px;
+  border-radius: var(--curio-radius-pill);
+}
+
+.groupBox {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px dashed var(--curio-text-secondary);
+  border-radius: var(--curio-radius-lg);
+  background: linear-gradient(
+      color-mix(in srgb, var(--curio-text-secondary) 12%, transparent),
+      color-mix(in srgb, var(--curio-text-secondary) 12%, transparent)
+    ),
+    var(--curio-card-bg);
+  box-shadow: var(--curio-shadow-browse-card-raised);
+  font-family: var(--curio-font-family);
+  color: var(--curio-text-primary);
+  pointer-events: auto;
+  cursor: grab;
+  user-select: none;
+}
+
+.groupBox:active {
+  cursor: grabbing;
 }
 
 .status {
@@ -214,8 +309,8 @@
   position: absolute;
   transform: translateX(-50%);
   display: flex;
-  gap: 4px;
-  padding: 3px 5px;
+  gap: 8px;
+  padding: 6px 10px;
   border-radius: 999px;
   background: var(--curio-card-bg);
   box-shadow: 0 0 0 1px var(--curio-border);
@@ -223,25 +318,10 @@
 }
 
 .dot {
-  width: 10px;
-  height: 10px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   box-sizing: border-box;
-  border: 2px solid currentColor;
+  border: 3px solid currentColor;
   background: var(--curio-card-bg);
-}
-
-/* The scenario set a scenario is in, before its name over its frame. */
-.setTag {
-  padding: 0 8px;
-  line-height: 20px;
-  border-radius: var(--curio-radius-pill);
-  background: var(--curio-card-bg);
-  box-shadow: 0 0 0 1px var(--curio-border);
-  font-family: var(--curio-font-family);
-  font-size: var(--curio-font-size-xs);
-  font-weight: 600;
-  color: var(--curio-text-secondary);
-  white-space: nowrap;
-  pointer-events: auto;
 }

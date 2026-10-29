@@ -14,6 +14,16 @@ export function nodeLabel(node: NodeLike | undefined, id: string): string {
   }
 }
 
+/** The kind of node it is, as its header names it: Python, Autark… */
+export function nodeKind(node: NodeLike | undefined): string {
+  if (!node) return "";
+  try {
+    return resolveNodeDisplayLabel(node.data) || "";
+  } catch {
+    return "";
+  }
+}
+
 // An outcome's latest output, as a word, lives where a header's chips can read
 // it without the node registry (utils/nodeOutputStatus).
 export { outputStatus, type OutputTone } from "../../utils/nodeOutputStatus";

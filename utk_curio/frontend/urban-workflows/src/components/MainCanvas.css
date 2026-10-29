@@ -42,49 +42,12 @@ path.react-flow__edge-path:hover {
     border-radius: var(--curio-radius-lg);
 }
 
-/* The fixed context of the scenario pointed at in the Scenario Catalog
-   drawer's In project tab. */
-.react-flow__node.curio-scenario-fixed {
+/* The shared context and shared outcomes of the scenario pointed at in the
+   Scenario Catalog drawer's In project tab, or of one being defined. Every
+   set's groups are framed by the scenario layers. */
+.react-flow__node.curio-scenario-fixed,
+.react-flow__node.curio-scenario-outcome {
     outline: 3px dashed var(--curio-text-secondary);
     outline-offset: 6px;
     border-radius: var(--curio-radius-lg);
-}
-
-/* What a scenario feeds, downstream of it: marked with the context. */
-.react-flow__node.curio-scenario-outcome {
-    outline: 3px solid var(--curio-text-secondary);
-    outline-offset: 6px;
-    border-radius: var(--curio-radius-lg);
-}
-
-.react-flow__node.curio-scenario-outcome::before {
-    content: "Outcome";
-    position: absolute;
-    top: -30px;
-    left: 0;
-    padding: 0 8px;
-    line-height: 20px;
-    border-radius: var(--curio-radius-pill);
-    background: var(--curio-top-bar-bg);
-    color: var(--curio-text-on-dark);
-    font-family: var(--curio-font-family);
-    font-size: var(--curio-font-size-xs);
-    white-space: nowrap;
-    pointer-events: none;
-}
-
-.react-flow__node.curio-scenario-fixed::before {
-    content: "Shared context";
-    position: absolute;
-    top: -30px;
-    left: 0;
-    padding: 0 8px;
-    line-height: 20px;
-    border-radius: var(--curio-radius-pill);
-    background: var(--curio-top-bar-bg);
-    color: var(--curio-text-on-dark);
-    font-family: var(--curio-font-family);
-    font-size: var(--curio-font-size-xs);
-    white-space: nowrap;
-    pointer-events: none;
 }

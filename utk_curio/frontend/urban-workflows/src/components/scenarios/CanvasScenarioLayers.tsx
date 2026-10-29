@@ -3,7 +3,7 @@ import React, { useMemo } from "react";
 import { useFlowContext } from "../../providers/FlowProvider";
 import type { ScenarioCanvasView } from "../../utils/scenarios/scenarioCanvasView";
 import { ScenarioLayers } from "./ScenarioLayers";
-import { nodeLabel, outputStatus } from "./scenarioLabels";
+import { nodeKind, nodeLabel, outputStatus } from "./scenarioLabels";
 import { useScenarioActions } from "./useScenarioActions";
 
 /** The layers on the canvas, reading the flow for labels and outputs. */
@@ -17,11 +17,14 @@ export function CanvasScenarioLayers({ view, editable }: { view: ScenarioCanvasV
       view={view}
       editable={editable}
       labelOf={(id) => nodeLabel(byId.get(id), id)}
+      typeOf={(id) => nodeKind(byId.get(id))}
       statusOf={(id) => outputStatus(byId.get(id), nodeExecStatus ?? {})}
       onExpand={(id) => actions.setCollapsed(id, false)}
       onCollapse={(id) => actions.setCollapsed(id, true)}
       onMoveBox={actions.moveBox}
       setNameOf={(id) => (id ? setNames.get(id) : undefined)}
+      onSharedCollapse={actions.setSharedCollapsed}
+      onSharedMove={actions.moveSharedBox}
     />
   );
 }

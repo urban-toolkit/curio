@@ -11,7 +11,7 @@
  * The twin of `utk_curio/backend/app/projects/scenario_sets.py`; both read
  * `scenarioSets.cases.json`.
  */
-import type { Scenario, ScenarioSet } from "./scenarioModel";
+import { SHARED_KINDS, type Scenario, type ScenarioSet, type SharedKind, type SharedLook } from "./scenarioModel";
 
 type EdgeLike = {
   source: string;
@@ -113,9 +113,29 @@ function wellFormedSets(raw: unknown): ScenarioSet[] {
     seen.add(e.id);
     const kept: ScenarioSet = { id: e.id, name: e.name };
     if (typeof e.description === "string" && e.description) kept.description = e.description;
+    const shared = wellFormedShared(e.shared);
+    if (shared) kept.shared = shared;
     out.push(kept);
   }
   return out;
+}
+
+const isNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+
+/** How the set's shared context and outcomes are drawn: only what is set and well formed. */
+function wellFormedShared(raw: unknown): ScenarioSet["shared"] {
+  const out: NonNullable<ScenarioSet["shared"]> = {};
+  for (const kind of SHARED_KINDS) {
+    const entry = raw && typeof raw === "object" ? (raw as Record<string, unknown>)[kind] : undefined;
+    if (!entry || typeof entry !== "object") continue;
+    const e = entry as Record<string, unknown>;
+    const kept: SharedLook = {};
+    if (e.collapsed === true) kept.collapsed = true;
+    const box = e.box as Record<string, unknown> | undefined;
+    if (box && typeof box === "object" && isNumber(box.x) && isNumber(box.y)) kept.box = { x: box.x, y: box.y };
+    if (Object.keys(kept).length) out[kind] = kept;
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 function freeId(base: string, taken: Set<string>): string {
@@ -202,4 +222,28 @@ export function setMembership(
     }
   }
   return out;
+}
+
+/**
+ * The sets with the shared *kind* of set *id* collapsed or expanded, or its box
+ * moved. Expanding keeps where the box was, for the next collapse.
+ */
+export function updateSharedLook(
+  sets: readonly ScenarioSet[],
+  id: string,
+  kind: SharedKind,
+  patch: { collapsed?: boolean; box?: { x: number; y: number } },
+): ScenarioSet[] {
+  return sets.map((set) => {
+    if (set.id !== id) return set;
+    const look: SharedLook = { ...(set.shared?.[kind] ?? {}) };
+    if (patch.collapsed === true) look.collapsed = true;
+    if (patch.collapsed === false) delete look.collapsed;
+    if (patch.box) look.box = { x: patch.box.x, y: patch.box.y };
+    const shared = { ...(set.shared ?? {}), [kind]: look };
+    if (Object.keys(look).length === 0) delete shared[kind];
+    const next: ScenarioSet = { ...set, shared };
+    if (Object.keys(shared).length === 0) delete next.shared;
+    return next;
+  });
 }

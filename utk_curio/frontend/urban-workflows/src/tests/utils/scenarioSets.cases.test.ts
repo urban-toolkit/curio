@@ -7,7 +7,7 @@
  */
 import cases from "../../utils/scenarios/scenarioSets.cases.json";
 import { normalizeScenarios } from "../../utils/scenarios/scenarioModel";
-import { normalizeScenarioSets, setMembership } from "../../utils/scenarios/scenarioSets";
+import { normalizeScenarioSets, setMembership, updateSharedLook } from "../../utils/scenarios/scenarioSets";
 
 type Case = {
   name: string;
@@ -32,5 +32,25 @@ describe("the shared scenario sets cases", () => {
     expect(member.scenarios).toEqual(["existing", "towers", "cap"]);
     expect(member.context.around).toEqual(["towers", "cap"]);
     expect(member.outcomes.changeT).toEqual(["existing", "towers"]);
+  });
+});
+
+describe("collapsing a set's shared group", () => {
+  const sets = [{ id: "park", name: "Park" }, { id: "other", name: "Other" }];
+
+  test("is kept on that set, with where its box was moved", () => {
+    const collapsed = updateSharedLook(sets, "park", "outcomes", { collapsed: true });
+    expect(collapsed).toEqual([{ id: "park", name: "Park", shared: { outcomes: { collapsed: true } } }, sets[1]]);
+    const moved = updateSharedLook(collapsed, "park", "outcomes", { box: { x: 4, y: 5 } });
+    expect(moved[0].shared).toEqual({ outcomes: { collapsed: true, box: { x: 4, y: 5 } } });
+    // Expanding keeps where the box was, for the next collapse.
+    expect(updateSharedLook(moved, "park", "outcomes", { collapsed: false })[0].shared).toEqual({
+      outcomes: { box: { x: 4, y: 5 } },
+    });
+  });
+
+  test("leaves nothing behind once expanded and never moved", () => {
+    const collapsed = updateSharedLook(sets, "park", "context", { collapsed: true });
+    expect(updateSharedLook(collapsed, "park", "context", { collapsed: false })).toEqual(sets);
   });
 });
