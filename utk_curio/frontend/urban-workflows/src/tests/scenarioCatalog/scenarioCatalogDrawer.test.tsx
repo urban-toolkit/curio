@@ -169,7 +169,7 @@ describe("the canvas Scenario Catalog drawer", () => {
     expect(root()).not.toHaveAttribute("data-dragging");
   });
 
-  describe("Select to drag: several scenarios of a set, dragged by one handle", () => {
+  describe("Pick scenarios to drag: several scenarios of a set, dragged by one handle", () => {
     const PARK = { id: "park", name: "Park shade" };
     const rows = () => [
       heatScenario({ key: "p-heat/s-a", id: "s-a", name: "Existing", set: PARK }),
@@ -196,7 +196,7 @@ describe("the canvas Scenario Catalog drawer", () => {
 
     beforeEach(() => api.listCatalog.mockResolvedValue({ items: rows() }));
 
-    test("no checkboxes until Select to drag; a card drags its scenario alone", async () => {
+    test("no checkboxes until Pick scenarios to drag; a card drags its scenario alone", async () => {
       renderDrawer();
       await within(root()).findByText("Towers");
       expect(within(root()).queryByRole("checkbox")).toBeNull();
@@ -206,7 +206,7 @@ describe("the canvas Scenario Catalog drawer", () => {
     test("in select mode the checked scenarios drag by the set's handle, and the cards do not drag", async () => {
       renderDrawer();
       await within(root()).findByText("Towers");
-      fireEvent.click(within(setPanel("Park shade")).getByRole("button", { name: "Select to drag" }));
+      fireEvent.click(within(setPanel("Park shade")).getByRole("button", { name: "Pick scenarios to drag" }));
       expect(within(setPanel("Loop")).queryByRole("checkbox")).toBeNull();
       expect(handle()).toHaveAttribute("aria-disabled", "true");
       expect(handle()).toHaveTextContent("Check scenarios to drag");
@@ -219,15 +219,15 @@ describe("the canvas Scenario Catalog drawer", () => {
       });
     });
 
-    test("Select all, Clear and Done; another set's Select to drag takes over", async () => {
+    test("Select all, Clear and Done; another set's Pick scenarios to drag takes over", async () => {
       renderDrawer();
       await within(root()).findByText("Towers");
-      fireEvent.click(within(setPanel("Park shade")).getByRole("button", { name: "Select to drag" }));
+      fireEvent.click(within(setPanel("Park shade")).getByRole("button", { name: "Pick scenarios to drag" }));
       fireEvent.click(within(setPanel("Park shade")).getByRole("button", { name: "Select all" }));
       expect(handle()).toHaveTextContent("Drag 3 scenarios");
       fireEvent.click(within(setPanel("Park shade")).getByRole("button", { name: "Clear" }));
       expect(handle()).toHaveTextContent("Check scenarios to drag");
-      fireEvent.click(within(setPanel("Loop")).getByRole("button", { name: "Select to drag" }));
+      fireEvent.click(within(setPanel("Loop")).getByRole("button", { name: "Pick scenarios to drag" }));
       expect(within(setPanel("Park shade")).queryByRole("checkbox")).toBeNull();
       expect(within(setPanel("Loop")).getAllByRole("checkbox")).toHaveLength(2);
       fireEvent.click(within(setPanel("Loop")).getByRole("button", { name: "Done" }));

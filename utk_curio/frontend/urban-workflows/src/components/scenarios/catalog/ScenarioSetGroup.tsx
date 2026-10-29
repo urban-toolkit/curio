@@ -14,7 +14,7 @@ export interface ScenarioSetGroupProps {
   isSet?: boolean;
   /** Beside the count: Browse all's Open source project. */
   action?: React.ReactNode;
-  /** Browse all: dragging several of its scenarios. "Select to drag" puts it
+  /** Browse all: dragging several of its scenarios. "Pick scenarios to drag" puts it
    *  in select mode (*active*), where its cards show checkboxes and one
    *  handle drags the *checked* ones. */
   select?: {
@@ -36,9 +36,9 @@ export interface ScenarioSetGroupProps {
 /**
  * One scenario set in the Scenario Catalog drawer, in both tabs: a panel
  * headed by the set's name, how many scenarios it holds and, in Browse all,
- * the way to its project and "Select to drag", for a drag of several; its
- * scenarios' cards hang off a line beneath, as a tree's children do. In
- * project, the set is renamed in place.
+ * the way to its project and "Pick scenarios to drag", for a drag of
+ * several; its scenarios' cards follow beneath. In project, the set is
+ * renamed in place.
  */
 export function ScenarioSetGroup({
   name,
@@ -76,7 +76,7 @@ export function ScenarioSetGroup({
   );
 }
 
-/** "Select to drag", or, in select mode, the handle that drags the checked
+/** "Pick scenarios to drag", or, in select mode, the handle that drags the checked
  *  scenarios, Select all or Clear, and Done. */
 function SelectBar({
   name,
@@ -98,7 +98,7 @@ function SelectBar({
           onClick={onStart}
           data-tooltip="Pick scenarios of this set to drag onto the canvas together"
         >
-          Select to drag
+          Pick scenarios to drag
         </button>
       </div>
     );

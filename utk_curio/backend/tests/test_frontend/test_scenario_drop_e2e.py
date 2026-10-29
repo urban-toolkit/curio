@@ -780,7 +780,7 @@ def test_two_scenarios_checked_and_dragged_together_arrive_as_a_new_set(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
     """A set of three scenarios reads one loader. ``compare`` reads two of
-    them, ``all`` reads all three. Select to drag, checking the two, and
+    them, ``all`` reads all three. Pick scenarios to drag, checking the two, and
     dragging the set's handle brings both as a new set, "Heights (copy)": the loader once, as
     data, shared by both; ``compare``, every input of which came; not
     ``all``, which would miss the third. Everything arrives collapsed. Python
@@ -833,7 +833,7 @@ def test_two_scenarios_checked_and_dragged_together_arrive_as_a_new_set(
 
     drawer = _open_scenario_catalog(page)
     panel = drawer.locator('section[data-scenario-set="hs"]')
-    panel.get_by_role("button", name="Select to drag").click()
+    panel.get_by_role("button", name="Pick scenarios to drag").click()
     for name in ("Doubled", "Tripled"):
         panel.get_by_role("checkbox", name=f"Select {name}").check()
     handle = panel.locator("[data-scenario-drag-handle]")

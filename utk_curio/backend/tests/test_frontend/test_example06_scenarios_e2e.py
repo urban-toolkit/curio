@@ -762,7 +762,7 @@ def test_both_scenarios_dragged_into_an_empty_project_read_one_context(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
     """The seeded example runs and is saved; then, in an empty project, both of
-    its scenarios are checked (Select to drag) and dragged in together by
+    its scenarios are checked (Pick scenarios to drag) and dragged in together by
     their set's handle, as a new set: they show their saved results with no run, read one
     context, and expand in place. A
     Vega-Lite chart reading ``inputs``, wired to the two dropped Roads nodes,
@@ -814,7 +814,7 @@ def test_both_scenarios_dragged_into_an_empty_project_read_one_context(
     _open_scenario_catalog(page)
     card = page.locator(f'[data-scenario-key="{source}/{BASELINE}"]')
     panel = drawer.locator("section[data-scenario-set]").filter(has=card)
-    panel.get_by_role("button", name="Select to drag").click()
+    panel.get_by_role("button", name="Pick scenarios to drag").click()
     for name in ("Baseline", "Twice as tall"):
         panel.get_by_role("checkbox", name=f"Select {name}").check()
     _drag_onto_canvas(page, panel.locator("[data-scenario-drag-handle]"), at=(200.0, 80.0))

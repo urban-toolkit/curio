@@ -36,7 +36,7 @@ function dragBadge(event: DragEvent<HTMLElement>, text: string) {
  * viewed, and the drag onto the canvas.
  *
  * A card drags its scenario alone. To drag several, a set is put in select
- * mode ("Select to drag"), one set at a time: its cards show checkboxes and
+ * mode ("Pick scenarios to drag"), one set at a time: its cards show checkboxes and
  * no longer drag, and the one handle in its header drags the checked ones.
  */
 export function useScenarioCatalogDrawer(presented: boolean) {

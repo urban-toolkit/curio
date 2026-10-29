@@ -55,53 +55,19 @@
   white-space: nowrap;
 }
 
-/* The cards, indented under the header, a line down their left joined to
-   each by a short tick. */
+/* The cards, under the header. */
 .cards {
-  position: relative;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 12px 12px 12px 34px;
-}
-
-.cards::before {
-  content: "";
-  position: absolute;
-  left: 16px;
-  top: 0;
-  bottom: 12px;
-  width: 2px;
-  background: var(--curio-border-strong);
+  padding: 12px;
 }
 
 .cards > * {
-  position: relative;
   box-shadow: none;
 }
 
-.cards > *::before {
-  content: "";
-  position: absolute;
-  left: -18px;
-  top: 32px;
-  width: 18px;
-  height: 2px;
-  background: var(--curio-border-strong);
-}
-
-/* The line ends at the last card's tick. */
-.cards > *:last-child::after {
-  content: "";
-  position: absolute;
-  left: -19px;
-  top: 34px;
-  bottom: -13px;
-  width: 4px;
-  background: var(--curio-card-bg);
-}
-
-/* Browse all: "Select to drag", and in select mode the handle that drags the
+/* Browse all: "Pick scenarios to drag", and in select mode the handle that drags the
    checked scenarios, Select all and Done, a row under the header. */
 .selectBar {
   display: flex;
