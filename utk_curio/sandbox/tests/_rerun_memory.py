@@ -18,9 +18,11 @@ What one cycle does, and why:
   with its input.
 
 The sandbox is started the way a local launch runs it: in-process execution
-(``CURIO_ISOLATION=off``), no auth, the threaded Werkzeug server. Its resident
-memory is sampled every 20 ms from outside, so nothing in the process being
-measured changes to measure it.
+(``CURIO_ISOLATION=off``), no auth, the threaded Werkzeug server, and the
+allocator settings the target's launcher gives it
+(``isolation/lifecycle.server_environment``, which a build from before #1210
+does not have). Its resident memory is sampled every 20 ms from outside, so
+nothing in the process being measured changes to measure it.
 
 ``--variant`` exists to find the cause rather than to change Curio: each one
 alters a single thing from outside the sandbox (an allocator setting, a cleanup
@@ -67,6 +69,29 @@ VARIANTS = {
 }
 
 MB = 1024 * 1024
+
+#: The allocator settings a launch gives the sandbox server, which the report
+#: names as the sandbox had them.
+ALLOCATOR_SETTINGS = ("MALLOC_ARENA_MAX", "ARROW_DEFAULT_MEMORY_POOL",
+                      "MALLOC_MMAP_THRESHOLD_", "MALLOC_TRIM_THRESHOLD_")
+
+#: Run in the target tree: the environment its launcher starts the sandbox
+#: server with (``cli/services.start_sandbox``), printed as JSON. A build from
+#: before ``server_environment`` started it with the launcher's environment as
+#: it was.
+_LAUNCH_ENVIRONMENT = textwrap.dedent("""
+    import json
+    import os
+    import sys
+
+    try:
+        from utk_curio.sandbox.isolation.lifecycle import server_environment
+    except ImportError:
+        env = dict(os.environ)
+    else:
+        env = server_environment(dict(os.environ))
+    sys.stdout.write(json.dumps(env))
+""")
 
 # Injected into the sandbox for the gc/trim variants only. The cleanup runs in
 # the WSGI close() hook, i.e. after the response has been sent, which is where
@@ -218,6 +243,7 @@ class Report:
     cycle_peak: list = field(default_factory=list)
     samples: list = field(default_factory=list)
     killed: str = ""
+    allocators: dict = field(default_factory=dict)
 
     # Thresholds the unit test holds the sandbox to (see test_rerun_memory.py).
     GROWTH_SHARE = 0.25
@@ -290,6 +316,8 @@ class Report:
         lines = [
             f"rows={self.rows} cycles={self.cycles} variant={','.join(self.variants) or 'baseline'} "
             f"sandbox={self.sandbox_root}",
+            "sandbox allocators: " + (" ".join(f"{k}={v}" for k, v in self.allocators.items())
+                                      or "glibc's and Arrow's defaults"),
             f"idle baseline {self.baseline / MB:8.0f} MB",
             f"largest single request {self.unit / MB:8.0f} MB above the RSS before it ({self.unit_request})",
             "cycle   rss after   peak   (MB)",
@@ -312,10 +340,26 @@ class Report:
             "cycle_after_mb": [v / MB for v in self.cycle_after],
             "cycle_peak_mb": [v / MB for v in self.cycle_peak],
             "growth_per_cycle_mb": self.growth_per_cycle / MB,
-            "at_rest_mb": self.at_rest / MB, "killed": self.killed,
+            "at_rest_mb": self.at_rest / MB, "killed": self.killed, "allocators": self.allocators,
             "compute_cost_mb": self.compute_cost / MB, "serve_cost_mb": self.serve_cost / MB,
             "failures": self.failures(),
         }
+
+
+def _launch_environment(sandbox_root: Path, env: dict) -> dict:
+    """*env* as the target's launcher hands it to the sandbox server.
+
+    Asked of the target tree, in a process of its own: glibc and Arrow settle
+    their allocators once per process, from the environment it starts with,
+    and an older build named by ``--sandbox-root`` keeps the settings it had.
+    """
+    done = subprocess.run(
+        [sys.executable, "-c", _LAUNCH_ENVIRONMENT], cwd=str(sandbox_root), env=env,
+        capture_output=True, text=True, timeout=120,
+    )
+    if done.returncode != 0:
+        raise RuntimeError(f"the target's launch environment failed:\n{done.stderr[-4000:]}")
+    return json.loads(done.stdout)
 
 
 class _Sandbox:
@@ -342,6 +386,8 @@ class _Sandbox:
         })
         if "arena2" in variants:
             env["MALLOC_ARENA_MAX"] = "2"
+        env = _launch_environment(sandbox_root, env)
+        self.allocators = {name: env[name] for name in ALLOCATOR_SETTINGS if env.get(name)}
         self.log_path = workdir / "sandbox.log"
         self._log = open(self.log_path, "wb")
         self.proc = subprocess.Popen(
@@ -448,6 +494,7 @@ def run(rows: int = 200_000, cycles: int = 5, variants=(), sandbox_root: Path = 
         datasets.append(path)
 
     sandbox = _Sandbox(sandbox_root, workdir, variants)
+    report.allocators = sandbox.allocators
     sampler = None
     try:
         sandbox.wait_ready()
