@@ -548,7 +548,9 @@ to, so the next change branches from there.
 
 A saved dataflow's history is kept by Curio, the same for you and the editors
 you invited, and it shows each change as it is made. Putting a version back
-changes everyone's canvas. Only the owner sees **Clear history before this
+changes everyone's canvas, and the dataflow keeps its name, its categories,
+**Run stale nodes automatically**, and the packages and datasets installed in
+it. Only the owner sees **Clear history before this
 version**, which removes the versions before it; someone who only watches the
 dataflow sees no history. A dataflow not saved yet keeps its history in its
 tab: putting a version back there leaves the dataflow **Unsaved**, and its
