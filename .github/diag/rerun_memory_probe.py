@@ -39,7 +39,7 @@ HEADER = re.compile(r"^([0-9a-f]+)-([0-9a-f]+) (\S{4}) \S+ \S+ \d+\s*(.*)$")
 
 def variant_env(env):
     env = dict(env)
-    variant = STATE["variant"]
+    variant = STATE["variant"].replace("_thp_off", "").replace("thp_off", "baseline")
     if variant == "launch":
         from utk_curio.sandbox.isolation.lifecycle import server_environment
         return server_environment(env)
@@ -55,8 +55,18 @@ def variant_env(env):
 _real_popen = subprocess.Popen
 
 
+def _thp_off():
+    """PR_SET_THP_DISABLE (41): no transparent huge pages for this process and
+    what it execs, whatever the host's setting."""
+    import ctypes
+
+    ctypes.CDLL(None, use_errno=True).prctl(41, 1, 0, 0, 0)
+
+
 def _popen(args, **kwargs):
     kwargs["env"] = variant_env(kwargs.get("env") or os.environ)
+    if STATE["variant"].endswith("thp_off"):
+        kwargs["preexec_fn"] = _thp_off
     proc = _real_popen(args, **kwargs)
     STATE["pid"] = proc.pid
     return proc
@@ -97,6 +107,13 @@ def classify(pid):
                 kinds[kind] = kinds.get(kind, 0) + rss
                 if kind != "file" and rss >= 8 * MB:
                     big.append([hex(start), round(size / MB, 1), perms, kind, round(rss / MB, 1)])
+            elif line.startswith("AnonHugePages:") and kind:
+                huge = int(line.split()[1]) * KB
+                if huge:
+                    kinds[kind + "_thp"] = kinds.get(kind + "_thp", 0) + huge
+            elif line.startswith("THPeligible:") and kind and kind != "file":
+                if line.split()[1] == "1":
+                    kinds["thp_eligible_maps"] = kinds.get("thp_eligible_maps", 0) + MB
     big.sort(key=lambda row: -row[4])
     return {k: round(v / MB, 1) for k, v in sorted(kinds.items())}, big[:12]
 
@@ -108,7 +125,7 @@ def snapshot(pid):
             key, _, value = line.partition(":")
             if key in ("VmRSS", "RssAnon", "RssFile", "RssShmem"):
                 status[key] = round(int(value.split()[0]) * KB / MB, 1)
-            elif key == "Threads":
+            elif key in ("Threads", "THP_enabled"):
                 status[key] = int(value)
     kinds, big = classify(pid)
     env = {}
