@@ -86,14 +86,28 @@ def _spec() -> dict:
     }
 
 
+#: Someone of a role, as a chip in the dock's people (the owner's, say).
+PERSON = '[role="group"][aria-label="People here"] button[data-collab-role="{}"]'
+
+
 def _open_as(page, base: str, project_id: str, role: str) -> None:
-    """Open the dataflow's link and wait for its room to name this tab's role."""
+    """Open the dataflow's link and wait until its room names this tab's role
+    (``data-curio-room-role``), with the canvas bound to the dataflow's doc.
+    Any tab but the owner's also waits for the owner's chip in its dock: the
+    owner opens first, so the tab knows who the owner is."""
     page.goto(f"{base}/dataflow/{project_id}", timeout=120000)
     node_locator(page, EDIT).wait_for(timeout=30000)
     try:
-        page.locator(f'[data-collab-role="{role}"]').first.wait_for(timeout=30000)
+        page.locator(f'[data-curio-room-role="{role}"]').wait_for(state="attached", timeout=30000)
+        page.wait_for_function("() => !!window.__curio_awareness", timeout=30000)
     except Exception as exc:  # noqa: BLE001 - said in the test's words
-        raise AssertionError(f"the collaboration panel never named a {role} on this tab") from exc
+        raise AssertionError(f"the dataflow's room never named this tab its {role}, with its doc bound") from exc
+    if role == "owner":
+        return
+    try:
+        page.locator(PERSON.format("owner")).first.wait_for(timeout=30000)
+    except Exception as exc:  # noqa: BLE001 - said in the test's words
+        raise AssertionError(f"the {role}'s dock never showed the owner") from exc
 
 
 def _open_versions(page):
