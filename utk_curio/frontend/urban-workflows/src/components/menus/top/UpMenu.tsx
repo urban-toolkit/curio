@@ -6,7 +6,6 @@ import {
 } from "../../../providers/FlowProvider";
 import { useProvenanceDrawerOptional } from "../../../providers/provenanceDrawerContext";
 import { useCollab } from "../../../providers/CollaborationProvider";
-import { noteSaved } from "../../../providers/history/serverHistory";
 import { TrillGenerator } from "../../../TrillGenerator";
 import { trillToNotebook, serializeNotebook } from "../../../NotebookConvertor";
 import styles from "./UpMenu.module.css";
@@ -15,7 +14,6 @@ import clsx from "clsx";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
     faBolt,
-    faCircleCheck,
     faClockRotateLeft,
     faClone,
     faCodeBranch,
@@ -49,6 +47,7 @@ import { openDataflowFile } from "../../../utils/openedDataflowFile";
 import { LEAVE_DATAFLOW, useLeaveGuard } from "../../../hook/useLeaveGuard";
 import { useSharedView } from "../../../hook/useSharedView";
 import ShareMenu from "./ShareMenu";
+import { SaveStatus } from "./SaveStatus";
 import InviteEditorsDialog from "../../collab/InviteEditorsDialog";
 import DataflowCategoryInput from "../../projects/DataflowCategoryInput";
 import { projectsApi, type ProjectSummary } from "../../../api/projectsApi";
@@ -70,14 +69,14 @@ export default function UpMenu() {
         projectId,
         projectName,
         projectDirty,
-        projectSavedAt,
+        whenChangesKept,
         cleanCanvas,
         renameDataflow,
         workflowCategories,
         serverCategories,
         scenarios,
         updateDataflowCategories,
-        requestProjectSave,
+        saveDataflow,
         saveAsNewProject,
         discardProject,
         packages,
@@ -92,8 +91,12 @@ export default function UpMenu() {
     } = useFlowContext();
 
     /** Run *action* now, or ask first when there is unsaved work to lose.
-     *  The same guard every other way out of a dataflow uses (#197). */
-    const { leave: guardLeave, dialog: leaveDialog } = useLeaveGuard(projectDirty, LEAVE_DATAFLOW);
+     *  The same guard every other way out of a dataflow uses (#197). On a
+     *  dataflow bound to its doc nothing is unsaved: the leave waits for the
+     *  server to hold this tab's last change, and asks only if it cannot. */
+    const { leave: guardLeave, dialog: leaveDialog } = useLeaveGuard(projectDirty, LEAVE_DATAFLOW, {
+        settle: whenChangesKept,
+    });
     const leaveWithGuard = (body: string, action: () => void) => guardLeave(action, body);
 
     const collab = useCollab();
@@ -225,23 +228,17 @@ export default function UpMenu() {
 
     const handleSave = async () => {
         setSaving(true);
-        const wasNew = !projectId;
         try {
-            // Through the save queue, after any save already out (the pin's
-            // save, the autosave, an install save): two PUTs of one dataflow
-            // at once were behind #909 and #941. "Saving" lasts until this
-            // save has answered.
-            const detail = await requestProjectSave();
+            // A dataflow not saved yet is made; a saved one is a version named
+            // Saved once the server holds every change. "Saving" lasts until
+            // that has answered.
+            const saved = await saveDataflow();
             // First save of a brand-new dataflow: promote the placeholder
             // ``/dataflow/new`` URL to the canonical, shareable one. We use
             // replace so the user's back button still works as expected.
-            if (wasNew && detail?.id) {
-                navigate(`/dataflow/${detail.id}`, { replace: true });
+            if (saved.created && saved.id) {
+                navigate(`/dataflow/${saved.id}`, { replace: true });
             }
-            // A File > Save of a dataflow whose history the server keeps is a
-            // version of its own. No other save is: not the autosave, nor the
-            // saves a run, an install or a pin makes.
-            if (!wasNew) await noteSaved();
         } catch (err: any) {
             console.error("Save failed:", err);
             showToast(err?.message || "Save failed", "error");
@@ -589,50 +586,9 @@ export default function UpMenu() {
                     </button>
                 )}
 
-                {/* Save status indicator.
-                    Always present on a dataflow you own, so its absence never
-                    has to be interpreted. It used to render only once the
-                    dataflow was dirty or had been saved at least once, which
-                    meant a brand-new dataflow showed nothing at all - the one
-                    moment the state is most worth stating, because nothing is
-                    on disk yet. A never-saved dataflow reads as unsaved, the
-                    same as a dirty one; "Saved" means, and only means, "what
-                    you see is on disk". The word says it as well as the
-                    colour, so the state does not rest on telling two hues
-                    apart. Hidden on a tab that does not save the dataflow, a
-                    watcher's or an editor's: its owner's tab saves it. */}
-                {savesHere && (
-                    <button
-                        type="button"
-                        className={clsx(headerStyles.barButton, styles.saveStatus)}
-                        disabled={saving}
-                        onClick={handleSave}
-                        data-tooltip={
-                            saving          ? "Saving…"
-                            : projectDirty  ? "Unsaved changes - click to save"
-                            : !projectSavedAt ? "Not saved yet - click to save"
-                            : `Saved at ${projectSavedAt.toLocaleTimeString()} - click to save`
-                        }
-                        data-curio-save-state={
-                            saving ? "saving"
-                            : projectDirty || !projectSavedAt ? "unsaved"
-                            : "saved"
-                        }
-                    >
-                        <FontAwesomeIcon
-                            icon={saving || projectDirty || !projectSavedAt ? faFloppyDisk : faCircleCheck}
-                            className={clsx(
-                                saving || projectDirty || !projectSavedAt
-                                    ? styles.unsavedIcon
-                                    : styles.savedIcon,
-                                saving && styles.savingPulse,
-                            )}
-                        />
-                        <span>
-                            {saving ? "Saving..." : projectDirty || !projectSavedAt ? "Unsaved" : "Saved"}
-                        </span>
-                    </button>
-                )}
+                {/* Save status (SaveStatus). Hidden on a tab that does not save
+                    the dataflow, a watcher's or an editor's. */}
+                {savesHere && <SaveStatus saving={saving} onSave={handleSave} />}
 
                 <span className={headerStyles.divider} aria-hidden="true" />
                 <CatalogButtons projectId={projectId} crowded={collab.enabled} />

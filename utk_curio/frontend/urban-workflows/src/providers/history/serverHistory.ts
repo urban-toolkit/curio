@@ -1,8 +1,8 @@
 /**
  * Whose history this tab's canvas has: the server's, while the canvas is
  * bound to the dataflow's doc (`useDataflowDoc`), or the browser's own, while
- * it is not (a dataflow never saved, a hosted guest's own canvas, no sign-in,
- * the dashboard).
+ * it is not (a dataflow never saved, a hosted guest's own canvas, the
+ * dashboard).
  *
  * The one check the browser's recorders make (`ProvenanceProvider`'s entries,
  * `TrillGenerator`'s versions): a canvas bound to the doc records nothing

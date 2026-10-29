@@ -128,7 +128,7 @@ export function MainCanvas() {
         onNodesDelete,
         markDirty,
         requestAutoRun,
-        requestProjectSave,
+        ensureProjectId,
         notebookOn,
         notebookContentHeight,
         setNotebookPane,
@@ -606,16 +606,14 @@ export function MainCanvas() {
                     : target.kind === "connection"
                         ? "the connection"
                         : "the canvas";
-            // For a node target, persist the graph first so the (possibly
-            // freshly-added) node is in the saved spec the backend validates
-            // against — otherwise the attach 400s. See attachAgentOnDrop.
-            // Through the save queue, so it never goes out beside another
-            // save of this dataflow (#909, #941).
+            // For a node target, the server holds the (possibly freshly-added)
+            // node before the attach is checked against the dataflow:
+            // otherwise the attach 400s. See attachAgentOnDrop.
             attachAgentOnDrop({
                 projectId,
                 target,
                 agentCoord,
-                saveProject: requestProjectSave,
+                keepDataflow: ensureProjectId,
                 attach: (pid, coord, t) => agentsApi.attach(pid, coord, t),
                 // A hosted guest's drop that would save says to sign in.
                 hostedGuest,
@@ -635,7 +633,7 @@ export function MainCanvas() {
         const position = dropPosition(event);
         revealCreated(createCodeNode(type, { position }));
         markDirty();
-    }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleFileCanvasDrop, handleModelCanvasDrop, handlePackageCardCanvasDrop, handleScenarioCanvasDrop, projectId, showToast, requestProjectSave, reactFlow, hostedGuest]);
+    }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleFileCanvasDrop, handleModelCanvasDrop, handlePackageCardCanvasDrop, handleScenarioCanvasDrop, projectId, showToast, ensureProjectId, reactFlow, hostedGuest]);
 
     // The Delete key reaches these through React Flow, which sends the
     // selected edges plus every edge attached to a deleted node first, then

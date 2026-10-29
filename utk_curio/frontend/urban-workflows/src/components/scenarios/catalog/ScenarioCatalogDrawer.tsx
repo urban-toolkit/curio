@@ -59,15 +59,16 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
 }) => {
   const drawerRef = useRef<HTMLElement>(null);
   const navigate = useNavigate();
-  const { projectDirty, projectId, scenarios, nodes } = useFlowContext();
+  const { projectDirty, projectId, scenarios, nodes, whenChangesKept } = useFlowContext();
   const [ownTab, setOwnTab] = useState<DrawerTab>("browse");
   const tab = heldTab ?? ownTab;
   const setTab = onTabChange ?? setOwnTab;
-  // This dataflow's scenarios, with members deleted since the last save left
+  // This dataflow's scenarios, with members the canvas no longer holds left
   // out: the In project tab and its count.
   const inProject = useMemo(() => liveScenarios(scenarios ?? [], nodes ?? []), [scenarios, nodes]);
   const { leave, dialog: leaveDialog } = useLeaveGuard(projectDirty, LEAVE_DATAFLOW, {
     layer: "overlay",
+    settle: whenChangesKept,
   });
   const {
     search,

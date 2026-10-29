@@ -30,8 +30,10 @@
  *
  * **Binding.** The canvas binds once the doc's first sync is done and the
  * canvas holds the dataflow it loaded: what the doc changed since that load
- * (someone typing meanwhile) then reaches the canvas, and from then on every
- * change goes both ways. Opening a dataflow writes nothing into the doc: what
+ * (someone typing meanwhile) then reaches the canvas, what the canvas changed
+ * since (before the doc's first sync, or after the canvas was sent to make a
+ * new dataflow) goes into the doc, and from then on every change goes both
+ * ways. No tab saves a dataflow it is bound to. Opening a dataflow writes nothing into the doc: what
  * a load itself makes of a node (a place out of another's way, a default
  * setting) stays on the canvas until that node changes. A tab that watches
  * never writes.
@@ -83,6 +85,9 @@ const DROP_WAIT_MS = 2000;
 const REMOVER_WAIT_MS = 1000;
 /** How often this tab's drag is told the others. */
 const DRAG_EVERY_MS = 50;
+/** How long File > Save waits for a canvas to bind before it says the server
+ *  cannot be reached, as long as a wait for the server to keep a change. */
+const BIND_WAIT_MS = 10000;
 
 /** What a node's Trill field becomes on the canvas: the node data a load
  *  builds from it (`codeNodes.ts`); `position` is the node's place. */
@@ -227,14 +232,24 @@ export interface LoadedDataflow {
     epoch: number;
     projectId: string | null;
     dataflow: Fields | null;
+    /** The canvas as {@link DataflowDocBridge.canvasNow} took it when the
+     *  dataflow was made from it: the bind writes what changed after. */
+    canvas?: Fields;
 }
 
 export interface DataflowDocBridge {
     /** Whether the canvas is bound to the doc. */
     bound(): boolean;
+    /** Resolves true once the canvas is bound to the doc, false when it is not
+     *  within *timeoutMs*. */
+    whenBound(timeoutMs?: number): Promise<boolean>;
     /** Write what the canvas holds now, then wait for the server to keep this
-     *  tab's every change. Whether the canvas is bound. */
+     *  tab's every change. Whether it kept them: false when the canvas is not
+     *  bound, or the wait ran out. */
     whenKept(): Promise<boolean>;
+    /** The canvas as the doc would hold it now: what a dataflow made from the
+     *  canvas starts as, so its bind writes only what changed after. */
+    canvasNow(): Fields;
     /** This tab's drag: the others see it live. */
     noteDrag(changes: NodeChange[]): void;
     /** Who else is editing *nodeId*'s code. */
@@ -248,6 +263,13 @@ export interface DataflowDocBridge {
 
 export interface DataflowDocDeps {
     binding: DocBinding | null;
+    /** Whether this canvas binds when its dataflow's doc is there: every
+     *  canvas but the dashboard's. Its load is taken as soon as it holds it,
+     *  so what it changes before the doc's first sync goes in with the bind. */
+    bindable?: boolean;
+    /** The canvas bound to *provider*'s doc, and unbound from it. */
+    onBound?: (provider: DataflowDocProvider) => void;
+    onUnbound?: () => void;
     canWrite: boolean;
     /** Whether this tab reads and adds to the dataflow's history, which the
      *  server keeps while the canvas is bound: an owner's and an invited
@@ -313,6 +335,8 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
     const historyRef = useRef<ServerHistory | null>(null);
     /** The bridge's `whenKept`, as of this render. */
     const whenKeptRef = useRef<() => Promise<boolean>>(async () => false);
+    /** Who waits for the canvas to bind. */
+    const boundWaitersRef = useRef(new Set<() => void>());
     /** Nodes another tab drags now, and those it dropped whose place is due. */
     const remoteDragRef = useRef(new Set<string>());
     const droppedRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
@@ -728,8 +752,10 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
     }, [applyToCanvas, setNodes]);
 
     const unbind = useCallback(() => {
+        const was = boundRef.current;
         boundRef.current?.detach();
         boundRef.current = null;
+        if (was) latest.current.onUnbound?.();
         if (historyRef.current && serverHistory() === historyRef.current) setServerHistory(null);
         historyRef.current = null;
         docStateRef.current = null;
@@ -772,6 +798,10 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
         };
         historyRef.current = history;
         setServerHistory(history);
+        latest.current.onBound?.(held);
+        const waiters = Array.from(boundWaitersRef.current);
+        boundWaitersRef.current.clear();
+        waiters.forEach((resolve) => resolve());
     }, [applyToCanvas, attach, canvasTrill, unbind]);
 
     // Each commit: take the canvas's load, bind when due, then write what the
@@ -780,12 +810,19 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
         const loaded = loadedDataflowRef?.current ?? null;
         const epoch = loaded?.epoch ?? 0;
         // Only a canvas with a doc to bind to (not the dashboard's, nor one
-        // never saved) takes its load.
-        if (binding && loaded && loadedCanvasRef.current?.epoch !== epoch) {
-            // The canvas holds its load once every node the load listed is on it.
-            const ids = new Set(nodes.map((n) => n.id));
-            const listed = (Array.isArray(loaded.dataflow?.nodes) ? loaded.dataflow!.nodes : []) as Fields[];
-            if (listed.every((n) => ids.has(n?.id))) loadedCanvasRef.current = { epoch, trill: canvasTrill() };
+        // never saved) takes its load: as soon as it holds it, before the doc's
+        // first sync, so what it changes meanwhile goes in with the bind. A
+        // dataflow made from the canvas starts as the canvas was when it was
+        // sent, so what the canvas changed after goes in too.
+        if (loaded && loadedCanvasRef.current?.epoch !== epoch && (binding || (deps.bindable && loaded.projectId))) {
+            if (loaded.canvas) {
+                loadedCanvasRef.current = { epoch, trill: loaded.canvas };
+            } else {
+                // The canvas holds its load once every node the load listed is on it.
+                const ids = new Set(nodes.map((n) => n.id));
+                const listed = (Array.isArray(loaded.dataflow?.nodes) ? loaded.dataflow!.nodes : []) as Fields[];
+                if (listed.every((n) => ids.has(n?.id))) loadedCanvasRef.current = { epoch, trill: canvasTrill() };
+            }
         }
         const bound = boundRef.current;
         if (bound && (bound.epoch !== epoch || !provider || bound.provider.projectId !== loaded?.projectId)) unbind();
@@ -795,23 +832,41 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
         }
         write();
     }, [nodes, edges, deps.scenarios, deps.workflowName, deps.workflowGoal, deps.workflowDescription,
-        deps.workflowCategories, deps.autoRun, deps.canWrite, binding, provider, bind, unbind, write, canvasTrill,
-        loadedDataflowRef]);
+        deps.workflowCategories, deps.autoRun, deps.canWrite, deps.bindable, binding, provider, bind, unbind, write,
+        canvasTrill, loadedDataflowRef]);
 
     useEffect(() => () => unbind(), [unbind]);
+
+    const bound = () => !!provider && boundRef.current?.provider === provider;
 
     const whenKept = async () => {
         const held = boundRef.current?.provider;
         if (!held || held !== provider) return false;
         write();
-        await held.whenKept();
-        return true;
+        return (await held.whenKept()) !== false;
     };
     whenKeptRef.current = whenKept;
 
+    const whenBound = (timeoutMs: number = BIND_WAIT_MS): Promise<boolean> => {
+        if (bound()) return Promise.resolve(true);
+        return new Promise<boolean>((resolve) => {
+            const waiter = () => {
+                clearTimeout(timer);
+                resolve(true);
+            };
+            const timer = setTimeout(() => {
+                boundWaitersRef.current.delete(waiter);
+                resolve(false);
+            }, timeoutMs);
+            boundWaitersRef.current.add(waiter);
+        });
+    };
+
     return {
-        bound: () => !!provider && boundRef.current?.provider === provider,
+        bound,
+        whenBound,
         whenKept,
+        canvasNow: () => canvasTrill(),
         noteDrag: (changes: NodeChange[]) => {
             const held = boundRef.current?.provider;
             if (!held || !latest.current.canWrite) return;

@@ -95,8 +95,8 @@ export type RunEvent =
 
 export const runsApi = {
   /**
-   * Run the saved dataflow, one node of it (`target`), or several (`targets`).
-   * A 409 carries `runId` when the dataflow already runs.
+   * Run the dataflow as its doc holds it, one node of it (`target`), or
+   * several (`targets`). A 409 carries `runId` when the dataflow already runs.
    */
   start(
     projectId: string,
@@ -104,7 +104,6 @@ export const runsApi = {
       target?: string;
       targets?: string[];
       reuse?: Record<string, unknown>;
-      specRevision?: number | null;
     },
   ): Promise<Run> {
     return apiFetch<Run>(`/api/projects/${projectId}/runs`, {
