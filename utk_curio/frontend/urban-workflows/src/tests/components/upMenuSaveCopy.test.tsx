@@ -128,3 +128,20 @@ test("saving a shared dataflow names it, by the id in its link, as the dataflow 
   expect(mockFlow.requestProjectSave).not.toHaveBeenCalled();
   expect(screen.getByTestId("where").textContent).toBe("/dataflow/copy-1");
 });
+
+// The canvas title is cut short beside the agents' dock (UpMenu.module.css,
+// canvasTitleBesideTheDock.test.ts), so its tooltip gives the whole name.
+test("the canvas title's tooltip is its whole name", () => {
+  render(
+    <MemoryRouter initialEntries={[`/dataflow/${SHARED}`]}>
+      <Routes>
+        <Route path="/dataflow/:id?" element={<UpMenu />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  expect(screen.getByRole("heading", { level: 1, name: "Chicago trips" })).toHaveAttribute(
+    "data-tooltip",
+    "Chicago trips",
+  );
+});
