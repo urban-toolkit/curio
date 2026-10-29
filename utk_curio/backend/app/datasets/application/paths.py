@@ -114,6 +114,11 @@ class PathResolver:
         if self.user is not None:
             # Installed/published datasets live in the *current* user's store.
             roots.append(user_datasets_dir(self._user_key()))
+            # An editor the owner of a dataflow invited reads, of the owner's
+            # store, the folders of the datasets that dataflow lists, once the
+            # catalog has read it (``InstalledDatasetRepository.listed_folders``),
+            # and nothing else of it.
+            roots.extend(self.installed.listed_folders)
         return roots
 
     def _contained_path(self, path_value: str) -> str | None:
