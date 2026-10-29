@@ -25,6 +25,28 @@ describe("attachAgentOnDrop", () => {
     expect(attach).toHaveBeenCalledWith("proj-9", "agent.test.x@1", { kind: "node", targetId: "n1" });
   });
 
+  it("an invited editor's drop on a node or a connection attaches with no save first", async () => {
+    // The editor's tab saves nothing: its canvas is bound to the dataflow's
+    // doc on the server, which the attach reads.
+    for (const target of [
+      { kind: "node" as const, targetId: "n1" },
+      { kind: "connection" as const, targetId: "e1" },
+    ]) {
+      const saveProject = jest.fn(async () => ({ id: "owners-proj" }));
+      const attach = jest.fn(async () => undefined);
+      await attachAgentOnDrop({
+        projectId: "owners-proj",
+        target,
+        agentCoord: "agent.test.x@1",
+        saveProject,
+        attach,
+        savesHere: false,
+      });
+      expect(saveProject).not.toHaveBeenCalled();
+      expect(attach).toHaveBeenCalledWith("owners-proj", "agent.test.x@1", target);
+    }
+  });
+
   it("attaches to a node of a never-saved project using the id from the save", async () => {
     const saveProject = jest.fn(async () => ({ id: "new-proj" }));
     const attach = jest.fn(async () => undefined);

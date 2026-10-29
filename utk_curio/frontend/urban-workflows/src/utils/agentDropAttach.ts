@@ -20,6 +20,11 @@ export interface AgentDropAttachDeps {
   attach: (projectId: string, coord: string, target: AgentDropTarget) => Promise<unknown>;
   /** A hosted guest (`isHostedGuest`), who cannot save the dataflow. */
   hostedGuest?: boolean;
+  /** Whether this tab saves the dataflow: the owner's does. An editor the
+   * owner invited saves nothing: the editor's canvas is bound to the
+   * dataflow's doc on the server, which the attach reads, so the editor
+   * attaches with no save first. */
+  savesHere?: boolean;
 }
 
 /**
@@ -39,7 +44,7 @@ export async function attachAgentOnDrop(deps: AgentDropAttachDeps): Promise<{ ta
   if (deps.hostedGuest && (savesFirst || !projectId)) {
     throw Object.assign(new Error(hostedGuestSignInNote("attach agents")), { toastVariant: "warning" as const });
   }
-  if (savesFirst) {
+  if (savesFirst && deps.savesHere !== false) {
     // Flush the graph so the just-dropped-on element exists in the saved spec
     // backend validates against. Also covers a never-saved project (create).
     const detail = await deps.saveProject();

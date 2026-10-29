@@ -142,6 +142,18 @@ def _remove_edge(edge_id: str):
     return change
 
 
+def _set_fields(**fields):
+    """A change to the dataflow's own fields, as a tab's canvas writes one."""
+
+    def change(doc):
+        from utk_curio.backend.app.collaboration import doc_mapping
+
+        before = doc_mapping.doc_to_dataflow(doc)
+        doc_mapping.apply_dataflow(doc, before, {**copy.deepcopy(before), **copy.deepcopy(fields)})
+
+    return change
+
+
 def _type(text: str, node: str = "loader", at: int = 0):
     def change(doc):
         from pycrdt import Map
@@ -606,6 +618,39 @@ def test_putting_a_version_back_makes_every_tab_hold_it(kept):
     assert (newest["kind"], newest["restores"], newest["parent"], newest["by"]["name"]) == (
         "putBack", first, first, "Bob")
     assert history.versions(kept.owner_key, kept.project_id)["head"] == newest["id"]
+
+
+def test_a_version_put_back_keeps_the_dataflows_name_settings_and_installs(kept):
+    """A version put back brings back its nodes, connections and goal, and
+    leaves the dataflow its name, hand-set categories, auto-run, packages and
+    datasets as they are now: a rename made after the version stays, so the
+    next save, which sends the name the tab shows, renames nothing."""
+    from utk_curio.backend.app.collaboration import dataflow_docs, history
+
+    alice, bob = _synced(kept, "alice"), _synced(kept, "bob")
+    first = history.versions(kept.owner_key, kept.project_id)["head"]
+    now = {
+        "name": "Renamed",
+        "provenance_id": "Renamed",
+        "categories": {"city": ["Chicago"], "topic": ["Greenery"]},
+        "autoRun": True,
+        "packages": ["model.curio.ddrnet23-slim@1"],
+        "datasets": [{"datasetId": "data.cityofchicago.neighborhoods",
+                      "dirName": "data.cityofchicago.neighborhoods@1"}],
+    }
+    alice.edit(_set_fields(task="A later goal", **now))
+    alice.edit(_add_node("extra"))
+    bob.pump()
+    answer = _http(kept).post(f"/api/projects/{kept.project_id}/history/{first}/put-back", headers=_auth(kept, "bob"))
+    assert answer.status_code == 200, answer.get_json()
+    for tab in (alice, bob):
+        flow = tab.dataflow()
+        assert "extra" not in _node_ids(flow)
+        assert flow.get("task") == "", "the version's goal was not put back"
+        assert {name: flow.get(name) for name in now} == now, "the put-back changed the dataflow's own fields"
+    held = dataflow_docs.read(kept.owner_key, kept.project_id)["dataflow"]
+    assert "extra" not in _node_ids(held)
+    assert {name: held.get(name) for name in now} == now, "the server's dataflow lost its own fields"
 
 
 # ---------------------------------------------------------------------------

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 
+from utk_curio.backend.app.agents.application import askers as agents_askers
 from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
 from utk_curio.backend.app.agents.application import delegation
 from utk_curio.backend.app.agents.application import source_grounding
@@ -621,16 +622,17 @@ def _grounding_context(
             node_type, packages_services.roster_templates(user_key, project_id),
         )
     base_of = base if base is not None else {}
+    keys = _keys_of(base, user_key)
     if base is not None:
         catalog_paths = base.get("catalog_paths") or {}
         catalog_ids = base.get("catalog_ids") or {}
         texts = list(base.get("texts") or [])
         verified = dict(base.get("verified") or {})
-        secrets = dict(base["secrets"]) if "secrets" in base else _connection_key_refs(user_key)
+        secrets = dict(base["secrets"]) if "secrets" in base else _connection_key_refs(keys)
     else:
         catalog_paths, catalog_ids = _catalog_grounding_refs(project_id)
         texts, verified = _session_grounding_evidence(user_key, project_id, loop_ctx)
-        secrets = _connection_key_refs(user_key)
+        secrets = _connection_key_refs(keys)
     models = dict(base_of["models"]) if "models" in base_of else _model_refs(user_key)
     reachable, package_modules = None, None
     if code_engine == "python" and node_type:
@@ -689,7 +691,7 @@ def _grounding_context(
             ),
             )
         )
-    secret_values = _exec_secrets_resolver(user_key)
+    secret_values = _exec_secrets_resolver(keys)
     return source_grounding.GroundingContext(
         catalog_paths=catalog_paths,
         catalog_ids=catalog_ids,
@@ -963,9 +965,21 @@ def _reachable_modules(user_key: str, node_type: object, project_id: str) -> fro
     return frozenset(name for source in sources for name in source.get("names") or ())
 
 
+def _keys_of(base: dict | None, user_key: str, user=None) -> str:
+    """The storage key whose saved connection keys a run lists and resolves:
+    whoever asked for it, as a Solve's grounding base recorded them in the
+    request thread (``"keys"``), else *user* or the request's account
+    (``askers.keys_account``). An invited editor's run so names the editor's
+    keys alone, never the owner's, and no value of the owner's resolves."""
+    if isinstance(base, dict) and isinstance(base.get("keys"), str):
+        return base["keys"]
+    return agents_askers.keys_account(user_key, user)
+
+
 def _connection_key_refs(user_key: str) -> dict:
-    """dev/116: the user's saved connection keys as ``SecretRef``s (names,
-    hosts, delivery — never values). Read in the request thread; a missing or
+    """dev/116: the saved connection keys of the account *user_key*, whoever
+    asked for the run (:func:`_keys_of`), as ``SecretRef``s: names, hosts and
+    delivery, never values. Read in the request thread; a missing or
     unreadable store is simply no keys."""
     from utk_curio.backend.app.users.connection_keys import default_store
 
@@ -981,8 +995,9 @@ def _connection_key_refs(user_key: str) -> dict:
 def _exec_secrets_resolver(user_key: str):
     """dev/116: ``codes -> {name: value}`` for the ``curio_secret("<name>")``
     calls in *codes* — the ONE reader of values on the agent path. The user
-    key is captured here (request thread); the store needs no request context,
-    so a job thread may call the closure per round (dev/115 lesson 1)."""
+    key, that of whoever asked for the run (:func:`_keys_of`), is captured
+    here (request thread); the store needs no request context, so a job
+    thread may call the closure per round (dev/115 lesson 1)."""
     from utk_curio.backend.app.users.connection_keys import default_store, secret_names
 
     def _resolve(codes) -> dict:
@@ -1007,8 +1022,10 @@ def _solve_grounding_base(
     """dev/114: ONE grounding base per Solve batch, built in the request
     thread (workers hold no request context): catalog paths, the mission and
     plan texts (the human-authored intents), the session-free verified
-    map (empty: Solve has no candidates transcript of its own), and the
-    account's keys, models and the modules its packages ship."""
+    map (empty: Solve has no candidates transcript of its own), the
+    account's models and the modules its packages ship, and the saved keys
+    of whoever asked for the Solve, with the storage key they are under
+    (``"keys"``, :func:`_keys_of`)."""
     dataflow = (spec or {}).get("dataflow") or {}
     texts = [str(dataflow.get("task") or ""), str(dataflow.get("name") or "")]
     for node_id in targets:
@@ -1016,12 +1033,14 @@ def _solve_grounding_base(
         texts.append(str(node.get("goal") or ""))
     items = _catalog_listing_items(project_id)
     by_path, by_id = _catalog_grounding_refs(project_id, items or [])
+    keys = _keys_of(None, user_key)
     return {
         "catalog_paths": by_path,
         "catalog_ids": by_id,
         "texts": [t for t in texts if t.strip()],
         "verified": {},
-        "secrets": _connection_key_refs(user_key),
+        "keys": keys,
+        "secrets": _connection_key_refs(keys),
         "models": _model_refs(user_key),
         "package_modules": _package_modules(user_key, project_id),
         # The dataflow's datasets with their lines, for the dataflow block

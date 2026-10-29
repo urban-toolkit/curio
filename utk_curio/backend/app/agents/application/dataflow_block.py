@@ -10,7 +10,9 @@ Tools panel and a node's run read it:
   "Datasets in project", each with the line the catalog gives it;
 - the models: the model packages the dataflow's lockfile names that the
   account holds, its "Models in project", each with its loader line;
-- the keys: the account's Node code keys, by name, from API Settings;
+- the keys: the Node code keys of whoever asked for the run, by name, from
+  API Settings: an invited editor's own, never the dataflow owner's
+  (``askers.keys_account``);
 - the template being written, for a run that writes one node's code: the
   node's template as the project's roster resolves it, its starter as the
   starters feed reads it, and the functions of the modules a node of it can
@@ -25,6 +27,7 @@ from __future__ import annotations
 
 import logging
 
+from utk_curio.backend.app.agents.application import askers as agents_askers
 from utk_curio.backend.app.agents.application import source_grounding
 from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.domain import dataflow_block as block
@@ -116,7 +119,8 @@ def _models(user_key: str, project_id: str) -> tuple[block.Model, ...]:
 
 
 def _keys(user_key: str) -> tuple[block.Key, ...]:
-    """The account's Node code keys: name, host and delivery, never a value."""
+    """The Node code keys the account *user_key* saved, whoever asked for the
+    run (``askers.keys_account``): name, host and delivery, never a value."""
     from utk_curio.backend.app.users.connection_keys import default_store
 
     try:
@@ -159,18 +163,21 @@ def compose(
     datasets=None,
     tools=(),
     user=None,
+    keys: str | None = None,
 ) -> str | None:
     """The block for a run of *project_id* that writes code: the one place a
     run's block is composed. *node_type* is the type of the node it writes,
     if one; *datasets* the dataflow's rows when the caller read them already
     (a Solve job), else they are read now as *user*; *tools* the run's grants,
-    of which the cut list names only those it holds. None when the block would
-    hold nothing."""
+    of which the cut list names only those it holds. *keys* is the storage
+    key whose saved keys the block lists, when the caller resolved it already
+    (a Solve job's grounding base), else those of *user*, who asked
+    (``askers.keys_account``). None when the block would hold nothing."""
     rows = read_datasets(project_id, user) if datasets is None else tuple(datasets)
     return block.layout(
         datasets=rows,
         models=_models(user_key, project_id),
-        keys=_keys(user_key),
+        keys=_keys(keys or agents_askers.keys_account(user_key, user)),
         template=_template(user_key, project_id, node_type),
         tools=tools,
     )
