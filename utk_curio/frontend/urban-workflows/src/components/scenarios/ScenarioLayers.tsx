@@ -84,13 +84,18 @@ function geometryOf(internals: ReactFlowState["nodeInternals"], id: string): Geo
   return { x: at.x, y: at.y, width: internal.width ?? 0, height: internal.height ?? 0, internal };
 }
 
-/** The point a node's handle sits at, or the middle of the side a handle of that kind sits on. */
+/** Where a stand-in edge meets a node's handle, or the middle of the side a handle of that kind sits on. */
 function handlePoint(geo: Geometry, kind: "source" | "target", handle?: string | null) {
   const bounds = geo.internal?.[internalsSymbol]?.handleBounds?.[kind] as
     | Array<{ id?: string | null; x: number; y: number; width: number; height: number }>
     | undefined;
   const found = bounds?.find((b) => (b.id ?? null) === (handle ?? null)) ?? bounds?.[0];
-  if (found) return { x: geo.x + found.x + found.width / 2, y: geo.y + found.y + found.height / 2 };
+  // An edge into a node ends at its handle's outer edge, so its arrow shows
+  // in front of the handle's circle; one out of a node starts at its middle.
+  if (found) {
+    const x = geo.x + found.x + (kind === "target" ? 0 : found.width / 2);
+    return { x, y: geo.y + found.y + found.height / 2 };
+  }
   return { x: kind === "source" ? geo.x + geo.width : geo.x, y: geo.y + geo.height / 2 };
 }
 
