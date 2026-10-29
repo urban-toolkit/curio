@@ -9,7 +9,6 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
-from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
@@ -592,6 +591,17 @@ def _carry_auto_run(new_spec, old_spec) -> None:
         new_df["autoRun"] = old_df["autoRun"]
 
 
+def _spec_written_at(p):
+    """When the dataflow *p*'s ``spec.trill.json`` was last written, as a
+    Unix time, read where its storage keeps it: its owner's folder of the
+    row's id (``storage.project_dir``), as every reader and writer of the spec
+    finds it. ``None`` when there is no such file."""
+    try:
+        return (storage.project_dir(_owner_user_dir_key(p), str(p.id)) / storage.SPEC_FILE).stat().st_mtime
+    except (OSError, TypeError, ValueError, AttributeError):
+        return None
+
+
 def updated_at_of(p) -> str:
     """When the dataflow *p* last changed: its row's time, or the last write
     of its spec when that is later, or its open doc's last change when the
@@ -600,10 +610,7 @@ def updated_at_of(p) -> str:
     and an open writes no spec unless the spec is behind its doc. Given in the
     row's own form."""
     stamp = getattr(p, "updated_at", None)
-    try:
-        written = (Path(getattr(p, "folder_path", None)) / storage.SPEC_FILE).stat().st_mtime
-    except (OSError, TypeError, ValueError):
-        written = None
+    written = _spec_written_at(p)
     unwritten = dataflow_docs.unwritten_change_at(str(getattr(p, "id", "")))
     if unwritten is not None and (written is None or unwritten > written):
         written = unwritten
@@ -990,21 +997,22 @@ def save_project(user, data: ProjectCreate, *, sign_in: Optional[str] = None,
     sent = [ref for ref in data.outputs if to_copy.get(ref.node_id) != ref.filename]
     readable = _readable_sent_outputs(user, sent, sign_in)
 
-    project_id = str(uuid4())
     ukey = _user_dir_key(user)
     # First-time real users have no per-user package store yet; seed builtin
     # so the new dataflow's palette isn't empty.
     ensure_user_packages_initialized(ukey)
-    folder = str(storage.project_dir(ukey, project_id))
 
     project = repo.upsert_project(
         user_id=user.id,
         name=data.name,
-        folder_path=folder,
+        folder_path="",
         description=data.description,
         thumbnail_accent=data.thumbnail_accent,
     )
     project_id = project.id
+    # The folder its dataflow is written to, which the row's own id names. No
+    # save rewrites the row after its create, so the create writes it right.
+    project.folder_path = str(storage.project_dir(ukey, project_id))
 
     # New project: merge per-user defaults into the spec's lockfile so the
     # package palette starts populated. Caller can override by passing a

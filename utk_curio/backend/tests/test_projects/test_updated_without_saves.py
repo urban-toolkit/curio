@@ -50,6 +50,21 @@ def test_a_change_the_doc_writes_moves_the_updated_time(client, user_and_token, 
     assert datetime.fromisoformat(after) > datetime.fromisoformat(before), (before, after)
 
 
+def test_a_new_dataflows_row_names_the_folder_its_spec_is_written_to(client, user_and_token, db, tmp_curio):
+    """No save rewrites the row after its create, so the create names the
+    folder it wrote the spec to: the one its own id names."""
+    from utk_curio.backend.app.projects import storage
+    from utk_curio.backend.app.projects.models import Project
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user, token = user_and_token
+    pid = _create(client, token)
+
+    folder = storage.project_dir(_user_dir_key(user), pid)
+    assert (folder / storage.SPEC_FILE).is_file()
+    assert db.session.get(Project, pid).folder_path == str(folder)
+
+
 def test_opening_a_dataflow_writes_no_spec(client, user_and_token, tmp_curio):
     """So the spec's last write is a change's, never an open's."""
     from utk_curio.backend.app.projects import storage
