@@ -97,12 +97,22 @@
   background: #ffffff;
 }
 
-/* The catalog pages' page title (CatalogBrowseLayout.module.css `.titleRow h1`). */
+/* The catalog pages' page title (CatalogBrowseLayout.module.css `.titleRow h1`).
+   One line, cut short with an ellipsis where it would run under the agents'
+   dock on its row, as a node's title is cut in its header
+   (EditableNodeHeaderLabel.module.css `.labelText`); the full name is its
+   tooltip. The dock sets --curio-canvas-dock-left (AgentDock.tsx), whose
+   default is the window's width when no dock is on the row (curioTokens.css);
+   50px is where the container starts. */
 .workflowNameStyle {
   font-size: 20px;
   font-weight: 700;
   color: var(--curio-text-primary);
   cursor: pointer;
+  max-width: max(6em, calc(var(--curio-canvas-dock-left) - 50px - 16px));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* The category chips hang under the title without widening its container,

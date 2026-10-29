@@ -1531,6 +1531,10 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         noteLoadedDataflow(detail?.spec?.dataflow ?? spec.dataflow, detail.id);
         setProjectId(detail.id);
         setProjectName(detail.name);
+        // Titled with the copy's own name, which the server gave its dataflow
+        // too (save_project). The canvas kept the name of the dataflow it
+        // copied, so the copy read as the original until a save renamed it.
+        setWorkflowName(detail.name);
         setProjectSavedAt(new Date());
         setProjectDirty(false);
         setViewerMode("owner");
@@ -1542,7 +1546,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             ?.packages;
         setCurrentProject(detail.id, Array.isArray(copiedPackages) ? copiedPackages : []);
         return detail;
-    }, [workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, syncDatasetsFromSavedSpec, defaultSaveOutputDataset]);
+    }, [workflowNameRef, setWorkflowName, reactFlow, deps.outputsRef, blockGuestSaves, syncDatasetsFromSavedSpec, defaultSaveOutputDataset]);
 
     const loadProject = useCallback(async (id: string, options?: { lastResults?: boolean }) => {
         const result = await projectsApi.get(id, options);

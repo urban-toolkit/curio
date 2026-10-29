@@ -80,7 +80,14 @@ def test_it_serves_the_spec_without_a_token(client, user_and_token, tmp_curio):
 
     assert resp.status_code == 200
     body = resp.get_json()
-    assert body["spec"]["dataflow"]["name"] == "dash-route-test"
+    # The spec as created: the one sent, by its nodes and the provenance id
+    # only it carries, named as its row (the create names the dataflow it
+    # makes, services.save_project), which the page's meta names too.
+    dataflow = body["spec"]["dataflow"]
+    assert sorted(node["id"] for node in dataflow["nodes"]) == ["chart", "py"]
+    assert dataflow["provenance_id"] == "dash-route-test"
+    assert dataflow["name"] == "Dashboard"
+    assert body["meta"]["name"] == "Dashboard"
     assert body["meta"]["projectId"] == pid
     assert "outputs" in body
 
