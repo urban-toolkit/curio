@@ -4,6 +4,7 @@ import { useSharedView } from "../../../hook/useSharedView";
 import { useFlowContext } from "../../../providers/FlowProvider";
 import type { ScenarioSortMode } from "../../../services/scenarioCatalog";
 import type { Scenario } from "../../../utils/scenarios/scenarioModel";
+import { scenarioNameProblem } from "../../../utils/scenarios/scenarioEdits";
 import { scenarioParts, type ScenarioParts } from "../../../utils/scenarios/scenarioParts";
 import { useScenarioUi } from "../scenarioUi";
 import { useScenarioActions } from "../useScenarioActions";
@@ -154,6 +155,8 @@ export function InProjectScenarios({ scenarios, search, sort, presented }: InPro
           inProject={{
             details: inProjectDetails(detail.scenario, detail.parts, liveNodes, project, preview),
             onEdit: shared ? undefined : (patch) => actions.update(detail.scenario.id, patch),
+            nameProblem: (name) =>
+              scenarioNameProblem(scenarios, scenarioSets ?? [], detail.scenario.set, name, detail.scenario.id),
           }}
           onClose={() => setDetailId(null)}
         />

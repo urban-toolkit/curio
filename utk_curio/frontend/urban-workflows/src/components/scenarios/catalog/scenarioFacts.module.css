@@ -112,3 +112,15 @@
   background: var(--curio-card-bg);
   cursor: pointer;
 }
+
+/* Why the name typed cannot be used, under its field. */
+.fieldProblem {
+  grid-column: 2;
+  margin-top: -4px;
+  font-size: 12px;
+  color: var(--curio-danger-text);
+}
+
+.fieldInput[aria-invalid="true"] {
+  border-color: var(--curio-danger-text);
+}

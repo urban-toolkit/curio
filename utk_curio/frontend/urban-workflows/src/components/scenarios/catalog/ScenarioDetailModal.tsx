@@ -31,6 +31,8 @@ export interface InProjectScenario {
   /** Changes its name, color or description. Absent for a shared viewer,
    *  who reads the scenario and changes nothing. */
   onEdit?: (patch: ScenarioFieldsPatch) => void;
+  /** Why a name cannot be used, as it is typed: another scenario of its set has it. */
+  nameProblem?: (name: string) => string | null;
 }
 
 export interface ScenarioDetailModalProps {
@@ -133,7 +135,7 @@ export const ScenarioDetailModal: React.FC<ScenarioDetailModalProps> = ({
 
           <div className={styles.body} data-scenario-key={scenario.key}>
             {inProject?.onEdit ? (
-              <ScenarioFields scenario={scenario} onEdit={inProject.onEdit} />
+              <ScenarioFields scenario={scenario} onEdit={inProject.onEdit} nameProblem={inProject.nameProblem} />
             ) : scenario.description ? (
               <p className={styles.purpose}>{scenario.description}</p>
             ) : null}
@@ -212,9 +214,11 @@ export const ScenarioDetailModal: React.FC<ScenarioDetailModalProps> = ({
 function ScenarioFields({
   scenario,
   onEdit,
+  nameProblem,
 }: {
   scenario: Pick<ScenarioRow, "name" | "color" | "description">;
   onEdit: (patch: ScenarioFieldsPatch) => void;
+  nameProblem?: (name: string) => string | null;
 }) {
   const [name, setName] = useState(scenario.name);
   const [description, setDescription] = useState(scenario.description);
@@ -226,9 +230,12 @@ function ScenarioFields({
   }, [scenario.name]);
   useEffect(() => setDescription(scenario.description), [scenario.description]);
 
+  const problem = name.trim() === scenario.name ? null : (nameProblem?.(name) ?? null);
+  // A name another scenario of the set has is never kept: leaving the field
+  // puts the scenario's own name back.
   const commitName = () => {
     const next = name.trim();
-    if (!next) {
+    if (!next || problem) {
       setName(scenario.name);
       return;
     }
@@ -247,15 +254,23 @@ function ScenarioFields({
         type="text"
         className={factStyles.fieldInput}
         aria-label="Scenario name"
+        aria-invalid={problem ? true : undefined}
+        aria-describedby={problem ? "scenario-name-problem" : undefined}
         value={name}
         onChange={(e) => setName(e.target.value)}
         onBlur={commitName}
         onKeyDown={(e) => {
           if (e.key !== "Enter") return;
+          if (problem) return;
           commitName();
           e.currentTarget.blur();
         }}
       />
+      {problem && (
+        <span className={factStyles.fieldProblem} id="scenario-name-problem" role="alert">
+          {problem}
+        </span>
+      )}
       <span className={factStyles.fieldLabel}>Color</span>
       <input
         type="color"

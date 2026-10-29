@@ -38,7 +38,7 @@ Choose **View → Define scenario**, or **Define scenario** in the drawer's **In
 
 1. **Scenario-specific nodes:** select on the canvas the nodes unique to the scenario (click one, or Shift and drag a box). The panel lists them as you select. Nodes already in a scenario are left out.
 2. **Shared context & outcomes:** Curio follows the edges from them and lists the shared context and the outcomes, and the canvas marks them. Confirm them, remove a node with **×**, or select one on the canvas and click **+ Add selected node**. Joining a set that has scenarios already, each list says what the set has and what is new to it.
-3. **Name & set:** name the scenario, and put it in one of this dataflow's scenario sets or create a new one, named after the dataflow unless you name it. **Save scenario** writes it; nothing is written before.
+3. **Name & set:** name the scenario, and put it in one of this dataflow's scenario sets or create a new one, named after the dataflow unless you name it. **Save scenario** writes it; nothing is written before. No two scenarios of a set share a name: a name another scenario of the set has is flagged as you type, and the scenario cannot be saved with it.
 
 On the canvas, each scenario's frame shows its set's name before its own.
 

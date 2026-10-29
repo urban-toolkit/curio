@@ -186,6 +186,22 @@ describe("defining a scenario", () => {
     );
   });
 
+  test("a name another scenario of the chosen set has cannot be saved; a new set takes it", () => {
+    mockFlow.scenarios = [EXISTING];
+    mockFlow.scenarioSets = [{ id: "park", name: "Park shade" }];
+    renderPanel({ mode: "new" });
+    select("towers");
+    click("Next: shared context & outcomes");
+    click("Next: name & set");
+    fireEvent.change(screen.getByTestId("scenario-define-name"), { target: { value: "existing " } });
+    expect(screen.getByRole("alert")).toHaveTextContent('"Existing" is already a scenario in "Park shade".');
+    expect(screen.getByTestId("scenario-define-save")).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("radio", { name: /Create a new scenario set/ }));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByTestId("scenario-define-save")).toBeEnabled();
+  });
+
   test("a node already in a scenario cannot be one of its nodes", () => {
     mockFlow.scenarios = [EXISTING];
     mockFlow.scenarioSets = [{ id: "park", name: "Park shade" }];

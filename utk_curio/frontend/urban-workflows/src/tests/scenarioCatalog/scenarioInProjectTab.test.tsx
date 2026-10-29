@@ -338,6 +338,28 @@ describe("the Scenario Catalog drawer's In project tab", () => {
     expect(name).toHaveValue("Doubled");
   });
 
+  test("a name another scenario of its set has is refused as it is typed", async () => {
+    mockFlow.scenarios = [
+      { ...DOUBLED, set: "heights" },
+      { ...CHARTED, set: "heights" },
+    ];
+    mockFlow.scenarioSets = [{ id: "heights", name: "Heights" }];
+    await openInProject();
+    fireEvent.click(within(card("s-doubled")).getByRole("button", { name: "View Doubled (Heights) details" }));
+    const modal = within(await screen.findByRole("dialog", { name: "Scenario details" }));
+    const name = modal.getByLabelText("Scenario name");
+
+    // Whatever its case and spaces.
+    fireEvent.change(name, { target: { value: " charted " } });
+    expect(modal.getByRole("alert")).toHaveTextContent('"Charted" is already a scenario in "Heights".');
+    expect(name).toHaveAttribute("aria-invalid", "true");
+    fireEvent.keyDown(name, { key: "Enter" });
+    fireEvent.blur(name);
+    expect(mockActions.update).not.toHaveBeenCalled();
+    expect(name).toHaveValue("Doubled");
+    expect(modal.queryByRole("alert")).toBeNull();
+  });
+
   test("a scenario with no node left says so in its details", async () => {
     mockFlow.scenarios = [GONE];
     renderDrawer();

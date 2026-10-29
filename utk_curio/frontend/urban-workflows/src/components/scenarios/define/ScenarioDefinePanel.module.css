@@ -318,3 +318,13 @@
   opacity: 0.45;
   cursor: not-allowed;
 }
+
+/* Why the name cannot be used: another scenario of the set has it. */
+.problem {
+  font-size: var(--curio-font-size-xs);
+  color: var(--curio-danger-text);
+}
+
+.field input[aria-invalid="true"] {
+  border-color: var(--curio-danger-text);
+}

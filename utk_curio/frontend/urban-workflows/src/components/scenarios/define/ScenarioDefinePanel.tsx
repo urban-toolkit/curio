@@ -5,7 +5,7 @@ import { v4 as uuid } from "uuid";
 import { useFlowContext } from "../../../providers/FlowProvider";
 import { useToastContext } from "../../../providers/ToastProvider";
 import type { Scenario, ScenarioSet } from "../../../utils/scenarios/scenarioModel";
-import { nextScenarioColor, nextScenarioName } from "../../../utils/scenarios/scenarioEdits";
+import { nextScenarioColor, nextScenarioName, scenarioNameProblem } from "../../../utils/scenarios/scenarioEdits";
 import { inferContextOutcomes } from "../../../utils/scenarios/scenarioSets";
 import { nodeLabel } from "../scenarioLabels";
 import { useScenarioUi, type ScenarioDefine } from "../scenarioUi";
@@ -133,6 +133,11 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
   const others = scenarios.filter((s) => setId && s.set === setId && s.id !== editing?.id);
   const inSet = (part: Part) => new Set(others.flatMap((s) => s[part] ?? []));
 
+  // No two scenarios of a set share a name; a new set has none yet.
+  const nameProblem = editing
+    ? null
+    : scenarioNameProblem(scenarios, scenarioSets, choice.kind === "existing" ? choice.setId : null, name);
+
   const save = () => {
     if (!lists) return;
     if (editing) {
@@ -146,6 +151,10 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
     const scenarioName = name.trim();
     if (!scenarioName) {
       showToast("Give the scenario a name.", "warning");
+      return;
+    }
+    if (nameProblem) {
+      showToast(nameProblem, "warning");
       return;
     }
     let sets = scenarioSets;
@@ -300,7 +309,18 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
           <>
             <label className={styles.field}>
               Scenario name
-              <input value={name} onChange={(e) => setName(e.target.value)} data-testid="scenario-define-name" />
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                data-testid="scenario-define-name"
+                aria-invalid={nameProblem ? true : undefined}
+                aria-describedby={nameProblem ? "scenario-define-name-problem" : undefined}
+              />
+              {nameProblem && (
+                <span className={styles.problem} id="scenario-define-name-problem" role="alert">
+                  {nameProblem}
+                </span>
+              )}
             </label>
             <fieldset className={styles.choices}>
               <legend className={styles.question}>Which scenario set does it belong to?</legend>
@@ -376,7 +396,13 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
           </button>
         )}
         {(step === 3 || editing) && (
-          <button type="button" className={styles.primary} onClick={save} data-testid="scenario-define-save">
+          <button
+            type="button"
+            className={styles.primary}
+            onClick={save}
+            disabled={!!nameProblem}
+            data-testid="scenario-define-save"
+          >
             {editing ? "Save" : "Save scenario"}
           </button>
         )}

@@ -5,7 +5,7 @@
  * A node belongs to at most one scenario, so a scenario is never given a node
  * another scenario holds: the edit is refused, naming that scenario.
  */
-import { SCENARIO_COLOR_RE, type Scenario } from "./scenarioModel";
+import { SCENARIO_COLOR_RE, type Scenario, type ScenarioSet } from "./scenarioModel";
 
 /** The colors new scenarios take in turn, picked to tell apart on the canvas. */
 export const SCENARIO_COLORS = [
@@ -33,6 +33,26 @@ export function nextScenarioName(scenarios: readonly Scenario[], skip: readonly 
   for (let n = 1; ; n += 1) {
     if (!taken.has(`Scenario ${n}`)) return `Scenario ${n}`;
   }
+}
+
+/**
+ * Why *name* cannot name a scenario of the set *setId*: no two scenarios of a
+ * set share a name, whatever their case or the spaces around them. Null when
+ * it can; *except* is the scenario being renamed.
+ */
+export function scenarioNameProblem(
+  scenarios: readonly Scenario[],
+  sets: readonly ScenarioSet[],
+  setId: string | null | undefined,
+  name: string,
+  except?: string,
+): string | null {
+  const wanted = name.trim().toLowerCase();
+  if (!setId || !wanted) return null;
+  const clash = scenarios.find((s) => s.set === setId && s.id !== except && s.name.trim().toLowerCase() === wanted);
+  if (!clash) return null;
+  const setName = sets.find((s) => s.id === setId)?.name ?? "this set";
+  return `"${clash.name}" is already a scenario in "${setName}". Choose another name.`;
 }
 
 /**
