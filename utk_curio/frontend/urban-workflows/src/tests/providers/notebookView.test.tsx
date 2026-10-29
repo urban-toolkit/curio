@@ -28,6 +28,9 @@ if (!(global as any).DOMMatrixReadOnly) {
 }
 
 // Mocks: replace the heavy and IO collaborators, keep reactflow REAL.
+// The dataflow the canvas loaded, which a canvas bound to its doc binds on:
+// none unless a test binds the canvas.
+const mockLoaded: { current: any } = { current: null };
 jest.mock('../../hook/useWorkflowOperations', () => ({
   useWorkflowOperations: () => ({
     markNodeExecuted: jest.fn(),
@@ -46,6 +49,13 @@ jest.mock('../../hook/useWorkflowOperations', () => ({
     updateDefaultCode: jest.fn(),
     workflowGoal: '',
     acceptSuggestion: jest.fn(),
+    loadedDataflowRef: mockLoaded,
+    workflowGoalRef: { current: '' },
+    workflowCategoriesRef: { current: {} },
+    scenariosRef: { current: [] },
+    autoRunRef: { current: false },
+    takeDataflowFields: jest.fn(),
+    quietly: (apply: () => unknown) => apply(),
   }),
 }));
 
@@ -53,8 +63,9 @@ jest.mock('../../providers/ToastProvider', () => ({
   useToastContext: () => ({ showToast: jest.fn() }),
 }));
 
-// A collaborator's events, by name: `onRemote` registers a handler here and the
-// test fires it as the socket would. Nodes and edges arrive this way too.
+// The room's events, by name: `onRemote` registers a handler here. A
+// collaborator's nodes and edges arrive through the dataflow's doc
+// (`fromAnotherTab`).
 const mockHandlers: Record<string, (payload: any) => void> = {};
 const mockNoop = () => undefined;
 const mockCollab = {
@@ -128,15 +139,35 @@ const Bridge: React.FC = () => {
   );
 };
 
+const PROJECT = 'project-notebook';
+/** The dataflow's doc, as the server and every other tab hold it, when a test
+ *  binds the canvas. */
+let held: any = null;
+
+/** The dataflow's doc and its mapping, required by the tests that bind the
+ *  canvas, the others needing neither. */
+function docModules() {
+  return {
+    ...require('../../providers/collab/docContext'),
+    ...require('../../providers/collab/docProvider'),
+    ...require('../../providers/collab/docMapping'),
+  };
+}
+
 function renderFlow(dashboardOn = false) {
-  return render(
+  const flow = (
     <BrowserRouter>
       <ReactFlowProvider>
         <FlowProvider dashboardOn={dashboardOn}>
           <Bridge />
         </FlowProvider>
       </ReactFlowProvider>
-    </BrowserRouter>,
+    </BrowserRouter>
+  );
+  if (!held) return render(flow);
+  const { DataflowDocContext } = docModules();
+  return render(
+    <DataflowDocContext.Provider value={{ provider: held, synced: true }}>{flow}</DataflowDocContext.Provider>,
   );
 }
 
@@ -155,29 +186,79 @@ const CANVAS: Record<string, XY> = {
   c: { x: 1400, y: 300 },
 };
 
-function remoteNode(id: string, position: XY, extra: Record<string, unknown> = {}) {
+const NODE_TYPE = 'curio.builtin/computation-analysis';
+
+function canvasNode(id: string, position: XY, extra: Record<string, unknown> = {}) {
   return {
     id,
     type: CURIO_UNIVERSAL_NODE_TYPE,
     position,
-    data: { nodeId: id, nodeType: 'curio.builtin/computation-analysis', input: '', inputTypes: [], ...extra },
+    data: { nodeId: id, nodeType: NODE_TYPE, input: '', inputTypes: [], ...extra },
   };
 }
 
-async function fromPeer(event: string, payload: any) {
-  expect(typeof mockHandlers[event]).toBe('function');
+/** Put nodes on the canvas, as a drop does. */
+async function addNodes(entries: Array<[string, XY, Record<string, unknown>?]>) {
   await act(async () => {
-    mockHandlers[event](payload);
+    for (const [id, position, extra] of entries) api.addNode(canvasNode(id, position, extra), undefined, false);
+  });
+  await flush();
+}
+
+/** Connect *source* to *target*, as a drag between their circles does. */
+async function connect(id: string, source: string, target: string) {
+  await act(async () => {
+    api.onConnect({ id, source, target, sourceHandle: 'out', targetHandle: 'in' } as any,
+      undefined, undefined, undefined, false, true);
   });
   await flush();
 }
 
 async function seedChain() {
-  for (const [id, position] of Object.entries(CANVAS)) {
-    await fromPeer('node_added', { node: remoteNode(id, position) });
-  }
-  await fromPeer('edge_added', { edge: { id: 'ab', source: 'a', target: 'b', sourceHandle: 'out', targetHandle: 'in' } });
-  await fromPeer('edge_added', { edge: { id: 'bc', source: 'b', target: 'c', sourceHandle: 'out', targetHandle: 'in' } });
+  await addNodes(Object.entries(CANVAS).map(([id, position]) => [id, position] as [string, XY]));
+  await connect('ab', 'a', 'b');
+  await connect('bc', 'b', 'c');
+}
+
+/** The chain as the dataflow holds it: what a canvas bound to the doc loaded. */
+function chainDataflow() {
+  return {
+    name: '',
+    nodes: Object.entries(CANVAS).map(([id, p]) => ({ id, type: NODE_TYPE, x: p.x, y: p.y })),
+    edges: [
+      { id: 'ab', source: 'a', target: 'b', sourceHandle: 'out', targetHandle: 'in' },
+      { id: 'bc', source: 'b', target: 'c', sourceHandle: 'out', targetHandle: 'in' },
+    ],
+  };
+}
+
+/** Bind the next canvas to the chain's doc, as the server synced it. */
+function bindToDoc() {
+  const { DataflowDocProvider, dataflowToDoc } = docModules();
+  const dataflow = chainDataflow();
+  held = new DataflowDocProvider(PROJECT, { canWrite: true });
+  dataflowToDoc(dataflow, held.doc, 'doc-1');
+  held.synced = true;
+  mockLoaded.current = { epoch: 1, projectId: PROJECT, dataflow };
+}
+
+/** Another tab's change to the dataflow, as the provider applies one the
+ *  server relays. */
+async function fromAnotherTab(change: (dataflow: any) => void) {
+  const { applyDataflow, docToDataflow } = docModules();
+  const before = docToDataflow(held.doc);
+  const after = JSON.parse(JSON.stringify(before));
+  change(after);
+  await act(async () => {
+    held.doc.transact(() => applyDataflow(held.doc, before, after), held);
+  });
+  await flush();
+}
+
+/** Each node's place as the doc holds it, which every tab and the server read. */
+function docSpots(): Record<string, XY> {
+  const { docToDataflow } = docModules();
+  return Object.fromEntries(docToDataflow(held.doc).nodes.map((n: any) => [n.id, { x: n.x, y: n.y }]));
 }
 
 async function setPane() {
@@ -223,6 +304,9 @@ async function measure(heights: Record<string, number>) {
 afterEach(() => {
   for (const key of Object.keys(mockHandlers)) delete mockHandlers[key];
   window.history.replaceState(null, '', '/');
+  held?.destroy();
+  held = null;
+  mockLoaded.current = null;
 });
 
 describe('the notebook view shows the nodes as cells', () => {
@@ -309,39 +393,55 @@ describe('the notebook view shows the nodes as cells', () => {
   });
 
   test("a collaborator's drag during the notebook view lands on the canvas spot", async () => {
+    bindToDoc();
     renderFlow();
     await flush();
     await seedChain();
     await setPane();
     await show('notebook');
+    // The cells move the nodes on this canvas alone: the dataflow every tab
+    // reads keeps the canvas spots.
+    expect(docSpots()).toEqual(CANVAS);
     const cell = { ...node('b').position };
 
-    await fromPeer('node_updated', { nodeId: 'b', patch: { position: { x: 333, y: 777 } } });
+    await fromAnotherTab((df) => {
+      const b = df.nodes.find((n: any) => n.id === 'b');
+      b.x = 333;
+      b.y = 777;
+    });
 
     expect(node('b').position).toEqual(cell);
     expect(saved().b).toEqual({ x: 333, y: 777 });
+    expect(docSpots()).toEqual({ ...CANVAS, b: { x: 333, y: 777 } });
 
     await show('canvas');
     expect(node('b').position).toEqual({ x: 333, y: 777 });
   });
 
   test('a node added in the notebook view keeps the canvas spot it was given, and a removed one is forgotten', async () => {
+    bindToDoc();
     renderFlow();
     await flush();
     await seedChain();
     await setPane();
     await show('notebook');
 
-    await fromPeer('node_added', { node: remoteNode('d', { x: 2100, y: 300 }) });
+    await fromAnotherTab((df) => {
+      df.nodes.push({ id: 'd', type: NODE_TYPE, x: 2100, y: 300 });
+    });
     expect(node('d').position.x).toBe(node('a').position.x);
     expect(saved().d).toEqual({ x: 2100, y: 300 });
 
-    await fromPeer('node_removed', { nodeId: 'a' });
+    await fromAnotherTab((df) => {
+      df.nodes = df.nodes.filter((n: any) => n.id !== 'a');
+      df.edges = df.edges.filter((e: any) => e.source !== 'a' && e.target !== 'a');
+    });
     await show('canvas');
     expect(node('a')).toBeUndefined();
     expect(node('b').position).toEqual(CANVAS.b);
     expect(node('c').position).toEqual(CANVAS.c);
     expect(node('d').position).toEqual({ x: 2100, y: 300 });
+    expect(docSpots()).toEqual({ b: CANVAS.b, c: CANVAS.c, d: { x: 2100, y: 300 } });
   });
 
   test('a cell that grows moves the cells below it by the same amount, and only those', async () => {
@@ -373,9 +473,7 @@ describe('the notebook view shows the nodes as cells', () => {
   test("the round trip leaves the canvas positions and sizes, whatever the cells' heights", async () => {
     renderFlow();
     await flush();
-    for (const [id, position] of Object.entries(CANVAS)) {
-      await fromPeer('node_added', { node: remoteNode(id, position, { nodeWidth: 525, nodeHeight: 350 }) });
-    }
+    await addNodes(Object.entries(CANVAS).map(([id, position]) => [id, position, { nodeWidth: 525, nodeHeight: 350 }]));
     await setPane();
     await show('notebook');
     await measure({ a: 612, b: 95, c: 404 });

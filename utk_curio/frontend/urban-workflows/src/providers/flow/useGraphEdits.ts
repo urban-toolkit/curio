@@ -18,7 +18,6 @@ import {
 } from "../../utils/inputSlots";
 import { renumberInputReferences } from "../../utils/references/codeReferences";
 import { getUnversionedFlowNodeType } from "../../utils/flowNodeCanonicalType";
-import type { useCollab } from "../CollaborationProvider";
 import { normalizeFlowInput } from "../../utils/flowOutputRef";
 import { markSelectionEcho, SelectionEchoOptions } from "../../utils/selectionEcho";
 import { nodeCodeWriter } from "../../utils/nodeCodeWriters";
@@ -37,15 +36,23 @@ function withSlotValues(node: Node, slots: number[], value: unknown, sourceId: s
     };
 }
 
+/** What an agent's applied code asks of the dataflow's doc the canvas is
+ *  bound to (`useDataflowDoc`). */
+export interface AppliedCodeDoc {
+    /** Whether the canvas is bound to the doc. */
+    bound(): boolean;
+    /** The code *code* replaced, when the doc brought *code* to the node. */
+    codeBefore(nodeId: string, code: string): string | undefined;
+}
+
 export function useGraphEdits({
-    setNodes, setEdges, reactFlow, workflowNameRef, collabRef, outputsRef, markNodeStaleRef, setOutputs,
-    nodeEditProv, markDirtyRef,
+    setNodes, setEdges, reactFlow, workflowNameRef, outputsRef, markNodeStaleRef, setOutputs,
+    nodeEditProv, markDirtyRef, codeDocRef,
 }: {
     setNodes: React.Dispatch<React.SetStateAction<Node[]>>;
     setEdges: React.Dispatch<React.SetStateAction<Edge[]>>;
     reactFlow: ReactFlowInstance;
     workflowNameRef: React.MutableRefObject<string>;
-    collabRef: React.MutableRefObject<ReturnType<typeof useCollab>>;
     outputsRef: React.MutableRefObject<IOutput[]>;
     markNodeStaleRef: React.MutableRefObject<(nodeId: string) => void>;
     setOutputs: (fnOrValue: ((prev: IOutput[]) => IOutput[]) | IOutput[]) => void;
@@ -57,6 +64,11 @@ export function useGraphEdits({
     nodeEditProv?: (nodeId: string, code: string, label: string, before?: string) => void;
     /** Leaves the dataflow Unsaved, so the next save writes what changed: an entry filed here among it. */
     markDirtyRef?: React.MutableRefObject<() => void>;
+    /**
+     * The dataflow's doc this canvas is bound to (`useDataflowDoc`): an
+     * agent's applied code is already the doc's there, written by the server.
+     */
+    codeDocRef?: React.MutableRefObject<AppliedCodeDoc | null>;
 }) {
     // The bridge's content path (dev/51): both fields, one provider-state
     // update — ``defaultCode`` drives the Monaco editor's value and ``code``
@@ -71,6 +83,23 @@ export function useGraphEdits({
     const applyNodeContent = useCallback(
         (nodeId: string, content: string, author?: string) => {
             const label = author || "Agent";
+            const doc = codeDocRef?.current;
+            if (doc?.bound()) {
+                // The server wrote the agent's code into the dataflow's doc,
+                // which brings it to every tab, this one too: written here as
+                // well, the two writes of one text would merge into two
+                // copies. Only the change's entry is this tab's to file, with
+                // the code it replaced: the canvas's, or, when the doc brought
+                // the code first, the doc's before it.
+                const live = reactFlow.getNodes().find((n) => n.id === nodeId);
+                if (!live) return;
+                const shown = nodeCode(live.data);
+                const before = content === shown ? doc.codeBefore(nodeId, content) : shown;
+                if (before === undefined || before === content) return;
+                nodeEditProv?.(nodeId, content, label, before);
+                markDirtyRef?.current();
+                return;
+            }
             const writer = nodeCodeWriter(nodeId);
             if (writer) {
                 writer(content, label);
@@ -90,13 +119,15 @@ export function useGraphEdits({
             nodeEditProv?.(nodeId, content, label, before);
             markDirtyRef?.current();
         },
-        [setNodes, reactFlow, nodeEditProv, markDirtyRef],
+        [setNodes, reactFlow, nodeEditProv, markDirtyRef, codeDocRef],
     );
 
     const addNode = useCallback(
         (node: Node, customWorkflowName?: string, provenance?: boolean) => {
             console.log("add node");
-            setNodes((prev: any) => prev.concat(node));
+            // A node the canvas holds already is not added again: the doc and
+            // an agent's apply can both bring one before the canvas renders.
+            setNodes((prev: any) => (prev.some((n: Node) => n.id === node.id) ? prev : prev.concat(node)));
 
             if (provenance) {
                 TrillGenerator.addNewVersionProvenance(
@@ -105,27 +136,6 @@ export function useGraphEdits({
                     workflowNameRef.current, "", "Node added"
                 );
             }
-
-            // socket.io-client serialises the payload as JSON, which silently
-            // drops the runtime callbacks on ``data`` (outputCallback,
-            // interpreters, …). That's intentional — the receiver re-attaches
-            // its own local callbacks in the remote-graph handler. Position
-            // and other ReactFlow-required fields MUST be included though;
-            // omitting ``position`` makes the receiver throw inside
-            // ``createNodeInternals`` when it walks the nodes array.
-            collabRef.current.broadcastNodeAdded({
-                nodeId: node.id,
-                node: {
-                    id: node.id,
-                    type: node.type,
-                    position: node.position,
-                    sourcePosition: node.sourcePosition,
-                    targetPosition: node.targetPosition,
-                    width: node.width,
-                    height: node.height,
-                    data: node.data,
-                },
-            });
         },
         [setNodes]
     );
@@ -240,9 +250,9 @@ export function useGraphEdits({
      * each surviving edge moves up one circle per deleted circle above it, the
      * values move with it, and the node's code is rewritten so every input
      * chip and typed input name still names the same input. Deleted inputs'
-     * chips and names become `[!! input_? !!]`. Peers get the moved edges and
-     * the new code from here; they never rewrite on their own, so the code
-     * changes once.
+     * chips and names become `[!! input_? !!]`. Other tabs get the moved edges
+     * and the new code through the dataflow's doc; they never rewrite on their
+     * own, so the code changes once.
      */
     const closeUpCircles = (target: Node, deleted: Edge[], deletedIds: Set<string>) => {
         const removed = deleted
@@ -293,11 +303,6 @@ export function useGraphEdits({
 
         if (moved.size > 0) {
             setEdges((eds) => eds.map((e) => (moved.has(e.id) ? { ...e, targetHandle: moved.get(e.id) } : e)));
-            for (const edge of survivors) {
-                if (!moved.has(edge.id)) continue;
-                collabRef.current.broadcastEdgeRemoved(edge.id);
-                collabRef.current.broadcastEdgeAdded({ edgeId: edge.id, edge: { ...edge, targetHandle: moved.get(edge.id) } });
-            }
         }
         setNodes((nds) =>
             nds.map((node) => {
@@ -310,20 +315,40 @@ export function useGraphEdits({
                 return { ...node, data };
             }),
         );
-        if (rewritten !== code) {
-            collabRef.current.broadcastNodeUpdated({
-                nodeId: target.id,
-                patch: { data: { code: rewritten, defaultCode: rewritten } },
-            });
-        }
+    };
+
+    /** A growing node's circles that *deleted* emptied, taken out of the
+     *  values it holds, as another tab's removal leaves them: that tab moved
+     *  the edges below and rewrote the code, which the doc brings. */
+    const dropCircles = (target: Node, deleted: Edge[]) => {
+        const removed = deleted
+            .map((e) => inputSlotOf(e.targetHandle))
+            .filter((s) => s >= 0)
+            .sort((a, b) => b - a);
+        if (removed.length === 0) return;
+        setNodes((nds) =>
+            nds.map((node) => {
+                if (node.id !== target.id) return node;
+                let inputSlots: unknown[] = node.data?.inputSlots ?? [];
+                let sourceSlots: unknown[] = node.data?.sourceSlots ?? [];
+                for (const slot of removed) {
+                    inputSlots = withoutSlot(inputSlots, slot);
+                    sourceSlots = withoutSlot(sourceSlots, slot);
+                }
+                const wired = wiredInputSlots(
+                    reactFlow.getEdges().filter((e) => !deleted.some((d) => d.id === e.id)),
+                    node.id,
+                );
+                return { ...node, data: { ...node.data, inputSlots, sourceSlots, input: nodeInputFromSlots(inputSlots, wired) } };
+            }),
+        );
     };
 
     const onEdgesDelete = useCallback(
-        (connections: Edge[]) => {
+        (connections: Edge[], options?: { remote?: boolean }) => {
             const deletedIds = new Set(connections.map((c) => c.id));
             const growing = new Map<string, Edge[]>();
             for (const connection of connections) {
-                collabRef.current.broadcastEdgeRemoved(connection.id);
                 const resetInput = connection.target;
                 const targetNode = reactFlow.getNode(connection.target) as Node;
                 markNodeStaleRef.current(connection.target);
@@ -363,7 +388,9 @@ export function useGraphEdits({
             }
             growing.forEach((deleted, targetId) => {
                 const target = reactFlow.getNode(targetId);
-                if (target) closeUpCircles(target, deleted, deletedIds);
+                if (!target) return;
+                if (options?.remote) dropCircles(target, deleted);
+                else closeUpCircles(target, deleted, deletedIds);
             });
         },
         [setNodes, setEdges]
@@ -395,7 +422,6 @@ export function useGraphEdits({
                             workflowNameRef.current, "", "Node deleted"
                         );
                     }
-                    collabRef.current.broadcastNodeRemoved(change.id);
                 }
             }
         },
