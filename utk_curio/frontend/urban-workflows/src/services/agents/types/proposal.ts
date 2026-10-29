@@ -130,7 +130,8 @@ export type AgentProposalStatus = "pending" | "applied" | "dismissed" | "superse
 export interface AgentProposalPart {
   type: "proposal";
   proposalId: string;
-  /** "package.install" | "package.draft.apply" | "dataset.install" | "discovery.acquire" | "project.install" | future kinds. */
+  /** "package.install" | "package.draft.apply" | "dataset.install" | "discovery.acquire" | "project.install" | future kinds;
+   * or a change tool (`landsAsAChange`) in a review saved before agents changed the dataflow directly. */
   tool: string;
   summary: string;
   /** The full proposed content (plain text — rendered inert). */

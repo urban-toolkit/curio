@@ -50,6 +50,7 @@ from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.collaboration import history
 from utk_curio.backend.app.collaboration import room_state
 from utk_curio.backend.app.execution.code_references import normalize_widgets
+from utk_curio.common import shared_constants
 
 #: The kinds of change, by the tool that makes each.
 CONTENT, SETTINGS, NODE, PLAN = "content", "settings", "node", "plan"
@@ -59,6 +60,11 @@ KIND_OF_TOOL = {
     "node.create": NODE,
     "dataflow.plan.write": PLAN,
 }
+#: The tools whose work lands as the agent's change, as
+#: ``src/contracts/agentChanges.json`` names them, which the review card reads
+#: too: a review of one saved before agents changed the dataflow directly can
+#: no longer be applied (``apply.apply_proposal``), only dismissed.
+CHANGE_TOOLS = frozenset(shared_constants.read("agentChanges")["tools"])
 #: The status a landed change has, and the one its Undo gives it.
 APPLIED, UNDONE = "applied", "undone"
 #: The tool status a landed change answers the model with.

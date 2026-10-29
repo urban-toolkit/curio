@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import type { AgentProposalPart } from "../../../services/agents";
+import { landsAsAChange, type AgentProposalPart } from "../../../services/agents";
 import styles from "./AgentReviewCard.module.css";
 import { BackendTrustBlock } from "./reviewCard/BackendTrustBlock";
 import { EffectLine } from "./reviewCard/EffectLine";
@@ -22,7 +22,8 @@ export type { PlanNodeReviewState } from "./reviewCard/reviewCardText";
  * output: it renders as inert plain text (REQ-SEC-002), never markup.
  * Non-pending proposals render inert with their outcome label. An agent's
  * change to the dataflow has no review: it lands, and its card is
- * `AgentChangeCard`.
+ * `AgentChangeCard`; a pending review of one saved before agents changed the
+ * dataflow directly says it can no longer be applied and keeps Dismiss alone.
  *
  * Since memo dev/142 (F4) the card COMPOSES one section per concern: source,
  * a draft's justification, package-draft details, the backend trust edge, the
@@ -42,6 +43,9 @@ export const AgentReviewCard: React.FC<{
 }> = ({ part, tintClassName, onApply, onDismiss, waitsForOwner = false }) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A review of a change, saved before agents changed the dataflow directly:
+  // its Apply is gone, never offered, and only its Dismiss is left.
+  const madeBefore = landsAsAChange(part.tool);
 
   const act = async (fn?: (proposalId: string) => Promise<unknown>) => {
     if (!fn || busy) return;
@@ -72,9 +76,10 @@ export const AgentReviewCard: React.FC<{
       <ReviewActions
         part={part}
         busy={busy}
-        onApply={onApply ? () => void act(onApply) : undefined}
+        onApply={onApply && !madeBefore ? () => void act(onApply) : undefined}
         onDismiss={onDismiss ? () => void act(onDismiss) : undefined}
         waitsForOwner={waitsForOwner}
+        madeBefore={madeBefore}
       />
       {error ? <div className={styles.error}>{error}</div> : null}
     </div>

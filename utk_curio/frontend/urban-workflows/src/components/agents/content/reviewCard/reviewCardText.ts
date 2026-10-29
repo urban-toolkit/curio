@@ -77,6 +77,12 @@ export const OUTCOME_LABEL: Record<string, string> = {
  * Apply and Dismiss: the dataflow's owner reviews it. */
 export const WAITS_FOR_OWNER = "Waits for the dataflow's owner to review it: an install changes their account.";
 
+/** What a pending review of a change (`landsAsAChange`) says in place of
+ * Apply: it was saved before agents changed the dataflow directly, so only
+ * its Dismiss is left (the server's refusal of its Apply says the same). */
+export const MADE_BEFORE_DIRECT_EDITS =
+  "Made before agents edited the dataflow directly, so it can no longer be applied: dismiss it and ask the agent again.";
+
 /**
  * dev/119 (DEC-076): can the sandbox run a node.create's kind? The roster's
  * own flag rides the proposal (`pins.executable`); a part minted before that

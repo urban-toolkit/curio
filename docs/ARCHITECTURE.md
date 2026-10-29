@@ -1932,6 +1932,8 @@ Undo (`changes.undo`, `POST .../changes/<changeId>/undo`) is the caller's own ch
 
 An install changes the account, so it stays a proposal the person applies (`proposals/apply.apply_proposal`): `package.install`, `package.draft.apply`, `dataset.install`, `discovery.acquire` and `project.install`.
 
+A chat saved before agents changed the dataflow directly may still hold a pending review of a change, a tool of `src/contracts/agentChanges.json` (`changes.CHANGE_TOOLS`), in the active slot, the queue behind it, or a plan parked beside a later review (`planProposal`). Nothing lands it: its Apply is refused with a **409** that says it can no longer be applied (`apply.MADE_BEFORE_DIRECT_CHANGES`), before anything is read or written, and its Dismiss settles it. Its card says the same in place of Apply and keeps Dismiss alone (`reviewCardText.MADE_BEFORE_DIRECT_EDITS`), and the chat's "Awaiting your review" chip leaves it out.
+
 ### Dataflow plans
 
 A Dataflow Builder plan may add nodes, add connections, and remove, each part optional, so a plan that only rewires a connection is valid and needs no filler node. Three rules hold:
@@ -2856,7 +2858,7 @@ Attachments and runs:
 | `/api/agents/projects/<projectId>/attachments/<id>/skills` | GET | The skills the chat's next run lists, each with `held` when the chat holds it already: what `/` in its composer offers |
 | `/api/agents/projects/<projectId>/attachments/<id>/run` | POST | Run one turn. Returns `{reply, executionId, usage, content}`, plus `skills` (what its system turn held but the catalog) and `skillsLoaded` when it held or loaded any, and `changes`, the changes that landed with their canvas mutations, when any did; persists both turns |
 | `/api/agents/projects/<projectId>/attachments/<id>/run/stream` | POST | The same turn as Server-Sent Events: `execution` then `delta` chunks, tool rounds, a `change` event per change that landed, `review_required`, `content`, `done` |
-| `/api/agents/projects/<projectId>/attachments/<id>/proposals/<proposalId>` | POST `/apply`, DELETE | Apply a pending install the person reviewed (re-checks what it installs, **409** on drift) or dismiss it |
+| `/api/agents/projects/<projectId>/attachments/<id>/proposals/<proposalId>` | POST `/apply`, DELETE | Apply a pending install the person reviewed (re-checks what it installs, **409** on drift) or dismiss it; a review of a change saved before agents changed the dataflow directly is only dismissed (its Apply is **409**) |
 | `/api/agents/projects/<projectId>/attachments/<id>/changes/<changeId>/undo` | POST | Undo a change the attachment's agent made, as the caller's own change, by its kind; **409**, naming who, when someone changed it after. Returns `{status, canvas}` |
 
 Solve and planning. The Dataflow Builder plans a dataflow, which lands whole as

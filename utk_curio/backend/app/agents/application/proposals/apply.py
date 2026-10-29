@@ -36,6 +36,14 @@ from utk_curio.backend.app.agents.infrastructure import testing_provider
 from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.collaboration import history
 
+#: Why the Apply of a review of a change (``changes.CHANGE_TOOLS``) saved
+#: before agents changed the dataflow directly is refused: the card says the
+#: same and offers Dismiss alone (``reviewCardText.MADE_BEFORE_DIRECT_EDITS``).
+MADE_BEFORE_DIRECT_CHANGES = (
+    "This review was made before agents edited the dataflow directly, so it can no longer "
+    "be applied: dismiss it and ask the agent again."
+)
+
 
 # ── an install, reviewed (memo dev/41) ───────────────────────────────────────
 def apply_proposal(
@@ -50,9 +58,13 @@ def apply_proposal(
     Success runs the install's own flow, logs a result-card turn (docs/08:
     results are logged as chat turns), and consumes no quota (deterministic,
     no provider work). No model/tool/user *text* can reach this path, only
-    this endpoint."""
+    this endpoint. A review of a change saved before agents changed the
+    dataflow directly is refused with :data:`MADE_BEFORE_DIRECT_CHANGES`,
+    and nothing changes: it can only be dismissed."""
     spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
     record = agents_spec_reads._record_or_404(spec, attachment_id)
+    if _review_saved_before(spec, attachment_id, proposal_id) is not None:
+        raise AgentServiceError(MADE_BEFORE_DIRECT_CHANGES, 409)
     # DEC-080 (dev/126): a plan apply attaches the plan-node agents, so the
     # closure is completed BEFORE the apply reads the lockfile it consults.
     if agents_lifecycle._repair_required_closure(
@@ -92,6 +104,23 @@ def apply_proposal(
             user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
         )
     raise AgentServiceError(f"no apply flow exists for tool {tool!r}", 409)
+
+
+def _review_saved_before(spec: dict, attachment_id: str, proposal_id: str) -> dict | None:
+    """The pending review *proposal_id* of a change (a tool of
+    ``changes.CHANGE_TOOLS``) saved before agents changed the dataflow
+    directly, wherever it was kept: the active slot, the queue behind it, or
+    a plan parked beside a later review (``planProposal``). None for any
+    other proposal. What it would write is the agent's to make again, never
+    landed from an old review: it can only be dismissed."""
+    proposal = attachments.find_proposal(spec, attachment_id, proposal_id)
+    if proposal is None:
+        parked = (attachments.get_attachment(spec, attachment_id) or {}).get("planProposal")
+        proposal = parked if isinstance(parked, dict) and parked.get("proposalId") == proposal_id else None
+    if (isinstance(proposal, dict) and proposal.get("status") == "pending"
+            and proposal.get("tool") in agents_changes.CHANGE_TOOLS):
+        return proposal
+    return None
 
 
 def _node_in(spec: dict, node_id: object) -> dict | None:
@@ -736,12 +765,15 @@ def land_node(user_key: str, project_id: str, loop_ctx: dict, spec: dict, propos
 def dismiss_proposal(
     user_key: str, project_id: str, attachment_id: str, proposal_id: str
 ) -> dict:
-    """Dismiss a pending install (keeps its outcome visible on the card)."""
+    """Dismiss a pending install (keeps its outcome visible on the card), or
+    a review of a change saved before agents changed the dataflow directly,
+    a plan parked beside a later review among them."""
     spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
     record = agents_spec_reads._record_or_404(spec, attachment_id)
     # dev/90 A16: a queued same-reply sibling is dismissible by id too.
     attachments.reconcile_proposal_queue(spec, attachment_id)
-    proposal = attachments.find_proposal(spec, attachment_id, proposal_id)
+    proposal = (attachments.find_proposal(spec, attachment_id, proposal_id)
+                or _review_saved_before(spec, attachment_id, proposal_id))
     if proposal is None:
         raise AgentServiceError(f"proposal {proposal_id!r} not found", 404)
     if proposal.get("status") != "pending":

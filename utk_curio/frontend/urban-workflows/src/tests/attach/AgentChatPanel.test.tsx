@@ -18,6 +18,7 @@ jest.mock("../../services/packages/packagesApi", () => ({
 import { packagesApi } from "../../services/packages/packagesApi";
 
 import { AgentChatPanel } from "../../components/agents/attach/AgentChatPanel";
+import { MADE_BEFORE_DIRECT_EDITS } from "../../components/agents/content/reviewCard/reviewCardText";
 import type { AgentAttachment, AgentSessionTurn } from "../../services/agents";
 
 const attachment: AgentAttachment = {
@@ -1299,6 +1300,37 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
     const statuses = screen.getAllByRole("status");
     expect(statuses[0]).not.toHaveTextContent("Awaiting your review");
     expect(statuses[1]).toHaveTextContent("Awaiting your review");
+  });
+
+  it("a review of a change saved before agents edited directly awaits nothing and keeps Dismiss alone", () => {
+    const onApplyProposal = jest.fn().mockResolvedValue(undefined);
+    const onDismissProposal = jest.fn().mockResolvedValue(undefined);
+    const summary = "Replace the content of node n1";
+    renderPanel({
+      attachment: {
+        ...attachment,
+        activeProposal: { proposalId: "p-old", tool: "node.content.write", nodeId: "n1", summary, status: "pending" },
+      },
+      turns: [
+        { role: "user", text: "q1" },
+        {
+          ...doneTurn("a1", [10, 10]),
+          content: [{
+            type: "proposal", proposalId: "p-old", tool: "node.content.write", summary,
+            preview: "print(2)", pins: { nodeId: "n1" }, status: "pending",
+          }],
+        } as AgentSessionTurn,
+      ],
+      onApplyProposal,
+      onDismissProposal,
+    });
+    expect(screen.queryByText("Awaiting your review")).toBeNull();
+    const saved = within(screen.getByRole("group", { name: `Review proposal: ${summary}` }));
+    expect(saved.getByText(MADE_BEFORE_DIRECT_EDITS)).toBeInTheDocument();
+    expect(saved.queryByRole("button", { name: "Apply" })).toBeNull();
+    fireEvent.click(saved.getByRole("button", { name: "Dismiss" }));
+    expect(onDismissProposal).toHaveBeenCalledWith("p-old");
+    expect(onApplyProposal).not.toHaveBeenCalled();
   });
 
   it("the live cumulative counter includes the in-flight run's interim sums", () => {

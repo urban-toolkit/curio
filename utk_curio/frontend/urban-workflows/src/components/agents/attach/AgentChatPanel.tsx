@@ -5,6 +5,7 @@ import { LEAVE_DATAFLOW, useLeaveGuard } from "../../../hook/useLeaveGuard";
 import {
   attachmentDisplayName,
   declaresCapability,
+  landsAsAChange,
   ORCHESTRATE_CAPABILITY,
   sessionTokenTotals,
   writtenBySomeoneElse,
@@ -270,8 +271,10 @@ export const AgentChatPanel: React.FC<{
   // Per-reply execution status (memo dev/80, amended: the status rides each
   // agent message, not a global strip). The review chip derives from the
   // attachment's install mirror: it self-clears on apply/dismiss: and
-  // marks only the NEWEST reply.
-  const pendingReview = attachment.activeProposal?.status === "pending";
+  // marks only the NEWEST reply. A review of a change saved before agents
+  // changed the dataflow directly awaits nothing: it can only be dismissed.
+  const pendingReview =
+    attachment.activeProposal?.status === "pending" && !landsAsAChange(attachment.activeProposal.tool);
   const runInFlight = runStatus?.phase === "running";
   const lastAgentIdx = useMemo(() => {
     for (let i = turns.length - 1; i >= 0; i--) if (turns[i].role === "agent") return i;
