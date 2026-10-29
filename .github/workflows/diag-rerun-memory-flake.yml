@@ -23,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        job: [1, 2]
+        job: [1, 2, 3]
     steps:
       - uses: actions/checkout@v6
 
@@ -40,18 +40,17 @@ jobs:
         run: nproc; free -m; lscpu | grep -E "Model name|^CPU\(s\)"; uname -r
 
       - name: Allocation bench, interleaved
-        if: ${{ false }}
         run: |
           base="-e MALLOC_ARENA_MAX=16 -e ARROW_DEFAULT_MEMORY_POOL=system"
-          for round in 1 2 3; do
-            for setting in none mmap4m mmap32m_trim8m mmap8m_trim16m; do
+          for order in "none mmap8m_trim16m mmap32m_trim8m" "mmap8m_trim16m mmap32m_trim8m none" "mmap32m_trim8m none mmap8m_trim16m"; do
+            for setting in $order; do
               case $setting in
                 none) extra="" ;;
                 mmap4m) extra="-e MALLOC_MMAP_THRESHOLD_=4194304 -e MALLOC_TRIM_THRESHOLD_=8388608" ;;
                 mmap32m_trim8m) extra="-e MALLOC_MMAP_THRESHOLD_=33554432 -e MALLOC_TRIM_THRESHOLD_=8388608" ;;
                 mmap8m_trim16m) extra="-e MALLOC_MMAP_THRESHOLD_=8388608 -e MALLOC_TRIM_THRESHOLD_=16777216" ;;
               esac
-              echo "round $round $setting"
+              echo "round [$order] $setting"
               docker run --rm -v "$GITHUB_WORKSPACE/.github/diag:/diag:ro" $base $extra "$IMAGE" \
                 python /diag/alloc_bench.py | tee -a "$GITHUB_STEP_SUMMARY"
             done
@@ -61,7 +60,7 @@ jobs:
         run: |
           mkdir -p out
           n=0
-          for variant in launch launch_mmap32m_trim8m launch_mmap32m_trim8m launch launch launch_mmap32m_trim8m; do
+          for variant in launch launch_mmap8m_trim16m launch_mmap32m_trim8m launch_mmap32m_trim8m launch_mmap8m_trim16m launch; do
             n=$((n + 1))
             docker run --rm -v "$GITHUB_WORKSPACE/.github/diag:/diag:ro" -v "$GITHUB_WORKSPACE/out:/out" \
               -e CURIO_ISOLATION=off -e FLASK_USE_RELOADER=0 -e CURIO_LAUNCH_CWD=/app -w /app "$IMAGE" \
