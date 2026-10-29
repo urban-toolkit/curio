@@ -12,9 +12,10 @@ editor, who drives the dataflow's agents too, sees the agent, the owner and
 the watcher; the watcher sees both people and no agent, under the read-only
 banner. Every stack serves this: there is no switch for it.
 
-Every guest signs in to the one shared guest account, so the room numbers its
-tabs: two guests watching a dataflow each see the other's chip, named and
-colored by its number.
+Every guest signs in to the one shared guest account, and so does every tab of
+a Curio with no sign-in, so the room numbers that account's tabs: two of them on
+one dataflow each see the other's chip, named and colored by its number. That
+test runs on every stack, with sign-in or without.
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from .utils import (
     CLOSEUP_MAX_DIFF_RATIO,
     CLOSEUP_PIXEL_THRESHOLD,
     api_json,
+    auth_enabled_env,
     hover_until_tooltip_says,
     node_locator,
     require_project_page,
@@ -104,6 +106,15 @@ class _Room:
         self.contexts.append(context)
         return context.new_page()
 
+    def guests_dataflow(self) -> None:
+        """The dataflow is the shared guest account's own, as every dataflow is
+        on a Curio with no sign-in, where every tab signs in to that account."""
+        signed_in = api_json(f"{self.backend}/api/auth/signin/auto-guest", "", method="POST", payload={})
+        self.project_id = api_json(
+            f"{self.backend}/api/testing/stub-project", "", method="POST",
+            payload={"username": signed_in["user"]["username"], "name": "Who is here", "spec": _spec()},
+        )["id"]
+
     def invite(self, username: str) -> None:
         api_json(f"{self.backend}/api/projects/{self.project_id}/editors", self.tokens[OWNER],
                  method="POST", payload={"username": username})
@@ -135,6 +146,16 @@ class _Room:
 def room(app_frontend: "FrontendPage", current_server: str, browser):
     require_project_page()
     require_user_auth()
+    opened = _Room(app_frontend.base_url, current_server, browser)
+    try:
+        yield opened
+    finally:
+        opened.close()
+
+
+@pytest.fixture()
+def any_room(app_frontend: "FrontendPage", current_server: str, browser):
+    """A room on any stack, with sign-in or without."""
     opened = _Room(app_frontend.base_url, current_server, browser)
     try:
         yield opened
@@ -363,22 +384,30 @@ def test_a_click_on_a_persons_chip_moves_the_view_to_where_they_point(room):
     )
 
 
-def test_two_guests_on_one_dataflow_each_see_one_chip_for_the_other_numbered_by_the_room(room):
-    """Two visitors with no account open an account's dataflow: each is signed
-    in to the one shared guest account, and the room numbers their tabs in the
-    order they came. Each guest's dock shows one chip, the other's, named and
-    colored by its number, and its Activity names both by theirs. The owner
-    never opens it, so the guests are the room."""
-    room.person(OWNER, "Dock Owner", owns=True)
+def test_two_guests_on_one_dataflow_each_see_one_chip_for_the_other_numbered_by_the_room(any_room):
+    """Two browsers with no account open one dataflow, and each is signed in to
+    the one shared guest account. With sign-in they are hosted guests watching
+    an account's dataflow, which the account never opens; with none, the
+    dataflow is the guest account's own, which every tab of that Curio owns.
+    The room numbers their tabs in the order they came. Each tab's dock shows
+    one chip, the other's, named and colored by its number, and its Activity
+    names both by theirs."""
+    room = any_room
+    if auth_enabled_env():
+        room.person(OWNER, "Dock Owner", owns=True)
+        role = "watcher"
+    else:
+        room.guests_dataflow()
+        role = "owner"
     first = room.guest()
-    room.open(first, "watcher")
+    room.open(first, role)
     second = room.guest()
-    room.open(second, "watcher")
+    room.open(second, role)
 
     for page, other, what in ((first, 2, "the first guest's dock"), (second, 1, "the second guest's dock")):
-        people = _wait_for_people(page, ["watcher"], what=what)
+        people = _wait_for_people(page, [role], what=what)
         assert [(person["label"], person["initials"]) for person in people] == [
-            (f"Shared Guest {other} (watcher)", f"S{other}"),
+            (f"Shared Guest {other} ({role})", f"S{other}"),
         ], f"{what} shows {people}"
         assert _chip_colors(page) == [NUMBER_COLORS[other]], f"{what}'s chip is not in its number's color"
 
@@ -386,6 +415,6 @@ def test_two_guests_on_one_dataflow_each_see_one_chip_for_the_other_numbered_by_
     activity = first.locator(ACTIVITY_LIST)
     activity.wait_for(timeout=10000)
     lines = activity.locator("li").all_inner_texts()
-    assert lines == ["Shared Guest 2 joined (watcher)", "Shared Guest 1 joined (watcher)"], (
+    assert lines == [f"Shared Guest 2 joined ({role})", f"Shared Guest 1 joined ({role})"], (
         f"the first guest's Activity lists {lines}"
     )
