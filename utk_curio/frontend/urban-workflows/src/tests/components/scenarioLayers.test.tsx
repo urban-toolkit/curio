@@ -249,10 +249,12 @@ describe("a stand-in edge", () => {
     );
     const path = document.querySelector("[data-scenario-stand-in]")!;
     const d = path.getAttribute("d")!;
-    // From the middle of pool's right side (no handle measured) to the port
-    // on the box's left edge, at the middle of a's card.
+    // From the middle of pool's right side (no handle measured) to the outer
+    // edge of the port on the box's left edge, at the middle of a's card,
+    // where its arrow points in.
     expect(d.startsWith("M -200 25 ")).toBe(true);
-    expect(d.endsWith(" 10 107")).toBe(true);
+    expect(d.endsWith(" 4 107")).toBe(true);
+    expect(path.getAttribute("marker-end")).toMatch(/^url\(#scenario-arrow-/);
   });
 
   test("leaves a collapsed group's box from the card of the node it leaves", () => {

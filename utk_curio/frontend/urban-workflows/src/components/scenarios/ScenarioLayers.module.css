@@ -72,6 +72,13 @@
   stroke-dasharray: 6 4;
 }
 
+.standInArrow {
+  fill: var(--curio-text-secondary);
+  stroke: var(--curio-text-secondary);
+  stroke-width: 1;
+  stroke-linejoin: round;
+}
+
 .frameHeader {
   position: absolute;
   display: flex;

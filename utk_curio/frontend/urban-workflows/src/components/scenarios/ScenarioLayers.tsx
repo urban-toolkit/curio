@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useId, useMemo, useRef, useState } from "react";
 import { internalsSymbol, useStore, type ReactFlowState } from "reactflow";
 
 import type { SharedKind } from "../../utils/scenarios/scenarioModel";
@@ -21,6 +21,8 @@ const GROUP_BOX_HEADER = 34;
 const CARD_HEIGHT = 58;
 const CARD_GAP = 8;
 const BOX_PAD = 10;
+/** Half a card's port, which sits on the box's edge. */
+const PORT_RADIUS = 6;
 /** Room a frame leaves around its scenario's nodes. */
 const FRAME_PAD = 18;
 /** How far below a shared node its scenario circles sit. */
@@ -138,6 +140,9 @@ export function ScenarioLayers({
   const internals = useStore(internalsOf);
   const [drag, setDrag] = useState<{ id: string; dx: number; dy: number } | null>(null);
   const dragStart = useRef<{ id: string; clientX: number; clientY: number; moved: boolean } | null>(null);
+  // A stand-in edge points the way the edge it stands in for runs, as React
+  // Flow's closed arrow does on every edge.
+  const arrowId = `scenario-arrow-${useId().replace(/:/g, "")}`;
 
   const boxes = useMemo(
     () =>
@@ -247,8 +252,9 @@ export function ScenarioLayers({
     if (!placed) return null;
     const row = placed.layout.rows.get(end.of);
     if (row === undefined) return null;
+    // An edge into a box ends at its port's outer edge, so its arrow shows.
     return {
-      x: placed.x + (end.port === "out" ? placed.layout.width : 0),
+      x: placed.x + (end.port === "out" ? placed.layout.width : -PORT_RADIUS),
       y: placed.y + row + CARD_HEIGHT / 2,
     };
   };
@@ -404,8 +410,28 @@ export function ScenarioLayers({
             />
           ))}
           <svg className={styles.edges}>
+            <defs>
+              <marker
+                id={arrowId}
+                viewBox="-10 -10 20 20"
+                markerWidth="12.5"
+                markerHeight="12.5"
+                refX="0"
+                refY="0"
+                orient="auto-start-reverse"
+                markerUnits="strokeWidth"
+              >
+                <polyline className={styles.standInArrow} points="-9,-5 0,0 -9,5 -9,-5" />
+              </marker>
+            </defs>
             {paths.map((p) => (
-              <path key={p.id} d={p.d} className={styles.standIn} data-scenario-stand-in="true" />
+              <path
+                key={p.id}
+                d={p.d}
+                className={styles.standIn}
+                markerEnd={`url(#${arrowId})`}
+                data-scenario-stand-in="true"
+              />
             ))}
           </svg>
         </div>
