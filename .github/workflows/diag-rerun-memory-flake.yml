@@ -1,0 +1,67 @@
+name: Diag rerun memory flake
+
+# Diagnostic only, on a tmp branch that is never merged. Replays #408's
+# dataflow inside main's CI images, on ubuntu-latest as the unit (sandbox)
+# job does, and records what the replay's sandbox keeps at rest
+# (.github/diag/rerun_memory_probe.py).
+on:
+  push:
+    branches: ["tmp/rerun-memory-probe"]
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { label: before1210, image: 691d18af155813e967c914aa5ec6d39202a2111e, variant: baseline, job: 1 }
+          - { label: with1210, image: fccfef99c1afd34bb2a1fcd31daa0c4fab560608, variant: baseline, job: 1 }
+          - { label: latest, image: a18707561b12afdc72ac779357a1bd5099516163, variant: baseline, job: 1 }
+          - { label: latest, image: a18707561b12afdc72ac779357a1bd5099516163, variant: baseline, job: 2 }
+          - { label: latest, image: a18707561b12afdc72ac779357a1bd5099516163, variant: launch, job: 1 }
+          - { label: latest, image: a18707561b12afdc72ac779357a1bd5099516163, variant: launch, job: 2 }
+          - { label: latest, image: a18707561b12afdc72ac779357a1bd5099516163, variant: arrow_system, job: 1 }
+          - { label: latest, image: a18707561b12afdc72ac779357a1bd5099516163, variant: arena16, job: 1 }
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull the image
+        run: docker pull --quiet "ghcr.io/urban-toolkit/curio-ci:${{ matrix.image }}"
+
+      - name: Machine and image
+        run: |
+          nproc; free -m; lscpu | grep -E "Model name|^CPU\(s\)"
+          docker run --rm "ghcr.io/urban-toolkit/curio-ci:${{ matrix.image }}" sh -c '
+            ldd --version | head -1
+            python -c "import pyarrow as pa; print(\"pyarrow\", pa.__version__, pa.default_memory_pool().backend_name)"
+            ARROW_DEFAULT_MEMORY_POOL=system python -c "import pyarrow as pa; print(\"with system:\", pa.default_memory_pool().backend_name)"
+            python -c "import pandas, numpy, geopandas, shapely, duckdb; print(pandas.__version__, numpy.__version__, geopandas.__version__, shapely.__version__, duckdb.__version__)"'
+
+      - name: Probe
+        run: |
+          mkdir -p out
+          docker run --rm -v "$GITHUB_WORKSPACE/.github/diag:/diag:ro" -v "$GITHUB_WORKSPACE/out:/out" \
+            -e CURIO_ISOLATION=off -e FLASK_USE_RELOADER=0 -e CURIO_LAUNCH_CWD=/app -w /app \
+            "ghcr.io/urban-toolkit/curio-ci:${{ matrix.image }}" \
+            python /diag/rerun_memory_probe.py --variant "${{ matrix.variant }}" --label "${{ matrix.label }}" \
+              --samples 3 --cycles 10 --out "/out/${{ matrix.label }}-${{ matrix.variant }}-${{ matrix.job }}.json" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: probe-${{ matrix.label }}-${{ matrix.variant }}-${{ matrix.job }}
+          path: out
+          retention-days: 7
