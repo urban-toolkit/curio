@@ -409,15 +409,25 @@ class Worker:
     def _proposals(self, project_id: str | None, attachment_id: str | None, body: dict) -> list[dict]:
         """What the run proposed, as its dataflow keeps each proposal for
         review (its code or spec, its widgets, its plan), else as its reply's
-        cards show them."""
+        cards show them. The dataflow is the run's own, so every attachment's
+        proposals are the run's: a node's content written by a delegate waits
+        for review on that node's agent, not on the chat's."""
         found: list = []
         if project_id and attachment_id:
             _, project = self._json("GET", f"/api/projects/{project_id}")
             spec = project.get("spec") if isinstance(project.get("spec"), dict) else {}
-            record = attachments.get_attachment(spec, attachment_id) or {}
-            found = [record.get("planProposal"), record.get("activeProposal"), *(record.get("queuedProposals") or [])]
-        kept = [{key: _clip(value) for key, value in proposal.items() if key not in _BOOKKEEPING}
-                for proposal in found if isinstance(proposal, dict)]
+            for record in attachments.list_attachments(spec):
+                found += [record.get("planProposal"), record.get("activeProposal"),
+                          *(record.get("queuedProposals") or [])]
+        seen: set = set()
+        kept = []
+        for proposal in found:
+            if not isinstance(proposal, dict) or proposal.get("status") == "superseded":
+                continue
+            if proposal.get("proposalId") in seen:
+                continue
+            seen.add(proposal.get("proposalId"))
+            kept.append({key: _clip(value) for key, value in proposal.items() if key not in _BOOKKEEPING})
         if kept:
             return kept
         return [{"tool": part.get("tool"), "summary": part.get("summary"), "content": _clip(part.get("preview"))}
@@ -428,7 +438,9 @@ class Worker:
         _write(folder / "outputs" / "proposals.json", scrub(proposals, values=self.secrets))
 
     def _calls(self, folder: Path) -> list[dict]:
-        """The tools the run called, from its turn's record in the transcript."""
+        """The tools the run called, from its turn's record in the transcript,
+        but skill.read: a run without the skill seldom calls it, so the grader
+        is not shown it, and judges the answer blind to its condition."""
         try:
             turns = json.loads((folder / "transcript.json").read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -436,7 +448,8 @@ class Worker:
         execution = next((turn.get("execution") for turn in reversed(turns)
                           if isinstance(turn, dict) and isinstance(turn.get("execution"), dict)), {})
         return [{"tool": call.get("tool"), "status": call.get("status")}
-                for call in execution.get("toolCalls") or [] if isinstance(call, dict)]
+                for call in execution.get("toolCalls") or []
+                if isinstance(call, dict) and call.get("tool") != skill_runs.TOOL]
 
     def _grade(self, task: skill_evals.Task, body: dict, proposals: list[dict]) -> dict:
         folder = self.results / task.path
