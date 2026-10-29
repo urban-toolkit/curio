@@ -25,15 +25,23 @@ describe("attachAgentOnDrop", () => {
     expect(attach).toHaveBeenCalledWith("proj-9", "agent.test.x@1", { kind: "node", targetId: "n1" });
   });
 
-  it("an invited editor's drop on a node or a connection attaches with nothing made or waited for", async () => {
+  it("an invited editor's drop on a node or a connection makes nothing, and waits for the editor's last change", async () => {
     // The editor's tab makes no dataflow: its canvas is bound to the
-    // dataflow's doc on the server, which the attach reads.
+    // dataflow's doc on the server, which the attach reads, so the node the
+    // editor just added reaches the server first, as the owner's does.
     for (const target of [
       { kind: "node" as const, targetId: "n1" },
       { kind: "connection" as const, targetId: "e1" },
     ]) {
+      const calls: string[] = [];
       const keepDataflow = jest.fn(async () => "owners-proj");
-      const attach = jest.fn(async () => undefined);
+      const whenKept = jest.fn(async () => {
+        calls.push("kept");
+        return true;
+      });
+      const attach = jest.fn(async () => {
+        calls.push("attach");
+      });
       await attachAgentOnDrop({
         projectId: "owners-proj",
         target,
@@ -41,10 +49,28 @@ describe("attachAgentOnDrop", () => {
         keepDataflow,
         attach,
         savesHere: false,
+        whenKept,
       });
       expect(keepDataflow).not.toHaveBeenCalled();
+      expect(calls).toEqual(["kept", "attach"]);
       expect(attach).toHaveBeenCalledWith("owners-proj", "agent.test.x@1", target);
     }
+  });
+
+  it("an invited editor's drop on the canvas waits for nothing", async () => {
+    const whenKept = jest.fn(async () => true);
+    const attach = jest.fn(async () => undefined);
+    await attachAgentOnDrop({
+      projectId: "owners-proj",
+      target: { kind: "canvas" },
+      agentCoord: "agent.test.x@1",
+      keepDataflow: jest.fn(),
+      attach,
+      savesHere: false,
+      whenKept,
+    });
+    expect(whenKept).not.toHaveBeenCalled();
+    expect(attach).toHaveBeenCalledWith("owners-proj", "agent.test.x@1", { kind: "canvas" });
   });
 
   it("attaches to a node of a never-saved project using the id of the dataflow made for it", async () => {
@@ -121,6 +147,8 @@ describe("attachAgentOnDrop", () => {
   it("is handed the canvas's wait for the server, never a save", () => {
     const src = fs.readFileSync(path.resolve(__dirname, "../../components/MainCanvas.tsx"), "utf8");
     expect(src).toMatch(/attachAgentOnDrop\(\{[^}]*\bkeepDataflow:\s*ensureProjectId\b[^}]*\}\)/);
+    // An editor's drop waits for the editor's last change the same way.
+    expect(src).toMatch(/attachAgentOnDrop\(\{[^}]*\bwhenKept:\s*whenChangesKept\b[^}]*\}\)/);
     expect(src).not.toMatch(/requestProjectSave/);
   });
 });

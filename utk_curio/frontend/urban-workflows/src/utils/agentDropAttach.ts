@@ -25,8 +25,11 @@ export interface AgentDropAttachDeps {
   /** Whether this is the owner's tab, whose drop waits for `keepDataflow`.
    * An editor the owner invited makes no dataflow and records nothing: the
    * editor's canvas is bound to the dataflow's doc on the server, which the
-   * attach reads, so the editor attaches at once. */
+   * attach reads, so the editor's drop waits for `whenKept` alone. */
   savesHere?: boolean;
+  /** Resolves once the server has every change this tab made (the editor's
+   *  wait), or gives up after a moment (`FlowProvider.whenChangesKept`). */
+  whenKept?: () => Promise<unknown>;
 }
 
 /**
@@ -50,6 +53,10 @@ export async function attachAgentOnDrop(deps: AgentDropAttachDeps): Promise<{ ta
     // The just-dropped-on element reaches the server before the attach is
     // checked against the dataflow. Also covers a never-saved one (made now).
     projectId = (await deps.keepDataflow()) ?? projectId;
+  } else if (keepsFirst) {
+    // An editor's own change (a node just added, a connection just drawn)
+    // reaches the server the same way, through the doc.
+    await deps.whenKept?.();
   }
   if (!projectId) {
     throw new Error("Save the project before attaching an agent.");

@@ -129,7 +129,9 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
 
   // The drawer is *per-project*: Install/Uninstall write to the current
   // project's lockfile (see docs/NODE-CATALOG.md).
-  const { projectId, projectName, packages: projectPackages, ensureProjectId: keepDataflow, projectDirty, nodes } = useFlowContext();
+  const {
+    projectId, projectName, packages: projectPackages, ensureProjectId: keepDataflow, projectDirty, whenChangesKept, nodes,
+  } = useFlowContext();
   const { showToast } = useToastContext();
   const hostedGuest = useHostedGuest();
 
@@ -594,6 +596,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
           pkg={detailPkg}
           isPublished={catalogPublishedDirs.has(detailPkg.dirName)}
           unsavedChanges={projectDirty}
+          whenChangesKept={whenChangesKept}
           onClose={() => setDetailPkg(null)}
         />
       ) : null}

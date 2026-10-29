@@ -130,6 +130,7 @@ export function MainCanvas() {
         markDirty,
         requestAutoRun,
         ensureProjectId,
+        whenChangesKept,
         notebookOn,
         notebookContentHeight,
         setNotebookPane,
@@ -619,9 +620,10 @@ export function MainCanvas() {
                 attach: (pid, coord, t) => agentsApi.attach(pid, coord, t),
                 // A hosted guest's drop that would save says to sign in.
                 hostedGuest,
-                // An invited editor's tab makes no dataflow: the server's doc
-                // already holds what the editor dropped on.
+                // An invited editor's tab makes no dataflow: it waits for the
+                // server to have what the editor changed, then attaches.
                 savesHere: viewerMode !== "shared",
+                whenKept: whenChangesKept,
             })
                 .then(() => {
                     notifyAgentDockRefresh();
@@ -638,7 +640,7 @@ export function MainCanvas() {
         const position = dropPosition(event);
         revealCreated(createCodeNode(type, { position }));
         markDirty();
-    }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleFileCanvasDrop, handleModelCanvasDrop, handlePackageCardCanvasDrop, handleScenarioCanvasDrop, projectId, showToast, ensureProjectId, reactFlow, hostedGuest, viewerMode]);
+    }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleFileCanvasDrop, handleModelCanvasDrop, handlePackageCardCanvasDrop, handleScenarioCanvasDrop, projectId, showToast, ensureProjectId, whenChangesKept, reactFlow, hostedGuest, viewerMode]);
 
     // The Delete key reaches these through React Flow, which sends the
     // selected edges plus every edge attached to a deleted node first, then

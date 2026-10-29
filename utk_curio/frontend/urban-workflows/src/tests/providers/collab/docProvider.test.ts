@@ -322,6 +322,64 @@ test("a kept message saying the server lost this tab's sync starts the sync agai
     server.take(update, { ok: true, queued: true });
     socket.deliver(KEPT, { projectId: PROJECT, answered: 1, kept: {}, refused: { not_synced: 1 } });
 
-    expect(socket.messages().map(kindOf).filter((kind) => kind === "step1")).toHaveLength(2);
+    const starts = socket.messages().filter((m) => kindOf(m) === "step1");
+    expect(starts).toHaveLength(2);
+    // The change is the server's only once the new sync has carried it.
+    expect(provider.isKept()).toBe(false);
+    server.start(socket, starts[1]);
+    for (const step2 of socket.messages().filter((m) => kindOf(m) === "step2").slice(1)) server.take(step2);
     expect(provider.isKept()).toBe(true);
+});
+
+test("a change the socket dropped unanswered is not kept until the next sync has carried it", async () => {
+    const server = new FakeServer(DATAFLOW);
+    const { socket, provider } = syncedTab(server);
+
+    typeInto(provider.doc, "# dropped\n");
+    expect(socket.messages().filter((m) => kindOf(m) === "update")).toHaveLength(1);
+    // The socket drops before the server answers: the change may never have
+    // reached it, so closing the tab must still ask.
+    socket.connected = false;
+    provider.detach();
+    expect(provider.isKept()).toBe(false);
+
+    // The room joins the tab again on a new socket, whose sync carries what
+    // the server lacks of this tab's changes.
+    const again = new FakeSocket();
+    provider.attach(again);
+    const kept = provider.whenKept(1000);
+    expect(provider.isKept()).toBe(false);
+    server.start(again, again.messages()[0]);
+    const carried = again.messages().filter((m) => kindOf(m) === "step2");
+    expect(carried).toHaveLength(1);
+    expect(provider.isKept()).toBe(false);
+    server.take(carried[0]);
+
+    await expect(kept).resolves.toBe(true);
+    expect(docToDataflow(server.doc).nodes[0].content).toBe("# dropped\nx = 1\n");
+});
+
+test("a change the server took before the socket dropped is kept once the next sync is answered", () => {
+    const server = new FakeServer(DATAFLOW);
+    const { socket, provider } = syncedTab(server);
+
+    typeInto(provider.doc, "# taken\n");
+    const [update] = socket.messages().filter((m) => kindOf(m) === "update");
+    // The server applies it, but its answer is lost with the socket.
+    const decoder = decoding.createDecoder(update.payload.message);
+    decoding.readVarUint(decoder);
+    syncProtocol.readSyncMessage(decoder, encoding.createEncoder(), server.doc, "tab");
+    socket.connected = false;
+    provider.detach();
+    expect(provider.isKept()).toBe(false);
+
+    const again = new FakeSocket();
+    provider.attach(again);
+    server.start(again, again.messages()[0]);
+    expect(provider.isKept()).toBe(false);
+    for (const step2 of again.messages().filter((m) => kindOf(m) === "step2")) server.take(step2);
+
+    // Nothing was missing: the change is kept, and the server holds it once.
+    expect(provider.isKept()).toBe(true);
+    expect(docToDataflow(server.doc).nodes[0].content).toBe("# taken\nx = 1\n");
 });

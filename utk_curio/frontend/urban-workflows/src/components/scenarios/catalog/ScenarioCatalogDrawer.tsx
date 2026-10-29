@@ -240,6 +240,7 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
           scenarioId={detailScenario.id}
           fallbackScenario={detailScenario}
           unsavedChanges={projectDirty}
+          whenChangesKept={whenChangesKept}
           onLeave={onRequestClose}
           onClose={closeScenarioDetails}
         />

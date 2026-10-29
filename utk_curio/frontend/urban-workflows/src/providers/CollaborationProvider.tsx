@@ -5,7 +5,8 @@
  * ``projectPackagesStore.subscribe``, opening one socket per project id once a
  * tab is signed in, emitting ``join_session`` on connect, and tearing the
  * socket down when the user navigates to a different project (or away from
- * the canvas). Every backend serves the socket: the dataflow's Yjs doc
+ * the canvas), once the server has the tab's last change on it. Every backend
+ * serves the socket: the dataflow's Yjs doc
  * travels on it (``collab/docProvider.ts``), whatever ``--collab`` says. With
  * ``enable_collab=false`` from ``/api/config/public`` the room's own controls,
  * the people panel and its button, stay hidden (``enabled``).
@@ -49,7 +50,7 @@ import {
 import { backendUrl } from "../utils/backendUrl";
 import { collabSocketTarget } from "../utils/collabSocketTarget";
 import { roleIn, writesDoc, type RoomRole } from "./collab/participants";
-import { DataflowDocProvider } from "./collab/docProvider";
+import { DataflowDocProvider, KEPT_WAIT_MS } from "./collab/docProvider";
 import { CONNECTION_DROPPED_EVENT, DataflowDocContext, type DocBinding } from "./collab/docContext";
 import { HISTORY_CHANGED_EVENT } from "./history/serverHistory";
 import { remoteCursorStyle } from "./collab/presence";
@@ -59,6 +60,38 @@ export type { RoomRole } from "./collab/participants";
 const BACKEND_URL = backendUrl();
 // The backend's --collab-namespace, until /api/config/public reports it.
 const DEFAULT_NAMESPACE = "/collab";
+
+/**
+ * Close *socket* and drop *provider*, the doc this tab held on it, once the
+ * server has every change the tab sent (at most `KEPT_WAIT_MS`): a leave that
+ * asked nothing, the browser's Back among them, never drops a change still on
+ * its way, which the server refuses once its socket has gone. Meanwhile the
+ * socket listens for nothing but the doc's answers: the room is the tab's no
+ * more.
+ */
+function retire(socket: Socket | null, provider: DataflowDocProvider | null): void {
+    const close = () => {
+        provider?.destroy();
+        if (!socket) return;
+        try {
+            socket.removeAllListeners();
+            socket.disconnect();
+        } catch {
+            /* socket already gone */
+        }
+    };
+    if (!socket || !provider || !socket.connected || provider.isKept()) {
+        close();
+        return;
+    }
+    try {
+        socket.removeAllListeners();
+    } catch {
+        /* socket already gone */
+    }
+    provider.listenAgain();
+    void provider.whenKept(KEPT_WAIT_MS).then(close, close);
+}
 /** The style element that colors everyone else's cursor in the code editors. */
 const CURSOR_STYLE_ID = "curio-remote-cursors";
 
@@ -276,22 +309,17 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
 
     const closeSocket = useCallback(() => {
         const s = socketRef.current;
-        if (s) {
-            try {
-                s.removeAllListeners();
-                s.disconnect();
-            } catch {
-                /* socket already gone */
-            }
-        }
+        const provider = docProviderRef.current;
         socketRef.current = null;
-        dropDoc();
+        docProviderRef.current = null;
+        setDocBinding(null);
+        retire(s, provider);
         setConnected(false);
         setParticipantId(null);
         setUsers([]);
         setLockedNodes({});
         setActivity([]);
-    }, [dropDoc]);
+    }, []);
 
     const installSocketListeners = useCallback(
         (socket: Socket) => {
@@ -427,9 +455,10 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
 
     // Follow the current project once the namespace is known. On every
     // project change close the socket and reconnect with the new room.
-    // Closing is the whole story - the backend's ``disconnect`` handler
-    // releases this sid's locks, emits ``user_left`` to the old room and
-    // clears its presence in the doc, so there is nothing to send first.
+    // Closing waits only for the server to have this tab's last change
+    // (``retire``); the backend's ``disconnect`` handler then releases this
+    // sid's locks, emits ``user_left`` to the old room and clears its
+    // presence in the doc, so there is nothing else to send first.
     useEffect(() => {
         if (!configLoaded) return;
         const reconcile = () => {
