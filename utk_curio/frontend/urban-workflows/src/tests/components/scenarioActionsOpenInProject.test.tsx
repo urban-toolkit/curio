@@ -149,9 +149,9 @@ describe("the scenario commands open the In project tab", () => {
     await expectInProjectOpen();
   });
 
-  test("Duplicate scenario copies it into its set and opens the copy at Name & set", async () => {
+  test("Duplicate scenario copies it into its set, with its context and no outcomes, and opens the copy at Name & set", async () => {
     const original = {
-      id: "s1", name: "Doubled", color: "#2a9d8f", nodes: ["scale"], set: "park", context: ["load"], outcomes: [],
+      id: "s1", name: "Doubled", color: "#2a9d8f", nodes: ["scale"], set: "park", context: ["load"], outcomes: ["chart"],
     };
     mockFlow.scenarios = [original];
     mockFlow.scenarioSets = [{ id: "park", name: "Heights" }];

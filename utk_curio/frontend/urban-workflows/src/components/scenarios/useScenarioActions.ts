@@ -155,10 +155,13 @@ export function useScenarioActions() {
 
   /**
    * Duplicate scenario: its own nodes copied below them, made a scenario of
-   * the same set with the next color and the same shared context and
-   * outcomes, which the define panel then opens on, at Name & set, to be
+   * the same set with the next color and the same shared context, which the
+   * define panel then opens on, at Name & set, to be
    * named, recolored or put in another set. A collapsed scenario stays
    * collapsed, and so does its copy, its box just below the original's.
+   * The copy reads what the original reads but feeds nothing (its outputs
+   * are left unwired), so it has no shared outcomes until they are wired and
+   * added.
    */
   const duplicateScenario = useCallback(
     (id: string) => {
@@ -181,7 +184,7 @@ export function useScenarioActions() {
         nodes: scenario.nodes.map((n) => ids.get(n)).filter((n): n is string => Boolean(n)),
         ...(scenario.set ? { set: scenario.set } : {}),
         ...(scenario.context ? { context: [...scenario.context] } : {}),
-        ...(scenario.outcomes ? { outcomes: [...scenario.outcomes] } : {}),
+        outcomes: [],
         ...(box ? { collapsed: true, box } : {}),
       };
       setScenarios([...scenarios, twin]);

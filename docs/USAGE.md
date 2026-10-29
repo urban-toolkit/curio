@@ -815,9 +815,10 @@ To make one:
 To build an alternative, click **Duplicate scenario** on the scenario's card in
 the **In project** tab. Its nodes are copied below themselves with the edges
 between them, and every edge entering them feeds the copy too. The copy becomes
-a scenario of the same set, with the next color and the same shared context and
-outcomes, and the define panel opens on it at **Name & set**: rename it, recolor
-it, or put it in another set. **View → Duplicate selection** copies the selected
+a scenario of the same set, with the next color and the same shared context, and
+the define panel opens on it at **Name & set**: rename it, recolor
+it, or put it in another set. Nothing reads the copy yet, so it has no shared
+outcomes: wire its outputs into a comparison and add them there. **View → Duplicate selection** copies the selected
 nodes without making a scenario.
 
 Then change the copy's nodes: a widget value, a line of code. Each copy remembers
