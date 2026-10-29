@@ -18,7 +18,7 @@ import {
     useReactFlow,
 } from "reactflow";
 import { useProvenanceContext } from "../providers/ProvenanceProvider";
-import { setServerHistory } from "../providers/history/serverHistory";
+import { noteSaved, setServerHistory } from "../providers/history/serverHistory";
 import { useToastContext } from "../providers/ToastProvider";
 import { useUserContext } from "../providers/UserProvider";
 import { isHostedGuest } from "../components/apiSettings/useHostedGuest";
@@ -26,8 +26,7 @@ import { DEFAULT_WORKFLOW_NAME } from "../constants";
 import { updateNodeData, updateNodesByMap, updateEdgesByMap, extractNodeFieldMap, extractKeywordMaps } from "../utils/flowNodeUtils";
 import { fitViewWithMenuOffset } from "../utils/fitViewWithMenuOffset";
 import { TrillGenerator } from "../TrillGenerator";
-import { projectsApi, OutputRef, DatasetInstallWarning } from "../api/projectsApi";
-import { nextSaveOrder } from "../api/saveOrder";
+import { projectsApi, OutputRef, DatasetInstallWarning, type ProjectDetail, type TileLayout } from "../api/projectsApi";
 import type { DataflowCategories, HandCategories } from "../utils/dataflowCategories";
 import { normalizeScenarios, type Scenario } from "../utils/scenarios/scenarioModel";
 import { buildSaveableLiveOutputs } from "../utils/saveOutputDataset";
@@ -90,24 +89,46 @@ export interface WorkflowOperationsDeps {
     defaultSaveOutputDataset: boolean;
     /**
      * The canvas's binding to the dataflow's doc (`useDataflowDoc`), which
-     * FlowProvider fills once the bridge exists. A bound canvas's save sends
-     * its outputs, never the dataflow, which the doc keeps, nor its history,
-     * which the server keeps.
+     * FlowProvider fills once the bridge exists. No tab saves a dataflow it
+     * is bound to: the doc keeps each change as it is made, and the server
+     * the history.
      */
     docBridgeRef?: React.MutableRefObject<DocBridgeForSaves | null>;
+    /** Records now the outputs a run left waiting to be recorded
+     *  (`useInstallSave`), and resolves once they are. */
+    flushOutputsRef?: React.MutableRefObject<() => Promise<void> | void>;
+    /** Records, a moment later, the outputs a pinned tile or a scenario reads
+     *  (`useDashboardPinSave`). */
+    recordSourcesRef?: React.MutableRefObject<() => void>;
 }
 
-/** What a save asks the canvas's binding to the dataflow's doc. */
+/** What the canvas asks its binding to the dataflow's doc. */
 export interface DocBridgeForSaves {
     bound(): boolean;
+    /** Resolves true once the canvas is bound to the doc, false when it is
+     *  not within *timeoutMs*, and false at once for a canvas that binds to
+     *  none (the dashboard's). */
+    whenBound(timeoutMs?: number): Promise<boolean>;
     whenKept(): Promise<boolean>;
+    /** The canvas as the doc would hold it now: what a new dataflow is made
+     *  from, so its bind writes only what changed after. */
+    canvasNow(): Record<string, any>;
 }
+
+/** What File > Save says when the server cannot be reached to keep the
+ *  dataflow's changes. */
+export const SAVE_OFFLINE_MESSAGE =
+    "Curio cannot reach the server right now. Your changes stay on this page and are sent as soon as it can.";
 
 /** The dataflow the canvas was built from or saved as, on which load. */
 export interface LoadedDataflow {
     epoch: number;
     projectId: string | null;
     dataflow: any;
+    /** The canvas as its doc would hold it when the dataflow was made from
+     *  it (a never-saved canvas's first save, Save a copy): its bind writes
+     *  what the canvas changed after. */
+    canvas?: any;
 }
 
 export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
@@ -148,10 +169,19 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // The hand-set categories (``dataflow.categories``), saved with the dataflow,
     // read through a ref for the same reason as the goal. ``serverCategories`` is
     // the source and the automatic ones, which only the server computes: set from
-    // each load and each save's response, so they change when the dataflow saves.
+    // each load and each answer that carries them (a create, File > Save, a
+    // record of outputs), and asked again as the dataflow changes
+    // (useCategoriesRefresh). Each answer taken is counted, so an answer that
+    // a newer one overtook is dropped.
     const [workflowCategories, setWorkflowCategoriesState] = useState<HandCategories>({});
     const workflowCategoriesRef = useRef<HandCategories>({});
-    const [serverCategories, setServerCategories] = useState<DataflowCategories>({});
+    const [serverCategories, setServerCategoriesState] = useState<DataflowCategories>({});
+    const categoriesTakenRef = useRef(0);
+    const setServerCategories = useCallback((categories: DataflowCategories) => {
+        categoriesTakenRef.current += 1;
+        setServerCategoriesState(categories);
+    }, []);
+    const categoriesTaken = useCallback(() => categoriesTakenRef.current, []);
     // #662: the dataflow's scenarios (``dataflow.scenarios``), saved with it and
     // read through a ref, as the categories are. TrillGenerator holds a copy so
     // a version snapshot carries them.
@@ -167,9 +197,9 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // This component subscribes so save callers see fresh state.
     const [packages, setPackagesState] = useState<string[]>(getCurrentProjectPackagesList());
     const [dataflowDatasets, setDataflowDatasets] = useState<any[]>([]);
-    // Keep a ref that's always in sync so saveCurrentProject never reads a
-    // stale closure value (important: set during render, not in a useEffect,
-    // so it's always the value from the most recent completed render).
+    // Keep a ref that's always in sync so a create never reads a stale
+    // closure value (important: set during render, not in a useEffect, so
+    // it's always the value from the most recent completed render).
     const dataflowDatasetsRef = useRef<any[]>([]);
     dataflowDatasetsRef.current = dataflowDatasets;
     // In-flight dataset installs, surfaced as "Adding…" placeholders in the
@@ -211,22 +241,24 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
 
     // Project state
     const [projectId, setProjectId] = useState<string | null>(null);
-    // Mirror projectId in a ref so saveCurrentProject can decide create-vs-update
-    // from the *live* id, not a stale closure: after a create sets projectId, a
-    // follow-up save in the same async flow (e.g. a serialized install save) would
-    // otherwise still see ``null`` and POST a second project. Synced on render and
-    // set explicitly the instant a create resolves (below).
+    // Mirror projectId in a ref so a caller decides whether to create from the
+    // *live* id, not a stale closure: after a create sets projectId, a
+    // follow-up action in the same async flow (an outputs record) would
+    // otherwise still see ``null`` and POST a second project. Synced on render
+    // and set explicitly the instant a create resolves (below).
     const projectIdRef = useRef<string | null>(null);
     projectIdRef.current = projectId;
     const [projectName, setProjectName] = useState<string>("");
-    // Same treatment for the name (#270). A save queued behind an in-flight
-    // one - the 500 ms install-sync save landing after a manual save - ran a
-    // ``saveCurrentProject`` closed over the name as it was when the chain was
-    // built, and PUT the pre-rename name back over the one the user had just
-    // saved. Synced on render, and pinned synchronously by ``renameDataflow``.
+    // Same treatment for the name (#270): a create reads the name as it is
+    // when it leaves, never as it was when its caller's closure was made.
+    // Synced on render, and pinned synchronously by ``renameDataflow``.
     const projectNameRef = useRef<string>("");
     projectNameRef.current = projectName;
     const [projectDirty, setProjectDirty] = useState<boolean>(false);
+    // Mirrored for an action in the tick an edit was made in. Synced on
+    // render, and set the moment an edit marks it.
+    const projectDirtyRef = useRef<boolean>(false);
+    projectDirtyRef.current = projectDirty;
     const [projectSavedAt, setProjectSavedAt] = useState<Date | null>(null);
     const [nodeExecStatus, setNodeExecStatus] = useState<Record<string, "stale" | "executed" | "errored">>({});
     const [viewerMode, setViewerMode] = useState<"owner" | "shared">("owner");
@@ -234,8 +266,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // True only while ``loadParsedTrill`` replays a persisted dataflow onto the
     // canvas. That replay drives the very same ``onConnect`` a user drag does -
     // once per edge - and onConnect marks the project dirty, so a dataflow with
-    // even one edge came back from disk already reading "Unsaved changes" and
-    // the 30s auto-save below then rewrote it for nothing (#229).
+    // even one edge came back from disk already reading "Unsaved changes" (#229).
     //
     // A ref, not state: the replay runs inside a ``setNodes`` updater and has to
     // read this synchronously. Deliberately NOT a timer or a settle window - it
@@ -243,24 +274,30 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // made a millisecond after the load still marks the dataflow dirty.
     const hydratingRef = useRef(false);
 
-    // Bumped by every edit. A save captures it before its request and clears the
-    // dirty flag on return only if it has not moved (#270).
-    //
-    // Without that check the flag was cleared by whichever save happened to
-    // return last, including one whose request predated the edit. The edit was
-    // then live in the client and absent from disk while the UI said "saved":
-    // the 30s auto-save stands down (it is gated on ``projectDirty``), the
-    // beforeunload guard unbinds, and the in-app leave guard stops prompting -
-    // so the next navigation dropped the change with no warning. A rename is
-    // the way it was reported, but a node or code edit made mid-save was lost
-    // the same way, which is why this counts edits rather than watching the
-    // name.
+    // Bumped by every edit. A create captures it before its request and clears
+    // the dirty flag on return only if it has not moved (#270): an edit made
+    // while it was out is not in what it sent, so the dataflow stays Unsaved,
+    // with its leave question, until the bind writes that edit into the doc.
     const dirtyGenerationRef = useRef(0);
 
+    // Only a canvas bound to no doc holds unsaved changes: a dataflow not
+    // saved yet, or a hosted guest's own canvas. The doc keeps each change a
+    // bound canvas makes, as it is made.
     const markDirty = useCallback(() => {
         if (hydratingRef.current) return;
+        if (deps.docBridgeRef?.current?.bound()) return;
         dirtyGenerationRef.current += 1;
+        projectDirtyRef.current = true;
         setProjectDirty(true);
+    }, []);
+
+    /** The canvas bound to its dataflow's doc, which now holds what the canvas
+     *  changed before (`useDataflowDoc` writes it with the bind). */
+    const noteBound = useCallback(() => {
+        dirtyGenerationRef.current += 1;
+        projectDirtyRef.current = false;
+        setProjectDirty(false);
+        setProjectSavedAt(new Date());
     }, []);
 
     /** Run *apply*, a change the dataflow's doc brought to this canvas, with
@@ -279,12 +316,13 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // each: the doc's first sync on it applies what the doc changed since
     // (useDataflowDoc). Leaving a dataflow notes none.
     const loadedDataflowRef = useRef<LoadedDataflow | null>(null);
-    const noteLoadedDataflow = useCallback((dataflow: any, projectIdOfIt?: string | null) => {
+    const noteLoadedDataflow = useCallback((dataflow: any, projectIdOfIt?: string | null, canvas?: any) => {
         loadedDataflowRef.current = {
             epoch: (loadedDataflowRef.current?.epoch ?? 0) + 1,
             // A load's dataflow is the one the route opened.
             projectId: projectIdOfIt !== undefined ? projectIdOfIt : (getCurrentProjectId() ?? null),
             dataflow,
+            ...(canvas ? { canvas } : {}),
         };
     }, []);
 
@@ -305,9 +343,12 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         TrillGenerator.scenarios = next;
         setScenariosState(next);
     }, []);
+    // A scenario's context and outcomes are saved to the Data Catalog, as a
+    // pinned tile's sources are (#662).
     const setScenarios = useCallback((next: Scenario[]) => {
         setScenariosQuietly(next);
         markDirty();
+        deps.recordSourcesRef?.current?.();
     }, [setScenariosQuietly, markDirty]);
 
     // And the auto-run toggle.
@@ -343,17 +384,6 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         if ("packages" in fields && Array.isArray(fields.packages)) setPackages(fields.packages);
         if ("datasets" in fields) setDataflowDatasets(Array.isArray(fields.datasets) ? fields.datasets : []);
     }, [setWorkflowName, setWorkflowDescription, setWorkflowCategories, setAutoRunQuietly, setScenariosQuietly, setPackages]);
-
-    // beforeunload guard
-    useEffect(() => {
-        if (!projectDirty) return;
-        const handler = (e: BeforeUnloadEvent) => {
-            e.preventDefault();
-            e.returnValue = "";
-        };
-        window.addEventListener("beforeunload", handler);
-        return () => window.removeEventListener("beforeunload", handler);
-    }, [projectDirty]);
 
     // ---------------------------------------------------------------------------
     // Effects
@@ -966,14 +996,22 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // The dataflow's name is stored twice: in ``spec.dataflow.name``, which the
     // canvas title renders, and in the project row's ``name``, which the Projects
     // list renders. #230: the canvas rename wrote only ``workflowName`` (the spec
-    // side), while ``saveCurrentProject`` sends ``projectName`` - so the save
-    // faithfully re-sent the name the dataflow was loaded under and the Projects
-    // card never moved. One entry point keeps both in step.
+    // side), while a save sent ``projectName`` - so the save faithfully re-sent
+    // the name the dataflow was loaded under and the Projects card never moved.
+    // One entry point keeps both in step.
     //
     // Deliberately NOT solved by flipping the ``||`` precedence below:
     // ``loadParsedTrill`` also calls ``setWorkflowName``, so preferring the canvas
     // name there would make File -> Load into an open project silently rename it.
     //
+    /** The project row's name, sent alone, as the Projects page's rename sends it. */
+    const sendRowName = useCallback((id: string, name: string) => {
+        projectsApi.update(id, { name }).then(
+            (detail) => setServerCategories(detail?.categories ?? {}),
+            (err) => showToast((err as Error)?.message || "Could not rename the dataflow.", "error"),
+        );
+    }, [showToast]);
+
     // Returns false for a blank entry so the caller can restore the old title.
     const renameDataflow = useCallback((rawName: string): boolean => {
         const next = rawName.trim();
@@ -981,21 +1019,29 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setWorkflowName(next);
         projectNameRef.current = next;
         setProjectName(next);
-        // A rename diverges from disk like any other edit. Nothing said so before,
-        // which went unnoticed only because the phantom dirty flag of #229 was
-        // masking it.
+        // A rename is an edit like any other: Unsaved on a canvas bound to no
+        // doc, and kept by the doc on a bound one.
         markDirty();
+        // The doc holds the dataflow's name (a canvas not bound yet writes it
+        // with the bind), and the project row the one the Projects page lists,
+        // which no doc writes: the owner's rename sends it there too, as the
+        // Projects page's rename does. A rename while the create is out goes
+        // there once the create has made the row (createDataflow). An invited
+        // editor's tab, bound to the owner's dataflow, renames it through the
+        // editors' route.
+        const id = projectIdRef.current;
+        if (id && viewerMode === "owner") {
+            sendRowName(id, next);
+        } else if (viewerMode === "shared" && deps.docBridgeRef?.current?.bound()) {
+            const shared = getCurrentProjectId();
+            if (shared) {
+                projectsApi.renameShared(shared, next).catch(
+                    (err) => showToast((err as Error)?.message || "Could not rename the dataflow.", "error"),
+                );
+            }
+        }
         return true;
-    }, [setWorkflowName, markDirty]);
-
-    // The spec revision this canvas last synced with (memo dev/124): set when a
-    // project is loaded and re-set from every save's own response. It is sent
-    // with a save so the server can refuse one that would delete a node, an
-    // edge or a node's code written since -- an agent apply, a Solve wave, an
-    // install -- which a canvas cannot see and would otherwise overwrite. A
-    // stale basis alone is never refused, so this does not need updating from
-    // every endpoint that writes the spec; only from the two points that sync.
-    const baseRevisionRef = useRef<number | null>(null);
+    }, [setWorkflowName, markDirty, viewerMode, sendRowName, showToast]);
 
     /**
      * A route load that has not delivered an id yet, or ``null`` when there is
@@ -1006,9 +1052,9 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
      * that has loaded, and one that genuinely has no id because it has never
      * been saved (``/dataflow/new`` leaves the store's project id undefined,
      * which is what tells the two apart). Awaiting a resolved promise still
-     * costs a microtask, and the request would no longer leave in the tick its
-     * caller ran in: ``requestProjectSave`` chains on that, and two saves
-     * queued in one tick would each see an idle chain and race.
+     * costs a microtask, and the create would no longer leave in the tick its
+     * caller ran in: two callers in one tick share one create only because
+     * the first one's is already out.
      *
      * The promise rejects rather than letting the caller create when the load
      * settles without an id: a 404 that fell through to the shared endpoint, a
@@ -1028,163 +1074,60 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     }, []);
 
     /**
-     * Save the open dataflow.
+     * Make the dataflow of a canvas never saved, from what the canvas holds:
+     * the server's first transaction builds its doc (`dataflow_docs.create`),
+     * which the canvas then binds to (`useDataflowDoc`). What the canvas
+     * changed after this left goes in with the bind, so the canvas as it was
+     * sent is noted with the load. The history this canvas recorded, bound to
+     * no doc, goes with it, and the server imports it.
      *
-     * ``omitOutputs`` leaves the outputs out of the request, so the manifest the
-     * backend holds is untouched. The dashboard's Save layout uses it: that page
-     * writes tile geometry, and it has no business re-recording which outputs a
-     * dataflow has - what its viewers' runs make is never the dataflow's.
-     * ``savedWidgets``, which Save layout passes too, are the widgets each node
-     * is saved with, written in place of a value a viewer tried (#1117).
+     * One at a time: a caller while one is out gets that one, so two callers
+     * never make two dataflows.
      */
-    const saveCurrentProject = useCallback(async (
-        nameOverride?: string,
-        options?: { omitOutputs?: boolean; savedWidgets?: ReadonlyMap<string, WidgetDef[]> },
-    ) => {
-        if (viewerMode === "shared") {
-            throw new Error("Shared dataflows are read-only; use Save a copy");
-        }
-        if (blockGuestSaves) {
-            throw new Error("Guest users cannot save projects");
-        }
-        // A routed dataflow is never unsaved; at most it has not loaded YET.
-        //
-        // ``projectIdRef`` fills in when ``loadProject`` answers, which is well
-        // after the route resolved, so anything that saves in that window - the
-        // catalog drawer's import, install and remove all do - used to fall
-        // into the create branch below and mint a SECOND dataflow, installing
-        // into it while the URL still named the first (#340).
-        //
-        // Before the canvas is read, not after: the spec is serialized from
-        // whatever the canvas holds at that moment, so waiting later would
-        // persist the empty pre-load canvas over the stored dataflow.
-        const routedLoad = settleRoutedLoad();
-        if (routedLoad) await routedLoad;
-        // A canvas bound to the dataflow's doc saves what the doc does not
-        // hold: its outputs. The doc keeps the dataflow, and the server its
-        // history, so the save waits until the server has every change this
-        // tab made, and its answer holds them.
-        const docBridge = deps.docBridgeRef?.current;
-        if (projectIdRef.current && !options?.savedWidgets && docBridge?.bound()) {
-            await docBridge.whenKept();
-            const outputs = options?.omitOutputs ? undefined : buildOutputRefs();
-            const name = nameOverride || projectNameRef.current || workflowNameRef.current;
+    const createInFlightRef = useRef<Promise<ProjectDetail> | null>(null);
+    const createDataflow = useCallback((): Promise<ProjectDetail> => {
+        if (createInFlightRef.current) return createInFlightRef.current;
+        const create = (async () => {
+            const currentNodes = reactFlow.getNodes();
+            const currentEdges = reactFlow.getEdges();
+            // Read packages directly from the store (always up-to-date) rather
+            // than from the React state snapshot, which may lag behind the store
+            // when a package install/uninstall updates the store before React
+            // re-renders. The datasets section seeds the new project's refs (dev/81).
+            const currentPackages = getCurrentProjectPackagesList();
+            const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, workflowGoalRef.current, currentPackages, workflowDescriptionRef.current, dataflowDatasetsRef.current, workflowCategoriesRef.current, scenariosRef.current, autoRunRef.current);
+            spec.nodeProvenance = getAllNodeProvenance();
+            spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
+            // The canvas as its doc would hold it, taken with the spec.
+            const sent = deps.docBridgeRef?.current?.canvasNow();
+            // The ref, not the closure (#270): see projectNameRef.
+            const name = projectNameRef.current || workflowNameRef.current;
+            // Anything changed from here on is not in the request, and stays
+            // Unsaved until the bind writes it (#270).
             const dirtyAtSend = dirtyGenerationRef.current;
-            const detail = await projectsApi.update(projectIdRef.current, {
-                ...(outputs ? { outputs } : {}),
-                name,
-                ...nextSaveOrder(),
-            });
-            baseRevisionRef.current = detail.spec_revision ?? null;
-            syncDatasetsFromSavedSpec(detail.spec);
-            setServerCategories(detail.categories ?? {});
-            if (projectNameRef.current === name) {
-                projectNameRef.current = detail.name;
-                setProjectName(detail.name);
-            }
-            notifyAgentDockRefresh();
-            setProjectSavedAt(new Date());
-            if (dirtyGenerationRef.current === dirtyAtSend) setProjectDirty(false);
-            return detail;
-        }
-        const savedWidgets = options?.savedWidgets;
-        const currentNodes = savedWidgets
-            ? reactFlow.getNodes().map((node) => (
-                savedWidgets.has(node.id)
-                    ? { ...node, data: { ...node.data, widgets: savedWidgets.get(node.id) } }
-                    : node
-            ))
-            : reactFlow.getNodes();
-        const currentEdges = reactFlow.getEdges();
-        // Read packages directly from the store (always up-to-date) rather than
-        // from the React state snapshot, which may lag behind the store when a
-        // package install/uninstall updates the store before React re-renders.
-        const currentPackages = getCurrentProjectPackagesList();
-        // The serialized datasets section matters only on the CREATE branch,
-        // where it seeds the new project's refs (dev/81). On an update the
-        // backend owns dataflow.datasets and ignores whatever is sent here —
-        // syncDatasetsFromSavedSpec re-aligns the mirror from the response.
-        // The history this canvas recorded while bound to no doc, which the
-        // server imports when the dataflow has none of its own yet.
-        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, workflowGoalRef.current, currentPackages, workflowDescriptionRef.current, dataflowDatasetsRef.current, workflowCategoriesRef.current, scenariosRef.current, autoRunRef.current);
-        spec.nodeProvenance = getAllNodeProvenance();
-        spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
-
-        const outputRefs: OutputRef[] | undefined =
-            options?.omitOutputs ? undefined : buildOutputRefs();
-
-        // The ref, not the closure (#270): see projectNameRef.
-        const name = nameOverride || projectNameRef.current || workflowNameRef.current;
-
-        // Everything this request carries has now been read out of the store.
-        // Anything the user changes from here on is NOT in the payload, so it
-        // must survive the response as unsaved work (#270).
-        const dirtyAtSend = dirtyGenerationRef.current;
-
-        // Read the live id from the ref, not the closure: a save chained right
-        // after a create (serialized install saves) must take the update branch.
-        const existingId = projectIdRef.current;
-        if (existingId) {
-            const detail = await projectsApi.update(existingId, {
-                spec,
-                // Absent, not empty: the backend keeps the stored manifest when
-                // the field is missing. When it is sent, even as [], an output
-                // on record that it leaves out goes if this save deleted its
-                // node, changed its code or turned its Save off.
-                ...(outputRefs ? { outputs: outputRefs } : {}),
-                name,
-                ...(baseRevisionRef.current !== null
-                    ? { baseRevision: baseRevisionRef.current }
-                    : {}),
-                // Numbered after this tab's last save, so a save the page gave
-                // up on cannot land over this one (api/saveOrder.ts).
-                ...nextSaveOrder(),
-            });
-            baseRevisionRef.current = detail.spec_revision ?? null;
-            syncDatasetsFromSavedSpec(detail.spec);
-            setServerCategories(detail.categories ?? {});
-            // Re-pin the client's copy of the name to what the server actually
-            // stored. The create branch already did this, so only the update path
-            // could drift out of date - and it also self-heals a project that
-            // diverged before #230 was fixed. Unless the user renamed while
-            // this save was in flight (#270): then the server is echoing the
-            // name we SENT, and adopting it would silently undo the rename.
-            if (projectNameRef.current === name) {
-                projectNameRef.current = detail.name;
-                setProjectName(detail.name);
-            }
-            // The backend prunes attachments for deleted nodes/edges (and
-            // preserves the agent lockfile) on save, so reconcile the dock with
-            // the freshly-persisted spec — a just-deleted node's tile disappears
-            // without a reload. Mirrors the dataset-catalog refresh above.
-            notifyAgentDockRefresh();
-            setProjectSavedAt(new Date());
-            // A save did complete, so the timestamp stands - but the flag only
-            // clears if nothing was edited while the request was in flight.
-            if (dirtyGenerationRef.current === dirtyAtSend) {
-                setProjectDirty(false);
-            }
-            return detail;
-        } else {
             const detail = await projectsApi.create({
                 name,
                 spec,
                 // A create always sends them: there is no stored manifest to keep.
-                outputs: outputRefs ?? [],
+                outputs: buildOutputRefs(),
             });
-            // Pin the ref synchronously so a save chained immediately after this
-            // create sees the new id and updates instead of creating a duplicate
-            // (setProjectId only reaches the ref on the next render).
+            // Pin the ref synchronously so an action right after this one
+            // finds the new id (setProjectId only reaches the ref on the next
+            // render).
             projectIdRef.current = detail.id;
             // The server built the dataflow's doc from what it stored.
-            noteLoadedDataflow(detail?.spec?.dataflow ?? spec.dataflow, detail.id);
-            baseRevisionRef.current = detail.spec_revision ?? null;
+            noteLoadedDataflow(detail?.spec?.dataflow ?? spec.dataflow, detail.id, sent);
             syncDatasetsFromSavedSpec(detail.spec);
             setServerCategories(detail.categories ?? {});
             setProjectId(detail.id);
             if (projectNameRef.current === name) {
                 projectNameRef.current = detail.name;
                 setProjectName(detail.name);
+            } else if (projectNameRef.current) {
+                // Renamed while the create was out: the row the create made
+                // has the name it sent, and the doc takes the new one with the
+                // bind.
+                sendRowName(detail.id, projectNameRef.current);
             }
             setProjectSavedAt(new Date());
             if (dirtyGenerationRef.current === dirtyAtSend) {
@@ -1206,135 +1149,73 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             const seededPackages = dataflowSpec?.packages;
             setCurrentProject(detail.id, Array.isArray(seededPackages) ? seededPackages : []);
             return detail;
-        }
-    }, [projectId, workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, viewerMode, settleRoutedLoad, syncDatasetsFromSavedSpec, defaultSaveOutputDataset]);
+        })();
+        createInFlightRef.current = create;
+        const done = () => {
+            if (createInFlightRef.current === create) createInFlightRef.current = null;
+        };
+        create.then(done, done);
+        return create;
+    }, [reactFlow, workflowNameRef, deps.outputsRef, defaultSaveOutputDataset, syncDatasetsFromSavedSpec, noteLoadedDataflow, getAllNodeProvenance, sendRowName]);
 
-    // Serialize project saves so concurrent callers (e.g. two producing nodes
-    // finishing back-to-back) can never run two creates in parallel and POST
-    // duplicate projects, nor two updates of one dataflow at once: overlapping
-    // PUTs held the database for SQLite's busy timeout (#909) and let a
-    // dashboard read outputs mid-rewrite (#941). Every save of the open
-    // dataflow comes through here (Save, the pin's save, the autosave, install
-    // saves, server runs, the agent drop, the catalog drawers); only the
-    // dashboard's Save layout, the one writer on its page, saves directly.
-    // A save the server never answers gives up after SAVE_TIMEOUT_MS
-    // (projectsApi.ts), so it cannot hold the saves behind it. The autosave
-    // queues through requestAutosave, so at most one autosave waits.
-    //
-    // Each request runs strictly after all prior ones; once the first create
-    // has set projectIdRef, every chained save takes the update
-    // branch. Because saveCurrentProject reads dataflowDatasetsRef/projectIdRef/
-    // projectNameRef live (not from a closure), a save enqueued after a ref was
-    // staged persists that ref even if it rode in on an already-running chain.
-    //
-    // The chained call goes through a ref too (#270): ``prior.then(() =>
-    // saveCurrentProject())`` captured the *identity* of saveCurrentProject at
-    // enqueue time, so any state it still closes over was as of then.
-    //
-    // ``onStart`` runs when a queued save leaves the queue, just before it
-    // reads the canvas.
-    const saveChainRef = useRef<Promise<any> | null>(null);
-    const saveCurrentProjectRef = useRef(saveCurrentProject);
-    saveCurrentProjectRef.current = saveCurrentProject;
-    const enqueueSave = useCallback((onStart?: () => void): Promise<any> => {
-        const prior = saveChainRef.current;
-        // Start immediately when idle (so the create/update fires synchronously);
-        // otherwise chain strictly after the previous save so two creates never run
-        // in parallel. ``prior`` is always a never-rejecting tail.
-        const next = prior
-            ? prior.then(() => {
-                onStart?.();
-                return saveCurrentProjectRef.current();
-            })
-            : saveCurrentProject();
-        // Track a caught tail for chaining + cleanup so a failed save can neither
-        // surface as an unhandled rejection nor wedge the chain. The caller still
-        // gets ``next`` (which may reject) and is expected to handle it.
-        const tail = next.then(
-            () => undefined,
-            () => undefined,
-        );
-        saveChainRef.current = tail;
-        tail.then(() => {
-            if (saveChainRef.current === tail) saveChainRef.current = null;
-        });
-        return next;
-    }, [saveCurrentProject]);
-    const requestProjectSave = useCallback((): Promise<any> => enqueueSave(), [enqueueSave]);
-
-    // The 30 second autosave. A save can wait up to SAVE_TIMEOUT_MS for its
-    // answer, and the autosaves that come due meanwhile would each queue and
-    // then go out one after another. Instead, a tick that finds an autosave
-    // still waiting in the queue joins it: the one waiting reads the canvas
-    // when it leaves the queue, so it saves what those ticks would have. Any
-    // other save queued behind it keeps its place.
-    const waitingAutosaveRef = useRef<Promise<any> | null>(null);
-    const requestAutosave = useCallback((): Promise<any> => {
-        if (waitingAutosaveRef.current) return waitingAutosaveRef.current;
-        // Nothing saving: it goes out now, so nothing waits.
-        if (!saveChainRef.current) return enqueueSave();
-        const waiting: Promise<any> = enqueueSave(() => {
-            // Leaving the queue: a tick from now on queues the next autosave.
-            if (waitingAutosaveRef.current === waiting) waitingAutosaveRef.current = null;
-        });
-        waitingAutosaveRef.current = waiting;
-        return waiting;
-    }, [enqueueSave]);
-
-    // Resolve the current project id, creating+saving the project when this is a
-    // brand-new dataflow that has never been persisted. Centralizes the rule that
-    // used to live only in the catalog drawer so the node-execution auto-install
-    // path can guarantee a persisted project without a manual save. Does NOT force
-    // a save when the project already exists (the catalog Install endpoint persists
-    // its own ref) — see persistDataflowForInstall for the always-save behavior.
-    // Concurrent callers share one create (so two rapid installs can't double-create)
-    // and all receive the same id, without triggering a redundant follow-up update.
-    const ensureProjectInFlightRef = useRef<Promise<string | null> | null>(null);
+    /**
+     * The dataflow's id, for an action on the server's copy of it (a dataset
+     * or package added, an agent attached, a scenario dropped, a run), once
+     * the server holds every change this tab made. A dataflow not saved yet is
+     * made first, as its first save would make it, and a routed one still
+     * loading is waited for (#340). Concurrent callers share one create.
+     * Null when there is none to act on, with the reason said but for a
+     * hosted guest's, whose action tells it to sign in.
+     */
     const ensureProjectId = useCallback(async (): Promise<string | null> => {
-        if (projectIdRef.current) return projectIdRef.current;
+        const kept = async () => {
+            // A saved dataflow's canvas that changed before it bound holds
+            // changes the server has only once the bind writes them: wait for
+            // it, for as long as File > Save does. A hosted guest's canvas of
+            // an example never binds (its room refuses it), and a shared view
+            // acts on no dataflow of its own, so neither waits.
+            const mayBind = !blockGuestSaves && viewerMode !== "shared";
+            if (mayBind && projectDirtyRef.current && !deps.docBridgeRef?.current?.bound()) {
+                await deps.docBridgeRef?.current?.whenBound();
+            }
+            // The bridge of the render after the bind.
+            await deps.docBridgeRef?.current?.whenKept();
+            return projectIdRef.current;
+        };
+        if (projectIdRef.current) return kept();
         // A hosted guest's saves are refused, so a dataflow it never saved
         // gets no id, and no toast from here: the action that asked tells it
         // to sign in (hostedGuestSignInNote). Only a save the guest asks for
         // (File > Save, Save a copy) answers "Guest users cannot save projects".
         if (blockGuestSaves) return null;
-        if (ensureProjectInFlightRef.current) return ensureProjectInFlightRef.current;
-        const inFlight = (async () => {
-            try {
-                const detail = await requestProjectSave();
-                return (detail as { id?: string } | undefined)?.id || projectIdRef.current || null;
-            } catch (err) {
-                showToast(
-                    (err as Error)?.message || "Save the dataflow before adding datasets.",
-                    "error",
-                );
-                return null;
-            } finally {
-                ensureProjectInFlightRef.current = null;
+        try {
+            if (viewerMode === "shared") {
+                throw new Error("Shared dataflows are read-only; use Save a copy");
             }
-        })();
-        ensureProjectInFlightRef.current = inFlight;
-        return inFlight;
-    }, [requestProjectSave, showToast, blockGuestSaves]);
+            const routedLoad = settleRoutedLoad();
+            if (routedLoad) await routedLoad;
+            if (projectIdRef.current) return kept();
+            return (await createDataflow()).id;
+        } catch (err) {
+            showToast(
+                (err as Error)?.message || "Save the dataflow before adding datasets.",
+                "error",
+            );
+            return null;
+        }
+    }, [blockGuestSaves, viewerMode, settleRoutedLoad, createDataflow, showToast]);
 
-    // Persist the dataflow after a producing node ran but the backend did NOT
-    // auto-install during execution (it only does so for deliberately-saved
-    // tabular/geo datasets or bundles — a raster/raw-artifact output returns no
-    // installedDataset payload). The dataset is instead installed at SAVE time
-    // from the node's output refs (_auto_install_computed_outputs), so this runs
-    // the exact same save the disk icon does — create-or-update + resync — making
-    // the dataset appear without a manual save. No dataset ref to stage here: the
-    // backend derives it from the saved output refs and returns it in detail.spec.
-    // Map a save's install-warnings onto friendly node labels and warn the user.
+    // Map a record's install-warnings onto friendly node labels and warn the user.
     // Without this, a computed output that failed to install (e.g. its artifact
-    // was missing at save time) was swallowed server-side and the dataset just
+    // was missing when it was recorded) was swallowed server-side and the dataset just
     // never appeared — the "Play All didn't generate all datasets" symptom.
     //
     // ``scopeNodeIds`` is the set of nodes THIS install-sync covered
     // (runInstallSyncNow in providers/flow/useInstallSave.ts passes
     // installSyncPendingIdsRef's contents).
     // It is load-bearing: buildOutputRefs rebuilds refs for EVERY toggle-enabled
-    // node on every install-save, and ProjectLoader repopulates outputsRef from
-    // the saved refs on load, so a save triggered by node C used to toast
+    // node on every record, and ProjectLoader repopulates outputsRef from
+    // the saved refs on load, so a record triggered by node C used to toast
     // `Dataset for "A" couldn't be generated` about a node the user never
     // touched, for a stale artifact from a previous sandbox session (#180).
     // ``undefined`` means unscoped (surface everything), which keeps every
@@ -1382,35 +1263,86 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         [reactFlow, showToast],
     );
 
-    // ``nodeIds`` scopes the warning toast to the producers this save was run
-    // for; omit it to surface every warning the response carries (see
-    // surfaceInstallWarnings).
-    //
-    // Returns which producers did NOT get their dataset, so the caller can
-    // decide what to do with their "Adding…" placeholders (#352). This used to
-    // resolve ``void`` and swallow its own errors, so every caller saw the same
-    // success-shaped settle whether the datasets installed, failed to install,
-    // or the save itself threw - and FlowProvider's ``.finally`` cleared every
-    // placeholder unconditionally on the strength of it.
-    const persistDataflowForInstall = useCallback(
+    /**
+     * Record the outputs the canvas holds that the dataflow records, after a
+     * run, a pin or a scenario: each as a computed dataset in the Data
+     * Catalog, and in the dataflow's saved outputs a reload and its dashboard
+     * show (`POST /api/projects/<id>/outputs`). No tab saves the dataflow,
+     * which its doc keeps. Only the owner's tab records them; a dataflow not
+     * saved yet is made first, as its first save would make it.
+     *
+     * ``nodeIds`` scopes the warning toast to the producers this record was
+     * made for; omit it to surface every warning the answer carries (see
+     * surfaceInstallWarnings). Returns which producers did NOT get their
+     * dataset, so the caller can decide what to do with their "Adding…"
+     * placeholders (#352).
+     */
+    const recordOutputs = useCallback(
         async (nodeIds?: readonly string[]): Promise<InstallSyncOutcome> => {
+            // Nothing this record covered was installed.
+            const none = (): InstallSyncOutcome => ({ saved: false, failedNodeIds: [...(nodeIds ?? [])] });
+            if (viewerMode === "shared" || blockGuestSaves) return none();
+            const id = await ensureProjectId();
+            if (!id) {
+                notifyDatasetCatalogRefresh();
+                return none();
+            }
             try {
-                const detail = await requestProjectSave();
+                const detail = await projectsApi.recordOutputs(id, buildOutputRefs());
+                // What a run made changes the categories the title shows, which
+                // no save after it brings now: the record answers them.
+                if (detail?.categories) setServerCategories(detail.categories);
                 surfaceInstallWarnings(detail, nodeIds);
                 const scope = nodeIds ? new Set(nodeIds) : null;
                 const failed = ((detail?.dataset_install_warnings ?? []) as DatasetInstallWarning[])
                     .map((w: DatasetInstallWarning) => w.node_id)
-                    .filter((id: string) => !scope || scope.has(id));
+                    .filter((nodeId: string) => !scope || scope.has(nodeId));
+                notifyDatasetCatalogRefresh();
                 return { saved: true, failedNodeIds: failed };
             } catch (err) {
-                showToast((err as Error)?.message || "Could not save the dataflow.", "error");
+                showToast((err as Error)?.message || "Could not save the outputs.", "error");
                 notifyDatasetCatalogRefresh();
-                // Nothing was installed, so nothing this sync covered succeeded.
-                return { saved: false, failedNodeIds: [...(nodeIds ?? [])] };
+                return none();
             }
         },
-        [requestProjectSave, showToast, surfaceInstallWarnings],
+        [viewerMode, blockGuestSaves, ensureProjectId, showToast, surfaceInstallWarnings, defaultSaveOutputDataset],
     );
+
+    /**
+     * File > Save. A dataflow not saved yet is made (`createDataflow`). A
+     * saved one's doc holds every change already: what a run left waiting to
+     * be recorded is recorded, and once the server has every change this tab
+     * made, the dataflow's history gets a version named Saved.
+     */
+    const saveDataflow = useCallback(async (): Promise<{ id: string; created: boolean }> => {
+        if (viewerMode === "shared") {
+            throw new Error("Shared dataflows are read-only; use Save a copy");
+        }
+        if (blockGuestSaves) {
+            throw new Error("Guest users cannot save projects");
+        }
+        // A routed dataflow is never unsaved; at most it has not loaded YET
+        // (#340): saving in that window must not make a second dataflow.
+        const routedLoad = settleRoutedLoad();
+        if (routedLoad) await routedLoad;
+        if (!projectIdRef.current) {
+            const detail = await createDataflow();
+            return { id: detail.id, created: true };
+        }
+        const id = projectIdRef.current;
+        // Every output the canvas holds that the dataflow records, as a save
+        // sent them: what a run left waiting, and what ran before its Save was
+        // on or failed to be recorded then.
+        await deps.flushOutputsRef?.current?.();
+        await recordOutputs();
+        // The bridge of the render after the bind: one read before it holds no doc.
+        if (!(await deps.docBridgeRef?.current?.whenBound())) throw new Error(SAVE_OFFLINE_MESSAGE);
+        if (!(await deps.docBridgeRef?.current?.whenKept())) throw new Error(SAVE_OFFLINE_MESSAGE);
+        const saved = await noteSaved();
+        if (saved?.categories) setServerCategories(saved.categories);
+        setProjectSavedAt(new Date());
+        return { id, created: false };
+    }, [viewerMode, blockGuestSaves, settleRoutedLoad, createDataflow, recordOutputs]);
 
     // ── In-flight install placeholders ────────────────────────────────────────
     // Upper bound on how long a placeholder can linger if its clear never fires
@@ -1477,24 +1409,34 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         };
     }, []);
 
-    // Auto-save every 30 seconds when a project has been explicitly saved at least once
-    useEffect(() => {
-        if (!projectId || !projectDirty || blockGuestSaves || viewerMode === "shared") return;
-        // Never from the dashboard: its writes are explicit (Save layout), so a
-        // page left open cannot save on a timer.
-        if (presentation) return;
-        const id = window.setInterval(async () => {
-            try {
-                // Queued: a tick that comes due while a save is out waits for
-                // it instead of going out beside it (#909), and joins an
-                // autosave already waiting.
-                await requestAutosave();
-            } catch (err) {
-                console.error("Auto-save failed:", err);
+    /**
+     * The dashboard's Save layout: where each pinned tile sits and how large
+     * it is, which the server writes into the dataflow's doc, and nothing else
+     * the page holds: never a value a viewer tried there (#1117).
+     */
+    const saveDashboardLayout = useCallback(async (): Promise<void> => {
+        const id = projectIdRef.current;
+        if (!id) throw new Error("Only the dataflow's owner saves its dashboard's layout.");
+        const tiles: Record<string, TileLayout> = {};
+        for (const node of reactFlow.getNodes()) {
+            const data = node.data ?? {};
+            if (!data.dashboardPinned) continue;
+            const tile: TileLayout = {};
+            if (typeof data.dashboardX === "number" && typeof data.dashboardY === "number") {
+                tile.dashboardX = data.dashboardX;
+                tile.dashboardY = data.dashboardY;
             }
-        }, 30_000);
-        return () => window.clearInterval(id);
-    }, [projectId, projectDirty, requestAutosave, blockGuestSaves, viewerMode, presentation]);
+            if (typeof data.dashboardWidth === "number" && typeof data.dashboardHeight === "number") {
+                tile.dashboardWidth = data.dashboardWidth;
+                tile.dashboardHeight = data.dashboardHeight;
+            }
+            if (Object.keys(tile).length > 0) tiles[node.id] = tile;
+        }
+        const dirtyAtSend = dirtyGenerationRef.current;
+        await projectsApi.saveLayout(id, tiles);
+        setProjectSavedAt(new Date());
+        if (dirtyGenerationRef.current === dirtyAtSend) setProjectDirty(false);
+    }, [reactFlow]);
 
     // ``copyOf``: the dataflow the copy is made from, whose saved outputs the
     // copy gets for each node still showing one.
@@ -1504,7 +1446,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         }
         const currentNodes = reactFlow.getNodes();
         const currentEdges = reactFlow.getEdges();
-        // Same as saveCurrentProject: read from store to avoid stale React state snapshot.
+        // Same as createDataflow: read from store to avoid stale React state snapshot.
         const currentPackages = getCurrentProjectPackagesList();
         // Save-a-copy is a CREATE: the serialized datasets section seeds the new
         // project's refs (dev/81) — read from the ref so the copy carries the
@@ -1515,6 +1457,8 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, workflowGoalRef.current, currentPackages, workflowDescriptionRef.current, dataflowDatasetsRef.current, workflowCategoriesRef.current, scenariosRef.current, autoRunRef.current);
         spec.nodeProvenance = getAllNodeProvenance();
         spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
+        // The canvas as the copy's doc would hold it, taken with the spec.
+        const sent = deps.docBridgeRef?.current?.canvasNow();
 
         const outputRefs: OutputRef[] = buildOutputRefs();
 
@@ -1527,8 +1471,9 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         syncDatasetsFromSavedSpec(detail.spec);
         setServerCategories(detail.categories ?? {});
         projectIdRef.current = detail.id;
-        // The canvas is the copy's now, whose doc the server builds from it.
-        noteLoadedDataflow(detail?.spec?.dataflow ?? spec.dataflow, detail.id);
+        // The canvas is the copy's now, whose doc the server builds from it:
+        // what the canvas changed after this left goes in with the bind.
+        noteLoadedDataflow(detail?.spec?.dataflow ?? spec.dataflow, detail.id, sent);
         setProjectId(detail.id);
         setProjectName(detail.name);
         // Titled with the copy's own name, which the server gave its dataflow
@@ -1538,8 +1483,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setProjectSavedAt(new Date());
         setProjectDirty(false);
         setViewerMode("owner");
-        // Re-pin the package store to the copy, as saveCurrentProject's create
-        // branch does. Without it the store still names the ORIGINAL dataflow,
+        // Re-pin the package store to the copy, as createDataflow does. Without it the store still names the ORIGINAL dataflow,
         // so the copy's palette and every lockfile write from it would be
         // filtered by, and applied to, the dataflow it was copied from.
         const copiedPackages = (detail?.spec?.dataflow as { packages?: string[] } | undefined)
@@ -1553,17 +1497,15 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         const { project, outputs } = result;
 
         // Pin the ref here rather than letting the next render carry it over,
-        // for the same reason the create branch of ``saveCurrentProject`` does:
-        // ``settleRoutedLoad`` reads it the moment ProjectLoader releases the
-        // latch, which is sooner than React is obliged to re-render.
+        // for the same reason createDataflow does: ``settleRoutedLoad`` reads
+        // it the moment ProjectLoader releases the latch, which is sooner than
+        // React is obliged to re-render.
         projectIdRef.current = project.id;
         setProjectId(project.id);
         setProjectName(project.name);
         setProjectDirty(false);
         setProjectSavedAt(project.updated_at ? new Date(project.updated_at) : null);
         setViewerMode("owner");
-        // What this canvas has seen, for the save guard (memo dev/124).
-        baseRevisionRef.current = project.spec_revision ?? null;
         setServerCategories(project.categories ?? {});
 
         const execStatus: Record<string, "stale" | "executed"> = {};
@@ -1670,6 +1612,10 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         workflowCategories,
         workflowCategoriesRef,
         serverCategories,
+        // For useCategoriesRefresh: how many answers with them were taken, and
+        // the one it brings.
+        categoriesTaken,
+        takeServerCategories: setServerCategories,
         scenarios,
         // For the run's save rule, which must read the list as it is now.
         scenariosRef,
@@ -1718,16 +1664,17 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         renameDataflow,
         updateDataflowCategories,
         setScenarios,
-        saveCurrentProject,
+        saveDataflow,
+        saveDashboardLayout,
         saveAsNewProject,
         ensureProjectId,
-        persistDataflowForInstall,
+        recordOutputs,
         surfaceInstallWarnings,
-        requestProjectSave,
         loadProject,
         loadSharedProject,
         discardProject,
         markDirty,
+        noteBound,
         markNodeExecuted,
         markNodeStale,
         markNodeErrored,

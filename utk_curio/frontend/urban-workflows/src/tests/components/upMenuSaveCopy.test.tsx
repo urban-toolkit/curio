@@ -88,8 +88,9 @@ function sharedView() {
     autoRun: false,
     setAutoRun: jest.fn(),
     autoRunAvailable: false,
-    requestProjectSave: jest.fn(),
-    saveCurrentProject: jest.fn(),
+    boundDoc: null,
+    whenChangesKept: jest.fn().mockResolvedValue(true),
+    saveDataflow: jest.fn(),
   };
 }
 
@@ -125,6 +126,7 @@ test("saving a shared dataflow names it, by the id in its link, as the dataflow 
 
   expect(mockFlow.saveAsNewProject).toHaveBeenCalledTimes(1);
   expect(mockFlow.saveAsNewProject).toHaveBeenCalledWith("Chicago trips (copy)", SHARED);
-  expect(mockFlow.requestProjectSave).not.toHaveBeenCalled();
+  // A copy, never a save of the dataflow it copies.
+  expect(mockFlow.saveDataflow).not.toHaveBeenCalled();
   expect(screen.getByTestId("where").textContent).toBe("/dataflow/copy-1");
 });

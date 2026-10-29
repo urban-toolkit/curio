@@ -235,8 +235,10 @@ export const AgentChatPanel: React.FC<{
   // A link the agent writes to another Curio page leaves this dataflow, so it
   // asks first when there is unsaved work, like every other way out of it.
   const navigate = useNavigate();
-  const { projectDirty } = useFlowContext();
-  const { leave, dialog: leaveDialog } = useLeaveGuard(Boolean(projectDirty), LEAVE_DATAFLOW);
+  const { projectDirty, whenChangesKept } = useFlowContext();
+  const { leave, dialog: leaveDialog } = useLeaveGuard(Boolean(projectDirty), LEAVE_DATAFLOW, {
+    settle: whenChangesKept,
+  });
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   // The app's own dialog, not the browser's (#197).

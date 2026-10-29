@@ -49,14 +49,10 @@ def start_run(project_id: str):
         return jsonify({"error": "Send 'target' or 'targets', not both"}), 400
     if reuse is not None and not isinstance(reuse, dict):
         return jsonify({"error": "'reuse' must map node ids to outputs"}), 400
-    revision = body.get("specRevision")
-    if revision is not None and (isinstance(revision, bool) or not isinstance(revision, int)):
-        return jsonify({"error": "'specRevision' must be a whole number"}), 400
     try:
         run = service.start_run(
             g.user, get_current_token(), project_id,
             target_node_id=target or None, target_node_ids=targets, reuse=reuse,
-            spec_revision=revision,
         )
     except RunError as exc:
         return _error(exc)

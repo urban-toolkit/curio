@@ -95,24 +95,30 @@ export interface UpdateBody {
   name?: string;
   description?: string;
   thumbnail_accent?: string;
-  /** The spec revision this client last synced with (memo dev/124). The
-   *  server refuses a save whose basis is older than the spec on disk AND
-   *  which would delete a node, an edge or a node's code that the client
-   *  never saw. Omitting it means "no opinion" and is not checked. */
-  baseRevision?: number;
   /** Replaces the hand-set categories (`dataflow.categories`). */
   categories?: HandCategories;
-  /** This tab's id and the save's number among its saves (`saveOrder.ts`).
-   *  The server refuses a number lower than one it has already applied from
-   *  the same tab. Omitting them means the save is not checked. */
-  saveTab?: string;
-  saveNumber?: number;
 }
 
-/** How long the page waits for a save before it gives up. Generous, since a
- *  save installs every output it sends. Giving up frees the save queue for
- *  the next save; the server may still finish this one, which the save's
- *  number (`saveOrder.ts`) keeps from landing over a newer save. */
+/** What recording a canvas's outputs answers: the outputs the dataflow now
+ *  records, and those that could not be installed in the Data Catalog. */
+export interface RecordedOutputs {
+  outputs: OutputRef[];
+  dataset_install_warnings?: DatasetInstallWarning[];
+  /** The dataflow's categories as it is now, which the canvas title shows. */
+  categories?: DataflowCategories;
+}
+
+/** A tile's place and size on the dashboard page, as its node holds them;
+ *  each pair is sent whole or not at all. */
+export interface TileLayout {
+  dashboardX?: number;
+  dashboardY?: number;
+  dashboardWidth?: number;
+  dashboardHeight?: number;
+}
+
+/** How long the page waits for a dataflow to be made before it gives up.
+ *  Generous, since a new dataflow installs every output it carries. */
 export const SAVE_TIMEOUT_MS = 2 * 60 * 1000;
 
 export const SAVE_TIMEOUT_MESSAGE =
@@ -173,6 +179,12 @@ export const projectsApi = {
     return apiFetch<LoadResponse>(`/api/projects/${id}/shared`);
   },
 
+  /** The dataflow's categories as it is now, which the canvas title shows:
+   *  any tab that opens the dataflow asks, a watcher's among them. */
+  categories(id: string): Promise<{ categories: DataflowCategories }> {
+    return apiFetch<{ categories: DataflowCategories }>(`/api/projects/${id}/categories`);
+  },
+
   create(body: SaveBody): Promise<ProjectDetail> {
     return sendSave((signal) =>
       apiFetch<ProjectDetail>("/api/projects", {
@@ -191,6 +203,35 @@ export const projectsApi = {
         signal,
       }),
     );
+  },
+
+  /** Record the outputs the owner's canvas holds that the dataflow records:
+   *  no tab saves the dataflow, which its doc keeps. */
+  recordOutputs(id: string, outputs: OutputRef[]): Promise<RecordedOutputs> {
+    return sendSave((signal) =>
+      apiFetch<RecordedOutputs>(`/api/projects/${id}/outputs`, {
+        method: "POST",
+        body: JSON.stringify({ outputs }),
+        signal,
+      }),
+    );
+  },
+
+  /** An invited editor's rename on the canvas: the project row's name and the
+   *  dataflow's, as the owner's name-only `update` renames them. */
+  renameShared(id: string, name: string): Promise<{ id: string; name: string }> {
+    return apiFetch<{ id: string; name: string }>(`/api/projects/${id}/name`, {
+      method: "PUT",
+      body: JSON.stringify({ name }),
+    });
+  },
+
+  /** The dashboard's Save layout: each tile's place and size, and nothing else. */
+  saveLayout(id: string, tiles: Record<string, TileLayout>): Promise<{ saved: boolean }> {
+    return apiFetch<{ saved: boolean }>(`/api/projects/${id}/dashboard/layout`, {
+      method: "PUT",
+      body: JSON.stringify({ tiles }),
+    });
   },
 
   /** Hard-deletes the project and its files. There is no soft variant (#261). */

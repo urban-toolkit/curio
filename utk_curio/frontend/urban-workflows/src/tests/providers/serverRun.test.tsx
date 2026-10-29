@@ -75,7 +75,8 @@ function harness(initial: Array<{ id: string; data?: any }>, edges: any[] = []) 
     reactFlow,
     setNodes,
     showToast: jest.fn(),
-    requestProjectSave: jest.fn().mockResolvedValue({ id: "p1", spec_revision: 3 }),
+    // The dataflow's id once the server has this tab's every change.
+    keepDataflow: jest.fn().mockResolvedValue("p1"),
     applyNewOutput: jest.fn(),
     setOutputs: jest.fn(),
     hydrateRestoredOutputs: jest.fn(),
@@ -176,18 +177,31 @@ describe("which nodes the browser still runs", () => {
 });
 
 describe("a run started on the canvas", () => {
-  it("saves first, then runs the saved revision", async () => {
+  it("starts once the server has this tab's last change, with no save and no revision", async () => {
     stream();
     api.start.mockResolvedValue(run("r1", [step("a")]));
     const { hook, deps } = harness([{ id: "a" }]);
 
     await act(async () => { await hook.result.current.startRun(); });
 
-    expect(deps.requestProjectSave).toHaveBeenCalledTimes(1);
-    expect(api.start).toHaveBeenCalledWith("p1", { specRevision: 3 });
-    expect(deps.requestProjectSave.mock.invocationCallOrder[0])
+    expect(deps.keepDataflow).toHaveBeenCalledTimes(1);
+    // The server runs the dataflow as its doc holds it.
+    expect(api.start).toHaveBeenCalledWith("p1", {});
+    expect(deps.keepDataflow.mock.invocationCallOrder[0])
       .toBeLessThan(api.start.mock.invocationCallOrder[0]);
     expect(hook.result.current.serverRunActive).toBe(true);
+  });
+
+  it("runs nothing when there is no dataflow to run, and gives the button back", async () => {
+    // keepDataflow said why itself (a guest, a shared view, a create that failed).
+    const { hook, deps } = harness([{ id: "a" }]);
+    deps.keepDataflow.mockResolvedValue(null);
+
+    await act(async () => { await hook.result.current.startRun(); });
+
+    expect(api.start).not.toHaveBeenCalled();
+    expect(hook.result.current.serverRunActive).toBe(false);
+    expect(deps.showToast).not.toHaveBeenCalled();
   });
 
   it("turns each event into the node state a run in the browser leaves", async () => {
@@ -334,7 +348,7 @@ describe("a run started on the canvas", () => {
     expect(shown("b")).toBeUndefined();
   });
 
-  it("follows the run already going when the dataflow runs", async () => {
+  it("follows the run already going when the dataflow runs, and says so", async () => {
     const live = stream();
     api.start.mockRejectedValue(Object.assign(new Error("This dataflow is already running."), {
       status: 409, body: { runId: "r9" },
@@ -347,21 +361,23 @@ describe("a run started on the canvas", () => {
     expect(api.get).toHaveBeenCalledWith("r9");
     expect(live.runIds).toEqual(["r9"]);
     expect(hook.result.current.serverRunActive).toBe(true);
-    expect(deps.showToast).not.toHaveBeenCalled();
+    expect(deps.showToast).toHaveBeenCalledWith(expect.stringContaining("already running"), "info");
   });
 
-  it("follows a run of an earlier version as a run opened later, and says so", async () => {
+  it("follows a run another tab started as a run opened later: that tab runs its browser part", async () => {
+    // No tab saves a revision of its own, so any run already going is one
+    // this click did not start.
     const live = stream();
     api.start.mockRejectedValue(Object.assign(new Error("This dataflow is already running."), {
       status: 409, body: { runId: "r8" },
     }));
-    api.get.mockResolvedValue(run("r8", [step("osm", { role: "browser" })], { status: "running", specRevision: 2 }));
+    api.get.mockResolvedValue(run("r8", [step("osm", { role: "browser" })], { status: "running" }));
     const { hook, deps } = harness([{ id: "osm" }]);
 
     await act(async () => { await hook.result.current.startRun(); });
 
     expect(live.runIds).toEqual(["r8"]);
-    expect(deps.showToast).toHaveBeenCalledWith(expect.stringContaining("earlier version"), "info");
+    expect(deps.showToast).toHaveBeenCalledWith(expect.stringContaining("already running"), "info");
     // Not this click's run: the browser's part is left to Finish run.
     live.emit({ kind: "step_finished", nodeId: "osm", status: "browser" });
     expect(hook.result.current.serverRunActive).toBe(false);
@@ -385,22 +401,22 @@ describe("a run started on the canvas", () => {
     expect(api.reportStep).toHaveBeenLastCalledWith("r1", "osm", { status: "ok" });
   });
 
-  it("a played node says it runs from the click, and gets its output back if the save fails", async () => {
+  it("a played node says it runs from the click, and gets its output back if there is no dataflow to run", async () => {
     const before = { code: "success", content: "Saved to file: old" };
     const { hook, deps, shown } = harness([{ id: "a", data: { output: before } }]);
-    let failSave: (err: Error) => void = () => {};
-    deps.requestProjectSave.mockReturnValue(new Promise((_, reject) => { failSave = reject; }));
+    let fail: (err: Error) => void = () => {};
+    deps.keepDataflow.mockReturnValue(new Promise((_, reject) => { fail = reject; }));
 
     let started: Promise<void> = Promise.resolve();
     act(() => { started = hook.result.current.startRun("a"); });
     expect(shown("a")).toEqual({ code: "exec", content: "" });
 
-    await act(async () => { failSave(new Error("Guest users cannot save projects")); await started; });
+    await act(async () => { fail(new Error("Guest users cannot save projects")); await started; });
 
     expect(shown("a")).toEqual(before);
     expect(api.start).not.toHaveBeenCalled();
     expect(hook.result.current.serverRunActive).toBe(false);
-    expect(deps.showToast).toHaveBeenCalledWith(expect.stringContaining("could not be saved"), "error");
+    expect(deps.showToast).toHaveBeenCalledWith(expect.stringContaining("was not run"), "error");
   });
 
   it("a run of several nodes sends them with the outputs it reuses above them, marking none running first (#845)", async () => {
@@ -422,7 +438,7 @@ describe("a run started on the canvas", () => {
 
     await act(async () => { await hook.result.current.startRun(["b", "c", "chart"]); });
 
-    expect(api.start).toHaveBeenCalledWith("p1", { targets: ["b", "c", "chart"], reuse: { a: kept }, specRevision: 3 });
+    expect(api.start).toHaveBeenCalledWith("p1", { targets: ["b", "c", "chart"], reuse: { a: kept } });
     expect(shown("b")).toBeUndefined();
 
     // The chart among them is drawn by the run's browser part, as a play of it would.
@@ -515,7 +531,7 @@ describe("a run started on the canvas", () => {
 
     expect(api.start).toHaveBeenCalledTimes(3);
     expect(live.runIds).toEqual(["r1", "r2"]);
-    expect(deps.showToast).not.toHaveBeenCalledWith(expect.stringContaining("earlier version"), "info");
+    expect(deps.showToast).not.toHaveBeenCalledWith(expect.stringContaining("already running"), "info");
   });
 });
 

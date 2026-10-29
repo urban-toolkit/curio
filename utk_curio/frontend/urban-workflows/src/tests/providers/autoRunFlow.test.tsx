@@ -48,7 +48,7 @@ jest.mock('../../hook/useWorkflowOperations', () => ({
     markNodeExecuted: jest.fn(),
     markNodeStale: mockMarkNodeStale,
     markDirty: jest.fn(),
-    persistDataflowForInstall: jest.fn().mockResolvedValue(undefined),
+    recordOutputs: jest.fn().mockResolvedValue(undefined),
     beginPendingInstall: jest.fn(),
     endPendingInstall: jest.fn(),
     applyRemoveChanges: jest.fn(),
@@ -66,7 +66,7 @@ jest.mock('../../hook/useWorkflowOperations', () => ({
     cleanCanvas: jest.fn(),
     discardProject: jest.fn(),
     viewerMode: 'owner',
-    requestProjectSave: jest.fn().mockResolvedValue(undefined),
+    ensureProjectId: jest.fn().mockResolvedValue('project-1'),
     surfaceInstallWarnings: jest.fn(),
     // The dataflow has "Run stale nodes automatically" on.
     autoRun: true,
