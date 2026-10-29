@@ -28,7 +28,11 @@ MALLOC_ARENA_MAX=2):
   columns. After ten re-runs that was 1.06 to 1.75 of one request at rest
   with the launch's arena cap and Arrow on glibc, and 1.11 to 1.38, about
   20 MB more each re-run, with neither. With the thresholds held fixed, as
-  the launch now holds them, it is 0.25 to 0.35.
+  the launch now holds them, it is 0.45 to 0.72, so the limits below keep
+  their headroom: at rest at most one request, growth at most a quarter of
+  one run's working set a re-run (1 to 9 MB measured, against about 100),
+  and serving costing no more than computing (about 120 MB against 400 to
+  480).
 * A re-run's peak comes from **serving** its outputs, not computing them. The
   canvas fetches every output at once, and each full fetch held the artifact
   three times over (the Arrow table, the IPC stream, a ``bytes`` copy of it):
