@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useState } from "react";
 import { internalsSymbol, useStore, type ReactFlowState } from "reactflow";
 
-import type { DrawnCursor } from "../../providers/collab/cursors";
+import type { DrawnCursor, ViewTransform } from "../../providers/collab/cursors";
 import type {
   ScenarioBox,
   ScenarioCanvasView,
@@ -290,6 +290,85 @@ export function ScenarioLayers({ view, labelOf, statusOf, onExpand, onCollapse, 
   );
 }
 
+/** Attributes that tell an element of the cursors' planes apart in the page. */
+export type Markers = { [attribute: `data-${string}`]: string | number | undefined };
+
+const NO_ORIGIN = { x: 0, y: 0 };
+
+/**
+ * The pan-and-zoom plane cursors are drawn on, in the layer *className*: the
+ * view's translate and zoom, from *origin*, where the canvas's top-left is in
+ * that layer. It follows every pan and zoom; *children* draws on it for the
+ * view it has.
+ */
+export function CursorPlane({
+  className,
+  origin = NO_ORIGIN,
+  markers,
+  children,
+}: {
+  className: string;
+  origin?: { x: number; y: number };
+  markers?: Markers;
+  children: (view: ViewTransform) => React.ReactNode;
+}) {
+  const [tx, ty, zoom] = useStore(transformOf);
+  const plane = { transform: `translate(${origin.x + tx}px, ${origin.y + ty}px) scale(${zoom})` };
+  return (
+    <div className={className} aria-hidden="true" {...markers}>
+      <div className={styles.plane} style={plane}>
+        {children([tx, ty, zoom])}
+      </div>
+    </div>
+  );
+}
+
+/** The arrow of a cursor on the canvas, its tip at the cursor's point. */
+export function CursorArrow() {
+  return (
+    <svg className={styles.cursorArrow} width="18" height="23" viewBox="-2 -2 18 23">
+      <path d="M0 0 L0 16 L4.4 12.2 L7.3 18.8 L10.1 17.6 L7.3 11.2 L13 11.2 Z" />
+    </svg>
+  );
+}
+
+/**
+ * One cursor on a plane: the arrow, its tip at (*x*, *y*), and *name*, in
+ * *color*. It is scaled back by the view's *zoom*, from the arrow's tip, so it
+ * has one size at any zoom and its point stays where the plane puts it.
+ */
+export function CanvasCursor({
+  x,
+  y,
+  name,
+  color,
+  zoom,
+  idle = false,
+  markers,
+}: {
+  x: number;
+  y: number;
+  name: string;
+  color: string;
+  zoom: number;
+  idle?: boolean;
+  markers: Markers;
+}) {
+  return (
+    <div
+      className={styles.cursor}
+      {...markers}
+      data-idle={idle ? "true" : undefined}
+      style={{ left: x, top: y, transform: `scale(${1 / zoom})`, color }}
+    >
+      <CursorArrow />
+      <span className={styles.cursorName} style={{ backgroundColor: color }}>
+        {name}
+      </span>
+    </div>
+  );
+}
+
 /**
  * Everyone else's pointer, on the same pan-and-zoom plane as the scenarios'
  * layers and over everything on the canvas: each at its point of the dataflow,
@@ -297,32 +376,24 @@ export function ScenarioLayers({ view, labelOf, statusOf, onExpand, onCollapse, 
  * A cursor that moves glides to its next point; one that rests is faded.
  */
 export function ParticipantCursors({ cursors }: { cursors: readonly DrawnCursor[] }) {
-  const [tx, ty, zoom] = useStore(transformOf);
   if (cursors.length === 0) return null;
-  const plane = { transform: `translate(${tx}px, ${ty}px) scale(${zoom})` };
-  // Scaled back, from the arrow's tip: the point stays where the plane puts it.
-  const size = `scale(${1 / zoom})`;
   return (
-    <div className={styles.cursors} aria-hidden="true">
-      <div className={styles.plane} style={plane}>
-        {cursors.map((cursor) => (
-          <div
+    <CursorPlane className={styles.cursors}>
+      {([, , zoom]) =>
+        cursors.map((cursor) => (
+          <CanvasCursor
             key={cursor.clientId}
-            className={styles.cursor}
-            data-canvas-cursor={cursor.clientId}
-            data-idle={cursor.idle ? "true" : undefined}
-            style={{ left: cursor.x, top: cursor.y, transform: size, color: cursor.color }}
-          >
-            <svg className={styles.cursorArrow} width="18" height="23" viewBox="-2 -2 18 23">
-              <path d="M0 0 L0 16 L4.4 12.2 L7.3 18.8 L10.1 17.6 L7.3 11.2 L13 11.2 Z" />
-            </svg>
-            <span className={styles.cursorName} style={{ backgroundColor: cursor.color }}>
-              {cursor.name}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
+            x={cursor.x}
+            y={cursor.y}
+            name={cursor.name}
+            color={cursor.color}
+            zoom={zoom}
+            idle={cursor.idle}
+            markers={{ "data-canvas-cursor": cursor.clientId }}
+          />
+        ))
+      }
+    </CursorPlane>
   );
 }
 
