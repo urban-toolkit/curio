@@ -1301,6 +1301,40 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
     expect(statuses[1]).toHaveTextContent("Awaiting your review");
   });
 
+  it("a review of a change saved before agents edited directly awaits nothing and keeps Dismiss alone", () => {
+    const onApplyProposal = jest.fn().mockResolvedValue(undefined);
+    const onDismissProposal = jest.fn().mockResolvedValue(undefined);
+    const summary = "Replace the content of node n1";
+    renderPanel({
+      attachment: {
+        ...attachment,
+        activeProposal: { proposalId: "p-old", tool: "node.content.write", nodeId: "n1", summary, status: "pending" },
+      },
+      turns: [
+        { role: "user", text: "q1" },
+        {
+          ...doneTurn("a1", [10, 10]),
+          content: [{
+            type: "proposal", proposalId: "p-old", tool: "node.content.write", summary,
+            preview: "print(2)", pins: { nodeId: "n1" }, status: "pending",
+          }],
+        } as AgentSessionTurn,
+      ],
+      onApplyProposal,
+      onDismissProposal,
+    });
+    expect(screen.queryByText("Awaiting your review")).toBeNull();
+    const saved = within(screen.getByRole("group", { name: `Review proposal: ${summary}` }));
+    expect(saved.queryByRole("button", { name: "Apply" })).toBeNull();
+    // Read here, so a checkout without it fails this test alone.
+    const { MADE_BEFORE_DIRECT_EDITS } = require("../../components/agents/content/reviewCard/reviewCardText");
+    expect(MADE_BEFORE_DIRECT_EDITS).toEqual(expect.any(String));
+    expect(saved.getByText(MADE_BEFORE_DIRECT_EDITS)).toBeInTheDocument();
+    fireEvent.click(saved.getByRole("button", { name: "Dismiss" }));
+    expect(onDismissProposal).toHaveBeenCalledWith("p-old");
+    expect(onApplyProposal).not.toHaveBeenCalled();
+  });
+
   it("the live cumulative counter includes the in-flight run's interim sums", () => {
     renderPanel({
       runStatus: {

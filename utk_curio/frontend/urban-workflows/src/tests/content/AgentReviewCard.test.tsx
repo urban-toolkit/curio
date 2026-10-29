@@ -71,6 +71,68 @@ describe("AgentReviewCard (an install's review, memo dev/41)", () => {
   });
 });
 
+describe("AgentReviewCard: a review of a change saved before agents edited the dataflow directly", () => {
+  /** Every tool whose work now lands as the agent's change; the first test
+   * holds it to the shared file (contracts/agentChanges.json). */
+  const CHANGE_TOOLS = ["dataflow.plan.write", "node.content.write", "node.create", "node.settings.write"];
+
+  /** What such a card says in place of Apply, read inside each test, so a
+   * checkout without it fails each test on its own. */
+  const madeBefore = (): string =>
+    require("../../components/agents/content/reviewCard/reviewCardText").MADE_BEFORE_DIRECT_EDITS;
+
+  /** A review the agent made of *tool* before its work landed by itself, as a
+   * saved chat still holds it: pending, never applied. */
+  const saved = (tool: string, status: AgentProposalPart["status"] = "pending"): AgentProposalPart => ({
+    type: "proposal",
+    proposalId: `saved-${tool}`,
+    tool,
+    summary: `Saved review · ${tool}`,
+    preview: "print('the agent wrote this before')",
+    pins: { nodeId: "n1" },
+    status,
+  });
+
+  it("the kinds here are the tools the shared file names", () => {
+    const { AGENT_CHANGE_TOOLS } = require("../../services/agents/agentChanges");
+    expect([...AGENT_CHANGE_TOOLS].sort()).toEqual(CHANGE_TOOLS);
+  });
+
+  it.each(CHANGE_TOOLS)(
+    "a pending %s review says it can no longer be applied and keeps Dismiss alone",
+    async (tool) => {
+      const onApply = jest.fn().mockResolvedValue(undefined);
+      const onDismiss = jest.fn().mockResolvedValue(undefined);
+      render(<AgentReviewCard part={saved(tool)} onApply={onApply} onDismiss={onDismiss} />);
+      // No Apply: the server lands nothing from it any more.
+      expect(screen.queryByRole("button", { name: "Apply" })).toBeNull();
+      expect(screen.getByText(madeBefore())).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+      await waitFor(() => expect(onDismiss).toHaveBeenCalledWith(`saved-${tool}`));
+      expect(onApply).not.toHaveBeenCalled();
+    },
+  );
+
+  it("one already dismissed keeps its outcome label and nothing more", () => {
+    const words = madeBefore();
+    expect(words).toEqual(expect.any(String));
+    const { container } = render(
+      <AgentReviewCard part={saved("node.create", "dismissed")} onApply={jest.fn()} onDismiss={jest.fn()} />,
+    );
+    expect(screen.getByText("Dismissed")).toBeInTheDocument();
+    expect(screen.queryByText(words)).toBeNull();
+    expect(container.querySelector("button")).toBeNull();
+  });
+
+  it("an install keeps its Apply and says nothing of when it was made", () => {
+    const words = madeBefore();
+    expect(words).toEqual(expect.any(String));
+    render(<AgentReviewCard part={part()} onApply={jest.fn()} onDismiss={jest.fn()} />);
+    expect(screen.getByRole("button", { name: "Apply" })).toBeInTheDocument();
+    expect(screen.queryByText(words)).toBeNull();
+  });
+});
+
 describe("AgentReviewCard: dev/48 install kinds", () => {
   it("project.install states the install-only effect", () => {
     const install: AgentProposalPart = {

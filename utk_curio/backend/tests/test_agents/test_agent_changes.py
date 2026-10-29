@@ -348,6 +348,128 @@ class TestUndoByKind:
         assert _undo(client, token, project, att, "no-such-change").status_code == 404
 
 
+#: A review of each kind of change, as a dataflow saved one before agents
+#: changed it directly: pending, waiting for an Apply that lands nothing now.
+SAVED_REVIEWS = {
+    "node.content.write": {"nodeId": "sum", "content": "return 99"},
+    "node.create": {"nodeType": CA, "content": "return 2"},
+    "node.settings.write": {"nodeId": "sum", "settings": {"widgets": {}}},
+    "dataflow.plan.write": {"plan": {"goal": "replace the loader", "removeNodes": ["load"], "edges": [],
+                                     "nodes": [{"ref": "a", "nodeType": CA, "title": "API Fetch"}]}},
+}
+
+
+class TestAReviewSavedBeforeAgentsEditedDirectly:
+    """A chat saved while a review of a change waited still holds it. Its
+    Apply is refused, saying why, and changes nothing; its Dismiss settles it,
+    on the card the chat shows too. A plan parked beside a later review is
+    found where it was kept."""
+
+    @staticmethod
+    def _saved_review(client, user, token, tool, *, parked=False):
+        from utk_curio.backend.app.agents.application import attachments
+        from utk_curio.backend.app.agents.application import spec_reads
+        from utk_curio.backend.app.agents.application.proposals import store
+        from utk_curio.backend.app.agents.domain import content
+        from utk_curio.backend.app.agents.repositories import sessions
+        from utk_curio.backend.app.collaboration import dataflow_docs
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        project, att = _setup(client, user, token, coord=DFB if tool == "dataflow.plan.write" else NB)
+        ukey = _user_dir_key(user)
+        session_id = _listing(client, token, project, att)["sessionId"]
+        loop_ctx = {"attachment_id": att, "session_id": session_id}
+
+        def _review(kind):
+            """A pending review of *kind* and its card, in the chat as a reply holds it."""
+            review = {"proposalId": f"saved-{kind}", "tool": kind, "summary": f"Saved review of {kind}",
+                      "status": "pending", **SAVED_REVIEWS[kind]}
+            part = content.make_proposal_part(proposal_id=review["proposalId"], tool=kind, summary=review["summary"],
+                                              preview="what the agent wrote then", pins={})
+            sessions.append_turns(ukey, project, session_id, att,
+                                  [sessions.make_turn("agent", "Review it below.", content=[part])])
+            return review, part
+
+        review, part = _review(tool)
+        spec = spec_reads._live_spec_or_404(ukey, project)
+        if parked:
+            # A pending plan parked beside a later review, which took the active slot.
+            attachments.get_attachment(spec, att)["planProposal"] = review
+            dataflow_docs.write(ukey, project, spec, dataflow_docs.by_agent(None, ukey, "proposal"))
+            later, later_part = _review("node.content.write")
+            store._store_proposal(ukey, project, spec_reads._live_spec_or_404(ukey, project), loop_ctx,
+                                  later, later_part)
+        else:
+            store._store_proposal(ukey, project, spec, loop_ctx, review, part)
+        return project, att, review["proposalId"]
+
+    @staticmethod
+    def _part_status(client, token, project, att, proposal_id):
+        turns = client.get(f"/api/agents/projects/{project}/attachments/{att}/session",
+                           headers=_auth(token)).get_json()["turns"]
+        [status] = [p["status"] for t in turns for p in t.get("content") or []
+                    if p.get("type") == "proposal" and p.get("proposalId") == proposal_id]
+        return status
+
+    def test_every_kind_of_change_has_a_saved_review_here(self):
+        from utk_curio.backend.app.agents.application.proposals.changes import CHANGE_TOOLS
+
+        assert set(SAVED_REVIEWS) == CHANGE_TOOLS
+
+    @pytest.mark.parametrize("tool", sorted(SAVED_REVIEWS))
+    def test_its_apply_is_refused_saying_why_and_changes_nothing(self, client, user_and_token, tmp_curio, tool):
+        user, token = user_and_token
+        project, att, proposal_id = self._saved_review(client, user, token, tool)
+        before = _saved(client, token, project)
+        refused = client.post(f"/api/agents/projects/{project}/attachments/{att}/proposals/{proposal_id}/apply",
+                              headers=_auth(token))
+        assert refused.status_code == 409, refused.get_data(as_text=True)
+        said = refused.get_json()["error"]
+        # Words the card can show, not "no apply flow exists for tool ...".
+        assert "can no longer be applied" in said and "dismiss it" in said, said
+        from utk_curio.backend.app.agents.application.proposals.apply import MADE_BEFORE_DIRECT_CHANGES
+
+        assert said == MADE_BEFORE_DIRECT_CHANGES
+        after = _saved(client, token, project)
+        assert (after["nodes"], after["edges"]) == (before["nodes"], before["edges"])
+        assert _listing(client, token, project, att)["activeProposal"]["status"] == "pending"
+        assert self._part_status(client, token, project, att, proposal_id) == "pending"
+
+    @pytest.mark.parametrize("tool", sorted(SAVED_REVIEWS))
+    def test_its_dismiss_settles_it_on_the_card_too(self, client, user_and_token, tmp_curio, tool):
+        user, token = user_and_token
+        project, att, proposal_id = self._saved_review(client, user, token, tool)
+        dismissed = client.delete(f"/api/agents/projects/{project}/attachments/{att}/proposals/{proposal_id}",
+                                  headers=_auth(token))
+        assert dismissed.status_code == 200, dismissed.get_data(as_text=True)
+        assert dismissed.get_json()["status"] == "dismissed"
+        assert _listing(client, token, project, att)["activeProposal"]["status"] == "dismissed"
+        assert self._part_status(client, token, project, att, proposal_id) == "dismissed"
+
+    def test_a_plan_parked_beside_a_later_review_is_refused_and_dismissed_where_it_was_kept(
+        self, client, user_and_token, tmp_curio,
+    ):
+        user, token = user_and_token
+        project, att, proposal_id = self._saved_review(client, user, token, "dataflow.plan.write", parked=True)
+        before = _saved(client, token, project)
+        path = f"/api/agents/projects/{project}/attachments/{att}/proposals/{proposal_id}"
+        refused = client.post(f"{path}/apply", headers=_auth(token))
+        assert refused.status_code == 409, refused.get_data(as_text=True)
+        from utk_curio.backend.app.agents.application.proposals.apply import MADE_BEFORE_DIRECT_CHANGES
+
+        assert refused.get_json()["error"] == MADE_BEFORE_DIRECT_CHANGES
+        after = _saved(client, token, project)
+        assert (after["nodes"], after["edges"]) == (before["nodes"], before["edges"])
+        dismissed = client.delete(path, headers=_auth(token))
+        assert dismissed.status_code == 200, dismissed.get_data(as_text=True)
+        listing = _listing(client, token, project, att)
+        assert listing["planProposal"]["status"] == "dismissed"
+        # The later review that took the active slot is left as it was.
+        assert listing["activeProposal"]["proposalId"] == "saved-node.content.write"
+        assert listing["activeProposal"]["status"] == "pending"
+        assert self._part_status(client, token, project, att, proposal_id) == "dismissed"
+
+
 class TestAChangeWaitsForAPersonInTheNode:
     @pytest.fixture(autouse=True)
     def _quick(self, monkeypatch):
