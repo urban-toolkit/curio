@@ -425,7 +425,9 @@ def _land_dataflow_plan(user_key: str, project_id: str, loop_ctx: dict, spec: di
     spec_nodes_by_id = {n.get("id"): n for n in nodes if isinstance(n, dict)}
     remove_node_set = set(plan.get("removeNodes", []))
     planner = attachments.get_attachment(spec, attachment_id) or {}
+    # What the planner held before: the Undo of this plan puts both back.
     session_before = copy.deepcopy(planner.get("builderSession") or {})
+    plan_before = copy.deepcopy(planner.get("planProposal"))
     removed_edge_ids, pruned = _remove_plan_victims(spec, nodes, edges, remove_node_set, plan.get("removeEdges", []))
     starters = _content_starters(user_key, project_id, plan.get("nodes", []))
     declared = _declared_widgets(user_key, project_id, plan.get("nodes", []))
@@ -452,6 +454,7 @@ def _land_dataflow_plan(user_key: str, project_id: str, loop_ctx: dict, spec: di
         removedNodeIds=sorted(remove_node_set), removedEdgeIds=sorted(removed_edge_ids),
         scenarioIds=[s.get("id") for s in created_scenarios if isinstance(s, dict) and s.get("id")],
         session=session_before,
+        **({"planBefore": plan_before} if isinstance(plan_before, dict) else {}),
     )
     agents_changes.keep(spec, attachment_id, change)
     dataflow_docs.write(user_key, project_id, spec, agents_changes.actor(user_key, spec, loop_ctx, "plan"),
@@ -532,7 +535,11 @@ def _undo_plan(user_key: str, project_id: str, attachment_id: str, change: dict,
     if record is not None:
         record["builderSession"] = copy.deepcopy(change.get("session") or {})
         if (record.get("planProposal") or {}).get("proposalId") == change.get("planId"):
-            record.pop("planProposal", None)
+            # The plan before it, when there was one, is the planner's again.
+            if isinstance(change.get("planBefore"), dict):
+                record["planProposal"] = copy.deepcopy(change["planBefore"])
+            else:
+                record.pop("planProposal", None)
     pruned = attachments.prune_orphaned_attachments(spec)
     dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._person(user_key, "undo"))
     sessions.delete_sessions_of(user_key, project_id, pruned)
