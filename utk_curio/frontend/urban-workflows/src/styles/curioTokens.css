@@ -403,6 +403,10 @@
   --curio-z-node-drawer: 10040;
   --curio-z-dataset-drawer: 10045;
   --curio-z-agent-drawer: 10048;
+  /* An agent's drag on the canvas (components/collab/AgentDrags): over the
+     catalog drawers and the tool rail, where a drag starts, and under API
+     Settings and everything above it. */
+  --curio-z-agent-drags: 10049;
   /* API Settings and Monitor on the canvas: above the catalog drawers, since a
      catalog card can open API Settings, and below the modals. */
   --curio-z-header-drawer: 10050;

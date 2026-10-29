@@ -14,6 +14,7 @@ import { DatasetsPaletteDropdown } from "./datasetPalette";
 import { AgentsPaletteDropdown } from "./agentsPalette";
 import { ModelsPaletteDropdown } from "./modelsPalette";
 import { RunAllButton } from "./RunAllButton";
+import type { RailPalette } from "./toolsPaletteDismiss";
 import styles from "./ToolsMenu.module.css";
 
 const NOOP = () => () => {};
@@ -50,10 +51,10 @@ const ToolsMenu = memo(function ToolsMenu() {
     // the same strip to the right of it, so only one may be open at a time,
     // and the rail starts with all of them closed. A palette closes ONLY when
     // its own trigger is clicked again (or another trigger takes the strip) -
-    // outside clicks and Escape deliberately leave it open.
-    const [activePalette, setActivePalette] = useState<
-        "builtin" | "datasets" | "packages" | "agents" | "models" | null
-    >(null);
+    // outside clicks and Escape deliberately leave it open. An agent's drag
+    // names its palette by these names (`RAIL_PALETTES`), and starts at the
+    // rail's edge beside the button of one that is closed.
+    const [activePalette, setActivePalette] = useState<RailPalette | null>(null);
     const setBuiltinOpen = useCallback((value: boolean) => {
         setActivePalette((prev) => (value ? "builtin" : prev === "builtin" ? null : prev));
     }, []);

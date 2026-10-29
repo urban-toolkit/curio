@@ -156,13 +156,19 @@ def set_user_role(room: str, user_id, role: str) -> Tuple[bool, List[str]]:
         return changed, released
 
 
+#: What an agent's lock names besides a person's fields: the agent, and what
+#: it writes on the node (``agent_peers.py``).
+AGENT_LOCK_FIELDS = ("agent", "writes")
+
+
 def try_lock(room: str, node_id: str, user_info: dict) -> Optional[dict]:
     """Acquire (or refresh) the soft lock on ``node_id`` for the participant
-    *user_info*.
+    *user_info*. An agent's lock also keeps its :data:`AGENT_LOCK_FIELDS`.
 
     Returns the lock record if it owns it after the call (newly or
     already), otherwise ``None`` (another participant holds it).
     """
+    agent = {key: user_info[key] for key in AGENT_LOCK_FIELDS if user_info.get(key) is not None}
     with _lock:
         _ensure_room(room)
         locks = _room_locks[room]
@@ -171,6 +177,7 @@ def try_lock(room: str, node_id: str, user_info: dict) -> Optional[dict]:
         if existing is not None:
             if existing.get("participant_id") == participant_id:
                 existing["since"] = _now()
+                existing.update(agent)
                 return dict(existing)
             return None
         lock = {
@@ -179,6 +186,7 @@ def try_lock(room: str, node_id: str, user_info: dict) -> Optional[dict]:
             "name": user_info.get("name"),
             "participant_id": participant_id,
             "since": _now(),
+            **agent,
         }
         locks[node_id] = lock
         return dict(lock)
