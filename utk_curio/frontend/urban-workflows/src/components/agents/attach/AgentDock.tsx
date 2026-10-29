@@ -32,7 +32,8 @@ const GOAL_INPUT_ID = "curio-dataflow-goal";
  * root while the dock shares the canvas title's row. The title, on the same
  * row from the left, is cut short where it would run under the dock
  * (`.workflowNameStyle` in UpMenu.module.css); a long dataflow name used to be
- * drawn over the dock and its goal field.
+ * drawn over the dock and its goal field. Taken off, it is its default in
+ * curioTokens.css, the window's width.
  */
 export const DOCK_LEFT_PROPERTY = "--curio-canvas-dock-left";
 

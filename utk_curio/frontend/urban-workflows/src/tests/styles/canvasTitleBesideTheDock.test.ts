@@ -53,7 +53,13 @@ describe("the canvas title beside the agents' dock", () => {
   it("stops before the left edge the dock publishes", () => {
     expect(DOCK_LEFT_PROPERTY).toBe("--curio-canvas-dock-left");
     const maxWidth = (ruleBody(CSS, ".workflowNameStyle") ?? "").match(/\n\s*max-width:([^;]*);/);
-    expect(maxWidth?.[1]).toContain(`var(${DOCK_LEFT_PROPERTY},`);
+    expect(maxWidth?.[1]).toContain(`var(${DOCK_LEFT_PROPERTY})`);
+  });
+
+  it("keeps the window's width with no dock on its row, the edge's default", () => {
+    // What the title reads once the dock takes its edge off the page's root.
+    const tokens = fs.readFileSync(path.resolve(__dirname, "../../styles/curioTokens.css"), "utf8");
+    expect(tokens).toMatch(new RegExp(`\\n\\s*${DOCK_LEFT_PROPERTY}:\\s*100vw;`));
   });
 
   it("gives the whole name as its tooltip", () => {
