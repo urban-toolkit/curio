@@ -10,12 +10,12 @@
  *   show live; the place itself is written into the doc at the drop;
  * - `removed`: the nodes this tab just removed, so a tab that was editing one
  *   says who removed it;
- * - `cursor`: where this tab's pointer is on the canvas, in flow coordinates,
- *   or null while it is off the canvas (`cursors.ts`); the others draw it in
- *   this tab's color with its name.
+ * - `pointer`: where this tab's pointer is on the canvas, in flow coordinates,
+ *   or null while it is off the canvas (`cursors.ts`); the others draw it as a
+ *   cursor in this tab's color with its name.
  *
  * The server writes each state's `user`: the participant the room knows. A
- * watcher's state keeps only `cursor` and `selection`.
+ * watcher's state keeps only `pointer` and `selection`.
  */
 import type { Awareness } from "y-protocols/awareness";
 
@@ -34,7 +34,7 @@ export interface DragState {
 /** A pointer on the canvas: the point of the dataflow it is on, in React
  *  Flow's flow coordinates (the same in every tab, whatever each has panned
  *  or zoomed to), and when it was sent, in milliseconds since the epoch. */
-export interface CursorPoint {
+export interface CanvasPointer {
     x: number;
     y: number;
     t: number;
@@ -46,7 +46,7 @@ export interface PresenceState {
     drag?: DragState | null;
     removed?: { nodes: string[]; at: number } | null;
     selection?: unknown;
-    cursor?: CursorPoint | null;
+    pointer?: CanvasPointer | null;
 }
 
 /** How long a removal note stays in this tab's state. */

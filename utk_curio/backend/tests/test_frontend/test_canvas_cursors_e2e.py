@@ -3,8 +3,10 @@
 The owner opens her dataflow and a watcher opens its link, each in a browser of
 their own. Where one's pointer is on the canvas shows on the other's, at the
 same point of the dataflow whatever either has panned or zoomed to, in their
-color with their name, and nobody's own pointer is drawn. A pointer that rests
-fades and is drawn whole again when it moves; one that leaves the canvas goes.
+color with their name, and nobody's own pointer is drawn. The watcher's reaches
+the owner's tab too: the server keeps a watcher's awareness ``pointer``. A
+pointer that rests fades and is drawn whole again when it moves; one that
+leaves the canvas goes.
 
 A watcher is in the dataflow's room on any stack with sign-in, so this needs no
 ``--collab``.
@@ -292,7 +294,7 @@ def _frame(page, name: str, cursor: dict, failures: list[str]) -> None:
         failures.append(f"{name}: {error}")
 
 
-def test_a_pointer_shows_at_its_point_of_the_dataflow_in_the_other_tab_as_either_pans_and_zooms(room):
+def test_a_watchers_pointer_shows_on_the_owners_canvas_at_its_point_of_the_dataflow_as_either_pans_and_zooms(room):
     frames_failed: list[str] = []
     owner = room.person(OWNER, OWNER_NAME, owns=True)
     room.open(owner)
@@ -305,12 +307,13 @@ def test_a_pointer_shows_at_its_point_of_the_dataflow_in_the_other_tab_as_either
     watcher = room.person(WATCHER, WATCHER_NAME)
     room.open(watcher)
 
-    # The watcher's pointer, on the owner's canvas at the same point of the
-    # dataflow, in the watcher's color with the watcher's name.
+    # The watcher's pointer reaches the owner's tab: on the owner's canvas at
+    # the same point of the dataflow, in the watcher's color with the
+    # watcher's name.
     at = _bare_point(watcher, right=220, down=90)
     _point_at(watcher, at)
     drawn = _cursor_lands(owner, WATCHER_NAME, _drawn_at(owner, _flow_point(watcher, at)),
-                          what="the watcher's pointer")
+                          what="the watcher's pointer, on the owner's canvas,")
     _frame(owner, "watchers-pointer", drawn, frames_failed)
     assert not _cursors(owner, WATCHER_NAME)[0]["idle"], "the watcher's cursor faded before its frame was taken"
     assert drawn["opacity"] == pytest.approx(1), f"a pointer that just moved is drawn faded: {drawn}"

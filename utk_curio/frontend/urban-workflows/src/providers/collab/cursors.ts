@@ -1,9 +1,10 @@
 /**
  * Everyone's pointer on the canvas, through the doc's awareness
- * (`presence.ts`): each tab's state holds `cursor`, `{x, y, t}`, where `x` and
+ * (`presence.ts`): each tab's state holds `pointer`, `{x, y, t}`, where `x` and
  * `y` are the point of the dataflow the pointer is on, in React Flow's flow
  * coordinates, and `t` is when it was sent, in milliseconds since the epoch.
- * It is `null` while the pointer is off the canvas.
+ * It is `null` while the pointer is off the canvas. The server keeps a
+ * watcher's too (`PRESENCE_FIELDS` in `collaboration/dataflow_docs.py`).
  *
  * - **Sending** (`CursorSender`): at most once every `CURSOR_EVERY_MS`, about
  *   20 times a second, and only when the pointer's point of the dataflow
@@ -14,12 +15,12 @@
  *   tab's, from when the move arrived: another machine's clock can be off by
  *   minutes.
  */
-import { colorOf, nameOf, type CursorPoint, type PresenceState } from "./presence";
+import { colorOf, nameOf, type CanvasPointer, type PresenceState } from "./presence";
 
-export type { CursorPoint } from "./presence";
+export type { CanvasPointer } from "./presence";
 
 /** The awareness field. */
-export const CURSOR_FIELD = "cursor";
+export const POINTER_FIELD = "pointer";
 /** The shortest time between two of a tab's cursor messages. */
 export const CURSOR_EVERY_MS = 50;
 /** How long a cursor rests before it fades. */
@@ -45,12 +46,12 @@ function finite(value: unknown): value is number {
     return typeof value === "number" && Number.isFinite(value);
 }
 
-/** The cursor a state holds, or null when it holds none, or nothing a cursor
- *  can be: a state comes from another tab. */
-export function cursorOf(state: PresenceState | null | undefined): CursorPoint | null {
-    const cursor = state?.cursor as Partial<CursorPoint> | null | undefined;
-    if (!cursor || typeof cursor !== "object" || !finite(cursor.x) || !finite(cursor.y)) return null;
-    return { x: cursor.x, y: cursor.y, t: finite(cursor.t) ? cursor.t : 0 };
+/** The pointer a state holds, or null when it holds none, or nothing a
+ *  pointer can be: a state comes from another tab. */
+export function pointerOf(state: PresenceState | null | undefined): CanvasPointer | null {
+    const pointer = state?.pointer as Partial<CanvasPointer> | null | undefined;
+    if (!pointer || typeof pointer !== "object" || !finite(pointer.x) || !finite(pointer.y)) return null;
+    return { x: pointer.x, y: pointer.y, t: finite(pointer.t) ? pointer.t : 0 };
 }
 
 /** A tenth of a flow unit: a fifth of a pixel at React Flow's largest zoom. */
@@ -99,9 +100,9 @@ export class CursorSender {
     left(): void {
         this.cancel();
         this.sent = null;
-        if ((this.awareness.getLocalState()?.[CURSOR_FIELD] ?? null) === null) return;
+        if ((this.awareness.getLocalState()?.[POINTER_FIELD] ?? null) === null) return;
         this.sentAt = Date.now();
-        this.awareness.setLocalStateField(CURSOR_FIELD, null);
+        this.awareness.setLocalStateField(POINTER_FIELD, null);
     }
 
     /** Nothing more is sent, and the cursor goes. */
@@ -123,7 +124,7 @@ export class CursorSender {
         if (this.sent && this.sent.x === point.x && this.sent.y === point.y) return;
         this.sent = point;
         this.sentAt = Date.now();
-        this.awareness.setLocalStateField(CURSOR_FIELD, { x: point.x, y: point.y, t: this.sentAt });
+        this.awareness.setLocalStateField(POINTER_FIELD, { x: point.x, y: point.y, t: this.sentAt });
     }
 }
 
@@ -139,17 +140,17 @@ export interface DrawnCursor {
     idle: boolean;
 }
 
-/** Everyone else's cursors, from their awareness states, and when each last
- *  moved by this tab's clock. */
+/** Everyone else's cursors, from the pointers in their awareness states, and
+ *  when each last moved by this tab's clock. */
 export class CursorTracker {
-    private readonly seen = new Map<number, CursorPoint & { movedAt: number }>();
+    private readonly seen = new Map<number, CanvasPointer & { movedAt: number }>();
 
-    /** The cursors *others* hold at *now*, in client order. */
+    /** The cursors of the pointers *others* hold at *now*, in client order. */
     read(others: ReadonlyArray<readonly [number, PresenceState]>, now: number): DrawnCursor[] {
         const drawn: DrawnCursor[] = [];
         const held = new Set<number>();
         for (const [clientId, state] of others) {
-            const cursor = cursorOf(state);
+            const cursor = pointerOf(state);
             if (!cursor) continue;
             held.add(clientId);
             const last = this.seen.get(clientId);

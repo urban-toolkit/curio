@@ -131,8 +131,8 @@ export class DataflowDocProvider {
     destroy(): void {
         if (this.destroyed) return;
         // A doc started again on the same socket is another client, so the
-        // others drop this one's presence now, its cursor among it: the server
-        // would keep it until the socket goes.
+        // others drop this one's presence now, its pointer among it: the
+        // server would keep it until the socket goes.
         if (this.socket?.connected) this.awareness.setLocalState(null);
         this.destroyed = true;
         if (this.retryTimer) clearTimeout(this.retryTimer);

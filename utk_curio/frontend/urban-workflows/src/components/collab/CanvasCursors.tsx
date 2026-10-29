@@ -1,7 +1,7 @@
 /**
  * Everyone's pointer on the canvas (`providers/collab/cursors.ts`).
  *
- * - This tab's goes into the doc's awareness as `cursor` while it is over the
+ * - This tab's goes into the doc's awareness as `pointer` while it is over the
  *   canvas, nodes included, and becomes null when it leaves the canvas (onto
  *   the top bar, the tool rail, a menu) or the tab is hidden.
  * - Everyone else's is drawn over the canvas on the scenario layers' plane
