@@ -11,7 +11,7 @@ import { nodeLabel } from "../scenarioLabels";
 import { useScenarioUi, type ScenarioDefine } from "../scenarioUi";
 import styles from "./ScenarioDefinePanel.module.css";
 
-const STEPS = ["Scenario nodes", "Shared context & outcomes", "Name & set"];
+const STEPS = ["Scenario-specific nodes", "Shared context & outcomes", "Name & set"];
 
 type SetChoice = { kind: "new"; name: string } | { kind: "existing"; setId: string };
 type Part = "context" | "outcomes";
@@ -34,7 +34,7 @@ const selectedOf = (s: ReactFlowState) =>
 /**
  * Define scenario, beside the canvas so the canvas stays usable:
  *
- * 1. Scenario nodes: the person selects on the canvas the nodes unique to the
+ * 1. Scenario-specific nodes: the person selects on the canvas the nodes unique to the
  *    scenario; the panel lists them as they are selected.
  * 2. Shared context & outcomes: Curio infers the shared context (every node upstream
  *    of them) and the outcomes (every node downstream), which the canvas
@@ -252,7 +252,7 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
       )}
       <div className={styles.body}>
         {step === 1 && (
-          <section className={styles.part} aria-label="Scenario nodes">
+          <section className={styles.part} aria-label="Scenario-specific nodes">
             <h3 className={styles.question}>Which nodes are unique to this scenario?</h3>
             <p className={styles.hint}>
               Select them on the canvas: click one, or hold Shift and drag a box around several. These are the nodes

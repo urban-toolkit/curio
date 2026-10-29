@@ -113,7 +113,7 @@ export function scenarioInfoRows(
     { label: "Project", value: row.project.name },
     origin ? { label: "Origin", value: scenarioOriginLabel(row) } : null,
     row.set?.name ? { label: "Set", value: row.set.name } : null,
-    { label: "Scenario nodes", value: String(row.nodeCount) },
+    { label: "Scenario-specific nodes", value: String(row.nodeCount) },
     details ? { label: "Shared context", value: String(details.context.length) } : null,
     details ? { label: "Shared outcomes", value: String(details.outcomes.length) } : null,
   ];

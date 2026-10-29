@@ -123,7 +123,7 @@ describe("defining a scenario", () => {
     expect(screen.getByTestId("scenario-define-waiting")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Next: shared context & outcomes" })).toBeDisabled();
     select("existing");
-    expect(part("Scenario nodes").getByText("existing")).toBeInTheDocument();
+    expect(part("Scenario-specific nodes").getByText("existing")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Next: shared context & outcomes" })).toBeEnabled();
   });
 

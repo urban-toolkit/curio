@@ -36,7 +36,7 @@ Scenarios live in their projects. The catalog lists them; it keeps no copy. Edit
 
 Choose **View → Define scenario**, or **Define scenario** in the drawer's **In project** tab. A panel opens beside the canvas, in three steps:
 
-1. **Scenario nodes:** select on the canvas the nodes unique to the scenario (click one, or Shift and drag a box). The panel lists them as you select. Nodes already in a scenario are left out.
+1. **Scenario-specific nodes:** select on the canvas the nodes unique to the scenario (click one, or Shift and drag a box). The panel lists them as you select. Nodes already in a scenario are left out.
 2. **Shared context & outcomes:** Curio follows the edges from them and lists the shared context and the outcomes, and the canvas marks them. Confirm them, remove a node with **×**, or select one on the canvas and click **+ Add selected node**. Joining a set that has scenarios already, each list says what the set has and what is new to it.
 3. **Name & set:** name the scenario, and put it in one of this dataflow's scenario sets or create a new one, named after the dataflow unless you name it. **Save scenario** writes it; nothing is written before.
 
@@ -97,7 +97,7 @@ A scenario's details show its name, color, project, set and description, and its
 | List | Holds | Each node shows |
 |---|---|---|
 | **Shared context** | The nodes upstream of the scenario that it uses, as it keeps them | Its name, and the output its project saved |
-| **Scenario nodes** | The nodes in the scenario | Its name, and the output its project saved |
+| **Scenario-specific nodes** | The nodes in the scenario | Its name, and the output its project saved |
 | **Shared outcomes** | The nodes downstream of the scenario that it feeds, as it keeps them; for a scenario that feeds nothing outside it, its own last nodes | Its name, and the output its project saved |
 
 A chart or a Data Pool saves nothing itself, so its saved result is the output of the node feeding it.

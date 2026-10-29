@@ -142,7 +142,7 @@ def _define(page, node_id: str, name: str) -> None:
     panel = page.get_by_test_id("scenario-define-panel")
     panel.wait_for(state="visible", timeout=10000)
     # 1. Its own nodes: the selection.
-    panel.get_by_role("region", name="Scenario nodes").get_by_text(TITLES[node_id]).wait_for(timeout=10000)
+    panel.get_by_role("region", name="Scenario-specific nodes").get_by_text(TITLES[node_id]).wait_for(timeout=10000)
     panel.get_by_role("button", name="Next: shared context & outcomes").click()
     # 2. What Curio found up and down from them.
     context = panel.get_by_role("region", name="Shared context").inner_text()

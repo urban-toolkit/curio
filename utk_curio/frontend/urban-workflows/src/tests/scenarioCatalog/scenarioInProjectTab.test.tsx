@@ -303,7 +303,7 @@ describe("the Scenario Catalog drawer's In project tab", () => {
     expect(modal.getByLabelText("Scenario description")).toHaveValue("Every height twice.");
     const region = (name: string) => within(modal.getByRole("region", { name }));
     expect(region("Shared context").getByText("Load parcels")).toBeInTheDocument();
-    expect(region("Scenario nodes").getByText("Scale heights")).toBeInTheDocument();
+    expect(region("Scenario-specific nodes").getByText("Scale heights")).toBeInTheDocument();
     expect(region("Shared outcomes").getByText("Scale heights")).toBeInTheDocument();
     // Read off the canvas: no saved-output lines, and no request.
     expect(modal.queryByText("No saved output")).toBeNull();
@@ -344,7 +344,7 @@ describe("the Scenario Catalog drawer's In project tab", () => {
     fireEvent.click(tab("In project"));
     fireEvent.click(await within(root()).findByRole("button", { name: "View Gone (Heights) details" }));
     const modal = within(await screen.findByRole("dialog", { name: "Scenario details" }));
-    expect(within(modal.getByRole("region", { name: "Scenario nodes" })).getByText("No nodes: add some, or delete it.")).toBeInTheDocument();
+    expect(within(modal.getByRole("region", { name: "Scenario-specific nodes" })).getByText("No nodes: add some, or delete it.")).toBeInTheDocument();
   });
 
   test("a shared viewer's details only read", async () => {

@@ -77,22 +77,22 @@ describe("ScenarioDetailModal", () => {
   test("lists the fixed context, the levers and the outcomes, each by its label", async () => {
     api.getScenario.mockResolvedValue(heatDetails());
     renderModal();
-    await modal().findByRole("region", { name: "Scenario nodes" });
+    await modal().findByRole("region", { name: "Scenario-specific nodes" });
     expect(section("Shared context").getByText("Load parcels")).toBeInTheDocument();
-    expect(section("Scenario nodes").getByText("Filter roofs")).toBeInTheDocument();
+    expect(section("Scenario-specific nodes").getByText("Filter roofs")).toBeInTheDocument();
     // No title of its own, and no registry in a test: the template's name.
-    expect(section("Scenario nodes").getByText("computation-analysis")).toBeInTheDocument();
+    expect(section("Scenario-specific nodes").getByText("computation-analysis")).toBeInTheDocument();
     expect(section("Shared outcomes").getByText("vis-vega")).toBeInTheDocument();
   });
 
   test("shows each node's saved outputs, or says it has none", async () => {
     api.getScenario.mockResolvedValue(heatDetails());
     renderModal();
-    await modal().findByRole("region", { name: "Scenario nodes" });
+    await modal().findByRole("region", { name: "Scenario-specific nodes" });
     expect(section("Shared context").getByText("Parcels · geojson · 1,204 features")).toBeInTheDocument();
     expect(section("Shared outcomes").getByText("Roof chart data · csv · 42 rows")).toBeInTheDocument();
     // The filter saved nothing; the value node saved its year.
-    expect(section("Scenario nodes").getAllByText("No saved output")).toHaveLength(1);
+    expect(section("Scenario-specific nodes").getAllByText("No saved output")).toHaveLength(1);
     const value = document.querySelector('[data-scenario-node-id="year"]') as HTMLElement;
     expect(within(value).getByText("Year · json")).toBeInTheDocument();
     expect(within(value).queryByText("No saved output")).toBeNull();
@@ -102,7 +102,7 @@ describe("ScenarioDetailModal", () => {
   test("marks the levers and the fixed context on the project graph", async () => {
     api.getScenario.mockResolvedValue(heatDetails());
     renderModal();
-    await modal().findByRole("region", { name: "Scenario nodes" });
+    await modal().findByRole("region", { name: "Scenario-specific nodes" });
     const thumb = document.querySelector("[data-curio-scenario-thumbnail]") as HTMLElement;
     const role = (r: string) =>
       Array.from(thumb.querySelectorAll(`g[data-thumbnail-role="${r}"]`)).length;

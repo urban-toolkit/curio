@@ -172,8 +172,8 @@ export const ScenarioDetailModal: React.FC<ScenarioDetailModalProps> = ({
                     empty={inProject && details.levers.length > 0 ? "None: everything it reads is in it." : "None."}
                   />
                 </section>
-                <section className={styles.section} aria-label="Scenario nodes">
-                  <h3 className={styles.sectionLabel}>Scenario nodes</h3>
+                <section className={styles.section} aria-label="Scenario-specific nodes">
+                  <h3 className={styles.sectionLabel}>Scenario-specific nodes</h3>
                   <ScenarioNodeList
                     entries={details.levers}
                     results={!inProject}

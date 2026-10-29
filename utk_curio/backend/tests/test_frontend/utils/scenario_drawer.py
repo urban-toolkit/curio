@@ -92,6 +92,6 @@ def close_scenario_details(page: Page, *, timeout: float = 10000) -> None:
 
 
 def scenario_part(modal, part: str) -> str:
-    """The text of one list in the details: "Shared context", "Scenario nodes" or
+    """The text of one list in the details: "Shared context", "Scenario-specific nodes" or
     "Shared outcomes"."""
     return modal.get_by_role("region", name=part).inner_text()
