@@ -110,7 +110,7 @@ const circles = (node: string) => ({
 });
 
 describe("a collapsed shared group", () => {
-  test("is a box of cards with the set's circles, under its pill, and Expand opens it", () => {
+  test("is a box of cards with the set's circles, under its pill, and a double-click opens it", () => {
     const { onSharedCollapse } = renderLayers(
       view({ boxes: [], groups: [outcomes], dots: [circles("map"), circles("chart")] }),
     );
@@ -125,12 +125,11 @@ describe("a collapsed shared group", () => {
     const dots = [...chart.querySelectorAll("[data-scenario]")].map((d) => d.getAttribute("data-member"));
     expect(dots).toEqual(["true", "false"]);
     const header = document.querySelector('[data-shared-header="group:park:outcomes"]') as HTMLElement;
-    expect(header.textContent).toBe("Shared outcomesExpand");
+    expect(header.textContent).toBe("Shared outcomes");
     expect([header.style.left, header.style.top]).toEqual(["400px", "2px"]);
-    fireEvent.click(screen.getByTestId("shared-expand-park-outcomes"));
-    expect(onSharedCollapse).toHaveBeenCalledWith("park", "outcomes", false);
+    expect(el.textContent).toContain("Double-click to expand");
     fireEvent.doubleClick(el);
-    expect(onSharedCollapse).toHaveBeenCalledTimes(2);
+    expect(onSharedCollapse).toHaveBeenCalledWith("park", "outcomes", false);
   });
 });
 
@@ -263,7 +262,7 @@ describe("a stand-in edge", () => {
       }),
     );
     const d = document.querySelector("[data-scenario-stand-in]")!.getAttribute("d")!;
-    // The box's right edge, at the middle of chart's card: 30 + 10 + 66 + 29.
-    expect(d.startsWith("M 660 135 ")).toBe(true);
+    // The box's right edge, at the middle of chart's card: 30 + 34 + 66 + 29.
+    expect(d.startsWith("M 660 159 ")).toBe(true);
   });
 });

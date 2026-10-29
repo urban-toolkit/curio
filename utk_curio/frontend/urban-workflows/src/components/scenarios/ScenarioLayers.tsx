@@ -16,8 +16,8 @@ import styles from "./ScenarioLayers.module.css";
 export const BOX_WIDTH = 260;
 /** A scenario box's header: the scenario's name, and how to open it. */
 const SCENARIO_BOX_HEADER = 58;
-/** A shared group's box has its title over it, as its frame does. */
-const GROUP_BOX_HEADER = 10;
+/** A shared group's box has its title over it, as its frame does, and how to open it in it. */
+const GROUP_BOX_HEADER = 34;
 const CARD_HEIGHT = 58;
 const CARD_GAP = 8;
 const BOX_PAD = 10;
@@ -484,16 +484,6 @@ export function ScenarioLayers({
                 style={{ left: x, top: y - FRAME_HEADER_OFFSET }}
               >
                 <span className={styles.groupChip}>{SHARED_TITLE[group.kind]}</span>
-                {onSharedCollapse && (
-                  <button
-                    type="button"
-                    className={styles.headerButton}
-                    data-testid={`shared-expand-${group.set}-${group.kind}`}
-                    onClick={() => onSharedCollapse(group.set, group.kind, false)}
-                  >
-                    Expand
-                  </button>
-                )}
               </div>
               <div
                 className={styles.groupBox}
@@ -506,6 +496,7 @@ export function ScenarioLayers({
                 onPointerMove={moveDrag}
                 onPointerUp={endDrag(group.key, group, (at) => onSharedMove?.(group.set, group.kind, at))}
               >
+                <div className={styles.groupHint}>Double-click to expand</div>
                 {[...layout.rows].map(([id, top]) =>
                   card(group.key, id, top, circles(id), "var(--curio-text-secondary)", { "data-shared-row": id }),
                 )}

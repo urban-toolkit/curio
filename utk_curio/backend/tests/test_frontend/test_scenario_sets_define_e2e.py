@@ -206,10 +206,11 @@ def test_two_scenarios_defined_step_by_step_share_one_set(
     saved = api_json(f"{current_server}/api/projects/{project_id}", session["token"])["spec"]["dataflow"]
     assert saved["scenarioSets"][0].get("shared") == {"outcomes": {"collapsed": True}}
 
-    # Reopened, it is still collapsed; Expand shows the node again.
+    # Reopened, it is still collapsed; a double-click shows the node again.
     page.reload()
     box.wait_for(state="visible", timeout=45000)
+    assert "Double-click to expand" in box.inner_text()
     # The reopened view fits the nodes that show, which can leave the box out.
-    page.get_by_test_id(f"shared-expand-{set_id}-outcomes").dispatch_event("click")
+    box.dispatch_event("dblclick")
     node_locator(page, "chart").wait_for(state="visible", timeout=10000)
     assert page.locator(f'[data-shared-header="group:{set_id}:outcomes"]').inner_text().startswith("Shared outcomes")

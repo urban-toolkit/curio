@@ -848,8 +848,8 @@ scenario's nodes still run with **Run All**, and the context they share runs onc
 
 Each scenario set's shared context and shared outcomes are framed in gray, under a
 **Shared context** or **Shared outcomes** pill with a **Collapse** button. Collapsed,
-a group is one gray box with a card for each node and the set's circles on it, and
-**Expand** or a double-click opens it again.
+a group is one gray box with a card for each node and the set's circles on it;
+double-click it to expand it.
 
 Defining a scenario saves the outputs of the nodes feeding it and its last nodes to your Data
 Catalog, whatever their **Save output** setting, as pinning a dashboard tile does. A

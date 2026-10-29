@@ -255,6 +255,15 @@
   user-select: none;
 }
 
+.groupHint {
+  position: absolute;
+  left: 12px;
+  top: 10px;
+  font-size: var(--curio-font-size-xs);
+  color: var(--curio-text-secondary);
+  white-space: nowrap;
+}
+
 .groupBox:active {
   cursor: grabbing;
 }
