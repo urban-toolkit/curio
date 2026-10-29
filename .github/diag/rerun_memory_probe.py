@@ -231,6 +231,19 @@ def variant_env(env):
     if STATE.get("decorate"):
         env["GLIBC_TUNABLES"] = "glibc.mem.decorate_maps=1"
     variant = STATE["variant"].replace("_thp_off", "").replace("thp_off", "baseline")
+    if variant == "launch_trim128k":
+        # glibc's own default trim threshold, fixed: no dynamic raising, so
+        # the mmap threshold stays at 128 KiB too.
+        from utk_curio.sandbox.isolation.lifecycle import server_environment
+        env = server_environment(env)
+        env["MALLOC_TRIM_THRESHOLD_"] = "131072"
+        return env
+    if variant == "launch_mmap4m":
+        from utk_curio.sandbox.isolation.lifecycle import server_environment
+        env = server_environment(env)
+        env["MALLOC_MMAP_THRESHOLD_"] = str(4 * MB)
+        env["MALLOC_TRIM_THRESHOLD_"] = str(8 * MB)
+        return env
     if variant == "launch":
         from utk_curio.sandbox.isolation.lifecycle import server_environment
         return server_environment(env)
@@ -338,7 +351,8 @@ def snapshot(pid):
         raw = Path(f"/proc/{pid}/environ").read_bytes().split(b"\0")
         for item in raw:
             name, _, value = item.decode(errors="replace").partition("=")
-            if name in ("MALLOC_ARENA_MAX", "ARROW_DEFAULT_MEMORY_POOL"):
+            if name in ("MALLOC_ARENA_MAX", "ARROW_DEFAULT_MEMORY_POOL", "MALLOC_TRIM_THRESHOLD_",
+                        "MALLOC_MMAP_THRESHOLD_"):
                 env[name] = value
     except OSError:
         pass
@@ -374,6 +388,7 @@ def one(rows, cycles, workdir, replay_variants=()):
     data["ratios"] = [round((after - report.baseline) / report.unit, 3) if report.unit else None
                       for after in report.cycle_after]
     data["snaps"] = STATE["snaps"]
+    data["samples"] = report.samples
     data["table"] = report.table()
     return data
 

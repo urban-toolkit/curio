@@ -20,8 +20,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { label: named, image: a18707561b12afdc72ac779357a1bd5099516163, variant: baseline, job: 1, diag: "--diag --decorate", samples: 2 }
-          - { label: named, image: a18707561b12afdc72ac779357a1bd5099516163, variant: launch, job: 1, diag: "--diag --decorate", samples: 2 }
+          - { label: cost, image: a18707561b12afdc72ac779357a1bd5099516163, variant: launch, job: 1 }
+          - { label: cost, image: a18707561b12afdc72ac779357a1bd5099516163, variant: launch, job: 2 }
+          - { label: cost, image: a18707561b12afdc72ac779357a1bd5099516163, variant: launch_trim128k, job: 1 }
+          - { label: cost, image: a18707561b12afdc72ac779357a1bd5099516163, variant: launch_trim128k, job: 2 }
+          - { label: cost, image: a18707561b12afdc72ac779357a1bd5099516163, variant: launch_mmap4m, job: 1 }
+          - { label: cost, image: a18707561b12afdc72ac779357a1bd5099516163, variant: launch_mmap4m, job: 2 }
     steps:
       - uses: actions/checkout@v6
 
