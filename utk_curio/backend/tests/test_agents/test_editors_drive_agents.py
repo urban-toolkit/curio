@@ -199,6 +199,7 @@ def test_a_watcher_is_refused_and_sees_nothing_private(client, people, flow, scr
         ("post", f"{base}/attachments/{flow.att}/run/stream", {"message": "hello"}),
         ("delete", f"{base}/attachments/{flow.att}/session", None),
         ("post", f"{base}/attachments/{flow.att}/solve", {}),
+        ("post", f"{base}/attachments/{flow.att}/changes/any-change/undo", None),
         ("get", base, None),
         ("post", f"{base}/install", {"coord": COORD}),
     ):
@@ -428,18 +429,33 @@ def test_an_editors_agent_change_is_a_point_named_after_the_editor(client, peopl
     script.replies[:] = [
         '```curio.v1\n{"toolRequest": {"tool": "node.content.write", '
         '"params": {"nodeId": "n1", "content": "print(2)"}}}\n```',
-        "Proposed: review it above.",
+        "Written: the node prints two.",
     ]
     ran = _run(client, flow, BOB_TOKEN, "Print two instead.")
     assert ran.status_code == 200, ran.get_data(as_text=True)
-    proposal = next(p for p in ran.get_json()["content"] if p["type"] == "proposal")
-    r = client.post(
-        f"/api/agents/projects/{flow.pid}/attachments/{flow.att}/proposals/{proposal['proposalId']}/apply",
-        headers=_auth(BOB_TOKEN),
-    )
-    assert r.status_code == 200, r.get_data(as_text=True)
+    # The change lands with bob's reply, as his own edit would: no review
+    # waits for him or for alice.
+    content = ran.get_json()["content"]
+    assert [p for p in content if p["type"] == "proposal"] == []
+    [change] = [p for p in content if p["type"] == "change"]
+    assert (change["kind"], change["status"], change["nodeId"]) == ("content", "applied", "n1")
+    live = dataflow_docs.live(flow.owner_key, flow.pid)
+    assert [n["content"] for n in live["dataflow"]["nodes"] if n["id"] == "n1"] == ["print(2)"]
 
     newest = history.points(flow.owner_key, flow.pid)[-1]
     assert (newest["kind"], newest["by"]) == ("agent", {"kind": "agent", "account": str(people.bob.id), "agent": COORD})
     listed = client.get(f"/api/projects/{flow.pid}/history", headers=_auth(BOB_TOKEN)).get_json()
     assert listed["versions"][-1]["what"] == "Node Builder, asked by Bob"
+
+    # bob's Undo of it is his own change, a point named after him.
+    undone = client.post(
+        f"/api/agents/projects/{flow.pid}/attachments/{flow.att}/changes/{change['changeId']}/undo",
+        headers=_auth(BOB_TOKEN),
+    )
+    assert undone.status_code == 200, undone.get_data(as_text=True)
+    assert undone.get_json()["status"] == "undone"
+    live = dataflow_docs.live(flow.owner_key, flow.pid)
+    assert [n["content"] for n in live["dataflow"]["nodes"] if n["id"] == "n1"] == ["print(1)"]
+    newest = history.points(flow.owner_key, flow.pid)[-1]
+    assert (newest["kind"], newest["what"], newest["by"]) == (
+        "code", "Undid Node Builder's change", {"kind": "person", "account": str(people.bob.id), "name": "Bob"})
