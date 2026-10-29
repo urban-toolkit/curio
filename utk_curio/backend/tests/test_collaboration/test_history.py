@@ -574,6 +574,25 @@ def test_file_saves_answer_has_the_dataflows_categories_as_it_is(kept):
     assert answer.get_json()["categories"] == expected
 
 
+def test_file_save_writes_the_dataflows_file_as_its_doc_holds_it(kept):
+    """A tab's change reaches the dataflow's file a second after the doc took
+    it. No tab sends the dataflow, so File > Save's version writes the file
+    first: what reads the file (the Scenario Catalog among them) has the change
+    once the save answers."""
+    from utk_curio.backend.app.projects import storage
+
+    alice = _synced(kept, "alice")
+    alice.edit(_type("# typed just now\n"))
+    before = storage.read_spec(kept.owner_key, kept.project_id)
+    assert _code_of(before["dataflow"], "loader") == "x = 1\n", "the file had the change before the save"
+
+    answer = _http(kept).post(f"/api/projects/{kept.project_id}/history/saved", headers=_auth(kept))
+
+    assert answer.status_code == 201, answer.get_json()
+    after = storage.read_spec(kept.owner_key, kept.project_id)
+    assert _code_of(after["dataflow"], "loader") == "# typed just now\nx = 1\n"
+
+
 def test_an_agents_change_is_a_version_named_after_it_with_an_entry_on_the_node_it_changed(kept):
     from utk_curio.backend.app.collaboration import dataflow_docs
 

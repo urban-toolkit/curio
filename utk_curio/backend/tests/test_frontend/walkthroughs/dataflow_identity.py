@@ -65,7 +65,14 @@ def renaming_a_dataflow_renames_it_everywhere(ctx: Ctx) -> None:
     box.wait_for(state="visible", timeout=10000)
     box.fill("Renamed Dataflow")
     # Commit on blur - the path #270 was reported on; Enter is the other one.
-    box.blur()
+    # The rename sends the project row its name, which the list reads.
+    with page.expect_response(
+        lambda r: r.request.method == "PUT"
+        and re.search(r"/api/projects/[0-9a-f-]{36}$", r.url.split("?")[0].rstrip("/")) is not None,
+        timeout=20000,
+    ) as renamed_row:
+        box.blur()
+    assert renamed_row.value.ok, renamed_row.value.status
 
     # The doc keeps the rename as it is made, so the indicator says Saved
     # once the server has it: then, and only then, is the user told so.

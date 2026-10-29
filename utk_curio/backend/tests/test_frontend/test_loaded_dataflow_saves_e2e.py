@@ -221,7 +221,14 @@ def test_loading_over_a_saved_dataflow_asks_nothing_and_over_unsaved_work_asks_f
     box = page.locator("[data-curio-canvas-title] input[type='text']").first
     box.wait_for(state="visible", timeout=10000)
     box.fill(renamed)
-    box.press("Enter")
+    # The doc takes the canvas's name, and the rename sends the project row its own.
+    with page.expect_response(
+        lambda r: r.request.method == "PUT"
+        and r.url.split("?")[0].rstrip("/").endswith(f"/api/projects/{open_id}"),
+        timeout=20000,
+    ) as renamed_row:
+        box.press("Enter")
+    assert renamed_row.value.ok, renamed_row.value.status
     expect(page.locator(TITLE)).to_have_text(renamed, timeout=10000)
     wait_for_changes_kept(page)
     save_state = page.locator(SAVE_STATE)

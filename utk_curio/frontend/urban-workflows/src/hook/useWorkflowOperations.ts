@@ -106,7 +106,8 @@ export interface WorkflowOperationsDeps {
 export interface DocBridgeForSaves {
     bound(): boolean;
     /** Resolves true once the canvas is bound to the doc, false when it is
-     *  not within *timeoutMs*. */
+     *  not within *timeoutMs*, and false at once for a canvas that binds to
+     *  none (the dashboard's). */
     whenBound(timeoutMs?: number): Promise<boolean>;
     whenKept(): Promise<boolean>;
     /** The canvas as the doc would hold it now: what a new dataflow is made
@@ -1150,8 +1151,11 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         const kept = async () => {
             // A saved dataflow's canvas that changed before it bound holds
             // changes the server has only once the bind writes them: wait for
-            // it, for as long as File > Save does.
-            if (projectDirtyRef.current && !deps.docBridgeRef?.current?.bound()) {
+            // it, for as long as File > Save does. A hosted guest's canvas of
+            // an example never binds (its room refuses it), and a shared view
+            // acts on no dataflow of its own, so neither waits.
+            const mayBind = !blockGuestSaves && viewerMode !== "shared";
+            if (mayBind && projectDirtyRef.current && !deps.docBridgeRef?.current?.bound()) {
                 await deps.docBridgeRef?.current?.whenBound();
             }
             // The bridge of the render after the bind.

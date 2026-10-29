@@ -241,7 +241,8 @@ export interface DataflowDocBridge {
     /** Whether the canvas is bound to the doc. */
     bound(): boolean;
     /** Resolves true once the canvas is bound to the doc, false when it is not
-     *  within *timeoutMs*. */
+     *  within *timeoutMs*, and false at once for a canvas that binds to none
+     *  (the dashboard's). */
     whenBound(timeoutMs?: number): Promise<boolean>;
     /** Write what the canvas holds now, then wait for the server to keep this
      *  tab's every change. Whether it kept them: false when the canvas is not
@@ -849,6 +850,8 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
 
     const whenBound = (timeoutMs: number = BIND_WAIT_MS): Promise<boolean> => {
         if (bound()) return Promise.resolve(true);
+        // A canvas that binds to no doc (the dashboard's) has none to wait for.
+        if (latest.current.bindable === false) return Promise.resolve(false);
         return new Promise<boolean>((resolve) => {
             const waiter = () => {
                 clearTimeout(timer);

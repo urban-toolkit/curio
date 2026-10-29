@@ -2316,12 +2316,15 @@ def record_edit(user, project_id: str, node_id: str, label) -> dict:
 
 
 def record_saved(user, project_id: str) -> dict:
-    """File > Save: a version named Saved. Answered with the dataflow's
+    """File > Save: a version named Saved, with the dataflow's file written
+    first, so what reads the file (the Scenario Catalog among them) has every
+    change the server holds, as a save wrote it. Answered with the dataflow's
     categories as it is now (its source, and what its nodes make of it), which
     the canvas title shows, as a save's answer carried them."""
     from utk_curio.backend.app.collaboration import history
 
     project, ukey, _role = _history_of(user, project_id)
+    dataflow_docs.flush(project_id)
     answer = _history_errors(lambda: history.saved(ukey, project_id, _history_person(user)))
     spec = dataflow_docs.read(ukey, project_id)
     return {**answer, "categories": _categories(project.owner or user, project_id, spec)}

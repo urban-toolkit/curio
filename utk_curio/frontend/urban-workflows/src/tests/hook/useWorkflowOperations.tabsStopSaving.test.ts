@@ -34,8 +34,10 @@ const mockShowToast = jest.fn();
 jest.mock("../../providers/ToastProvider", () => ({
   useToastContext: () => ({ showToast: mockShowToast }),
 }));
+// Signed in as nobody, unless a test signs a hosted guest in.
+let mockUserContext: { user: object | null; enableUserAuth: boolean } = { user: null, enableUserAuth: false };
 jest.mock("../../providers/UserProvider", () => ({
-  useUserContext: () => ({ user: null, enableUserAuth: false }),
+  useUserContext: () => mockUserContext,
 }));
 jest.mock("../../api/projectsApi", () => ({
   projectsApi: { create: jest.fn(), update: jest.fn(), get: jest.fn(), recordOutputs: jest.fn() },
@@ -141,6 +143,7 @@ const CREATED = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockUserContext = { user: null, enableUserAuth: false };
   mockCanvasNodes = [];
   (projectsApi.create as jest.Mock).mockResolvedValue(CREATED);
   (projectsApi.update as jest.Mock).mockResolvedValue({ id: "proj-1", name: "Loaded name", categories: {} });
@@ -366,6 +369,27 @@ describe("a canvas bound to no doc, with a dataflow", () => {
     const deps = makeDeps(docBridge);
     const { result } = renderHook(() => useWorkflowOperations(deps));
     await loadedProject(result);
+
+    await act(async () => {
+      await expect(result.current.ensureProjectId()).resolves.toBe("proj-1");
+    });
+
+    expect(docBridge.whenBound).not.toHaveBeenCalled();
+  });
+
+  it("acts at once for a hosted guest, whose canvas of an example never binds", async () => {
+    // Its room refuses it, so a wait for the bind would hold Save as package
+    // node, New node from a Python function and the rest for nothing.
+    mockUserContext = { user: { id: 1, username: "guest_shared", is_guest: true }, enableUserAuth: true };
+    const docBridge = bridge(false);
+    docBridge.whenBound.mockImplementation(() => new Promise<boolean>(() => {}));
+    const deps = makeDeps(docBridge);
+    const { result } = renderHook(() => useWorkflowOperations(deps));
+    await loadedProject(result);
+    act(() => {
+      result.current.markDirty();
+    });
+    expect(result.current.projectDirty).toBe(true);
 
     await act(async () => {
       await expect(result.current.ensureProjectId()).resolves.toBe("proj-1");
