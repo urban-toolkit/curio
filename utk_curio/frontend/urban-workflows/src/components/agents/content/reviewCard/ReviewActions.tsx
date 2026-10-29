@@ -19,7 +19,7 @@ export const ReviewActions: React.FC<{
       <div className={styles.actions}>
         {onApply ? (
           <button type="button" className={styles.apply} disabled={busy} onClick={onApply}>
-            {busy ? "Applying…" : part.validation?.verdict === "fail" ? "Apply anyway" : "Apply"}
+            {busy ? "Applying…" : "Apply"}
           </button>
         ) : null}
         {onDismiss ? (

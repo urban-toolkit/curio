@@ -1,27 +1,36 @@
 /**
  * The builder strip's pure vocabulary and derivations (memo dev/142, F4 —
- * split out of `AgentBuilderStrip.tsx`; every name kept): the phase chips and
- * their rank, what a live pill state means in words, how a session's ending
- * reads, why Solve is disabled, and the two remedy de-duplications.
+ * split out of `AgentBuilderStrip.tsx`): the phase chips and their rank, what
+ * a live pill state means in words, how a session's ending reads, whether a
+ * landed plan has nodes left to build, why Solve is disabled, and the two
+ * remedy de-duplications.
  */
-import type { AgentRemedy, AgentSolveWave } from "../../../../services/agents";
+import type { AgentBuilderSession, AgentProposalSummary, AgentRemedy, AgentSolveWave } from "../../../../services/agents";
 
 export const PHASES: Array<{ id: string; label: string }> = [
   { id: "idle", label: "Plan" },
-  { id: "plan_review", label: "Review" },
   { id: "applied", label: "Solve" },
   { id: "ready", label: "Ready" },
 ];
 
 export const PHASE_RANK: Record<string, number> = {
   idle: 0,
-  plan_review: 1,
-  simulating: 2, // dev/67-5: per-node create/solve in progress
-  applied: 2,
-  solving: 2,
-  interrupted: 2, // dev/115: the server stopped mid-solve — Retry continues
-  ready: 3,
+  applied: 1,
+  solving: 1,
+  interrupted: 1, // dev/115: the server stopped mid-solve — Retry continues
+  ready: 2,
 };
+
+/** Whether *plan*, the plan the agent landed, has a node Build & validate
+ * still has work on: one not approved yet in the builder session's ledger. */
+export function planLeftToBuild(
+  plan: AgentProposalSummary | null | undefined,
+  session: Pick<AgentBuilderSession, "nodeStates">,
+): boolean {
+  if (!plan || plan.tool !== "dataflow.plan.write" || plan.status !== "applied") return false;
+  const states = session.nodeStates ?? {};
+  return (plan.appliedRefs ?? []).some((ref) => (states[ref] ?? "created") !== "approved");
+}
 
 /** dev/115: what a live pill state means, in words (never colour alone). */
 export const STATUS_LABEL: Record<string, string> = {
@@ -35,7 +44,6 @@ export const STATUS_LABEL: Record<string, string> = {
   failed: "failed",
   skipped: "skipped",
   pending: "pending",
-  proposed: "review pending",
 };
 
 export type SolveWaitingRow = { nodeId: string; kind: string; reason?: string; attachmentId?: string | null };
@@ -92,11 +100,9 @@ export function solveDisabledReasonFor(opts: {
   userBlockedCount: number;
 }): string | null {
   const { phase, unresolved, everyUnresolvedNeedsUser, userBlockedCount } = opts;
-  return phase === "plan_review"
-    ? "Apply or dismiss the plan review first"
-    : phase === "idle"
-      ? "Apply a plan first"
-      : unresolved === 0
+  return phase === "idle"
+    ? "Ask for a plan first"
+    : unresolved === 0
         ? "No pending nodes"
         : everyUnresolvedNeedsUser
           ? `Waiting for you: ${

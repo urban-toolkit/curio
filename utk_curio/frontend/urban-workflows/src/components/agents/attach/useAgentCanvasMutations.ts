@@ -29,9 +29,12 @@ const NODE_CENTER_Y = 100;
 const CENTER_ANIMATION_MS = 400;
 
 /**
- * Canvas-side listener of the apply→canvas bridge (memos dev/48 §3.3, dev/51).
+ * Canvas-side listener of the canvas bridge (memos dev/48 §3.3, dev/51).
  *
- * Mounted where React Flow is reachable (the {@link AgentDockOverlay}).
+ * Mounted where React Flow is reachable (the {@link AgentDockOverlay}). A
+ * mutation marked `landed` (an agent's change, or its Undo) is already in the
+ * dataflow's doc: a canvas the doc binds takes it from there, and this listener
+ * only files its history entry and frames the view.
  * - ``node-created`` → insert the applied node into the LIVE graph through
  *   the existing `useCode.createCodeNode` factory (same interpreters and
  *   callbacks as a palette drop) with the SERVER-minted id, then **center the
@@ -55,8 +58,7 @@ const CENTER_ANIMATION_MS = 400;
 /** dev/112: ONE materialization of an applied spec edge for the live canvas —
  * parity with loadTrill's `add_edge` (useCode): a Trill `Interaction` edge is
  * bidirectional on `in/out` handles with arrows both ends; a data edge keeps
- * the explicit handles the apply assigned (input circles, dev/67-3). Both bridge
- * paths (bulk plan, per-edge connect) go through here. */
+ * the explicit handles the plan assigned (input circles, dev/67-3). */
 function appliedEdgeToCanvasEdge(edge: {
   id: string;
   source: string;
@@ -83,7 +85,7 @@ function appliedEdgeToCanvasEdge(edge: {
 
 export function useAgentCanvasMutations(): void {
   const { createCodeNode } = useCode();
-  const { applyNodeContent, applyNodeSettings, onEdgesChange, applyReviewedRemovals, scenarios, setScenarios } =
+  const { applyNodeContent, applyNodeSettings, onEdgesChange, applyReviewedRemovals, scenarios, setScenarios, dataflowDoc } =
     useFlowContext();
   const { nodeEditProv } = useProvenanceContext();
   const { reveal } = useNotebookViewContext();
@@ -142,13 +144,12 @@ export function useAgentCanvasMutations(): void {
     if (saved?.length) setScenarios(joinScenarios(scenarios, saved));
   };
 
-  // What an applied plan removes, through the REVIEWED path (dev/62): the
-  // user authorized every victim by name on the review card, and the edge
-  // cascade travels in the same event, so victims and their edges leave in
-  // one operation with manual-delete bookkeeping, without the manual "remove
-  // the edges first" guard (which reads the not-yet-committed edge state and
-  // would refuse every connected victim). Already-absent elements (user
-  // deleted them live) are a no-op.
+  // What a landed plan removes, or an Undo takes away (dev/62): the plan's
+  // card names every victim, and the edge cascade travels in the same event,
+  // so victims and their edges leave in one operation with manual-delete
+  // bookkeeping, without the manual "remove the edges first" guard (which
+  // reads the not-yet-committed edge state and would refuse every connected
+  // victim). Already-absent elements (user deleted them live) are a no-op.
   const removeReviewed = (live: Set<string>, nodeIds: string[] | undefined, edgeIds: string[] | undefined) => {
     const removedNodeIds = (nodeIds ?? []).filter((id) => live.has(id));
     const removedEdgeIds = edgeIds ?? [];
@@ -157,7 +158,26 @@ export function useAgentCanvasMutations(): void {
     }
   };
 
+  // An agent's change (or its Undo) the server wrote into the dataflow's doc,
+  // on a canvas the doc binds: the doc brings it, under the agent's name, so
+  // writing it here too would write it again, as this tab's person. Only what
+  // the doc does not carry is this tab's: the entry of a node's code in its
+  // history (`applyNodeContent` files only that when bound), and the view.
+  const landedThroughTheDoc = (mutation: AgentCanvasMutation) => {
+    if (mutation.kind === "node-content-applied") {
+      if (mutation.agent) applyNodeContent(mutation.nodeId, mutation.content, mutation.agent);
+      else applyNodeContent(mutation.nodeId, mutation.content);
+    } else if (mutation.kind === "graph-created" && !processedRef.current.has(mutation.planId)) {
+      processedRef.current.add(mutation.planId);
+      window.setTimeout(() => fitViewWithMenuOffset(reactFlow, { duration: 400 }), 50);
+    }
+  };
+
   handlerRef.current = (mutation: AgentCanvasMutation) => {
+    if (mutation.landed && dataflowDoc?.bound()) {
+      landedThroughTheDoc(mutation);
+      return;
+    }
     if (mutation.kind === "node-content-applied") {
       // The agent that wrote it, which the node's change is named after.
       if (mutation.agent) applyNodeContent(mutation.nodeId, mutation.content, mutation.agent);
@@ -168,32 +188,13 @@ export function useAgentCanvasMutations(): void {
       applyNodeSettings(mutation.nodeId, mutation.settings);
       return;
     }
-    if (mutation.kind === "scenarios-created") {
-      joinSaved(mutation.scenarios);
-      return;
-    }
     if (mutation.kind === "plan-removals") {
-      // A plan applied a row at a time, or by Connect all, removes what it
-      // names when it completes, as a whole applied plan does. Its rows
-      // already placed its nodes: nothing to insert, no fit.
+      // A node an agent added, undone: it leaves with its connections.
+      // Nothing to insert, no fit.
       const key = `removals:${mutation.planId}`;
       if (processedRef.current.has(key)) return;
       processedRef.current.add(key);
       removeReviewed(new Set(getNodes().map((n) => n.id)), mutation.removedNodeIds, mutation.removedEdgeIds);
-      return;
-    }
-    if (mutation.kind === "edges-created") {
-      // dev/67-8: the connection stage applies edges one review at a time —
-      // insert quietly through the same provider path (handles + data
-      // parity), no fit/center (the nodes are already where the user looks).
-      if (processedRef.current.has(mutation.batchId)) return;
-      processedRef.current.add(mutation.batchId);
-      onEdgesChange(
-        notOnCanvas(mutation.edges).map((edge) => ({
-          type: "add" as const,
-          item: appliedEdgeToCanvasEdge(edge) as never,
-        })),
-      );
       return;
     }
     if (mutation.kind === "graph-created") {
