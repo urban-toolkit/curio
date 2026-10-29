@@ -36,8 +36,8 @@ dataflow with no node, then one point a node, then one a connection.
 (:func:`clear_before`): the points before it go, and so does every log the
 remaining ones do not need, and the earlier history set aside.
 
-The history records while :data:`RECORDING` is on: ``dataflow_docs`` hands each
-change of an open doc to :func:`recorded`, under the doc's lock. Who may read it
+``dataflow_docs`` hands each change of an open doc to :func:`recorded`, under
+the doc's lock. Who may read it
 and change it is ``projects/services.py``'s to decide. ``points.jsonl`` is
 written under storage's history lock, a leaf.
 """
@@ -66,10 +66,6 @@ from utk_curio.backend.app.projects import storage
 from utk_curio.backend.config import COLLAB_NAMESPACE
 
 logger = logging.getLogger(__name__)
-
-#: Whether the server records the history: each change of an open doc a
-#: point, and a dataflow's first points made when its doc opens.
-RECORDING = False
 
 #: Beside the spec file, in ``history/``: the points, one JSON line each.
 POINTS_FILE = "points.jsonl"
@@ -1176,16 +1172,9 @@ def entry_in_use(records: list[dict], code: Optional[str]) -> Optional[int]:
 # What a tab, or a person, adds to the history
 # ---------------------------------------------------------------------------
 
-#: What a change of the history is told while the server does not keep it.
-NOT_KEPT = "This server does not keep the dataflow's history yet."
-
-
 @contextmanager
 def _held(user_key: str, project_id: str):
-    """The dataflow's open doc, with its lock held, while the history
-    records; otherwise the refusal."""
-    if not RECORDING:
-        raise HistoryError(NOT_KEPT, 409)
+    """The dataflow's open doc, with its lock held, or the refusal."""
     try:
         with dataflow_docs._held(project_id, user_key) as entry:
             yield entry
@@ -1247,8 +1236,6 @@ def put_back(user_key: str, project_id: str, point_id: str, by: dict) -> dict:
     it, for every tab, and a version named after it, its parent the version
     put back. ``refused``: the nodes whose code someone changed while it was
     being put back, which keep theirs."""
-    if not RECORDING:
-        raise HistoryError(NOT_KEPT, 409)
     folder = _folder(user_key, project_id)
     point = next((p for p in _read_points(folder) if p["id"] == point_id and _listed(p)), None)
     if point is None:
@@ -1278,8 +1265,6 @@ def write_code(user_key: str, project_id: str, by: dict, node_id: str, *, expect
     code the person's put-back, Undo or Redo began from: checked in the same
     transaction (``doc_mapping.apply_dataflow``'s code refusal). Refused, the
     node keeps what it holds, and :class:`Refused` names who changed it."""
-    if not RECORDING:
-        raise HistoryError(NOT_KEPT, 409)
     spec = dataflow_docs.live(user_key, project_id)
     if spec is None:
         raise HistoryError("This dataflow has no saved spec.", 404)
@@ -1321,8 +1306,6 @@ def clear_before(user_key: str, project_id: str, point_id: str) -> dict:
     needs goes, with the earlier history set aside. The dataflow stays as it
     is. Each new file is written before the points name it, and an old one
     goes only once they no longer do."""
-    if not RECORDING:
-        raise HistoryError(NOT_KEPT, 409)
     with dataflow_docs._spec_lock(user_key, project_id):
         with _held(user_key, project_id) as entry:
             close_typing(entry)
@@ -1377,6 +1360,25 @@ def clear_before(user_key: str, project_id: str, point_id: str) -> dict:
             _tell(entry)
     storage.drop_history_aside(user_key, project_id)
     return {"first": point_id, "versions": sum(1 for point in kept if _listed(point))}
+
+
+def copy_history(from_key: str, from_id: str, to_key: str, to_id: str) -> bool:
+    """Give the dataflow *to_id*, the account *to_key*'s new copy of the
+    dataflow *from_id*, that dataflow's history: its points, and the logs they
+    name, copied as they are, before the copy's doc first opens. What the copy
+    carries of the earlier history's sections goes: the points are its
+    history. Whether there was a history to copy."""
+    source, target = _folder(from_key, from_id), _folder(to_key, to_id)
+    copied = _read_points(source)
+    if not copied:
+        return False
+    for doc_id in sorted({point.get("doc") for point in copied if isinstance(point.get("doc"), str)}):
+        logs = source / dataflow_docs.LOG_DIR / doc_id
+        if logs.is_dir():
+            shutil.copytree(logs, target / dataflow_docs.LOG_DIR / doc_id, dirs_exist_ok=True)
+    _write_points(to_key, to_id, copied)
+    storage.drop_history_aside(to_key, to_id)
+    return True
 
 
 def drop(user_key: str, project_id: str) -> None:

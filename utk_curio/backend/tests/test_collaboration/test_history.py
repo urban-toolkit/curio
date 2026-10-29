@@ -65,12 +65,11 @@ class _Clock:
 
 @pytest.fixture()
 def kept(room, monkeypatch):
-    """alice's dataflow as FLOW, with no history, on a server that records
-    the history, its clock the test's."""
-    from utk_curio.backend.app.collaboration import dataflow_docs, history
+    """alice's dataflow as FLOW, with no history, its server's clock the
+    test's."""
+    from utk_curio.backend.app.collaboration import dataflow_docs
     from utk_curio.backend.app.projects import storage
 
-    monkeypatch.setattr(history, "RECORDING", True)
     clock = _Clock()
     monkeypatch.setattr(dataflow_docs, "_clock", clock)
     storage.drop_history(room.owner_key, room.project_id)
@@ -682,24 +681,80 @@ def test_node_history_read_reads_the_points(kept):
     assert status == "ok" and json.loads(text)["code"] == "ran = 2\n", text
 
 
-def test_nothing_is_kept_while_the_history_is_off(kept, monkeypatch):
-    """With the history off, as every server runs until the canvas reads it
-    from the server, no change makes a point and no route adds one."""
-    from utk_curio.backend.app.collaboration import dataflow_docs, history
+# ---------------------------------------------------------------------------
+# What a load and a save carry, and copies
+# ---------------------------------------------------------------------------
 
-    monkeypatch.setattr(history, "RECORDING", False)
-    dataflow_docs.close_all()
+def test_a_load_a_shared_view_and_a_saves_answer_carry_no_history(kept):
+    """The history is read from its own routes, by the owner and the editors:
+    no load serves it, so a watcher's link never carries it."""
+    from utk_curio.backend.app.projects import storage
+
+    storage.write_spec(kept.owner_key, kept.project_id, {**copy.deepcopy(FLOW), **_earlier_history()})
+    _synced(kept, "alice")
+    base = f"/api/projects/{kept.project_id}"
+    loaded = _http(kept).get(base, headers=_auth(kept)).get_json()["spec"]
+    shared = _http(kept).get(f"{base}/shared").get_json()["spec"]
+    answered = _http(kept).put(base, headers=_auth(kept), data=json.dumps({"name": "Renamed"})).get_json()["spec"]
+    for name, spec in (("load", loaded), ("shared view", shared), ("save's answer", answered)):
+        assert not set(spec) & set(storage.HISTORY_KEYS), (name, sorted(spec))
+    listed = _http(kept).get(f"{base}/history", headers=_auth(kept)).get_json()
+    assert [v["id"] for v in listed["versions"] if v["kind"] == "imported"] == list(
+        _earlier_history()["dataflowProvenance"]["versions"]
+    )
+
+
+def test_a_save_carrying_history_is_imported_before_the_first_open_and_not_read_after(kept):
+    """A whole save of a dataflow that has no points yet puts the history it
+    carries on record, and the save's own first open imports it; once the
+    dataflow has its points, what a save carries is not read, nor written
+    beside the spec."""
+    from utk_curio.backend.app.collaboration import history
+    from utk_curio.backend.app.projects import storage
+
+    earlier = _earlier_history()
+    base = f"/api/projects/{kept.project_id}"
+    saved = _http(kept).put(base, headers=_auth(kept),
+                            data=json.dumps({"spec": {**copy.deepcopy(FLOW), **copy.deepcopy(earlier)}}))
+    assert saved.status_code == 200, saved.get_json()
+    imported = [p["id"] for p in _points(kept) if p["kind"] == "imported"]
+    assert imported == list(earlier["dataflowProvenance"]["versions"])
+
+    count = len(_points(kept))
+    late = {"nodeProvenance": {"loader": [{"id": 77, "parentId": None, "code": "late()\n", "inputs": [],
+                                           "outputs": [], "startTime": "", "endTime": ""}]}}
+    for body in ({"history": late}, {"spec": {**copy.deepcopy(FLOW), **late}}):
+        answer = _http(kept).put(base, headers=_auth(kept), data=json.dumps(body))
+        assert answer.status_code == 200, answer.get_json()
+    assert storage.history_sections(kept.owner_key, kept.project_id) == {}, "a late history was written beside the spec"
+    assert 77 not in [e["id"] for e in history.entries(kept.owner_key, kept.project_id, "loader")["entries"]]
+    assert all(p["kind"] != "imported" for p in _points(kept)[count:])
+
+
+def test_a_duplicate_and_an_editors_copy_keep_the_history_and_a_watchers_copy_starts_its_own(kept):
+    from utk_curio.backend.app.collaboration import history
+
     alice = _synced(kept, "alice")
-    alice.edit(_add_node("unrecorded"))
-    assert not history.has_points(kept.owner_key, kept.project_id)
-    base = f"/api/projects/{kept.project_id}/history"
-    for url, body in ((f"{base}/saved", {}), (f"{base}/nodes/loader/runs", {"code": "x = 1\n"}),
-                      (f"{base}/nodes/loader/edits", {"label": "An edit"}), (f"{base}/p1/put-back", {}),
-                      (f"{base}/nodes/loader/code", {"from": "x = 1\n", "code": "x = 2\n"}),
-                      (f"{base}/clear", {"before": "p1"})):
-        answer = _http(kept).post(url, headers=_auth(kept), data=json.dumps(body))
-        assert answer.status_code == 409 and answer.get_json()["error"] == history.NOT_KEPT, (url, answer.get_json())
-    assert _code_of(kept.live()["dataflow"], "loader") == "x = 1\n", "a write the history keeps landed without it"
-    listed = _http(kept).get(f"/api/projects/{kept.project_id}/history", headers=_auth(kept)).get_json()
-    assert (listed["versions"], listed["kept"]) == ([], False)
-    assert not history.has_points(kept.owner_key, kept.project_id)
+    alice.edit(_add_node("kept-in-copies"))
+    source = [v["id"] for v in history.versions(kept.owner_key, kept.project_id)["versions"]]
+
+    def versions_of(name: str, project: dict) -> list:
+        key = kept.owner_key if name == "alice" else str(kept.users[name].id)
+        return [v["id"] for v in history.versions(key, project["id"])["versions"]]
+
+    duplicate = _http(kept).post(f"/api/projects/{kept.project_id}/duplicate", headers=_auth(kept))
+    assert duplicate.status_code == 201, duplicate.get_json()
+    assert versions_of("alice", duplicate.get_json()) == source
+
+    for name in ("bob", "carol"):
+        made = _http(kept).post("/api/projects", headers=_auth(kept, name), data=json.dumps(
+            {"name": f"{name}'s copy", "spec": copy.deepcopy(FLOW), "copy_of": kept.project_id}))
+        assert made.status_code == 201, made.get_json()
+        copied = made.get_json()
+        if name == "bob":
+            assert versions_of(name, copied) == source, "an editor's copy did not keep the history"
+        else:
+            own = history.versions(str(kept.users[name].id), copied["id"])["versions"]
+            assert all(v["kind"] == "load" for v in own), (
+                f"a watcher's copy took the history it may not read: {[(v['id'], v['kind']) for v in own]}"
+            )
