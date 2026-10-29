@@ -234,7 +234,9 @@ def test_a_file_that_breaks_the_format_is_refused_naming_each_problem(tmp_path):
 def test_trigger_rates_and_the_benchmark_count_as_agentskills_io_says(tmp_path):
     """A query passes on a trigger rate above one half when it should
     trigger, below it when it should not, and a run that failed counts in
-    neither. The benchmark holds each condition's mean pass rate over its
+    neither. A run whose chat delegated its work before it loaded the skill
+    did not load it, and is counted as handed off. The benchmark holds each
+    condition's mean pass rate over its
     graded runs, the difference, and the runs with the skill split by
     whether the skill reached the model."""
     skill_evals = _skill_evals()
@@ -242,23 +244,23 @@ def test_trigger_rates_and_the_benchmark_count_as_agentskills_io_says(tmp_path):
     _write_skill(folder, _evals())
     evals = skill_evals.read(folder)
 
-    def trigger(query, triggered, error=None):
+    def trigger(query, triggered, error=None, handed_off=None):
         return {"kind": "trigger", "skill": "street-trees", "query": query, "triggered": triggered,
-                **({"error": error} if error else {})}
+                **({"error": error} if error else {}), **({"handedOff": handed_off} if handed_off else {})}
 
     rows = skill_evals.trigger_results(evals, [
-        trigger(1, True), trigger(1, True), trigger(1, False),
+        trigger(1, True), trigger(1, True), trigger(1, False, handed_off="node.content.generate"),
         trigger(2, True), trigger(2, False), trigger(2, False, error="the run answered 502"),
     ])
     assert rows == [
         {"query": "How many oaks are on my street?", "should_trigger": True, "triggers": 2, "runs": 3,
-         "errors": 0, "trigger_rate": 0.6667, "passed": True},
+         "errors": 0, "handed_off": 1, "trigger_rate": 0.6667, "passed": True},
         {"query": "Rename the chart.", "should_trigger": False, "triggers": 1, "runs": 2, "errors": 1,
-         "trigger_rate": 0.5, "passed": False},
+         "handed_off": 0, "trigger_rate": 0.5, "passed": False},
     ]
     assert skill_evals.trigger_summary(rows) == {
         "queries": 2, "judged": 2, "passed": 1, "should_trigger_rate": 0.6667,
-        "should_not_trigger_rate": 0.5, "errors": 1,
+        "should_not_trigger_rate": 0.5, "errors": 1, "runs": 5, "handed_off": 1,
     }
 
     def task(condition, rate, used=None, error=None):

@@ -24,13 +24,22 @@ runs, so no sandbox either.
   the preamble leaves out its text (``prompts._resolve_prompt_text``), for a
   delegated run too.
 - **Checked on every run:** a run with the skill held it (listed, handed or
-  in its preamble); a run without it held it nowhere, and the skill's text is
-  in no system turn its model calls were sent; a trigger run listed it and
-  was not handed it. A run that breaks this is an error, and counts nowhere.
-- **A trigger run** stops once it loads the skill, as agentskills.io's guide
-  suggests: the outcome is known. ``--full-trigger-runs`` lets it finish.
+  in its preamble, or handed to a run it delegated to); a run without it held
+  it nowhere, and the skill's text is in no system turn its model calls were
+  sent; a trigger run's chat listed it and was not handed it, judged by the
+  chat's own system turn (a run the chat delegates to may be handed it, as
+  Curio hands it). A run that breaks this is an error, and counts nowhere.
+- **A trigger run** stops once its chat loads the skill, or delegates its work
+  before loading it, as agentskills.io's guide suggests: the agent consulted
+  the skill or went to work without it, so the outcome is known, and the
+  delegated run, which Curio may hand the skill, never starts.
+  ``--full-trigger-runs`` lets it finish; a delegated run handed the skill
+  before the chat loaded it then makes it an error.
+- **Retried:** a run whose model call the server failed (a 5xx, a lost
+  connection) runs again on a fresh dataflow, after :data:`RETRY_WAITS_S`;
+  the grader waits the same. Its record counts the attempts.
 - **Not run:** the title call a conversation's first turn makes, which
-  nothing here reads.
+  nothing here reads, and the kept outputs' sweep, which needs a sandbox.
 - **Graded:** a test case's answer goes to the grader, the same model through
   the same code, with the words of the base entry's ``skill-evals.md``.
 
@@ -69,7 +78,10 @@ GRADER_SECTION = "grader"
 GRADER_TASK_SECTION = "grader-task"
 #: What the grader may write, and how many times it is asked for JSON.
 GRADER_MAX_TOKENS = 2048
-GRADER_ATTEMPTS = 2
+GRADER_ATTEMPTS = 3
+#: How long a run, or the grader, waits before each new try after the model's
+#: server failed it (a 5xx or a lost connection): two more tries at most.
+RETRY_WAITS_S = (15, 45)
 #: The most characters of one proposed change the grader is shown.
 PREVIEW_MAX_CHARS = 16000
 #: The name every run's dataflow has, which says nothing of what it tests.
@@ -97,6 +109,16 @@ class _Loaded(BaseException):
     a failure of the model or of a tool."""
 
 
+class _HandedOff(BaseException):
+    """A trigger run's chat delegated its work before it loaded the skill: it
+    went to work without consulting the skill, so its outcome is known too.
+    The delegated run, which Curio may hand the skill, never starts."""
+
+
+#: What only a chat's system turn holds: the list of skills it may load.
+_CATALOG_MARK = "<available_skills>"
+
+
 class _Seams:
     """What one run changes of the backend, and what it saw of it."""
 
@@ -104,17 +126,24 @@ class _Seams:
         self.reset()
 
     def reset(self, *, left_out: str | None = None, left_out_text: str | None = None,
-              watch: str | None = None) -> None:
+              watch: str | None = None, stop_at_hand_off: bool = False) -> None:
         self.left_out = left_out
         self.left_out_text = left_out_text
         self.watch = watch
+        self.stop_at_hand_off = stop_at_hand_off
+        self.handed_off: str | None = None
         self.capturing = True
         self.loaded: list[str] = []
         self.runs: list[dict] = []
-        self.systems: list[str] = []
+        #: Each system turn a model call was sent, as (whether a chat's, its text).
+        self.systems: list[tuple[bool, str]] = []
         self.calls = 0
         self.input_tokens = 0
         self.output_tokens = 0
+
+    def texts(self, *, chat: bool | None = None) -> list[str]:
+        """The system turns sent: the chat's, the others', or all of them."""
+        return [text for is_chat, text in self.systems if chat is None or is_chat == chat]
 
     def install(self) -> None:
         """Wrap the functions a run's skills and model calls go through, once."""
@@ -138,15 +167,22 @@ class _Seams:
                 text = text.replace(seams.left_out_text, "")
             return text
 
-        def _record(run, kind):
-            seams.runs.append({"kind": kind, **run.pins(), "placed": sorted(run.placed)})
+        def _record(run, kind, **more):
+            seams.runs.append({"kind": kind, **more, **run.pins(), "placed": sorted(run.placed)})
             return run
 
         def _for_chat(*args, **kwargs):
             return _record(for_chat(*args, **kwargs), "chat")
 
         def _for_delegated(*args, **kwargs):
-            return _record(for_delegated(*args, **kwargs), "delegated")
+            capability = args[3] if len(args) > 3 else kwargs.get("capability")
+            stop = bool(seams.watch and seams.stop_at_hand_off)
+            run = _record(for_delegated(*args, **kwargs), "delegated", capability=capability,
+                          loadedBefore=list(seams.loaded), started=not stop)
+            if stop:
+                seams.handed_off = str(capability)
+                raise _HandedOff()
+            return run
 
         def _read(run, params):
             before = list(run.loaded)
@@ -166,7 +202,10 @@ class _Seams:
                 seams.calls += 1
                 seams.input_tokens += int(usage.get("inputTokens") or 0)
                 seams.output_tokens += int(usage.get("outputTokens") or 0)
-                seams.systems += [str(m.get("content") or "") for m in messages if m.get("role") == "system"]
+                for message in messages:
+                    if message.get("role") == "system":
+                        text = str(message.get("content") or "")
+                        seams.systems.append((_CATALOG_MARK in text, text))
             return turn
 
         skill_runs._pool = _pool
@@ -255,6 +294,12 @@ class Worker:
         # Writes in this thread, at once, as the unit tests' app makes them.
         dataflow_docs.BACKGROUND = False
         self.app = create_app(_Config)
+        # No run here keeps outputs and no sandbox runs, so the kept outputs'
+        # sweep the backend schedules a minute after it starts is called off.
+        from utk_curio.backend.app.runs import kept
+
+        if kept._prune_timer is not None:
+            kept._prune_timer.cancel()
         self.context = self.app.app_context()
         self.context.push()
         db.create_all()
@@ -317,49 +362,58 @@ class Worker:
             return agent_text.skill_text(name)
         return skill_format.parse(folder).body.rstrip("\n")
 
+    def _delegates_held(self, name: str, text: str | None) -> list[dict]:
+        """The delegated runs that were handed the skill *name*, by their records."""
+        started = [run for run in self.seams.runs if run["kind"] == "delegated" and run.get("started")]
+        held = [run for run in started if any(name in run.get(key, []) for key in ("handed", "placed"))]
+        if not held and text and any(text in system for system in self.seams.texts(chat=False)):
+            held = started[:1]
+        return held
+
     def _held(self, task: skill_evals.Task, text: str | None) -> tuple[str | None, str | None]:
         """How the run's chat held the skill (``listed``, ``handed`` or
-        ``placed``, or None), and why that breaks the run's condition, or None."""
+        ``placed``, or None), and why that breaks the run's condition, or None.
+        The chat is judged by its own system turn alone: a run it delegated
+        to may be handed the skill, as Curio hands it, without the chat
+        holding it."""
         name = task.skill
         chat = next((run for run in self.seams.runs if run["kind"] == "chat"), None)
         if chat is None:
             return None, "the run built no chat"
-        placed = name in chat["placed"] or (bool(text) and any(text in system for system in self.seams.systems))
+        in_text = bool(text) and any(text in system for system in self.seams.texts(chat=True))
+        placed = name in chat["placed"] or in_text
         handed = any(name in chat.get(key, []) for key in ("handed", "kept", "named"))
         how = "handed" if handed else "placed" if placed else "listed" if name in chat.get("catalog", []) else None
         if task.kind == skill_evals.TRIGGER:
             if how != "listed":
                 return how, (f"the chat does not list {name}" if how is None
                              else f"the chat is {how} {name}, so loading it measures nothing")
+            early = [run for run in self._delegates_held(name, text) if name not in run.get("loadedBefore", [])]
+            if early:
+                return how, f"a delegated run ({early[0].get('capability')}) held {name} before the chat loaded it"
             return how, None
         if task.condition == skill_evals.WITH_SKILL:
-            return how, None if how else f"the run did not hold {name}"
+            return how, None if how or self._delegates_held(name, text) else f"the run did not hold {name}"
         for run in self.seams.runs:
             if any(name in run.get(key, []) for key in ("catalog", "handed", "kept", "named", "placed")):
                 return how, f"a {run['kind']} run still held {name}"
-        if text and any(text in system for system in self.seams.systems):
+        if text and any(text in system for system in self.seams.texts()):
             return how, f"a system turn still held the text of {name}"
         if name in self.seams.loaded:
             return how, f"the run loaded {name}"
         return None, None
 
-    def run(self, task: skill_evals.Task, *, hand: bool = False) -> dict:
-        """Run *task* and write its files; returns its record."""
-        folder = self.results / task.path
-        record: dict = {key: value for key, value in task.as_dict().items()
-                        if key in ("kind", "skill", "key", "condition", "run", "query", "should_trigger", "case")}
-        started = time.monotonic()
-        text = self._text_of(task.skill)
-        without = task.condition == skill_evals.WITHOUT_SKILL
-        self.seams.reset(left_out=task.skill if without else None, left_out_text=text if without else None,
-                         watch=task.skill if task.kind == skill_evals.TRIGGER and self.stop_early else None)
+    def _attempt(self, task: skill_evals.Task, message: str, folder: Path, record: dict):
+        """One attempt at *task*'s run, on a dataflow and an attachment of its
+        own; returns ``(the run's status or None, its reply, project id,
+        attachment id)``, and notes on *record* how it ended."""
         body: dict = {}
-        project_id = attachment_id = None
+        status = project_id = attachment_id = None
+        for key in ("error", "stoppedEarly", "handedOff"):
+            record.pop(key, None)
         try:
             project_id = self._project(task.context)
             attachment_id = self._attach(project_id, task.context)
-            message = f"/{task.skill} {task.message}" if hand and task.kind == skill_evals.TASK and not without \
-                else task.message
             url = f"/api/agents/projects/{project_id}/attachments/{attachment_id}/run"
             try:
                 status, body = self._json("POST", url, {"message": message})
@@ -368,24 +422,55 @@ class Worker:
                     record["error"] = f"the run answered {status}: {body.get('error') or body}"
             except _Loaded:
                 record["stoppedEarly"] = True
+            except _HandedOff:
+                record["stoppedEarly"] = True
+                record["handedOff"] = self.seams.handed_off
             _, session = self._json("GET", f"/api/agents/projects/{project_id}/attachments/{attachment_id}/session")
             _write(folder / "transcript.json", scrub(session.get("turns") or [], values=self.secrets))
         except Exception as exc:  # noqa: BLE001 - a run that cannot start is an error, not a crash
             record["error"] = f"{type(exc).__name__}: {exc}"
+        return status, body, project_id, attachment_id
+
+    def run(self, task: skill_evals.Task, *, hand: bool = False) -> dict:
+        """Run *task* and write its files; returns its record. A run the model's
+        server failed (a 5xx, a lost connection) is run again, on a fresh
+        dataflow, after each wait of :data:`RETRY_WAITS_S`."""
+        folder = self.results / task.path
+        record: dict = {key: value for key, value in task.as_dict().items()
+                        if key in ("kind", "skill", "key", "condition", "run", "query", "should_trigger", "case")}
+        started = time.monotonic()
+        text = self._text_of(task.skill)
+        without = task.condition == skill_evals.WITHOUT_SKILL
+        trigger = task.kind == skill_evals.TRIGGER
+        message = f"/{task.skill} {task.message}" if hand and not trigger and not without else task.message
+        failed: list[str] = []
+        while True:
+            self.seams.reset(left_out=task.skill if without else None, left_out_text=text if without else None,
+                             watch=task.skill if trigger and self.stop_early else None,
+                             stop_at_hand_off=trigger and self.stop_early)
+            attempt_started = time.monotonic()
+            status, body, project_id, attachment_id = self._attempt(task, message, folder, record)
+            if status is None or status < 500 or len(failed) >= len(RETRY_WAITS_S):
+                break
+            failed.append(record["error"])
+            time.sleep(RETRY_WAITS_S[len(failed) - 1])
+        record["attempts"] = len(failed) + 1
+        if failed:
+            record["failedAttempts"] = failed
         self.seams.capturing = False
         record["loadedSkills"] = list(self.seams.loaded)
         record["loaded"] = task.skill in self.seams.loaded
         record["skills"] = self.seams.runs
         how, problem = self._held(task, text)
         record["held"] = how
-        # What reached the model of the skill: its text, handed or placed, or loaded.
-        record["used"] = record["loaded"] or how in ("handed", "placed")
+        # What reached a model of the skill: loaded, handed or placed, or handed to a delegate.
+        record["used"] = record["loaded"] or how in ("handed", "placed") or bool(self._delegates_held(task.skill, text))
         if problem and "error" not in record:
             record["error"] = f"the condition was not met: {problem}"
         record["calls"] = self.seams.calls
         record["seconds"] = round(time.monotonic() - started, 3)
         timing = {"total_tokens": self.seams.input_tokens + self.seams.output_tokens,
-                  "duration_ms": int(record["seconds"] * 1000),
+                  "duration_ms": int((time.monotonic() - attempt_started) * 1000),
                   "input_tokens": self.seams.input_tokens, "output_tokens": self.seams.output_tokens}
         record["timing"] = timing
         if task.kind == skill_evals.TRIGGER:
@@ -468,11 +553,14 @@ class Worker:
         config = provider_config.resolve_llm(self.user_key)
         problem = "no reply"
         usage: dict = {}
+        waits = list(RETRY_WAITS_S)
         for attempt in range(1, GRADER_ATTEMPTS + 1):
             try:
                 reply = providers.run_chat_completion(config, messages, GRADER_MAX_TOKENS, usage)
             except Exception as exc:  # noqa: BLE001 - a grader that fails is an error of the run
                 problem = provider_config.redact_error(exc, config)
+                if attempt < GRADER_ATTEMPTS and waits:
+                    time.sleep(waits.pop(0))
                 continue
             parsed = _json_object(reply)
             results = parsed.get("assertion_results") if parsed else None

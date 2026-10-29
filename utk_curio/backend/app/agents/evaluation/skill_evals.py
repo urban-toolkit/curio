@@ -24,7 +24,9 @@ times (:data:`RUNS`):
 
 - **Trigger rate:** a query's runs that loaded the skill, of its runs. A
   query that should trigger passes above :data:`THRESHOLD`, one that should
-  not below it.
+  not below it. A run whose chat delegated its work before it loaded the
+  skill went to work without consulting it, so it did not load it
+  (``handed_off`` counts those runs).
 - **Task result:** each test case with the skill (``with_skill``: the agent
   as Curio ships it) and without it (``without_skill``: the same agent with
   the skill taken out of every run's skills: its catalog, what it is handed
@@ -388,7 +390,9 @@ def _stat(values: list[float]) -> dict:
 def trigger_results(skill: SkillEvals, results: Iterable[Mapping]) -> list[dict]:
     """Each trigger query of *skill* as agentskills.io's script reports it,
     from its runs' *results*: how many runs loaded the skill, of how many ran
-    without an error, the rate, and whether the query passed."""
+    without an error, the rate, and whether the query passed. A run whose
+    chat delegated its work before loading the skill did not load it; how
+    many did is ``handed_off``."""
     by_query: dict[int, list[Mapping]] = {}
     for result in results:
         if result.get("kind") == TRIGGER and result.get("skill") == skill.name:
@@ -403,6 +407,7 @@ def trigger_results(skill: SkillEvals, results: Iterable[Mapping]) -> list[dict]
         rows.append({
             "query": query.query, "should_trigger": query.should_trigger, "triggers": triggers,
             "runs": len(ok), "errors": len(runs) - len(ok),
+            "handed_off": sum(1 for r in ok if r.get("handedOff") and not r.get("triggered")),
             "trigger_rate": None if rate is None else round(rate, 4), "passed": passed,
         })
     return rows
@@ -420,6 +425,7 @@ def trigger_summary(rows: list[dict]) -> dict | None:
         "queries": len(rows), "judged": len(judged), "passed": sum(1 for row in judged if row["passed"]),
         "should_trigger_rate": _mean(should), "should_not_trigger_rate": _mean(should_not),
         "errors": sum(row["errors"] for row in rows),
+        "runs": sum(row["runs"] for row in rows), "handed_off": sum(row["handed_off"] for row in rows),
     }
 
 

@@ -269,8 +269,9 @@ def _report(folder: Path, chosen: list, meta: dict) -> dict:
         f"Model `{meta['model']}`. Runs of each query, and of each test case in each condition: {meta['runs']}. "
         "An evaluation report, not a gate.",
         "",
-        "| Skill | Triggers passed | Should trigger | Should not | With skill | Without | Delta | Used | Errors |",
-        "|---|---|---|---|---|---|---|---|---|",
+        "| Skill | Triggers passed | Should trigger | Should not | Handed off | With skill | Without | Delta | Used "
+        "| Errors |",
+        "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for row in rows:
         t, b = row["triggers"] or {}, row["benchmark"] or {}
@@ -281,6 +282,7 @@ def _report(folder: Path, chosen: list, meta: dict) -> dict:
             row["skill"],
             f"{t['passed']} of {t['judged']}" if t else "",
             _percent(t.get("should_trigger_rate")), _percent(t.get("should_not_trigger_rate")),
+            f"{t['handed_off']} of {t['runs']}" if t else "",
             _percent((with_skill.get("pass_rate") or {}).get("mean")),
             _percent((without.get("pass_rate") or {}).get("mean")),
             "" if delta is None else f"{delta * 100:+.0f} points",
