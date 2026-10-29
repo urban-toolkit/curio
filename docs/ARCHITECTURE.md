@@ -1264,9 +1264,12 @@ The sandbox runs as a separate Flask process. It:
   (`sandbox/isolation/lifecycle.py::server_environment`): its malloc arenas
   capped from the same budget (`MALLOC_ARENA_MAX`, 16 at the default 4096 MB),
   and Arrow allocating in them (`ARROW_DEFAULT_MEMORY_POOL=system`) unless the
-  environment names another pool. glibc allows eight arenas a core, the release
-  above cannot trim the top of any arena but the main one, and Arrow's default
-  pool kept what it freed.
+  environment names another pool, and glibc's mmap and trim thresholds held
+  fixed (`MALLOC_MMAP_THRESHOLD_`, `MALLOC_TRIM_THRESHOLD_`) unless the
+  environment sets them. glibc allows eight arenas a core, the release above
+  cannot trim the top of any arena but the main one, Arrow's default pool kept
+  what it freed, and glibc raises its thresholds after a run's first big frees,
+  after which each arena keeps up to 64 MiB of free top.
 
 > [!WARNING]
 > **By default this is a network boundary, not an execution boundary.** Unless
