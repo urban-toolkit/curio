@@ -35,7 +35,10 @@ jest.mock("../../providers/StarterProvider", () => ({ useStarterContext: () => (
 jest.mock("../../providers/modelCatalog", () => ({
   useModelCatalogDrawer: () => ({ openModelCatalogDrawer: jest.fn() }),
 }));
-jest.mock("../../providers/agents", () => ({ AgentAttachmentsProvider: ({ children }: any) => <>{children}</> }));
+jest.mock("../../providers/agents", () => ({
+  AgentAttachmentsProvider: ({ children }: any) => <>{children}</>,
+  useAgentsDataflowId: () => null,
+}));
 jest.mock("../../components/datasets/catalog/datasetDetailsContext", () => ({
   useDatasetDetails: () => ({ openDatasetDetails: jest.fn() }),
   viewDatasetDetailsToast: jest.fn(),
