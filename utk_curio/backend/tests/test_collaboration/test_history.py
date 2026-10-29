@@ -657,8 +657,14 @@ def test_nothing_is_kept_while_the_history_is_off(kept, monkeypatch):
     alice = _synced(kept, "alice")
     alice.edit(_add_node("unrecorded"))
     assert not history.has_points(kept.owner_key, kept.project_id)
-    answer = _http(kept).post(f"/api/projects/{kept.project_id}/history/saved", headers=_auth(kept))
-    assert answer.status_code == 409 and answer.get_json()["error"] == history.NOT_KEPT
+    base = f"/api/projects/{kept.project_id}/history"
+    for url, body in ((f"{base}/saved", {}), (f"{base}/nodes/loader/runs", {"code": "x = 1\n"}),
+                      (f"{base}/nodes/loader/edits", {"label": "An edit"}), (f"{base}/p1/put-back", {}),
+                      (f"{base}/nodes/loader/code", {"from": "x = 1\n", "code": "x = 2\n"}),
+                      (f"{base}/clear", {"before": "p1"})):
+        answer = _http(kept).post(url, headers=_auth(kept), data=json.dumps(body))
+        assert answer.status_code == 409 and answer.get_json()["error"] == history.NOT_KEPT, (url, answer.get_json())
+    assert _code_of(kept.live()["dataflow"], "loader") == "x = 1\n", "a write the history keeps landed without it"
     listed = _http(kept).get(f"/api/projects/{kept.project_id}/history", headers=_auth(kept)).get_json()
     assert (listed["versions"], listed["kept"]) == ([], False)
     assert not history.has_points(kept.owner_key, kept.project_id)

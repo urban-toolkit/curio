@@ -716,14 +716,17 @@ class _Built:
 
     def step(self, target: dict) -> tuple[int, int]:
         """Make the doc *target*, one transaction; where its updates start and
-        end."""
+        end. A step that fails partway leaves in the log what it changed, as
+        the doc holds it, since a transaction is not undone."""
         start = len(self.records)
-        with self.doc.transaction(origin=doc_mapping.TRILL_ORIGIN):
-            doc_mapping.apply_dataflow(self.doc, self.current, target)
-        for update in self._updates:
-            self.records += write_message(update)
-        self._updates = []
-        self.current = doc_mapping.doc_to_dataflow(self.doc)
+        try:
+            with self.doc.transaction(origin=doc_mapping.TRILL_ORIGIN):
+                doc_mapping.apply_dataflow(self.doc, self.current, target)
+        finally:
+            for update in self._updates:
+                self.records += write_message(update)
+            self._updates = []
+            self.current = doc_mapping.doc_to_dataflow(self.doc)
         return start, len(self.records)
 
     def code(self, node_id: str) -> Optional[str]:
@@ -1274,6 +1277,8 @@ def write_code(user_key: str, project_id: str, by: dict, node_id: str, *, expect
     code the person's put-back, Undo or Redo began from: checked in the same
     transaction (``doc_mapping.apply_dataflow``'s code refusal). Refused, the
     node keeps what it holds, and :class:`Refused` names who changed it."""
+    if not RECORDING:
+        raise HistoryError(NOT_KEPT, 409)
     spec = dataflow_docs.live(user_key, project_id)
     if spec is None:
         raise HistoryError("This dataflow has no saved spec.", 404)
