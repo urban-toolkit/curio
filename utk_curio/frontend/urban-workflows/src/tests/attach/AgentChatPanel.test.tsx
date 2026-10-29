@@ -18,7 +18,6 @@ jest.mock("../../services/packages/packagesApi", () => ({
 import { packagesApi } from "../../services/packages/packagesApi";
 
 import { AgentChatPanel } from "../../components/agents/attach/AgentChatPanel";
-import { MADE_BEFORE_DIRECT_EDITS } from "../../components/agents/content/reviewCard/reviewCardText";
 import type { AgentAttachment, AgentSessionTurn } from "../../services/agents";
 
 const attachment: AgentAttachment = {
@@ -1303,6 +1302,9 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
   });
 
   it("a review of a change saved before agents edited directly awaits nothing and keeps Dismiss alone", () => {
+    // Read here, so a checkout without it fails this test alone.
+    const { MADE_BEFORE_DIRECT_EDITS } = require("../../components/agents/content/reviewCard/reviewCardText");
+    expect(MADE_BEFORE_DIRECT_EDITS).toEqual(expect.any(String));
     const onApplyProposal = jest.fn().mockResolvedValue(undefined);
     const onDismissProposal = jest.fn().mockResolvedValue(undefined);
     const summary = "Replace the content of node n1";
