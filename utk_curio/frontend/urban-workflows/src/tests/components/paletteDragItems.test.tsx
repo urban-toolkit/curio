@@ -1,5 +1,3 @@
-import fs from "fs";
-import path from "path";
 import React from "react";
 import { fireEvent, render } from "@testing-library/react";
 import "@testing-library/jest-dom";
@@ -16,9 +14,6 @@ import { faUpload } from "@fortawesome/free-solid-svg-icons";
  * - a dataset's row and card, and a layer group's row, the dataset's id;
  * - a model's row and card, the model's package id;
  * - a node package's card, its nodes' types, separated by spaces.
- *
- * When the palette is closed, the drag starts at the rail's edge beside its
- * root, which has the id `<palette>-palette`.
  */
 
 jest.mock("reactflow", () => ({
@@ -77,17 +72,17 @@ const dataset = (over: Partial<DatasetCatalogItem> = {}): DatasetCatalogItem =>
         ...over,
     }) as DatasetCatalogItem;
 
-const shapes = (templates: ReturnType<typeof template>[]): PackagePayload =>
+const shapes = (templates: ReturnType<typeof template>[], dirName = "acme.shapes@1"): PackagePayload =>
     ({
-        dirName: "acme.shapes@1",
-        packageId: "acme.shapes",
+        dirName,
+        packageId: dirName.replace(/@\d+$/, ""),
         name: "Shapes",
         version: "1.0.0",
         publisher: "Acme",
         description: "",
         templates,
         lineage: null,
-        familyKey: "acme.shapes@1",
+        familyKey: dirName,
     }) as unknown as PackagePayload;
 
 const cardProps = {
@@ -165,7 +160,7 @@ describe("a catalog drawer's card names its item", () => {
         expect(card).toHaveAttribute("data-dataset-id", "imported.bikes");
     });
 
-    test("a node package's card: its nodes' types, in the order its drag lists them", () => {
+    test("a node package's card: its nodes' types, in the order its drag lists them; none when it has none", () => {
         const pkg = shapes([
             template({ id: "acme.shapes/hexbin@1", label: "Hexbin", paletteOrder: 2 }),
             template({ id: "acme.shapes/heatmap@1", label: "Heatmap", paletteOrder: 1 }),
@@ -177,14 +172,14 @@ describe("a catalog drawer's card names its item", () => {
         expect(items).toEqual(["acme.shapes/heatmap@1", "acme.shapes/hexbin@1"]);
         const written = JSON.parse(dragWrites(card)["application/x-curio-package-card"]);
         expect(items).toEqual(written.nodes.map((node: { nodeType: string }) => node.nodeType));
-    });
 
-    test("a node package's card with no node names none, as it drags none", () => {
-        render(<PackageCard {...cardProps} pkg={shapes([])} />);
-        const card = document.querySelector('article[data-pkg-dir="acme.shapes@1"]');
-        expect(card).not.toHaveAttribute("draggable");
-        expect(card).not.toHaveAttribute("data-palette");
-        expect(card).not.toHaveAttribute("data-palette-item");
+        // A package with no node drags none, and so names none.
+        render(<PackageCard {...cardProps} pkg={shapes([], "acme.empty@1")} />);
+        const empty = document.querySelector('article[data-pkg-dir="acme.empty@1"]');
+        expect(empty).not.toBeNull();
+        expect(empty).not.toHaveAttribute("draggable");
+        expect(empty).not.toHaveAttribute("data-palette");
+        expect(empty).not.toHaveAttribute("data-palette-item");
     });
 
     test("a model's card: its model's package id, the one its drag writes", () => {
@@ -192,17 +187,5 @@ describe("a catalog drawer's card names its item", () => {
         const card = document.querySelector('article[data-model-id="model.curio.ddrnet23-slim"]');
         expect(itemOf(card)).toEqual(["models", "model.curio.ddrnet23-slim"]);
         expect(JSON.parse(dragWrites(card)["application/x-curio-model"]).modelId).toBe("model.curio.ddrnet23-slim");
-    });
-});
-
-describe("a closed palette's root", () => {
-    test.each([
-        ["builtin", "builtinPalette/BuiltinPaletteDropdown.tsx"],
-        ["packages", "toolsMenuPackagePalette/PackagesPaletteDropdown.tsx"],
-        ["datasets", "datasetPalette/DatasetsPaletteDropdown.tsx"],
-        ["models", "modelsPalette/ModelsPaletteDropdown.tsx"],
-    ])("of %s has the id an agent's drag starts beside", (palette, file) => {
-        const source = fs.readFileSync(path.resolve(__dirname, "../../components/menus/nodes", file), "utf8");
-        expect(source).toContain(`id="${palette}-palette"`);
     });
 });

@@ -45,6 +45,7 @@ import type { NodeDescriptor } from "../../../registry/types";
 import type { DatasetCatalogItem } from "../../../services/datasetCatalog";
 import type { PackagePayload } from "../../../services/packages";
 import { declaredValue } from "../../_support/cssRules";
+import { ddrnetPackage } from "../../_support/modelPackages";
 
 const NOW = 1_700_000_000_000;
 /** Where the canvas's box starts in the window. */
@@ -412,6 +413,73 @@ describe("an agent's drag starts from this tab's own page", () => {
         drag = dragOf(nodeBuilder);
         expect(drag!.getAttribute("data-drag-start")).toBe("node");
         expect(at(drag)).toEqual([200, 120]);
+    });
+
+    test("for a card dropped onto a node: at the card, else the rail's edge, carrying the card or a node chip's outline", () => {
+        const nodes = new Map([
+            ["n1", { id: "n1", position: { x: 40, y: 30 }, positionAbsolute: { x: 40, y: 30 }, width: 300, height: 200, data: {} }],
+        ]);
+        const { getByTestId } = renderCanvas(
+            <>
+                {/* The rail's Models palette, closed: its root is its button. */}
+                <div id="models-palette" data-curio-tools-palette-dropdown="true" />
+                <div data-testid="drawer">
+                    <PackageCard
+                        pkg={ddrnetPackage()}
+                        isInstalled
+                        hasUpdate={false}
+                        catalogRow={undefined}
+                        busy={false}
+                        onInstall={jest.fn()}
+                        onUpdate={jest.fn()}
+                    />
+                </div>
+            </>,
+            VIEW,
+            nodes,
+        );
+        boxed(document.getElementById("models-palette"), 50, 420, 112, 50);
+        const card = document.querySelector('article[data-model-id="model.curio.ddrnet23-slim"]');
+        expect(card).not.toBeNull();
+        boxed(card, 880, 160, 300, 110);
+        // Dropped on the node n1, which runs the model.
+        const onNode = { x: 120, y: 90 };
+        const dropping = (id: string): Drag => ({
+            carrying: {
+                id,
+                kind: "onto",
+                from: { palette: "models", item: "model.curio.ddrnet23-slim" },
+                onto: "n1",
+                node: { type: "model.curio.ddrnet23-slim/image-segmentation@1", label: "DDRNet23-Slim (street scenes)" },
+                ms: MS,
+            },
+            drop: onNode,
+        });
+
+        builderIs(dropping("drag-1"));
+        let drag = dragOf(builder);
+        expect(drag!.getAttribute("data-drag-kind")).toBe("onto");
+        expect(drag!.getAttribute("data-drag-start")).toBe("card");
+        expect(at(drag)).toEqual(flowOf(880, 160));
+        expect(ghostOf(drag).getAttribute("data-agent-ghost")).toBe("copy");
+        expect(ghostOf(drag).textContent).toContain("DDRNet23-Slim");
+        advance(PAST_MS);
+        expect(at(dragOf(builder))).toEqual([onNode.x, onNode.y]);
+        builderIs(null);
+
+        // The drawer closes: the rail's edge at the Models button, carrying the
+        // outline of a node's chip, since it brings no node of its own.
+        getByTestId("drawer").setAttribute("aria-hidden", "true");
+        builderIs(dropping("drag-2"));
+        drag = dragOf(builder);
+        expect(drag!.getAttribute("data-drag-start")).toBe("rail");
+        expect(at(drag)).toEqual(flowOf(50 + 112, 420 + 25));
+        const ghost = ghostOf(drag);
+        expect(ghost.getAttribute("data-agent-ghost")).toBe("outline");
+        expect([ghost.style.width, ghost.style.height]).toEqual(["250px", "40px"]);
+        expect(ghost.textContent).toBe("DDRNet23-Slim (street scenes)");
+        advance(PAST_MS);
+        expect(at(dragOf(builder))).toEqual([onNode.x, onNode.y]);
     });
 
     test("at its drop point, where it waits, when this tab shows nothing to start from", () => {
