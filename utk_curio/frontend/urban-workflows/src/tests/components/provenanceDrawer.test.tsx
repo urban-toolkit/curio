@@ -42,9 +42,6 @@ jest.mock("../../providers/CollaborationProvider", () => ({
     activity: [],
     lockNode: () => undefined,
     unlockNode: () => undefined,
-    resolveConflict: () => undefined,
-    broadcastOutputProduced: () => undefined,
-    signalExecDisplay: () => undefined,
     onRemote: (event: string, handler: (payload: unknown) => void) => {
       mockRemote.set(event, handler);
       return () => {

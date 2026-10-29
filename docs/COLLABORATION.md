@@ -86,6 +86,19 @@ Open the dataflow's link (`http://<host>:8080/dataflow/<UUID>`) in each collabor
 - **Room state:** in-memory dicts in [utk_curio/backend/app/collaboration/room_state.py](../utk_curio/backend/app/collaboration/room_state.py), guarded by a single `threading.RLock`: who is in the room, locks and activity. **Not persisted across restarts.**
 - **Each open dataflow's doc:** the dataflow itself is a Yjs doc the backend keeps in memory, synced with each tab over the same socket (the `yjs` event) and kept beside the dataflow's spec, so a restart reloads it; see [ARCHITECTURE.md § Each open dataflow's doc](ARCHITECTURE.md#each-open-dataflows-doc) and [§ The canvas bound to its doc](ARCHITECTURE.md#the-canvas-bound-to-its-doc). One backend process serves them all.
 
+### The room's events
+
+What a tab sends on the room's socket, and what the server does with it. The server answers no other event.
+
+| Event | What the server does |
+|-------|----------------------|
+| `connect` | Checks the Bearer token in the Socket.IO handshake's `auth`, and refuses a socket without a valid one. |
+| `join_session` | Puts the tab in the dataflow's room with its account's role, and answers with its participant id and the room's people, locks and activity; the others get `user_joined`. A join to a dataflow that does not exist, or a hosted guest's to an example, is refused. |
+| `node_lock` | Locks the node the tab edits, and tells the room (`node_locked`). A watcher's is refused (`read_only`). |
+| `node_unlock` | Releases the tab's lock on the node, and tells the room (`node_unlocked`). |
+| `yjs` | Syncs the dataflow's doc and everyone's presence in it, and drops a watcher's changes; see [ARCHITECTURE.md § Each open dataflow's doc](ARCHITECTURE.md#each-open-dataflows-doc). |
+| `disconnect` | Releases the tab's locks, takes it out of each doc it synced, clears its presence, and tells the room (`user_left`). |
+
 ### Backend modules
 
 | File | Role |
@@ -94,7 +107,7 @@ Open the dataflow's link (`http://<host>:8080/dataflow/<UUID>`) in each collabor
 | [app/__init__.py](../utk_curio/backend/app/__init__.py) | Mounts the SocketIO server and registers its events, on every backend. |
 | [app/collaboration/auth.py](../utk_curio/backend/app/collaboration/auth.py) | Bearer-token handshake; resolves the socket to a real `User` + `UserSession`. |
 | [app/collaboration/room_state.py](../utk_curio/backend/app/collaboration/room_state.py) | All in-memory dicts and helpers. Participants and locks are keyed by participant id, one per socket. |
-| [app/collaboration/events.py](../utk_curio/backend/app/collaboration/events.py) | The room's `@sio.on(...)` handlers: the join, locks, outputs. Identity is read from `room_state.get_identity(sid)`, populated in the `connect` handler. A join takes the account's role; every change to the room is refused to a watcher. |
+| [app/collaboration/events.py](../utk_curio/backend/app/collaboration/events.py) | The room's `@sio.on(...)` handlers: the join and locks. Identity is read from `room_state.get_identity(sid)`, populated in the `connect` handler. A join takes the account's role; every change to the room is refused to a watcher. |
 | [app/collaboration/roles.py](../utk_curio/backend/app/collaboration/roles.py) | Tells a room that the owner added or removed an editor (`roles_changed`). |
 | [app/collaboration/dataflow_docs.py](../utk_curio/backend/app/collaboration/dataflow_docs.py) | Each open dataflow's Yjs doc: its sync and awareness (`yjs`), a watcher's changes dropped, a connection to a removed node dropped (`connection_dropped`), its files beside the spec. Every backend writer of a dataflow (agents, Solve, installs, the PUT) writes through it, so each change reaches the room as it lands. |
 | [app/collaboration/doc_mapping.py](../utk_curio/backend/app/collaboration/doc_mapping.py) | A dataflow's Trill to its doc and back, on the layout in `src/contracts/dataflowDoc.json`. |
@@ -125,8 +138,8 @@ Open the dataflow's link (`http://<host>:8080/dataflow/<UUID>`) in each collabor
 ## Security model
 
 - **Identity** is anchored in `UserSession.token` (the same Bearer token used by REST). The token is sent through Socket.IO's `auth` handshake (`io(url, { auth: { token } })`); the server resolves it in [auth.py](../utk_curio/backend/app/collaboration/auth.py) and stashes the `(user_id, username, name, profile_image)` tuple via `room_state.set_identity(sid, ...)`, with a participant id of the socket's own. **Every subsequent event handler reads from that stashed identity, never from the client-supplied payload.** Spoofing `userId`/`username` fields in an event has no effect.
-- **Roles are checked on the server.** A join takes the role the account has on the dataflow: its owner, an editor in its editors list ([access.py](../utk_curio/backend/app/projects/access.py)), or a watcher. A watcher's changes to the dataflow's doc are dropped, and its every other change to the room (a lock, an output) is answered `read_only` and reaches nobody. A join to a dataflow that does not exist is refused. Only the owner reads or changes the editors list; anyone else is told the dataflow is not found. The agents' routes take the same roles: the owner and the editors drive the dataflow's agents, and anyone else, a hosted guest on another account's dataflow included, is refused with a 403.
-- **Sandbox artifact isolation is preserved.** Outputs flow between collaborators over the socket as `output_produced` payloads, not by one user fetching another user's artifact via `/get`, so the per-session gate on DuckDB artifact reads in [`sandbox/util/parsers.py`](../utk_curio/sandbox/util/parsers.py) still applies. The exception is a project's SAVED outputs: the project's output routes have the sandbox read each one in place, from the file its owner's Data Catalog keeps, so a shared dataflow or dashboard shows its data.
+- **Roles are checked on the server.** A join takes the role the account has on the dataflow: its owner, an editor in its editors list ([access.py](../utk_curio/backend/app/projects/access.py)), or a watcher. A watcher's changes to the dataflow's doc are dropped, and a lock it asks for is answered `read_only` and reaches nobody. A join to a dataflow that does not exist is refused. Only the owner reads or changes the editors list; anyone else is told the dataflow is not found. The agents' routes take the same roles: the owner and the editors drive the dataflow's agents, and anyone else, a hosted guest on another account's dataflow included, is refused with a 403.
+- **Sandbox artifact isolation is preserved.** Each person's runs are their own, and no one reads another user's artifact via `/get`, so the per-session gate on DuckDB artifact reads in [`sandbox/util/parsers.py`](../utk_curio/sandbox/util/parsers.py) applies to collaborators too. The exception is a project's SAVED outputs: the project's output routes have the sandbox read each one in place, from the file its owner's Data Catalog keeps, so a shared dataflow or dashboard shows its data.
 - **Editability of shared dataflows.** An editor's canvas is editable, and anyone else who opens a dataflow's link gets a watcher's, which stays read-only. The server keeps an editor's change as it arrives, whoever else has the dataflow open.
 - **Hosted guests.** The server refuses a hosted guest's save with "Guest users cannot save projects", the words the page shows, and refuses its join to a room of a dataflow a guest owns. Without `--deploy` the shared guest is the one local user, which owns and saves its dataflows.
 - **No transport encryption out of the box.** Run behind HTTPS for deployments crossing an untrusted network.
@@ -135,7 +148,6 @@ Open the dataflow's link (`http://<host>:8080/dataflow/<UUID>`) in each collabor
 
 - **In-memory room state.** Room presence, locks and activity are stored in process memory, and a backend restart drops them. The dataflow's doc is kept on disk.
 - **No transport encryption** is enforced by Curio. Run behind HTTPS for any deployment that crosses an untrusted network.
-- **Output payload size.** Outputs are relayed as JSON over the socket. Very large outputs (>~256 KB, images, parquet) may render slowly on peers.
 - **Lock TTL.** Stale locks are released only on socket disconnect, so a laptop suspended mid-edit holds the lock until the socket times out.
 - **Persistence of activity log.** The 200-entry activity ring buffer is lost on restart.
 - **`async_mode="threading"`.** 100 people typing at once in their rooms see each other's changes within about a second. A backend busier than that delays the changes rather than dropping the sockets. Production with many concurrent rooms should switch to `eventlet` or `gevent`.

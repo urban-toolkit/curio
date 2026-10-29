@@ -75,7 +75,7 @@ jest.mock("../../providers/FlowProvider", () => ({
   }),
 }));
 jest.mock("../../providers/CollaborationProvider", () => ({
-  useCollab: () => ({ enabled: false, lockedNodes: {}, currentUserId: null }),
+  useCollab: () => ({ lockedNodes: {} }),
 }));
 
 import UniversalNode from "../../components/UniversalNode";
