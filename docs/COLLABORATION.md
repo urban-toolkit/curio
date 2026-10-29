@@ -136,4 +136,4 @@ Open the project URL (`http://<host>:8080/dataflow/<UUID>`) on each collaborator
 - **Output payload size.** Outputs are relayed as JSON over the socket. Very large outputs (>~256 KB, images, parquet) may render slowly on peers.
 - **Lock TTL.** Stale locks are released only on socket disconnect, so a laptop suspended mid-edit holds the lock until the socket times out.
 - **Persistence of activity log.** The 200-entry activity ring buffer is lost on restart.
-- **`async_mode="threading"`.** 50 people typing at once in their rooms see each other's changes in under a second. At 100 the one backend process falls behind, and their sockets drop at Engine.IO's ping timeout. Production with many concurrent rooms should switch to `eventlet` or `gevent`.
+- **`async_mode="threading"`.** 100 people typing at once in their rooms see each other's changes within about a second. A backend busier than that delays the changes rather than dropping the sockets. Production with many concurrent rooms should switch to `eventlet` or `gevent`.
