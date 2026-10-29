@@ -330,6 +330,16 @@ export function ScenarioLayers({
     );
   };
 
+  /** A node's latest output, as a word: Done, Stale, Error, Not run. */
+  const statusPill = (id: string) => {
+    const status = statusOf(id);
+    return status.text ? (
+      <span className={styles.status} data-tone={status.tone}>
+        {status.text}
+      </span>
+    ) : null;
+  };
+
   const circles = (id: string) => {
     const row = dotsOf.get(id);
     if (!row) return null;
@@ -498,7 +508,17 @@ export function ScenarioLayers({
               >
                 <div className={styles.groupHint}>Double-click to expand</div>
                 {[...layout.rows].map(([id, top]) =>
-                  card(group.key, id, top, circles(id), "var(--curio-text-secondary)", { "data-shared-row": id }),
+                  card(
+                    group.key,
+                    id,
+                    top,
+                    <span className={styles.cardSide}>
+                      {statusPill(id)}
+                      {circles(id)}
+                    </span>,
+                    "var(--curio-text-secondary)",
+                    { "data-shared-row": id },
+                  ),
                 )}
               </div>
             </React.Fragment>
@@ -528,15 +548,9 @@ export function ScenarioLayers({
                 <span className={styles.boxName}>{box.scenario.name}</span>
               </div>
               <div className={styles.boxHint}>Double-click to expand</div>
-              {[...layout.rows].map(([id, top]) => {
-                const status = statusOf(id);
-                const side = status.text ? (
-                  <span className={styles.status} data-tone={status.tone}>
-                    {status.text}
-                  </span>
-                ) : null;
-                return card(box.scenario.id, id, top, side, box.scenario.color, { "data-scenario-row": id });
-              })}
+              {[...layout.rows].map(([id, top]) =>
+                card(box.scenario.id, id, top, statusPill(id), box.scenario.color, { "data-scenario-row": id }),
+              )}
             </div>
           ))}
         </div>

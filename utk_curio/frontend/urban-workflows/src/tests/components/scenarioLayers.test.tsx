@@ -121,7 +121,9 @@ describe("a collapsed shared group", () => {
       `${groupBoxLayout(outcomes).height}px`,
     ]);
     const chart = el.querySelector('[data-shared-row="chart"]')!;
-    expect(chart.textContent).toBe("Vega-Litechart");
+    // Its latest output, as the scenario box shows it, then its circles.
+    expect(chart.textContent).toBe("Vega-LiteNot runchart");
+    expect(el.querySelector('[data-shared-row="map"] [data-tone="done"]')!.textContent).toBe("Done");
     const dots = [...chart.querySelectorAll("[data-scenario]")].map((d) => d.getAttribute("data-member"));
     expect(dots).toEqual(["true", "false"]);
     const header = document.querySelector('[data-shared-header="group:park:outcomes"]') as HTMLElement;

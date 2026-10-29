@@ -192,6 +192,14 @@
   font-weight: 600;
   color: var(--curio-text-primary);
   white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cardSide,
+.cardDots {
+  flex: none;
 }
 
 .cardTitle {
@@ -200,6 +208,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.cardSide {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .cardDots {
