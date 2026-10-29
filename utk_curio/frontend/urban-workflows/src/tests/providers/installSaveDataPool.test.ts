@@ -58,7 +58,7 @@ function asksForTheSave(nodeType: string): boolean {
                 beginPendingInstall,
                 endPendingInstall: jest.fn(),
                 failPendingInstall: jest.fn(),
-                persistDataflowForInstall: jest.fn(() => Promise.resolve({ failedNodeIds: [] })),
+                recordOutputs: jest.fn(() => Promise.resolve({ failedNodeIds: [] })),
             } as any,
             flushInstallSyncRef,
         }),
