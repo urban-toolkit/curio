@@ -43,14 +43,73 @@ import json as _diag_json
 import os as _diag_os
 
 
-def _diag_payload():
+def _anon_mb():
+    with open("/proc/self/status") as handle:
+        for line in handle:
+            if line.startswith("RssAnon:"):
+                return int(line.split()[1]) / 1024
+
+
+def _obmalloc():
+    import re
+    import sys
+    import tempfile
+
+    with tempfile.TemporaryFile(mode="w+") as sink:
+        saved = _diag_os.dup(2)
+        try:
+            sys.stderr.flush()
+            _diag_os.dup2(sink.fileno(), 2)
+            sys._debugmallocstats()
+        finally:
+            sys.stderr.flush()
+            _diag_os.dup2(saved, 2)
+            _diag_os.close(saved)
+        sink.seek(0)
+        text = sink.read()
+    found = {}
+    for key, pattern in (("arenas_current", r"# arenas allocated current\s*=\s*([\d,]+)"),
+                         ("arenas_total", r"# arenas allocated total\s*=\s*([\d,]+)"),
+                         ("arenas_highwater", r"# arenas highwater mark\s*=\s*([\d,]+)"),
+                         ("bytes_in_blocks", r"# bytes in allocated blocks\s*=\s*([\d,]+)"),
+                         ("bytes_in_free_blocks", r"# bytes in available blocks\s*=\s*([\d,]+)"),
+                         ("unused_pools_bytes", r"unused pools \* \d+ bytes\s*=\s*([\d,]+)"),
+                         ("arena_bytes", r"Total\s*=\s*([\d,]+)")):
+        match = re.search(pattern, text)
+        if match:
+            found[key] = int(match.group(1).replace(",", ""))
+    return found
+
+
+def _counts_by_type(limit=12):
+    import gc
+
+    counts = {}
+    for obj in gc.get_objects():
+        name = type(obj).__name__
+        counts[name] = counts.get(name, 0) + 1
+    top = sorted(counts.items(), key=lambda item: -item[1])[:limit]
+    return {"total": sum(counts.values()), "top": top}
+
+
+def _diag_payload(intervene=False):
     import ctypes
     import gc
     import re
     import sys
     import tempfile
 
-    out = {}
+    out = {"anon_mb": _anon_mb(), "obmalloc": _obmalloc(), "gc_counts": gc.get_count(),
+           "gc_objects": _counts_by_type()}
+    if intervene:
+        started = __import__("time").perf_counter()
+        found = gc.collect()
+        out["gc_collected"] = found
+        out["gc_seconds"] = round(__import__("time").perf_counter() - started, 3)
+        out["after_gc"] = {"anon_mb": _anon_mb(), "obmalloc": _obmalloc()}
+        from utk_curio.sandbox.util.memory_release import release_free_memory
+        release_free_memory()
+        out["after_gc_release"] = {"anon_mb": _anon_mb(), "obmalloc": _obmalloc()}
     pa = sys.modules.get("pyarrow")
     if pa is not None:
         pool = pa.default_memory_pool()
@@ -134,7 +193,8 @@ _diag_orig_call = _diag_flask.Flask.__call__
 
 def _diag_call(self, environ, start_response):
     if environ.get("PATH_INFO") == "/__diag_mem":
-        body = _diag_json.dumps(_diag_payload(), default=str).encode()
+        intervene = "intervene" in environ.get("QUERY_STRING", "")
+        body = _diag_json.dumps(_diag_payload(intervene), default=str).encode()
         start_response("200 OK", [("Content-Type", "application/json"),
                                   ("Content-Length", str(len(body)))])
         return [body]
@@ -182,11 +242,12 @@ def _popen(args, **kwargs):
     return proc
 
 
-def _inside():
+def _inside(intervene=False):
     import requests
 
+    query = "?intervene=1" if intervene else ""
     try:
-        return requests.get(f"http://127.0.0.1:{STATE['port']}/__diag_mem", timeout=120).json()
+        return requests.get(f"http://127.0.0.1:{STATE['port']}/__diag_mem{query}", timeout=120).json()
     except Exception as exc:  # noqa: BLE001
         return {"error": repr(exc)}
 
@@ -266,8 +327,8 @@ def _sleep(seconds):
             snap = snapshot(STATE["pid"])
         except OSError as exc:
             snap = {"error": str(exc)}
-        if STATE["diag"] and len(STATE["snaps"]) in (0, 1, 3, 6, 10):
-            snap["inside"] = _inside()
+        if STATE["diag"] and len(STATE["snaps"]) in (0, 1, 3, 6, STATE["cycles"]):
+            snap["inside"] = _inside(intervene=len(STATE["snaps"]) == STATE["cycles"])
         STATE["snaps"].append(snap)
 
 
@@ -276,10 +337,12 @@ rr.subprocess = types.SimpleNamespace(Popen=_popen, STDOUT=subprocess.STDOUT,
 rr.time = types.SimpleNamespace(sleep=_sleep, monotonic=time.monotonic)
 
 
-def one(rows, cycles, workdir):
+def one(rows, cycles, workdir, replay_variants=()):
     STATE["snaps"] = []
     STATE["pid"] = None
-    report = rr.run(rows=rows, cycles=cycles, workdir=workdir, log=lambda _: None)
+    STATE["cycles"] = cycles
+    report = rr.run(rows=rows, cycles=cycles, variants=replay_variants, workdir=workdir,
+                    log=lambda _: None)
     data = report.to_json()
     data["unit_bytes"] = report.unit
     data["baseline_bytes"] = report.baseline
@@ -299,6 +362,8 @@ def main():
     parser.add_argument("--rows", type=int, default=200_000)
     parser.add_argument("--out", required=True)
     parser.add_argument("--diag", action="store_true")
+    parser.add_argument("--replay-variant", default="",
+                        help="comma-separated _rerun_memory variants, such as gc")
     args = parser.parse_args()
     STATE["variant"] = args.variant
     STATE["diag"] = args.diag
@@ -307,7 +372,8 @@ def main():
     results = []
     with tempfile.TemporaryDirectory(prefix="probe-") as workdir:
         for sample in range(args.samples):
-            data = one(args.rows, args.cycles, Path(workdir))
+            data = one(args.rows, args.cycles, Path(workdir),
+                       tuple(v for v in args.replay_variant.split(",") if v))
             data.update({"variant": args.variant, "label": args.label, "sample": sample})
             results.append(data)
             base = data["snaps"][0] if data["snaps"] else {}
