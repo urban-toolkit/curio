@@ -22,6 +22,8 @@ Every tab that opens a saved dataflow (`/dataflow/<UUID>`) while signed in holds
 - **Code typed together.** Every keystroke in a node's code or spec shows in every other tab as it is typed, with each person's cursor in their color and their name over it. There is no vote: each change is kept as it is made.
 - **Undo is your own.** **Ctrl+Z** (**Cmd+Z** on a Mac) in a node's editor undoes your typing in that node, never someone else's. **Ctrl+Shift+Z** or **Ctrl+Y** redoes it.
 - **Everything else, live.** Adding, removing or connecting nodes, a widget's value, a scenario, a node's title, size or settings reach every other tab at once. While someone drags a node, the others see it move; it lands where they drop it.
+- **Everyone's cursor on the canvas.** Where each person's pointer is on the canvas shows on everyone else's, in their color with their name, at the same point of the dataflow whatever each of you has panned or zoomed to. A cursor that rests for 5 seconds fades until it moves again, and one that leaves the canvas goes. Your own is not drawn.
+- **One color per person.** A person's color comes from their account: their cursor has it on the canvas and in the code editors, in each of their tabs, and after a reload.
 - **Kept as it is made.** The server keeps each change the moment it arrives and writes the dataflow a second after the last one. A tab that opens the dataflow later finds every change, the last keystroke included.
 
 A dataflow not saved yet, a hosted guest's canvas of an example, every canvas of a Curio started with `--no-project`, and the dashboard page each stay in their own tab.
@@ -41,7 +43,7 @@ Everyone in a dataflow's room has a role, which the server decides when they joi
 |------|-----|--------------|
 | Owner | The account that owns the dataflow | Edits. Invites and removes editors. Works with the dataflow's agents. |
 | Editor | An account the owner invited | With `--collab`, edits: code, nodes, connections, widgets and scenarios, which reach everyone, and works with the dataflow's agents. Without it, watches. |
-| Watcher | Anyone else signed in who opens the dataflow's link | Watches: every edit, keystroke and cursor shows as it lands, and the server keeps nothing their tab changes. |
+| Watcher | Anyone else signed in who opens the dataflow's link | Watches: every edit, keystroke and cursor shows as it lands, their own cursor shows to the others, and the server keeps nothing their tab changes. |
 
 **Inviting editors.** The owner opens **Share > Invite editors**, types an account's username and presses **Add**. The editors are listed below it, each with a remove button. The editor opens the dataflow's link (**Share > Copy dataflow link**) as anyone does, and edits once the room names them an editor. Adding or removing an editor applies at once, also to someone already in the room. A guest is never an editor, and a guest invites nobody.
 
@@ -113,7 +115,9 @@ Open the project URL (`http://<host>:8080/dataflow/<UUID>`) on each collaborator
 | [providers/collab/docMapping.ts](../utk_curio/frontend/urban-workflows/src/providers/collab/docMapping.ts) | A dataflow's Trill to its doc and back, on the server's layout. |
 | [providers/flow/useDataflowDoc.ts](../utk_curio/frontend/urban-workflows/src/providers/flow/useDataflowDoc.ts) | Keeps the canvas and the doc in step both ways; live drags; a node removed while you edit it. |
 | [components/editing/useYMonacoBinding.ts](../utk_curio/frontend/urban-workflows/src/components/editing/useYMonacoBinding.ts) | Binds a node's code editor to its code in the doc (y-monaco), with each person's cursor and the per-node Ctrl+Z. |
-| [providers/collab/presence.ts](../utk_curio/frontend/urban-workflows/src/providers/collab/presence.ts) | What each tab tells the others through awareness: the node it edits, its drags, the nodes it removes, and each person's cursor color. |
+| [providers/collab/presence.ts](../utk_curio/frontend/urban-workflows/src/providers/collab/presence.ts) | What each tab tells the others through awareness: the node it edits, its drags, the nodes it removes, where its pointer is on the canvas; and each person's color, from their account (`personColor`). |
+| [providers/collab/cursors.ts](../utk_curio/frontend/urban-workflows/src/providers/collab/cursors.ts) | A pointer on the canvas as awareness carries it, `pointer: {x, y, t}` in flow coordinates: sent about 20 times a second at most, and faded once it rests. |
+| [components/collab/CanvasCursors.tsx](../utk_curio/frontend/urban-workflows/src/components/collab/CanvasCursors.tsx) | Sends this tab's pointer while it is on the canvas, and draws everyone else's on the scenario layers' pan-and-zoom plane (`ParticipantCursors` in `components/scenarios/ScenarioLayers.tsx`). |
 | [providers/flow/useRemovalAsk.tsx](../utk_curio/frontend/urban-workflows/src/providers/flow/useRemovalAsk.tsx) | Asks before removing a node someone else is editing. |
 | [providers/collab/participants.ts](../utk_curio/frontend/urban-workflows/src/providers/collab/participants.ts) | Tells participants apart by participant id: whether a lock is this tab's, a tab's role. |
 | [hook/useSharedView.ts](../utk_curio/frontend/urban-workflows/src/hook/useSharedView.ts) | Whether the canvas is read-only: a watcher's. Every gate on editing reads it. |
