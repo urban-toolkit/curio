@@ -162,7 +162,6 @@
  "test_datasets.test_reinstall_producer": 0.2,
  "test_datasets.test_remote_import_provenance": 0.6,
  "test_datasets.test_save_lock_order": 0.8,
- "test_datasets.test_save_order": 1.5,
  "test_datasets.test_save_output_flag_parsing": 3.4,
  "test_datasets.test_saved_layer_names": 0.8,
  "test_datasets.test_sidecar_preview_export": 0.0,

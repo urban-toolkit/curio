@@ -129,7 +129,8 @@ export function MainCanvas() {
         onNodesDelete,
         markDirty,
         requestAutoRun,
-        requestProjectSave,
+        ensureProjectId,
+        whenChangesKept,
         notebookOn,
         notebookContentHeight,
         setNotebookPane,
@@ -625,22 +626,21 @@ export function MainCanvas() {
                     : target.kind === "connection"
                         ? "the connection"
                         : "the canvas";
-            // For a node target, persist the graph first so the (possibly
-            // freshly-added) node is in the saved spec the backend validates
-            // against — otherwise the attach 400s. See attachAgentOnDrop.
-            // Through the save queue, so it never goes out beside another
-            // save of this dataflow (#909, #941).
+            // For a node target, the server holds the (possibly freshly-added)
+            // node before the attach is checked against the dataflow:
+            // otherwise the attach 400s. See attachAgentOnDrop.
             attachAgentOnDrop({
                 projectId: agentsDataflow,
                 target,
                 agentCoord,
-                saveProject: requestProjectSave,
+                keepDataflow: ensureProjectId,
                 attach: (pid, coord, t) => agentsApi.attach(pid, coord, t),
                 // A hosted guest's drop that would save says to sign in.
                 hostedGuest,
-                // An invited editor's tab saves nothing: the server's doc
-                // already holds what the editor dropped on.
+                // An invited editor's tab makes no dataflow: it waits for the
+                // server to have what the editor changed, then attaches.
                 savesHere: viewerMode !== "shared",
+                whenKept: whenChangesKept,
             })
                 .then(() => {
                     notifyAgentDockRefresh();
@@ -657,7 +657,7 @@ export function MainCanvas() {
         const position = dropPosition(event);
         revealCreated(createCodeNode(type, { position }));
         markDirty();
-    }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleFileCanvasDrop, handleModelCanvasDrop, handlePackageCardCanvasDrop, handleScenarioCanvasDrop, agentsDataflow, showToast, requestProjectSave, reactFlow, hostedGuest, viewerMode]);
+    }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleFileCanvasDrop, handleModelCanvasDrop, handlePackageCardCanvasDrop, handleScenarioCanvasDrop, agentsDataflow, showToast, ensureProjectId, whenChangesKept, reactFlow, hostedGuest, viewerMode]);
 
     // The Delete key reaches these through React Flow, which sends the
     // selected edges plus every edge attached to a deleted node first, then

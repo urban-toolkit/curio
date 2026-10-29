@@ -8,9 +8,10 @@
  * React Flow over `position` on each frame of a tile drag.
  *
  * The other half is what must NOT happen there: the canvas fit (it cannot
- * complete when unpinned nodes are never measured) and the 30-second auto-save
- * (a dashboard's only write is an explicit Save layout, so a page left open must
- * not rewrite the owner's dataflow).
+ * complete when unpinned nodes are never measured) and any save on its own (a
+ * dashboard's only write is an explicit Save layout, so a page left open must
+ * not rewrite the owner's dataflow). Save layout writes where the tiles sit
+ * and how large they are, and nothing else.
  */
 import { renderHook, act } from "@testing-library/react";
 
@@ -18,10 +19,12 @@ const mockFitViewWithMenuOffset = jest.fn((..._args: any[]) => true);
 jest.mock("../../utils/fitViewWithMenuOffset", () => ({
   fitViewWithMenuOffset: (...args: any[]) => mockFitViewWithMenuOffset(...args),
 }));
+// One measured node, so the fit would succeed if it were ever scheduled.
+const MEASURED = [{ id: "a", width: 100, height: 50, position: { x: 0, y: 0 }, data: {} }];
+let mockFlowNodes: any[] = MEASURED;
 jest.mock("reactflow", () => ({
-  // One measured node, so the fit would succeed if it were ever scheduled.
   useReactFlow: () => ({
-    getNodes: () => [{ id: "a", width: 100, height: 50, position: { x: 0, y: 0 }, data: {} }],
+    getNodes: () => mockFlowNodes,
     getEdges: () => [],
     fitView: jest.fn(),
   }),
@@ -43,7 +46,7 @@ jest.mock("../../providers/UserProvider", () => ({
   useUserContext: () => ({ user: null, enableUserAuth: false }),
 }));
 jest.mock("../../api/projectsApi", () => ({
-  projectsApi: { create: jest.fn(), update: jest.fn(), get: jest.fn() },
+  projectsApi: { create: jest.fn(), update: jest.fn(), get: jest.fn(), saveLayout: jest.fn() },
 }));
 jest.mock("../../registry/projectPackagesStore", () => ({
   getCurrentProjectPackagesList: jest.fn(() => []),
@@ -129,7 +132,10 @@ async function load(api: any, nodes: any[], edges: any[]) {
   });
 }
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+  jest.clearAllMocks();
+  mockFlowNodes = MEASURED;
+});
 
 describe("a dashboard load", () => {
   test("the nodes arrive laid out as tiles", async () => {
@@ -203,8 +209,8 @@ describe("a canvas load is unchanged", () => {
 });
 
 describe("saving", () => {
-  test("a dashboard never auto-saves", async () => {
-    // The interval is installed by an effect; a dirty dashboard must not get one.
+  test("a dashboard never saves on its own", async () => {
+    const { projectsApi } = require("../../api/projectsApi");
     const { result } = render({ presentation: true });
     jest.useFakeTimers();
     try {
@@ -213,38 +219,46 @@ describe("saving", () => {
     } finally {
       jest.useRealTimers();
     }
-    // No project id either way in this harness, so assert on the mechanism the
-    // page relies on: the flag is read before the interval is created.
+    // Its unsaved layout stays the page's until Save layout.
     expect(result.current.projectDirty).toBe(true);
+    expect(projectsApi.update).not.toHaveBeenCalled();
+    expect(projectsApi.create).not.toHaveBeenCalled();
+    expect(projectsApi.saveLayout).not.toHaveBeenCalled();
   });
 
-  test("outputs can be left out of a save", async () => {
+  test("Save layout sends each pinned tile's place and size, and nothing else", async () => {
+    // Not the dataflow, nor its outputs, nor a value a viewer tried on a
+    // control (#1117): those are never the layout's.
     const { projectsApi } = require("../../api/projectsApi");
-    projectsApi.create.mockResolvedValue({ id: "p1", name: "wf", spec: { dataflow: {} } });
-    const { result } = render({ presentation: true });
-
-    await act(async () => {
-      await result.current.saveCurrentProject("wf", { omitOutputs: true });
+    projectsApi.get.mockResolvedValue({
+      project: { id: "p1", name: "wf", updated_at: null },
+      spec: { dataflow: { nodes: [], edges: [] } },
+      outputs: [],
     });
-
-    // A create has no stored manifest to preserve, so it sends the empty list.
-    expect(projectsApi.create).toHaveBeenCalledWith(
-      expect.objectContaining({ outputs: [] }),
-    );
-  });
-
-  test("an update with omitOutputs leaves the manifest alone", async () => {
-    const { projectsApi } = require("../../api/projectsApi");
-    projectsApi.create.mockResolvedValue({ id: "p1", name: "wf", spec: { dataflow: {} } });
-    projectsApi.update.mockResolvedValue({ id: "p1", name: "wf", spec: { dataflow: {} } });
+    projectsApi.saveLayout.mockResolvedValue({ saved: true });
+    mockFlowNodes = [
+      makeNode("chart", CHART, {
+        dashboardPinned: true, dashboardX: 400, dashboardY: 80, dashboardWidth: 640, dashboardHeight: 360,
+        widgets: [{ name: "year", type: "select", value: "a value tried here" }],
+      }),
+      // Not a tile, though it holds a place: its place is not the page's.
+      makeNode("py", PRODUCER, { dashboardX: 1, dashboardY: 2 }),
+      // A tile with no saved place yet sends none.
+      makeNode("fresh", CHART, { dashboardPinned: true }),
+    ];
     const { result } = render({ presentation: true });
+    await act(async () => { await result.current.loadProject("p1"); });
+    act(() => { result.current.markDirty(); });
 
-    await act(async () => { await result.current.saveCurrentProject("wf"); });
-    await act(async () => {
-      await result.current.saveCurrentProject("wf", { omitOutputs: true });
+    await act(async () => { await result.current.saveDashboardLayout(); });
+
+    expect(projectsApi.saveLayout).toHaveBeenCalledTimes(1);
+    expect(projectsApi.saveLayout).toHaveBeenCalledWith("p1", {
+      chart: { dashboardX: 400, dashboardY: 80, dashboardWidth: 640, dashboardHeight: 360 },
     });
-
-    const body = projectsApi.update.mock.calls[0][1];
-    expect("outputs" in body).toBe(false);
+    expect(projectsApi.update).not.toHaveBeenCalled();
+    expect(projectsApi.create).not.toHaveBeenCalled();
+    // The layout is kept: leaving the page asks nothing.
+    expect(result.current.projectDirty).toBe(false);
   });
 });

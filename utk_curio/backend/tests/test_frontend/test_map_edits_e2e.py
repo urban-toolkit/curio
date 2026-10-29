@@ -11,7 +11,7 @@ is its only state.
 
 1. A building clicked on the linked map is selected in Map Editor, which sends
    it back for the map to light up. Remove takes it off the map at once, the
-   dataflow reads Unsaved and the nodes below keep what they had. Commit edits
+   server has it with no save, and the nodes below keep what they had. Commit edits
    runs them, and the count drops by every part of the building. Saved and
    opened again, the code, the list and the Remove's entry in the node's
    Provenance drawer come back.
@@ -110,6 +110,7 @@ from .utils import (
     save_workflow_test_screenshot,
     set_node_code,
     stub_login_and_enter_workflow,
+    wait_for_changes_kept,
     wait_for_drawer_closed,
     wait_for_node_capture,
     wait_for_node_run_to_end,
@@ -635,8 +636,8 @@ def _frame(page, step: str, gesture: str, phase: str, source: str, target: str, 
         )
 
 
-# Records each state the dataflow's save indicator takes from now on, so an
-# Unsaved that the 30 second autosave clears soon after is still seen.
+# Records each state the dataflow's save indicator takes from now on, so a
+# state it shows only for a moment is still seen.
 _WATCH_SAVE_STATE_JS = """() => {
     const el = document.querySelector('[data-curio-save-state]');
     if (!el) return null;
@@ -658,15 +659,14 @@ def _watch_save_state(page) -> str:
     return state
 
 
-def _wait_for_unsaved(page, what: str) -> None:
-    states: list = []
-    deadline = time.time() + 10
-    while time.time() < deadline:
-        states = page.evaluate("() => window.__curioSaveStates || []")
-        if "unsaved" in states:
-            return
-        page.wait_for_timeout(200)
-    raise AssertionError(f"after {what}, the dataflow never read Unsaved: its save states were {states}")
+def _kept_with_no_save(page, current_server: str, token: str, project_id: str, node_id: str, code: str, what: str) -> None:
+    """The server has *node_id*'s *code* though nothing saved the dataflow: the
+    doc keeps each change as it is made, and the bar never read Unsaved."""
+    wait_for_changes_kept(page)
+    kept = {node["id"]: node for node in _saved_spec(current_server, token, project_id)["dataflow"]["nodes"]}
+    assert kept[node_id]["content"] == code, f"after {what}, the server does not have the node's code"
+    states = page.evaluate("() => window.__curioSaveStates || []")
+    assert "unsaved" not in states, f"after {what}, the dataflow read Unsaved: its save states were {states}"
 
 
 # A node's new outcome: "error", or "success" once its output is saved to
@@ -781,8 +781,8 @@ def test_a_building_picked_on_the_linked_map_is_removed_at_once_and_committed_an
     In One removed's Remove, a building clicked on the linked map is picked in
     the node, which sends the pick back for the map to light up. Remove writes
     the edit into the node's code by building_id, lists it, and the map draws
-    without the building at once; the dataflow reads Unsaved, and the count
-    below keeps what it had. Commit edits runs the node, the map and the
+    without the building at once; the server has it with no save, and the
+    count below keeps what it had. Commit edits runs the node, the map and the
     count, which drops by every part of the building, the other scenario's
     staying. Saved and opened again, the code, the list and the Remove's entry
     in the node's Provenance drawer come back."""
@@ -838,7 +838,7 @@ def test_a_building_picked_on_the_linked_map_is_removed_at_once_and_committed_an
         _frame(page, "map-pick", "pick", "after", MAP_2, EDIT_2)
 
     # Remove takes out every part of it, in the node's code and on the map at
-    # once. The dataflow reads Unsaved, and the nodes below keep what they had.
+    # once. The server has it with no save, and the nodes below keep what they had.
     save_dataflow_and_settle_header(page)
     assert _watch_save_state(page) == "saved"
     counted = page.evaluate(_OUTPUT_ARTIFACT_JS, COUNT_2)
@@ -849,7 +849,7 @@ def test_a_building_picked_on_the_linked_map_is_removed_at_once_and_committed_an
     expect(edit.locator('[data-edit-list="1"] [data-edit-op="remove"]')).to_contain_text(f"Remove building_id {picked}")
     expect(edit.get_by_test_id("interaction-counts")).to_have_text(f"{PARTS[picked]} removed, 0 changed")
     expect(remove).to_be_disabled()
-    _wait_for_unsaved(page, f"a Remove of building {picked}")
+    _kept_with_no_save(page, current_server, token, project_id, EDIT_2, code, f"a Remove of building {picked}")
     _wait_for_redraw(page, MAP_2, f"a Remove of building {picked}")
     gone = _changed(before, _map_pixels(page, MAP_2))
     assert gone >= REMOVED_MIN_SHARE, f"removing building {picked} changed {gone:.2%} of the map: it still draws it"

@@ -67,7 +67,7 @@ jest.mock("../../providers/FlowProvider", () => ({
     projectName: "Street photos",
     packages: mockLockfile,
     nodes: mockNodes,
-    saveCurrentProject: jest.fn(),
+    ensureProjectId: jest.fn().mockResolvedValue("p1"),
     projectDirty: false,
   }),
 }));

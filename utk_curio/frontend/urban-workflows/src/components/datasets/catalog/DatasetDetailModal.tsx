@@ -16,6 +16,10 @@ export interface DatasetDetailModalProps {
   /** The dataflow behind the modal has changes not yet saved, so a link that
    *  leaves it asks first. Set only by the in-canvas drawer. */
   unsavedChanges?: boolean;
+  /** A dataflow bound to its doc: a link that leaves it waits for the server
+   *  to have its last change, and asks only when it cannot (`useLeaveGuard`'s
+   *  `settle`). Set only by the in-canvas drawer. */
+  whenChangesKept?: () => Promise<boolean>;
   /** In the account's "all projects" list. Left out, the modal reads the
    *  list itself. */
   inAllProjects?: boolean;
@@ -41,6 +45,7 @@ export const DatasetDetailModal: React.FC<DatasetDetailModalProps> = ({
   initialTab = "Overview",
   canvasAvailable = false,
   unsavedChanges = false,
+  whenChangesKept,
   inAllProjects,
   onClose,
 }) => {
@@ -48,6 +53,7 @@ export const DatasetDetailModal: React.FC<DatasetDetailModalProps> = ({
   const { pathname } = useLocation();
   const { leave, dialog: leaveDialog } = useLeaveGuard(unsavedChanges, LEAVE_DATAFLOW, {
     layer: "overlay",
+    settle: whenChangesKept,
   });
   const [dataset, setDataset] = useState<DatasetCatalogItem | null>(fallbackDataset);
   const [loading, setLoading] = useState(!fallbackDataset);

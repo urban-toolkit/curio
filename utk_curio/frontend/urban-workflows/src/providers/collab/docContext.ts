@@ -1,8 +1,8 @@
 /**
  * The open dataflow's Yjs doc on this tab, as `CollaborationProvider` holds
  * it: null while the canvas is not bound to it (a dataflow never saved, a
- * hosted guest's own canvas, no sign-in, the dashboard), and before the room
- * has joined the tab.
+ * hosted guest's own canvas, the dashboard), and before the room has joined
+ * the tab.
  *
  * Its own context, beside `useCollab`'s, so a component reads the doc without
  * every test's mock of the collaboration context having to name it.
