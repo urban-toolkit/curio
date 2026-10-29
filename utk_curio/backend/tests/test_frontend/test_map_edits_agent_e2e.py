@@ -3,10 +3,11 @@
 named after the agent, and a reload keeps it.
 
 The Node Builder, attached to the node, writes code that removes a building,
-and the change lands with its reply. It goes through the node's own writer,
-as an edit made in the node does: the node holds the agent's code,
-the dataflow saves the entry with it, and after a reload the drawer lists it
-under the agent's name. One close-up shows the drawer.
+and the change lands with its reply. The server writes the agent's code into
+the dataflow's doc and keeps the change in the dataflow's history: the node
+holds the agent's code, the history holds the entry with it, and after a
+reload the drawer lists it under the agent's name. One close-up shows the
+drawer.
 
 The dataflow has no map, so the test runs on any runner.
 
@@ -130,9 +131,9 @@ def test_an_agents_change_to_map_edits_is_an_entry_named_after_it_that_a_reload_
     page, frontend_server, current_server,
 ):
     """The Node Builder, attached to the Map Editor node, writes a removal,
-    which lands with its reply. The node holds the agent's code, and the saved
-    dataflow keeps an entry of the node's history named after the agent with
-    that code. Opened again, the node's Provenance drawer lists it."""
+    which lands with its reply. The node holds the agent's code, and the
+    dataflow's history keeps an entry of the node named after the agent with
+    that code. Saved and opened again, the node's Provenance drawer lists it."""
     require_project_page()
     require_user_auth()
     agent = next(m for m in builtin.list_builtin_manifests() if m.agent_id == "agent.curio.node-builder")
@@ -171,14 +172,14 @@ def test_an_agents_change_to_map_edits_is_an_entry_named_after_it_that_a_reload_
     expect(page.locator(CHAT_PANEL)).to_have_count(0, timeout=10000)
     leave_agent_badge(page)
 
-    # Saved: the node's history holds the agent's change, named after it.
-    save_dataflow(page)
-    saved = api_json(f"{current_server}/api/projects/{project_id}", token)["spec"]
-    history = (saved.get("nodeProvenance") or {}).get(EDIT) or []
+    # The node's history, which the server keeps, holds the agent's change,
+    # named after it.
+    history = api_json(f"{current_server}/api/projects/{project_id}/history/nodes/{EDIT}", token)["entries"]
     named = [entry for entry in history if entry.get("label") == agent.name]
-    assert named, f"the saved history of the Map Editor node has no entry named {agent.name!r}: {history}"
+    assert named, f"the history of the Map Editor node has no entry named {agent.name!r}: {history}"
     assert str(named[-1].get("code") or "").strip() == AGENT_CODE.strip(), named[-1]
     assert named[-1].get("kind") == "edit", named[-1]
+    save_dataflow(page)
 
     # Opened again: the drawer lists it.
     page.reload()

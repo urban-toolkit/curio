@@ -87,7 +87,7 @@ export function useAgentCanvasMutations(): void {
   const { createCodeNode } = useCode();
   const { applyNodeContent, applyNodeSettings, onEdgesChange, applyReviewedRemovals, scenarios, setScenarios, dataflowDoc } =
     useFlowContext();
-  const { nodeEditProv } = useProvenanceContext();
+  const { agentEditProv } = useProvenanceContext();
   const { reveal } = useNotebookViewContext();
   const reactFlow = useReactFlow();
   const { getNodes, setCenter, getZoom } = reactFlow;
@@ -133,9 +133,11 @@ export function useAgentCanvasMutations(): void {
     // agent, as its applied change to a node's code is named. Only a node.create
     // or package draft apply names the agent: a plan's node gets no entry, even
     // when its template's starter is its code, and the code later written into
-    // it is its first edit.
+    // it is its first edit. On a canvas bound to the dataflow's doc nothing is
+    // filed here: the server's history names the agent in the version its
+    // change made.
     if (node.agent && typeof node.content === "string" && node.content.trim()) {
-      nodeEditProv(node.id, node.content, node.agent);
+      agentEditProv(node.id, node.content, node.agent);
     }
   };
 

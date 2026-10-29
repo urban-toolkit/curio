@@ -2,18 +2,24 @@
 around it, and reverting."""
 from __future__ import annotations
 
+from playwright.sync_api import expect
+
 from ..utils import assert_header_shows_save, save_dataflow_and_settle_header
 from .framework import Ctx, walkthrough
 from .steps import (
     PROVENANCE_PANEL,
-    await_canvas_nodes,
+    await_canvas_graph,
+    await_provenance_total,
     canvas_graph,
     close_provenance,
+    listed_versions,
     load_example_spec,
     open_provenance,
     open_version,
     park_pointer_off_drawer,
+    provenance_total,
     put_version_on_canvas,
+    unfold_through,
     version_graph,
 )
 
@@ -31,10 +37,11 @@ PROVENANCE_EXAMPLE = "01-vega-lite-chained-transforms.json"
     refs=[186],
     title="Loaded dataflows get a real provenance history",
     premise="Open a saved dataflow, then read its version history.",
-    note="loadParsedTrill now snapshots each version from the arrays it was handed, "
-        "not from the React Flow store, which is one commit stale inside its own "
-        "synchronous load loop.",
-    tests=["src/tests/hook/useWorkflowOperations.loadProvenance.test.ts",
+    note="A dataflow with no history gets one when it first opens on the server: "
+        "the dataflow with no node, then a version per node and one per "
+        "connection, each holding the whole graph as it stood at that step.",
+    tests=["test_collaboration/test_history.py",
+           "src/tests/hook/useWorkflowOperations.loadProvenance.test.ts",
            "test_frontend/test_walkthrough_baselines.py"],
     clip_selector=PROVENANCE_PANEL,
     fit_reactflow=False,
@@ -157,10 +164,14 @@ def provenance_graph_navigation(ctx: Ctx) -> None:
     title="Reverting a dataflow to an earlier version",
     premise="Step back through the version history, saving each version, and "
             "watch the canvas follow.",
-    note="onConnect resolved its target with `nodes.find(...) as Node` and never "
-         "checked it, so reverting to a version whose edges named nodes it does "
-         "not hold tore the canvas down. Such an edge is now dropped instead.",
+    note="A version put back is a version of its own, made from the one put "
+         "back, and so is each File > Save: the server keeps the history, and "
+         "the canvas follows the dataflow's doc. onConnect resolved its target "
+         "with `nodes.find(...) as Node` and never checked it, so a version "
+         "whose edges named nodes it does not hold tore the canvas down. Such "
+         "an edge is now dropped instead.",
     tests=["src/tests/providers/onConnectMissingEndpoint.test.tsx",
+           "test_collaboration/test_history.py",
            "test_frontend/test_provenance_revert_e2e.py",
            "test_frontend/test_walkthrough_baselines.py"],
 )
@@ -174,9 +185,11 @@ def provenance_reverting_to_a_previous_version(ctx: Ctx) -> None:
             f"{saved['nodes']} nodes, {saved['edges']} connections.")
 
     panel = open_provenance(ctx)
-    versions = panel.locator("[data-provenance-item]")
-    count = versions.count()
+    # The loaded dataflow's versions, one line of them, oldest first.
+    chain = listed_versions(page)
+    count = len(chain)
     assert count > 1, f"the provenance history offers {count} versions to revert to"
+    assert provenance_total(page) == count, "a loaded dataflow's history is one line, yet the drawer folds some"
 
     # Newest-first, skipping the one already on the canvas, so the dataflow
     # visibly unwinds. Four is the floor: a single hop would not show that the
@@ -190,7 +203,11 @@ def provenance_reverting_to_a_previous_version(ctx: Ctx) -> None:
     ctx.say("Revert from a version's own button",
             "Opening a version shows it; its button puts it on the canvas.")
 
+    # The versions the walk adds: each put-back is one, and so is each save.
+    added = 0
+
     def capture_canvas(label: str, *, nodes: int, reopen: bool = True) -> None:
+        nonlocal added
         # The drawer covers the right of the canvas each frame is about, so close
         # it for the shot and open it again for the next version. The first
         # version is empty, and an empty canvas has nothing to fit.
@@ -198,19 +215,34 @@ def provenance_reverting_to_a_previous_version(ctx: Ctx) -> None:
         # A revert is an edit, so the header reads "Unsaved" until the 30 s
         # autosave, which lands on whichever frame the runner's speed puts it
         # near. Save the version on the canvas so every frame shows its own
-        # saved header and categories. A save adds no version to the history.
+        # saved header and categories. File > Save is a version of its own.
         save_dataflow_and_settle_header(page)
         assert_header_shows_save(page)
+        added += 1
         ctx.capture(label, fit_reactflow=nodes > 0)
         if reopen:
             open_provenance(ctx)
+            await_provenance_total(page, count + added)
+
+    def put_back(version, number: int) -> None:
+        """Put *version*, the history's *number*, back: the drawer gains that
+        put-back, in use, and the canvas holds the version."""
+        nonlocal added
+        put_version_on_canvas(ctx, version)
+        added += 1
+        await_provenance_total(page, count + added)
+        current = panel.locator('[data-provenance-current="true"]')
+        expect(current).to_contain_text(f"Put back version {number}", timeout=20000)
+        assert current.get_attribute("data-provenance-item") not in chain, (
+            f"putting version {number} back made no version of its own"
+        )
 
     for index in targets:
-        version = versions.nth(index)
+        version = panel.locator(f'[data-provenance-item="{chain[index]}"]')
         open_version(page, version, click=ctx.click)
         expected = version_graph(version)
-        put_version_on_canvas(ctx, version)
-        await_canvas_nodes(page, expected["nodes"])
+        put_back(version, index + 1)
+        await_canvas_graph(page, expected)
         actual = canvas_graph(page)
 
         assert not errors, (
@@ -223,23 +255,19 @@ def provenance_reverting_to_a_previous_version(ctx: Ctx) -> None:
             f"nodes and {actual['edges']} connections on the canvas, but that "
             f"version holds {expected['nodes']} and {expected['edges']}"
         )
-        assert version.get_attribute("data-provenance-current") == "true", (
-            f"version {index + 1} is on the canvas, but the drawer still marks "
-            f"another one as in use"
-        )
-        assert versions.count() == count, (
-            f"reverting changed the history: {versions.count()} versions, not {count}"
-        )
         capture_canvas(f"reverted-to-v{index + 1:02d}", nodes=expected["nodes"])
 
     ctx.say(f"Stepped back through {len(targets)} versions",
             "Each one put its own graph on the canvas.")
 
-    # Forward to the newest, so the canvas ends where it started.
-    newest = versions.nth(count - 1)
+    # Forward to the newest, so the canvas ends where it started. Each version
+    # put back left the ones after it on a branch, so the newest is folded
+    # under the one before it.
+    unfold_through(page, chain[1:])
+    newest = panel.locator(f'[data-provenance-item="{chain[-1]}"]')
     open_version(page, newest, click=ctx.click)
-    put_version_on_canvas(ctx, newest)
-    await_canvas_nodes(page, saved["nodes"])
+    put_back(newest, count)
+    await_canvas_graph(page, saved)
     restored = canvas_graph(page)
     assert restored == saved, (
         f"returning to the newest version left {restored} on the canvas, not the "

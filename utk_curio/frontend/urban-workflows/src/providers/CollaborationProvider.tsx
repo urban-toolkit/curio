@@ -51,6 +51,7 @@ import { collabSocketTarget } from "../utils/collabSocketTarget";
 import { roleIn, writesDoc, type RoomRole } from "./collab/participants";
 import { DataflowDocProvider } from "./collab/docProvider";
 import { CONNECTION_DROPPED_EVENT, DataflowDocContext, type DocBinding } from "./collab/docContext";
+import { HISTORY_CHANGED_EVENT } from "./history/serverHistory";
 import { remoteCursorStyle } from "./collab/presence";
 
 export type { RoomRole } from "./collab/participants";
@@ -124,8 +125,9 @@ export interface CollabContextValue {
     /**
      * Subscribe to incoming remote events. Returns an unsubscribe fn.
      * Event names mirror the backend's outgoing events: ``output_produced``,
-     * ``conflict_resolved``, ``node_exec_display`` (``events.py``), and
-     * ``connection_dropped`` (``dataflow_docs.py``).
+     * ``conflict_resolved``, ``node_exec_display`` (``events.py``),
+     * ``connection_dropped`` (``dataflow_docs.py``) and ``history_changed``
+     * (``history.py``).
      */
     onRemote: (event: string, handler: RemoteHandler) => () => void;
 }
@@ -174,6 +176,7 @@ const REMOTE_EVENTS = [
     "node_exec_display",
     "conflict_resolved",
     CONNECTION_DROPPED_EVENT,
+    HISTORY_CHANGED_EVENT,
 ] as const;
 
 export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
