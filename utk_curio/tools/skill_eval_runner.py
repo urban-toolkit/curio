@@ -352,4 +352,9 @@ def run(args) -> int:
             print(f"  {path}", file=sys.stderr)
         return 1
     _say("checked: no file holds the key, the base URL or its host")
-    return 130 if interrupted else 0
+    missing = sum(1 for task in planned if not (folder / task.path / RECORD).is_file())
+    if missing:
+        print(f"{missing} run(s) have no record (see {folder / 'logs'}); go on with --resume {folder}",
+              file=sys.stderr)
+        return 130 if interrupted else 1
+    return 0
