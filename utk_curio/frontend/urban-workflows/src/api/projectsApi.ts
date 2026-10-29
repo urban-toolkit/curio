@@ -104,6 +104,8 @@ export interface UpdateBody {
 export interface RecordedOutputs {
   outputs: OutputRef[];
   dataset_install_warnings?: DatasetInstallWarning[];
+  /** The dataflow's categories as it is now, which the canvas title shows. */
+  categories?: DataflowCategories;
 }
 
 /** A tile's place and size on the dashboard page, as its node holds them;

@@ -116,7 +116,9 @@ def update_project(project_id: str):
 def record_outputs(project_id: str):
     """The outputs the owner's canvas holds that the dataflow records (after a
     run in the browser, a pin, a scenario), recorded in its manifest and the
-    account's Data Catalog. No tab saves the dataflow, which its doc keeps."""
+    account's Data Catalog. No tab saves the dataflow, which its doc keeps.
+    Answered with the dataflow's categories as it is now, which what a run
+    made changes and the canvas title shows, as a save's answer carried them."""
     body = request.get_json(silent=True) or {}
     raw = body.get("outputs")
     if not isinstance(raw, list):
@@ -137,6 +139,7 @@ def record_outputs(project_id: str):
     return jsonify({
         "outputs": [asdict(ref) for ref in recorded],
         "dataset_install_warnings": warnings,
+        "categories": services.dataflow_categories(g.user, project_id),
     }), 200
 
 

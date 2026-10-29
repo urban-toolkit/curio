@@ -2374,6 +2374,15 @@ def record_edit(user, project_id: str, node_id: str, label) -> dict:
     ))
 
 
+def dataflow_categories(user, project_id: str) -> dict:
+    """The owner's dataflow's categories as it is now, as File > Save's
+    version answers them (:func:`record_saved`): what a record of its
+    outputs answers, since what a run made changes them and no save follows."""
+    project = repo.get_for_user(project_id, user.id)
+    spec = dataflow_docs.read(_user_dir_key(user), project_id)
+    return _categories(project.owner or user, project_id, spec)
+
+
 def record_saved(user, project_id: str) -> dict:
     """File > Save: a version named Saved, with the dataflow's file written
     first, so what reads the file (the Scenario Catalog among them) has every

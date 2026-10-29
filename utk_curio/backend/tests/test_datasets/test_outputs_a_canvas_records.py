@@ -64,6 +64,25 @@ def test_the_outputs_a_canvas_sends_are_recorded_and_installed(app, client, user
     assert _installed(user, project_id, "b") == {"v": "b"}
 
 
+def test_a_record_answers_the_categories_the_canvas_title_shows(app, client, user_and_token):
+    """What a run made changes the dataflow's categories, and no save follows
+    a run now to bring them: the record answers them, as File > Save's version
+    does (``test_history.py``)."""
+    from utk_curio.backend.app.collaboration import dataflow_docs
+    from utk_curio.backend.app.projects import services
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user, token = user_and_token
+    project_id = _create(client, token, spec=_both_saving())
+    a = _artifact(1790000000000, {"v": "a"})
+
+    resp = _send(client, token, project_id, [("a", a)])
+
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    expected = services._categories(user, project_id, dataflow_docs.read(_user_dir_key(user), project_id))
+    assert resp.get_json()["categories"] == expected
+
+
 def test_recording_a_canvas_outputs_writes_neither_the_spec_nor_its_revision(app, client, user_and_token):
     from utk_curio.backend.app.projects import storage
     from utk_curio.backend.app.projects.services import _user_dir_key

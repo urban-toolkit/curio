@@ -1280,6 +1280,9 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             }
             try {
                 const detail = await projectsApi.recordOutputs(id, buildOutputRefs());
+                // What a run made changes the categories the title shows, which
+                // no save after it brings now: the record answers them.
+                if (detail?.categories) setServerCategories(detail.categories);
                 surfaceInstallWarnings(detail, nodeIds);
                 const scope = nodeIds ? new Set(nodeIds) : null;
                 const failed = ((detail?.dataset_install_warnings ?? []) as DatasetInstallWarning[])

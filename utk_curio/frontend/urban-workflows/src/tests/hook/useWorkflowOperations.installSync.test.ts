@@ -193,6 +193,21 @@ describe("recordOutputs (no execution-time install payload)", () => {
     expect(projectsApi.update).not.toHaveBeenCalled();
   });
 
+  it("shows the categories the record answers on the canvas title: what a run made changes them, and no save follows", async () => {
+    const categories = { auto: { tags: ["Tables", "Pandas"], data_type: "dataframe" } };
+    (projectsApi.recordOutputs as jest.Mock).mockResolvedValue({ ...recorded(), categories });
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
+    await act(async () => {
+      await result.current.ensureProjectId();
+    });
+
+    await act(async () => {
+      await result.current.recordOutputs();
+    });
+
+    expect(result.current.serverCategories).toEqual(categories);
+  });
+
   it("records into an already-saved project, and saves nothing", async () => {
     const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
     // Establish the project, then a second producing run with no install payload.
