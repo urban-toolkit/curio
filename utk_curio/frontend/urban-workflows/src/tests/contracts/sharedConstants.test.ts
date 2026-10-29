@@ -11,7 +11,6 @@ import fs from "fs";
 import path from "path";
 
 import { stoppedByPhrase } from "../../components/agents/content/AgentSolveAttemptsCard";
-import { ACCOUNT_INSTALL_TOOLS, installsIntoAccount } from "../../services/agents/agentEditors";
 import {
   AGENT_CATEGORY_KEYS,
   agentCategoryKey,
@@ -35,7 +34,6 @@ const FILES = [
   "visDefaults",
   "nodeSettings",
   "dashboardRuns",
-  "agentInstalls",
 ];
 
 /** A shared file, read when a test runs, so a checkout without it fails each test on its own. */
@@ -153,6 +151,9 @@ describe("what a visualization node does by itself", () => {
 
 describe("the installs a dataflow's owner reviews", () => {
   test("a proposal installs into an account exactly when the file names its tool", () => {
+    // Read here, so a checkout without the file or the module fails this test alone.
+    expect(fs.existsSync(path.join(CONTRACTS, "agentInstalls.json"))).toBe(true);
+    const { ACCOUNT_INSTALL_TOOLS, installsIntoAccount } = require("../../services/agents/agentEditors");
     const { tools } = shared("agentInstalls");
     expect(tools.length).toBeGreaterThan(0);
     for (const tool of tools) expect(installsIntoAccount(tool)).toBe(true);

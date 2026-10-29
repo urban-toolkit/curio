@@ -621,6 +621,9 @@ export function MainCanvas() {
                 attach: (pid, coord, t) => agentsApi.attach(pid, coord, t),
                 // A hosted guest's drop that would save says to sign in.
                 hostedGuest,
+                // An invited editor's tab saves nothing: the server's doc
+                // already holds what the editor dropped on.
+                savesHere: viewerMode !== "shared",
             })
                 .then(() => {
                     notifyAgentDockRefresh();
@@ -637,7 +640,7 @@ export function MainCanvas() {
         const position = dropPosition(event);
         revealCreated(createCodeNode(type, { position }));
         markDirty();
-    }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleFileCanvasDrop, handleModelCanvasDrop, handlePackageCardCanvasDrop, handleScenarioCanvasDrop, projectId, showToast, requestProjectSave, reactFlow, hostedGuest]);
+    }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleFileCanvasDrop, handleModelCanvasDrop, handlePackageCardCanvasDrop, handleScenarioCanvasDrop, projectId, showToast, requestProjectSave, reactFlow, hostedGuest, viewerMode]);
 
     // The Delete key reaches these through React Flow, which sends the
     // selected edges plus every edge attached to a deleted node first, then

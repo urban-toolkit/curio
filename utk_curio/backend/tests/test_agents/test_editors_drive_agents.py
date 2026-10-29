@@ -326,7 +326,7 @@ def test_a_solve_job_keeps_the_keys_of_whoever_started_it(app, people, flow):
     with app.test_request_context():
         g.user = people.bob
         base = grounding._solve_grounding_base(flow.owner_key, flow.pid, spec, {}, [])
-    assert base["keys"] == str(people.bob.id)
+    assert base.get("keys") == str(people.bob.id)
     assert sorted(base["secrets"]) == ["bobs-weather"]
     # The job's thread: no request, no one signed in.
     ctx = grounding._grounding_context(flow.owner_key, flow.pid, {}, node_type=None, base=base)

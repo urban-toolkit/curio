@@ -40,7 +40,8 @@ def test_the_backend_reads_each_file_from_the_frontends_folder(name):
     from utk_curio.common import shared_constants
 
     assert shared_constants.CONTRACTS_DIR.resolve() == CONTRACTS.resolve()
-    assert shared_constants.read(name) == _file(name)
+    expected = _file(name)
+    assert shared_constants.read(name) == expected
 
 
 def test_a_key_given_twice_is_refused_where_json_would_keep_the_last():
