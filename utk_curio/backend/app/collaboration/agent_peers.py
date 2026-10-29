@@ -11,7 +11,12 @@ everyone's. Its fields:
   ``agent``: ``attachmentId``, ``coord``, ``category`` and ``askedBy``, the
   person who asked it, ``{account, name}``.
 * ``skills``: the skills its run holds and has loaded.
-* ``editing``: the node whose lock it holds, as a person's focus names one.
+* ``editing``: the node it is writing, from just before the write to a second
+  after, whether it holds that node's lock or writes under its asker's (a node
+  its asker holds stays the asker's); ``None`` otherwise.
+* ``writes``: with ``editing``, what it writes there (:data:`WRITES`);
+  ``None`` otherwise. A tab's code view follows these two, its lock chip the
+  lock.
 * ``pointer``: ``{x, y, t}`` in flow coordinates, during a drag only: its drop
   point, set as the drag starts, ``None`` as it ends.
 * ``carrying``: during a drag only, what it drags: ``{id, kind, from, onto,
@@ -26,11 +31,11 @@ happen and kept for a join's snapshot (``room_state.record_activity``).
 
 :func:`act` plays the peer's actions one at a time, in the order they come: it
 waits while someone else holds a node it changes (:func:`wait_for_people`),
-takes their locks, plays its drag, checks its targets again, writes, keeps the
-locks a second and lets go. :func:`holding` is the same hold around a write its
-caller makes, with no drag. A lock is ``room_state``'s soft lock, named after
-the agent, with ``agent``, as its state's ``user.agent``, and ``writes``
-(:data:`WRITES`).
+takes their locks, plays its drag, checks its targets again, names the node in
+``editing`` and ``writes``, writes, keeps the locks and those two a second and
+lets go. :func:`holding` is the same hold around a write its caller makes, with
+no drag. A lock is ``room_state``'s soft lock, named after the agent, with
+``agent``, as its state's ``user.agent``, and ``writes`` (:data:`WRITES`).
 
 **Pace.** A drag (:data:`DRAG_MS`) and the second a lock is kept after its
 write (:data:`KEEP_AFTER_WRITE_S`) are waited only while some tab is bound to
@@ -151,7 +156,6 @@ class Peer:
         #: Its state, held while it is sent.
         self._lock = threading.Lock()
         self._skills: list[str] = []
-        self._editing: Optional[str] = None
         #: The nodes whose lock it holds, in the order it took them, each with
         #: how many of its holds take it.
         self._held: dict[str, int] = {}
@@ -195,7 +199,7 @@ class Peer:
 
     def _state(self) -> dict:
         return {"user": copy.deepcopy(self.user), "skills": list(self._skills),
-                "editing": self._editing, "pointer": None, "carrying": None}
+                "editing": None, "writes": None, "pointer": None, "carrying": None}
 
     def _send(self, fields: dict, *, joining: bool = False) -> None:
         """Write *fields* into its state in the room, under its own lock. A
@@ -390,7 +394,6 @@ def _locked(peer: Peer, node_ids: tuple, writes: str) -> tuple[list[str], Option
     with peer._lock:
         for node_id, _lock_record in taken:
             peer._held[node_id] = peer._held.get(node_id, 0) + 1
-        _send_editing(peer)
     for node_id, lock in taken:
         _emit(LOCKED_EVENT, {"nodeId": node_id, "lock": lock}, peer.room)
     return [node_id for node_id, _lock_record in taken], None
@@ -407,18 +410,9 @@ def _unlocked(peer: Peer, node_ids: list[str]) -> None:
             elif node_id in peer._held:
                 del peer._held[node_id]
                 gone.append(node_id)
-        _send_editing(peer)
     for node_id in gone:
         if room_state.release_lock(peer.room, node_id, peer.participant_id):
             _emit(UNLOCKED_EVENT, {"nodeId": node_id}, peer.room)
-
-
-def _send_editing(peer: Peer) -> None:
-    """Under the peer's lock: its ``editing``, the first node it holds."""
-    editing = next(iter(peer._held), None)
-    if editing != peer._editing and not peer.left:
-        peer._editing = editing
-        peer._send({"editing": editing})
 
 
 # ---------------------------------------------------------------------------
@@ -465,17 +459,40 @@ class Acted(NamedTuple):
 
 
 class Holding:
-    """A hold of nodes' locks for a write (:func:`holding`)."""
+    """A hold of nodes for a write (:func:`holding`, :func:`act`)."""
 
-    def __init__(self, held_by: Optional[str], nodes: tuple):
+    def __init__(self, peer: Peer, held_by: Optional[str], nodes: tuple, taken: tuple,
+                 writes: Optional[str]):
+        self._peer = peer
         #: Who still held one of the nodes when the wait ran out; then it
-        #: holds none and the block writes nothing.
+        #: takes no lock, names no node, and the block writes nothing.
         self.held_by = held_by
-        #: The nodes whose lock it took.
-        self.nodes = nodes
-        #: Whether the locks are kept a second after the block (a write that
-        #: did not happen shows nothing).
+        #: The nodes whose lock it took: a node its asker holds stays theirs.
+        self.nodes = taken
+        #: The node its write writes, as the peer's ``editing`` names it, and
+        #: what it writes there, as its ``writes`` does.
+        self.node = nodes[0] if nodes else None
+        self.writes = writes
+        #: Whether ``editing``, ``writes`` and the locks are kept a second
+        #: after the block (a write that did not happen shows nothing).
         self.keep = True
+        self._shown = False
+
+    def writing(self) -> None:
+        """Name the node and what is written there in the peer's ``editing``
+        and ``writes``, just before the write: they stay until a second after
+        it, lock or no lock."""
+        if self._shown or self.node is None or self.held_by is not None:
+            return
+        self._shown = True
+        with self._peer._lock:
+            self._peer._send({"editing": self.node, "writes": self.writes})
+
+    def _done(self) -> None:
+        if self._shown:
+            self._shown = False
+            with self._peer._lock:
+                self._peer._send({"editing": None, "writes": None})
 
 
 def _not_under_the_spec_lock(peer: Peer) -> None:
@@ -491,10 +508,20 @@ def holding(peer: Peer, nodes=(), writes: Optional[str] = None, *,
             within: Optional[float] = None) -> Iterator[Holding]:
     """Hold *nodes* for a write the block makes, the peer's one action then:
     wait while someone else holds one (:func:`wait_for_people`), take their
-    locks, and after the block keep them a second while a tab is bound, then
-    let go. The block writes nothing when :attr:`Holding.held_by` names who
-    still held one. Started under the dataflow's spec lock, it raises
-    ``RuntimeError``: the block takes that lock for its write."""
+    locks, and name the first in the peer's ``editing`` and ``writes`` for the
+    block. After the block, keep those and the locks a second while a tab is
+    bound, then let go. The block writes nothing when :attr:`Holding.held_by`
+    names who still held one. Started under the dataflow's spec lock, it
+    raises ``RuntimeError``: the block takes that lock for its write."""
+    with _hold(peer, nodes, writes, within) as hold:
+        hold.writing()
+        yield hold
+
+
+@contextmanager
+def _hold(peer: Peer, nodes, writes: Optional[str], within: Optional[float]) -> Iterator[Holding]:
+    """The hold of :func:`holding` and :func:`act`, which name the node
+    (:meth:`Holding.writing`) just before their write."""
     nodes = tuple(dict.fromkeys(nodes))
     if nodes and writes not in WRITES:
         raise ValueError(f"an agent's lock writes one of {sorted(WRITES)}, not {writes!r}")
@@ -505,12 +532,13 @@ def holding(peer: Peer, nodes=(), writes: Optional[str] = None, *,
         held_by, taken = None, []
         if nodes:
             held_by, taken = _wait_and_lock(peer, nodes, writes, LOCK_WAIT_S if within is None else within)
-        hold = Holding(held_by, tuple(taken))
+        hold = Holding(peer, held_by, nodes, tuple(taken), writes)
         try:
             yield hold
-            if taken and hold.keep and dataflow_docs.has_tabs(peer.project_id):
+            if hold._shown and hold.keep and dataflow_docs.has_tabs(peer.project_id):
                 _sleep(KEEP_AFTER_WRITE_S)
         finally:
+            hold._done()
             _unlocked(peer, taken)
 
 
@@ -535,12 +563,13 @@ def act(peer: Peer, action: Action) -> Acted:
     turn: wait while someone else holds one of its nodes, take their locks,
     play its drag (``pointer`` and ``carrying`` in the peer's state for
     :data:`DRAG_MS` while a tab is bound), check that the dataflow still holds
-    its targets, write, keep the locks a second while a tab is bound, and let
-    go. An action whose nodes someone still holds, or whose targets went,
-    writes nothing and says what it left undone. Started under the dataflow's
-    spec lock, it raises ``RuntimeError``."""
+    its targets, name its first node in the peer's ``editing`` and ``writes``,
+    write, keep those and the locks a second while a tab is bound, and let go.
+    An action whose nodes someone still holds, or whose targets went, writes
+    nothing and says what it left undone. Started under the dataflow's spec
+    lock, it raises ``RuntimeError``."""
     drag = _dragged(action.drag) if action.drag is not None else None
-    with holding(peer, action.holds, action.writes) as hold:
+    with _hold(peer, action.holds, action.writes, None) as hold:
         if hold.held_by is not None:
             return Acted(False, left=action.what, held_by=hold.held_by)
         dragging = False
@@ -556,6 +585,7 @@ def act(peer: Peer, action: Action) -> Acted:
             if gone:
                 hold.keep = False
                 return Acted(False, left=action.what, gone=gone)
+            hold.writing()
             result = action.write()
         finally:
             if dragging:

@@ -236,6 +236,7 @@ def test_a_tab_sees_the_agent_join_with_its_name_asker_and_skills_and_leave(room
             },
             "skills": ["catalogs"],
             "editing": None,
+            "writes": None,
             "pointer": None,
             "carrying": None,
         }
@@ -337,7 +338,8 @@ def test_its_lock_reaches_the_room_naming_it_and_goes_a_second_after_its_write(r
         # The second after the write: the code is in, the node is still the
         # agent's, and someone joining sees its lock.
         _carol, ack = room.joined("carol")
-        kept.append((seconds, ack["snapshot"]["locks"].get("loader"), bob.others()[peer.client_id]["editing"],
+        state = bob.others()[peer.client_id]
+        kept.append((seconds, ack["snapshot"]["locks"].get("loader"), state["editing"], state["writes"],
                      _code(bob.dataflow(), "loader")))
         _a_writer_lands_at_once(room)
 
@@ -347,17 +349,17 @@ def test_its_lock_reaches_the_room_naming_it_and_goes_a_second_after_its_write(r
             what="write the loader's code", write=room.writes(peer, _set_code("loader", "x = 2\n")),
             holds=("loader",), writes="code", targets=("loader",), did=(("changed", "node", "loader"),),
         ))
-        editing_after = bob.others()[peer.client_id]["editing"]
+        after = bob.others()[peer.client_id]
 
     assert acted.landed and acted.result.wrote, acted
-    [(seconds, lock, editing, code)] = kept
+    [(seconds, lock, editing, writes, code)] = kept
     assert seconds == room.peers.KEEP_AFTER_WRITE_S
     assert lock == {"user_id": None, "username": None, "name": "Dataflow Builder",
                     "participant_id": peer.participant_id, "since": lock["since"],
                     "agent": peer.user["agent"], "writes": "code"}
-    assert editing == "loader", "the agent's state did not name the node it holds"
+    assert (editing, writes) == ("loader", "code"), "the agent's state did not name the node it writes"
     assert code == "x = 2\n", "the lock was kept before its write landed"
-    assert editing_after is None and room.locks() == {}
+    assert (after["editing"], after["writes"]) == (None, None) and room.locks() == {}
     events = _room_events(alice, "node_locked", "node_unlocked")
     assert events == [("node_locked", {"nodeId": "loader", "lock": lock}), ("node_unlocked", {"nodeId": "loader"})]
 
@@ -425,6 +427,47 @@ def test_the_askers_own_focus_never_holds_their_agent_back(room):
     assert room.slept == [], "the agent waited for the person who asked it"
     assert _code(room.read(), "loader") == "x = 4\n"
     assert room.locks()["loader"]["user_id"] == room.users["alice"].id, "the agent took its asker's lock"
+
+
+def test_an_agent_writing_under_its_askers_lock_still_names_the_node_it_writes(room, monkeypatch):
+    """A node its asker has open stays the asker's, and the agent writes under
+    that lock: another tab still sees which node it writes, and what, from
+    just before the write to a second after, which its code view follows."""
+    alice, _ = room.joined("alice")
+    assert _lock_as(alice, room, "loader")["ok"] is True
+    alice.get_received(namespace=NAMESPACE)  # alice's own lock
+    bob = room.tab("bob")  # bound: the second after the write is kept
+    seen: list = []
+
+    def _sleep(seconds):
+        state = bob.others()[peer.client_id]
+        seen.append(("kept", seconds, state["editing"], state["writes"], _code(bob.dataflow(), "loader")))
+
+    monkeypatch.setattr(room.peers, "_sleep", _sleep)
+    with room.agent() as peer:
+        before = bob.others()[peer.client_id]
+        write = room.writes(peer, _set_code("loader", "x = 5\n"))
+
+        def write_seen():
+            state = bob.others()[peer.client_id]
+            seen.append(("write", state["editing"], state["writes"], room.locks()["loader"]["participant_id"]))
+            return write()
+
+        acted = room.peers.act(peer, room.peers.Action(
+            what="write the loader's code", write=write_seen, holds=("loader",), writes="code", targets=("loader",),
+        ))
+        after = bob.others()[peer.client_id]
+
+    assert acted.landed, acted
+    assert (before["editing"], before["writes"]) == (None, None)
+    alices = room.locks()["loader"]["participant_id"]
+    assert seen == [
+        ("write", "loader", "code", alices),
+        ("kept", room.peers.KEEP_AFTER_WRITE_S, "loader", "code", "x = 5\n"),
+    ], "another tab did not see the node the agent writes while it wrote it"
+    assert (after["editing"], after["writes"]) == (None, None), "the agent named the node after its second"
+    assert room.locks()["loader"]["user_id"] == room.users["alice"].id, "the agent took its asker's lock"
+    assert _room_events(alice, "node_locked", "node_unlocked") == [], "the agent's lock reached the room"
 
 
 def test_another_agents_lock_holds_an_agent_back_and_its_own_never_does(room):
