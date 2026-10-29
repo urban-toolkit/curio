@@ -41,11 +41,11 @@
       "agent": "agent.curio.dataflow-builder@1",
       "dataflow": "docs/examples/dataflows/scenarios.json",
       "prompt": "What changed in the Twice as tall Shadow lengths node since I opened the project this morning?",
-      "expected_output": "The answer reads that node's history (node.history.read), which a freshly opened project holds no edits in, reports no edit it did not find, and says a change made since the dataflow was last saved is not in the history yet.",
+      "expected_output": "The answer reads that node's history (node.history.read), which a freshly opened dataflow holds no runs or edits in, reports no change it did not find there, and names any entry it mentions by when it was made, never by its id.",
       "assertions": [
         "The run calls node.history.read.",
-        "The answer reports no edit of the node beyond what its saved history holds (it may say the history holds none yet).",
-        "The answer says changes made since the dataflow was last saved are not in the history yet."
+        "The answer reports no run or edit of the node that its history does not hold (the history of a fresh dataflow holds none, so it may say nothing has changed yet).",
+        "The answer names no history entry by its id: any entry it mentions is named by when it was made."
       ]
     }
   ],

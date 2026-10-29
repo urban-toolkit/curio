@@ -439,16 +439,18 @@ def benchmark(skill: SkillEvals, results: Iterable[Mapping]) -> dict:
     runs = [r for r in results if r.get("kind") == TASK and r.get("skill") == skill.name]
     summary: dict = {}
     listed = []
+    means: dict[str, dict[str, float | None]] = {}
     for condition in CONDITIONS:
         mine = [r for r in runs if r.get("condition") == condition]
         graded = [r for r in mine if not r.get("error") and isinstance(r.get("grading"), Mapping)]
-        rates = [r["grading"]["summary"]["pass_rate"] for r in graded]
-        entry = {
-            "pass_rate": _stat(rates),
-            "time_seconds": _stat([r["timing"]["duration_ms"] / 1000 for r in graded]),
-            "tokens": _stat([float(r["timing"]["total_tokens"]) for r in graded]),
-            "runs": len(graded), "errors": len(mine) - len(graded),
+        values = {
+            "pass_rate": [r["grading"]["summary"]["pass_rate"] for r in graded],
+            "time_seconds": [r["timing"]["duration_ms"] / 1000 for r in graded],
+            "tokens": [float(r["timing"]["total_tokens"]) for r in graded],
         }
+        means[condition] = {key: statistics.fmean(found) if found else None for key, found in values.items()}
+        entry = {**{key: _stat(found) for key, found in values.items()},
+                 "runs": len(graded), "errors": len(mine) - len(graded)}
         if condition == WITH_SKILL:
             used = [r for r in graded if r.get("used")]
             entry["used"] = {"runs": len(used), "pass_rate": _mean([r["grading"]["summary"]["pass_rate"]
@@ -467,7 +469,7 @@ def benchmark(skill: SkillEvals, results: Iterable[Mapping]) -> dict:
             })
     delta = {}
     for key in ("pass_rate", "time_seconds", "tokens"):
-        a, b = summary[WITH_SKILL][key]["mean"], summary[WITHOUT_SKILL][key]["mean"]
+        a, b = means[WITH_SKILL][key], means[WITHOUT_SKILL][key]
         delta[key] = None if a is None or b is None else round(a - b, 4)
     summary["delta"] = delta
     return {"skill_name": skill.name, "run_summary": summary, "runs": listed}
