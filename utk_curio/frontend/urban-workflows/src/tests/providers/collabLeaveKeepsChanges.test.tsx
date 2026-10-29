@@ -3,9 +3,11 @@
  * (`CollaborationProvider`'s `retire`): the browser's Back, a link that asked
  * nothing, any way out of the canvas. The tab's socket stays open, listening
  * for nothing but the doc's answers, until the server has every change sent
- * on it, since the server refuses a queued change whose socket has gone. The
- * tab leaves everyone else's view at once all the same: its presence and its
- * locks go at the leave. A socket with nothing on its way closes at once.
+ * on it, since the server refuses a queued change whose socket has gone. Its
+ * presence goes at the leave all the same, and its locks go one way only, with
+ * its socket: the server lets go of them and names them to the room
+ * (`user_left`), which every other tab drops. A socket with nothing on its way
+ * closes at once.
  */
 import React from "react";
 import { act, render, waitFor } from "@testing-library/react";
@@ -209,17 +211,26 @@ test("a change the server queued is waited for until its kept message answers it
   await waitFor(() => expect(socket.disconnect).toHaveBeenCalledTimes(1));
 });
 
-test("the locks this tab holds go at the leave, though its socket waits for the doc's answers", async () => {
+test("the locks this tab holds go with its socket alone, never by an unlock of the leave's own", async () => {
   const socket = await ownersTab();
   socket.fire("node_locked", { nodeId: "n1", lock: { user_id: 7, username: "ana", participant_id: "p-1", since: 1 } });
   socket.fire("node_locked", { nodeId: "n2", lock: { user_id: 8, username: "bo", participant_id: "p-2", since: 1 } });
   renameOnCanvas();
+  const [update] = updatesOn(socket);
+  const unlocks = () => socket.sent.filter((sent) => sent.event === "node_unlock");
 
   leaveTheDataflow();
 
+  // While the change is on its way the socket stays, and the tab lets go of nothing itself.
   expect(socket.disconnect).not.toHaveBeenCalled();
-  const released = socket.sent.filter((sent) => sent.event === "node_unlock").map((sent) => sent.payload.nodeId);
-  expect(released).toEqual(["n1"]);
+  expect(unlocks()).toEqual([]);
+  // Its socket goes once the server has the change: the server's release of its locks then.
+  await act(async () => {
+    update.ack!({ ok: true, kept: {} });
+    await Promise.resolve();
+  });
+  await waitFor(() => expect(socket.disconnect).toHaveBeenCalledTimes(1));
+  expect(unlocks()).toEqual([]);
 });
 
 test("a tab with nothing on its way closes its socket at once", async () => {
