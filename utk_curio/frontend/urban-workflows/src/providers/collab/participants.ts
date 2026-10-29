@@ -9,6 +9,12 @@
  * Each participant carries the role its account has on the dataflow, decided
  * on the server (`projects/access.py`): the owner and the editors the owner
  * invited edit, everyone else watches.
+ *
+ * An agent at work is a participant too, run by the server, which names it
+ * the same way in its lock and in its awareness state's `user`: `agent`, who
+ * it is and who asked it (`agentHolding`). Its lock is the room's soft lock,
+ * named after it, with `writes`, what it writes into the node; its awareness
+ * says which node it is writing (`collab/agentHolds`).
  */
 
 /** A participant's role on the open dataflow. */
@@ -70,5 +76,52 @@ export function roleIn(
 ): RoomRole | null {
   if (!participantId) return null;
   return users.find((user) => user.participant_id === participantId)?.role ?? null;
+}
+
+/** What an agent's lock says it writes into its node. */
+export type AgentWrites = "code" | "spec" | "widgets" | "settings";
+
+const AGENT_WRITES: ReadonlySet<string> = new Set<AgentWrites>(["code", "spec", "widgets", "settings"]);
+
+/** An agent at work on a node, as its lock or its awareness names it. */
+export interface AgentHold {
+  /** The agent's participant in the room. */
+  participantId: string | null;
+  /** Its name, from its manifest: the lock is named after it. */
+  name: string;
+  /** Its category, which gives its glyph and its tint. */
+  category: string | null;
+  /** The name of whoever asked it. */
+  askedBy: string | null;
+  /** What it writes into the node; null for anything else. */
+  writes: AgentWrites | null;
+}
+
+function text(value: unknown): string | null {
+  return typeof value === "string" && value ? value : null;
+}
+
+/** The agent *lock* names, a lock of the room's or an agent peer's awareness
+ *  `user` with its `writes`; null for a person's. An agent's carries
+ *  `agent`, `{attachmentId, coord, category, askedBy: {account, name}}`,
+ *  beside its `name` and `participant_id`. */
+export function agentHolding(lock: unknown): AgentHold | null {
+  if (!lock || typeof lock !== "object") return null;
+  const { agent, name, participant_id: participantId, writes } = lock as Record<string, unknown>;
+  if (!agent || typeof agent !== "object") return null;
+  const { category, askedBy } = agent as { category?: unknown; askedBy?: unknown };
+  const asker = askedBy && typeof askedBy === "object" ? (askedBy as Record<string, unknown>) : {};
+  return {
+    participantId: text(participantId),
+    name: text(name) ?? "An agent",
+    category: text(category),
+    askedBy: text(asker.name) ?? text(asker.account),
+    writes: typeof writes === "string" && AGENT_WRITES.has(writes) ? (writes as AgentWrites) : null,
+  };
+}
+
+/** An agent as the room names it: "Node Builder (asked by Ana)". */
+export function agentWithAsker(hold: Pick<AgentHold, "name" | "askedBy">): string {
+  return hold.askedBy ? `${hold.name} (asked by ${hold.askedBy})` : hold.name;
 }
 

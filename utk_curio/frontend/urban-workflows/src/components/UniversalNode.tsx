@@ -33,8 +33,11 @@ import { NodeType } from '../constants';
 import { NodeBehaviorHook, TIconCardinality } from '../registry/types';
 import { useFlowContext } from '../providers/FlowProvider';
 import { NodeAgentBadges } from './agents/attach/NodeAgentBadges';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { useCollab } from '../providers/CollaborationProvider';
-import { isOwnParticipant } from '../providers/collab/participants';
+import { agentHolding, agentWithAsker, isOwnParticipant } from '../providers/collab/participants';
+import { agentCategoryIcon, agentCategoryKey } from './menus/nodes/agentsPalette/agentCategoryStyle';
+import badgeStyles from './agents/attach/AgentAvatarBadge.module.css';
 import ErrorBoundary from "./ErrorBoundary";
 import { NodeOutcomeStrip } from './nodes/NodeOutcomeStrip';
 import './Node.css';
@@ -221,6 +224,11 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   // code is typed together.
   const lockInfo = collab.lockedNodes?.[data.nodeId];
   const lockedByOther = Boolean(lockInfo && !isOwnParticipant(collab.participantId, lockInfo));
+  // An agent's lock names the agent and who asked it, and its chip holds the
+  // agent's glyph in its category's tint, as the agent's badge does; a
+  // person's holds their initials.
+  const lockingAgent = lockedByOther ? agentHolding(lockInfo) : null;
+  const lockingTint = lockingAgent ? agentCategoryKey(lockingAgent.category) : null;
 
   useEffect(() => {
     const current = data.triggerExec ?? 0;
@@ -475,16 +483,19 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
       style={{ display: "contents" }}
     >
       {lockedByOther && (
+        // It takes the pointer, so its tooltip shows on hover.
         <div
-          className="collab-lock-chip"
-          data-tooltip={`Editing: ${lockInfo?.name || lockInfo?.username}`}
+          className={lockingTint ? `collab-lock-chip ${badgeStyles[`tint_${lockingTint}` as keyof typeof badgeStyles]}` : "collab-lock-chip"}
+          data-tooltip={`Editing: ${lockingAgent ? agentWithAsker(lockingAgent) : lockInfo?.name || lockInfo?.username}`}
+          data-lock-agent={lockingTint ?? undefined}
           style={{
             position: "absolute",
             top: -8,
             right: -8,
             zIndex: 10,
-            background: "#ff9800",
-            color: "#fff",
+            ...(lockingAgent
+              ? { background: "var(--curio-card-bg)", border: "1px solid rgba(0, 0, 0, 0.12)", boxSizing: "border-box" as const }
+              : { background: "#ff9800", color: "#fff" }),
             borderRadius: "50%",
             width: 22,
             height: 22,
@@ -494,10 +505,13 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
             fontSize: 10,
             fontWeight: 700,
             boxShadow: "0 1px 3px rgba(0,0,0,0.35)",
-            pointerEvents: "none",
           }}
         >
-          {(lockInfo?.username || "?").slice(0, 2).toUpperCase()}
+          {lockingAgent ? (
+            <FontAwesomeIcon icon={agentCategoryIcon(lockingAgent.category)} aria-hidden="true" />
+          ) : (
+            (lockInfo?.username || "?").slice(0, 2).toUpperCase()
+          )}
         </div>
       )}
       {!dashboardOn && (

@@ -15,6 +15,10 @@
  *   change, from a tab that edits the dataflow.
  * - **Focus** is the tab's `editing` presence: removing a node someone else
  *   is editing asks first.
+ * - **An agent's change** to the node's code or spec, landing while the agent
+ *   is writing the node (`collab/agentHolds`), has its lines marked for a
+ *   moment in the agent's tint (`agentChangeMarks`): decorations of the
+ *   editor's own, which never reach its text or the doc.
  *
  * Nothing binds while the canvas is not bound to a doc (a dataflow never
  * saved, a hosted guest's own canvas, the dashboard): the editor is then
@@ -27,6 +31,9 @@ import { CANVAS_ORIGIN, useDocBinding } from "../../providers/collab/docContext"
 import { CONTENT, replaceText } from "../../providers/collab/docMapping";
 import { markBound } from "../../providers/collab/boundTexts";
 import { setEditing } from "../../providers/collab/presence";
+import { agentHoldOf } from "../../providers/collab/agentHolds";
+import { agentCategoryKey } from "../menus/nodes/agentsPalette/agentCategoryStyle";
+import { changedLinesBetween, dropLineMarks, markChangedLines } from "./agentChangeMarks";
 
 /** The undo each editor's Ctrl+Z runs, while it is bound. */
 const undoOf = new WeakMap<object, { manager: Y.UndoManager | null }>();
@@ -167,7 +174,25 @@ export function useYMonacoBinding(
             }
             const made = new MonacoBinding(ytext, model, new Set([editor]), awareness);
             const manager = new Y.UndoManager(ytext, { trackedOrigins: new Set<unknown>([made, CANVAS_ORIGIN]) });
-            current = { binding: made, undo: manager, text: ytext, release: markBound(doc, nodeId) };
+            // Observed after y-monaco, so a change is in the editor when its
+            // lines are marked. What this tab wrote is never an agent's.
+            let shown = ytext.toString();
+            const onLanded = (event: Y.YTextEvent) => {
+                const before = shown;
+                shown = ytext.toString();
+                if (event.transaction.local) return;
+                const hold = agentHoldOf(nodeId);
+                if (hold?.writes !== "code" && hold?.writes !== "spec") return;
+                markChangedLines(editor, changedLinesBetween(before, shown), agentCategoryKey(hold.category));
+            };
+            ytext.observe(onLanded);
+            const bound = markBound(doc, nodeId);
+            const release = () => {
+                ytext.unobserve(onLanded);
+                dropLineMarks(editor);
+                bound();
+            };
+            current = { binding: made, undo: manager, text: ytext, release };
             undo.manager = manager;
         };
 

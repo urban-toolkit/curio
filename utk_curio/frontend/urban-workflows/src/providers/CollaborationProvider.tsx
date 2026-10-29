@@ -54,6 +54,7 @@ import { DataflowDocProvider } from "./collab/docProvider";
 import { CONNECTION_DROPPED_EVENT, DataflowDocContext, type DocBinding } from "./collab/docContext";
 import { HISTORY_CHANGED_EVENT } from "./history/serverHistory";
 import { remoteCursorStyle } from "./collab/presence";
+import { useAgentsWriting } from "./collab/agentHolds";
 
 export type { RoomRole } from "./collab/participants";
 
@@ -377,6 +378,23 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
                     return next;
                 });
             });
+            // A participant that leaves lets go of its locks: the server
+            // released them (``room_state.remove_user``) and names them. A
+            // node someone took since keeps its new lock.
+            socket.on("user_left", (payload: { participant_id?: string; released_locks?: unknown }) => {
+                const released = Array.isArray(payload?.released_locks) ? payload.released_locks : [];
+                if (released.length === 0 || !payload.participant_id) return;
+                setLockedNodes((prev) => {
+                    const next = { ...prev };
+                    let dropped = false;
+                    for (const nodeId of released) {
+                        if (typeof nodeId !== "string" || next[nodeId]?.participant_id !== payload.participant_id) continue;
+                        delete next[nodeId];
+                        dropped = true;
+                    }
+                    return dropped ? next : prev;
+                });
+            });
 
             // Fan-out to consumer-registered handlers.
             for (const ev of REMOTE_EVENTS) {
@@ -462,6 +480,10 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     useEffect(() => {
         usersRef.current = users;
     }, [users]);
+
+    // The nodes agents are writing, from their states in the doc's awareness
+    // (``collab/agentHolds``), with or without the node's lock.
+    useAgentsWriting(docBinding?.provider.awareness);
 
     // Everyone else's cursor in the code editors, in their color. The style
     // is written only when it changes: a pointer moving on someone's canvas
