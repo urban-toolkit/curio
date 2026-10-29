@@ -69,18 +69,9 @@ jest.mock('../../providers/ToastProvider', () => ({
 const mockHandlers: Record<string, (payload: any) => void> = {};
 const mockNoop = () => undefined;
 const mockCollab = {
-  enabled: true,
   lockedNodes: {},
-  currentUserId: null,
   lockNode: mockNoop,
   unlockNode: mockNoop,
-  signalExecDisplay: mockNoop,
-  broadcastOutputProduced: mockNoop,
-  broadcastNodeAdded: mockNoop,
-  broadcastNodeRemoved: mockNoop,
-  broadcastNodeUpdated: mockNoop,
-  broadcastEdgeAdded: mockNoop,
-  broadcastEdgeRemoved: mockNoop,
   onRemote: (event: string, handler: (payload: any) => void) => {
     mockHandlers[event] = handler;
     return () => {

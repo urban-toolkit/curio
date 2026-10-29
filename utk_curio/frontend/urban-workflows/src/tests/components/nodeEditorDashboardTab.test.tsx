@@ -39,14 +39,8 @@ jest.mock("@monaco-editor/react", () => ({
 }));
 jest.mock("../../providers/CollaborationProvider", () => ({
   useCollab: () => ({
-    enabled: false,
     connected: false,
     users: [],
-    proposals: [],
-    currentUserId: null,
-    requestCodeChange: jest.fn(),
-    approveCodeChange: jest.fn(),
-    rejectCodeChange: jest.fn(),
     onRemote: jest.fn(() => jest.fn()),
   }),
 }));

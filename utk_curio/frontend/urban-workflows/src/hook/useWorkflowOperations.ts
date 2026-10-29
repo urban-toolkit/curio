@@ -706,9 +706,9 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
 
     // Removes nodes together with their edges. Shared by a reviewed plan apply
     // (dev/62, DEC-049) and the node header's Delete node button. Bookkeeping
-    // parity with deleting an edge by hand: onEdgesDelete (collab broadcast,
-    // provenance, survivor-input reset) and onNodesDelete (output pruning,
-    // provenance, broadcast). Already-absent elements no-op.
+    // parity with deleting an edge by hand: onEdgesDelete (provenance,
+    // survivor-input reset) and onNodesDelete (output pruning, provenance).
+    // Already-absent elements no-op.
     const applyReviewedRemovals = useCallback((nodeIds: string[], edgeIds: string[]) => {
         const edgeSet = new Set(edgeIds);
         const victimEdges = reactFlow.getEdges().filter((e: Edge) => edgeSet.has(e.id));
