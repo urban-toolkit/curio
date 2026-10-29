@@ -9,7 +9,6 @@ import { TrillGenerator } from "../../TrillGenerator";
 import { inputSlotOf, slotHandleId, wiredInputSlots } from "../../utils/inputSlots";
 import { INTERACTION_EDGE_CARRIES_NOTHING, interactionEdgeCarries } from "../../registry/interactionRoles";
 import type { useToastContext } from "../ToastProvider";
-import type { useCollab } from "../CollaborationProvider";
 import type { IOutput } from "./flowTypes";
 import type { useGraphEdits } from "./useGraphEdits";
 import { nodeGrowsInputs, nodeInputCapacity } from "./growingInputs";
@@ -24,7 +23,7 @@ function uniqueEdgeId(base: string, edges: Edge[]): string {
 
 export function useConnect({
     markDirtyRef, reactFlow, showToast, markNodeStaleRef, applyOutput, setEdges,
-    workflowNameRef, collabRef, outputsRef,
+    workflowNameRef, outputsRef,
 }: {
     markDirtyRef: React.MutableRefObject<() => void>;
     reactFlow: ReactFlowInstance;
@@ -33,7 +32,6 @@ export function useConnect({
     applyOutput: ReturnType<typeof useGraphEdits>["applyOutput"];
     setEdges: React.Dispatch<React.SetStateAction<Edge[]>>;
     workflowNameRef: React.MutableRefObject<string>;
-    collabRef: React.MutableRefObject<ReturnType<typeof useCollab>>;
     outputsRef: React.MutableRefObject<IOutput[]>;
 }) {
     // A new edge hands what its source holds to its own target alone, once:
@@ -303,11 +301,6 @@ export function useConnect({
                                 );
                             }
                         }
-
-                        collabRef.current.broadcastEdgeAdded({
-                            edgeId: customConnection.id,
-                            edge: customConnection,
-                        });
 
                         return addEdge(customConnection, eds);
                     });

@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
 
+import { changedStretch } from "../utils/textStretch";
+
 // The slice of a Monaco editor instance this hook drives. Structural (rather
 // than monaco-editor's own types) so tests can pass a plain object and the
 // hook stays agnostic of the @monaco-editor/react loader.
@@ -7,6 +9,7 @@ export interface MonacoEditorLike {
     getModel(): {
         getFullModelRange(): unknown;
         validatePosition?(position: unknown): unknown;
+        getPositionAt?(offset: number): { lineNumber: number; column: number };
     } | null;
     getValue(): string;
     setValue(value: string): void;
@@ -19,14 +22,18 @@ export interface MonacoEditorLike {
     pushUndoStop?(): void;
 }
 
-// Replace the editor's whole content while keeping the user's undo history
-// and cursor. `setValue` would wipe the undo stack and park the cursor at the
-// document start; `executeEdits` alone parks it at the end — so edit, then
-// restore the previous position clamped into the new content. A read-only
-// editor (a dashboard tile's) refuses every edit, so it gets the content
-// whole: it has no undo history to keep.
+// Make the editor's content *value* while keeping the user's undo history and
+// cursor. `setValue` would wipe the undo stack and park the cursor at the
+// document start; `executeEdits` parks it at the end of what it wrote, so
+// edit, then restore the previous position clamped into the new content. The
+// edit rewrites only the stretch where the two differ (`changedStretch`): a
+// node's code bound to the dataflow's doc takes it as that stretch alone, so
+// someone else's typing elsewhere in it stays. A read-only editor (a
+// dashboard tile's) refuses every edit, so it gets the content whole: it has
+// no undo history to keep.
 function setEditorContent(editor: MonacoEditorLike, value: string) {
-    if (editor.getValue() === value) return;
+    const old = editor.getValue();
+    if (old === value) return;
     const model = editor.getModel();
     if (!model || !editor.executeEdits) {
         editor.setValue(value);
@@ -34,9 +41,23 @@ function setEditorContent(editor: MonacoEditorLike, value: string) {
     }
     const prevPosition = editor.getPosition?.() ?? null;
     editor.pushUndoStop?.();
-    const edited = editor.executeEdits("curio.external-content", [
-        { range: model.getFullModelRange(), text: value, forceMoveMarkers: true },
-    ]);
+    let edit = { range: model.getFullModelRange(), text: value, forceMoveMarkers: true };
+    if (typeof model.getPositionAt === "function") {
+        const { start, endOld, endNew } = changedStretch(old, value);
+        const from = model.getPositionAt(start);
+        const to = model.getPositionAt(endOld);
+        edit = {
+            range: {
+                startLineNumber: from.lineNumber,
+                startColumn: from.column,
+                endLineNumber: to.lineNumber,
+                endColumn: to.column,
+            },
+            text: value.slice(start, endNew),
+            forceMoveMarkers: true,
+        };
+    }
+    const edited = editor.executeEdits("curio.external-content", [edit]);
     if (edited === false) {
         editor.setValue(value);
         return;
@@ -61,10 +82,10 @@ function setEditorContent(editor: MonacoEditorLike, value: string) {
  *   back to the already-applied value — the oscillation that used to reset
  *   the Autark editor — never touches the editor.
  * - `applyValue` is the imperative channel for other external writers
- *   (collaboration's applied proposals).
+ *   (a run's code put back from the provenance drawer).
  *
- * `baselineRef` tracks the as-loaded / last-externally-applied content, the
- * same baseline the collaboration blur-diff proposals compare against.
+ * `baselineRef` tracks the as-loaded / last-externally-applied content: an
+ * editor whose content differs from it holds the user's typing.
  */
 export function useMonacoExternalValue({
     externalValue,

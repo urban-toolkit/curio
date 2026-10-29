@@ -2,9 +2,9 @@
  * #629: with collaboration on, a selection made on a node that arrived from a
  * collaborator reaches the nodes linked to it, as it does without collaboration.
  *
- * Drives the REAL FlowProvider with collaboration enabled. A peer adds a chart,
- * a Data Pool and the interaction edge between them; the chart's
- * `interactionsCallback` (re-attached on receipt, since the socket strips
+ * Drives the REAL FlowProvider bound to the dataflow's doc. Another tab adds a
+ * chart, a Data Pool and the interaction edge between them through the doc;
+ * the chart's `interactionsCallback` (the canvas's own, as the doc carries no
  * functions) then records a selection, which must land on the pool.
  * Harness as in connectionFanInGuard.test.tsx.
  */
@@ -24,6 +24,8 @@ if (!(global as any).DOMMatrixReadOnly) {
 }
 
 // Mocks: replace the heavy and IO collaborators, keep reactflow REAL.
+// The dataflow the canvas loaded, which the canvas binds to its doc on.
+const mockLoaded: { current: any } = { current: null };
 jest.mock('../../hook/useWorkflowOperations', () => ({
   useWorkflowOperations: () => ({
     markNodeExecuted: jest.fn(),
@@ -42,6 +44,13 @@ jest.mock('../../hook/useWorkflowOperations', () => ({
     updateDefaultCode: jest.fn(),
     workflowGoal: '',
     acceptSuggestion: jest.fn(),
+    loadedDataflowRef: mockLoaded,
+    workflowGoalRef: { current: '' },
+    workflowCategoriesRef: { current: {} },
+    scenariosRef: { current: [] },
+    autoRunRef: { current: false },
+    takeDataflowFields: jest.fn(),
+    quietly: (apply: () => unknown) => apply(),
   }),
 }));
 
@@ -89,7 +98,7 @@ jest.mock('vega', () => ({}), { virtual: true });
 jest.mock('vega-lite', () => ({}), { virtual: true });
 
 import FlowProvider, { useFlowContext } from '../../providers/FlowProvider';
-import { CURIO_UNIVERSAL_NODE_TYPE, VisInteractionType } from '../../constants';
+import { VisInteractionType } from '../../constants';
 
 type FlowApi = ReturnType<typeof useFlowContext>;
 let api: FlowApi;
@@ -109,13 +118,35 @@ const Bridge: React.FC = () => {
   );
 };
 
-function renderFlow() {
+const PROJECT = 'project-interactions';
+/** The dataflow's doc, as the server and every other tab hold it. */
+let held: any = null;
+
+/** The dataflow's doc and its mapping, required where a test binds the canvas. */
+function docModules() {
+  return {
+    ...require('../../providers/collab/docContext'),
+    ...require('../../providers/collab/docProvider'),
+    ...require('../../providers/collab/docMapping'),
+  };
+}
+
+/** A canvas bound to a doc the server synced, of an empty dataflow loaded as such. */
+function renderBound() {
+  const { DataflowDocContext, DataflowDocProvider, dataflowToDoc } = docModules();
+  const dataflow = { name: '', nodes: [], edges: [] };
+  held = new DataflowDocProvider(PROJECT, { canWrite: true });
+  dataflowToDoc(dataflow, held.doc, 'doc-1');
+  held.synced = true;
+  mockLoaded.current = { epoch: 1, projectId: PROJECT, dataflow };
   return render(
-    <ReactFlowProvider>
-      <FlowProvider>
-        <Bridge />
-      </FlowProvider>
-    </ReactFlowProvider>,
+    <DataflowDocContext.Provider value={{ provider: held, synced: true }}>
+      <ReactFlowProvider>
+        <FlowProvider>
+          <Bridge />
+        </FlowProvider>
+      </ReactFlowProvider>
+    </DataflowDocContext.Provider>,
   );
 }
 
@@ -125,20 +156,15 @@ async function flush() {
   });
 }
 
-// A node as a peer's `node_added` carries it: plain JSON, no callbacks.
-function remoteNode(id: string, nodeType: string, x: number) {
-  return {
-    id,
-    type: CURIO_UNIVERSAL_NODE_TYPE,
-    position: { x, y: 0 },
-    data: { nodeId: id, nodeType, input: '', inputTypes: [] },
-  };
-}
-
-async function fromPeer(event: string, payload: any) {
-  expect(typeof mockHandlers[event]).toBe('function');
+/** Another tab's change to the dataflow, as the provider applies one the
+ *  server relays. */
+async function fromAnotherTab(change: (dataflow: any) => void) {
+  const { applyDataflow, docToDataflow } = docModules();
+  const before = docToDataflow(held.doc);
+  const after = JSON.parse(JSON.stringify(before));
+  change(after);
   await act(async () => {
-    mockHandlers[event](payload);
+    held.doc.transact(() => applyDataflow(held.doc, before, after), held);
   });
   await flush();
 }
@@ -147,17 +173,20 @@ const nodeById = (id: string) => api.nodes.find((n: any) => n.id === id) as any;
 
 afterEach(() => {
   for (const key of Object.keys(mockHandlers)) delete mockHandlers[key];
+  held?.destroy();
+  held = null;
+  mockLoaded.current = null;
 });
 
 describe('collaboration: a selection on a received node reaches linked nodes (#629)', () => {
   test("a chart received from a peer sends its selection to the pool it is linked to", async () => {
-    renderFlow();
+    renderBound();
     await flush();
 
-    await fromPeer('node_added', { node: remoteNode('chart', 'curio.builtin/vis-vega@1', 0) });
-    await fromPeer('node_added', { node: remoteNode('pool', 'curio.builtin/data-pool@1', 400) });
-    await fromPeer('edge_added', {
-      edge: { id: 'chart-pool', source: 'chart', target: 'pool', sourceHandle: 'in/out', targetHandle: 'in/out' },
+    await fromAnotherTab((df) => {
+      df.nodes.push({ id: 'chart', type: 'curio.builtin/vis-vega@1', x: 0, y: 0 });
+      df.nodes.push({ id: 'pool', type: 'curio.builtin/data-pool@1', x: 400, y: 0 });
+      df.edges.push({ id: 'chart-pool', source: 'chart', target: 'pool', type: 'Interaction' });
     });
 
     expect(nodeById('chart')).toBeDefined();
