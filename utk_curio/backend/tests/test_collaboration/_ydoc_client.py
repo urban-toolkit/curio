@@ -41,6 +41,10 @@ class DocClient:
         self.events: list = []
         #: Each server step 1 this tab answered, and the ack of its answer.
         self.answers: list = []
+        #: Every update the server sent this tab (its step 2 and its
+        #: updates), and every update this tab sent, each in order.
+        self.received: list[bytes] = []
+        self.sent: list[bytes] = []
         self._unsent: list[bytes] = []
         self._remote = False
         self.doc.observe(self._local)
@@ -76,6 +80,7 @@ class DocClient:
                 answer = handle_sync_message(message[1:], self.doc)
                 self.answers.append((answer, self.send(answer)))
             elif message[0] == YMessageType.SYNC:
+                self.received.append(read_message(message[2:]))
                 self._remote = True
                 try:
                     handle_sync_message(message[1:], self.doc)
@@ -90,6 +95,7 @@ class DocClient:
         with self.doc.transaction():
             change(self.doc)
         unsent, self._unsent = self._unsent, []
+        self.sent += unsent
         return [self.send(create_update_message(update)) for update in unsent]
 
     def set_presence(self, state) -> dict:
