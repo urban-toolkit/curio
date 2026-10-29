@@ -105,7 +105,7 @@ PRODUCER_CODE = (
 
 
 def _sent_outputs(post_data) -> list:
-    """The output refs a save sent: its body's ``outputs``, each a dict."""
+    """The output refs a record of outputs sent: its body's ``outputs``, each a dict."""
     try:
         body = json.loads(post_data or "{}")
     except ValueError:
@@ -271,17 +271,17 @@ def test_a_saved_output_dragged_from_the_data_palette_becomes_a_data_loading_nod
     # Run the producer with its save-output toggle on, so its output is saved
     # to the Data Catalog as this dataflow's.
     enable_save_output(page, PRODUCER)
-    # The save of the dataflow itself whose outputs hold the producer's ref,
-    # not a request to one of its routes that names the producer otherwise (a
+    # The record of the outputs whose refs hold the producer's, not a request
+    # to another of the dataflow's routes that names the producer otherwise (a
     # server run of it, a run in its history).
     with page.expect_response(
-        lambda r: r.request.method == "PUT"
-        and urlparse(r.url).path.rstrip("/") == f"/api/projects/{project_id}"
+        lambda r: r.request.method == "POST"
+        and urlparse(r.url).path.rstrip("/") == f"/api/projects/{project_id}/outputs"
         and any(ref.get("node_id") == PRODUCER for ref in _sent_outputs(r.request.post_data)),
         timeout=180000,
     ) as saved:
         run_node_and_wait(page, PRODUCER, node_type=ANALYSIS_TYPE)
-    assert saved.value.ok, f"the save of the output failed: {saved.value.status}"
+    assert saved.value.ok, f"the record of the output failed: {saved.value.status}"
 
     # Frame the producer small at the top left, under the palette, so the drop
     # point to the right of the palette is empty canvas.

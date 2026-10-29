@@ -11,6 +11,7 @@ from playwright.sync_api import expect
 from .utils import (
     REPO_ROOT,
     _post_json,
+    api_json,
     canvas_nodes,
     dismiss_toasts,
     drag_builtin_to_canvas,
@@ -19,6 +20,7 @@ from .utils import (
     require_user_auth,
     signup_and_enter_new_workflow,
     stub_db_login,
+    wait_for_changes_kept,
     wait_for_projects_page,
 )
 
@@ -75,12 +77,13 @@ def test_a_freshly_loaded_dataflow_is_not_dirty(
     "turn green after a while".
 
     Three claims, and the third matters most: the guard must not have swallowed
-    genuine edits along with the replay.
+    genuine edits along with the replay. No tab saves a dataflow it is bound
+    to, so the edit is kept as it is made, and nothing ever sends the dataflow.
     """
     require_project_page()
     require_user_auth()
 
-    stub_db_login(
+    session = stub_db_login(
         page,
         frontend_url=app_frontend.base_url,
         backend_url=current_server,
@@ -95,6 +98,12 @@ def test_a_freshly_loaded_dataflow_is_not_dirty(
             "spec": _example_spec(),
         },
     )
+    # Every whole-dataflow write the tab sends from here on.
+    dataflow_url = f"/api/projects/{created['id']}"
+    sent = []
+    page.on("request", lambda request: sent.append(request.method) if (
+        request.method in ("PUT", "POST") and request.url.split("?")[0].rstrip("/").endswith(dataflow_url)
+    ) else None)
 
     page.goto(f"{app_frontend.base_url}/dataflow/{created['id']}")
     page.wait_for_load_state("domcontentloaded")
@@ -111,19 +120,26 @@ def test_a_freshly_loaded_dataflow_is_not_dirty(
     disk = page.locator("[data-curio-save-state]")
     expect(disk).to_have_attribute("data-curio-save-state", "saved", timeout=15000)
 
-    # Past the 30s auto-save. A fix that merely DELAYED the flag - or left the
-    # needless save in place - shows up here and nowhere else.
+    # Past the 30 s the auto-save waited. A fix that merely DELAYED the flag -
+    # or a needless write of the dataflow - shows up here and nowhere else.
     page.wait_for_timeout(35000)
     assert disk.get_attribute("data-curio-save-state") == "saved", (
-        "the dataflow went dirty on its own after loading, and the auto-save "
-        "then rewrote it - this is #229"
+        "the dataflow went dirty on its own after loading - this is #229"
     )
+    assert sent == [], f"opening the dataflow sent it whole: {sent}"
 
     # The fix's real risk, asserted last: suppressing dirty across the replay
-    # must not suppress it for the user's next real edit. If this is what fails,
-    # the guard is swallowing edits - worse than the phantom flag it replaced,
-    # because the user is then told their work is saved when it is not.
+    # must not suppress the user's next real edit. If this is what fails, the
+    # guard is swallowing edits - worse than the phantom flag it replaced,
+    # because the user is then told their work is saved when it is not. The
+    # doc keeps the edit as it is made: the server has it, with no save.
     before = len(canvas_nodes(page))
     drag_builtin_to_canvas(page, ANALYSIS_TILE, at=(150, 150))
     assert len(canvas_nodes(page)) == before + 1
-    expect(disk).to_have_attribute("data-curio-save-state", "unsaved", timeout=15000)
+    wait_for_changes_kept(page)
+    kept = api_json(f"{current_server}{dataflow_url}", session["token"])["spec"]["dataflow"]["nodes"]
+    assert len(kept) == before + 1, (
+        f"the server holds {len(kept)} nodes after the edit, the canvas {before + 1}: "
+        "the edit never reached it"
+    )
+    assert sent == [], f"the edit sent the dataflow whole: {sent}"
