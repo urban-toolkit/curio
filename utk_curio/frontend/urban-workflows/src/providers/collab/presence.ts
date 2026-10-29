@@ -129,7 +129,7 @@ export const PARTICIPANT_COLORS = [
     "#0c8599", "#c2255c", "#5c940d", "#364fc7", "#a61e4d",
 ];
 
-/** The color of the participant *id*: the same in every tab. */
+/** The color the key *id* gives: the same in every tab. */
 export function participantColor(id: string | null | undefined): string {
     const key = id || "";
     let hash = 0;
@@ -137,10 +137,22 @@ export function participantColor(id: string | null | undefined): string {
     return PARTICIPANT_COLORS[hash % PARTICIPANT_COLORS.length];
 }
 
+/**
+ * A person's color, from their account: the same in every tab, in each of
+ * their own tabs, and after a reload or a reconnect, each of which makes them
+ * a new participant with a new id. What names no account takes its
+ * participant's color, then *fallback*'s. The room's list of people and the
+ * awareness states both carry what it reads.
+ */
+export function personColor(user: PresenceUser | null | undefined, fallback?: string): string {
+    const account = user?.username || (typeof user?.user_id === "number" ? `user ${user.user_id}` : "");
+    return participantColor(account || user?.participant_id || fallback);
+}
+
 /** The color of whoever holds the awareness state *state*, client *clientId*:
  *  their cursor's in the code editors and on the canvas. */
 export function colorOf(clientId: number, state: PresenceState | null | undefined): string {
-    return participantColor(state?.user?.participant_id ?? String(clientId));
+    return personColor(state?.user, String(clientId));
 }
 
 function cssString(text: string): string {

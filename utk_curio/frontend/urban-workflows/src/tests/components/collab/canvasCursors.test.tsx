@@ -88,7 +88,7 @@ function anaIs(state: PresenceState | null) {
 
 /** Ana watches: the server keeps a watcher's `pointer`. */
 const anaAt = (x: number, y: number): PresenceState => ({
-    user: { participant_id: "p-ana", name: "Ana", role: "watcher" },
+    user: { participant_id: "p-ana", username: "ana", name: "Ana", role: "watcher" },
     pointer: { x, y, t: Date.now() },
 });
 
@@ -171,8 +171,9 @@ describe("everyone else's pointer", () => {
         // (100 + 2 * 100, 50 + 2 * 100) on the canvas.
         expect((cursor.parentElement as HTMLElement).style.transform).toBe("translate(100px, 50px) scale(2)");
         expect(cursor.style.transform).toBe("scale(0.5)");
-        expect(cursor.style.color).toBe(cssColor(participantColor("p-ana")));
-        expect((cursor.querySelector("span") as HTMLElement).style.backgroundColor).toBe(cssColor(participantColor("p-ana")));
+        // Her account's color, whatever participant id her tab has today.
+        expect(cursor.style.color).toBe(cssColor(participantColor("ana")));
+        expect((cursor.querySelector("span") as HTMLElement).style.backgroundColor).toBe(cssColor(participantColor("ana")));
     });
 
     test("stays at its point of the dataflow as this tab pans and zooms", () => {

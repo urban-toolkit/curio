@@ -293,7 +293,7 @@ export function ScenarioLayers({ view, labelOf, statusOf, onExpand, onCollapse, 
 /**
  * Everyone else's pointer, on the same pan-and-zoom plane as the scenarios'
  * layers and over everything on the canvas: each at its point of the dataflow,
- * in its participant's color with their name, and the same size at any zoom.
+ * in its person's color with their name, and the same size at any zoom.
  * A cursor that moves glides to its next point; one that rests is faded.
  */
 export function ParticipantCursors({ cursors }: { cursors: readonly DrawnCursor[] }) {
