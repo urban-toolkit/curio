@@ -243,7 +243,7 @@ def upload_import():
     body = request.get_json(silent=True) or {}
     try:
         payload = agents_services.upload_import(
-            _user_dir_key(g.user), body.get("manifest"), body.get("prompts") or {}
+            _user_dir_key(g.user), body.get("manifest"), body.get("prompts") or {}, user=g.user,
         )
     except AgentServiceError as exc:
         return _svc_error(exc)
@@ -253,7 +253,13 @@ def upload_import():
 @agents_bp.route("/imports/<coord>", methods=["DELETE"])
 @require_auth
 def remove_import(coord: str):
-    return jsonify(agents_services.remove_import(_user_dir_key(g.user), coord, user=g.user)), 200
+    """Remove an agent from all the account's projects: a 409 names each
+    dataflow that keeps it, and then the account keeps it too."""
+    try:
+        payload = agents_services.remove_import(_user_dir_key(g.user), coord, user=g.user)
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+    return jsonify(payload), 200
 
 
 # ── Publish to the Global Catalog (imported-only) ────────────────────────────
@@ -284,7 +290,7 @@ def publish_agent():
     if not isinstance(coord, str):
         return _error("body must include 'coord'")
     try:
-        payload = agents_services.publish_agent(_user_dir_key(g.user), coord)
+        payload = agents_services.publish_agent(_user_dir_key(g.user), coord, user=g.user)
     except AgentServiceError as exc:
         return _svc_error(exc)
     return jsonify(payload), 201
@@ -296,7 +302,7 @@ def unpublish_agent(coord: str):
     if not packages_routes_common.CURIO_ALLOW_FACTORY_CATALOG_PUBLISH:
         return packages_routes_common.catalog_publish_disabled()
     try:
-        payload = agents_services.unpublish_agent(_user_dir_key(g.user), coord)
+        payload = agents_services.unpublish_agent(_user_dir_key(g.user), coord, user=g.user)
     except AgentServiceError as exc:
         return _svc_error(exc)
     return jsonify(payload), 200

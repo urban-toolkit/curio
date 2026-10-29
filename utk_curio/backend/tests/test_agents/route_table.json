@@ -352,8 +352,50 @@
  {
   "rule": "/api/agents/skills/<name>",
   "methods": [
+   "DELETE"
+  ],
+  "endpoint": "agents_api.remove_own_skill"
+ },
+ {
+  "rule": "/api/agents/skills/<name>",
+  "methods": [
    "GET"
   ],
   "endpoint": "agents_api.read_skill"
+ },
+ {
+  "rule": "/api/agents/skills/<name>/export",
+  "methods": [
+   "GET"
+  ],
+  "endpoint": "agents_api.export_skill"
+ },
+ {
+  "rule": "/api/agents/skills/imports",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.import_skill"
+ },
+ {
+  "rule": "/api/agents/skills/imports/check",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.check_skill_import"
+ },
+ {
+  "rule": "/api/agents/skills/publications",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.publish_skill"
+ },
+ {
+  "rule": "/api/agents/skills/publications/<name>",
+  "methods": [
+   "DELETE"
+  ],
+  "endpoint": "agents_api.unpublish_skill"
  }
 ]

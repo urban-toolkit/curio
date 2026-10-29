@@ -1524,6 +1524,37 @@ class TestDestructiveReplan:
             s == "pending" for s in runs.values()
         )
 
+    def test_a_plan_that_removes_a_node_deletes_the_transcript_of_the_agent_on_it(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch,
+    ):
+        """A transcript lives exactly as long as its attachment: the plan that
+        removes a node takes the chat of the agent attached to it with it, as a
+        detach and a save that deletes the node do."""
+        from utk_curio.backend.app.agents.repositories import sessions
+
+        user, token = user_and_token
+        att_id, _ = self._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Revising.\n" + self._revision_tail(nodes=[self._new_node()])],
+        )
+        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": "agent.curio.node-builder@1"},
+                    headers=_auth(token))
+        victim = client.post(
+            f"/api/agents/projects/{alice_project}/attachments",
+            json={"coord": "agent.curio.node-builder@1", "target": {"kind": "node", "targetId": "old-loader"}},
+            headers=_auth(token),
+        ).get_json()
+        key = _user_dir_key(user)
+        sessions.append_turns(key, alice_project, victim["sessionId"], victim["attachmentId"],
+                              [sessions.make_turn("user", "What does this loader read?")])
+        transcript = sessions._session_path(key, alice_project, victim["sessionId"])
+        assert transcript.exists()
+        proposal = self._proposal(self._run(client, token, alice_project, att_id))
+        resp = self._apply(client, token, alice_project, att_id, proposal["proposalId"])
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        assert resp.get_json()["appliedGraph"]["removedNodeIds"] == ["old-loader"]
+        assert not transcript.exists(), "the removed node's agent kept its transcript"
+
     def test_remove_only_plan_applies(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         att_id, _ = self._setup(
