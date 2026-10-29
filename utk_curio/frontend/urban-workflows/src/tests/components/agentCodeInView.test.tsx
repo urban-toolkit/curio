@@ -6,7 +6,8 @@
  * Widgets tab when it opens on its controls; a tab a person picked before, or
  * while the agent wrote, stays. The notebook view's cells turn the same way.
  * The node's lock chip shows the agent's glyph in its tint, and says on hover
- * who is editing and who asked.
+ * who is editing and who asked; a tab of the shared guest account's names it
+ * by its number.
  *
  * The room is the real CollaborationProvider on a fake socket, as
  * collabRoles.test.tsx has it, and the agent reaches this tab as the server
@@ -611,5 +612,22 @@ describe("the node's lock chip", () => {
 
     expect(lockChip("rows")).toBeNull();
     expect(lockChip("loader")?.getAttribute("data-tooltip")).toBe("Editing: Cara");
+  });
+
+  test("a tab of the shared guest account's names it by its number, as its chip in the dock does", async () => {
+    // Every guest signs in to the one shared guest account, so the room
+    // numbers its tabs, and a lock carries the number of the tab that holds it.
+    const guestsLock = {
+      user_id: 3, username: "guest_shared", name: "Shared Guest", participant_id: "p-guest-2", since: 1, guest_number: 2,
+    };
+    await inTheRoom(<><Node data={PYTHON} /><Node data={LOADER} /></>, { locks: { rows: guestsLock, loader: ANAS_LOCK } });
+
+    expect([lockChip("rows")?.getAttribute("data-tooltip"), lockChip("rows")?.textContent]).toEqual([
+      "Editing: Shared Guest 2", "S2",
+    ]);
+    // An account's lock keeps its letters and its name.
+    expect([lockChip("loader")?.getAttribute("data-tooltip"), lockChip("loader")?.textContent]).toEqual([
+      "Editing: Ana", "AN",
+    ]);
   });
 });
