@@ -318,7 +318,7 @@ export function ScenarioLayers({
               ))}
               {layout.outcomeTitle !== undefined && (
                 <div className={styles.section} style={{ top: layout.outcomeTitle }}>
-                  Outcomes
+                  Shared outcomes
                 </div>
               )}
               {[...layout.outcomes].map(([id, top]) => {

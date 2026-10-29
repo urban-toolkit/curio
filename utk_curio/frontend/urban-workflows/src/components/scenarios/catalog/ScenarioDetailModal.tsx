@@ -180,8 +180,8 @@ export const ScenarioDetailModal: React.FC<ScenarioDetailModalProps> = ({
                     empty={inProject ? "No nodes: add some, or delete it." : "None."}
                   />
                 </section>
-                <section className={styles.section} aria-label="Outcomes">
-                  <h3 className={styles.sectionLabel}>Outcomes</h3>
+                <section className={styles.section} aria-label="Shared outcomes">
+                  <h3 className={styles.sectionLabel}>Shared outcomes</h3>
                   <ScenarioNodeList entries={details.outcomes} results={!inProject} />
                 </section>
               </>

@@ -121,21 +121,21 @@ describe("defining a scenario", () => {
     renderPanel({ mode: "new" });
     expect(screen.getByRole("heading", { name: "Which nodes are unique to this scenario?" })).toBeInTheDocument();
     expect(screen.getByTestId("scenario-define-waiting")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Next: context & outcomes" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Next: shared context & outcomes" })).toBeDisabled();
     select("existing");
     expect(part("Scenario nodes").getByText("existing")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Next: context & outcomes" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Next: shared context & outcomes" })).toBeEnabled();
   });
 
   test("infers its context and outcomes, then puts it in a new set named after the dataflow", () => {
     const value = renderPanel({ mode: "new" });
     select("existing");
-    click("Next: context & outcomes");
-    expect(screen.getByRole("listitem", { current: "step" })).toHaveTextContent("Context & outcomes");
+    click("Next: shared context & outcomes");
+    expect(screen.getByRole("listitem", { current: "step" })).toHaveTextContent("Shared context & outcomes");
     expect(part("Shared context").getByText("load")).toBeInTheDocument();
     expect(part("Shared context").getByText("heights")).toBeInTheDocument();
     expect(part("Shared context").queryByText("around")).toBeNull();
-    expect(part("Outcomes").getByText("chart")).toBeInTheDocument();
+    expect(part("Shared outcomes").getByText("chart")).toBeInTheDocument();
     expect(value.setPreview).toHaveBeenLastCalledWith({ context: ["load", "heights"], outcomes: ["chart", "change"] });
 
     click("Next: name & set");
@@ -171,7 +171,7 @@ describe("defining a scenario", () => {
     mockFlow.scenarioSets = [{ id: "park", name: "Park shade" }];
     renderPanel({ mode: "new" });
     select("towers");
-    click("Next: context & outcomes");
+    click("Next: shared context & outcomes");
     const context = screen.getByRole("region", { name: "Shared context" });
     expect(within(context).getByText("Already in the set").parentElement).toHaveTextContent("load");
     expect(within(context).getByText("New to the set").parentElement).toHaveTextContent("around");
@@ -196,7 +196,7 @@ describe("defining a scenario", () => {
 
   test("a node is removed with ×, and a selected one is added", () => {
     renderPanel({ mode: "new", nodes: ["existing"] });
-    click("Next: context & outcomes");
+    click("Next: shared context & outcomes");
     click("Remove change");
     select("around");
     fireEvent.click(part("Shared context").getByRole("button", { name: "+ Add selected node" }));
@@ -210,11 +210,11 @@ describe("defining a scenario", () => {
 
   test("Back keeps the edits made", () => {
     renderPanel({ mode: "new", nodes: ["existing"] });
-    click("Next: context & outcomes");
+    click("Next: shared context & outcomes");
     click("Remove change");
     click("Next: name & set");
     click("Back");
-    expect(part("Outcomes").queryByText("change")).toBeNull();
+    expect(part("Shared outcomes").queryByText("change")).toBeNull();
   });
 });
 
@@ -223,7 +223,7 @@ describe("editing a scenario's context and outcomes", () => {
     mockFlow.scenarios = [{ ...EXISTING, outcomes: ["chart"] }];
     mockFlow.scenarioSets = [{ id: "park", name: "Park shade" }];
     renderPanel({ mode: "edit", scenarioId: "e" });
-    expect(part("Outcomes").queryByText("change")).toBeNull();
+    expect(part("Shared outcomes").queryByText("change")).toBeNull();
     click("Remove heights");
     fireEvent.click(screen.getByTestId("scenario-define-save"));
     expect(mockFlow.setScenarios).toHaveBeenCalledWith([{ ...EXISTING, context: ["load"], outcomes: ["chart"] }]);

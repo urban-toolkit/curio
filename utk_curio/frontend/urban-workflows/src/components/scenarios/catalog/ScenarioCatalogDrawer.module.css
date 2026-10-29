@@ -131,7 +131,7 @@
   cursor: pointer;
 }
 
-/* A set's heading, and its Context & outcomes beside it. */
+/* A set's heading, and its Shared context & outcomes beside it. */
 .groupHead {
   display: flex;
   align-items: baseline;

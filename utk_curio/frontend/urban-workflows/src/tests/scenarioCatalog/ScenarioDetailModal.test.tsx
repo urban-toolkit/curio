@@ -82,7 +82,7 @@ describe("ScenarioDetailModal", () => {
     expect(section("Scenario nodes").getByText("Filter roofs")).toBeInTheDocument();
     // No title of its own, and no registry in a test: the template's name.
     expect(section("Scenario nodes").getByText("computation-analysis")).toBeInTheDocument();
-    expect(section("Outcomes").getByText("vis-vega")).toBeInTheDocument();
+    expect(section("Shared outcomes").getByText("vis-vega")).toBeInTheDocument();
   });
 
   test("shows each node's saved outputs, or says it has none", async () => {
@@ -90,7 +90,7 @@ describe("ScenarioDetailModal", () => {
     renderModal();
     await modal().findByRole("region", { name: "Scenario nodes" });
     expect(section("Shared context").getByText("Parcels · geojson · 1,204 features")).toBeInTheDocument();
-    expect(section("Outcomes").getByText("Roof chart data · csv · 42 rows")).toBeInTheDocument();
+    expect(section("Shared outcomes").getByText("Roof chart data · csv · 42 rows")).toBeInTheDocument();
     // The filter saved nothing; the value node saved its year.
     expect(section("Scenario nodes").getAllByText("No saved output")).toHaveLength(1);
     const value = document.querySelector('[data-scenario-node-id="year"]') as HTMLElement;

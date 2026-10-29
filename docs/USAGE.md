@@ -787,7 +787,7 @@ splits the dataflow into three parts:
   changes by hand (see [The Map Editor node](#the-map-editor-node)).
 - **Shared context:** every node upstream of it, outside every scenario, that it
   uses. The scenario takes their outputs as given.
-- **Outcomes:** every node downstream of it, outside every scenario, that it
+- **Shared outcomes:** every node downstream of it, outside every scenario, that it
   feeds: the maps, charts and tables the alternatives are compared on.
 
 Every scenario is in a **scenario set**, the scenarios that answer one question
@@ -828,7 +828,7 @@ and each scenario's card offers:
 - **Run scenario**: run its nodes, and of the nodes feeding it only those that
   have not run or have changed since;
 - **Collapse** or **Expand**;
-- **Edit context & outcomes**: the define panel, on what the scenario keeps;
+- **Edit shared context & outcomes**: the define panel, on what the scenario keeps;
 - **Add selected** or **Remove selected**: the nodes selected on the canvas
   before the drawer opened;
 - **Delete**. Its nodes stay on the canvas.

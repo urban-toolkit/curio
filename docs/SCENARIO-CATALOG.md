@@ -22,7 +22,7 @@ A scenario splits its dataflow into three parts:
 
 - **Its own nodes:** the nodes unique to it, drawn in its box. This is what an alternative changes.
 - **Shared context:** every node upstream of it, outside every box, that it uses: the data and settings the comparison holds fixed.
-- **Outcomes:** every node downstream of it, outside every box, that it feeds: the maps, charts and tables the comparison is read on.
+- **Shared outcomes:** every node downstream of it, outside every box, that it feeds: the maps, charts and tables the comparison is read on.
 
 Every scenario belongs to one **scenario set**: the scenarios that answer one question, compared on the same shared context and outcomes. Scenarios of different sets never mix. A context or outcome node can belong to some of a set's scenarios and not others: in the Lower Manhattan park shade example, only the two edited scenarios read *Buildings around parks*, and each change map compares *Existing* with one of them. On the canvas, such a node carries a row of circles under it, one per scenario of its set, filled where that scenario uses it.
 
@@ -35,12 +35,12 @@ Scenarios live in their projects. The catalog lists them; it keeps no copy. Edit
 Choose **View → Define scenario**, or **Define scenario** in the drawer's **In project** tab. A panel opens beside the canvas, in three steps:
 
 1. **Scenario nodes:** select on the canvas the nodes unique to the scenario (click one, or Shift and drag a box). The panel lists them as you select. Nodes already in a scenario are left out.
-2. **Context & outcomes:** Curio follows the edges from them and lists the shared context and the outcomes, and the canvas marks them. Confirm them, remove a node with **×**, or select one on the canvas and click **+ Add selected node**. Joining a set that has scenarios already, each list says what the set has and what is new to it.
+2. **Shared context & outcomes:** Curio follows the edges from them and lists the shared context and the outcomes, and the canvas marks them. Confirm them, remove a node with **×**, or select one on the canvas and click **+ Add selected node**. Joining a set that has scenarios already, each list says what the set has and what is new to it.
 3. **Name & set:** name the scenario, and put it in one of this dataflow's scenario sets or create a new one, named after the dataflow unless you name it. **Save scenario** writes it; nothing is written before.
 
 On the canvas, each scenario's frame shows its set's name before its own.
 
-A saved scenario's context and outcomes are changed with **Edit context & outcomes** on its card in the drawer's **In project** tab. A dataflow from before scenario sets is read with its scenarios grouped by the nodes they share and their lists inferred, the way its next save keeps them.
+A saved scenario's context and outcomes are changed with **Edit shared context & outcomes** on its card in the drawer's **In project** tab. A dataflow from before scenario sets is read with its scenarios grouped by the nodes they share and their lists inferred, the way its next save keeps them.
 
 ### What ships with Curio
 
@@ -59,7 +59,7 @@ No scenario ships with Curio. The catalog lists the scenarios in your own projec
 
 - **The `/catalog/scenarios` page** lists every scenario in your projects. Reach it from the **Scenario Catalog** tab. Search with **Search scenarios**, sort by **Recently edited**, **Name** or **Project**, and filter by **By project** or **By origin** (**Your dataflows** or **Examples**) in the left rail. Click a card to describe it in the right-hand drawer.
 - **The Scenario Catalog drawer**, on the canvas. Open it from the **Scenario** button in the top bar. It has two tabs:
-  - **Browse all** lists every scenario in your projects, under a heading for each scenario set: its name, its project, and how many of the scenarios listed are in it. **Context & outcomes** under the heading shows the set's shared context and outcomes as a table, with a circle per scenario, filled where that scenario uses the node. The sort orders the groups by their first card, and the cards within each group. Drag a card onto the canvas to bring the scenario into the open dataflow.
+  - **Browse all** lists every scenario in your projects, under a heading for each scenario set: its name, its project, and how many of the scenarios listed are in it. **Shared context & outcomes** under the heading shows the set's shared context and outcomes as a table, with a circle per scenario, filled where that scenario uses the node. The sort orders the groups by their first card, and the cards within each group. Drag a card onto the canvas to bring the scenario into the open dataflow.
   - **In project** lists the open dataflow's own scenarios, saved or not, under their sets, and the tab shows how many there are. Each card runs, collapses or expands its scenario, edits its context and outcomes, adds or removes the nodes selected on the canvas, or deletes it, and its details rename, recolor and describe it (see [Scenarios](USAGE.md#scenarios)).
 
 Each card shows a square of the scenario's color before its name, then its project, how many nodes it holds, its description, and its project's graph; in the **In project** tab the graph marks the scenario's nodes. On the `/catalog/scenarios` page, the strip at the top is the same on every card.
@@ -73,7 +73,7 @@ Agents find your scenarios too: asked for a scenario of another project, the [Da
 | **View details** | A card, the drawer, or the canvas drawer | Nothing | The scenario's shared context, its own nodes and its outcomes, with their saved results. In the **In project** tab, the nodes as the canvas holds them. |
 | **Open source project** | A card, the drawer, the canvas drawer's **Browse all** tab, or the details | Nothing | The project the scenario lives in, on the canvas. From an open dataflow with unsaved changes, Curio asks first. |
 | **Drag onto the canvas** | A card in the canvas drawer's **Browse all** tab | The open dataflow: it gains a copy of the scenario, and the packages its nodes need | The scenario, collapsed where you dropped it, with its fixed context beside it and its saved results. See [4. Using a scenario in a dataflow](#4-using-a-scenario-in-a-dataflow). |
-| **Run scenario**, **Collapse** or **Expand**, **Edit context & outcomes**, **Add selected**, **Remove selected**, **Delete** | A card in the canvas drawer's **In project** tab | The open dataflow's scenario | Its nodes run, its box closes or opens, the define panel opens on its context and outcomes, its nodes change, or it is gone and its nodes stay. |
+| **Run scenario**, **Collapse** or **Expand**, **Edit shared context & outcomes**, **Add selected**, **Remove selected**, **Delete** | A card in the canvas drawer's **In project** tab | The open dataflow's scenario | Its nodes run, its box closes or opens, the define panel opens on its context and outcomes, its nodes change, or it is gone and its nodes stay. |
 | **Rename, recolor, describe** | The details of a card in the **In project** tab | The open dataflow's scenario | Its new name, color or description, on its card and on the canvas. |
 
 ### Workflows
@@ -96,7 +96,7 @@ A scenario's details show its name, color, project, set and description, and its
 |---|---|---|
 | **Shared context** | The nodes upstream of the scenario that it uses, as it keeps them | Its name, and the output its project saved |
 | **Scenario nodes** | The nodes in the scenario | Its name, and the output its project saved |
-| **Outcomes** | The nodes downstream of the scenario that it feeds, as it keeps them; for a scenario that feeds nothing outside it, its own last nodes | Its name, and the output its project saved |
+| **Shared outcomes** | The nodes downstream of the scenario that it feeds, as it keeps them; for a scenario that feeds nothing outside it, its own last nodes | Its name, and the output its project saved |
 
 A chart or a Data Pool saves nothing itself, so its saved result is the output of the node feeding it.
 

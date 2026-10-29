@@ -304,7 +304,7 @@ describe("the Scenario Catalog drawer's In project tab", () => {
     const region = (name: string) => within(modal.getByRole("region", { name }));
     expect(region("Shared context").getByText("Load parcels")).toBeInTheDocument();
     expect(region("Scenario nodes").getByText("Scale heights")).toBeInTheDocument();
-    expect(region("Outcomes").getByText("Scale heights")).toBeInTheDocument();
+    expect(region("Shared outcomes").getByText("Scale heights")).toBeInTheDocument();
     // Read off the canvas: no saved-output lines, and no request.
     expect(modal.queryByText("No saved output")).toBeNull();
     expect(api.getScenario).not.toHaveBeenCalled();

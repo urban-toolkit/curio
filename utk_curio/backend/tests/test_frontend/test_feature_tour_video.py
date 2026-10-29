@@ -2295,7 +2295,7 @@ def scene_scenario_catalog(ctx: Ctx) -> None:
     tour.click(card.get_by_role("button", name="View details", exact=True))
     details = page.locator(f'[role="dialog"] [data-scenario-key="{project}/{WHATIF_BASELINE}"]')
     details.wait_for(state="visible", timeout=15000)
-    expect(details).to_contain_text("Outcomes", timeout=15000)
+    expect(details).to_contain_text("Shared outcomes", timeout=15000)
     tour.beat(2500)
     _still_with_boxes(ctx, "scenario-details", {"dialog": '[role="dialog"]:has([data-scenario-key])'})
     page.keyboard.press("Escape")

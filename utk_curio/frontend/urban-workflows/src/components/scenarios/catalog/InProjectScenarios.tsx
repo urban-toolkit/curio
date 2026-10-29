@@ -200,7 +200,7 @@ function ScenarioControls({
         onClick={() => actions.editContextAndOutcomes(scenario.id)}
         disabled={empty}
       >
-        Edit context &amp; outcomes
+        Edit shared context &amp; outcomes
       </button>
       <button type="button" className={buttons.btnInstall} onClick={() => actions.addSelected(scenario.id)}>
         Add selected

@@ -11,7 +11,7 @@ import { nodeLabel } from "../scenarioLabels";
 import { useScenarioUi, type ScenarioDefine } from "../scenarioUi";
 import styles from "./ScenarioDefinePanel.module.css";
 
-const STEPS = ["Scenario nodes", "Context & outcomes", "Name & set"];
+const STEPS = ["Scenario nodes", "Shared context & outcomes", "Name & set"];
 
 type SetChoice = { kind: "new"; name: string } | { kind: "existing"; setId: string };
 type Part = "context" | "outcomes";
@@ -36,7 +36,7 @@ const selectedOf = (s: ReactFlowState) =>
  *
  * 1. Scenario nodes: the person selects on the canvas the nodes unique to the
  *    scenario; the panel lists them as they are selected.
- * 2. Context & outcomes: Curio infers the shared context (every node upstream
+ * 2. Shared context & outcomes: Curio infers the shared context (every node upstream
  *    of them) and the outcomes (every node downstream), which the canvas
  *    marks; the person confirms them, removes some, or adds selected nodes.
  * 3. Name & set: the scenario is named and put in one of this dataflow's
@@ -231,7 +231,7 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
   return (
     <aside className={styles.panel} role="dialog" aria-label="Define scenario" data-testid="scenario-define-panel">
       <header className={styles.header}>
-        <div className={styles.title}>{editing ? `Context & outcomes of ${editing.name}` : "Define scenario"}</div>
+        <div className={styles.title}>{editing ? `Shared context & outcomes of ${editing.name}` : "Define scenario"}</div>
         <button type="button" className={styles.close} aria-label="Close" onClick={close}>
           ×
         </button>
@@ -287,7 +287,7 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
               </p>
             )}
             {list("context", "Shared context", "The nodes upstream that this scenario uses, held the same across scenarios.")}
-            {list("outcomes", "Outcomes", "The nodes downstream that this scenario feeds: what the scenarios are compared on.")}
+            {list("outcomes", "Shared outcomes", "The nodes downstream that this scenario feeds: what the scenarios are compared on.")}
             {!editing && (
               <button type="button" className={styles.link} onClick={() => infer(members)}>
                 Start again from what Curio found
@@ -367,7 +367,7 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
         )}
         {step === 1 && (
           <button type="button" className={styles.primary} onClick={toReview} disabled={selection.length === 0 && members.length === 0}>
-            Next: context & outcomes
+            Next: shared context & outcomes
           </button>
         )}
         {step === 2 && !editing && (

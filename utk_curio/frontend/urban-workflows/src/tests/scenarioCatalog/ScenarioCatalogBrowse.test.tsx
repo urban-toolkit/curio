@@ -213,7 +213,7 @@ describe("ScenarioCatalogBrowse", () => {
     expect(modal.getByRole("heading", { name: "Cool roofs" })).toBeInTheDocument();
     expect(await modal.findByRole("region", { name: "Scenario nodes" })).toBeInTheDocument();
     expect(modal.getByRole("region", { name: "Shared context" })).toBeInTheDocument();
-    expect(modal.getByRole("region", { name: "Outcomes" })).toBeInTheDocument();
+    expect(modal.getByRole("region", { name: "Shared outcomes" })).toBeInTheDocument();
     // Nothing navigated: details are a modal over the page.
     expect(location).toBe("/catalog/scenarios");
   });

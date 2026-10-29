@@ -50,6 +50,6 @@ test("a set's summary fills the circles of the scenarios that use each node", as
   const around = context.getByText("Buildings around parks").closest("tr")!;
   expect(within(around).getByRole("img", { name: "Existing does not use it" })).toBeInTheDocument();
   expect(within(around).getByRole("img", { name: "Towers removed uses it" })).toBeInTheDocument();
-  const outcomes = within(screen.getByRole("region", { name: "Outcomes" }));
+  const outcomes = within(screen.getByRole("region", { name: "Shared outcomes" }));
   expect(outcomes.getAllByRole("img", { name: /uses it$/ })).toHaveLength(3);
 });

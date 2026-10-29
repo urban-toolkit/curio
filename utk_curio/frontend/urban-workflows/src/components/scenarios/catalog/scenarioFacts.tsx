@@ -115,7 +115,7 @@ export function scenarioInfoRows(
     row.set?.name ? { label: "Set", value: row.set.name } : null,
     { label: "Scenario nodes", value: String(row.nodeCount) },
     details ? { label: "Shared context", value: String(details.context.length) } : null,
-    details ? { label: "Outcomes", value: String(details.outcomes.length) } : null,
+    details ? { label: "Shared outcomes", value: String(details.outcomes.length) } : null,
   ];
   return rows.filter((fact): fact is ScenarioFact => fact != null);
 }

@@ -229,7 +229,7 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
                           aria-expanded={openSet === group.key}
                           onClick={() => setOpenSet(openSet === group.key ? null : group.key)}
                         >
-                          {openSet === group.key ? "Hide context & outcomes" : "Context & outcomes"}
+                          {openSet === group.key ? "Hide shared context & outcomes" : "Shared context & outcomes"}
                         </button>
                       ) : null}
                     </div>

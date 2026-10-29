@@ -66,7 +66,7 @@ export function ScenarioSetSummary({ projectId, setId }: { projectId: string; se
   return (
     <div className={styles.summary} data-scenario-set-summary={setId}>
       {table("Shared context", set.context)}
-      {table("Outcomes", set.outcomes)}
+      {table("Shared outcomes", set.outcomes)}
     </div>
   );
 }
