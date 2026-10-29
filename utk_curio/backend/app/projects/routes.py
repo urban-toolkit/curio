@@ -141,6 +141,24 @@ def record_outputs(project_id: str):
 
 
 # ---------------------------------------------------------------------------
+# PUT /api/projects/:id/name - an invited editor's rename
+# ---------------------------------------------------------------------------
+@projects_bp.route("/<project_id>/name", methods=["PUT"])
+@require_auth
+def rename_shared_dataflow(project_id: str):
+    """The dataflow's name, from an invited editor's canvas: the project row
+    and the dataflow both, as the owner's name-only PUT renames them."""
+    body = request.get_json(silent=True) or {}
+    try:
+        answer = services.rename_shared_dataflow(g.user, project_id, body.get("name"))
+    except NotFoundError:
+        return _error("Project not found", 404)
+    except ProjectError as exc:
+        return _error(str(exc), exc.status)
+    return jsonify(answer), 200
+
+
+# ---------------------------------------------------------------------------
 # PUT /api/projects/:id/dashboard/layout - the dashboard's Save layout
 # ---------------------------------------------------------------------------
 @projects_bp.route("/<project_id>/dashboard/layout", methods=["PUT"])

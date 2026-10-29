@@ -1954,6 +1954,40 @@ def rename_project(user, project_id: str, new_name: str) -> ProjectSummary:
     )
 
 
+#: What anyone but the owner and the editors the owner invited is told who
+#: would rename the dataflow.
+RENAME_WATCHER_REFUSAL = "Only the owner and the editors the owner invited rename this dataflow."
+
+
+def rename_shared_dataflow(user, project_id: str, name) -> dict:
+    """A rename an invited editor made on the canvas: the project row's name,
+    which the owner's Projects page lists, and the dataflow's, as the owner's
+    name-only PUT writes both (:func:`update_project`), which the owner's tab
+    sends. Anyone but the owner and the editors is refused."""
+    from utk_curio.backend.app.projects import access
+    from utk_curio.backend.app.projects.models import Project
+
+    new_name = name.strip() if isinstance(name, str) else ""
+    if not new_name:
+        raise ProjectError("'name' must name the dataflow", 400)
+    project = db.session.get(Project, project_id)
+    if project is None:
+        raise repo.NotFoundError(f"Project {project_id} not found")
+    if access.room_role(user, project) not in access.EDIT_ROLES:
+        raise ProjectError(RENAME_WATCHER_REFUSAL, 403)
+    # The dataflow's name, through its one writer, before the row: the lock
+    # before any database write (#909).
+    with dataflow_docs.writing(_owner_user_dir_key(project), project_id,
+                               dataflow_docs.person(user.id, "rename")) as spec:
+        if spec is None:
+            raise repo.NotFoundError(f"Project {project_id} not found")
+        _sync_dataflow_name(spec, new_name)
+    project.name = new_name
+    project.slug = repo._unique_slug(project.user_id, _slugify(new_name), exclude_id=project_id)
+    db.session.commit()
+    return {"id": project_id, "name": project.name}
+
+
 # ---------------------------------------------------------------------------
 # Delete
 # ---------------------------------------------------------------------------

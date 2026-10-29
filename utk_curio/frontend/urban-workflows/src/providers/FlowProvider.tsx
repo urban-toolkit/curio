@@ -53,6 +53,7 @@ import { isHostedGuest } from "../components/apiSettings/useHostedGuest";
 import { DEFAULT_SAVE_OUTPUT_DATASET } from "../utils/saveOutputDataset";
 import { writeNodeSettings, type NodeSettings } from "../utils/nodeSettingsWriters";
 import { authApi } from "../utils/authApi";
+import { refreshAgentsWhenKept } from "./flow/agentDockAfterRemovals";
 
 /** How long leaving a dataflow bound to its doc waits for the server to keep
  *  this tab's last change before it asks whether to leave without it. */
@@ -366,11 +367,22 @@ const FlowProvider = ({
     // The doc an agent's applied code is the server's in, once the canvas binds.
     const codeDocRef = useRef<AppliedCodeDoc | null>(null);
     const {
-        applyNodeContent, addNode, propagateDownstreamInputs, applyOutput, onEdgesDelete, onNodesDelete,
+        applyNodeContent, addNode, propagateDownstreamInputs, applyOutput,
+        onEdgesDelete: dropEdges, onNodesDelete: dropNodes,
     } = useGraphEdits({
         setNodes, setEdges, reactFlow, workflowNameRef, outputsRef, markNodeStaleRef, setOutputs,
         agentEditProv, markDirtyRef, codeDocRef,
     });
+    // A node or a connection removed takes the agents attached to it along,
+    // once the server has the removal (agentDockAfterRemovals.ts).
+    const onNodesDelete = useCallback((...removed: Parameters<typeof dropNodes>) => {
+        dropNodes(...removed);
+        void refreshAgentsWhenKept(docBridgeRef.current?.whenKept);
+    }, [dropNodes]);
+    const onEdgesDelete = useCallback((...removed: Parameters<typeof dropEdges>) => {
+        dropEdges(...removed);
+        void refreshAgentsWhenKept(docBridgeRef.current?.whenKept);
+    }, [dropEdges]);
 
     const { onConnect, isValidConnection } = useConnect({
         markDirtyRef, reactFlow, showToast, markNodeStaleRef, applyOutput, setEdges,

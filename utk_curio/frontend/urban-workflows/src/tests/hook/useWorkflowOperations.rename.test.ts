@@ -22,7 +22,10 @@ jest.mock("../../providers/UserProvider", () => ({
   useUserContext: () => ({ user: null, enableUserAuth: false }),
 }));
 jest.mock("../../api/projectsApi", () => ({
-  projectsApi: { create: jest.fn(), update: jest.fn(), get: jest.fn(), recordOutputs: jest.fn() },
+  projectsApi: {
+    create: jest.fn(), update: jest.fn(), get: jest.fn(), getShared: jest.fn(),
+    recordOutputs: jest.fn(), renameShared: jest.fn(),
+  },
 }));
 jest.mock("../../TrillGenerator", () => ({
   TrillGenerator: {
@@ -178,6 +181,68 @@ describe("renameDataflow on a dataflow bound to its doc", () => {
     });
 
     expect(mockShowToast).toHaveBeenCalledWith("offline", "error");
+  });
+});
+
+describe("renameDataflow on an invited editor's canvas, bound to the owner's dataflow", () => {
+  /** The owner's dataflow, opened from its link as an editor opens it. */
+  async function openedAsEditor(result: any) {
+    const { getCurrentProjectId } = jest.requireMock("../../registry/projectPackagesStore");
+    (getCurrentProjectId as jest.Mock).mockReturnValue("owners-proj");
+    (projectsApi.getShared as jest.Mock).mockResolvedValue({
+      project: { id: "owners-proj", name: "Owner's name", categories: {} },
+      spec: { dataflow: { nodes: [], edges: [] } },
+      outputs: [],
+    });
+    await act(async () => {
+      await result.current.loadSharedProject("owners-proj");
+    });
+  }
+
+  afterEach(() => {
+    const { getCurrentProjectId } = jest.requireMock("../../registry/projectPackagesStore");
+    (getCurrentProjectId as jest.Mock).mockReturnValue(undefined);
+  });
+
+  it("sends the new name to the owner's project row through the editors' route", async () => {
+    // The doc takes the canvas's name; the row the owner's Projects page
+    // lists is renamed only by this.
+    (projectsApi.renameShared as jest.Mock).mockResolvedValue({ id: "owners-proj", name: "Bob's name" });
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps(true)));
+    await openedAsEditor(result);
+
+    await act(async () => {
+      result.current.renameDataflow("Bob's name");
+    });
+
+    expect(projectsApi.renameShared).toHaveBeenCalledTimes(1);
+    expect(projectsApi.renameShared).toHaveBeenCalledWith("owners-proj", "Bob's name");
+    // Never the owner's PUT, which refuses anyone but the owner.
+    expect(projectsApi.update).not.toHaveBeenCalled();
+  });
+
+  it("says so when the rename could not reach the row", async () => {
+    (projectsApi.renameShared as jest.Mock).mockRejectedValue(new Error("refused"));
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps(true)));
+    await openedAsEditor(result);
+
+    await act(async () => {
+      result.current.renameDataflow("Bob's name");
+    });
+
+    expect(mockShowToast).toHaveBeenCalledWith("refused", "error");
+  });
+
+  it("sends nothing from a shared view bound to no doc", async () => {
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps(false)));
+    await openedAsEditor(result);
+
+    await act(async () => {
+      result.current.renameDataflow("Bob's name");
+    });
+
+    expect(projectsApi.renameShared).not.toHaveBeenCalled();
+    expect(projectsApi.update).not.toHaveBeenCalled();
   });
 });
 

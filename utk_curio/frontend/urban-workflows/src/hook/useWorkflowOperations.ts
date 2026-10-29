@@ -1017,11 +1017,22 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         // with the bind), and the project row the one the Projects page lists,
         // which no doc writes: the owner's rename sends it there too, as the
         // Projects page's rename does. A rename while the create is out goes
-        // there once the create has made the row (createDataflow).
+        // there once the create has made the row (createDataflow). An invited
+        // editor's tab, bound to the owner's dataflow, renames it through the
+        // editors' route.
         const id = projectIdRef.current;
-        if (id && viewerMode === "owner") sendRowName(id, next);
+        if (id && viewerMode === "owner") {
+            sendRowName(id, next);
+        } else if (viewerMode === "shared" && deps.docBridgeRef?.current?.bound()) {
+            const shared = getCurrentProjectId();
+            if (shared) {
+                projectsApi.renameShared(shared, next).catch(
+                    (err) => showToast((err as Error)?.message || "Could not rename the dataflow.", "error"),
+                );
+            }
+        }
         return true;
-    }, [setWorkflowName, markDirty, viewerMode, sendRowName]);
+    }, [setWorkflowName, markDirty, viewerMode, sendRowName, showToast]);
 
     /**
      * A route load that has not delivered an id yet, or ``null`` when there is

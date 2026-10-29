@@ -209,6 +209,15 @@ export const projectsApi = {
     );
   },
 
+  /** An invited editor's rename on the canvas: the project row's name and the
+   *  dataflow's, as the owner's name-only `update` renames them. */
+  renameShared(id: string, name: string): Promise<{ id: string; name: string }> {
+    return apiFetch<{ id: string; name: string }>(`/api/projects/${id}/name`, {
+      method: "PUT",
+      body: JSON.stringify({ name }),
+    });
+  },
+
   /** The dashboard's Save layout: each tile's place and size, and nothing else. */
   saveLayout(id: string, tiles: Record<string, TileLayout>): Promise<{ saved: boolean }> {
     return apiFetch<{ saved: boolean }>(`/api/projects/${id}/dashboard/layout`, {
