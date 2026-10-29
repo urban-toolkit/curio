@@ -34,20 +34,14 @@ const mockRemote = new Map<string, (payload: unknown) => void>();
 jest.mock("../../providers/CollaborationProvider", () => ({
   ...jest.requireActual("../../providers/CollaborationProvider"),
   useCollab: () => ({
-    enabled: false,
     connected: false,
     participantId: null,
     role: null,
     users: [],
     lockedNodes: {},
     activity: [],
-    panelOpen: false,
-    setPanelOpen: () => undefined,
     lockNode: () => undefined,
     unlockNode: () => undefined,
-    resolveConflict: () => undefined,
-    broadcastOutputProduced: () => undefined,
-    signalExecDisplay: () => undefined,
     onRemote: (event: string, handler: (payload: unknown) => void) => {
       mockRemote.set(event, handler);
       return () => {

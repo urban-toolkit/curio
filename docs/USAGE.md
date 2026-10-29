@@ -65,7 +65,6 @@ curio setup                  # install deps and exit
 | *(none)* | Auto sign-in as shared guest, projects page shown |
 | `--no-project` | Skip both login and projects; open the canvas directly |
 | `--deploy` | Auth **and** projects on, and isolated node execution, which it requires. The only way to turn auth on, so use it locally too when you need the login page |
-| `--collab` | Invited editors edit with the owner, and the people panel shows. Experimental, LAN-only. `--collab-origins` and `--collab-namespace` set the origins the backend's Socket.IO accepts and its namespace; see [COLLABORATION.md](COLLABORATION.md) |
 
 **Frontend**
 
@@ -112,6 +111,7 @@ Curio needs Node.js 26 and refuses to start on an earlier version, naming the on
 | `--proxy-hops N` | 0 | How many reverse proxies in front of the backend add the visitor's address to `X-Forwarded-For`. The limits per address (sign-in attempts, error reports, a dashboard's runs) then read it there. See [DEPLOYMENT.md](DEPLOYMENT.md#security-checklist) |
 | `--shared-guest-name NAME` / `--shared-guest-username NAME` | `Shared Guest` / `guest_shared` | The shared guest, the one account every guest sign-in uses. A new username gives guests a new, empty account |
 | `--log-to-stdout` / `--no-log-to-stdout` | on | Whether the backend and sandbox write their logs to their output, which the launcher keeps in its own log, or to `utk_curio/logs/` |
+| `--collab-origins ORIGINS` / `--collab-namespace NAMESPACE` | `*` / `/collab` | The origins whose pages may connect to the backend's Socket.IO, which [real-time collaboration](#real-time-collaboration) travels over, and its namespace. See [COLLABORATION.md](COLLABORATION.md) |
 
 **Hosts, ports, and diagnostics**
 
@@ -123,7 +123,7 @@ Curio needs Node.js 26 and refuses to start on an earlier version, naming the on
 > [!NOTE]
 > `--force-rebuild` deletes `node_modules/`, `dist/` and `build/` and rebuilds from source, so it needs the frontend sources and a working npm; the Docker image ships only the built `dist/` and cannot rebuild in place.
 
-Some flags set their variable on every start, passed or not: the backend and sandbox host and port flags, `--backend-url`, `--dev`, `--with-examples`, `--reseed`, `--allow-publish`, `--save-node-outputs`, `--deploy`, `--no-project` and `--collab`. For those, the matching variable in a `.env` has no effect when you launch through `curio.py`; use the flag. Every other flag sets its variable only when it is passed.
+Some flags set their variable on every start, passed or not: the backend and sandbox host and port flags, `--backend-url`, `--dev`, `--with-examples`, `--reseed`, `--allow-publish`, `--save-node-outputs`, `--deploy` and `--no-project`. For those, the matching variable in a `.env` has no effect when you launch through `curio.py`; use the flag. Every other flag sets its variable only when it is passed.
 
 `CURIO_BACKEND_DEBUG=1` turns on Flask's debug mode for the backend, which is off by default. It has no flag of its own, so, unlike the variables above, setting it in a `.env` does work when you launch through `curio.py`. Auto-reload is a separate switch (`FLASK_USE_RELOADER`) and is unaffected.
 
@@ -134,7 +134,6 @@ The three startup modes control which pages are shown when a user first opens Cu
 | *(default)* | No (auto sign-in as shared guest) | Yes | Local single-user development |
 | `--deploy` | Yes | Yes | Multi-user instance, locally or on a server |
 | `--no-project` | No (auto sign-in as shared guest) | No, opens the canvas directly | Demos or embedding Curio in a kiosk |
-| `--collab` | Stackable with other modes (pairs naturally with `--deploy`) | n/a | Real-time multi-user editing. See [COLLABORATION.md](COLLABORATION.md). |
 
 > [!NOTE]
 > When reading files from inside Curio's dataflow nodes, paths are resolved relative to the directory where you started Curio. If you see a "No such file or directory" error while loading a file, double-check the folder you're running Curio from, because the file path you provide is interpreted relative to that location. A path written out as `docs/examples/data/...` that this folder does not hold reads the example data Curio ships.
@@ -1555,7 +1554,7 @@ the page opens.
   the dataflow, and saves the outputs feeding those nodes to your Data Catalog, which is
   what the page draws from later.
 - **Open** it from **Share → Open dashboard**, which opens a new tab. The same menu
-  copies either link, and with collaboration on it invites editors to the dataflow
+  copies either link, and invites editors to the dataflow
   ([Real-time collaboration](#real-time-collaboration)).
 - **Save the dataflow** after changing anything else the page shows, such as a chart's
   spec: the page shows what is on disk.
@@ -1769,11 +1768,11 @@ provider, publishing, and writing your own, see [docs/AGENT-CATALOG.md](AGENT-CA
 
 ## Real-time collaboration
 
-Every tab that opens a saved dataflow while signed in holds one shared copy of it, which the server keeps as each change is made. A change in one tab shows in every other tab that has the dataflow open: code and specs as they are typed, with each person's cursor, and nodes, connections, widgets, scenarios and drags at once. Each person's pointer shows on the others' canvases too, in their color with their name, and fades while it rests. A tab that opens the dataflow later finds every change. A hosted guest's canvas of an example, and every canvas of a Curio started with `--no-project`, stay their own.
+Every tab that opens a saved dataflow while signed in holds one shared copy of it, which the server keeps as each change is made. A change in one tab shows in every other tab that has the dataflow open: code and specs as they are typed, with each person's cursor, and nodes, connections, widgets, scenarios and drags at once. Each person's pointer shows on the others' canvases too, in their color with their name, and fades while it rests. A tab that opens the dataflow later finds every change. A hosted guest's canvas of an example, and every canvas of a Curio started without `--deploy` or with `--no-project`, stay their own.
 
-`curio start --collab` lets the editors the owner invited edit with the owner, and shows who is in the dataflow: the people panel, a lock chip on a node someone is in, and the outputs others run. It needs no rebuild to turn on.
+Who is here shows in the dock at the top of the canvas, beside the canvas agents: a chip for each other person, with their initials in their color. Hover one for their name, their role and the node they are editing, and click it to move your view to where they point on the canvas. The **Activity** button at the end of the row lists who joined, who left and whose role changed. A node someone is in shows their initials in its corner.
 
-The owner decides who edits. **Share → Invite editors**, shown to the owner of a saved dataflow when collaboration is on, adds an account by its username and lists the editors, each with a button that removes it. An editor opens the dataflow's link (**Share → Copy dataflow link**) and edits it with the owner. Anyone else signed in who opens the link watches it, read-only, and a guest on a Curio started with `--deploy` only watches.
+The owner decides who edits. **Share → Invite editors**, shown to the owner of a saved dataflow, adds an account by its username and lists the editors, each with a button that removes it. An editor opens the dataflow's link (**Share → Copy dataflow link**) and edits it with the owner. Anyone else signed in who opens the link watches it, read-only, and a guest on a Curio started with `--deploy` only watches.
 
 When two people change the same thing:
 

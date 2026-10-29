@@ -22,8 +22,10 @@ export const AgentDockOverlay: React.FC = () => {
   const ctx = useAgentAttachmentsContext();
   // dev/129 (porting dev/111): `outputs` rides along so nodeContext's
   // current_output can name the artifact a node produced.
-  const { workflowGoal, setWorkflowGoal, workflowNameRef, outputs, scenarios, projectId } =
-    useFlowContext();
+  const { workflowGoal, setWorkflowGoal, workflowNameRef, outputs, scenarios } = useFlowContext();
+  // The dataflow these agents work on: on an invited editor's canvas, the one
+  // its link opened, which the flow state does not name.
+  const dataflowId = ctx?.dataflowId ?? null;
   // Whose messages the chat names the writer of: everyone's but this account's.
   const { user } = useUserContext();
   const viewerAccount = user?.id != null ? String(user.id) : null;
@@ -259,8 +261,8 @@ export const AgentDockOverlay: React.FC = () => {
               onClearConversation={() => ctx.clearConversation(shown.attachmentId)}
               // What `/` offers: the skills this chat's next run lists.
               loadSkills={
-                projectId
-                  ? async () => (await skillsApi.runSkills(projectId, shown.attachmentId)).skills
+                dataflowId
+                  ? async () => (await skillsApi.runSkills(dataflowId, shown.attachmentId)).skills
                   : undefined
               }
             />,

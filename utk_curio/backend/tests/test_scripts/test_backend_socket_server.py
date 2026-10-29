@@ -1,5 +1,5 @@
-"""The backend serves through Socket.IO, whatever ``--collab`` says, and its dev
-server keeps the reloader's exclusions.
+"""Every backend serves through Socket.IO, and its dev server keeps the
+reloader's exclusions.
 
 Flask-SocketIO's threading mode starts Werkzeug through ``Flask.run``, which
 stands in for serving here, and hands Werkzeug's reloader only what it gets as
@@ -44,14 +44,13 @@ class BackendSocketServerTest(unittest.TestCase):
         self.assertEqual(seen["flask"].get("reloader_type"), DEFAULT_RELOADER_TYPE)
         self.assertIs(seen["flask"].get("threaded"), True)
 
-    def test_every_backend_mounts_socketio_without_collab(self):
+    def test_every_backend_mounts_socketio(self):
         from utk_curio.backend import config
         from utk_curio.backend.app import create_app
 
-        with mock.patch.object(config, "ENABLE_COLLAB", False):
-            app = create_app()
+        app = create_app()
         sio = app.extensions.get("socketio")
-        self.assertIsNotNone(sio, "a backend started without --collab serves no Socket.IO")
+        self.assertIsNotNone(sio, "the backend serves no Socket.IO")
         handlers = sio.server.handlers.get(config.COLLAB_NAMESPACE, {})
         for event in ("connect", "join_session", "disconnect", "yjs"):
             self.assertIn(event, handlers)

@@ -23,8 +23,8 @@ export interface ShareMenuProps {
   onClose: () => void;
   /** Unsaved edits are not in what a visitor would open. */
   projectDirty?: boolean;
-  /** Opens the dataflow's editors, for its owner with collaboration on. The
-   *  item is not offered without it. */
+  /** Opens the dataflow's editors, for its owner; without it the menu
+   *  offers no Invite editors. */
   onInviteEditors?: () => void;
 }
 
@@ -37,7 +37,7 @@ export interface ShareMenuProps {
  *
  * Both links are ordinary URLs into this app. A dataflow link opens the canvas,
  * read-only for anyone but the owner and the editors the owner invited (Invite
- * editors, with collaboration on); a dashboard link opens the pinned tiles.
+ * editors); a dashboard link opens the pinned tiles.
  * Neither mints a token or changes what the project already grants.
  */
 export function ShareMenu({

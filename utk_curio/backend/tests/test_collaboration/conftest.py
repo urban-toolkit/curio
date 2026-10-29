@@ -1,10 +1,9 @@
-"""The app the collaboration tests talk to: collaboration on, a fresh database."""
+"""The app the collaboration tests talk to, on a fresh database."""
 
 from __future__ import annotations
 
 import pytest
 
-from utk_curio.backend import config as _config
 from utk_curio.backend import extensions as _ext
 from utk_curio.backend.app import create_app
 
@@ -19,14 +18,8 @@ class _CollabConfig:
 
 @pytest.fixture()
 def collab_app(monkeypatch):
-    """Build a Flask app with ENABLE_COLLAB=True via a config monkeypatch.
-
-    ``create_app`` re-reads ``ENABLE_COLLAB`` from the config module on
-    every call (the import is inside the function body), so flipping the
-    module attribute before invoking it is enough: no module reload,
-    no double SQLAlchemy registration.
-    """
-    monkeypatch.setattr(_config, "ENABLE_COLLAB", True, raising=True)
+    """A Flask app as every backend starts, with its SocketIO server and the
+    room's state."""
     # Drop any singleton left behind by an earlier test invocation.
     monkeypatch.setattr(_ext, "socketio", None, raising=True)
 
@@ -59,14 +52,13 @@ def _doc_server():
 
 @pytest.fixture()
 def doc_app(monkeypatch, tmp_path):
-    """An app as every backend starts, without ``--collab``, whose dataflows'
-    folders are in *tmp_path*; its SocketIO server, ``None`` if it serves
-    none. The doc server writes a doc only when a test asks it to
-    (``flush_due``, ``flush``, ``close``), on a clock the test may set."""
+    """An app as every backend starts, whose dataflows' folders are in
+    *tmp_path*; its SocketIO server, ``None`` if it serves none. The doc
+    server writes a doc only when a test asks it to (``flush_due``,
+    ``flush``, ``close``), on a clock the test may set."""
     from utk_curio.backend.app.collaboration import room_state
 
     docs = _doc_server()
-    monkeypatch.setattr(_config, "ENABLE_COLLAB", False, raising=True)
     monkeypatch.setattr(_ext, "socketio", None, raising=True)
     if docs is not None:
         monkeypatch.setattr(docs, "BACKGROUND", False, raising=True)

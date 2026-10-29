@@ -33,8 +33,11 @@ import { NodeType } from '../constants';
 import { NodeBehaviorHook, TIconCardinality } from '../registry/types';
 import { useFlowContext } from '../providers/FlowProvider';
 import { NodeAgentBadges } from './agents/attach/NodeAgentBadges';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { useCollab } from '../providers/CollaborationProvider';
-import { isOwnParticipant } from '../providers/collab/participants';
+import { agentHolding, agentWithAsker, isOwnParticipant } from '../providers/collab/participants';
+import { agentCategoryIcon, agentCategoryKey } from './menus/nodes/agentsPalette/agentCategoryStyle';
+import badgeStyles from './agents/attach/AgentAvatarBadge.module.css';
 import ErrorBoundary from "./ErrorBoundary";
 import { NodeOutcomeStrip } from './nodes/NodeOutcomeStrip';
 import './Node.css';
@@ -203,12 +206,11 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const drawSeqRef = useRef(0);
 
   // Lock-on-focus / unlock-on-blur. Safe to call always: useCollab()
-  // returns no-op handlers when collaboration is disabled.
+  // returns no-op handlers off the canvas, and the room refuses a watcher's.
   const handleNodeFocus = () => {
-    if (collab.enabled) collab.lockNode(data.nodeId);
+    collab.lockNode(data.nodeId);
   };
   const handleNodeBlur = (e: React.FocusEvent<HTMLDivElement>) => {
-    if (!collab.enabled) return;
     // Only release when focus leaves the entire node subtree — clicks
     // between buttons / handles inside the node shouldn't toggle the lock.
     if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
@@ -222,6 +224,11 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   // code is typed together.
   const lockInfo = collab.lockedNodes?.[data.nodeId];
   const lockedByOther = Boolean(lockInfo && !isOwnParticipant(collab.participantId, lockInfo));
+  // An agent's lock names the agent and who asked it, and its chip holds the
+  // agent's glyph in its category's tint, as the agent's badge does; a
+  // person's holds their initials.
+  const lockingAgent = lockedByOther ? agentHolding(lockInfo) : null;
+  const lockingTint = lockingAgent ? agentCategoryKey(lockingAgent.category) : null;
 
   useEffect(() => {
     const current = data.triggerExec ?? 0;
@@ -236,7 +243,6 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     lastRenderedInputRef.current = data.input;
     drawnValuesRef.current = widgetValues;
     drawSeqRef.current += 1;
-    if (collab.enabled) collab.signalExecDisplay(data.nodeId);
   }, [data.triggerExec]);
 
   // A run that stopped above this node: a node feeding it failed, so the run
@@ -436,13 +442,6 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     if (output?.code === "error" || output?.code === "success") {
       // A failure stops the run below this node (#603).
       signalNodeExecDone(data.nodeId, { failed: output.code === "error" });
-      if (collab.enabled && output) {
-        collab.broadcastOutputProduced({
-          nodeId: data.nodeId,
-          nodeType: data.nodeType,
-          output: output as { code: string; content: unknown },
-        });
-      }
     }
     // Keyed on the OBJECT, not `output?.code`: a node that errors twice in a
     // row (e.g. a node re-triggered by Play with inputs still missing) keeps
@@ -484,16 +483,19 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
       style={{ display: "contents" }}
     >
       {lockedByOther && (
+        // It takes the pointer, so its tooltip shows on hover.
         <div
-          className="collab-lock-chip"
-          data-tooltip={`Editing: ${lockInfo?.name || lockInfo?.username}`}
+          className={lockingTint ? `collab-lock-chip ${badgeStyles[`tint_${lockingTint}` as keyof typeof badgeStyles]}` : "collab-lock-chip"}
+          data-tooltip={`Editing: ${lockingAgent ? agentWithAsker(lockingAgent) : lockInfo?.name || lockInfo?.username}`}
+          data-lock-agent={lockingTint ?? undefined}
           style={{
             position: "absolute",
             top: -8,
             right: -8,
             zIndex: 10,
-            background: "#ff9800",
-            color: "#fff",
+            ...(lockingAgent
+              ? { background: "var(--curio-card-bg)", border: "1px solid rgba(0, 0, 0, 0.12)", boxSizing: "border-box" as const }
+              : { background: "#ff9800", color: "#fff" }),
             borderRadius: "50%",
             width: 22,
             height: 22,
@@ -503,10 +505,13 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
             fontSize: 10,
             fontWeight: 700,
             boxShadow: "0 1px 3px rgba(0,0,0,0.35)",
-            pointerEvents: "none",
           }}
         >
-          {(lockInfo?.username || "?").slice(0, 2).toUpperCase()}
+          {lockingAgent ? (
+            <FontAwesomeIcon icon={agentCategoryIcon(lockingAgent.category)} aria-hidden="true" />
+          ) : (
+            (lockInfo?.username || "?").slice(0, 2).toUpperCase()
+          )}
         </div>
       )}
       {!dashboardOn && (

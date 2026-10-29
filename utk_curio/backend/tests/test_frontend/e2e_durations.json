@@ -105,7 +105,6 @@
  "tests.test_frontend.test_canvas_node_card_e2e::test_the_provenance_button_opens_the_nodes_runs_in_the_drawer[chromium]": 14.0,
  "tests.test_frontend.test_canvas_node_card_e2e::test_the_tools_show_only_under_the_pointer_or_on_a_selected_node[chromium]": 12.5,
  "tests.test_frontend.test_canvas_paint_at_rest_e2e::test_the_canvas_is_painted_at_the_zoom_it_shows[chromium]": 18.8,
- "tests.test_frontend.test_canvas_side_panels_e2e::test_the_collaboration_panel_opens_under_the_top_bar_and_its_button_toggles_it[chromium]": 12.9,
  "tests.test_frontend.test_catalog_calendar_e2e::test_catalog_cards_read_their_age_on_the_calendar[chromium]": 14.9,
  "tests.test_frontend.test_catalog_calendar_e2e::test_every_shipped_date_is_days_before_the_calendar": 0.1,
  "tests.test_frontend.test_catalog_destructive_confirms_e2e::test_publish_is_offered_only_for_the_users_own_data_and_asks_first[chromium]": 12.5,

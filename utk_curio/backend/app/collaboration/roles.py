@@ -3,7 +3,7 @@
 ``projects/access.py`` calls :func:`set_user_role` after it adds or removes an
 editor, so the account's participants edit or watch at once, without joining
 again. A removed editor's locks go with their edit rights. Nothing happens
-without collaboration (``--collab``), or when the account is not in the room.
+when the account is not in the room.
 """
 from __future__ import annotations
 

@@ -44,8 +44,7 @@ describe("the scenario commands", () => {
     const view = menuSource("View", "</HeaderMenu>");
     expect(view).not.toContain("Show scenarios");
     expect(view).not.toContain("Hide scenarios");
-    // Nor the panel's open state it toggled. (`collab.panelOpen` is the
-    // collaboration panel's, which stays.)
+    // Nor the panel's open state it toggled.
     expect(UP_MENU).not.toContain("scenarioUi.panelOpen");
     expect(UP_MENU).not.toContain("useScenarioUi");
   });

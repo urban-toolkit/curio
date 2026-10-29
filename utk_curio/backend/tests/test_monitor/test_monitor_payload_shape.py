@@ -30,7 +30,7 @@ class TestTopLevelShape:
                     "platform", "pythonVersion"):
             assert isinstance(deployment[key], str), key
         for key in ("execUserConfigured", "authEnabled", "projectsEnabled",
-                    "guestLoginAllowed", "collabEnabled",
+                    "guestLoginAllowed",
                     "factoryPublishAllowed", "saveNodeOutputDefault",
                     "llmProviderConfigured", "searchToolConfigured"):
             assert isinstance(deployment[key], bool), key
@@ -39,6 +39,11 @@ class TestTopLevelShape:
         # #450: --allow-shared-installs is gone (users/capabilities.py), and
         # nothing sets CURIO_ALLOW_SHARED_INSTALLS, so the field could only say off.
         assert "sharedInstallsAllowed" not in client.get("/api/monitor").get_json()["deployment"]
+
+    def test_no_chip_for_the_retired_collab_flag(self, client):
+        # --collab is gone: every backend serves collaboration, so the field
+        # could only say on.
+        assert "collabEnabled" not in client.get("/api/monitor").get_json()["deployment"]
 
     def test_generated_at_parses_as_utc(self, client):
         stamp = client.get("/api/monitor").get_json()["generatedAt"]

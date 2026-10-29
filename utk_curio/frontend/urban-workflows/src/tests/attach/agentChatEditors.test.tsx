@@ -19,7 +19,7 @@ jest.mock("../../services/packages/packagesApi", () => ({
 
 import { AgentChatPanel } from "../../components/agents/attach/AgentChatPanel";
 import { WAITS_FOR_OWNER } from "../../components/agents/content/reviewCard/reviewCardText";
-import { agentsOnCanvas } from "../../services/agents";
+import { agentsDataflowId, agentsOnCanvas } from "../../services/agents";
 import type { AgentAttachment, AgentSessionTurn } from "../../services/agents";
 
 const attachment: AgentAttachment = {
@@ -179,5 +179,16 @@ describe("who works with the dataflow's agents on a canvas", () => {
     expect(agentsOnCanvas("owner")).toEqual({ drives: true, installsWaitForOwner: false });
     expect(agentsOnCanvas("editor")).toEqual({ drives: true, installsWaitForOwner: true });
     expect(agentsOnCanvas("watcher")).toEqual({ drives: false, installsWaitForOwner: false });
+  });
+
+  it("their dataflow: the owner's tab saves it, and an editor's, which saves none, opened it", () => {
+    // The owner's canvas: the dataflow it saves, whatever the route names.
+    expect(agentsDataflowId("owner", "p-own", "p-own")).toBe("p-own");
+    expect(agentsDataflowId("owner", null, undefined)).toBeNull();
+    // An editor's tab on the owner's dataflow names no dataflow it saves.
+    expect(agentsDataflowId("editor", null, "p-shared")).toBe("p-shared");
+    expect(agentsDataflowId("editor", null, undefined)).toBeNull();
+    // A watcher drives none.
+    expect(agentsDataflowId("watcher", "p-own", "p-shared")).toBeNull();
   });
 });

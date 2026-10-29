@@ -9,10 +9,10 @@ Mounted on the namespace declared by ``COLLAB_NAMESPACE`` (default
 2. For room-scoped events, the sid is a current member of the room it
    targets. This is defence-in-depth on top of Socket.IO's own room
    bookkeeping.
-3. For an event that changes the room (taking a lock, a broadcast output or
-   conflict choice), the participant edits the dataflow: ``access.room_role``,
-   asked again for each such event, says owner or editor (an account the owner
-   invited). A watcher's is refused with ``read_only``.
+3. For an event that changes the room (taking a lock), the participant edits
+   the dataflow: ``access.room_role``, asked again for each such event, says
+   owner or editor (an account the owner invited). A watcher's is refused with
+   ``read_only``.
 
 The dataflow itself, its nodes, connections, code, widgets and scenarios, is
 the server's Yjs doc, which tabs sync with the ``yjs`` event
@@ -63,15 +63,6 @@ GUEST_OWNED_REFUSAL = "A guest's canvas of this dataflow is its own, so it joins
 
 def _valid_project_id(value) -> bool:
     return isinstance(value, str) and bool(_UUID_RE.match(value))
-
-
-def _sender(entry: dict) -> dict:
-    """Who sent an event, as its relay names them."""
-    return {
-        "user_id": entry.get("user_id"),
-        "username": entry.get("username"),
-        "participant_id": entry.get("participant_id"),
-    }
 
 
 def _account(sess: dict):
@@ -267,68 +258,4 @@ def register(sio):
             {"nodeId": node_id},
             to=room, namespace=ns,
         )
-        return {"ok": True}
-
-    # ------------------------------------------------------------------
-    # Output broadcast (preserves sandbox isolation — no cross-session /get)
-    # ------------------------------------------------------------------
-
-    @sio.on("output_produced", namespace=ns)
-    def _output_produced(payload):
-        room, me, err = _editing(payload)
-        if err:
-            return err
-        node_id = (payload or {}).get("nodeId")
-        output = (payload or {}).get("output")
-        if not node_id or output is None:
-            return {"ok": False, "error": "invalid_payload"}
-        room_state.set_output(room, node_id, output)
-        sio.emit(
-            "output_produced",
-            {
-                "nodeId": node_id,
-                "nodeType": payload.get("nodeType"),
-                "output": output,
-                "from": _sender(me),
-            },
-            to=room, skip_sid=request.sid, namespace=ns,
-        )
-        return {"ok": True}
-
-    @sio.on("node_exec_display", namespace=ns)
-    def _node_exec_display(payload):
-        sess, room, err = _gated(payload)
-        if err:
-            return err
-        node_id = (payload or {}).get("nodeId")
-        if not node_id:
-            return {"ok": False, "error": "invalid_payload"}
-        sio.emit(
-            "node_exec_display",
-            {"nodeId": node_id, "by": sess["username"]},
-            to=room, skip_sid=request.sid, namespace=ns,
-        )
-        return {"ok": True}
-
-    # ------------------------------------------------------------------
-    # Conflict resolution (relay-only — peers update their local view)
-    # ------------------------------------------------------------------
-
-    @sio.on("resolve_conflict", namespace=ns)
-    def _resolve_conflict(payload):
-        room, me, err = _editing(payload)
-        if err:
-            return err
-        sio.emit(
-            "conflict_resolved",
-            {
-                **(payload or {}),
-                "by": _sender(me),
-            },
-            to=room, namespace=ns,
-        )
-        room_state.record_activity(room, "conflict_resolved", {
-            "by": me["username"],
-            "choice": (payload or {}).get("choice"),
-        })
         return {"ok": True}

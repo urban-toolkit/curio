@@ -62,16 +62,12 @@ workers as its runner's free memory and video memory hold
 (`scripts/ci_memory_budget.py`), and always at least two backend and sandbox
 pairs: on a runner that holds one worker (`utk-desktop-02`), the second pair
 answers only those tests, and the serial run counts it from
-`CURIO_E2E_SHARDS`. A test that needs real-time collaboration is marked
-`needs_collab` and runs on the `collab` share alone, CI's `e2e-collab` job,
-the one stack started with `--collab`; locally, set `CURIO_E2E_COLLAB=1` so
-the harness starts its stack with `--collab`. Everything else runs on the CPU
-runners. Two variables select a share, and a run with neither runs everything:
+`CURIO_E2E_SHARDS`. Everything else runs on the CPU runners. Two variables
+select a share, and a run with neither runs everything:
 
 ```bash
 CURIO_E2E_RUNNER=utk pytest utk_curio/backend/tests/test_frontend/       # the webgpu share
 CURIO_E2E_RUNNER=desktop CURIO_E2E_PART=3/14 pytest ...                  # one of fourteen desktop parts
-CURIO_E2E_COLLAB=1 CURIO_E2E_RUNNER=collab pytest ...                    # the collaboration share
 ```
 
 CI runs `E2E_DESKTOP_PARTS` desktop parts (`tests/parts.py`; a Jest test
@@ -252,7 +248,7 @@ The DB stub is strictly additive - Strategy A still works against the same test 
 | Helper | What it does |
 |---|---|
 | `api_json(url, token, *, method="GET", payload=None, timeout=10.0, raw=False)` | Authenticated JSON request, stdlib only. The escape hatch for asserting backend state from a browser test: a seeding or persistence problem then fails in about a second with the offending payload, instead of as a 15-second locator timeout that says nothing about which side broke. `raw=True` returns bytes, for binary endpoints such as a `.curio.zip`. |
-| `require_owner_view(page, *, timeout=4000)` | **Fails** when the dataflow opened read-only as the shared guest. A guest cannot see another user's installed packages, datasets or agents, so every catalog fetch comes back empty and the test asserts nothing. That is a setup bug: boot the stack with `--deploy`. |
+| `require_owner_view(page, *, timeout=4000)` | **Fails** unless the tab is the dataflow's owner's: a watcher's canvas shows the read-only banner, and an invited editor's has no save status. Only the owner sees the dataflow's installed packages, datasets and agents, so on anyone else's tab every catalog fetch comes back empty and the test asserts nothing. The usual cause is a stack without user auth, where the browser lands as the shared guest: boot it with `--deploy`. |
 | `open_tools_palette(page, kind)` | Opens one left-rail palette, `"builtin"`, `"packages"`, `"datasets"`, `"agents"` or `"models"`, and returns its panel locator. Re-callable: it matches either the `Open …` or the `Close …` tooltip (`data-tooltip`) and clicks only when the panel is not already showing, so a test that needs two palettes can come back to the first one. They are mutually exclusive (`ToolsMenu` keeps a single `activePalette`), so opening one closes the other. `close_tools_palette(page, kind)` closes one, and `tools_palette_is_open(page, kind)` says whether it shows. |
 
 ### Canvas authoring helpers

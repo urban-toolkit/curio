@@ -28,7 +28,6 @@ _lock = threading.RLock()
 
 _room_users: Dict[str, Dict[str, dict]] = {}      # room -> sid -> participant
 _room_locks: Dict[str, Dict[str, dict]] = {}      # room -> nodeId -> lock info
-_room_outputs: Dict[str, Dict[str, dict]] = {}    # room -> nodeId -> last output payload
 _room_meta: Dict[str, dict] = {}                  # room -> bookkeeping
 _room_activity: Dict[str, deque] = {}             # room -> ring buffer of events
 _sid_index: Dict[str, set] = {}                   # sid -> rooms (for fast cleanup)
@@ -55,7 +54,6 @@ def _now() -> float:
 def _ensure_room(room: str) -> None:
     _room_users.setdefault(room, {})
     _room_locks.setdefault(room, {})
-    _room_outputs.setdefault(room, {})
     _room_meta.setdefault(room, {"created_at": _now(), "last_active": _now()})
     _room_activity.setdefault(room, deque(maxlen=ACTIVITY_CAP))
 
@@ -158,13 +156,19 @@ def set_user_role(room: str, user_id, role: str) -> Tuple[bool, List[str]]:
         return changed, released
 
 
+#: What an agent's lock names besides a person's fields: the agent, and what
+#: it writes on the node (``agent_peers.py``).
+AGENT_LOCK_FIELDS = ("agent", "writes")
+
+
 def try_lock(room: str, node_id: str, user_info: dict) -> Optional[dict]:
     """Acquire (or refresh) the soft lock on ``node_id`` for the participant
-    *user_info*.
+    *user_info*. An agent's lock also keeps its :data:`AGENT_LOCK_FIELDS`.
 
     Returns the lock record if it owns it after the call (newly or
     already), otherwise ``None`` (another participant holds it).
     """
+    agent = {key: user_info[key] for key in AGENT_LOCK_FIELDS if user_info.get(key) is not None}
     with _lock:
         _ensure_room(room)
         locks = _room_locks[room]
@@ -173,6 +177,7 @@ def try_lock(room: str, node_id: str, user_info: dict) -> Optional[dict]:
         if existing is not None:
             if existing.get("participant_id") == participant_id:
                 existing["since"] = _now()
+                existing.update(agent)
                 return dict(existing)
             return None
         lock = {
@@ -181,6 +186,7 @@ def try_lock(room: str, node_id: str, user_info: dict) -> Optional[dict]:
             "name": user_info.get("name"),
             "participant_id": participant_id,
             "since": _now(),
+            **agent,
         }
         locks[node_id] = lock
         return dict(lock)
@@ -204,19 +210,12 @@ def record_activity(room: str, kind: str, payload: dict) -> dict:
         return dict(entry)
 
 
-def set_output(room: str, node_id: str, output: dict) -> None:
-    with _lock:
-        _ensure_room(room)
-        _room_outputs[room][node_id] = dict(output, ts=_now())
-
-
 def snapshot(room: str) -> dict:
     with _lock:
         _ensure_room(room)
         return {
             "users": list(map(dict, _room_users[room].values())),
             "locks": {nid: dict(lock) for nid, lock in _room_locks[room].items()},
-            "outputs": dict(_room_outputs[room]),
             "activity": list(_room_activity[room]),
         }
 
@@ -236,7 +235,6 @@ def reset_for_tests() -> None:
     with _lock:
         _room_users.clear()
         _room_locks.clear()
-        _room_outputs.clear()
         _room_meta.clear()
         _room_activity.clear()
         _sid_index.clear()
