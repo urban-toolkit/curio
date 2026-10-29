@@ -483,9 +483,8 @@ opens them again.
 **Run All** runs every node. A node's **Play** button, or Ctrl+Enter (Cmd+Enter
 on a Mac), runs that node and the nodes above it whose output is out of date.
 
-On your own dataflow, a run saves the dataflow first and then runs on the
-server, so it goes on when you close the tab. A dataflow you never saved is
-saved under its title by its first run.
+On your own dataflow, a run is made on the server, so it goes on when you close
+the tab. A dataflow you never saved is saved under its title by its first run.
 
 - Charts, maps and the other nodes that draw in the browser draw while the
   dataflow is open.
@@ -1549,13 +1548,11 @@ saved with the dataflow, and a tile with none runs the nodes before it on the se
 the page opens.
 
 - **Pin** the nodes to show, with the pin control in each node's header. Pinning saves
-  the dataflow, and saves the outputs feeding those nodes to your Data Catalog, which is
-  what the page draws from later.
+  the outputs feeding those nodes to your Data Catalog, which is what the page draws
+  from later.
 - **Open** it from **Share → Open dashboard**, which opens a new tab. The same menu
   copies either link, and with collaboration on it invites editors to the dataflow
   ([Real-time collaboration](#real-time-collaboration)).
-- **Save the dataflow** after changing anything else the page shows, such as a chart's
-  spec: the page shows what is on disk.
 - **Controls**: a pinned node's widgets show on its tile, above a chart or map and in
   place of a code node's code, and anyone viewing the page can change them. A chart or
   map draws again with a new value of its own widget.
@@ -1756,7 +1753,7 @@ provider, publishing, and writing your own, see [docs/AGENT-CATALOG.md](AGENT-CA
 
 ## Real-time collaboration
 
-Every tab that opens a saved dataflow while signed in holds one shared copy of it, which the server keeps as each change is made. A change in one tab shows in every other tab that has the dataflow open: code and specs as they are typed, with each person's cursor, and nodes, connections, widgets, scenarios and drags at once. A tab that opens the dataflow later finds every change. A hosted guest's canvas of an example, and every canvas of a Curio started with `--no-project`, stay their own.
+Every tab that opens a saved dataflow while signed in holds one shared copy of it, which the server keeps as each change is made. A change in one tab shows in every other tab that has the dataflow open: code and specs as they are typed, with each person's cursor, and nodes, connections, widgets, scenarios and drags at once. A tab that opens the dataflow later finds every change. A hosted guest's canvas of an example stays its own.
 
 `curio start --collab` lets the editors the owner invited edit with the owner, and shows who is in the dataflow: the people panel, a lock chip on a node someone is in, and the outputs others run. It needs no rebuild to turn on.
 

@@ -135,7 +135,7 @@ node {node_id} not found in the saved spec
 
 ## tools.node-history-none
 
-the saved dataflow holds no history of node {node_id}: no run of it or edit to it was saved yet
+the saved dataflow holds no history of node {node_id}: no run of it or edit to it is recorded yet
 
 ## tools.node-history-no-entry
 

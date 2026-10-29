@@ -24,7 +24,7 @@ Every tab that opens a saved dataflow (`/dataflow/<UUID>`) while signed in holds
 - **Everything else, live.** Adding, removing or connecting nodes, a widget's value, a scenario, a node's title, size or settings reach every other tab at once. While someone drags a node, the others see it move; it lands where they drop it.
 - **Kept as it is made.** The server keeps each change the moment it arrives and writes the dataflow a second after the last one. A tab that opens the dataflow later finds every change, the last keystroke included.
 
-A dataflow not saved yet, a hosted guest's canvas of an example, every canvas of a Curio started with `--no-project`, and the dashboard page each stay in their own tab.
+A dataflow not saved yet, a hosted guest's canvas of an example, and the dashboard page each stay in their own tab.
 
 Without `--collab`, only the owner's tabs edit, and everyone else's follow the dataflow as it changes. With `--collab`:
 
@@ -45,7 +45,7 @@ Everyone in a dataflow's room has a role, which the server decides when they joi
 
 **Inviting editors.** The owner opens **Share > Invite editors**, types an account's username and presses **Add**. The editors are listed below it, each with a remove button. The editor opens the dataflow's link (**Share > Copy dataflow link**) as anyone does, and edits once the room names them an editor. Adding or removing an editor applies at once, also to someone already in the room. A guest is never an editor, and a guest invites nobody.
 
-**Saving.** Every change is kept by the server as it is made, whoever makes it. **File > Save dataflow** on the owner's tab also saves the outputs the dataflow keeps, and is a version of the dataflow's history. An editor or a watcher saves a copy with **File > Save dataflow**, as on any shared dataflow.
+**Saving.** Every change is kept by the server as it is made, whoever makes it. On the owner's tab the top bar reads **Saved** once the server has every change made there, **Saving...** while some are on their way, and **Offline** while Curio cannot reach the server. Leaving the dataflow, or closing its tab, asks first only while a change of yours has not reached the server. **File > Save dataflow** on the owner's tab also saves the outputs the dataflow keeps, and is a version of the dataflow's history. An editor or a watcher saves a copy with **File > Save dataflow**, as on any shared dataflow.
 
 **History.** The server keeps the dataflow's one history, the same in every tab: a version for each node or connection added or removed, each person's typing once they pause or leave the editor ("Ana edited"), an agent's change ("Node Builder, asked by Ana"), each File > Save and each version put back, and each node's runs and edits. The owner and the editors see it in the Provenance drawer, which shows each change as it lands; a watcher and a hosted guest are told it is not theirs to see. Putting a version back changes every tab's canvas. A node's code put back, and a Map Editor node's **Undo** and **Redo**, change the code only if the node still holds what you saw: when someone changed it meanwhile, nothing changes, and Curio says who did ("Ana changed this node after; nothing was undone."). Only the owner can **Clear history before this version**. A copy of the dataflow keeps its history when its owner or an editor makes it.
 
