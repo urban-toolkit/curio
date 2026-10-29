@@ -306,6 +306,10 @@ a node the plan removes ({label}) changed after you read it, so nothing changed:
 
 a connection the plan draws would now close a cycle ({cycle}) through one drawn after you read the dataflow, so nothing changed: read the dataflow again and plan from what it holds now
 
+## change.plan-scenario-taken
+
+the scenario {name} the plan saves takes a name or a node of a scenario saved after you read the dataflow, so nothing changed: read the dataflow again and plan from what it holds now
+
 ## mint.widgets-not-placeable
 
 params.widgets: a {label} node cannot hold widgets; a widget is placed in a node's code or spec

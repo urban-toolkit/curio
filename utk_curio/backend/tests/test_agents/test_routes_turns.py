@@ -25,6 +25,8 @@ from utk_curio.backend.tests.test_agents.test_routes_proposals import (
     TestDataflowPlanMint,
     TestDestructiveReplan,
     TestNodeCreate,
+    _changes,
+    _landed_plan,
 )
 
 
@@ -1138,18 +1140,17 @@ class TestToolLoop:
         ).get_json()["turns"]
         assert len(turns[1]["execution"]["toolCalls"]) == 3
 
-    def test_mutate_request_never_executes_in_the_loop(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+    def test_a_mutate_request_lands_only_as_the_agents_change(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        """A mutate request is never run as a read tool is: it lands through
+        its checks as the agent's change, kept on the attachment with what the
+        node held before, which its Undo puts back."""
         from utk_curio.backend.app.projects import storage as projects_storage
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         calls = []
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents.application import catalog
-            from utk_curio.backend.app.agents.application.turns import delegates
-            from utk_curio.backend.app.agents.application.turns import policy
             from utk_curio.backend.app.agents.application.turns import titles
-            from utk_curio.backend.app.agents.infrastructure import providers
 
             if messages and messages[0].get("content") == titles.title_prompt():
                 return "Title"
@@ -1159,7 +1160,7 @@ class TestToolLoop:
                     '```curio.v1\n{"toolRequest": {"tool": "node.content.write", '
                     '"params": {"nodeId": "n1", "content": "pwned"}}}\n```'
                 )
-            return "Proposed."
+            return "Written."
 
         monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         user, token = user_and_token
@@ -1173,9 +1174,14 @@ class TestToolLoop:
             json={"message": "q"}, headers=_auth(token),
         )
         assert r.status_code == 200
-        # The spec is untouched: the loop NEVER executes a mutation (DEC-006).
+        [card] = [p for p in r.get_json()["content"] if p["type"] == "change"]
+        assert (card["tool"], card["nodeId"], card["status"]) == ("node.content.write", "n1", "applied")
         spec = projects_storage.read_spec(_user_dir_key(user), alice_project)
-        assert spec["dataflow"]["nodes"][0]["content"] == "original"
+        assert spec["dataflow"]["nodes"][0]["content"] == "pwned"
+        [record] = [a for a in spec["dataflow"]["agentAttachments"] if a["attachmentId"] == att_id]
+        [kept] = record["changes"]
+        assert (kept["changeId"], kept["before"], kept["content"]) == (card["changeId"], "original", "pwned")
+        assert "now holds your code" in calls[1][-1]["content"]
 
     def test_grantless_system_turn_is_byte_identical_to_t2(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         from utk_curio.backend.app.agents.domain import builtin
@@ -1957,22 +1963,16 @@ class TestReuseLadder:
         )
         self._write_store_package(key, "curio.notes@1", "curio.notes", "note-surface", "Note")
         project_packages.install_to_project(key, alice_project, "curio.notes@1")
-        resp = self._run(client, token, alice_project, att_id)
-        spec_nodes_before = None  # proposals only; nothing lands without Apply
-        proposals = [p for p in resp.get_json()["content"] if p["type"] == "proposal"]
-        assert len(proposals) == 3
-        # The mirrored proposals carry the normalized colors + the title.
-        att = next(
-            a for a in self._spec(client, token, alice_project)["dataflow"]["agentAttachments"]
-            if a["attachmentId"] == att_id
-        )
-        mirrored = [att["activeProposal"]] + list(att.get("queuedProposals") or [])
-        by_id = {p["proposalId"]: p for p in mirrored}
-        ordered = [by_id[p["proposalId"]] for p in proposals]
+        body = self._run(client, token, alice_project, att_id).get_json()
+        assert not [p for p in body["content"] if p["type"] == "proposal"]
+        # Each note landed, in order, with the normalized color and the title.
+        created = [c["canvas"]["node"] for c in body.get("changes") or [] if c["tool"] == "node.create"]
+        assert len(created) == 3
+        saved = {n["id"]: n for n in self._spec(client, token, alice_project)["dataflow"]["nodes"]}
+        notes = [saved[n["id"]] for n in created]
         norm = lambda c: node_appearance.normalize_appearance({"backgroundColor": c}, NOTE_PALETTE)
-        assert [p.get("appearance") for p in ordered] == [norm("yellow"), norm("pink"), norm("green")]
-        assert ordered[0]["title"] == "Question" and "title" not in ordered[1]
-        assert spec_nodes_before is None
+        assert [n["metadata"]["appearance"] for n in notes] == [norm("yellow"), norm("pink"), norm("green")]
+        assert notes[0]["title"] == "Question" and "title" not in notes[1]
 
     def test_a13_default_never_touches_other_agents_or_code_templates(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
@@ -1992,13 +1992,13 @@ class TestReuseLadder:
             client, user=user, token=token, project_id=alice_project,
             monkeypatch=monkeypatch, replies=[self._create_req("curio.builtin/computation-analysis"), "done"],
         )
+        def _landed_node(response):
+            [landed] = [c for c in response.get_json().get("changes") or [] if c["tool"] == "node.create"]
+            saved = {n["id"]: n for n in self._spec(client, token, alice_project)["dataflow"]["nodes"]}
+            return saved[landed["canvas"]["node"]["id"]]
+
         resp = self._run(client, token, alice_project, att_id)
-        (proposal,) = [p for p in resp.get_json()["content"] if p["type"] == "proposal"]
-        att = next(
-            a for a in self._spec(client, token, alice_project)["dataflow"]["agentAttachments"]
-            if a["attachmentId"] == att_id
-        )
-        assert "appearance" not in att["activeProposal"]
+        assert "appearance" not in (_landed_node(resp).get("metadata") or {})
         # A Node Builder creating a NOTE without a color: no default either.
         helper = TestNodeCreate()
         att2, _ = helper._setup(
@@ -2006,12 +2006,7 @@ class TestReuseLadder:
             monkeypatch=monkeypatch, replies=[self._create_req("curio.notes/note-surface"), "done"],
         )
         resp2 = helper._run(client, token, alice_project, att2)
-        (proposal2,) = [p for p in resp2.get_json()["content"] if p["type"] == "proposal"]
-        att2_row = next(
-            a for a in self._spec(client, token, alice_project)["dataflow"]["agentAttachments"]
-            if a["attachmentId"] == att2
-        )
-        assert "appearance" not in att2_row["activeProposal"]
+        assert "appearance" not in (_landed_node(resp2).get("metadata") or {})
 
     def _spec(self, client, token, project_id):
         return client.get(f"/api/projects/{project_id}", headers=_auth(token)).get_json()["spec"]
@@ -2047,7 +2042,7 @@ class TestReuseLadder:
         (proposal,) = [p for p in resp.get_json()["content"] if p["type"] == "proposal"]
         assert proposal["summary"] == "Install package · Simple Notes"  # no "to follow"
         body = self._apply(client, token, alice_project, att_id, proposal["proposalId"]).get_json()
-        assert body["followUpProposals"] == []
+        assert body["createdNodes"] == []
         assert body["requiresRegistryRefresh"] is True  # dev/105 A4: enlisting alone changes the lockfile
         assert "No notes rode this request" in self._turn_texts(client, token, alice_project, att_id)[-1]
 
@@ -2095,7 +2090,7 @@ class TestReuseLadder:
         assert proposal["summary"].endswith("· 1 note to follow")
         body = self._apply(client, token, alice_project, att_id, proposal["proposalId"]).get_json()
         assert body["installedPackage"]["dirName"] == "curio.tools@1"  # enlisted anyway
-        assert body["followUpProposals"] == []
+        assert body["createdNodes"] == []
         last = self._turn_texts(client, token, alice_project, att_id)[-1]
         assert "has no presentation (note) template" in last
 
@@ -2556,8 +2551,8 @@ class TestSnapshotCostAndCoherence:
             lambda uk: (walks.__setitem__("n", walks["n"] + 1), real(uk))[1],
         )
         body = helper._run(client, token, alice_project, att_id).get_json()
-        proposal = next(p for p in body["content"] if p["type"] == "proposal")
-        assert len(proposal["plan"]["nodes"]) == size
+        # The plan lands in the run, so what its landing reads is counted too.
+        assert len(_landed_plan(body)["plan"]["nodes"]) == size
         return walks["n"]
 
     def test_plan_mint_cost_does_not_grow_with_plan_size(
@@ -2565,8 +2560,8 @@ class TestSnapshotCostAndCoherence:
     ):
         """The R1.2 invariant, stated as the thing that actually matters: a
         run takes a small CONSTANT number of store snapshots (the roster, the
-        fan-in view, the batch resolution) and resolving twelve nodes costs no
-        more than resolving two. Before batching, each node re-walked the
+        fan-in view, the batch resolution, the landing's templates) and
+        resolving and placing twelve nodes costs no more than two. Before batching, each node re-walked the
         store — and once readers hold the seed lock, re-acquired it."""
         small = self._walks_for_plan_of(
             2, client, user_and_token, tmp_curio, alice_project, monkeypatch,
@@ -2632,7 +2627,7 @@ class TestPlanCorrectionRounds:
         ], "edges": []}
         return f"```curio.v1\n{_json.dumps({'dataflowPlan': plan})}\n```"
 
-    def test_invalid_json_then_corrected_mints(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+    def test_invalid_json_then_corrected_lands(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         helper = TestDataflowPlanMint()
         att_id, calls = helper._setup(
@@ -2645,8 +2640,7 @@ class TestPlanCorrectionRounds:
         r = helper._run(client, token, alice_project, att_id)
         assert r.status_code == 200
         body = r.get_json()
-        proposal = next(p for p in body["content"] if p["type"] == "proposal")
-        assert proposal["tool"] == "dataflow.plan.write"
+        assert _landed_plan(body)["tool"] == "dataflow.plan.write"
         # The correction round carried the precise error.
         correction = calls[1][-1]["content"]
         assert "[plan validation]" in correction
@@ -2657,7 +2651,7 @@ class TestPlanCorrectionRounds:
         assert "Attempt one." not in body["reply"]
         assert body["reply"].startswith("Here we go.")
 
-    def test_wrong_template_id_then_corrected_mints(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+    def test_wrong_template_id_then_corrected_lands(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         # The previously dead one-shot mint refusal now self-corrects.
         user, token = user_and_token
         helper = TestDataflowPlanMint()
@@ -2669,8 +2663,7 @@ class TestPlanCorrectionRounds:
             ],
         )
         r = helper._run(client, token, alice_project, att_id)
-        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
-        assert proposal["status"] == "pending"
+        assert _landed_plan(r.get_json())["status"] == "applied"
         assert "not an available template" in calls[1][-1]["content"]
 
     def test_persistent_failure_caps_loudly(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
@@ -2686,9 +2679,9 @@ class TestPlanCorrectionRounds:
         # shared budget; the fourth attempt fails LOUDLY: the raw tail is
         # released (fail-open transparency) and the error card explains.
         assert len(calls) == 4
-        assert all(p["type"] != "proposal" for p in body["content"])
+        assert all(p["type"] not in ("proposal", "change") for p in body["content"])
         card = next(p for p in body["content"] if p["type"] == "card")
-        assert card["title"] == "Plan not proposable"
+        assert card["title"] == "Plan could not be made"
         assert "not valid JSON" in card["lines"][0]
         assert "curio.v1" in body["reply"]  # the model's text is never lost
 
@@ -2707,7 +2700,8 @@ class TestPlanCorrectionRounds:
         # calls: tool round, bad plan, correction, correction (script repeats
         # bad; dev/73 budget = 3) → cap.
         assert len(calls) == 4
-        assert any(p["type"] == "card" and p["title"] == "Plan not proposable" for p in body["content"])
+        assert any(p["type"] == "card" and p["title"] == "Plan could not be made" for p in body["content"])
+        assert _changes(body) == []
 
     def test_ungranted_agents_keep_failopen_behavior(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         # Regression: a non-plan agent's invalid plan-ish tail streams as raw
@@ -2752,16 +2746,17 @@ class TestPlanCorrectionRounds:
             lines = dict(l.split(": ", 1) for l in block.splitlines() if ": " in l)
             events.append((lines["event"], _json.loads(lines["data"])))
         kinds = [k for k, _ in events]
+        assert "review_required" not in kinds
         assert (
             kinds.index("plan_revision")
-            < kinds.index("review_required")
+            < kinds.index("change")
             < kinds.index("done")
         )
         # The invalid tail never streamed as text.
         text = "".join(p.get("text", "") for k, p in events if k == "delta")
         assert "curio.v1" not in text
         done = events[-1][1]
-        assert any(p["type"] == "proposal" for p in done["content"])
+        assert any(p["type"] == "change" and p.get("kind") == "plan" for p in done["content"])
 
 
 class TestPlanToolRequestForm:
@@ -2792,26 +2787,26 @@ class TestPlanToolRequestForm:
         r = helper._run(client, token, project_id, att_id)
         return r, calls
 
-    def test_nested_tool_form_mints_the_same_proposal(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+    def test_nested_tool_form_lands_the_same_plan(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         r, _ = self._run_with(
             client, user, token, alice_project, monkeypatch,
-            replies=["Planning.\n" + self._tool_form_tail(nested=True), "Proposed — review above."],
+            replies=["Planning.\n" + self._tool_form_tail(nested=True), "It is on the canvas."],
         )
-        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
-        assert proposal["tool"] == "dataflow.plan.write"
-        assert proposal["status"] == "pending"
-        assert [n["title"] for n in proposal["plan"]["nodes"]] == ["Load", "Analyze"]
+        card = _landed_plan(r.get_json())
+        assert card["tool"] == "dataflow.plan.write"
+        assert card["status"] == "applied"
+        assert [n["title"] for n in card["plan"]["nodes"]] == ["Load", "Analyze"]
 
-    def test_direct_params_tool_form_mints_too(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+    def test_direct_params_tool_form_lands_too(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         r, _ = self._run_with(
             client, user, token, alice_project, monkeypatch,
-            replies=["Planning.\n" + self._tool_form_tail(nested=False), "Proposed."],
+            replies=["Planning.\n" + self._tool_form_tail(nested=False), "Placed."],
         )
-        assert any(p["type"] == "proposal" for p in r.get_json()["content"])
+        assert _landed_plan(r.get_json())["status"] == "applied"
 
-    def test_large_tool_form_plan_parses_and_mints(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+    def test_large_tool_form_plan_parses_and_lands(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         import json as _json
 
         user, token = user_and_token
@@ -2824,16 +2819,16 @@ class TestPlanToolRequestForm:
         assert len(body.encode()) > 4096  # past the classic caps
         r, _ = self._run_with(
             client, user, token, alice_project, monkeypatch,
-            replies=[f"Planning.\n```curio.v1\n{body}\n```", "Proposed."],
+            replies=[f"Planning.\n```curio.v1\n{body}\n```", "Placed."],
         )
-        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
-        assert len(proposal["plan"]["nodes"]) == 40
+        card = _landed_plan(r.get_json())
+        assert len(card["plan"]["nodes"]) == 40 and len(card["canvas"]["nodes"]) == 40
 
     def test_invalid_tool_form_feeds_errors_back_and_corrects(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         # The user's exact scenario: the model uses the toolRequest syntax with
-        # a wrong template id — previously "no proposal flow exists" and the
+        # a wrong template id: previously "no proposal flow exists" and the
         # model apologizing; now the refusal carries the errors and the next
-        # round mints.
+        # round lands.
         user, token = user_and_token
         helper = TestDataflowPlanMint()
         r, calls = self._run_with(
@@ -2843,8 +2838,7 @@ class TestPlanToolRequestForm:
                 "Fixed.\n" + helper._plan_tail(),
             ],
         )
-        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
-        assert proposal["status"] == "pending"
+        assert _landed_plan(r.get_json())["status"] == "applied"
         feedback = calls[1][-1]["content"]
         assert "dataflow.plan.write" in feedback
         assert "not an available template" in feedback
@@ -2873,7 +2867,7 @@ class TestToolRequestRecovery:
     def _helper(self):
         return TestNodeCreate()
 
-    def _json_fence(self, content="print('recovered')", trailing="Click Apply above."):
+    def _json_fence(self, content="print('recovered')", trailing="It is on the canvas now."):
         import json as _json
 
         block = _json.dumps({"toolRequest": {"tool": "node.create", "params": {
@@ -2888,18 +2882,18 @@ class TestToolRequestRecovery:
         )
         return helper._run(client, token, project, att_id), calls, att_id, helper
 
-    def test_json_fence_request_mints_and_strips_the_block(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+    def test_json_fence_request_lands_and_strips_the_block(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         r, calls, _, _ = self._run(
             client, user, token, alice_project, monkeypatch,
-            replies=[self._json_fence(), "Proposed."],
+            replies=[self._json_fence(), "Added."],
         )
         body = r.get_json()
-        assert any(p["type"] == "proposal" for p in body["content"])
+        assert [p["kind"] for p in _changes(body)] == ["node"]
         # The block is stripped; the model's own prose survives.
         assert "toolRequest" not in body["reply"]
         assert "```" not in body["reply"]
-        assert "Click Apply above." in body["reply"]
+        assert "It is on the canvas now." in body["reply"]
 
     def test_non_terminal_curio_fence_is_recovered(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         # extract_content deliberately refuses a non-terminal block (dev/90
@@ -2911,9 +2905,9 @@ class TestToolRequestRecovery:
             "nodeType": "curio.builtin/computation-analysis", "content": "print(1)"}}})
         reply = f"Adding it.\n\n```curio.v1\n{block}\n```\n\nDone."
         r, _, _, _ = self._run(client, user, token, alice_project, monkeypatch,
-                               replies=[reply, "Proposed."])
+                               replies=[reply, "Added."])
         body = r.get_json()
-        assert any(p["type"] == "proposal" for p in body["content"])
+        assert [p["kind"] for p in _changes(body)] == ["node"]
         assert "toolRequest" not in body["reply"]
 
     def test_large_content_survives_recovery(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
@@ -2922,26 +2916,19 @@ class TestToolRequestRecovery:
         source = "import pandas as pd\n# analysis\n" * 400
         r, _, att_id, helper = self._run(
             client, user, token, alice_project, monkeypatch,
-            replies=[self._json_fence(content=source), "Proposed."],
+            replies=[self._json_fence(content=source), "Added."],
         )
-        proposal = helper._proposal_from_run(r)
-        assert proposal["tool"] == "node.create"
         assert "import pandas" not in r.get_json()["reply"]
-        resp = client.post(
-            f"/api/agents/projects/{alice_project}/attachments/{att_id}"
-            f"/proposals/{proposal['proposalId']}/apply",
-            headers=_auth(token),
-        )
-        assert resp.get_json()["createdNode"]["content"] == source.strip()
+        assert helper._created(r.get_json())["content"] == source.strip()
 
-    def test_broken_json_request_corrects_then_mints(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+    def test_broken_json_request_corrects_then_lands(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         broken = ('Attempt one.\n\n```curio.v1\n'
                   '{"toolRequest": {"tool": "node.create", "params": {oops}\n```')
         helper = self._helper()
         r, calls, _, _ = self._run(
             client, user, token, alice_project, monkeypatch,
-            replies=[broken, helper._create_tail_json(content="print('fixed')"), "Proposed."],
+            replies=[broken, helper._create_tail_json(content="print('fixed')"), "Added."],
         )
         assert len(calls) >= 2
         # `calls` aliases the live message list, so scan the whole conversation
@@ -2950,8 +2937,8 @@ class TestToolRequestRecovery:
         assert "[tool validation]" in feedback
         assert "not valid JSON" in feedback
         body = r.get_json()
-        assert any(p["type"] == "proposal" for p in body["content"])
-        # The invalid attempt never reaches the user — not its prose, not its JSON.
+        assert helper._created(body)["content"] == "print('fixed')"
+        # The invalid attempt never reaches the user: not its prose, not its JSON.
         assert "Attempt one." not in body["reply"]
         assert "toolRequest" not in body["reply"]
 
@@ -2968,14 +2955,14 @@ class TestToolRequestRecovery:
                 helper._create_tail_json(
                     content="x" * (content_mod.PROPOSAL_CONTENT_MAX_CHARS + 1)),
                 helper._create_tail_json(content="print('small enough')"),
-                "Proposed.",
+                "Added.",
             ],
         )
         feedback = "\n".join(m["content"] for m in calls[-1] if isinstance(m.get("content"), str))
         assert "[tool validation]" in feedback
         assert "params.content is" in feedback  # the error names the real field
         body = r.get_json()
-        assert any(p["type"] == "proposal" for p in body["content"])
+        assert helper._created(body)["content"] == "print('small enough')"
         assert "x" * 200 not in body["reply"]
 
     def test_persistent_failure_contains_the_raw_json(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
@@ -3066,16 +3053,17 @@ class TestToolRequestRecovery:
         # The invalid tail never streamed as text.
         text = "".join(p.get("text", "") for k, p in events if k == "delta")
         assert "curio.v1" not in text and "toolRequest" not in text
+        assert kinds.index("tool_revision") < kinds.index("change") < kinds.index("done")
         done = events[-1][1]
-        assert any(p["type"] == "proposal" for p in done["content"])
+        assert any(p["type"] == "change" and p.get("kind") == "node" for p in done["content"])
 
 
 class TestFenceAgnosticPlanRecognition:
-    """dev/56 — the user's exact scenario: a valid plan in a ```json fence
-    with prose after it must mint; the runtime meets the model where it
+    """dev/56: the user's exact scenario: a valid plan in a ```json fence
+    with prose after it must land; the runtime meets the model where it
     writes."""
 
-    def _json_fence_reply(self, bad_type=False, trailing="Click the Apply button above to place it."):
+    def _json_fence_reply(self, bad_type=False, trailing="It is on the canvas now."):
         import json as _json
 
         plan = {
@@ -3096,7 +3084,7 @@ class TestFenceAgnosticPlanRecognition:
             + trailing
         )
 
-    def test_valid_json_fence_plan_mints_and_strips_the_block(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+    def test_valid_json_fence_plan_lands_and_strips_the_block(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         helper = TestDataflowPlanMint()
         att_id, _ = helper._setup(
@@ -3105,18 +3093,19 @@ class TestFenceAgnosticPlanRecognition:
         )
         r = helper._run(client, token, alice_project, att_id)
         body = r.get_json()
-        proposal = next(p for p in body["content"] if p["type"] == "proposal")
-        assert proposal["tool"] == "dataflow.plan.write"
-        assert proposal["status"] == "pending"
-        # The prose stays; the raw JSON block is gone — the card is the home.
+        card = _landed_plan(body)
+        assert card["tool"] == "dataflow.plan.write"
+        assert len(card["canvas"]["nodes"]) == 2
+        # The prose stays; the raw JSON block is gone: the card is the home.
         assert "Here is your plan:" in body["reply"]
         assert "```" not in body["reply"]
-        # The mirror drives the strip Apply button too.
+        # The planner holds the plan Build & validate works on.
         cards = client.get(
             f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
         ).get_json()["attachments"]
-        assert cards[0]["activeProposal"]["tool"] == "dataflow.plan.write"
-        assert cards[0]["builderSession"]["phase"] == "plan_review"
+        planner = next(c for c in cards if c["attachmentId"] == att_id)
+        assert planner["planProposal"]["proposalId"] == card["planId"]
+        assert planner["builderSession"]["phase"] == "applied"
 
     def test_invalid_json_fence_plan_corrects_with_fence_guidance(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
@@ -3129,15 +3118,14 @@ class TestFenceAgnosticPlanRecognition:
             ],
         )
         r = helper._run(client, token, alice_project, att_id)
-        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
-        assert proposal["status"] == "pending"
+        assert _landed_plan(r.get_json())["status"] == "applied"
         feedback = calls[1][-1]["content"]
         assert "not an available template" in feedback
         assert "curio.v1" in feedback  # the fence guidance
 
-    def test_remove_only_bare_json_fence_mints(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        # dev/61 — the "clear the canvas" scenario: a BARE remove-only plan
-        # (no "nodes" key) in a ```json fence must mint, not leak.
+    def test_remove_only_bare_json_fence_lands(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # dev/61, the "clear the canvas" scenario: a BARE remove-only plan
+        # (no "nodes" key) in a ```json fence must land, not leak.
         import json as _json
 
         user, token = user_and_token
@@ -3147,19 +3135,17 @@ class TestFenceAgnosticPlanRecognition:
         reply = (
             "Removing everything:\n\n```json\n"
             + _json.dumps(plan, indent=2)
-            + "\n```\n\nReview and apply the plan."
+            + "\n```\n\nBoth nodes are gone."
         )
         att_id, _ = helper._setup(
             client, user, token, alice_project, monkeypatch, replies=[reply],
         )
         body = helper._run(client, token, alice_project, att_id, message="clear the canvas").get_json()
-        proposal = next(p for p in body["content"] if p["type"] == "proposal")
-        assert {v["id"] for v in proposal["plan"]["removals"]} == {"old-loader", "cleaner"}
+        card = _landed_plan(body)
+        assert {v["id"] for v in card["plan"]["removals"]} == {"old-loader", "cleaner"}
+        assert sorted(card["canvas"]["removedNodeIds"]) == ["cleaner", "old-loader"]
         assert "```" not in body["reply"]
-        cards = client.get(
-            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
-        ).get_json()["attachments"]
-        assert cards[0]["builderSession"]["phase"] == "plan_review"
+        assert helper._spec(user, alice_project)["dataflow"]["nodes"] == []
 
     def test_ungranted_agents_keep_json_fences_verbatim(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
@@ -3172,9 +3158,9 @@ class TestFenceAgnosticPlanRecognition:
         body = helper._run(client, token, alice_project, att_id).get_json()
         assert len(calls) == 1
         assert "```json" in body["reply"]  # byte-identical for non-plan agents
-        assert all(p["type"] != "proposal" for p in body["content"])
+        assert all(p["type"] not in ("proposal", "change") for p in body["content"])
 
-    def test_stream_json_fence_plan_mints_with_review_required(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+    def test_stream_json_fence_plan_lands_with_its_change(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         import json as _json
 
         user, token = user_and_token
@@ -3198,9 +3184,11 @@ class TestFenceAgnosticPlanRecognition:
             lines = dict(l.split(": ", 1) for l in block.splitlines() if ": " in l)
             events.append((lines["event"], _json.loads(lines["data"])))
         kinds = [k for k, _ in events]
-        assert "review_required" in kinds
+        assert "review_required" not in kinds
+        change = next(p for k, p in events if k == "change")
+        assert change["tool"] == "dataflow.plan.write" and change["canvas"]["kind"] == "graph-created"
         done = events[-1][1]
-        assert any(p["type"] == "proposal" for p in done["content"])
+        assert any(p["type"] == "change" and p["changeId"] == change["changeId"] for p in done["content"])
         assert "```" not in done["reply"]
 
 

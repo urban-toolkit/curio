@@ -428,6 +428,23 @@ def _closes_a_cycle_now(user_key: str, project_id: str, plan: dict) -> str | Non
     return agent_text.message("change.plan-closes-a-cycle", cycle=cycle)
 
 
+def _scenarios_taken_now(user_key: str, project_id: str, plan: dict) -> str | None:
+    """Why the plan cannot land when a scenario it saves would take a name,
+    or a node, that a scenario saved after the mint read the dataflow has, as
+    while it waited for a person in a node it removes (#662); None when none
+    would."""
+    planned = plan.get("scenarios") or []
+    if not planned:
+        return None
+    current = plan_scenarios.existing_scenarios(dataflow_docs.live(user_key, project_id) or {})
+    owner = {m for s in current for m in s["nodes"]}
+    names = {s["name"] for s in current}
+    for scenario in planned:
+        if scenario["name"] in names or any(m in owner for m in scenario.get("nodes") or []):
+            return agent_text.message("change.plan-scenario-taken", name=scenario["name"])
+    return None
+
+
 def _land_dataflow_plan(user_key: str, project_id: str, loop_ctx: dict, spec: dict, landing: dict, part: dict):
     """A dataflow plan, landed whole and at once (dev/52, dev/59), as the
     agent's change: its removals and the connections they cascade to, its
@@ -439,7 +456,11 @@ def _land_dataflow_plan(user_key: str, project_id: str, loop_ctx: dict, spec: di
     attachment_id = loop_ctx.get("attachment_id")
     plan = landing["plan"]
     plan_id = landing["proposalId"]
-    refusal = _victims_changed(user_key, project_id, plan, landing) or _closes_a_cycle_now(user_key, project_id, plan)
+    refusal = (
+        _victims_changed(user_key, project_id, plan, landing)
+        or _closes_a_cycle_now(user_key, project_id, plan)
+        or _scenarios_taken_now(user_key, project_id, plan)
+    )
     if refusal:
         return "refused", refusal, None
     dataflow = spec.setdefault("dataflow", {})

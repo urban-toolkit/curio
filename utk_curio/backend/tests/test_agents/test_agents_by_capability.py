@@ -232,7 +232,7 @@ class TestSpecLookupsReadCapabilities:
 
 
 class TestPlannedNodesGetTheCopies:
-    def _mint(self, client, user, token, project_id, monkeypatch):
+    def _land(self, client, user, token, project_id, monkeypatch):
         _write_copies(_user_dir_key(user))
         mint = routes_proposals.TestDataflowPlanMint()
         apply = routes_proposals.TestDataflowPlanApply()
@@ -247,54 +247,25 @@ class TestPlannedNodesGetTheCopies:
         assert r.status_code == 201, r.get_data(as_text=True)
         apply._add_data_loading_template(user)
         r = mint._run(client, token, project_id, att_id)
-        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
-        return att_id, proposal
+        return att_id, routes_proposals._landed_plan(r.get_json())
 
-    def test_whole_plan_apply_attaches_the_copies_per_node_kind(
+    def test_a_landed_plan_attaches_the_copies_per_node_kind(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
         user, token = user_and_token
-        att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
-        body = routes_proposals.TestDataflowPlanApply()._apply(
-            client, token, alice_project, att_id, proposal["proposalId"],
-        ).get_json()
-        ids = {n["goal"].split(" —")[0]: n["id"] for n in body["appliedGraph"]["nodes"]}
-        by_node: dict[str, set] = {}
-        for row in body["attachedAgents"]:
-            by_node.setdefault(row["nodeId"], set()).add(row["agentId"])
-        assert by_node == {
-            ids["Load boundaries"]: {"agent.test.my-builder", "agent.test.my-finder"},
-            ids["Analyze"]: {"agent.test.my-builder"},
+        _att_id, card = self._land(client, user, token, alice_project, monkeypatch)
+        ids = {
+            title: next(n["id"] for n in card["canvas"]["nodes"] if n["goal"].startswith(title))
+            for title in ("Load boundaries", "Analyze")
         }
         spec = projects_storage.read_spec(_user_dir_key(user), alice_project)
         assert _node_coords(spec, ids["Load boundaries"]) == {MY_BUILDER, MY_FINDER}
         assert _node_coords(spec, ids["Analyze"]) == {MY_BUILDER}
         assert RESEARCHER in project_agents.project_agents(spec)
         assert not [r for r in attachments.list_attachments(spec) if r.get("coord") == RESEARCHER]
-        # The applied card names them as their manifests do.
-        card = next(
-            p for t in reversed(_turns(client, token, alice_project, att_id))
-            for p in (t.get("content") or []) if p.get("title") == "Applied: dataflow plan"
-        )
+        # The plan's card names them as their manifests do.
         line = next(l for l in card["lines"] if l.startswith("agents attached:"))
         assert line == "agents attached: My Builder ×2 · My Finder"
-
-    def test_per_node_apply_names_the_content_agents_attachment(
-        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
-    ):
-        user, token = user_and_token
-        att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
-        per_node = client.post(
-            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/"
-            f"{proposal['proposalId']}/apply-node",
-            json={"ref": "a"}, headers=_auth(token),
-        ).get_json()
-        assert {r["agentId"] for r in per_node["attachedAgents"]} == {
-            "agent.test.my-builder", "agent.test.my-finder",
-        }
-        spec = projects_storage.read_spec(_user_dir_key(user), alice_project)
-        node_id = per_node["createdNode"]["id"]
-        assert per_node["attachedAgentId"] == _attachment_of(spec, node_id, MY_BUILDER)["attachmentId"]
 
 
 class TestSolveUsesTheCopies:
@@ -372,21 +343,17 @@ class TestSolveUsesTheCopies:
         assert "dataset.select" in error and "My Builder" in error
 
     def _plan_node(self, client, user, token, project_id, monkeypatch, reply):
+        """The orchestrator's plan, landed; its first node's ref and id."""
         _write_copies(_user_dir_key(user))
         mint = routes_proposals.TestDataflowPlanMint()
         att_id, _ = mint._setup(
             client, user, token, project_id, monkeypatch,
             replies=["Plan.\n" + mint._plan_tail(), reply], coord=MY_ORCHESTRATOR,
         )
-        r = mint._run(client, token, project_id, att_id)
-        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
-        ref = proposal["plan"]["nodes"][0]["ref"]
-        created = client.post(
-            f"/api/agents/projects/{project_id}/attachments/{att_id}/proposals/"
-            f"{proposal['proposalId']}/apply-node",
-            json={"ref": ref}, headers=_auth(token),
-        ).get_json()
-        return att_id, ref, created
+        card = routes_proposals._landed_plan(mint._run(client, token, project_id, att_id).get_json())
+        ref = card["plan"]["nodes"][0]["ref"]
+        node_id = card["canvas"]["nodes"][0]["id"]
+        return att_id, ref, node_id
 
     def _link(self, client, token, project_id, att_id):
         """The parent's last turn that links the node's agent, and that link."""
@@ -396,7 +363,7 @@ class TestSolveUsesTheCopies:
         )
         return turn, next(p for p in turn["content"] if p["type"] == "delegation")
 
-    def test_validate_homes_the_review_at_the_copied_builder(
+    def test_validate_homes_the_change_at_the_copied_builder(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
         user, token = user_and_token
@@ -405,47 +372,46 @@ class TestSolveUsesTheCopies:
             lambda endpoint, payload: {"stdout": [], "stderr": "",
                                        "output": {"path": "art", "dataType": "dataframe"}},
         )
-        att_id, ref, created = self._plan_node(
+        att_id, ref, node_id = self._plan_node(
             client, user, token, alice_project, monkeypatch, "print('validated')",
         )
-        node_id = created["createdNode"]["id"]
         spec = projects_storage.read_spec(_user_dir_key(user), alice_project)
-        home_id = created["attachedAgentId"]
-        assert home_id == _attachment_of(spec, node_id, MY_BUILDER)["attachmentId"]
+        home_id = _attachment_of(spec, node_id, MY_BUILDER)["attachmentId"]
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/validate-node",
             json={"ref": ref}, headers=_auth(token),
         )
         done = routes_solve.TestStreamedSolve()._sse_events(r)[-1][1]
-        assert done["verdict"] == "pass" and done["proposalAttachmentId"] == home_id
+        assert done["verdict"] == "pass" and done["changeAttachmentId"] == home_id
         home_turns = _turns(client, token, alice_project, home_id)
         assert any(t["text"].startswith("[Delegated by My Orchestrator] Solve") for t in home_turns)
+        assert any(p.get("type") == "change" and p.get("changeId") == done["changeId"]
+                   for t in home_turns for p in t.get("content") or [])
         turn, link = self._link(client, token, alice_project, att_id)
-        assert turn["text"].endswith("the trace and content review live in the node's My Builder.")
+        assert turn["text"].endswith("the trace and the change live in the node's My Builder.")
         assert (link["attachmentId"], link["name"], link["coord"]) == (home_id, "My Builder", MY_BUILDER)
 
-    def test_propose_mode_mints_the_review_at_the_copied_builder(
+    def test_a_streamed_solve_writes_the_node_through_the_copied_builder(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
         user, token = user_and_token
-        att_id, _ref, created = self._plan_node(
+        att_id, _ref, node_id = self._plan_node(
             client, user, token, alice_project, monkeypatch, "print('generated')",
         )
-        node_id = created["createdNode"]["id"]
         resp = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/solve/stream",
-            json={"mode": "propose", "nodeIds": [node_id], "verify": False},
+            json={"nodeIds": [node_id], "verify": False},
             headers=_auth(token),
         )
         result = next(p for k, p in routes_solve.TestStreamedSolve()._sse_events(resp)
                       if k == "node_result")
-        assert result["status"] == "proposed", result
+        assert result["status"] == "solved", result
         spec = projects_storage.read_spec(_user_dir_key(user), alice_project)
-        home_id = _attachment_of(spec, node_id, MY_BUILDER)["attachmentId"]
-        assert result["proposalAttachmentId"] == home_id
-        turn, link = self._link(client, token, alice_project, att_id)
-        assert turn["text"].endswith("the review lives in the node's My Builder.")
-        assert (link["attachmentId"], link["name"], link["coord"]) == (home_id, "My Builder", MY_BUILDER)
+        assert next(n for n in spec["dataflow"]["nodes"] if n["id"] == node_id)["content"] == "print('generated')"
+        # The content came from the copied builder, never the built-in one.
+        execution = next(t["execution"] for t in reversed(_turns(client, token, alice_project, att_id))
+                         if (t.get("text") or "").startswith("Solved"))
+        assert {child["coord"] for child in execution["delegations"]} == {MY_BUILDER}
 
 
 class TestADataLoadingNodeIsATemplateThatLoadsADataset:
