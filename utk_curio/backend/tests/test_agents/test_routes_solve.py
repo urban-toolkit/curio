@@ -905,12 +905,6 @@ class TestBuildAndValidate:
     Undo, and approving only records it; a failure pauses with nothing
     downstream written, and resume continues from the persisted state."""
 
-    @pytest.fixture(autouse=True)
-    def _recording(self, monkeypatch):
-        from utk_curio.backend.app.collaboration import history
-
-        monkeypatch.setattr(history, "RECORDING", True, raising=False)
-
     def _fake_exec(self, monkeypatch, fail_markers=()):
         def _exec(endpoint, payload):
             if any(m in payload["code"] for m in fail_markers):
@@ -1196,12 +1190,6 @@ class TestValidateNode:
     change, with its validation block; code that fails is not written, and its
     attempts stay in the node's agent chat."""
 
-    @pytest.fixture(autouse=True)
-    def _recording(self, monkeypatch):
-        from utk_curio.backend.app.collaboration import history
-
-        monkeypatch.setattr(history, "RECORDING", True, raising=False)
-
     def _fake_exec(self, monkeypatch, fail_markers=()):
         calls = []
 
@@ -1399,12 +1387,6 @@ class TestSolveTraceHome:
     """dev/72 — a node's Solve lifecycle lives in its attached Node Builder:
     the trace, the change its code landed as, and the cross-attachment ledger
     advance."""
-
-    @pytest.fixture(autouse=True)
-    def _recording(self, monkeypatch):
-        from utk_curio.backend.app.collaboration import history
-
-        monkeypatch.setattr(history, "RECORDING", True, raising=False)
 
     def _passing_sandbox(self, monkeypatch):
         monkeypatch.setattr(

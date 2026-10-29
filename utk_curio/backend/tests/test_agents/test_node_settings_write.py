@@ -65,15 +65,6 @@ def _request(**params) -> str:
     return "```curio.v1\n" + json.dumps({"toolRequest": {"tool": TOOL, "params": params}}) + "\n```"
 
 
-@pytest.fixture(autouse=True)
-def _recording(monkeypatch):
-    """The history records, as it does once the canvas reads it: an Undo is
-    a checked write of it, and a settings change its point."""
-    from utk_curio.backend.app.collaboration import history
-
-    monkeypatch.setattr(history, "RECORDING", True, raising=False)
-
-
 def _change(client, user, token, monkeypatch, *, target="pool", coord=NB, **params):
     """A project holding the nodes above, *coord* attached to the node
     *target* (to the canvas when None) and asked once for a change with

@@ -422,10 +422,6 @@ def test_an_editors_dataset_selection_waits_for_the_owner_to_download(client, pe
 def test_an_editors_agent_change_is_a_point_named_after_the_editor(client, people, flow, script, monkeypatch):
     from utk_curio.backend.app.collaboration import dataflow_docs, history
 
-    monkeypatch.setattr(history, "RECORDING", True, raising=False)
-    # The doc opens again on a server that records the history, so its first
-    # points come before the agent's change.
-    dataflow_docs.close(flow.pid)
     script.replies[:] = [
         '```curio.v1\n{"toolRequest": {"tool": "node.content.write", '
         '"params": {"nodeId": "n1", "content": "print(2)"}}}\n```',

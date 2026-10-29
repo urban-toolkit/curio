@@ -34,14 +34,6 @@ def _landed_plan(body) -> dict:
     return {**card, "canvas": landed["canvas"]}
 
 
-def _recording(monkeypatch) -> None:
-    """The history records, as it does once the canvas reads it: Undo is a
-    checked write of it."""
-    from utk_curio.backend.app.collaboration import history
-
-    monkeypatch.setattr(history, "RECORDING", True, raising=False)
-
-
 class TestReviewProposals:
     """What a run changes and what it asks for (memo dev/41, DEC-006): an
     agent's code write lands at once, after its checks, as the agent's change,
@@ -230,7 +222,6 @@ class TestReviewProposals:
         assert "node n1" not in shown and "(n1)" not in shown and "'n1'" not in shown
 
     def test_undo_puts_the_code_back_once_and_runs_no_model(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        _recording(monkeypatch)
         user, token = user_and_token
         att_id, calls = self._setup(client, token, alice_project, monkeypatch)
         [card] = _changes(self._run(client, token, alice_project, att_id).get_json())
@@ -710,7 +701,6 @@ class TestNodeCreate:
         return [n["content"] for n in self._spec_nodes(user, project_id)]
 
     def test_two_nodes_one_reply_asks_for_land_each_as_its_change(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        _recording(monkeypatch)
         user, token = user_and_token
         att_id, cards, _ = self._two_note_run(client, user, token, alice_project, monkeypatch)
         contents = self._contents(user, alice_project)
@@ -723,7 +713,6 @@ class TestNodeCreate:
         assert self._contents(user, alice_project) == ["print(1)"]
 
     def test_two_nodes_one_reply_asks_for_are_undone_in_either_order(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        _recording(monkeypatch)
         user, token = user_and_token
         att_id, cards, _ = self._two_note_run(client, user, token, alice_project, monkeypatch)
         assert self._undo(client, token, alice_project, att_id, cards[1]["changeId"]).status_code == 200
@@ -1252,7 +1241,6 @@ class TestDataflowPlanApply:
         assert "'a'" in feedback
 
     def test_undo_of_the_only_plan_leaves_the_planner_nothing_to_build(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        _recording(monkeypatch)
         user, token = user_and_token
         att_id, card = self._land(client, user, token, alice_project, monkeypatch)
         resp = client.post(

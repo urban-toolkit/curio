@@ -1587,10 +1587,6 @@ class TestSolveNode:
         assert turns[-1]["content"][0]["title"].startswith("Solve · PASS")
 
     def test_failing_current_content_is_fixed_into_a_change_with_its_undo(self, client, user_and_token, tmp_curio, monkeypatch):
-        from utk_curio.backend.app.collaboration import history
-
-        # Undo is a checked write of the history, which records once the canvas reads it.
-        monkeypatch.setattr(history, "RECORDING", True, raising=False)
         user, token = user_and_token
         bad = 'import pandas as pd\ndataset_path = curio_data_path("{DATASET}")\ndf = pd.read_csv(dataset_path, sep="|||")\nbad_sep()\nreturn df'
         ctx = self._setup(client, user, token, monkeypatch, content=bad, child_replies=[self.LOADER],

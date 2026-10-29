@@ -35,15 +35,6 @@ DFB = "agent.curio.dataflow-builder@1"
 CA = "curio.builtin/computation-analysis"
 
 
-@pytest.fixture(autouse=True)
-def _recording(monkeypatch):
-    """The history records, as it does once the canvas reads it: Undo is a
-    checked write of it, and a plan's Undo puts back the version before it."""
-    from utk_curio.backend.app.collaboration import history
-
-    monkeypatch.setattr(history, "RECORDING", True, raising=False)
-
-
 def _nodes() -> list[dict]:
     return [
         {"id": "load", "type": CA, "title": "Load", "goal": "Load the parks", "content": "return 1", "x": 0, "y": 0},
