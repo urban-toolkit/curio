@@ -469,32 +469,23 @@ def _entries(client, pid, node_id) -> list:
     return client.get(f"/api/projects/{pid}/history/nodes/{node_id}", headers=_auth(BOB_TOKEN)).get_json()["entries"]
 
 
-def _alices_templates(people) -> None:
-    """The node templates alice's dataflow and its agents read, in her store:
-    the Solve helpers below write them for the account whose dataset the
-    loader reads, bob's, since an editor's run grounds a source in the
-    editor's own Data Catalog."""
-    from utk_curio.backend.app.projects.services import _user_dir_key
-    from utk_curio.backend.tests.test_agents.test_routes_proposals import TestNodeCreate
-    from utk_curio.backend.tests.test_agents.test_verified_rounds import TEMPLATES
-
-    TestNodeCreate()._write_builtin_package(_user_dir_key(people.alice), templates=TEMPLATES)
+#: What the Node Builder writes into a computation node here: data the code
+#: makes itself, which opens no file, so it grounds with no Data Catalog.
+DERIVED = "import pandas as pd\nreturn pd.DataFrame({'tract': [1, 2], 'heat': [30.5, 31.0]})"
 
 
 def test_an_editors_solve_of_one_node_is_named_after_the_editor(client, people, monkeypatch, tmp_curio):
-    """bob solves an empty node of alice's dataflow from the node's agent,
-    loading a dataset of his own Data Catalog. The Solve runs as a job, on a
-    thread that holds no request, so it names the person it took when it
-    started: the code it writes is a version named "Node Builder, asked by
-    Bob", and the node's entry is by Bob, not alice."""
+    """bob solves an empty computation node of alice's dataflow from the
+    node's agent. The Solve runs as a job, on a thread that holds no request,
+    so it names the person it took when it started: the code it writes is a
+    version named "Node Builder, asked by Bob", and the node's entry is by
+    Bob, not alice."""
     from utk_curio.backend.app.projects import access
-    from utk_curio.backend.tests.test_agents.test_verified_rounds import TestSolveNode
+    from utk_curio.backend.tests.test_agents.test_verified_rounds import CA, TestSolveNode
 
-    _alices_templates(people)
     helper = TestSolveNode()
-    # The project and its agent are alice's; the dataset the loader reads is bob's.
-    ctx = helper._setup(client, people.bob, people.alice_token, monkeypatch, content="",
-                        child_replies=[helper.LOADER])
+    ctx = helper._setup(client, people.alice, people.alice_token, monkeypatch, content="",
+                        child_replies=[DERIVED], node_type=CA)
     access.add_editor(people.alice, ctx["pid"], "bob")
     done = helper._solve_node(client, BOB_TOKEN, ctx)[-1][1]
     assert done["verdict"] == "pass" and done.get("written") is True, done
@@ -505,24 +496,26 @@ def test_an_editors_solve_of_one_node_is_named_after_the_editor(client, people, 
     assert entries and (entries[-1].get("by") or {}).get("name") == "Bob", entries
 
 
-def test_an_editors_solve_of_a_plan_is_named_after_the_editor(client, people, monkeypatch, tmp_curio):
-    """bob solves the plan alice's Dataflow Builder landed, its loader reading
-    a dataset of his own Data Catalog. The batch writes on a job's thread too:
-    each version it makes, and the node's entry, is by Bob."""
+def test_an_editors_solve_of_a_plan_is_named_after_the_editor(client, people, monkeypatch, tmp_curio,
+                                                               alice_project):
+    """bob solves the plan of computation nodes alice's Dataflow Builder
+    landed. The batch writes on a job's thread too: each version it makes,
+    and each node's entry, is by Bob."""
     from utk_curio.backend.app.projects import access
-    from utk_curio.backend.tests.test_agents.test_verified_rounds import TestVerifiedSolve
+    from utk_curio.backend.tests.test_agents.test_routes_solve import TestSolve
 
-    _alices_templates(people)
-    helper = TestVerifiedSolve()
-    # alice plans on her dataflow; the dataset the loader reads is bob's.
-    ctx = helper._setup(client, people.bob, people.alice_token, monkeypatch,
-                        dl_replies=[helper.LOADER], with_stats=False)
-    access.add_editor(people.alice, ctx["pid"], "bob")
-    before = len(_versions(client, ctx["pid"]))
-    body = helper._solve(client, BOB_TOKEN, ctx)
-    assert body["results"][ctx["load"]]["status"] == "solved", body
+    helper = TestSolve()
+    att, _canvas, _calls = helper._applied_plan(client, people.alice, people.alice_token, alice_project, monkeypatch)
+    access.add_editor(people.alice, alice_project, "bob")
+    before = len(_versions(client, alice_project))
+    solved = helper._solve(client, BOB_TOKEN, alice_project, att)
+    assert solved.status_code == 200, solved.get_data(as_text=True)
+    body = solved.get_json()
+    assert {result["status"] for result in body["results"].values()} == {"solved"}, body
 
-    made = _versions(client, ctx["pid"])[before:]
+    made = _versions(client, alice_project)[before:]
     assert made and all(str(version.get("what")).endswith(", asked by Bob") for version in made), made
-    entries = _entries(client, ctx["pid"], ctx["load"])
-    assert entries and (entries[-1].get("by") or {}).get("name") == "Bob", entries
+    assert body["appliedContents"], body
+    for item in body["appliedContents"]:
+        entries = _entries(client, alice_project, item["nodeId"])
+        assert entries and (entries[-1].get("by") or {}).get("name") == "Bob", entries
