@@ -14,6 +14,17 @@ xfail pinning a real bug - the modal handoff dropped every edit - and turned
 green once ``NodeSaveAsModal`` started selecting its node off React Flow's store
 rather than sampling it once; see that test's docstring.
 
+Both open a dataflow made under one name with a spec sent under another, and
+check that the canvas is titled with the first, the name the Projects page
+lists, as it opens and again after the reload and the import. The canvas titles
+a dataflow with its spec's name, and a create kept the name the spec was sent
+with, so the title read ``PackageConfigSource`` until a save sent the
+project's name and the server wrote it into the spec. After the reload only
+the Node Catalog drawer saves, and only when Import is clicked before the
+reload's load lands (#340), so the ``after_reimport`` frame showed one name or
+the other from run to run on the same code. A create now names the dataflow as
+its row (``services.save_project``).
+
 The chains under test are long and entirely implicit. For the kind:
 ``NodeTemplateConfigModal.onSave`` writes ``packageTemplateConfig`` onto the
 canvas node (``styles.tsx``), and ``templateDraftFromCanvasNode`` reads it back
@@ -52,6 +63,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import zipfile
 from typing import TYPE_CHECKING
 
@@ -112,6 +124,14 @@ SAVE_AS_NEW = "__save_as_new__"
 DRAWER_ROOT = '[data-curio-node-catalog-drawer="true"]'
 SCREENSHOT_STEM = "package-metadata-roundtrip"
 
+# The dataflow's name, as the Projects page lists it, and the name its spec is
+# sent with, which differs on purpose: the canvas must show the first.
+PROJECT_NAME = "Package Metadata Roundtrip"
+SPEC_NAME = "PackageConfigSource"
+CANVAS_TITLE = "[data-curio-canvas-title] h1"
+# A save of a dataflow: PUT /api/projects/<id>, not a route below it.
+_DATAFLOW_SAVE = re.compile(r"/api/projects/[0-9a-f-]{36}(?:\?|$)")
+
 
 def _spec() -> dict:
     """One node, so the canvas is not empty.
@@ -123,7 +143,7 @@ def _spec() -> dict:
     """
     return {
         "dataflow": {
-            "name": "PackageConfigSource",
+            "name": SPEC_NAME,
             "task": "",
             "nodes": [
                 {
@@ -181,6 +201,44 @@ def uninstall_packages(current_server):
                 print(f"[teardown] DELETE {url} failed: {exc}")
 
 
+def _record_saves(page) -> list[str]:
+    """Every save of a dataflow the page sends from now on, in order, with the
+    name it carries.
+
+    A save sends the project's name and the server writes it into the
+    dataflow's spec (``services._sync_dataflow_name``), so a title read after
+    one cannot tell what name the dataflow opened with.
+    """
+    saves: list[str] = []
+
+    def on_request(request) -> None:
+        if request.method != "PUT" or not _DATAFLOW_SAVE.search(request.url):
+            return
+        try:
+            name = (request.post_data_json or {}).get("name")
+        except Exception:  # noqa: BLE001 - a body that is not JSON names nothing
+            name = None
+        saves.append(f"PUT {request.url.split('/api/', 1)[-1]} name={name!r}")
+
+    page.on("request", on_request)
+    return saves
+
+
+def _expect_titled_as_its_project(page, saves: list[str], when: str) -> None:
+    """The canvas title is the dataflow's name as the Projects page lists it,
+    not the name its spec was sent with."""
+    title = page.locator(CANVAS_TITLE)
+    try:
+        expect(title).to_have_text(PROJECT_NAME, timeout=15000)
+    except AssertionError:
+        shown = title.inner_text() if title.count() else None
+        raise AssertionError(
+            f"{when}, the canvas title reads {shown!r}, not the dataflow's name "
+            f"{PROJECT_NAME!r}, which the Projects page lists (its spec was sent "
+            f"named {SPEC_NAME!r}). Saves of the dataflow so far: {saves or 'none'}"
+        ) from None
+
+
 def _enter_dataflow(page, app_frontend, current_server, *, username: str):
     """One stub user PER TEST.
 
@@ -188,23 +246,34 @@ def _enter_dataflow(page, app_frontend, current_server, *, username: str):
     ``e2e_clean_db`` truncates ``user`` / ``user_session`` between tests and
     sqlite recycles the id, so the second login lands on a coordinate the
     backend has already seen.
+
+    Returns the stub session and the list :func:`_record_saves` keeps. The
+    dataflow is made as ``PROJECT_NAME`` with a spec named ``SPEC_NAME``, and
+    its title is checked as it opens, before anything saved it, so it is what
+    the load read: the name the create gave the dataflow.
     """
     # Before navigating: the Node Catalog drawer slides in via translate3d, so
     # to_be_visible is not a gate on its own, and the provider reads
     # prefers-reduced-motion through useSyncExternalStore.
     page.emulate_media(reduced_motion="reduce")
+    saves = _record_saves(page)
     session = stub_login_and_enter_workflow(
         page,
         frontend_url=app_frontend.base_url,
         backend_url=current_server,
         name="Package Configurator",
         username=username,
-        project_name="Package Metadata Roundtrip",
+        project_name=PROJECT_NAME,
         project_spec=_spec(),
     )
     require_owner_view(page)
     _wait_for_reactflow_ready(page)
-    return session
+    _expect_titled_as_its_project(page, saves, "As the dataflow opens")
+    assert not saves, (
+        f"the dataflow was saved before its title was read ({saves}), so the "
+        "title shows the name a save gave it, not the one it opened with"
+    )
+    return session, saves
 
 
 # ---------------------------------------------------------------------------
@@ -372,7 +441,7 @@ def test_package_metadata_survives_export_and_reimport(
     """Edit package metadata -> export -> uninstall -> import -> it is all still there."""
     require_project_page()
     require_user_auth()
-    session = _enter_dataflow(
+    session, saves = _enter_dataflow(
         page, app_frontend, current_server, username="pkg_metadata_user"
     )
     token = session["token"]
@@ -602,6 +671,10 @@ def test_package_metadata_survives_export_and_reimport(
     expect(page.locator("#pkg-meta-permissions")).to_have_value(PERMISSIONS_INPUT)
     expect(page.locator("#pkg-meta-readme")).to_have_value(README_TEXT)
 
+    # The frame's title. Whether a save came after the reload is a race: the
+    # drawer saves first only when Import was clicked before the reload's
+    # load landed (#340). The title must not depend on it.
+    _expect_titled_as_its_project(page, saves, "After the reload and the import")
     save_workflow_test_screenshot(
         page, SCREENSHOT_STEM,
         test_name="test_package_metadata_after_reimport",
@@ -641,7 +714,7 @@ def test_node_settings_configuration_reaches_the_saved_package(
     """
     require_project_page()
     require_user_auth()
-    session = _enter_dataflow(
+    session, _saves = _enter_dataflow(
         page, app_frontend, current_server, username="pkg_kindconfig_user"
     )
     token = session["token"]

@@ -125,7 +125,10 @@ export const flowProviderModule = {
     workflowNameRef: { current: 'wf' }, scenarios: flowScenarios.current,
   }),
 };
-export const toastProviderModule = { useToastContext: () => ({ showToast }) };
+export const toastProviderModule = {
+  useToastContext: () => ({ showToast }),
+  useOptionalToastContext: () => ({ showToast }),
+};
 export const apiModule = {
   fetchData: jest.fn(async (path?: string) => (
     (path !== undefined && inputsByPath.current[path]) || { dataType: 'geodataframe', data: nodeInput.current }

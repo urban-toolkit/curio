@@ -56,7 +56,10 @@ export const AgentReviewCard: React.FC<{
   /** dev/72: the icon-link route to a homed content review's chat. */
   onOpenAgentChat?: (attachmentId: string) => void;
   delegateExists?: (attachmentId: string) => boolean;
-}> = ({ part, tintClassName, onApply, onDismiss, planNodeState, onApplyPlanNode, onSavePlanGoal, onApplyPlanEdges, onSolvePlanNode, onRunPlanNode, onOpenAgentChat, delegateExists }) => {
+  /** An install on an invited editor's chat: it waits for the dataflow
+   * owner's review, which the card says in place of Apply and Dismiss. */
+  waitsForOwner?: boolean;
+}> = ({ part, tintClassName, onApply, onDismiss, planNodeState, onApplyPlanNode, onSavePlanGoal, onApplyPlanEdges, onSolvePlanNode, onRunPlanNode, onOpenAgentChat, delegateExists, waitsForOwner = false }) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [edgeBusy, setEdgeBusy] = useState<string | null>(null);
@@ -128,6 +131,7 @@ export const AgentReviewCard: React.FC<{
         busy={busy}
         onApply={onApply ? () => void act(onApply) : undefined}
         onDismiss={onDismiss ? () => void act(onDismiss) : undefined}
+        waitsForOwner={waitsForOwner}
       />
       {error ? <div className={styles.error}>{error}</div> : null}
     </div>

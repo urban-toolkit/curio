@@ -1,11 +1,14 @@
 """Playwright E2E: a node's Provenance button opens its runs in the provenance drawer.
 
-A Python node runs twice. Its first run's code is put back from the drawer,
-without a run, though it is the code the node loaded with; a third run then
-branches from that first run. The drawer lists the line to the newest run, with
-the run left behind folded under the run it left from; opened, the fold shows
-it on a line of its own. A click opens a run: what it read and returned, when
-it ran and its code. A notebook cell's button opens the same drawer.
+A Python node runs twice, its code typed in between: the typing is an entry of
+its own, named after the person, before the second run. The dataflow is saved,
+so its history is the server's. The first run's code is put back from the
+drawer, without a run, though it is the code the node loaded with; the typing
+and the run that follow then branch from that first run. The drawer lists the
+line to the newest run, with the entries left behind folded under the run they
+left from; opened, the fold shows them on a line of their own. A click opens a
+run: what it read and returned, when it ran and its code. A notebook cell's
+button opens the same drawer.
 
 A run's times come from the server's clock, not the browser's, so no fixed date
 reaches them. The frame shows them on one line, which the screenshot masks.
@@ -48,6 +51,8 @@ if TYPE_CHECKING:
 
 TEST_NAME = "test_a_nodes_runs_open_in_the_provenance_drawer"
 
+#: Who runs and types, as the drawer names the typing.
+OWNER = "Runs Owner"
 NODE = "runs-node"
 NODE_TYPE = "curio.builtin/computation-analysis"
 FIRST = "return 1\n"
@@ -121,7 +126,7 @@ def test_a_nodes_runs_open_in_the_provenance_drawer(
         page,
         frontend_url=app_frontend.base_url,
         backend_url=current_server,
-        name="Runs Owner",
+        name=OWNER,
         username=f"node_runs_{uuid.uuid4().hex[:8]}",
         project_name="Node runs",
         project_spec=_spec(),
@@ -134,12 +139,14 @@ def test_a_nodes_runs_open_in_the_provenance_drawer(
     _run(page, FIRST)
     _run(page, SECOND)
 
-    # The two runs, the second in use: the next run would branch from it.
+    # The two runs and the typing between them, the second run in use: the
+    # next run would branch from it.
     panel = _open_runs(page)
     expect(panel.get_by_text(re.compile(r"^Runs of \S"))).to_be_visible()
+    expect(panel.locator("[data-provenance-item]")).to_have_count(3, timeout=20000)
     runs = _shown(panel)
-    assert len(runs) == 2, f"two runs should be listed, not {runs}"
-    first_run, second_run = runs
+    first_run, typed, second_run = runs
+    expect(_run_item(panel, typed)).to_contain_text(f"{OWNER} edited")
     expect(_run_item(panel, second_run)).to_have_attribute("data-provenance-current", "true")
 
     # Opening the first run shows it and puts nothing back.
@@ -151,11 +158,12 @@ def test_a_nodes_runs_open_in_the_provenance_drawer(
     assert read_node_code(page, NODE).strip() == SECOND.strip(), "opening a run changed the node's code"
 
     # Its button puts that code back, though it is the code the node loaded
-    # with, and the next run branches from it. Nothing runs.
+    # with, and the next run branches from it. Nothing runs, and no entry is
+    # added.
     first.get_by_role("button", name="Put this code back in the node", exact=True).click()
     expect(first).to_have_attribute("data-provenance-current", "true")
     expect(_run_item(panel, second_run)).not_to_have_attribute("data-provenance-current", "true")
-    assert len(_shown(panel)) == 2, "putting a run's code back ran the node"
+    assert len(_shown(panel)) == 3, "putting a run's code back ran the node"
     _close(page)
     code_pill = node_locator(page, NODE).locator('.nav-link[data-rr-ui-event-key="code"]').first
     expect(code_pill).to_have_class(ACTIVE)
@@ -163,25 +171,29 @@ def test_a_nodes_runs_open_in_the_provenance_drawer(
         "the first run's code did not go back in the node"
     )
 
-    # A third run branches from the first: the list keeps the line to it, with
-    # the second run folded under the first. Opened, the fold shows the second
-    # run on a line of its own.
+    # The typing and the third run branch from the first: the list keeps the
+    # line to them, with the typing and the second run folded under the first.
+    # Opened, the fold shows them on a line of their own.
     _run(page, THIRD)
     panel = _open_runs(page)
+    fold = panel.get_by_role("button", name=re.compile(r"^2 entries on another branch$"))
+    expect(fold).to_have_attribute("aria-expanded", "false", timeout=20000)
+    # The typing, then the run: both, once the run is in.
+    expect(panel.locator("[data-provenance-item]")).to_have_count(3, timeout=20000)
     runs = _shown(panel)
-    assert len(runs) == 2 and runs[0] == first_run and runs[1] not in (first_run, second_run), (
-        f"the list should show the first run then the third, the second folded: {runs}"
+    assert len(runs) == 3 and runs[0] == first_run and not set(runs[1:]) & {typed, second_run}, (
+        f"the list should show the first run, then the typing and the third run, the rest folded: {runs}"
     )
-    third_run = runs[1]
-    fold = panel.get_by_role("button", name=re.compile(r"^1 run on another branch$"))
-    expect(fold).to_have_attribute("aria-expanded", "false")
+    typed_again, third_run = runs[1:]
+    expect(_run_item(panel, typed_again)).to_contain_text(f"{OWNER} edited")
+    expect(_run_item(panel, third_run)).to_have_attribute("data-provenance-current", "true")
     fold.click()
-    assert _shown(panel) == [first_run, second_run, third_run]
+    assert _shown(panel) == [first_run, typed, second_run, typed_again, third_run]
     lines = {
         run_id: _run_item(panel, run_id).evaluate("el => el.closest('ol').dataset.provenanceLine")
-        for run_id in (first_run, second_run, third_run)
+        for run_id in (first_run, typed, second_run, typed_again, third_run)
     }
-    assert lines == {first_run: "0", second_run: "1", third_run: "0"}, lines
+    assert lines == {first_run: "0", typed: "1", second_run: "1", typed_again: "0", third_run: "0"}, lines
 
     _open_run(panel, third_run)
     park_pointer_off_drawer(page)
@@ -195,5 +207,6 @@ def test_a_nodes_runs_open_in_the_provenance_drawer(
     radio.click()
     expect(radio).to_have_attribute("aria-checked", "true")
     panel = _open_runs(page)
-    assert sorted(_shown(panel)) == sorted([first_run, third_run]), _shown(panel)
+    expect(panel.locator("[data-provenance-item]")).to_have_count(3, timeout=20000)
+    assert sorted(_shown(panel)) == sorted([first_run, typed_again, third_run]), _shown(panel)
     _close(page)

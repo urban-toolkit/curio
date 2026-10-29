@@ -116,7 +116,8 @@ function mountCanvas({ settings = KEYED, link = true }: { settings?: EditFeature
     interactions: any[];
     setNodes: (update: (nodes: any[]) => any[]) => void;
     setEdges: (edges: any[]) => void;
-  } = { nodes: seed, interactions: [], setNodes: () => {}, setEdges: () => {} };
+    drawAgain: () => void;
+  } = { nodes: seed, interactions: [], setNodes: () => {}, setEdges: () => {}, drawAgain: () => {} };
   const play: { current: (spec: string) => Promise<void> } = { current: async () => {} };
   const provenance: { current: ReturnType<typeof useProvenanceContext> | null } = { current: null };
 
@@ -124,12 +125,14 @@ function mountCanvas({ settings = KEYED, link = true }: { settings?: EditFeature
     const [nodes, setNodes] = React.useState<any[]>(seed);
     const [edges, setEdges] = React.useState<any[]>(firstEdges);
     const [interactions, setInteractions] = React.useState<any[]>([]);
+    const [, setDraws] = React.useState(0);
     const nodesRef = React.useRef(nodes);
     nodesRef.current = nodes;
     latest.nodes = nodes;
     latest.interactions = interactions;
     latest.setNodes = setNodes;
     latest.setEdges = setEdges;
+    latest.drawAgain = () => setDraws((draws) => draws + 1);
     const reactFlow = React.useMemo(() => ({ getNode: (id: string) => nodesRef.current.find((n) => n.id === id) }), []);
     const { interactionsCallback } = useInteractions({ interactions, setInteractions, nodes, edges, reactFlow: reactFlow as any, setNodes });
     // Every node records its selections through the one callback, as useCode gives it.
@@ -211,6 +214,12 @@ function mountCanvas({ settings = KEYED, link = true }: { settings?: EditFeature
     unlink: () =>
       act(() => {
         latest.setEdges(firstEdges.filter((edge) => edge.id !== LINK.id));
+      }),
+    /** The canvas drawn again with nothing changed, as anything around the
+     *  node can draw it: a lock taken in the dataflow's room, a toast. */
+    drawAgain: () =>
+      act(() => {
+        latest.drawAgain();
       }),
     runsOf: (nodeId: string) => provenance.current?.getAllNodeProvenance()[nodeId] ?? [],
   };
@@ -379,6 +388,27 @@ test("a feature picked on the map shows its values as the log leaves them, and t
   fireEvent.change(field, { target: { value: "30" } });
   fireEvent.click(screen.getByTestId("interaction-form-submit"));
   expect(canvas.settings()?.edits).toEqual([raised, { op: "set", ids: [136], column: "height", value: 30 }]);
+});
+
+test("a value typed into a field stays when the node draws again before its first edit, and Apply sets it", async () => {
+  // The form kept its typed values only while nothing drew the node again:
+  // with no edits yet, each draw handed the workbench a new empty list, and
+  // its form started over on the loaded values. Focusing a field takes a lock
+  // in the dataflow's room, which draws the node again at once.
+  const canvas = mountCanvas();
+  await canvas.playMap();
+  await openAction("edit");
+  pickOnMap([1]);
+  const field = (await screen.findByTestId("interaction-field-height")) as HTMLInputElement;
+  expect(field.value).toBe("20");
+  fireEvent.change(field, { target: { value: "30" } });
+
+  canvas.drawAgain();
+
+  expect((screen.getByTestId("interaction-field-height") as HTMLInputElement).value).toBe("30");
+  expect(screen.getByTestId("interaction-form-submit")).toBeEnabled();
+  fireEvent.click(screen.getByTestId("interaction-form-submit"));
+  expect(canvas.settings()?.edits).toEqual([{ op: "set", ids: [136], column: "height", value: 30 }]);
 });
 
 test("the link taken off, the node drops the picks that came from the map, and says to link one", async () => {

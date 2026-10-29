@@ -240,8 +240,7 @@ def create_app(config_class=config_class):
             db.session.rollback()
 
     # Every backend serves Socket.IO: the collaboration room and each open
-    # dataflow's Yjs doc travel over it. ENABLE_COLLAB (--collab) only tells
-    # the page to show the collaboration panel (/api/config/public).
+    # dataflow's Yjs doc travel over it.
     from utk_curio.backend.config import COLLAB_NAMESPACE
     from utk_curio.backend.extensions import init_socketio
     sio = init_socketio(app)

@@ -7,19 +7,22 @@ the version's nodes and connections. Twice on CI (e2e-desktop (7), runs
 for version 11, which holds 6 and 4. The browser log showed the revert connect
 all 4, and the screenshot taken at the failure showed them drawn.
 
-A revert hands React Flow new node objects, without the sizes it measured. React
-Flow then hides each node and draws no connection to it until it has measured
-the node again, in its ResizeObserver callback, which the browser runs only
-when it draws a frame. The canvas holds 6 nodes before that revert and after
-it, so the scene's wait for 6 nodes passed at once, and its read, 150 ms after
-the click, came before React Flow measured the nodes again.
+A revert in the browser hands React Flow new node objects, without the sizes it
+measured. React Flow then hides each node and draws no connection to it until
+it has measured the node again, in its ResizeObserver callback, which the
+browser runs only when it draws a frame. The canvas holds 6 nodes before that
+revert and after it, so the scene's wait for 6 nodes passed at once, and its
+read, 150 ms after the click, came before React Flow measured the nodes again.
 
-This test plays a runner that draws no frame for a while after the click. An
-init script, installed before the app loads, holds the page's ResizeObserver
-and animation frame callbacks from the click on "Put this version on the
-canvas" until ``HOLD_MS`` later, then runs them in the order they came. The
-test runs the scene's own steps for its first revert (``walkthroughs/steps.py``)
-and asserts what the scene asserts.
+The browser reverts a canvas bound to no dataflow's doc, whose history it keeps
+itself (a dataflow never saved: here, example 01 loaded from a file); a saved
+dataflow's versions are the server's, and its canvas follows the doc. This test
+plays a runner that draws no frame for a while after the click. An init script,
+installed before the app loads, holds the page's ResizeObserver and animation
+frame callbacks from the click on "Put this version on the canvas" until
+``HOLD_MS`` later, then runs them in the order they came. The test runs the
+scene's steps for its first revert (``walkthroughs/steps.py``) and asserts what
+the scene asserts of the canvas.
 
 Run::
 
@@ -34,7 +37,8 @@ from .utils import (
     require_owner_view,
     require_project_page,
     require_user_auth,
-    stub_login_and_enter_workflow,
+    stub_db_login,
+    upload_workflow,
 )
 from .walkthroughs import PROVENANCE_EXAMPLE, Ctx, SilentNarrator, load_example_spec
 from .walkthroughs.steps import (
@@ -118,24 +122,30 @@ def _hold_script() -> str:
 
 
 def test_a_revert_is_read_once_the_versions_connections_are_drawn(
-    app_frontend: "FrontendPage", current_server: str, page,
+    app_frontend: "FrontendPage", current_server: str, page, tmp_path,
 ):
     require_project_page()
     require_user_auth()
 
     page.emulate_media(reduced_motion="reduce")
     page.context.add_init_script(_hold_script())
-    stub_login_and_enter_workflow(
+    # A dataflow never saved: example 01 loaded from a file onto a new canvas.
+    stub_db_login(
         page,
-        frontend_url=app_frontend.base_url,
-        backend_url=current_server,
+        app_frontend.base_url,
+        current_server,
         name="Prov User",
         username="prov_revert_late",
-        project_name="Provenance revert",
-        project_spec=load_example_spec(PROVENANCE_EXAMPLE),
     )
+    page.goto(f"{app_frontend.base_url}/dataflow/new", timeout=120000)
+    page.locator("#tools-menu").wait_for(state="visible", timeout=45000)
     require_owner_view(page)
+    spec = load_example_spec(PROVENANCE_EXAMPLE)
+    spec_file = tmp_path / PROVENANCE_EXAMPLE
+    spec_file.write_text(json.dumps(spec), encoding="utf-8")
+    upload_workflow(page, app_frontend, str(spec_file), len(spec["dataflow"]["nodes"]))
     page.wait_for_selector(".react-flow__node", timeout=45000)
+    assert "/dataflow/new" in page.url, f"the loaded file was saved as a dataflow: {page.url}"
     assert page.evaluate("() => window.__curioTestHolds") == 0, (
         "the init script that holds frame callbacks from the restore click is not in the page"
     )

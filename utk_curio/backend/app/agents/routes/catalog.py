@@ -12,6 +12,7 @@ from flask import request
 
 from utk_curio.backend.app.agents import service as agents_services
 from utk_curio.backend.app.agents.repositories import catalog_settings
+from utk_curio.backend.app.agents.routes.common import _driven_dataflow_key
 from utk_curio.backend.app.agents.routes.common import _error
 from utk_curio.backend.app.agents.routes.common import _map_agent_errors
 from utk_curio.backend.app.agents.routes.common import _svc_error
@@ -43,7 +44,9 @@ def list_catalog():
     so the existing drawer keeps working while the browse page is built.
     """
     project_id = request.args.get("projectId") or None
-    agents = agents_services.list_global_catalog(_user_dir_key(g.user), project_id)
+    agents = agents_services.list_global_catalog(
+        _user_dir_key(g.user), project_id, spec_key=_driven_dataflow_key(project_id),
+    )
     facets = agents_services.agent_catalog_facets(agents)
     return jsonify({"items": agents, "agents": agents, "facets": facets}), 200
 
@@ -213,7 +216,9 @@ def list_imports():
     project (memo dev/47 — the lockfile is the one source of truth)."""
     project_id = request.args.get("projectId") or None
     return (
-        jsonify({"agents": agents_services.list_my_imports(_user_dir_key(g.user), project_id)}),
+        jsonify({"agents": agents_services.list_my_imports(
+            _user_dir_key(g.user), project_id, spec_key=_driven_dataflow_key(project_id),
+        )}),
         200,
     )
 

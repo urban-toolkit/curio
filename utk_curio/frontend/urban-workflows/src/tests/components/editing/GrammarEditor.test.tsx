@@ -70,16 +70,10 @@ jest.mock("../../../providers/FlowProvider", () => ({
 
 jest.mock("../../../providers/CollaborationProvider", () => ({
     useCollab: () => ({
-        enabled: false,
         connected: false,
         users: [],
-        proposals: [],
-        currentUserId: null,
         lockedNodes: {},
         onRemote: () => () => undefined,
-        requestCodeChange: jest.fn(),
-        approveCodeChange: jest.fn(),
-        rejectCodeChange: jest.fn(),
     }),
 }));
 

@@ -18,6 +18,7 @@ import {
     useReactFlow,
 } from "reactflow";
 import { useProvenanceContext } from "../providers/ProvenanceProvider";
+import { setServerHistory } from "../providers/history/serverHistory";
 import { useToastContext } from "../providers/ToastProvider";
 import { useUserContext } from "../providers/UserProvider";
 import { isHostedGuest } from "../components/apiSettings/useHostedGuest";
@@ -90,7 +91,8 @@ export interface WorkflowOperationsDeps {
     /**
      * The canvas's binding to the dataflow's doc (`useDataflowDoc`), which
      * FlowProvider fills once the bridge exists. A bound canvas's save sends
-     * its outputs and its history, never the dataflow: the doc keeps that.
+     * its outputs, never the dataflow, which the doc keeps, nor its history,
+     * which the server keeps.
      */
     docBridgeRef?: React.MutableRefObject<DocBridgeForSaves | null>;
 }
@@ -448,6 +450,9 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
 
     const loadParsedTrill = async (workflowName: string, task: string, loaded_nodes: any, loaded_edges: any, provenance?: boolean, merge?: boolean, incomingPackages?: string[], incomingDescription?: string, incomingDatasets?: any[], incomingCategories?: HandCategories, incomingScenarios?: unknown, fit?: boolean, incomingAutoRun?: boolean) => {
         if (!merge) {
+            // The canvas holds another load now, bound to no doc until its
+            // own binds: the versions below are recorded here till then.
+            setServerHistory(null);
             TrillGenerator.reset();
             // Before the replay below, whose version snapshots carry them.
             // Absent = keep, as for the categories.
@@ -701,9 +706,9 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
 
     // Removes nodes together with their edges. Shared by a reviewed plan apply
     // (dev/62, DEC-049) and the node header's Delete node button. Bookkeeping
-    // parity with deleting an edge by hand: onEdgesDelete (collab broadcast,
-    // provenance, survivor-input reset) and onNodesDelete (output pruning,
-    // provenance, broadcast). Already-absent elements no-op.
+    // parity with deleting an edge by hand: onEdgesDelete (provenance,
+    // survivor-input reset) and onNodesDelete (output pruning, provenance).
+    // Already-absent elements no-op.
     const applyReviewedRemovals = useCallback((nodeIds: string[], edgeIds: string[]) => {
         const edgeSet = new Set(edgeIds);
         const victimEdges = reactFlow.getEdges().filter((e: Edge) => edgeSet.has(e.id));
@@ -1056,21 +1061,16 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         const routedLoad = settleRoutedLoad();
         if (routedLoad) await routedLoad;
         // A canvas bound to the dataflow's doc saves what the doc does not
-        // hold: its outputs and its history. The doc keeps the dataflow, so the
-        // save waits until the server has every change this tab made, and its
-        // answer holds them.
+        // hold: its outputs. The doc keeps the dataflow, and the server its
+        // history, so the save waits until the server has every change this
+        // tab made, and its answer holds them.
         const docBridge = deps.docBridgeRef?.current;
         if (projectIdRef.current && !options?.savedWidgets && docBridge?.bound()) {
             await docBridge.whenKept();
-            const history = {
-                nodeProvenance: getAllNodeProvenance(),
-                dataflowProvenance: TrillGenerator.getSerializableDataflowProvenance(),
-            };
             const outputs = options?.omitOutputs ? undefined : buildOutputRefs();
             const name = nameOverride || projectNameRef.current || workflowNameRef.current;
             const dirtyAtSend = dirtyGenerationRef.current;
             const detail = await projectsApi.update(projectIdRef.current, {
-                history,
                 ...(outputs ? { outputs } : {}),
                 name,
                 ...nextSaveOrder(),
@@ -1104,6 +1104,8 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         // where it seeds the new project's refs (dev/81). On an update the
         // backend owns dataflow.datasets and ignores whatever is sent here —
         // syncDatasetsFromSavedSpec re-aligns the mirror from the response.
+        // The history this canvas recorded while bound to no doc, which the
+        // server imports when the dataflow has none of its own yet.
         const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, workflowGoalRef.current, currentPackages, workflowDescriptionRef.current, dataflowDatasetsRef.current, workflowCategoriesRef.current, scenariosRef.current, autoRunRef.current);
         spec.nodeProvenance = getAllNodeProvenance();
         spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
@@ -1507,6 +1509,9 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         // Save-a-copy is a CREATE: the serialized datasets section seeds the new
         // project's refs (dev/81) — read from the ref so the copy carries the
         // latest installed datasets.
+        // A copy of a dataflow the canvas is bound to gets its history from
+        // the server, when you may read it; a canvas bound to none carries
+        // its own.
         const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, workflowGoalRef.current, currentPackages, workflowDescriptionRef.current, dataflowDatasetsRef.current, workflowCategoriesRef.current, scenariosRef.current, autoRunRef.current);
         spec.nodeProvenance = getAllNodeProvenance();
         spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
@@ -1526,6 +1531,10 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         noteLoadedDataflow(detail?.spec?.dataflow ?? spec.dataflow, detail.id);
         setProjectId(detail.id);
         setProjectName(detail.name);
+        // Titled with the copy's own name, which the server gave its dataflow
+        // too (save_project). The canvas kept the name of the dataflow it
+        // copied, so the copy read as the original until a save renamed it.
+        setWorkflowName(detail.name);
         setProjectSavedAt(new Date());
         setProjectDirty(false);
         setViewerMode("owner");
@@ -1537,7 +1546,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             ?.packages;
         setCurrentProject(detail.id, Array.isArray(copiedPackages) ? copiedPackages : []);
         return detail;
-    }, [workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, syncDatasetsFromSavedSpec, defaultSaveOutputDataset]);
+    }, [workflowNameRef, setWorkflowName, reactFlow, deps.outputsRef, blockGuestSaves, syncDatasetsFromSavedSpec, defaultSaveOutputDataset]);
 
     const loadProject = useCallback(async (id: string, options?: { lastResults?: boolean }) => {
         const result = await projectsApi.get(id, options);

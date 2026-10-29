@@ -121,7 +121,7 @@ Curio is a framework for collaborative urban visual analytics that uses a datafl
 - 📊 **Shareable dashboards.** Pinned nodes get a page of their own at `/dashboard/<id>`, drawn from the dataflow's saved outputs. Share the link; nobody has to run anything.
 - 🦆 **DuckDB-native artifact I/O.** Type-safe data exchange between sandbox and backend.
 - 🖼️ **Project thumbnails** in the project list, plus the `--with-examples` flag to seed example projects on startup, and toast notifications.
-- 👥 **Real-time collaboration.** Opt-in via `curio start --collab`. Co-edit a project with presence, soft locks, and shared execution output. See [docs/COLLABORATION.md](docs/COLLABORATION.md).
+- 👥 **Real-time collaboration.** Edit a dataflow with the people you invite: code typed together, every change live for everyone in it, and who is here at the top of the canvas. See [docs/COLLABORATION.md](docs/COLLABORATION.md).
 
 See the full [release notes](https://github.com/urban-toolkit/curio/releases) for more. To get started, follow the [usage guide](docs/USAGE.md) or jump into the [quick start tutorial](docs/QUICK-START.md). If you'd like to contribute, read the [contribution guide](docs/CONTRIBUTING.md).
 

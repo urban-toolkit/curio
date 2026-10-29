@@ -354,7 +354,7 @@ const FlowProvider = ({
 
     // The nodes' Provenance drawers: a run files an entry, and so does an
     // agent's applied change to a node's code.
-    const { nodeExecProv, nodeEditProv } = useProvenanceContext();
+    const { nodeExecProv, agentEditProv } = useProvenanceContext();
 
     // The doc an agent's applied code is the server's in, once the canvas binds.
     const codeDocRef = useRef<AppliedCodeDoc | null>(null);
@@ -362,7 +362,7 @@ const FlowProvider = ({
         applyNodeContent, addNode, propagateDownstreamInputs, applyOutput, onEdgesDelete, onNodesDelete,
     } = useGraphEdits({
         setNodes, setEdges, reactFlow, workflowNameRef, outputsRef, markNodeStaleRef, setOutputs,
-        nodeEditProv, markDirtyRef, codeDocRef,
+        agentEditProv, markDirtyRef, codeDocRef,
     });
 
     const { onConnect, isValidConnection } = useConnect({
@@ -414,10 +414,12 @@ const FlowProvider = ({
     scenariosNowRef.current = () => workflowOps.scenariosRef?.current ?? workflowOps.scenarios ?? [];
 
     // The canvas and the dataflow's doc, both ways. A watcher's canvas takes
-    // the doc's changes and writes none.
+    // the doc's changes and writes none, and has no history to read.
+    const role = canvasRole(workflowOps.viewerMode, collab);
     const dataflowDoc = useDataflowDoc({
         binding: dashboardOn ? null : docBinding,
-        canWrite: canvasRole(workflowOps.viewerMode, collab) !== "watcher" && !!docBinding?.provider.canWrite,
+        canWrite: role !== "watcher" && !!docBinding?.provider.canWrite,
+        readsHistory: role !== "watcher",
         nodes, edges, setNodes, setEdges, reactFlow,
         workflowNameRef, workflowGoalRef: workflowOps.workflowGoalRef, workflowDescriptionRef,
         workflowCategoriesRef: workflowOps.workflowCategoriesRef, scenariosRef: workflowOps.scenariosRef,
@@ -630,7 +632,6 @@ const FlowProvider = ({
                     noteRemoval: dataflowDoc.noteRemoval,
                     askBeforeRemoving: removal.ask,
                     noteNodeData: dataflowDoc.noteNodeData,
-                    codeBefore: dataflowDoc.codeBefore,
                 },
                 // A project switch must not inherit a run in flight: the guard
                 // is provider state, and the provider outlives the dataflow

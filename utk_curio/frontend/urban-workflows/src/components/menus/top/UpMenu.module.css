@@ -55,16 +55,9 @@
    tooltips. Queried against the header's slot rather than the window: the
    account's name is as long as the user's, so the room left over is not a
    function of the window width alone. The slot's controls need about 790px
-   with every catalog label showing and the view switch as icons, and about
-   40px more with the collaboration button. */
+   with every catalog label showing and the view switch as icons. */
 @container (max-width: 800px) {
   .catalogLabel {
-    display: none;
-  }
-}
-
-@container (max-width: 860px) {
-  .catalogsCrowded .catalogLabel {
     display: none;
   }
 }
@@ -76,13 +69,6 @@
 .canvasHeader .viewSwitch {
   margin-left: auto;
   margin-right: 0;
-}
-
-/* ── Collaboration ───────────────────────────────────────────────────────── */
-
-.peerCount {
-  font-size: 10px;
-  font-weight: 700;
 }
 
 /* ── The dataflow's title, under the bar ─────────────────────────────────── */
@@ -111,12 +97,22 @@
   background: #ffffff;
 }
 
-/* The catalog pages' page title (CatalogBrowseLayout.module.css `.titleRow h1`). */
+/* The catalog pages' page title (CatalogBrowseLayout.module.css `.titleRow h1`).
+   One line, cut short with an ellipsis where it would run under the agents'
+   dock on its row, as a node's title is cut in its header
+   (EditableNodeHeaderLabel.module.css `.labelText`); the full name is its
+   tooltip. The dock sets --curio-canvas-dock-left (AgentDock.tsx), whose
+   default is the window's width when no dock is on the row (curioTokens.css);
+   50px is where the container starts. */
 .workflowNameStyle {
   font-size: 20px;
   font-weight: 700;
   color: var(--curio-text-primary);
   cursor: pointer;
+  max-width: max(6em, calc(var(--curio-canvas-dock-left) - 50px - 16px));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* The category chips hang under the title without widening its container,
