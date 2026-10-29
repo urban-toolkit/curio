@@ -616,8 +616,10 @@ The dataset stays in your Data Catalog and in any other dataflow using it.`) +
 
   return {
     fileInputRef,
-    projectId,
-    dataflowId,
+    // The dataflow the drawer is of, the one its listing and its In project
+    // tab read, so a card's in-project state agrees with the tab that listed
+    // it. Its Add, Remove and Publish save through the flow state instead.
+    projectId: dataflowId,
     tab,
     setTab,
     search,
