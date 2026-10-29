@@ -44,8 +44,9 @@ export interface ScenarioCatalogDrawerProps {
  * there, so such a card changes nothing in it. It offers its details, the way
  * to its project, which asks first when this dataflow has unsaved changes, and
  * a drag onto the canvas, which brings a copy of the scenario into this
- * dataflow as a new scenario set. Checking cards of one set drags them
- * together; an unchecked card drags alone. While a card is dragged, the scrim lets the drag through to the
+ * dataflow as a new scenario set. To bring several of a set, "Select to
+ * drag" in its heading shows checkboxes on its cards, and the handle there
+ * drags the checked ones. While a card is dragged, the scrim lets the drag through to the
  * canvas beneath it, as in every drawer (useDrawerDragThrough).
  *
  * In project is this dataflow's scenarios, read off the canvas, with what can
@@ -85,7 +86,11 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
     groups,
     handleScenarioDragStart,
     handleScenarioDragEnd,
+    handleCheckedDragStart,
+    isSelecting,
     isChecked,
+    startSelecting,
+    stopSelecting,
     setRowsChecked,
     detailScenario,
     openScenarioDetails,
@@ -211,10 +216,15 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
                     isSet={Boolean(group.set.id)}
                     data={{ "data-scenario-group": group.project.id, "data-scenario-set": group.set.id }}
                     select={
-                      group.set.id
+                      group.set.id && group.items.length > 1
                         ? {
+                            active: isSelecting(group.items[0]),
                             checked: group.items.filter(isChecked).length,
+                            onStart: () => startSelecting(group.items[0]),
+                            onDone: stopSelecting,
                             onAll: (on) => setRowsChecked(group.items, on),
+                            onDragStart: handleCheckedDragStart,
+                            onDragEnd: handleScenarioDragEnd,
                           }
                         : undefined
                     }
@@ -235,12 +245,16 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
                         scenario={scenario}
                         highlight={rowHighlight(scenario)}
                         onOpenDetails={openScenarioDetails}
+                        // In select mode the card is checked, not dragged: the
+                        // set's handle drags what is checked.
                         check={
-                          group.set.id
+                          isSelecting(scenario)
                             ? { checked: isChecked(scenario), onChange: (on) => setRowsChecked([scenario], on) }
                             : undefined
                         }
-                        onDragStart={(event) => handleScenarioDragStart(scenario, event)}
+                        onDragStart={
+                          isSelecting(scenario) ? undefined : (event) => handleScenarioDragStart(scenario, event)
+                        }
                         onDragEnd={handleScenarioDragEnd}
                       />
                     ))}

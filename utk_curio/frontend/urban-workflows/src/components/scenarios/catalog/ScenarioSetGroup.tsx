@@ -1,6 +1,6 @@
-import React, { useEffect, useId, useRef, useState } from "react";
+import React, { useId, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faPen } from "@fortawesome/free-solid-svg-icons";
+import { faGripVertical, faPen } from "@fortawesome/free-solid-svg-icons";
 
 import { scenarioCount } from "./scenarioFacts";
 import styles from "./ScenarioSetGroup.module.css";
@@ -14,9 +14,18 @@ export interface ScenarioSetGroupProps {
   isSet?: boolean;
   /** Beside the count: Browse all's Open source project. */
   action?: React.ReactNode;
-  /** Browse all: how many of its scenarios are checked, and checking them all
-   *  or none, for a drag of several. */
-  select?: { checked: number; onAll: (on: boolean) => void };
+  /** Browse all: dragging several of its scenarios. "Select to drag" puts it
+   *  in select mode (*active*), where its cards show checkboxes and one
+   *  handle drags the *checked* ones. */
+  select?: {
+    active: boolean;
+    checked: number;
+    onStart: () => void;
+    onDone: () => void;
+    onAll: (on: boolean) => void;
+    onDragStart: (event: React.DragEvent<HTMLElement>) => void;
+    onDragEnd: () => void;
+  };
   /** In project: renames the set. *problem* says why a name cannot be used. */
   rename?: { onRename: (name: string) => void; problem: (name: string) => string | null };
   /** Spread on the section: `data-scenario-set`, `data-scenario-group`. */
@@ -27,7 +36,7 @@ export interface ScenarioSetGroupProps {
 /**
  * One scenario set in the Scenario Catalog drawer, in both tabs: a panel
  * headed by the set's name, how many scenarios it holds and, in Browse all,
- * the way to its project and a Select all for a drag of several; its
+ * the way to its project and "Select to drag", for a drag of several; its
  * scenarios' cards hang off a line beneath, as a tree's children do. In
  * project, the set is renamed in place.
  */
@@ -42,26 +51,10 @@ export function ScenarioSetGroup({
   children,
 }: ScenarioSetGroupProps) {
   const nameId = useId();
-  const allRef = useRef<HTMLInputElement>(null);
-  const some = select ? select.checked > 0 && select.checked < count : false;
-  useEffect(() => {
-    if (allRef.current) allRef.current.indeterminate = some;
-  }, [some]);
 
   return (
     <section className={styles.group} aria-labelledby={nameId} {...data}>
       <header className={styles.head}>
-        {select ? (
-          <input
-            ref={allRef}
-            type="checkbox"
-            className={styles.check}
-            aria-label={`Select all of ${name}`}
-            data-tooltip="Select all, to drag them together"
-            checked={select.checked > 0 && select.checked === count}
-            onChange={(e) => select.onAll(e.target.checked)}
-          />
-        ) : null}
         <div className={styles.titles}>
           {isSet ? <span className={styles.eyebrow}>Scenario set</span> : null}
           {rename ? (
@@ -71,19 +64,69 @@ export function ScenarioSetGroup({
               {name}
             </h3>
           )}
-          {select && select.checked > 0 ? (
-            <span className={styles.selected} data-scenario-set-selected>
-              {select.checked} selected: drag a checked card
-            </span>
-          ) : null}
         </div>
         <span className={styles.count} data-scenario-set-count>
           {scenarioCount(count)}
         </span>
         {action}
       </header>
+      {select ? <SelectBar name={name} count={count} {...select} /> : null}
       <div className={styles.cards}>{children}</div>
     </section>
+  );
+}
+
+/** "Select to drag", or, in select mode, the handle that drags the checked
+ *  scenarios, Select all or Clear, and Done. */
+function SelectBar({
+  name,
+  count,
+  active,
+  checked,
+  onStart,
+  onDone,
+  onAll,
+  onDragStart,
+  onDragEnd,
+}: { name: string; count: number } & NonNullable<ScenarioSetGroupProps["select"]>) {
+  if (!active) {
+    return (
+      <div className={styles.selectBar}>
+        <button
+          type="button"
+          className={styles.selectStart}
+          onClick={onStart}
+          data-tooltip="Pick scenarios of this set to drag onto the canvas together"
+        >
+          Select to drag
+        </button>
+      </div>
+    );
+  }
+  const label = checked === 0 ? "Check scenarios to drag" : `Drag ${checked} scenario${checked === 1 ? "" : "s"}`;
+  return (
+    <div className={`${styles.selectBar} ${styles.selectBarActive}`} data-scenario-set-selecting>
+      <div
+        role="button"
+        tabIndex={checked === 0 ? -1 : 0}
+        aria-disabled={checked === 0 || undefined}
+        aria-label={checked === 0 ? label : `${label} of ${name}`}
+        className={styles.dragHandle}
+        draggable={checked > 0}
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
+        data-scenario-drag-handle
+      >
+        <FontAwesomeIcon icon={faGripVertical} aria-hidden />
+        {label}
+      </div>
+      <button type="button" className={styles.selectLink} onClick={() => onAll(checked < count)}>
+        {checked < count ? "Select all" : "Clear"}
+      </button>
+      <button type="button" className={styles.selectDone} onClick={onDone}>
+        Done
+      </button>
+    </div>
   );
 }
 

@@ -219,6 +219,12 @@ def _drag_scenario_onto_canvas(page, project_id: str, scenario_id: str, at=(700.
     ``drag_to_canvas`` drags a dataset: dragstart on the card, then dragover
     and drop on the canvas, then dragend."""
     card = page.locator(f'[data-curio-scenario-catalog-drawer="true"] [data-scenario-key="{project_id}/{scenario_id}"]')
+    _drag_onto_canvas(page, card, at)
+
+
+def _drag_onto_canvas(page, source, at=(700.0, 120.0)) -> None:
+    """Drag *source*, a card or a set's drag handle, onto the canvas."""
+    card = source
     card.wait_for(state="visible", timeout=20000)
     pane = page.locator(CANVAS_DROP_TARGET)
     box = pane.bounding_box()
@@ -774,8 +780,8 @@ def test_two_scenarios_checked_and_dragged_together_arrive_as_a_new_set(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
     """A set of three scenarios reads one loader. ``compare`` reads two of
-    them, ``all`` reads all three. Checking the two and dragging one of their
-    cards brings both as a new set, "Heights (copy)": the loader once, as
+    them, ``all`` reads all three. Select to drag, checking the two, and
+    dragging the set's handle brings both as a new set, "Heights (copy)": the loader once, as
     data, shared by both; ``compare``, every input of which came; not
     ``all``, which would miss the third. Everything arrives collapsed. Python
     nodes only, so it runs without WebGPU."""
@@ -826,14 +832,17 @@ def test_two_scenarios_checked_and_dragged_together_arrive_as_a_new_set(
     source = _create_project(current_server, token, "Heights", spec)
 
     drawer = _open_scenario_catalog(page)
+    panel = drawer.locator('section[data-scenario-set="hs"]')
+    panel.get_by_role("button", name="Select to drag").click()
     for name in ("Doubled", "Tripled"):
-        drawer.get_by_role("checkbox", name=f"Select {name}").check()
-    expect(drawer.get_by_text("2 selected: drag a checked card")).to_be_visible()
+        panel.get_by_role("checkbox", name=f"Select {name}").check()
+    handle = panel.locator("[data-scenario-drag-handle]")
+    expect(handle).to_have_text("Drag 2 scenarios")
     with page.expect_response(
         lambda r: r.request.method == "POST" and r.url.endswith("/api/scenarios/sets/" + source + "/hs/copy"),
         timeout=240000,
     ) as copied:
-        _drag_scenario_onto_canvas(page, source, "s-double")
+        _drag_onto_canvas(page, handle)
     assert copied.value.ok, copied.value.text()
     _toast(page, 'Added 2 scenarios of "Heights" as the scenario set "Heights (copy)"')
     page.keyboard.press("Escape")

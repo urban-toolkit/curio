@@ -69,7 +69,7 @@ from .test_map_edits_e2e import _edits_of
 from .test_multi_input_e2e import _wait_for_circles
 from .test_scenario_drop_e2e import (
     _copies,
-    _drag_scenario_onto_canvas,
+    _drag_onto_canvas,
     _open_scenario_catalog,
     _saved_spec,
     _status,
@@ -762,8 +762,8 @@ def test_both_scenarios_dragged_into_an_empty_project_read_one_context(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
     """The seeded example runs and is saved; then, in an empty project, both of
-    its scenarios are checked and dragged in together from the Scenario
-    Catalog, as a new set: they show their saved results with no run, read one
+    its scenarios are checked (Select to drag) and dragged in together by
+    their set's handle, as a new set: they show their saved results with no run, read one
     context, and expand in place. A
     Vega-Lite chart reading ``inputs``, wired to the two dropped Roads nodes,
     names each input's rows by the dropped box its node is in."""
@@ -812,9 +812,12 @@ def test_both_scenarios_dragged_into_an_empty_project_read_one_context(
     python, _loads, stop = _record_runs(page, DATA)
     _zoom_out(page)
     _open_scenario_catalog(page)
+    card = page.locator(f'[data-scenario-key="{source}/{BASELINE}"]')
+    panel = drawer.locator("section[data-scenario-set]").filter(has=card)
+    panel.get_by_role("button", name="Select to drag").click()
     for name in ("Baseline", "Twice as tall"):
-        drawer.get_by_role("checkbox", name=f"Select {name}").first.check()
-    _drag_scenario_onto_canvas(page, source, BASELINE, at=(200.0, 80.0))
+        panel.get_by_role("checkbox", name=f"Select {name}").check()
+    _drag_onto_canvas(page, panel.locator("[data-scenario-drag-handle]"), at=(200.0, 80.0))
     _toast(page, "Added 2 scenarios of ")
     page.keyboard.press("Escape")
     wait_for_drawer_closed(page, '[data-curio-scenario-catalog-drawer="true"]')
