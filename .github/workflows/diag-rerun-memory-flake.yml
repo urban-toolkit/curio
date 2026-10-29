@@ -40,6 +40,7 @@ jobs:
         run: nproc; free -m; lscpu | grep -E "Model name|^CPU\(s\)"; uname -r
 
       - name: Allocation bench, interleaved
+        if: ${{ false }}
         run: |
           base="-e MALLOC_ARENA_MAX=16 -e ARROW_DEFAULT_MEMORY_POOL=system"
           for round in 1 2 3; do
@@ -59,11 +60,13 @@ jobs:
       - name: Replays, interleaved
         run: |
           mkdir -p out
-          for variant in launch launch_mmap4m launch_mmap32m_trim8m launch_mmap8m_trim16m; do
+          n=0
+          for variant in launch launch_mmap32m_trim8m launch_mmap32m_trim8m launch launch launch_mmap32m_trim8m; do
+            n=$((n + 1))
             docker run --rm -v "$GITHUB_WORKSPACE/.github/diag:/diag:ro" -v "$GITHUB_WORKSPACE/out:/out" \
               -e CURIO_ISOLATION=off -e FLASK_USE_RELOADER=0 -e CURIO_LAUNCH_CWD=/app -w /app "$IMAGE" \
-              python /diag/rerun_memory_probe.py --variant "$variant" --label "bench${{ matrix.job }}" \
-                --samples 1 --cycles 10 --out "/out/bench${{ matrix.job }}-$variant.json" \
+              python /diag/rerun_memory_probe.py --variant "$variant" --label "order$n" \
+                --samples 1 --cycles 10 --out "/out/bench${{ matrix.job }}-$n-$variant.json" \
               | tee -a "$GITHUB_STEP_SUMMARY"
           done
 
