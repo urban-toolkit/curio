@@ -1,5 +1,11 @@
 """Explicit, non-chaining lifecycle commands: import/remove, seed, install with its requiresAgents closure, uninstall, publish/unpublish (DEC-029).
 
+The code an agent's and a skill's import, removal, publication and
+unpublication share is here too: a hosted guest's refusal
+(:func:`refuse_hosted_guest`) and the shared catalog's publisher rules
+(:func:`publish_entry`, :func:`unpublish_entry`), which
+``skill_lifecycle.py`` calls for skills.
+
 Application layer of the agents package (memo dev/142, B2; re-derived on enh/agent-catalog): cut from
 ``services.py`` by responsibility; every function keeps its name and body. Sibling modules are reached
 module-qualified (``agents_<module>.name``) so a test that patches the owner is seen by every caller,
@@ -23,11 +29,22 @@ from utk_curio.backend.app.agents.application import catalog as agents_catalog
 from utk_curio.backend.app.agents.repositories import project_agents as agents_project_agents
 from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.projects import storage as projects_storage
+from utk_curio.backend.app.users.capabilities import catalog_entry_refusal
 
 log = logging.getLogger(__name__)
 
 
 # ── lifecycle commands (explicit, non-chaining) ──────────────────────────────
+def refuse_hosted_guest(user, action: str) -> None:
+    """Refuse *action*, such as "import agents" or "publish skills", to a
+    hosted guest (``capabilities.catalog_entry_refusal``), with a 403. Every
+    import, removal, publication and unpublication of an Agent Catalog entry
+    asks this first, an agent's and a skill's alike."""
+    refusal = catalog_entry_refusal(user, action)
+    if refusal:
+        raise AgentServiceError(refusal, 403)
+
+
 def _fan_out_imports(user, user_key: str, coord: str, *, install: bool) -> list[dict]:
     """Apply an account-level import decision to every project the user has.
 
@@ -43,7 +60,9 @@ def _fan_out_imports(user, user_key: str, coord: str, *, install: bool) -> list[
     opened, so only a walk at decision time can make the claim true.
 
     Best-effort per project - one project with a broken spec must not abort the
-    rest, and never fails the import itself.
+    rest, and never fails the import itself. Each result names its project
+    (``id``, ``name``); a project with no spec has nothing to remove, so an
+    uninstall there succeeds.
     """
     if user is None:
         return []
@@ -55,14 +74,18 @@ def _fan_out_imports(user, user_key: str, coord: str, *, install: bool) -> list[
             if install:
                 install_in_project(user_key, project.id, coord)
             else:
-                uninstall_from_project(user_key, project.id, coord)
-            results.append({"id": project.id, "ok": True})
+                try:
+                    uninstall_from_project(user_key, project.id, coord)
+                except AgentServiceError as exc:
+                    if exc.status != 404:  # a project with no spec: nothing to remove
+                        raise
+            results.append({"id": project.id, "name": project.name, "ok": True})
         except Exception as exc:  # noqa: BLE001 - per-project failure is OK
             log.warning(
                 "agent import fan-out (%s) failed for project %s: %s",
                 "install" if install else "uninstall", project.id, exc,
             )
-            results.append({"id": project.id, "ok": False, "error": str(exc)})
+            results.append({"id": project.id, "name": project.name, "ok": False, "error": str(exc)})
     return results
 
 
@@ -83,8 +106,10 @@ def import_agent(user_key: str, coord: str, *, user=None) -> dict:
 
     ``user`` is optional so the many existing callers that only hold a
     ``user_key`` keep working unchanged; without it this records the coordinate
-    and nothing else, exactly as before.
+    and nothing else, exactly as before. A hosted guest is refused
+    (:func:`refuse_hosted_guest`).
     """
+    refuse_hosted_guest(user, "import agents")
     _refuse_internal(coord)
     agents_catalog._require_definition(user_key, coord)
     agents_catalog._materialize_definition(user_key, coord)
@@ -93,10 +118,74 @@ def import_agent(user_key: str, coord: str, *, user=None) -> dict:
     return {"coord": coord, "imported": True, "projects": projects}
 
 
+#: How many dataflows a refusal of Remove from all projects names, before
+#: how many more there are.
+NAMED_DATAFLOWS = 3
+
+
+def _named(entries: list[str]) -> str:
+    """The first :data:`NAMED_DATAFLOWS` of *entries*, then how many more."""
+    shown = entries[:NAMED_DATAFLOWS]
+    more = len(entries) - len(shown)
+    return "; ".join(shown) + (f"; and {more} more" if more else "")
+
+
+def _agent_name(user_key: str, coord: str) -> str:
+    """The name of the agent at *coord*, or *coord* when it names none."""
+    try:
+        m = agents_catalog._resolve_definition(user_key, coord)
+    except (ValueError, PermissionError):  # a coordinate no agent folder can have
+        m = None
+    return m.name if m is not None else coord
+
+
+def _kept_by_dependents(user, user_key: str, coord: str) -> list[str]:
+    """The account's dataflows where another added agent requires *coord*,
+    each as ``<dataflow> (<the agents that require it>)``: the refusal
+    ``uninstall_from_project`` makes, asked of every project before anything
+    is written, as an install resolves its whole closure first (dev/106)."""
+    if user is None:
+        return []
+    from utk_curio.backend.app.projects import repositories as projects_repo
+
+    kept: list[str] = []
+    for project in projects_repo.list_for_user(user.id):
+        spec = dataflow_docs.read(user_key, project.id)
+        current = project_agents.project_agents(spec) if isinstance(spec, dict) else []
+        dependents = delegation.required_by(user_key, current, coord) if coord in current else []
+        if dependents:
+            kept.append(f"{project.name} ({', '.join(_agent_name(user_key, d) for d in dependents)})")
+    return kept
+
+
 def remove_import(user_key: str, coord: str, *, user=None) -> dict:
-    """Drop *coord* from My Imports and uninstall it from every project."""
-    imports.remove_imported_agent(user_key, coord)
+    """Uninstall *coord* from every project, then drop it from My Imports.
+
+    Refused with a 409 before anything is written while another added agent
+    requires it in one of the account's dataflows, naming those dataflows
+    and those agents: it stays in every project and in My Imports, so "In all
+    projects" stays true and new projects still get it. A project whose
+    removal fails otherwise keeps it too, and so does My Imports, with a 409
+    naming that project. A hosted guest is refused
+    (:func:`refuse_hosted_guest`)."""
+    refuse_hosted_guest(user, "remove agents")
+    kept = _kept_by_dependents(user, user_key, coord)
+    if kept:
+        name = _agent_name(user_key, coord)
+        raise AgentServiceError(
+            f"{name} stays in all your projects, because other agents require it in {_named(kept)}. "
+            f"Remove those agents there first, then remove {name} again.",
+            409,
+        )
     projects = _fan_out_imports(user, user_key, coord, install=False)
+    failed = [f"{row['name']} ({row['error']})" for row in projects if not row["ok"]]
+    if failed:
+        raise AgentServiceError(
+            f"{_agent_name(user_key, coord)} stays in all your projects, because it could not be removed "
+            f"from {_named(failed)}",
+            409,
+        )
+    imports.remove_imported_agent(user_key, coord)
     return {"coord": coord, "imported": False, "projects": projects}
 
 
@@ -260,7 +349,9 @@ def _disclose_closure_repair(
 
 
 def uninstall_from_project(user_key: str, project_id: str, coord: str) -> dict:
-    """Remove *coord* from the project's lockfile and drop its defaults record.
+    """Remove *coord* from the project's lockfile, with its attachments and
+    their transcripts, once the write lands (``sessions.delete_sessions_of``),
+    as a detach deletes one's.
 
     dev/106: refused (409) while another INSTALLED template lists *coord*'s
     agent in ``requiresAgents`` — the dependents are named. No cascade."""
@@ -291,24 +382,53 @@ def uninstall_from_project(user_key: str, project_id: str, coord: str) -> dict:
         dirty = True
     if dirty:
         dataflow_docs.write(user_key, project_id, spec, dataflow_docs.person(user_key, "agents"))
+        sessions.delete_sessions_of(user_key, project_id, detached)
     return {
         "agents": project_agents.project_agents(spec),
         "detached": [r.get("attachmentId") for r in detached],
     }
 
 
-NOT_THE_PUBLISHER_MESSAGE = "only the owning account can unpublish this definition"
-NOT_THE_PUBLISHER_REPLACE_MESSAGE = "only the account that published this definition can replace it"
+def not_the_publisher(catalog: publications.SharedCatalog, *, replacing: bool) -> str:
+    """Why an account that did not publish an entry of *catalog* may not
+    unpublish it or, *replacing*, publish over it."""
+    return f"only the account that published this {catalog.noun} can {'replace' if replacing else 'unpublish'} it"
 
 
-def publish_agent(user_key: str, coord: str) -> dict:
+def publish_entry(catalog: publications.SharedCatalog, user_key: str, name: str, source) -> None:
+    """Copy *source*, the folder of the account's own entry *name*, into the
+    shared *catalog*, and record *user_key* as its publisher: an agent's
+    (:func:`publish_agent`) and a skill's (``skill_lifecycle.publish_skill``)
+    alike. A republish replaces what is there, so it follows unpublish's
+    rule: only the account that published it may."""
+    if catalog.is_published(name) and not catalog.is_publisher(name, user_key):
+        raise AgentServiceError(not_the_publisher(catalog, replacing=True), 403)
+    catalog.publish_from_dir(source, name)
+    catalog.record_publisher(name, user_key)
+
+
+def unpublish_entry(catalog: publications.SharedCatalog, user_key: str, name: str) -> None:
+    """Remove *name* from the shared *catalog*: only its publisher may, an
+    agent's and a skill's alike.
+
+    The publisher record decides, not a store copy: every account that added
+    the entry holds one (#438). A publication with no record (published before
+    the record existed) fails closed, as a node package does."""
+    if catalog.is_published(name) and not catalog.is_publisher(name, user_key):
+        raise AgentServiceError(not_the_publisher(catalog, replacing=False), 403)
+    catalog.unpublish(name)
+
+
+def publish_agent(user_key: str, coord: str, *, user=None) -> dict:
     """Publish an owned imported definition to the Global Catalog.
 
     Imported-only (`DEC-030`): the coordinate must resolve to a store definition
     whose provenance trust is ``imported`` (a user-owned definition) and be in My
     Imports. Built-ins — even after their bytes are materialized into the store —
-    carry trust ``built-in`` and are rejected here.
+    carry trust ``built-in`` and are rejected here. A hosted guest is refused
+    (:func:`refuse_hosted_guest`).
     """
+    refuse_hosted_guest(user, "publish agents")
     m = storage.load_installed_agent_definition(user_key, coord)
     if m is None or m.provenance.trust != "imported":
         raise AgentServiceError(
@@ -318,22 +438,14 @@ def publish_agent(user_key: str, coord: str) -> dict:
         )
     if coord not in imports.load_imported_agents(user_key):
         raise AgentServiceError("import the definition before publishing it", 400)
-    # A republish replaces what is there, so it follows unpublish's rule.
-    if publications.is_published(coord) and not publications.is_publisher(coord, user_key):
-        raise AgentServiceError(NOT_THE_PUBLISHER_REPLACE_MESSAGE, 403)
-    publications.publish_from_dir(storage.agent_definition_dir(user_key, coord), coord)
-    publications.record_publisher(coord, user_key)
+    publish_entry(publications.AGENTS, user_key, coord, storage.agent_definition_dir(user_key, coord))
     return {"coord": coord, "published": True}
 
 
-def unpublish_agent(user_key: str, coord: str) -> dict:
-    """Remove a published definition from the Global Catalog (only its publisher may).
-
-    The publisher record decides, not a store copy: every account that added
-    the agent holds one (#438). A publication with no record (published before
-    the record existed) fails closed, as a node package does.
-    """
-    if publications.is_published(coord) and not publications.is_publisher(coord, user_key):
-        raise AgentServiceError(NOT_THE_PUBLISHER_MESSAGE, 403)
-    publications.unpublish(coord)
+def unpublish_agent(user_key: str, coord: str, *, user=None) -> dict:
+    """Remove a published definition from the Global Catalog: only its
+    publisher may (:func:`unpublish_entry`), and a hosted guest may not
+    (:func:`refuse_hosted_guest`)."""
+    refuse_hosted_guest(user, "unpublish agents")
+    unpublish_entry(publications.AGENTS, user_key, coord)
     return {"coord": coord, "published": False}

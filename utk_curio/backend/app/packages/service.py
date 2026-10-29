@@ -78,7 +78,7 @@ from utk_curio.backend.app.packages.application.templates import (
     template_is_executable,
 )
 from utk_curio.backend.app.packages.application.node_templates import installed_template, template_behavior
-from utk_curio.backend.app.packages.application.package_skills import dataflow_skill_folders
+from utk_curio.backend.app.packages.application.package_skills import dataflow_skill_folders, package_skill_names
 from utk_curio.backend.app.packages.builder.factory import FactoryError
 
 from utk_curio.backend.app.packages.application.store_install import (
@@ -220,6 +220,7 @@ __all__ = [
     "installed_template",
     "template_behavior",
     "dataflow_skill_folders",
+    "package_skill_names",
     "template_content_kind",
     "template_flags",
     "template_is_executable",

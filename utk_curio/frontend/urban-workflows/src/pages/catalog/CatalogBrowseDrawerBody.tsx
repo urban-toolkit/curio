@@ -26,6 +26,7 @@ export interface CatalogBrowseDrawerBodyProps {
   /** Publisher/provenance line under the title. */
   subtitle: React.ReactNode;
   metaLeft: React.ReactNode;
+  /** Beside the freshness dot; empty (a skill that names no license) leaves out the dot too. */
   metaRight: React.ReactNode;
   /** Drives the meta-row freshness dot (green within 24h, grey otherwise). */
   fresh: boolean;
@@ -123,10 +124,12 @@ export const CatalogBrowseDrawerBody: React.FC<CatalogBrowseDrawerBodyProps> = (
 
         <div className={styles.drawerMeta}>
           <span>{metaLeft}</span>
-          <span className={styles.drawerMetaRight}>
-            <span className={`${styles.liveDot} ${fresh ? styles.liveDotGreen : styles.liveDotGray}`} />
-            <span>{metaRight}</span>
-          </span>
+          {metaRight ? (
+            <span className={styles.drawerMetaRight}>
+              <span className={`${styles.liveDot} ${fresh ? styles.liveDotGreen : styles.liveDotGray}`} />
+              <span>{metaRight}</span>
+            </span>
+          ) : null}
         </div>
 
         {description ? (
