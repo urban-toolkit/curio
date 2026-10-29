@@ -42,9 +42,14 @@ room (``join_session``, ``events.py``) takes part.
   starts. It waits for the doc with the updates: a batch keeps each client's
   latest state and sends each tab one message, its own clients' left out. The
   server writes each state's ``user``, the participant the room knows; a
-  socket sets only client ids no other account's socket set; a watcher's
-  state keeps only its presence (:data:`PRESENCE_FIELDS`), never an edit; and
-  a socket's states are cleared when it disconnects (:func:`leave`).
+  socket sets only client ids no other person's socket set (an account, and
+  on a guest account, which every guest signs in to, a sign-in), and never an
+  agent's; a watcher's state keeps only its presence (:data:`PRESENCE_FIELDS`),
+  never an edit; and a socket's states are cleared when it disconnects
+  (:func:`leave`).
+* An agent at work is in the room too: the server writes its state under a
+  client id no tab holds, and puts it back when the doc opens again
+  (:func:`set_agent_state`, ``agent_peers.py``).
 
 **The log, the dataflow's one history.** Every change to the doc is appended to
 its update log the moment it lands, and the log is never emptied. It is kept
@@ -624,6 +629,7 @@ def _attach(entry: _OpenDoc, doc) -> None:
     entry.updates = []
     entry.awareness = Awareness(doc)
     entry.awareness.set_local_state(None)  # the server is no one in the room
+    _put_agents_back(entry)
     doc.observe(entry.on_update)
     entry.awareness.observe(entry.on_awareness)
     history.observe(entry)
@@ -1048,6 +1054,7 @@ def reset_for_tests() -> None:
             entry.closed = True
         _docs.clear()
         _sid_docs.clear()
+        _agent_states.clear()
     for entry in entries:
         with entry.queue:
             drainer = entry.drainer
@@ -1696,15 +1703,17 @@ def _latest(entries: list[tuple[int, int, str]]) -> list[tuple[int, int, str]]:
 def _accepted_awareness(entry: _OpenDoc, sid: str, me: dict,
                         entries: list[tuple[int, int, str]]) -> tuple[bytes, set[int]]:
     """The states among awareness *entries* a socket may set, as the server
-    relays them, and their client ids. A client id another account's socket
-    set is not this one's."""
+    relays them, and their client ids. An agent's client id is never a
+    socket's (:func:`set_agent_state`), not even to clear it, and a client id
+    another socket set is this one's only as :func:`_may_take` says."""
+    agents = _agent_clients(entry.project_id)
     accepted = []
     for client_id, clock, text in entries:
+        if client_id in agents:
+            continue
         owner = entry.awareness_owners.get(client_id)
-        if owner is not None and owner != sid:
-            other = entry.tabs.get(owner)
-            if other is not None and other.get("user_id") != me.get("user_id"):
-                continue
+        if owner is not None and owner != sid and not _may_take(entry, owner, sid, me):
+            continue
         try:
             state = json.loads(text) if text else None
         except ValueError:
@@ -1715,14 +1724,39 @@ def _accepted_awareness(entry: _OpenDoc, sid: str, me: dict,
         elif isinstance(state, dict):
             entry.awareness_owners[client_id] = sid
             accepted.append((client_id, clock, _named(state, me)))
+    return _encoded_states(accepted), {client_id for client_id, _clock, _state in accepted}
+
+
+def _may_take(entry: _OpenDoc, owner: str, sid: str, me: dict) -> bool:
+    """Whether the socket *sid*, the participant *me*, may set a client id the
+    socket *owner* set: once *owner* is no tab of the doc (a tab whose socket
+    reconnected sets its own client id again), and while it is one, when both
+    are one person's tabs. A person is an account, but on a guest account,
+    which every guest signs in to, a sign-in (``room_state``'s identity)."""
+    other = entry.tabs.get(owner)
+    if other is None:
+        return True
+    if other.get("user_id") != me.get("user_id"):
+        return False
+    mine = room_state.get_identity(sid) or {}
+    if not mine.get("is_guest"):
+        return True
+    theirs = room_state.get_identity(owner) or {}
+    sign_in = mine.get("token_session_id")
+    return sign_in is not None and sign_in == theirs.get("token_session_id")
+
+
+def _encoded_states(rows) -> bytes:
+    """Awareness states as an update: each client id, its clock and its state,
+    ``None`` for a state taken out."""
     encoder = Encoder()
-    encoder.write_var_uint(len(accepted))
-    for client_id, clock, state in accepted:
+    encoder.write_var_uint(len(rows))
+    for client_id, clock, state in rows:
         encoder.write_var_uint(client_id)
         encoder.write_var_uint(clock)
         # ASCII JSON: pycrdt's encoder writes a string's length in characters.
         encoder.write_var_string(json.dumps(state, separators=(",", ":")))
-    return encoder.to_bytes(), {client_id for client_id, _clock, _state in accepted}
+    return encoder.to_bytes()
 
 
 def _start(sid: str, me: dict, project_id: str, message: bytes, held_id) -> dict:
@@ -2133,3 +2167,98 @@ def register(sio) -> None:
     @sio.on(EVENT, namespace=COLLAB_NAMESPACE)
     def _yjs(payload=None):
         return receive(request.sid, payload)
+
+
+# ---------------------------------------------------------------------------
+# Agents in the room
+# ---------------------------------------------------------------------------
+
+#: The origin an agent's awareness state is applied with.
+AGENT_ORIGIN = "agent"
+
+#: The awareness state of each agent at work in a dataflow's room
+#: (``agent_peers.py``), by the client id the server writes it under, one no
+#: tab holds: its clock and its state. Kept apart from the open doc, so a doc
+#: that opens again has them back (:func:`_attach`). Guarded by this module's
+#: lock.
+_agent_states: dict[str, dict[int, list]] = {}
+
+
+def has_tabs(project_id: str) -> bool:
+    """Whether some tab is synced with the dataflow's open doc: someone to see
+    an agent at its pace. Read without the doc's lock: a moment's answer."""
+    entry = _open_entry(project_id)
+    return entry is not None and bool(entry.tabs)
+
+
+def set_agent_state(project_id: str, client_id: int, fields: dict, *, joining: bool = False) -> bool:
+    """Write *fields* into the awareness state of the agent at work under
+    *client_id*: its whole state as it joins (*joining*), then the fields that
+    change, and none to renew it. Each write moves the state's clock on, so
+    every tab takes it as new. The open doc, if any, takes it under its lock
+    and relays it to its tabs as a tab's state; a doc that opens later puts it
+    back. Whether the agent is at work: one that left is not written again."""
+    with _lock:
+        held = _agent_states.get(project_id) or {}
+        if client_id not in held and not joining:
+            return False
+        clock, state = held.get(client_id, (-1, {}))
+        _agent_states.setdefault(project_id, {})[client_id] = [clock + 1, {**state, **copy.deepcopy(fields)}]
+    entry = _open_entry(project_id)
+    if entry is not None:
+        with entry.lock:
+            if entry.loaded and not entry.closed:
+                _apply_agents(entry, [client_id])
+                _relay_awareness(entry, skip_sid=None)
+    return True
+
+
+def clear_agent_state(project_id: str, client_id: int) -> None:
+    """Take the state of the agent at work under *client_id* out of the
+    dataflow's room: it left."""
+    with _lock:
+        held = _agent_states.get(project_id)
+        if not held or held.pop(client_id, None) is None:
+            return
+        if not held:
+            del _agent_states[project_id]
+    entry = _open_entry(project_id)
+    if entry is None:
+        return
+    with entry.lock:
+        if entry.loaded and not entry.closed and client_id in entry.awareness.states:
+            entry.awareness.remove_awareness_states([client_id], AGENT_ORIGIN)
+            _relay_awareness(entry, skip_sid=None)
+
+
+def _agent_clients(project_id: str) -> frozenset:
+    """The client ids of the agents at work in the dataflow's room."""
+    with _lock:
+        return frozenset(_agent_states.get(project_id) or ())
+
+
+def _put_agents_back(entry: _OpenDoc) -> None:
+    """Put the agents at work in the dataflow's room into the awareness of its
+    doc, which a doc opening again starts without (:func:`_attach`), each a
+    clock on from the one its tabs last took."""
+    _apply_agents(entry, list(_agent_clients(entry.project_id)), step=1)
+
+
+def _apply_agents(entry: _OpenDoc, client_ids: list, *, step: int = 0) -> None:
+    """Apply agents' states, as this module holds them now, to the open doc's
+    awareness, under its lock: each at a clock above any the awareness holds
+    for its client id, which no socket then holds."""
+    rows = []
+    with _lock:
+        held = _agent_states.get(entry.project_id) or {}
+        for client_id in client_ids:
+            kept = held.get(client_id)
+            if kept is None:
+                continue
+            seen = (entry.awareness.meta.get(client_id) or {}).get("clock", -1)
+            kept[0] = max(kept[0] + step, seen + 1)
+            rows.append((client_id, kept[0], copy.deepcopy(kept[1])))
+    for client_id, _clock_at, _state in rows:
+        entry.awareness_owners.pop(client_id, None)
+    if rows:
+        entry.awareness.apply_awareness_update(_encoded_states(rows), AGENT_ORIGIN)
