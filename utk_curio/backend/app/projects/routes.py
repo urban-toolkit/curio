@@ -413,3 +413,81 @@ def duplicate_project(project_id: str):
         return _error(str(exc), exc.status)
 
     return jsonify(asdict(detail)), 201
+
+
+# ---------------------------------------------------------------------------
+# /api/projects/:id/history - the dataflow's history, for its owner and the
+# editors the owner invited (services.project_history and the rest)
+# ---------------------------------------------------------------------------
+def _history_answer(answer, status: int = 200):
+    try:
+        return jsonify(answer()), status
+    except NotFoundError:
+        return _error("Project not found", 404)
+    except ProjectError as exc:
+        return _error(str(exc), exc.status)
+
+
+@projects_bp.route("/<project_id>/history", methods=["GET"])
+@require_auth
+def get_history(project_id: str):
+    """The dataflow's versions, the one on the canvas, and whether you may
+    clear the history."""
+    return _history_answer(lambda: services.project_history(g.user, project_id))
+
+
+@projects_bp.route("/<project_id>/history/nodes/<node_id>", methods=["GET"])
+@require_auth
+def get_node_history(project_id: str, node_id: str):
+    """A node's runs and edits, each with its code."""
+    return _history_answer(lambda: services.node_history(g.user, project_id, node_id))
+
+
+@projects_bp.route("/<project_id>/history/nodes/<node_id>/runs", methods=["POST"])
+@require_auth
+def post_node_run(project_id: str, node_id: str):
+    """A run of the node: ``{code, inputs, outputs, startTime, endTime}``."""
+    body = request.get_json(silent=True) or {}
+    return _history_answer(lambda: services.record_run(g.user, project_id, node_id, body), 201)
+
+
+@projects_bp.route("/<project_id>/history/nodes/<node_id>/edits", methods=["POST"])
+@require_auth
+def post_node_edit(project_id: str, node_id: str):
+    """An edit made in the node's body: ``{label}``."""
+    body = request.get_json(silent=True) or {}
+    return _history_answer(lambda: services.record_edit(g.user, project_id, node_id, body.get("label")), 201)
+
+
+@projects_bp.route("/<project_id>/history/nodes/<node_id>/code", methods=["POST"])
+@require_auth
+def post_node_code(project_id: str, node_id: str):
+    """Put code back in the node if it still holds what you saw:
+    ``{from, code, label}``; 409 when someone changed it after."""
+    body = request.get_json(silent=True) or {}
+    return _history_answer(lambda: services.write_node_code(g.user, project_id, node_id, body))
+
+
+@projects_bp.route("/<project_id>/history/saved", methods=["POST"])
+@require_auth
+def post_saved_version(project_id: str):
+    """File > Save: a version named Saved."""
+    return _history_answer(lambda: services.record_saved(g.user, project_id), 201)
+
+
+@projects_bp.route("/<project_id>/history/<point_id>/put-back", methods=["POST"])
+@require_auth
+def post_put_back(project_id: str, point_id: str):
+    """Put a version back on the canvas, for every tab."""
+    return _history_answer(lambda: services.put_back_version(g.user, project_id, point_id))
+
+
+@projects_bp.route("/<project_id>/history/clear", methods=["POST"])
+@require_auth
+def post_clear_history(project_id: str):
+    """The owner clears the history before a version: ``{before}``."""
+    body = request.get_json(silent=True) or {}
+    before = body.get("before")
+    if not isinstance(before, str) or not before:
+        return _error("Name the version to keep the history from (before).")
+    return _history_answer(lambda: services.clear_history(g.user, project_id, before))
