@@ -206,7 +206,7 @@ def test_each_transaction_of_a_batch_is_a_point_of_its_own_named_after_its_origi
 
 
 def test_tabs_updates_applied_as_one_batch_are_a_point_per_tab_and_transaction(kept, monkeypatch):
-    """Through the server's own batch (``dataflow_docs._apply_queued``):
+    """Through the server's own batch (``dataflow_docs._apply_batch``):
     updates from several tabs that wait for the doc together are written to
     the log at once, and each is still a point of its own, named after the
     account of the tab that sent it, holding the dataflow up to its change."""

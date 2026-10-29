@@ -2,6 +2,7 @@
 
 import re
 import time
+from urllib.parse import urlparse
 
 from playwright.sync_api import (
     TimeoutError as PlaywrightTimeoutError,
@@ -252,6 +253,24 @@ def enable_save_output(page, node_id: str) -> None:
     expect(box).to_be_checked(timeout=10000)
 
 
+#: A dataflow's own route: ``/api/projects``, or ``/api/projects/<id>``.
+_DATAFLOW_PATH = re.compile(r"/api/projects(?:/(?P<id>[^/]+))?/?$")
+
+
+def is_dataflow_save(response) -> bool:
+    """Whether *response* answers the save of a dataflow itself: the PUT of
+    ``/api/projects/<id>``, or the POST of ``/api/projects`` that creates
+    one. Not a request to one of its routes (its history, its runs), which a
+    run or an edit sends while a save is out."""
+    if not response.ok:
+        return False
+    match = _DATAFLOW_PATH.search(urlparse(response.url).path)
+    if match is None:
+        return False
+    method = response.request.method
+    return (method == "PUT" and match.group("id") is not None) or (method == "POST" and match.group("id") is None)
+
+
 def save_dataflow(page, *, timeout: float = 30000) -> dict:
     """Save the open dataflow through the File menu, and wait for the write.
 
@@ -264,12 +283,7 @@ def save_dataflow(page, *, timeout: float = 30000) -> dict:
     file_btn.click(force=True)
     save_btn = page.get_by_role("button", name="Save dataflow", exact=True)
     save_btn.wait_for(state="visible", timeout=10000)
-    with page.expect_response(
-        lambda r: "/api/projects" in r.url
-        and r.request.method in ("POST", "PUT")
-        and r.ok,
-        timeout=timeout,
-    ) as saved:
+    with page.expect_response(is_dataflow_save, timeout=timeout) as saved:
         save_btn.click()
     save_btn.wait_for(state="hidden", timeout=timeout)
     return saved.value.json()

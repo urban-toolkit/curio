@@ -542,6 +542,7 @@ describe("on a canvas bound to the dataflow's doc, the history is the server's",
         </ProvenanceProvider>,
       );
       fireEvent.click(screen.getByRole("button", { name: "Node provenance pill" }));
+      await waitFor(() => expect(root()).toHaveAttribute("aria-hidden", "false"));
       await waitFor(() => expect(item("2")).not.toBeNull());
     }
 
