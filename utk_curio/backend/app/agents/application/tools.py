@@ -1244,23 +1244,33 @@ def _history_row(record: dict) -> dict:
     }
 
 
-def _execute_node_history_read(spec: dict, target: dict | None, params: dict) -> tuple[str, str]:
+def _execute_node_history_read(spec: dict, target: dict | None, params: dict,
+                               user_key: str = "", project_id: str = "") -> tuple[str, str]:
     """``node.history.read``: a node's entries, newest first, or with
-    ``entryId`` that entry's code, from the saved dataflow's
-    ``nodeProvenance``, keyed by node id as a load keys it
-    (``projects/node_provenance``, the twin of ``utils/nodeProvenanceKeys.ts``)."""
+    ``entryId`` that entry's code. A dataflow whose history the server keeps
+    as points reads the node's entries there (``collaboration/history``);
+    another reads the saved dataflow's ``nodeProvenance``, keyed by node id
+    as a load keys it (``projects/node_provenance``, the twin of
+    ``utils/nodeProvenanceKeys.ts``)."""
+    from utk_curio.backend.app.collaboration import history
     from utk_curio.backend.app.projects.node_provenance import rekey_node_provenance
 
     node_id = _resolve_node_id(target, params)
     if not node_id:
         return "error", agent_text.message("tools.no-node-id")
     nodes = [n for n in (spec.get("dataflow") or {}).get("nodes") or [] if isinstance(n, dict)]
-    if not any(n.get("id") == node_id for n in nodes):
+    node = next((n for n in nodes if n.get("id") == node_id), None)
+    if node is None:
         return "error", agent_text.message("tools.node-not-in-spec", node_id=repr(node_id))
-    saved = spec.get("nodeProvenance")
-    keyed = rekey_node_provenance(saved if isinstance(saved, dict) else {}, [str(n.get("id")) for n in nodes])
+    if user_key and project_id and history.has_points(user_key, project_id):
+        code = node.get("content") if isinstance(node.get("content"), str) else None
+        found = history.entries(user_key, project_id, node_id, code=code)["entries"]
+    else:
+        saved = spec.get("nodeProvenance")
+        keyed = rekey_node_provenance(saved if isinstance(saved, dict) else {}, [str(n.get("id")) for n in nodes])
+        found = keyed.get(node_id) or []
     records = sorted(
-        (record for record in keyed.get(node_id) or [] if isinstance(record, dict)),
+        (record for record in found if isinstance(record, dict)),
         key=lambda record: _whole_number(record.get("id")) or 0,
         reverse=True,
     )
@@ -1515,7 +1525,7 @@ def execute_read_tool(
             record["contentChangedSinceRun"] = bool(executed_sha) and executed_sha != current_sha
             return "ok", _truncate(json.dumps(record, ensure_ascii=False))
         if tool_id == "node.history.read":
-            return _execute_node_history_read(spec, target, params)
+            return _execute_node_history_read(spec, target, params, user_key, project_id)
         if tool_id == "catalog.search":
             rows = _catalog_listing_rows(user_key, project_id, params)
             return "ok", _truncate(json.dumps(_cut("datasets", rows, _CATALOG_SEARCH_MAX_ROWS), ensure_ascii=False))

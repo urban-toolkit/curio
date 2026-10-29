@@ -103,6 +103,8 @@ _SCENARIO_ID = _field_of(_SCENARIO, KEY)
 _WIDGET_NAME = _field_of(_WIDGET, KEY)
 #: The node fields that hold its code and its settings.
 _CONTENT = _field_of(_NODE, TEXT)
+#: The node field, and the key of a node's map, that holds its code.
+CONTENT = _CONTENT
 _NODE_METADATA = _field_of(_NODE, METADATA)
 _METADATA_WIDGETS = _field_of(_METADATA, WIDGETS)
 _WIDGET_VALUE = _field_of(_WIDGET, VALUE_KEY)

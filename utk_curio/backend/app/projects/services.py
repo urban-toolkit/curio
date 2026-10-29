@@ -2069,3 +2069,181 @@ def _copy_saved_outputs(
         for copy in staged:
             dataset_copy.discard_staged_copy(copy)
     return restored
+
+
+# ---------------------------------------------------------------------------
+# The dataflow's history (``collaboration/history.py``)
+# ---------------------------------------------------------------------------
+
+#: What anyone but the owner and the editors the owner invited is told.
+HISTORY_WATCHER_REFUSAL = "Only the owner and the editors the owner invited see this dataflow's history."
+#: What anyone but the owner is told who would clear it.
+HISTORY_CLEAR_REFUSAL = "Only the owner can clear this dataflow's history."
+
+
+def _history_of(user, project_id: str, *, clears: bool = False):
+    """The dataflow, its owner's storage key and *user*'s role in it, for a
+    read or a change of its history: the owner's and invited editors'
+    alone, and clearing it the owner's (``access.room_role``). A watcher and
+    a hosted guest are refused, as is anyone for a dataflow that is gone."""
+    from utk_curio.backend.app.projects import access
+    from utk_curio.backend.app.projects.models import Project
+
+    project = db.session.get(Project, project_id)
+    if project is None:
+        raise repo.NotFoundError(f"Project {project_id} not found")
+    role = access.room_role(user, project)
+    if role not in access.EDIT_ROLES:
+        raise ProjectError(HISTORY_WATCHER_REFUSAL, 403)
+    if clears and role != access.OWNER:
+        raise ProjectError(HISTORY_CLEAR_REFUSAL, 403)
+    return project, _owner_user_dir_key(project), role
+
+
+def _history_person(user) -> dict:
+    """*user* as a point of the history names a person."""
+    return {"kind": "person", "account": str(user.id), "name": user.name or user.username}
+
+
+def _history_names(ukey: str, rows: list) -> None:
+    """Name who made each of *rows* (versions or entries, each with a ``by``)
+    as the drawer lists them: a person by their name, an agent by its own
+    and the account that asked it. An agent's version with no name of its
+    own is named so."""
+    from utk_curio.backend.app.agents import service as agents_service
+    from utk_curio.backend.app.users.models import User as UserModel
+
+    accounts: dict = {}
+    agents: dict = {}
+
+    def account_name(account) -> Optional[str]:
+        if account not in accounts:
+            user = db.session.get(UserModel, int(account)) if str(account).isdigit() else None
+            accounts[account] = (user.name or user.username) if user is not None else None
+        return accounts[account]
+
+    def agent_name(coord: str) -> str:
+        if coord not in agents:
+            try:
+                bundle = agents_service.read_definition_bundle_anywhere(ukey, coord)
+            except Exception:  # noqa: BLE001 - an agent no catalog holds is named by its coordinate
+                bundle = None
+            manifest = (bundle or {}).get("manifest") if isinstance(bundle, dict) else None
+            agents[coord] = (manifest or {}).get("name") or coord
+        return agents[coord]
+
+    for row in rows:
+        by = row.get("by")
+        if not isinstance(by, dict):
+            continue
+        named = dict(by)
+        if not named.get("name") and named.get("account") is not None:
+            named["name"] = account_name(named["account"])
+        if named.get("agent"):
+            named["agentName"] = agent_name(str(named["agent"]))
+            if "preview" in row and not row.get("what"):
+                asked = named.get("name")
+                row["what"] = f"{named['agentName']}, asked by {asked}" if asked else named["agentName"]
+            if "preview" not in row and row.get("kind") == "edit" and not row.get("label"):
+                row["label"] = named["agentName"]
+        row["by"] = named
+
+
+def _history_errors(change: Callable[[], dict]) -> dict:
+    """*change*'s answer, its refusal a :class:`ProjectError`."""
+    from utk_curio.backend.app.collaboration import history
+
+    try:
+        return change()
+    except history.HistoryError as exc:
+        raise ProjectError(str(exc), exc.status) from exc
+
+
+def project_history(user, project_id: str) -> dict:
+    """The dataflow's versions as its Provenance drawer lists them, the one on
+    the canvas, and whether *user* may clear the history (its owner)."""
+    from utk_curio.backend.app.collaboration import history
+    from utk_curio.backend.app.projects import access
+
+    _project, ukey, role = _history_of(user, project_id)
+    listed = history.versions(ukey, project_id)
+    _history_names(ukey, listed["versions"])
+    return {**listed, "kept": history.has_points(ukey, project_id), "canClear": role == access.OWNER}
+
+
+def node_history(user, project_id: str, node_id: str) -> dict:
+    """The node's runs and edits as its Provenance drawer lists them, each
+    with its code, and the one its next entry descends from."""
+    from utk_curio.backend.app.collaboration import history
+
+    _project, ukey, _role = _history_of(user, project_id)
+    spec = dataflow_docs.read(ukey, project_id) or {}
+    node = next((n for n in (spec.get("dataflow") or {}).get("nodes") or []
+                 if isinstance(n, dict) and n.get("id") == node_id), None)
+    code = node.get("content") if isinstance(node, dict) and isinstance(node.get("content"), str) else None
+    listed = history.entries(ukey, project_id, node_id, code=code)
+    _history_names(ukey, listed["entries"])
+    return listed
+
+
+def record_run(user, project_id: str, node_id: str, body: dict) -> dict:
+    """A run of the node on *user*'s tab, as its entry and its point."""
+    from utk_curio.backend.app.collaboration import history
+
+    _project, ukey, _role = _history_of(user, project_id)
+    code = body.get("code") if isinstance(body.get("code"), str) else ""
+    inputs = body.get("inputs") if isinstance(body.get("inputs"), list) else []
+    outputs = body.get("outputs") if isinstance(body.get("outputs"), list) else []
+    return _history_errors(lambda: history.note_run(
+        ukey, project_id, _history_person(user), node_id, inputs=inputs, outputs=outputs,
+        start_time=str(body.get("startTime") or ""), end_time=str(body.get("endTime") or ""), code=code,
+    ))
+
+
+def record_edit(user, project_id: str, node_id: str, label) -> dict:
+    """An edit *user* made in the node's body (a Map Editor's), named *label*."""
+    from utk_curio.backend.app.collaboration import history
+
+    _project, ukey, _role = _history_of(user, project_id)
+    return _history_errors(lambda: history.note_edit(
+        ukey, project_id, _history_person(user), node_id, str(label or "").strip() or "Edit",
+    ))
+
+
+def record_saved(user, project_id: str) -> dict:
+    """File > Save: a version named Saved."""
+    from utk_curio.backend.app.collaboration import history
+
+    _project, ukey, _role = _history_of(user, project_id)
+    return _history_errors(lambda: history.saved(ukey, project_id, _history_person(user)))
+
+
+def put_back_version(user, project_id: str, point_id: str) -> dict:
+    """Put the version back on the canvas, for every tab."""
+    from utk_curio.backend.app.collaboration import history
+
+    _project, ukey, _role = _history_of(user, project_id)
+    return _history_errors(lambda: history.put_back(ukey, project_id, point_id, _history_person(user)))
+
+
+def write_node_code(user, project_id: str, node_id: str, body: dict) -> dict:
+    """Put code back in the node (a put-back, the Map Editor's Undo or Redo)
+    only if the node still holds the code it began from."""
+    from utk_curio.backend.app.collaboration import history
+
+    _project, ukey, _role = _history_of(user, project_id)
+    expect, code = body.get("from"), body.get("code")
+    if not isinstance(expect, str) or not isinstance(code, str):
+        raise ProjectError("Send the code the node holds (from) and the code to put back (code).", 400)
+    label = str(body.get("label") or "").strip() or "Code put back"
+    return _history_errors(lambda: history.write_code(
+        ukey, project_id, _history_person(user), node_id, expect=expect, code=code, label=label,
+    ))
+
+
+def clear_history(user, project_id: str, point_id: str) -> dict:
+    """The owner clears the history before the version *point_id*."""
+    from utk_curio.backend.app.collaboration import history
+
+    _project, ukey, _role = _history_of(user, project_id, clears=True)
+    return _history_errors(lambda: history.clear_before(ukey, project_id, point_id))
