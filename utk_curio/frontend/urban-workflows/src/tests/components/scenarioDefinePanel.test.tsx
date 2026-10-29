@@ -293,7 +293,8 @@ describe("Edit scenario", () => {
     fireEvent.click(screen.getByTestId("scenario-define-save"));
     const [scenarios, sets] = mockFlow.setScenarios.mock.calls[0];
     expect(sets).toHaveLength(1);
-    expect(sets[0]).toEqual(expect.objectContaining({ name: "Park shade" }));
+    // The dataflow's name is taken by the set it leaves, so the new one is told apart.
+    expect(sets[0]).toEqual(expect.objectContaining({ name: "Park shade 2" }));
     expect(sets[0].id).not.toBe("park");
     expect(scenarios).toEqual([
       expect.objectContaining({ id: "e", color: "#123456", name: "Both", nodes: ["existing", "towers"], set: sets[0].id }),

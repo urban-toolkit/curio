@@ -220,18 +220,18 @@ def test_a_shipped_scenario_drops_from_a_project_never_run_and_runs(
     sent, _outputs, stop = _record_python_runs(page)
     _open_scenario_catalog(page)
     with page.expect_response(
-        lambda r: r.request.method == "POST" and r.url.endswith(f"/api/scenarios/{source}/{scenario}/copy"),
+        lambda r: r.request.method == "POST" and r.url.endswith("/copy") and f"/{source}/" in r.url,
         timeout=DROP_MS,
     ) as copied:
         _drag_scenario_onto_canvas(page, source, scenario)
     assert copied.value.ok, copied.value.text()
-    _toast(page, f'Added "{name}" from {project}.')
+    _toast(page, f'Added "{name}" from {project} as the scenario set')
     page.keyboard.press("Escape")
     wait_for_drawer_closed(page, DRAWER)
     stop()
     assert started == [{"targets": sources}], f"the drop asked for {started} to run the context"
     assert sent == [], f"the page ran {sent}: the context runs on the server, in its own project"
-    running = f"Running {_listed([node['label'] for node in to_run])} in {project} for {name}"
+    running = f"Running {_listed([node['label'] for node in to_run])} in {project} for \"{name}\""
     toasts = page.evaluate("() => window.__curioDropToasts")
     assert any(running in toast for toast in toasts), f"no {running!r} among {toasts}"
 

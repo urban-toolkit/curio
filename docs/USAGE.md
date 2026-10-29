@@ -840,7 +840,8 @@ On top of it is **Define scenario**, and each scenario's card offers:
 **View details** on a card renames, recolors and describes the scenario, and
 lists its shared context, its own nodes and its outcomes. Pointing at a card marks
 the scenario's context and outcomes on the canvas. The tab lists the scenarios
-in a panel per set, headed by its name and how many scenarios it holds. In a dataflow someone shares with you,
+in a panel per set, headed by its name and how many scenarios it holds; the pencil
+beside the name renames the set. No two sets of a dataflow share a name. In a dataflow someone shares with you,
 the tab lists the scenarios without these controls.
 
 On the canvas, an expanded scenario's nodes wear its color inside a frame, with its

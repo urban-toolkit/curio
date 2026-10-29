@@ -314,7 +314,8 @@
   color: var(--curio-danger-text);
 }
 
-.field input[aria-invalid="true"] {
+.field input[aria-invalid="true"],
+.choiceText input[aria-invalid="true"] {
   border-color: var(--curio-danger-text);
 }
 

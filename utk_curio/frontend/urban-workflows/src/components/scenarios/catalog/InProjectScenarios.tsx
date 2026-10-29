@@ -13,7 +13,7 @@ import { useSharedView } from "../../../hook/useSharedView";
 import { useFlowContext } from "../../../providers/FlowProvider";
 import type { ScenarioSortMode } from "../../../services/scenarioCatalog";
 import type { Scenario } from "../../../utils/scenarios/scenarioModel";
-import { scenarioNameProblem } from "../../../utils/scenarios/scenarioEdits";
+import { scenarioNameProblem, setNameProblem } from "../../../utils/scenarios/scenarioEdits";
 import { scenarioParts, type ScenarioParts } from "../../../utils/scenarios/scenarioParts";
 import { useScenarioUi } from "../scenarioUi";
 import { useScenarioActions } from "../useScenarioActions";
@@ -122,6 +122,14 @@ export function InProjectScenarios({ scenarios, search, sort, presented }: InPro
             count={group.items.length}
             isSet={Boolean(group.id)}
             data={{ "data-scenario-set": group.id }}
+            rename={
+              group.id && !shared
+                ? {
+                    onRename: (name) => actions.renameSet(group.id, name),
+                    problem: (name) => setNameProblem(scenarioSets ?? [], name, group.id),
+                  }
+                : undefined
+            }
           >
             {group.items.map(({ scenario, parts }) => (
               <ScenarioCard

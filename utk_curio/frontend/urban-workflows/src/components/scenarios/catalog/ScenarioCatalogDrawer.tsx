@@ -44,7 +44,8 @@ export interface ScenarioCatalogDrawerProps {
  * there, so such a card changes nothing in it. It offers its details, the way
  * to its project, which asks first when this dataflow has unsaved changes, and
  * a drag onto the canvas, which brings a copy of the scenario into this
- * dataflow. While a card is dragged, the scrim lets the drag through to the
+ * dataflow as a new scenario set. Checking cards of one set drags them
+ * together; an unchecked card drags alone. While a card is dragged, the scrim lets the drag through to the
  * canvas beneath it, as in every drawer (useDrawerDragThrough).
  *
  * In project is this dataflow's scenarios, read off the canvas, with what can
@@ -84,6 +85,8 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
     groups,
     handleScenarioDragStart,
     handleScenarioDragEnd,
+    isChecked,
+    setRowsChecked,
     detailScenario,
     openScenarioDetails,
     closeScenarioDetails,
@@ -207,6 +210,14 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
                     count={group.items.length}
                     isSet={Boolean(group.set.id)}
                     data={{ "data-scenario-group": group.project.id, "data-scenario-set": group.set.id }}
+                    select={
+                      group.set.id
+                        ? {
+                            checked: group.items.filter(isChecked).length,
+                            onAll: (on) => setRowsChecked(group.items, on),
+                          }
+                        : undefined
+                    }
                     action={
                       <button
                         type="button"
@@ -224,6 +235,11 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
                         scenario={scenario}
                         highlight={rowHighlight(scenario)}
                         onOpenDetails={openScenarioDetails}
+                        check={
+                          group.set.id
+                            ? { checked: isChecked(scenario), onChange: (on) => setRowsChecked([scenario], on) }
+                            : undefined
+                        }
                         onDragStart={(event) => handleScenarioDragStart(scenario, event)}
                         onDragEnd={handleScenarioDragEnd}
                       />

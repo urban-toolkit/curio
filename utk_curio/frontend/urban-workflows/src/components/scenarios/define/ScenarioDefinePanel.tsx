@@ -5,7 +5,13 @@ import { v4 as uuid } from "uuid";
 import { useFlowContext } from "../../../providers/FlowProvider";
 import { useToastContext } from "../../../providers/ToastProvider";
 import type { Scenario, ScenarioSet } from "../../../utils/scenarios/scenarioModel";
-import { nextScenarioColor, nextScenarioName, scenarioNameProblem } from "../../../utils/scenarios/scenarioEdits";
+import {
+  nextScenarioColor,
+  nextScenarioName,
+  scenarioNameProblem,
+  setNameProblem,
+  uniqueSetName,
+} from "../../../utils/scenarios/scenarioEdits";
 import { inferContextOutcomes } from "../../../utils/scenarios/scenarioSets";
 import { nodeLabel } from "../scenarioLabels";
 import { useScenarioUi, type ScenarioDefine } from "../scenarioUi";
@@ -91,7 +97,7 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
       ? { kind: "existing", setId: editing.set }
       : scenarioSets.length > 0
       ? { kind: "existing", setId: scenarioSets[0].id }
-      : { kind: "new", name: workflowNameRef?.current?.trim() || "Scenario set" },
+      : { kind: "new", name: uniqueSetName(workflowNameRef?.current?.trim() || "Scenario set", scenarioSets) },
   );
 
   // While it is open the canvas marks the scenario's nodes' context and outcomes.
@@ -150,6 +156,8 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
 
   // No two scenarios of a set share a name; a new set has none yet.
   const nameProblem = scenarioNameProblem(scenarios, scenarioSets, setId, name, editing?.id);
+  // No two sets of a dataflow share a name either.
+  const setProblem = choice.kind === "new" ? setNameProblem(scenarioSets, choice.name) : null;
 
   const save = () => {
     if (!lists) return;
@@ -166,8 +174,8 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
     let target: string;
     if (choice.kind === "new") {
       const setName = choice.name.trim();
-      if (!setName) {
-        showToast("Give the new scenario set a name.", "warning");
+      if (setProblem) {
+        showToast(setProblem, "warning");
         return;
       }
       target = freshSetId(scenarioSets);
@@ -355,7 +363,7 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
                   type="radio"
                   name="scenario-set"
                   checked={choice.kind === "new"}
-                  onChange={() => setChoice({ kind: "new", name: workflowNameRef?.current?.trim() || "Scenario set" })}
+                  onChange={() => setChoice({ kind: "new", name: uniqueSetName(workflowNameRef?.current?.trim() || "Scenario set", scenarioSets) })}
                 />
                 <span className={styles.choiceText}>
                   <b>Create a new scenario set</b>
@@ -365,7 +373,13 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
                       value={choice.name}
                       onChange={(e) => setChoice({ kind: "new", name: e.target.value })}
                       data-testid="scenario-define-set-name"
+                      aria-invalid={setProblem ? true : undefined}
                     />
+                  )}
+                  {setProblem && (
+                    <span className={styles.problem} role="alert">
+                      {setProblem}
+                    </span>
                   )}
                 </span>
               </label>
@@ -397,7 +411,7 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
             type="button"
             className={styles.primary}
             onClick={save}
-            disabled={!!nameProblem}
+            disabled={!!nameProblem || !!setProblem}
             data-testid="scenario-define-save"
           >
             {editing ? "Save" : "Save scenario"}

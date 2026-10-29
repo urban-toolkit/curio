@@ -13,6 +13,16 @@
   --curio-drawer-z: var(--curio-z-dataset-drawer);
 }
 
+/* Browse all: a card's checkbox, before its name, for a drag of several. */
+.cardCheck {
+  width: 15px;
+  height: 15px;
+  margin: 0 8px 0 0;
+  vertical-align: -2px;
+  cursor: pointer;
+  accent-color: var(--curio-text-primary);
+}
+
 /* The avatar square holds the project graph instead of a glyph. */
 .avatarThumb {
   overflow: hidden;

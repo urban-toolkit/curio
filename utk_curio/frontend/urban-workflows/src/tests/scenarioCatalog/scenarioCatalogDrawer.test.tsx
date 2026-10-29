@@ -153,10 +153,13 @@ describe("the canvas Scenario Catalog drawer", () => {
     };
     fireEvent.dragStart(heat, { dataTransfer });
     // The canvas reads this type (MainCanvas, useScenarioDrop).
+    // A scenario of no set drags alone, named after its project.
     expect(JSON.parse(data["application/x-curio-scenario"])).toEqual({
       projectId: "p-heat",
-      scenarioId: "s-cool",
-      name: "Cool roofs",
+      setId: "",
+      setName: "Heat study",
+      scenarioIds: ["s-cool"],
+      names: ["Cool roofs"],
     });
     expect(dataTransfer.effectAllowed).toBe("copy");
     // While it is dragged the scrim lets the drag through to the canvas.
@@ -164,6 +167,54 @@ describe("the canvas Scenario Catalog drawer", () => {
 
     fireEvent.dragEnd(heat);
     expect(root()).not.toHaveAttribute("data-dragging");
+  });
+
+  describe("checking cards of one set drags them together", () => {
+    const PARK = { id: "park", name: "Park shade" };
+    const rows = () => [
+      heatScenario({ key: "p-heat/s-a", id: "s-a", name: "Existing", set: PARK }),
+      heatScenario({ key: "p-heat/s-b", id: "s-b", name: "Towers", set: PARK }),
+      heatScenario({ key: "p-heat/s-c", id: "s-c", name: "Cap", set: PARK }),
+      exampleScenario({ set: { id: "loop", name: "Loop" } }),
+    ];
+    const dragged = (key: string) => {
+      const data: Record<string, string> = {};
+      const dataTransfer = {
+        setData: (type: string, value: string) => { data[type] = value; },
+        getData: (type: string) => data[type] ?? "",
+        setDragImage: jest.fn(),
+        types: [] as string[],
+        effectAllowed: "",
+      };
+      fireEvent.dragStart(card(key), { dataTransfer });
+      fireEvent.dragEnd(card(key));
+      return JSON.parse(data["application/x-curio-scenario"]);
+    };
+    const check = (name: string) => fireEvent.click(within(root()).getByRole("checkbox", { name: `Select ${name}` }));
+
+    beforeEach(() => api.listCatalog.mockResolvedValue({ items: rows() }));
+
+    test("a checked card drags every checked one of its set; an unchecked one drags alone", async () => {
+      renderDrawer();
+      await within(root()).findByText("Towers");
+      check("Existing");
+      check("Cap");
+      expect(within(setPanel("Park shade")).getByText("2 selected: drag a checked card")).toBeInTheDocument();
+      expect(dragged("p-heat/s-c")).toEqual({
+        projectId: "p-heat", setId: "park", setName: "Park shade", scenarioIds: ["s-a", "s-c"], names: ["Existing", "Cap"],
+      });
+      expect(dragged("p-heat/s-b").scenarioIds).toEqual(["s-b"]);
+    });
+
+    test("Select all checks a whole set, and checking another set's card starts over there", async () => {
+      renderDrawer();
+      await within(root()).findByText("Towers");
+      fireEvent.click(within(root()).getByRole("checkbox", { name: "Select all of Park shade" }));
+      expect(dragged("p-heat/s-a").scenarioIds).toEqual(["s-a", "s-b", "s-c"]);
+      check("Baseline");
+      expect(within(root()).getByRole("checkbox", { name: "Select Existing" })).not.toBeChecked();
+      expect(within(root()).getByRole("checkbox", { name: "Select Baseline" })).toBeChecked();
+    });
   });
 
   test("the search goes to the server as q", async () => {

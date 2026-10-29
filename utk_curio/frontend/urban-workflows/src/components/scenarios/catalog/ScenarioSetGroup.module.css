@@ -100,3 +100,76 @@
   width: 4px;
   background: var(--curio-card-bg);
 }
+
+/* Browse all: Select all, and a card's own checkbox (ScenarioCard). */
+.check {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--curio-text-primary);
+}
+
+.selected {
+  font-size: var(--curio-font-size-xs);
+  font-weight: 600;
+  color: var(--curio-text-secondary);
+}
+
+/* In project: the name with its pencil, or the field that renames it. */
+.nameRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.rename {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border: 1px solid transparent;
+  border-radius: var(--curio-radius-sm);
+  background: none;
+  color: var(--curio-text-secondary);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.rename:hover {
+  border-color: var(--curio-border-strong);
+  background: var(--curio-card-bg);
+}
+
+.nameInput {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: var(--curio-radius-md);
+  font: inherit;
+  font-size: var(--curio-font-size-lg);
+  font-weight: 700;
+  color: var(--curio-text-primary);
+  background: var(--curio-card-bg);
+}
+
+.nameInput[aria-invalid="true"] {
+  border-color: var(--curio-danger-text);
+}
+
+.problem {
+  flex-basis: 100%;
+  font-size: var(--curio-font-size-xs);
+  color: var(--curio-danger-text);
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}

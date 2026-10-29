@@ -20,13 +20,23 @@ import { liveScenarios } from "../../utils/scenarios/scenarioParts";
 export interface DroppedScenario {
   /** The ids of the nodes the drop added. */
   nodes: string[];
-  /** The id of the scenario it added. */
-  scenario: string;
+  /** The ids of the scenarios it added. */
+  scenarios: string[];
+  /** The id of the set it added them in. */
+  set: string;
 }
 
 /** "A", "A and B", "A, B and C". */
 function listed(labels: string[]): string {
   return labels.length < 2 ? labels.join("") : `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}`;
+}
+
+/** What a message calls the scenarios a plan drops: one by its name, several
+ *  by how many and their set. */
+function dragged(plan: ScenarioCopyPlan): string {
+  return plan.scenarios.length === 1
+    ? `"${plan.scenarios[0].name}"`
+    : `${plan.scenarios.length} scenarios of "${plan.set.name}"`;
 }
 
 /**
@@ -40,7 +50,7 @@ async function runContext(
   showToast: (message: string, variant?: ToastVariant) => void,
 ): Promise<string | null> {
   const nodes = `${listed(plan.toRun.map((node) => node.label))} in ${plan.project.name}`;
-  showToast(`Running ${nodes} for ${plan.scenario.name}`, "info");
+  showToast(`Running ${nodes} for ${dragged(plan)}`, "info");
   let runId: string;
   try {
     runId = (await runsApi.start(plan.project.id, { targets: plan.toRun.map((node) => node.nodeId) })).id;
@@ -63,7 +73,8 @@ async function runContext(
 }
 
 /**
- * A scenario dragged from the Scenario Catalog onto this canvas (#662).
+ * Scenarios of one set dragged from the Scenario Catalog onto this canvas
+ * (#662), arriving as a new scenario set, all collapsed.
  *
  * The server says what the drop copies and whether it can (a package that
  * cannot be added, a context only the browser can make); a context node with
@@ -72,13 +83,15 @@ async function runContext(
  * (`planScenarioDrop`); the server then adds the packages and copies the
  * saved outputs to those ids; and the canvas loads the copies the way
  * Duplicate selection does, with the copied outputs restored the way opening
- * a project restores them, and adds the scenario collapsed.
+ * a project restores them, and adds the scenarios and their set. Nothing is
+ * added unless all of them can be.
  *
  * Resolves to what it added, null when the drop is refused.
  */
 export function useScenarioDrop() {
   const {
     scenarios: saved,
+    scenarioSets,
     nodes,
     setScenarios,
     setOutputs,
@@ -92,6 +105,8 @@ export function useScenarioDrop() {
   // Read once the drop's run has ended, which can be long after the drop.
   const scenariosRef = useRef(scenarios);
   scenariosRef.current = scenarios;
+  const setsRef = useRef(scenarioSets);
+  setsRef.current = scenarioSets;
   const { loadTrill } = useCode();
   const reactFlow = useReactFlow();
   const { showToast } = useToastContext();
@@ -112,14 +127,14 @@ export function useScenarioDrop() {
         return null;
       }
       try {
-        let plan = await scenarioCatalogApi.getCopyPlan(payload.projectId, payload.scenarioId, target);
+        let plan = await scenarioCatalogApi.getCopyPlan(payload, target);
         if (plan.problems.length === 0 && plan.toRun.length > 0) {
           const failed = await runContext(plan, showToast);
           if (failed) {
             showToast(failed, "error");
             return null;
           }
-          plan = await scenarioCatalogApi.getCopyPlan(payload.projectId, payload.scenarioId, target);
+          plan = await scenarioCatalogApi.getCopyPlan(payload, target);
         }
         if (plan.problems.length > 0) {
           showToast(plan.problems.join(" "), "error");
@@ -128,7 +143,7 @@ export function useScenarioDrop() {
         if (plan.toRun.length > 0) {
           showToast(
             `${listed(plan.toRun.map((node) => node.label))} in ${plan.project.name} has no saved output after its run: `
-              + `drag "${plan.scenario.name}" again.`,
+              + `drag ${dragged(plan)} again.`,
             "error",
           );
           return null;
@@ -137,12 +152,13 @@ export function useScenarioDrop() {
         const live = TrillGenerator.generateTrill(
           reactFlow.getNodes(), reactFlow.getEdges(), workflowNameRef.current, workflowGoal,
         );
-        const drop = planScenarioDrop(plan, live.dataflow, scenarios, { newId: uuid, at });
+        const sets = setsRef.current ?? [];
+        const drop = planScenarioDrop(plan, live.dataflow, scenarios, sets, { newId: uuid, at });
         if ("error" in drop) {
           showToast(drop.error, "warning");
           return null;
         }
-        const copied = await scenarioCatalogApi.copyInto(payload.projectId, payload.scenarioId, target, drop.outputs);
+        const copied = await scenarioCatalogApi.copyInto(payload, target, drop.outputs);
         if (copied.added.length > 0) {
           // As the Node Catalog's Add does, and before the nodes that use them
           // are built, so none of them comes up as an unknown kind.
@@ -166,14 +182,16 @@ export function useScenarioDrop() {
           setOutputs((prev) => withOutputs(prev, outputs));
           hydrateRestoredOutputs(outputs, loaded.edges);
         }
-        setScenarios([...scenarios, drop.scenario]);
+        setScenarios([...scenarios, ...drop.scenarios], [...sets, drop.set]);
         markDirty();
         const added = copied.added.length > 0 ? ` Added ${copied.added.join(", ")} to this project.` : "";
-        showToast(`Added "${drop.scenario.name}" from ${plan.project.name}.${added}`, "success");
+        const from = plan.scenarios.length === 1 ? ` from ${plan.project.name}` : "";
+        showToast(`Added ${dragged(plan)}${from} as the scenario set "${drop.set.name}".${added}`, "success");
         const before = new Set(live.dataflow.nodes.map((node: { id: string }) => node.id));
         return {
           nodes: graph.nodes.map((node) => node.id).filter((id) => !before.has(id)),
-          scenario: drop.scenario.id,
+          scenarios: drop.scenarios.map((s) => s.id),
+          set: drop.set.id,
         };
       } catch (err: any) {
         showToast(err?.message || "The scenario could not be added.", "error");

@@ -5,8 +5,9 @@ column, and an Autark map of the result. The branch is the scenario "Twice as
 tall", so the loader is its fixed context. Then, in a second project:
 
 1. Drag the scenario from the Scenario Catalog drawer onto the canvas. It
-   arrives collapsed, where it was dropped; its context arrives as a Data
-   Loading node reading a copy of the loader's saved output; its lever and
+   arrives in a new scenario set, collapsed, where it was dropped; its
+   context arrives as a Data Loading node reading a copy of the loader's
+   saved output, in the set's shared context, collapsed too; its lever and
    that loader show the source's results, with nothing run.
 2. Run scenario runs the lever and reuses the copied context. Expanded, the
    map is drawn.
@@ -355,7 +356,7 @@ def test_a_scenario_dragged_into_another_project_brings_its_results_and_its_own_
     sent, _outputs, stop = _record_python_runs(page)
     _open_scenario_catalog(page)
     _drag_scenario_onto_canvas(page, source, SCENARIO)
-    _toast(page, 'Added "Twice as tall" from Shadows.')
+    _toast(page, 'Added "Twice as tall" from Shadows as the scenario set')
     page.keyboard.press("Escape")
     copies = _copies(page)
     assert sorted(copies) == sorted([LOADER, SCALE, MAP]), copies
@@ -378,10 +379,12 @@ def test_a_scenario_dragged_into_another_project_brings_its_results_and_its_own_
     assert copy_id in by_id[loader]["content"], by_id[loader]["content"]
     assert by_id[scale]["metadata"]["copiedFrom"] == [SCALE]
     assert {(e["source"], e["target"]) for e in saved["edges"]} == {(loader, scale), (scale, map_copy)}
-    for node_id in (scale, map_copy):
+    for node_id in (scale, map_copy, loader):
         member = node_locator(page, node_id)
         member.wait_for(state="attached", timeout=10000)
-        assert not member.is_visible(), f"{node_id} shows, though the scenario arrived collapsed"
+        assert not member.is_visible(), f"{node_id} shows, though the scenario and its set arrived collapsed"
+    [new_set] = saved["scenarioSets"]
+    assert dropped["set"] == new_set["id"] and new_set["name"] == "Shadows (copy)", new_set
 
     # 2. Run scenario: the lever runs, the copied context is reused.
     sent, _outputs, stop = _record_python_runs(page)
@@ -423,6 +426,9 @@ def test_a_scenario_dragged_into_another_project_brings_its_results_and_its_own_
     page.goto(f"{app_frontend.base_url}/dataflow/{target}")
     node_locator(page, OWN).wait_for(state="visible", timeout=45000)
     node_locator(page, scale).wait_for(state="visible", timeout=30000)
+    # The context arrived in the set's collapsed shared context: expand it.
+    page.get_by_test_id(f"shared-box-{new_set['id']}-context").dispatch_event("dblclick")
+    node_locator(page, loader).wait_for(state="visible", timeout=10000)
     frame_nodes(page, [loader])
     node_locator(page, loader).click(position={"x": 300, "y": 8})
     page.keyboard.press("Delete")
@@ -635,7 +641,7 @@ def test_a_scenario_dropped_into_an_empty_dataflow_keeps_its_box_in_sight(
     )
     _open_scenario_catalog(page)
     _drag_scenario_onto_canvas(page, source, SCENARIO, at=at)
-    _toast(page, 'Added "Twice as tall" from Heights.')
+    _toast(page, 'Added "Twice as tall" from Heights as the scenario set')
     page.keyboard.press("Escape")
     wait_for_drawer_closed(page, '[data-curio-scenario-catalog-drawer="true"]')
 
@@ -721,13 +727,13 @@ def test_a_scenario_from_a_project_never_run_runs_its_context_there_and_drops(
     sent, _outputs, stop = _record_python_runs(page)
     _open_scenario_catalog(page)
     with page.expect_response(
-        lambda r: r.request.method == "POST" and r.url.endswith(f"/api/scenarios/{source}/{SCENARIO}/copy"),
+        lambda r: r.request.method == "POST" and r.url.endswith("/copy") and f"/{source}/" in r.url,
         timeout=240000,
     ) as copied:
         _drag_scenario_onto_canvas(page, source, SCENARIO)
-        _toast(page, "Running Grid in Heights for Twice as tall")
+        _toast(page, 'Running Grid in Heights for "Twice as tall"')
     assert copied.value.ok, copied.value.text()
-    _toast(page, 'Added "Twice as tall" from Heights.')
+    _toast(page, 'Added "Twice as tall" from Heights as the scenario set')
     page.keyboard.press("Escape")
     wait_for_drawer_closed(page, '[data-curio-scenario-catalog-drawer="true"]')
     stop()
@@ -762,3 +768,99 @@ def test_a_scenario_from_a_project_never_run_runs_its_context_there_and_drops(
     assert dict(sent)[scale] == restored[loader_copy], (
         f"the lever read {dict(sent)[scale]!r}, not the context's output {restored[loader_copy]!r}"
     )
+
+
+def test_two_scenarios_checked_and_dragged_together_arrive_as_a_new_set(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    """A set of three scenarios reads one loader. ``compare`` reads two of
+    them, ``all`` reads all three. Checking the two and dragging one of their
+    cards brings both as a new set, "Heights (copy)": the loader once, as
+    data, shared by both; ``compare``, every input of which came; not
+    ``all``, which would miss the third. Everything arrives collapsed. Python
+    nodes only, so it runs without WebGPU."""
+    require_project_page()
+    require_user_auth()
+    page.emulate_media(reduced_motion="reduce")
+    session = stub_login_and_enter_workflow(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name="Scenario Set Drop",
+        username="scenario_set_drop_e2e",
+        project_name="Elsewhere",
+        project_spec=_dataflow("Elsewhere", [_node(OWN, "curio.builtin/data-loading", 0, _grid_code(7))]),
+    )
+    require_owner_view(page)
+    token = session["token"]
+    target = session["project"]["id"]
+    node_locator(page, OWN).wait_for(state="visible", timeout=45000)
+
+    py = "curio.builtin/computation-analysis"
+    edge = lambda s, t, h="in": {"id": f"e-{s}-{t}", "source": s, "target": t, "sourceHandle": "out", "targetHandle": h}  # noqa: E731
+    spec = _dataflow(
+        "Heights",
+        [
+            {**_node(LOADER, "curio.builtin/data-loading", 0, _grid_code(1)), "title": "Grid"},
+            _node("double", py, 645, SCALE_CODE, y=0),
+            _node("triple", py, 645, SCALE_CODE.replace("* 2", "* 3"), y=420),
+            _node("half", py, 645, SCALE_CODE.replace("* 2", "/ 2"), y=840),
+            _node("compare", py, 1290, "return len(input_0) + len(input_1)", y=200),
+            _node("all", py, 1290, "return len(input_0) + len(input_1) + len(input_2)", y=700),
+        ],
+        [
+            edge(LOADER, "double"), edge(LOADER, "triple"), edge(LOADER, "half"),
+            edge("double", "compare", "in_0"), edge("triple", "compare", "in_1"),
+            edge("double", "all", "in_0"), edge("triple", "all", "in_1"), edge("half", "all", "in_2"),
+        ],
+        [
+            {"id": "s-double", "name": "Doubled", "color": "#e86a3c", "nodes": ["double"], "set": "hs",
+             "context": [LOADER], "outcomes": ["compare", "all"]},
+            {"id": "s-triple", "name": "Tripled", "color": "#2f8f4a", "nodes": ["triple"], "set": "hs",
+             "context": [LOADER], "outcomes": ["compare", "all"]},
+            {"id": "s-half", "name": "Halved", "color": "#7a4bd1", "nodes": ["half"], "set": "hs",
+             "context": [LOADER], "outcomes": ["all"]},
+        ],
+    )
+    spec["dataflow"]["scenarioSets"] = [{"id": "hs", "name": "Heights"}]
+    source = _create_project(current_server, token, "Heights", spec)
+
+    drawer = _open_scenario_catalog(page)
+    for name in ("Doubled", "Tripled"):
+        drawer.get_by_role("checkbox", name=f"Select {name}").check()
+    expect(drawer.get_by_text("2 selected: drag a checked card")).to_be_visible()
+    with page.expect_response(
+        lambda r: r.request.method == "POST" and r.url.endswith("/api/scenarios/sets/" + source + "/hs/copy"),
+        timeout=240000,
+    ) as copied:
+        _drag_scenario_onto_canvas(page, source, "s-double")
+    assert copied.value.ok, copied.value.text()
+    _toast(page, 'Added 2 scenarios of "Heights" as the scenario set "Heights (copy)"')
+    page.keyboard.press("Escape")
+    wait_for_drawer_closed(page, '[data-curio-scenario-catalog-drawer="true"]')
+
+    save_dataflow_and_settle_header(page)
+    saved = _saved_spec(current_server, token, target)["dataflow"]
+    [new_set] = saved["scenarioSets"]
+    assert new_set["name"] == "Heights (copy)", new_set
+    assert new_set.get("shared") == {"context": {"collapsed": True}, "outcomes": {"collapsed": True}}, new_set
+    dropped = {s["name"]: s for s in saved["scenarios"]}
+    assert sorted(dropped) == ["Doubled", "Tripled"], dropped
+    assert all(s["set"] == new_set["id"] and s["collapsed"] is True for s in dropped.values()), dropped
+
+    by_origin = {}
+    for node in saved["nodes"]:
+        lineage = (node.get("metadata") or {}).get("copiedFrom") or []
+        if lineage:
+            by_origin.setdefault(lineage[-1], []).append(node)
+    assert len(by_origin.get(LOADER, [])) == 1, f"the loader came {len(by_origin.get(LOADER, []))} times"
+    assert by_origin[LOADER][0]["type"].startswith("curio.builtin/data-loading")
+    assert "compare" in by_origin, "compare, every input of which came, did not come"
+    assert "all" not in by_origin and "half" not in by_origin, sorted(by_origin)
+    compare = by_origin["compare"][0]["id"]
+    double, triple = by_origin["double"][0]["id"], by_origin["triple"][0]["id"]
+    assert {(e["source"], e["target"]) for e in saved["edges"] if e["target"] == compare} == {
+        (double, compare), (triple, compare),
+    }
+    assert dropped["Doubled"]["outcomes"] == [compare], dropped["Doubled"]
+    assert dropped["Doubled"]["context"] == [by_origin[LOADER][0]["id"]], dropped["Doubled"]

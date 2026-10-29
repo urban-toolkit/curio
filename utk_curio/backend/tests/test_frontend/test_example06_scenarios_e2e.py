@@ -762,8 +762,9 @@ def test_both_scenarios_dragged_into_an_empty_project_read_one_context(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
     """The seeded example runs and is saved; then, in an empty project, both of
-    its scenarios are dragged in from the Scenario Catalog: they show their
-    saved results with no run, read one context, and expand in place. A
+    its scenarios are checked and dragged in together from the Scenario
+    Catalog, as a new set: they show their saved results with no run, read one
+    context, and expand in place. A
     Vega-Lite chart reading ``inputs``, wired to the two dropped Roads nodes,
     names each input's rows by the dropped box its node is in."""
     require_project_page()
@@ -801,20 +802,20 @@ def test_both_scenarios_dragged_into_an_empty_project_read_one_context(
         _settled_done(page, node_id, node_type)
     save_dataflow(page)
 
-    # Both scenarios dragged into the empty project: nothing runs. Zoomed out
-    # first, so the two land far enough apart to be expanded side by side.
+    # Both scenarios checked and dragged in together: nothing runs. Zoomed out
+    # first, so the set lands in view.
     page.goto(f"{app_frontend.base_url}/dataflow/{target}")
     page.wait_for_load_state("domcontentloaded")
     page.wait_for_function("() => !!window.__curio_reactFlow", timeout=45000)
     page.locator(".react-flow__pane").wait_for(state="visible", timeout=45000)
     drawer = page.locator('[data-curio-scenario-catalog-drawer="true"]')
     python, _loads, stop = _record_runs(page, DATA)
-    for scenario_id, name, at in ((BASELINE, "Baseline", (200.0, 80.0)), (TWICE, "Twice as tall", (200.0, 420.0))):
-        _zoom_out(page)
-        if not drawer.is_visible():
-            _open_scenario_catalog(page)
-        _drag_scenario_onto_canvas(page, source, scenario_id, at=at)
-        _toast(page, f'Added "{name}" from {EXAMPLE_NAME}.')
+    _zoom_out(page)
+    _open_scenario_catalog(page)
+    for name in ("Baseline", "Twice as tall"):
+        drawer.get_by_role("checkbox", name=f"Select {name}").first.check()
+    _drag_scenario_onto_canvas(page, source, BASELINE, at=(200.0, 80.0))
+    _toast(page, "Added 2 scenarios of ")
     page.keyboard.press("Escape")
     wait_for_drawer_closed(page, '[data-curio-scenario-catalog-drawer="true"]')
     # The pool passes on the loader's layers, so the Data Loading node that

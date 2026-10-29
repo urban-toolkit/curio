@@ -9,7 +9,7 @@ This guide is in four parts:
 - [1. What is the Scenario Catalog?](#1-what-is-the-scenario-catalog): scenarios, scenario sets, and where they are kept.
 - [2. Surfaces and workflows](#2-surfaces-and-workflows): the page, the canvas drawer, the action matrix, and walkthroughs.
 - [3. Reading a scenario](#3-reading-a-scenario): its shared context, its own nodes and its outcomes, and their saved results.
-- [4. Using a scenario in a dataflow](#4-using-a-scenario-in-a-dataflow): dragging one in, what arrives, and when a drop is refused.
+- [4. Using a scenario in a dataflow](#4-using-a-scenario-in-a-dataflow): dragging one or several in, what arrives, and when a drop is refused.
 - [5. Importing, publishing, and sharing](#5-importing-publishing-and-sharing): copies and shared dataflows.
 
 ---
@@ -74,7 +74,7 @@ Agents find your scenarios too: asked for a scenario of another project, the [Da
 |---|---|---|---|
 | **View details** | A card, the drawer, or the canvas drawer | Nothing | The scenario's shared context, its own nodes and its outcomes, with their saved results. In the **In project** tab, the nodes as the canvas holds them. |
 | **Open source project** | A card or the drawer on the `/catalog/scenarios` page, a set's heading in the canvas drawer's **Browse all** tab, or the details | Nothing | The project the scenario lives in, on the canvas. From an open dataflow with unsaved changes, Curio asks first. |
-| **Drag onto the canvas** | A card in the canvas drawer's **Browse all** tab | The open dataflow: it gains a copy of the scenario, and the packages its nodes need | The scenario, collapsed where you dropped it, with its fixed context beside it and its saved results. See [4. Using a scenario in a dataflow](#4-using-a-scenario-in-a-dataflow). |
+| **Drag onto the canvas** | A card in the canvas drawer's **Browse all** tab, alone or with the other checked cards of its set | The open dataflow: it gains a new scenario set holding copies of the scenarios, and the packages their nodes need | The scenarios and their set, collapsed where you dropped them, with their context, the shared outcomes that still work, and their saved results. See [4. Using a scenario in a dataflow](#4-using-a-scenario-in-a-dataflow). |
 | **Run scenario**, **Edit scenario**, **Duplicate scenario**, **Delete** | A card in the canvas drawer's **In project** tab | The open dataflow's scenario | Its nodes run; the define panel opens on it; its nodes are copied into a new scenario of its set, which the define panel opens on at **Name & set**; or it is gone and its nodes stay. |
 | **Rename, recolor, describe** | The details of a card in the **In project** tab | The open dataflow's scenario | Its new name, color or description, on its card and on the canvas. |
 
@@ -106,22 +106,24 @@ A chart or a Data Pool saves nothing itself, so its saved result is the output o
 
 ## 4. Using a scenario in a dataflow
 
-A scenario dragged from the canvas drawer onto the canvas arrives as a copy, and editing either one leaves the other as it is. A drag brings one scenario, with the nodes that feed it directly; dragging a whole set, with its outcome views, is not there yet.
+Scenarios dragged from the canvas drawer onto the canvas arrive as copies, and editing either one leaves the other as it is. Drag one card to bring its scenario. To bring several of a set, check their cards (or **Select all** in the set's heading) and drag any checked card: they come together. Checking a card of another set clears the first set's checks, since scenarios of different sets never mix.
 
-- **Its own nodes** are copied with new ids. Each copy names the node it was copied from.
-- **The context it reads directly** arrives as data. Each node feeding it becomes a **Data Loading** node that reads a copy of the output that node saved in its project, wired where the context was. The copy is this dataflow's own: running the source project again changes its own output, not the copy.
-- **A context node with no saved output** runs first, on the server and in the scenario's project, which saves its output there; the drop then brings it. While it runs, a notice names it, such as "Running Buildings and Season in Chicago Loop shadow with towers removed or edited for Existing". When the run fails, the message says why and nothing is added.
-- **Its outcomes** show the results its project saved, before anything runs.
-- **Packages** its nodes use are added to the dataflow, as **Add** in the Node Catalog adds one.
-- **The scenario** is collapsed where you dropped it, in its own color, and keeps its name and description.
+- **A new scenario set.** Even one scenario arrives in a set of its own, named after its source set with "(copy)", such as "Park shade (copy)", or "(copy 2)" when that name is taken: no two sets of a dataflow share a name. Rename it with the pencil beside its name in the **In project** tab. Each scenario keeps its name, and its color unless a scenario here already wears it.
+- **Their own nodes** are copied with new ids. Each copy names the node it was copied from. They keep their places relative to one another, their top left where you dropped them.
+- **The context they read** arrives as data, once, whichever of them read it. Each node feeding them becomes a **Data Loading** node that reads a copy of the output that node saved in its project, wired where the context was. The copy is this dataflow's own: running the source project again changes its own output, not the copy.
+- **A context node with no saved output** runs first, on the server and in the scenarios' project, which saves its output there; the drop then brings it. While it runs, a notice names it, such as "Running Buildings and Season in Chicago Loop shadow with towers removed or edited for 'Existing'". When the run fails, the message says why and nothing is added.
+- **Shared outcomes** come only when every input they have comes too: a dragged scenario's node, a context node arriving as data, or another outcome that comes. A chart comparing three scenarios comes when all three are dragged; with two of them it stays behind, since it would miss the third.
+- **Their results** show what their project saved, before anything runs.
+- **Packages** their nodes use are added to the dataflow, as **Add** in the Node Catalog adds one.
+- **Everything arrives collapsed:** each scenario's box, and the set's shared context and shared outcomes. Double-click a box to open it.
 
-A second scenario of the same project, dragged into the same dataflow, reads the context the first one brought, so the two share it as they did in their project.
+Each drop brings its own context, so two drops are two sets that share nothing. A drop is all or nothing: when one of the scenarios cannot come, none does.
 
-To use your own data instead, double-click the box, delete the Data Loading node, and connect your node to the scenario node it fed. **Run scenario** then runs your node first.
+To use your own data instead, double-click the shared context's box, delete the Data Loading node, and connect your node to the scenario node it fed. **Run scenario** then runs your node first.
 
 A drop is refused, and nothing is added, when:
 
-- a node feeding it has no saved output and cannot run on the server: only the browser runs it (an Autark compute node, for one), you are a guest on a hosted Curio, or Curio runs with `--no-project`. Run the scenario in its project and save it, then drag it again;
+- a node feeding them has no saved output and cannot run on the server: only the browser runs it (an Autark compute node, for one), you are a guest on a hosted Curio, or Curio runs with `--no-project`. Run the scenario in its project and save it, then drag it again;
 - its nodes need a package, a dataset or a model your account does not have, or a package your account cannot add; the message names it.
 
 ---

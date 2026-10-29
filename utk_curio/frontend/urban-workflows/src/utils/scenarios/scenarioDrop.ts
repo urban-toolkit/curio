@@ -1,30 +1,35 @@
 /**
- * A scenario dragged in from the Scenario Catalog (#662), built on the saved
- * shape of a dataflow, as Duplicate selection is:
+ * Scenarios of one set dragged in from the Scenario Catalog (#662), built on
+ * the saved shape of a dataflow, as Duplicate selection is:
  *
- * - its levers are copied with fresh ids, each naming its original in
- *   `metadata.copiedFrom`, with the edges between them;
- * - each context node arrives as fixed data: a Data Loading node that reads
- *   a copy of the output the source project saved for it, wired where the
- *   context node was;
- * - a context node an earlier drop from the same project already brought is
- *   reused, so two scenarios that shared their context there share it here;
- * - the scenario is added collapsed, its box where it was dropped, naming the
- *   project and scenario it came from.
+ * - their levers, and the set's shared outcomes that come (the server keeps
+ *   only those whose every input comes too), are copied with fresh ids, each
+ *   naming its original in `metadata.copiedFrom`, with the edges between them,
+ *   keeping their places relative to one another, the top left at the drop;
+ * - each context node they read arrives once, as fixed data: a Data Loading
+ *   node that reads a copy of the output the source project saved for it,
+ *   wired where the context node was, for every scenario that read it;
+ * - they make a new scenario set of this dataflow, named after theirs with
+ *   "(copy)", a name no set here has; each keeps its name, and its color
+ *   unless a scenario here wears it;
+ * - everything arrives collapsed: each scenario's box, and the set's shared
+ *   context and outcomes.
  *
  * Two steps, around the server's copy: `planScenarioDrop` chooses the ids and
  * says which saved output to copy to which node; `loaderNodes` makes the Data
  * Loading nodes from the datasets the copy made.
  */
+import { v4 as uuid } from "uuid";
+
 import type { ScenarioCopyOutput, ScenarioCopyPlan } from "../../services/scenarioCatalog/scenarioCatalogTypes";
-import { duplicateSelection, lineageOf, type SpecEdge, type SpecNode } from "./duplicateSelection";
-import { nextScenarioColor } from "./scenarioEdits";
-import type { Scenario } from "./scenarioModel";
+import { duplicateSelection, type SpecEdge, type SpecNode } from "./duplicateSelection";
+import { nextScenarioColor, uniqueSetName } from "./scenarioEdits";
+import type { Scenario, ScenarioSet } from "./scenarioModel";
 
 /** Kept in sync with `NodeType.DATA_LOADING`. */
 const DATA_LOADING_TYPE = "curio.builtin/data-loading";
 
-/** One column to the left of the box, where the context lands. */
+/** One column to the left of the copies, where the context lands. */
 const CONTEXT_COLUMN = 645;
 /** Room between two context nodes stacked in that column. */
 const CONTEXT_ROW = 420;
@@ -40,84 +45,58 @@ export interface PlannedLoader {
 }
 
 export interface ScenarioDrop {
-  /** The lever copies, to load into the canvas. */
+  /** The copies of the levers and shared outcomes, to load into the canvas. */
   nodes: SpecNode[];
   edges: SpecEdge[];
   /** The Data Loading nodes to make once their datasets are copied. */
   loaders: PlannedLoader[];
-  /** Nodes of this dataflow the drop reads again rather than copies. */
-  reused: SpecNode[];
   /** Which saved output of the source each new node gets. */
   outputs: ScenarioCopyOutput[];
-  scenario: Scenario;
+  /** The scenarios added, in the order they were dragged. */
+  scenarios: Scenario[];
+  /** The new set they are in. */
+  set: ScenarioSet;
 }
 
 export interface DropOptions {
   newId: () => string;
-  /** Where the box goes, in flow coordinates. */
+  /** Where the copies' top left goes, in flow coordinates. */
   at: { x: number; y: number };
 }
 
-const isDataLoading = (node: SpecNode) => String(node.type ?? "").split("@")[0] === DATA_LOADING_TYPE;
-const lastOf = (node: SpecNode) => lineageOf(node).at(-1);
-
-function uniqueName(name: string, scenarios: readonly Scenario[]): string {
-  const taken = new Set(scenarios.map((s) => s.name));
-  if (!taken.has(name)) return name;
-  for (let n = 2; ; n += 1) {
-    if (!taken.has(`${name} (${n})`)) return `${name} (${n})`;
-  }
-}
-
 /**
- * What dropping *plan*'s scenario into the dataflow *live* (its saved shape)
- * adds, or why it cannot be added.
+ * What dropping *plan*'s scenarios into the dataflow *live* (its saved shape),
+ * whose scenarios and sets are *scenarios* and *sets*, adds, or why it cannot
+ * be added.
  */
 export function planScenarioDrop(
   plan: ScenarioCopyPlan,
   live: { nodes: readonly SpecNode[]; edges: readonly SpecEdge[] },
   scenarios: readonly Scenario[],
+  sets: readonly ScenarioSet[],
   options: DropOptions,
 ): ScenarioDrop | { error: string } {
   const { at, newId } = options;
   const byId = new Map(plan.dataflow.nodes.map((node) => [node.id, node as SpecNode]));
-  const levers = plan.levers.filter((id) => byId.has(id));
-  if (levers.length === 0) return { error: `"${plan.scenario.name}" has no nodes to bring.` };
+  const dragged = plan.scenarios.map((s) => ({ ...s, levers: s.levers.filter((id) => byId.has(id)) }));
+  const empty = dragged.find((s) => s.levers.length === 0);
+  if (empty) return { error: `"${empty.name}" has no nodes to bring.` };
 
-  // What an earlier drop from the same project brought: the Data Loading
-  // nodes outside every scenario here that copy one of its nodes' outputs.
-  const members = new Set(scenarios.flatMap((s) => s.nodes));
-  const fromSameProject = scenarios.some((s) => s.source?.project === plan.project.id);
-  const outside = fromSameProject ? live.nodes.filter((node) => !members.has(node.id)) : [];
-  const broughtFor = (sourceId: string) =>
-    outside.find((node) => isDataLoading(node) && lastOf(node) === sourceId);
+  const copied = [...byId.keys()];
+  const left = Math.min(...copied.map((id) => byId.get(id)!.x ?? 0));
+  const top = Math.min(...copied.map((id) => byId.get(id)!.y ?? 0));
+  const offset = { x: at.x - left, y: at.y - top };
+  const copy = duplicateSelection(plan.dataflow, copied, { newId, offset });
 
-  const left = Math.min(...levers.map((id) => byId.get(id)!.x ?? 0));
-  const top = Math.min(...levers.map((id) => byId.get(id)!.y ?? 0));
-  const copy = duplicateSelection(plan.dataflow, levers, {
-    newId,
-    offset: { x: at.x - left, y: at.y - top },
-  });
-
-  const reused: SpecNode[] = [];
   const loaders: PlannedLoader[] = [];
   const standIn = new Map<string, string>();
-  let row = 0;
-  const nextPlace = () => ({ x: at.x - CONTEXT_COLUMN, y: at.y + CONTEXT_ROW * row++ });
-
   for (const entry of plan.context) {
     if (!entry.source) continue;
-    const again = broughtFor(entry.source.nodeId);
-    if (again) {
-      reused.push(again);
-      standIn.set(entry.nodeId, again.id);
-      continue;
-    }
     const loader: PlannedLoader = {
       id: newId(),
       source: entry.source.nodeId,
-      goal: `Fixed context of "${plan.scenario.name}": a copy of what ${entry.label} passed on in ${plan.project.name}.`,
-      position: nextPlace(),
+      goal: `Fixed context of "${plan.set.name}": a copy of what ${entry.label} passed on in ${plan.project.name}.`,
+      position: { x: at.x - CONTEXT_COLUMN, y: at.y + CONTEXT_ROW * loaders.length },
       copiedFrom: [...entry.source.copiedFrom, entry.source.nodeId],
     };
     loaders.push(loader);
@@ -136,41 +115,53 @@ export function planScenarioDrop(
   }
 
   const outputs: ScenarioCopyOutput[] = loaders.map((loader) => ({ source: loader.source, node: loader.id }));
-  for (const outcome of plan.outcomes) {
+  for (const outcome of [...plan.outcomes, ...plan.shared]) {
     for (const source of outcome.sources) {
       const node = copy.ids.get(source);
       if (node && !outputs.some((o) => o.node === node)) outputs.push({ source, node });
     }
   }
 
-  const color = scenarios.some((s) => s.color.toLowerCase() === plan.scenario.color.toLowerCase())
-    ? nextScenarioColor(scenarios)
-    : plan.scenario.color;
-  const scenario: Scenario = {
-    id: newId(),
-    name: uniqueName(plan.scenario.name, scenarios),
-    color,
-    ...(plan.scenario.description ? { description: plan.scenario.description } : {}),
-    nodes: levers.map((id) => copy.ids.get(id)!),
-    collapsed: true,
-    box: { x: at.x, y: at.y },
-    source: { project: plan.project.id, scenario: plan.scenario.id },
+  const set: ScenarioSet = {
+    id: `set-${uuid()}`,
+    name: uniqueSetName(`${plan.set.name} (copy)`, sets),
+    shared: { context: { collapsed: true }, outcomes: { collapsed: true } },
   };
+  const made: Scenario[] = [];
+  for (const s of dragged) {
+    const worn = [...scenarios, ...made].some((x) => x.color.toLowerCase() === s.color.toLowerCase());
+    const box = {
+      x: Math.min(...s.levers.map((id) => byId.get(id)!.x ?? 0)) + offset.x,
+      y: Math.min(...s.levers.map((id) => byId.get(id)!.y ?? 0)) + offset.y,
+    };
+    made.push({
+      id: newId(),
+      name: s.name,
+      color: worn ? nextScenarioColor([...scenarios, ...made]) : s.color,
+      ...(s.description ? { description: s.description } : {}),
+      nodes: s.levers.map((id) => copy.ids.get(id)!),
+      set: set.id,
+      context: s.context.flatMap((id) => standIn.get(id) ?? []),
+      outcomes: s.outcomes.flatMap((id) => copy.ids.get(id) ?? []),
+      collapsed: true,
+      box,
+      source: { project: plan.project.id, scenario: s.id },
+    });
+  }
 
-  return { nodes: copy.nodes, edges, loaders, reused, outputs, scenario };
+  return { nodes: copy.nodes, edges, loaders, outputs, scenarios: made, set };
 }
 
 /**
- * The nodes and edges a drop loads into the canvas: the reused nodes, which
- * the copies' edges may come from, the Data Loading nodes that arrived, and
- * the copies. An edge from a loader that did not arrive is left out, so no
- * edge names a node that is not there.
+ * The nodes and edges a drop loads into the canvas: the Data Loading nodes
+ * that arrived, and the copies. An edge from a loader that did not arrive is
+ * left out, so no edge names a node that is not there.
  */
 export function dropGraph(drop: ScenarioDrop, loaders: readonly SpecNode[]): { nodes: SpecNode[]; edges: SpecEdge[] } {
   const arrived = new Set(loaders.map((node) => node.id));
   const missing = new Set(drop.loaders.map((loader) => loader.id).filter((id) => !arrived.has(id)));
   return {
-    nodes: [...drop.reused, ...loaders, ...drop.nodes],
+    nodes: [...loaders, ...drop.nodes],
     edges: drop.edges.filter((edge) => !missing.has(edge.source)),
   };
 }

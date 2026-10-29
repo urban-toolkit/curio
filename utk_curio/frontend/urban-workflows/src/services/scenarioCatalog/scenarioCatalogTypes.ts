@@ -109,6 +109,22 @@ export interface ScenarioCopyContext {
   label: string;
   /** The node whose saved output stands for this one's, which arrives as data. */
   source?: { nodeId: string; copiedFrom: string[]; datasetId?: string };
+  /** The dragged scenarios that read it. */
+  scenarios?: string[];
+}
+
+/** One dragged scenario, as a drop plan gives it. Node ids are the source's. */
+export interface ScenarioCopyScenario {
+  id: string;
+  name: string;
+  color: string;
+  description: string;
+  /** Its own nodes. */
+  levers: string[];
+  /** The context nodes it reads that arrive. */
+  context: string[];
+  /** The shared outcome nodes it lists that come. */
+  outcomes: string[];
 }
 
 /**
@@ -116,13 +132,22 @@ export interface ScenarioCopyContext {
  * of the scenario into the target copies. Ids are the source project's.
  */
 export interface ScenarioCopyPlan {
+  /** The first scenario dragged. */
   scenario: { id: string; name: string; color: string; description: string };
+  /** Every scenario dragged, of one set. */
+  scenarios: ScenarioCopyScenario[];
+  /** Their set in the source project. */
+  set: { id: string; name: string };
   project: { id: string; name: string };
   levers: string[];
   context: ScenarioCopyContext[];
-  /** Each outcome, with the levers whose saved outputs it shows. */
+  /** Each scenario's results, with the levers whose saved outputs they show. */
   outcomes: { nodeId: string; label: string; sources: string[] }[];
-  /** The levers, and the edges into them. */
+  /** The set's shared outcome nodes that come: every input of theirs comes
+   *  too. Each with the scenarios that list it and the copied nodes whose
+   *  saved outputs it shows. */
+  shared: { nodeId: string; label: string; scenarios: string[]; sources: string[] }[];
+  /** The levers and the shared outcomes that come, and the edges into them. */
   dataflow: { nodes: SpecNodeShape[]; edges: SpecEdgeShape[] };
   /** Packages the target project gets. */
   packages: string[];

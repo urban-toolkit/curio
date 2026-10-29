@@ -231,6 +231,13 @@ export function useScenarioActions() {
     [saved, scenarioSets, setScenarios],
   );
 
+  /** Rename the scenario set *id*; a name another set has is refused by the caller. */
+  const renameSet = useCallback(
+    (id: string, name: string) =>
+      setScenarios(saved, (scenarioSets ?? []).map((s) => (s.id === id ? { ...s, name } : s))),
+    [saved, scenarioSets, setScenarios],
+  );
+
   const remove = useCallback((id: string) => setScenarios(deleteScenario(scenarios, id)), [scenarios, setScenarios]);
 
   return {
@@ -245,6 +252,7 @@ export function useScenarioActions() {
     moveBox,
     setSharedCollapsed,
     moveSharedBox,
+    renameSet,
     remove,
   };
 }

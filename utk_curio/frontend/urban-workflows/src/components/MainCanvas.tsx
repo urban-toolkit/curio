@@ -526,13 +526,14 @@ export function MainCanvas() {
         dropPackageCard({ card, position: dropPosition(event), at: { x: event.clientX, y: event.clientY } });
     }, [dropPosition, dropPackageCard]);
 
-    // A scenario from the Scenario Catalog arrives as a copy: its box where it
-    // was dropped, its context as fixed data (useScenarioDrop). The notebook
-    // view shows its cells. On the canvas the box is drawn beside React Flow,
-    // not in its store, so no fit of nodes frames it: once it is drawn, the
-    // view moves as far as it takes to bring the box into sight (#769).
+    // Scenarios from the Scenario Catalog arrive as copies, a new set of
+    // collapsed boxes where they were dropped, their context as fixed data
+    // (useScenarioDrop). The notebook view shows their cells. On the canvas
+    // the boxes are drawn beside React Flow, not in its store, so no fit of
+    // nodes frames them: once they are drawn, the view moves as far as it
+    // takes to bring the set's boxes into sight (#769).
     const dropScenario = useScenarioDrop();
-    const [boxToReveal, setBoxToReveal] = useState<string | null>(null);
+    const [boxToReveal, setBoxToReveal] = useState<{ scenarios: string[]; set: string } | null>(null);
     const handleScenarioCanvasDrop = useCallback((event: React.DragEvent) => {
         event.preventDefault();
         event.stopPropagation();
@@ -541,16 +542,29 @@ export function MainCanvas() {
         if (!scenario) return;
         void dropScenario(scenario, dropPosition(event)).then((dropped) => {
             if (!dropped || revealNodes(dropped.nodes)) return;
-            setBoxToReveal(dropped.scenario);
+            setBoxToReveal({ scenarios: dropped.scenarios, set: dropped.set });
         });
     }, [dropScenario, dropPosition, revealNodes]);
     useEffect(() => {
         if (!boxToReveal) return;
-        const box = scenarioView.boxes.find((b) => b.scenario.id === boxToReveal);
-        if (!box) return;
+        const boxes = scenarioView.boxes.filter((b) => boxToReveal.scenarios.includes(b.scenario.id));
+        if (boxes.length < boxToReveal.scenarios.length) return;
+        const rects = [
+            ...boxes.map((b) => ({ x: b.x, y: b.y, width: BOX_WIDTH, height: boxLayout(b).height })),
+            ...(scenarioView.groups ?? [])
+                .filter((g) => g.set === boxToReveal.set && g.collapsed)
+                .map((g) => ({ x: g.x, y: g.y, width: BOX_WIDTH, height: groupBoxLayout(g).height })),
+        ];
         setBoxToReveal(null);
-        revealRectInView(reactFlow, { x: box.x, y: box.y, width: BOX_WIDTH, height: boxLayout(box).height });
-    }, [boxToReveal, scenarioView.boxes, reactFlow]);
+        const x = Math.min(...rects.map((r) => r.x));
+        const y = Math.min(...rects.map((r) => r.y));
+        revealRectInView(reactFlow, {
+            x,
+            y,
+            width: Math.max(...rects.map((r) => r.x + r.width)) - x,
+            height: Math.max(...rects.map((r) => r.y + r.height)) - y,
+        });
+    }, [boxToReveal, scenarioView.boxes, scenarioView.groups, reactFlow]);
 
     const handleDrop = useCallback((event: React.DragEvent) => {
         if (hasDatasetDrag(event.dataTransfer)) {

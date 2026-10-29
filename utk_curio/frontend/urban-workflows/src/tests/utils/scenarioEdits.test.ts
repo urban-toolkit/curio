@@ -9,6 +9,8 @@ import {
   deleteScenario,
   nextScenarioColor,
   nextScenarioName,
+  setNameProblem,
+  uniqueSetName,
   updateScenario,
 } from "../../utils/scenarios/scenarioEdits";
 import type { Scenario } from "../../utils/scenarios/scenarioModel";
@@ -45,6 +47,22 @@ describe("names and colors", () => {
     expect(nextScenarioColor([])).toBe(SCENARIO_COLORS[0]);
     const all = SCENARIO_COLORS.map((color, i) => ({ ...baseline, id: `s${i}`, color }));
     expect(nextScenarioColor(all)).toBe(SCENARIO_COLORS[0]);
+  });
+});
+
+describe("set names", () => {
+  const sets = [{ id: "a", name: "Park shade" }, { id: "b", name: "Park shade (copy)" }];
+
+  test("no two sets of a dataflow share a name, whatever the case or spaces", () => {
+    expect(setNameProblem(sets, " park SHADE ")).toMatch(/already has a scenario set "Park shade"/);
+    expect(setNameProblem(sets, "Park shade", "a")).toBeNull();
+    expect(setNameProblem(sets, "  ")).toMatch(/Give the scenario set a name/);
+  });
+
+  test("a name made unique counts up inside its parentheses, else after it", () => {
+    expect(uniqueSetName("Park shade (copy)", sets)).toBe("Park shade (copy 2)");
+    expect(uniqueSetName("Park shade", sets)).toBe("Park shade 2");
+    expect(uniqueSetName("Roads", sets)).toBe("Roads");
   });
 });
 

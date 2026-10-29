@@ -49,6 +49,7 @@ const mockActions = {
   setCollapsed: jest.fn(),
   moveBox: jest.fn(),
   editScenario: jest.fn(),
+  renameSet: jest.fn(),
   remove: jest.fn(),
 };
 jest.mock("../../components/scenarios/useScenarioActions", () => ({
@@ -337,6 +338,27 @@ describe("the Scenario Catalog drawer's In project tab", () => {
     fireEvent.blur(name);
     expect(mockActions.update).not.toHaveBeenCalled();
     expect(name).toHaveValue("Doubled");
+  });
+
+  test("a set is renamed in place; a name another set has is refused as it is typed", async () => {
+    mockFlow.scenarios = [
+      { ...DOUBLED, set: "heights" },
+      { ...CHARTED, set: "roads" },
+    ];
+    mockFlow.scenarioSets = [{ id: "heights", name: "Heights" }, { id: "roads", name: "Roads" }];
+    await openInProject();
+    fireEvent.click(within(root()).getByRole("button", { name: "Rename Heights" }));
+    const input = within(root()).getByLabelText("Scenario set name");
+    fireEvent.change(input, { target: { value: " roads " } });
+    expect(within(root()).getByRole("alert")).toHaveTextContent('already has a scenario set "Roads"');
+    fireEvent.blur(input);
+    expect(mockActions.renameSet).not.toHaveBeenCalled();
+
+    fireEvent.click(within(root()).getByRole("button", { name: "Rename Heights" }));
+    const again = within(root()).getByLabelText("Scenario set name");
+    fireEvent.change(again, { target: { value: "Building heights" } });
+    fireEvent.keyDown(again, { key: "Enter" });
+    expect(mockActions.renameSet).toHaveBeenCalledWith("heights", "Building heights");
   });
 
   test("a name another scenario of its set has is refused as it is typed", async () => {

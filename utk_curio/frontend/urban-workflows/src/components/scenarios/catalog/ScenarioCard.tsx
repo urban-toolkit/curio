@@ -17,6 +17,8 @@ export interface ScenarioCardProps {
   controls?: React.ReactNode;
   /** In the In project tab: the card's top-right corner, Delete. */
   corner?: React.ReactNode;
+  /** In Browse all: the card's checkbox, for a drag of several. */
+  check?: { checked: boolean; onChange: (on: boolean) => void };
   /** In the In project tab: the pointer entering (true) or leaving (false)
    *  the card, which marks the scenario's fixed context on the canvas. */
   onPoint?: (on: boolean) => void;
@@ -46,6 +48,7 @@ export const ScenarioCard: React.FC<ScenarioCardProps> = ({
   onDragEnd,
   controls,
   corner,
+  check,
   onPoint,
   highlight = null,
   testId,
@@ -94,6 +97,18 @@ export const ScenarioCard: React.FC<ScenarioCardProps> = ({
 
       <div className={styles.cardBody}>
         <h3 className={styles.cardTitle}>
+          {check ? (
+            <input
+              type="checkbox"
+              className={local.cardCheck}
+              aria-label={`Select ${scenario.name}`}
+              checked={check.checked}
+              onChange={(e) => check.onChange(e.target.checked)}
+              // A checkbox is clicked, not dragged; the card around it is.
+              draggable={false}
+              onClick={(e) => e.stopPropagation()}
+            />
+          ) : null}
           <ScenarioName row={scenario} />
         </h3>
         {scenario.description ? (

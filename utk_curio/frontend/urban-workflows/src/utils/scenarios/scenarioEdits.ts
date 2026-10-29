@@ -56,6 +56,27 @@ export function scenarioNameProblem(
 }
 
 /**
+ * Why *name* cannot name a scenario set of this dataflow: no two sets share a
+ * name, whatever their case or the spaces around them. Null when it can;
+ * *except* is the set being renamed.
+ */
+export function setNameProblem(sets: readonly ScenarioSet[], name: string, except?: string): string | null {
+  const wanted = name.trim().toLowerCase();
+  if (!wanted) return "Give the scenario set a name.";
+  const clash = sets.find((s) => s.id !== except && s.name.trim().toLowerCase() === wanted);
+  return clash ? `This dataflow already has a scenario set "${clash.name}". Choose another name.` : null;
+}
+
+/** *base*, or "*base* 2", "*base* 3", …: the first no set of *sets* is named. */
+export function uniqueSetName(base: string, sets: readonly ScenarioSet[]): string {
+  if (!setNameProblem(sets, base)) return base;
+  for (let n = 2; ; n += 1) {
+    const name = base.endsWith(")") ? `${base.slice(0, -1)} ${n})` : `${base} ${n}`;
+    if (!setNameProblem(sets, name)) return name;
+  }
+}
+
+/**
  * Why *nodeIds* cannot join a scenario other than *except*: the first one
  * that already holds one of them, named, or null.
  */

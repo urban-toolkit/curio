@@ -42,6 +42,35 @@ def get_set(project_id: str, set_id: str):
     return jsonify(_service().get_set(project_id, set_id)), 200
 
 
+@scenarios_bp.route("/sets/<project_id>/<set_id>/copy", methods=["GET"])
+@require_auth
+@_errors
+def copy_set_plan(project_id: str, set_id: str):
+    """What dragging ``?scenarios=a,b`` of the set into ``?target=<projectId>``
+    copies."""
+    target = request.args.get("target") or ""
+    if not target:
+        raise ScenarioCatalogError("target is required")
+    scenarios = [i for i in (request.args.get("scenarios") or "").split(",") if i]
+    return jsonify(_service().copy_set_plan(project_id, set_id, scenarios, target)), 200
+
+
+@scenarios_bp.route("/sets/<project_id>/<set_id>/copy", methods=["POST"])
+@require_auth
+@_errors
+def copy_set_into(project_id: str, set_id: str):
+    """Copy the saved outputs and packages a drop of the body's
+    ``scenarioIds`` needs into the target project, for copies with the node
+    ids the body names."""
+    body = request.get_json(silent=True) or {}
+    target = body.get("targetProjectId") if isinstance(body, dict) else None
+    if not isinstance(target, str) or not target:
+        raise ScenarioCatalogError("targetProjectId is required")
+    return jsonify(
+        _service().copy_set_into(project_id, set_id, body.get("scenarioIds"), target, body.get("outputs"))
+    ), 200
+
+
 @scenarios_bp.route("/<project_id>/<scenario_id>", methods=["GET"])
 @require_auth
 @_errors
