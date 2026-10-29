@@ -52,6 +52,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sys
 import time
 import uuid
@@ -265,6 +266,23 @@ def _clip(value):
     return value
 
 
+#: The status a model's server answered, as the provider's error names it.
+_PROVIDER_STATUS_RE = re.compile(r"Error code: (\d{3})")
+#: A model server's answers that say "try again later".
+_TRY_AGAIN = (408, 429)
+
+
+def _transient(status: int | None, error: str | None) -> bool:
+    """Whether a run that answered *status* failed for a reason a later try
+    may not meet: a lost connection, a timeout or the model's server failing
+    (a 5xx, 408 or 429 from it). The route answers 502 for every failed turn,
+    so a 4xx the provider names, such as a request too long, is not one."""
+    if status is None or status < 500:
+        return False
+    found = _PROVIDER_STATUS_RE.search(error or "")
+    return not (found and 400 <= int(found.group(1)) < 500 and int(found.group(1)) not in _TRY_AGAIN)
+
+
 def _json_object(text: str):
     """The JSON object *text* holds, alone or inside other text, or None."""
     text = (text or "").strip()
@@ -450,7 +468,7 @@ class Worker:
                              stop_at_hand_off=trigger and self.stop_early)
             attempt_started = time.monotonic()
             status, body, project_id, attachment_id = self._attempt(task, message, folder, record)
-            if status is None or status < 500 or len(failed) >= len(RETRY_WAITS_S):
+            if not _transient(status, record.get("error")) or len(failed) >= len(RETRY_WAITS_S):
                 break
             failed.append(record["error"])
             time.sleep(RETRY_WAITS_S[len(failed) - 1])
