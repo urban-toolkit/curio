@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useLayoutEffect, useState } from "react";
 import clsx from "clsx";
 import type { AgentAttachment } from "../../../services/agents";
 import { usePeopleHere } from "../../../providers/collab/usePeopleHere";
@@ -27,6 +27,40 @@ export const GOAL_PLACEHOLDER = "What is this dataflow for?";
 
 const GOAL_INPUT_ID = "curio-dataflow-goal";
 
+/**
+ * The dock's left edge, in pixels from the window's left, set on the page's
+ * root while the dock shares the canvas title's row. The title, on the same
+ * row from the left, is cut short where it would run under the dock
+ * (`.workflowNameStyle` in UpMenu.module.css); a long dataflow name used to be
+ * drawn over the dock and its goal field.
+ */
+export const DOCK_LEFT_PROPERTY = "--curio-canvas-dock-left";
+
+/** Keep {@link DOCK_LEFT_PROPERTY} at *dock*'s left edge while it is drawn on
+ *  the title's row, through its size, its container's and the window's, and
+ *  take it off when the dock goes. */
+function usePublishedLeftEdge(dock: HTMLElement | null, onTheTitlesRow: boolean): void {
+  useLayoutEffect(() => {
+    if (!dock || !onTheTitlesRow) return undefined;
+    const root = document.documentElement;
+    const publish = () => {
+      root.style.setProperty(DOCK_LEFT_PROPERTY, `${Math.floor(dock.getBoundingClientRect().left)}px`);
+    };
+    publish();
+    // Centered, the dock's left edge moves when its row grows or shrinks (an
+    // agent, a person, the goal field) and when the canvas around it does.
+    const resized = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(publish);
+    resized?.observe(dock);
+    if (dock.offsetParent) resized?.observe(dock.offsetParent);
+    window.addEventListener("resize", publish);
+    return () => {
+      resized?.disconnect();
+      window.removeEventListener("resize", publish);
+      root.style.removeProperty(DOCK_LEFT_PROPERTY);
+    };
+  }, [dock, onTheTitlesRow]);
+}
+
 const NO_AGENTS: AgentAttachment[] = [];
 const noop = () => undefined;
 
@@ -53,9 +87,13 @@ export const AgentDock: React.FC<{
   belowBanner = false,
 }) => {
   const here = usePeopleHere();
+  const [dock, setDock] = useState<HTMLDivElement | null>(null);
+  // Under a read-only canvas's banner the dock is below the title's row.
+  usePublishedLeftEdge(dock, !belowBanner);
   if (attachments.length === 0 && !showGoal && here.people.length === 0) return null;
   return (
     <div
+      ref={setDock}
       className={clsx(styles.dock, belowBanner && styles.dockBelowBanner)}
       role="toolbar"
       aria-label="Canvas agents"
