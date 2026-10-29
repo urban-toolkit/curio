@@ -11,6 +11,10 @@ The owner, with a canvas agent, sees an editor she invited and a watcher; the
 editor, who drives the dataflow's agents too, sees the agent, the owner and
 the watcher; the watcher sees both people and no agent, under the read-only
 banner. Every stack serves this: there is no switch for it.
+
+Every guest signs in to the one shared guest account, so the room numbers its
+tabs: two guests watching a dataflow each see the other's chip, named and
+colored by its number.
 """
 
 from __future__ import annotations
@@ -52,6 +56,9 @@ ACTIVITY = f'{PEOPLE} button[aria-label="Activity"]'
 ACTIVITY_LIST = '[role="region"][aria-label="Activity"]'
 #: Where the editor says they point on the canvas, in flow coordinates.
 POINT = (900, 640)
+#: The color of a guest's tab numbered 1 or 2 in its room, the first two of
+#: `PARTICIPANT_COLORS` (`presence.ts`), as a page computes them.
+NUMBER_COLORS = {1: "rgb(214, 51, 108)", 2: "rgb(43, 138, 62)"}
 
 
 def _spec() -> dict:
@@ -89,6 +96,13 @@ class _Room:
         if owns:
             self.project_id = login["project"]["id"]
         return page
+
+    def guest(self):
+        """A browser of someone with no account: the dataflow's link signs it
+        in to the shared guest account, with a sign-in of its own."""
+        context = self.browser.new_context(viewport={"width": 1280, "height": 768})
+        self.contexts.append(context)
+        return context.new_page()
 
     def invite(self, username: str) -> None:
         api_json(f"{self.backend}/api/projects/{self.project_id}/editors", self.tokens[OWNER],
@@ -136,6 +150,11 @@ def _people(page) -> list[dict]:
             label: chip.getAttribute('aria-label'),
         }))"""
     )
+
+
+def _chip_colors(page) -> list[str]:
+    """The color of each person's chip in *page*'s dock, in the row's order."""
+    return page.locator(CHIP).evaluate_all("(chips) => chips.map((chip) => getComputedStyle(chip).color)")
 
 
 def _dock_buttons(page) -> list[str]:
@@ -341,4 +360,32 @@ def test_a_click_on_a_persons_chip_moves_the_view_to_where_they_point(room):
     middle = owner.evaluate(_FLOW_MIDDLE_JS)
     assert middle == pytest.approx(list(POINT), abs=1), (
         f"the view's middle is at {middle} after the click, not where the editor points, {POINT}"
+    )
+
+
+def test_two_guests_on_one_dataflow_each_see_one_chip_for_the_other_numbered_by_the_room(room):
+    """Two visitors with no account open an account's dataflow: each is signed
+    in to the one shared guest account, and the room numbers their tabs in the
+    order they came. Each guest's dock shows one chip, the other's, named and
+    colored by its number, and its Activity names both by theirs. The owner
+    never opens it, so the guests are the room."""
+    room.person(OWNER, "Dock Owner", owns=True)
+    first = room.guest()
+    room.open(first, "watcher")
+    second = room.guest()
+    room.open(second, "watcher")
+
+    for page, other, what in ((first, 2, "the first guest's dock"), (second, 1, "the second guest's dock")):
+        people = _wait_for_people(page, ["watcher"], what=what)
+        assert [(person["label"], person["initials"]) for person in people] == [
+            (f"Shared Guest {other} (watcher)", f"S{other}"),
+        ], f"{what} shows {people}"
+        assert _chip_colors(page) == [NUMBER_COLORS[other]], f"{what}'s chip is not in its number's color"
+
+    first.locator(ACTIVITY).click()
+    activity = first.locator(ACTIVITY_LIST)
+    activity.wait_for(timeout=10000)
+    lines = activity.locator("li").all_inner_texts()
+    assert lines == ["Shared Guest 2 joined (watcher)", "Shared Guest 1 joined (watcher)"], (
+        f"the first guest's Activity lists {lines}"
     )
