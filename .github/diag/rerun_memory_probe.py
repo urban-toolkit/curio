@@ -238,11 +238,12 @@ def variant_env(env):
         env = server_environment(env)
         env["MALLOC_TRIM_THRESHOLD_"] = "131072"
         return env
-    if variant == "launch_mmap4m":
+    pairs = {"launch_mmap4m": (4, 8), "launch_mmap32m_trim8m": (32, 8), "launch_mmap8m_trim16m": (8, 16)}
+    if variant in pairs:
         from utk_curio.sandbox.isolation.lifecycle import server_environment
         env = server_environment(env)
-        env["MALLOC_MMAP_THRESHOLD_"] = str(4 * MB)
-        env["MALLOC_TRIM_THRESHOLD_"] = str(8 * MB)
+        env["MALLOC_MMAP_THRESHOLD_"] = str(pairs[variant][0] * MB)
+        env["MALLOC_TRIM_THRESHOLD_"] = str(pairs[variant][1] * MB)
         return env
     if variant == "launch":
         from utk_curio.sandbox.isolation.lifecycle import server_environment

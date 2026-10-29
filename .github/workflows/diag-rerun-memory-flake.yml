@@ -43,11 +43,12 @@ jobs:
         run: |
           base="-e MALLOC_ARENA_MAX=16 -e ARROW_DEFAULT_MEMORY_POOL=system"
           for round in 1 2 3; do
-            for setting in none mmap4m trim128k; do
+            for setting in none mmap4m mmap32m_trim8m mmap8m_trim16m; do
               case $setting in
                 none) extra="" ;;
                 mmap4m) extra="-e MALLOC_MMAP_THRESHOLD_=4194304 -e MALLOC_TRIM_THRESHOLD_=8388608" ;;
-                trim128k) extra="-e MALLOC_TRIM_THRESHOLD_=131072" ;;
+                mmap32m_trim8m) extra="-e MALLOC_MMAP_THRESHOLD_=33554432 -e MALLOC_TRIM_THRESHOLD_=8388608" ;;
+                mmap8m_trim16m) extra="-e MALLOC_MMAP_THRESHOLD_=8388608 -e MALLOC_TRIM_THRESHOLD_=16777216" ;;
               esac
               echo "round $round $setting"
               docker run --rm -v "$GITHUB_WORKSPACE/.github/diag:/diag:ro" $base $extra "$IMAGE" \
@@ -58,7 +59,7 @@ jobs:
       - name: Replays, interleaved
         run: |
           mkdir -p out
-          for variant in launch launch_mmap4m launch_trim128k; do
+          for variant in launch launch_mmap4m launch_mmap32m_trim8m launch_mmap8m_trim16m; do
             docker run --rm -v "$GITHUB_WORKSPACE/.github/diag:/diag:ro" -v "$GITHUB_WORKSPACE/out:/out" \
               -e CURIO_ISOLATION=off -e FLASK_USE_RELOADER=0 -e CURIO_LAUNCH_CWD=/app -w /app "$IMAGE" \
               python /diag/rerun_memory_probe.py --variant "$variant" --label "bench${{ matrix.job }}" \
