@@ -24,7 +24,7 @@ from pathlib import Path
 
 import pytest
 
-from .test_dataflow_docs import SPEC, _code, _type, room  # noqa: F401 - room is a fixture
+from .test_dataflow_docs import SPEC, _code, _imported_entries, _type, room  # noqa: F401 - room is a fixture
 
 #: The agent the writers here write as.
 BUILDER = "agent.curio.node-builder@1"
@@ -107,7 +107,7 @@ def test_a_writer_changes_only_what_it_changed_and_a_tab_gets_it(room):
     on_disk = room.on_disk()
     assert _code(on_disk["dataflow"]) == "# alice\nx = 1\n" and on_disk["dataflow"]["name"] == "Written"
     assert on_disk["dataflow"]["agents"] == SPEC["dataflow"]["agents"]
-    assert on_disk["nodeProvenance"] == SPEC["nodeProvenance"], "the write touched the history"
+    assert _imported_entries(room) == len(SPEC["nodeProvenance"]["loader"]), "the write touched the history"
 
 
 def test_a_writer_writes_the_spec_it_was_handed_and_nothing_when_it_changed_nothing(room):
@@ -262,11 +262,14 @@ def test_a_create_makes_an_open_doc_match_it_and_a_closed_one_start_anew(room):
     assert fresh.dataflow()["name"] == "Seeded again"
 
 
-def test_a_history_only_save_writes_the_history_and_never_the_dataflow(room):
-    """A tab bound to the doc saves its history, never the dataflow: the doc's
-    change is written first, the history goes on record, the dataflow's
-    revision moves for the doc's change alone, and the doc keeps what alice
-    typed."""
+def test_a_save_that_sends_no_dataflow_writes_only_the_docs_change_and_reads_no_history(room):
+    """A tab bound to the doc saves its outputs, never the dataflow: the doc's
+    change is written first and the dataflow's revision moves for it alone,
+    and the doc keeps what alice typed. A history such a save still carries,
+    as a tab of an earlier Curio sends it, is not read: the dataflow's points
+    are its history (``collaboration/history.py``)."""
+    from utk_curio.backend.app.projects import storage
+
     alice = room.tab("alice")
     alice.sync()
     alice.edit(_type("# typed\n"))
@@ -280,11 +283,12 @@ def test_a_history_only_save_writes_the_history_and_never_the_dataflow(room):
     assert resp.status_code == 200, resp.get_data(as_text=True)
     answered = resp.get_json()["spec"]
     assert _code(answered["dataflow"]) == "# typed\nx = 1\n", "the save answered with a dataflow behind the doc"
-    assert answered["nodeProvenance"] == history["nodeProvenance"]
+    assert not set(answered) & set(storage.HISTORY_KEYS), "the save answered with history sections"
+    assert storage.history_sections(room.owner_key, room.project_id) == {}, "the history was written beside the spec"
+    assert _imported_entries(room) == len(SPEC["nodeProvenance"]["loader"]), "the save changed the history"
     on_disk = room.on_disk()
-    assert on_disk["nodeProvenance"] == history["nodeProvenance"], "the history was not put on record"
     assert _code(on_disk["dataflow"]) == "# typed\nx = 1\n"
-    assert room.revision() == before + 1, "the history save wrote the spec beyond the doc's own change"
+    assert room.revision() == before + 1, "the save wrote the spec beyond the doc's own change"
     assert _code(alice.dataflow()) == "# typed\nx = 1\n"
     assert _code(room.live()["dataflow"]) == "# typed\nx = 1\n"
 

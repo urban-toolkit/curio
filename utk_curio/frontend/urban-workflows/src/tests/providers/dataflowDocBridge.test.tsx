@@ -46,6 +46,7 @@ import { buildCodeNode, nodeMetaFromTrill } from "../../hook/codeNodes";
 import { METADATA_FIELD_DATA, NODE_FIELD_DATA, trillNodeOf } from "../../providers/flow/useDataflowDoc";
 import { setCurrentProject } from "../../registry/projectPackagesStore";
 import { TrillGenerator } from "../../TrillGenerator";
+import { serverHistory } from "../../providers/history/serverHistory";
 
 const PROJECT = "7c3e0f42-5b9a-4d0e-9c1f-2a8b6d4e1f30";
 const TYPE = "curio.builtin/python-computation@1";
@@ -416,16 +417,6 @@ describe("what the canvas changes in place, with no new node", () => {
         expect(docNode().metadata.widgets[0].value).toBe(9);
     });
 
-    test("a node's code the doc brought is asked once for the code it replaced", async () => {
-        await open(serverDoc(spec().dataflow));
-        await fromAnotherTab((df) => {
-            df.nodes[0].content = "x = 5\n";
-        });
-        expect(api.dataflowDoc!.codeBefore("n", "x = 4\n")).toBeUndefined();
-        expect(api.dataflowDoc!.codeBefore("n", "x = 5\n")).toBe("x = 1\n");
-        expect(api.dataflowDoc!.codeBefore("n", "x = 5\n")).toBeUndefined();
-    });
-
     test("a node or a connection added twice with one id is on the canvas once", async () => {
         await open(serverDoc(spec().dataflow));
         const node = buildCodeNode(TYPE, nodeMetaFromTrill({ id: "k", type: TYPE, x: 5, y: 5, content: "z = 1\n" }, () => ({ x: 0, y: 0 })), {
@@ -478,6 +469,41 @@ describe("binding", () => {
         live.nodes[0].content = "x = 1\n# typed meanwhile\n";
         await open(serverDoc(live), spec());
         expect(canvasNode().data.code).toBe("x = 1\n# typed meanwhile\n");
+    });
+
+    test("a bound canvas's history is the server's: the versions its load recorded go, and its edits record none", async () => {
+        await open(serverDoc(spec().dataflow));
+        const history = serverHistory();
+        expect(history?.projectId).toBe(PROJECT);
+        expect(history?.reads()).toBe(true);
+        expect(history?.codeOf("n")).toBe("x = 1\n");
+        expect(history?.codeOf("gone")).toBeUndefined();
+        expect(TrillGenerator.provenanceJSON.nodes).toEqual([]);
+
+        const node = buildCodeNode(TYPE, nodeMetaFromTrill({ id: "k", type: TYPE, x: 5, y: 5, content: "z = 1\n" }, () => ({ x: 0, y: 0 })), {
+            pythonInterpreter: {}, jsInterpreter: {}, outputCallback: null, interactionsCallback: null,
+            propagationCallback: null, defaultSaveOutputDataset: false, position: () => ({ x: 0, y: 0 }),
+        });
+        act(() => api.addNode(node, undefined, true));
+        await flush();
+        expect(docNode("k")).toBeDefined();
+        expect(TrillGenerator.provenanceJSON.nodes).toEqual([]);
+        expect(history?.codeOf("k")).toBe("z = 1\n");
+    });
+
+    test("a load of the bound dataflow binds again, and the versions its replay recorded go", async () => {
+        await open(serverDoc(spec().dataflow));
+        const first = serverHistory();
+        expect(first).not.toBeNull();
+        act(() => {
+            code.loadTrill(spec());
+        });
+        await flush();
+        await flush();
+        const again = serverHistory();
+        expect(again).not.toBeNull();
+        expect(again).not.toBe(first);
+        expect(TrillGenerator.provenanceJSON.nodes).toEqual([]);
     });
 
     test("a watcher's canvas takes the doc's changes and writes none", async () => {

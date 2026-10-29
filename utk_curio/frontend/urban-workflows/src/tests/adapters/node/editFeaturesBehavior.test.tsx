@@ -24,10 +24,20 @@ jest.mock("../../../utils/autkInput", () => ({
   readAutkInput: jest.fn(() => Promise.resolve({ frames: mockSources.map((s: any) => ({ name: s.named ? s.outputTableName : null })) })),
   autkSourcesFrom: jest.fn(() => ({ sources: mockSources })),
 }));
+jest.mock("../../../api/historyApi", () => ({
+  historyApi: { entries: jest.fn(), writeCode: jest.fn(), noteEdit: jest.fn() },
+}));
+const mockShowToast = jest.fn();
+jest.mock("../../../providers/ToastProvider", () => ({
+  ...jest.requireActual("../../../providers/ToastProvider"),
+  useOptionalToastContext: () => ({ showToast: mockShowToast }),
+}));
 
 import { useEditFeaturesBehavior } from "../../../adapters/node/editFeaturesBehavior";
 import ProvenanceProvider, { useProvenanceContext, type NodeExecRecord } from "../../../providers/ProvenanceProvider";
 import { editFeaturesCode, readEditFeaturesCode, type EditFeaturesSettings } from "../../../utils/editFeatures/editFeatures";
+import { historyApi } from "../../../api/historyApi";
+import { setServerHistory } from "../../../providers/history/serverHistory";
 
 const NODE = "edit-1";
 const MAP = "map";
@@ -341,6 +351,72 @@ test("Undo puts back the entry before and Redo the newest one after it, by the b
   expect(redo()).toBeDisabled();
   fireEvent.click(undo());
   expect(log()).toEqual([LOG.edits![0]]);
+});
+
+describe("on a dataflow whose history the server keeps", () => {
+  const entries = historyApi.entries as jest.Mock;
+  const writeCode = historyApi.writeCode as jest.Mock;
+  const noteEdit = historyApi.noteEdit as jest.Mock;
+  const OFF: EditFeaturesSettings = { ...LOG, edits: [{ ...LOG.edits![0], enabled: false }, LOG.edits![1]] };
+  const whenKept = jest.fn().mockResolvedValue(true);
+
+  beforeEach(() => {
+    [entries, writeCode, noteEdit, whenKept, mockShowToast].forEach((m) => m.mockReset());
+    whenKept.mockResolvedValue(true);
+    noteEdit.mockResolvedValue({});
+    // The node's one entry: its first edit switched edit 1 off.
+    entries.mockResolvedValue({
+      entries: [{
+        id: 1, parentId: null, code: editFeaturesCode(OFF, 2), inputs: [], outputs: [],
+        startTime: "2026-10-28T14:05:03Z", endTime: "2026-10-28T14:05:03Z", kind: "edit",
+        label: "Switch off: Remove building_id 119 in table_osm_buildings", before: editFeaturesCode(LOG, 2), point: "p3",
+      }],
+      current: 1,
+    });
+    act(() => setServerHistory({ projectId: "proj", reads: () => true, whenKept, codeOf: () => undefined }));
+  });
+
+  afterEach(() => {
+    act(() => setServerHistory(null));
+  });
+
+  test("a change is sent to the server, named by what it changed, after the node's code reached the doc; nothing is filed here", async () => {
+    const { entries: filed } = mountLive(LOG, LINKED);
+    await screen.findByTestId("interaction-connected");
+    fireEvent.click(screen.getByLabelText("Use edit 1"));
+    await waitFor(() => expect(noteEdit).toHaveBeenCalledWith(
+      "proj", NODE, "Switch off: Remove building_id 119 in table_osm_buildings",
+    ));
+    expect(whenKept.mock.invocationCallOrder[0]).toBeLessThan(noteEdit.mock.invocationCallOrder[0]);
+    expect(filed()).toHaveLength(0);
+  });
+
+  test("Undo asks the server to put the code back only if the node still holds what this Undo began from; a refusal says who changed it", async () => {
+    mountLive(OFF, LINKED);
+    await screen.findByTestId("interaction-connected");
+    const undo = () => screen.getByTestId("interaction-undo");
+    await waitFor(() => expect(undo()).not.toBeDisabled());
+
+    writeCode.mockResolvedValueOnce({ ok: true });
+    fireEvent.click(undo());
+    await waitFor(() => expect(writeCode).toHaveBeenCalledWith("proj", NODE, {
+      from: editFeaturesCode(OFF, 2), code: editFeaturesCode(LOG, 2), label: "Undo",
+    }));
+    expect(whenKept.mock.invocationCallOrder[0]).toBeLessThan(writeCode.mock.invocationCallOrder[0]);
+    // The Undo's answer is in before the next one starts.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(mockShowToast).not.toHaveBeenCalled();
+
+    // Someone changed the node after: nothing is undone, and the toast says who.
+    writeCode.mockRejectedValueOnce(Object.assign(new Error("Ben changed this node after; nothing was undone."), { status: 409 }));
+    fireEvent.keyDown(body(), { key: "z", ctrlKey: true });
+    await waitFor(() => expect(mockShowToast).toHaveBeenCalledWith(
+      "Ben changed this node after; nothing was undone.", "warning",
+    ));
+    expect(writeCode).toHaveBeenCalledTimes(2);
+  });
 });
 
 test("an old save's metadata.editFeatures is ignored: the node reads its code", async () => {

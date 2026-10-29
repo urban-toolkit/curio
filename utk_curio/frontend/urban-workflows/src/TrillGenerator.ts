@@ -1,6 +1,7 @@
 /**
  * Serializes the canvas into a Trill dataflow document, and keeps its version
- * history.
+ * history while the canvas is bound to no dataflow's doc: a bound canvas's
+ * versions are the server's (`providers/history/serverHistory.ts`).
  *
  * The output format's canonical spec is `docs/schemas/trill.v1.json`; the prose
  * reference is `docs/TRILL-SPEC.md`. Adding a field here means declaring it
@@ -20,6 +21,7 @@ import { datasetWidgetBindings } from "./utils/widgets/datasetWidgets";
 import { normalizeSelections } from "./utils/references/selectionTags";
 import { normalizeScenarios, type Scenario } from "./utils/scenarios/scenarioModel";
 import { registeredCategory } from "./utils/graphPreviewCategories";
+import { serverHistory } from "./providers/history/serverHistory";
 
 export class TrillGenerator {
 
@@ -38,10 +40,16 @@ export class TrillGenerator {
     static scenarios: Scenario[] = [];
 
     static reset() {
+        this.forgetVersions();
+        this.scenarios = [];
+    }
+
+    /** Drop the versions recorded here: the canvas bound to its dataflow's
+     *  doc, whose history the server keeps. */
+    static forgetVersions() {
         this.provenanceJSON = { id: "", nodes: [], edges: [] };
         this.latestTrill = "";
         this.list_of_trills = {};
-        this.scenarios = [];
     }
 
     /** The plain-box graph a version is drawn with, each node in its
@@ -86,9 +94,7 @@ export class TrillGenerator {
     }
 
     static intializeProvenance(trill_spec: any){
-        // TODO: look for a provenance JSON for the workflow. If it does not exist initialize it. If it exists load the meta and trill versions to memory (ideally they should be on the database)
-        // TODO: for now assuming that the user is never loading a trill or provenanceJSON.
-
+        if (serverHistory()) return;
         const versionId = this._uniqueVersionId(
             trill_spec.dataflow.name, trill_spec.dataflow.timestamp,
         );
@@ -105,6 +111,7 @@ export class TrillGenerator {
     }
 
     static addNewVersionProvenance(nodes: any, edges: any, name: string, task: string, change: string){
+        if (serverHistory()) return;
 
         console.log("nodes", [...nodes]);
 
