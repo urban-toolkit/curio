@@ -89,6 +89,13 @@ export function useAgentCanvasMutations(): void {
   const { reveal } = useNotebookViewContext();
   const reactFlow = useReactFlow();
   const { getNodes, setCenter, getZoom } = reactFlow;
+  // The connections the canvas holds already are not added again: on a
+  // canvas bound to the dataflow's doc, the server's write of an applied
+  // plan reaches it through the doc, and can come before the apply's answer.
+  const notOnCanvas = <E extends { id: string }>(edges: E[]): E[] => {
+    const live = new Set(reactFlow.getEdges().map((e) => e.id));
+    return edges.filter((edge) => !live.has(edge.id));
+  };
   // Event-level idempotence: survives the store-sync lag between an insert
   // and the next controlled re-render.
   const processedRef = useRef<Set<string>>(new Set());
@@ -182,7 +189,7 @@ export function useAgentCanvasMutations(): void {
       if (processedRef.current.has(mutation.batchId)) return;
       processedRef.current.add(mutation.batchId);
       onEdgesChange(
-        mutation.edges.map((edge) => ({
+        notOnCanvas(mutation.edges).map((edge) => ({
           type: "add" as const,
           item: appliedEdgeToCanvasEdge(edge) as never,
         })),
@@ -202,7 +209,7 @@ export function useAgentCanvasMutations(): void {
         if (!live.has(node.id)) insertNode(node);
       }
       onEdgesChange(
-        mutation.edges.map((edge) => ({
+        notOnCanvas(mutation.edges).map((edge) => ({
           type: "add" as const,
           // dev/67-3: the apply assigns real handles (input circles in_N),
           // passed through; dev/112: interaction edges become bidirectional.

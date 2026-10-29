@@ -2681,7 +2681,8 @@ def scene_collaboration(ctx: Ctx) -> None:
 
     Needs a stack started with ``--collab`` (``CURIO_E2E_COLLAB=1``). The second
     person drives a context of their own that is not recorded: the video shows
-    what the owner sees when someone joins, adds a node and proposes a change.
+    what the owner sees when someone joins, adds a node and types in a node's
+    code.
     """
     page, tour = ctx.page, ctx.tour
     if os.environ.get("CURIO_E2E_COLLAB", "0").strip().lower() not in ("1", "true", "yes", "on"):
@@ -2744,20 +2745,23 @@ def scene_collaboration(ctx: Ctx) -> None:
         _fit_view(page)
         tour.beat(900)
 
-        # Ben edits the loader's code: this canvas shows his lock while he types,
-        # and a proposal once he leaves the editor.
+        # Ben edits the loader's code: this canvas shows his lock, and each
+        # keystroke as he types it, with his cursor in his color.
         node_locator(page2, loader_id).locator(".view-lines").first.click()
         page2.keyboard.press("ControlOrMeta+End")
         page2.keyboard.press("Enter")
         page2.keyboard.type("# checked by Ben", delay=40)
+        page.wait_for_function(
+            """() => (window.monaco ? window.monaco.editor.getModels() : [])
+                .some((model) => model.getValue().includes('# checked by Ben'))""",
+            timeout=30000,
+        )
+        node_locator(page, loader_id).locator(".yRemoteSelectionHead").first.wait_for(
+            state="attached", timeout=30000)
         tour.beat(1800)
         tour.still("collaboration-lock")
-        page2.mouse.click(1100, 720)
-        banner = node_locator(page, loader_id).get_by_text("proposed a code change")
-        banner.wait_for(state="visible", timeout=30000)
-        tour.focus(banner, hold=1400)
-        tour.still("collaboration-proposal", cursor=True)
-        tour.click(node_locator(page, loader_id).get_by_role("button", name="Approve", exact=True), hold=1800)
+        tour.focus(node_locator(page, loader_id).locator(".view-lines").first, hold=1400)
+        tour.still("collaboration-typing", cursor=True)
     finally:
         other.close()
     tour.hush()

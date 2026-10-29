@@ -9,11 +9,14 @@ Mounted on the namespace declared by ``COLLAB_NAMESPACE`` (default
 2. For room-scoped events, the sid is a current member of the room it
    targets. This is defence-in-depth on top of Socket.IO's own room
    bookkeeping.
-3. For an event that changes the room (a node or edge relay, a code-change
-   request, a vote, taking a lock, a broadcast output or conflict choice),
-   the participant edits the dataflow: ``access.room_role``, asked again for
-   each such event, says owner or editor (an account the owner invited). A
-   watcher's is refused with ``read_only``.
+3. For an event that changes the room (taking a lock, a broadcast output or
+   conflict choice), the participant edits the dataflow: ``access.room_role``,
+   asked again for each such event, says owner or editor (an account the owner
+   invited). A watcher's is refused with ``read_only``.
+
+The dataflow itself, its nodes, connections, code, widgets and scenarios, is
+the server's Yjs doc, which tabs sync with the ``yjs`` event
+(``dataflow_docs.py``).
 
 A join takes the same ``room_role``, which the room's list shows, and a change
 to the editors reaches the room at once (``roles.py``). A join is refused for
@@ -264,136 +267,6 @@ def register(sio):
             {"nodeId": node_id},
             to=room, namespace=ns,
         )
-        return {"ok": True}
-
-    # ------------------------------------------------------------------
-    # Graph relay (no merge logic — frontend ReactFlow is authoritative)
-    # ------------------------------------------------------------------
-
-    def _make_relay(event_name: str, activity_kind: str):
-        def _handler(payload):
-            room, me, err = _editing(payload)
-            if err:
-                return err
-            relay_payload = dict(payload or {})
-            relay_payload["from"] = _sender(me)
-            sio.emit(
-                event_name, relay_payload,
-                to=room, skip_sid=request.sid, namespace=ns,
-            )
-            room_state.bump_version(room)
-            activity_payload = {
-                "by": me["username"],
-                "payload": {
-                    k: payload.get(k)
-                    for k in ("nodeId", "edgeId", "patch")
-                    if payload and k in payload
-                },
-            }
-            room_state.record_activity(room, activity_kind, activity_payload)
-            return {"ok": True}
-        return _handler
-
-    for event_name in (
-        "node_added", "node_updated", "node_removed",
-        "edge_added", "edge_removed",
-    ):
-        sio.on(event_name, namespace=ns)(_make_relay(event_name, event_name))
-
-    # ------------------------------------------------------------------
-    # Code-change proposals (peer-approved edits while a lock is held)
-    # ------------------------------------------------------------------
-
-    @sio.on("request_code_change", namespace=ns)
-    def _request_code_change(payload):
-        room, me, err = _editing(payload)
-        if err:
-            return err
-        node_id = payload.get("nodeId")
-        kind = payload.get("kind", "code")  # "code" | "grammar"
-        if not node_id or "newValue" not in payload:
-            return {"ok": False, "error": "invalid_payload"}
-        proposal = room_state.add_proposal(room, {
-            "nodeId": node_id,
-            "kind": kind,
-            "oldValue": payload.get("oldValue"),
-            "newValue": payload["newValue"],
-            "proposed_by": _sender(me),
-        })
-        sio.emit(
-            "code_change_proposed", proposal,
-            to=room, namespace=ns,
-        )
-        room_state.record_activity(room, "code_change_proposed", {
-            "nodeId": node_id, "by": me["username"], "kind": kind,
-        })
-        return {"ok": True, "proposal": proposal}
-
-    def _vote(payload, approve: bool):
-        room, me, err = _editing(payload)
-        if err:
-            return None, err
-        proposal_id = (payload or {}).get("proposalId")
-        if not proposal_id:
-            return None, {"ok": False, "error": "invalid_payload"}
-        prop = room_state.vote_proposal(room, proposal_id, me["participant_id"], approve)
-        if prop is None:
-            return None, {"ok": False, "error": "unknown_proposal"}
-        return (room, me, prop), None
-
-    @sio.on("approve_code_change", namespace=ns)
-    def _approve_code_change(payload):
-        ctx, err = _vote(payload, True)
-        if err:
-            return err
-        room, me, prop = ctx
-        # Everyone else who edits the dataflow approves; a watcher has no vote.
-        voters = room_state.voters(room, prop)
-        approvals = set(prop.get("approvals") or [])
-        all_approved = bool(voters) and all(v in approvals for v in voters)
-        sio.emit(
-            "code_change_voted",
-            {
-                "proposalId": prop["id"],
-                "by": me["username"],
-                "approve": True,
-                "approvals": list(approvals),
-                "rejections": list(prop.get("rejections") or []),
-            },
-            to=room, namespace=ns,
-        )
-        if all_approved:
-            room_state.remove_proposal(room, prop["id"])
-            sio.emit(
-                "code_change_applied", prop,
-                to=room, namespace=ns,
-            )
-            room_state.record_activity(room, "code_change_applied", {
-                "nodeId": prop.get("nodeId"), "kind": prop.get("kind"),
-            })
-        return {"ok": True, "applied": all_approved}
-
-    @sio.on("reject_code_change", namespace=ns)
-    def _reject_code_change(payload):
-        ctx, err = _vote(payload, False)
-        if err:
-            return err
-        room, me, prop = ctx
-        room_state.remove_proposal(room, prop["id"])
-        sio.emit(
-            "code_change_rejected",
-            {
-                "proposalId": prop["id"],
-                "by": me["username"],
-                "proposal": prop,
-            },
-            to=room, namespace=ns,
-        )
-        room_state.record_activity(room, "code_change_rejected", {
-            "nodeId": prop.get("nodeId"),
-            "kind": prop.get("kind"),
-            "by": me["username"],
-        })
         return {"ok": True}
 
     # ------------------------------------------------------------------

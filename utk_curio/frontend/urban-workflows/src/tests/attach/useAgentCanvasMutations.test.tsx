@@ -30,11 +30,13 @@ jest.mock("../../utils/fitViewWithMenuOffset", () => ({
 }));
 
 const mockGetNodes = jest.fn(() => [] as Array<{ id: string }>);
+const mockGetEdges = jest.fn(() => [] as Array<{ id: string }>);
 const mockSetCenter = jest.fn();
 const mockGetZoom = jest.fn(() => 0.8);
 jest.mock("reactflow", () => ({
   useReactFlow: () => ({
     getNodes: mockGetNodes,
+    getEdges: mockGetEdges,
     setCenter: mockSetCenter,
     getZoom: mockGetZoom,
   }),
@@ -80,6 +82,7 @@ const NODE = {
 beforeEach(() => {
   jest.clearAllMocks();
   mockGetNodes.mockReturnValue([]);
+  mockGetEdges.mockReturnValue([]);
   mockScenarios.current = [];
 });
 
@@ -229,6 +232,28 @@ describe("graph-created (dev/52 — a whole applied plan)", () => {
     act(() => notifyAgentCanvasMutation(GRAPH));
     act(() => notifyAgentCanvasMutation(GRAPH));
     expect(mockCreateCodeNode).toHaveBeenCalledTimes(2); // not 4
+  });
+
+  // On a canvas bound to the dataflow's doc, the server's write of the plan
+  // reaches the canvas through the doc, and can land before the apply answers.
+  it("adds no node or connection the canvas holds already", () => {
+    mockGetNodes.mockReturnValue([{ id: "ga" }, { id: "gb" }]);
+    mockGetEdges.mockReturnValue([{ id: "e1" }]);
+    render(<Host />);
+    act(() => notifyAgentCanvasMutation({
+      ...GRAPH,
+      planId: "plan-through-the-doc",
+      edges: [...GRAPH.edges, { id: "e2", source: "gb", target: "ga" }],
+    }));
+    expect(mockCreateCodeNode).not.toHaveBeenCalled();
+    const changes = mockOnEdgesChange.mock.calls[0][0];
+    expect(changes.map((change: any) => change.item.id)).toEqual(["e2"]);
+
+    act(() => notifyAgentCanvasMutation({
+      kind: "edges-created", batchId: "batch-through-the-doc",
+      edges: [{ id: "e1", source: "ga", target: "gb" }],
+    }));
+    expect(mockOnEdgesChange.mock.calls[1][0]).toEqual([]);
   });
 
 

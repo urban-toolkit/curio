@@ -9,20 +9,24 @@ import React, {
     useEffect,
 } from "react";
 import {
+    applyEdgeChanges,
     useNodesState,
     useEdgesState,
     useReactFlow,
+    type EdgeChange,
+    type NodeRemoveChange,
 } from "reactflow";
 import { useInRouterContext } from "react-router-dom";
 import { useConnect } from "./flow/useConnect";
-import { useGraphEdits } from "./flow/useGraphEdits";
+import { useGraphEdits, type AppliedCodeDoc } from "./flow/useGraphEdits";
 import { useDashboardPins, useDashboardPinSave } from "./flow/useDashboardPins";
 import { usePlayAll } from "./flow/usePlayAll";
 import type { PlayAllState } from "./flow/usePlayAll";
 import { useApplyOutput } from "./flow/useApplyOutput";
 import { useInteractions } from "./flow/useInteractions";
 import { useSelectionTags } from "./flow/useSelectionTags";
-import { useCollaborationSync } from "./flow/useCollaborationSync";
+import { useDataflowDoc } from "./flow/useDataflowDoc";
+import { useRemovalAsk } from "./flow/useRemovalAsk";
 import { useInstallSave } from "./flow/useInstallSave";
 import { useServerRun } from "./flow/useServerRun";
 import { useStepOutcomes } from "./flow/useStepOutcomes";
@@ -36,9 +40,11 @@ import type { Scenario } from "../utils/scenarios/scenarioModel";
 import { DEFAULT_WORKFLOW_NAME } from "../constants";
 import { TrillGenerator } from "../TrillGenerator";
 import { isStandaloneDashboard } from "../standalone/dashboardPayload";
-import { useWorkflowOperations } from "../hook/useWorkflowOperations";
+import { useWorkflowOperations, type DocBridgeForSaves } from "../hook/useWorkflowOperations";
 import { useToastContext } from "./ToastProvider";
 import { useCollab } from "./CollaborationProvider";
+import { CONNECTION_DROPPED_EVENT, useDocBinding } from "./collab/docContext";
+import { canvasRole } from "./collab/participants";
 import { useProvenanceContext } from "./ProvenanceProvider";
 import { useUserContext } from "./UserProvider";
 import { isHostedGuest } from "../components/apiSettings/useHostedGuest";
@@ -201,7 +207,15 @@ const FlowProvider = ({
     const { user, enableUserAuth, skipProjectPage } = useUserContext();
     const hostedGuest = isHostedGuest(user, enableUserAuth);
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
-    const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+    const [edges, setEdges] = useEdgesState([]);
+    // An edge added with an id the canvas holds is not added again: the doc
+    // and an agent's apply can both bring one before the canvas renders.
+    const onEdgesChange = useCallback((changes: EdgeChange[]) => {
+        setEdges((eds) => applyEdgeChanges(
+            changes.filter((change) => change.type !== "add" || !eds.some((edge) => edge.id === change.item.id)),
+            eds,
+        ));
+    }, [setEdges]);
     const [outputs, _setOutputs] = useState<IOutput[]>([]);
     const outputsRef = useRef<IOutput[]>([]);
     const playAllStateRef = useRef<PlayAllState | null>(null);
@@ -265,15 +279,11 @@ const FlowProvider = ({
         };
     }, []);
 
-    // Collaboration broadcasters. The provider may be a no-op (when
-    // --collab is off or no project is loaded), in which case every
-    // broadcast call is a noop too. We hold the latest value in a ref
-    // so the mutation callbacks below don't have to list `collab` in
-    // their dependency arrays and risk re-creating themselves on every
-    // presence change.
+    // The room, and the dataflow's doc this canvas binds to (useDataflowDoc).
+    // The dashboard binds to none: a viewer's tried values never reach it.
     const collab = useCollab();
-    const collabRef = useRef(collab);
-    collabRef.current = collab;
+    const docBinding = useDocBinding();
+    const docBridgeRef = useRef<DocBridgeForSaves | null>(null);
 
     // The ref is written now, not when React renders: a save reads the outputs
     // from it, and the save a run's end flushes runs in the tick the run's last
@@ -346,16 +356,18 @@ const FlowProvider = ({
     // agent's applied change to a node's code.
     const { nodeExecProv, nodeEditProv } = useProvenanceContext();
 
+    // The doc an agent's applied code is the server's in, once the canvas binds.
+    const codeDocRef = useRef<AppliedCodeDoc | null>(null);
     const {
         applyNodeContent, addNode, propagateDownstreamInputs, applyOutput, onEdgesDelete, onNodesDelete,
     } = useGraphEdits({
-        setNodes, setEdges, reactFlow, workflowNameRef, collabRef, outputsRef, markNodeStaleRef, setOutputs,
-        nodeEditProv, markDirtyRef,
+        setNodes, setEdges, reactFlow, workflowNameRef, outputsRef, markNodeStaleRef, setOutputs,
+        nodeEditProv, markDirtyRef, codeDocRef,
     });
 
     const { onConnect, isValidConnection } = useConnect({
         markDirtyRef, reactFlow, showToast, markNodeStaleRef, applyOutput, setEdges,
-        workflowNameRef, collabRef, outputsRef,
+        workflowNameRef, outputsRef,
     });
 
     const { cancelRun, signalNodeExecDone, playAllNodes, playNodesUpTo, playNodes } = usePlayAll({
@@ -376,16 +388,6 @@ const FlowProvider = ({
     // and a view drawn again without it empties them (#884).
     const { clearViewTags } = useSelectionTags({ interactions, reactFlow, setNodes, markNodeStaleRef, markDirtyRef });
 
-    // A peer's change that lands here is the dataflow's: the owner's tab, the
-    // one that saves it, marks it Unsaved, so its next save keeps the change.
-    // Assigned once workflowOps exists, as markDirtyRef is.
-    const remoteEditRef = useRef<() => void>(() => {});
-    useCollaborationSync({
-        collab, applyNewOutput, interactionsCallback, applyNewPropagation, setNodes, setEdges,
-        takeCanvasPosition: notebook.takeCanvasPosition, remoteEditRef,
-    });
-    // NEW CODE
-
     // Workflow operations extracted into a dedicated hook
     // NOTE: markNodeExecutedRef/markNodeStaleRef are updated here so functions defined earlier
     // (applyNewOutput, onEdgesDelete, onConnect) can access them without stale closures.
@@ -402,16 +404,50 @@ const FlowProvider = ({
         onEdgesDelete, onNodesDelete, onNodesChange,
         onConnect, addNode,
         defaultSaveOutputDataset,
+        docBridgeRef,
     });
 
     markNodeExecutedRef.current = workflowOps.markNodeExecuted;
     markNodeStaleRef.current = workflowOps.markNodeStale;
     markNodeErroredRef.current = workflowOps.markNodeErrored ?? (() => {});
     markDirtyRef.current = workflowOps.markDirty;
-    remoteEditRef.current = () => {
-        if (workflowOps.viewerMode === "owner") workflowOps.markDirty();
-    };
     scenariosNowRef.current = () => workflowOps.scenariosRef?.current ?? workflowOps.scenarios ?? [];
+
+    // The canvas and the dataflow's doc, both ways. A watcher's canvas takes
+    // the doc's changes and writes none.
+    const dataflowDoc = useDataflowDoc({
+        binding: dashboardOn ? null : docBinding,
+        canWrite: canvasRole(workflowOps.viewerMode, collab) !== "watcher" && !!docBinding?.provider.canWrite,
+        nodes, edges, setNodes, setEdges, reactFlow,
+        workflowNameRef, workflowGoalRef: workflowOps.workflowGoalRef, workflowDescriptionRef,
+        workflowCategoriesRef: workflowOps.workflowCategoriesRef, scenariosRef: workflowOps.scenariosRef,
+        autoRunRef: workflowOps.autoRunRef,
+        scenarios: workflowOps.scenarios, workflowName, workflowGoal: workflowOps.workflowGoal, workflowDescription,
+        workflowCategories: workflowOps.workflowCategories, autoRun: workflowOps.autoRun,
+        loadedDataflowRef: workflowOps.loadedDataflowRef,
+        takeDataflowFields: workflowOps.takeDataflowFields,
+        quietly: workflowOps.quietly,
+        markNodeStale: workflowOps.markNodeStale,
+        addNode, onConnect, onEdgesDelete, onNodesDelete, onNodesChange,
+        applyNewOutput, interactionsCallback, applyNewPropagation, defaultSaveOutputDataset,
+        takeCanvasPosition: notebook.takeCanvasPosition, setDashboardPins, showToast,
+    });
+    docBridgeRef.current = dataflowDoc;
+    codeDocRef.current = dataflowDoc;
+    // A connection this tab drew to a node someone removed meanwhile: the
+    // server took it out, and says who removed the node.
+    useEffect(() => {
+        if (typeof collab.onRemote !== "function") return;
+        return collab.onRemote(CONNECTION_DROPPED_EVENT, (payload: any) => {
+            const who = payload?.by?.name || payload?.by?.username || "Someone";
+            showToast(`${who} removed that node, so this connection was not kept.`, "warning", { stay: true });
+        });
+    }, [collab.onRemote, showToast]);
+    // Removing a node someone else is editing asks first.
+    const removal = useRemovalAsk(dataflowDoc.editorsOf);
+    const applyRemoveChanges = useCallback((changes: NodeRemoveChange[]) => {
+        removal.ask(changes.map((change) => change.id), () => workflowOps.applyRemoveChanges(changes));
+    }, [removal.ask, workflowOps.applyRemoveChanges]);
 
     useDashboardPinSave({
         savePinChangeRef, dashboardOn, workflowOps, showToast, hostedGuest,
@@ -493,7 +529,7 @@ const FlowProvider = ({
     const nodeActionsValue = useMemo<NodeActionsContextProps>(() => ({
         workflowNameRef,
         workflowName,
-        applyRemoveChanges: workflowOps.applyRemoveChanges,
+        applyRemoveChanges,
         setPinForDashboard,
         allMinimized: workflowOps.allMinimized,
         setAllMinimized: workflowOps.setAllMinimized,
@@ -507,7 +543,7 @@ const FlowProvider = ({
     }), [
         workflowNameRef,
         workflowName,
-        workflowOps.applyRemoveChanges,
+        applyRemoveChanges,
         setPinForDashboard,
         workflowOps.allMinimized,
         workflowOps.setAllMinimized,
@@ -586,6 +622,16 @@ const FlowProvider = ({
                 loading,
 
                 ...workflowOps,
+                applyRemoveChanges,
+                dataflowDoc: {
+                    bound: dataflowDoc.bound,
+                    noteDrag: dataflowDoc.noteDrag,
+                    editorsOf: dataflowDoc.editorsOf,
+                    noteRemoval: dataflowDoc.noteRemoval,
+                    askBeforeRemoving: removal.ask,
+                    noteNodeData: dataflowDoc.noteNodeData,
+                    codeBefore: dataflowDoc.codeBefore,
+                },
                 // A project switch must not inherit a run in flight: the guard
                 // is provider state, and the provider outlives the dataflow
                 // when the user loads another one in place (#271).
@@ -613,6 +659,7 @@ const FlowProvider = ({
             <NotebookViewContext.Provider value={notebook.notebookViewValue}>
                 {inRouter && !dashboardOn && <CanvasViewAddress view={notebook.canvasView} />}
                 {children}
+                {removal.dialog}
             </NotebookViewContext.Provider>
         </FlowContext.Provider>
         </NodeActionsContext.Provider>
