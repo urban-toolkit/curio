@@ -17,7 +17,7 @@ import {
     pointerOf,
     type Point,
 } from "../../../providers/collab/cursors";
-import { participantColor, type PresenceState } from "../../../providers/collab/presence";
+import { participantColor, personColor, type PresenceState } from "../../../providers/collab/presence";
 
 const NOW = 1_700_000_000_000;
 
@@ -152,13 +152,31 @@ describe("a tab's pointer", () => {
     });
 });
 
+describe("a person's color", () => {
+    test("comes from their account: the same in two of their tabs, and after a reload or a reconnect", () => {
+        // Each tab, and each reconnect, is a new participant with a new id.
+        const before = personColor({ username: "ana", user_id: 3, participant_id: "0f1e2d3c" });
+        const after = personColor({ username: "ana", user_id: 3, participant_id: "9a8b7c6d" });
+        expect(after).toBe(before);
+        expect(before).toBe(participantColor("ana"));
+        // The room's list of people names accounts the same way: chips and cursors agree.
+        expect(personColor({ username: "ana", user_id: 3, name: "Ana", role: "editor" })).toBe(before);
+    });
+
+    test("what names no account takes its participant's color, then its client's", () => {
+        expect(personColor({ participant_id: "0f1e2d3c" }, "7")).toBe(participantColor("0f1e2d3c"));
+        expect(personColor(null, "7")).toBe(participantColor("7"));
+        expect(personColor({ user_id: 3 })).toBe(participantColor("user 3"));
+    });
+});
+
 describe("everyone else's cursors", () => {
     const ana = (pointer: unknown): PresenceState => ({
-        user: { participant_id: "p-ana", name: "Ana" },
+        user: { participant_id: "p-ana", username: "ana", name: "Ana" },
         pointer: pointer as PresenceState["pointer"],
     });
 
-    test("are drawn in their participant's color with their name; a state with no point is not", () => {
+    test("are drawn in their person's color with their name; a state with no point is not", () => {
         const tracker = new CursorTracker();
         const drawn = tracker.read([
             [7, ana({ x: 10, y: 20, t: NOW })],
@@ -168,19 +186,28 @@ describe("everyone else's cursors", () => {
             [11, { user: { participant_id: "p-ed", name: "Ed" } }],
         ], NOW);
         expect(drawn).toEqual([
-            { clientId: 7, x: 10, y: 20, name: "Ana", color: participantColor("p-ana"), idle: false },
+            { clientId: 7, x: 10, y: 20, name: "Ana", color: participantColor("ana"), idle: false },
         ]);
         expect(pointerOf({ pointer: { x: 1, y: 2 } as any })).toEqual({ x: 1, y: 2, t: 0 });
+    });
+
+    test("two tabs of one person are drawn in one color", () => {
+        const tracker = new CursorTracker();
+        const [first, second] = tracker.read([
+            [7, ana({ x: 10, y: 20, t: NOW })],
+            [8, { ...ana({ x: 30, y: 40, t: NOW }), user: { participant_id: "p-ana-2", username: "ana", name: "Ana" } }],
+        ], NOW);
+        expect(second.color).toBe(first.color);
     });
 
     test("a watcher's pointer is drawn as anyone's is", () => {
         const tracker = new CursorTracker();
         const watcher: PresenceState = {
-            user: { participant_id: "p-wes", name: "Wes", role: "watcher" },
+            user: { participant_id: "p-wes", username: "wes", name: "Wes", role: "watcher" },
             pointer: { x: -5, y: 7.5, t: NOW },
         };
         expect(tracker.read([[12, watcher]], NOW)).toEqual([
-            { clientId: 12, x: -5, y: 7.5, name: "Wes", color: participantColor("p-wes"), idle: false },
+            { clientId: 12, x: -5, y: 7.5, name: "Wes", color: participantColor("wes"), idle: false },
         ]);
     });
 
