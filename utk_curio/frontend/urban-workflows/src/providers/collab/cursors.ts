@@ -14,6 +14,9 @@
  *   each faded once it has not moved for `CURSOR_IDLE_MS`. The time is this
  *   tab's, from when the move arrived: another machine's clock can be off by
  *   minutes.
+ * - **A drag** (`agentDrags.ts`): a state that holds `carrying` is an agent's
+ *   drag, and its `pointer` is the drag's drop point. Its cursor is the one
+ *   that carries the drag, so it has no cursor of its own here.
  */
 import { colorOf, nameOf, type CanvasPointer, type PresenceState } from "./presence";
 
@@ -21,6 +24,8 @@ export type { CanvasPointer } from "./presence";
 
 /** The awareness field. */
 export const POINTER_FIELD = "pointer";
+/** The awareness field of an agent's drag (`agentDrags.ts`). */
+export const CARRYING_FIELD = "carrying";
 /** The shortest time between two of a tab's cursor messages. */
 export const CURSOR_EVERY_MS = 50;
 /** How long a cursor rests before it fades. */
@@ -52,6 +57,12 @@ export function pointerOf(state: PresenceState | null | undefined): CanvasPointe
     const pointer = state?.pointer as Partial<CanvasPointer> | null | undefined;
     if (!pointer || typeof pointer !== "object" || !finite(pointer.x) || !finite(pointer.y)) return null;
     return { x: pointer.x, y: pointer.y, t: finite(pointer.t) ? pointer.t : 0 };
+}
+
+/** Whether a state holds a drag, whose pointer is the drag's drop point. */
+export function carries(state: PresenceState | null | undefined): boolean {
+    const carrying = (state as { [CARRYING_FIELD]?: unknown } | null | undefined)?.[CARRYING_FIELD];
+    return !!carrying && typeof carrying === "object";
 }
 
 /** A tenth of a flow unit: a fifth of a pixel at React Flow's largest zoom. */
@@ -145,12 +156,13 @@ export interface DrawnCursor {
 export class CursorTracker {
     private readonly seen = new Map<number, CanvasPointer & { movedAt: number }>();
 
-    /** The cursors of the pointers *others* hold at *now*, in client order. */
+    /** The cursors of the pointers *others* hold at *now*, in client order:
+     *  none for a state that carries a drag, whose cursor carries it. */
     read(others: ReadonlyArray<readonly [number, PresenceState]>, now: number): DrawnCursor[] {
         const drawn: DrawnCursor[] = [];
         const held = new Set<number>();
         for (const [clientId, state] of others) {
-            const cursor = pointerOf(state);
+            const cursor = carries(state) ? null : pointerOf(state);
             if (!cursor) continue;
             held.add(clientId);
             const last = this.seen.get(clientId);
