@@ -164,7 +164,7 @@ def _solve_node_events(
     trail_lines = _trail_lines(attempts)
     text, card_kind, parts = _conclude(
         user_key, project_id, attachment_id, session_id, spec, node, label, had_content,
-        grounding_base, outcome, done,
+        grounding_base, outcome, done, asker_id=getattr(acting_user, "id", None),
     )
     card = {
         "type": "card", "kind": card_kind,
@@ -309,7 +309,7 @@ def _write_empty_node(user_key, project_id, node_id, candidate: str, *, actor=No
 
 
 def _conclude(user_key, project_id, attachment_id, session_id, spec, node, label, had_content,
-              grounding_base, outcome: dict, done: dict) -> tuple[str, str, list]:
+              grounding_base, outcome: dict, done: dict, asker_id=None) -> tuple[str, str, list]:
     """What the per-node Solve says and shows for its verdict: the text, the card kind and the
     content parts (the change's card when PASS writes corrected code; the caller adds the attempt
     trail). Writes the verdict-specific fields (unchanged, written, change ids, remedy) into *done*,
@@ -343,7 +343,9 @@ def _conclude(user_key, project_id, attachment_id, session_id, spec, node, label
         )
         card_kind = "result"
     elif verdict == "pass":
-        stream: dict = {}
+        # The job's thread holds no request: the change waits for anyone but
+        # the account that asked.
+        stream: dict = {"asker_id": asker_id}
         part, home_att, _mint_text = agents_delegates._mint_content_review_from_delegate(
             user_key, project_id,
             node_id=node_id,

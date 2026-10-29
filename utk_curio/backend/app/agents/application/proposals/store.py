@@ -43,11 +43,11 @@ def _proposal_summary(proposal: object) -> dict | None:
         "summary": proposal.get("summary"),
         "status": proposal.get("status"),
     }
-    # dev/67-5: the per-node review state survives reloads through the mirror.
+    # A landed plan: each ref the plan placed, with the node it is, which its
+    # rows' Solve and Run read.
     if proposal.get("tool") == "dataflow.plan.write":
-        summary["editedGoals"] = dict(proposal.get("editedGoals") or {})
-        summary["appliedRefs"] = list(proposal.get("appliedRefs") or [])
-        summary["edgeStates"] = dict(proposal.get("edgeStates") or {})
+        summary["appliedRefs"] = list(proposal.get("appliedNodeIds") or {})
+        summary["nodeIds"] = dict(proposal.get("appliedNodeIds") or {})
         # #662: which of the plan's scenarios are saved, when it has any.
         if proposal.get("scenarioStates"):
             summary["scenarioStates"] = dict(proposal["scenarioStates"])

@@ -83,11 +83,14 @@ def _holder(project_id: str, node_ids: list, asker) -> str | None:
     return None
 
 
-def wait_for_people(project_id: str, node_ids: list) -> str | None:
-    """Wait while a person other than the one who asked holds one of
-    *node_ids*, as one person waits for another to leave a node, up to
-    :data:`LOCK_WAIT_S`: the name of who still holds one then, or None."""
-    asker = getattr(agents_spec_reads._acting_user(), "id", None)
+def wait_for_people(project_id: str, node_ids: list, asker=None) -> str | None:
+    """Wait while a person other than *asker*, the account that asked, holds
+    one of *node_ids*, as one person waits for another to leave a node, up to
+    :data:`LOCK_WAIT_S`: the name of who still holds one then, or None. A run
+    outside a request (a job's thread) names its asker; a request's is its
+    user."""
+    if asker is None:
+        asker = getattr(agents_spec_reads._acting_user(), "id", None)
     deadline = time.monotonic() + LOCK_WAIT_S
     while True:
         holder = _holder(project_id, node_ids, asker)
@@ -107,7 +110,7 @@ def land(user_key: str, project_id: str, loop_ctx: dict, spec: dict, proposal: d
     from utk_curio.backend.app.agents.application.proposals import apply as agents_apply
     from utk_curio.backend.app.agents.application.proposals import plans as agents_plans
 
-    held = wait_for_people(project_id, _nodes_it_changes(proposal))
+    held = wait_for_people(project_id, _nodes_it_changes(proposal), loop_ctx.get("asker_id"))
     if held:
         return "refused", agent_text.message("change.person-editing", name=held), None
     lander = {
@@ -168,6 +171,9 @@ def card(part: dict, change: dict, lines: list[str]) -> dict:
                 "summary": change["summary"], "status": APPLIED, "lines": list(lines)})
     if change.get("nodeId"):
         out["nodeId"] = change["nodeId"]
+    if change.get("planId"):
+        # The plan's rows read its ledger, on the attachment, by this id.
+        out["planId"] = change["planId"]
     return out
 
 
@@ -301,7 +307,8 @@ def _undo_content(user_key, project_id, attachment_id, change, by, label) -> lis
                            code=change["before"], label=label)
     except history.HistoryError as exc:
         raise AgentServiceError(str(exc), exc.status) from exc
-    return [{"kind": "node-content-applied", "nodeId": change["nodeId"], "content": change["before"], "agent": "Undo"}]
+    # The node's history in the tab names the entry as the server's does.
+    return [{"kind": "node-content-applied", "nodeId": change["nodeId"], "content": change["before"], "agent": label}]
 
 
 def _undo_node(user_key, project_id, attachment_id, change, by, label) -> list[dict]:
@@ -335,7 +342,7 @@ def _undo_settings(user_key, project_id, attachment_id, change, by, label) -> li
     if node is None:
         raise AgentServiceError("the node this change set is not on the canvas any more; nothing was undone.", 409)
     if settings_basis(node, change["settings"]) != change.get("basisAfter"):
-        raise _refused(None)
+        raise _refused(_last_by(user_key, project_id, change["nodeId"]))
     for step in change.get("undo") or []:
         write_settings(node, step)
     dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._person(user_key, "undo"),

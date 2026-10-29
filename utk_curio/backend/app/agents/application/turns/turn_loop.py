@@ -84,6 +84,8 @@ class AttachmentTurn:
         self.tool_calls: list = []
         self.delegations: list = []
         self.minted: list = []
+        # The changes that landed, which a blocking run's reply carries.
+        self.landed: list = []
         self.folded: list[str] = []
         self.final_parts: list = []
         self.conversation = _RunConversation(messages, self.loop_ctx)
@@ -155,8 +157,11 @@ class AttachmentTurn:
     def _emit_landed(self):
         """Each change that landed since the last round, as a ``change``
         event: a tab no doc binds takes its canvas mutation, and every tab
-        knows its chat holds a new change."""
+        knows its chat holds a new change. A blocking run answers them with
+        its reply (``changes``)."""
         for landed in agents_changes.take_landed(self.loop_ctx):
+            if not self.streaming:
+                self.landed.append(landed)
             yield from self._emit("change", landed)
 
     def _native_call_request(self, native_calls: list, result: dict):
@@ -618,6 +623,8 @@ class AttachmentTurn:
             "content": run_parts,
             **({"skills": held} if held else {}),
             **({"skillsLoaded": execution["skillsLoaded"]} if execution.get("skillsLoaded") else {}),
+            # What the streamed run sends as change events, for a tab no doc binds.
+            **({"changes": list(self.landed)} if self.landed else {}),
         }
 
     # ── the streaming envelope ──────────────────────────────────────────────
