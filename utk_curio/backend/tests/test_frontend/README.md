@@ -134,6 +134,43 @@ It writes `report.json` and `summary.md` (errors by kind, p50/p95/max per
 endpoint, the slowest users, every failure with its stderr) and exits non-zero
 if any tier had any failure.
 
+**Each user's tab** (`stress/sockets.py`). A tier's users are also put in rooms
+of five (`--room-size`, 0 for none). The first user of a room owns the dataflow
+it created, and invites the others as editors by username through the Share
+menu's route (`POST /api/projects/<id>/editors`), since the server drops a
+watcher's changes. While its own dataflow runs, each user opens a tab of the
+room's dataflow as the canvas does: a pycrdt doc that connects with the user's
+token over WebSocket (python-socketio's client and `websocket-client`), joins
+the room (`join_session`) and syncs over the `yjs` event, with the frames the
+server's doc speaks (`collaboration/dataflow_docs.py`). It then types two
+comment lines into a node's code, a keystroke a transaction, and drags the node
+every 15 keystrokes, at five keys a second in the burst profile and at a
+person's pace in the session profile. Once every tab of the room has typed, the
+tabs check they hold the same code and places, and each stays open until its
+user's dataflow work is done. A tier's users run in harness processes of at
+most ten, two whole rooms each, behind one start gate, so no one process
+carries every tab. The report adds, per tier:
+
+- sync times, p50, p95 and max: how long an update took from its tab to every
+  other tab of the room, known by its sender's client id and clock, as Yjs
+  knows what a doc holds; an update not in every tab 60 s after the room's
+  last one is an `unsynced` failure, and a tab whose nodes' code and places
+  then differ from the room's first tab's is a `diverged` one;
+- the backend's threads and resident memory before the tier, at their peak (read
+  every second while it runs) and after it;
+- the CPU, user plus system, of the backend's process and of the harness's
+  processes, which drive every user's calls and tab: the seconds each ran, and
+  the cores that kept busy over the tier and at most over one reading;
+- the doc logs the tier's dataflows left on disk, each day's checkpoint
+  (`ydoc/<doc id>/<day>.bin`) and updates (`<day>.updates`), and the size of
+  the doc a tab joining at the end downloads.
+
+The backend's process and files are read by `stress/backend_probe.py`, run with
+Python where the backend runs: `--probe "docker exec <container> python"` in
+CI, since the stack's `.curio` is its root's alone, and this Python by default,
+for a stack started on this machine. A reading it cannot take is reported as
+not measured, with the reason; `--no-probe` reads nothing.
+
 Two profiles, because they answer different questions. `--profile burst` (the
 default, and what the tiers gate on) starts every user at the same instant and
 runs flat out: can the stack survive a thundering herd. `--profile session`

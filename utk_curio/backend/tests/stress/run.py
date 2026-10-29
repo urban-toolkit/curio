@@ -7,16 +7,26 @@ Each tier starts N users behind a barrier so they hit the stack together, and
 every tier runs even if an earlier one failed -- the point is to see where the
 limits are, not to stop at the first one. The process exits non-zero if any
 tier had any failure.
+
+A tier's users are also put in rooms of ``--room-size`` (``sockets.py``): each
+opens a tab of its room's shared dataflow over Socket.IO, types and drags in
+it while its own dataflow runs, and the report gives how long each update took
+to reach the room's other tabs. Around each tier the probe (``--probe``,
+``backend_probe.py``) reads the backend's threads and memory, and after it the
+doc files the tier's shared dataflows left on disk.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
+import multiprocessing
 import os
+import queue
+import shlex
 import sys
 import random
-import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -25,7 +35,9 @@ import requests
 
 from ..test_frontend.workflow_spec import parse_workflow
 from . import report as reporting
+from . import sockets
 from .autk import compile_autk_data
+from .backend_probe import BackendProbe, Sampler, reading_now, track_worker, worker_finished
 from .driver import BURST, Pacing, VirtualUser, new_user_name
 
 REPO_ROOT = os.path.abspath(
@@ -63,6 +75,24 @@ USER_DEADLINE_S = 20 * 60
 SESSION_RAMP_S = 120.0
 SESSION_THINK_MIN_S = 3.0
 SESSION_THINK_MAX_S = 20.0
+# A session's tab types at a person's pace, three to eight keys a second, and
+# stops after each drag as if to look at the canvas.
+SESSION_KEY_GAP_MIN_S = 0.12
+SESSION_KEY_GAP_MAX_S = 0.35
+SESSION_PAUSE_MIN_S = 1.0
+SESSION_PAUSE_MAX_S = 4.0
+
+# How often the probe reads the backend while a tier runs, and how long after
+# a tier it takes the last reading: long enough for the thread of each socket
+# the tier closed to end, so a thread still there then was kept.
+PROBE_EVERY_S = 1.0
+PROBE_END_WAIT_S = 2.0
+
+# Users per harness process: two rooms of five. Each socket message costs the
+# harness about 0.6 ms of Python (tier 10 and the session profile, run
+# 40777602350), so one process carrying a 50-user typing burst needed about
+# 0.9 of a core and a 100-user one 1.8; ten users need about 0.2.
+USERS_PER_PROCESS = 10
 
 
 def build_pacing(profile: str, tier: int, rng: random.Random) -> list[Pacing]:
@@ -76,8 +106,23 @@ def build_pacing(profile: str, tier: int, rng: random.Random) -> list[Pacing]:
             arrival_delay=rng.uniform(0, SESSION_RAMP_S),
             think_min=SESSION_THINK_MIN_S,
             think_max=SESSION_THINK_MAX_S,
+            key_gap_min=SESSION_KEY_GAP_MIN_S,
+            key_gap_max=SESSION_KEY_GAP_MAX_S,
+            pause_min=SESSION_PAUSE_MIN_S,
+            pause_max=SESSION_PAUSE_MAX_S,
         )
         for _ in range(tier)
+    ]
+
+
+def build_rooms(names: list[str], room_size: int) -> list[sockets.Room]:
+    """The tier's users in rooms of *room_size*, in order, the last one
+    smaller; none for a room size of 0."""
+    if room_size <= 0:
+        return []
+    return [
+        sockets.Room(index, names[index * room_size:(index + 1) * room_size])
+        for index in range(math.ceil(len(names) / room_size))
     ]
 
 
@@ -115,6 +160,18 @@ def wait_for_backend(backend_url: str, timeout_s: float = 180.0) -> None:
             last = str(exc)
         time.sleep(2)
     raise SystemExit(f"[stress] backend {backend_url} never came up: {last}")
+
+
+def read_namespace(backend_url: str) -> str:
+    """The collaboration namespace, read as the page reads it."""
+    try:
+        resp = requests.get(f"{backend_url}/api/config/public", timeout=30)
+        namespace = (resp.json() or {}).get("collab_namespace")
+    except (requests.RequestException, ValueError) as exc:
+        raise SystemExit(f"[stress] could not read /api/config/public: {exc}") from exc
+    if not isinstance(namespace, str) or not namespace.startswith("/"):
+        raise SystemExit(f"[stress] /api/config/public names no collaboration namespace: {namespace!r}")
+    return namespace
 
 
 def read_exec_lock(backend_url: str) -> dict | None:
@@ -161,43 +218,212 @@ def run_baseline(backend_url: str, run_id: str, examples: list[Example]) -> dict
     return baselines
 
 
+def tier_slices(tier: int, room_size: int, per_process: int = USERS_PER_PROCESS) -> list[list[int]]:
+    """The tier's users, by index, in the harness processes that run them:
+    whole rooms each, in order, at most *per_process* users a process (or one
+    room, when a room is larger)."""
+    unit = room_size if room_size > 0 else 1
+    groups = [list(range(first, min(first + unit, tier))) for first in range(0, tier, unit)]
+    per = max(1, per_process // unit)
+    return [sum(groups[k:k + per], []) for k in range(0, len(groups), per)]
+
+
+def run_slice(job: dict, start_gate, register_gate, results_out) -> None:
+    """One harness process's part of a tier: its users' sessions, their rooms
+    whole, as threads of this process; what they did goes back to the main
+    process through *results_out*, with this process's own CPU seconds."""
+    from .backend_probe import process_cpu_seconds
+
+    try:
+        room_size, names, examples = job["room_size"], job["names"], job["examples"]
+        mine = set(job["indices"])
+        rooms = {room.index: room for room in build_rooms(names, room_size)
+                 if room.index * room_size in mine}
+        users = []
+        for index in job["indices"]:
+            example = examples[index % len(examples)]
+            users.append(VirtualUser(
+                job["backend_url"], names[index], example.relpath, example.spec_json,
+                example.workflow, example.autk_code,
+                compare_to=job["baselines"].get(example.relpath),
+                register_gate=register_gate, start_gate=start_gate,
+                pacing=job["pacing"][index],
+                room=rooms[index // room_size] if room_size else None,
+                namespace=job["namespace"],
+            ))
+        with ThreadPoolExecutor(max_workers=len(users)) as pool:
+            futures = [pool.submit(user.run) for user in users]
+            results = [f.result(timeout=USER_DEADLINE_S) for f in futures]
+        results_out.put({"slice": job["slice"], "results": results,
+                         "rooms": [room.outcome() for room in rooms.values()],
+                         "cpu_seconds": process_cpu_seconds()})
+    except BaseException as exc:  # noqa: BLE001 - the main process reports it for these users
+        results_out.put({"slice": job["slice"], "error": f"{type(exc).__name__}: {exc}",
+                         "cpu_seconds": process_cpu_seconds()})
+
+
+def _lost_user(name: str, example: str, why: str):
+    """The result of a user whose harness process never reported it."""
+    from .driver import Sample, UserResult
+
+    result = UserResult(user=name, example=example, started_at=time.time())
+    result.samples.append(Sample(endpoint="harness process", node_id=None, status=None,
+                                 seconds=0.0, ok=False, error=why[:2000], kind="transport"))
+    return result
+
+
 def run_tier(backend_url: str, run_id: str, tier: int, examples: list[Example],
              baselines: dict, register_concurrency: int,
-             profile: str = "burst", label: str | None = None) -> tuple[list, float]:
-    """Run *tier* users, all doing their dataflow work at the same moment.
+             profile: str = "burst", label: str | None = None,
+             room_size: int = 0, namespace: str | None = None) -> tuple[list, float, list]:
+    """Run *tier* users, all doing their dataflow work at the same moment,
+    and, in rooms of *room_size*, each with its tab of its room's dataflow;
+    the results, the seconds it took, and each room's outcome
+    (``sockets.Room.outcome``).
+
+    The users run in harness processes of their own (:func:`tier_slices`,
+    :func:`run_slice`), whole rooms each, behind one start gate that spans
+    them: one process driving every user's calls and tab was the busier side
+    of a 50-user typing burst, so it measured itself.
 
     ``register_concurrency`` caps how many accounts are created at once (0
     means no cap). Registration is the one step that is throttled; see
     ``VirtualUser.run``.
     """
-    start_gate = threading.Barrier(tier)
-    register_gate = (
-        threading.Semaphore(register_concurrency) if register_concurrency else None
-    )
+    context = multiprocessing.get_context("spawn")
+    start_gate = context.Barrier(tier)
+    register_gate = context.Semaphore(register_concurrency) if register_concurrency else None
     # Seeded on the run id: two runs of the same tier get the same arrival
     # pattern, so their numbers can be compared.
     pacing = build_pacing(profile, tier, random.Random(f"{run_id}-{tier}"))
     label = label or str(tier)
-    users = [
-        VirtualUser(
-            backend_url, new_user_name(label, index, run_id),
-            examples[index % len(examples)].relpath,
-            examples[index % len(examples)].spec_json,
-            examples[index % len(examples)].workflow,
-            examples[index % len(examples)].autk_code,
-            compare_to=baselines.get(examples[index % len(examples)].relpath),
-            register_gate=register_gate,
-            start_gate=start_gate,
-            pacing=pacing[index],
-        )
-        for index in range(tier)
-    ]
-
+    names = [new_user_name(label, index, run_id) for index in range(tier)]
+    slices = tier_slices(tier, room_size)
+    results_out = context.Queue()
+    processes = []
     started = time.time()
-    with ThreadPoolExecutor(max_workers=tier) as pool:
-        futures = [pool.submit(user.run) for user in users]
-        results = [f.result(timeout=USER_DEADLINE_S) for f in futures]
-    return results, time.time() - started
+    for number, indices in enumerate(slices):
+        job = {"slice": number, "indices": indices, "names": names, "examples": examples,
+               "baselines": baselines, "pacing": pacing, "room_size": room_size,
+               "namespace": namespace, "backend_url": backend_url}
+        process = context.Process(target=run_slice, args=(job, start_gate, register_gate, results_out),
+                                  name=f"stress-{label}-{number}", daemon=True)
+        process.start()
+        track_worker(process.pid)
+        processes.append(process)
+
+    reported: dict[int, dict] = {}
+    deadline = time.monotonic() + USER_DEADLINE_S + 120
+    while len(reported) < len(slices) and time.monotonic() < deadline:
+        try:
+            message = results_out.get(timeout=5)
+        except queue.Empty:
+            if not any(process.is_alive() for process in processes) and results_out.empty():
+                break
+            continue
+        reported[message["slice"]] = message
+        worker_finished(processes[message["slice"]].pid, message["cpu_seconds"])
+    for process in processes:
+        process.join(timeout=30)
+    seconds = time.time() - started
+
+    results, outcomes = [], []
+    for number, indices in enumerate(slices):
+        message = reported.get(number)
+        if message is not None and "results" in message:
+            results.extend(message["results"])
+            outcomes.extend(message["rooms"])
+            continue
+        why = (message or {}).get("error") or (
+            f"its harness process ended (exit code {processes[number].exitcode}) without reporting"
+        )
+        results.extend(_lost_user(names[index], examples[index % len(examples)].relpath, why)
+                       for index in indices)
+    return results, seconds, outcomes
+
+
+def make_probe(args) -> BackendProbe | None:
+    """The probe ``--probe`` names: a command that runs Python where the
+    backend runs; this Python by default, for a stack on this machine."""
+    if args.no_probe:
+        return None
+    command = shlex.split(args.probe) if args.probe.strip() else [sys.executable]
+    return BackendProbe(command)
+
+
+def probe_tier(probe: BackendProbe | None, run):
+    """Run *run* (a tier) between two readings, sampling while it runs:
+    ``(what run returned, backend summary, doc files summary, harness
+    summary)``. The backend is read through *probe*; the harness's own CPU is
+    read whatever the probe. *run* returns its rooms' outcomes last, whose
+    dataflows' doc files are listed."""
+    problems = []
+    start, problem = reading_now(probe)
+    if problem:
+        problems.append(f"before the tier: {problem}")
+    sampler = Sampler(probe, PROBE_EVERY_S).start()
+    try:
+        outcome = run()
+    finally:
+        samples = sampler.stop()
+    if sampler.problem:
+        problems.append(f"while it ran: {sampler.problem}")
+    if probe is not None:
+        time.sleep(PROBE_END_WAIT_S)
+    project_ids = [room["project_id"] for room in outcome[-1] if room.get("project_id")]
+    end, problem = reading_now(probe, project_ids)
+    if problem:
+        problems.append(f"after the tier: {problem}")
+    if probe is None:
+        problems = ["not asked for (--no-probe)"]
+    problem = "; ".join(problems) or None
+    listing = end.get("docs") if project_ids else {}
+    return (outcome,
+            reporting.backend_summary(start, samples, end, PROBE_EVERY_S, problem),
+            reporting.doc_files_summary(listing, problem),
+            reporting.harness_summary(start, samples, end))
+
+
+def tier_lines(summary: dict) -> list[str]:
+    """What a tier's tabs and the backend's process did, for the log."""
+    lines = []
+    tabs = summary.get("sockets")
+    if tabs:
+        sync = tabs["sync_ms"]
+        timing = (f"sync p50 {sync['p50']} ms, p95 {sync['p95']} ms, max {sync['max']} ms"
+                  if sync else "no other tab to sync with")
+        lines.append(
+            f"{tabs['rooms']} room(s), {tabs['tabs']} tab(s) over "
+            f"{' and '.join(tabs['transports']) or 'no socket'}: {tabs['updates']} "
+            f"update(s), {timing}; {tabs['unsynced']} unsynced, "
+            f"{tabs['diverged_rooms']} room(s) diverged"
+        )
+    backend = summary.get("backend") or {}
+    if backend.get("measured"):
+        threads, rss = backend["threads"], backend["rss_mib"]
+        lines.append(
+            f"backend threads {threads['start']} -> {threads['peak']} -> {threads['end']}, "
+            f"RSS {rss['start']} -> {rss['peak']} -> {rss['end']} MiB "
+            f"({backend['samples']} reading(s) while it ran)"
+        )
+    elif backend:
+        lines.append(f"backend not measured: {backend.get('problem')}")
+    cpu = []
+    for name, track in (("backend", backend.get("cpu")),
+                        ("harness", (summary.get("harness") or {}).get("cpu"))):
+        if track:
+            cpu.append(f"{name} {track['seconds']} s, {track['cores_busy']} cores "
+                       f"(peak {track['peak_cores_busy']})")
+    if cpu:
+        lines.append("CPU: " + "; ".join(cpu))
+    files = summary.get("doc_files") or {}
+    if files.get("measured"):
+        lines.append(
+            f"{files['docs']} doc log(s) on disk: .bin {files['bin_bytes']['total']} B, "
+            f".updates {files['updates_bytes']['total']} B"
+            + (f"; no log for {', '.join(files['without_log'])}" if files["without_log"] else "")
+        )
+    return lines
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -218,16 +444,33 @@ def main(argv: list[str] | None = None) -> int:
                         help="burst: everyone starts together and runs flat "
                              "out (the gated worst case). session: arrivals "
                              "over a ramp, with pauses between node runs")
+    parser.add_argument("--room-size", type=int, default=sockets.ROOM_SIZE,
+                        help="users per shared dataflow, whose tabs type and "
+                             "drag in it together over Socket.IO (0: no tabs)")
+    parser.add_argument("--probe", default="",
+                        help="the command that runs Python where the backend "
+                             "runs, to read its threads, memory and doc files, "
+                             "such as 'docker exec <container> python'; this "
+                             "Python by default, for a stack on this machine")
+    parser.add_argument("--no-probe", action="store_true",
+                        help="read nothing of the backend's process")
     parser.add_argument("--run-id", default=uuid.uuid4().hex[:6])
     args = parser.parse_args(argv)
 
     backend_url = args.backend.rstrip("/")
     tiers = [int(t) for t in args.tiers.split(",") if t.strip()]
     examples = load_mix([m.strip() for m in args.mix.split(",") if m.strip()])
+    room_size = max(0, args.room_size)
+    if room_size:
+        sockets.require_websocket_client()
 
     wait_for_backend(backend_url)
+    namespace = read_namespace(backend_url) if room_size else None
+    probe = make_probe(args)
     print(f"[stress] run {args.run_id} against {backend_url}; "
-          f"tiers {tiers}; profile {args.profile}", flush=True)
+          f"tiers {tiers}; profile {args.profile}; "
+          + (f"rooms of {room_size} on {namespace}" if room_size else "no tabs"),
+          flush=True)
 
     baselines = run_baseline(backend_url, args.run_id, examples)
 
@@ -238,13 +481,18 @@ def main(argv: list[str] | None = None) -> int:
         # Bracketing the tier, because the counters are cumulative since the
         # sandbox started and the baseline runs before the first tier.
         lock_before = read_exec_lock(backend_url)
-        results, seconds = run_tier(backend_url, args.run_id, tier, examples,
-                                    baselines, args.register_concurrency,
-                                    args.profile, label=f"{tier}x{position}")
+        (results, seconds, outcomes), backend, doc_files, harness = probe_tier(probe, lambda: run_tier(
+            backend_url, args.run_id, tier, examples, baselines,
+            args.register_concurrency, args.profile, label=f"{tier}x{position}",
+            room_size=room_size, namespace=namespace,
+        ))
         all_results.extend(results)
         lock = reporting.exec_lock_delta(lock_before, read_exec_lock(backend_url))
+        tabs = reporting.socket_summary(outcomes)
         summary = reporting.tier_summary(tier, results, seconds, args.profile,
-                                         exec_lock=lock)
+                                         exec_lock=lock, sockets=tabs,
+                                         backend=backend, doc_files=doc_files,
+                                         harness=harness)
         tier_reports.append(summary)
         print(f"[stress] tier {tier}: {summary['completed']}/{tier} completed in "
               f"{seconds:.1f}s, {summary['failure_count']} failure(s)", flush=True)
@@ -254,9 +502,12 @@ def main(argv: list[str] | None = None) -> int:
                 for label, stat in sorted(lock["labels"].items())
             )
             print(f"[stress] tier {tier}: exec lock waited {waits}", flush=True)
+        for line in tier_lines(summary):
+            print(f"[stress] tier {tier}: {line}", flush=True)
 
     report = reporting.build_report(args.run_id, backend_url, tier_reports,
-                                    args.stats_log, profile=args.profile)
+                                    args.stats_log, profile=args.profile,
+                                    room_size=room_size)
     json_path, md_path = reporting.write_outputs(report, args.out)
     with open(os.path.join(args.out, "samples.json"), "w", encoding="utf-8") as fh:
         json.dump(reporting.raw_samples(all_results), fh)
