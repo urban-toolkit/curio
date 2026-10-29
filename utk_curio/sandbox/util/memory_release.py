@@ -22,9 +22,9 @@ arenas keep at their tops stays. On a host with many cores that adds up over
 hundreds of arenas, and Arrow's default pool, mimalloc, kept freed memory this
 release did not reach either. So the server starts with its arenas capped and
 Arrow allocating in them (``isolation/lifecycle.server_environment``), and with
-glibc's trim threshold held at 8 MiB where glibc would raise it to 64, so an
-arena gives a big block back when it is freed into it, rather than keeping it
-at its top for this release to miss.
+glibc's thresholds held fixed, so a block of 8 MiB or more is unmapped when it
+is freed and an arena gives back a free top past 16 MiB, rather than keeping up
+to 64 MiB of it for this release to miss.
 """
 
 from __future__ import annotations

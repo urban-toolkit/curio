@@ -42,14 +42,13 @@ MALLOC_ARENA_SHARE = 4
 #: glibc's malloc, in the arenas capped above.
 ARROW_POOL_UNDER_A_CAP = "system"
 
-#: glibc's mmap threshold in the sandbox server, held where glibc's own
-#: raising of it stops on a 64-bit build: a block of this size or more is
-#: mapped on its own, and unmapped as soon as it is freed.
-SERVER_MMAP_THRESHOLD_BYTES = 32 * 1024 * 1024
+#: glibc's mmap threshold in the sandbox server, held fixed: a block of this
+#: size or more is mapped on its own, and unmapped as soon as it is freed.
+SERVER_MMAP_THRESHOLD_BYTES = 8 * 1024 * 1024
 
 #: glibc's trim threshold in the sandbox server, held fixed: an arena gives
 #: its free top back once a free leaves it bigger than this.
-SERVER_TRIM_THRESHOLD_BYTES = 8 * 1024 * 1024
+SERVER_TRIM_THRESHOLD_BYTES = 16 * 1024 * 1024
 
 
 class ZygoteStartupError(RuntimeError):
@@ -149,19 +148,18 @@ def server_environment(environ=None):
     threshold. After a run's first big frees, blocks of up to 32 MiB come from
     the arenas, and up to 64 MiB of free top stays in each arena that is not
     the main one, where the idle release cannot trim. With Arrow allocating in
-    glibc, that is where a run's columns go. The mmap threshold is held at
-    32 MiB, where glibc's raising of it stops, so a block comes from where it
-    would once glibc has raised it. The trim threshold is held at 8 MiB
-    rather than rising to 64, so an arena gives back a free top over 8 MiB
-    when a block is freed into it. After ten re-runs of #408's replay on four
-    cores (``tests/_rerun_memory.py``, kernel 7.0) the sandbox kept 1.06 to
-    1.75 times its largest request at rest without them, and 0.25 to 0.35
-    with them, its peaks about a third lower (diagnostic runs 40830598948 and
-    40831402960 on ``tmp/rerun-memory-probe``). The cost: an arena that gave
-    its top back faults those pages in again when it grows, which made the
-    replay's loaders 6 to 7% slower and a pandas groupby and merge on a
-    million rows 3 to 8% slower; numpy temporaries of 256 KiB to 2 MiB ran as
-    before. An operator's own values stand.
+    glibc, that is where a run's columns go. Held at 8 MiB, the mmap threshold
+    maps a block of that size or more on its own and unmaps it as soon as it
+    is freed; held at 16 MiB, the trim threshold has an arena give back a free
+    top bigger than that when a block is freed into it, rather than keep up to
+    64 MiB. After ten re-runs of #408's replay on four cores
+    (``tests/_rerun_memory.py``, kernel 7.0) the sandbox kept 1.06 to 1.75
+    times its largest request at rest without them, and 0.45 to 0.72 with
+    them, its peaks about 30% lower (diagnostic runs 40830598948 and
+    40833698033 on ``tmp/rerun-memory-probe``). Measured on one runner,
+    interleaved, the replay's loaders ran 5 to 8% slower, a pandas groupby and
+    merge on a million rows 11 to 13% faster, and numpy temporaries of 256 KiB
+    to 2 MiB as before. An operator's own values stand.
 
     Set in the environment the server starts with, because glibc settles its
     arena limit and thresholds, and Arrow its pool, once per process. The
