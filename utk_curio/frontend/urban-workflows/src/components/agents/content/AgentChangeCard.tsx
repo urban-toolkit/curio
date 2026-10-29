@@ -7,7 +7,7 @@ import { PlanScenariosList } from "./reviewCard/PlanScenariosList";
 import { PlanSummary } from "./reviewCard/PlanSummary";
 import { SourceBlock } from "./reviewCard/SourceBlock";
 import { ValidationBlock } from "./reviewCard/ValidationBlock";
-import type { PlanNodeReviewState } from "./reviewCard/reviewCardText";
+import { nodeKindExecutable, type PlanNodeReviewState } from "./reviewCard/reviewCardText";
 
 /** What each kind of change is, on its card's header. */
 export const CHANGE_KIND_LABEL: Record<string, string> = {
@@ -15,6 +15,22 @@ export const CHANGE_KIND_LABEL: Record<string, string> = {
   settings: "settings",
   node: "new node",
   plan: "plan",
+};
+
+/** dev/115 (Amendment A2) → dev/118 (DEC-075) → dev/119 (DEC-076): what Solve
+ * does with a new node that loads data. Whether the sandbox can run its kind
+ * is the ROSTER's answer (`executable`), falling back to the registry
+ * descriptor; unknown says nothing rather than guessing. */
+const SolveLine: React.FC<{ part: AgentChangePart }> = ({ part }) => {
+  const executable = nodeKindExecutable({ nodeType: part.nodeType, executable: part.executable });
+  if (executable === null) return null;
+  return (
+    <div className={styles.meta}>
+      {executable
+        ? "Solve runs it in the sandbox and fixes errors before its code is trusted."
+        : "This kind has no code to run: Solve writes it, the browser or its own service renders it; it is never called verified."}
+    </div>
+  );
 };
 
 /**
@@ -108,6 +124,7 @@ export const AgentChangeCard: React.FC<{
       ) : part.kind === "content" || part.kind === "node" ? (
         part.preview ? <div className={styles.preview}>{part.preview}</div> : null
       ) : null}
+      {part.kind === "node" && part.source ? <SolveLine part={part} /> : null}
       {undone ? (
         <div className={styles.outcome}>Undone</div>
       ) : onUndo ? (

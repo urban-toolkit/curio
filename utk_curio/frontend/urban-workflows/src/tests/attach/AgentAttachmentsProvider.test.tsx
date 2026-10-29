@@ -32,10 +32,9 @@ jest.mock("../../services/agents/agentsApi", () => ({
     solveNodeStream: jest.fn(),
     attachJobStream: jest.fn(),
     cancelSolve: jest.fn(),
-    applyPlanNode: jest.fn(),
-    savePlanGoal: jest.fn(),
-    applyPlanEdges: jest.fn(),
+    undoChange: jest.fn(),
     runNode: jest.fn(),
+    validateNode: jest.fn(),
     simulate: jest.fn(),
     cancelSimulate: jest.fn(),
   },
@@ -85,14 +84,9 @@ const Harness: React.FC = () => {
         apply
       </button>
       <button onClick={() => void ctx.solveAttachment("a1").catch(() => undefined)}>solve</button>
-      <button onClick={() => void ctx.applyPlanNode("a1", "p1", "ra").catch(() => undefined)}>
-        apply-plan-node
-      </button>
-      <button onClick={() => void ctx.savePlanGoal("a1", "p1", "ra", "new goal")}>
-        save-plan-goal
-      </button>
-      <button onClick={() => void ctx.applyPlanEdges("a1", "p1").catch(() => undefined)}>
-        apply-plan-edges
+      <button onClick={() => void ctx.undoChange("a1", "c1").catch(() => undefined)}>undo-change</button>
+      <button onClick={() => void ctx.validateNode("a1", { ref: "ra" }).catch(() => undefined)}>
+        validate-node
       </button>
       <button onClick={() => void ctx.runSimulation("a1", "auto").catch(() => undefined)}>
         run-simulation
@@ -501,33 +495,96 @@ describe("AgentAttachmentsProvider apply→canvas bridge (memo dev/48 §3.3)", (
 
   afterEach(() => unsubscribe());
 
-  it("a createdNode apply response dispatches node-created", async () => {
-    api.applyProposal.mockResolvedValue({
-      attachmentId: "a1",
-      proposalId: "p1",
-      status: "applied",
-      mutationApplied: true,
-      createdNode: { id: "nid", type: "curio.builtin/computation-analysis", content: "c", x: 1, y: 2 },
+  it("a change that landed during a reply reaches the canvas from its stream event, marked landed", async () => {
+    const canvas = { kind: "node-created", node: { id: "nid", type: "curio.builtin/computation-analysis", content: "c", x: 1, y: 2 } };
+    api.runAttachmentStream.mockImplementation(async (_p, _a, _m, onDelta, onEvent) => {
+      onEvent?.("change", { changeId: "c1", attachmentId: "a1", tool: "node.create", canvas });
+      onDelta("added");
+      return { reply: "added", executionId: "e1", content: [{ type: "change", changeId: "c1" } as never] };
+    });
+    renderProvider();
+    fireEvent.click(screen.getByText("open"));
+    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
+    api.listAttachments.mockClear();
+    await act(async () => {
+      fireEvent.click(screen.getByText("send"));
+    });
+    expect(events).toEqual([{ ...canvas, landed: true }]);
+    // The change moved the attachment's changes and plan: the listing reloads.
+    await waitFor(() => expect(api.listAttachments).toHaveBeenCalled());
+  });
+
+  it("the blocking fallback's reply carries what landed, and the canvas takes it as the stream's events", async () => {
+    const canvas = { kind: "node-content-applied" as const, nodeId: "n1", content: "print(2)", agent: "Node Builder" };
+    api.runAttachmentStream.mockRejectedValue(new Error("stream broke"));
+    api.runAttachment.mockResolvedValue({
+      attachmentId: "a1", coord: "c", reply: "written",
+      changes: [{ changeId: "c1", attachmentId: "a1", tool: "node.content.write", canvas }],
     });
     renderProvider();
     fireEvent.click(screen.getByText("open"));
     await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
     await act(async () => {
-      fireEvent.click(screen.getByText("apply"));
+      fireEvent.click(screen.getByText("send"));
     });
-    expect(events).toEqual([
-      {
-        kind: "node-created",
-        node: { id: "nid", type: "curio.builtin/computation-analysis", content: "c", x: 1, y: 2 },
-      },
-    ]);
+    expect(events).toEqual([{ ...canvas, landed: true }]);
+  });
+
+  it("an Undo posts the change, hands its answer's canvas mutations on marked landed, and refreshes", async () => {
+    const restored = { kind: "node-content-applied" as const, nodeId: "n1", content: "print(1)", agent: "Undid Node Builder's change" };
+    api.undoChange.mockResolvedValue({ attachmentId: "a1", changeId: "c1", status: "undone", canvas: [restored] });
+    renderProvider();
+    fireEvent.click(screen.getByText("open"));
+    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
+    api.getSession.mockClear();
+    api.listAttachments.mockClear();
+    await act(async () => {
+      fireEvent.click(screen.getByText("undo-change"));
+    });
+    expect(api.undoChange).toHaveBeenCalledWith("p1", "a1", "c1");
+    expect(events).toEqual([{ ...restored, landed: true }]);
+    // The card says undone, from the transcript and the listing.
+    expect(api.getSession).toHaveBeenCalledWith("p1", "a1");
+    expect(api.listAttachments).toHaveBeenCalled();
+  });
+
+  it("an Undo someone refused (they changed it after) changes nothing on the canvas and still refreshes", async () => {
+    api.undoChange.mockRejectedValue(
+      Object.assign(new Error("Ana changed this node after; nothing was undone."), { status: 409 }),
+    );
+    renderProvider();
+    fireEvent.click(screen.getByText("open"));
+    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
+    api.getSession.mockClear();
+    await act(async () => {
+      fireEvent.click(screen.getByText("undo-change"));
+    });
+    expect(events).toEqual([]);
+    expect(api.getSession).toHaveBeenCalledWith("p1", "a1");
+  });
+
+  it("a validated node's code that landed reaches the canvas from the validate stream", async () => {
+    const canvas = { kind: "node-content-applied", nodeId: "n1", content: "x = 2", agent: "Node Builder" };
+    api.validateNode.mockImplementation(async (_p, _a, _t, onEvent) => {
+      onEvent("round_verdict", { round: 1, verdict: "pass" });
+      onEvent("change", { changeId: "c9", attachmentId: "a2", tool: "node.content.write", canvas });
+      return { verdict: "pass", changeId: "c9" };
+    });
+    renderProvider();
+    fireEvent.click(screen.getByText("open"));
+    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
+    await act(async () => {
+      fireEvent.click(screen.getByText("validate-node"));
+    });
+    expect(api.validateNode).toHaveBeenCalledWith("p1", "a1", { ref: "ra" }, expect.any(Function));
+    expect(events).toEqual([{ ...canvas, landed: true }]);
   });
 
   // dev/105 A4 — the third live test: a package.install apply re-enlisted the
-  // notes package and queued the note cards, but the result carried no
-  // requiresRegistryRefresh, so the registry stayed stale and the follow-up
-  // notes painted "Loading node…". The install apply now declares the
-  // lockfile change; the SAME bridge branch pulses the registry (no nodes).
+  // notes package, but the result carried no requiresRegistryRefresh, so the
+  // registry stayed stale and the notes painted "Loading node…". The install
+  // apply now declares the lockfile change; the SAME bridge branch pulses the
+  // registry, here with no notes to place.
   it("a package-install apply dispatches package-nodes-created with no nodes (dev/105 A4)", async () => {
     api.applyProposal.mockResolvedValue({
       attachmentId: "a1",
@@ -536,7 +593,6 @@ describe("AgentAttachmentsProvider apply→canvas bridge (memo dev/48 §3.3)", (
       mutationApplied: true,
       requiresRegistryRefresh: true,
       installedPackage: { dirName: "curio.notes@1", name: "Simple Notes" },
-      followUpProposals: ["n1", "n2"],
     });
     renderProvider();
     fireEvent.click(screen.getByText("open"));
@@ -598,63 +654,6 @@ describe("AgentAttachmentsProvider apply→canvas bridge (memo dev/48 §3.3)", (
         ],
       },
     ]);
-  });
-
-  it("an appliedContent apply response dispatches node-content-applied (the dev/41 clobber fix)", async () => {
-    api.applyProposal.mockResolvedValue({
-      attachmentId: "a1",
-      proposalId: "p1",
-      status: "applied",
-      mutationApplied: true,
-      appliedContent: { nodeId: "n1", content: "print(2)" },
-    });
-    renderProvider();
-    fireEvent.click(screen.getByText("open"));
-    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
-    await act(async () => {
-      fireEvent.click(screen.getByText("apply"));
-    });
-    expect(events).toEqual([
-      { kind: "node-content-applied", nodeId: "n1", content: "print(2)" },
-    ]);
-  });
-
-  it("an appliedContent apply response names the agent that wrote it, and the canvas gets that name", async () => {
-    const appliedContent = { nodeId: "n1", content: "print(2)", agent: "Node Builder" };
-    api.applyProposal.mockResolvedValue({
-      attachmentId: "a1",
-      proposalId: "p1",
-      status: "applied",
-      mutationApplied: true,
-      appliedContent,
-    });
-    renderProvider();
-    fireEvent.click(screen.getByText("open"));
-    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
-    await act(async () => {
-      fireEvent.click(screen.getByText("apply"));
-    });
-    expect(events).toEqual([
-      { kind: "node-content-applied", nodeId: "n1", content: "print(2)", agent: "Node Builder" },
-    ]);
-  });
-
-  it("an appliedSettings apply response dispatches node-settings-applied with the node and its settings", async () => {
-    const settings = { dataPool: { betweenCharts: "MERGE_AND" }, widgets: { combine: "max" } };
-    api.applyProposal.mockResolvedValue({
-      attachmentId: "a1",
-      proposalId: "p1",
-      status: "applied",
-      mutationApplied: true,
-      appliedSettings: { nodeId: "pool", settings, agent: "Node Builder" },
-    });
-    renderProvider();
-    fireEvent.click(screen.getByText("open"));
-    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
-    await act(async () => {
-      fireEvent.click(screen.getByText("apply"));
-    });
-    expect(events).toEqual([{ kind: "node-settings-applied", nodeId: "pool", settings }]);
   });
 
   it("a project.install apply repaints the AGENTS palette (dev/106)", async () => {
@@ -803,25 +802,25 @@ describe("AgentAttachmentsProvider lines that stay under a reply (#447, #243)", 
     expect(screen.getByText(NO_CHANGE)).toBeInTheDocument();
   });
 
-  it("a Node Builder reply that holds a node.create proposal does not (#243)", async () => {
+  it("a Node Builder reply that holds a node it added does not (#243)", async () => {
     api.runAttachmentStream.mockImplementation(async (_p, _a, _m, onDelta, onEvent) => {
       onEvent?.("tool_requested", { tool: "node.create" });
-      onEvent?.("tool_result", { tool: "node.create", status: "proposed" });
-      onEvent?.("review_required", { proposalId: "pc1", tool: "node.create", summary: "Create a node" });
-      onDelta("Here is the node for your review.");
+      onEvent?.("tool_result", { tool: "node.create", status: "applied" });
+      onDelta("I added the node.");
       return {
-        reply: "Here is the node for your review.",
+        reply: "I added the node.",
         executionId: "e7",
         usage: null,
         content: [
           {
-            type: "proposal",
-            proposalId: "pc1",
+            type: "change",
+            changeId: "c1",
             tool: "node.create",
-            summary: "Create a node",
+            kind: "node",
+            summary: "Created a new Python node",
             preview: "print(1)",
-            pins: { nodeType: "COMPUTATION_ANALYSIS" },
-            status: "pending",
+            status: "applied",
+            lines: ["Python · COMPUTATION_ANALYSIS", "node n1"],
           },
         ],
       } as never;
@@ -830,7 +829,8 @@ describe("AgentAttachmentsProvider lines that stay under a reply (#447, #243)", 
     await act(async () => {
       fireEvent.click(screen.getByText("send-go"));
     });
-    expect(screen.getByText("Here is the node for your review.")).toBeInTheDocument();
+    expect(screen.getByText("I added the node.")).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Change: Created a new Python node" })).toBeInTheDocument();
     expect(screen.queryByText(NO_CHANGE)).not.toBeInTheDocument();
   });
 
@@ -850,7 +850,7 @@ describe("AgentAttachmentsProvider lines that stay under a reply (#447, #243)", 
     expect(screen.queryByText(/^dataflow\.read ·/)).not.toBeInTheDocument();
   });
 
-  it("a node.create the turn recovered from leaves no line beside the proposal (#447)", async () => {
+  it("a node.create the turn recovered from leaves no line beside the change that landed (#447)", async () => {
     api.runAttachmentStream.mockImplementation(async (_p, _a, _m, onDelta, onEvent) => {
       onEvent?.("tool_requested", { tool: "node.create" });
       onEvent?.("tool_result", {
@@ -859,22 +859,22 @@ describe("AgentAttachmentsProvider lines that stay under a reply (#447, #243)", 
         reason: "template.content must be a non-empty string",
       });
       onEvent?.("tool_requested", { tool: "node.create" });
-      onEvent?.("tool_result", { tool: "node.create", status: "proposed" });
-      onEvent?.("review_required", { proposalId: "pc2", tool: "node.create", summary: "Create a node" });
-      onDelta("Here is the node for your review.");
+      onEvent?.("tool_result", { tool: "node.create", status: "applied" });
+      onDelta("I added the node.");
       return {
-        reply: "Here is the node for your review.",
+        reply: "I added the node.",
         executionId: "e10",
         usage: null,
         content: [
           {
-            type: "proposal",
-            proposalId: "pc2",
+            type: "change",
+            changeId: "c2",
             tool: "node.create",
-            summary: "Create a node",
+            kind: "node",
+            summary: "Created a new Python node",
             preview: "print(1)",
-            pins: { nodeType: "COMPUTATION_ANALYSIS" },
-            status: "pending",
+            status: "applied",
+            lines: [],
           },
         ],
       } as never;
@@ -883,14 +883,30 @@ describe("AgentAttachmentsProvider lines that stay under a reply (#447, #243)", 
     await act(async () => {
       fireEvent.click(screen.getByText("send-go"));
     });
-    expect(screen.getByRole("group", { name: "Review proposal: Create a node" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Change: Created a new Python node" })).toBeInTheDocument();
     expect(screen.queryByText(/^node\.create ·/)).not.toBeInTheDocument();
     expect(screen.queryByText(NO_CHANGE)).not.toBeInTheDocument();
+  });
+
+  it("a change still keeps the reason of a failed call no later call of its tool recovered (#447)", async () => {
+    api.runAttachmentStream.mockImplementation(async (_p, _a, _m, onDelta, onEvent) => {
+      onEvent?.("tool_requested", { tool: "node.settings.write" });
+      onEvent?.("tool_result", { tool: "node.settings.write", status: "refused", reason: "no such setting" });
+      onEvent?.("tool_requested", { tool: "node.create" });
+      onEvent?.("tool_result", { tool: "node.create", status: "applied" });
+      onDelta("Added; the setting is not one it has.");
+      return { reply: "Added; the setting is not one it has.", executionId: "e11", usage: null } as never;
+    });
+    renderChat(nodeBuilder);
+    await act(async () => {
+      fireEvent.click(screen.getByText("send-go"));
+    });
+    expect(screen.getByText("node.settings.write · no such setting")).toBeInTheDocument();
   });
 });
 
 describe("AgentAttachmentsProvider stream fallback payload parity (dev/53)", () => {
-  it("a pre-delta stream failure keeps the content parts (the review card renders)", async () => {
+  it("a pre-delta stream failure keeps the content parts (the change card renders)", async () => {
     api.runAttachmentStream.mockRejectedValue(new Error("stream transport failed"));
     api.runAttachment.mockResolvedValue({
       attachmentId: "a1",
@@ -900,13 +916,15 @@ describe("AgentAttachmentsProvider stream fallback payload parity (dev/53)", () 
       usage: { inputTokens: 5, outputTokens: 6 },
       content: [
         {
-          type: "proposal",
-          proposalId: "pp9",
+          type: "change",
+          changeId: "c9",
           tool: "dataflow.plan.write",
-          summary: "Apply plan · 2 nodes, 1 edges",
+          kind: "plan",
+          planId: "plan-9",
+          summary: "Plan · 2 nodes, 1 edges",
           preview: "Load…",
-          pins: { baseGraphDigest: "d" },
-          status: "pending",
+          status: "applied",
+          lines: ["+2 nodes · +1 connection"],
         },
       ],
     } as never);
@@ -916,9 +934,9 @@ describe("AgentAttachmentsProvider stream fallback payload parity (dev/53)", () 
     });
     expect(screen.getByTestId("turns")).toHaveTextContent("Here is the plan.");
     // The fallback turn carries the parts AND the execution record.
-    expect(screen.getByTestId("contents")).toHaveTextContent("proposal");
+    expect(screen.getByTestId("contents")).toHaveTextContent("change");
     expect(screen.getByTestId("executions")).toHaveTextContent("e7:5/6");
-    // A minted proposal still triggers the listing reload (activeProposal).
+    // A change that landed still triggers the listing reload (its changes, its plan).
     expect(api.listAttachments.mock.calls.length).toBeGreaterThan(1);
   });
 });
@@ -1153,12 +1171,15 @@ describe("AgentAttachmentsProvider streamed solve (dev/63)", () => {
 
 
 
-  it("runSimulation maps driver stream events onto the canvas bridge (dev/67-9)", async () => {
+  it("runSimulation hands each validated node's landed code to the canvas bridge, marked landed (dev/67-9)", async () => {
+    const first = { kind: "node-content-applied", nodeId: "n1", content: "print(1)", agent: "Node Builder" };
+    const second = { kind: "node-content-applied", nodeId: "n2", content: "print(2)", agent: "Node Builder" };
     api.simulate.mockImplementation(
       async (_p: string, _a: string, _m: string, onEvent: (n: string, pl: Record<string, unknown>) => void) => {
-        onEvent("node_created", { createdNode: { id: "n1", type: "t", content: "", x: 1, y: 2 } });
-        onEvent("node_content_applied", { nodeId: "n1", content: "print(1)" });
-        onEvent("edges_created", { createdEdges: [{ id: "e1", source: "n1", target: "n2" }] });
+        onEvent("stage", { action: "validate", ref: "a", label: "Load" });
+        onEvent("change", { changeId: "c1", attachmentId: "a2", tool: "node.content.write", canvas: first });
+        onEvent("action_result", { action: "validate", ref: "a", outcome: "pass", changeId: "c1" });
+        onEvent("change", { changeId: "c2", attachmentId: "a3", tool: "node.content.write", canvas: second });
         return { status: "completed", mode: "auto" };
       },
     );
@@ -1166,60 +1187,22 @@ describe("AgentAttachmentsProvider streamed solve (dev/63)", () => {
     await act(async () => {
       fireEvent.click(screen.getByText("run-simulation"));
     });
-    expect(events.map((e: any) => e.kind)).toEqual([
-      "node-created", "node-content-applied", "edges-created",
-    ]);
+    expect(events).toEqual([{ ...first, landed: true }, { ...second, landed: true }]);
   });
 
-  it("runSimulation hands the canvas what the plan it completes removes", async () => {
+  it("runSimulation's other events reach no canvas: a failure pauses with nothing written", async () => {
     api.simulate.mockImplementation(
       async (_p: string, _a: string, _m: string, onEvent: (n: string, pl: Record<string, unknown>) => void) => {
-        onEvent("plan_removals", { proposalId: "p1", removedNodeIds: ["old-loader"], removedEdgeIds: ["edge-1"] });
-        return { status: "completed", mode: "auto" };
+        onEvent("stage", { action: "validate", ref: "a", label: "Load" });
+        onEvent("action_result", { action: "validate", ref: "a", outcome: "fail" });
+        return { status: "paused", mode: "auto", reason: { kind: "validation-failed", ref: "a", message: "m" } };
       },
     );
     renderProvider();
     await act(async () => {
       fireEvent.click(screen.getByText("run-simulation"));
     });
-    expect(events).toContainEqual(
-      expect.objectContaining({ removedNodeIds: ["old-loader"], removedEdgeIds: ["edge-1"] }),
-    );
-  });
-
-  it("applyPlanEdges hands the canvas what the plan it completes removes", async () => {
-    // A plan of connections that also removes one: Connect all completes it.
-    const completing = {
-      attachmentId: "a1", proposalId: "p1", status: "applied",
-      results: {}, edgeStates: { "0": "applied" },
-      createdEdges: [{ id: "ce1", source: "vis", target: "pool", sourceHandle: "in/out", targetHandle: "in/out", type: "Interaction" }],
-      removedNodeIds: [], removedEdgeIds: ["e5"],
-    };
-    api.applyPlanEdges.mockResolvedValue(completing as never);
-    renderProvider();
-    await act(async () => {
-      fireEvent.click(screen.getByText("apply-plan-edges"));
-    });
-    expect(events).toContainEqual(expect.objectContaining({ removedNodeIds: [], removedEdgeIds: ["e5"] }));
-  });
-
-  it("applyPlanEdges dispatches edges-created for the applied edges (dev/67-8)", async () => {
-    api.applyPlanEdges.mockResolvedValue({
-      attachmentId: "a1", proposalId: "p1", status: "pending",
-      results: {}, edgeStates: { "0": "applied" },
-      createdEdges: [{ id: "ce1", source: "n1", target: "n2", sourceHandle: "out", targetHandle: "in" }],
-    });
-    renderProvider();
-    await act(async () => {
-      fireEvent.click(screen.getByText("apply-plan-edges"));
-    });
-    expect(events).toEqual([
-      {
-        kind: "edges-created",
-        batchId: "p1:ce1",
-        edges: [{ id: "ce1", source: "n1", target: "n2", sourceHandle: "out", targetHandle: "in" }],
-      },
-    ]);
+    expect(events).toEqual([]);
   });
 
   it("cancelSolve posts the cancel endpoint for the attachment", async () => {
@@ -1229,107 +1212,6 @@ describe("AgentAttachmentsProvider streamed solve (dev/63)", () => {
       fireEvent.click(screen.getByText("cancel-solve"));
     });
     expect(api.cancelSolve).toHaveBeenCalledWith("p1", "a1");
-  });
-});
-
-describe("AgentAttachmentsProvider per-node plan apply (dev/67-5)", () => {
-  const events: unknown[] = [];
-  let unsubscribe: () => void = () => undefined;
-
-  beforeEach(() => {
-    events.length = 0;
-    const { subscribeAgentCanvasMutations } = jest.requireActual(
-      "../../services/agents/agentEvents",
-    );
-    unsubscribe = subscribeAgentCanvasMutations((m: unknown) => events.push(m));
-  });
-
-  afterEach(() => unsubscribe());
-
-
-  it("applyPlanNode also dispatches the progressive sweep's edges (dev/71)", async () => {
-    api.applyPlanNode.mockResolvedValue({
-      attachmentId: "a1", proposalId: "p1", status: "pending", ref: "ra",
-      createdNode: { id: "nid-1", type: "t", content: "", goal: "g", x: 1, y: 2 },
-      createdEdges: [{ id: "pe1", source: "n0", target: "nid-1", sourceHandle: "out", targetHandle: "in" }],
-      appliedRefs: ["ra"],
-    });
-    renderProvider();
-    await act(async () => {
-      fireEvent.click(screen.getByText("apply-plan-node"));
-    });
-    expect(events.map((e: any) => e.kind)).toEqual(["node-created", "edges-created"]);
-    expect((events[1] as any).edges[0]).toMatchObject({ id: "pe1", targetHandle: "in" });
-  });
-
-  it("applyPlanNode hands the canvas what the plan it completes removes, before the node", async () => {
-    // The last row of a plan that replaces Load CSV: the call that completes
-    // it removes Load CSV and its connection, as a whole applied plan does.
-    const completing = {
-      attachmentId: "a1", proposalId: "p1", status: "applied", ref: "ra",
-      createdNode: { id: "nid-1", type: "t", content: "", goal: "g", x: 1, y: 2 },
-      createdEdges: [{ id: "pe1", source: "nid-1", target: "cleaner", sourceHandle: "out", targetHandle: "in" }],
-      appliedRefs: ["ra"],
-      removedNodeIds: ["old-loader"], removedEdgeIds: ["edge-1"],
-    };
-    api.applyPlanNode.mockResolvedValue(completing as never);
-    renderProvider();
-    await act(async () => {
-      fireEvent.click(screen.getByText("apply-plan-node"));
-    });
-    const removal = events.findIndex((e: any) => Array.isArray(e.removedNodeIds));
-    expect(events[removal]).toMatchObject({ removedNodeIds: ["old-loader"], removedEdgeIds: ["edge-1"] });
-    // First, as a whole applied plan's removals are: the new feed then lands
-    // on the circle the removed one leaves.
-    expect(removal).toBe(0);
-    expect(events.slice(1).map((e: any) => e.kind)).toEqual(["node-created", "edges-created"]);
-  });
-
-  it("applyPlanNode dispatches node-created for the created node", async () => {
-    api.applyPlanNode.mockResolvedValue({
-      attachmentId: "a1",
-      proposalId: "p1",
-      status: "pending",
-      ref: "ra",
-      createdNode: { id: "nid-1", type: "curio.builtin/computation-analysis",
-                     content: "", goal: "Load — load it", x: 500, y: 60 },
-      appliedRefs: ["ra"],
-    });
-    renderProvider();
-    await act(async () => {
-      fireEvent.click(screen.getByText("apply-plan-node"));
-    });
-    expect(api.applyPlanNode).toHaveBeenCalledWith("p1", "a1", "p1", "ra");
-    expect(events).toEqual([
-      {
-        kind: "node-created",
-        node: { id: "nid-1", type: "curio.builtin/computation-analysis",
-                content: "", goal: "Load — load it", x: 500, y: 60 },
-      },
-    ]);
-  });
-
-  it("an already-applied result dispatches nothing (idempotence)", async () => {
-    api.applyPlanNode.mockResolvedValue({
-      attachmentId: "a1", proposalId: "p1", status: "already-applied",
-      ref: "ra", nodeId: "nid-1", appliedRefs: ["ra"],
-    });
-    renderProvider();
-    await act(async () => {
-      fireEvent.click(screen.getByText("apply-plan-node"));
-    });
-    expect(events).toEqual([]);
-  });
-
-  it("savePlanGoal posts the overlay and refreshes the listing", async () => {
-    api.savePlanGoal.mockResolvedValue({
-      proposalId: "p1", ref: "ra", goal: "new goal", editedGoals: { ra: "new goal" },
-    });
-    renderProvider();
-    await act(async () => {
-      fireEvent.click(screen.getByText("save-plan-goal"));
-    });
-    expect(api.savePlanGoal).toHaveBeenCalledWith("p1", "a1", "p1", "ra", "new goal");
   });
 });
 

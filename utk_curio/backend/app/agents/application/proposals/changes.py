@@ -167,6 +167,9 @@ def card(part: dict, change: dict, lines: list[str]) -> dict:
     """The turn's card of *change*: what its mint showed (*part*: summary,
     preview, settings, plan, source, validation), as a change that landed."""
     out = {key: value for key, value in part.items() if key not in ("type", "proposalId", "pins", "status")}
+    pins = part.get("pins") or {}
+    # A new node's kind, and whether the sandbox can run it, which its card says.
+    out.update({key: pins[key] for key in ("nodeType", "executable") if key in pins})
     out.update({"type": "change", "changeId": change["changeId"], "kind": change["kind"],
                 "summary": change["summary"], "status": APPLIED, "lines": list(lines)})
     if change.get("nodeId"):

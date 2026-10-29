@@ -135,7 +135,9 @@ export function planNodeRowState(
   const planRefSet = new Set(part.plan!.nodes.map((n) => n.ref));
   const incoming = planEdges.filter((edge) => edge.to === node.ref);
   const deps = incoming.map((edge) => edge.fromLabel);
-  const applied = (planNodeState?.appliedRefs ?? []).includes(node.ref);
+  // The plan landed whole: without the attachment's ledger of it (it moved on
+  // to another plan), each of its nodes was placed.
+  const applied = planNodeState ? planNodeState.appliedRefs.includes(node.ref) : true;
   const state = nodeStates[node.ref] ?? (applied ? "created" : "planned");
   const unsolvedUpstream = incoming.filter(
     (edge) => planRefSet.has(edge.from) && !["validated", "approved"].includes(nodeStates[edge.from] ?? ""),

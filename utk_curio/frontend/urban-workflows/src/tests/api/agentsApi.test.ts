@@ -263,6 +263,23 @@ describe("agentsApi", () => {
       expect(result.reply).toBe("hi");
     });
 
+    it("routes a landed change's event to onEvent with its canvas mutation", async () => {
+      const canvas = { kind: "node-content-applied", nodeId: "n1", content: "x = 1", agent: "Node Builder" };
+      global.fetch = jest.fn().mockResolvedValue(
+        streamResponse([
+          'event: tool_result\ndata: {"tool": "node.content.write", "status": "applied"}\n\n',
+          `event: change\ndata: ${JSON.stringify({ changeId: "c1", attachmentId: "att-1", tool: "node.content.write", canvas })}\n\n`,
+          'event: delta\ndata: {"text": "done"}\n\nevent: done\ndata: {"reply": "done"}\n\n',
+        ]),
+      );
+      const seen: Array<[string, unknown]> = [];
+      await agentsApi.runAttachmentStream(
+        "p1", "att-1", "hi", () => undefined, (name, payload) => seen.push([name, payload]),
+      );
+      expect(seen.map(([n]) => n)).toEqual(["tool_result", "change"]);
+      expect(seen[1][1]).toEqual({ changeId: "c1", attachmentId: "att-1", tool: "node.content.write", canvas });
+    });
+
     it("skips unknown event names (forward tolerance)", async () => {
       global.fetch = jest.fn().mockResolvedValue(
         streamResponse([
@@ -367,14 +384,15 @@ describe("agentsApi", () => {
       global.fetch = jest.fn().mockResolvedValue(
         streamResponse([
           'event: simulate_started\ndata: {"executionId": "e1", "mode": "auto"}\n\n',
-          'event: stage\ndata: {"action": "create", "ref": "a", "label": "Load"}\n\n',
-          'event: node_created\ndata: {"createdNode": {"id": "n1"}}\n\n',
+          'event: stage\ndata: {"action": "validate", "ref": "a", "label": "Load"}\n\n',
+          'event: change\ndata: {"changeId": "c1", "canvas": {"kind": "node-content-applied", "nodeId": "n1", "content": "x"}}\n\n',
+          'event: action_result\ndata: {"action": "validate", "ref": "a", "outcome": "pass", "changeId": "c1"}\n\n',
           'event: done\ndata: {"status": "completed", "mode": "auto"}\n\n',
         ]),
       );
       const seen: string[] = [];
       const result = await agentsApi.simulate("p1", "att-1", "auto", (n) => seen.push(n));
-      expect(seen).toEqual(["simulate_started", "stage", "node_created"]);
+      expect(seen).toEqual(["simulate_started", "stage", "change", "action_result"]);
       expect(result).toMatchObject({ status: "completed" });
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining("/attachments/att-1/simulate"),
@@ -389,35 +407,17 @@ describe("agentsApi", () => {
           'event: generation_round\ndata: {"round": 1}\n\n',
           'event: node_executed\ndata: {"nodeId": "up1", "index": 0, "total": 2}\n\n',
           'event: round_verdict\ndata: {"round": 1, "verdict": "pass"}\n\n',
-          'event: done\ndata: {"verdict": "pass", "rounds": 1, "proposalId": "vp1", "nodeId": "n1"}\n\n',
+          'event: change\ndata: {"changeId": "c1", "canvas": {"kind": "node-content-applied", "nodeId": "n1", "content": "x"}}\n\n',
+          'event: done\ndata: {"verdict": "pass", "rounds": 1, "changeId": "c1", "nodeId": "n1"}\n\n',
         ]),
       );
       const seen: string[] = [];
       const result = await agentsApi.validateNode("p1", "att-1", { ref: "ra" }, (n) => seen.push(n));
-      expect(seen).toEqual(["validation_started", "generation_round", "node_executed", "round_verdict"]);
-      expect(result).toMatchObject({ verdict: "pass", proposalId: "vp1" });
+      expect(seen).toEqual(["validation_started", "generation_round", "node_executed", "round_verdict", "change"]);
+      expect(result).toMatchObject({ verdict: "pass", changeId: "c1" });
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining("/attachments/att-1/validate-node"),
         expect.objectContaining({ method: "POST", body: JSON.stringify({ ref: "ra" }) }),
-      );
-    });
-
-    it("posts propose mode when given (dev/67-6)", async () => {
-      global.fetch = jest.fn().mockResolvedValue(
-        streamResponse([
-          'event: solve_started\ndata: {"executionId": "e1", "targets": ["n1"]}\n\n',
-          'event: node_result\ndata: {"nodeId": "n1", "status": "proposed", "proposalId": "cp1"}\n\n',
-          'event: done\ndata: {"attachmentId": "a1", "executionId": "e1", "results": {}, "appliedContents": [], "builderSession": {"phase": "simulating"}, "mode": "propose"}\n\n',
-        ]),
-      );
-      const seen: Array<[string, unknown]> = [];
-      await agentsApi.solveAttachmentStream(
-        "p1", "att-1", (n, p) => seen.push([n, p]), ["n1"], undefined, "propose",
-      );
-      expect(seen[1][1]).toEqual({ nodeId: "n1", status: "proposed", proposalId: "cp1" });
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({ body: JSON.stringify({ nodeIds: ["n1"], mode: "propose" }) }),
       );
     });
 
@@ -465,32 +465,11 @@ describe("agentsApi", () => {
 
 
 
-  it("applyPlanEdges() posts the indices to the apply-edges path (dev/67-8)", () => {
-    agentsApi.applyPlanEdges("p1", "att-1", "prop-1", [0, 2]);
+  it("undoChange() posts the change's undo path", () => {
+    agentsApi.undoChange("p1", "att 1", "c/1");
     expect(mockFetch).toHaveBeenCalledWith(
-      "/api/agents/projects/p1/attachments/att-1/proposals/prop-1/apply-edges",
-      { method: "POST", body: JSON.stringify({ edges: [0, 2] }) },
-    );
-    agentsApi.applyPlanEdges("p1", "att-1", "prop-1");
-    expect(mockFetch).toHaveBeenLastCalledWith(
-      "/api/agents/projects/p1/attachments/att-1/proposals/prop-1/apply-edges",
-      { method: "POST", body: JSON.stringify({}) },
-    );
-  });
-
-  it("applyPlanNode() posts the ref to the apply-node path (dev/67-5)", () => {
-    agentsApi.applyPlanNode("p1", "att-1", "prop-1", "ra");
-    expect(mockFetch).toHaveBeenCalledWith(
-      "/api/agents/projects/p1/attachments/att-1/proposals/prop-1/apply-node",
-      { method: "POST", body: JSON.stringify({ ref: "ra" }) },
-    );
-  });
-
-  it("savePlanGoal() PATCHes the plan-goals path (dev/67-5)", () => {
-    agentsApi.savePlanGoal("p1", "att-1", "prop-1", "ra", "better goal");
-    expect(mockFetch).toHaveBeenCalledWith(
-      "/api/agents/projects/p1/attachments/att-1/proposals/prop-1/plan-goals",
-      { method: "PATCH", body: JSON.stringify({ ref: "ra", goal: "better goal" }) },
+      "/api/agents/projects/p1/attachments/att%201/changes/c%2F1/undo",
+      { method: "POST" },
     );
   });
 });

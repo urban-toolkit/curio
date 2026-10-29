@@ -296,6 +296,10 @@ export interface AgentChangePart
   nodeId?: string;
   /** A plan's id: its rows read the attachment's ledger by it. */
   planId?: string;
+  /** A new node's kind, and the roster's answer to whether the sandbox can
+   * run it (dev/119, DEC-076): display only. */
+  nodeType?: string;
+  executable?: boolean;
 }
 
 /** A change that landed, as a run's `change` event and a blocking run's

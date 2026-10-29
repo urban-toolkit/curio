@@ -13,6 +13,8 @@ const mockApplyReviewedRemovals = jest.fn();
 // #662: the canvas's scenarios, which an applied plan's join.
 const mockSetScenarios = jest.fn();
 const mockScenarios = { current: [] as Array<{ id: string; name: string; color: string; nodes: string[] }> };
+// Whether the dataflow's doc binds the canvas.
+const mockBound = { current: false };
 jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => ({
     applyNodeContent: mockApplyNodeContent,
@@ -21,6 +23,7 @@ jest.mock("../../providers/FlowProvider", () => ({
     applyReviewedRemovals: mockApplyReviewedRemovals,
     scenarios: mockScenarios.current,
     setScenarios: mockSetScenarios,
+    dataflowDoc: { bound: () => mockBound.current },
   }),
 }));
 
@@ -62,6 +65,7 @@ import { useAgentCanvasMutations } from "../../components/agents/attach/useAgent
 import {
   type AgentCanvasMutation,
   notifyAgentCanvasMutation,
+  notifyAgentChangesLanded,
   subscribeAgentCanvasMutations,
 } from "../../services/agents";
 
@@ -84,6 +88,7 @@ beforeEach(() => {
   mockGetNodes.mockReturnValue([]);
   mockGetEdges.mockReturnValue([]);
   mockScenarios.current = [];
+  mockBound.current = false;
 });
 
 describe("agentCanvasEvents", () => {
@@ -94,6 +99,94 @@ describe("agentCanvasEvents", () => {
     off();
     notifyAgentCanvasMutation({ kind: "node-content-applied", nodeId: "n2", content: "c" });
     expect(seen).toEqual([{ kind: "node-content-applied", nodeId: "n1", content: "c" }]);
+  });
+
+  it("a landed change's mutations, one or a list, each reach subscribers marked landed; anything else is skipped", () => {
+    const seen: unknown[] = [];
+    const off = subscribeAgentCanvasMutations((m) => seen.push(m));
+    const content = { kind: "node-content-applied", nodeId: "n1", content: "c" };
+    const settings = { kind: "node-settings-applied", nodeId: "n2", settings: { widgets: { k: 2 } } };
+    expect(notifyAgentChangesLanded(content)).toBe(1);
+    expect(notifyAgentChangesLanded([settings, { kind: "no-such-kind" }, null, "text"])).toBe(1);
+    expect(notifyAgentChangesLanded(undefined)).toBe(0);
+    off();
+    expect(seen).toEqual([{ ...content, landed: true }, { ...settings, landed: true }]);
+  });
+});
+
+describe("a landed change: the doc brings it to a canvas it binds; a canvas no doc binds takes it here", () => {
+  const PLAN = {
+    kind: "graph-created" as const,
+    planId: "landed-plan",
+    nodes: [{ id: "ga", type: "curio.builtin/computation-analysis", content: "", goal: "Load", x: 500, y: 60 }],
+    edges: [{ id: "e1", source: "ga", target: "old" }],
+    removedNodeIds: ["victim"],
+    removedEdgeIds: ["e0"],
+  };
+
+  it("on a canvas the doc binds, nothing is written again: no node, no settings, no removal, no connection", () => {
+    mockBound.current = true;
+    mockGetNodes.mockReturnValue([{ id: "victim" }, { id: "old" }]);
+    render(<Host />);
+    act(() => {
+      notifyAgentChangesLanded([
+        { kind: "node-created", node: NODE },
+        { kind: "node-settings-applied", nodeId: "pool", settings: { widgets: { k: 1 } } },
+        { kind: "plan-removals", planId: "undo:c1", removedNodeIds: ["victim"], removedEdgeIds: [] },
+        PLAN,
+      ]);
+    });
+    expect(mockCreateCodeNode).not.toHaveBeenCalled();
+    expect(mockApplyNodeSettings).not.toHaveBeenCalled();
+    expect(mockApplyReviewedRemovals).not.toHaveBeenCalled();
+    expect(mockOnEdgesChange).not.toHaveBeenCalled();
+    expect(mockSetScenarios).not.toHaveBeenCalled();
+  });
+
+  it("on a canvas the doc binds, a landed plan still frames the view, and code still files its entry", () => {
+    jest.useFakeTimers();
+    try {
+      mockBound.current = true;
+      render(<Host />);
+      act(() => {
+        notifyAgentChangesLanded(PLAN);
+        notifyAgentChangesLanded({ kind: "node-content-applied", nodeId: "n1", content: "x = 1", agent: "Node Builder" });
+      });
+      act(() => {
+        jest.runAllTimers();
+      });
+      expect(mockFitViewWithMenuOffset).toHaveBeenCalledTimes(1);
+      // applyNodeContent's own bound branch files only the node's entry.
+      expect(mockApplyNodeContent).toHaveBeenCalledWith("n1", "x = 1", "Node Builder");
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("on a canvas no doc binds (a hosted guest's), a landed change is taken as any bridge event is", () => {
+    mockGetNodes.mockReturnValue([{ id: "victim" }, { id: "old" }]);
+    render(<Host />);
+    act(() => {
+      notifyAgentChangesLanded({ kind: "node-created", node: NODE });
+      notifyAgentChangesLanded({ kind: "node-settings-applied", nodeId: "pool", settings: { widgets: { k: 1 } } });
+      notifyAgentChangesLanded(PLAN);
+    });
+    expect(mockCreateCodeNode).toHaveBeenCalledWith(
+      "curio.builtin/computation-analysis", expect.objectContaining({ nodeId: "server-minted-id" }),
+    );
+    expect(mockCreateCodeNode).toHaveBeenCalledWith(
+      "curio.builtin/computation-analysis", expect.objectContaining({ nodeId: "ga" }),
+    );
+    expect(mockApplyNodeSettings).toHaveBeenCalledWith("pool", { widgets: { k: 1 } });
+    expect(mockApplyReviewedRemovals).toHaveBeenCalledWith(["victim"], ["e0"]);
+    expect(mockOnEdgesChange.mock.calls[0][0][0].item).toMatchObject({ id: "e1", source: "ga", target: "old" });
+  });
+
+  it("a bridge event that is no landed change is taken even on a canvas the doc binds (an applied install)", () => {
+    mockBound.current = true;
+    render(<Host />);
+    act(() => notifyAgentCanvasMutation({ kind: "node-created", node: NODE }));
+    expect(mockCreateCodeNode).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -135,10 +228,10 @@ describe("useAgentCanvasMutations (the apply→canvas bridge, dev/48 §3.3 + dev
     expect(mockCreateCodeNode).toHaveBeenCalledTimes(1);
   });
 
-  // dev/105 A4: a package.install apply enlists a package and queues its note
-  // cards for a later, sequential walk — the bridge event carries NO nodes.
-  // The handler must still add the store entry and pulse the registry (so
-  // the walk's node-created events paint real notes) and do nothing else.
+  // dev/105 A4: a package.install apply that carries no notes enlists a
+  // package and places nothing — the bridge event carries NO nodes. The
+  // handler must still add the store entry and pulse the registry (so a later
+  // node of the package paints as itself) and do nothing else.
   it("package-nodes-created with no nodes updates store + registry, inserts and centers nothing", async () => {
     render(<Host />);
     act(() =>
@@ -234,52 +327,19 @@ describe("graph-created (dev/52 — a whole applied plan)", () => {
     expect(mockCreateCodeNode).toHaveBeenCalledTimes(2); // not 4
   });
 
-  // On a canvas bound to the dataflow's doc, the server's write of the plan
-  // reaches the canvas through the doc, and can land before the apply answers.
+  // A canvas holds part of the plan already, as one that took a replay does.
   it("adds no node or connection the canvas holds already", () => {
     mockGetNodes.mockReturnValue([{ id: "ga" }, { id: "gb" }]);
     mockGetEdges.mockReturnValue([{ id: "e1" }]);
     render(<Host />);
     act(() => notifyAgentCanvasMutation({
       ...GRAPH,
-      planId: "plan-through-the-doc",
+      planId: "plan-partly-there",
       edges: [...GRAPH.edges, { id: "e2", source: "gb", target: "ga" }],
     }));
     expect(mockCreateCodeNode).not.toHaveBeenCalled();
     const changes = mockOnEdgesChange.mock.calls[0][0];
     expect(changes.map((change: any) => change.item.id)).toEqual(["e2"]);
-
-    act(() => notifyAgentCanvasMutation({
-      kind: "edges-created", batchId: "batch-through-the-doc",
-      edges: [{ id: "e1", source: "ga", target: "gb" }],
-    }));
-    expect(mockOnEdgesChange.mock.calls[1][0]).toEqual([]);
-  });
-
-
-  it("edges-created inserts quietly with handles — no fit, no center (dev/67-8)", () => {
-    render(<Host />);
-    act(() =>
-      notifyAgentCanvasMutation({
-        kind: "edges-created",
-        batchId: "batch-1",
-        edges: [{ id: "ce1", source: "ga", target: "gm", targetHandle: "in_2" }],
-      }),
-    );
-    const changes = mockOnEdgesChange.mock.calls[0][0];
-    expect(changes[0].item).toMatchObject({
-      id: "ce1", targetHandle: "in_2", sourceHandle: "out", data: {},
-    });
-    expect(mockSetCenter).not.toHaveBeenCalled();
-    expect(mockFitViewWithMenuOffset).not.toHaveBeenCalled();
-    // Idempotent per batch.
-    act(() =>
-      notifyAgentCanvasMutation({
-        kind: "edges-created", batchId: "batch-1",
-        edges: [{ id: "ce1", source: "ga", target: "gm" }],
-      }),
-    );
-    expect(mockOnEdgesChange).toHaveBeenCalledTimes(1);
   });
 
   it("passes the apply's explicit handles through (input circles, dev/67-3)", () => {
@@ -304,8 +364,9 @@ describe("graph-created (dev/52 — a whole applied plan)", () => {
     render(<Host />);
     act(() =>
       notifyAgentCanvasMutation({
-        kind: "edges-created",
-        batchId: "batch-ix",
+        kind: "graph-created",
+        planId: "plan-ix",
+        nodes: [],
         edges: [
           { id: "ix", source: "gv", target: "gp", sourceHandle: "in/out", targetHandle: "in/out", type: "Interaction" },
           { id: "dx", source: "ga", target: "gb" },
@@ -446,10 +507,12 @@ describe("#662: a plan's widgets, copies and scenarios reach the live canvas", (
     expect(mockSetScenarios).toHaveBeenCalledWith([own, ...SAVED]);
   });
 
-  it("scenarios-created joins them once: one already on the canvas is not added twice", () => {
+  it("graph-created joins them once: one already on the canvas is not added twice", () => {
     mockScenarios.current = [SAVED[0]];
     render(<Host />);
-    act(() => notifyAgentCanvasMutation({ kind: "scenarios-created", scenarios: SAVED }));
+    act(() =>
+      notifyAgentCanvasMutation({ kind: "graph-created", planId: "plan-once", nodes: [], edges: [], scenarios: SAVED }),
+    );
     expect(mockSetScenarios).toHaveBeenCalledWith(SAVED);
   });
 
@@ -509,7 +572,7 @@ describe("graph-created removals (dev/59)", () => {
   });
 });
 
-describe("plan-removals (a plan completed a row at a time, or by Connect all)", () => {
+describe("plan-removals (a node an agent added, undone)", () => {
   const removals = (planId: string): AgentCanvasMutation => ({
     kind: "plan-removals",
     planId,
@@ -517,20 +580,20 @@ describe("plan-removals (a plan completed a row at a time, or by Connect all)", 
     removedEdgeIds: ["edge-1"],
   });
 
-  it("removes what the plan removes through the reviewed path, as graph-created does", () => {
+  it("removes the node and its connections through the reviewed path, as graph-created does", () => {
     mockGetNodes.mockReturnValue([{ id: "old-loader" }, { id: "cleaner" }]);
     render(<Host />);
-    act(() => notifyAgentCanvasMutation(removals("rows-1")));
+    act(() => notifyAgentCanvasMutation(removals("undo:c1")));
     expect(mockApplyReviewedRemovals).toHaveBeenCalledWith(["old-loader"], ["edge-1"]);
-    // The rows already placed the plan's nodes: nothing is inserted.
+    // Nothing is inserted.
     expect(mockCreateCodeNode).not.toHaveBeenCalled();
   });
 
-  it("leaves out a node already gone, and removes once per plan", () => {
+  it("leaves out a node already gone, and removes once per Undo", () => {
     mockGetNodes.mockReturnValue([{ id: "cleaner" }]); // the user deleted it live
     render(<Host />);
-    act(() => notifyAgentCanvasMutation(removals("rows-2")));
-    act(() => notifyAgentCanvasMutation(removals("rows-2")));
+    act(() => notifyAgentCanvasMutation(removals("undo:c2")));
+    act(() => notifyAgentCanvasMutation(removals("undo:c2")));
     expect(mockApplyReviewedRemovals).toHaveBeenCalledTimes(1);
     expect(mockApplyReviewedRemovals).toHaveBeenCalledWith([], ["edge-1"]);
   });
