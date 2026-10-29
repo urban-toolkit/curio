@@ -1,6 +1,6 @@
 import React from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
-import { AgentDock, GOAL_PLACEHOLDER } from "../../components/agents/attach/AgentDock";
+import { act, render, screen, fireEvent } from "@testing-library/react";
+import { AgentDock, DOCK_LEFT_PROPERTY, GOAL_PLACEHOLDER } from "../../components/agents/attach/AgentDock";
 
 function att(id: string, name: string) {
   return {
@@ -198,5 +198,58 @@ describe("the goal field beside attached agents", () => {
       />,
     );
     expect(screen.getByLabelText("Dataflow goal")).toBeInTheDocument();
+  });
+});
+
+/**
+ * The canvas title shares the dock's row, from the left, and is cut short
+ * where the dock starts (UpMenu.module.css reads the edge); a long dataflow
+ * name was drawn over the dock and its goal field. jsdom lays nothing out, so
+ * the dock's box is given here; test_canvas_title_beside_the_dock_e2e.py
+ * measures both in a browser.
+ */
+describe("the dock's left edge, for the canvas title beside it", () => {
+  const edge = () => document.documentElement.style.getPropertyValue(DOCK_LEFT_PROPERTY);
+  const at = (left: number) =>
+    ({ left, right: left + 404, top: 76, bottom: 108, width: 404, height: 32, x: left, y: 76, toJSON: () => ({}) }) as DOMRect;
+  let box: jest.SpyInstance;
+
+  beforeEach(() => {
+    box = jest.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(at(437.6));
+  });
+
+  afterEach(() => {
+    box.mockRestore();
+    document.documentElement.style.removeProperty(DOCK_LEFT_PROPERTY);
+  });
+
+  it("is on the page while the dock shares the title's row, and goes with the dock", () => {
+    expect(DOCK_LEFT_PROPERTY).toBe("--curio-canvas-dock-left");
+    const { rerender, unmount } = render(<AgentDock showGoal goal="" onGoalChange={jest.fn()} />);
+    expect(edge()).toBe("437px");
+    // Nothing left to show: the dock draws nothing, and its edge goes.
+    rerender(<AgentDock showGoal={false} />);
+    expect(edge()).toBe("");
+    rerender(<AgentDock showGoal goal="" onGoalChange={jest.fn()} />);
+    expect(edge()).toBe("437px");
+    unmount();
+    expect(edge()).toBe("");
+  });
+
+  it("follows the dock when the window changes", () => {
+    render(<AgentDock showGoal goal="" onGoalChange={jest.fn()} />);
+    expect(edge()).toBe("437px");
+    box.mockReturnValue(at(300.2));
+    act(() => {
+      window.dispatchEvent(new Event("resize"));
+    });
+    expect(edge()).toBe("300px");
+  });
+
+  it("is not on the page while the dock sits under a read-only canvas's banner, below the title", () => {
+    expect(DOCK_LEFT_PROPERTY).toBe("--curio-canvas-dock-left");
+    render(<AgentDock showGoal goal="" belowBanner />);
+    expect(screen.getByRole("toolbar", { name: "Canvas agents" })).toBeInTheDocument();
+    expect(edge()).toBe("");
   });
 });

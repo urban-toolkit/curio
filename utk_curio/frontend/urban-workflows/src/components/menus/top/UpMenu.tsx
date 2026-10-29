@@ -599,6 +599,9 @@ export default function UpMenu() {
                 ) : (
                     <h1
                         className={styles.workflowNameStyle}
+                        // The whole name, which the title cuts short beside
+                        // the agents' dock.
+                        data-tooltip={workflowName}
                         onClick={() => { if (!isSharedView) setIsEditing(true); }}
                     >
                         {workflowName}
