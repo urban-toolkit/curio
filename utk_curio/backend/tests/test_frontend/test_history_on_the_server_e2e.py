@@ -9,9 +9,7 @@ editor deletes an edit there: when the Undo reaches the server the node no
 longer holds the code it began from, so nothing is undone, and the owner is
 told who changed the node.
 
-Needs a stack started with ``--collab``: CI's e2e-collab job, which runs the
-tests marked ``needs_collab`` (``runner_split.py``), or a local run with
-``CURIO_E2E_COLLAB=1``. On any other stack it fails saying so.
+Every stack with sign-in serves this: there is no switch for it.
 """
 
 from __future__ import annotations
@@ -19,10 +17,8 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
-import pytest
 from playwright.sync_api import expect
 
-from .test_collaboration_editors_e2e import _require_collab_stack
 from .test_widget_tags_e2e import _open_tab
 from .utils import (
     api_json,
@@ -44,8 +40,6 @@ from .walkthroughs.steps import (
 
 if TYPE_CHECKING:
     from .utils import FrontendPage
-
-pytestmark = pytest.mark.needs_collab
 
 OWNER, OWNER_NAME = "history_owner_e2e", "History Owner"
 EDITOR, EDITOR_NAME = "history_editor_e2e", "History Editor"
@@ -148,7 +142,6 @@ def test_two_browsers_list_the_same_versions_and_the_owners_save_reaches_the_edi
 ):
     require_project_page()
     require_user_auth()
-    _require_collab_stack(current_server)
     base = app_frontend.base_url
     viewport = {"width": 1280, "height": 768}
     owner_ctx = browser.new_context(viewport=viewport)
@@ -202,7 +195,6 @@ def test_an_undo_after_another_persons_edit_is_refused_and_says_who_changed_the_
 ):
     require_project_page()
     require_user_auth()
-    _require_collab_stack(current_server)
     base = app_frontend.base_url
     viewport = {"width": 1280, "height": 768}
     owner_ctx = browser.new_context(viewport=viewport)
