@@ -185,7 +185,7 @@ def _validate_events(
             yield from _land_validated(user_key, project_id, attachment_id, session_id,
                                        home_attachment_id, home_session_id,
                                        node_id, label, candidate, done, rounds_used, rounds_trace,
-                                       resolution=resolution)
+                                       resolution=resolution, asker=acting_user)
         elif candidate and done["verdict"] in ("fail", "not-executable"):
             # Code that failed its check is not written: its attempts, each
             # with the code it ran, stay in the node's agent chat.
@@ -270,15 +270,18 @@ def _trace_card(done: dict, rounds_used: int, rounds_trace: list) -> dict:
 
 def _land_validated(user_key, project_id, attachment_id, session_id, home_attachment_id, home_session_id,
                     node_id, label, candidate, done: dict, rounds_used: int, rounds_trace: list,
-                    *, resolution=None):
+                    *, resolution=None, asker=None):
     """Write the code that passed its check into its node, as the agent's
     change with its Undo, through the ``node.content.write`` mint and its
     checks, at the NODE's agent when it exists (dev/72). Its card carries the
     validation block (verdict, rounds, attempts). Yields its ``change``
-    event; writes the change's id, or why it did not land, into *done*."""
+    event; writes the change's id, or why it did not land, into *done*.
+    *asker*: the person the job took when it started, whom the change names
+    and whose own focus in the node never holds it back."""
     change_attachment = home_attachment_id or attachment_id
     change_session = home_session_id or session_id
-    ctx = {"attachment_id": change_attachment, "session_id": change_session}
+    ctx = {"attachment_id": change_attachment, "session_id": change_session,
+           "asker_id": getattr(asker, "id", None), "asker": asker}
     status, text, part = agents_mint._mint_node_content_write(
         user_key, project_id, ctx,
         {"tool": "node.content.write", "params": {"nodeId": node_id, "content": candidate}},

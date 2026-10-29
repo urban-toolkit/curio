@@ -455,3 +455,56 @@ def test_an_editors_agent_change_is_a_point_named_after_the_editor(client, peopl
     newest = history.points(flow.owner_key, flow.pid)[-1]
     assert (newest["kind"], newest["what"], newest["by"]) == (
         "code", "Undid Node Builder's change", {"kind": "person", "account": str(people.bob.id), "name": "Bob"})
+
+
+# ---------------------------------------------------------------------------
+# An editor's Solve is named after the editor
+# ---------------------------------------------------------------------------
+
+def _versions(client, pid) -> list:
+    return client.get(f"/api/projects/{pid}/history", headers=_auth(BOB_TOKEN)).get_json()["versions"]
+
+
+def _entries(client, pid, node_id) -> list:
+    return client.get(f"/api/projects/{pid}/history/nodes/{node_id}", headers=_auth(BOB_TOKEN)).get_json()["entries"]
+
+
+def test_an_editors_solve_of_one_node_is_named_after_the_editor(client, people, monkeypatch, tmp_curio):
+    """bob solves an empty node of alice's dataflow from the node's agent. The
+    Solve runs as a job, on a thread that holds no request, so it names the
+    person it took when it started: the code it writes is a version named
+    "Node Builder, asked by Bob", and the node's entry is by Bob, not alice."""
+    from utk_curio.backend.app.projects import access
+    from utk_curio.backend.tests.test_agents.test_verified_rounds import TestSolveNode
+
+    helper = TestSolveNode()
+    ctx = helper._setup(client, people.alice, people.alice_token, monkeypatch, content="",
+                        child_replies=[helper.LOADER])
+    access.add_editor(people.alice, ctx["pid"], "bob")
+    done = helper._solve_node(client, BOB_TOKEN, ctx)[-1][1]
+    assert done["verdict"] == "pass" and done.get("written") is True, done
+
+    newest = _versions(client, ctx["pid"])[-1]
+    assert newest["what"] == "Node Builder, asked by Bob", newest
+    entries = _entries(client, ctx["pid"], "n1")
+    assert entries and (entries[-1].get("by") or {}).get("name") == "Bob", entries
+
+
+def test_an_editors_solve_of_a_plan_is_named_after_the_editor(client, people, monkeypatch, tmp_curio):
+    """bob solves the plan alice's Dataflow Builder landed. The batch writes on
+    a job's thread too: each version it makes, and the node's entry, is by Bob."""
+    from utk_curio.backend.app.projects import access
+    from utk_curio.backend.tests.test_agents.test_verified_rounds import TestVerifiedSolve
+
+    helper = TestVerifiedSolve()
+    ctx = helper._setup(client, people.alice, people.alice_token, monkeypatch,
+                        dl_replies=[helper.LOADER], with_stats=False)
+    access.add_editor(people.alice, ctx["pid"], "bob")
+    before = len(_versions(client, ctx["pid"]))
+    body = helper._solve(client, BOB_TOKEN, ctx)
+    assert body["results"][ctx["load"]]["status"] == "solved", body
+
+    made = _versions(client, ctx["pid"])[before:]
+    assert made and all(str(version.get("what")).endswith(", asked by Bob") for version in made), made
+    entries = _entries(client, ctx["pid"], ctx["load"])
+    assert entries and (entries[-1].get("by") or {}).get("name") == "Bob", entries

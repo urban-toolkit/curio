@@ -441,7 +441,7 @@ def _mint_content_review_from_delegate(
     mint_ctx = {
         k: v for k, v in (parent_loop_ctx or {}).items()
         if k in ("message", "previous_message", "_verified_urls", "_egress_budget", "_probe_cache",
-                 "granted", "manifest", "asker_id")
+                 "granted", "manifest", "asker_id", "asker")
     }
     mint_ctx.update({"attachment_id": home_att, "session_id": home_sess})
     if parent_loop_ctx is not None:

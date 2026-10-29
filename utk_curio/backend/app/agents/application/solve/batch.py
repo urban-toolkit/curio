@@ -27,6 +27,7 @@ import queue as _queue
 import time
 from concurrent.futures import ThreadPoolExecutor
 
+from utk_curio.backend.app.agents.application import askers as agents_askers
 from utk_curio.backend.app.agents.application import attachments
 from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
 from utk_curio.backend.app.agents.application import dataset_resolution as agents_dataset_resolution
@@ -712,8 +713,13 @@ class SolveBatch:
 
     def _actor(self) -> dataflow_docs.Actor:
         """Who the batch's writes are by: the agent that writes its content,
-        asked by the account."""
-        return dataflow_docs.by_agent(getattr(self.resolution, "coord", None) or self.coord, self.user_key, "solve")
+        asked by the person who started the Solve (``acting_user``, taken in
+        the request, since the job's thread holds none), an invited editor
+        among them (``askers.account``)."""
+        return dataflow_docs.by_agent(
+            getattr(self.resolution, "coord", None) or self.coord,
+            agents_askers.account(self.user_key, self.acting_user), "solve",
+        )
 
     def _changed_meanwhile(self, node_ids: tuple, node_runs: dict) -> None:
         """The nodes whose code the dataflow kept (``dataflow_docs.write``):

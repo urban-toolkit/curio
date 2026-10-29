@@ -164,8 +164,10 @@ def forget(spec: dict, attachment_id: str | None, change_id: str) -> None:
 
 def actor(user_key: str, spec: dict, loop_ctx: dict, what: str) -> dataflow_docs.Actor:
     """Who a change is by: the agent of the attachment that made it, asked
-    by the account that asked it (``spec_reads._agent_actor``)."""
-    return agents_spec_reads._agent_actor(user_key, spec, loop_ctx.get("attachment_id"), what)
+    by the account that asked it (``spec_reads._agent_actor``): on a job's
+    thread, the person the job took when it started (``loop_ctx["asker"]``)."""
+    return agents_spec_reads._agent_actor(user_key, spec, loop_ctx.get("attachment_id"), what,
+                                          loop_ctx.get("asker"))
 
 
 def card(part: dict, change: dict, lines: list[str]) -> dict:
