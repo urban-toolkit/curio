@@ -3,6 +3,7 @@ import re
 import sqlite3
 import threading
 import time
+from contextlib import contextmanager
 
 from flask import has_app_context
 from flask_sqlalchemy import SQLAlchemy
@@ -220,4 +221,74 @@ def init_socketio(app):
         logger=False,
         engineio_logger=False,
     )
+    _whole_messages(socketio.server)
     return socketio
+
+
+# A Socket.IO message with binary data, as every doc message is, goes out as
+# several packets, each its own put on the client's queue, and python-socketio's
+# sends are not thread safe ("use standard concurrency solutions (such as a Lock
+# object)", its Server.emit). A packet another thread sends the client meanwhile,
+# such as the answer to one of its events, could land between a message's
+# packets, which the client's parser takes as a broken stream: socket.io-client
+# closes the connection on it. So every send to a client takes the client's lock,
+# and whoever puts a message of several packets holds it across them
+# (emit_whole). A thread holding one client's lock never waits for another's, so
+# no two sends can wait for each other.
+_CLIENT_LOCKS = tuple(threading.Lock() for _ in range(64))
+_holding = threading.local()
+
+
+@contextmanager
+def whole_sends(eio_sid: str):
+    """Hold the sends to the Engine.IO client *eio_sid* while this thread puts
+    a message's packets, so no other thread's packet to it lands between them."""
+    if getattr(_holding, "held", False):
+        yield
+        return
+    with _CLIENT_LOCKS[hash(eio_sid) % len(_CLIENT_LOCKS)]:
+        _holding.held = True
+        try:
+            yield
+        finally:
+            _holding.held = False
+
+
+def _whole_messages(server) -> None:
+    """Make each send of *server*, a ``socketio.Server``, take its client's
+    lock (:func:`whole_sends`): an event's answer and every other packet the
+    server sends (``_send_packet``), and each packet of an emit
+    (``_send_eio_packet``)."""
+    send_packet, send_eio_packet = server._send_packet, server._send_eio_packet
+
+    def locked_send_packet(eio_sid, pkt):
+        with whole_sends(eio_sid):
+            send_packet(eio_sid, pkt)
+
+    def locked_send_eio_packet(eio_sid, eio_pkt):
+        with whole_sends(eio_sid):
+            send_eio_packet(eio_sid, eio_pkt)
+
+    server._send_packet = locked_send_packet
+    server._send_eio_packet = locked_send_eio_packet
+
+
+def emit_whole(socketio, event: str, data, *, namespace: str, to: str, skip_sid=None) -> None:
+    """Emit *event* with *data* to *to*, a room or a client, but *skip_sid*, a
+    client or a list of them, encoded once and put whole to each client:
+    every packet of it while that client's sends are held
+    (:func:`whole_sends`)."""
+    from engineio import packet as eio_packet
+    from socketio import packet
+
+    server = socketio.server
+    encoded = server.packet_class(packet.EVENT, namespace=namespace, data=[event, data]).encode()
+    parts = [eio_packet.Packet(eio_packet.MESSAGE, part)
+             for part in (encoded if isinstance(encoded, list) else [encoded])]
+    skipped = set(skip_sid) if isinstance(skip_sid, list) else {skip_sid}
+    for sid, eio_sid in list(server.manager.get_participants(namespace, to)):
+        if sid in skipped:
+            continue
+        with whole_sends(eio_sid):
+            for part in parts:
+                server._send_eio_packet(eio_sid, part)
