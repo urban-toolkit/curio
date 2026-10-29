@@ -1,10 +1,9 @@
 /**
  * Which tabs send their changes to the dataflow's doc (`CollaborationProvider`,
- * `collab/participants.ts`'s `writesDoc`): the owner's always, an invited
- * editor's only with --collab on, as its canvas watches without it, and a
- * watcher's never. The doc's sync starts on the room's socket once the room
- * has joined the tab, whatever --collab says, but on a Curio with no sign-in,
- * where each canvas stays its own.
+ * `collab/participants.ts`'s `writesDoc`): the owner's and an invited
+ * editor's, and a watcher's never. The doc's sync starts on the room's socket
+ * once the room has joined the tab, but on a Curio with no sign-in, where a
+ * tab joins no room and each canvas stays its own.
  */
 import React from "react";
 import { act, render, waitFor } from "@testing-library/react";
@@ -143,8 +142,8 @@ test.each([
   ["owner", true],
   ["editor", true],
   ["watcher", false],
-])("with --collab, a tab the room names %s sends its changes: %s", async (role, sends) => {
-  mockConfig = { enable_collab: true };
+])("a tab the room names %s sends its changes: %s", async (role, sends) => {
+  mockConfig = {};
   const socket = await joinedAs(role);
 
   renameOnCanvas();
@@ -154,32 +153,11 @@ test.each([
 });
 
 test.each([
-  ["owner", true],
-  ["editor", false],
-  ["watcher", false],
-])("without --collab, a tab the room names %s sends its changes: %s", async (role, sends) => {
-  mockConfig = { enable_collab: false };
-  const socket = await joinedAs(role);
-
-  renameOnCanvas();
-
-  expect(binding!.provider.canWrite).toBe(sends);
-  expect(updatesSent(socket) > 0).toBe(sends);
-});
-
-test("on a Curio with no sign-in the room joins the owner's tab, and no doc starts", async () => {
-  mockConfig = { enable_collab: true, curio_no_auth: true };
-  await opened();
-  await waitFor(() => expect(sockets).toHaveLength(1));
-
-  joinAs(sockets[0], "owner");
-
-  expect(binding).toBeNull();
-  expect(sockets[0].sent.filter((sent) => sent.event === "yjs")).toEqual([]);
-});
-
-test("on a Curio with no sign-in and no people panel, a tab joins no room", async () => {
-  mockConfig = { enable_collab: false, curio_no_auth: true };
+  ["curio_no_auth"],
+  ["skip_project_page"],
+  ["curio_no_project"],
+])("on a Curio with no sign-in (%s), a tab joins no room and starts no doc", async (setting) => {
+  mockConfig = { [setting]: true };
   await opened();
   // Time for a socket to open, as one does on a Curio with sign-in.
   await act(async () => {
