@@ -167,6 +167,16 @@ class _Burst:
         for thread in threads:
             thread.join(WAIT_S)
             assert not thread.is_alive(), "a tab is still waiting for its update's answer"
+        self.idle()
+
+    def idle(self) -> None:
+        """Wait until nothing waits for the doc and no thread holds its turn:
+        every message the burst sent is applied and answered."""
+        entry = self.entry
+        with entry.queue:
+            assert entry.queue.wait_for(lambda: not entry.applying and not entry.queued, WAIT_S), (
+                "the doc's thread never drained its queue"
+            )
 
     def hold(self, first):
         """Send *first* from a thread of its own and hold its apply, and with
@@ -187,6 +197,7 @@ class _Burst:
         self.going.set()
         thread.join(WAIT_S)
         assert not thread.is_alive(), "the held update's tab is still waiting for its answer"
+        self.idle()
 
 
 def _type(text: str):
@@ -346,7 +357,7 @@ def test_a_burst_from_several_tabs_is_one_batch_one_write_and_one_message_to_eac
     assert answers.get("alice") == [{"ok": True, "kept": _own_clock(tabs["alice"])}], answers.get("alice")
     for name in ("ana", "bob", "bea"):
         assert answers.get(name) == [QUEUED], (name, answers.get(name))
-    assert room.docs.wait_idle(room.project_id, WAIT_S), "the doc's thread never drained its queue"
+    burst.idle()
     for name in ("ana", "bob", "bea"):
         assert _answered(tabs[name], 1) == [
             {"projectId": room.project_id, "answered": 1, "kept": _own_clock(tabs[name])},
@@ -389,7 +400,7 @@ def test_a_burst_from_several_tabs_is_one_batch_one_write_and_one_message_to_eac
     for thread in threads:
         thread.join(WAIT_S)
         assert not thread.is_alive(), "a tab is still waiting for its key's answer"
-    assert room.docs.wait_idle(room.project_id, WAIT_S), "the doc's thread never drained its queue"
+    burst.idle()
     for name, typed in keys.items():
         assert len(typed) == len(f"<{name}>"), (name, typed)
         queued = [kept for ack, kept in typed if ack == QUEUED]
@@ -432,7 +443,7 @@ def test_an_update_that_does_not_apply_is_refused_alone_and_the_rest_of_its_batc
     assert answers.get("bob") == QUEUED, answers.get("bob")
     for name in ("ana", "bea"):
         assert answers.get(name) == [QUEUED], (name, answers.get(name))
-    assert room.docs.wait_idle(room.project_id, WAIT_S), "the doc's thread never drained its queue"
+    burst.idle()
     assert _answered(tabs["bob"], 1) == [{
         "projectId": room.project_id, "answered": 1, "kept": {}, "refused": {"invalid_message": 1},
     }], "the update that does not apply was not refused, alone"
@@ -513,7 +524,7 @@ def test_a_tabs_messages_behind_a_batch_are_answered_at_once_and_its_queued_keys
     assert [ack for ack, _kept in keys] == [QUEUED] * 3, keys
     assert pointer == [QUEUED], pointer
     assert answers.get("alice") == [{"ok": True, "kept": _own_clock(tabs["alice"])}], answers.get("alice")
-    assert room.docs.wait_idle(room.project_id, WAIT_S), "the doc's thread never drained its queue"
+    burst.idle()
     assert _answered(tabs["ana"], 3) == [{"projectId": room.project_id, "answered": 3, "kept": keys[-1][1]}], (
         "ana's three keys were not answered by one kept message"
     )
@@ -564,7 +575,7 @@ def test_awareness_waits_with_the_updates_and_each_tab_gets_each_clients_latest_
         burst.let_go(held)
 
     assert moves == {"ana": [QUEUED] * 3, "bob": [QUEUED] * 3}, moves
-    assert room.docs.wait_idle(room.project_id, WAIT_S), "the doc's thread never drained its queue"
+    burst.idle()
     clients = {name: tab.doc.client_id for name, tab in tabs.items()}
     for name, tab in everyone.items():
         tab.pump()
