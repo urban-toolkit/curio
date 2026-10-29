@@ -7,6 +7,7 @@ the internal layering can move without a sweep.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from flask import current_app
@@ -48,6 +49,9 @@ from utk_curio.backend.app.discovery.schemas.payloads import (
     resource_row,
     search_payload,
 )
+
+logger = logging.getLogger(__name__)
+
 
 #: Search asks each portal for at most this many rows.
 class JobNotFound(SourceNotFound):
@@ -787,7 +791,9 @@ class DiscoveryService:
         (``DatasetCatalogService.get_dataset``): for its owner and for an
         editor the owner invited, a collection the dataflow lists counts too,
         read from the owner's store. For anyone else the dataflow lists
-        nothing, and the lookup is as with no dataflow.
+        nothing, and the lookup is as with no dataflow; so is it, logged, when
+        the dataflow's listing fails, as a run's datasets keep what the
+        dataset index resolved (``CatalogListing.resolve_execution_paths``).
         """
         from utk_curio.backend.app.datasets.service import DatasetCatalogError
         from utk_curio.backend.app.discovery.domain.errors import ResourceNotFound
@@ -798,9 +804,17 @@ class DiscoveryService:
             try:
                 # A dataflow's catalog is an account's; with none, the shared one.
                 item = catalog.get_dataset(dataset_id, dataflow_id=self.dataflow_id if self.user else None)
-            except NotFoundError:
-                # A dataflow this account neither owns nor edits
-                # (``InstalledDatasetRepository._dataflow_store``).
+            except DatasetCatalogError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - looked up as with no dataflow
+                # NotFoundError: a dataflow this account neither owns nor
+                # edits (``InstalledDatasetRepository._dataflow_store``).
+                if not isinstance(exc, NotFoundError):
+                    logger.warning(
+                        "Could not list the Data Catalog of dataflow %s to find collection %s; "
+                        "looking it up without the dataflow",
+                        self.dataflow_id, dataset_id, exc_info=True,
+                    )
                 item = catalog.get_dataset(dataset_id)
         except DatasetCatalogError as exc:
             raise ResourceNotFound(f"no dataset {dataset_id!r}") from exc
