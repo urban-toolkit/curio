@@ -10,7 +10,7 @@ This guide is in six parts, plus operator notes:
 - [2. Surfaces and workflows](#2-surfaces-and-workflows): the three places you manage agents, the action matrix, walkthroughs, and catalog settings.
 - [3. Using an agent in a dataflow](#3-using-an-agent-in-a-dataflow): adding, attaching, and the difference between the two.
 - [4. LLM configurations](#4-llm-configurations): which model answers, and where it is set.
-- [5. Importing, publishing, and sharing](#5-importing-publishing-and-sharing): your own definitions, and offering them to everyone.
+- [5. Importing, publishing, and sharing](#5-importing-publishing-and-sharing): your own definitions, adding a skill and an agent of your own, and offering them to everyone.
 - [6. The manifest](#6-the-manifest): writing your own agent.
 - [Operator notes](#operator-notes): the Deployment default and launcher flags.
 
@@ -482,6 +482,18 @@ Whoever runs the install can set a Deployment default with `curio.py start` flag
 
 Skills are imported, exported, published and removed the same way, from the Skills view of `/catalog/agents` ([Skills](#skills)). A guest on a hosted Curio imports, publishes, unpublishes and removes no agent and no skill.
 
+### Add skills and agents
+
+Write a skill and an agent, import both, and connect them: the agent holds the skill, and its chat loads the skill when a task needs it. The worked example is in Curio's repository: the skill [`street-trees`](examples/skills/street-trees/SKILL.md), by a parks team, with its file [`references/species.md`](examples/skills/street-trees/references/species.md), and your agent **Tree Counter**, [`agent.you.tree-counter@1`](examples/agents/agent.you.tree-counter@1/manifest.json), whose manifest names the skill.
+
+1. **Write the skill.** A folder named as the skill holds its `SKILL.md`, in the [Agent Skills format](https://agentskills.io/specification): frontmatter with its `name` and a `description` that says when to use it, then the body, the instructions an agent follows. A file the body links, such as `references/species.md`, sits one level below the folder, and a chat reads it when the body says to. [EXTENDING](EXTENDING.md#9-writing-a-skill) gives the format's rules.
+2. **Import the skill.** **Import skill** takes its folder or a `.zip` of it ([Skills](#skills)). In the review, untick each agent that should not hold it, then **Import**.
+3. **Write the agent.** A folder named `<agentId>@<major>` holds its `manifest.json` and, in `prompts/`, its prompt files ([The manifest](#6-the-manifest)). Its id is `agent.`, you as its publisher and its name. The manifest names its instruction, the tools it uses and, in `skills`, your skill.
+4. **Import the agent.** **Import agent** takes its `manifest.json` and its prompt files.
+5. **Chat with it.** Add the agent to a dataflow and attach it to the canvas. Its chat lists the skill and loads it with **skill.read** when your message asks for its task, and the line under the reply names it.
+
+An agent holds a skill in three ways: its manifest names the skill in `skills`, as Tree Counter's names `street-trees`; the skill's import review left the agent ticked; or **Add skill** in the agent's details gave it the skill. An agent of yours whose manifest has no `skills` holds every skill Curio ships and none of yours until you give it one. A skill the instruction names in its own `skills` (`prompts.instruction.skills`) is in the chat from its first message, with no **skill.read**.
+
 ---
 
 ## 6. The manifest
@@ -532,7 +544,7 @@ A minimal, complete manifest:
 | `runtime` | | `execution` (`foreground` or `background`) and `reviewPolicy` (`report-only` or `review-before-apply`). |
 | `providerRequirements` | | Provider *capability* requirements such as `structured-output`, as a preference: an agent runs on the configuration chosen for it whatever these say. Credentials and configurations are never in a manifest. |
 | `tools` | | Typed, allowlisted tool **requirements**, not a permission grant. A chat that lists skills holds **skill.read** whatever this names. |
-| `skills` | | The [skills](#skills) the agent's calls may hold, by name, each a folder of Curio's `skills/`. Its chat lists those its preamble does not hold and loads one when a task needs it; its modes are handed the ones their task needs. Without this field, every skill Curio ships; an empty list, none, and then its chat lists no skills and holds no skill.read. |
+| `skills` | | The [skills](#skills) the agent's calls may hold, by name: skills Curio ships and [your own](#add-skills-and-agents). Its chat lists those its preamble does not hold and loads one when a task needs it; its modes are handed the ones their task needs. Without this field, every skill Curio ships; an empty list, none, and then its chat lists no skills and holds no skill.read. |
 | `settingsDefaults` | | Non-secret seed suggestions. |
 | `catalog` | | `{ listed, order }`, set by the agents Curio ships only: `listed` is `true` for a catalog agent and `false` for a helper, and `order` is the agent's place in the order the lists of who asks follow. No other key is accepted, and an import that sets it is refused. |
 | `workedExamples` | | `true` gives a run of the agent's instruction worked examples, the shipped dataflows closest to its task. A mode says so for itself, with `workedExamples` on its capability. Read for the agents Curio ships. |
