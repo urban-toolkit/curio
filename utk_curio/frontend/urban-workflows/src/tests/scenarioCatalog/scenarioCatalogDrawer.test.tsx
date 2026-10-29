@@ -84,7 +84,7 @@ function groups() {
     .getAllByRole("region")
     .map((group) => ({
       project: group.getAttribute("data-scenario-group"),
-      heading: group.querySelector("h3")?.textContent,
+      heading: `${group.querySelector("h3")?.textContent} ${group.querySelector("[data-scenario-set-count]")?.textContent}`,
       cards: Array.from(group.querySelectorAll("[data-scenario-key]")).map((el) =>
         el.getAttribute("data-scenario-key"),
       ),
@@ -124,7 +124,7 @@ describe("the canvas Scenario Catalog drawer", () => {
     expect(screen.getByRole("button", { name: "Close Scenario Catalog drawer" })).toBeInTheDocument();
     expect(await within(root()).findByText("Cool roofs")).toBeInTheDocument();
     const heat = within(card("p-heat/s-cool"));
-    expect(heat.getByText("Heat study · 2 nodes")).toBeInTheDocument();
+    expect(heat.getByText("2 nodes")).toBeInTheDocument();
     expect(heat.getByText("Raise roof albedo across the district.")).toBeInTheDocument();
     expect(within(card("p-ex/s-cool")).getByText("Baseline")).toBeInTheDocument();
     expect(api.listCatalog).toHaveBeenCalledWith({ q: "" });

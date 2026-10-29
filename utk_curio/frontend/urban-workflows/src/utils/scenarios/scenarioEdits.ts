@@ -105,24 +105,6 @@ export function createScenario(
   return { scenarios: [...scenarios, scenario] };
 }
 
-/** *scenarios* with *nodeIds* added to the scenario *id*, or why not. */
-export function addNodesToScenario(scenarios: readonly Scenario[], id: string, nodeIds: readonly string[]): ScenarioEdit {
-  if (nodeIds.length === 0) return { error: "Select the nodes to add first." };
-  const problem = overlapProblem(scenarios, nodeIds, id);
-  if (problem) return { error: problem };
-  return {
-    scenarios: scenarios.map((s) =>
-      s.id === id ? { ...s, nodes: [...s.nodes, ...nodeIds.filter((n) => !s.nodes.includes(n))] } : s,
-    ),
-  };
-}
-
-/** *scenarios* with *nodeIds* taken out of whichever scenario holds them. */
-export function removeNodesFromScenarios(scenarios: readonly Scenario[], nodeIds: readonly string[]): Scenario[] {
-  const gone = new Set(nodeIds);
-  return scenarios.map((s) => (s.nodes.some((n) => gone.has(n)) ? { ...s, nodes: s.nodes.filter((n) => !gone.has(n)) } : s));
-}
-
 /**
  * *scenarios* with the scenario *id* changed by *patch*. A blank name or a
  * color that is not `#rrggbb` is ignored; an empty description is removed.

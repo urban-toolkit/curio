@@ -67,6 +67,7 @@ export function scenarioHighlight(details: ScenarioDetails): ThumbnailHighlight 
     color: details.color,
     members: details.levers.map((entry) => entry.id),
     context: details.context.map((entry) => entry.id),
+    outcomes: details.outcomes.map((entry) => entry.id),
   };
 }
 

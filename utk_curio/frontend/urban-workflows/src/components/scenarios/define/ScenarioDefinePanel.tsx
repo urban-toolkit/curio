@@ -43,8 +43,10 @@ const selectedOf = (s: ReactFlowState) =>
  *    scenario sets, or in a new one. Save scenario writes it; nothing is
  *    written before.
  *
- * Opened on a saved scenario ("edit"), it is step 2 alone, on the lists the
- * scenario keeps.
+ * Opened on a saved scenario (Edit scenario, "edit"), it is the same three
+ * steps, starting from what the scenario keeps: its nodes (selected on the
+ * canvas), its context and outcomes, its name and its set. Its Save changes
+ * the scenario in place, from step 2 on.
  */
 export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
   const { scenarios, scenarioSets, nodes, edges, setScenarios, workflowNameRef } = useFlowContext();
@@ -64,7 +66,7 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
     [selectedKey, boxedByOthers],
   );
 
-  const [step, setStep] = useState(editing ? 2 : 1);
+  const [step, setStep] = useState(1);
   const [members, setMembers] = useState<string[]>(() =>
     editing ? editing.nodes : define.mode === "new" ? define.nodes ?? [] : [],
   );
@@ -76,9 +78,11 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
   const [lists, setLists] = useState<Record<Part, string[]> | null>(() =>
     editing ? { context: editing.context ?? [], outcomes: editing.outcomes ?? [] } : null,
   );
-  const [name, setName] = useState(() => nextScenarioName(scenarios));
+  const [name, setName] = useState(() => editing?.name ?? nextScenarioName(scenarios));
   const [choice, setChoice] = useState<SetChoice>(() =>
-    scenarioSets.length > 0
+    editing?.set && scenarioSets.some((x) => x.id === editing.set)
+      ? { kind: "existing", setId: editing.set }
+      : scenarioSets.length > 0
       ? { kind: "existing", setId: scenarioSets[0].id }
       : { kind: "new", name: workflowNameRef?.current?.trim() || "Scenario set" },
   );
@@ -129,25 +133,15 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
     });
   };
 
-  const setId = editing?.set ?? (choice.kind === "existing" ? choice.setId : null);
+  const setId = choice.kind === "existing" ? choice.setId : null;
   const others = scenarios.filter((s) => setId && s.set === setId && s.id !== editing?.id);
   const inSet = (part: Part) => new Set(others.flatMap((s) => s[part] ?? []));
 
   // No two scenarios of a set share a name; a new set has none yet.
-  const nameProblem = editing
-    ? null
-    : scenarioNameProblem(scenarios, scenarioSets, choice.kind === "existing" ? choice.setId : null, name);
+  const nameProblem = scenarioNameProblem(scenarios, scenarioSets, setId, name, editing?.id);
 
   const save = () => {
     if (!lists) return;
-    if (editing) {
-      setScenarios(
-        scenarios.map((s) => (s.id === editing.id ? { ...s, context: lists.context, outcomes: lists.outcomes } : s)),
-      );
-      showToast(`Saved the context and outcomes of "${editing.name}".`, "success");
-      close();
-      return;
-    }
     const scenarioName = name.trim();
     if (!scenarioName) {
       showToast("Give the scenario a name.", "warning");
@@ -169,6 +163,19 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
       sets = [...scenarioSets, { id: target, name: setName }];
     } else {
       target = choice.setId;
+    }
+    if (editing) {
+      const next = scenarios.map((s) =>
+        s.id === editing.id
+          ? { ...s, name: scenarioName, nodes: [...members], set: target, context: lists.context, outcomes: lists.outcomes }
+          : s,
+      );
+      // A set its last scenario left goes with it.
+      const left = editing.set && editing.set !== target && !next.some((s) => s.set === editing.set);
+      setScenarios(next, left ? sets.filter((x) => x.id !== editing.set) : sets);
+      showToast(`Saved "${scenarioName}".`, "success");
+      close();
+      return;
     }
     const scenario: Scenario = {
       id: uuid(),
@@ -235,30 +242,26 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
     );
   };
 
-  const steps = editing ? [STEPS[1]] : STEPS;
-  const current = editing ? 1 : step;
   return (
     <aside className={styles.panel} role="dialog" aria-label="Define scenario" data-testid="scenario-define-panel">
       <header className={styles.header}>
-        <div className={styles.title}>{editing ? `Shared context & outcomes of ${editing.name}` : "Define scenario"}</div>
+        <div className={styles.title}>{editing ? `Edit scenario: ${editing.name}` : "Define scenario"}</div>
         <button type="button" className={styles.close} aria-label="Close" onClick={close}>
           ×
         </button>
       </header>
-      {!editing && (
-        <ol className={styles.steps} aria-label="Steps">
-          {steps.map((label, index) => {
-            const n = index + 1;
-            const state = n < current ? "done" : n === current ? "current" : "todo";
-            return (
-              <li key={label} className={styles.step} data-state={state} aria-current={state === "current" ? "step" : undefined}>
-                <span className={styles.stepMark}>{state === "done" ? "✓" : n}</span>
-                {label}
-              </li>
-            );
-          })}
-        </ol>
-      )}
+      <ol className={styles.steps} aria-label="Steps">
+        {STEPS.map((label, index) => {
+          const n = index + 1;
+          const state = n < step ? "done" : n === step ? "current" : "todo";
+          return (
+            <li key={label} className={styles.step} data-state={state} aria-current={state === "current" ? "step" : undefined}>
+              <span className={styles.stepMark}>{state === "done" ? "✓" : n}</span>
+              {label}
+            </li>
+          );
+        })}
+      </ol>
       <div className={styles.body}>
         {step === 1 && (
           <section className={styles.part} aria-label="Scenario-specific nodes">
@@ -267,6 +270,7 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
               Select them on the canvas: click one, or hold Shift and drag a box around several. These are the nodes
               this scenario changes, such as a widget value, a line of code or an edited layer. Leave out the data
               they read and the views they feed: Curio finds those next.
+              {editing ? " The scenario's nodes are selected: change the selection to change them." : null}
             </p>
             {selection.length === 0 ? (
               <p className={styles.waiting} data-testid="scenario-define-waiting">
@@ -285,23 +289,19 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
 
         {step === 2 && (
           <>
-            {!editing && (
-              <p className={styles.lead}>
-                Curio followed the links from{" "}
-                <b>
-                  {members.length} scenario node{members.length === 1 ? "" : "s"}
-                </b>
-                . Check what it found: remove what is not part of the comparison, or select a node on the canvas and add
-                it.
-              </p>
-            )}
+            <p className={styles.lead}>
+              {editing ? "The scenario's shared context and outcomes, for its " : "Curio followed the links from "}
+              <b>
+                {members.length} scenario node{members.length === 1 ? "" : "s"}
+              </b>
+              . Check {editing ? "them" : "what it found"}: remove what is not part of the comparison, or select a node
+              on the canvas and add it.
+            </p>
             {list("context", "Shared context", "The nodes upstream that this scenario uses, held the same across scenarios.")}
             {list("outcomes", "Shared outcomes", "The nodes downstream that this scenario feeds: what the scenarios are compared on.")}
-            {!editing && (
-              <button type="button" className={styles.link} onClick={() => infer(members)}>
-                Start again from what Curio found
-              </button>
-            )}
+            <button type="button" className={styles.link} onClick={() => infer(members)}>
+              Start again from what Curio found
+            </button>
           </>
         )}
 
@@ -380,7 +380,7 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
         <button type="button" className={styles.secondary} onClick={close}>
           Cancel
         </button>
-        {!editing && step > 1 && (
+        {step > 1 && (
           <button type="button" className={styles.secondary} onClick={() => setStep(step - 1)}>
             Back
           </button>
@@ -390,12 +390,12 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
             Next: shared context & outcomes
           </button>
         )}
-        {step === 2 && !editing && (
-          <button type="button" className={styles.primary} onClick={() => setStep(3)}>
+        {step === 2 && (
+          <button type="button" className={editing ? styles.secondary : styles.primary} onClick={() => setStep(3)}>
             Next: name & set
           </button>
         )}
-        {(step === 3 || editing) && (
+        {(step === 3 || (editing && step === 2)) && (
           <button
             type="button"
             className={styles.primary}

@@ -1,4 +1,15 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import {
+  faClone,
+  faCompress,
+  faExpand,
+  faPen,
+  faPlay,
+  faPlus,
+  faTrashCan,
+  type IconDefinition,
+} from "@fortawesome/free-solid-svg-icons";
 
 import { useSharedView } from "../../../hook/useSharedView";
 import { useFlowContext } from "../../../providers/FlowProvider";
@@ -10,10 +21,9 @@ import { useScenarioUi } from "../scenarioUi";
 import { useScenarioActions } from "../useScenarioActions";
 import { ScenarioCard } from "./ScenarioCard";
 import { ScenarioDetailModal } from "./ScenarioDetailModal";
+import { ScenarioSetGroup } from "./ScenarioSetGroup";
 import { inProjectDetails, inProjectRow, liveGraphPreview, type LiveProject } from "./inProjectRows";
-import { scenarioCount } from "./scenarioFacts";
 import shell from "../../packages/publishing/CatalogDrawerShell.module.css";
-import buttons from "../../packages/publishing/PackageCard.module.css";
 import styles from "./ScenarioCatalogDrawer.module.css";
 
 export interface InProjectScenariosProps {
@@ -30,11 +40,10 @@ type ScenarioActions = ReturnType<typeof useScenarioActions>;
 
 /**
  * The Scenario Catalog drawer's In project tab: the open dataflow's scenarios,
- * read off the canvas, so an unsaved one is listed too. On top, Save selection
- * as scenario and Duplicate as scenario; on each card, Run scenario, Collapse
- * or Expand, Add selected and Remove selected (the canvas selection made
- * before the drawer opened) and Delete; in its details, its name, color and
- * description. Pointing at a card marks the scenario's fixed context on the
+ * read off the canvas, so an unsaved one is listed too, inside a panel per
+ * scenario set. On top, Define scenario and Duplicate as scenario; on each
+ * card, Run scenario, Collapse or Expand, Edit scenario (Define scenario on
+ * it) and Delete; in its details, its name, color and description. Pointing at a card marks the scenario's fixed context on the
  * canvas. A shared viewer reads them and changes nothing.
  */
 export function InProjectScenarios({ scenarios, search, sort, presented }: InProjectScenariosProps) {
@@ -97,18 +106,14 @@ export function InProjectScenarios({ scenarios, search, sort, presented }: InPro
     <>
       {!shared ? (
         <div className={styles.inProjectActions}>
-          <button type="button" className={buttons.btnInstall} onClick={actions.saveSelectionAsScenario}>
-            Define scenario
-          </button>
+          <ToolButton icon={faPlus} label="Define scenario" primary onClick={actions.saveSelectionAsScenario} />
           {/* Duplicating adds nodes, which happens on the canvas only. */}
-          <button
-            type="button"
-            className={buttons.btnInstall}
+          <ToolButton
+            icon={faClone}
+            label="Duplicate as scenario"
             onClick={() => actions.duplicate(true)}
             disabled={notebookOn}
-          >
-            Duplicate as scenario
-          </button>
+          />
         </div>
       ) : null}
 
@@ -121,29 +126,34 @@ export function InProjectScenarios({ scenarios, search, sort, presented }: InPro
         <div className={shell.empty}>No scenarios match the current search.</div>
       ) : (
         groups.map((group) => (
-          <section key={group.id || "loose"} aria-label={group.name} data-scenario-set={group.id}>
-            <h3 className={styles.groupHeading}>
-              <span className={styles.groupName}>{group.name}</span>{" "}
-              <span className={styles.groupCount}>{scenarioCount(group.items.length)}</span>
-            </h3>
-            <div className={shell.cardList}>
-              {group.items.map(({ scenario, parts }) => (
-                <ScenarioCard
-                  key={scenario.id}
-                  scenario={inProjectRow(scenario, parts, project, preview)}
-                  testId={`scenario-card-${scenario.id}`}
-                  highlight={{ color: scenario.color, members: parts.levers, context: scenario.context ?? parts.context }}
-                  onOpenDetails={() => setDetailId(scenario.id)}
-                  onPoint={(on) => setHighlighted(on ? scenario.id : null)}
-                  controls={
-                    shared ? undefined : (
-                      <ScenarioControls scenario={scenario} parts={parts} actions={actions} onDelete={remove} />
-                    )
-                  }
-                />
-              ))}
-            </div>
-          </section>
+          <ScenarioSetGroup
+            key={group.id || "loose"}
+            name={group.name}
+            count={group.items.length}
+            isSet={Boolean(group.id)}
+            data={{ "data-scenario-set": group.id }}
+          >
+            {group.items.map(({ scenario, parts }) => (
+              <ScenarioCard
+                key={scenario.id}
+                scenario={inProjectRow(scenario, parts, project, preview)}
+                testId={`scenario-card-${scenario.id}`}
+                highlight={{
+                  color: scenario.color,
+                  members: parts.levers,
+                  context: scenario.context ?? parts.context,
+                  outcomes: scenario.outcomes ?? parts.outcomes,
+                }}
+                onOpenDetails={() => setDetailId(scenario.id)}
+                onPoint={(on) => setHighlighted(on ? scenario.id : null)}
+                controls={
+                  shared ? undefined : (
+                    <ScenarioControls scenario={scenario} parts={parts} actions={actions} onDelete={remove} />
+                  )
+                }
+              />
+            ))}
+          </ScenarioSetGroup>
         ))
       )}
 
@@ -165,8 +175,44 @@ export function InProjectScenarios({ scenarios, search, sort, presented }: InPro
   );
 }
 
+/** A small bordered button with an icon. *danger* (Delete) shows the icon
+ *  alone, named by its tooltip and accessible name. */
+function ToolButton({
+  icon,
+  label,
+  onClick,
+  disabled,
+  primary,
+  danger,
+}: {
+  icon: IconDefinition;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  primary?: boolean;
+  danger?: boolean;
+}) {
+  const className = [styles.tool, primary ? styles.toolPrimary : "", danger ? styles.toolDanger : ""]
+    .filter(Boolean)
+    .join(" ");
+  return (
+    <button
+      type="button"
+      className={className}
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={danger ? label : undefined}
+      data-tooltip={danger ? label : undefined}
+    >
+      <FontAwesomeIcon icon={icon} className={styles.toolIcon} aria-hidden />
+      {danger ? null : label}
+    </button>
+  );
+}
+
 /** A card's buttons. A scenario with no node left can neither run nor
- *  collapse. */
+ *  collapse; Edit scenario opens Define scenario on it, where its nodes,
+ *  shared context and outcomes, name and set are changed. */
 function ScenarioControls({
   scenario,
   parts,
@@ -181,39 +227,21 @@ function ScenarioControls({
   const empty = parts.levers.length === 0;
   return (
     <>
-      <button
-        type="button"
-        className={buttons.btnInstall}
+      <ToolButton
+        icon={faPlay}
+        label="Run scenario"
+        primary
         onClick={() => actions.runScenario(scenario.id)}
         disabled={empty}
-      >
-        Run scenario
-      </button>
-      <button
-        type="button"
-        className={buttons.btnInstall}
+      />
+      <ToolButton
+        icon={scenario.collapsed ? faExpand : faCompress}
+        label={scenario.collapsed ? "Expand" : "Collapse"}
         onClick={() => actions.setCollapsed(scenario.id, !scenario.collapsed)}
         disabled={empty}
-      >
-        {scenario.collapsed ? "Expand" : "Collapse"}
-      </button>
-      <button
-        type="button"
-        className={buttons.btnInstall}
-        onClick={() => actions.editContextAndOutcomes(scenario.id)}
-        disabled={empty}
-      >
-        Edit shared context &amp; outcomes
-      </button>
-      <button type="button" className={buttons.btnInstall} onClick={() => actions.addSelected(scenario.id)}>
-        Add selected
-      </button>
-      <button type="button" className={buttons.btnSecondary} onClick={() => actions.removeSelected(scenario.id)}>
-        Remove selected
-      </button>
-      <button type="button" className={buttons.btnSecondary} onClick={() => onDelete(scenario.id)}>
-        Delete
-      </button>
+      />
+      <ToolButton icon={faPen} label="Edit scenario" onClick={() => actions.editScenario(scenario.id)} />
+      <ToolButton icon={faTrashCan} label="Delete" danger onClick={() => onDelete(scenario.id)} />
     </>
   );
 }

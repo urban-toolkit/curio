@@ -99,7 +99,7 @@ describe("ScenarioDetailModal", () => {
     expect(section("Shared context").queryByText("No saved output")).toBeNull();
   });
 
-  test("marks the levers and the fixed context on the project graph", async () => {
+  test("marks the levers, the shared context and the shared outcomes on the project graph", async () => {
     api.getScenario.mockResolvedValue(heatDetails());
     renderModal();
     await modal().findByRole("region", { name: "Scenario-specific nodes" });
@@ -109,7 +109,7 @@ describe("ScenarioDetailModal", () => {
     expect(thumb.querySelector("svg")).toHaveAttribute("data-thumbnail-highlight", "true");
     expect(role("member")).toBe(2);
     expect(role("context")).toBe(1);
-    expect(role("faded")).toBe(1);
+    expect(role("outcome")).toBe(1);
   });
 
   test("shows the listing's row at once, while its details load", () => {

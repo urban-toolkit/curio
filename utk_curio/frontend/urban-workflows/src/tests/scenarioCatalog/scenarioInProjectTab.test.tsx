@@ -47,8 +47,7 @@ const mockActions = {
   update: jest.fn(),
   setCollapsed: jest.fn(),
   moveBox: jest.fn(),
-  addSelected: jest.fn(),
-  removeSelected: jest.fn(),
+  editScenario: jest.fn(),
   remove: jest.fn(),
 };
 jest.mock("../../components/scenarios/useScenarioActions", () => ({
@@ -167,7 +166,7 @@ describe("the Scenario Catalog drawer's In project tab", () => {
     await openInProject();
     expect(tab("In project")).toHaveAttribute("aria-pressed", "true");
     expect(within(card("s-doubled")).getByText("Doubled")).toBeInTheDocument();
-    expect(within(card("s-doubled")).getByText("Heights · 1 node")).toBeInTheDocument();
+    expect(within(card("s-doubled")).getByText("1 node")).toBeInTheDocument();
     expect(within(card("s-doubled")).getByText("Every height twice.")).toBeInTheDocument();
     expect(within(card("s-charted")).getByText("Charted")).toBeInTheDocument();
     // Browse all's listing is not In project's: its card is not here.
@@ -182,10 +181,8 @@ describe("the Scenario Catalog drawer's In project tab", () => {
     expect(mockActions.runScenario).toHaveBeenCalledWith("s-doubled");
     fireEvent.click(button("s-doubled", "Collapse"));
     expect(mockActions.setCollapsed).toHaveBeenCalledWith("s-doubled", true);
-    fireEvent.click(button("s-doubled", "Add selected"));
-    expect(mockActions.addSelected).toHaveBeenCalledWith("s-doubled");
-    fireEvent.click(button("s-doubled", "Remove selected"));
-    expect(mockActions.removeSelected).toHaveBeenCalledWith("s-doubled");
+    fireEvent.click(button("s-doubled", "Edit scenario"));
+    expect(mockActions.editScenario).toHaveBeenCalledWith("s-doubled");
     fireEvent.click(button("s-doubled", "Delete"));
     expect(mockActions.remove).toHaveBeenCalledWith("s-doubled");
     // Each acted on its own scenario only.
@@ -203,10 +200,10 @@ describe("the Scenario Catalog drawer's In project tab", () => {
     mockFlow.scenarios = [DOUBLED, CHARTED, GONE];
     await openInProject();
     expect(tab("In project")).toHaveTextContent(/^In project3$/);
-    expect(within(card("s-gone")).getByText("Heights · 0 nodes")).toBeInTheDocument();
+    expect(within(card("s-gone")).getByText("0 nodes")).toBeInTheDocument();
     expect(button("s-gone", "Run scenario")).toBeDisabled();
     expect(button("s-gone", "Collapse")).toBeDisabled();
-    expect(button("s-gone", "Add selected")).toBeEnabled();
+    expect(button("s-gone", "Edit scenario")).toBeEnabled();
     expect(button("s-gone", "Delete")).toBeEnabled();
   });
 

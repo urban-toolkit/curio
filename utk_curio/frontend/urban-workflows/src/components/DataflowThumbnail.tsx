@@ -18,8 +18,8 @@ const PAD = 16;
 const NODE_W = 28;
 const NODE_H = 16;
 
-// What a highlight paints: a scenario's own nodes in its colour, the nodes
-// that feed it with a dark dashed outline, and everything else faded.
+// What a highlight paints: a scenario's own nodes in its colour, its shared
+// context and outcomes with a dark dashed outline, and everything else faded.
 const CONTEXT_STROKE = "#2f3034";
 const FADED_OPACITY = 0.3;
 
@@ -31,6 +31,8 @@ export interface ThumbnailHighlight {
   members: readonly string[];
   /** The nodes that feed them: a dark dashed outline. */
   context?: readonly string[];
+  /** The nodes they feed: the same outline, as on the canvas. */
+  outcomes?: readonly string[];
 }
 
 interface Props {
@@ -100,8 +102,9 @@ const DataflowThumbnail: React.FC<Props> = ({ preview, highlight }) => {
   // one every spread below is empty, so the plain drawing cannot move.
   const members = new Set(highlight?.members ?? []);
   const context = new Set(highlight?.context ?? []);
+  const outcomes = new Set(highlight?.outcomes ?? []);
   const roleOf = (id: string) =>
-    members.has(id) ? "member" : context.has(id) ? "context" : "faded";
+    members.has(id) ? "member" : context.has(id) ? "context" : outcomes.has(id) ? "outcome" : "faded";
   const edgeMarks = (source: string, target: string) => {
     if (!highlight) return {};
     if (members.has(source) && members.has(target)) {
@@ -121,7 +124,7 @@ const DataflowThumbnail: React.FC<Props> = ({ preview, highlight }) => {
         box: { fill: highlight.color, fillOpacity: 0.18, stroke: highlight.color, strokeWidth: 1.5 },
       };
     }
-    if (role === "context") {
+    if (role === "context" || role === "outcome") {
       return {
         group: { "data-thumbnail-role": role },
         box: { stroke: CONTEXT_STROKE, strokeWidth: 1, strokeDasharray: "2 1.5" },

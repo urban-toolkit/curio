@@ -234,14 +234,62 @@ describe("defining a scenario", () => {
   });
 });
 
-describe("editing a scenario's context and outcomes", () => {
-  test("starts from what it keeps and saves only those", () => {
+describe("Edit scenario", () => {
+  const TOWERS = { id: "t", name: "Towers", color: "#e76f51", nodes: ["towers"], set: "park", context: ["load"], outcomes: ["chart"] };
+
+  test("the same three steps, starting from the scenario's nodes", () => {
     mockFlow.scenarios = [{ ...EXISTING, outcomes: ["chart"] }];
     mockFlow.scenarioSets = [{ id: "park", name: "Park shade" }];
+    select("existing");
     renderPanel({ mode: "edit", scenarioId: "e" });
+    expect(screen.getByRole("dialog", { name: "Define scenario" })).toHaveTextContent("Edit scenario: Existing");
+    expect(screen.getAllByRole("listitem").map((li) => li.textContent)).toEqual(
+      expect.arrayContaining(["1Scenario-specific nodes", "2Shared context & outcomes", "3Name & set"]),
+    );
+    expect(screen.getByText("1 node selected")).toBeInTheDocument();
+    click("Next: shared context & outcomes");
+    // The same nodes: what it keeps, not inferred anew.
     expect(part("Shared outcomes").queryByText("change")).toBeNull();
     click("Remove heights");
+    // Saved from step 2, in place.
     fireEvent.click(screen.getByTestId("scenario-define-save"));
-    expect(mockFlow.setScenarios).toHaveBeenCalledWith([{ ...EXISTING, context: ["load"], outcomes: ["chart"] }]);
+    expect(mockFlow.setScenarios).toHaveBeenCalledWith(
+      [{ ...EXISTING, context: ["load"], outcomes: ["chart"] }],
+      [{ id: "park", name: "Park shade" }],
+    );
+  });
+
+  test("changes its nodes, name and set, and a set it leaves empty goes", () => {
+    mockFlow.scenarios = [EXISTING];
+    mockFlow.scenarioSets = [{ id: "park", name: "Park shade" }];
+    select("existing", "towers");
+    renderPanel({ mode: "edit", scenarioId: "e" });
+    click("Next: shared context & outcomes");
+    click("Next: name & set");
+    expect(screen.getByTestId("scenario-define-name")).toHaveValue("Existing");
+    expect(screen.getByRole("radio", { name: /Park shade/ })).toBeChecked();
+    fireEvent.change(screen.getByTestId("scenario-define-name"), { target: { value: "Both" } });
+    fireEvent.click(screen.getByRole("radio", { name: /Create a new scenario set/ }));
+    fireEvent.click(screen.getByTestId("scenario-define-save"));
+    const [scenarios, sets] = mockFlow.setScenarios.mock.calls[0];
+    expect(sets).toHaveLength(1);
+    expect(sets[0]).toEqual(expect.objectContaining({ name: "Park shade" }));
+    expect(sets[0].id).not.toBe("park");
+    expect(scenarios).toEqual([
+      expect.objectContaining({ id: "e", color: EXISTING.color, name: "Both", nodes: ["existing", "towers"], set: sets[0].id }),
+    ]);
+  });
+
+  test("its own name is fine; a sibling's is not", () => {
+    mockFlow.scenarios = [EXISTING, TOWERS];
+    mockFlow.scenarioSets = [{ id: "park", name: "Park shade" }];
+    select("existing");
+    renderPanel({ mode: "edit", scenarioId: "e" });
+    click("Next: shared context & outcomes");
+    click("Next: name & set");
+    expect(screen.queryByRole("alert")).toBeNull();
+    fireEvent.change(screen.getByTestId("scenario-define-name"), { target: { value: "towers" } });
+    expect(screen.getByRole("alert")).toHaveTextContent('"Towers" is already a scenario in "Park shade".');
+    expect(screen.getByTestId("scenario-define-save")).toBeDisabled();
   });
 });

@@ -11,13 +11,11 @@ import type { Scenario, SharedKind } from "../../utils/scenarios/scenarioModel";
 import { updateSharedLook } from "../../utils/scenarios/scenarioSets";
 import { duplicateSelection } from "../../utils/scenarios/duplicateSelection";
 import {
-  addNodesToScenario,
   createScenario,
   deleteScenario,
   nextScenarioColor,
   nextScenarioName,
   overlapProblem,
-  removeNodesFromScenarios,
   scenarioHoldingExactly,
   updateScenario,
   type ScenarioEdit,
@@ -94,13 +92,24 @@ export function useScenarioActions() {
     setDefine({ mode: "new", nodes: ids });
   }, [scenarios, selectedIds, closeScenarioCatalogDrawer, setDefine]);
 
-  /** Opens the define panel on a scenario, to edit its context and outcomes. */
-  const editContextAndOutcomes = useCallback(
+  /**
+   * Edit scenario: opens the define panel on a saved scenario, where its nodes,
+   * shared context and outcomes, name and set are changed. The scenario is
+   * expanded and its nodes are selected, which step 1 starts from.
+   */
+  const editScenario = useCallback(
     (id: string) => {
+      const scenario = scenarios.find((s) => s.id === id);
+      if (!scenario) return;
       closeScenarioCatalogDrawer();
+      if (scenario.collapsed) setScenarios(updateScenario(scenarios, id, { collapsed: false }));
+      const members = new Set(scenario.nodes);
+      reactFlow.setNodes((all) =>
+        all.map((n) => (Boolean(n.selected) === members.has(n.id) ? n : { ...n, selected: members.has(n.id) })),
+      );
       setDefine({ mode: "edit", scenarioId: id });
     },
-    [closeScenarioCatalogDrawer, setDefine],
+    [scenarios, closeScenarioCatalogDrawer, setScenarios, reactFlow, setDefine],
   );
 
   const saveDataflowAsScenario = useCallback(() => {
@@ -209,31 +218,11 @@ export function useScenarioActions() {
     [saved, scenarioSets, setScenarios],
   );
 
-  const addSelected = useCallback(
-    (id: string) => apply(addNodesToScenario(scenarios, id, selectedIds())),
-    [scenarios, selectedIds, apply],
-  );
-
-  /** Take the selected nodes of the scenario *id* out of it; it keeps the others. */
-  const removeSelected = useCallback(
-    (id: string) => {
-      const scenario = scenarios.find((s) => s.id === id);
-      if (!scenario) return;
-      const ids = selectedIds().filter((n) => scenario.nodes.includes(n));
-      if (ids.length === 0) {
-        showToast(`Select nodes of "${scenario.name}" to take out first.`, "warning");
-        return;
-      }
-      setScenarios(removeNodesFromScenarios(scenarios, ids));
-    },
-    [scenarios, selectedIds, setScenarios, showToast],
-  );
-
   const remove = useCallback((id: string) => setScenarios(deleteScenario(scenarios, id)), [scenarios, setScenarios]);
 
   return {
     saveSelectionAsScenario,
-    editContextAndOutcomes,
+    editScenario,
     saveDataflowAsScenario,
     duplicate,
     runScenario,
@@ -242,8 +231,6 @@ export function useScenarioActions() {
     moveBox,
     setSharedCollapsed,
     moveSharedBox,
-    addSelected,
-    removeSelected,
     remove,
   };
 }

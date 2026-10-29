@@ -28,7 +28,8 @@ export interface ScenarioCardProps {
  * One scenario in the canvas Scenario Catalog drawer.
  *
  * The Model drawer's card body: an avatar with the way into the details
- * beneath it, a title and ONE meta line, then the description. The avatar is
+ * beneath it, a title and ONE meta line (its node count; the set panel it sits
+ * in names the set), then the description. The avatar is
  * the project's graph, the picture that tells two scenarios apart; which of its
  * nodes the scenario holds shows in the details, which load them. In Browse
  * all the whole card is the drag source, as a model card is: dropped on the
@@ -96,7 +97,7 @@ export const ScenarioCard: React.FC<ScenarioCardProps> = ({
         </h3>
         <div className={styles.cardMetaRow}>
           <span className={styles.cardMetaText}>
-            {[scenario.project.name, scenarioNodeCount(scenario)].join(" · ")}
+            {scenarioNodeCount(scenario)}
           </span>
         </div>
         {scenario.description ? (

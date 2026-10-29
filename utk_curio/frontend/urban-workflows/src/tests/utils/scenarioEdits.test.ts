@@ -5,12 +5,10 @@
  */
 import {
   SCENARIO_COLORS,
-  addNodesToScenario,
   createScenario,
   deleteScenario,
   nextScenarioColor,
   nextScenarioName,
-  removeNodesFromScenarios,
   scenarioHoldingExactly,
   updateScenario,
 } from "../../utils/scenarios/scenarioEdits";
@@ -49,25 +47,6 @@ describe("names and colors", () => {
     expect(nextScenarioColor([])).toBe(SCENARIO_COLORS[0]);
     const all = SCENARIO_COLORS.map((color, i) => ({ ...baseline, id: `s${i}`, color }));
     expect(nextScenarioColor(all)).toBe(SCENARIO_COLORS[0]);
-  });
-});
-
-describe("adding and removing nodes", () => {
-  const other: Scenario = { id: "s2", name: "Twice as tall", color: SCENARIO_COLORS[1], nodes: ["c"] };
-
-  test("adds nodes once", () => {
-    const edit = addNodesToScenario([baseline, other], "s1", ["b", "d"]);
-    expect(edit.scenarios![0].nodes).toEqual(["a", "b", "d"]);
-  });
-
-  test("refuses a node of another scenario", () => {
-    expect(addNodesToScenario([baseline, other], "s1", ["c"]).error).toMatch(/"Twice as tall"/);
-  });
-
-  test("takes nodes out of whichever scenario holds them, leaving the others as they are", () => {
-    const next = removeNodesFromScenarios([baseline, other], ["b"]);
-    expect(next[0].nodes).toEqual(["a"]);
-    expect(next[1]).toBe(other);
   });
 });
 

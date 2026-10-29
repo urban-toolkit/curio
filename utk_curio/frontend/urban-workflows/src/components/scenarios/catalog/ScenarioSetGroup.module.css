@@ -1,0 +1,58 @@
+/* A scenario set in the Scenario Catalog drawer: a panel holding its
+   scenarios' cards, so each card reads as one of the set's. */
+.group {
+  margin-bottom: 16px;
+  padding: 12px;
+  border: 1px solid var(--curio-border);
+  border-radius: var(--curio-radius-lg);
+  background: var(--curio-surface-muted);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--curio-text-secondary);
+}
+
+.name {
+  margin: 0;
+  font-size: var(--curio-font-size-md);
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--curio-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.count {
+  flex: none;
+  padding: 3px 10px;
+  border-radius: var(--curio-radius-pill);
+  background: var(--curio-text-primary);
+  color: var(--curio-card-bg);
+  font-size: var(--curio-font-size-xs);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}

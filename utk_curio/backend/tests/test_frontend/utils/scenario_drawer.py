@@ -1,7 +1,7 @@
 """The open dataflow's scenarios: the Scenario Catalog drawer's In project tab.
 
-Each scenario is a card there with Run scenario, Collapse or Expand, Add
-selected, Remove selected and Delete, and its details hold its name, color and
+Each scenario is a card there with Run scenario, Collapse or Expand, Edit
+scenario and Delete, and its details hold its name, color and
 description and list its fixed context, levers and outcomes. Every scenario
 test reaches them through these helpers.
 
@@ -64,8 +64,8 @@ def in_project_card(page: Page, scenario_id: str):
 
 
 def scenario_card_button(page: Page, scenario_id: str, name: str):
-    """One of the card's buttons: Run scenario, Collapse, Expand, Add
-    selected, Remove selected or Delete."""
+    """One of the card's buttons: Run scenario, Collapse, Expand, Edit
+    scenario or Delete."""
     return in_project_card(page, scenario_id).get_by_role("button", name=name, exact=True)
 
 

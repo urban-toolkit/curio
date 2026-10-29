@@ -828,15 +828,15 @@ and each scenario's card offers:
 - **Run scenario**: run its nodes, and of the nodes feeding it only those that
   have not run or have changed since;
 - **Collapse** or **Expand**;
-- **Edit shared context & outcomes**: the define panel, on what the scenario keeps;
-- **Add selected** or **Remove selected**: the nodes selected on the canvas
-  before the drawer opened;
-- **Delete**. Its nodes stay on the canvas.
+- **Edit scenario**: the define panel, on what the scenario keeps: its nodes
+  are selected on the canvas, and its context, outcomes, name and set are
+  filled in. Change any step; **Save** changes it in place;
+- **Delete** (the bin). Its nodes stay on the canvas.
 
 **View details** on a card renames, recolors and describes the scenario, and
 lists its shared context, its own nodes and its outcomes. Pointing at a card marks
 the scenario's context and outcomes on the canvas. The tab lists the scenarios
-under their sets. In a dataflow someone shares with you,
+in a panel per set, headed by its name and how many scenarios it holds. In a dataflow someone shares with you,
 the tab lists the scenarios without these controls.
 
 On the canvas, an expanded scenario's nodes wear its color inside a frame, with its
