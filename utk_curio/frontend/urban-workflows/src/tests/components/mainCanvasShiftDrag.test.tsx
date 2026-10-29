@@ -16,7 +16,7 @@ import { ReactFlowProvider, type Node, type NodeChange } from "reactflow";
 let mockCanvasRenders = 0;
 let mockFlow: any = null;
 const mockSetActivePackageKey = jest.fn();
-const mockCollab = { broadcastNodeUpdated: jest.fn() };
+const mockCollab = {};
 const mockMotionHint = { onMoveStart: jest.fn(), onMove: jest.fn(), onMoveEnd: jest.fn() };
 const mockDropScenario = jest.fn();
 

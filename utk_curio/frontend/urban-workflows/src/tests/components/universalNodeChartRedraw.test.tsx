@@ -78,12 +78,9 @@ jest.mock("../../providers/ProvenanceProvider", () => ({
 jest.mock("../../providers/ToastProvider", () => ({ useToastContext: () => ({ showToast: () => undefined }) }));
 jest.mock("../../providers/CollaborationProvider", () => ({
   useCollab: () => ({
-    enabled: false,
     connected: false,
     users: [],
-    proposals: [],
     lockedNodes: {},
-    currentUserId: null,
     onRemote: () => () => undefined,
   }),
 }));
