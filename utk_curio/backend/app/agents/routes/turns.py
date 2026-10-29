@@ -19,6 +19,7 @@ from utk_curio.backend.app.agents.routes.common import _error
 from utk_curio.backend.app.agents.routes.common import _llm_for_attachment
 from utk_curio.backend.app.agents.routes.common import _provider_error
 from utk_curio.backend.app.agents.routes.common import _svc_error
+from utk_curio.backend.app.agents.routes.common import _working_dataflow
 from utk_curio.backend.app.agents.routes.common import agents_bp
 from utk_curio.backend.app.agents.service import AgentServiceError
 from utk_curio.backend.app.projects import repositories as projects_repo
@@ -40,6 +41,7 @@ def run_attachment(project_id: str, attachment_id: str):
         return _error("'context' must be a string when present")
     try:
         projects_repo.get_for_user(project_id, g.user.id)
+        project_id = _working_dataflow(project_id)
         config = _llm_for_attachment(project_id, attachment_id)
         payload = agents_services.run_attachment(
             _user_dir_key(g.user), project_id, attachment_id, message, config, run_context
@@ -82,6 +84,7 @@ def stream_attachment(project_id: str, attachment_id: str):
         return _error("'context' must be a string when present")
     try:
         projects_repo.get_for_user(project_id, g.user.id)
+        project_id = _working_dataflow(project_id)
         config = _llm_for_attachment(project_id, attachment_id)
         events = agents_services.stream_attachment(
             _user_dir_key(g.user), project_id, attachment_id, message, config, run_context
