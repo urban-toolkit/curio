@@ -2,23 +2,37 @@
 
 Presentation layer of the agents package (memo dev/142, B4-1; re-derived on enh/agent-catalog): the handlers
 of ``routes.py`` by resource, bodies verbatim, registered on the one ``agents_bp`` from ``routes/common.py``.
+
+An install a proposal makes changes the account of the dataflow's owner, so
+an editor the owner invited neither applies nor dismisses one: it waits for
+the owner's review (``application/editors.py``).
 """
 
 from __future__ import annotations
 
-from flask import g
 from flask import jsonify
 from flask import request
 
 from utk_curio.backend.app.agents import service as agents_services
+from utk_curio.backend.app.agents.routes.common import Dataflow
+from utk_curio.backend.app.agents.routes.common import _dataflow
 from utk_curio.backend.app.agents.routes.common import _error
 from utk_curio.backend.app.agents.routes.common import _svc_error
-from utk_curio.backend.app.agents.routes.common import _working_dataflow
 from utk_curio.backend.app.agents.routes.common import agents_bp
 from utk_curio.backend.app.agents.service import AgentServiceError
 from utk_curio.backend.app.projects import repositories as projects_repo
-from utk_curio.backend.app.projects.services import _user_dir_key
 from utk_curio.backend.app.users.dependencies import require_auth
+
+
+def _owners_install(flow: Dataflow, attachment_id: str, proposal_id: str) -> None:
+    """Refuse an editor's review of an install, which is the owner's."""
+    if not flow.editor:
+        return
+    refusal = agents_services.install_refusal(
+        flow.key, flow.project_id, attachment_id, proposal_id, flow.owner_name,
+    )
+    if refusal:
+        raise AgentServiceError(refusal, 403)
 
 
 @agents_bp.route(
@@ -29,13 +43,14 @@ from utk_curio.backend.app.users.dependencies import require_auth
 def apply_proposal(project_id: str, attachment_id: str, proposal_id: str):
     """Apply a pending review proposal (memo dev/41) — the only mutation path.
 
-    Explicit, owner-authenticated, revision-safe: a drifted target returns a
-    409 and marks the proposal stale. Consumes no quota."""
+    Explicit, authenticated, revision-safe: a drifted target returns a 409
+    and marks the proposal stale. Consumes no quota. An install waits for the
+    dataflow owner's own Apply."""
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        project_id = _working_dataflow(project_id)
+        flow = _dataflow(project_id)
+        _owners_install(flow, attachment_id, proposal_id)
         payload = agents_services.apply_proposal(
-            _user_dir_key(g.user), project_id, attachment_id, proposal_id
+            flow.key, flow.project_id, attachment_id, proposal_id
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
@@ -59,10 +74,9 @@ def apply_plan_node(project_id: str, attachment_id: str, proposal_id: str):
     if not isinstance(ref, str) or not ref.strip():
         return _error("body must include a non-empty 'ref'")
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        project_id = _working_dataflow(project_id)
+        flow = _dataflow(project_id)
         payload = agents_services.apply_plan_node(
-            _user_dir_key(g.user), project_id, attachment_id, proposal_id, ref.strip()
+            flow.key, flow.project_id, attachment_id, proposal_id, ref.strip()
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
@@ -88,10 +102,9 @@ def apply_plan_edges(project_id: str, attachment_id: str, proposal_id: str):
     ):
         return _error("'edges' must be a list of integer indices when present")
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        project_id = _working_dataflow(project_id)
+        flow = _dataflow(project_id)
         payload = agents_services.apply_plan_edges(
-            _user_dir_key(g.user), project_id, attachment_id, proposal_id, indices
+            flow.key, flow.project_id, attachment_id, proposal_id, indices
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
@@ -117,10 +130,9 @@ def set_plan_goal(project_id: str, attachment_id: str, proposal_id: str):
     if not isinstance(goal, str):
         return _error("body must include a 'goal' string")
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        project_id = _working_dataflow(project_id)
+        flow = _dataflow(project_id)
         payload = agents_services.set_plan_goal(
-            _user_dir_key(g.user), project_id, attachment_id, proposal_id,
+            flow.key, flow.project_id, attachment_id, proposal_id,
             ref.strip(), goal,
         )
     except projects_repo.NotFoundError:
@@ -136,12 +148,13 @@ def set_plan_goal(project_id: str, attachment_id: str, proposal_id: str):
 )
 @require_auth
 def dismiss_proposal(project_id: str, attachment_id: str, proposal_id: str):
-    """Dismiss a pending review proposal without applying it."""
+    """Dismiss a pending review proposal without applying it. An install
+    waits for the dataflow owner's own review."""
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        project_id = _working_dataflow(project_id)
+        flow = _dataflow(project_id)
+        _owners_install(flow, attachment_id, proposal_id)
         payload = agents_services.dismiss_proposal(
-            _user_dir_key(g.user), project_id, attachment_id, proposal_id
+            flow.key, flow.project_id, attachment_id, proposal_id
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
