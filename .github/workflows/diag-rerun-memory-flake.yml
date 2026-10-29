@@ -1,10 +1,9 @@
 name: Diag rerun memory flake
 
-# Diagnostic only, on a tmp branch that is never merged. Replays #408's
-# dataflow inside main's CI images, on ubuntu-latest as the unit (sandbox)
-# job does, and records what the replay's sandbox keeps at rest
-# (.github/diag/rerun_memory_probe.py). This round: the cost of glibc's fixed
-# thresholds, every setting on the same runner, interleaved.
+# Diagnostic only, on a tmp branch that is never merged. This round: the two
+# sandbox test files of the fix's tree and of the before-run's tree (main plus
+# only the tests), run inside main's CI image on ubuntu-latest, before the PR
+# run and the before-run, so a mistake in a new test does not cost a full run.
 on:
   push:
     branches: ["tmp/rerun-memory-probe"]
@@ -17,15 +16,18 @@ env:
   IMAGE: ghcr.io/urban-toolkit/curio-ci:a18707561b12afdc72ac779357a1bd5099516163
 
 jobs:
-  bench:
+  check:
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        job: [1, 2, 3]
+        tree: [tmp/rerun-memory-flake-check, tmp/rerun-memory-flake-before]
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ matrix.tree }}
+          path: tree
 
       - uses: docker/login-action@v4
         with:
@@ -36,42 +38,11 @@ jobs:
       - name: Pull the image
         run: docker pull --quiet "$IMAGE"
 
-      - name: Machine
-        run: nproc; free -m; lscpu | grep -E "Model name|^CPU\(s\)"; uname -r
-
-      - name: Allocation bench, interleaved
+      - name: The two sandbox test files
         run: |
-          base="-e MALLOC_ARENA_MAX=16 -e ARROW_DEFAULT_MEMORY_POOL=system"
-          for order in "none mmap8m_trim16m mmap32m_trim8m" "mmap8m_trim16m mmap32m_trim8m none" "mmap32m_trim8m none mmap8m_trim16m"; do
-            for setting in $order; do
-              case $setting in
-                none) extra="" ;;
-                mmap4m) extra="-e MALLOC_MMAP_THRESHOLD_=4194304 -e MALLOC_TRIM_THRESHOLD_=8388608" ;;
-                mmap32m_trim8m) extra="-e MALLOC_MMAP_THRESHOLD_=33554432 -e MALLOC_TRIM_THRESHOLD_=8388608" ;;
-                mmap8m_trim16m) extra="-e MALLOC_MMAP_THRESHOLD_=8388608 -e MALLOC_TRIM_THRESHOLD_=16777216" ;;
-              esac
-              echo "round [$order] $setting"
-              docker run --rm -v "$GITHUB_WORKSPACE/.github/diag:/diag:ro" $base $extra "$IMAGE" \
-                python /diag/alloc_bench.py | tee -a "$GITHUB_STEP_SUMMARY"
-            done
-          done
-
-      - name: Replays, interleaved
-        run: |
-          mkdir -p out
-          n=0
-          for variant in launch launch_mmap8m_trim16m launch_mmap32m_trim8m launch_mmap32m_trim8m launch_mmap8m_trim16m launch; do
-            n=$((n + 1))
-            docker run --rm -v "$GITHUB_WORKSPACE/.github/diag:/diag:ro" -v "$GITHUB_WORKSPACE/out:/out" \
-              -e CURIO_ISOLATION=off -e FLASK_USE_RELOADER=0 -e CURIO_LAUNCH_CWD=/app -w /app "$IMAGE" \
-              python /diag/rerun_memory_probe.py --variant "$variant" --label "order$n" \
-                --samples 1 --cycles 10 --out "/out/bench${{ matrix.job }}-$n-$variant.json" \
-              | tee -a "$GITHUB_STEP_SUMMARY"
-          done
-
-      - uses: actions/upload-artifact@v6
-        if: always()
-        with:
-          name: bench-${{ matrix.job }}
-          path: out
-          retention-days: 7
+          git -C tree log -1 --format='tree %h %s'
+          docker run --rm -v "$GITHUB_WORKSPACE/tree:/src" -w /src -e PYTHONPATH=/src \
+            -e CURIO_ISOLATION=off "$IMAGE" \
+            python -m pytest utk_curio/sandbox/tests/test_memory_release.py \
+              utk_curio/sandbox/tests/test_rerun_memory.py -v -p no:cacheprovider -rA \
+            | tee -a "$GITHUB_STEP_SUMMARY" || true
