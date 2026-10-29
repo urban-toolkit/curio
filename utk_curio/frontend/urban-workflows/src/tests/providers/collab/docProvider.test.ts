@@ -254,3 +254,46 @@ test("this tab's presence goes once synced, everyone else's arrives, and a disco
     other.destroy();
     provider.destroy();
 });
+
+/** Hands the others what *socket* sent of its presence from the *from*-th
+ *  message on, as the server relays it. */
+function relayPresence(socket: FakeSocket, others: awarenessProtocol.Awareness, from = 0) {
+    for (const sent of socket.messages().slice(from).filter((m) => kindOf(m) === "awareness")) {
+        const decoder = decoding.createDecoder(sent.payload.message);
+        decoding.readVarUint(decoder);
+        awarenessProtocol.applyAwarenessUpdate(others, decoding.readVarUint8Array(decoder), "server");
+    }
+}
+
+test("a provider that goes while its socket stays takes its presence, its cursor among it, from the others", () => {
+    // A doc started again on the same socket (a reload, a new role) is a new
+    // client: the old one's pointer would otherwise stay drawn, frozen.
+    const socket = new FakeSocket();
+    const server = new FakeServer(DATAFLOW);
+    const provider = new DataflowDocProvider(PROJECT, { canWrite: true });
+    provider.attach(socket);
+    server.start(socket, socket.messages()[0]);
+    provider.awareness.setLocalStateField("cursor", { x: 1, y: 2, t: 3 });
+    const others = new awarenessProtocol.Awareness(new Y.Doc());
+    relayPresence(socket, others);
+    const clientId = provider.doc.clientID;
+    expect((others.getStates().get(clientId) as any)?.cursor).toEqual({ x: 1, y: 2, t: 3 });
+
+    const before = socket.messages().length;
+    provider.destroy();
+    relayPresence(socket, others, before);
+    expect(others.getStates().has(clientId)).toBe(false);
+    others.destroy();
+});
+
+test("a provider whose socket went sends nothing as it goes", () => {
+    const socket = new FakeSocket();
+    const server = new FakeServer(DATAFLOW);
+    const provider = new DataflowDocProvider(PROJECT, { canWrite: true });
+    provider.attach(socket);
+    server.start(socket, socket.messages()[0]);
+    socket.connected = false;
+    const before = socket.messages().length;
+    provider.destroy();
+    expect(socket.messages().length).toBe(before);
+});
