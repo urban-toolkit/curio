@@ -8,22 +8,20 @@ from __future__ import annotations
 
 import json
 from flask import Response
-from flask import g
 from flask import jsonify
 from flask import request
 from flask import stream_with_context
 
 from utk_curio.backend.app.agents import service as agents_services
 from utk_curio.backend.app.agents.infrastructure.provider_config import ProviderConfigError
+from utk_curio.backend.app.agents.routes.common import _dataflow
 from utk_curio.backend.app.agents.routes.common import _error
 from utk_curio.backend.app.agents.routes.common import _llm_for_attachment
 from utk_curio.backend.app.agents.routes.common import _provider_error
 from utk_curio.backend.app.agents.routes.common import _svc_error
-from utk_curio.backend.app.agents.routes.common import _working_dataflow
 from utk_curio.backend.app.agents.routes.common import agents_bp
 from utk_curio.backend.app.agents.service import AgentServiceError
 from utk_curio.backend.app.projects import repositories as projects_repo
-from utk_curio.backend.app.projects.services import _user_dir_key
 from utk_curio.backend.app.users.dependencies import require_auth
 
 
@@ -32,8 +30,8 @@ from utk_curio.backend.app.users.dependencies import require_auth
 )
 @require_auth
 def solve_attachment(project_id: str, attachment_id: str):
-    """The dev/52 Solve batch (DEC-048): one explicit, owner-authenticated
-    action fills the applied plan's pending nodes through bounded-concurrency
+    """The dev/52 Solve batch (DEC-048): one explicit, authenticated action
+    of the owner or an invited editor fills the applied plan's pending nodes through bounded-concurrency
     depth-1 children. The endpoint consumes no quota; each child reserves
     under its own policy. Body: optional ``{"nodeIds": [...]}`` for Retry."""
 
@@ -47,11 +45,10 @@ def solve_attachment(project_id: str, attachment_id: str):
     if not isinstance(verify, bool):
         return _error("'verify' must be a boolean when present")
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        project_id = _working_dataflow(project_id)
-        config = _llm_for_attachment(project_id, attachment_id)
+        flow = _dataflow(project_id)
+        config = _llm_for_attachment(flow, attachment_id)
         payload = agents_services.solve_attachment(
-            _user_dir_key(g.user), project_id, attachment_id, config, node_ids,
+            flow.key, flow.project_id, attachment_id, config, node_ids,
             verify=verify,
         )
     except projects_repo.NotFoundError:
@@ -90,11 +87,10 @@ def solve_attachment_stream(project_id: str, attachment_id: str):
     if not isinstance(verify, bool):
         return _error("'verify' must be a boolean when present")
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        project_id = _working_dataflow(project_id)
-        config = _llm_for_attachment(project_id, attachment_id)
+        flow = _dataflow(project_id)
+        config = _llm_for_attachment(flow, attachment_id)
         events = agents_services.solve_attachment_stream(
-            _user_dir_key(g.user), project_id, attachment_id, config, node_ids,
+            flow.key, flow.project_id, attachment_id, config, node_ids,
             mode=mode, verify=verify,
         )
     except projects_repo.NotFoundError:
@@ -132,11 +128,10 @@ def simulate(project_id: str, attachment_id: str):
     if mode not in ("step", "auto"):
         return _error("'mode' must be 'step' or 'auto' when present")
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        project_id = _working_dataflow(project_id)
-        config = _llm_for_attachment(project_id, attachment_id)
+        flow = _dataflow(project_id)
+        config = _llm_for_attachment(flow, attachment_id)
         events = agents_services.simulate_stream(
-            _user_dir_key(g.user), project_id, attachment_id, config, mode=mode
+            flow.key, flow.project_id, attachment_id, config, mode=mode
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
@@ -165,10 +160,9 @@ def cancel_simulate(project_id: str, attachment_id: str):
     """Cancel a running simulation (dev/67-9): stops at the next action
     boundary; everything already done stays done."""
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        project_id = _working_dataflow(project_id)
+        flow = _dataflow(project_id)
         payload = agents_services.request_simulate_cancel(
-            _user_dir_key(g.user), project_id, attachment_id
+            flow.key, flow.project_id, attachment_id
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
@@ -194,10 +188,9 @@ def run_node(project_id: str, attachment_id: str):
     if node_id is not None and not isinstance(node_id, str):
         return _error("'nodeId' must be a string when present")
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        project_id = _working_dataflow(project_id)
+        flow = _dataflow(project_id)
         events = agents_services.run_node_stream(
-            _user_dir_key(g.user), project_id, attachment_id,
+            flow.key, flow.project_id, attachment_id,
             ref=ref or None, node_id=node_id or None,
         )
     except projects_repo.NotFoundError:
@@ -235,11 +228,10 @@ def solve_node(project_id: str, attachment_id: str):
     if not isinstance(node_id, str) or not node_id:
         return _error("'nodeId' is required")
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        project_id = _working_dataflow(project_id)
-        config = _llm_for_attachment(project_id, attachment_id)
+        flow = _dataflow(project_id)
+        config = _llm_for_attachment(flow, attachment_id)
         events = agents_services.solve_node_stream(
-            _user_dir_key(g.user), project_id, attachment_id, config, node_id=node_id,
+            flow.key, flow.project_id, attachment_id, config, node_id=node_id,
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
@@ -279,11 +271,10 @@ def validate_node(project_id: str, attachment_id: str):
     if node_id is not None and not isinstance(node_id, str):
         return _error("'nodeId' must be a string when present")
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        project_id = _working_dataflow(project_id)
-        config = _llm_for_attachment(project_id, attachment_id)
+        flow = _dataflow(project_id)
+        config = _llm_for_attachment(flow, attachment_id)
         events = agents_services.validate_node_stream(
-            _user_dir_key(g.user), project_id, attachment_id, config,
+            flow.key, flow.project_id, attachment_id, config,
             ref=ref or None, node_id=node_id or None,
         )
     except projects_repo.NotFoundError:
@@ -314,10 +305,9 @@ def cancel_solve(project_id: str, attachment_id: str):
     next node boundary; in-flight children finish and their results persist;
     undispatched targets revert to pending. 409 when nothing is running."""
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        project_id = _working_dataflow(project_id)
+        flow = _dataflow(project_id)
         payload = agents_services.request_solve_cancel(
-            _user_dir_key(g.user), project_id, attachment_id
+            flow.key, flow.project_id, attachment_id
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)

@@ -8,22 +8,20 @@ from __future__ import annotations
 
 import json
 from flask import Response
-from flask import g
 from flask import jsonify
 from flask import request
 from flask import stream_with_context
 
 from utk_curio.backend.app.agents import service as agents_services
 from utk_curio.backend.app.agents.infrastructure.provider_config import ProviderConfigError
+from utk_curio.backend.app.agents.routes.common import _dataflow
 from utk_curio.backend.app.agents.routes.common import _error
 from utk_curio.backend.app.agents.routes.common import _llm_for_attachment
 from utk_curio.backend.app.agents.routes.common import _provider_error
 from utk_curio.backend.app.agents.routes.common import _svc_error
-from utk_curio.backend.app.agents.routes.common import _working_dataflow
 from utk_curio.backend.app.agents.routes.common import agents_bp
 from utk_curio.backend.app.agents.service import AgentServiceError
 from utk_curio.backend.app.projects import repositories as projects_repo
-from utk_curio.backend.app.projects.services import _user_dir_key
 from utk_curio.backend.app.users.dependencies import require_auth
 
 
@@ -40,11 +38,10 @@ def run_attachment(project_id: str, attachment_id: str):
     if run_context is not None and not isinstance(run_context, str):
         return _error("'context' must be a string when present")
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        project_id = _working_dataflow(project_id)
-        config = _llm_for_attachment(project_id, attachment_id)
+        flow = _dataflow(project_id)
+        config = _llm_for_attachment(flow, attachment_id)
         payload = agents_services.run_attachment(
-            _user_dir_key(g.user), project_id, attachment_id, message, config, run_context
+            flow.key, flow.project_id, attachment_id, message, config, run_context
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
@@ -83,11 +80,10 @@ def stream_attachment(project_id: str, attachment_id: str):
     if run_context is not None and not isinstance(run_context, str):
         return _error("'context' must be a string when present")
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        project_id = _working_dataflow(project_id)
-        config = _llm_for_attachment(project_id, attachment_id)
+        flow = _dataflow(project_id)
+        config = _llm_for_attachment(flow, attachment_id)
         events = agents_services.stream_attachment(
-            _user_dir_key(g.user), project_id, attachment_id, message, config, run_context
+            flow.key, flow.project_id, attachment_id, message, config, run_context
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)

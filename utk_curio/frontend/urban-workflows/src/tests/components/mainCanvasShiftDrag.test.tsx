@@ -81,6 +81,7 @@ jest.mock("../../services/scenarioCatalog/scenarioDrag", () => ({
 }));
 jest.mock("../../services/agents", () => ({
   agentsApi: {},
+  agentsOnCanvas: (role: string) => ({ drives: role !== "watcher", installsWaitForOwner: role === "editor" }),
   readAgentDragCoord: () => null,
   notifyAgentDockRefresh: jest.fn(),
   resolveAgentDropTarget: jest.fn(),
