@@ -59,7 +59,7 @@ class _TestLink:
 
     def pump(self):
         for event in self.client.get_received(NAMESPACE):
-            if event["name"] == "yjs":
+            if event["name"] in ("yjs", "yjs_kept"):
                 self.on_yjs(event["args"][0])
 
     def close(self):
