@@ -204,6 +204,15 @@ def _union(*boxes: dict, margin: int = 8) -> dict:
             "width": int(right - max(0, left)) + 1, "height": int(bottom - max(0, top)) + 1}
 
 
+def _frame(page, name: str, failures: list[str], **capture) -> None:
+    """One of the test's frames. A missing or moved frame is told at the
+    test's end, so every check after it still runs."""
+    try:
+        save_workflow_test_screenshot(page, FRAMES, test_name=name, fit_reactflow=False, **capture)
+    except AssertionError as error:
+        failures.append(f"{name}: {error}")
+
+
 def _quiet_pointers(*pages) -> None:
     """Each page's pointer at the top bar's corner, off the canvas: no hover
     changes a frame, and no pointer of theirs is drawn on another's canvas."""
@@ -214,6 +223,7 @@ def _quiet_pointers(*pages) -> None:
 
 
 def test_the_dock_shows_who_else_is_here_with_their_role_the_node_they_edit_and_the_activity(room):
+    frames_failed: list[str] = []
     owner = room.person(OWNER, "Dock Owner", owns=True)
     room.attach_agent()
     room.open(owner, "owner")
@@ -272,12 +282,12 @@ def test_the_dock_shows_who_else_is_here_with_their_role_the_node_they_edit_and_
     # of the editor's chip, and the room's Activity. Moving the editor's
     # pointer away keeps the focus, and so the node they are editing.
     _quiet_pointers(owner, editor, watcher)
-    save_workflow_test_screenshot(owner, FRAMES, test_name="owners-row", clip_selector=DOCK, fit_reactflow=False)
+    _frame(owner, "owners-row", frames_failed, clip_selector=DOCK)
     editor_chip = f'{CHIP}[data-collab-role="editor"]'
     tip = hover_until_tooltip_says(owner, editor_chip, "the editor's chip", [expected])
-    save_workflow_test_screenshot(
-        owner, FRAMES, test_name="chip-tooltip",
-        fit_reactflow=False, keep_tooltip=True, clip_rect=tooltip_close_up(owner, tip),
+    _frame(
+        owner, "chip-tooltip", frames_failed,
+        keep_tooltip=True, clip_rect=tooltip_close_up(owner, tip),
         pixel_threshold=CLOSEUP_PIXEL_THRESHOLD, max_diff_ratio=CLOSEUP_MAX_DIFF_RATIO, closeup=True,
     )
     owner.locator(ACTIVITY).click()
@@ -289,19 +299,17 @@ def test_the_dock_shows_who_else_is_here_with_their_role_the_node_they_edit_and_
     )
     assert activity.locator("button").count() == 0, "the Activity list holds a vote"
     _quiet_pointers(owner)
-    save_workflow_test_screenshot(
-        owner, FRAMES, test_name="activity",
-        clip_rect=_union(owner.locator(DOCK).bounding_box(), activity.bounding_box()), fit_reactflow=False,
-    )
+    _frame(owner, "activity", frames_failed,
+           clip_rect=_union(owner.locator(DOCK).bounding_box(), activity.bounding_box()))
     owner.keyboard.press("Escape")
     activity.wait_for(state="detached", timeout=10000)
 
     # The watcher's dock, under the banner.
     _quiet_pointers(owner, editor, watcher)
-    save_workflow_test_screenshot(
-        watcher, FRAMES, test_name="watchers-row",
-        clip_rect=_union(banner.bounding_box(), watcher.locator(DOCK).bounding_box()), fit_reactflow=False,
-    )
+    _frame(watcher, "watchers-row", frames_failed,
+           clip_rect=_union(banner.bounding_box(), watcher.locator(DOCK).bounding_box()))
+
+    assert not frames_failed, "\n".join(frames_failed)
 
 
 def test_a_click_on_a_persons_chip_moves_the_view_to_where_they_point(room):
