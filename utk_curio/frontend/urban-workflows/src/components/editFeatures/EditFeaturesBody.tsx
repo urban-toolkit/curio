@@ -96,6 +96,9 @@ const OP_TONE: Partial<Record<EditOp, "done" | "error">> = { add: "done", remove
 /** At most this many edits name an entry of the Provenance drawer, then how many more. */
 const LABEL_EDITS = 3;
 const NO_ENTRIES: NodeExecRecord[] = [];
+/** A node's edits before its first: one list, so the workbench's form keeps
+ *  what was typed in it whenever the node draws again. */
+const NO_EDITS: readonly FeatureEdit[] = [];
 
 /** One layer of the input, by the table name its map reads it as. */
 export interface InputLayer {
@@ -392,7 +395,7 @@ export function EditFeaturesBody({
   const committed = targets.every((id) => status[id] === "executed");
   const running = !!flow?.isRunActive || !!flow?.serverRunActive;
 
-  const edits = settings?.edits ?? [];
+  const edits = settings?.edits ?? NO_EDITS;
 
   // Undo and Redo walk the node's entries in its Provenance drawer.
   const records = provenanceGraphNodes[nodeId] ?? NO_ENTRIES;
