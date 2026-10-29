@@ -33,7 +33,116 @@ from utk_curio.sandbox.tests import _rerun_memory as rr  # noqa: E402
 
 MB = 1024 * 1024
 KB = 1024
-STATE = {"pid": None, "variant": "baseline", "snaps": []}
+STATE = {"pid": None, "variant": "baseline", "snaps": [], "diag": False, "port": None}
+
+#: Appended to the replay's sitecustomize with --diag: a route the sandbox
+#: answers before Flask (so the idle release does not run for it) with what
+#: holds its memory, read inside the process.
+DIAG_SITE = r'''
+import json as _diag_json
+import os as _diag_os
+
+
+def _diag_payload():
+    import ctypes
+    import gc
+    import re
+    import sys
+    import tempfile
+
+    out = {}
+    pa = sys.modules.get("pyarrow")
+    if pa is not None:
+        pool = pa.default_memory_pool()
+        out["arrow"] = {"backend": pool.backend_name, "pool_allocated": pool.bytes_allocated(),
+                        "total_allocated": pa.total_allocated_bytes()}
+
+    class _M2(ctypes.Structure):
+        _fields_ = [(n, ctypes.c_size_t) for n in (
+            "arena", "ordblks", "smblks", "hblks", "hblkhd", "usmblks", "fsmblks",
+            "uordblks", "fordblks", "keepcost")]
+
+    libc = ctypes.CDLL(None)
+    try:
+        info = libc.mallinfo2
+        info.restype = _M2
+        got = info()
+        out["mallinfo2"] = {n: getattr(got, n) for n, _ in _M2._fields_}
+    except AttributeError:
+        pass
+    try:
+        libc.fopen.restype = ctypes.c_void_p
+        libc.fopen.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+        libc.fclose.argtypes = [ctypes.c_void_p]
+        libc.malloc_info.argtypes = [ctypes.c_int, ctypes.c_void_p]
+        with tempfile.TemporaryDirectory() as folder:
+            path = _diag_os.path.join(folder, "m.xml")
+            stream = libc.fopen(path.encode(), b"w")
+            libc.malloc_info(0, stream)
+            libc.fclose(stream)
+            xml = open(path).read()
+        rows = []
+        for nr, body in re.findall(r'<heap nr="(\d+)">(.*?)</heap>', xml, re.S):
+            fast = re.search(r'<total type="fast" count="\d+" size="(\d+)"', body)
+            rest = re.search(r'<total type="rest" count="\d+" size="(\d+)"', body)
+            cur = re.search(r'<system type="current" size="(\d+)"', body)
+            rows.append([int(nr), int(fast.group(1)) if fast else 0,
+                         int(rest.group(1)) if rest else 0, int(cur.group(1)) if cur else 0])
+        out["arenas_nr_fast_rest_current"] = rows
+        out["malloc_totals"] = re.findall(
+            r'<(total|system|aspace) type="(\w+)"(?: count="\d+")? size="(\d+)"', xml.split("</heap>")[-1])
+    except Exception as exc:  # noqa: BLE001
+        out["malloc_info_error"] = repr(exc)
+    counts, nbytes = {}, {}
+    for obj in gc.get_objects():
+        name = type(obj).__name__
+        if name in ("DataFrame", "GeoDataFrame", "Series", "GeoSeries", "Table", "RecordBatch",
+                    "ChunkedArray", "BlockManager", "GeometryArray", "ArrowStringArray"):
+            counts[name] = counts.get(name, 0) + 1
+            try:
+                value = getattr(obj, "nbytes", 0)
+                nbytes[name] = nbytes.get(name, 0) + (int(value) if not callable(value) else 0)
+            except Exception:  # noqa: BLE001
+                pass
+    out["objects"] = counts
+    out["object_nbytes"] = nbytes
+    out["threads"] = [t.name for t in __import__("threading").enumerate()]
+    try:
+        from utk_curio.sandbox.util import db
+
+        con = db._connection
+        if con is not None:
+            raw = object.__getattribute__(con, "_con")
+            cur = raw.cursor()
+            out["duckdb_memory"] = cur.execute(
+                "SELECT tag, memory_usage_bytes, temporary_storage_bytes FROM duckdb_memory() "
+                "WHERE memory_usage_bytes > 0 OR temporary_storage_bytes > 0").fetchall()
+            out["duckdb_settings"] = cur.execute(
+                "SELECT name, value FROM duckdb_settings() WHERE name IN ('memory_limit', 'threads', "
+                "'enable_external_file_cache', 'allocator_background_threads', "
+                "'allocator_flush_threshold', 'allocator_bulk_deallocation_flush_threshold')").fetchall()
+            cur.close()
+    except Exception as exc:  # noqa: BLE001
+        out["duckdb_error"] = repr(exc)
+    return out
+
+
+import flask as _diag_flask
+
+_diag_orig_call = _diag_flask.Flask.__call__
+
+
+def _diag_call(self, environ, start_response):
+    if environ.get("PATH_INFO") == "/__diag_mem":
+        body = _diag_json.dumps(_diag_payload(), default=str).encode()
+        start_response("200 OK", [("Content-Type", "application/json"),
+                                  ("Content-Length", str(len(body)))])
+        return [body]
+    return _diag_orig_call(self, environ, start_response)
+
+
+_diag_flask.Flask.__call__ = _diag_call
+'''
 HEADER = re.compile(r"^([0-9a-f]+)-([0-9a-f]+) (\S{4}) \S+ \S+ \d+\s*(.*)$")
 
 
@@ -69,7 +178,17 @@ def _popen(args, **kwargs):
         kwargs["preexec_fn"] = _thp_off
     proc = _real_popen(args, **kwargs)
     STATE["pid"] = proc.pid
+    STATE["port"] = kwargs["env"].get("FLASK_SANDBOX_PORT")
     return proc
+
+
+def _inside():
+    import requests
+
+    try:
+        return requests.get(f"http://127.0.0.1:{STATE['port']}/__diag_mem", timeout=120).json()
+    except Exception as exc:  # noqa: BLE001
+        return {"error": repr(exc)}
 
 
 def classify(pid):
@@ -144,9 +263,12 @@ def _sleep(seconds):
     time.sleep(seconds)
     if seconds == 1.0 and STATE["pid"]:
         try:
-            STATE["snaps"].append(snapshot(STATE["pid"]))
+            snap = snapshot(STATE["pid"])
         except OSError as exc:
-            STATE["snaps"].append({"error": str(exc)})
+            snap = {"error": str(exc)}
+        if STATE["diag"] and len(STATE["snaps"]) in (0, 1, 3, 6, 10):
+            snap["inside"] = _inside()
+        STATE["snaps"].append(snap)
 
 
 rr.subprocess = types.SimpleNamespace(Popen=_popen, STDOUT=subprocess.STDOUT,
@@ -176,8 +298,12 @@ def main():
     parser.add_argument("--cycles", type=int, default=10)
     parser.add_argument("--rows", type=int, default=200_000)
     parser.add_argument("--out", required=True)
+    parser.add_argument("--diag", action="store_true")
     args = parser.parse_args()
     STATE["variant"] = args.variant
+    STATE["diag"] = args.diag
+    if args.diag:
+        rr._SITECUSTOMIZE = rr._SITECUSTOMIZE + DIAG_SITE
     results = []
     with tempfile.TemporaryDirectory(prefix="probe-") as workdir:
         for sample in range(args.samples):
