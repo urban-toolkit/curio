@@ -9,9 +9,13 @@
  * - `drag`: the places of the nodes this tab is dragging, which the others
  *   show live; the place itself is written into the doc at the drop;
  * - `removed`: the nodes this tab just removed, so a tab that was editing one
- *   says who removed it.
+ *   says who removed it;
+ * - `pointer`: where this tab's pointer is on the canvas, in flow coordinates,
+ *   or null while it is off the canvas (`cursors.ts`); the others draw it as a
+ *   cursor in this tab's color with its name.
  *
- * The server writes each state's `user`: the participant the room knows.
+ * The server writes each state's `user`: the participant the room knows. A
+ * watcher's state keeps only `pointer` and `selection`.
  */
 import type { Awareness } from "y-protocols/awareness";
 
@@ -27,12 +31,22 @@ export interface DragState {
     nodes: Record<string, { x: number; y: number }>;
 }
 
+/** A pointer on the canvas: the point of the dataflow it is on, in React
+ *  Flow's flow coordinates (the same in every tab, whatever each has panned
+ *  or zoomed to), and when it was sent, in milliseconds since the epoch. */
+export interface CanvasPointer {
+    x: number;
+    y: number;
+    t: number;
+}
+
 export interface PresenceState {
     user?: PresenceUser;
     editing?: string | null;
     drag?: DragState | null;
     removed?: { nodes: string[]; at: number } | null;
     selection?: unknown;
+    pointer?: CanvasPointer | null;
 }
 
 /** How long a removal note stays in this tab's state. */
@@ -115,12 +129,30 @@ export const PARTICIPANT_COLORS = [
     "#0c8599", "#c2255c", "#5c940d", "#364fc7", "#a61e4d",
 ];
 
-/** The color of the participant *id*: the same in every tab. */
+/** The color the key *id* gives: the same in every tab. */
 export function participantColor(id: string | null | undefined): string {
     const key = id || "";
     let hash = 0;
     for (let i = 0; i < key.length; i += 1) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
     return PARTICIPANT_COLORS[hash % PARTICIPANT_COLORS.length];
+}
+
+/**
+ * A person's color, from their account: the same in every tab, in each of
+ * their own tabs, and after a reload or a reconnect, each of which makes them
+ * a new participant with a new id. What names no account takes its
+ * participant's color, then *fallback*'s. The room's list of people and the
+ * awareness states both carry what it reads.
+ */
+export function personColor(user: PresenceUser | null | undefined, fallback?: string): string {
+    const account = user?.username || (typeof user?.user_id === "number" ? `user ${user.user_id}` : "");
+    return participantColor(account || user?.participant_id || fallback);
+}
+
+/** The color of whoever holds the awareness state *state*, client *clientId*:
+ *  their cursor's in the code editors and on the canvas. */
+export function colorOf(clientId: number, state: PresenceState | null | undefined): string {
+    return personColor(state?.user, String(clientId));
 }
 
 function cssString(text: string): string {
@@ -136,7 +168,7 @@ function cssString(text: string): string {
 export function remoteCursorStyle(awareness: Awareness | null | undefined): string {
     const rules: string[] = [];
     for (const [clientId, state] of othersOf(awareness)) {
-        const color = participantColor(state.user?.participant_id ?? String(clientId));
+        const color = colorOf(clientId, state);
         rules.push(
             `.yRemoteSelection-${clientId} { background-color: ${color}33; }`,
             `.yRemoteSelectionHead-${clientId} { position: absolute; border-left: 2px solid ${color}; `
