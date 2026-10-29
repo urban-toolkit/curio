@@ -28,7 +28,6 @@ function monitor(): MonitorPayload {
       authEnabled: true,
       projectsEnabled: true,
       guestLoginAllowed: true,
-      collabEnabled: false,
       factoryPublishAllowed: true,
       saveNodeOutputDefault: false,
       llmProviderConfigured: true,

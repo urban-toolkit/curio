@@ -930,20 +930,43 @@ def _saved_outputs_to_copy(data: ProjectCreate) -> tuple:
     return ((project.id, owner_key) if to_copy else None), to_copy
 
 
-def save_project(user, data: ProjectCreate, *, sign_in: Optional[str] = None) -> ProjectDetail:
+def _history_to_copy(user, data: ProjectCreate) -> Optional[tuple]:
+    """``(owner's key, dataflow id)`` of the dataflow *data* copies (``copy_of``,
+    Save a copy), when *user* may read its history: its owner, or an editor
+    the owner invited. A watcher's copy starts its own."""
+    if not data.copy_of:
+        return None
+    from utk_curio.backend.app.projects import access
+    from utk_curio.backend.app.projects.models import Project
+
+    project = db.session.get(Project, data.copy_of)
+    if project is None or access.room_role(user, project) not in access.EDIT_ROLES:
+        return None
+    return _owner_user_dir_key(project), project.id
+
+
+def save_project(user, data: ProjectCreate, *, sign_in: Optional[str] = None,
+                 history_from: Optional[tuple] = None) -> ProjectDetail:
     """Create a dataflow from *data*. *sign_in*: the caller's, for a save a
     request sent (:func:`_readable_sent_outputs`).
 
     A node whose output is the one the dataflow *data* copies saved gets that
     saved output, copied from its owner's Data Catalog
     (:func:`_saved_outputs_to_copy`, :func:`_copy_saved_outputs`); any other
-    output is installed as a save installs one."""
+    output is installed as a save installs one.
+
+    The new dataflow keeps the history it carries, imported when its doc
+    first opens, or, copying a dataflow whose history *user* may read
+    (*history_from*, ``(owner's key, dataflow id)``, or the one Save a copy
+    names), that dataflow's history (``history.copy_history``)."""
+    from utk_curio.backend.app.collaboration import history
     from utk_curio.backend.app.packages.service import (
         ensure_user_packages_initialized,
         seed_spec_with_defaults,
     )
 
     _assert_guest_can_save(user)
+    history_from = history_from or _history_to_copy(user, data)
     copied_from, to_copy = _saved_outputs_to_copy(data)
     sent = [ref for ref in data.outputs if to_copy.get(ref.node_id) != ref.filename]
     readable = _readable_sent_outputs(user, sent, sign_in)
@@ -983,6 +1006,10 @@ def save_project(user, data: ProjectCreate, *, sign_in: Optional[str] = None) ->
 
     actor = dataflow_docs.person(ukey, "create")
     created = dataflow_docs.create(ukey, project_id, data.spec, actor)
+    if history_from is not None:
+        # Before anything below opens the copy's doc, whose first open would
+        # give it points of its own.
+        history.copy_history(history_from[0], history_from[1], ukey, project_id)
     # The new row is committed once its spec is on disk (a listing drops a row
     # without one), and before anything below asks for a spec lock: seeding
     # the account's default datasets installs them under one, and no thread
@@ -999,7 +1026,8 @@ def save_project(user, data: ProjectCreate, *, sign_in: Optional[str] = None) ->
     # Drop dataset refs keyed on visualization/sink nodes (passthrough duplicates).
     effective_spec = _prune_sink_node_dataset_refs(effective_spec, ukey)
     if effective_spec is not data.spec:
-        dataflow_docs.put(ukey, project_id, effective_spec, over=created, actor=actor)
+        # The history the create put on record is not written twice.
+        dataflow_docs.put(ukey, project_id, _without_history(effective_spec), over=created, actor=actor)
     # The dataset twin of `seed_spec_with_defaults` above: ids the user put in
     # "all projects" are installed into this brand-new project. Done HERE, after
     # the spec is on disk, and by calling the ordinary install path rather than
@@ -1082,6 +1110,30 @@ OLDER_SAVE_REFUSAL = (
 )
 
 
+def _carry_history(ukey: str, project_id: str, data: ProjectUpdate, spec) -> None:
+    """Take the earlier history's sections out of a save, out of its spec
+    (*spec*, which is *data*'s) and its ``history``: the dataflow's history is
+    its points (``collaboration/history.py``). Before the dataflow has points,
+    what the save carries goes on record (``storage.write_history``) for its
+    doc's first open to import; once it has them, the sections are not read."""
+    from utk_curio.backend.app.collaboration import history
+
+    carried: dict = {}
+    if data.spec is not None and isinstance(spec, dict):
+        for key in storage.HISTORY_KEYS:
+            if key in spec:
+                carried[key] = spec.pop(key)
+    if data.history is not None:
+        carried.update(data.history)
+    if not carried:
+        return
+    if history.has_points(ukey, project_id):
+        logger.info("dataflow %s: a save carried history sections its points already hold; they are not read",
+                    project_id)
+        return
+    storage.write_history(ukey, project_id, carried)
+
+
 def _refuse_an_older_save(ukey: str, project_id: str, data: ProjectUpdate) -> None:
     """Refuse a save numbered lower than the latest one applied from its tab.
 
@@ -1108,9 +1160,9 @@ def update_project(
     project = _project_to_save(user, project_id, cleanup=cleanup)
     ukey = _user_dir_key(user)
     readable = _readable_sent_outputs(user, data.outputs, sign_in)
-    if data.history is not None:
-        # A tab bound to the dataflow's doc saves its outputs and its history,
-        # never the dataflow, which the doc holds: the doc's changes are
+    if data.spec is None:
+        # A save that sends no dataflow (a tab bound to the dataflow's doc
+        # saves its outputs, the Projects page a name): the doc's changes are
         # written first, so the save answers with the dataflow as it is.
         dataflow_docs.flush(project_id)
 
@@ -1127,6 +1179,11 @@ def update_project(
         _refuse_an_older_save(ukey, project_id, data)
         existing_spec = dataflow_docs.live(ukey, project_id)
         effective_spec = data.spec if data.spec is not None else existing_spec
+        # The history is the server's (``collaboration/history.py``). What a
+        # save still carries of the earlier history's sections goes on record
+        # for the dataflow's first open to import, before this save opens its
+        # doc; once the dataflow has its points, it is theirs and is not read.
+        _carry_history(ukey, project_id, data, effective_spec)
         spec_dirty = False
         # The canvas save (TrillGenerator) does not serialize the backend-owned
         # agent sections, so carry dataflow.agents / agentAttachments forward
@@ -1274,8 +1331,6 @@ def update_project(
             # change: its transaction makes the doc match the PUT, from the
             # dataflow read above, after the loss rule.
             dataflow_docs.put(ukey, project_id, effective_spec, over=existing_spec, actor=actor)
-        if data.history is not None:
-            storage.write_history(ukey, project_id, data.history)
 
         # Record only outputs the reload path can restore from a durable source so a
         # swallowed install error can't leave a phantom manifest entry (#144).
@@ -1288,9 +1343,9 @@ def update_project(
             thumbnail_accent=project.thumbnail_accent or "peach",
             produced_at=produced_at,
         )
-        # A save that sends no dataflow answers with the whole document as it
-        # is, its history included, which the dataflow read above leaves out.
-        answered = effective_spec if data.spec is not None else storage.read_spec(ukey, project_id)
+        # A save answers with the dataflow as it is, without the history, as a
+        # load serves it.
+        answered = _without_history(effective_spec if data.spec is not None else storage.read_spec(ukey, project_id))
 
     db.session.commit()
     return _to_detail(project, spec=answered, outputs=persisted_refs,
@@ -1405,6 +1460,15 @@ def replace_dataflow_datasets(user, project_id: str, refs: list) -> Optional[dic
 # Load
 # ---------------------------------------------------------------------------
 
+def _without_history(spec):
+    """*spec* as a load serves it: without the history sections. The history
+    is the server's, which the Provenance drawer reads from its own routes
+    (:func:`project_history`), for the owner and the editors alone."""
+    if not isinstance(spec, dict):
+        return spec
+    return {key: value for key, value in spec.items() if key not in storage.HISTORY_KEYS}
+
+
 def _with_effective_packages(spec, ukey: str, project_id: str):
     """Serve the backend's EFFECTIVE lockfile in ``dataflow.packages`` (memo dev/101).
 
@@ -1482,7 +1546,7 @@ def load_project(user, project_id: str, *, last_results: bool = False) -> dict:
     # restored from it.
     ensure_dataflow_datasets_installed(ukey, storage.read_spec(ukey, project_id))
     spec, readable, _missing = _saved_outputs(ukey, project_id)
-    spec = _with_effective_packages(spec, ukey, project_id)
+    spec = _without_history(_with_effective_packages(spec, ukey, project_id))
 
     # After the spec lock: a thread holding a database write may not wait for
     # it (#909).
@@ -1543,7 +1607,7 @@ def load_shared_project(project_id: str) -> dict:
     # defaults) from the served copy. The on-disk spec is untouched.
     from utk_curio.backend.app.agents.repositories.project_agents import strip_agent_state
     spec = strip_agent_state(spec)
-    spec = _with_effective_packages(spec, ukey, project_id)
+    spec = _without_history(_with_effective_packages(spec, ukey, project_id))
 
     detail = _to_detail(
         project, spec=spec, outputs=readable,
@@ -2001,7 +2065,7 @@ def duplicate_project(user, project_id: str) -> ProjectDetail:
         description=src.description,
         thumbnail_accent=src.thumbnail_accent or "peach",
     )
-    created = save_project(user, create_data)
+    created = save_project(user, create_data, history_from=(ukey, project_id))
     copied = _copy_saved_outputs(ukey, project_id, target_key=ukey, target_id=created.id, target_name=new_name)
     return dataclasses.replace(created, outputs=copied)
 

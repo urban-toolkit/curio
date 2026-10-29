@@ -735,11 +735,14 @@ def _commit(page, edit_id: str, saved: list[str], drawn: list[str], *, below: in
 
 
 def _open_provenance(page, node_id: str):
-    """The node's Provenance drawer, opened from the button in its header."""
+    """The node's Provenance drawer, opened from the button in its header, once
+    it has read the node's history, which the server keeps."""
     node_locator(page, node_id).locator('.nav-link[data-rr-ui-event-key="provenance"]').first.click()
     expect(page.get_by_role("dialog", name="Node provenance")).to_be_visible(timeout=20000)
     await_drawer_at_rest(page)
-    return page.locator(PROVENANCE_PANEL)
+    panel = page.locator(PROVENANCE_PANEL)
+    expect(panel.get_by_text("Reading the history…")).to_have_count(0, timeout=20000)
+    return panel
 
 
 def _close_provenance(page) -> None:
@@ -1163,6 +1166,8 @@ def test_each_change_is_an_entry_in_the_node_provenance_and_putting_one_back_res
     _run_all(page)
     frame_nodes(page, [EDIT_2, MAP_2])
     panel = _open_provenance(page, EDIT_2)
+    # The run reaches the server's history once it has ended.
+    expect(panel.locator("[data-provenance-item]").first).to_be_visible(timeout=20000)
     ran = _entries(panel)
     assert ran, "the node's run is not in its Provenance drawer"
     _close_provenance(page)
@@ -1209,6 +1214,7 @@ def test_each_change_is_an_entry_in_the_node_provenance_and_putting_one_back_res
     # Three entries more, before any run, each named by what it changed, one
     # after the other on one line, the Remove the newest.
     panel = _open_provenance(page, EDIT_2)
+    expect(panel.locator("[data-provenance-item]")).to_have_count(len(ran) + 3, timeout=20000)
     entries = _entries(panel)
     assert len(entries) == len(ran) + 3, f"the drawer lists {entries}: not the node's run and the three changes"
     made = entries[-3:]

@@ -65,12 +65,11 @@ class _Clock:
 
 @pytest.fixture()
 def kept(room, monkeypatch):
-    """alice's dataflow as FLOW, with no history, on a server that records
-    the history, its clock the test's."""
-    from utk_curio.backend.app.collaboration import dataflow_docs, history
+    """alice's dataflow as FLOW, with no history, its server's clock the
+    test's."""
+    from utk_curio.backend.app.collaboration import dataflow_docs
     from utk_curio.backend.app.projects import storage
 
-    monkeypatch.setattr(history, "RECORDING", True)
     clock = _Clock()
     monkeypatch.setattr(dataflow_docs, "_clock", clock)
     storage.drop_history(room.owner_key, room.project_id)
@@ -139,6 +138,18 @@ def _remove_edge(edge_id: str):
         after = copy.deepcopy(before)
         after["edges"] = [edge for edge in after["edges"] if edge["id"] != edge_id]
         doc_mapping.apply_dataflow(doc, before, after)
+
+    return change
+
+
+def _set_fields(**fields):
+    """A change to the dataflow's own fields, as a tab's canvas writes one."""
+
+    def change(doc):
+        from utk_curio.backend.app.collaboration import doc_mapping
+
+        before = doc_mapping.doc_to_dataflow(doc)
+        doc_mapping.apply_dataflow(doc, before, {**copy.deepcopy(before), **copy.deepcopy(fields)})
 
     return change
 
@@ -467,6 +478,63 @@ def test_a_run_follows_the_typing_before_it_and_a_map_editor_edit_takes_its_plac
     assert made[0]["start"] < made[0]["end"], "the edit's point holds the typing it took the place of"
 
 
+def test_a_read_before_any_tab_opened_the_dataflow_gives_it_its_first_points(kept):
+    """The drawer can ask before any tab's sync opened the dataflow's doc: the
+    read opens it, and lists the versions the open made."""
+    from utk_curio.backend.app.collaboration import history
+
+    assert not history.has_points(kept.owner_key, kept.project_id)
+    listed = _http(kept).get(f"/api/projects/{kept.project_id}/history", headers=_auth(kept)).get_json()
+    assert listed["kept"] is True, listed
+    assert [v["kind"] for v in listed["versions"]] == ["load"] * (1 + 3 + 2), listed["versions"]
+    assert listed["head"] == listed["versions"][-1]["id"]
+    entries = _http(kept).get(f"/api/projects/{kept.project_id}/history/nodes/loader",
+                              headers=_auth(kept)).get_json()
+    assert entries == {"entries": [], "current": None}, entries
+
+
+def test_an_entry_descends_from_the_one_whose_code_it_began_from_and_typing_that_changed_nothing_is_none(kept):
+    """A node's next entry branches from the entry in use: after a run's code
+    is put back, the typing and the run that follow descend from that run, not
+    from the newest entry. Typing that leaves the code as it began is no
+    entry."""
+    from utk_curio.backend.app.collaboration import dataflow_docs, history
+
+    alice = _synced(kept, "alice")
+    runs = f"/api/projects/{kept.project_id}/history/nodes/loader/runs"
+
+    def run(code: str) -> None:
+        answer = _http(kept).post(runs, headers=_auth(kept), data=json.dumps(
+            {"code": code, "inputs": [], "outputs": ["DATAFRAME"]}))
+        assert answer.status_code == 201, answer.get_json()
+
+    run("x = 1\n")
+    alice.edit(_type("# a\n"))
+    run("# a\nx = 1\n")
+    put = _http(kept).post(
+        f"/api/projects/{kept.project_id}/history/nodes/loader/code", headers=_auth(kept),
+        data=json.dumps({"from": "# a\nx = 1\n", "code": "x = 1\n", "label": "Code put back"}),
+    )
+    assert put.status_code == 200, put.get_json()
+    alice.pump()
+    alice.edit(_type("# b\n"))
+    run("# b\nx = 1\n")
+    entries = history.entries(kept.owner_key, kept.project_id, "loader")
+    assert [(e["id"], e["parentId"], e.get("kind", "run")) for e in entries["entries"]] == [
+        (1, None, "run"), (2, 1, "edit"), (3, 2, "run"), (4, 1, "edit"), (5, 4, "run"),
+    ], entries["entries"]
+    assert entries["current"] == 5
+
+    # Typed and taken out again: the code is as it began, and nothing is added.
+    count = len(_points(kept))
+    alice.edit(_type("# c\n"))
+    alice.edit(_erase("# c\n"))
+    kept.clock.now += history.TYPING_PAUSE_S + 1
+    dataflow_docs.flush_due(kept.clock.now)
+    assert len(_points(kept)) == count, _points(kept)[count:]
+    assert _code_of(kept.live()["dataflow"], "loader") == "# b\nx = 1\n"
+
+
 def test_a_run_whose_code_the_doc_no_longer_holds_keeps_it(kept):
     from utk_curio.backend.app.collaboration import history
 
@@ -550,6 +618,39 @@ def test_putting_a_version_back_makes_every_tab_hold_it(kept):
     assert (newest["kind"], newest["restores"], newest["parent"], newest["by"]["name"]) == (
         "putBack", first, first, "Bob")
     assert history.versions(kept.owner_key, kept.project_id)["head"] == newest["id"]
+
+
+def test_a_version_put_back_keeps_the_dataflows_name_settings_and_installs(kept):
+    """A version put back brings back its nodes, connections and goal, and
+    leaves the dataflow its name, hand-set categories, auto-run, packages and
+    datasets as they are now: a rename made after the version stays, so the
+    next save, which sends the name the tab shows, renames nothing."""
+    from utk_curio.backend.app.collaboration import dataflow_docs, history
+
+    alice, bob = _synced(kept, "alice"), _synced(kept, "bob")
+    first = history.versions(kept.owner_key, kept.project_id)["head"]
+    now = {
+        "name": "Renamed",
+        "provenance_id": "Renamed",
+        "categories": {"city": ["Chicago"], "topic": ["Greenery"]},
+        "autoRun": True,
+        "packages": ["model.curio.ddrnet23-slim@1"],
+        "datasets": [{"datasetId": "data.cityofchicago.neighborhoods",
+                      "dirName": "data.cityofchicago.neighborhoods@1"}],
+    }
+    alice.edit(_set_fields(task="A later goal", **now))
+    alice.edit(_add_node("extra"))
+    bob.pump()
+    answer = _http(kept).post(f"/api/projects/{kept.project_id}/history/{first}/put-back", headers=_auth(kept, "bob"))
+    assert answer.status_code == 200, answer.get_json()
+    for tab in (alice, bob):
+        flow = tab.dataflow()
+        assert "extra" not in _node_ids(flow)
+        assert flow.get("task") == "", "the version's goal was not put back"
+        assert {name: flow.get(name) for name in now} == now, "the put-back changed the dataflow's own fields"
+    held = dataflow_docs.read(kept.owner_key, kept.project_id)["dataflow"]
+    assert "extra" not in _node_ids(held)
+    assert {name: held.get(name) for name in now} == now, "the server's dataflow lost its own fields"
 
 
 # ---------------------------------------------------------------------------
@@ -682,24 +783,80 @@ def test_node_history_read_reads_the_points(kept):
     assert status == "ok" and json.loads(text)["code"] == "ran = 2\n", text
 
 
-def test_nothing_is_kept_while_the_history_is_off(kept, monkeypatch):
-    """With the history off, as every server runs until the canvas reads it
-    from the server, no change makes a point and no route adds one."""
-    from utk_curio.backend.app.collaboration import dataflow_docs, history
+# ---------------------------------------------------------------------------
+# What a load and a save carry, and copies
+# ---------------------------------------------------------------------------
 
-    monkeypatch.setattr(history, "RECORDING", False)
-    dataflow_docs.close_all()
+def test_a_load_a_shared_view_and_a_saves_answer_carry_no_history(kept):
+    """The history is read from its own routes, by the owner and the editors:
+    no load serves it, so a watcher's link never carries it."""
+    from utk_curio.backend.app.projects import storage
+
+    storage.write_spec(kept.owner_key, kept.project_id, {**copy.deepcopy(FLOW), **_earlier_history()})
+    _synced(kept, "alice")
+    base = f"/api/projects/{kept.project_id}"
+    loaded = _http(kept).get(base, headers=_auth(kept)).get_json()["spec"]
+    shared = _http(kept).get(f"{base}/shared").get_json()["spec"]
+    answered = _http(kept).put(base, headers=_auth(kept), data=json.dumps({"name": "Renamed"})).get_json()["spec"]
+    for name, spec in (("load", loaded), ("shared view", shared), ("save's answer", answered)):
+        assert not set(spec) & set(storage.HISTORY_KEYS), (name, sorted(spec))
+    listed = _http(kept).get(f"{base}/history", headers=_auth(kept)).get_json()
+    assert [v["id"] for v in listed["versions"] if v["kind"] == "imported"] == list(
+        _earlier_history()["dataflowProvenance"]["versions"]
+    )
+
+
+def test_a_save_carrying_history_is_imported_before_the_first_open_and_not_read_after(kept):
+    """A whole save of a dataflow that has no points yet puts the history it
+    carries on record, and the save's own first open imports it; once the
+    dataflow has its points, what a save carries is not read, nor written
+    beside the spec."""
+    from utk_curio.backend.app.collaboration import history
+    from utk_curio.backend.app.projects import storage
+
+    earlier = _earlier_history()
+    base = f"/api/projects/{kept.project_id}"
+    saved = _http(kept).put(base, headers=_auth(kept),
+                            data=json.dumps({"spec": {**copy.deepcopy(FLOW), **copy.deepcopy(earlier)}}))
+    assert saved.status_code == 200, saved.get_json()
+    imported = [p["id"] for p in _points(kept) if p["kind"] == "imported"]
+    assert imported == list(earlier["dataflowProvenance"]["versions"])
+
+    count = len(_points(kept))
+    late = {"nodeProvenance": {"loader": [{"id": 77, "parentId": None, "code": "late()\n", "inputs": [],
+                                           "outputs": [], "startTime": "", "endTime": ""}]}}
+    for body in ({"history": late}, {"spec": {**copy.deepcopy(FLOW), **late}}):
+        answer = _http(kept).put(base, headers=_auth(kept), data=json.dumps(body))
+        assert answer.status_code == 200, answer.get_json()
+    assert storage.history_sections(kept.owner_key, kept.project_id) == {}, "a late history was written beside the spec"
+    assert 77 not in [e["id"] for e in history.entries(kept.owner_key, kept.project_id, "loader")["entries"]]
+    assert all(p["kind"] != "imported" for p in _points(kept)[count:])
+
+
+def test_a_duplicate_and_an_editors_copy_keep_the_history_and_a_watchers_copy_starts_its_own(kept):
+    from utk_curio.backend.app.collaboration import history
+
     alice = _synced(kept, "alice")
-    alice.edit(_add_node("unrecorded"))
-    assert not history.has_points(kept.owner_key, kept.project_id)
-    base = f"/api/projects/{kept.project_id}/history"
-    for url, body in ((f"{base}/saved", {}), (f"{base}/nodes/loader/runs", {"code": "x = 1\n"}),
-                      (f"{base}/nodes/loader/edits", {"label": "An edit"}), (f"{base}/p1/put-back", {}),
-                      (f"{base}/nodes/loader/code", {"from": "x = 1\n", "code": "x = 2\n"}),
-                      (f"{base}/clear", {"before": "p1"})):
-        answer = _http(kept).post(url, headers=_auth(kept), data=json.dumps(body))
-        assert answer.status_code == 409 and answer.get_json()["error"] == history.NOT_KEPT, (url, answer.get_json())
-    assert _code_of(kept.live()["dataflow"], "loader") == "x = 1\n", "a write the history keeps landed without it"
-    listed = _http(kept).get(f"/api/projects/{kept.project_id}/history", headers=_auth(kept)).get_json()
-    assert (listed["versions"], listed["kept"]) == ([], False)
-    assert not history.has_points(kept.owner_key, kept.project_id)
+    alice.edit(_add_node("kept-in-copies"))
+    source = [v["id"] for v in history.versions(kept.owner_key, kept.project_id)["versions"]]
+
+    def versions_of(name: str, project: dict) -> list:
+        key = kept.owner_key if name == "alice" else str(kept.users[name].id)
+        return [v["id"] for v in history.versions(key, project["id"])["versions"]]
+
+    duplicate = _http(kept).post(f"/api/projects/{kept.project_id}/duplicate", headers=_auth(kept))
+    assert duplicate.status_code == 201, duplicate.get_json()
+    assert versions_of("alice", duplicate.get_json()) == source
+
+    for name in ("bob", "carol"):
+        made = _http(kept).post("/api/projects", headers=_auth(kept, name), data=json.dumps(
+            {"name": f"{name}'s copy", "spec": copy.deepcopy(FLOW), "copy_of": kept.project_id}))
+        assert made.status_code == 201, made.get_json()
+        copied = made.get_json()
+        if name == "bob":
+            assert versions_of(name, copied) == source, "an editor's copy did not keep the history"
+        else:
+            own = history.versions(str(kept.users[name].id), copied["id"])["versions"]
+            assert all(v["kind"] == "load" for v in own), (
+                f"a watcher's copy took the history it may not read: {[(v['id'], v['kind']) for v in own]}"
+            )

@@ -73,9 +73,9 @@ place in the log the spec was last written from, with that write's revision
   is lost, or when no tab holds it and it has grown to :data:`GROWN_TOO_LARGE`
   times a doc built anew; the old log stays where it is, readable.
 * A doc leaves memory :data:`CLOSE_AFTER_S` after its last tab, written first.
-* While the server records the history (``history.RECORDING``), each change
-  :func:`_commit` logs is a point of it, named after the change's origin, and
-  a dataflow's first open gives it its first points (``history.py``).
+* Each change a write to the log holds is a point of the dataflow's history,
+  named after the change's origin, and a dataflow's first open gives it its
+  first points (``history.py``).
 
 **Writers.** This module is the one writer of ``spec.trill.json``
 (``storage.write_spec``), and every backend writer of a dataflow goes through
@@ -264,10 +264,12 @@ class _OpenDoc:
         self.edge_authors: dict[str, str] = {}
         self.removers: dict[str, dict] = {}
         #: What the doc's last transaction added, removed and typed, the
-        #: observers that note it, and the history's own state of this doc
-        #: (``history.py``), while the history records (``history.RECORDING``).
+        #: observers that note it, each node's code's digest as the last
+        #: change left it, and the history's own state of this doc
+        #: (``history.py``).
         self.touched = None
         self.watching = None
+        self.codes = None
         self.history = None
         # Guarded by this module's lock.
         self.changed_at: Optional[float] = None
@@ -446,8 +448,7 @@ def _roll(entry: _OpenDoc) -> None:
     history's typing points end with the day they began in."""
     day = _today()
     if day != entry.segment:
-        if history.RECORDING:
-            history.close_typing(entry)
+        history.close_typing(entry)
         _start_segment(entry, day)
         _write_pointer(entry)
 
@@ -625,8 +626,7 @@ def _attach(entry: _OpenDoc, doc) -> None:
     entry.awareness.set_local_state(None)  # the server is no one in the room
     doc.observe(entry.on_update)
     entry.awareness.observe(entry.on_awareness)
-    if history.RECORDING:
-        history.observe(entry)
+    history.observe(entry)
 
 
 def _built_anew(entry: _OpenDoc, dataflow: dict) -> None:
@@ -675,10 +675,9 @@ def _load(entry: _OpenDoc) -> None:
         entry.revision, entry.base = file.revision, _owned(file.spec)
         _built_anew(entry, entry.base)
     entry.loaded = True
-    if history.RECORDING:
-        # Before anything this open changes: the dataflow's first points are
-        # the history it carries, or the dataflow as its doc holds it.
-        history.first_points(entry)
+    # Before anything this open changes: the dataflow's first points are the
+    # history it carries, or the dataflow as its doc holds it.
+    history.first_points(entry)
     _catch_up(entry, file)
     if not entry.tabs:
         _built_anew_if_grown(entry)
@@ -941,7 +940,7 @@ def _close(entry: _OpenDoc) -> bool:
     if entry.dirty_since is not None:
         _flush(entry)
     with entry.lock:
-        if history.RECORDING and not entry.closed:
+        if not entry.closed:
             history.close_typing(entry)
         with _lock:
             if entry.closed or entry.tabs or entry.dirty_since is not None or entry.idle_since is None:
@@ -978,7 +977,7 @@ def flush_due(now: Optional[float] = None) -> None:
     for entry in entries:
         with _lock:
             close_due, save_due = _close_due(entry), _save_due(entry)
-        typing_due = history.next_due(entry) if history.RECORDING else None
+        typing_due = history.next_due(entry)
         if typing_due is not None and now >= typing_due:
             with entry.lock:
                 if not entry.closed:
@@ -1015,8 +1014,7 @@ def _run_flusher() -> None:
                     _flusher = None
                 return
             dues = [due for entry in _docs.values()
-                    for due in (_save_due(entry), _close_due(entry),
-                                history.next_due(entry) if history.RECORDING else None)
+                    for due in (_save_due(entry), _close_due(entry), history.next_due(entry))
                     if due is not None]
             wait = max(0.0, min(dues) - _clock()) if dues else CLOSE_AFTER_S
             if failed:
@@ -1032,7 +1030,7 @@ def close_all() -> None:
         if entry.dirty_since is not None:
             _flush(entry)
         with entry.lock:
-            if history.RECORDING and not entry.closed:
+            if not entry.closed:
                 history.close_typing(entry)
             entry.closed = True
     with _lock:
@@ -1582,7 +1580,7 @@ def _logged_and_relayed(entry: _OpenDoc, changes: list[tuple[Optional[str], list
                      exc_info=True)
     _relay(entry, changes)
     _changed(entry)
-    if history.RECORDING and span is not None and taken:
+    if span is not None and taken:
         history.recorded(entry, _spans(changes, taken, span[0]), point=point)
     return logged
 
@@ -1971,15 +1969,14 @@ def _apply_updates(entry: _OpenDoc, updates: dict[str, list[_Queued]], answers: 
 def _apply_states(entry: _OpenDoc, states: dict[str, list[_Queued]]) -> None:
     """A batch's awareness (:func:`_apply_batch`): each socket's entries as
     each client's latest state, accepted and applied, then one message to
-    each tab. While the history records, a person whose states left a node's
-    editor ends their typing point there."""
+    each tab. A person whose states left a node's editor ends their typing
+    point there."""
     own: dict[str, set[int]] = {}
     editing: list[tuple[str, dict, dict]] = []
     for sid, items in states.items():
         accepted, ids = _accepted_awareness(entry, sid, items[-1].me,
                                             _latest([state for item in items for state in item.data]))
-        if history.RECORDING:
-            editing.append((sid, items[-1].me, history.editing(entry, sid)))
+        editing.append((sid, items[-1].me, history.editing(entry, sid)))
         entry.awareness.apply_awareness_update(accepted, sid)
         own[sid] = ids | {client for client, owner in entry.awareness_owners.items() if owner == sid}
     _relay_states(entry, own)
@@ -2115,8 +2112,7 @@ def leave(sid: str) -> None:
         with entry.lock:
             if entry.closed:
                 continue
-            if history.RECORDING:
-                history.close_typing(entry, sid=sid)
+            history.close_typing(entry, sid=sid)
             entry.tabs.pop(sid, None)
             ids = [client for client, owner in entry.awareness_owners.items() if owner == sid]
             for client in ids:

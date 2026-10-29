@@ -1,13 +1,19 @@
 import React from "react";
+import clsx from "clsx";
 import type { AgentAttachment } from "../../../services/agents";
+import { usePeopleHere } from "../../../providers/collab/usePeopleHere";
 import { AgentAvatarBadge } from "./AgentAvatarBadge";
+import { PeopleHere } from "./PeopleHere";
 import styles from "./AgentDock.module.css";
 
 /**
- * Canvas-agent dock: the same avatar chips as the node badges (per the
- * concept), clustered in a persistent bar centered at the top of the canvas.
- * Clicking an avatar opens its chat; the hover ✕ detaches. Renders nothing when
- * there are no canvas agents.
+ * The canvas's dock, centered at the top of the canvas: who is here. The
+ * canvas agents, as the same avatar chips as the node badges (per the
+ * concept), and beside them a chip for each other person in the dataflow's
+ * room, read from its doc's awareness, with the Activity button at the row's
+ * end (`PeopleHere`). Clicking an agent's avatar opens its chat; the hover ✕
+ * detaches. Your own chip is not in the row, so with nobody else and no canvas
+ * agent the dock renders nothing.
  *
  * The goal field here is NOT a chat composer, which is what #227 assumed when
  * it asked which of several attached agents answers a question typed into it.
@@ -21,19 +27,39 @@ export const GOAL_PLACEHOLDER = "What is this dataflow for?";
 
 const GOAL_INPUT_ID = "curio-dataflow-goal";
 
+const NO_AGENTS: AgentAttachment[] = [];
+const noop = () => undefined;
+
 export const AgentDock: React.FC<{
-  attachments: AgentAttachment[];
-  selectedId: string | null;
-  onSelect: (attachmentId: string) => void;
-  onDetach: (attachmentId: string) => void;
+  /** The canvas agents: the owner's canvas has them, anyone else's none. */
+  attachments?: AgentAttachment[];
+  selectedId?: string | null;
+  onSelect?: (attachmentId: string) => void;
+  onDetach?: (attachmentId: string) => void;
   /** Shown whenever any agent is attached, canvas-target or not. */
   showGoal?: boolean;
   goal?: string;
   onGoalChange?: (goal: string) => void;
-}> = ({ attachments, selectedId, onSelect, onDetach, showGoal, goal, onGoalChange }) => {
-  if (attachments.length === 0 && !showGoal) return null;
+  /** A read-only canvas: the dock sits under its banner. */
+  belowBanner?: boolean;
+}> = ({
+  attachments = NO_AGENTS,
+  selectedId = null,
+  onSelect = noop,
+  onDetach = noop,
+  showGoal,
+  goal,
+  onGoalChange,
+  belowBanner = false,
+}) => {
+  const here = usePeopleHere();
+  if (attachments.length === 0 && !showGoal && here.people.length === 0) return null;
   return (
-    <div className={styles.dock} role="toolbar" aria-label="Canvas agents">
+    <div
+      className={clsx(styles.dock, belowBanner && styles.dockBelowBanner)}
+      role="toolbar"
+      aria-label="Canvas agents"
+    >
       {showGoal && (
         // The dataflow's goal. Built-in agents declare `workflowGoal` in
         // their manifest `reads` (the Node Builder's content mode, and the
@@ -72,6 +98,7 @@ export const AgentDock: React.FC<{
           onDetach={() => onDetach(a.attachmentId)}
         />
       ))}
+      {here.people.length > 0 && <PeopleHere people={here.people} pointerOf={here.pointerOf} />}
     </div>
   );
 };

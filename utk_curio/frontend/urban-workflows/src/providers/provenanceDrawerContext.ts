@@ -7,6 +7,9 @@ export interface NodeProvenanceTarget {
   title: string;
   /** Puts a run's code back in the node's editor. */
   restore: (code: string) => void;
+  /** Shows the node's code, which the server put back (a canvas bound to the
+   *  dataflow's doc). */
+  showCode?: () => void;
 }
 
 /**

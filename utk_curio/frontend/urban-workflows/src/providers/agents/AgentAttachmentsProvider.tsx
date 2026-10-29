@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo } from "react";
 
-import { useFlowContext } from "../FlowProvider";
 import { useAgentAttachments, type AgentAttachmentsState } from "../../services/agents";
+import { useAgentsDataflowId } from "./useAgentsDataflowId";
 import { useAgentSession, type AgentSessionSlice } from "./useAgentSession";
 import { useAgentProposals, type AgentProposalsSlice } from "./useAgentProposals";
 import { useAgentSolve, type AgentSolveSlice } from "./useAgentSolve";
@@ -34,6 +34,9 @@ export interface AgentAttachmentsContextValue
   /** An editor the owner invited drives the agents here: an install a
    * proposal makes waits for the owner's review (`agentsOnCanvas`). */
   installsWaitForOwner?: boolean;
+  /** The dataflow these agents work on (`useAgentsDataflowId`), or null when
+   * the hook is disabled or there is none. */
+  dataflowId?: string | null;
 }
 
 const AgentAttachmentsContext = createContext<AgentAttachmentsContextValue | null>(null);
@@ -46,8 +49,10 @@ export const AgentAttachmentsProvider: React.FC<{
   installsWaitForOwner?: boolean;
   children: React.ReactNode;
 }> = ({ enabled = true, installsWaitForOwner = false, children }) => {
-  const { projectId } = useFlowContext();
-  const effectiveProjectId = enabled ? (projectId ?? null) : null;
+  // The dataflow whose agents this canvas drives: on an invited editor's
+  // canvas, the one its link opened, since the flow state names none there.
+  const dataflowId = useAgentsDataflowId();
+  const effectiveProjectId = enabled ? dataflowId : null;
   const state = useAgentAttachments(effectiveProjectId);
   const session = useAgentSession(effectiveProjectId, state);
   const { projectRef, refreshAfterMutation, setSelectedId, ...sessionValue } = session;
@@ -75,9 +80,10 @@ export const AgentAttachmentsProvider: React.FC<{
       ...simulation,
       ...nodeRuns,
       installsWaitForOwner,
+      dataflowId: effectiveProjectId,
     }),
     // `sessionValue` is a rest of `session`, whose identity already tracks its fields.
-    [state, session, setSelectedId, proposals, solve, simulation, nodeRuns, installsWaitForOwner],
+    [state, session, setSelectedId, proposals, solve, simulation, nodeRuns, installsWaitForOwner, effectiveProjectId],
   );
 
   return <AgentAttachmentsContext.Provider value={value}>{children}</AgentAttachmentsContext.Provider>;

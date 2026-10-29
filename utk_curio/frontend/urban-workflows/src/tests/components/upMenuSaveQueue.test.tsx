@@ -36,7 +36,7 @@ jest.mock("../../providers/UserProvider", () => ({
   useUserContext: () => ({ skipProjectPage: false }),
 }));
 jest.mock("../../providers/CollaborationProvider", () => ({
-  useCollab: () => ({ enabled: false, panelOpen: false, setPanelOpen: jest.fn(), connected: false, users: [] }),
+  useCollab: () => ({ connected: false, users: [] }),
 }));
 jest.mock("../../hook/useSharedView", () => ({ useSharedView: () => false }));
 jest.mock("../../components/layout/GlobalPageHeader", () => ({

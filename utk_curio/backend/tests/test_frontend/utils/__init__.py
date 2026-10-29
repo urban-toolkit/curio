@@ -190,6 +190,7 @@ from .canvas_authoring import (  # noqa: F401
     canvas_node_type,
     node_locator,
     enable_save_output,
+    is_dataflow_save,
     save_dataflow,
     save_dataflow_and_settle_header,
     settle_header_after_save,

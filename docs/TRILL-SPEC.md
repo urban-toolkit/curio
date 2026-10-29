@@ -9,7 +9,7 @@ Trills live in two places:
 
 | Where | What |
 |---|---|
-| `.curio/users/<userKey>/projects/<projectId>/` | a user's saved projects: `spec.trill.json`, with `nodeProvenance` and `dataflowProvenance` kept beside it in `history/` |
+| `.curio/users/<userKey>/projects/<projectId>/` | a user's saved projects: `spec.trill.json`, with the dataflow's history beside it in `history/`, into which the server imports `nodeProvenance` and `dataflowProvenance` once |
 | `docs/examples/*.json`, `docs/examples/dataflows/*.json` | the examples shipped in-repo |
 
 ## Structure
@@ -29,8 +29,8 @@ spec
 │   ├── scenarios[]             named selections of the nodes
 │   ├── agents[]                agent lockfile             (backend-owned, stripped on share)
 │   └── agentAttachments[]      live agent bindings        (backend-owned, stripped on share)
-├── nodeProvenance              per-node history of runs and edits (written by the canvas, read by agents)
-└── dataflowProvenance          version history of the whole dataflow
+├── nodeProvenance              per-node history of runs and edits (written by a canvas of an unsaved dataflow)
+└── dataflowProvenance          version history of the whole dataflow (the same)
 ```
 
 ### A node

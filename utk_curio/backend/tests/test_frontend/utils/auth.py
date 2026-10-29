@@ -94,30 +94,41 @@ def signup_and_enter_new_workflow(
 
 
 def require_owner_view(page, *, timeout: float = 4000) -> None:
-    """Fail when the dataflow opened read-only as the shared guest.
+    """Fail unless this tab is the dataflow's owner's.
 
-    This used to ``pytest.skip`` here, and that was the wrong call. A dataflow's
+    A dataflow has an owner, the editors the owner invited, and watchers:
+    anyone else who opens its link, a hosted guest among them. A dataflow's
     packages, datasets and agents are visible only to the user who installed
-    them, so a browser that lands as the shared guest sees empty catalogs -
-    which means every test guarded by this is testing nothing. Skipping made
-    that invisible: ``scripts/test.sh`` booted its shared stack without
-    ``--deploy``, and 43 tests across 22 files - the whole agent-catalog suite
-    among them - quietly skipped while the run reported green.
+    them, so a tab that is not the owner's sees empty catalogs, and every test
+    guarded by this would be testing nothing.
 
-    The environment being wrong is a setup bug, and a setup bug should be loud.
-    Detection is unchanged; only the consequence is. The fix when this fires is
-    to boot with ``--deploy`` (which ``scripts/test.sh`` and the
-    ``curio_servers`` fixture both now do), never to tolerate the state.
+    A watcher's canvas shows the read-only banner. An editor's has none, but
+    only the owner's tab saves the dataflow, so only it has the save status.
+
+    The usual cause is a stack without user auth, where the browser lands as
+    the shared guest: a setup bug, which should be loud, not a skip. The fix is
+    to boot with ``--deploy`` (``scripts/test.sh`` and the ``curio_servers``
+    fixture both do), never to tolerate the state.
     """
     banner = page.get_by_test_id("shared-view-banner")
     try:
         banner.wait_for(state="visible", timeout=timeout)
     except PlaywrightTimeoutError:
-        return  # no banner → authenticated owner, proceed
-    raise AssertionError(
-        "Dataflow opened read-only as the shared guest, so this test would "
-        "assert against empty catalogs. The stack is running without user "
-        "auth: boot it with `--deploy` (scripts/test.sh does, and so does the "
-        "curio_servers fixture), or unset CURIO_NO_AUTH in the pytest "
-        "environment so the fixture passes --deploy for you."
-    )
+        pass  # no banner: not a watcher
+    else:
+        raise AssertionError(
+            "The dataflow opened read-only: this tab watches it, so this test "
+            "would assert against empty catalogs. The stack is running without "
+            "user auth: boot it with `--deploy` (scripts/test.sh does, and so "
+            "does the curio_servers fixture), or unset CURIO_NO_AUTH in the "
+            "pytest environment so the fixture passes --deploy for you."
+        )
+    try:
+        page.locator("[data-curio-save-state]").first.wait_for(state="visible", timeout=30000)
+    except PlaywrightTimeoutError:
+        raise AssertionError(
+            "The dataflow opened as someone else's: this tab has no save "
+            "status, which only the owner's tab has (an editor the owner "
+            "invited edits, but saves nothing), so this test would assert "
+            "against another account's catalogs."
+        ) from None
