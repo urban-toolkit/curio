@@ -90,7 +90,7 @@ const USERS = [
   { user_id: 7, username: "ana", participant_id: "p-1", role: "owner" },
   { user_id: 7, username: "ana", participant_id: "p-2", role: "editor" },
 ];
-const SNAPSHOT = { users: USERS, locks: {}, proposals: [], activity: [] };
+const SNAPSHOT = { users: USERS, locks: {}, activity: [] };
 
 beforeEach(() => {
   sockets = [];
