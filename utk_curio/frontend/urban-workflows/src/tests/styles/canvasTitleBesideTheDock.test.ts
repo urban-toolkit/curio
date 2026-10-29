@@ -12,11 +12,17 @@ import { DOCK_LEFT_PROPERTY } from "../../components/agents/attach/AgentDock";
  * is cut in its header.
  *
  * Source-read for the reason agentDockGoalGeometry.test.ts gives: Jest maps
- * CSS modules to identity-obj-proxy, and jsdom lays nothing out.
- * test_canvas_title_beside_the_dock_e2e.py measures it in a browser.
+ * CSS modules to identity-obj-proxy, and jsdom lays nothing out; and UpMenu
+ * needs the whole provider stack to mount, as upMenuRename.test.ts says.
+ * test_canvas_title_beside_the_dock_e2e.py measures it in a browser and
+ * hovers it.
  */
 const CSS = fs.readFileSync(
   path.resolve(__dirname, "../../components/menus/top/UpMenu.module.css"),
+  "utf8",
+);
+const UP_MENU = fs.readFileSync(
+  path.resolve(__dirname, "../../components/menus/top/UpMenu.tsx"),
   "utf8",
 );
 const NODE_TITLE_CSS = fs.readFileSync(
@@ -48,5 +54,14 @@ describe("the canvas title beside the agents' dock", () => {
     expect(DOCK_LEFT_PROPERTY).toBe("--curio-canvas-dock-left");
     const maxWidth = (ruleBody(CSS, ".workflowNameStyle") ?? "").match(/\n\s*max-width:([^;]*);/);
     expect(maxWidth?.[1]).toContain(`var(${DOCK_LEFT_PROPERTY},`);
+  });
+
+  it("gives the whole name as its tooltip", () => {
+    // The title's own element: the heading drawn with the style above.
+    const heading = UP_MENU.slice(
+      UP_MENU.indexOf("className={styles.workflowNameStyle}"),
+      UP_MENU.indexOf("</h1>", UP_MENU.indexOf("className={styles.workflowNameStyle}")),
+    );
+    expect(heading).toContain("data-tooltip={workflowName}");
   });
 });

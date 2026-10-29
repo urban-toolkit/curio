@@ -21,12 +21,16 @@ from typing import TYPE_CHECKING
 from playwright.sync_api import expect
 
 from .utils import (
+    CLOSEUP_MAX_DIFF_RATIO,
+    CLOSEUP_PIXEL_THRESHOLD,
     _wait_for_reactflow_ready,
     hover_until_tooltip_says,
     require_owner_view,
     require_project_page,
     require_user_auth,
+    save_workflow_test_screenshot,
     stub_login_and_enter_workflow,
+    tooltip_close_up,
 )
 
 if TYPE_CHECKING:
@@ -37,6 +41,7 @@ SHORT_NAME = "Heat islands"
 TITLE = "[data-curio-canvas-title] h1"
 DOCK = '[role="toolbar"][aria-label="Canvas agents"]'
 AGENT = "agent.curio.dataflow-builder@1"
+FRAMES = "canvas-title-beside-the-dock"
 
 # The title's box, the dock's and whether the title's text is cut, as the page
 # lays them out now.
@@ -100,10 +105,11 @@ def _open(page, app_frontend, current_server, *, username: str, name: str) -> No
     expect(page.locator(TITLE)).to_have_text(name, timeout=30000)
 
 
-def _attach_an_agent(page, current_server: str) -> None:
+def _attach_an_agent(page, current_server: str, name: str) -> None:
     """An agent attached to the canvas, which brings the dock and its goal
     field, over HTTP as the dataflow-goal walkthrough attaches one; then the
-    page again, whose dock is drawn from the attachments it reads."""
+    page again, whose dock is drawn from the attachments it reads, once it
+    shows the dataflow *name*."""
     token = page.evaluate(
         "() => (document.cookie.match(/(?:^|; )session_token=([^;]*)/) || [])[1] || ''"
     )
@@ -121,6 +127,31 @@ def _attach_an_agent(page, current_server: str) -> None:
     require_owner_view(page)
     expect(page.locator(DOCK)).to_be_visible(timeout=30000)
     expect(page.get_by_label("Dataflow goal")).to_be_visible(timeout=30000)
+    expect(page.locator(TITLE)).to_have_text(name, timeout=30000)
+
+
+def _frame(page, name: str, failures: list[str], **capture) -> None:
+    """One of the test's close-ups. A missing or moved frame is told at the
+    test's end, so every check after it still runs."""
+    try:
+        save_workflow_test_screenshot(
+            page, FRAMES, test_name=name, fit_reactflow=False,
+            pixel_threshold=CLOSEUP_PIXEL_THRESHOLD, max_diff_ratio=CLOSEUP_MAX_DIFF_RATIO,
+            closeup=True, **capture,
+        )
+    except AssertionError as error:
+        failures.append(f"{name}: {error}")
+
+
+def _row(page) -> dict:
+    """The box around the title and the dock, a few pixels out."""
+    boxes = [page.locator(TITLE).bounding_box(), page.locator(DOCK).bounding_box()]
+    left = min(box["x"] for box in boxes) - 8
+    top = min(box["y"] for box in boxes) - 6
+    right = max(box["x"] + box["width"] for box in boxes) + 8
+    bottom = max(box["y"] + box["height"] for box in boxes) + 6
+    return {"x": int(max(0, left)), "y": int(max(0, top)),
+            "width": int(right - max(0, left)) + 1, "height": int(bottom - max(0, top)) + 1}
 
 
 def _title_ends_before_the_dock(page, what: str) -> dict:
@@ -152,17 +183,22 @@ def test_a_long_title_stops_before_the_agents_dock_and_shows_whole_on_hover(
 ):
     require_project_page()
     require_user_auth()
+    frames_failed: list[str] = []
     _open(page, app_frontend, current_server, username="title_dock_long", name=LONG_NAME)
-    _attach_an_agent(page, current_server)
-    expect(page.locator(TITLE)).to_have_text(LONG_NAME, timeout=30000)
+    _attach_an_agent(page, current_server, LONG_NAME)
 
     layout = _title_ends_before_the_dock(page, "A long name beside the dock")
     assert layout["cut"], f"the long name fits beside the dock, so this checks nothing: {layout}"
     assert layout["title"]["right"] - layout["title"]["left"] > 100, (
         f"the title is cut to almost nothing: {layout}"
     )
+    # The row as it reads, the pointer off the canvas so nothing hovers.
+    page.mouse.move(2, 2)
+    _frame(page, "long-title-row", frames_failed, clip_rect=_row(page))
     # The whole name is the title's tooltip.
-    hover_until_tooltip_says(page, TITLE, "the canvas title", [LONG_NAME])
+    tip = hover_until_tooltip_says(page, TITLE, "the canvas title", [LONG_NAME])
+    _frame(page, "long-title-tooltip", frames_failed, keep_tooltip=True, clip_rect=tooltip_close_up(page, tip))
+    assert not frames_failed, "\n".join(frames_failed)
 
 
 def test_a_short_title_beside_the_agents_dock_is_shown_whole(
@@ -171,7 +207,7 @@ def test_a_short_title_beside_the_agents_dock_is_shown_whole(
     require_project_page()
     require_user_auth()
     _open(page, app_frontend, current_server, username="title_dock_short", name=SHORT_NAME)
-    _attach_an_agent(page, current_server)
+    _attach_an_agent(page, current_server, SHORT_NAME)
 
     layout = _title_ends_before_the_dock(page, "A short name beside the dock")
     assert layout["text"] == SHORT_NAME and not layout["cut"], (
