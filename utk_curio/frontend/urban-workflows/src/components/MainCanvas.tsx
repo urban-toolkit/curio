@@ -93,6 +93,7 @@ import { isDrawnHidden } from "../utils/hiddenNodes";
 import { isNodeDragRegion, keepPaneOffNodes } from "../utils/nodeDragRegion";
 import { useSharedView } from "../hook/useSharedView";
 import { useCollab } from "../providers/CollaborationProvider";
+import { useDocBinding } from "../providers/collab/docContext";
 import { frameNodesInView, revealRectInView } from "../utils/focusDatasetNodes";
 import { scenarioCanvasView } from "../utils/scenarios/scenarioCanvasView";
 import { BOX_WIDTH, boxLayout } from "./scenarios/ScenarioLayers";
@@ -319,6 +320,18 @@ export function MainCanvas() {
             }
         };
     }, [reactFlow, flowStore]);
+
+    // Test hook, as the one above: this tab's presence in the dataflow's room
+    // (its doc's awareness), so Playwright can read what reached it and say
+    // where this tab points, as another tab's canvas would.
+    const awareness = useDocBinding()?.provider.awareness ?? null;
+    useEffect(() => {
+        if (!awareness) return;
+        (window as any).__curio_awareness = awareness;
+        return () => {
+            if ((window as any).__curio_awareness === awareness) delete (window as any).__curio_awareness;
+        };
+    }, [awareness]);
 
     // Ctrl/Cmd+Enter on a selected node (#223).
     useRunSelectedNodeShortcut();

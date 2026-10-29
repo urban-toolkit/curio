@@ -8,11 +8,8 @@ the drag live while it goes. A tab that opens later finds the last edit, and a
 watcher's typing never reaches anyone. The merge rules say what happened:
 removing a node someone is editing asks first, the one editing it is told and
 can put it back, and a connection drawn to a node removed meanwhile is dropped
-with a message to whoever drew it.
-
-Needs a stack started with ``--collab``: CI's e2e-collab job, which runs the
-tests marked ``needs_collab`` (``runner_split.py``), or a local run with
-``CURIO_E2E_COLLAB=1``. On any other stack it fails saying so.
+with a message to whoever drew it. Every stack serves this: there is no switch
+for it.
 """
 
 from __future__ import annotations
@@ -41,8 +38,6 @@ from .utils.scenario_drawer import close_scenario_drawer, open_in_project_tab, s
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-pytestmark = pytest.mark.needs_collab
-
 FRAMES = "collaboration-doc"
 #: A warning toast saying *words*: the merge rules' messages.
 _TOAST = '[aria-label="Notifications"] [role="status"]:has-text("{}")'
@@ -69,14 +64,6 @@ def _spec() -> dict:
             "scenarios": [{"id": SCENARIO, "name": "Cool roofs", "color": "#4477aa", "nodes": [SPEC_NODE]}],
         },
     }
-
-
-def _require_collab_stack(backend: str) -> None:
-    if not api_json(f"{backend}/api/config/public", "").get("enable_collab"):
-        pytest.fail(
-            "this stack runs without --collab: run the test in CI's e2e-collab job, "
-            "or locally with CURIO_E2E_COLLAB=1"
-        )
 
 
 _BOUND_JS = """() => {
@@ -140,7 +127,6 @@ class _Room:
 def room(app_frontend: "FrontendPage", current_server: str, browser):
     require_project_page()
     require_user_auth()
-    _require_collab_stack(current_server)
     opened = _Room(app_frontend.base_url, current_server, browser)
     try:
         yield opened
