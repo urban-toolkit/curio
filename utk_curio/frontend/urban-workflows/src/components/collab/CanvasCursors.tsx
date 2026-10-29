@@ -6,6 +6,8 @@
  *   the top bar, the tool rail, a menu) or the tab is hidden.
  * - Everyone else's is drawn over the canvas on the scenario layers' plane
  *   (`ParticipantCursors`), watchers' included; this tab's own never is.
+ * - An agent's drag is drawn with the cursor that carries it (`AgentDrags`),
+ *   so a state that carries one has no cursor of its own (`cursors.ts`).
  *
  * A canvas bound to no doc (never saved, a hosted guest's example) sends and
  * draws nothing. A child of React Flow, which it reads the view from.
@@ -25,6 +27,7 @@ import {
     type Point,
 } from "../../providers/collab/cursors";
 import { ParticipantCursors } from "../scenarios/ScenarioLayers";
+import { AgentDrags } from "./AgentDrags";
 
 const NONE: DrawnCursor[] = [];
 const canvasOf = (s: ReactFlowState) => s.domNode;
@@ -106,5 +109,10 @@ export const CanvasCursors = React.memo(function CanvasCursors() {
     const awareness = useDocBinding()?.provider.awareness ?? null;
     useCursorSending(awareness);
     const cursors = useOthersCursors(awareness);
-    return cursors.length > 0 ? <ParticipantCursors cursors={cursors} /> : null;
+    return (
+        <>
+            {cursors.length > 0 ? <ParticipantCursors cursors={cursors} /> : null}
+            <AgentDrags awareness={awareness} />
+        </>
+    );
 });
