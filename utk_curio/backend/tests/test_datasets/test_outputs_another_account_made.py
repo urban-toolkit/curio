@@ -132,6 +132,26 @@ def test_a_save_installs_only_the_outputs_its_caller_may_read(client, user_and_t
     assert _no_dataset_of(user, project_id, "theirs")
 
 
+def test_a_canvas_records_only_the_outputs_its_caller_may_read(client, user_and_token, theirs):
+    """The outputs the owner's canvas sends after a run, a pin or a scenario
+    (no tab saves the dataflow) pass the same check a save's do."""
+    user, token = user_and_token
+    project_id = create_project(client, token, name="A canvas's outputs")
+    mine = _table(token)
+
+    resp = client.post(
+        f"/api/projects/{project_id}/outputs",
+        data=json.dumps({"outputs": [_ref("mine", mine), _ref("theirs", theirs), _ref("gone", GONE)]}),
+        headers=auth_headers(token),
+    )
+
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    body = resp.get_json()
+    assert _installed(body) == ["mine"]
+    assert _warnings(body) == {"theirs": MISSING, "gone": MISSING}
+    assert _no_dataset_of(user, project_id, "theirs")
+
+
 def test_a_new_dataflow_installs_only_the_outputs_its_creator_may_read(client, user_and_token, theirs):
     user, token = user_and_token
     mine = _table(token)
