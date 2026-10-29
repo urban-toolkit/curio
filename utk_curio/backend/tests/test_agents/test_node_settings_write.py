@@ -9,9 +9,10 @@ node's setting is judged by, so a mode the pool has not, an empty column, a
 setting the node's template does not take or a value its widget would not take
 comes back to the model in words it can act on. A key the change gives is
 picked as the node's own select picks it, a key it leaves out stays, and ``{}``
-puts the whole setting back to its default. The review card names the node and
-says each change in the node's own words; Apply writes it into the saved node,
-once what it changes is still what the user reviewed.
+puts the whole setting back to its default. A change that passes lands at once
+in the saved node, as the agent's change with a point of the history of its
+own; its card names the node and says each change in the node's own words, and
+its Undo puts the old values back while the node still holds what it set.
 
 The modules this adds are imported inside each test, so a before-run fails
 here and not the whole collection.
@@ -27,7 +28,6 @@ from utk_curio.backend.tests.test_agents.test_map_edits_grounding import _projec
 from utk_curio.backend.tests.test_agents.test_source_grounding_routes import (
     _attach,
     _install,
-    _proposals,
     _run,
     _script,
     _tool_results,
@@ -65,24 +65,34 @@ def _request(**params) -> str:
     return "```curio.v1\n" + json.dumps({"toolRequest": {"tool": TOOL, "params": params}}) + "\n```"
 
 
-def _propose(client, user, token, monkeypatch, *, target="pool", coord=NB, **params):
+def _change(client, user, token, monkeypatch, *, target="pool", coord=NB, **params):
     """A project holding the nodes above, *coord* attached to the node
     *target* (to the canvas when None) and asked once for a change with
-    *params*: the project, the attachment, the proposal (None when there is
-    none) and what the model was told of its request."""
+    *params*: the project, the attachment, the change's card (None when
+    nothing landed), what the model was told of its request, and the reply's
+    record of what landed (``changes``)."""
     project = _project(client, user, token, _nodes())
     _install(client, token, project, *dict.fromkeys((coord, NB)))
     att = _attach(client, token, project, coord, target={"kind": "node", "targetId": target} if target else None)
-    calls = _script(monkeypatch, [_request(**params), "Proposed: review it above."])
-    proposals = _proposals(_run(client, token, project, att, "change it"))
-    return project, att, (proposals[0] if proposals else None), _tool_results(calls[-1], TOOL)
+    calls = _script(monkeypatch, [_request(**params), "Changed it."])
+    body = _run(client, token, project, att, "change it")
+    assert not [p for p in body["content"] if p["type"] == "proposal"], "a settings change waited for review"
+    cards = [p for p in body["content"] if p["type"] == "change"]
+    return project, att, (cards[0] if cards else None), _tool_results(calls[-1], TOOL), body.get("changes") or []
 
 
-def _apply(client, token, project, att, proposal):
+def _undo(client, token, project, att, change):
     return client.post(
-        f"/api/agents/projects/{project}/attachments/{att}/proposals/{proposal['proposalId']}/apply",
+        f"/api/agents/projects/{project}/attachments/{att}/changes/{change['changeId']}/undo",
         headers=_auth(token),
     )
+
+
+def _points(user, project) -> list[dict]:
+    from utk_curio.backend.app.collaboration import history
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    return history.points(_user_dir_key(user), project)
 
 
 def _saved(user, project) -> dict[str, dict]:
@@ -193,7 +203,7 @@ def test_the_tool_offers_each_setting_with_the_nodes_choices_and_widget_values_b
 
     contract = tools.REGISTRY[TOOL]
     assert contract.effect == "mutate"
-    assert contract.label == "Propose a settings change"
+    assert contract.label == "Change a node's settings"
     params = contract.parameters
     assert list(params["properties"]) == ["nodeId", "dataPool", "simpleVis", "spatialJoin", "widgets"]
     assert "required" not in params
@@ -214,12 +224,12 @@ def test_the_tool_offers_each_setting_with_the_nodes_choices_and_widget_values_b
 
 def test_both_builders_are_told_to_change_an_existing_nodes_setting_in_place():
     """Asked to change a setting of a node already on the canvas, a builder
-    proposes node.settings.write with just that change, never a new node or
+    uses node.settings.write with just that change, never a new node or
     rewritten content."""
     from utk_curio.backend.app.agents.domain import builtin
 
-    assert "propose node.settings.write with that node's REAL id" in builtin.read_prompt_text(DFB, "instruction")
-    assert "propose node.settings.write with just that change" in builtin.read_prompt_text(NB, "instruction")
+    assert "use node.settings.write with that node's REAL id" in builtin.read_prompt_text(DFB, "instruction")
+    assert "use node.settings.write with just that change" in builtin.read_prompt_text(NB, "instruction")
 
 
 def test_every_agent_reads_how_an_existing_nodes_settings_change(tmp_curio):
@@ -253,119 +263,112 @@ def test_every_agent_reads_how_an_existing_nodes_settings_change(tmp_curio):
         assert skill in [handed.name for handed in on_node.handed], (node, skill)
 
 
-class TestAChangeReachesTheCardAndTheNode:
+class TestAChangeLandsInTheNodeAndOnItsCard:
     def test_a_pools_mode_is_changed_beside_the_one_it_leaves(
         self, client, user_and_token, tmp_curio, monkeypatch,
     ):
         user, token = user_and_token
-        project, att, proposal, [said] = _propose(
+        project, att, change, [said], landed = _change(
             client, user, token, monkeypatch, target="pool", dataPool={"betweenCharts": "MERGE_AND"},
         )
-        assert said.startswith(f"[tool result] {TOOL}: proposed"), said
-        assert proposal["summary"] == "Change the settings of the Data Pool node · Picked photos"
-        assert proposal["settingLines"] == ["Conflict between visualizations: Merge (AND)"]
-        assert proposal["pins"]["nodeId"] == "pool"
-        # Nothing changes before the user applies it.
-        assert _saved(user, project)["pool"]["metadata"]["dataPool"] == {"insideChart": "MERGE_OR"}
-
-        response = _apply(client, token, project, att, proposal)
-        assert response.status_code == 200, response.get_json()
+        assert said.startswith(f"[tool result] {TOOL}: applied"), said
+        assert change["kind"] == "settings" and change["status"] == "applied"
+        assert change["summary"] == "Changed the settings of the Data Pool node · Picked photos"
+        assert change["settingLines"] == ["Conflict between visualizations: Merge (AND)"]
+        assert change["nodeId"] == "pool"
+        # It landed at once, beside the mode it leaves.
         assert _saved(user, project)["pool"]["metadata"]["dataPool"] == {
             "insideChart": "MERGE_OR", "betweenCharts": "MERGE_AND",
         }
-        # The canvas takes the change through the node's own select, and the
-        # agent that proposed it is named.
-        assert response.get_json()["appliedSettings"] == {
-            "nodeId": "pool", "settings": {"dataPool": {"betweenCharts": "MERGE_AND"}}, "agent": "Node Builder",
-        }
+        # A canvas no doc binds takes the change through the node's own select.
+        assert [entry["canvas"] for entry in landed] == [
+            {"kind": "node-settings-applied", "nodeId": "pool", "settings": {"dataPool": {"betweenCharts": "MERGE_AND"}}},
+        ]
+        # The card in the chat names the node and says the change in its words.
         turns = client.get(
             f"/api/agents/projects/{project}/attachments/{att}/session", headers=_auth(token),
         ).get_json()["turns"]
         result = json.dumps(turns[-1], ensure_ascii=False)
-        assert "Applied: Data Pool node · Picked photos settings changed." in result
+        assert "Changed the settings of the Data Pool node · Picked photos" in result
         assert "Conflict between visualizations: Merge (AND)" in result
+        # The history has a point of its own for it, the agent's.
+        newest = _points(user, project)[-1]
+        assert newest["kind"] == "agent", newest
+        assert str(newest["by"].get("agent") or "").startswith("agent.curio.node-builder"), newest
 
     def test_a_pools_mode_back_at_overwrite_is_written_as_the_pool_writes_it(
         self, client, user_and_token, tmp_curio, monkeypatch,
     ):
         user, token = user_and_token
-        project, att, proposal, _ = _propose(
+        project, _att, change, _, _ = _change(
             client, user, token, monkeypatch, target="pool", dataPool={"insideChart": "OVERWRITE"},
         )
-        assert proposal["settingLines"] == ["Conflict inside visualization: Overwrite"]
-        assert _apply(client, token, project, att, proposal).status_code == 200
+        assert change["settingLines"] == ["Conflict inside visualization: Overwrite"]
         assert "dataPool" not in (_saved(user, project)["pool"].get("metadata") or {})
 
     def test_a_views_image_column(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
-        project, att, proposal, _ = _propose(
+        project, _att, change, _, landed = _change(
             client, user, token, monkeypatch, target="view", simpleVis={"imageColumn": " overlay_url "},
         )
-        assert proposal["summary"] == "Change the settings of the Simple View node · Overlays"
-        assert proposal["settingLines"] == ["Image column: overlay_url"]
-        response = _apply(client, token, project, att, proposal)
-        assert response.status_code == 200, response.get_json()
+        assert change["summary"] == "Changed the settings of the Simple View node · Overlays"
+        assert change["settingLines"] == ["Image column: overlay_url"]
         assert _saved(user, project)["view"]["metadata"]["simpleVis"] == {"imageColumn": "overlay_url"}
-        assert response.get_json()["appliedSettings"]["settings"] == {"simpleVis": {"imageColumn": "overlay_url"}}
+        assert landed[0]["canvas"]["settings"] == {"simpleVis": {"imageColumn": "overlay_url"}}
 
     def test_every_image_column_clears_the_views_setting(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
-        project, att, proposal, _ = _propose(client, user, token, monkeypatch, target="view", simpleVis={})
-        assert proposal["settingLines"] == ["Image column: all"]
-        response = _apply(client, token, project, att, proposal)
-        assert response.status_code == 200, response.get_json()
+        project, _att, change, _, landed = _change(client, user, token, monkeypatch, target="view", simpleVis={})
+        assert change["settingLines"] == ["Image column: all"]
         assert "simpleVis" not in (_saved(user, project)["view"].get("metadata") or {})
-        assert response.get_json()["appliedSettings"]["settings"] == {"simpleVis": {}}
+        assert landed[0]["canvas"]["settings"] == {"simpleVis": {}}
 
     def test_a_joins_operation_keeps_its_output(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
-        project, att, proposal, _ = _propose(
+        project, _att, change, _, _ = _change(
             client, user, token, monkeypatch, target="join", spatialJoin={"predicate": "within"},
         )
-        assert proposal["summary"] == "Change the settings of the Spatial Join node · Trees in parks"
-        assert proposal["settingLines"] == ["operation within"]
-        assert _apply(client, token, project, att, proposal).status_code == 200
+        assert change["summary"] == "Changed the settings of the Spatial Join node · Trees in parks"
+        assert change["settingLines"] == ["operation within"]
         assert _saved(user, project)["join"]["metadata"]["spatialJoin"] == {"predicate": "within", "output": "counts"}
 
     def test_a_code_nodes_widget_value(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
-        project, att, proposal, _ = _propose(client, user, token, monkeypatch, target="chart", widgets={"combine": "max"})
-        assert proposal["summary"] == "Change the settings of the Python Computation node · Shadow by tract"
-        assert proposal["settingLines"] == ["Combine: max"]
-        response = _apply(client, token, project, att, proposal)
-        assert response.status_code == 200, response.get_json()
+        project, _att, change, _, landed = _change(
+            client, user, token, monkeypatch, target="chart", widgets={"combine": "max"},
+        )
+        assert change["summary"] == "Changed the settings of the Python Computation node · Shadow by tract"
+        assert change["settingLines"] == ["Combine: max"]
         widgets = {w["name"]: w for w in _saved(user, project)["chart"]["metadata"]["widgets"]}
         assert widgets["combine"]["value"] == "max"
         assert "value" not in widgets["threshold"]
-        assert response.get_json()["appliedSettings"]["settings"] == {"widgets": {"combine": "max"}}
+        assert landed[0]["canvas"]["settings"] == {"widgets": {"combine": "max"}}
 
     def test_a_value_nodes_value_named_from_the_canvas(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
-        project, att, proposal, _ = _propose(
+        project, _att, change, _, _ = _change(
             client, user, token, monkeypatch, target=None, nodeId="season", widgets={"season": "winter"},
         )
-        assert proposal["summary"] == "Change the settings of the Python Computation node · Season"
-        assert proposal["settingLines"] == ["season: winter"]
-        assert _apply(client, token, project, att, proposal).status_code == 200
+        assert change["summary"] == "Changed the settings of the Python Computation node · Season"
+        assert change["settingLines"] == ["season: winter"]
         assert _saved(user, project)["season"]["metadata"]["widgets"][0]["value"] == "winter"
 
-    def test_the_dataflow_builder_proposes_one_too(self, client, user_and_token, tmp_curio, monkeypatch):
+    def test_the_dataflow_builder_changes_one_too(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
-        project, att, proposal, [said] = _propose(
+        project, _att, change, [said], _ = _change(
             client, user, token, monkeypatch, target=None, coord=DFB, nodeId="pool",
             dataPool={"betweenCharts": "MERGE_AND"},
         )
-        assert said.startswith(f"[tool result] {TOOL}: proposed"), said
-        assert proposal["settingLines"] == ["Conflict between visualizations: Merge (AND)"]
-        assert _apply(client, token, project, att, proposal).status_code == 200
+        assert said.startswith(f"[tool result] {TOOL}: applied"), said
+        assert change["settingLines"] == ["Conflict between visualizations: Merge (AND)"]
         assert _saved(user, project)["pool"]["metadata"]["dataPool"]["betweenCharts"] == "MERGE_AND"
 
 
 class TestAWrongChangeIsRefusedToTheModel:
     @staticmethod
     def _refused(client, user, token, monkeypatch, **kw) -> str:
-        _project_id, _att, proposal, said = _propose(client, user, token, monkeypatch, **kw)
-        assert proposal is None, "the change was proposed"
+        _project_id, _att, change, said, landed = _change(client, user, token, monkeypatch, **kw)
+        assert change is None and landed == [], "the change landed"
         [refused] = said
         assert refused.startswith(f"[tool result] {TOOL}: refused"), refused
         return refused
@@ -453,42 +456,94 @@ class TestAWrongChangeIsRefusedToTheModel:
         ) in refused, refused
 
 
-class TestApplyChecksWhatTheUserReviewed:
-    def test_a_setting_changed_since_the_review_is_refused_and_kept(
+class TestUndoPutsTheOldValuesBack:
+    def test_undo_puts_back_each_setting_it_changed_as_a_new_point(
         self, client, user_and_token, tmp_curio, monkeypatch,
     ):
         user, token = user_and_token
-        project, att, proposal, _ = _propose(
+        project, att, change, _, _ = _change(
             client, user, token, monkeypatch, target="pool", dataPool={"betweenCharts": "MERGE_AND"},
         )
-        # The user picks another mode in the pool before reviewing the card.
+        before = len(_points(user, project))
+        response = _undo(client, token, project, att, change)
+        assert response.status_code == 200, response.get_json()
+        assert response.get_json()["status"] == "undone"
+        # The mode it left was never the change's: it stays.
+        assert _saved(user, project)["pool"]["metadata"]["dataPool"] == {"insideChart": "MERGE_OR"}
+        # A canvas no doc binds takes the old values through the node's setters.
+        steps = response.get_json()["canvas"]
+        assert [step["kind"] for step in steps] == ["node-settings-applied"] * len(steps)
+        assert steps[-1]["settings"]["dataPool"] == {"insideChart": "MERGE_OR"}
+        # The Undo is a point of its own, the person's, after the agent's.
+        points = _points(user, project)
+        assert len(points) > before
+        assert points[-1]["by"]["kind"] == "person", points[-1]
+        # The card says undone, and a second Undo is refused.
+        turns = client.get(
+            f"/api/agents/projects/{project}/attachments/{att}/session", headers=_auth(token),
+        ).get_json()["turns"]
+        [card] = [p for t in turns for p in t.get("content") or [] if p.get("changeId") == change["changeId"]]
+        assert card["status"] == "undone"
+        assert _undo(client, token, project, att, change).status_code == 409
+
+    def test_undo_takes_back_a_joins_operation_the_change_picked(self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        project, att, change, _, _ = _change(
+            client, user, token, monkeypatch, target="join", spatialJoin={"predicate": "within"},
+        )
+        assert _saved(user, project)["join"]["metadata"]["spatialJoin"] == {"predicate": "within", "output": "counts"}
+        response = _undo(client, token, project, att, change)
+        assert response.status_code == 200, response.get_json()
+        # The operation goes back to the join's default, which the node holds as
+        # none; the output it kept was never the change's.
+        assert _saved(user, project)["join"]["metadata"]["spatialJoin"] == {"output": "counts"}
+        assert response.get_json()["canvas"][-1]["settings"]["spatialJoin"] == {"output": "counts"}
+
+    def test_undo_puts_a_widgets_value_back_to_its_default(self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        project, att, change, _, _ = _change(
+            client, user, token, monkeypatch, target="chart", widgets={"combine": "max"},
+        )
+        assert _undo(client, token, project, att, change).status_code == 200
+        widgets = {w["name"]: w for w in _saved(user, project)["chart"]["metadata"]["widgets"]}
+        assert widgets["combine"].get("value", widgets["combine"]["default"]) == "mean"
+
+    def test_a_setting_someone_changed_after_is_kept_and_the_undo_refused(
+        self, client, user_and_token, tmp_curio, monkeypatch,
+    ):
+        user, token = user_and_token
+        project, att, change, _, _ = _change(
+            client, user, token, monkeypatch, target="pool", dataPool={"betweenCharts": "MERGE_AND"},
+        )
+        # The user picks another mode in the pool after the agent's change.
         nodes = _nodes()
         nodes[0]["metadata"]["dataPool"] = {"insideChart": "MERGE_OR", "betweenCharts": "MERGE_OR"}
         _resave(client, token, project, nodes)
 
-        response = _apply(client, token, project, att, proposal)
+        response = _undo(client, token, project, att, change)
         assert response.status_code == 409, response.get_json()
-        assert "changed since" in response.get_json()["error"]
+        assert "changed this node after; nothing was undone." in response.get_json()["error"]
         assert _saved(user, project)["pool"]["metadata"]["dataPool"] == {
             "insideChart": "MERGE_OR", "betweenCharts": "MERGE_OR",
         }
-        cards = client.get(f"/api/agents/projects/{project}/attachments", headers=_auth(token)).get_json()
-        assert cards["attachments"][0]["activeProposal"]["status"] == "stale"
 
-    def test_what_the_change_does_not_touch_may_change_since_the_review(
+    def test_what_the_change_does_not_touch_may_change_after_and_undo_still_works(
         self, client, user_and_token, tmp_curio, monkeypatch,
     ):
-        """The review pins what the change touches: the node moved and its
-        other widget given a value still apply."""
+        """Undo checks only what the change touches: the node moved and its
+        other widget given a value, Undo still puts the one it set back."""
         user, token = user_and_token
-        project, att, proposal, _ = _propose(client, user, token, monkeypatch, target="chart", widgets={"combine": "max"})
+        project, att, change, _, _ = _change(
+            client, user, token, monkeypatch, target="chart", widgets={"combine": "max"},
+        )
         nodes = _nodes()
         nodes[3]["x"] = 1500
+        nodes[3]["metadata"]["widgets"][0]["value"] = "max"
         nodes[3]["metadata"]["widgets"][1]["value"] = 7
         _resave(client, token, project, nodes)
 
-        response = _apply(client, token, project, att, proposal)
+        response = _undo(client, token, project, att, change)
         assert response.status_code == 200, response.get_json()
         widgets = {w["name"]: w for w in _saved(user, project)["chart"]["metadata"]["widgets"]}
-        assert widgets["combine"]["value"] == "max"
+        assert widgets["combine"].get("value", widgets["combine"]["default"]) == "mean"
         assert widgets["threshold"]["value"] == 7

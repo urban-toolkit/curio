@@ -545,22 +545,51 @@ describe("AgentChatPanel structured content (memo dev/39)", () => {
   });
 });
 
-describe("AgentChatPanel review + tool activity (memo dev/41)", () => {
-  it("renders a proposal part as the review card and wires apply", () => {
+describe("AgentChatPanel changes, reviews + tool activity (memo dev/41)", () => {
+  it("renders a change part as the change card and wires its Undo", () => {
+    const onUndoChange = jest.fn().mockResolvedValue(undefined);
+    renderPanel({
+      turns: [
+        {
+          role: "agent",
+          text: "I wrote the node's code.",
+          content: [
+            {
+              type: "change",
+              changeId: "c1",
+              tool: "node.content.write",
+              kind: "content",
+              summary: "Replaced the content of the Python node · n1",
+              preview: "print(2)",
+              status: "applied",
+              lines: ["n1"],
+              nodeId: "n1",
+            } as never,
+          ],
+        },
+      ],
+      onUndoChange,
+    });
+    expect(screen.queryByRole("button", { name: "Apply" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    expect(onUndoChange).toHaveBeenCalledWith("c1");
+  });
+
+  it("renders an install's proposal part as the review card and wires apply", () => {
     const onApplyProposal = jest.fn().mockResolvedValue(undefined);
     renderPanel({
       turns: [
         {
           role: "agent",
-          text: "Here is my proposal.",
+          text: "This needs the Cities dataset.",
           content: [
             {
               type: "proposal",
               proposalId: "p1",
-              tool: "node.content.write",
-              summary: "Replace the content of node 'n1'",
-              preview: "print(2)",
-              pins: { nodeId: "n1", contentSha256: "abc" },
+              tool: "dataset.install",
+              summary: "Install dataset · Cities",
+              preview: "Cities · csv · imported",
+              pins: { datasetId: "imported.abc@1" },
               status: "pending",
             },
           ],
@@ -649,14 +678,15 @@ describe("AgentChatPanel says when a canvas agent changed nothing (#243)", () =>
     capabilities: NODE_BUILDER_CAPABILITIES,
   };
   const ask: AgentSessionTurn = { role: "user", text: "Add a node that loads the parks." };
-  const proposal = {
-    type: "proposal",
-    proposalId: "pc1",
+  const created = {
+    type: "change",
+    changeId: "c1",
     tool: "node.create",
-    summary: "Create a node",
+    kind: "node",
+    summary: "Created a new Python node",
     preview: "print(1)",
-    pins: { nodeType: "COMPUTATION_ANALYSIS" },
-    status: "pending",
+    status: "applied",
+    lines: ["Load parks · COMPUTATION_ANALYSIS"],
   };
 
   it("a reloaded Node Builder reply with only a dataflow.read call says so", () => {
@@ -672,17 +702,34 @@ describe("AgentChatPanel says when a canvas agent changed nothing (#243)", () =>
     expect(screen.getByText(NO_CHANGE)).toBeInTheDocument();
   });
 
-  it("a reply that holds a node.create proposal does not", () => {
+  it("a reply that holds a node it added does not", () => {
     renderPanel({
       attachment: nodeBuilder,
       turns: [
         ask,
-        savedReply("Here is the node for your review.", {
-          toolCalls: [{ tool: "node.create", status: "proposed", durationMs: 3 }],
-        }, [proposal]),
+        savedReply("I added the node.", {
+          toolCalls: [{ tool: "node.create", status: "applied", durationMs: 3 }],
+        }, [created]),
       ],
     });
-    expect(screen.getByText("Here is the node for your review.")).toBeInTheDocument();
+    expect(screen.getByText("I added the node.")).toBeInTheDocument();
+    expect(screen.queryByText(NO_CHANGE)).not.toBeInTheDocument();
+  });
+
+  it("a reply that holds an install waiting for review does not either", () => {
+    const install = {
+      type: "proposal", proposalId: "pk1", tool: "package.install", summary: "Install package · Weather",
+      preview: "weather", pins: { dirName: "curio.weather@1" }, status: "pending",
+    };
+    renderPanel({
+      attachment: nodeBuilder,
+      turns: [
+        ask,
+        savedReply("This needs the weather package.", {
+          toolCalls: [{ tool: "package.install", status: "proposed", durationMs: 3 }],
+        }, [install]),
+      ],
+    });
     expect(screen.queryByText(NO_CHANGE)).not.toBeInTheDocument();
   });
 
@@ -702,20 +749,20 @@ describe("AgentChatPanel says when a canvas agent changed nothing (#243)", () =>
     expect(screen.getByText(NO_CHANGE)).toBeInTheDocument();
   });
 
-  it("a node.create the turn recovered from leaves no line beside the proposal (#447)", () => {
+  it("a node.create the turn recovered from leaves no line beside the change (#447)", () => {
     renderPanel({
       attachment: nodeBuilder,
       turns: [
         ask,
-        savedReply("Here is the node for your review.", {
+        savedReply("I added the node.", {
           toolCalls: [
             { tool: "node.create", status: "refused", durationMs: 1, reason: "template.content must be a non-empty string" },
-            { tool: "node.create", status: "proposed", durationMs: 3 },
+            { tool: "node.create", status: "applied", durationMs: 3 },
           ],
-        }, [proposal]),
+        }, [created]),
       ],
     });
-    expect(screen.getByRole("group", { name: "Review proposal: Create a node" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Change: Created a new Python node" })).toBeInTheDocument();
     expect(screen.queryByText(/^node\.create ·/)).not.toBeInTheDocument();
   });
 
@@ -724,7 +771,7 @@ describe("AgentChatPanel says when a canvas agent changed nothing (#243)", () =>
       attachment: nodeBuilder,
       turns: [
         ask,
-        savedReply("Here is the node for your review.", {}, [proposal]),
+        savedReply("I added the node.", {}, [created]),
         // A Solve verdict: written by the run, not a reply to a message.
         savedReply("Solved 'Load parks': the corrected code ran successfully.", {
           pins: { coord: "agent.curio.node-builder@1", tools: [], intentEdited: false },
@@ -1228,15 +1275,15 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Failed");
   });
 
-  it("a pending review proposal marks only the newest reply", () => {
+  it("a pending install review marks only the newest reply", () => {
     renderPanel({
       attachment: {
         ...attachment,
         activeProposal: {
           proposalId: "p1",
-          tool: "node.content.write",
-          nodeId: "n1",
-          summary: "write",
+          tool: "dataset.install",
+          nodeId: "",
+          summary: "Install dataset · Cities",
           status: "pending",
         },
       },
@@ -1252,6 +1299,40 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
     const statuses = screen.getAllByRole("status");
     expect(statuses[0]).not.toHaveTextContent("Awaiting your review");
     expect(statuses[1]).toHaveTextContent("Awaiting your review");
+  });
+
+  it("a review of a change saved before agents edited directly awaits nothing and keeps Dismiss alone", () => {
+    const onApplyProposal = jest.fn().mockResolvedValue(undefined);
+    const onDismissProposal = jest.fn().mockResolvedValue(undefined);
+    const summary = "Replace the content of node n1";
+    renderPanel({
+      attachment: {
+        ...attachment,
+        activeProposal: { proposalId: "p-old", tool: "node.content.write", nodeId: "n1", summary, status: "pending" },
+      },
+      turns: [
+        { role: "user", text: "q1" },
+        {
+          ...doneTurn("a1", [10, 10]),
+          content: [{
+            type: "proposal", proposalId: "p-old", tool: "node.content.write", summary,
+            preview: "print(2)", pins: { nodeId: "n1" }, status: "pending",
+          }],
+        } as AgentSessionTurn,
+      ],
+      onApplyProposal,
+      onDismissProposal,
+    });
+    expect(screen.queryByText("Awaiting your review")).toBeNull();
+    const saved = within(screen.getByRole("group", { name: `Review proposal: ${summary}` }));
+    expect(saved.queryByRole("button", { name: "Apply" })).toBeNull();
+    // Read here, so a checkout without it fails this test alone.
+    const { MADE_BEFORE_DIRECT_EDITS } = require("../../components/agents/content/reviewCard/reviewCardText");
+    expect(MADE_BEFORE_DIRECT_EDITS).toEqual(expect.any(String));
+    expect(saved.getByText(MADE_BEFORE_DIRECT_EDITS)).toBeInTheDocument();
+    fireEvent.click(saved.getByRole("button", { name: "Dismiss" }));
+    expect(onDismissProposal).toHaveBeenCalledWith("p-old");
+    expect(onApplyProposal).not.toHaveBeenCalled();
   });
 
   it("the live cumulative counter includes the in-flight run's interim sums", () => {

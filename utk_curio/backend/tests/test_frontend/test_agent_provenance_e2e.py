@@ -2,7 +2,7 @@
 Provenance drawer, named after the agent, holding the code it replaced.
 
 The Node Builder, attached to a Python node that keeps the years from 2020 on,
-proposes code that drops that filter; the user applies it in the chat. The
+writes code that drops that filter, and the change lands with its reply. The
 server writes the code into the dataflow's doc and keeps the change in the
 dataflow's history as an edit named after the agent, with the code it left and
 the code it replaced, and the node's Provenance drawer lists it. One close-up
@@ -90,10 +90,10 @@ def _write_reply() -> str:
 def test_an_agents_change_to_a_python_node_is_an_entry_named_after_it_holding_the_code_it_replaced(
     page, frontend_server, current_server,
 ):
-    """The Node Builder, attached to the Python node, proposes new code and the
-    user applies it. The node holds the agent's code; the dataflow's history
-    keeps an edit of the node named after the agent, with the code it left and
-    the code it replaced; the node's Provenance drawer lists it."""
+    """The Node Builder, attached to the Python node, writes new code, which
+    lands with its reply. The node holds the agent's code; the dataflow's
+    history keeps an edit of the node named after the agent, with the code it
+    left and the code it replaced; the node's Provenance drawer lists it."""
     require_project_page()
     require_user_auth()
     agent = next(m for m in builtin.list_builtin_manifests() if m.agent_id == "agent.curio.node-builder")
@@ -112,7 +112,7 @@ def test_an_agents_change_to_a_python_node_is_an_entry_named_after_it_holding_th
         f"{base}/attachments", token, method="POST",
         payload={"coord": agent.dir_name, "target": {"kind": "node", "targetId": YEARS}},
     )
-    script_agent_replies(current_server, _write_reply(), "I have proposed the change for your review.")
+    script_agent_replies(current_server, _write_reply(), "The node keeps every year now.")
 
     _goto_when_served(page, f"{frontend_server}/dataflow/{project_id}")
     page.wait_for_url(f"**/dataflow/{project_id}", timeout=20000)
@@ -120,17 +120,12 @@ def test_an_agents_change_to_a_python_node_is_an_entry_named_after_it_holding_th
     _wait_for_reactflow_ready(page)
     node_locator(page, YEARS).wait_for(state="attached", timeout=45000)
 
-    # The agent proposes; the user applies.
+    # The agent's change lands with its reply: its card, with its Undo.
     panel = _open_chat(page, agent)
     _send(panel, "Keep every year in this node.")
-    apply = panel.get_by_role("button", name=re.compile(r"^Apply")).first
-    expect(apply).to_be_visible(timeout=30000)
-    with page.expect_response(
-        lambda r: "/proposals/" in r.url and r.url.endswith("/apply") and r.request.method == "POST",
-        timeout=30000,
-    ) as applied:
-        apply.click()
-    assert applied.value.ok, f"the apply failed with HTTP {applied.value.status}: {applied.value.text()[:300]}"
+    card = panel.get_by_role("group", name=re.compile(r"^Change: ")).first
+    expect(card).to_be_visible(timeout=30000)
+    expect(card.get_by_role("button", name="Undo")).to_be_visible(timeout=10000)
     _wait_for_code(page, YEARS, AFTER)
     panel.get_by_role("button", name="Close chat").click()
     expect(page.locator(CHAT_PANEL)).to_have_count(0, timeout=10000)

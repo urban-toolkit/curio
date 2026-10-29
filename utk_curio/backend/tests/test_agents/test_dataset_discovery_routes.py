@@ -106,18 +106,11 @@ class _Harness:
         )
         r = client.post(f"/api/agents/projects/{self.pid}/attachments/{self.att}/run",
                         json={"message": "plan it"}, headers=_auth(token))
-        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
-        applied = client.post(
-            f"/api/agents/projects/{self.pid}/attachments/{self.att}/proposals/"
-            f"{proposal['proposalId']}/apply", headers=_auth(token),
-        ).get_json()
-        self.applied = applied
-        self.load = next(
-            n["id"] for n in applied["appliedGraph"]["nodes"] if str(n["type"]).startswith(DL)
-        )
-        self.stats = next(
-            n["id"] for n in applied["appliedGraph"]["nodes"] if str(n["type"]).startswith(CA)
-        )
+        # The plan landed with the reply; its nodes are what the reply hands a
+        # canvas no doc binds.
+        graph = routes_proposals._landed_plan(r.get_json())["canvas"]
+        self.load = next(n["id"] for n in graph["nodes"] if str(n["type"]).startswith(DL))
+        self.stats = next(n["id"] for n in graph["nodes"] if str(n["type"]).startswith(CA))
 
     def solve(self, node_ids=None):
         payload = {"nodeIds": node_ids} if node_ids else {}

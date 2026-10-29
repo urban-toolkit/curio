@@ -1195,7 +1195,10 @@ class TestResearcher:
         # 2026-10-26: a value several nodes read is a widget on one Python
         # node that returns it, wired into each reader, and a setting change
         # names a widget's value only: the Parameter node is gone (PR #1186).
-        "7ceb84cbd0b03bc18f7daf026e7a89789f468dcf358d661f971bf86cf00a4ca4"
+        # 2026-10-29: a plan, a node, a node's code or settings land at once,
+        # as the agent's change the user can undo; the rules say what landed
+        # and that a node's code is written into it (step 13).
+        "ef82c2265c1a1884be2d0dfacf6ca0e88d7586506c9a755716bd9a0d2e3afb9b"
     )
 
     def test_manifest_surface(self):

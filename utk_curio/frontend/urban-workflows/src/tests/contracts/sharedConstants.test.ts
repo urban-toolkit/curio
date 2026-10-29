@@ -164,6 +164,21 @@ describe("the installs a dataflow's owner reviews", () => {
   });
 });
 
+describe("the tools whose work lands as the agent's change", () => {
+  test("a review lands as a change exactly when the file names its tool, and no install does", () => {
+    // Read here, so a checkout without the file or the module fails this test alone.
+    expect(fs.existsSync(path.join(CONTRACTS, "agentChanges.json"))).toBe(true);
+    const { AGENT_CHANGE_TOOLS, landsAsAChange } = require("../../services/agents/agentChanges");
+    const { tools } = shared("agentChanges");
+    expect(tools.length).toBeGreaterThan(0);
+    for (const tool of tools) expect(landsAsAChange(tool)).toBe(true);
+    expect([...AGENT_CHANGE_TOOLS].sort()).toEqual([...tools].sort());
+    for (const tool of [...shared("agentInstalls").tools, "project.install"]) {
+      expect(landsAsAChange(tool)).toBe(false);
+    }
+  });
+});
+
 /** Every value of the shared files with a space in it, and every palette color. */
 function sentencesAndColors(): string[] {
   const found = new Set<string>();
