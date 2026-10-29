@@ -14,6 +14,15 @@ zone 16N, each cell holding its column, 0 in the west to 63 in the east, so a
 map shows the scheme from left to right. The lines are three of a Python
 node's GeoDataFrame, about 2 km long near the Loop.
 
+Two maps on one source draw twice each time the second is played: once from
+the input the first map's run hands it, outside any run, and once more for
+its own Play, on a new canvas that stays 300 by 150 until autk-map sizes it.
+The scheme test's ``held`` case plays the order two CI failures had (runs
+40818895965 and 40783748468, "the 300x150 map canvas is one colour"): the
+reversed map is still drawing from its input when its Play is clicked, shows
+Done after the click, and the Play's run reaches it only once that drawing
+has been checked (``_LATE_PLAY_RUN_JS``).
+
 Run::
 
     CURIO_TESTING=1 pytest utk_curio/backend/tests/test_frontend/test_autark_layer_options_e2e.py -v
@@ -25,6 +34,8 @@ import json
 import time
 from io import BytesIO
 from typing import TYPE_CHECKING
+
+import pytest
 
 from .utils import (
     assert_autark_map_drawn,
@@ -222,6 +233,135 @@ def _assert_ramp_runs(image, box, low, high, what: str) -> None:
     )
 
 
+#: How long the held case's Play run waits, once the map shows Done from its
+#: own drawing, for that drawing to be read before it goes on anyway. A wait
+#: for the run itself reads nothing until the run ends, so it meets this one.
+LATE_RUN_AFTER_DONE_MS = 10000
+
+#: How long the database of the Play run's own drawing is held: its canvas
+#: stays 300 by 150 and blank meanwhile, as autk-map sizes it only once its
+#: layers are loaded.
+LATE_DATABASE_MS = 10000
+
+# Before the app's own scripts, for the held case: the order both CI failures
+# had, made to happen every time. *map* is the map node played second.
+#
+# 1. A read of an output while no run holds the run guard is the map drawing
+#    from the input the first map's run handed it. It is held until the page
+#    asks for the next run, the Play's: the map is still drawing when its Play
+#    is clicked, and shows Done after the click.
+# 2. That run's stream is held until the map, Done, has its sized canvas read
+#    (a check of the drawing it shows), or until LATE_RUN_AFTER_DONE_MS after
+#    it shows Done. Only then does the run draw the map again: on a new
+#    canvas, as every draw does.
+# 3. That drawing's database is autk-db's DuckDB worker, which starts from a
+#    blob. Its messages are held for LATE_DATABASE_MS, so the new canvas stays
+#    300 by 150 and blank.
+#
+# window.__curioTestLatePlay records what was held, for the guard below.
+_LATE_PLAY_RUN_JS = r"""(map, afterDoneMs, databaseMs) => {
+    const state = window.__curioTestLatePlay = {
+        heldReads: 0, streamHeld: false, doneWhileHeld: false, streamRelease: null, heldDatabases: 0,
+    };
+    const realFetch = window.fetch.bind(window);
+    const runActive = () => !!document.querySelector('[data-run-active="true"]');
+    const status = () => {
+        const el = document.querySelector(`.react-flow__node[data-id="${map}"] [data-curio-node-status]`);
+        return el ? el.getAttribute('data-curio-node-status') : null;
+    };
+    let phase = 'reads';
+    const reads = [];
+    let release = null;
+    let holdDatabase = false;
+
+    window.fetch = (input, init) => {
+        const url = typeof input === 'string' ? input : String((input && input.url) || input || '');
+        const method = String((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+        if (phase === 'reads' && /\/outputs\/get\?/.test(url) && !runActive()) {
+            state.heldReads += 1;
+            return new Promise((resolve, reject) => {
+                reads.push(() => realFetch(input, init).then(resolve, reject));
+            });
+        }
+        if (phase === 'reads' && reads.length > 0 && method === 'POST'
+            && /\/api\/projects\/[^/?]+\/runs$/.test(url)) {
+            phase = 'stream';
+            reads.splice(0).forEach((send) => send());
+        } else if (phase === 'stream' && /\/api\/runs\/[^/?]+\/stream/.test(url)) {
+            phase = 'database';
+            state.streamHeld = true;
+            return new Promise((resolve, reject) => {
+                let timer = null;
+                const watch = setInterval(() => {
+                    if (timer !== null || status() !== 'done') return;
+                    state.doneWhileHeld = true;
+                    timer = setTimeout(() => { if (release) release('time'); }, afterDoneMs);
+                }, 100);
+                release = (why) => {
+                    release = null;
+                    clearInterval(watch);
+                    if (timer !== null) clearTimeout(timer);
+                    state.streamRelease = why;
+                    holdDatabase = true;
+                    realFetch(input, init).then(resolve, reject);
+                };
+            });
+        }
+        return realFetch(input, init);
+    };
+
+    const toDataURL = HTMLCanvasElement.prototype.toDataURL;
+    HTMLCanvasElement.prototype.toDataURL = function (...args) {
+        const url = toDataURL.apply(this, args);
+        if (release && this.id === `autk-grammar-map-${map}` && status() === 'done'
+            && !(this.width === 300 && this.height === 150)) {
+            state.doneWhileHeld = true;
+            release('read');
+        }
+        return url;
+    };
+
+    const RealWorker = window.Worker;
+    if (typeof RealWorker !== 'function') return;
+    const Holding = function (url, options) {
+        const worker = options === undefined ? new RealWorker(url) : new RealWorker(url, options);
+        if (holdDatabase && String(url).startsWith('blob:')) {
+            holdDatabase = false;
+            state.heldDatabases += 1;
+            const post = worker.postMessage.bind(worker);
+            const queued = [];
+            let held = true;
+            worker.postMessage = (...args) => {
+                if (held) queued.push(args);
+                else post(...args);
+            };
+            setTimeout(() => {
+                held = false;
+                queued.splice(0).forEach((args) => post(...args));
+            }, databaseMs);
+        }
+        return worker;
+    };
+    Holding.prototype = RealWorker.prototype;
+    window.Worker = Holding;
+}"""
+
+
+def _late_play_run_script(map_id: str) -> str:
+    """``_LATE_PLAY_RUN_JS`` as an init script for the map node *map_id*."""
+    return f"({_LATE_PLAY_RUN_JS})({json.dumps(map_id)}, {LATE_RUN_AFTER_DONE_MS}, {LATE_DATABASE_MS});"
+
+
+def _assert_the_play_ran_late(page) -> None:
+    """The held case held what it plays: the map's drawing from its input
+    waited for the Play, the map read Done while the Play's run was held, and
+    the run's own drawing started its database late. Without these the case
+    would pass without the order the CI failures had."""
+    held = page.evaluate("() => window.__curioTestLatePlay || null")
+    assert held and held["heldReads"] >= 1 and held["streamHeld"] and held["doneWhileHeld"] \
+        and held["heldDatabases"] == 1, f"the held case did not hold the steps it plays: {held!r}"
+
+
 def test_a_layer_title_names_its_legend(app_frontend: "FrontendPage", current_server: str, page):
     """autk-grammar's ``title`` is the layer's id in autk-map, which titles the
     legend with it; with no title the legend reads ``input_0``."""
@@ -238,14 +378,22 @@ def test_a_layer_title_names_its_legend(app_frontend: "FrontendPage", current_se
     save_node_closeup(page, CLOSEUP_STEM, titled, test_name="titled_legend", sweep_toasts=True)
 
 
+@pytest.mark.parametrize("play_run", ["prompt", "held"])
 def test_raster_cells_and_legend_labels_follow_the_scheme(
-    app_frontend: "FrontendPage", current_server: str, page,
+    app_frontend: "FrontendPage", current_server: str, page, play_run,
 ):
     """The cells are drawn in the scheme the layer names, every cell with a
     value opaque, and the legend's labels run from the lowest value to the
     highest under the scheme's colors. ``colorMapReverse`` turns the cells and
-    the labels around: the highest value takes the scheme's first color."""
+    the labels around: the highest value takes the scheme's first color.
+
+    *play_run* ``held`` has the reversed map's Play run reach the map late,
+    in the order two CI failures had (``_LATE_PLAY_RUN_JS``): the map is still
+    drawing from its input when its Play is clicked and shows Done after the
+    click, and the run draws it again once that drawing has been read."""
     ramp, plain, reversed_ = "scheme-ramp", "scheme-map", "reversed-map"
+    if play_run == "held":
+        page.add_init_script(_late_play_run_script(reversed_))
     _enter(page, app_frontend, current_server, username="autark_raster_scheme", spec=_flow(
         "AutarkRasterScheme", (ramp, JS_TYPE, RAMP),
         {
@@ -269,10 +417,14 @@ def test_raster_cells_and_legend_labels_follow_the_scheme(
     # The bar keeps the scheme's order: its first color is the highest value's.
     assert _distance(_rgb(legend["colors"][0]), VIRIDIS_LOW) < 20, legend["colors"][:1]
 
-    # The close-ups come once every map is checked, so a missing baseline
-    # never hides a map that drew wrong.
-    save_node_closeup(page, CLOSEUP_STEM, plain, test_name="raster_scheme", sweep_toasts=True)
-    save_node_closeup(page, CLOSEUP_STEM, reversed_, test_name="raster_scheme_reversed", sweep_toasts=True)
+    if play_run == "held":
+        _assert_the_play_ran_late(page)
+    else:
+        # The close-ups come once every map is checked, so a missing baseline
+        # never hides a map that drew wrong. The held case draws the same
+        # maps, later, and takes none.
+        save_node_closeup(page, CLOSEUP_STEM, plain, test_name="raster_scheme", sweep_toasts=True)
+        save_node_closeup(page, CLOSEUP_STEM, reversed_, test_name="raster_scheme_reversed", sweep_toasts=True)
 
 
 def test_a_centered_scale_puts_its_center_at_the_schemes_middle(
