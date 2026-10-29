@@ -2,11 +2,11 @@
 Provenance drawer, named after the agent, holding the code it replaced.
 
 The Node Builder, attached to a Python node that keeps the years from 2020 on,
-proposes code that drops that filter; the user applies it in the chat. A
-Python node has no writer of its own, so the canvas writes the code and files
-the change as an edit named after the agent: the saved dataflow keeps the
-entry with the code it left and the code it replaced, and the node's
-Provenance drawer lists it. One close-up shows the drawer.
+proposes code that drops that filter; the user applies it in the chat. The
+server writes the code into the dataflow's doc and keeps the change in the
+dataflow's history as an edit named after the agent, with the code it left and
+the code it replaced, and the node's Provenance drawer lists it. One close-up
+shows the drawer.
 
 The dataflow runs nothing, so the test runs on any runner.
 
@@ -37,7 +37,6 @@ from .utils import (
     require_owner_view,
     require_project_page,
     require_user_auth,
-    save_dataflow,
     save_workflow_test_screenshot,
     script_agent_replies,
     stub_db_user,
@@ -92,9 +91,9 @@ def test_an_agents_change_to_a_python_node_is_an_entry_named_after_it_holding_th
     page, frontend_server, current_server,
 ):
     """The Node Builder, attached to the Python node, proposes new code and the
-    user applies it. The node holds the agent's code; the saved dataflow keeps
-    an edit of the node's history named after the agent, with the code it left
-    and the code it replaced; the node's Provenance drawer lists it."""
+    user applies it. The node holds the agent's code; the dataflow's history
+    keeps an edit of the node named after the agent, with the code it left and
+    the code it replaced; the node's Provenance drawer lists it."""
     require_project_page()
     require_user_auth()
     agent = next(m for m in builtin.list_builtin_manifests() if m.agent_id == "agent.curio.node-builder")
@@ -137,13 +136,11 @@ def test_an_agents_change_to_a_python_node_is_an_entry_named_after_it_holding_th
     expect(page.locator(CHAT_PANEL)).to_have_count(0, timeout=10000)
     leave_agent_badge(page)
 
-    # Saved: the node's history holds the agent's change, named after it,
-    # with the code it left and the code it replaced.
-    save_dataflow(page)
-    saved = api_json(f"{current_server}/api/projects/{project_id}", token)["spec"]
-    history = (saved.get("nodeProvenance") or {}).get(YEARS) or []
+    # The node's history, which the server keeps, holds the agent's change,
+    # named after it, with the code it left and the code it replaced.
+    history = api_json(f"{current_server}/api/projects/{project_id}/history/nodes/{YEARS}", token)["entries"]
     named = [entry for entry in history if entry.get("label") == agent.name]
-    assert named, f"the saved history of the Python node has no entry named {agent.name!r}: {history}"
+    assert named, f"the history of the Python node has no entry named {agent.name!r}: {history}"
     assert named[-1].get("kind") == "edit", named[-1]
     assert str(named[-1].get("code") or "").strip() == AFTER.strip(), named[-1]
     assert str(named[-1].get("before") or "").strip() == BEFORE.strip(), named[-1]

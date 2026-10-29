@@ -249,10 +249,12 @@ class _OpenDoc:
         self.edge_authors: dict[str, str] = {}
         self.removers: dict[str, dict] = {}
         #: What the doc's last transaction added, removed and typed, the
-        #: observers that note it, and the history's own state of this doc
+        #: observers that note it, each node's code's digest as the last
+        #: change left it, and the history's own state of this doc
         #: (``history.py``).
         self.touched = None
         self.watching = None
+        self.codes = None
         self.history = None
         # Guarded by this module's lock.
         self.changed_at: Optional[float] = None

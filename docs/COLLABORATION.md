@@ -45,7 +45,9 @@ Everyone in a dataflow's room has a role, which the server decides when they joi
 
 **Inviting editors.** The owner opens **Share > Invite editors**, types an account's username and presses **Add**. The editors are listed below it, each with a remove button. The editor opens the dataflow's link (**Share > Copy dataflow link**) as anyone does, and edits once the room names them an editor. Adding or removing an editor applies at once, also to someone already in the room. A guest is never an editor, and a guest invites nobody.
 
-**Saving.** Every change is kept by the server as it is made, whoever makes it. **File > Save dataflow** on the owner's tab also saves the outputs the dataflow keeps and its Provenance. An editor or a watcher saves a copy with **File > Save dataflow**, as on any shared dataflow.
+**Saving.** Every change is kept by the server as it is made, whoever makes it. **File > Save dataflow** on the owner's tab also saves the outputs the dataflow keeps, and is a version of the dataflow's history. An editor or a watcher saves a copy with **File > Save dataflow**, as on any shared dataflow.
+
+**History.** The server keeps the dataflow's one history, the same in every tab: a version for each node or connection added or removed, each person's typing once they pause or leave the editor ("Ana edited"), an agent's change ("Node Builder, asked by Ana"), each File > Save and each version put back, and each node's runs and edits. The owner and the editors see it in the Provenance drawer, which shows each change as it lands; a watcher and a hosted guest are told it is not theirs to see. Putting a version back changes every tab's canvas. A node's code put back, and a Map Editor node's **Undo** and **Redo**, change the code only if the node still holds what you saw: when someone changed it meanwhile, nothing changes, and Curio says who did ("Ana changed this node after; nothing was undone."). Only the owner can **Clear history before this version**. A copy of the dataflow keeps its history when its owner or an editor makes it.
 
 **Hosted guests.** On a Curio started with `--deploy`, every guest shares one account, which also owns the example dataflows. Such a guest watches other accounts' dataflows. It joins no room of an example, so each guest's canvas of one stays its own, and the server refuses its saves.
 
@@ -100,6 +102,7 @@ Open the project URL (`http://<host>:8080/dataflow/<UUID>`) on each collaborator
 | [app/collaboration/roles.py](../utk_curio/backend/app/collaboration/roles.py) | Tells a room that the owner added or removed an editor (`roles_changed`). |
 | [app/collaboration/dataflow_docs.py](../utk_curio/backend/app/collaboration/dataflow_docs.py) | Each open dataflow's Yjs doc: its sync and awareness (`yjs`), a watcher's changes dropped, a connection to a removed node dropped (`connection_dropped`), its files beside the spec. Every backend writer of a dataflow (agents, Solve, installs, the PUT) writes through it, so each change reaches the room as it lands. |
 | [app/collaboration/doc_mapping.py](../utk_curio/backend/app/collaboration/doc_mapping.py) | A dataflow's Trill to its doc and back, on the layout in `src/contracts/dataflowDoc.json`. |
+| [app/collaboration/history.py](../utk_curio/backend/app/collaboration/history.py) | The dataflow's history as points in its doc's log: the versions, the nodes' entries, putting back, the checked code write and clearing (`history_changed` tells the owner's and editors' tabs). |
 | [app/projects/access.py](../utk_curio/backend/app/projects/access.py) | The roles, and the editors list behind **Invite editors** (`/api/projects/<id>/editors`). |
 
 ### Frontend modules
@@ -113,6 +116,7 @@ Open the project URL (`http://<host>:8080/dataflow/<UUID>`) on each collaborator
 | [components/editing/useYMonacoBinding.ts](../utk_curio/frontend/urban-workflows/src/components/editing/useYMonacoBinding.ts) | Binds a node's code editor to its code in the doc (y-monaco), with each person's cursor and the per-node Ctrl+Z. |
 | [providers/collab/presence.ts](../utk_curio/frontend/urban-workflows/src/providers/collab/presence.ts) | What each tab tells the others through awareness: the node it edits, its drags, the nodes it removes, and each person's cursor color. |
 | [providers/flow/useRemovalAsk.tsx](../utk_curio/frontend/urban-workflows/src/providers/flow/useRemovalAsk.tsx) | Asks before removing a node someone else is editing. |
+| [providers/history/serverHistory.ts](../utk_curio/frontend/urban-workflows/src/providers/history/serverHistory.ts) | Whether the canvas's history is the server's (bound to the doc) or the browser's; the Provenance drawers read the server's through `useHistoryReads.ts`. |
 | [providers/collab/participants.ts](../utk_curio/frontend/urban-workflows/src/providers/collab/participants.ts) | Tells participants apart by participant id: whether a lock is this tab's, a tab's role. |
 | [hook/useSharedView.ts](../utk_curio/frontend/urban-workflows/src/hook/useSharedView.ts) | Whether the canvas is read-only: a watcher's. Every gate on editing reads it. |
 | [components/UniversalNode.tsx](../utk_curio/frontend/urban-workflows/src/components/UniversalNode.tsx) | Lock-on-focus / unlock-on-blur, peer-lock chip, output broadcast on exec completion. |

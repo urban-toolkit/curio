@@ -466,6 +466,48 @@ def test_a_run_follows_the_typing_before_it_and_a_map_editor_edit_takes_its_plac
     assert made[0]["start"] < made[0]["end"], "the edit's point holds the typing it took the place of"
 
 
+def test_an_entry_descends_from_the_one_whose_code_it_began_from_and_typing_that_changed_nothing_is_none(kept):
+    """A node's next entry branches from the entry in use: after a run's code
+    is put back, the typing and the run that follow descend from that run, not
+    from the newest entry. Typing that leaves the code as it began is no
+    entry."""
+    from utk_curio.backend.app.collaboration import dataflow_docs, history
+
+    alice = _synced(kept, "alice")
+    runs = f"/api/projects/{kept.project_id}/history/nodes/loader/runs"
+
+    def run(code: str) -> None:
+        answer = _http(kept).post(runs, headers=_auth(kept), data=json.dumps(
+            {"code": code, "inputs": [], "outputs": ["DATAFRAME"]}))
+        assert answer.status_code == 201, answer.get_json()
+
+    run("x = 1\n")
+    alice.edit(_type("# a\n"))
+    run("# a\nx = 1\n")
+    put = _http(kept).post(
+        f"/api/projects/{kept.project_id}/history/nodes/loader/code", headers=_auth(kept),
+        data=json.dumps({"from": "# a\nx = 1\n", "code": "x = 1\n", "label": "Code put back"}),
+    )
+    assert put.status_code == 200, put.get_json()
+    alice.pump()
+    alice.edit(_type("# b\n"))
+    run("# b\nx = 1\n")
+    entries = history.entries(kept.owner_key, kept.project_id, "loader")
+    assert [(e["id"], e["parentId"], e.get("kind", "run")) for e in entries["entries"]] == [
+        (1, None, "run"), (2, 1, "edit"), (3, 2, "run"), (4, 1, "edit"), (5, 4, "run"),
+    ], entries["entries"]
+    assert entries["current"] == 5
+
+    # Typed and taken out again: the code is as it began, and nothing is added.
+    count = len(_points(kept))
+    alice.edit(_type("# c\n"))
+    alice.edit(_erase("# c\n"))
+    kept.clock.now += history.TYPING_PAUSE_S + 1
+    dataflow_docs.flush_due(kept.clock.now)
+    assert len(_points(kept)) == count, _points(kept)[count:]
+    assert _code_of(kept.live()["dataflow"], "loader") == "# b\nx = 1\n"
+
+
 def test_a_run_whose_code_the_doc_no_longer_holds_keeps_it(kept):
     from utk_curio.backend.app.collaboration import history
 

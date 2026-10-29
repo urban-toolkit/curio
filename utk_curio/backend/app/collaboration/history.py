@@ -195,10 +195,17 @@ def observe(entry) -> None:
     """Note what each transaction of the open doc *entry* adds, removes and
     types (:attr:`entry.touched`), for :func:`recorded`. The observers live
     as long as the entry holds them (:attr:`entry.watching`): pycrdt drops an
-    observer once its type's object and its subscription are gone."""
+    observer once its type's object and its subscription are gone. Each
+    node's code is known by its digest as the doc holds it now
+    (:attr:`entry.codes`), so a change knows the code it replaced."""
     entry.touched = Touched()
     nodes = entry.doc.get("nodes", type=Map)
     edges = entry.doc.get("edges", type=Map)
+    entry.codes = {}
+    for key in list(nodes.keys()):
+        held = _code_in(entry.doc, str(key))
+        if held is not None:
+            entry.codes[str(key)] = _sha(held)
 
     def on_nodes(events) -> None:
         touched = entry.touched
@@ -360,14 +367,17 @@ def head_of(points_: Iterable[dict]) -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 class _Typing:
-    """One person's typing in one node, since its last point."""
+    """One person's typing in one node, since its last point: *parent* is the
+    digest of the code it began from."""
 
-    __slots__ = ("node", "by", "sid", "doc", "day", "start", "end", "last")
+    __slots__ = ("node", "by", "sid", "doc", "day", "start", "end", "last", "parent")
 
-    def __init__(self, node: str, by: dict, sid: Optional[str], doc: str, day: str, start: int):
+    def __init__(self, node: str, by: dict, sid: Optional[str], doc: str, day: str, start: int,
+                 parent: Optional[str] = None):
         self.node, self.by, self.sid = node, by, sid
         self.doc, self.day, self.start, self.end = doc, day, start, start
         self.last = 0.0
+        self.parent = parent
 
 
 class _State:
@@ -561,8 +571,35 @@ def recorded(entry, changes: list[Change], *, point: Optional[dict] = None) -> N
 
 
 def _record(entry, change: Change, point: Optional[dict]) -> None:
-    state = _state(entry)
     touched = change.touched or Touched()
+    # The digest of the code each node held before the change: an entry the
+    # change makes descends from the newest entry that holds it.
+    codes = getattr(entry, "codes", None) or {}
+    before = {node: codes.get(node) for node in touched.contents}
+    try:
+        _record_change(entry, change, point, touched, before)
+    finally:
+        _remember_codes(entry, touched)
+
+
+def _remember_codes(entry, touched: Touched) -> None:
+    """The digests of the codes the change left (:attr:`entry.codes`)."""
+    codes = getattr(entry, "codes", None)
+    if not isinstance(codes, dict):
+        codes = entry.codes = {}
+    for node in touched.nodes_removed:
+        codes.pop(node, None)
+    for node in touched.contents | touched.nodes_added:
+        held = _code_in(entry.doc, node)
+        if held is None:
+            codes.pop(node, None)
+        else:
+            codes[node] = _sha(held)
+
+
+def _record_change(entry, change: Change, point: Optional[dict], touched: Touched,
+                   before: dict[str, Optional[str]]) -> None:
+    state = _state(entry)
     by = (point or {}).get("by") or _by(change.origin)
     for node in touched.contents:
         state.authors[node] = by
@@ -576,7 +613,7 @@ def _record(entry, change: Change, point: Optional[dict]) -> None:
             _add(entry, {"kind": GRAPH, "what": _graph_label(touched), "by": by,
                          **_place(entry, change.start, change.end)})
         for node in sorted(touched.typed()):
-            _typed(entry, change.origin, by, node, change)
+            _typed(entry, change.origin, by, node, change, before.get(node))
         return
     if isinstance(change.origin, dataflow_docs.Actor) and change.origin.kind == dataflow_docs.AGENT:
         if not (touched.graph() or touched.typed()):
@@ -587,7 +624,7 @@ def _record(entry, change: Change, point: Optional[dict]) -> None:
             sha = _sha(code)
             notes.append({
                 "id": state.next_note(), "node": node, "kind": _NOTE_EDIT,
-                "parentId": state.current(node, None), "label": "", "inputs": [], "outputs": [],
+                "parentId": state.current(node, before.get(node)), "label": "", "inputs": [], "outputs": [],
                 "startTime": _now_text(), "endTime": _now_text(), "sha": sha, "chars": len(code or ""),
             })
         _add(entry, {"kind": AGENT, "what": "", "by": by, **_place(entry, change.start, change.end),
@@ -598,8 +635,9 @@ def _record(entry, change: Change, point: Optional[dict]) -> None:
                      **_place(entry, change.start, change.end)})
 
 
-def _typed(entry, tab: Tab, by: dict, node: str, change: Change) -> None:
-    """Note a person's typing in *node*: their point waits for a pause."""
+def _typed(entry, tab: Tab, by: dict, node: str, change: Change, parent: Optional[str]) -> None:
+    """Note a person's typing in *node*, which began from the code whose
+    digest is *parent*: their point waits for a pause."""
     state = _state(entry)
     key = (node, _account(by))
     typing = state.typing.get(key)
@@ -607,7 +645,8 @@ def _typed(entry, tab: Tab, by: dict, node: str, change: Change) -> None:
         _close(entry, key)
         typing = None
     if typing is None:
-        typing = state.typing[key] = _Typing(node, by, tab.sid, entry.doc_id, entry.segment, change.start)
+        typing = state.typing[key] = _Typing(node, by, tab.sid, entry.doc_id, entry.segment, change.start,
+                                             parent=parent)
     typing.end = change.end
     typing.sid = tab.sid
     typing.last = dataflow_docs._clock()
@@ -617,20 +656,24 @@ def _typed(entry, tab: Tab, by: dict, node: str, change: Change) -> None:
 def _close(entry, key: tuple[str, str], *, kind: str = TYPING, label: Optional[str] = None,
            end: Optional[int] = None) -> Optional[dict]:
     """Make one person's typing in one node its point: a version named after
-    them, with an edit entry on the node."""
+    them, with an edit entry on the node, which descends from the newest
+    entry that holds the code the typing began from. Typing that left the
+    code as it began is no change, and no point."""
     state = _state(entry)
     typing = state.typing.pop(key, None)
     state.retime()
     if typing is None:
         return None
-    name = (typing.by or {}).get("name") or "Someone"
-    what = label if label is not None else f"{name} edited"
     code = _code_in(entry.doc, typing.node)
     sha = _sha(code)
+    if kind == TYPING and typing.parent is not None and sha == typing.parent:
+        return None
+    name = (typing.by or {}).get("name") or "Someone"
+    what = label if label is not None else f"{name} edited"
     at = _now_text()
     note = {
         "id": state.next_note(), "node": typing.node, "kind": _NOTE_EDIT,
-        "parentId": state.current(typing.node, None), "label": what, "inputs": [], "outputs": [],
+        "parentId": state.current(typing.node, typing.parent), "label": what, "inputs": [], "outputs": [],
         "startTime": at, "endTime": at, "sha": sha, "chars": len(code or ""),
     }
     return _add(entry, {
@@ -1105,9 +1148,18 @@ def _preview(flow: Optional[dict]) -> Optional[dict]:
     }
 
 
+def _opened(user_key: str, project_id: str) -> None:
+    """Open the dataflow's doc if it has no points yet, which gives it its
+    first ones: a read can come before any tab opened it."""
+    if not has_points(user_key, project_id):
+        with _held(user_key, project_id):
+            pass
+
+
 def versions(user_key: str, project_id: str) -> dict:
     """The dataflow's versions, in the order they were made, each with its
     graph (``preview``), and the one on the canvas (``head``)."""
+    _opened(user_key, project_id)
     folder = _folder(user_key, project_id)
     points_ = _read_points(folder)
     listed = [point for point in points_ if _listed(point) and "doc" in point]
@@ -1124,6 +1176,7 @@ def entries(user_key: str, project_id: str, node_id: str, *, code: Optional[str]
     """The entries of the node *node_id*, in the order they were made, each
     with its code, an edit's with the code it replaced, and the entry in use:
     the newest that holds *code*, the node's code now, else the newest."""
+    _opened(user_key, project_id)
     folder = _folder(user_key, project_id)
     rows = [(point, note) for point in _read_points(folder) for note in point.get("notes") or []
             if note.get("node") == node_id and "doc" in point]
@@ -1218,7 +1271,8 @@ def note_edit(user_key: str, project_id: str, by: dict, node_id: str, label: str
         key = (node_id, _account(by))
         if key not in state.typing:
             doc_id, day, end = dataflow_docs.log_end(entry)
-            state.typing[key] = _Typing(node_id, by, None, doc_id, day, end)
+            state.typing[key] = _Typing(node_id, by, None, doc_id, day, end,
+                                        parent=(getattr(entry, "codes", None) or {}).get(node_id))
         state.typing[key].by = by
         return _close(entry, key, kind=EDIT, label=label or "Edit")
 

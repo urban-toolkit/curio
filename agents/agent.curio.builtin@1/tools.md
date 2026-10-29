@@ -40,7 +40,7 @@ Read one node from the saved spec. Params: {"nodeId": "..."} (defaults to the no
 
 ## node.history.read
 
-Read one node's history as the saved dataflow keeps it and its Provenance drawer lists it: each run of the node and each edit of it, newest first. Params: {"nodeId": "..."} (defaults to the node this agent is attached to). Each entry gives its id, the entry it descends from (parentId), its kind ("run" or "edit"), an edit's label (the agent that made it, or what it changed), when it started and ended, the kinds of data a run read and returned, and the length of its code (codeChars). Add "entryId": <an entry's id> for that entry's code and, for an edit that holds it, the code it replaced (before). A list or a code cut to fit says how much it left out (entriesElided, codeElided). Compare an entry's code with another entry's, or with the node's code now (node.read), to say what changed. An entry made since the dataflow was last saved is not in it yet.
+Read one node's history as Curio keeps it and its Provenance drawer lists it: each run of the node and each edit of it, newest first. Params: {"nodeId": "..."} (defaults to the node this agent is attached to). Each entry gives its id, the entry it descends from (parentId), its kind ("run" or "edit"), an edit's label (the agent that made it, or what it changed), when it started and ended, the kinds of data a run read and returned, and the length of its code (codeChars). Add "entryId": <an entry's id> for that entry's code and, for an edit that holds it, the code it replaced (before). A list or a code cut to fit says how much it left out (entriesElided, codeElided). Compare an entry's code with another entry's, or with the node's code now (node.read), to say what changed.
 
 ### Parameters
 
