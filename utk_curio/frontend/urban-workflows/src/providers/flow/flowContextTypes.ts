@@ -145,6 +145,9 @@ export interface FlowContextProps {
     ensureProjectId: () => Promise<string | null>;
     /** Record the outputs the canvas holds that the dataflow records. */
     recordOutputs: (nodeIds?: readonly string[]) => Promise<InstallSyncOutcome>;
+    /** The same, a moment from now: after a pin, a scenario or a node's Save
+     *  output switched (`useDashboardPinSave`). */
+    recordOutputsSoon?: () => void;
     /** Open the owner's dataflow; with `lastResults`, with the results its canvas was left with. */
     loadProject: (id: string, options?: { lastResults?: boolean }) => Promise<any>;
     loadSharedProject: (id: string) => Promise<any>;

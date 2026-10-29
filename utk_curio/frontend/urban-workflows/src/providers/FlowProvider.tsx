@@ -54,6 +54,10 @@ import { DEFAULT_SAVE_OUTPUT_DATASET } from "../utils/saveOutputDataset";
 import { writeNodeSettings, type NodeSettings } from "../utils/nodeSettingsWriters";
 import { authApi } from "../utils/authApi";
 
+/** How long leaving a dataflow bound to its doc waits for the server to keep
+ *  this tab's last change before it asks whether to leave without it. */
+const LEAVE_WAIT_MS = 3000;
+
 export type { IOutput, IInteraction, IPropagation, NodeExecOutcome } from "./flow/flowTypes";
 export type { NodeActionsContextProps } from "./flow/flowContextTypes";
 
@@ -640,7 +644,16 @@ const FlowProvider = ({
 
                 ...workflowOps,
                 boundDoc: boundProvider,
-                whenChangesKept: () => (dataflowDoc.bound() ? dataflowDoc.whenKept() : Promise.resolve(true)),
+                recordOutputsSoon: () => savePinChangeRef.current(),
+                whenChangesKept: () => {
+                    if (!dataflowDoc.bound() || boundProvider?.isKept()) return Promise.resolve(true);
+                    // Offline, what waits in the tab is lost on leaving: ask at once.
+                    if (collab.connected === false) return Promise.resolve(false);
+                    return Promise.race([
+                        dataflowDoc.whenKept(),
+                        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), LEAVE_WAIT_MS)),
+                    ]);
+                },
                 applyRemoveChanges,
                 dataflowDoc: {
                     bound: dataflowDoc.bound,

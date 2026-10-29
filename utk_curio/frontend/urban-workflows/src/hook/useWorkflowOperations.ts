@@ -1003,9 +1003,10 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         // it there too, as the Projects page's rename does.
         const id = projectIdRef.current;
         if (id && viewerMode === "owner" && deps.docBridgeRef?.current?.bound()) {
-            projectsApi.update(id, { name: next }).catch((err) => {
-                showToast((err as Error)?.message || "Could not rename the dataflow.", "error");
-            });
+            projectsApi.update(id, { name: next }).then(
+                (detail) => setServerCategories(detail?.categories ?? {}),
+                (err) => showToast((err as Error)?.message || "Could not rename the dataflow.", "error"),
+            );
         }
         return true;
     }, [setWorkflowName, markDirty, viewerMode, showToast]);
@@ -1119,38 +1120,6 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         create.then(done, done);
         return create;
     }, [reactFlow, workflowNameRef, deps.outputsRef, defaultSaveOutputDataset, syncDatasetsFromSavedSpec, noteLoadedDataflow, getAllNodeProvenance]);
-
-    /**
-     * File > Save. A dataflow not saved yet is made (`createDataflow`). A
-     * saved one's doc holds every change already: what a run left waiting to
-     * be recorded is recorded, and once the server has every change this tab
-     * made, the dataflow's history gets a version named Saved.
-     */
-    const saveDataflow = useCallback(async (): Promise<{ id: string; created: boolean }> => {
-        if (viewerMode === "shared") {
-            throw new Error("Shared dataflows are read-only; use Save a copy");
-        }
-        if (blockGuestSaves) {
-            throw new Error("Guest users cannot save projects");
-        }
-        // A routed dataflow is never unsaved; at most it has not loaded YET
-        // (#340): saving in that window must not make a second dataflow.
-        const routedLoad = settleRoutedLoad();
-        if (routedLoad) await routedLoad;
-        if (!projectIdRef.current) {
-            const detail = await createDataflow();
-            return { id: detail.id, created: true };
-        }
-        const id = projectIdRef.current;
-        await deps.flushOutputsRef?.current?.();
-        const bridge = deps.docBridgeRef?.current;
-        if (!bridge || !(await bridge.whenBound()) || !(await bridge.whenKept())) {
-            throw new Error(SAVE_OFFLINE_MESSAGE);
-        }
-        await noteSaved();
-        setProjectSavedAt(new Date());
-        return { id, created: false };
-    }, [viewerMode, blockGuestSaves, settleRoutedLoad, createDataflow]);
 
     /**
      * The dataflow's id, for an action on the server's copy of it (a dataset
@@ -1288,6 +1257,42 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         },
         [viewerMode, blockGuestSaves, ensureProjectId, showToast, surfaceInstallWarnings, defaultSaveOutputDataset],
     );
+
+    /**
+     * File > Save. A dataflow not saved yet is made (`createDataflow`). A
+     * saved one's doc holds every change already: what a run left waiting to
+     * be recorded is recorded, and once the server has every change this tab
+     * made, the dataflow's history gets a version named Saved.
+     */
+    const saveDataflow = useCallback(async (): Promise<{ id: string; created: boolean }> => {
+        if (viewerMode === "shared") {
+            throw new Error("Shared dataflows are read-only; use Save a copy");
+        }
+        if (blockGuestSaves) {
+            throw new Error("Guest users cannot save projects");
+        }
+        // A routed dataflow is never unsaved; at most it has not loaded YET
+        // (#340): saving in that window must not make a second dataflow.
+        const routedLoad = settleRoutedLoad();
+        if (routedLoad) await routedLoad;
+        if (!projectIdRef.current) {
+            const detail = await createDataflow();
+            return { id: detail.id, created: true };
+        }
+        const id = projectIdRef.current;
+        // Every output the canvas holds that the dataflow records, as a save
+        // sent them: what a run left waiting, and what ran before its Save was
+        // on or failed to be recorded then.
+        await deps.flushOutputsRef?.current?.();
+        await recordOutputs();
+        // The bridge of the render after the bind: one read before it holds no doc.
+        if (!(await deps.docBridgeRef?.current?.whenBound())) throw new Error(SAVE_OFFLINE_MESSAGE);
+        if (!(await deps.docBridgeRef?.current?.whenKept())) throw new Error(SAVE_OFFLINE_MESSAGE);
+        const saved = await noteSaved();
+        if (saved?.categories) setServerCategories(saved.categories);
+        setProjectSavedAt(new Date());
+        return { id, created: false };
+    }, [viewerMode, blockGuestSaves, settleRoutedLoad, createDataflow, recordOutputs]);
 
     // ── In-flight install placeholders ────────────────────────────────────────
     // Upper bound on how long a placeholder can linger if its clear never fires

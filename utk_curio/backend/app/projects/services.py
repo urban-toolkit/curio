@@ -2316,11 +2316,15 @@ def record_edit(user, project_id: str, node_id: str, label) -> dict:
 
 
 def record_saved(user, project_id: str) -> dict:
-    """File > Save: a version named Saved."""
+    """File > Save: a version named Saved. Answered with the dataflow's
+    categories as it is now (its source, and what its nodes make of it), which
+    the canvas title shows, as a save's answer carried them."""
     from utk_curio.backend.app.collaboration import history
 
-    _project, ukey, _role = _history_of(user, project_id)
-    return _history_errors(lambda: history.saved(ukey, project_id, _history_person(user)))
+    project, ukey, _role = _history_of(user, project_id)
+    answer = _history_errors(lambda: history.saved(ukey, project_id, _history_person(user)))
+    spec = dataflow_docs.read(ukey, project_id)
+    return {**answer, "categories": _categories(project.owner or user, project_id, spec)}
 
 
 def put_back_version(user, project_id: str, point_id: str) -> dict:

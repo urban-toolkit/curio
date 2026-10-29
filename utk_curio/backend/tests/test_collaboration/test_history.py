@@ -546,6 +546,22 @@ def test_file_save_is_a_version_named_saved(kept):
     assert listed["versions"][-1]["what"] == "Saved" and listed["head"] == newest["id"]
 
 
+def test_file_saves_answer_has_the_dataflows_categories_as_it_is(kept):
+    """No tab saves the dataflow, so File > Save's version is what tells the
+    canvas title its categories, as a save's answer did."""
+    from utk_curio.backend.app.projects import services
+    from utk_curio.backend.app.collaboration import dataflow_docs
+
+    _synced(kept, "alice")
+    answer = _http(kept).post(f"/api/projects/{kept.project_id}/history/saved", headers=_auth(kept))
+
+    assert answer.status_code == 201, answer.get_json()
+    expected = services._categories(
+        kept.users["alice"], kept.project_id, dataflow_docs.read(kept.owner_key, kept.project_id),
+    )
+    assert answer.get_json()["categories"] == expected
+
+
 def test_an_agents_change_is_a_version_named_after_it_with_an_entry_on_the_node_it_changed(kept):
     from utk_curio.backend.app.collaboration import dataflow_docs
 
