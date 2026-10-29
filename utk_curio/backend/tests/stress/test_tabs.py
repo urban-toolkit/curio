@@ -5,6 +5,8 @@
 * The room: a phase waits for every member still in it.
 * The socket: python-socketio's client puts a binary event together on the
   thread that read it, in order; every doc message is a binary event.
+* A tab's answers: an update's ack, or, when the ack says the server queued
+  it, the kept message that answers it once its batch is applied.
 * Where a tab connects, and where it types and drags: the canvas's socket
   target, and the layout's places for a node's code and its place.
 
@@ -164,6 +166,65 @@ class TheSocketReadsInOrderTest(unittest.TestCase):
             for part in parts:
                 client.eio._receive_packet(eio_packet.Packet(eio_packet.MESSAGE, data=part))
         self.assertEqual(got, [(threading.get_ident(), payload) for payload in sent])
+
+
+class ATabsAnswersTest(unittest.TestCase):
+    """An update is answered by its ack, or, when the ack says ``queued``, by
+    the kept message that answers it once its batch is applied; a tab's
+    answers come in the order it sent its updates."""
+
+    QUEUED = {"ok": True, "queued": True}
+
+    def _tab(self):
+        """A tab holding a doc of one code node, its socket a stand-in that
+        keeps each update's answer callback; the samples it records."""
+        from pycrdt import create_update_message
+
+        from utk_curio.backend.app.collaboration import doc_mapping
+        from utk_curio.backend.tests.stress.sockets import SyncLedger, Tab
+
+        samples = []
+        tab = Tab("t", "p", SyncLedger(),
+                  lambda label, seconds, ok, error=None, kind=None: samples.append((label, ok, error)))
+        server = doc_mapping.new_doc()
+        doc_mapping.dataflow_to_doc({"nodes": [{"id": "n", "type": "curio.builtin/code", "x": 0, "y": 0,
+                                                "content": ""}], "edges": []}, server, doc_id="d")
+        tab.receive({"projectId": "p", "message": create_update_message(server.get_update())})
+        answers = []
+
+        class Link:
+            def emit(self, event, data, callback=None):
+                answers.append(callback)
+
+        tab.link = Link()
+        return tab, answers, samples
+
+    def test_a_queued_update_is_answered_by_its_kept_message_even_before_its_queued_ack(self):
+        tab, answers, samples = self._tab()
+        tab.keystroke("n", "a")
+        answers[0]({"ok": True, "kept": {}})
+        self.assertEqual(samples, [("socket yjs update", True, None)], "an ack did not answer its update")
+
+        tab.keystroke("n", "b")
+        tab.keystroke("n", "c")
+        answers[1](self.QUEUED)
+        self.assertEqual(len(samples), 1, "a queued update was taken as answered")
+        tab.receive({"projectId": "p", "answered": 2, "kept": {}})
+        self.assertEqual(samples, [("socket yjs update", True, None)] * 3)
+        answers[2](self.QUEUED)
+        self.assertEqual(len(samples), 3, "the queued ack of an update answered already counted again")
+        self.assertTrue(tab.wait_for_answers(0.1))
+
+    def test_what_a_kept_message_refused_is_a_failure(self):
+        tab, answers, samples = self._tab()
+        tab.keystroke("n", "a")
+        answers[0](self.QUEUED)
+        self.assertEqual(samples, [], "a queued update was taken as answered")
+        tab.receive({"projectId": "p", "answered": 1, "kept": {}, "refused": {"invalid_message": 1}})
+        [(label, ok, error)] = samples
+        self.assertEqual((label, ok), ("socket yjs update", False))
+        self.assertIn("invalid_message", error)
+        self.assertTrue(tab.wait_for_answers(0.1))
 
 
 class WhereATabConnectsAndWorksTest(unittest.TestCase):
