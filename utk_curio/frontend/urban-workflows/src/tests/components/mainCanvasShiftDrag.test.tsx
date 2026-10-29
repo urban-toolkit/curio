@@ -148,7 +148,7 @@ beforeEach(() => {
     onEdgesDelete: jest.fn(),
     onNodesDelete: jest.fn(),
     markDirty: jest.fn(),
-    saveCurrentProject: jest.fn(),
+    ensureProjectId: jest.fn(),
     notebookOn: false,
     notebookContentHeight: 0,
     setNotebookPane: jest.fn(),

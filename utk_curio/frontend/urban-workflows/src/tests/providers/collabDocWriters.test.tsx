@@ -3,8 +3,8 @@
  * `collab/participants.ts`'s `writesDoc`): the owner's always, an invited
  * editor's only with --collab on, as its canvas watches without it, and a
  * watcher's never. The doc's sync starts on the room's socket once the room
- * has joined the tab, whatever --collab says, but on a Curio with no sign-in,
- * where each canvas stays its own.
+ * has joined the tab, whatever --collab says, and on a Curio with no sign-in
+ * (where the shared guest is signed in for everyone) as on one with it.
  */
 import React from "react";
 import { act, render, waitFor } from "@testing-library/react";
@@ -167,25 +167,19 @@ test.each([
   expect(updatesSent(socket) > 0).toBe(sends);
 });
 
-test("on a Curio with no sign-in the room joins the owner's tab, and no doc starts", async () => {
-  mockConfig = { enable_collab: true, curio_no_auth: true };
-  await opened();
-  await waitFor(() => expect(sockets).toHaveLength(1));
+test.each([
+  ["with --collab", { enable_collab: true, curio_no_auth: true }],
+  ["without --collab", { enable_collab: false, curio_no_auth: true }],
+  ["with no projects page", { enable_collab: false, curio_no_auth: true, curio_no_project: true, skip_project_page: true }],
+])("on a Curio with no sign-in, %s, the owner's tab syncs its dataflow's doc and sends its changes", async (_how, config) => {
+  // The shared guest is signed in for everyone there and owns every dataflow,
+  // so its tab binds as a signed-in owner's does, and no tab saves.
+  mockConfig = config;
+  const socket = await joinedAs("owner");
 
-  joinAs(sockets[0], "owner");
+  renameOnCanvas();
 
-  expect(binding).toBeNull();
-  expect(sockets[0].sent.filter((sent) => sent.event === "yjs")).toEqual([]);
-});
-
-test("on a Curio with no sign-in and no people panel, a tab joins no room", async () => {
-  mockConfig = { enable_collab: false, curio_no_auth: true };
-  await opened();
-  // Time for a socket to open, as one does on a Curio with sign-in.
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  });
-
-  expect(mockIo).not.toHaveBeenCalled();
-  expect(binding).toBeNull();
+  expect(mockIo).toHaveBeenCalledTimes(1);
+  expect(binding!.provider.canWrite).toBe(true);
+  expect(updatesSent(socket)).toBeGreaterThan(0);
 });

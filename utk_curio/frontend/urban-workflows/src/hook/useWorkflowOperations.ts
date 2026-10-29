@@ -245,6 +245,10 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     const projectNameRef = useRef<string>("");
     projectNameRef.current = projectName;
     const [projectDirty, setProjectDirty] = useState<boolean>(false);
+    // Mirrored for an action in the tick an edit was made in. Synced on
+    // render, and set the moment an edit marks it.
+    const projectDirtyRef = useRef<boolean>(false);
+    projectDirtyRef.current = projectDirty;
     const [projectSavedAt, setProjectSavedAt] = useState<Date | null>(null);
     const [nodeExecStatus, setNodeExecStatus] = useState<Record<string, "stale" | "executed" | "errored">>({});
     const [viewerMode, setViewerMode] = useState<"owner" | "shared">("owner");
@@ -273,6 +277,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         if (hydratingRef.current) return;
         if (deps.docBridgeRef?.current?.bound()) return;
         dirtyGenerationRef.current += 1;
+        projectDirtyRef.current = true;
         setProjectDirty(true);
     }, []);
 
@@ -280,6 +285,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
      *  changed before (`useDataflowDoc` writes it with the bind). */
     const noteBound = useCallback(() => {
         dirtyGenerationRef.current += 1;
+        projectDirtyRef.current = false;
         setProjectDirty(false);
         setProjectSavedAt(new Date());
     }, []);
@@ -980,14 +986,22 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // The dataflow's name is stored twice: in ``spec.dataflow.name``, which the
     // canvas title renders, and in the project row's ``name``, which the Projects
     // list renders. #230: the canvas rename wrote only ``workflowName`` (the spec
-    // side), while ``saveCurrentProject`` sends ``projectName`` - so the save
-    // faithfully re-sent the name the dataflow was loaded under and the Projects
-    // card never moved. One entry point keeps both in step.
+    // side), while a save sent ``projectName`` - so the save faithfully re-sent
+    // the name the dataflow was loaded under and the Projects card never moved.
+    // One entry point keeps both in step.
     //
     // Deliberately NOT solved by flipping the ``||`` precedence below:
     // ``loadParsedTrill`` also calls ``setWorkflowName``, so preferring the canvas
     // name there would make File -> Load into an open project silently rename it.
     //
+    /** The project row's name, sent alone, as the Projects page's rename sends it. */
+    const sendRowName = useCallback((id: string, name: string) => {
+        projectsApi.update(id, { name }).then(
+            (detail) => setServerCategories(detail?.categories ?? {}),
+            (err) => showToast((err as Error)?.message || "Could not rename the dataflow.", "error"),
+        );
+    }, [showToast]);
+
     // Returns false for a blank entry so the caller can restore the old title.
     const renameDataflow = useCallback((rawName: string): boolean => {
         const next = rawName.trim();
@@ -998,18 +1012,15 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         // A rename is an edit like any other: Unsaved on a canvas bound to no
         // doc, and kept by the doc on a bound one.
         markDirty();
-        // The doc holds the dataflow's name, and the project row the one the
-        // Projects page lists, which no doc writes: the owner's rename sends
-        // it there too, as the Projects page's rename does.
+        // The doc holds the dataflow's name (a canvas not bound yet writes it
+        // with the bind), and the project row the one the Projects page lists,
+        // which no doc writes: the owner's rename sends it there too, as the
+        // Projects page's rename does. A rename while the create is out goes
+        // there once the create has made the row (createDataflow).
         const id = projectIdRef.current;
-        if (id && viewerMode === "owner" && deps.docBridgeRef?.current?.bound()) {
-            projectsApi.update(id, { name: next }).then(
-                (detail) => setServerCategories(detail?.categories ?? {}),
-                (err) => showToast((err as Error)?.message || "Could not rename the dataflow.", "error"),
-            );
-        }
+        if (id && viewerMode === "owner") sendRowName(id, next);
         return true;
-    }, [setWorkflowName, markDirty, viewerMode, showToast]);
+    }, [setWorkflowName, markDirty, viewerMode, sendRowName]);
 
     /**
      * A route load that has not delivered an id yet, or ``null`` when there is
@@ -1091,6 +1102,11 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             if (projectNameRef.current === name) {
                 projectNameRef.current = detail.name;
                 setProjectName(detail.name);
+            } else if (projectNameRef.current) {
+                // Renamed while the create was out: the row the create made
+                // has the name it sent, and the doc takes the new one with the
+                // bind.
+                sendRowName(detail.id, projectNameRef.current);
             }
             setProjectSavedAt(new Date());
             if (dirtyGenerationRef.current === dirtyAtSend) {
@@ -1119,7 +1135,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         };
         create.then(done, done);
         return create;
-    }, [reactFlow, workflowNameRef, deps.outputsRef, defaultSaveOutputDataset, syncDatasetsFromSavedSpec, noteLoadedDataflow, getAllNodeProvenance]);
+    }, [reactFlow, workflowNameRef, deps.outputsRef, defaultSaveOutputDataset, syncDatasetsFromSavedSpec, noteLoadedDataflow, getAllNodeProvenance, sendRowName]);
 
     /**
      * The dataflow's id, for an action on the server's copy of it (a dataset
@@ -1132,6 +1148,13 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
      */
     const ensureProjectId = useCallback(async (): Promise<string | null> => {
         const kept = async () => {
+            // A saved dataflow's canvas that changed before it bound holds
+            // changes the server has only once the bind writes them: wait for
+            // it, for as long as File > Save does.
+            if (projectDirtyRef.current && !deps.docBridgeRef?.current?.bound()) {
+                await deps.docBridgeRef?.current?.whenBound();
+            }
+            // The bridge of the render after the bind.
             await deps.docBridgeRef?.current?.whenKept();
             return projectIdRef.current;
         };

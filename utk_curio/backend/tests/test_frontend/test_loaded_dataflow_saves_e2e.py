@@ -8,7 +8,8 @@ dataflow that had been open lost its own nodes.
 
 Both halves are checked here: the file's dataflow is listed under its own name
 and opens with its own nodes, and the dataflow that was open keeps its nodes and
-its name. Loading over unsaved changes asks first, as every other way out of a
+its name. Loading over a saved dataflow asks nothing, as its doc has kept every
+change, and loading over unsaved work asks first, as every other way out of a
 dataflow does.
 
 Run::
@@ -35,6 +36,7 @@ from .utils import (
     save_dataflow,
     stub_login_and_enter_workflow,
     upload_workflow,
+    wait_for_changes_kept,
     wait_for_projects_page,
 )
 
@@ -198,10 +200,13 @@ def test_a_loaded_dataflow_is_saved_as_its_own_and_the_open_one_keeps_its_nodes(
     ), "the dataflow open before the load no longer holds its own nodes and name"
 
 
-def test_loading_over_unsaved_changes_asks_before_leaving_them(
+def test_loading_over_a_saved_dataflow_asks_nothing_and_over_unsaved_work_asks_first(
     app_frontend: "FrontendPage", current_server: str, page, tmp_path,
 ):
-    """Load dataflow leaves the open dataflow, so it asks first, like File > New."""
+    """Load dataflow leaves the open dataflow. A saved one's doc keeps each
+    change as it is made, so the load leaves it with no question and the
+    change in it. A file loaded is a dataflow not saved yet: loading another
+    over it asks first, like File > New."""
     require_project_page()
     require_user_auth()
     session = _enter_open_dataflow(
@@ -210,43 +215,50 @@ def test_loading_over_unsaved_changes_asks_before_leaving_them(
     token, open_id = session["token"], session["project"]["id"]
     file_path = _write(tmp_path, "tree-canopy-by-block.json", _spec(FILE_NAME, FILE_IDS))
 
-    # An unsaved change: a rename on the canvas.
+    # A change: a rename on the canvas, which the server has as it is made.
     renamed = f"{OPEN_NAME}, renamed"
     page.locator(TITLE).click()
     box = page.locator("[data-curio-canvas-title] input[type='text']").first
     box.wait_for(state="visible", timeout=10000)
     box.fill(renamed)
     box.press("Enter")
+    expect(page.locator(TITLE)).to_have_text(renamed, timeout=10000)
+    wait_for_changes_kept(page)
     save_state = page.locator(SAVE_STATE)
+    expect(save_state).to_have_attribute("data-curio-save-state", "saved", timeout=10000)
+
+    # Loading leaves it with no question, and opens the file as a new
+    # dataflow, not yet saved.
+    _pick_file(page, file_path)
+    _expect_canvas(page, FILE_IDS, FILE_NAME)
+    page.wait_for_url("**/dataflow/new", timeout=30000)
+    expect(page.get_by_role("dialog", name=DISCARD_TITLE)).to_have_count(0)
     expect(save_state).to_have_attribute("data-curio-save-state", "unsaved", timeout=10000)
 
-    # Loading asks before it leaves them; Stay here keeps everything as it was.
-    _pick_file(page, file_path)
+    # The dataflow that was open has the rename, in its doc and on its
+    # project's row, and never received the file's nodes.
+    assert _saved_dataflow(current_server, token, open_id) == (
+        renamed, renamed, sorted(OPEN_IDS),
+    ), "the dataflow left by the load lost its rename, or took the file's nodes"
+
+    # A loaded file is unsaved work: loading another over it asks first, and
+    # Stay here keeps everything as it was.
+    second_path = _write(tmp_path, "bus-stops-by-route.json", _spec(SECOND_FILE_NAME, SECOND_FILE_IDS))
+    _pick_file(page, second_path)
     dialog = page.get_by_role("dialog", name=DISCARD_TITLE)
     expect(dialog).to_be_visible(timeout=15000)
     expect(dialog).to_contain_text("Loading a dataflow file discards the changes you have not saved.")
     dialog.get_by_role("button", name="Stay here", exact=True).click()
     expect(dialog).to_have_count(0, timeout=10000)
-    _expect_canvas(page, OPEN_IDS, renamed)
-    assert f"/dataflow/{open_id}" in page.url, page.url
-    expect(save_state).to_have_attribute("data-curio-save-state", "unsaved", timeout=10000)
-
-    # Discard and continue opens the file as a new dataflow, not yet saved.
-    _pick_file(page, file_path)
-    accept_confirm_dialog(page, title=DISCARD_TITLE, button="Discard and continue")
     _expect_canvas(page, FILE_IDS, FILE_NAME)
-    page.wait_for_url("**/dataflow/new", timeout=30000)
+    assert "/dataflow/new" in page.url, page.url
     expect(save_state).to_have_attribute("data-curio-save-state", "unsaved", timeout=10000)
 
-    # A loaded file is unsaved work too: loading another over it asks again,
-    # and the second file takes its place.
-    _pick_file(
-        page,
-        _write(tmp_path, "bus-stops-by-route.json", _spec(SECOND_FILE_NAME, SECOND_FILE_IDS)),
-    )
+    # Discard and continue: the second file takes its place.
+    _pick_file(page, second_path)
     accept_confirm_dialog(page, title=DISCARD_TITLE, button="Discard and continue")
     _expect_canvas(page, SECOND_FILE_IDS, SECOND_FILE_NAME)
 
-    # The dataflow that was open never received the file's nodes.
+    # Still, the dataflow that was open never received a file's nodes.
     _, _, node_ids = _saved_dataflow(current_server, token, open_id)
     assert node_ids == sorted(OPEN_IDS), node_ids

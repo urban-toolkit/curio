@@ -259,14 +259,16 @@ def test_a_saved_output_dragged_from_the_data_palette_becomes_a_data_loading_nod
     # Run the producer with its save-output toggle on, so its output is saved
     # to the Data Catalog as this dataflow's.
     enable_save_output(page, PRODUCER)
+    # The record of the outputs that carries the producer's: its run's start
+    # names it too, so the route tells them apart.
     with page.expect_response(
-        lambda r: f"/api/projects/{project_id}" in r.url
-        and r.request.method in ("PUT", "POST")
+        lambda r: r.url.split("?", 1)[0].endswith(f"/api/projects/{project_id}/outputs")
+        and r.request.method == "POST"
         and PRODUCER in (r.request.post_data or ""),
         timeout=180000,
     ) as saved:
         run_node_and_wait(page, PRODUCER, node_type=ANALYSIS_TYPE)
-    assert saved.value.ok, f"the save of the output failed: {saved.value.status}"
+    assert saved.value.ok, f"the record of the output failed: {saved.value.status}"
 
     # Frame the producer small at the top left, under the palette, so the drop
     # point to the right of the palette is empty canvas.

@@ -56,8 +56,9 @@ jest.mock("../../providers/ToastProvider", () => ({
   useToastContext: () => ({ showToast: mockShowToast }),
 }));
 const mockLockfile = ["curio.scout@1", "model.curio.ddrnet23-slim@1"];
-// The save every Add, Remove and Import makes first on a dataflow with no id.
-const mockRequestProjectSave = jest.fn();
+// What every Add, Remove and Import asks first on a dataflow with no id: the
+// dataflow made, as its first save would make it, and its id.
+const mockEnsureProjectId = jest.fn();
 jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => ({
     // Never saved.
@@ -65,8 +66,7 @@ jest.mock("../../providers/FlowProvider", () => ({
     projectName: null,
     packages: mockLockfile,
     nodes: [],
-    requestProjectSave: mockRequestProjectSave,
-    saveCurrentProject: jest.fn(),
+    ensureProjectId: mockEnsureProjectId,
     projectDirty: true,
   }),
 }));
@@ -219,14 +219,14 @@ beforeEach(() => {
   mockApi.uploadArchive.mockResolvedValue({ package: importedModelPackage() });
   mockApi.weightsLicense.mockResolvedValue("MIT License");
   mockApi.usage.mockResolvedValue([]);
-  // How the save queue answers anyone but a hosted guest: the save creates the dataflow.
-  mockRequestProjectSave.mockResolvedValue({ id: "p-new" });
+  // How it answers anyone but a hosted guest: the create made the dataflow.
+  mockEnsureProjectId.mockResolvedValue("p-new");
 });
 
 describe("a hosted guest, on a dataflow it never saved", () => {
   beforeEach(() => {
-    // How the save queue answers a hosted guest.
-    mockRequestProjectSave.mockRejectedValue(new Error("Guest users cannot save projects"));
+    // How it answers a hosted guest: no dataflow, and no toast of its own.
+    mockEnsureProjectId.mockResolvedValue(null);
   });
 
   test("is told to sign in when it adds a model, and nothing is saved or reviewed", async () => {
@@ -236,7 +236,7 @@ describe("a hosted guest, on a dataflow it never saved", () => {
     await settle();
 
     expect(mockShowToast).toHaveBeenCalledWith("Sign in to add models.", "warning");
-    expect(mockRequestProjectSave).not.toHaveBeenCalled();
+    expect(mockEnsureProjectId).not.toHaveBeenCalled();
     expect(mockApi.resolve).not.toHaveBeenCalled();
   });
 
@@ -247,7 +247,7 @@ describe("a hosted guest, on a dataflow it never saved", () => {
     await settle();
 
     expect(mockShowToast).toHaveBeenCalledWith("Sign in to remove models.", "warning");
-    expect(mockRequestProjectSave).not.toHaveBeenCalled();
+    expect(mockEnsureProjectId).not.toHaveBeenCalled();
     expect(mockApi.uninstallFromProject).not.toHaveBeenCalled();
   });
 
@@ -259,7 +259,7 @@ describe("a hosted guest, on a dataflow it never saved", () => {
     await settle();
 
     expect(mockShowToast).toHaveBeenCalledWith("Sign in to import models.", "warning");
-    expect(mockRequestProjectSave).not.toHaveBeenCalled();
+    expect(mockEnsureProjectId).not.toHaveBeenCalled();
     expect(mockApi.uploadArchive).not.toHaveBeenCalled();
   });
 
@@ -271,7 +271,7 @@ describe("a hosted guest, on a dataflow it never saved", () => {
     await settle();
 
     expect(mockShowToast).toHaveBeenCalledWith("Sign in to import packages.", "warning");
-    expect(mockRequestProjectSave).not.toHaveBeenCalled();
+    expect(mockEnsureProjectId).not.toHaveBeenCalled();
     expect(mockApi.uploadArchive).not.toHaveBeenCalled();
   });
 });
@@ -286,7 +286,7 @@ describe.each([
     await addDeepUmbra();
 
     await waitFor(() => expect(mockApi.resolve).toHaveBeenCalled());
-    expect(mockRequestProjectSave).toHaveBeenCalledTimes(1);
+    expect(mockEnsureProjectId).toHaveBeenCalledTimes(1);
     expect(signInToasts()).toEqual([]);
   });
 
@@ -298,7 +298,7 @@ describe.each([
     await waitFor(() =>
       expect(mockApi.uninstallFromProject).toHaveBeenCalledWith("p-new", "model.curio.ddrnet23-slim@1"),
     );
-    expect(mockRequestProjectSave).toHaveBeenCalledTimes(1);
+    expect(mockEnsureProjectId).toHaveBeenCalledTimes(1);
     expect(signInToasts()).toEqual([]);
   });
 
@@ -311,7 +311,7 @@ describe.each([
     await waitFor(() =>
       expect(mockApi.installToProject).toHaveBeenCalledWith("p-new", "imported.xabc123def456@1"),
     );
-    expect(mockRequestProjectSave).toHaveBeenCalledTimes(1);
+    expect(mockEnsureProjectId).toHaveBeenCalledTimes(1);
     expect(signInToasts()).toEqual([]);
   });
 });

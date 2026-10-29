@@ -13,15 +13,16 @@ hard-link a file.
 
 The chain is invisible from the canvas: ``applyNewOutput`` ->
 ``scheduleInstallSyncRef`` (500 ms debounce, ``providers/flow/useInstallSave.ts``) ->
-``persistDataflowForInstall`` -> a project PUT -> ``_auto_install_computed_outputs``
--> ``dataset_install_warnings`` in the response -> ``surfaceInstallWarnings`` ->
-the toast. Every hop but the last is server-side or debounced, which is why the
-suite worked around the symptom (``dismiss_toasts``' quiet-window sweep exists
-for exactly this warning) instead of failing on it.
+``recordOutputs`` -> a record of the outputs (``POST /api/projects/<id>/outputs``)
+-> ``_auto_install_computed_outputs`` -> ``dataset_install_warnings`` in the
+response -> ``surfaceInstallWarnings`` -> the toast. Every hop but the last is
+server-side or debounced, which is why the suite worked around the symptom
+(``dismiss_toasts``' quiet-window sweep exists for exactly this warning) instead
+of failing on it.
 
 This test pins the chain from the only place it is observable end to end:
 
-  * the save that carried the node's output ref answers with
+  * the record that carried the node's output ref answers with
     ``dataset_install_warnings: []`` - the deterministic signal, read off the
     response rather than the DOM; for a run on the server, the node's step
     records no ``installWarnings`` and the dataset it installed;
@@ -33,8 +34,8 @@ This test pins the chain from the only place it is observable end to end:
     compressed body under a ``.json`` name that no client could parse.
 
 ``test_a_reload_restores_the_output_each_run_recorded`` runs the same two nodes
-and reloads: the dataflow's saved outputs restore both, and the save each run
-ended with named the node it had just run.
+and reloads: the dataflow's saved outputs restore both, and the record of
+outputs each run ended with named the node it had just run.
 
 Covered more cheaply elsewhere and not re-asserted here: the palette drag and
 Monaco's ``setValue`` path (``test_canvas_authoring_e2e.py``); the installer's
@@ -156,22 +157,22 @@ def _assert_no_install_warning_toast(page, context: str) -> None:
 
 
 def _install_save_response(project_id: str, node_id: str):
-    """Predicate for the project save that carried *node_id*'s output ref.
+    """Predicate for the record of outputs that carried *node_id*'s output ref.
 
-    Not "any PUT to this project", deliberately. A dirty canvas autosaves every
-    30 s through the same ``saveCurrentProject``, answered with the same
+    Not "any record of this dataflow's outputs", deliberately. A pin, a
+    scenario and File > Save record them too, answered with the same
     ``dataset_install_warnings`` field, so a URL-only waiter can be satisfied by
-    a save that fired BEFORE the node produced anything and then assert an empty
+    a record made BEFORE the node produced anything and then assert an empty
     warning list that means nothing. ``outputs`` is populated only from
     ``outputsRef``, which ``applyNewOutput`` writes, so requiring the node's own
-    ref in the request body is exactly "the save that tried to install this node".
+    ref in the request body is exactly "the record that tried to install this node".
     """
 
     def _match(response) -> bool:
         request = response.request
-        if request.method != "PUT":
+        if request.method != "POST":
             return False
-        if not response.url.endswith("/api/projects/{}".format(project_id)):
+        if not response.url.endswith("/api/projects/{}/outputs".format(project_id)):
             return False
         try:
             body = json.loads(request.post_data or "{}")
@@ -341,11 +342,12 @@ def _run_and_capture_save(page, token: str, project_id: str, node_id: str) -> tu
     """Run one node and return ``(output text, install outcome)``, the outcome
     carrying ``dataset_install_warnings``.
 
-    A run in the page installs at the save that carries the node's output ref,
-    so the outcome is that save's response. Its listener is armed BEFORE the run
-    on purpose: ``wait_for_node_done`` only watches ``data-curio-node-status``,
-    which flips in the same synchronous block that calls ``applyNewOutput``,
-    while the install-save is 500 ms debounced after that plus a round trip.
+    A run in the page installs at the record that carries the node's output
+    ref, so the outcome is that record's response. Its listener is armed BEFORE
+    the run on purpose: ``wait_for_node_done`` only watches
+    ``data-curio-node-status``, which flips in the same synchronous block that
+    calls ``applyNewOutput``, while the record is 500 ms debounced after that
+    plus a round trip.
 
     A run on the server (a signed-in owner's) installs as it records the node's
     output, and the node's step carries the same warnings (``installWarnings``)
@@ -377,7 +379,7 @@ def _run_and_capture_save(page, token: str, project_id: str, node_id: str) -> tu
         page.remove_listener("response", _on_response)
         sent.stop()
     response = saves[-1]
-    assert response.ok, "install-save failed: {} {}".format(response.status, response.url)
+    assert response.ok, "the record of outputs failed: {} {}".format(response.status, response.url)
     return output, response.json()
 
 
@@ -432,26 +434,26 @@ def test_a_dict_and_a_scalar_output_install_without_a_warning(
     dict_output, dict_save = _run_and_capture_save(page, token, project_id, dict_node)
     assert "Saved to file:" in dict_output, dict_output
     assert dict_save.get("dataset_install_warnings") == [], (
-        "the save that carried {}'s output reported install warnings {!r}; a dict "
+        "the record that carried {}'s output reported install warnings {!r}; a dict "
         "return value must install as a json computed dataset, not be skipped "
         "(#180)".format(dict_node, dict_save.get("dataset_install_warnings"))
     )
 
     # 2. The scalar node. Run second and assert separately rather than relying on
     #    the 500 ms debounce to collapse both: the two runs are seconds apart, so
-    #    which save covers which node is not something to guess at.
+    #    which record covers which node is not something to guess at.
     scalar_output, scalar_save = _run_and_capture_save(page, token, project_id, scalar_node)
     assert "Saved to file:" in scalar_output, scalar_output
     assert scalar_save.get("dataset_install_warnings") == [], (
-        "the save that carried {}'s output reported install warnings {!r}; a "
+        "the record that carried {}'s output reported install warnings {!r}; a "
         "scalar return value has no parquet and no artifact file, and used to be "
         "skipped outright (#180)".format(
             scalar_node, scalar_save.get("dataset_install_warnings")
         )
     )
-    # This save re-sent the dict node's ref too (buildOutputRefs rebuilds refs for
-    # every toggle-enabled node), so an empty list here also shows the first
-    # node's dataset stayed installable across a second save.
+    # This record re-sent the dict node's ref too (buildOutputRefs rebuilds refs
+    # for every toggle-enabled node), so an empty list here also shows the first
+    # node's dataset stayed installable across a second record.
 
     # 3. The datasets are real and usable.
     for node_id, expected in ((dict_node, DICT_PAYLOAD), (scalar_node, SCALAR_PAYLOAD)):
@@ -548,10 +550,10 @@ def _assert_the_scalar_is_the_newer_dataset(
 ) -> None:
     """The scalar ran after the dict, so its dataset is dated after the dict's.
 
-    Read once the canvas frame is taken, seconds after the save that follows
-    the scalar's run: that save sends the dict's output again, unchanged, and
-    must not date the dict's dataset anew. The Computed tab's order rests on
-    these dates, and a tie of dates would leave it to the ids.
+    Read once the canvas frame is taken, seconds after the record of outputs
+    that follows the scalar's run: that record sends the dict's output again,
+    unchanged, and must not date the dict's dataset anew. The Computed tab's
+    order rests on these dates, and a tie of dates would leave it to the ids.
     """
     catalog = api_json(
         "{}/api/datasets/catalog?includeHub=false&dataflowId={}".format(server, project_id),
@@ -562,7 +564,7 @@ def _assert_the_scalar_is_the_newer_dataset(
         assert dated.get(dataset_id), "{} has no updatedAt: {}".format(dataset_id, dated)
     assert datetime.fromisoformat(dated[scalar_id]) > datetime.fromisoformat(dated[dict_id]), (
         "the scalar's dataset is dated {} and the dict's {}; the scalar ran after "
-        "the dict, so its dataset is the newer one. A save that sends the dict's "
+        "the dict, so its dataset is the newer one. A record that sends the dict's "
         "output again, unchanged, must not date it anew.".format(
             dated[scalar_id], dated[dict_id]
         )
@@ -609,16 +611,20 @@ def _open_computed_tab(page, dataset_ids) -> None:
 
 
 def _project_traffic(page, project_id: str) -> list:
-    """Record, in the order they are sent, each run start and each save of
-    *project_id*, as ``(kind, request)``."""
+    """Record, in the order they are sent, each run start, each record of
+    *project_id*'s outputs and each write of the whole dataflow, which no tab
+    sends, as ``(kind, request)``."""
     log: list = []
     runs_path = "/api/projects/{}/runs".format(project_id)
+    outputs_path = "/api/projects/{}/outputs".format(project_id)
     project_path = "/api/projects/{}".format(project_id)
 
     def _on_request(request) -> None:
         path = request.url.split("?", 1)[0]
         if request.method == "POST" and path.endswith(runs_path):
             log.append(("run", request))
+        elif request.method == "POST" and path.endswith(outputs_path):
+            log.append(("record", request))
         elif request.method == "PUT" and path.endswith(project_path):
             log.append(("save", request))
 
@@ -626,33 +632,34 @@ def _project_traffic(page, project_id: str) -> list:
     return log
 
 
-def _save_ending_the_run(page, traffic: list, since: int, node_id: str) -> list:
-    """The node ids named by the save the canvas makes as *node_id*'s run
-    ends: the first save sent after the run was started, once it has answered.
+def _record_ending_the_run(page, traffic: list, since: int, node_id: str) -> list:
+    """The node ids named by the record of outputs the canvas makes as
+    *node_id*'s run ends: the first record sent after the run was started,
+    once it has answered.
 
-    By order, not by what it carries: the save before the run is sent before
-    the start, and the one the run's end flushes is the next.
+    By order, not by what it carries: nothing goes before the start, and the
+    record the run's end flushes is the next.
     """
     deadline = time.monotonic() + 60
     while True:
         entries = traffic[since:]
         kinds = [kind for kind, _request in entries]
         if "run" in kinds:
-            save = next(
-                (request for kind, request in entries[kinds.index("run") + 1:] if kind == "save"),
+            record = next(
+                (request for kind, request in entries[kinds.index("run") + 1:] if kind == "record"),
                 None,
             )
-            if save is not None:
+            if record is not None:
                 break
         assert time.monotonic() < deadline, (
-            "no save followed the start of {}'s run: {}".format(node_id, kinds)
+            "no record of the outputs followed the start of {}'s run: {}".format(node_id, kinds)
         )
         page.wait_for_timeout(250)
-    response = save.response()
-    assert response is not None and response.ok, "the save that ended {}'s run failed: {}".format(
+    response = record.response()
+    assert response is not None and response.ok, "the record that ended {}'s run failed: {}".format(
         node_id, response.status if response is not None else "no response"
     )
-    body = json.loads(save.post_data or "{}")
+    body = json.loads(record.post_data or "{}")
     return sorted(ref.get("node_id") for ref in (body.get("outputs") or []))
 
 
@@ -666,11 +673,12 @@ def test_a_reload_restores_the_output_each_run_recorded(
     restored from the dataflow's saved outputs.
 
     Each run records its node's output in the dataflow
-    (``record_node_outputs``), and the canvas saves as the run ends, naming the
-    outputs it holds. That save read them before the node's new output had
-    reached them, so it named every output but the one just made, and a save's
-    outputs replace the dataflow's (``_merge_outputs``): the output went back
-    out. Read off the saved outputs the load's own response lists for the
+    (``record_node_outputs``), and the canvas records the outputs it holds as
+    the run ends. That record (a save, then) read them before the node's new
+    output had reached them, so it named every output but the one just made,
+    and its outputs replaced the dataflow's (``_merge_outputs``): the output
+    went back out. No tab saves the dataflow now. Read off the saved outputs
+    the load's own response lists for the
     dataflow (``project.outputs``): the owner's canvas also shows each node's
     last kept result (``?results=last``), which hid it there, but a shared
     link, a duplicate and the dashboard read only the saved outputs.
@@ -706,9 +714,12 @@ def test_a_reload_restores_the_output_each_run_recorded(
     for node_id in (dict_node, scalar_node):
         since = len(traffic)
         run_node_and_wait(page, node_id, node_type=ANALYSIS_TYPE)
-        named_at_end[node_id] = _save_ending_the_run(page, traffic, since, node_id)
+        named_at_end[node_id] = _record_ending_the_run(page, traffic, since, node_id)
+    assert [kind for kind, _request in traffic if kind == "save"] == [], (
+        "a run, or its end, sent the whole dataflow"
+    )
 
-    # At once: a later save, the next run's own among them, names both.
+    # At once: a later record, the next run's own among them, names both.
     with page.expect_response(
         lambda r: r.request.method == "GET"
         and r.url.split("?", 1)[0].endswith("/api/projects/{}".format(project_id)),
@@ -718,10 +729,10 @@ def test_a_reload_restores_the_output_each_run_recorded(
     restored = sorted(o["node_id"] for o in (load_info.value.json()["project"].get("outputs") or []))
     assert restored == both, (
         "the reloaded dataflow restores the saved outputs of {}, not of both nodes; "
-        "the save each run ended with named {}".format(restored, named_at_end)
+        "the record each run ended with named {}".format(restored, named_at_end)
     )
     assert named_at_end == {dict_node: [dict_node], scalar_node: both}, (
-        "the save each run ended with left out the node it had just run: {}".format(named_at_end)
+        "the record each run ended with left out the node it had just run: {}".format(named_at_end)
     )
 
     require_owner_view(page)

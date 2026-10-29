@@ -2,6 +2,7 @@
 
 import re
 import time
+from urllib.parse import urlparse
 
 from playwright.sync_api import (
     TimeoutError as PlaywrightTimeoutError,
@@ -252,27 +253,84 @@ def enable_save_output(page, node_id: str) -> None:
     expect(box).to_be_checked(timeout=10000)
 
 
-def save_dataflow(page, *, timeout: float = 30000) -> dict:
-    """Save the open dataflow through the File menu, and wait for the write.
+def _api_path(response) -> str:
+    return urlparse(response.url).path.rstrip("/")
 
-    Gates on the write itself rather than on the File menu closing: the menu can
-    close before the PUT is answered, and a test that then reads the server sees
-    the pre-save spec. Returns the saved project as the server answered it.
+
+def dataflow_save_answered(response) -> bool:
+    """The answer that ends a save, from File > Save or the status icon.
+
+    A dataflow never saved is made by its create (``POST /api/projects``). A
+    saved one is never sent: its doc holds every change already, so its save
+    records the outputs the canvas holds, waits for the server to keep every
+    change, and ends with the version named Saved
+    (``POST /api/projects/<id>/history/saved``).
+    """
+    if response.request.method != "POST" or not response.ok:
+        return False
+    path = _api_path(response)
+    return path.endswith("/api/projects") or (
+        "/api/projects/" in path and path.endswith("/history/saved")
+    )
+
+
+def _outputs_recorded(response) -> bool:
+    """A record of the outputs a canvas holds (``POST /api/projects/<id>/outputs``)."""
+    path = _api_path(response)
+    return (
+        response.request.method == "POST" and response.ok
+        and "/api/projects/" in path and path.endswith("/outputs")
+    )
+
+
+def save_answer(page, click, *, timeout: float = 30000) -> dict:
+    """Run *click*, which saves the open dataflow, and wait for the save.
+
+    Returns, for a dataflow never saved, the dataflow its create made, as the
+    server answered it. For a saved one: its ``id``, the ``categories`` the
+    version named Saved answered with, and the ``outputs`` the dataflow
+    records, as the save's record of them answered.
+    """
+    recorded: list = []
+
+    def note(response) -> None:
+        if _outputs_recorded(response):
+            recorded.append(response)
+
+    page.on("response", note)
+    try:
+        with page.expect_response(dataflow_save_answered, timeout=timeout) as saved:
+            click()
+    finally:
+        page.remove_listener("response", note)
+    answer = saved.value
+    body = answer.json()
+    path = _api_path(answer)
+    if path.endswith("/api/projects"):
+        return body
+    outputs = recorded[-1].json().get("outputs") if recorded else None
+    return {
+        "id": path.split("/")[-3],
+        "categories": body.get("categories") or {},
+        "outputs": outputs or [],
+    }
+
+
+def save_dataflow(page, *, timeout: float = 30000) -> dict:
+    """Save the open dataflow through the File menu, and wait for the save.
+
+    Gates on the save's last answer rather than on the File menu closing: the
+    menu can close before the save is answered, and a test that then reads the
+    server sees what it held before. Returns what ``save_answer`` returns.
     """
     file_btn = page.get_by_role("button", name=re.compile("File"))
     file_btn.wait_for(state="visible", timeout=15000)
     file_btn.click(force=True)
     save_btn = page.get_by_role("button", name="Save dataflow", exact=True)
     save_btn.wait_for(state="visible", timeout=10000)
-    with page.expect_response(
-        lambda r: "/api/projects" in r.url
-        and r.request.method in ("POST", "PUT")
-        and r.ok,
-        timeout=timeout,
-    ) as saved:
-        save_btn.click()
+    detail = save_answer(page, save_btn.click, timeout=timeout)
     save_btn.wait_for(state="hidden", timeout=timeout)
-    return saved.value.json()
+    return detail
 
 
 # True once the canvas header shows what a save leaves on it: the save icon
@@ -297,12 +355,12 @@ _HEADER_SHOWS_SAVE_JS = """(wantAutoChips) => {
 def save_dataflow_and_settle_header(page, *, timeout: float = 30000) -> dict:
     """Save the open dataflow, then wait until the header shows the save.
 
-    Three things in the canvas header change only when a save lands: the save
-    icon (``data-curio-save-state``), the automatic category chips (the save
-    response's ``categories``) and the Data Catalog count (refetched once the
-    save is answered). A frame captured without a save shows whichever of them
-    the 30 s autosave had reached, so the same frame came out saved on one run
-    and unsaved on the next (issue #584).
+    Three things in the canvas header change when a save lands: the save icon
+    (``data-curio-save-state``), the automatic category chips (the save's
+    answer's ``categories``) and the Data Catalog count (refetched once the
+    save's record of the outputs is answered). A frame captured without a save
+    shows whichever of them the last change had reached, so the same frame
+    came out one way on one run and another on the next (issue #584).
 
     Leaves the pointer parked: the File menu's Save row sits over the title and
     its category chips, and a chip under the pointer is drawn hovered.
@@ -339,6 +397,8 @@ def settle_header_after_save(page, saved_project: dict, *, timeout: float = 3000
 _HEADER_STATE_JS = """() => ({
     saveState: document.querySelector('[data-curio-save-state]')
         ?.getAttribute('data-curio-save-state') ?? null,
+    changesPending: document.querySelector('[data-curio-save-state]')
+        ?.getAttribute('data-curio-changes-pending') ?? null,
     catalogBusy: document.querySelector('#datasets-palette button[aria-busy]')
         ?.getAttribute('aria-busy') ?? null,
     autoChips: document.querySelectorAll(
@@ -346,12 +406,38 @@ _HEADER_STATE_JS = """() => ({
 })"""
 
 
+# True once the server has every change this tab made to the dataflow its
+# canvas is bound to: no change of the tab's waits, and the status reads Saved.
+_CHANGES_KEPT_JS = """() => {
+    const el = document.querySelector('[data-curio-save-state]');
+    return !!el && el.getAttribute('data-curio-changes-pending') === 'false'
+        && el.getAttribute('data-curio-save-state') === 'saved';
+}"""
+
+
+def wait_for_changes_kept(page, *, timeout: float = 30000) -> None:
+    """Wait until the server has every change this tab made to its dataflow.
+
+    A canvas bound to its dataflow's doc saves nothing itself: the doc keeps
+    each change as it is made, and the save status says whether one still
+    waits (``data-curio-changes-pending``) before the bar shows Saving....
+    Call it once the change shows on the canvas.
+    """
+    try:
+        page.wait_for_function(_CHANGES_KEPT_JS, timeout=timeout)
+    except PlaywrightTimeoutError:
+        seen = page.evaluate(_HEADER_STATE_JS)
+        raise AssertionError(
+            f"the server did not have this tab's changes within {timeout / 1000:.0f} s: {seen}"
+        ) from None
+
+
 def assert_header_shows_save(page) -> None:
     """Fail unless the canvas header shows a landed save right now.
 
-    No wait, on purpose: a frame taken without a save shows "Unsaved", or
-    whatever the 30 s autosave last left, and only a check made at the moment
-    of the capture tells the two apart.
+    No wait, on purpose: a frame taken without a save shows whatever the last
+    change left, and only a check made at the moment of the capture tells the
+    two apart.
     """
     seen = page.evaluate(_HEADER_STATE_JS)
     assert seen["saveState"] == "saved" and seen["catalogBusy"] == "false", (

@@ -444,7 +444,7 @@
  "tests.test_frontend.test_library_manager_js_e2e::test_no_install_request_is_ever_sent[chromium]": 6.6,
  "tests.test_frontend.test_library_manager_js_e2e::test_python_still_installs_from_the_same_dialog[chromium]": 6.1,
  "tests.test_frontend.test_loaded_dataflow_saves_e2e::test_a_loaded_dataflow_is_saved_as_its_own_and_the_open_one_keeps_its_nodes[chromium]": 15.4,
- "tests.test_frontend.test_loaded_dataflow_saves_e2e::test_loading_over_unsaved_changes_asks_before_leaving_them[chromium]": 7.2,
+ "tests.test_frontend.test_loaded_dataflow_saves_e2e::test_loading_over_a_saved_dataflow_asks_nothing_and_over_unsaved_work_asks_first[chromium]": 7.2,
  "tests.test_frontend.test_lower_manhattan_park_shade_e2e::test_three_scenarios_of_lower_manhattans_park_shade_are_charted_and_mapped[chromium]": 95.3,
  "tests.test_frontend.test_minimized_node_e2e::test_a_minimized_node_is_still_minimized_after_a_save_and_a_reload[chromium]": 8.1,
  "tests.test_frontend.test_missing_module_install_e2e.TestMissingModuleNotice::test_a_pip_failure_is_reported_as_a_pip_failure[chromium]": 7.5,

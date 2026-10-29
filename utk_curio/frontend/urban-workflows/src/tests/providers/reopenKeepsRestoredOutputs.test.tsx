@@ -6,8 +6,9 @@
  * A play on the server (`useServerRun.startRun`) sends `reuse`: the outputs of
  * the ancestors `nodesToRunUpTo` says need no new run, read from the
  * provider's `outputs` (`serverRunSteps.reuseFor`). The server runs the target
- * and every ancestor not in `reuse` (`run_engine.plan_run`). The save before
- * it sends the same `outputs` (`buildOutputRefs`), which the manifest records.
+ * and every ancestor not in `reuse` (`run_engine.plan_run`). No save goes
+ * before it, so nothing rewrites the manifest that holds the restored output,
+ * and a record of the outputs the canvas holds (`buildOutputRefs`) names it.
  *
  * The dataflow is reopened here as `ProjectLoader` opens it: `loadProject`,
  * then `applyResult`, which loads the spec (`useCode().loadTrill`, then
@@ -33,6 +34,8 @@ if (!(global as any).DOMMatrixReadOnly) {
 const mockShowToast = jest.fn();
 const mockGetProject = jest.fn();
 const mockUpdateProject = jest.fn();
+const mockCreateProject = jest.fn();
+const mockRecordOutputs = jest.fn();
 const mockStartRun = jest.fn();
 
 jest.mock('../../api/projectsApi', () => {
@@ -43,6 +46,8 @@ jest.mock('../../api/projectsApi', () => {
       ...actual.projectsApi,
       get: (...args: any[]) => mockGetProject(...args),
       update: (...args: any[]) => mockUpdateProject(...args),
+      create: (...args: any[]) => mockCreateProject(...args),
+      recordOutputs: (...args: any[]) => mockRecordOutputs(...args),
     },
   };
 });
@@ -256,9 +261,12 @@ beforeEach(() => {
   mockUpdateProject.mockImplementation(async (id: string) => ({
     id, name: 'Tuple reopen', spec_revision: 4, spec: spec(), categories: {}, outputs: [],
   }));
+  mockRecordOutputs.mockImplementation(async (_id: string, outputs: SavedOutputRef[]) => ({
+    outputs, dataset_install_warnings: [],
+  }));
   mockStartRun.mockImplementation(async (projectId: string, body: any) => ({
     id: 'run-1', projectId, projectName: null, trigger: 'node', targetNodeId: body?.target ?? null,
-    wholeDataflow: false, rerunOf: null, specRevision: body?.specRevision ?? null, status: 'running',
+    wholeDataflow: false, rerunOf: null, specRevision: 3, status: 'running',
     createdAt: null, startedAt: null, finishedAt: null,
     counts: { ok: 0, failed: 0, skipped: 0, waiting: 0 }, error: null, live: true, steps: [],
   }));
@@ -306,16 +314,23 @@ describe('reopening a saved dataflow', () => {
     expect(body.reuse).toEqual({ [PRODUCER]: RESTORED });
   });
 
-  test('the save before that play keeps the restored output in the manifest', async () => {
+  test('that play saves nothing first, and a record of the outputs keeps the restored one in the manifest', async () => {
     await reopen(SIGNED_IN);
 
     await playOnServer(CONSUMER);
 
-    // A save names the outputs its canvas holds, the restored one among them.
-    expect(mockUpdateProject).toHaveBeenCalled();
-    const [savedId, saved] = mockUpdateProject.mock.calls[mockUpdateProject.mock.calls.length - 1];
-    expect(savedId).toBe(PROJECT_ID);
-    expect(saved.outputs).toEqual([
+    // No save rewrites the manifest that holds the restored output.
+    expect(mockUpdateProject).not.toHaveBeenCalled();
+    expect(mockCreateProject).not.toHaveBeenCalled();
+
+    // A record names the outputs its canvas holds, the restored one among them.
+    await act(async () => {
+      await api.recordOutputs();
+    });
+    expect(mockRecordOutputs).toHaveBeenCalledTimes(1);
+    const [recordedId, recorded] = mockRecordOutputs.mock.calls[0];
+    expect(recordedId).toBe(PROJECT_ID);
+    expect(recorded).toEqual([
       expect.objectContaining({ node_id: PRODUCER, filename: PRODUCER_FILE, data_type: 'outputs' }),
     ]);
   });
