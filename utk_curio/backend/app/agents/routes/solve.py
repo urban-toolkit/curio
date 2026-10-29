@@ -19,6 +19,7 @@ from utk_curio.backend.app.agents.routes.common import _error
 from utk_curio.backend.app.agents.routes.common import _llm_for_attachment
 from utk_curio.backend.app.agents.routes.common import _provider_error
 from utk_curio.backend.app.agents.routes.common import _svc_error
+from utk_curio.backend.app.agents.routes.common import _working_dataflow
 from utk_curio.backend.app.agents.routes.common import agents_bp
 from utk_curio.backend.app.agents.service import AgentServiceError
 from utk_curio.backend.app.projects import repositories as projects_repo
@@ -47,6 +48,7 @@ def solve_attachment(project_id: str, attachment_id: str):
         return _error("'verify' must be a boolean when present")
     try:
         projects_repo.get_for_user(project_id, g.user.id)
+        project_id = _working_dataflow(project_id)
         config = _llm_for_attachment(project_id, attachment_id)
         payload = agents_services.solve_attachment(
             _user_dir_key(g.user), project_id, attachment_id, config, node_ids,
@@ -86,6 +88,7 @@ def solve_attachment_stream(project_id: str, attachment_id: str):
         return _error("'verify' must be a boolean when present")
     try:
         projects_repo.get_for_user(project_id, g.user.id)
+        project_id = _working_dataflow(project_id)
         config = _llm_for_attachment(project_id, attachment_id)
         events = agents_services.solve_attachment_stream(
             _user_dir_key(g.user), project_id, attachment_id, config, node_ids,
@@ -127,6 +130,7 @@ def simulate(project_id: str, attachment_id: str):
         return _error("'mode' must be 'step' or 'auto' when present")
     try:
         projects_repo.get_for_user(project_id, g.user.id)
+        project_id = _working_dataflow(project_id)
         config = _llm_for_attachment(project_id, attachment_id)
         events = agents_services.simulate_stream(
             _user_dir_key(g.user), project_id, attachment_id, config, mode=mode
@@ -159,6 +163,7 @@ def cancel_simulate(project_id: str, attachment_id: str):
     boundary; everything already done stays done."""
     try:
         projects_repo.get_for_user(project_id, g.user.id)
+        project_id = _working_dataflow(project_id)
         payload = agents_services.request_simulate_cancel(
             _user_dir_key(g.user), project_id, attachment_id
         )
@@ -187,6 +192,7 @@ def run_node(project_id: str, attachment_id: str):
         return _error("'nodeId' must be a string when present")
     try:
         projects_repo.get_for_user(project_id, g.user.id)
+        project_id = _working_dataflow(project_id)
         events = agents_services.run_node_stream(
             _user_dir_key(g.user), project_id, attachment_id,
             ref=ref or None, node_id=node_id or None,
@@ -227,6 +233,7 @@ def solve_node(project_id: str, attachment_id: str):
         return _error("'nodeId' is required")
     try:
         projects_repo.get_for_user(project_id, g.user.id)
+        project_id = _working_dataflow(project_id)
         config = _llm_for_attachment(project_id, attachment_id)
         events = agents_services.solve_node_stream(
             _user_dir_key(g.user), project_id, attachment_id, config, node_id=node_id,
@@ -270,6 +277,7 @@ def validate_node(project_id: str, attachment_id: str):
         return _error("'nodeId' must be a string when present")
     try:
         projects_repo.get_for_user(project_id, g.user.id)
+        project_id = _working_dataflow(project_id)
         config = _llm_for_attachment(project_id, attachment_id)
         events = agents_services.validate_node_stream(
             _user_dir_key(g.user), project_id, attachment_id, config,
@@ -304,6 +312,7 @@ def cancel_solve(project_id: str, attachment_id: str):
     undispatched targets revert to pending. 409 when nothing is running."""
     try:
         projects_repo.get_for_user(project_id, g.user.id)
+        project_id = _working_dataflow(project_id)
         payload = agents_services.request_solve_cancel(
             _user_dir_key(g.user), project_id, attachment_id
         )
