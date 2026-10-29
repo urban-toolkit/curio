@@ -4,7 +4,7 @@ import styles from "../AgentReviewCard.module.css";
 import { removalsTitle, tilesLeftLine, type PlanDisplay } from "./reviewCardText";
 
 /** A landed plan's goal (its card's lines count what it added) and, when the
- * plan removed anything, DEC-049.2's removals block — every victim by NAME
+ * plan removed anything, DEC-049.2's removals block: every victim by NAME
  * with a content flag; dev/112: removed CONNECTIONS named too. */
 export const PlanSummary: React.FC<{ part: PlanDisplay }> = ({ part }) => {
   if (part.tool !== "dataflow.plan.write" || !part.plan) return null;

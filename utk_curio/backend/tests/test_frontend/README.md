@@ -850,9 +850,9 @@ Things worth knowing before adding to these:
   `test_agents/test_routes_turns.py` and `test_agents/test_routes_proposals.py`,
   and an agent declaring only those falls through
   to the read-tool leg.
-- **A plan is applied per node**, through the planned row's own
-  `Create node <title>` button and the `apply-node` route - not the card's
-  single `Apply`.
+- **A change lands with the reply**: a plan, a node, a node's code or
+  settings reach the canvas as the reply ends, and the change's card in the
+  chat offers **Undo**. Only an install has a review card's `Apply`.
 - **The transcript's vocabulary is `{"role": "user"|"agent", "text": ...}`.**
   `assistant` exists only in the provider-context mapping in `sessions.py`.
 - **`TestAgentChatGallery` is in `fixtures.py::_SHARED_SESSION_CLASSES`**, so the

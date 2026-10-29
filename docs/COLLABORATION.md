@@ -47,6 +47,8 @@ Everyone in a dataflow's room has a role, which the server decides when they joi
 
 **Saving.** Every change is kept by the server as it is made, whoever makes it. **File > Save dataflow** on the owner's tab also saves the outputs the dataflow keeps and its Provenance. An editor or a watcher saves a copy with **File > Save dataflow**, as on any shared dataflow.
 
+**Agents.** An agent's change to the dataflow (a node's code or settings, a new node, a plan) reaches every tab as an edit does, and the history names it after the agent and the person who asked, such as *Node Builder, asked by Ana*. Its **Undo**, in the agent's chat, is that person's own change.
+
 **Hosted guests.** On a Curio started with `--deploy`, every guest shares one account, which also owns the example dataflows. Such a guest watches other accounts' dataflows. It joins no room of an example, so each guest's canvas of one stays its own, and the server refuses its saves. Its agents work on its own copy of an example: their chats and what they change reach no other guest, and stay until the server restarts.
 
 ## When two people change the same thing
@@ -57,6 +59,8 @@ Everyone in a dataflow's room has a role, which the server decides when they joi
 | Someone removes a node while you type in it | "Fabio removed this node while you were editing it." with **Put it back**, which adds it again with your code and the connections whose other end is still there. |
 | You connect to a node someone removed at the same moment | The connection is not kept: "Fabio removed that node, so this connection was not kept." |
 | Two people set one widget | Every tab shows the same value within a moment, and the node needs a run. |
+| An agent's change reaches a node someone is working in | The change waits for them to leave the node. After 30 seconds it gives up, nothing changes, and the agent is told who is in it. |
+| You undo an agent's change that someone changed after | Nothing is undone: "Ana changed this node after; nothing was undone." |
 | Two people drag one node | It lands where one of them dropped it, the same in every tab. |
 
 ## Setup

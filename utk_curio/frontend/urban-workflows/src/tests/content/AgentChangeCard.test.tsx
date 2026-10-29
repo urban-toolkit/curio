@@ -121,7 +121,7 @@ describe("AgentChangeCard: a settings change names the node and says each change
   });
 });
 
-describe("AgentChangeCard — a new node (dev/118, dev/119: what Solve does with it)", () => {
+describe("AgentChangeCard: a new node (dev/118, dev/119: what Solve does with it)", () => {
   const source = { kind: "external", label: "x", refs: [{ kind: "external", value: "https://a.org", verification: { status: "verified" } }] };
   const created = (overrides: Partial<AgentChangePart>) =>
     change({
@@ -158,7 +158,7 @@ describe("AgentChangeCard — a new node (dev/118, dev/119: what Solve does with
   });
 });
 
-describe("AgentChangeCard — dev/114 (DEC-072) the Source block", () => {
+describe("AgentChangeCard: dev/114 (DEC-072) the Source block", () => {
   const withSource = (source: AgentChangePart["source"]) =>
     change({ tool: "node.create", kind: "node", summary: "Created a new Data Loading node", source });
 
@@ -242,7 +242,7 @@ describe("AgentChangeCard — dev/114 (DEC-072) the Source block", () => {
     expect(container.textContent).toContain("<img src=x");
   });
 
-  it("a secret ref reads as a connection key by name — never a value (dev/116)", () => {
+  it("a secret ref reads as a connection key by name: never a value (dev/116)", () => {
     render(
       <AgentChangeCard
         part={withSource({ kind: "mixed", label: "External · … · Connection key · census", refs: [
@@ -261,7 +261,7 @@ describe("AgentChangeCard — dev/114 (DEC-072) the Source block", () => {
       <AgentChangeCard
         part={withSource({ kind: "external", label: "x", refs: [
           { kind: "external", value: "https://api.census.gov/data", requirement: "credential-gated",
-            hint: "a connection key 'census' is saved for this host — use api_key = curio_secret(\"census\")",
+            hint: "a connection key 'census' is saved for this host: use api_key = curio_secret(\"census\")",
             verification: { status: "unreachable", httpStatus: 401 } },
         ] })}
       />,
@@ -270,7 +270,7 @@ describe("AgentChangeCard — dev/114 (DEC-072) the Source block", () => {
   });
 });
 
-describe("AgentChangeCard — dev/67-7 the validation block of code that landed", () => {
+describe("AgentChangeCard: dev/67-7 the validation block of code that landed", () => {
   const validated = (verdict: string, evidence = {}) =>
     change({ validation: { verdict, rounds: verdict === "pass" ? 1 : 3, evidence } });
 
@@ -298,7 +298,7 @@ describe("AgentChangeCard — dev/67-7 the validation block of code that landed"
   });
 });
 
-describe("AgentChangeCard — dev/115 the verification attempt trail", () => {
+describe("AgentChangeCard: dev/115 the verification attempt trail", () => {
   const executed = change({
     validation: {
       verdict: "pass",
@@ -418,7 +418,7 @@ const planChange = (plan: AgentChangePart["plan"], overrides: Partial<AgentChang
     ...overrides,
   });
 
-describe("AgentChangeCard — dev/52 a landed plan", () => {
+describe("AgentChangeCard: dev/52 a landed plan", () => {
   const plan = planChange({
     goal: "heat analysis",
     nodes: [
@@ -459,7 +459,7 @@ describe("AgentChangeCard — dev/52 a landed plan", () => {
   });
 });
 
-describe("AgentChangeCard — dev/59 a plan that removed nodes (DEC-049.2)", () => {
+describe("AgentChangeCard: dev/59 a plan that removed nodes (DEC-049.2)", () => {
   const revision = planChange({
     goal: "replace the loader",
     nodes: [{ ref: "a", nodeType: "curio.builtin/computation-analysis", title: "API Fetch", intent: "fetch" }],
@@ -502,7 +502,7 @@ describe("AgentChangeCard — dev/59 a plan that removed nodes (DEC-049.2)", () 
   });
 });
 
-describe("AgentChangeCard — dev/71 a landed plan's rows: Solve then Run", () => {
+describe("AgentChangeCard: dev/71 a landed plan's rows: Solve then Run", () => {
   const progressive = planChange({
     goal: "g",
     nodes: [
@@ -579,7 +579,7 @@ describe("AgentChangeCard — dev/71 a landed plan's rows: Solve then Run", () =
   });
 });
 
-describe("AgentChangeCard — dev/72 a row's chip links to the chat that holds its code's change", () => {
+describe("AgentChangeCard: dev/72 a row's chip links to the chat that holds its code's change", () => {
   const plan = planChange({
     goal: "g",
     nodes: [{ ref: "a", nodeType: "t", title: "Load", intent: "load" }],

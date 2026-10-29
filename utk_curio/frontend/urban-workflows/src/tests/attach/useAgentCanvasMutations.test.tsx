@@ -229,7 +229,7 @@ describe("useAgentCanvasMutations (the apply→canvas bridge, dev/48 §3.3 + dev
   });
 
   // dev/105 A4: a package.install apply that carries no notes enlists a
-  // package and places nothing — the bridge event carries NO nodes. The
+  // package and places nothing: the bridge event carries NO nodes. The
   // handler must still add the store entry and pulse the registry (so a later
   // node of the package paints as itself) and do nothing else.
   it("package-nodes-created with no nodes updates store + registry, inserts and centers nothing", async () => {

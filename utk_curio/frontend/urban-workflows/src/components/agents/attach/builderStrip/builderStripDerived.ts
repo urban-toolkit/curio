@@ -17,7 +17,7 @@ export const PHASE_RANK: Record<string, number> = {
   idle: 0,
   applied: 1,
   solving: 1,
-  interrupted: 1, // dev/115: the server stopped mid-solve — Retry continues
+  interrupted: 1, // dev/115: the server stopped mid-solve: Retry continues
   ready: 2,
 };
 

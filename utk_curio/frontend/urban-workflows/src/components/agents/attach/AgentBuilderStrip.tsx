@@ -77,7 +77,7 @@ export const AgentBuilderStrip: React.FC<{
    * Omitted → the transcript card is the only review surface. */
   onApplyProposal?: (proposalId: string) => Promise<unknown>;
   onDismissProposal?: (proposalId: string) => Promise<void>;
-  /** dev/67-9: Build & validate over the landed plan — step or auto. */
+  /** dev/67-9: Build & validate over the landed plan: step or auto. */
   onSimulate?: (mode: "step" | "auto") => Promise<unknown>;
   onCancelSimulate?: () => Promise<void>;
   /** dev/67-9: the running simulation's narration line. */

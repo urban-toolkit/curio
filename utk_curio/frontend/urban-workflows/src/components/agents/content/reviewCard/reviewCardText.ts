@@ -1,6 +1,6 @@
 /**
  * The review and change cards' pure text and state derivations (memo dev/142,
- * F4 — split out of `AgentReviewCard.tsx`): the source block's labels, the
+ * F4: split out of `AgentReviewCard.tsx`): the source block's labels, the
  * row-state chips, an install's outcome and effect lines, and the per-row
  * readiness a landed plan's rows compute from the attachment's ledgers.
  */
@@ -99,7 +99,7 @@ export const EFFECT_LINE: Record<string, string> = {
     "Applying installs the exact reviewed artifact and creates its requested nodes; nothing else changes.",
 };
 
-/** dev/112: the removals block title of a landed plan — nodes, connections,
+/** dev/112: the removals block title of a landed plan: nodes, connections,
  * and the cascade, each only when present. */
 export function removalsTitle(nodes: number, edges: number, cascade: number): string {
   const parts: string[] = [];
@@ -122,7 +122,7 @@ export function tilesLeftLine(removals: Array<{ pinned?: boolean }>): string | n
 }
 
 /** A landed plan node's readiness for its row (dev/71): dependencies by name,
- * its lifecycle state, whether Solve may run, and — when not — why. Its
+ * its lifecycle state, whether Solve may run, and: when not: why. Its
  * connections landed with the plan, so only an upstream plan node that is not
  * solved yet holds it back. */
 export function planNodeRowState(

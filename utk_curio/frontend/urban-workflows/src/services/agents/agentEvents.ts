@@ -8,7 +8,7 @@
  * change lands on the server through the dataflow's doc, so a canvas the doc
  * binds has it already: its mutation is marked `landed`, which only a canvas no
  * doc binds takes (a hosted guest's, a dataflow open without collaboration).
- * The server's answer or stream is the only payload source — the bridge never
+ * The server's answer or stream is the only payload source: the bridge never
  * re-derives it. The catalog and dock refresh signals mirror the dataset
  * catalog's refresh-event convention: dispatched after an install/uninstall or
  * attach/detach so the palette and the dock re-read without a page reload.

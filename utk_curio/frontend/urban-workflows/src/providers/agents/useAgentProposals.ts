@@ -1,10 +1,10 @@
 /**
  * An agent's changes and the installs a person reviews, from the client's side
- * (memo dev/142, F2 — extracted from `AgentAttachmentsProvider`): an install's
+ * (memo dev/142, F2: extracted from `AgentAttachmentsProvider`): an install's
  * apply and dismiss, a change's Undo, the dataset selection and the portal
  * import. An applied install and an Undo carry their mutation to the LIVE
- * canvas through the dev/48 §3.3 bridge — the server's answer is the only
- * payload source — and then refresh the transcript and the listing, which are
+ * canvas through the dev/48 §3.3 bridge: the server's answer is the only
+ * payload source: and then refresh the transcript and the listing, which are
  * the truth.
  */
 import type { DatasetDiscoverySourceInput } from "../../services/datasetCatalog/datasetCatalogTypes";

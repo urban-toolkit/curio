@@ -1,5 +1,5 @@
 /**
- * Build & validate from the client's side (memo dev/142, F2 — extracted from
+ * Build & validate from the client's side (memo dev/142, F2: extracted from
  * `AgentAttachmentsProvider`): run the driver over the plan that landed (step
  * or auto, dev/67-9), each change that lands reaching a canvas no doc binds,
  * and its current step narrated; cancel.

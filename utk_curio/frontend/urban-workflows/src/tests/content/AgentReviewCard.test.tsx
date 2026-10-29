@@ -71,7 +71,7 @@ describe("AgentReviewCard (an install's review, memo dev/41)", () => {
   });
 });
 
-describe("AgentReviewCard — dev/48 install kinds", () => {
+describe("AgentReviewCard: dev/48 install kinds", () => {
   it("project.install states the install-only effect", () => {
     const install: AgentProposalPart = {
       type: "proposal",

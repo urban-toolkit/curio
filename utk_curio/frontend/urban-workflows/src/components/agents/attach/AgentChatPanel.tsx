@@ -260,7 +260,7 @@ export const AgentChatPanel: React.FC<{
 
   // Per-reply execution status (memo dev/80, amended: the status rides each
   // agent message, not a global strip). The review chip derives from the
-  // attachment's install mirror — it self-clears on apply/dismiss — and
+  // attachment's install mirror: it self-clears on apply/dismiss: and
   // marks only the NEWEST reply.
   const pendingReview = attachment.activeProposal?.status === "pending";
   const runInFlight = runStatus?.phase === "running";

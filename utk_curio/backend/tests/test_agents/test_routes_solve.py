@@ -744,7 +744,7 @@ def _saved_nodes(user, project_id) -> dict:
 
 
 class TestALandedPlan:
-    """dev/71 — a plan lands whole: its nodes, each with its agent, and every
+    """dev/71: a plan lands whole: its nodes, each with its agent, and every
     connection it draws, in one write; per-node Run executes through the node
     and journals real results for the agents."""
 
@@ -899,7 +899,7 @@ class TestALandedPlan:
 
 
 class TestBuildAndValidate:
-    """dev/67-9 (DEC-054) — Build & validate over the plan that landed: one
+    """dev/67-9 (DEC-054): Build & validate over the plan that landed: one
     transition function for Step and auto; validate, then approve, per node
     in plan order. Code that passes lands as the agent's change, with its
     Undo, and approving only records it; a failure pauses with nothing
@@ -1191,7 +1191,7 @@ class TestBuildAndValidate:
 
 
 class TestValidateNode:
-    """dev/67-7 — validate one node of a landed plan: generate → execute
+    """dev/67-7: validate one node of a landed plan: generate → execute
     through → verdict → self-correct. Code that passes lands as the agent's
     change, with its validation block; code that fails is not written, and its
     attempts stay in the node's agent chat."""

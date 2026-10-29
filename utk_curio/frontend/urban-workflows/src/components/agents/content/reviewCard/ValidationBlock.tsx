@@ -6,8 +6,8 @@ import styles from "../AgentReviewCard.module.css";
 
 type Validation = NonNullable<AgentChangePart["validation"]>;
 
-/** dev/67-7: the validation verdict of code that landed — real runtime
- * evidence, rendered inert. dev/115: the engineering loop's trail — every
+/** dev/67-7: the validation verdict of code that landed: real runtime
+ * evidence, rendered inert. dev/115: the engineering loop's trail: every
  * round the runtime ran (or refused before running), how it failed, and that
  * a fix followed. Collapsed by default. */
 export const ValidationBlock: React.FC<{ validation: Validation }> = ({ validation }) => (

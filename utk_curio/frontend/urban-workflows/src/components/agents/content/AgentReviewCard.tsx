@@ -16,7 +16,7 @@ export type { PlanNodeReviewState } from "./reviewCard/reviewCardText";
  * The review card of an install (memo dev/41; the blueprint's planned
  * `AgentReviewCard`): a package, a package draft, a dataset, a Discovery
  * download or an agent changes the account, so it waits for the person who
- * asked. The agent proposes; the USER confirms here — Apply and Dismiss are
+ * asked. The agent proposes; the USER confirms here: Apply and Dismiss are
  * system review controls (the sanctioned exception family to "no agent action
  * buttons", same as the DEC-035 install dialog). The proposed content is model
  * output: it renders as inert plain text (REQ-SEC-002), never markup.
