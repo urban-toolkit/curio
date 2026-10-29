@@ -1,0 +1,41 @@
+{
+  "skill_name": "fact-checking",
+  "agent": "agent.curio.researcher@1",
+  "dataflow": "docs/examples/dataflows/data-pool-vega-2.json",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Before I build the loader: is ijzp-q8t2 the id of Chicago's crimes dataset on data.cityofchicago.org, and does it have fields named primary_type and community_area?",
+      "expected_output": "Labeled findings in chat, one per line: the dataset id and each of the two fields checked with web.fetch against the portal (its metadata or a one-row query, say), each labeled VERIFIED, REPORTED or UNVERIFIED, with the URL probed and a note that it was checked now; no notes placed.",
+      "assertions": [
+        "The run calls web.fetch at least once.",
+        "Each finding, on the dataset id and on each of the two fields, is labeled VERIFIED, REPORTED or UNVERIFIED.",
+        "Each finding names the URL that was probed for it.",
+        "The answer says the checks were made now, in this session.",
+        "The answer proposes no notes (no node.create)."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Is zz9q-4kfx the green roofs dataset on data.cityofchicago.org? I'd like to load it from the portal's API.",
+      "expected_output": "A probe of the id on the portal, and the failure to confirm it reported as the finding itself (for example, that the id answers 404 or names no dataset there), labeled UNVERIFIED or stated as a failed probe, with its URL and that it was checked now, never softened into a likely match.",
+      "assertions": [
+        "The answer states plainly, as its finding, that zz9q-4kfx could not be confirmed as the green roofs dataset (for example that it answered 404 or was not found).",
+        "The finding on zz9q-4kfx is not labeled VERIFIED and is not worded as probably right.",
+        "The answer names the URL it probed and says it checked it now.",
+        "Any other dataset id the answer offers carries its own label and the URL it was checked at."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Check that each of these Chicago dataset ids exists on data.cityofchicago.org: ijzp-q8t2, 85ca-t3if, 4ijn-s7e5, ydr8-5enu, 22u3-xenr, 6zsd-86xi, wrvz-psew.",
+      "expected_output": "At most four web calls, spent on the probes that settle the most; a labeled finding for each id, with its URL; every id it could not probe labeled UNVERIFIED and named as left unchecked because of the web call budget.",
+      "assertions": [
+        "The run makes at most four web.search and web.fetch calls in all.",
+        "The answer gives a finding for each of the seven ids, each labeled VERIFIED, REPORTED or UNVERIFIED.",
+        "No id is labeled VERIFIED without the URL it was probed at.",
+        "If any id went unprobed, the answer labels it UNVERIFIED and says the web call budget is why it was not checked."
+      ]
+    }
+  ]
+}

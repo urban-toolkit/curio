@@ -1,0 +1,41 @@
+{
+  "skill_name": "research-notes",
+  "agent": "agent.curio.researcher@1",
+  "dataflow": "docs/examples/dataflows/data-pool-vega-2.json",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Put this on the canvas as notes. My question was: How much cooler do green roofs keep Chicago's roofs in summer? What I found: (1) On hot summer afternoons the green roof of Chicago City Hall measured up to 50 degrees F cooler than the tar roof of the county building next door. Source: https://en.wikipedia.org/wiki/Chicago_City_Hall (2) The US EPA says green roof surfaces can be 30 to 40 degrees F cooler than conventional roofs. Source: https://www.epa.gov/heatislands/using-green-roofs-reduce-heat-islands",
+      "expected_output": "Notes on the built-in Note template in the reference order: first a yellow note titled Question holding the user's question verbatim, then one green note per finding, two in all, each in clean markdown with its source as a [source](https://...) link and nothing added to what the user gave; the reply states the answer in prose too.",
+      "assertions": [
+        "The first proposed note is a node.create of curio.builtin/note titled \"Question\" whose content is the user's question as written: How much cooler do green roofs keep Chicago's roofs in summer?",
+        "After it come one note per finding, two in all, each a node.create of curio.builtin/note.",
+        "Each finding note's content is markdown that carries its source as a [source](https://...) link.",
+        "The finding notes state only what the user gave, with no figures or sources added.",
+        "The reply also states the answer in prose."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Which US cities publish their street trees as open data? Put what you find on the canvas.",
+      "expected_output": "A web search, then notes in the reference order: a yellow note titled Question with the question verbatim, then one green note per finding, each naming a city's open street tree data with a [source](https://...) link to the page it came from, composed only from the search results; the reply states the answer in prose too.",
+      "assertions": [
+        "The run calls web.search.",
+        "The first proposed note is a node.create of curio.builtin/note titled \"Question\" whose content is the question: Which US cities publish their street trees as open data?",
+        "Each other proposed note is a curio.builtin/note that holds one finding, with a [source](https://...) link to where it was found.",
+        "The reply states the answer in prose as well."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Turn this into notes on the canvas, all of them in blue: I read that the city of Chicago has about 3.6 million trees, that its tree canopy covers roughly 16 percent of its land, and that the Chicago Region Trees Initiative wants more planting in the neighborhoods with the least canopy. Sources: https://chicagorti.org and https://en.wikipedia.org/wiki/Urban_forest",
+      "expected_output": "One blue note per finding, three finding notes in all (the number of trees, the canopy share, the planting priority), each in clean markdown with a bold label or a bullet and its source as a link, adding nothing to the user's text; the user's color overrides the default yellow and green. A proposal stores a note's color as a hex: the palette's blue is #cfe8f7, its yellow #fef3c0 and its green #d5f0d1.",
+      "assertions": [
+        "The answer proposes one note per finding in the text, three finding notes in all (the number of trees, the canopy share, the planting priority), each a node.create of curio.builtin/note.",
+        "Every proposed note's backgroundColor is a blue (the palette's blue is #cfe8f7), the color the user asked for, not the default yellow (#fef3c0) or green (#d5f0d1).",
+        "Each finding note's content is markdown (a bold label or a bullet) rather than the user's paragraph copied whole.",
+        "The notes add no facts, figures or sources beyond the user's text."
+      ]
+    }
+  ]
+}

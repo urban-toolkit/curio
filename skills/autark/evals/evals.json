@@ -1,0 +1,64 @@
+{
+  "skill_name": "autark",
+  "agent": "agent.curio.node-builder@1",
+  "dataflow": "docs/examples/dataflows/chicago-loop-layers.json",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Add an Autark histogram of the buildings' heights that I can brush, fed by the OpenStreetMap layers node.",
+      "expected_output": "One new Autark node whose document is a single plot: a bar mark with a binning-1d transform over height, its dataRef table_osm_buildings (the name the OpenStreetMap layers node gives its buildings), a brush event, and neither a data section nor a map.",
+      "assertions": [
+        "The answer proposes one new node (node.create) of type curio.builtin/autk-grammar.",
+        "Its document has a \"plot\" with \"mark\": \"bar\", a \"binning-1d\" transform and an \"axis\" that names height.",
+        "The plot's \"dataRef\" is table_osm_buildings, the name the OpenStreetMap layers node gives its buildings.",
+        "The document has no \"data\" section that loads OpenStreetMap again, and no \"map\": it reads its input and draws one view.",
+        "The plot names a brush event, such as \"events\": [\"brushX\"]."
+      ]
+    },
+    {
+      "id": 2,
+      "target": {"kind": "node", "node": "d517325b-266b-575d-ab48-2685bb889536"},
+      "prompt": "Also show a bar chart of the stations by accessibility under the map, in this same node.",
+      "expected_output": "No document with both a map and a plot: the answer says an Autark node draws one view, so the bar chart goes in an Autark node of its own, linked to the map with an interaction edge. Any plot it proposes is in a new Autark node, a bar over the stations' ada values.",
+      "assertions": [
+        "No proposed document holds both a \"map\" and a \"plot\".",
+        "The answer says an Autark node draws one view, one map or one plot, so the bar chart goes in an Autark node of its own.",
+        "The answer says the two views can be linked with an interaction edge.",
+        "The answer offers the bar chart as a node of its own: a new node (node.create) of type curio.builtin/autk-grammar whose plot has \"mark\": \"bar\" over the stations' ada values, or the steps to add one."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Add an Autark map of the CTA 'L' lines alone, fed by the CTA 'L' lines node and colored by each line's legend code.",
+      "expected_output": "One new Autark node whose document is a map with one layer that reads the node's first input (dataRef input_0, or the chip [!! input_0 !!]), colored by legend as categories, with no data section.",
+      "assertions": [
+        "The answer proposes one new node (node.create) of type curio.builtin/autk-grammar.",
+        "Its document is a \"map\" with one layerRef whose \"dataRef\" is the node's first input: input_0, or the chip [!! input_0 !!].",
+        "That layer colors by the legend column as categories: \"getFnv\": \"legend\" with \"getFnvType\": \"categorical\".",
+        "The document has no \"data\" section: the lines reach the node on its input and are not loaded again from a file or a URL."
+      ]
+    }
+  ],
+  "trigger_queries": [
+    {"query": "Color the buildings on the Downtown Chicago layers map by their number of levels instead of height.", "should_trigger": true},
+    {"query": "Add a histogram of building heights next to the map, one I can brush.", "should_trigger": true},
+    {"query": "load the bike paths from openstreetmap for the same downtown box in a new node", "should_trigger": true},
+    {"query": "Compute each road's length on the GPU and color the roads on the map by it.", "should_trigger": true},
+    {"query": "Show the CTA stations on a second map of their own beside this one.", "should_trigger": true},
+    {"query": "Make a heat map of where the trees are densest, on a grid.", "should_trigger": true},
+    {"query": "The tracts layer needs a legend titled 'SVI percentile'. Give the parks one too.", "should_trigger": true},
+    {"query": "Use a diverging red to blue scale for the vulnerability layer on the map.", "should_trigger": true},
+    {"query": "Plot lanes against road width as a scatter under the map.", "should_trigger": true},
+    {"query": "Join the parks onto the roads in the OpenStreetMap layers node, so each road gets a count of the parks near it.", "should_trigger": true},
+    {"query": "Remove the buildings over 200 m from the map as a what-if.", "should_trigger": false},
+    {"query": "Draw the census tracts as a Vega-Lite map colored by RPL_THEMES.", "should_trigger": false},
+    {"query": "When I pick a tract on the map, list its row in a table.", "should_trigger": false},
+    {"query": "In a Python node, add up the length of the roads.", "should_trigger": false},
+    {"query": "Pin the map to the dashboard.", "should_trigger": false},
+    {"query": "Let the Trees node keep only a sample of trees whose size I set with a slider.", "should_trigger": false},
+    {"query": "What did the map's document look like before my last change?", "should_trigger": false},
+    {"query": "Compare the map with and without the 'L' lines as two scenarios.", "should_trigger": false},
+    {"query": "Which OpenStreetMap extracts do I already have in my Data Catalog?", "should_trigger": false},
+    {"query": "Read the buildings I pick on the map in a Python node's code.", "should_trigger": false}
+  ]
+}

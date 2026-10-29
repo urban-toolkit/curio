@@ -1,0 +1,43 @@
+{
+  "skill_name": "node-control",
+  "agent": "agent.curio.node-builder@1",
+  "dataflow": "docs/examples/dataflows/multi-input.json",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Add a node after the one whose code is just `return input_0, input_1`. It hands on both loaded tables at once; the new node should return a small table with the row count of each.",
+      "expected_output": "One new Python node whose code reads the two tables by indexing its one input, input_0[0] and input_0[1], reads no input_1, and returns a table of the two counts.",
+      "assertions": [
+        "The answer proposes one new node (node.create) of a Python code template, such as Python Computation or Data Transformation.",
+        "The proposed code reads the two tables by indexing its one input: input_0[0] and input_0[1], or the chip [!! input_0 !!] indexed the same way.",
+        "The code reads no input_1: both tables arrive together, as one tuple, on one input circle.",
+        "The code returns the two row counts with return, as a DataFrame or a dict."
+      ]
+    },
+    {
+      "id": 2,
+      "dataflow": "docs/examples/dataflows/vega.json",
+      "prompt": "Add a Python node after the bar chart that returns the rows whose b is above 50.",
+      "expected_output": "One new Python node whose code reads, from its input, the table the bar chart passes on (columns a and b) and returns the rows with b above 50, without rebuilding the table or sending the user back to the loading node.",
+      "assertions": [
+        "The answer proposes one new node (node.create) of a Python code template.",
+        "The proposed code reads the table from its input, the rows the bar chart passes on with columns a and b, and returns those whose b is above 50, such as input_0[input_0[\"b\"] > 50].",
+        "The code rebuilds no table by hand (no new DataFrame of the nine rows) and parses no Vega-Lite spec.",
+        "The answer does not say the chart has no data to pass on, and does not tell the user to wire the new node to the loading node instead."
+      ]
+    },
+    {
+      "id": 3,
+      "dataflow": "docs/examples/dataflows/vega.json",
+      "target": {"kind": "node", "node": "4d414f97-fad3-4ac7-9e1d-53725eb61f70"},
+      "prompt": "Add two more bars to this chart: J with 60 and K with 33.",
+      "expected_output": "No data in the spec: the answer adds the rows in the loading node's Python code, whose DataFrame gains J = 60 and K = 33, since the chart draws the table the node before it returns.",
+      "assertions": [
+        "No proposed Vega-Lite spec has a \"data\" field or inline \"values\".",
+        "The answer adds the rows in the loading node's Python code (node 8d428948-f5e4-485b-9812-51a4212678a7), whose DataFrame gains J with 60 and K with 33 in columns a and b and is still returned, or tells the user to add them there.",
+        "The answer says the chart draws the table the node before it returns, so the new rows go in that node.",
+        "The answer proposes no new node: the new bars come from rows of the existing loading node."
+      ]
+    }
+  ]
+}

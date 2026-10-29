@@ -1,0 +1,65 @@
+{
+  "skill_name": "reuse-first",
+  "agent": "agent.curio.dataflow-builder@1",
+  "dataflow": "docs/examples/dataflows/data-pool-vega-2.json",
+  "evals": [
+    {
+      "id": 1,
+      "agent": "agent.curio.node-builder@1",
+      "prompt": "Build whatever this needs: for each zip code, the share of its green roofs that have more than 10,000 square feet of vegetation.",
+      "expected_output": "One node.create of a listed built-in Python template (Data Transformation or Python Computation) whose code computes the share per zip code; no package installed, drafted or asked for, and no claim that a new node type is needed.",
+      "assertions": [
+        "The answer proposes one node.create whose nodeType is curio.builtin/data-transformation or curio.builtin/computation-analysis.",
+        "The answer proposes no package: no package.install and no package.draft.apply.",
+        "The answer does not say a new node type or package has to be written for this.",
+        "The proposed code computes, for each zip code, the share of roofs whose VEGETATED_SQFT is above 10,000."
+      ]
+    },
+    {
+      "id": 2,
+      "agent": "agent.curio.node-builder@1",
+      "prompt": "After the transformation that keeps the top 10 zip codes, I want a node where I pick a column, a comparison and a threshold from controls drawn right in the node itself, with no code editor, and only the matching rows go on.",
+      "expected_output": "The ladder's second rung: the Nodes Catalog's Example: Custom UI Node package (curio.example-ui@1) holds Column Filter, which does exactly this, so the answer proposes package.install of curio.example-ui@1 with a reason naming the filter step, and writes no package of its own.",
+      "assertions": [
+        "The answer proposes package.install with dirName curio.example-ui@1.",
+        "The install's reason names the step that needs it: filtering the top zip codes' rows from controls in the node.",
+        "The answer drafts no package of its own (no package.draft.apply) and asks for none to be written.",
+        "The answer does not claim the package is installed or the node exists before the user applies the install."
+      ]
+    },
+    {
+      "id": 3,
+      "agent": "agent.curio.node-builder@1",
+      "dataflow": "docs/examples/dataflows/chicago-rain-wind-routing.json",
+      "prompt": "Add the Scout package to this project, I want to use its raster nodes.",
+      "expected_output": "Scout (curio.scout@1) is already in this project, so the answer says so and proposes no install and no package draft; its raster nodes are already templates the dataflow can use.",
+      "assertions": [
+        "The answer says the Scout package (curio.scout@1) is already in this project.",
+        "The answer proposes no package.install.",
+        "The answer proposes no package draft and asks for no package to be written."
+      ]
+    }
+  ],
+  "trigger_queries": [
+    {"query": "Add a step after the transformation that keeps only the zip codes with more than 5 roofs.", "should_trigger": true},
+    {"query": "Plan a dataflow that loads Chicago's neighborhoods, counts the green roofs in each, and maps the counts.", "should_trigger": true},
+    {"query": "Is there a package with a node that filters rows from controls in the node body? If so, use it after the transformation.", "should_trigger": true},
+    {"query": "I need each zip code drawn as a little card with a progress ring, all inside one node.", "should_trigger": true},
+    {"query": "Build me a reusable node for the Gini coefficient of roof sizes that I can drop into other dataflows.", "should_trigger": true},
+    {"query": "add smth that shows the top zip codes as a table", "should_trigger": true},
+    {"query": "Which template should a step that geocodes the roofs' addresses use?", "should_trigger": true},
+    {"query": "Plan the next steps: a histogram of roof sizes and a map of the roofs colored by zip code.", "should_trigger": true},
+    {"query": "Next I need the UTCI thermal comfort per neighborhood. Set that part up.", "should_trigger": true},
+    {"query": "Put a node between the pool and the transformation that drops the roofs with no zip code.", "should_trigger": true},
+    {"query": "Change the bar chart's color scheme to shades of green.", "should_trigger": false},
+    {"query": "Set the Data Pool to merge selections with OR.", "should_trigger": false},
+    {"query": "Remove the Data Pool and connect the loader straight to the transformation.", "should_trigger": false},
+    {"query": "What does this dataflow do, in two sentences?", "should_trigger": false},
+    {"query": "Why is the bar chart empty after the last run?", "should_trigger": false},
+    {"query": "Who changed the transformation node last?", "should_trigger": false},
+    {"query": "Pin the bar chart to the dashboard.", "should_trigger": false},
+    {"query": "Explain the difference between the Data Pool and the transformation node.", "should_trigger": false},
+    {"query": "Make the 10 in the transformation code a slider I can change.", "should_trigger": false},
+    {"query": "Is the green roofs dataset in my Data Catalog the latest version?", "should_trigger": false}
+  ]
+}

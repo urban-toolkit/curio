@@ -1,0 +1,40 @@
+{
+  "skill_name": "compatibility",
+  "agent": "agent.curio.dataflow-builder@1",
+  "dataflow": "docs/examples/dataflows/default-workflow.json",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Chart the 11 random numbers as a bar chart in Vega-Lite.",
+      "expected_output": "A plan that puts a Python node between the node that returns the list of numbers and a new Vega-Lite node, turning the list into a DataFrame, since a Vega-Lite node takes only a DataFrame or a GeoDataFrame.",
+      "assertions": [
+        "The answer proposes a dataflow plan (dataflow.plan.write).",
+        "The plan does not feed the list itself into the Vega-Lite node: a Python node it adds turns the list from node 7877e099-7c1b-4496-8be7-43264794aea4 into a DataFrame first, or the answer also changes that node so it returns a DataFrame.",
+        "The Vega-Lite node receives exactly one data edge, from the node that hands it the table."
+      ]
+    },
+    {
+      "id": 2,
+      "dataflow": "docs/examples/dataflows/data-pool-vega-2.json",
+      "prompt": "Save the top 10 zip codes to a CSV file with a Data Export node, then draw a second bar chart from the exported file.",
+      "expected_output": "A plan with a Data Export node fed by the top 10 node and a new Vega-Lite chart fed by that same top 10 node, since a Data Export node has no output: no edge leaves the Data Export node.",
+      "assertions": [
+        "The answer proposes a dataflow plan (dataflow.plan.write).",
+        "The plan adds a Data Export node (curio.builtin/data-export) fed by the top 10 node, f9e2b9af-23e6-4db3-9140-38bfecd6afc5.",
+        "No data edge in the plan leaves the Data Export node.",
+        "The second chart's data edge comes from f9e2b9af-23e6-4db3-9140-38bfecd6afc5, the table the export writes, not from the Data Export node."
+      ]
+    },
+    {
+      "id": 3,
+      "dataflow": "docs/examples/dataflows/netcdf-hourly-rain.json",
+      "prompt": "Plan a dataflow that loads the SCOUT flood depth raster for 2050 to 2080 without NbS from my Data Catalog and shows its depths as a Vega-Lite heatmap.",
+      "expected_output": "A plan in which a Python node turns the raster's cells into a table of positions and depths before the Vega-Lite heatmap, since a Vega-Lite node takes only a DataFrame or a GeoDataFrame; no edge carries the raster itself into the chart.",
+      "assertions": [
+        "The answer proposes a dataflow plan (dataflow.plan.write).",
+        "No data edge carries the raster itself into the Vega-Lite node: the node that feeds the chart hands it a table (a DataFrame) of cell positions and depths, made from the raster by Python code, in a node of its own or in a loader whose intent says it turns the cells into such a table.",
+        "The Vega-Lite node receives exactly one data edge."
+      ]
+    }
+  ]
+}
