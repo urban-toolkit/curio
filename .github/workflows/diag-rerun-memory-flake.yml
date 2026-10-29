@@ -14,15 +14,15 @@ permissions:
 
 jobs:
   probe:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os || 'ubuntu-latest' }}
     timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { label: inside, image: a18707561b12afdc72ac779357a1bd5099516163, variant: baseline, job: 1 }
-          - { label: inside, image: a18707561b12afdc72ac779357a1bd5099516163, variant: launch, job: 1 }
-          - { label: inside, image: a18707561b12afdc72ac779357a1bd5099516163, variant: thp_off, job: 1 }
+          - { label: kernel68, os: ubuntu-22.04, image: a18707561b12afdc72ac779357a1bd5099516163, variant: baseline, job: 1 }
+          - { label: kernel68, os: ubuntu-22.04, image: a18707561b12afdc72ac779357a1bd5099516163, variant: baseline, job: 2 }
+          - { label: kernel68, os: ubuntu-22.04, image: a18707561b12afdc72ac779357a1bd5099516163, variant: launch, job: 1 }
     steps:
       - uses: actions/checkout@v6
 
@@ -55,7 +55,7 @@ jobs:
             -e CURIO_ISOLATION=off -e FLASK_USE_RELOADER=0 -e CURIO_LAUNCH_CWD=/app -w /app \
             "ghcr.io/urban-toolkit/curio-ci:${{ matrix.image }}" \
             python /diag/rerun_memory_probe.py --variant "${{ matrix.variant }}" --label "${{ matrix.label }}" \
-              --samples 2 --cycles 10 --diag --out "/out/${{ matrix.label }}-${{ matrix.variant }}-${{ matrix.job }}.json" \
+              --samples 3 --cycles 10 --out "/out/${{ matrix.label }}-${{ matrix.variant }}-${{ matrix.job }}.json" \
             | tee -a "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v6
