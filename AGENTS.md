@@ -51,7 +51,7 @@ Each backend feature's `service.py` is its public entry point for routes and oth
 
 Under `utk_curio/backend/app/`:
 
-- `projects/`: dataflows: routes, services, storage, seeding, categories, dashboard payload, and who edits one (`access.py`: `room_role`, the editors list behind Share > Invite editors).
+- `projects/`: dataflows: routes, services, storage, seeding, categories, dashboard payload, who edits one (`access.py`: `room_role`, `agents_role`, who drives the dataflow's agents, which every project route of the agents asks through `agents/routes/common.py`'s `_dataflow`, and the editors list behind Share > Invite editors), and a hosted guest's own copy of a dataflow, which its agents work on (`visitor_copies.py`).
 - `runs/`: dataflow runs on the server: tables and retention (`models.py`, `repositories.py`), starting, following and cancelling one (`service.py`, `routes.py`), live runs (`jobs.py`), a dashboard viewer's runs, which need no sign-in (`viewer.py`, `viewer_routes.py`), and the outputs kept runs keep by key, for seven days, with their sweep (`kept.py`). The engine is `execution/run_engine.py` with `execution/run_plan.py`; which outputs a run saves is `execution/save_policy.py`.
 - `users/`: accounts, sessions, auth routes, capabilities, connection keys, Data source keys (`source_keys.py`), rate limits.
 - `execution/`: one node run as Play does it (`node_exec.py`, behind `/processPythonCode` and `/processJavaScriptCode`), the sandbox HTTP client (`sandbox_client.py`), headless dataflow runner (`runner.py`), per-node runtime journal, sandbox token.
@@ -71,7 +71,7 @@ Under `utk_curio/backend/app/`:
 - `src/adapters/node/`: one behavior hook per built-in node kind (`codeNodeBehavior.tsx`, `vegaBehavior.ts`, `autkGrammarBehavior.tsx`, `dataPoolBehavior.tsx`, ...), exported from `index.ts`.
 - `src/components/UniversalNode.tsx`: the component that renders every node.
 - `src/registry/`: node descriptors and behaviors, built from installed package manifests.
-- `src/contracts/`: the constants the frontend shares with the backend, one JSON file each (`renderCauses`, `solveStopReasons`, `agentCategories`, `noteColors`, `autkGrammar`, `visDefaults`, `nodeSettings`, `dashboardRuns`, `dataflowDoc`: the layout of a dataflow's Yjs doc), imported here and read by the backend through `utk_curio/common/shared_constants.py`; `autkGrammar.ts` holds `inputTableName` and `autkOneViewProblem`, with the cases both sides run in `autkGrammar.cases.json`.
+- `src/contracts/`: the constants the frontend shares with the backend, one JSON file each (`renderCauses`, `solveStopReasons`, `agentCategories`, `noteColors`, `autkGrammar`, `visDefaults`, `nodeSettings`, `dashboardRuns`, `agentInstalls`: the agent tools whose Apply installs into an account, which only a dataflow's owner reviews, `dataflowDoc`: the layout of a dataflow's Yjs doc), imported here and read by the backend through `utk_curio/common/shared_constants.py`; `autkGrammar.ts` holds `inputTableName` and `autkOneViewProblem`, with the cases both sides run in `autkGrammar.cases.json`.
 - `src/api/`: REST clients (projects, connection keys, LLM configurations, monitor).
 
 ## Tests

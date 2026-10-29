@@ -8,7 +8,7 @@ This guide is in six parts, plus operator notes:
 
 - [1. What is the Agent Catalog?](#1-what-is-the-agent-catalog): agents, the ones that ship, the skills they read and how each picks what to run, and the storage layers.
 - [2. Surfaces and workflows](#2-surfaces-and-workflows): the three places you manage agents, the action matrix, walkthroughs, and catalog settings.
-- [3. Using an agent in a dataflow](#3-using-an-agent-in-a-dataflow): adding, attaching, and the difference between the two.
+- [3. Using an agent in a dataflow](#3-using-an-agent-in-a-dataflow): adding, attaching, the difference between the two, and the editors the owner invites.
 - [4. LLM configurations](#4-llm-configurations): which model answers, and where it is set.
 - [5. Importing, publishing, and sharing](#5-importing-publishing-and-sharing): your own definitions, adding a skill and an agent of your own, and offering them to everyone.
 - [6. The manifest](#6-the-manifest): writing your own agent.
@@ -367,6 +367,17 @@ The task itself goes to the agent in the dataflow that declares its capability: 
 
 The reverse holds too. Removing an agent that another added agent requires is refused, with a message naming the agent that needs it, so a dataflow never holds a broken reference.
 
+### Invited editors
+
+The editors the dataflow's owner invited (**Share > Invite editors**, see [COLLABORATION.md](COLLABORATION.md#who-edits-owner-editors-and-watchers)) work with its agents as the owner does: they add and attach agents, chat, apply what an agent proposes and run **Solve**. Anyone else who opens the dataflow's link watches: no agent, chat or badge shows on their canvas, and the server refuses their requests to the agents. A guest on a hosted Curio works with the agents of the examples, each guest on a copy of its own, and watches every other dataflow.
+
+- **The owner's model and key.** An editor's runs answer with the owner's LLM configurations: the one the owner's **API Settings** choose for each agent, else the owner's default ([LLM configurations](#4-llm-configurations)). The agents' skills and the catalog settings they read are the owner's too.
+- **The editor's own saved keys.** An agent in an editor's chat or Solve is told the names of the editor's Node code keys, never the owner's, and a key it names that only the owner saved gives it nothing. The Discovery Catalog sends the editor's own Data source keys, and an editor's searches of the Data Catalog, the Scenario Catalog and the Discovery Catalog read the editor's own account.
+- **One chat per attachment.** The owner and every editor read and write the same chat. A message someone else wrote shows their name above it; yours show none.
+- **Installs wait for the owner.** An install an agent proposes changes an account, the owner's, so in an editor's chat its card reads *Waits for the dataflow's owner to review it* in place of **Apply** and **Dismiss**: a package, a package an agent drafted, a dataset for the dataflow, or a download from the Discovery Catalog. The owner reviews it in the same chat. Confirming a candidates card row that Curio would download waits for the owner too.
+- **Agents an editor adds.** An editor adds the agents the owner's account holds: those Curio ships, and those the owner imported.
+- **Provenance.** A change an editor applies from an agent's review card is named after the agent and the editor who asked.
+
 ### Solve
 
 The **Dataflow Builder** plans a whole dataflow. Once you apply its plan, **Solve** in its strip fills in the planned nodes in one batch, and **Solve this node**, in the chat of an agent attached to a node, does the same for one node.
@@ -415,7 +426,7 @@ The **Dataset Finder** can search the portals in the [Discovery Catalog](DISCOVE
 
 ## 4. LLM configurations
 
-Every agent, on every dataflow, answers with an **LLM configuration**: the one chosen for it in **API Settings**, else your default. Configurations belong to your account. **API Settings** is in the top bar: on `/projects` and the catalog pages it opens the settings page; on the canvas and the dashboard it opens on the right side, and the dataflow stays open. The **API Settings** button in the Agent Catalog drawer's header opens it on the **Agent configuration** tab. Configurations are the rows of kind **Language model** on the **API keys** tab. A configuration is:
+Every agent, on every dataflow, answers with an **LLM configuration**: the one chosen for it in **API Settings**, else your default. Configurations belong to your account. On a dataflow you edit at its owner's invitation, the agents answer with the owner's ([Invited editors](#invited-editors)). **API Settings** is in the top bar: on `/projects` and the catalog pages it opens the settings page; on the canvas and the dashboard it opens on the right side, and the dataflow stays open. The **API Settings** button in the Agent Catalog drawer's header opens it on the **Agent configuration** tab. Configurations are the rows of kind **Language model** on the **API keys** tab. A configuration is:
 
 | Field | What it is |
 |---|---|
