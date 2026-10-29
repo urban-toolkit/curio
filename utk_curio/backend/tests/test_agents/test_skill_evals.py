@@ -314,7 +314,7 @@ def test_the_endpoint_comes_from_three_variables_and_no_output_may_hold_it(tmp_p
     run's folder that holds its key, its base URL, its host and port or its
     host is found."""
     skill_evals = _skill_evals()
-    env = {"CURIO_EVAL_BASE_URL": "https://models.example.org:8443/v1/", "CURIO_EVAL_API_KEY": "sk-test-0123456789",
+    env = {"CURIO_EVAL_BASE_URL": "https://models.example.org:8443/v1/", "CURIO_EVAL_API_KEY": "not-a-real-key-0123",
            "CURIO_EVAL_MODEL": "a-model"}
     try:
         skill_evals.Endpoint.from_env({"CURIO_EVAL_MODEL": "a-model"})
@@ -325,17 +325,17 @@ def test_the_endpoint_comes_from_three_variables_and_no_output_may_hold_it(tmp_p
     endpoint = skill_evals.Endpoint.from_env(env)
     assert repr(endpoint) == "Endpoint(model='a-model')"
     assert endpoint.secrets() == {
-        "eval-api-key": "sk-test-0123456789", "eval-base-url": "https://models.example.org:8443/v1/",
+        "eval-api-key": "not-a-real-key-0123", "eval-base-url": "https://models.example.org:8443/v1/",
         "eval-base-url-bare": "https://models.example.org:8443/v1", "eval-endpoint": "models.example.org:8443",
         "eval-host": "models.example.org",
     }
     (tmp_path / "skill" / "triggers").mkdir(parents=True)
     (tmp_path / "skill" / "clean.json").write_text('{"model": "a-model"}', encoding="utf-8")
-    for at, secret in enumerate(("sk-test-0123456789", "models.example.org", "https://models.example.org:8443/v1")):
+    for at, secret in enumerate(("not-a-real-key-0123", "models.example.org", "https://models.example.org:8443/v1")):
         (tmp_path / "skill" / "triggers" / f"{at}.log").write_text(f"failed at {secret} once", encoding="utf-8")
     assert skill_evals.leaks(tmp_path, endpoint) == ["skill/triggers/0.log", "skill/triggers/1.log",
                                                      "skill/triggers/2.log"]
-    loopback = skill_evals.Endpoint(base_url="http://127.0.0.1:9/v1", api_key="sk-test-0123456789", model="m")
+    loopback = skill_evals.Endpoint(base_url="http://127.0.0.1:9/v1", api_key="not-a-real-key-0123", model="m")
     assert "eval-host" not in loopback.secrets() and loopback.secrets()["eval-endpoint"] == "127.0.0.1:9"
 
 

@@ -90,7 +90,7 @@ An agent's manifest names its skills ([`skills`](#6-the-manifest)). An agent of 
 
 **A skill's name** is its folder's, so no two skills you see share one. An import is refused when its name is a skill Curio ships, a skill a package you can add ships, or a skill of yours. The review names the skill that has it, and the name you give instead becomes the skill's folder and its `name` together. A newer `version` in its `metadata` replaces your skill of that name, and the agents that used it keep it.
 
-**Export**, in a skill's details, saves the skill as a `.zip` of its folder, `<name>/SKILL.md` and its other files, which any Agent Skills tool reads. A skill Curio ships has its text filled in as an agent reads it.
+**Export**, in a skill's details, saves the skill as a `.zip` of its folder, `<name>/SKILL.md` and its other files, which any Agent Skills tool reads. A skill Curio ships has its text filled in as an agent reads it. A skill's evaluations, its `evals/` folder, stay out of the zip, as they stay out of what an agent is offered.
 
 **Publish**, in the drawer of a skill you imported, offers it to every account on this Curio, as an agent is published, and only you can unpublish it or publish over it. Another account gives a published skill to one of its agents with **Add skill**, which keeps a copy of it in that account: the copy keeps working after you unpublish, it is never that account's to publish, and a newer `version` you publish reaches it the next time that account adds the skill to an agent.
 
