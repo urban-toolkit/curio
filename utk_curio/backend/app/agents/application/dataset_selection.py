@@ -18,6 +18,7 @@ from utk_curio.backend.app.agents.infrastructure import provider_config
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import catalog as agents_catalog
 from utk_curio.backend.app.agents.application import dataset_resolution as agents_dataset_resolution
+from utk_curio.backend.app.agents.application import editors as agents_editors
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application.proposals import acquire as agents_acquire
 from utk_curio.backend.app.agents.application.proposals import mint as agents_mint
@@ -37,7 +38,7 @@ SELECT = "dataset.select"
 
 def record_dataset_selection(
     user_key: str, project_id: str, attachment_id: str, picks: object,
-    guest: bool = False,
+    guest: bool = False, downloads_wait_for: str | None = None,
 ) -> dict:
     """dev/126: record the user's confirmed dataset selection for a node.
 
@@ -48,6 +49,11 @@ def record_dataset_selection(
     cannot enter through this endpoint. External picks are re-probed at
     confirmation time through the ``DEC-053`` chokepoint, and the verdict is
     what the record keeps — an unreachable pick does not resolve the node.
+
+    *downloads_wait_for* names the dataflow's owner when an editor the owner
+    invited confirms: a pick Curio would download into the Data Catalog then
+    refuses the whole confirmation, before anything is downloaded or recorded
+    (``editors.download_refusal``).
     """
 
     spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
@@ -108,6 +114,8 @@ def record_dataset_selection(
             # may be days old, and the delegation below depends on this one.
             agents_mint._mint_row_access(row)
         agents_acquire._mint_row_acquirable(row, roster, budget)
+    if downloads_wait_for is not None and any(r["lane"] == "external" and r.get("acquirable") for r in rows):
+        raise AgentServiceError(agents_editors.download_refusal(downloads_wait_for), 403)
     # A row Curio can download is downloaded now, by the Discovery Catalog, and
     # recorded as the catalog pick it becomes.
     acquisitions = agents_acquire._acquire_confirmed_picks(rows)

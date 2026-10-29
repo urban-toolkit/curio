@@ -2411,7 +2411,7 @@ Each socket is one participant, with an id `connect` gives it (`room_state.new_p
 
 ### Read-only follows the role
 
-`useSharedView` (`hook/useSharedView.ts`) is the one rule every editing gate reads: `MainCanvas`, the top bar, a node's resize handle, notes, scenario actions and the Map Editor (`editFeaturesBehavior.tsx`, `EditFeaturesBody.tsx`). Its `canvasRole` is `owner` off a shared view, and on one (`viewerMode` `"shared"`) `editor` only with collaboration on and a room role that edits; otherwise `watcher`, the read-only canvas, until the join answers too. The save gates read `viewerMode` itself: only the owner's tab saves, auto-saves, saves a pin or runs on the server, so the top bar gives an editor **Save a copy** and no save status. The dataflow's agents stay the owner's (`MainCanvas`'s `ownersCanvas`). Whether a tab sends its changes to the doc is the same rule on the room's role (`participants.writesDoc`): the owner's tab does, an editor's only with collaboration on, a watcher's never.
+`useSharedView` (`hook/useSharedView.ts`) is the one rule every editing gate reads: `MainCanvas`, the top bar, a node's resize handle, notes, scenario actions and the Map Editor (`editFeaturesBehavior.tsx`, `EditFeaturesBody.tsx`). Its `canvasRole` is `owner` off a shared view, and on one (`viewerMode` `"shared"`) `editor` only with collaboration on and a room role that edits; otherwise `watcher`, the read-only canvas, until the join answers too. The save gates read `viewerMode` itself: only the owner's tab saves, auto-saves, saves a pin or runs on the server, so the top bar gives an editor **Save a copy** and no save status. The owner and an editor drive the dataflow's agents, and a watcher has none (`MainCanvas` asks `agentsOnCanvas`, `services/agents/agentEditors.ts`); on an editor's canvas an install an agent proposes waits for the owner's review. Whether a tab sends its changes to the doc is the same rule on the room's role (`participants.writesDoc`): the owner's tab does, an editor's only with collaboration on, a watcher's never.
 
 ### Hosted guests
 
@@ -2788,9 +2788,14 @@ file that cannot be served as asked (no preview, or not a format Curio serves),
 ### Agent Routes
 
 Defined in `backend/app/agents/routes/` (one module per resource) over the `backend/app/agents/service.py` facade; all
-require authentication, and every project endpoint checks ownership (404 when the
-project is not the caller's). See [AGENT-CATALOG.md](AGENT-CATALOG.md) for the
-user-facing model, the manifest contract, and the storage layers.
+require authentication. Every project endpoint asks `routes/common.py`'s `_dataflow` who drives the dataflow's agents
+(`projects/access.py` `agents_role`): its owner, a hosted guest on the examples the guest account owns among them, or an
+editor the owner invited. Anyone else gets **403**, and a dataflow that does not exist **404**. The endpoint then works on
+the owner's storage key, so an editor's runs keep their transcripts in the owner's dataflow and answer with the owner's LLM
+configuration, while the saved keys a run lists and resolves are the asker's own (`agents/application/askers.py`). An
+editor's Apply or Dismiss of an install, a tool of `src/contracts/agentInstalls.json`, is **403**: it waits for the owner
+(`agents/application/editors.py`). See [AGENT-CATALOG.md](AGENT-CATALOG.md) for the user-facing model, the manifest
+contract, and the storage layers.
 
 Catalog and account scope:
 

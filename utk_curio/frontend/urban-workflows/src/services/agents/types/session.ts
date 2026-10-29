@@ -114,11 +114,23 @@ export type AgentContentPart =
   | AgentSolveAttemptsPart
   | { type: string };
 
+/** Who wrote a person's message, in a chat the dataflow's owner and the
+ * editors the owner invited share; named as a point of the dataflow's
+ * history names a person. */
+export interface AgentTurnWriter {
+  kind: "person";
+  account: string;
+  name: string;
+}
+
 /** One persisted chat turn of an attachment's session. */
 export interface AgentSessionTurn {
   role: "user" | "agent";
   text: string;
   ts?: string;
+  /** Who wrote a user turn; absent on a turn from before writers were kept,
+   * and on the local copy of the message this tab just sent. */
+  by?: AgentTurnWriter;
   /** Display-only failure marker; excluded from the agent's context. */
   error?: boolean;
   /** A client-side error turn's remedy (the refusal's own), never persisted. */

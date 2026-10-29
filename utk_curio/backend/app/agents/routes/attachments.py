@@ -8,20 +8,18 @@ from __future__ import annotations
 
 import json
 from flask import Response
-from flask import g
 from flask import jsonify
 from flask import request
 from flask import stream_with_context
 
 from utk_curio.backend.app.agents import service as agents_services
+from utk_curio.backend.app.agents.routes.common import _dataflow
 from utk_curio.backend.app.agents.routes.common import _error
 from utk_curio.backend.app.agents.routes.common import _svc_error
-from utk_curio.backend.app.agents.routes.common import _working_dataflow
 from utk_curio.backend.app.agents.routes.common import agents_bp
 from utk_curio.backend.app.agents.service import AgentServiceError
 from utk_curio.backend.app.agents.infrastructure import agent_jobs as agents_agent_jobs
 from utk_curio.backend.app.projects import repositories as projects_repo
-from utk_curio.backend.app.projects.services import _user_dir_key
 from utk_curio.backend.app.users.dependencies import require_auth
 
 
@@ -30,9 +28,8 @@ from utk_curio.backend.app.users.dependencies import require_auth
 @require_auth
 def list_attachments(project_id: str):
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        project_id = _working_dataflow(project_id, make=False)
-        att = agents_services.list_project_attachments(_user_dir_key(g.user), project_id)
+        flow = _dataflow(project_id, make=False)
+        att = agents_services.list_project_attachments(flow.key, flow.project_id)
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
     except AgentServiceError as exc:
@@ -51,9 +48,8 @@ def attach_agent(project_id: str):
     if not isinstance(target, dict):
         return _error("body must include a 'target' object")
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        project_id = _working_dataflow(project_id)
-        payload = agents_services.attach_agent(_user_dir_key(g.user), project_id, coord, target)
+        flow = _dataflow(project_id)
+        payload = agents_services.attach_agent(flow.key, flow.project_id, coord, target)
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
     except AgentServiceError as exc:
@@ -65,9 +61,8 @@ def attach_agent(project_id: str):
 @require_auth
 def detach_agent(project_id: str, attachment_id: str):
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        project_id = _working_dataflow(project_id)
-        payload = agents_services.detach_agent(_user_dir_key(g.user), project_id, attachment_id)
+        flow = _dataflow(project_id)
+        payload = agents_services.detach_agent(flow.key, flow.project_id, attachment_id)
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
     except AgentServiceError as exc:
@@ -95,15 +90,14 @@ def update_attachment(project_id: str, attachment_id: str):
     if "title" in body and (not isinstance(title, str) or not title.strip()):
         return _error("'title' must be a non-empty string")
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        project_id = _working_dataflow(project_id)
+        flow = _dataflow(project_id)
         if "intent" in body:
             payload = agents_services.update_attachment_intent(
-                _user_dir_key(g.user), project_id, attachment_id, intent
+                flow.key, flow.project_id, attachment_id, intent
             )
         if "title" in body:
             payload = agents_services.update_attachment_title(
-                _user_dir_key(g.user), project_id, attachment_id, title
+                flow.key, flow.project_id, attachment_id, title
             )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
@@ -124,21 +118,21 @@ def record_dataset_selection(project_id: str, attachment_id: str):
     — identifiers only, resolved server-side against the candidates the runtime
     itself proposed in this attachment's session; anything else is a 422. The
     node's next Solve reads the record instead of asking the model what the
-    user picked.
+    user picked. A download into the Data Catalog an editor's confirmation
+    would make waits for the dataflow's owner.
     """
 
     body = request.get_json(silent=True) or {}
     if "picks" not in body:
         return _error("body must include 'picks'")
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        project_id = _working_dataflow(project_id)
+        flow = _dataflow(project_id)
         # dev/132: a confirmed fetchable source is delegated to the node's own
         # builder, on the builder's LLM configuration. A selection is recorded
         # either way (the delegation says why a build did not start).
         payload = agents_services.record_dataset_selection(
-            _user_dir_key(g.user), project_id, attachment_id, body.get("picks"),
-            guest=bool(getattr(g.user, "is_guest", False)),
+            flow.key, flow.project_id, attachment_id, body.get("picks"),
+            guest=flow.guest, downloads_wait_for=flow.owner_name if flow.editor else None,
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
@@ -154,10 +148,9 @@ def record_dataset_selection(project_id: str, attachment_id: str):
 def get_attachment_session(project_id: str, attachment_id: str):
     """The attachment's persisted chat transcript (its session history)."""
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        project_id = _working_dataflow(project_id, make=False)
+        flow = _dataflow(project_id, make=False)
         payload = agents_services.get_attachment_session(
-            _user_dir_key(g.user), project_id, attachment_id
+            flow.key, flow.project_id, attachment_id
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
@@ -173,10 +166,9 @@ def get_attachment_session(project_id: str, attachment_id: str):
 def clear_attachment_session(project_id: str, attachment_id: str):
     """Clear the transcript; the attachment and its session id are kept."""
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        project_id = _working_dataflow(project_id)
+        flow = _dataflow(project_id)
         payload = agents_services.clear_attachment_session(
-            _user_dir_key(g.user), project_id, attachment_id
+            flow.key, flow.project_id, attachment_id
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
@@ -196,12 +188,13 @@ def attach_job_stream(project_id: str, attachment_id: str):
     so far, then tails live ones; 404 when there is nothing to attach to."""
 
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        project_id = _working_dataflow(project_id, make=False)
+        flow = _dataflow(project_id, make=False)
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
-    job = agents_agent_jobs.latest_job(_user_dir_key(g.user), attachment_id)
-    if job is None or job.project_id != project_id:
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+    job = agents_agent_jobs.latest_job(flow.key, attachment_id)
+    if job is None or job.project_id != flow.project_id:
         return _error("no background job for this attachment", 404)
     events = agents_agent_jobs.subscribe(job)
 
