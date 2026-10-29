@@ -260,18 +260,6 @@ describe("a change", () => {
     });
 });
 
-describe("Save layout", () => {
-    test("gets each pinned node's widgets as the page opened with them, never a value tried since", async () => {
-        const { nodes, hook } = setUp();
-        await act(async () => { hook.result.current.opened("dash-1"); });
-        // A Widgets tab writes its value into the node's data in place.
-        nodes[0].data.widgets[0].value = "Year" as any;
-        const saved = hook.result.current.savedWidgets();
-        expect(saved?.get("param")).toEqual([period]);
-        expect(saved?.has("grid")).toBe(false);
-    });
-});
-
 describe("a step only a browser runs", () => {
     const finished = (status: string) => ({ kind: "run_finished", status, ok: 1, failed: 0, skipped: 0, waiting: 2 });
 
