@@ -15,6 +15,7 @@ from utk_curio.backend.app.agents import service as agents_services
 from utk_curio.backend.app.agents.infrastructure.provider_config import ProviderConfigError
 from utk_curio.backend.app.agents.service import AgentServiceError
 from utk_curio.backend.app.agents.infrastructure import provider_config as agents_provider_config
+from utk_curio.backend.app.projects import visitor_copies
 from utk_curio.backend.app.projects.repositories import NotFoundError
 from utk_curio.backend.app.projects.services import _user_dir_key
 
@@ -24,6 +25,14 @@ agents_bp = Blueprint("agents_api", __name__, url_prefix="/api/agents")
 
 def _error(message: str, status: int = 400):
     return jsonify({"error": message}), status
+
+
+def _working_dataflow(project_id: str, *, make: bool = True) -> str:
+    """The dataflow this request's agents work on, once the caller may open
+    *project_id*: that dataflow, or a hosted guest's own copy of it
+    (``projects/visitor_copies.py``), made when *make* and there is none. A
+    route that writes makes it; one that only reads does not."""
+    return visitor_copies.for_request(g.user, project_id, make=make)
 
 
 def _provider_error(exc: ProviderConfigError):
