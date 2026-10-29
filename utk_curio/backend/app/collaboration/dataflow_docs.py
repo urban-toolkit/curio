@@ -15,7 +15,8 @@ room (``join_session``, ``events.py``) takes part.
   edits, and with everyone's awareness; the ack is ``{ok, docId, role}``. A tab
   holding another doc than the server's, one built anew since, is told
   ``reload`` and starts again holding none. It sends updates once this ack is
-  in: handlers run on threads of their own.
+  in; the server handles each socket's events one at a time, in the order the
+  socket sent them (``extensions.init_socketio``).
 * The owner's and an editor's step 2 and updates are applied, appended to the
   update log and relayed to the doc's other tabs. The ack, ``{ok, kept}``,
   gives for each client the update brought changes of the clock the doc now

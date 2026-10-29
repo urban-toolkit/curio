@@ -1,4 +1,6 @@
-"""One simulated user: sign up, create a dataflow, run every node, save it.
+"""One simulated user: sign up, create a dataflow, run every node, save it;
+and, in a room of users, open a tab of the room's shared dataflow, type and
+drag in it (``sockets.py``).
 
 Everything here goes through the same backend endpoints the canvas calls, with
 the same payload shapes, so a failure found under load is a failure a real user
@@ -24,6 +26,7 @@ from ..test_frontend.workflow_spec import (
     resolve_node_input,
     seed_node_code,
 )
+from . import sockets
 
 # Kept in step with the canvas: PythonInterpreter indents the node's source by
 # four spaces (the sandbox wraps it in a function), JavaScriptInterpreter sends
@@ -54,6 +57,13 @@ API_TIMEOUT_S = 120
 # it is not queued.
 START_GATE_TIMEOUT_S = 300
 
+# How long a user's tab may stay open once its dataflow work is over, a
+# judgement: a tab whose dataflow work failed early still has its room's
+# typing to finish, a few minutes at most in the session profile (arrivals
+# spread over two, then about a minute of typing, then the settling), so one
+# still open ten minutes on is stuck.
+TAB_CLOSE_TIMEOUT_S = 600
+
 
 @dataclass
 class Pacing:
@@ -66,16 +76,34 @@ class Pacing:
     different questions -- "can the stack survive a thundering herd" and "how
     many people can work at the same time" -- and the report says which one
     produced its numbers.
+
+    The same goes for a user's tab: ``burst`` types at a steady pace with no
+    pause, and ``session`` types at a person's pace and stops after each drag
+    (``key_gap``, ``pause``).
     """
 
     arrival_delay: float = 0.0
     think_min: float = 0.0
     think_max: float = 0.0
+    key_gap_min: float = sockets.BURST_KEY_GAP_S
+    key_gap_max: float = sockets.BURST_KEY_GAP_S
+    pause_min: float = 0.0
+    pause_max: float = 0.0
 
     def think(self) -> float:
         if self.think_max <= 0:
             return 0.0
         return random.uniform(self.think_min, self.think_max)
+
+    def key_gap(self) -> float:
+        """Seconds between two keystrokes of the user's tab."""
+        return random.uniform(self.key_gap_min, self.key_gap_max)
+
+    def pause(self) -> float:
+        """Seconds the tab stops typing after a drag."""
+        if self.pause_max <= 0:
+            return 0.0
+        return random.uniform(self.pause_min, self.pause_max)
 
 
 BURST = Pacing()
@@ -99,7 +127,14 @@ class Sample:
 # timeout         - no answer inside the browser's own ceiling
 # transport       - connection reset, refused, etc.
 # mismatch        - ran fine, produced different bytes than the solo baseline
-FAILURE_KINDS = ("http_error", "empty_output", "timeout", "transport", "mismatch")
+# socket          - a tab's socket did not connect; a join, a sync or an update
+#                   was refused or not answered; or the socket closed under it
+# unsynced        - an update a tab sent was not in every other tab of its room
+#                   sockets.SETTLE_TIMEOUT_S after the room's last update
+# diverged        - with every update in every tab, a tab's nodes' code and
+#                   places differed from the room's first tab's
+FAILURE_KINDS = ("http_error", "empty_output", "timeout", "transport", "mismatch",
+                 "socket", "unsynced", "diverged")
 
 
 @dataclass
@@ -112,6 +147,8 @@ class UserResult:
     samples: list[Sample] = field(default_factory=list)
     outputs: dict[str, dict] = field(default_factory=dict)
     hashes: dict[str, str] = field(default_factory=dict)
+    #: What the user's tab did (``sockets.Tab.summary``), when it had one.
+    tab: dict = field(default_factory=dict)
 
     @property
     def failures(self) -> list[Sample]:
@@ -174,6 +211,8 @@ class VirtualUser:
         register_gate=None,
         start_gate=None,
         pacing: "Pacing" = BURST,
+        room: "sockets.Room | None" = None,
+        namespace: str | None = None,
     ):
         self.backend_url = backend_url.rstrip("/")
         self.name = name
@@ -189,9 +228,16 @@ class VirtualUser:
         self.register_gate = register_gate
         self.start_gate = start_gate
         self.pacing = pacing
+        # The room whose shared dataflow the user opens a tab of, and the
+        # collaboration namespace the page reads from /api/config/public.
+        self.room = room
+        self.namespace = namespace
         self.session = requests.Session()
         self.token: str | None = None
         self.project_id: str | None = None
+        #: Set once the user's own dataflow work is over, however it ended:
+        #: its tab stays open until then.
+        self.dataflow_done = threading.Event()
         self.result = UserResult(user=name, example=example, started_at=time.time())
 
     # -- plumbing ---------------------------------------------------------
@@ -272,7 +318,79 @@ class VirtualUser:
             ok=False, error=message[:2000], kind=kind,
         ))
 
+    def socket_sample(self, label: str, seconds: float, ok: bool,
+                      error: str | None = None, kind: str | None = None) -> None:
+        """One step of the user's tab (``sockets.Tab``), labelled as the report
+        groups it. Called from the tab's thread and its socket's."""
+        self.result.samples.append(Sample(
+            endpoint=label, node_id=None, status=None, seconds=seconds, ok=ok,
+            error=error[:2000] if error else None, kind=kind,
+        ))
+
     # -- session steps ----------------------------------------------------
+
+    # -- the room -----------------------------------------------------------
+
+    def typing_targets(self) -> list[tuple[str, str]]:
+        """The nodes of this user's dataflow whose code a tab types comment
+        lines into, with each language's line comment: Python first, then
+        JavaScript, in the order the dataflow runs."""
+        python = [(n.id, "# ") for n in self.workflow.topo_sorted_nodes() if n.type in PY_CODE_TYPES]
+        javascript = [(n.id, "// ") for n in self.workflow.topo_sorted_nodes() if n.type == JS_COMPUTATION]
+        return python + javascript
+
+    def _enter_room(self) -> None:
+        """Tell the room this user's account exists. The room's owner, whose
+        dataflow it is, then invites the others to edit it, as the Share
+        menu's Invite editors does (``projects/access.py``)."""
+        room = self.room
+        if room is None:
+            return
+        room.arrive("registered", self.name)
+        if self.name != room.owner:
+            return
+        room.project_id = self.project_id
+        room.targets = self.typing_targets()
+        try:
+            if self.project_id is None:
+                return  # no dataflow to share: create_project says why
+            if not room.wait_all("registered", sockets.ROOM_WAIT_S):
+                self._fail("/api/projects/:id/editors", "",
+                           f"the room's editors had not signed up after {sockets.ROOM_WAIT_S:.0f}s",
+                           "timeout")
+            for editor in room.registered_editors():
+                try:
+                    self._call("POST", "/api/projects/:id/editors",
+                               path_url=f"/api/projects/{self.project_id}/editors",
+                               json_body={"username": editor}, expect=201)
+                except UserFailed:
+                    # It would join as a watcher, whose changes the server drops.
+                    room.leave(editor)
+        finally:
+            room.invited.set()
+
+    def _leave_room(self) -> None:
+        """This user will open no tab: the room goes on without it."""
+        room = self.room
+        if room is None:
+            return
+        room.leave(self.name)
+        if self.name == room.owner:
+            room.invited.set()
+
+    def _open_tab(self) -> threading.Thread | None:
+        """Open the user's tab of its room's dataflow, on a thread of its own,
+        beside the user's own dataflow run."""
+        if self.room is None:
+            return None
+        thread = threading.Thread(
+            target=sockets.run_tab, args=(self, self.room),
+            kwargs={"backend_url": self.backend_url, "namespace": self.namespace,
+                    "pacing": self.pacing},
+            name=f"tab-{self.name}", daemon=True,
+        )
+        thread.start()
+        return thread
 
     def sign_up(self) -> None:
         body = self._call(
@@ -346,8 +464,14 @@ class VirtualUser:
 
         ``start_gate`` then lines the registered users up so their dataflow
         work starts together rather than as each one finishes signing up.
+
+        In a room, the user's tab of the room's dataflow opens as its own
+        dataflow work starts, on a thread of its own, and closes once that
+        work is over; the user completed if both ended with no failure.
         """
         started = time.time()
+        tab = None
+        dataflow_ok = False
         try:
             if self.register_gate is not None:
                 with self.register_gate:
@@ -356,19 +480,32 @@ class VirtualUser:
             else:
                 self.sign_up()
                 self.create_project()
+            self._enter_room()
             self._wait_at_start_gate()
             if self.pacing.arrival_delay:
                 # Arrivals are spread from the same starting line rather than
                 # staggered thread by thread, so the offsets stay meaningful.
                 time.sleep(self.pacing.arrival_delay)
+            tab = self._open_tab()
             self.run_nodes()
             self.save_and_reload()
-            self.result.completed = True
+            dataflow_ok = True
         except UserFailed:
             self._release_start_gate()
         except Exception as exc:  # noqa: BLE001 - a crashed driver is a finding too
             self._release_start_gate()
             self._fail("driver", "", f"{type(exc).__name__}: {exc}", "transport")
+        finally:
+            self.dataflow_done.set()
+            if tab is not None:
+                tab.join(timeout=TAB_CLOSE_TIMEOUT_S)
+                if tab.is_alive():
+                    self._fail("socket tab", "",
+                               f"the tab was still open {TAB_CLOSE_TIMEOUT_S:.0f}s "
+                               "after the user's dataflow work ended", "socket")
+            else:
+                self._leave_room()
+        self.result.completed = dataflow_ok and not self.result.failures
         self.result.seconds = time.time() - started
         return self.result
 

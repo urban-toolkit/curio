@@ -202,10 +202,20 @@ def init_socketio(app):
     # Flask 3.x. The Flask session is not used anyway: what each socket is
     # (user_id, username, participant) is kept in collaboration/room_state.py
     # by the handshake.
+    # async_handlers=False: a socket's events are handled one at a time, in
+    # the order it sent them, on the thread that reads that socket, as
+    # Flask-SocketIO's test client runs them for the tests. python-socketio's
+    # default starts a thread for every event, so the backend's threads grew
+    # with the rate of events rather than with its sockets: a hundred tabs
+    # typing at once took the stress stack's container to its task limit,
+    # and the sandbox and node runs beside it could start no thread either.
+    # No handler waits on a client's answer (the server's call()), which this
+    # mode does not allow.
     socketio = SocketIO(
         app,
         cors_allowed_origins=origins,
         async_mode="threading",
+        async_handlers=False,
         manage_session=False,
         logger=False,
         engineio_logger=False,
