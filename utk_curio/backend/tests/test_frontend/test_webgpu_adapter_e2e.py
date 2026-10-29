@@ -16,7 +16,11 @@ process is still starting, and the switch drops that request. In #1015's run
 drew no frame in 10000 ms; the browser answered null at 13784 ms". In main's
 run 39072275174 it did not come back within the probe's 8 s. Every sighting
 was in ``test_shipped_scenario_drops_e2e``, which asks on an empty dataflow
-right after sign-in, before the page has drawn.
+right after sign-in, before the page has drawn. The page draws right after
+the switch, so a probe whose wait ran out and that found no adapter with
+every request made before the page drew waits for a frame once more, and asks
+again once one comes; the helper runs the probe again only when the page drew
+nothing through that wait too.
 
 These tests play that GPU process. An init script holds the page's animation
 frames back once a test switches it on, as a page that draws nothing does, and
@@ -63,8 +67,8 @@ NO_ANSWER_IN_8_S_MS = 9_000
 ASKED_AFTER_MS = 9_000
 
 #: How long the check may take to call a browser with no adapter missing. The
-#: frame wait, the dropped request and one more probe's 3 s of retries come to
-#: about 17 s.
+#: frame wait, the dropped request and the probe's 3 s of retries once the page
+#: draws come to about 17 s.
 NO_ADAPTER_WITHIN_S = 40
 
 EMPTY = {"dataflow": {
