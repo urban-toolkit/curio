@@ -90,12 +90,6 @@ export interface ActivityEntry {
     payload: Record<string, unknown>;
 }
 
-export interface OutputBroadcast {
-    nodeId: string;
-    nodeType?: string;
-    output: { code: string; content: unknown; [k: string]: unknown };
-}
-
 /** Listener callback for "a peer applied a remote change" events. */
 export type RemoteHandler<T = unknown> = (payload: T) => void;
 
@@ -129,16 +123,12 @@ export interface CollabContextValue {
 
     lockNode: (nodeId: string) => void;
     unlockNode: (nodeId: string) => void;
-    resolveConflict: (payload: Record<string, unknown>) => void;
-
-    broadcastOutputProduced: (payload: OutputBroadcast) => void;
-    signalExecDisplay: (nodeId: string) => void;
 
     /**
      * Subscribe to incoming remote events. Returns an unsubscribe fn.
-     * Event names mirror the backend's outgoing events: ``output_produced``,
-     * ``conflict_resolved``, ``node_exec_display`` (``events.py``), and
-     * ``connection_dropped`` (``dataflow_docs.py``).
+     * Event names mirror the backend's outgoing events: the room's
+     * (``events.py``, ``roles.py``) and ``connection_dropped``
+     * (``dataflow_docs.py``).
      */
     onRemote: (event: string, handler: RemoteHandler) => () => void;
 }
@@ -153,10 +143,6 @@ const NOOP_VALUE: CollabContextValue = {
 
     lockNode: () => undefined,
     unlockNode: () => undefined,
-    resolveConflict: () => undefined,
-
-    broadcastOutputProduced: () => undefined,
-    signalExecDisplay: () => undefined,
 
     onRemote: () => () => undefined,
 };
@@ -178,9 +164,6 @@ const REMOTE_EVENTS = [
     "roles_changed",
     "node_locked",
     "node_unlocked",
-    "output_produced",
-    "node_exec_display",
-    "conflict_resolved",
     CONNECTION_DROPPED_EVENT,
 ] as const;
 
@@ -393,8 +376,6 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
                 });
             });
 
-            socket.on("conflict_resolved", () => recordActivity("conflict_resolved"));
-
             // Fan-out to consumer-registered handlers.
             for (const ev of REMOTE_EVENTS) {
                 socket.on(ev, (payload: unknown) => {
@@ -523,19 +504,6 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
         (nodeId: string) => _emit("node_unlock", { nodeId }),
         [_emit],
     );
-    const resolveConflict = useCallback(
-        (payload: Record<string, unknown>) => _emit("resolve_conflict", payload),
-        [_emit],
-    );
-    const broadcastOutputProduced = useCallback(
-        (payload: OutputBroadcast) =>
-            _emit("output_produced", payload as unknown as Record<string, unknown>),
-        [_emit],
-    );
-    const signalExecDisplay = useCallback(
-        (nodeId: string) => _emit("node_exec_display", { nodeId }),
-        [_emit],
-    );
 
     const onRemote = useCallback(
         (event: string, handler: RemoteHandler) => {
@@ -567,10 +535,6 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
 
             lockNode,
             unlockNode,
-            resolveConflict,
-
-            broadcastOutputProduced,
-            signalExecDisplay,
 
             onRemote,
         }),
@@ -583,9 +547,6 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
             activity,
             lockNode,
             unlockNode,
-            resolveConflict,
-            broadcastOutputProduced,
-            signalExecDisplay,
             onRemote,
         ],
     );

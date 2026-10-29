@@ -79,8 +79,6 @@ def test_a_watchers_edit_is_refused_and_an_invited_editors_is_relayed(collab_app
 
 @pytest.mark.parametrize("event,extra", [
     ("node_lock", {"nodeId": "n1"}),
-    ("output_produced", {"nodeId": "n1", "output": {"code": "success", "content": "x"}}),
-    ("resolve_conflict", {"choice": "mine"}),
 ])
 def test_a_watcher_is_refused_every_change_to_the_room(collab_app, event, extra):
     project_id, s, _acks = _room(collab_app)
