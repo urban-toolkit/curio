@@ -62,16 +62,12 @@ workers as its runner's free memory and video memory hold
 (`scripts/ci_memory_budget.py`), and always at least two backend and sandbox
 pairs: on a runner that holds one worker (`utk-desktop-02`), the second pair
 answers only those tests, and the serial run counts it from
-`CURIO_E2E_SHARDS`. A test that needs real-time collaboration is marked
-`needs_collab` and runs on the `collab` share alone, CI's `e2e-collab` job,
-the one stack started with `--collab`; locally, set `CURIO_E2E_COLLAB=1` so
-the harness starts its stack with `--collab`. Everything else runs on the CPU
-runners. Two variables select a share, and a run with neither runs everything:
+`CURIO_E2E_SHARDS`. Everything else runs on the CPU runners. Two variables
+select a share, and a run with neither runs everything:
 
 ```bash
 CURIO_E2E_RUNNER=utk pytest utk_curio/backend/tests/test_frontend/       # the webgpu share
 CURIO_E2E_RUNNER=desktop CURIO_E2E_PART=3/14 pytest ...                  # one of fourteen desktop parts
-CURIO_E2E_COLLAB=1 CURIO_E2E_RUNNER=collab pytest ...                    # the collaboration share
 ```
 
 CI runs `E2E_DESKTOP_PARTS` desktop parts (`tests/parts.py`; a Jest test

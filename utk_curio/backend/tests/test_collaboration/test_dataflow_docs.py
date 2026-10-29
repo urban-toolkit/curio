@@ -1,8 +1,8 @@
 """The server's Yjs doc of each open dataflow (``collaboration/dataflow_docs.py``).
 
 Every test runs tabs that are each a pycrdt doc syncing over a Flask-SocketIO
-test client (``_ydoc_client.py``), on an app started without ``--collab``,
-since every backend serves Socket.IO. alice owns the dataflow, bob is an editor
+test client (``_ydoc_client.py``), on an app as every backend starts, since
+every backend serves Socket.IO. alice owns the dataflow, bob is an editor
 she invited, and carol watches. Nothing here waits on a clock: the doc is
 written when a test calls for it, at the times a test sets.
 """
@@ -48,8 +48,8 @@ SPEC = {
 }
 
 
-#: What a backend that serves no Socket.IO without --collab fails with.
-NO_SOCKETS = "a backend started without --collab serves no Socket.IO"
+#: What a backend that serves no Socket.IO fails with.
+NO_SOCKETS = "the backend serves no Socket.IO"
 
 
 class _Room:
@@ -160,13 +160,13 @@ def _code(dataflow: dict, node: str = "loader") -> str:
     return next(n for n in dataflow["nodes"] if n["id"] == node)["content"]
 
 
-def test_every_backend_serves_the_sockets_without_collab(doc_app):
-    """Socket.IO starts whatever --collab says: a tab connects, joins and
-    syncs on an app started without it."""
+def test_every_backend_serves_the_sockets(doc_app):
+    """Collaboration has no switch: every backend starts Socket.IO, and a tab
+    connects and joins."""
     from utk_curio.backend import config
 
     application, socketio = doc_app
-    assert config.ENABLE_COLLAB is False
+    assert not hasattr(config, "ENABLE_COLLAB"), "collaboration has a switch again"
     assert socketio is not None, NO_SOCKETS
     user, session = make_user("alice")
     project_id = make_project(user)

@@ -19,20 +19,16 @@ const VIEWS: ReadonlyArray<{ view: CanvasView; label: string; icon: IconDefiniti
 export function CanvasViewSwitch({
   value,
   onChange,
-  crowded = false,
   className,
 }: {
   value: CanvasView;
   onChange: (view: CanvasView) => void;
-  /** Another control shares the bar (the collaboration button), so the
-   *  words give way sooner. */
-  crowded?: boolean;
   /** Where the bar places it. */
   className?: string;
 }) {
   return (
     <div
-      className={clsx(styles.switch, crowded && styles.switchCrowded, className)}
+      className={clsx(styles.switch, className)}
       role="radiogroup"
       aria-label="Dataflow view"
     >

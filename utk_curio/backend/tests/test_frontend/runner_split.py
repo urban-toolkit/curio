@@ -22,10 +22,6 @@ One more thing only utk has: the sibling backends of ``--parallel``. A test that
 needs them says so with ``pytest.mark.needs_parallel`` and runs there too;
 anywhere else it would skip, which is a test lost rather than a test passed.
 
-A third runner, ``collab``, is the one stack started with ``--collab`` (CI's
-e2e-collab job). A test that needs real-time collaboration says so with
-``pytest.mark.needs_collab``, runs there alone, and is left out of the other two.
-
 It errs one way on purpose. A test that mentions Autark without needing a GPU
 stays on utk, which costs a little time; a test that needs a GPU and landed on
 a GPU-less runner would skip or fail. A new test is classified the same way,
@@ -35,8 +31,7 @@ Selected with two environment variables, both unset for an ordinary local run
 (which keeps running everything):
 
 * ``CURIO_E2E_RUNNER`` - ``utk`` keeps only the WebGPU tests, ``desktop``
-  only the others, and ``collab`` only the ``needs_collab`` ones, which the
-  other two leave out;
+  only the others;
 * ``CURIO_E2E_PART`` - ``k/n`` keeps the k-th of n parts (1-based) of what
   is left, balanced by the recorded seconds of each test in
   ``e2e_durations.json`` (see ``tests/parts.py``).
@@ -66,7 +61,7 @@ DURATIONS_FILE = Path(__file__).with_name("e2e_durations.json")
 #: What marks a test, a scene or a dataflow as needing WebGPU in the browser.
 WEBGPU_RE = re.compile(r"autk|autark|webgpu|navigator\.gpu", re.IGNORECASE)
 
-RUNNERS = ("utk", "desktop", "collab")
+RUNNERS = ("utk", "desktop")
 
 #: Modules classified per test rather than per file.
 WORKFLOW_MODULE = "test_workflows"
@@ -103,12 +98,6 @@ def module_needs_webgpu(path: str) -> bool:
         return bool(WEBGPU_RE.search(Path(path).read_text(encoding="utf-8")))
     except OSError:
         return True
-
-
-def item_needs_collab(item) -> bool:
-    """Whether the item needs the stack started with ``--collab``."""
-    closest = getattr(item, "get_closest_marker", None)
-    return bool(closest and closest("needs_collab") is not None)
 
 
 def item_needs_webgpu(item) -> bool:
@@ -208,8 +197,6 @@ def select(items, runner: str | None, shard: str | None, durations: dict | None 
     for item in items:
         if runner is None:
             keep = True
-        elif item_needs_collab(item) or runner == "collab":
-            keep = runner == "collab" and item_needs_collab(item)
         else:
             keep = (runner == "utk") == item_needs_webgpu(item)
         (kept if keep else dropped).append(item)

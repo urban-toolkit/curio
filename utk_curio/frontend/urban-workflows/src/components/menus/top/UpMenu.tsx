@@ -5,7 +5,6 @@ import {
     useNodeActionsContext,
 } from "../../../providers/FlowProvider";
 import { useProvenanceDrawerOptional } from "../../../providers/provenanceDrawerContext";
-import { useCollab } from "../../../providers/CollaborationProvider";
 import { TrillGenerator } from "../../../TrillGenerator";
 import { trillToNotebook, serializeNotebook } from "../../../NotebookConvertor";
 import styles from "./UpMenu.module.css";
@@ -26,7 +25,6 @@ import {
     faFolderOpen,
     faFloppyDisk,
     faPlus,
-    faUsers,
     faUpRightAndDownLeftFromCenter,
     faDownLeftAndUpRightToCenter,
 } from "@fortawesome/free-solid-svg-icons";
@@ -95,7 +93,6 @@ export default function UpMenu() {
     const { leave: guardLeave, dialog: leaveDialog } = useLeaveGuard(projectDirty, LEAVE_DATAFLOW);
     const leaveWithGuard = (body: string, action: () => void) => guardLeave(action, body);
 
-    const collab = useCollab();
     // The ``isSharedView`` gate MainCanvas reads: a watcher's canvas is
     // read-only, and an editor the owner invited edits it, so the read-only
     // banner and the editing items stand down for them.
@@ -103,10 +100,10 @@ export default function UpMenu() {
     // Saving is the owner's: an editor, like a watcher, saves a copy, and has
     // no save status of their own.
     const savesHere = viewerMode !== "shared";
-    // Share > Invite editors, for the owner of a saved dataflow with
-    // collaboration on. A guest invites nobody: the shared guest owns the
-    // examples every hosted guest opens.
-    const canInviteEditors = collab.enabled && savesHere && Boolean(projectId) && !user?.is_guest;
+    // Share > Invite editors, for the owner of a saved dataflow. A guest
+    // invites nobody: the shared guest owns the examples every hosted guest
+    // opens.
+    const canInviteEditors = savesHere && Boolean(projectId) && !user?.is_guest;
     const {
         workflowName,
         setWorkflowName,
@@ -560,30 +557,6 @@ export default function UpMenu() {
                     onInviteEditors={canInviteEditors ? () => setInviteOpen(true) : undefined}
                 />
 
-                {/* Real-time collaboration side panel toggle. Only rendered
-                    when --collab is on; the badge surfaces the live peer
-                    count so presence stays glanceable even with the panel
-                    closed. */}
-                {collab.enabled && (
-                    <button
-                        type="button"
-                        className={clsx(headerStyles.barButton, collab.panelOpen && headerStyles.barButtonActive)}
-                        aria-label="Collaboration"
-                        aria-pressed={collab.panelOpen}
-                        onClick={() => collab.setPanelOpen(!collab.panelOpen)}
-                        data-tooltip={
-                            collab.connected
-                                ? `Collaboration (${collab.users.length} online)`
-                                : "Collaboration disconnected"
-                        }
-                    >
-                        <FontAwesomeIcon icon={faUsers} />
-                        {collab.users.length > 1 && (
-                            <span className={styles.peerCount}>{collab.users.length}</span>
-                        )}
-                    </button>
-                )}
-
                 {/* Save status indicator.
                     Always present on a dataflow you own, so its absence never
                     has to be interpreted. It used to render only once the
@@ -630,7 +603,7 @@ export default function UpMenu() {
                 )}
 
                 <span className={headerStyles.divider} aria-hidden="true" />
-                <CatalogButtons projectId={projectId} crowded={collab.enabled} />
+                <CatalogButtons projectId={projectId} />
 
                 {/* The canvas, or the same nodes as a column of notebook cells.
                     Last in the slot and pushed to its end, so it sits beside
@@ -642,7 +615,6 @@ export default function UpMenu() {
                         setActiveMenu(null);
                         setCanvasView(view);
                     }}
-                    crowded={collab.enabled}
                 />
             </GlobalPageHeader>
 

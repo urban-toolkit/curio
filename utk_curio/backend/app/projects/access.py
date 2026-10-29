@@ -131,8 +131,8 @@ def remove_editor(owner, project_id: str, user_id: int) -> List[dict]:
 
 def _tell_the_room(project_id: str, user_id: int, role: str) -> None:
     """Give the account's participants in the dataflow's room *role* now,
-    rather than when they next join. Nothing to tell without collaboration,
-    and a room that cannot be told never fails the change itself."""
+    rather than when they next join. A room that cannot be told never fails
+    the change itself."""
     try:
         from utk_curio.backend.app.collaboration.roles import set_user_role
 
