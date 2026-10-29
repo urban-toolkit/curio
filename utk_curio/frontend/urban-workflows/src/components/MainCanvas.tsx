@@ -89,7 +89,7 @@ import { clearAgentDropHover, setAgentDropHoverEdgeId } from "../utils/agentDrop
 import { attachAgentOnDrop } from "../utils/agentDropAttach";
 import { AgentDockOverlay } from "./agents/attach/AgentDockOverlay";
 import { AgentDock } from "./agents/attach/AgentDock";
-import { AgentAttachmentsProvider } from "../providers/agents";
+import { AgentAttachmentsProvider, useAgentsDataflowId } from "../providers/agents";
 import { isDrawnHidden } from "../utils/hiddenNodes";
 import { isNodeDragRegion, keepPaneOffNodes } from "../utils/nodeDragRegion";
 import { useSharedView } from "../hook/useSharedView";
@@ -121,7 +121,6 @@ export function MainCanvas() {
         nodes,
         edges,
         loading,
-        projectId,
         onNodesChange,
         onEdgesChange,
         onConnect,
@@ -346,6 +345,9 @@ export function MainCanvas() {
     // agents, and a watcher with none; on an editor's canvas an install an
     // agent proposes waits for the owner's review.
     const agents = agentsOnCanvas(isSharedView ? "watcher" : viewerMode === "shared" ? "editor" : "owner");
+    // The dataflow whose agents they work with: on an editor's canvas, the
+    // one its link opened, since the flow state names none there.
+    const agentsDataflow = useAgentsDataflowId();
     // The role the dataflow's room gives this tab, once its join answered.
     const { role: roomRole } = useCollab();
     // Nodes are added (dropped), connected and deleted, and connections
@@ -629,7 +631,7 @@ export function MainCanvas() {
             // Through the save queue, so it never goes out beside another
             // save of this dataflow (#909, #941).
             attachAgentOnDrop({
-                projectId,
+                projectId: agentsDataflow,
                 target,
                 agentCoord,
                 saveProject: requestProjectSave,
@@ -655,7 +657,7 @@ export function MainCanvas() {
         const position = dropPosition(event);
         revealCreated(createCodeNode(type, { position }));
         markDirty();
-    }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleFileCanvasDrop, handleModelCanvasDrop, handlePackageCardCanvasDrop, handleScenarioCanvasDrop, projectId, showToast, requestProjectSave, reactFlow, hostedGuest, viewerMode]);
+    }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleFileCanvasDrop, handleModelCanvasDrop, handlePackageCardCanvasDrop, handleScenarioCanvasDrop, agentsDataflow, showToast, requestProjectSave, reactFlow, hostedGuest, viewerMode]);
 
     // The Delete key reaches these through React Flow, which sends the
     // selected edges plus every edge attached to a deleted node first, then

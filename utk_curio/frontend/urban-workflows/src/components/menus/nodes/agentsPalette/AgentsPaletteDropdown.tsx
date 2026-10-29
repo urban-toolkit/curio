@@ -6,7 +6,7 @@ import {
   AGENT_CATALOG_REFRESH_EVENT,
   type AgentCard,
 } from "../../../../services/agents";
-import { useFlowContext } from "../../../../providers/FlowProvider";
+import { useAgentsDataflowId } from "../../../../providers/agents";
 import { PaletteDragHint } from "../PaletteDragHint";
 import { useAgentCatalogDrawerControls } from "../../../../providers/AgentCatalogDrawerProvider";
 import { PaletteAccordion } from "../paletteAccordion";
@@ -32,7 +32,9 @@ export const AgentsPaletteDropdown = memo(function AgentsPaletteDropdown({
   setOpen: (value: boolean) => void;
 }) {
   const [agents, setAgents] = useState<AgentCard[]>([]);
-  const { projectId } = useFlowContext();
+  // The dataflow whose agents the canvas drives: on an invited editor's
+  // canvas, the one its link opened.
+  const projectId = useAgentsDataflowId();
   const { openAgentCatalogDrawer } = useAgentCatalogDrawerControls();
 
   const load = useCallback(async () => {
