@@ -59,6 +59,8 @@ logger = logging.getLogger(__name__)
 LAYOUT = shared_constants.read("dataflowDoc")
 #: The Socket.IO event the doc's messages travel in.
 EVENT: str = LAYOUT["event"]
+#: The event that answers a tab's updates the server queued, once applied.
+KEPT_EVENT: str = LAYOUT["keptEvent"]
 #: The ``dataflow`` sections the server keeps beside the doc, never in it: the
 #: dataflow's agents, which a watcher, who receives the doc, does not read.
 OUTSIDE_THE_DOC = frozenset(LAYOUT["outsideTheDoc"])

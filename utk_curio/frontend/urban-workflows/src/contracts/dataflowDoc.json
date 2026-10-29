@@ -1,6 +1,7 @@
 {
   "layout": 1,
   "event": "yjs",
+  "keptEvent": "yjs_kept",
   "roots": {
     "meta": "map",
     "dataflow": "map",

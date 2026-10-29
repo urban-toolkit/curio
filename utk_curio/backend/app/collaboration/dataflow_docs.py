@@ -18,15 +18,19 @@ room (``join_session``, ``events.py``) takes part.
   in; the server handles each socket's events one at a time, in the order the
   socket sent them (``extensions.init_socketio``).
 * The owner's and an editor's step 2 and updates are applied, appended to the
-  update log and relayed to the doc's other tabs. The ack, ``{ok, kept}``,
-  gives for each client the update brought changes of the clock the doc now
-  holds for it, which the top bar's Saved reads.
-* Updates that wait for the doc at the same time, as a burst of typing in a
-  room makes them, are applied as one batch (:func:`_update`): each in a
-  transaction of its own, in the order each tab sent them, then one write to
-  the log, a record each, and one message to each tab, every change of the
-  batch but the tab's own merged into one update. An update alone is applied
-  and relayed at once.
+  update log and relayed to the doc's other tabs. When nothing waits for the
+  doc, an update is applied at once, and its ack, ``{ok, kept}``, gives for
+  each client the update brought changes of the clock the doc now holds for
+  it, which the top bar's Saved reads.
+* Otherwise, as under a burst of typing in a room, it waits for the doc's
+  thread, which applies batch after batch of what waits (:func:`_take`), and
+  its ack is ``{ok, queued}`` at once, so the socket goes on reading. In a
+  batch each socket's updates are one transaction, in the order it sent them;
+  the batch makes one write to the log, a record a transaction, and sends
+  each tab one message, every change of the batch but the tab's own merged
+  into one update. Each socket whose updates it held gets one
+  :data:`KEPT_EVENT` message, ``{projectId, answered, kept}``, with
+  ``refused``, by why, when some were.
 * A watcher's step 2 and updates are dropped, ``read_only``: nothing is applied
   or relayed. The role is the room's (``room_state``), which a change to the
   editors updates at once (``roles.py``).
@@ -35,10 +39,12 @@ room (``join_session``, ``events.py``) takes part.
   at once, for every tab, and the tab that drew it is told who removed the
   node (:func:`_drop_dangling_connections`).
 * Awareness is relayed to the doc's other tabs and sent whole to a tab that
-  starts. The server writes each state's ``user``, the participant the room
-  knows; a socket sets only client ids no other account's socket set; a
-  watcher's state keeps only its presence (:data:`PRESENCE_FIELDS`), never an
-  edit; and a socket's states are cleared when it disconnects (:func:`leave`).
+  starts. It waits for the doc with the updates: a batch keeps each client's
+  latest state and sends each tab one message, its own clients' left out. The
+  server writes each state's ``user``, the participant the room knows; a
+  socket sets only client ids no other account's socket set; a watcher's
+  state keeps only its presence (:data:`PRESENCE_FIELDS`), never an edit; and
+  a socket's states are cleared when it disconnects (:func:`leave`).
 
 **The log, the dataflow's one history.** Every change to the doc is appended to
 its update log the moment it lands, and the log is never emptied. It is kept
@@ -144,6 +150,8 @@ from utk_curio.backend.config import COLLAB_NAMESPACE
 logger = logging.getLogger(__name__)
 
 EVENT = doc_mapping.EVENT
+#: What answers a tab's queued updates once their batch is applied (:func:`_update`).
+KEPT_EVENT = doc_mapping.KEPT_EVENT
 
 #: Beside ``spec.trill.json``: the docs' logs, a folder per doc.
 LOG_DIR = "ydoc"
@@ -193,18 +201,23 @@ class _NoDataflow(Exception):
     """The dataflow has no spec on disk."""
 
 
+#: The kinds of a tab's message to the doc (:class:`_Queued`): its sync step 2
+#: or an update, and its awareness.
+_UPDATE, _AWARENESS = "update", "awareness"
+
+
 class _Queued:
-    """A tab's step 2 or update waiting for its doc (:func:`_update`)."""
+    """A tab's message for its doc (:func:`_take`): its sync step 2 or an
+    update, as bytes, or its awareness, as the entries it sets."""
 
-    __slots__ = ("sid", "me", "update", "answer")
+    __slots__ = ("sid", "me", "kind", "data")
 
-    def __init__(self, sid: str, me: dict, update: bytes):
+    def __init__(self, sid: str, me: dict, kind: str, data):
         self.sid = sid
         #: The participant the socket is, as the room knows it.
         self.me = me
-        self.update = update
-        #: What the tab is answered, once its update is applied or refused.
-        self.answer: Optional[dict] = None
+        self.kind = kind
+        self.data = data
 
 
 class _OpenDoc:
@@ -234,13 +247,15 @@ class _OpenDoc:
         self.awareness_owners: dict[int, str] = {}
         self.updates: list[bytes] = []
         self.awareness_changed: list[int] = []
-        #: The tabs' updates waiting for the doc, in the order they came, and
-        #: whether a thread is applying a batch of them (:func:`_update`).
-        #: Guarded by :attr:`queue`, a leaf: taken under :attr:`lock` or
-        #: alone, and never held while waiting for another lock.
+        #: The tabs' messages waiting for the doc, in the order they came;
+        #: whether a thread holds the doc's turn, applying a message at once or
+        #: a batch of them; and the doc's thread, while it drains them
+        #: (:func:`_take`). Guarded by :attr:`queue`, a leaf: taken under
+        #: :attr:`lock` or alone, and never held while waiting for another lock.
         self.queue = threading.Condition(threading.Lock())
         self.queued: list[_Queued] = []
         self.applying = False
+        self.drainer: Optional[threading.Thread] = None
         #: Who drew each connection, by the socket whose update added it, and
         #: who removed each node lately: what a merge rule's notice names.
         self.edge_authors: dict[str, str] = {}
@@ -923,12 +938,20 @@ def close_all() -> None:
 
 
 def reset_for_tests() -> None:
-    """Forget every open doc, writing nothing, as a backend that stopped does."""
+    """Forget every open doc, writing nothing, as a backend that stopped does.
+    A doc's thread still draining its queue refuses what is left and ends
+    first."""
     with _lock:
-        for entry in _docs.values():
+        entries = list(_docs.values())
+        for entry in entries:
             entry.closed = True
         _docs.clear()
         _sid_docs.clear()
+    for entry in entries:
+        with entry.queue:
+            drainer = entry.drainer
+        if drainer is not None:
+            drainer.join(timeout=10)
 
 
 # ---------------------------------------------------------------------------
@@ -1472,6 +1495,24 @@ def _relay_awareness(entry: _OpenDoc, *, skip_sid: Optional[str]) -> None:
               to=_relay_room(entry.project_id), skip_sid=skip_sid)
 
 
+def _relay_states(entry: _OpenDoc, own: dict[str, set[int]]) -> None:
+    """Send the doc's tabs the awareness states a batch changed, one message
+    to each tab, each client's latest state: a tab that set none gets them all
+    in one message to the room, and one that set some, all but its own
+    clients' (*own*: each such socket and the client ids it set)."""
+    changed, entry.awareness_changed = entry.awareness_changed, []
+    ids = sorted(set(changed))
+    if not ids:
+        return
+    _emit(create_awareness_message(entry.awareness.encode_awareness_update(ids)), entry.project_id,
+          to=_relay_room(entry.project_id), skip_sid=list(own) or None)
+    for sid, mine in own.items():
+        others = [client for client in ids if client not in mine]
+        if others:
+            _emit(create_awareness_message(entry.awareness.encode_awareness_update(others)), entry.project_id,
+                  to=sid)
+
+
 def _user(me: dict) -> dict:
     """Who an awareness state is, as the room knows the participant."""
     return {
@@ -1494,15 +1535,34 @@ def _named(state: dict, me: dict) -> dict:
     return kept
 
 
-def _accepted_awareness(entry: _OpenDoc, sid: str, me: dict, data: bytes) -> bytes:
-    """The states of an awareness update a socket may set, as the server
-    relays them. A client id another account's socket set is not this one's."""
+def _awareness_entries(data: bytes) -> list[tuple[int, int, str]]:
+    """An awareness update's entries: each client id, its clock and its
+    state's JSON text."""
     decoder = Decoder(data)
     entries = []
     for _ in range(decoder.read_var_uint()):
         client_id = decoder.read_var_uint()
         clock = decoder.read_var_uint()
         entries.append((client_id, clock, decoder.read_var_string()))
+    return entries
+
+
+def _latest(entries: list[tuple[int, int, str]]) -> list[tuple[int, int, str]]:
+    """Awareness *entries*, several updates' in the order they came, as each
+    client's last: its state of the highest clock, the later on a tie."""
+    latest: dict[int, tuple[int, int, str]] = {}
+    for client_id, clock, text in entries:
+        held = latest.get(client_id)
+        if held is None or clock >= held[1]:
+            latest[client_id] = (client_id, clock, text)
+    return list(latest.values())
+
+
+def _accepted_awareness(entry: _OpenDoc, sid: str, me: dict,
+                        entries: list[tuple[int, int, str]]) -> tuple[bytes, set[int]]:
+    """The states among awareness *entries* a socket may set, as the server
+    relays them, and their client ids. A client id another account's socket
+    set is not this one's."""
     accepted = []
     for client_id, clock, text in entries:
         owner = entry.awareness_owners.get(client_id)
@@ -1527,7 +1587,7 @@ def _accepted_awareness(entry: _OpenDoc, sid: str, me: dict, data: bytes) -> byt
         encoder.write_var_uint(clock)
         # ASCII JSON: pycrdt's encoder writes a string's length in characters.
         encoder.write_var_string(json.dumps(state, separators=(",", ":")))
-    return encoder.to_bytes()
+    return encoder.to_bytes(), {client_id for client_id, _clock, _state in accepted}
 
 
 def _start(sid: str, me: dict, project_id: str, message: bytes, held_id) -> dict:
@@ -1573,96 +1633,220 @@ def _synced(project_id: str, sid: str) -> Optional[_OpenDoc]:
 
 
 def _update(sid: str, me: dict, project_id: str, message: bytes) -> dict:
-    """A tab's sync step 2 or update, answered once it is applied.
+    """A tab's sync step 2 or update.
 
-    A socket's events come one at a time (``extensions.init_socketio``) and
-    its update is answered only once applied, so a socket never has two
-    updates waiting: under a burst, what waits is the doc, an update from each
-    of several tabs. The thread that finds none being applied applies every
-    update waiting then, as one batch (:func:`_apply_queued`), while the
-    others wait for their answers, and an update that comes meanwhile waits
-    for the next batch. Nothing waits to gather one: an update alone is
-    applied and relayed at once."""
+    Applied at once, on the socket's own thread, when nothing waits for the
+    doc, and answered as it always was: ``{ok, kept}``. Otherwise it waits
+    for the doc's thread (:func:`_take`) and is answered at once
+    ``{ok, queued}``, so the socket goes on reading; its answer comes once its
+    batch is applied, in a :data:`KEPT_EVENT` message (:func:`_send_kept`)."""
     if me.get("role") not in room_state.EDIT_ROLES:
         return _refused("read_only", message=READ_ONLY_REFUSAL)
     entry = _synced(project_id, sid)
     if entry is None:
         return _refused("not_synced")
-    mine = _Queued(sid, me, _framed(message[2:]))
+    answers = _take(entry, _Queued(sid, me, _UPDATE, _framed(message[2:])))
+    if answers is None:
+        return {"ok": True, "queued": True}
+    answer = answers.get(sid) or _answer()
+    if answer["refused"]:
+        return _refused(next(iter(answer["refused"])))
+    return {"ok": True, "kept": answer["kept"]}
+
+
+def _take(entry: _OpenDoc, item: _Queued) -> Optional[dict[str, dict]]:
+    """Take a tab's message for its doc.
+
+    When no thread holds the doc's turn, nothing waits either: the message is
+    applied at once, on its socket's own thread, and this is what that batch
+    of one answers (:func:`_apply_batch`). Otherwise it waits for the doc's
+    thread, in the order it came, and this is ``None``. A socket's events come
+    one at a time (``extensions.init_socketio``), so a socket never kept
+    waiting goes on reading, its Engine.IO pings included, and its next
+    messages queue behind this one."""
     with entry.queue:
-        entry.queued.append(mine)
-        while mine.answer is None and entry.applying:
-            entry.queue.wait()
-        if mine.answer is not None:
-            return mine.answer
+        if entry.applying:
+            entry.queued.append(item)
+            return None
         entry.applying = True
-    batch: list[_Queued] = []
     try:
         with entry.lock:
-            with entry.queue:
-                batch, entry.queued = entry.queued, []
-            _apply_queued(entry, batch)
+            return _apply_batch(entry, [item])
     finally:
+        _hand_on(entry)
+
+
+def _hand_on(entry: _OpenDoc) -> None:
+    """End a turn at the doc taken by :func:`_take`: the messages queued
+    meanwhile go to the doc's thread, which then holds the turn."""
+    with entry.queue:
+        if entry.queued:
+            entry.drainer = threading.Thread(target=_drain, args=(entry,), name="dataflow-doc-batches",
+                                             daemon=True)
+            entry.drainer.start()
+            return
+        entry.applying = False
+        entry.queue.notify_all()
+
+
+def _drain(entry: _OpenDoc) -> None:
+    """The doc's thread: it applies batch after batch of the messages queued
+    for the doc, every message waiting then in each, answers each socket
+    whose updates a batch held with one :data:`KEPT_EVENT` message, and ends
+    once none is left."""
+    while True:
         with entry.queue:
-            entry.applying = False
-            for queued in batch:
-                if queued.answer is None:  # applying them failed
-                    queued.answer = _refused("not_kept")
-            entry.queue.notify_all()
-    return mine.answer
+            batch, entry.queued = entry.queued, []
+            if not batch:
+                entry.applying = False
+                entry.drainer = None
+                entry.queue.notify_all()
+                return
+        try:
+            with entry.lock:
+                answers = _apply_batch(entry, batch)
+        except BaseException:  # noqa: BLE001 - the doc's turn must outlive a batch that failed
+            logger.exception("dataflow %s: a batch of its tabs' messages could not be applied", entry.project_id)
+            answers = _unkept(batch)
+        _send_kept(entry, answers)
 
 
-def _apply_queued(entry: _OpenDoc, batch: list[_Queued]) -> None:
-    """Apply a batch of tabs' updates (:func:`_update`), under the doc's lock,
-    and set each one's answer.
+def _answer() -> dict:
+    """What a batch answers a socket: how many of its updates it held, the
+    clock the doc now holds for each client they changed, and how many were
+    refused, by why."""
+    return {"answered": 0, "kept": {}, "refused": {}}
 
-    Each update is applied in a transaction of its own, its tab the origin,
-    in the order the batch holds them, so each tab's stay in the order it sent
-    them; an answer's ``kept`` is what its own transaction moved. After each,
-    the merge rules run on what it changed (:func:`_drop_dangling_connections`).
-    The batch then makes one write to the log and one message to each tab,
-    every change but the tab's own merged into one update, the rules' changes
-    sent to every tab (:func:`_logged_and_relayed`); and then the tabs a rule
-    names are told."""
-    synced = []
-    for queued in batch:
-        if entry.closed or queued.sid not in entry.tabs:
-            queued.answer = _refused("not_synced")
-        else:
-            synced.append(queued)
-    if not synced:
+
+def _refuse(answers: dict[str, dict], sid: str, error: str, count: int = 1) -> None:
+    refused = answers.setdefault(sid, _answer())["refused"]
+    refused[error] = refused.get(error, 0) + count
+
+
+def _unkept(batch: list[_Queued]) -> dict[str, dict]:
+    """What a batch that could not be applied answers: no update kept."""
+    answers: dict[str, dict] = {}
+    for item in batch:
+        if item.kind == _UPDATE:
+            answers.setdefault(item.sid, _answer())["answered"] += 1
+            _refuse(answers, item.sid, "not_kept")
+    return answers
+
+
+def _send_kept(entry: _OpenDoc, answers: dict[str, dict]) -> None:
+    """Answer each socket whose queued updates a batch held: one
+    :data:`KEPT_EVENT` message, ``{projectId, answered, kept}``, and
+    ``refused``, by why, when some were. A socket's answers come in the order
+    it sent its updates, but this one may come before the ``queued`` answer of
+    the last update it answers."""
+    sio = _socketio()
+    if sio is None:
         return
+    for sid, answer in answers.items():
+        if not answer["answered"]:
+            continue
+        message = {"projectId": entry.project_id, "answered": answer["answered"], "kept": answer["kept"]}
+        if answer["refused"]:
+            message["refused"] = answer["refused"]
+        sio.emit(KEPT_EVENT, message, to=sid, namespace=COLLAB_NAMESPACE)
+
+
+def wait_idle(project_id: str, timeout: float = 10.0) -> bool:
+    """Whether every message queued for the dataflow's open doc was applied
+    and answered within *timeout*."""
+    entry = _open_entry(project_id)
+    if entry is None:
+        return True
+    with entry.queue:
+        return entry.queue.wait_for(lambda: not entry.applying and not entry.queued, timeout)
+
+
+def _apply_batch(entry: _OpenDoc, batch: list[_Queued]) -> dict[str, dict]:
+    """Apply a batch of tabs' messages (:func:`_take`), under the doc's lock;
+    what it answers each socket (:func:`_answer`).
+
+    * Each socket's updates are one transaction, the socket its origin, in the
+      order it sent them, so they reach the log as one record: the history's
+      point of one author. An answer's ``kept`` is what that transaction moved,
+      and the merge rules run on what it changed
+      (:func:`_drop_dangling_connections`). The batch then makes one write to
+      the log and one message to each tab, every change but the tab's own
+      merged into one update, the rules' changes sent to every tab
+      (:func:`_logged_and_relayed`); and then the tabs a rule names are told.
+    * Of each client's awareness, the batch keeps its latest state and sends
+      each tab one message with the states the batch changed but its own
+      clients' (:func:`_relay_states`).
+    * A message of a socket no longer among the doc's tabs is refused
+      ``not_synced``."""
+    answers: dict[str, dict] = {}
+    updates: dict[str, list[_Queued]] = {}
+    states: dict[str, list[_Queued]] = {}
+    for item in batch:
+        if entry.closed or item.sid not in entry.tabs:
+            if item.kind == _UPDATE:
+                answers.setdefault(item.sid, _answer())["answered"] += 1
+            _refuse(answers, item.sid, "not_synced")
+        else:
+            (updates if item.kind == _UPDATE else states).setdefault(item.sid, []).append(item)
+    if updates:
+        _apply_updates(entry, updates, answers)
+    if states:
+        _apply_states(entry, states)
+    return answers
+
+
+def _apply_updates(entry: _OpenDoc, updates: dict[str, list[_Queued]], answers: dict[str, dict]) -> None:
+    """A batch's updates (:func:`_apply_batch`), each socket's as one
+    transaction, the sockets in the order each first came."""
     _roll(entry)
     clocks = _clocks(entry.doc)
     changes: list[tuple[Optional[str], list[bytes]]] = []
-    applied: list[tuple[_Queued, dict]] = []
     notices: list[tuple[str, dict]] = []
-    for queued in synced:
+    for sid, items in updates.items():
+        answer = answers.setdefault(sid, _answer())
+        answer["answered"] += len(items)
         graph = _graph_keys(entry.doc)
-        try:
-            if queued.update != b"\x00\x00":
-                with entry.doc.transaction(origin=queued.sid):
-                    entry.doc.apply_update(queued.update)
-        except (ValueError, RuntimeError, IndexError, AssertionError):
-            logger.info("an update from %s for dataflow %s does not apply", queued.sid, entry.project_id,
-                        exc_info=True)
-            queued.answer = _refused("invalid_message")
+        with entry.doc.transaction(origin=sid):
+            for item in items:
+                if item.data == b"\x00\x00":
+                    continue
+                try:
+                    entry.doc.apply_update(item.data)
+                except (ValueError, RuntimeError, IndexError, AssertionError):
+                    logger.info("an update from %s for dataflow %s does not apply", sid, entry.project_id,
+                                exc_info=True)
+                    _refuse(answers, sid, "invalid_message")
         now = _clocks(entry.doc)
         observed, entry.updates = entry.updates, []
-        changes.append((queued.sid, observed))
-        if queued.answer is None:
-            applied.append((queued, {str(client): clock for client, clock in now.items()
-                                     if clocks.get(client) != clock}))
-        notices += _drop_dangling_connections(entry, queued.sid, queued.me, graph)
+        changes.append((sid, observed))
+        answer["kept"] = {str(client): clock for client, clock in now.items() if clocks.get(client) != clock}
+        notices += _drop_dangling_connections(entry, sid, items[-1].me, graph)
         ruled, entry.updates = entry.updates, []
         if ruled:
             changes.append((None, ruled))
             now = _clocks(entry.doc)
         clocks = now
-    logged = _logged_and_relayed(entry, changes)
+    if not _logged_and_relayed(entry, changes):
+        for sid in updates:
+            answer = answers[sid]
+            applied = answer["answered"] - sum(answer["refused"].values())
+            if applied > 0:
+                _refuse(answers, sid, "not_kept", applied)
+            answer["kept"] = {}
     _tell(notices)
-    for queued, kept in applied:
-        queued.answer = {"ok": True, "kept": kept} if logged else _refused("not_kept")
+
+
+def _apply_states(entry: _OpenDoc, states: dict[str, list[_Queued]]) -> None:
+    """A batch's awareness (:func:`_apply_batch`): each socket's entries as
+    each client's latest state, accepted and applied, then one message to
+    each tab."""
+    own: dict[str, set[int]] = {}
+    for sid, items in states.items():
+        accepted, ids = _accepted_awareness(entry, sid, items[-1].me,
+                                            _latest([state for item in items for state in item.data]))
+        entry.awareness.apply_awareness_update(accepted, sid)
+        own[sid] = ids | {client for client, owner in entry.awareness_owners.items() if owner == sid}
+    _relay_states(entry, own)
 
 
 def _graph_keys(doc) -> tuple[frozenset, frozenset]:
@@ -1680,7 +1864,7 @@ def _drop_dangling_connections(entry: _OpenDoc, sid: str, me: dict,
     A node removed while someone drew a connection to it leaves that
     connection pointing nowhere once both changes merge, whichever came first.
     It is taken out at once, in a transaction of the rule's own, whose update
-    :func:`_apply_queued` logs and sends every tab with the rest of its batch,
+    :func:`_apply_updates` logs and sends every tab with the rest of its batch,
     and the tab that drew it is told who removed the node
     (:data:`CONNECTION_DROPPED_EVENT`). The notices, each a socket and what it
     is told, for :func:`_tell` once the change is relayed."""
@@ -1738,16 +1922,17 @@ def _tell(notices: list[tuple[str, dict]]) -> None:
 
 
 def _awareness(sid: str, me: dict, project_id: str, message: bytes) -> dict:
+    """A tab's awareness: applied and relayed at once when nothing waits for
+    the doc, else in the doc's next batch, which keeps each client's latest
+    state (:func:`_take`). The canvas asks for no answer to it."""
     entry = _synced(project_id, sid)
     if entry is None:
         return _refused("not_synced")
-    with entry.lock:
-        if entry.closed or sid not in entry.tabs:
-            return _refused("not_synced")
-        accepted = _accepted_awareness(entry, sid, me, _framed(message[1:]))
-        entry.awareness.apply_awareness_update(accepted, sid)
-        _relay_awareness(entry, skip_sid=sid)
-    return {"ok": True}
+    answers = _take(entry, _Queued(sid, me, _AWARENESS, _awareness_entries(_framed(message[1:]))))
+    if answers is None:
+        return {"ok": True, "queued": True}
+    refused = (answers.get(sid) or _answer())["refused"]
+    return _refused(next(iter(refused))) if refused else {"ok": True}
 
 
 def receive(sid: str, payload) -> dict:

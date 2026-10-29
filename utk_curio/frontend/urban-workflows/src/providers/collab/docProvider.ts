@@ -14,6 +14,10 @@
  * - The tab's own changes are sent once that ack is in, each as an update
  *   whose ack, `{ok, kept}`, says the server has it: `whenKept` waits for every
  *   one sent. Changes made before it are held and sent after it.
+ * - An update the server queued behind others is acked `{ok, queued}` at once
+ *   and answered once its batch is applied, by a `yjs_kept` message,
+ *   `{projectId, answered, kept}`, which answers that many of the tab's
+ *   updates. It may come before the `queued` ack of the last one it answers.
  * - A watcher's tab never sends a change: the server would drop it anyway.
  * - Awareness is the tab's presence (`y-protocols/awareness`): its own state is
  *   sent at every change and every renewal, everyone else's comes from the
@@ -25,7 +29,7 @@ import * as encoding from "lib0/encoding";
 import * as syncProtocol from "y-protocols/sync";
 import * as awarenessProtocol from "y-protocols/awareness";
 
-import { DOC_EVENT } from "./docMapping";
+import { DOC_EVENT, DOC_KEPT_EVENT } from "./docMapping";
 
 /** The slice of a socket.io client socket the provider drives. */
 export interface DocSocket {
@@ -35,12 +39,24 @@ export interface DocSocket {
     off(event: string, handler: (payload: any) => void): unknown;
 }
 
-/** What a sync's start was answered with. */
+/** What a sync's start or an update was answered with. */
 export interface SyncAck {
     ok: boolean;
     error?: string;
     docId?: string;
     role?: string;
+    /** The update waits behind others: a `yjs_kept` message answers it. */
+    queued?: boolean;
+}
+
+/** The answer to updates the server queued, once their batch is applied. */
+export interface KeptMessage {
+    projectId: string;
+    /** How many of this tab's updates it answers. */
+    answered: number;
+    kept?: Record<string, number>;
+    /** How many of them the server refused, by why. */
+    refused?: Record<string, number>;
 }
 
 export interface DocProviderOptions {
@@ -110,8 +126,10 @@ export class DataflowDocProvider {
         if (this.destroyed) return;
         if (this.socket !== socket) {
             this.socket?.off(DOC_EVENT, this.onMessage);
+            this.socket?.off(DOC_KEPT_EVENT, this.onKept);
             this.socket = socket;
             socket.on(DOC_EVENT, this.onMessage);
+            socket.on(DOC_KEPT_EVENT, this.onKept);
         }
         this.joined = true;
         this.start();
@@ -132,6 +150,7 @@ export class DataflowDocProvider {
         this.destroyed = true;
         if (this.retryTimer) clearTimeout(this.retryTimer);
         this.socket?.off(DOC_EVENT, this.onMessage);
+        this.socket?.off(DOC_KEPT_EVENT, this.onKept);
         this.doc.off("update", this.onDocUpdate);
         this.awareness.off("update", this.onAwarenessUpdate);
         this.awareness.destroy();
@@ -225,6 +244,22 @@ export class DataflowDocProvider {
         }
     };
 
+    /** The server applied a batch that held some of this tab's queued updates. */
+    private onKept = (payload: KeptMessage): void => {
+        if (this.destroyed || !payload || payload.projectId !== this.projectId) return;
+        const answered = Math.max(0, Number(payload.answered) || 0);
+        this.inFlight = Math.max(0, this.inFlight - answered);
+        const refused = payload.refused ?? {};
+        if (refused.read_only) {
+            this.options.onReadOnly?.();
+        } else if (refused.not_synced) {
+            // The server lost this tab's sync: a new one carries what they brought.
+            this.started = false;
+            this.start();
+        }
+        this.notifyKept();
+    };
+
     private onDocUpdate = (update: Uint8Array, origin: unknown): void => {
         if (this.destroyed || origin === this || !this.canWrite) return;
         if (!this.synced || !this.joined || !this.socket?.connected) {
@@ -265,6 +300,8 @@ export class DataflowDocProvider {
         socket.emit(DOC_EVENT, { projectId: this.projectId, message }, (ack: SyncAck) => {
             if (answered) return;
             answered = true;
+            // Queued behind others: its yjs_kept message answers it.
+            if (ack && ack.ok && ack.queued) return;
             this.inFlight = Math.max(0, this.inFlight - 1);
             if (this.destroyed) return;
             if (ack && !ack.ok) {
