@@ -2195,14 +2195,16 @@ def set_agent_state(project_id: str, client_id: int, fields: dict, *, joining: b
     """Write *fields* into the awareness state of the agent at work under
     *client_id*: its whole state as it joins (*joining*), then the fields that
     change, and none to renew it. Each write moves the state's clock on, so
-    every tab takes it as new. The open doc, if any, takes it under its lock
-    and relays it to its tabs as a tab's state; a doc that opens later puts it
-    back. Whether the agent is at work: one that left is not written again."""
+    every tab takes it as new; the first is 1, since an awareness takes a
+    client it has not seen only above clock 0. The open doc, if any, takes it
+    under its lock and relays it to its tabs as a tab's state; a doc that
+    opens later puts it back. Whether the agent is at work: one that left is
+    not written again."""
     with _lock:
         held = _agent_states.get(project_id) or {}
         if client_id not in held and not joining:
             return False
-        clock, state = held.get(client_id, (-1, {}))
+        clock, state = held.get(client_id, (0, {}))
         _agent_states.setdefault(project_id, {})[client_id] = [clock + 1, {**state, **copy.deepcopy(fields)}]
     entry = _open_entry(project_id)
     if entry is not None:
@@ -2246,8 +2248,9 @@ def _put_agents_back(entry: _OpenDoc) -> None:
 
 def _apply_agents(entry: _OpenDoc, client_ids: list, *, step: int = 0) -> None:
     """Apply agents' states, as this module holds them now, to the open doc's
-    awareness, under its lock: each at a clock above any the awareness holds
-    for its client id, which no socket then holds."""
+    awareness, under its lock: each at a clock above the one the awareness
+    holds for its client id (0 for one it has not seen, which y-protocols and
+    pycrdt take only a higher clock of), which no socket then holds."""
     rows = []
     with _lock:
         held = _agent_states.get(entry.project_id) or {}
@@ -2255,7 +2258,7 @@ def _apply_agents(entry: _OpenDoc, client_ids: list, *, step: int = 0) -> None:
             kept = held.get(client_id)
             if kept is None:
                 continue
-            seen = (entry.awareness.meta.get(client_id) or {}).get("clock", -1)
+            seen = (entry.awareness.meta.get(client_id) or {}).get("clock", 0)
             kept[0] = max(kept[0] + step, seen + 1)
             rows.append((client_id, kept[0], copy.deepcopy(kept[1])))
     for client_id, _clock_at, _state in rows:
