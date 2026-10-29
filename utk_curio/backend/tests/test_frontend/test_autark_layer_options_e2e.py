@@ -21,7 +21,8 @@ The scheme test's ``held`` case plays the order two CI failures had (runs
 40818895965 and 40783748468, "the 300x150 map canvas is one colour"): the
 reversed map is still drawing from its input when its Play is clicked, shows
 Done after the click, and the Play's run reaches it only once that drawing
-has been checked (``_LATE_PLAY_RUN_JS``).
+has been checked (``_LATE_PLAY_RUN_JS``). So a Play waits for the run it
+started to end, by the run guard, not for its map to read Done (``_play``).
 
 Run::
 
@@ -40,6 +41,7 @@ import pytest
 from .utils import (
     assert_autark_map_drawn,
     frame_nodes,
+    node_execution_timeout_ms,
     play_node,
     require_owner_view,
     require_project_page,
@@ -47,6 +49,8 @@ from .utils import (
     save_node_closeup,
     stub_login_and_enter_workflow,
     wait_for_node_done,
+    wait_for_run_all_to_end,
+    watch_run_all,
 )
 from .utils.node_drawings import _AUTK_MAP_PIXELS_IN_FRAME_JS
 
@@ -146,10 +150,26 @@ def _enter(page, app_frontend, current_server, *, username: str, spec: dict) -> 
     require_owner_view(page)
 
 
-def _draw(page, map_id: str, attach_as: str) -> None:
-    """Run the map node and its source, and wait for a drawn map."""
+def _play(page, map_id: str) -> None:
+    """Play the map node, which runs its source too, and wait for the run that
+    Play started to end, then for the map to read Done.
+
+    The map's status cannot tell that run from an earlier drawing. A map fed
+    by the source another map's run just ran draws from that input, outside
+    any run, and can still be drawing when its Play is clicked: it then reads
+    Done after the click, before the Play's run reaches it and draws it again
+    on a new canvas (runs 40818895965 and 40783748468). The run guard, the Run
+    All button's ``data-run-active``, is held from the click until the run's
+    drawings end, and no drawing outside a run holds it."""
+    watch_run_all(page)
     play_node(page, map_id)
+    wait_for_run_all_to_end(page, timeout_ms=node_execution_timeout_ms(MAP_TYPE))
     wait_for_node_done(page, map_id, node_type=MAP_TYPE)
+
+
+def _draw(page, map_id: str, attach_as: str) -> None:
+    """Play the map node, and wait for its run to end and for a drawn map."""
+    _play(page, map_id)
     frame_nodes(page, [map_id])
     assert_autark_map_drawn(page, map_id, timeout=60000, attach_as=attach_as)
 
@@ -480,8 +500,7 @@ def test_lines_drawn_with_a_width_are_wider_than_the_default_line(
             page.wait_for_timeout(500)
 
     for map_id in (thin, wide):
-        play_node(page, map_id)
-        wait_for_node_done(page, map_id, node_type=MAP_TYPE)
+        _play(page, map_id)
     at_default, at_width = line_pixels(thin), line_pixels(wide)
     assert at_default > 0, f"the default-width map drew no pixel in {LINE_COLOR}"
     assert at_width > 2.5 * at_default, (
