@@ -435,7 +435,7 @@ Two families of baseline live in that folder:
   `package-metadata-roundtrip`, `package-export-drawer`, `save-as-modal`,
   `library-manager`, `node-catalog-drawer`, `data-catalog-drawer`,
   `agent-catalog-drawer`, `agent-run` (one per built-in agent, plus a
-  `_chat` companion for the four that mutate), `agent-review-card`,
+  `_chat` companion for the four that mutate), `agent-change-card`,
   `dataset-export`, `dataset-lineage`, `autark-grammar-edit`,
   `multi-input-authoring`, `canvas-delete-key`, `projects-page-scroll`,
   `global-imports`, `uhvi-install`, `data-pool-scroll`,
@@ -597,7 +597,7 @@ test_frontend/
   test_data_catalog.py        # Data Catalog drawer: hub datasets, search, add/remove, import
   test_agent_catalog.py       # Agent Catalog drawer: list, search, add -> palette, requiresAgents closure
   test_agent_runs_e2e.py      # EVERY built-in agent: install -> attach -> run a scripted turn (NO browser)
-  test_agent_chat_e2e.py      # one chat-panel baseline screenshot per agent + the review-card Apply
+  test_agent_chat_e2e.py      # one chat-panel baseline screenshot per agent + a change card and its Undo
   test_dataset_export.py      # Data Catalog detail panel -> Export: the downloaded name and bytes
   test_dataset_lineage_e2e.py # one edge -> the dataset's lineage grows (panel, card badge, server)
   test_computed_json_output_e2e.py # dict/scalar node output installs as json, no warning (#180)
@@ -771,18 +771,18 @@ agent arriving by some other path cannot slip past.
 
 | Module | Browser | What it is for |
 |---|---|---|
-| `test_agent_runs_e2e.py` | no | The correctness gate: install -> attach -> run -> the reply, the minted proposal or tool round, and the persisted transcript. ~1-2 s per agent. Each agent runs twice, fenced and on native tools, and one run falls back from native to fenced. One more writes an Autark document under its reply schema. |
-| `test_agent_chat_e2e.py` | yes | Drives a real chat turn per agent and captures the baselines below. A mutate-capable agent additionally **applies its proposal and is held to the canvas actually changing**; a report-only one is held to the canvas NOT changing. |
+| `test_agent_runs_e2e.py` | no | The correctness gate: install -> attach -> run -> the reply, the change that landed or the tool round, and the persisted transcript. ~1-2 s per agent. Each agent runs twice, fenced and on native tools, and one run falls back from native to fenced. One more writes an Autark document under its reply schema. |
+| `test_agent_chat_e2e.py` | yes | Drives a real chat turn per agent and captures the baselines below. A mutate-capable agent's **change lands with the reply and is held to the canvas actually changing**; a report-only one is held to the canvas NOT changing. |
 
 **What gets captured, and why it differs by agent.** 3 of the 4 catalog agents
-mint a proposal these tests can apply; the Dataset Finder's turn is a read
+make a change these tests can see land; the Dataset Finder's turn is a read
 (its one mutation, a dataset install, needs a real catalog row) - so there are
 two kinds of evidence and two capture shapes.
 
 | Agent kind | Baselines under `agent-run` | The assertion behind it |
 |---|---|---|
 | report-only (1) | `<agent-id>.png` - the chat panel, clipped | the reply rendered, and the saved dataflow is byte-identical afterwards |
-| mutate-capable (3) | `<agent-id>_chat.png` (panel) + `<agent-id>.png` (full canvas) | the proposal was applied and the node was really created or rewritten, on the server *and* on the canvas |
+| mutate-capable (3) | `<agent-id>_chat.png` (panel) + `<agent-id>.png` (full canvas) | the change landed and the node was really created or rewritten, on the server *and* on the canvas |
 
 Three things about those captures are deliberate:
 
@@ -810,7 +810,7 @@ handed. Three things make that usable from a test:
 | Point the user at it | `use_scripted_llm(backend, token)` - real `/api/agents/llm` calls that add a `testing` LLM configuration and make it the default, so the production `resolve_llm` path is the one under test |
 | Script the replies | `script_agent_replies(backend, *replies)` -> `POST /api/testing/agent-script`. One entry **per provider call**: a reply carrying a `toolRequest` tail is answered by the runtime and the model is prompted again, so script the follow-up too |
 | Script native tool calls | `script_agent_replies(backend, *replies, native_tools=True)`: the scripted endpoint calls tools natively, so runs are offered their tools instead of the fenced syntax (a reset puts it back). A reply is then `{"text", "toolCalls": [{"name", "arguments"}]}`, the name a tool id or its native name; `{"error": ..., "status": 400}` makes the call refuse the tools, which is how a test reaches the fallback tool calls: the same round again on the fenced protocol. `structured_output=True` makes it take a reply schema, so content written for an Autark node is scripted as the constrained JSON (`reply_schemas.autk_reply_schema(...).encode(document)`) |
-| Script a created node's id | `script_agent_replies(backend, *replies, node_ids=(uuid,))`: the next nodes an Apply creates get these ids, in order, until the next reset. Use it when a capture shows the applied turn: it prints the id, and a random one wraps that line or not by its width, moving the transcript by a line |
+| Script a created node's id | `script_agent_replies(backend, *replies, node_ids=(uuid,))`: the next nodes an agent's change creates get these ids, in order, until the next reset. Use it when a capture shows the change card: it prints the id, and a random one wraps that line or not by its width, moving the transcript by a line |
 | Read what reached the model | `captured_system_prompt(backend)` / `captured_agent_prompts(backend)` -> `GET /api/testing/agent-script`; `captured_agent_calls(backend)` says which configuration answered each call, and `captured_agent_offers(backend)` which native tools and which reply schema each call carried |
 
 The `agent-script` routes 404 unless `CURIO_TESTING` is set, on top of the
@@ -838,21 +838,21 @@ Things worth knowing before adding to these:
 - **Only three mutate tools are minted here**, and `MINTABLE_TOOLS` is ordered
   most-specific-first because an agent that declares several gets the first
   match: `dataflow.plan.write` (so the Dataflow Builder plans rather than
-  creating one node), then `node.create` (applying it puts a NEW node on the
+  creating one node), then `node.create` (it puts a NEW node on the
   canvas - the most visible proof an agent did something), then
   `node.content.write`. That spread is intentional: one plan and two node
   creations. No card's first match is `node.content.write` (node content is
-  the Node Builder's mode), so `TestAgentReviewCard` in
-  `test_agent_chat_e2e.py` applies a content replacement. The remaining mutate contracts
+  the Node Builder's mode), so `TestAgentChangeCard` in
+  `test_agent_chat_e2e.py` lands a content replacement and undoes it. The remaining mutate contracts
   (`dataset.install`, `package.install`, `package.draft.apply`) each need a real
   catalog row, or a run of the isolated build service; their mints are covered
   in-process by
   `test_agents/test_routes_turns.py` and `test_agents/test_routes_proposals.py`,
   and an agent declaring only those falls through
   to the read-tool leg.
-- **A plan is applied per node**, through the planned row's own
-  `Create node <title>` button and the `apply-node` route - not the card's
-  single `Apply`.
+- **A change lands with the reply**: a plan, a node, a node's code or
+  settings reach the canvas as the reply ends, and the change's card in the
+  chat offers **Undo**. Only an install has a review card's `Apply`.
 - **The transcript's vocabulary is `{"role": "user"|"agent", "text": ...}`.**
   `assistant` exists only in the provider-context mapping in `sessions.py`.
 - **`TestAgentChatGallery` is in `fixtures.py::_SHARED_SESSION_CLASSES`**, so the

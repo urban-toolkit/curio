@@ -1,8 +1,8 @@
 """A package template whose starter is a node's whole content (``starterIsContent``)
-keeps it when the Dataflow Builder's plan creates the node, whole or node by
-node: the node starts with the template's spec and the plan's widgets, and Solve
-leaves it as it is. A Node Builder ``node.create`` of such a template starts it
-the same way, at mint, so its card shows what Apply writes.
+keeps it when the Dataflow Builder's plan creates the node: the node starts
+with the template's spec and the plan's widgets, and Solve leaves it as it is.
+A Node Builder ``node.create`` of such a template starts it the same way, at
+mint, so its card shows what landed.
 
 Every other template keeps its path, in which a planned node is created empty
 and Solve writes its content: Scout's Raster Calculator, whose operation
@@ -23,7 +23,8 @@ from utk_curio.backend.tests.test_agents import test_source_grounding_routes as 
 from utk_curio.backend.tests.test_agents.test_routes_proposals import (
     TestDataflowPlanMint,
     TestNodeCreate,
-    TestPerNodePlanApply,
+    _changes,
+    _landed_plan,
 )
 from utk_curio.backend.tests.test_agents.test_routes_solve import TestSolve
 
@@ -109,10 +110,11 @@ def _enlist(user_key: str, project_id: str, dirs: list[str]) -> None:
     projects_storage.write_spec(user_key, project_id, spec)
 
 
-def _minted(client, user, token, project_id, monkeypatch, nodes, edges, installs, written=WRITTEN):
-    """The Dataflow Builder's plan of *nodes* and *edges*, minted in a project
-    that holds the packages *installs* write, and its proposal part. Every
-    later model call, each Solve child's, writes *written*."""
+def _landed(client, user, token, project_id, monkeypatch, nodes, edges, installs, written=WRITTEN):
+    """The Dataflow Builder's plan of *nodes* and *edges*, landed in a project
+    that holds the packages *installs* write: its attachment and the plan's
+    change card, with ``canvas``. Every later model call, each Solve child's,
+    writes *written*."""
     helper = TestDataflowPlanMint()
     reply = "Here is the plan.\n" + helper._plan_tail(nodes=nodes, edges=edges)
     att_id, _ = helper._setup(client, user, token, project_id, monkeypatch, replies=[reply, written])
@@ -128,17 +130,13 @@ def _minted(client, user, token, project_id, monkeypatch, nodes, edges, installs
     client.post(f"/api/agents/projects/{project_id}/install", json={"coord": TestSolve.WRITER},
                 headers=_auth(token))
     body = helper._run(client, token, project_id, att_id).get_json()
-    proposal = next(p for p in body["content"] if p["type"] == "proposal")
-    return att_id, proposal
+    return att_id, _landed_plan(body)
 
 
-def _apply(client, token, project_id, att_id, proposal_id) -> dict:
-    r = client.post(
-        f"/api/agents/projects/{project_id}/attachments/{att_id}/proposals/{proposal_id}/apply",
-        headers=_auth(token),
-    )
-    assert r.status_code == 200, r.get_json()
-    return r.get_json()
+def _session(client, token, project_id, att_id) -> dict:
+    """The planner's builder session, as the attachment listing has it."""
+    cards = client.get(f"/api/agents/projects/{project_id}/attachments", headers=_auth(token)).get_json()
+    return next(c for c in cards["attachments"] if c["attachmentId"] == att_id)["builderSession"]
 
 
 def _by_type(nodes: list[dict]) -> dict[str, dict]:
@@ -160,21 +158,21 @@ def _assert_starts_with_the_starter_and_the_plans_widgets(node: dict) -> None:
 
 
 class TestAPlannedTemplateKeepsItsStarter:
-    def test_the_whole_plan_creates_it_with_its_starter_and_solve_leaves_it(
+    def test_the_plan_lands_it_with_its_starter_and_solve_leaves_it(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
         user, token = user_and_token
-        att_id, proposal = _minted(
+        att_id, card = _landed(
             client, user, token, alice_project, monkeypatch,
             [LOAD, CHART], [{"from": "load", "to": "chart"}], [_install_charts],
         )
-        body = _apply(client, token, alice_project, att_id, proposal["proposalId"])
-        created = _by_type(body["appliedGraph"]["nodes"])
+        created = _by_type(card["canvas"]["nodes"])
         chart, load = created["test.charts/lines"], created["curio.builtin/computation-analysis"]
         _assert_starts_with_the_starter_and_the_plans_widgets(chart)
+        _assert_starts_with_the_starter_and_the_plans_widgets(_saved_nodes(user, alice_project)[chart["id"]])
         assert load["content"] == ""
-        session = body["builderSession"]
-        # Nothing is left for Solve to write in it, nor for Simulation Mode to
+        session = _session(client, token, alice_project, att_id)
+        # Nothing is left for Solve to write in it, nor for Build & validate to
         # validate: its content is the template's.
         assert session["nodeRuns"] == {load["id"]: "pending"}
         assert session["nodeStates"] == {"load": "created", "chart": "approved"}
@@ -189,30 +187,6 @@ class TestAPlannedTemplateKeepsItsStarter:
         _assert_starts_with_the_starter_and_the_plans_widgets(saved[chart["id"]])
         assert saved[load["id"]]["content"] == WRITTEN
 
-    def test_node_by_node_it_is_created_with_its_starter(
-        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
-    ):
-        user, token = user_and_token
-        att_id, proposal = _minted(
-            client, user, token, alice_project, monkeypatch,
-            [LOAD, CHART], [{"from": "load", "to": "chart"}], [_install_charts],
-        )
-        apply_node = TestPerNodePlanApply()._apply_node
-        body = apply_node(client, token, alice_project, att_id, proposal["proposalId"], "chart").get_json()
-        chart = body["createdNode"]
-        _assert_starts_with_the_starter_and_the_plans_widgets(chart)
-        session = body["builderSession"]
-        assert chart["id"] not in session["nodeRuns"]
-        assert session["nodeStates"]["chart"] == "approved"
-
-        body = apply_node(client, token, alice_project, att_id, proposal["proposalId"], "load").get_json()
-        load = body["createdNode"]
-        assert load["content"] == ""
-        session = body["builderSession"]
-        assert session["nodeRuns"] == {load["id"]: "pending"}
-        assert session["nodeStates"] == {"chart": "approved", "load": "created"}
-        assert _saved_nodes(user, alice_project)[chart["id"]]["content"] == SPEC
-
 
 class TestEveryOtherTemplateKeepsItsPath:
     def test_the_raster_calculator_and_rasterize_buildings_are_created_empty_for_solve_to_write(
@@ -223,13 +197,12 @@ class TestEveryOtherTemplateKeepsItsPath:
                    "title": "Heights", "intent": "rasterize the buildings"}
         calc = {"ref": "calc", "nodeType": "curio.scout/raster-calculator",
                 "title": "Change", "intent": "subtract the two rasters"}
-        att_id, proposal = _minted(
+        att_id, card = _landed(
             client, user, token, alice_project, monkeypatch,
             [heights, calc], [], [_install_scout_rasters], written=OPERATION,
         )
-        body = _apply(client, token, alice_project, att_id, proposal["proposalId"])
-        created = _by_type(body["appliedGraph"]["nodes"])
-        session = body["builderSession"]
+        created = _by_type(card["canvas"]["nodes"])
+        session = _session(client, token, alice_project, att_id)
         assert set(created) == {"curio.scout/rasterize-buildings", "curio.scout/raster-calculator"}
         for node in created.values():
             assert node["content"] == ""
@@ -264,14 +237,17 @@ class TestACreatedTemplateStartsFromItsStarter:
     def _run(self, client, user, token, project_id, monkeypatch, *replies):
         helper = TestNodeCreate()
         att_id, calls = helper._setup(client, user=user, token=token, project_id=project_id,
-                                      monkeypatch=monkeypatch, replies=[*replies, "Proposed: review it above."])
+                                      monkeypatch=monkeypatch, replies=[*replies, "Added it."])
         key = TestDataflowPlanMint()._ukey(user)
         _enlist(key, project_id, [_install_scout_rasters(key)])
         r = helper._run(client, token, project_id, att_id)
         assert r.status_code == 200, r.get_json()
-        proposal = next((p for p in r.get_json()["content"] if p["type"] == "proposal"), None)
+        body = r.get_json()
+        assert not [p for p in body["content"] if p["type"] == "proposal"]
+        card = next((p for p in _changes(body) if p["kind"] == "node"), None)
+        created = helper._created(body) if card is not None else None
         # Each node.create result is read by its prefix, never by its index.
-        return helper, att_id, proposal, grounding_routes._tool_results(calls[-1], "node.create")
+        return helper, card, created, grounding_routes._tool_results(calls[-1], "node.create")
 
     def test_with_no_content_it_starts_from_its_template_and_the_asked_value_is_set(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
@@ -282,24 +258,18 @@ class TestACreatedTemplateStartsFromItsStarter:
         calculator = create(nodeType="curio.scout/raster-calculator", content="")
         bars = create(nodeType="curio.scout/bars", title="Mean shadow", content="",
                       widgets=[{"name": "y", "type": "text", "value": "shadow_minutes"}])
-        helper, att_id, proposal, results = self._run(
+        helper, card, created, results = self._run(
             client, user, token, alice_project, monkeypatch, calculator, bars,
         )
-        refused, proposed = results
+        refused, landed = results
         # A template whose starter is not its content keeps today's rule: its
         # code is the agent's to write.
         assert "params.content must be a non-empty string" in refused, refused
-        assert proposed.startswith("[tool result] node.create: proposed"), proposed
-        # The card shows what Apply writes: the template's spec, as its package holds it.
-        assert proposal is not None
-        assert proposal["preview"] == starter
-        assert proposal["summary"] == "Create a new Bars node · Mean shadow · widgets y, combine, y_title"
-        resp = client.post(
-            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply",
-            headers=_auth(token),
-        )
-        assert resp.status_code == 200, resp.get_json()
-        created = resp.get_json()["createdNode"]
+        assert landed.startswith("[tool result] node.create: applied"), landed
+        # The card shows what landed: the template's spec, as its package holds it.
+        assert card is not None
+        assert card["preview"] == starter
+        assert card["summary"] == "Created a new Bars node · Mean shadow · widgets y, combine, y_title"
         assert created["content"] == starter
         got = created["metadata"]["widgets"]
         # The template's widgets, in its order, the asked value set over its own.
@@ -319,7 +289,8 @@ class TestACreatedTemplateStartsFromItsStarter:
         retyped = starter.replace('"type": "bar"', '"type": "line"')
         assert retyped != starter
         reply = TestNodeCreate()._create_tail_json(nodeType="curio.scout/bars", content=retyped)
-        _, _, proposal, [refused] = self._run(client, user, token, alice_project, monkeypatch, reply)
-        assert proposal is None, "a retyped Scout chart was proposed"
+        helper, card, _, [refused] = self._run(client, user, token, alice_project, monkeypatch, reply)
+        assert card is None, "a retyped Scout chart landed"
         assert "params.content: a Bars node starts from its template's own content" in refused, refused
         assert "y, combine, y_title" in refused, refused
+        assert [n["id"] for n in helper._spec_nodes(user, alice_project)] == ["n1"]

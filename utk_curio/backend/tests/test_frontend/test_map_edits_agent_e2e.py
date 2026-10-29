@@ -2,11 +2,12 @@
 ``curio.builtin/edit-features``) is an entry of the node's Provenance drawer,
 named after the agent, and a reload keeps it.
 
-The Node Builder, attached to the node, proposes code that removes a building;
-the user applies it in the chat. The server writes the agent's code into the
-dataflow's doc and keeps the change in the dataflow's history: the node holds
-the agent's code, the history holds the entry with it, and after a reload the
-drawer lists it under the agent's name. One close-up shows the drawer.
+The Node Builder, attached to the node, writes code that removes a building,
+and the change lands with its reply. The server writes the agent's code into
+the dataflow's doc and keeps the change in the dataflow's history: the node
+holds the agent's code, the history holds the entry with it, and after a
+reload the drawer lists it under the agent's name. One close-up shows the
+drawer.
 
 The dataflow has no map, so the test runs on any runner.
 
@@ -113,8 +114,8 @@ _NODE_CODE_JS = """(nodeId) => {
 
 
 def _wait_for_code(page, node_id: str, code: str, *, timeout: float = 30.0) -> None:
-    """Wait until the node holds *code* on the canvas, as an apply writes an
-    agent's code: without the blank lines around it."""
+    """Wait until the node holds *code* on the canvas, as an agent's change
+    lands its code: without the blank lines around it."""
     page.wait_for_function("() => !!window.__curio_reactFlow", timeout=30000)
     deadline = time.time() + timeout
     held = None
@@ -129,10 +130,10 @@ def _wait_for_code(page, node_id: str, code: str, *, timeout: float = 30.0) -> N
 def test_an_agents_change_to_map_edits_is_an_entry_named_after_it_that_a_reload_keeps(
     page, frontend_server, current_server,
 ):
-    """The Node Builder, attached to the Map Editor node, proposes a removal and
-    the user applies it. The node holds the agent's code, and the dataflow's
-    history keeps an entry of the node named after the agent with that code.
-    Saved and opened again, the node's Provenance drawer lists it."""
+    """The Node Builder, attached to the Map Editor node, writes a removal,
+    which lands with its reply. The node holds the agent's code, and the
+    dataflow's history keeps an entry of the node named after the agent with
+    that code. Saved and opened again, the node's Provenance drawer lists it."""
     require_project_page()
     require_user_auth()
     agent = next(m for m in builtin.list_builtin_manifests() if m.agent_id == "agent.curio.node-builder")
@@ -151,7 +152,7 @@ def test_an_agents_change_to_map_edits_is_an_entry_named_after_it_that_a_reload_
         f"{base}/attachments", token, method="POST",
         payload={"coord": agent.dir_name, "target": {"kind": "node", "targetId": EDIT}},
     )
-    script_agent_replies(current_server, _write_reply(), "I have proposed the change for your review.")
+    script_agent_replies(current_server, _write_reply(), "Building 2 is removed in the node.")
 
     _goto_when_served(page, f"{frontend_server}/dataflow/{project_id}")
     page.wait_for_url(f"**/dataflow/{project_id}", timeout=20000)
@@ -160,17 +161,12 @@ def test_an_agents_change_to_map_edits_is_an_entry_named_after_it_that_a_reload_
     for node_id in (LOAD, EDIT):
         node_locator(page, node_id).wait_for(state="attached", timeout=45000)
 
-    # The agent proposes; the user applies.
+    # The agent's change lands with its reply: its card, with its Undo.
     panel = _open_chat(page, agent)
     _send(panel, "Remove building 2 in this node.")
-    apply = panel.get_by_role("button", name=re.compile(r"^Apply")).first
-    expect(apply).to_be_visible(timeout=30000)
-    with page.expect_response(
-        lambda r: "/proposals/" in r.url and r.url.endswith("/apply") and r.request.method == "POST",
-        timeout=30000,
-    ) as applied:
-        apply.click()
-    assert applied.value.ok, f"the apply failed with HTTP {applied.value.status}: {applied.value.text()[:300]}"
+    card = panel.get_by_role("group", name=re.compile(r"^Change: ")).first
+    expect(card).to_be_visible(timeout=30000)
+    expect(card.get_by_role("button", name="Undo")).to_be_visible(timeout=10000)
     _wait_for_code(page, EDIT, AGENT_CODE)
     panel.get_by_role("button", name="Close chat").click()
     expect(page.locator(CHAT_PANEL)).to_have_count(0, timeout=10000)

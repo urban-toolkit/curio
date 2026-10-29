@@ -46,17 +46,20 @@ describe("AgentBuilderStrip (dev/52 DR-5)", () => {
     expect(screen.getByRole("button", { name: "Run workflow" })).toBeDisabled();
   });
 
-  it("plan_review disables Solve naming the pending review", () => {
+  it("before any plan, Solve is disabled saying a plan comes first", () => {
     render(
       <AgentBuilderStrip
-        attachment={attachment({ phase: "plan_review" })}
+        attachment={attachment({ phase: "idle" })}
         onSolve={jest.fn()}
         onComposePrompt={jest.fn()}
       />,
     );
     const solve = screen.getByRole("button", { name: "Solve" });
     expect(solve).toBeDisabled();
-    expect(solve).toHaveAttribute("data-tooltip", "Apply or dismiss the plan review first");
+    expect(solve).toHaveAttribute("data-tooltip", "Ask for a plan first");
+    // The phases: no review between a plan and its Solve.
+    expect(screen.queryByText("Review")).not.toBeInTheDocument();
+    expect(screen.getByText("Plan")).toHaveAttribute("aria-current", "step");
   });
 
   it("applied phase shows per-node progress and solves the batch", async () => {
@@ -195,126 +198,120 @@ describe("AgentBuilderStrip streamed solve (dev/63)", () => {
   });
 });
 
-describe("AgentBuilderStrip plan-review controls (dev/53)", () => {
-  const withReview = (): AgentAttachment => ({
-    ...attachment({ phase: "plan_review", planProposalId: "pp1" }),
-    activeProposal: {
-      proposalId: "pp1",
-      tool: "dataflow.plan.write",
-      nodeId: "",
-      summary: "Apply plan · 3 nodes, 2 edges",
-      status: "pending",
-    },
+/** A plan the agent landed: its refs a and b placed as nodes na and nb. */
+const LANDED_PLAN = {
+  proposalId: "pp1",
+  tool: "dataflow.plan.write",
+  nodeId: "",
+  summary: "Plan · 2 nodes, 1 edges",
+  status: "applied" as const,
+  appliedRefs: ["a", "b"],
+  nodeIds: { a: "na", b: "nb" },
+};
+
+const withLandedPlan = (nodeStates: Record<string, string>, extra: Record<string, unknown> = {}): AgentAttachment =>
+  ({
+    ...attachment({
+      phase: "applied",
+      appliedPlanId: "pp1",
+      planProposalId: "pp1",
+      nodeRuns: { na: "pending", nb: "pending" },
+      nodeStates,
+      nodeIds: { a: "na", b: "nb" },
+      ...extra,
+    } as never),
+    planProposal: LANDED_PLAN,
   }) as AgentAttachment;
 
-  it("surfaces Apply plan / Dismiss targeting the activeProposal mirror", async () => {
-    const onApplyProposal = jest.fn().mockResolvedValue(undefined);
-    const onDismissProposal = jest.fn().mockResolvedValue(undefined);
+describe("AgentBuilderStrip over a landed plan (dev/67-9, DEC-054)", () => {
+  it("Build & validate and Step drive the plan that landed; nothing applies or dismisses it", async () => {
+    const onSimulate = jest.fn().mockResolvedValue({ status: "completed" });
     render(
       <AgentBuilderStrip
-        attachment={withReview()}
-        onSolve={jest.fn()}
-        onComposePrompt={jest.fn()}
-        onApplyProposal={onApplyProposal}
-        onDismissProposal={onDismissProposal}
-      />,
-    );
-    expect(screen.getByText("Apply plan · 3 nodes, 2 edges")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Apply plan" }));
-    await waitFor(() => expect(onApplyProposal).toHaveBeenCalledWith("pp1"));
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
-    await waitFor(() => expect(onDismissProposal).toHaveBeenCalledWith("pp1"));
-  });
-
-  it("shows no review controls without a pending plan proposal", () => {
-    const other: AgentAttachment = {
-      ...attachment({ phase: "applied", appliedPlanId: "pp0", nodeRuns: { n: "pending" } }),
-      activeProposal: {
-        proposalId: "x1",
-        tool: "node.content.write",
-        nodeId: "n1",
-        summary: "Replace content",
-        status: "pending",
-      },
-    } as AgentAttachment;
-    render(
-      <AgentBuilderStrip
-        attachment={other}
+        attachment={withLandedPlan({ a: "created", b: "created" })}
         onSolve={jest.fn()}
         onComposePrompt={jest.fn()}
         onApplyProposal={jest.fn()}
         onDismissProposal={jest.fn()}
-      />,
-    );
-    expect(screen.queryByRole("button", { name: "Apply plan" })).toBeNull();
-  });
-
-  it("a failed apply surfaces the error", async () => {
-    const onApplyProposal = jest.fn().mockRejectedValue(new Error("the canvas changed since this plan was proposed"));
-    render(
-      <AgentBuilderStrip
-        attachment={withReview()}
-        onSolve={jest.fn()}
-        onComposePrompt={jest.fn()}
-        onApplyProposal={onApplyProposal}
-      />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Apply plan" }));
-    await waitFor(() =>
-      expect(screen.getByText(/canvas changed since/)).toBeInTheDocument(),
-    );
-  });
-});
-
-describe("AgentBuilderStrip simulation controls (dev/67-9, DEC-054)", () => {
-  const planReview = {
-    proposalId: "pp1",
-    tool: "dataflow.plan.write",
-    nodeId: "",
-    summary: "Apply plan · 2 nodes, 1 edges",
-    status: "pending" as const,
-  };
-
-  it("the validated sequence is the default; bulk apply is the labeled secondary", async () => {
-    const onSimulate = jest.fn().mockResolvedValue({ status: "completed" });
-    render(
-      <AgentBuilderStrip
-        attachment={{ ...attachment({ phase: "plan_review" }), activeProposal: planReview }}
-        onSolve={jest.fn()}
-        onComposePrompt={jest.fn()}
-        onApplyProposal={jest.fn()}
         onSimulate={onSimulate}
       />,
     );
+    expect(screen.getByText("Plan · 2 nodes, 1 edges")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Build & validate plan" }));
     await waitFor(() => expect(onSimulate).toHaveBeenCalledWith("auto"));
     fireEvent.click(screen.getByRole("button", { name: "Step" }));
     await waitFor(() => expect(onSimulate).toHaveBeenCalledWith("step"));
-    expect(
-      screen.getByRole("button", { name: "Apply all without validation" }),
-    ).toBeInTheDocument();
+    // The plan landed whole: no review controls are left for it.
+    expect(screen.queryByRole("button", { name: "Apply all without validation" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Apply plan" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Dismiss" })).toBeNull();
   });
 
-  it("a paused run narrates the reason and relabels Resume — parked plans included", () => {
+  it("a paused build narrates the reason and relabels Resume", () => {
     render(
       <AgentBuilderStrip
-        attachment={{
-          ...attachment({
-            phase: "simulating",
-            nodeStates: { a: "failed" },
-            pauseReason: { kind: "validation-failed", ref: "a", message: "validation failed — review the proposed content" },
-          } as never),
-          // The plan is PARKED behind the content review (dev/67-9).
-          activeProposal: { ...planReview, proposalId: "cp1", tool: "node.content.write" },
-          planProposal: planReview,
-        }}
+        attachment={withLandedPlan(
+          { a: "failed", b: "created" },
+          { pauseReason: { kind: "validation-failed", ref: "a", message: "validation failed and nothing was written" } },
+        )}
         onSolve={jest.fn()}
         onComposePrompt={jest.fn()}
         onSimulate={jest.fn()}
       />,
     );
     expect(screen.getByRole("button", { name: "Resume" })).toBeInTheDocument();
-    expect(screen.getByText(/Paused: validation failed/)).toBeInTheDocument();
+    expect(screen.getByText(/Paused: validation failed and nothing was written/)).toBeInTheDocument();
+  });
+
+  it("a validated node still waits for its approve step, so the controls stay", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={withLandedPlan({ a: "approved", b: "validated" })}
+        onSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+        onSimulate={jest.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Build & validate plan" })).toBeInTheDocument();
+  });
+
+  it("once every node is approved, nothing is left to build", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={withLandedPlan({ a: "approved", b: "approved" })}
+        onSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+        onSimulate={jest.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Build & validate plan" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Step" })).toBeNull();
+  });
+
+  it("no plan landed (or its Undo took it back): no build controls", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={attachment({ phase: "idle" })}
+        onSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+        onSimulate={jest.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Build & validate plan" })).toBeNull();
+  });
+
+  it("a failed build surfaces the error", async () => {
+    const onSimulate = jest.fn().mockRejectedValue(new Error("no plan to build: ask the agent for one"));
+    render(
+      <AgentBuilderStrip
+        attachment={withLandedPlan({ a: "created", b: "created" })}
+        onSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+        onSimulate={onSimulate}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Build & validate plan" }));
+    await waitFor(() => expect(screen.getByText(/no plan to build/)).toBeInTheDocument());
   });
 });
 
@@ -360,19 +357,12 @@ describe("AgentBuilderStrip running-status line (dev/83)", () => {
   });
 
   it("the auto-simulation drive shows Building without a fraction when no nodes ran yet", () => {
-    const withReview: AgentAttachment = {
-      ...attachment({ phase: "plan_review", planProposalId: "pp1" }),
-      activeProposal: {
-        proposalId: "pp1",
-        tool: "dataflow.plan.write",
-        nodeId: "",
-        summary: "Apply plan · 2 nodes",
-        status: "pending",
-      },
-    } as AgentAttachment;
+    // A landed plan whose nodes no Solve has run yet: the session lists none.
+    const landed = { ...withLandedPlan({ a: "created", b: "created" }) };
+    landed.builderSession = { ...landed.builderSession!, nodeRuns: {} };
     render(
       <AgentBuilderStrip
-        attachment={withReview}
+        attachment={landed}
         onSolve={jest.fn()}
         onComposePrompt={jest.fn()}
         onSimulate={() => new Promise(() => {})} // held in flight
@@ -385,19 +375,9 @@ describe("AgentBuilderStrip running-status line (dev/83)", () => {
   });
 
   it("the step drive shows Stepping", () => {
-    const withReview: AgentAttachment = {
-      ...attachment({ phase: "plan_review", planProposalId: "pp1" }),
-      activeProposal: {
-        proposalId: "pp1",
-        tool: "dataflow.plan.write",
-        nodeId: "",
-        summary: "Apply plan · 2 nodes",
-        status: "pending",
-      },
-    } as AgentAttachment;
     render(
       <AgentBuilderStrip
-        attachment={withReview}
+        attachment={withLandedPlan({ a: "created", b: "created" })}
         onSolve={jest.fn()}
         onComposePrompt={jest.fn()}
         onSimulate={() => new Promise(() => {})}
@@ -437,8 +417,8 @@ describe("AgentBuilderStrip missing specialist (dev/106)", () => {
     expect(screen.getByRole("button", { name: "Retry 2 failed" })).toBeEnabled();
     fireEvent.click(within(group).getByRole("button", { name: "Dismiss" }));
     await waitFor(() => expect(onDismissProposal).toHaveBeenCalledWith("ip1"));
-    // The plan-review controls are NOT conjured by an install proposal.
-    expect(screen.queryByRole("button", { name: "Apply plan" })).toBeNull();
+    // The plan's build controls are NOT conjured by an install proposal.
+    expect(screen.queryByRole("button", { name: "Build & validate plan" })).toBeNull();
   });
 
   it("renders one reason line for six identical node failures", () => {

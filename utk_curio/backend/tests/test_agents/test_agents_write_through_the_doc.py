@@ -15,7 +15,7 @@ import pytest
 
 from utk_curio.backend.tests._support.agent_routes import _auth
 
-#: The agent that writes node code: proposals' and Solve's.
+#: The agent that writes node code: its own changes and Solve's.
 NODE_BUILDER = "agent.curio.node-builder@1"
 
 
@@ -66,9 +66,9 @@ def _on_disk(user, project_id) -> dict:
     return storage.read_spec(_user_dir_key(user), project_id)
 
 
-def _minted_plan(client, user, token, project_id, monkeypatch):
-    """A Dataflow Builder plan minted and not applied, as Solve's tests mint
-    one (``TestSolve._applied_plan``): the attachment and the proposal id."""
+def _planner(client, user, token, project_id, monkeypatch):
+    """A Dataflow Builder whose next run lands a plan, as Solve's tests land
+    one (``test_routes_solve._landed_plan``): the attachment and the run."""
     from utk_curio.backend.tests.test_agents import test_routes_proposals as proposal_routes
 
     helper = proposal_routes.TestDataflowPlanMint()
@@ -79,12 +79,17 @@ def _minted_plan(client, user, token, project_id, monkeypatch):
                                    "output": {"path": "art-1", "dataType": "dataframe"}},
     )
     client.post(f"/api/agents/projects/{project_id}/install", json={"coord": NODE_BUILDER}, headers=_auth(token))
-    run = helper._run(client, token, project_id, att_id)
-    proposal = next(p for p in run.get_json()["content"] if p["type"] == "proposal")
-    return att_id, proposal["proposalId"]
+
+    def run():
+        response = helper._run(client, token, project_id, att_id)
+        assert response.status_code == 200, response.get_data(as_text=True)
+        return proposal_routes._landed_plan(response.get_json())
+
+    return att_id, run
 
 
 def _apply(client, token, project_id, att_id, proposal_id):
+    """Apply an install the attachment proposed, as its card's Apply does."""
     return client.post(
         f"/api/agents/projects/{project_id}/attachments/{att_id}/proposals/{proposal_id}/apply",
         headers=_auth(token),
@@ -95,83 +100,82 @@ def _solve(client, token, project_id, att_id):
     return client.post(f"/api/agents/projects/{project_id}/attachments/{att_id}/solve", json={}, headers=_auth(token))
 
 
-def _content_proposal(client, token, project_id, monkeypatch):
-    """A Node Builder's pending proposal of new code for node n1 ("print(1)"),
-    minted as the review tests mint one: the attachment and the proposal."""
+def _code_writer(client, token, project_id, monkeypatch):
+    """A Node Builder on node n1 ("print(1)") whose next run writes
+    "print(2)" into it, as the change tests script one: the attachment and the
+    run."""
     from utk_curio.backend.tests.test_agents import test_routes_proposals as proposal_routes
 
     helper = proposal_routes.TestReviewProposals()
-    att_id, _calls = helper._setup(client, token, project_id, monkeypatch)
-    proposal = helper._proposal_from_run(helper._run(client, token, project_id, att_id))
-    return att_id, proposal
+    att_id, calls = helper._setup(client, token, project_id, monkeypatch)
+    return att_id, calls, lambda: helper._run(client, token, project_id, att_id)
 
 
-def test_an_applied_code_proposal_reaches_a_tab_in_the_room(app, client, user_and_token, tmp_curio, alice_project,
-                                                            monkeypatch):
+def test_an_agents_code_write_reaches_a_tab_in_the_room(app, client, user_and_token, tmp_curio, alice_project,
+                                                        monkeypatch):
     from utk_curio.backend.app.collaboration.dataflow_docs import by_agent
     from utk_curio.backend.app.projects.services import _user_dir_key
 
     user, token = user_and_token
-    att_id, proposal = _content_proposal(client, token, alice_project, monkeypatch)
+    _att_id, _calls, run = _code_writer(client, token, alice_project, monkeypatch)
     tab = _tab(app, token, alice_project)
     origins = _origins(alice_project)
 
-    resp = _apply(client, token, alice_project, att_id, proposal["proposalId"])
+    resp = run()
 
     assert resp.status_code == 200, resp.get_data(as_text=True)
-    assert _nodes(tab)["n1"].get("content") == "print(2)", "the applied code never reached the tab"
+    assert [p["tool"] for p in resp.get_json()["content"] if p["type"] == "change"] == ["node.content.write"]
+    assert _nodes(tab)["n1"].get("content") == "print(2)", "the agent's code never reached the tab"
     assert by_agent(NODE_BUILDER, _user_dir_key(user), "apply") in origins.seen, origins.seen
 
 
-def test_code_typed_while_its_proposal_is_applied_stays_and_the_proposal_goes_stale(
+def test_code_typed_while_the_agent_writes_stays_and_the_write_is_refused(
     app, client, user_and_token, tmp_curio, alice_project, monkeypatch,
 ):
-    """alice types in n1 after the apply read the node and before it writes:
-    the doc keeps what she typed, the apply lands nothing and says the node
-    changed, as a node changed before the apply does."""
-    from utk_curio.backend.app.agents.application import attachments
+    """alice types in n1 after the write read the node and before it lands:
+    the doc keeps what she typed, the write lands nothing and the agent is
+    told the node took other code."""
+    from utk_curio.backend.app.agents.application.proposals import apply as agents_apply
 
     user, token = user_and_token
-    att_id, proposal = _content_proposal(client, token, alice_project, monkeypatch)
+    _att_id, calls, run = _code_writer(client, token, alice_project, monkeypatch)
     tab = _tab(app, token, alice_project)
-    listed = attachments.list_attachments
+    resolve = agents_apply._resolve_plan_ledger
     typed = []
 
-    def typed_meanwhile(spec):
+    def typed_meanwhile(spec, node_id):
         if not typed:
             typed.append(True)
             tab.edit(_typed("n1", "# mine\n"))
-        return listed(spec)
+        return resolve(spec, node_id)
 
-    monkeypatch.setattr(attachments, "list_attachments", typed_meanwhile)
+    monkeypatch.setattr(agents_apply, "_resolve_plan_ledger", typed_meanwhile)
 
-    resp = _apply(client, token, alice_project, att_id, proposal["proposalId"])
+    resp = run()
 
-    assert typed, "nothing was typed while the apply ran"
-    assert resp.status_code == 409, resp.get_data(as_text=True)
-    assert "changed since this was proposed" in resp.get_json()["error"]
+    assert typed, "nothing was typed while the write ran"
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert not [p for p in resp.get_json()["content"] if p["type"] in ("change", "proposal")]
+    assert "took other code while you worked" in calls[1][-1]["content"], calls[1][-1]["content"]
     node = next(n for n in _on_disk(user, alice_project)["dataflow"]["nodes"] if n["id"] == "n1")
-    assert node["content"] == "# mine\nprint(1)", "the apply replaced what alice typed"
-    record = attachments.get_attachment(_on_disk(user, alice_project), att_id)
-    assert record["activeProposal"]["status"] == "stale"
+    assert node["content"] == "# mine\nprint(1)", "the agent replaced what alice typed"
     assert _nodes(tab)["n1"]["content"] == "# mine\nprint(1)"
 
 
-def test_an_applied_plan_reaches_a_tab_in_the_room(app, client, user_and_token, tmp_curio, alice_project,
-                                                   monkeypatch):
+def test_a_plan_that_lands_reaches_a_tab_in_the_room(app, client, user_and_token, tmp_curio, alice_project,
+                                                     monkeypatch):
     user, token = user_and_token
-    att_id, proposal_id = _minted_plan(client, user, token, alice_project, monkeypatch)
+    _att_id, run = _planner(client, user, token, alice_project, monkeypatch)
     tab = _tab(app, token, alice_project)
 
-    resp = _apply(client, token, alice_project, att_id, proposal_id)
+    card = run()
 
-    assert resp.status_code == 200, resp.get_data(as_text=True)
-    created = {node["id"] for node in resp.get_json()["appliedGraph"]["nodes"]}
+    created = {node["id"] for node in card["canvas"]["nodes"]}
     seen = _nodes(tab)
     assert created and created <= set(seen), f"the plan's nodes never reached the tab: {sorted(seen)}"
     ends = {(edge.get("source"), edge.get("target")) for edge in tab.dataflow()["edges"]}
-    applied = resp.get_json()["appliedGraph"].get("edges") or []
-    assert {(edge.get("source"), edge.get("target")) for edge in applied} <= ends
+    landed = card["canvas"].get("edges") or []
+    assert landed and {(edge.get("source"), edge.get("target")) for edge in landed} <= ends
 
 
 def test_a_solve_waves_code_reaches_a_tab_in_the_room(app, client, user_and_token, tmp_curio, alice_project,
@@ -179,8 +183,8 @@ def test_a_solve_waves_code_reaches_a_tab_in_the_room(app, client, user_and_toke
     from utk_curio.backend.app.collaboration.dataflow_docs import Actor
 
     user, token = user_and_token
-    att_id, proposal_id = _minted_plan(client, user, token, alice_project, monkeypatch)
-    assert _apply(client, token, alice_project, att_id, proposal_id).status_code == 200
+    att_id, run = _planner(client, user, token, alice_project, monkeypatch)
+    run()
     tab = _tab(app, token, alice_project)
     origins = _origins(alice_project)
 
@@ -206,8 +210,8 @@ def test_code_typed_while_a_solve_wave_runs_stays_and_the_wave_says_so(app, clie
     from utk_curio.backend.app.agents.application.solve.batch import SolveBatch
 
     user, token = user_and_token
-    att_id, proposal_id = _minted_plan(client, user, token, alice_project, monkeypatch)
-    assert _apply(client, token, alice_project, att_id, proposal_id).status_code == 200
+    att_id, run = _planner(client, user, token, alice_project, monkeypatch)
+    run()
     tab = _tab(app, token, alice_project)
     apply_contents = SolveBatch.apply_contents
     typed: list = []
