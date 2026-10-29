@@ -263,12 +263,21 @@ test("this tab's presence goes once synced, everyone else's arrives, and a disco
 /** The message that answers a tab's queued updates once their batch is applied. */
 const KEPT = "yjs_kept";
 
-test("an update the server queued stays in flight until its kept message answers it", async () => {
+/** A tab synced with *server*, its answer to the server's step 1 answered too,
+ *  so it holds nothing in flight. */
+function syncedTab(server: FakeServer): { socket: FakeSocket; provider: DataflowDocProvider } {
     const socket = new FakeSocket();
-    const server = new FakeServer(DATAFLOW);
     const provider = new DataflowDocProvider(PROJECT, { canWrite: true });
     provider.attach(socket);
     server.start(socket, socket.messages()[0]);
+    for (const step2 of socket.messages().filter((m) => kindOf(m) === "step2")) server.take(step2);
+    expect(provider.isKept()).toBe(true);
+    return { socket, provider };
+}
+
+test("an update the server queued stays in flight until its kept message answers it", async () => {
+    const server = new FakeServer(DATAFLOW);
+    const { socket, provider } = syncedTab(server);
 
     typeInto(provider.doc, "# queued\n");
     const [update] = socket.messages().filter((m) => kindOf(m) === "update");
@@ -285,11 +294,8 @@ test("an update the server queued stays in flight until its kept message answers
 });
 
 test("one kept message answers each update it names, even before their queued acks come", () => {
-    const socket = new FakeSocket();
     const server = new FakeServer(DATAFLOW);
-    const provider = new DataflowDocProvider(PROJECT, { canWrite: true });
-    provider.attach(socket);
-    server.start(socket, socket.messages()[0]);
+    const { socket, provider } = syncedTab(server);
 
     typeInto(provider.doc, "a");
     typeInto(provider.doc, "b");
@@ -308,11 +314,8 @@ test("one kept message answers each update it names, even before their queued ac
 });
 
 test("a kept message saying the server lost this tab's sync starts the sync again", () => {
-    const socket = new FakeSocket();
     const server = new FakeServer(DATAFLOW);
-    const provider = new DataflowDocProvider(PROJECT, { canWrite: true });
-    provider.attach(socket);
-    server.start(socket, socket.messages()[0]);
+    const { socket, provider } = syncedTab(server);
 
     typeInto(provider.doc, "# lost\n");
     const [update] = socket.messages().filter((m) => kindOf(m) === "update");
