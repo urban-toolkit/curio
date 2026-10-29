@@ -9,6 +9,7 @@ import {
   type DragEvent,
 } from "react";
 import { useFlowContext } from "../../../providers/FlowProvider";
+import { useAgentsDataflowId } from "../../../providers/agents/useAgentsDataflowId";
 import { hostedGuestSignInNote, useHostedGuest } from "../../apiSettings/useHostedGuest";
 import { useDatasetDetails, viewDatasetDetailsToast } from "./datasetDetailsContext";
 import { useToastContext } from "../../../providers/ToastProvider";
@@ -50,6 +51,10 @@ export interface DatasetConfirmAction {
 export function useDatasetCatalogDrawer(presented: boolean) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { projectId, projectName, ensureProjectId, setDataflowDatasets, outputs, nodes, defaultSaveOutputDataset, pendingInstalls, beginPendingInstall, endPendingInstall } = useFlowContext();
+  // The dataflow the drawer lists, by the rule the canvas's agents and runs
+  // follow: the one the owner's canvas saves, the one an invited editor's
+  // route opened, none on a watcher's canvas.
+  const dataflowId = useAgentsDataflowId();
   const hostedGuest = useHostedGuest();
   // The canvas's one dataset details modal, the same one the palettes and the
   // Dataset Finder open (`CanvasDatasetDetailsProvider`), and the one this
@@ -77,7 +82,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
   }, [search]);
 
   const catalog = useDatasetCatalog({
-    dataflowId: projectId,
+    dataflowId,
     search: debouncedSearch,
     sort,
     origin: tabOrigin(tab),
@@ -145,16 +150,16 @@ export function useDatasetCatalogDrawer(presented: boolean) {
       // created on its first save, so before that nothing is installed and this
       // tab rendered empty even for datasets the user had just added to every
       // project. Those ARE in this dataflow, one save away.
-      list = list.filter((item) => isInThisDataflow(item, Boolean(projectId)));
+      list = list.filter((item) => isInThisDataflow(item, Boolean(dataflowId)));
     } else if (tab === "computed") {
       list = list.filter((item) => item.origin === "computed" || Boolean(item.producerNodeId));
     }
     return list.filter(matchesSearch);
-  }, [catalogItems, tab, debouncedSearch, projectId]);
+  }, [catalogItems, tab, debouncedSearch, dataflowId]);
 
   const installedCount = useMemo(
-    () => catalogItems.filter((item) => isInThisDataflow(item, Boolean(projectId))).length,
-    [catalogItems, projectId],
+    () => catalogItems.filter((item) => isInThisDataflow(item, Boolean(dataflowId))).length,
+    [catalogItems, dataflowId],
   );
 
   const computedCount = useMemo(
@@ -612,6 +617,7 @@ The dataset stays in your Data Catalog and in any other dataflow using it.`) +
   return {
     fileInputRef,
     projectId,
+    dataflowId,
     tab,
     setTab,
     search,

@@ -185,7 +185,7 @@ class TestCollectionsInDatasetWidgets:
         scanned = []
         monkeypatch.setattr(
             exec_collections, "resolve_exec_collections",
-            lambda code, user_key, user=None: scanned.append(code) or ({}, None),
+            lambda code, user_key, user=None, dataflow_id=None: scanned.append(code) or ({}, None),
         )
         data = {"name": "data", "type": "dataset", "label": "Data", "default": ""}
         load = {**_node("load", node_type="curio.builtin/data-loading",

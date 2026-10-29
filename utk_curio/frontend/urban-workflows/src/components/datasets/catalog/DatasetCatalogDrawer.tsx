@@ -31,6 +31,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
   const drawerRef = useRef<HTMLElement>(null);
   const {
     projectId,
+    dataflowId,
     tab,
     setTab,
     search,
@@ -225,7 +226,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
                     // handed a card offering "Add to project". Listed as in,
                     // told it was out.
                     const isInstalled =
-                      isInThisDataflow(dataset, Boolean(projectId))
+                      isInThisDataflow(dataset, Boolean(dataflowId))
                       || dataset.origin === "source_node";
                     return (
                       <DatasetCard

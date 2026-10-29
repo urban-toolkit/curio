@@ -21,10 +21,16 @@ class InstalledDatasetRepository:
     def __init__(self, user: Any | None):
         self.user = user
         #: The folders, in another account's store, of the datasets the
-        #: dataflows read here list: an editor the dataflow's owner invited
-        #: reads those of the owner's store, and no other
-        #: (``PathResolver._allowed_read_roots``).
-        self.listed_folders: list[Path] = []
+        #: dataflows read here list, each with the key of that store: an
+        #: editor the dataflow's owner invited reads those of the owner's
+        #: store, and no other (``PathResolver._allowed_read_roots``).
+        self._listed: dict[Path, str] = {}
+
+    @property
+    def listed_folders(self) -> list[Path]:
+        """The folders of another account's store this reader reads: those of
+        the datasets the dataflows read here list, once read."""
+        return list(self._listed)
 
     def _dataflow_store(self, dataflow_id: str) -> tuple[Any, str]:
         """The dataflow *dataflow_id* and the key of its owner's store, which
@@ -73,7 +79,16 @@ class InstalledDatasetRepository:
     def in_listed_folder(self, path: str | Path) -> bool:
         """Whether *path* is in one of :attr:`listed_folders`: a dataset of a
         dataflow's owner, which an editor of the dataflow reads."""
-        return any(is_within(Path(path), folder) for folder in self.listed_folders)
+        return self.listed_store(path) is not None
+
+    def listed_store(self, path: str | Path) -> str | None:
+        """The key of the store whose folder of :attr:`listed_folders` holds
+        *path*: the dataflow owner's, for a dataset of hers the dataflow lists
+        and an editor of it reads. None for any other path."""
+        return next(
+            (key for folder, key in self._listed.items() if is_within(Path(path), folder)),
+            None,
+        )
 
     def list_items(self, dataflow_id: str | None) -> list[dict[str, Any]]:
         if not dataflow_id:
@@ -113,8 +128,8 @@ class InstalledDatasetRepository:
 
                 try:
                     installed_dir = dataset_dir(store_key, dir_name)
-                    if listed_for_an_editor and installed_dir not in self.listed_folders:
-                        self.listed_folders.append(installed_dir)
+                    if listed_for_an_editor:
+                        self._listed.setdefault(installed_dir, store_key)
                     row = rows.get(dir_name)
                     if row is not None:
                         from utk_curio.backend.app.datasets.repositories import (

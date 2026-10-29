@@ -111,7 +111,9 @@ def _run_node_events(
         # with. An untagged artifact is readable by any signed-in session.
         acting_user = agents_spec_reads._acting_user()
         artifact_session = agents_spec_reads._acting_token()
-        collections, media_dir = resolve_spec_collections(spec, user_key, user=acting_user)
+        collections, media_dir = resolve_spec_collections(
+            spec, user_key, user=acting_user, dataflow_id=project_id,
+        )
         # The paths of the Data Catalog datasets the run reads, and how
         # curio_load_data reads a layer group, as Play and Solve's runs
         # resolve them: over each node's code as the run writes it, so the id

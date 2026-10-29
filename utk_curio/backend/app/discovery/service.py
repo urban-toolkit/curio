@@ -94,12 +94,17 @@ class DiscoveryService:
         icon_url_for=None,
         transport=None,
         budget=None,
+        dataflow_id: str | None = None,
     ) -> None:
         self.user_key = user_key or "-"
         # The ``User`` row, when there is one. Only ``credentials`` reads it,
         # and only to answer "does this account hold that slot" and to hand the
         # transport one header.
         self.user = user
+        #: The dataflow whose collections :meth:`collection` finds besides
+        #: the account's own: a run's, when it names one.
+        self.dataflow_id = dataflow_id
+        self._dataset_catalog = None
         self._budget = budget
         # A caller may pass a transport (tests, and the agent runtime threading
         # its own call budget through). Otherwise one is built per request, so
@@ -766,19 +771,51 @@ class DiscoveryService:
 
     # ── collections ────────────────────────────────────────────────────────
 
-    def collection(self, dataset_id: str) -> tuple[dict[str, Any], DiscoverySourceManifest]:
-        """This account's collection dataset and the source its files are in."""
-        from utk_curio.backend.app.datasets.service import DatasetCatalogError, DatasetCatalogService
-        from utk_curio.backend.app.discovery.domain.errors import ResourceNotFound
+    def _datasets(self):
+        """The Data Catalog this service finds collections in, the account's."""
+        if self._dataset_catalog is None:
+            from utk_curio.backend.app.datasets.service import DatasetCatalogService
 
+            self._dataset_catalog = DatasetCatalogService(self.user)
+        return self._dataset_catalog
+
+    def collection(self, dataset_id: str) -> tuple[dict[str, Any], DiscoverySourceManifest]:
+        """This account's collection dataset and the source its files are in.
+
+        With a dataflow (*dataflow_id*), the collection is looked up in the
+        Data Catalog's listing of that dataflow, as a run's datasets are
+        (``DatasetCatalogService.get_dataset``): for its owner and for an
+        editor the owner invited, a collection the dataflow lists counts too,
+        read from the owner's store. For anyone else the dataflow lists
+        nothing, and the lookup is as with no dataflow.
+        """
+        from utk_curio.backend.app.datasets.service import DatasetCatalogError
+        from utk_curio.backend.app.discovery.domain.errors import ResourceNotFound
+        from utk_curio.backend.app.projects.repositories import NotFoundError
+
+        catalog = self._datasets()
         try:
-            item = DatasetCatalogService(self.user).get_dataset(dataset_id)
+            try:
+                # A dataflow's catalog is an account's; with none, the shared one.
+                item = catalog.get_dataset(dataset_id, dataflow_id=self.dataflow_id if self.user else None)
+            except NotFoundError:
+                # A dataflow this account neither owns nor edits
+                # (``InstalledDatasetRepository._dataflow_store``).
+                item = catalog.get_dataset(dataset_id)
         except DatasetCatalogError as exc:
             raise ResourceNotFound(f"no dataset {dataset_id!r}") from exc
         block = item.get("collection") or {}
         if item.get("format") != "collection" or not block.get("sourceId"):
             raise ResourceNotFound(f"{dataset_id!r} is not a collection")
         return item, self._catalog.get_manifest(_renamed_source_dir(str(block["sourceId"])))
+
+    def collection_store(self, item: dict[str, Any]) -> str:
+        """The key of the store that holds *item*, a collection :meth:`collection`
+        found, which keeps its cached files: the dataflow owner's for one the
+        dataflow lists that an editor of it reads, else this account's."""
+        index_path = str(item.get("path") or "")
+        listed = self._datasets().installed.listed_store(index_path) if index_path else None
+        return listed or self.user_key
 
     def collection_status(self, dataset_id: str, *, samples: int = 12) -> dict[str, Any]:
         """Where a collection's files are, and a few of them to show.
