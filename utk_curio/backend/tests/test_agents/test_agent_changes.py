@@ -169,8 +169,10 @@ class TestEachFamilyLandsAtOnce:
         user, token = user_and_token
         project, att = _setup(client, user, token, coord=DFB)
         # The doc open, as a tab holds it: its first points are the dataflow
-        # as it is, so what follows is the plan's alone.
-        dataflow_docs.live(_user_dir_key(user), project)
+        # as it is, so what follows is the plan's alone. A read of the spec
+        # opens no doc no one holds (``dataflow_docs.live`` reads the file).
+        with dataflow_docs._held(project, _user_dir_key(user)):
+            pass
         before = len(history.points(_user_dir_key(user), project))
         assert before, "the open made no first points"
         plan = {
