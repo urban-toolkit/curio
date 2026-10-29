@@ -16,7 +16,7 @@ import { InProjectScenarios } from "./InProjectScenarios";
 import { ScenarioCard } from "./ScenarioCard";
 import { ScenarioDetailModal } from "./ScenarioDetailModal";
 import { ScenarioSetGroup } from "./ScenarioSetGroup";
-import { scenarioProjectPath } from "./scenarioFacts";
+import { rowHighlight, scenarioProjectPath } from "./scenarioFacts";
 import { useScenarioCatalogDrawer } from "./useScenarioCatalogDrawer";
 import styles from "./ScenarioCatalogDrawer.module.css";
 
@@ -222,6 +222,7 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
                       <ScenarioCard
                         key={scenario.key}
                         scenario={scenario}
+                        highlight={rowHighlight(scenario)}
                         onOpenDetails={openScenarioDetails}
                         onDragStart={(event) => handleScenarioDragStart(scenario, event)}
                         onDragEnd={handleScenarioDragEnd}

@@ -34,7 +34,7 @@ def _kept(scenario, **extra):
 
 def _listed(scenario, set_name, **extra):
     """*scenario* as a project summary lists it, in the set *set_name*."""
-    return {**scenario, "set": f"set-{scenario['id']}", "setName": set_name, **extra}
+    return {**scenario, "set": f"set-{scenario['id']}", "context": [], "outcomes": [], "setName": set_name, **extra}
 
 
 def _scenarios():

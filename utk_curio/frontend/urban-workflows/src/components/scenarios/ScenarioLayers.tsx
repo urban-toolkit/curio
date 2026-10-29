@@ -60,6 +60,11 @@ function cardsLayout(rows: readonly string[], header: number): BoxLayout {
   return layout;
 }
 
+/** How tall a collapsed scenario's box of *nodeIds* is. */
+export function scenarioBoxHeight(nodeIds: readonly string[]): number {
+  return cardsLayout(nodeIds, SCENARIO_BOX_HEADER).height;
+}
+
 /** A collapsed scenario's box: its own nodes. */
 export function boxLayout(box: ScenarioBox): BoxLayout {
   return cardsLayout(box.rows, SCENARIO_BOX_HEADER);

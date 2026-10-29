@@ -62,6 +62,12 @@ export function scenarioProjectPath(projectId: string): string {
 
 /** The project graph's marks: the levers in the scenario's colour, the fixed
  *  context dashed. */
+/** A listing row's scenario marked on its project's graph, as its details
+ *  mark it; a row without its marks marks nothing. */
+export function rowHighlight(row: ScenarioRow): ThumbnailHighlight | null {
+  return row.marks ? { color: row.color, ...row.marks } : null;
+}
+
 export function scenarioHighlight(details: ScenarioDetails): ThumbnailHighlight {
   return {
     color: details.color,

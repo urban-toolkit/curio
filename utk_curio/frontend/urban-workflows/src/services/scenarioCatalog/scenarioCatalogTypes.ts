@@ -24,6 +24,9 @@ export interface ScenarioRow {
   project: ScenarioProjectRef;
   /** Its project's graph, drawn as plain boxes with its own nodes marked. */
   preview: GraphPreview | null;
+  /** The ids its card marks on `preview`: its own nodes, and the shared
+   *  context and outcomes it keeps. */
+  marks?: { members: string[]; context: string[]; outcomes: string[] };
 }
 
 export interface ScenarioCatalogResponse {

@@ -22,6 +22,7 @@ import { liveScenarios, scenarioParts } from "../../utils/scenarios/scenarioPart
 // The context's own module, not the provider's: the provider mounts the
 // drawer, whose In project tab runs these commands.
 import { useScenarioCatalogDrawer } from "../../providers/scenarioCatalog/scenarioCatalogDrawerContext";
+import { scenarioBoxHeight } from "./ScenarioLayers";
 import { useScenarioUi } from "./scenarioUi";
 
 /** Room left between a selection and its duplicate, below it. */
@@ -156,29 +157,38 @@ export function useScenarioActions() {
    * Duplicate scenario: its own nodes copied below them, made a scenario of
    * the same set with the next color and the same shared context and
    * outcomes, which the define panel then opens on, at Name & set, to be
-   * named, recolored or put in another set.
+   * named, recolored or put in another set. A collapsed scenario stays
+   * collapsed, and so does its copy, its box just below the original's.
    */
   const duplicateScenario = useCallback(
     (id: string) => {
       const scenario = scenarios.find((s) => s.id === id);
       if (!scenario || scenario.nodes.length === 0) return;
-      // Its nodes are copied where they stand, so the original shows.
-      const shown = scenario.collapsed ? updateScenario(scenarios, id, { collapsed: false }) : scenarios;
+      let box: { x: number; y: number } | undefined;
+      if (scenario.collapsed) {
+        const members = reactFlow.getNodes().filter((n) => scenario.nodes.includes(n.id));
+        const at = scenario.box ?? {
+          x: Math.min(...members.map((n) => n.position.x)),
+          y: Math.min(...members.map((n) => n.position.y)),
+        };
+        box = { x: at.x, y: at.y + scenarioBoxHeight(scenario.nodes) + DUPLICATE_GAP };
+      }
       const ids = copyBelow(scenario.nodes);
       const twin: Scenario = {
         id: uuid(),
-        name: nextScenarioName(shown),
-        color: nextScenarioColor(shown),
+        name: nextScenarioName(scenarios),
+        color: nextScenarioColor(scenarios),
         nodes: scenario.nodes.map((n) => ids.get(n)).filter((n): n is string => Boolean(n)),
         ...(scenario.set ? { set: scenario.set } : {}),
         ...(scenario.context ? { context: [...scenario.context] } : {}),
         ...(scenario.outcomes ? { outcomes: [...scenario.outcomes] } : {}),
+        ...(box ? { collapsed: true, box } : {}),
       };
-      setScenarios([...shown, twin]);
+      setScenarios([...scenarios, twin]);
       closeScenarioCatalogDrawer();
       setDefine({ mode: "edit", scenarioId: twin.id, step: 3 });
     },
-    [scenarios, copyBelow, setScenarios, closeScenarioCatalogDrawer, setDefine],
+    [scenarios, reactFlow, copyBelow, setScenarios, closeScenarioCatalogDrawer, setDefine],
   );
 
   /** Run the scenario's levers, and only those of its context nodes that cannot be reused. */

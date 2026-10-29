@@ -42,7 +42,9 @@ def scenario_key(project_id: str, scenario_id: str) -> str:
 
 
 def scenario_row(scenario: dict, project: dict, preview: dict | None) -> dict[str, Any]:
-    """What a client is told about one scenario in a listing."""
+    """What a client is told about one scenario in a listing: with the ids of
+    its own nodes and of the shared context and outcomes it keeps, which its
+    card marks on the project's graph."""
     return {
         "key": scenario_key(project["id"], scenario["id"]),
         "id": scenario["id"],
@@ -50,6 +52,11 @@ def scenario_row(scenario: dict, project: dict, preview: dict | None) -> dict[st
         "color": scenario["color"],
         "description": scenario.get("description", ""),
         "nodeCount": len(scenario.get("nodes") or []),
+        "marks": {
+            "members": list(scenario.get("nodes") or []),
+            "context": list(scenario.get("context") or []),
+            "outcomes": list(scenario.get("outcomes") or []),
+        },
         "set": {"id": scenario.get("set", ""), "name": scenario.get("setName", "")},
         "project": project,
         "preview": preview,

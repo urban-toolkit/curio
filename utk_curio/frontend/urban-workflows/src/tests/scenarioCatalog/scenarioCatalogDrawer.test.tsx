@@ -206,6 +206,20 @@ describe("the canvas Scenario Catalog drawer", () => {
     expect(api.getScenario).toHaveBeenCalledWith("p-heat", "s-cool");
   });
 
+  test("a card's graph marks its scenario as its details do", async () => {
+    api.listCatalog.mockResolvedValue({
+      items: [heatScenario({ marks: { members: ["year", "filter"], context: ["load"], outcomes: ["chart"] } })],
+    });
+    renderDrawer();
+    await within(root()).findByText("Cool roofs");
+    const svg = card("p-heat/s-cool").querySelector("svg")!;
+    expect(svg).toHaveAttribute("data-thumbnail-highlight", "true");
+    const roles = Array.from(svg.querySelectorAll("g[data-thumbnail-role]")).map((g) =>
+      g.getAttribute("data-thumbnail-role"),
+    );
+    expect(roles.sort()).toEqual(["context", "member", "member", "outcome"]);
+  });
+
   test("Open source project goes there and closes the drawer", async () => {
     const { onRequestClose } = renderDrawer();
     await within(root()).findByText("Cool roofs");

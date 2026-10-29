@@ -173,6 +173,26 @@ describe("the scenario commands open the In project tab", () => {
     expect(document.querySelector(DRAWER)).toBeNull();
   });
 
+  test("Duplicate scenario keeps a collapsed scenario collapsed, and its copy too, boxed just below", async () => {
+    const original = {
+      id: "s1", name: "Doubled", color: "#2a9d8f", nodes: ["scale"], set: "park", collapsed: true, box: { x: 40, y: 60 },
+    };
+    mockFlow.scenarios = [original];
+    mockFlow.scenarioSets = [{ id: "park", name: "Heights" }];
+    mockFlow.setScenarios = jest.fn((next) => {
+      mockFlow.scenarios = next;
+    });
+    renderCommands();
+    fireEvent.click(screen.getByRole("button", { name: "duplicate the scenario" }));
+    const [next] = mockFlow.setScenarios.mock.calls[0];
+    // The original is left as it was: still collapsed, its box where it was.
+    expect(next[0]).toBe(original);
+    expect(next[1]).toEqual(expect.objectContaining({ nodes: ["scale-copy"], collapsed: true }));
+    expect(next[1].box.x).toBe(40);
+    expect(next[1].box.y).toBeGreaterThan(60);
+    await screen.findByTestId("scenario-define-panel");
+  });
+
   test("a command that is refused opens nothing", async () => {
     mockCanvas.nodes = [node("load", false), node("scale", false)];
     mockFlow.nodes = mockCanvas.nodes;

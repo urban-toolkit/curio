@@ -266,8 +266,9 @@ def kept_scenarios(spec: object) -> tuple[list[dict], list[dict]]:
 
 def scenario_summaries(spec: object) -> list[dict]:
     """The scenarios a project summary lists: each one's id, name, color,
-    description, members, and set with its name."""
-    keep = ("id", "name", "color", "description", "nodes", "set")
+    description, members, shared context and outcomes, and set with its
+    name."""
+    keep = ("id", "name", "color", "description", "nodes", "context", "outcomes", "set")
     kept, sets = kept_scenarios(spec)
     names = {x["id"]: x["name"] for x in sets}
     return [
