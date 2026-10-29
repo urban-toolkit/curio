@@ -5,15 +5,15 @@ import path from "path";
  * The canvas title's rename has to reach the PROJECT ROW, not just the canvas.
  *
  * #230: committing the title only called `setIsEditing(false)`, so the new name
- * lived in `workflowName` alone. `saveCurrentProject` sends `projectName` — set
- * only by `loadProject` — so the save re-sent the name the dataflow was opened
- * under and the Projects card never moved. `renameDataflow` writes both stores
- * and marks the dataflow dirty; committing must go through it.
+ * lived in `workflowName` alone. A save sent `projectName`, set only by
+ * `loadProject`, so the save re-sent the name the dataflow was opened under and
+ * the Projects card never moved. `renameDataflow` writes both stores (on a
+ * dataflow bound to its doc, the project row's name as well) and marks the
+ * dataflow dirty; committing must go through it.
  *
- * Source-read, following `saveStatusIndicator.test.ts` on this same component:
- * UpMenu needs the whole provider stack to render, and nothing in the suite
- * mounts it. The behaviour itself is asserted where it can be — against the real
- * app — by the `renaming-a-dataflow-renames-it-everywhere` walkthrough and by
+ * Source-read, following `saveStatusIndicator.test.ts` on this same component.
+ * The behaviour itself is asserted where it can be, against the real app, by
+ * the `renaming-a-dataflow-renames-it-everywhere` walkthrough and by
  * `test_project_save_load.py`, and the hook contract by
  * `useWorkflowOperations.rename.test.ts`.
  */

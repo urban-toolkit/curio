@@ -1,12 +1,14 @@
 /**
  * A saved dataflow whose node still carries comments (`metadata.comments`)
- * opens without them, and its next save writes none. The load neither refuses
- * the dataflow nor migrates it: the key stays behind, and the rest of the node
- * comes through.
+ * opens without them, and what the canvas sends of it writes none. The load
+ * neither refuses the dataflow nor migrates it: the key stays behind, and the
+ * rest of the node comes through.
  *
  * The dataflow is reopened as `ProjectLoader` opens it, `loadProject` and then
- * `useCode().loadTrill`, with the harness of `reopenKeepsRestoredOutputs.test.tsx`,
- * and saved through the save queue, as Save and the autosave save it.
+ * `useCode().loadTrill`, with the harness of `reopenKeepsRestoredOutputs.test.tsx`.
+ * No tab saves the dataflow: the doc writes what the canvas changes, through
+ * the serializer a dataflow made from the canvas goes through, which Save a
+ * copy is.
  */
 import React from 'react';
 import { render, act } from '@testing-library/react';
@@ -25,6 +27,7 @@ if (!(global as any).DOMMatrixReadOnly) {
 const mockShowToast = jest.fn();
 const mockGetProject = jest.fn();
 const mockUpdateProject = jest.fn();
+const mockCreateProject = jest.fn();
 
 jest.mock('../../api/projectsApi', () => {
   const actual = jest.requireActual('../../api/projectsApi');
@@ -34,6 +37,7 @@ jest.mock('../../api/projectsApi', () => {
       ...actual.projectsApi,
       get: (...args: any[]) => mockGetProject(...args),
       update: (...args: any[]) => mockUpdateProject(...args),
+      create: (...args: any[]) => mockCreateProject(...args),
     },
   };
 });
@@ -211,6 +215,9 @@ beforeEach(() => {
   mockUpdateProject.mockImplementation(async (id: string) => ({
     id, name: 'Commented reopen', spec_revision: 4, spec: spec(), categories: {}, outputs: [],
   }));
+  mockCreateProject.mockImplementation(async (body: any) => ({
+    id: 'the-copy', name: body.name, spec_revision: 1, spec: body.spec, categories: {}, outputs: [],
+  }));
 });
 
 afterEach(() => {
@@ -228,19 +235,20 @@ describe('a saved dataflow whose node carries comments', () => {
     expect(node.data).not.toHaveProperty('comments');
   });
 
-  test('saves back without them', async () => {
+  test('a dataflow made from it carries none of them', async () => {
     await reopen();
 
     await act(async () => {
-      await api.requestProjectSave();
+      await api.saveAsNewProject('Commented reopen (copy)', PROJECT_ID);
     });
 
-    expect(mockUpdateProject).toHaveBeenCalled();
-    const [savedId, saved] = mockUpdateProject.mock.calls[mockUpdateProject.mock.calls.length - 1];
-    expect(savedId).toBe(PROJECT_ID);
-    const savedNode = saved.spec.dataflow.nodes.find((n: any) => n.id === DISCUSSED);
-    expect(savedNode.metadata.packageTemplateLabel).toBe(LABEL);
-    // Checked last, so a canvas that still saves them fails here and nowhere earlier.
-    expect(savedNode.metadata).not.toHaveProperty('comments');
+    expect(mockCreateProject).toHaveBeenCalledTimes(1);
+    // No tab sends the dataflow it is open on.
+    expect(mockUpdateProject).not.toHaveBeenCalled();
+    const [sent] = mockCreateProject.mock.calls[0];
+    const sentNode = sent.spec.dataflow.nodes.find((n: any) => n.id === DISCUSSED);
+    expect(sentNode.metadata.packageTemplateLabel).toBe(LABEL);
+    // Checked last, so a canvas that still sends them fails here and nowhere earlier.
+    expect(sentNode.metadata).not.toHaveProperty('comments');
   });
 });

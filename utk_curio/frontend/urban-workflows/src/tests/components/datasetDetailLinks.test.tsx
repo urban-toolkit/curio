@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import React from "react";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 
@@ -91,7 +91,11 @@ const LocationProbe: React.FC = () => {
 
 function renderModal(
   entry: string,
-  props: { unsavedChanges?: boolean; fallbackDataset?: DatasetCatalogItem | null } = {},
+  props: {
+    unsavedChanges?: boolean;
+    fallbackDataset?: DatasetCatalogItem | null;
+    whenChangesKept?: () => Promise<boolean>;
+  } = {},
 ) {
   const onClose = jest.fn();
   render(
@@ -192,6 +196,34 @@ describe("leaving a dataflow with unsaved changes from its details", () => {
   });
 });
 
+describe("leaving a dataflow bound to its doc from its details", () => {
+  test("waits for the server to have the last change, then goes without asking", async () => {
+    let kept!: (answer: boolean) => void;
+    const whenChangesKept = jest.fn(() => new Promise<boolean>((resolve) => { kept = resolve; }));
+    const { onClose } = renderModal("/dataflow/flow-1", { whenChangesKept });
+    fireEvent.click(portalLink());
+
+    // A change still on its way would be lost on leaving now.
+    expect(whenChangesKept).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(location).toBe("/dataflow/flow-1");
+
+    await act(async () => { kept(true); });
+    expect(screen.queryByRole("dialog", { name: "Discard unsaved changes?" })).toBeNull();
+    expect(onClose).toHaveBeenCalled();
+    expect(location).toBe(PORTAL);
+  });
+
+  test("asks when the server cannot have the last change in time", async () => {
+    const { onClose } = renderModal("/dataflow/flow-1", { whenChangesKept: () => Promise.resolve(false) });
+    await act(async () => { fireEvent.click(portalLink()); });
+
+    expect(screen.getByRole("dialog", { name: "Discard unsaved changes?" })).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(location).toBe("/dataflow/flow-1");
+  });
+});
+
 describe("the modal's account status", () => {
   test("reads the all-projects list when the caller does not pass it", async () => {
     renderModal("/catalog/data");
@@ -220,5 +252,17 @@ describe("the canvas tells the modal", () => {
       "utf8"
     );
     expect(src).toContain("unsavedChanges={projectDirty}");
+  });
+
+  test.each([
+    "components/datasets/catalog/CanvasDatasetDetailsProvider.tsx",
+    "components/packages/publishing/NodeCatalogDrawer.tsx",
+    "components/menus/nodes/modelsPalette/ModelsPaletteDropdown.tsx",
+    "components/scenarios/catalog/ScenarioCatalogDrawer.tsx",
+  ])("how to wait for the server to have the last change, in %s", (file) => {
+    // Every details window the canvas opens leaves the way the top bar does.
+    const src = fs.readFileSync(path.resolve(__dirname, "../..", file), "utf8");
+    expect(src).toContain("unsavedChanges={projectDirty}");
+    expect(src).toContain("whenChangesKept={whenChangesKept}");
   });
 });

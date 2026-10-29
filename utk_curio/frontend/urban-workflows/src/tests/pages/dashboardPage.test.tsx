@@ -97,7 +97,9 @@ function flow(over: Record<string, unknown> = {}) {
     projectId: ID,
     projectName: "Chicago trips",
     projectDirty: false,
-    saveCurrentProject: jest.fn().mockResolvedValue({}),
+    saveDashboardLayout: jest.fn().mockResolvedValue(undefined),
+    saveDataflow: jest.fn().mockResolvedValue({ id: ID, created: false }),
+    recordOutputs: jest.fn().mockResolvedValue(undefined),
     ...over,
   };
 }
@@ -170,15 +172,19 @@ describe("editing the layout", () => {
     expect(mockFlow.setDashboardLocked).toHaveBeenCalledWith(false);
   });
 
-  test("saving writes the layout, leaves the outputs alone and writes every control as saved", async () => {
-    // The widgets the page opened with (#1117): never a value tried on it.
-    const saved = new Map([["param", [{ name: "period", type: "choice", default: "Date" }]]]);
-    mockFlow = flow({ dashboardLocked: false, dashboardSavedWidgets: () => saved });
+  test("saving writes the layout alone: no save of the dataflow, and the outputs left alone", async () => {
+    // The tiles' places are all it sends, so a control's value tried on the
+    // page is never written (#1117; useWorkflowOperations.presentation.test.ts
+    // checks what the layout's PUT carries).
+    mockFlow = flow({ dashboardLocked: false });
     await renderPage();
 
     await act(async () => { fireEvent.click(screen.getByTestId("save-layout-btn")); });
 
-    expect(mockFlow.saveCurrentProject).toHaveBeenCalledWith(undefined, { omitOutputs: true, savedWidgets: saved });
+    expect(mockFlow.saveDashboardLayout).toHaveBeenCalledTimes(1);
+    expect(mockFlow.saveDashboardLayout).toHaveBeenCalledWith();
+    expect(mockFlow.saveDataflow).not.toHaveBeenCalled();
+    expect(mockFlow.recordOutputs).not.toHaveBeenCalled();
     expect(mockFlow.setDashboardLocked).toHaveBeenCalledWith(true);
     expect(mockShowToast).toHaveBeenCalledWith("Dashboard layout saved.", "success");
   });
@@ -186,7 +192,7 @@ describe("editing the layout", () => {
   test("a failed save says so and stays unlocked", async () => {
     mockFlow = flow({
       dashboardLocked: false,
-      saveCurrentProject: jest.fn().mockRejectedValue(new Error("disk full")),
+      saveDashboardLayout: jest.fn().mockRejectedValue(new Error("disk full")),
     });
     await renderPage();
 

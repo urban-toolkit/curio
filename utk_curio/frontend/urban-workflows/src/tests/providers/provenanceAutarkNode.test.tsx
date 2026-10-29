@@ -237,7 +237,7 @@ test('a data node in a run on the server is filed once: the server ran it, and t
     },
     setNodes: jest.fn((next: any) => { nodes = typeof next === 'function' ? next(nodes) : next; }),
     showToast: jest.fn(),
-    requestProjectSave: jest.fn().mockResolvedValue({ id: 'p1', spec_revision: 3 }),
+    keepDataflow: jest.fn().mockResolvedValue('p1'),
     applyNewOutput: jest.fn(),
     setOutputs: jest.fn(),
     hydrateRestoredOutputs: jest.fn(),

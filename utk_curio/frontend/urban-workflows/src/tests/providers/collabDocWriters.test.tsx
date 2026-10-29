@@ -2,8 +2,8 @@
  * Which tabs send their changes to the dataflow's doc (`CollaborationProvider`,
  * `collab/participants.ts`'s `writesDoc`): the owner's and an invited
  * editor's, and a watcher's never. The doc's sync starts on the room's socket
- * once the room has joined the tab, but on a Curio with no sign-in, where a
- * tab joins no room and each canvas stays its own.
+ * once the room has joined the tab, and on a Curio with no sign-in (where the
+ * shared guest is signed in for everyone) as on one with it.
  */
 import React from "react";
 import { act, render, waitFor } from "@testing-library/react";
@@ -156,14 +156,15 @@ test.each([
   ["curio_no_auth"],
   ["skip_project_page"],
   ["curio_no_project"],
-])("on a Curio with no sign-in (%s), a tab joins no room and starts no doc", async (setting) => {
+])("on a Curio with no sign-in (%s), the owner's tab syncs its dataflow's doc and sends its changes", async (setting) => {
+  // The shared guest is signed in for everyone there and owns every dataflow,
+  // so its tab binds as a signed-in owner's does, and no tab saves.
   mockConfig = { [setting]: true };
-  await opened();
-  // Time for a socket to open, as one does on a Curio with sign-in.
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  });
+  const socket = await joinedAs("owner");
 
-  expect(mockIo).not.toHaveBeenCalled();
-  expect(binding).toBeNull();
+  renameOnCanvas();
+
+  expect(mockIo).toHaveBeenCalledTimes(1);
+  expect(binding!.provider.canWrite).toBe(true);
+  expect(updatesSent(socket)).toBeGreaterThan(0);
 });
