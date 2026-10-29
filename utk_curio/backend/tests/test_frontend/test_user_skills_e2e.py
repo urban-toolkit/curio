@@ -1,13 +1,16 @@
 """Playwright E2E: a skill of the account's own, imported through its review, exported and removed.
 
 **Import skill**, on the Agent Catalog page's Skills view, takes a zip of a
-skill's folder. The review shows the skill as the server read it, leniently:
+skill's folder: here the worked example of AGENT-CATALOG's "Add skills and
+agents", ``docs/examples/skills/street-trees/``, as another client might
+write it. The review shows the skill as the server read it, leniently:
 its description, what does not follow the format, its files, and the agents
 that will use it, each offered picked. Here the Researcher is unpicked, so
 only the other agents are given the skill. Imported, the skill's drawer says
 it is in the account's skills and offers **Remove from your skills**; its
-details export it as a zip that agentskills.io's ``skills-ref`` validates;
-and Remove takes it out of the grid and off its agents.
+details export it as a zip that agentskills.io's ``skills-ref`` validates,
+which holds the example's files as they are written; and Remove takes it out
+of the grid and off its agents.
 
 Frames for the owner: the import review, and the imported skill's drawer.
 
@@ -19,12 +22,14 @@ from __future__ import annotations
 
 import io
 import zipfile
+from pathlib import Path
 
 from playwright.sync_api import expect
 
 from .test_agent_chat_e2e import _goto_when_served
 from .utils import (
     EXPORT_DOWNLOAD_TIMEOUT_MS,
+    REPO_ROOT,
     api_json,
     install_session_cookie,
     require_project_page,
@@ -40,25 +45,33 @@ RESEARCHER = "agent.curio.researcher@1"
 MODAL = '[data-curio-modal-shell="true"]'
 BROWSE_DRAWER = '[data-curio-browse-drawer="true"]'
 
-#: A skill written for another client: a colon in a plain value, which YAML
-#: refuses, and a field the format does not define. The review reads both.
-SKILL_MD = (
+#: The worked example's skill, its ``SKILL.md`` and ``references/species.md``.
+EXAMPLE = Path(REPO_ROOT, "docs", "examples", "skills", NAME)
+SPECIES = "references/species.md"
+#: The example's frontmatter as another client might write it: a colon in a
+#: plain value, which YAML refuses, and its author as a field the format does
+#: not define. The review reads both, and the import keeps the skill in the
+#: format, which is the example as it is written.
+FRONTMATTER = (
     "---\n"
     f"name: {NAME}\n"
     "description: Use this skill when: a dataflow counts or maps the city's street trees\n"
     "author: parks-team\n"
     "---\n"
-    "## Street trees\n\n"
-    "Count the trees of each block from the city's tree census, and map them by species.\n"
 )
-SPECIES = "Honey locust, London plane, pin oak.\n"
+
+
+def _example(path: str) -> str:
+    return (EXAMPLE / path).read_text(encoding="utf-8")
 
 
 def _zip() -> bytes:
+    """The example's folder, its ``SKILL.md`` body under :data:`FRONTMATTER`."""
+    body = _example("SKILL.md").split("\n---\n", 1)[1]
     sink = io.BytesIO()
     with zipfile.ZipFile(sink, "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr(f"{NAME}/SKILL.md", SKILL_MD)
-        archive.writestr(f"{NAME}/references/species.md", SPECIES)
+        archive.writestr(f"{NAME}/SKILL.md", FRONTMATTER + body)
+        archive.writestr(f"{NAME}/{SPECIES}", _example(SPECIES))
     return sink.getvalue()
 
 
@@ -156,10 +169,12 @@ def test_a_skill_of_your_own_is_imported_through_its_review_exported_and_removed
     download = info.value
     assert download.suggested_filename == f"{NAME}.zip"
     with zipfile.ZipFile(download.path()) as archive:
-        assert sorted(archive.namelist()) == [f"{NAME}/SKILL.md", f"{NAME}/references/species.md"]
+        assert sorted(archive.namelist()) == [f"{NAME}/SKILL.md", f"{NAME}/{SPECIES}"]
         archive.extractall(tmp_path)
     assert skills_ref.validate(tmp_path / NAME) == []
-    assert (tmp_path / NAME / "references" / "species.md").read_text(encoding="utf-8") == SPECIES
+    # Kept in the format, the skill is the worked example as it is written.
+    for path in ("SKILL.md", SPECIES):
+        assert (tmp_path / NAME / path).read_text(encoding="utf-8") == _example(path), path
     expect(details.locator("[data-curio-export-error]")).to_have_count(0)
     page.keyboard.press("Escape")
     expect(details).to_have_count(0, timeout=10000)

@@ -15,11 +15,18 @@ room (``join_session``, ``events.py``) takes part.
   edits, and with everyone's awareness; the ack is ``{ok, docId, role}``. A tab
   holding another doc than the server's, one built anew since, is told
   ``reload`` and starts again holding none. It sends updates once this ack is
-  in: handlers run on threads of their own.
+  in; the server handles each socket's events one at a time, in the order the
+  socket sent them (``extensions.init_socketio``).
 * The owner's and an editor's step 2 and updates are applied, appended to the
   update log and relayed to the doc's other tabs. The ack, ``{ok, kept}``,
   gives for each client the update brought changes of the clock the doc now
   holds for it, which the top bar's Saved reads.
+* Updates that wait for the doc at the same time, as a burst of typing in a
+  room makes them, are applied as one batch (:func:`_update`): each in a
+  transaction of its own, in the order each tab sent them, then one write to
+  the log, a record each, and one message to each tab, every change of the
+  batch but the tab's own merged into one update. An update alone is applied
+  and relayed at once.
 * A watcher's step 2 and updates are dropped, ``read_only``: nothing is applied
   or relayed. The role is the room's (``room_state``), which a change to the
   editors updates at once (``roles.py``).
@@ -80,7 +87,8 @@ it, so every change reaches the doc's tabs and its log:
   holds it kept as the file holds it.
 
 **Locks**, in this order: the spec lock (``storage.spec_write_lock``), then a
-doc's lock, then this module's own; storage's history lock is a leaf. The spec
+doc's lock, then this module's own; storage's history lock and a doc's queue
+of updates (:attr:`_OpenDoc.queue`) are leaves. The spec
 lock is never asked for while a doc's lock is held, and the thread that writes
 the docs touches no database. A writer under the spec lock already (a
 read-modify-write that must not interleave) is not made to ask for it again.
@@ -120,6 +128,7 @@ from pycrdt import (
     create_sync_message,
     create_update_message,
     handle_sync_message,
+    merge_updates,
     write_message,
 )
 
@@ -184,6 +193,20 @@ class _NoDataflow(Exception):
     """The dataflow has no spec on disk."""
 
 
+class _Queued:
+    """A tab's step 2 or update waiting for its doc (:func:`_update`)."""
+
+    __slots__ = ("sid", "me", "update", "answer")
+
+    def __init__(self, sid: str, me: dict, update: bytes):
+        self.sid = sid
+        #: The participant the socket is, as the room knows it.
+        self.me = me
+        self.update = update
+        #: What the tab is answered, once its update is applied or refused.
+        self.answer: Optional[dict] = None
+
+
 class _OpenDoc:
     """One open dataflow. Its fields are guarded by :attr:`lock`, but the
     times, which this module's lock guards."""
@@ -211,6 +234,13 @@ class _OpenDoc:
         self.awareness_owners: dict[int, str] = {}
         self.updates: list[bytes] = []
         self.awareness_changed: list[int] = []
+        #: The tabs' updates waiting for the doc, in the order they came, and
+        #: whether a thread is applying a batch of them (:func:`_update`).
+        #: Guarded by :attr:`queue`, a leaf: taken under :attr:`lock` or
+        #: alone, and never held while waiting for another lock.
+        self.queue = threading.Condition(threading.Lock())
+        self.queued: list[_Queued] = []
+        self.applying = False
         #: Who drew each connection, by the socket whose update added it, and
         #: who removed each node lately: what a merge rule's notice names.
         self.edge_authors: dict[str, str] = {}
@@ -614,14 +644,20 @@ def _open_entry(project_id: str, user_key: Optional[str] = None) -> Optional[_Op
 
 
 def _changed(entry: _OpenDoc) -> None:
-    """Note a change the spec does not have yet."""
+    """Note a change the spec does not have yet. The writing thread is woken
+    only when the doc's write becomes due: a later change moves that time no
+    sooner (:func:`_save_due`), and the thread reads it again when it wakes,
+    so steady typing does not wake it at every keystroke."""
     with _wake:
         now = _clock()
         entry.changed_at = now
-        if entry.dirty_since is None:
+        due = entry.dirty_since is None
+        if due:
             entry.dirty_since = now
-        _wake.notify_all()
-    _ensure_flusher()
+            _wake.notify_all()
+        running = _flusher is not None and _flusher.is_alive()
+    if due or not running:
+        _ensure_flusher()
 
 
 def _save_due(entry: _OpenDoc) -> Optional[float]:
@@ -1349,7 +1385,9 @@ def _socketio():
     return extensions.socketio
 
 
-def _emit(message: bytes, project_id: str, *, to: str, skip_sid: Optional[str] = None) -> None:
+def _emit(message: bytes, project_id: str, *, to: str, skip_sid: Optional[str | list[str]] = None) -> None:
+    """Send *message* to *to*, a room or a socket, but *skip_sid*, a socket
+    or a list of them."""
     sio = _socketio()
     if sio is not None:
         sio.emit(EVENT, {"projectId": project_id, "message": message},
@@ -1376,9 +1414,20 @@ def _clocks(doc) -> dict[int, int]:
 
 
 def _commit(entry: _OpenDoc, *, skip_sid: Optional[str]) -> bool:
-    """Log and relay what the doc's last transaction changed. Whether the
-    log has it."""
+    """Log and relay what the doc's last transaction changed, *skip_sid* the
+    socket whose update it applied, if any. Whether the log has it."""
     updates, entry.updates = entry.updates, []
+    return _logged_and_relayed(entry, [(skip_sid, updates)])
+
+
+def _logged_and_relayed(entry: _OpenDoc, changes: list[tuple[Optional[str], list[bytes]]]) -> bool:
+    """Add what the doc's transactions changed to its log, in one write, and
+    relay it to the doc's tabs (:func:`_relay`). *changes* are each
+    transaction's updates as the doc observed them, in order, each with the
+    socket whose update the transaction applied, or ``None``. Each update is
+    a record of its own: the log, the dataflow's one history, never merges
+    two tabs' changes. Whether the log has them."""
+    updates = [update for _sid, observed in changes for update in observed]
     if not updates:
         return True
     logged = True
@@ -1388,11 +1437,31 @@ def _commit(entry: _OpenDoc, *, skip_sid: Optional[str]) -> bool:
         logged = False
         logger.error("dataflow %s: a change could not be added to its update log", entry.project_id,
                      exc_info=True)
-    for update in updates:
-        _emit(create_update_message(update), entry.project_id,
-              to=_relay_room(entry.project_id), skip_sid=skip_sid)
+    _relay(entry, changes)
     _changed(entry)
     return logged
+
+
+def _merged(updates: list[bytes]) -> bytes:
+    """*updates* as one update (``pycrdt.merge_updates``)."""
+    return updates[0] if len(updates) == 1 else merge_updates(*updates)
+
+
+def _relay(entry: _OpenDoc, changes: list[tuple[Optional[str], list[bytes]]]) -> None:
+    """Send the doc's tabs what *changes* brought (:func:`_logged_and_relayed`),
+    one update to each tab, merged: every change but the tab's own, so no tab
+    is sent its own update back. The tabs that brought none get it all in one
+    message to the doc's room; a tab that brought some, the others' alone."""
+    everything = [update for _sid, observed in changes for update in observed]
+    if not everything:
+        return
+    senders = list(dict.fromkeys(sid for sid, observed in changes if sid is not None and observed))
+    _emit(create_update_message(_merged(everything)), entry.project_id,
+          to=_relay_room(entry.project_id), skip_sid=senders or None)
+    for sid in senders:
+        others = [update for other, observed in changes if other != sid for update in observed]
+        if others:
+            _emit(create_update_message(_merged(others)), entry.project_id, to=sid)
 
 
 def _relay_awareness(entry: _OpenDoc, *, skip_sid: Optional[str]) -> None:
@@ -1504,29 +1573,96 @@ def _synced(project_id: str, sid: str) -> Optional[_OpenDoc]:
 
 
 def _update(sid: str, me: dict, project_id: str, message: bytes) -> dict:
-    """A tab's sync step 2 or update."""
+    """A tab's sync step 2 or update, answered once it is applied.
+
+    A socket's events come one at a time (``extensions.init_socketio``) and
+    its update is answered only once applied, so a socket never has two
+    updates waiting: under a burst, what waits is the doc, an update from each
+    of several tabs. The thread that finds none being applied applies every
+    update waiting then, as one batch (:func:`_apply_queued`), while the
+    others wait for their answers, and an update that comes meanwhile waits
+    for the next batch. Nothing waits to gather one: an update alone is
+    applied and relayed at once."""
     if me.get("role") not in room_state.EDIT_ROLES:
         return _refused("read_only", message=READ_ONLY_REFUSAL)
     entry = _synced(project_id, sid)
     if entry is None:
         return _refused("not_synced")
-    with entry.lock:
-        if entry.closed or sid not in entry.tabs:
-            return _refused("not_synced")
-        update = _framed(message[2:])
-        _roll(entry)
-        before = _clocks(entry.doc)
+    mine = _Queued(sid, me, _framed(message[2:]))
+    with entry.queue:
+        entry.queued.append(mine)
+        while mine.answer is None and entry.applying:
+            entry.queue.wait()
+        if mine.answer is not None:
+            return mine.answer
+        entry.applying = True
+    batch: list[_Queued] = []
+    try:
+        with entry.lock:
+            with entry.queue:
+                batch, entry.queued = entry.queued, []
+            _apply_queued(entry, batch)
+    finally:
+        with entry.queue:
+            entry.applying = False
+            for queued in batch:
+                if queued.answer is None:  # applying them failed
+                    queued.answer = _refused("not_kept")
+            entry.queue.notify_all()
+    return mine.answer
+
+
+def _apply_queued(entry: _OpenDoc, batch: list[_Queued]) -> None:
+    """Apply a batch of tabs' updates (:func:`_update`), under the doc's lock,
+    and set each one's answer.
+
+    Each update is applied in a transaction of its own, its tab the origin,
+    in the order the batch holds them, so each tab's stay in the order it sent
+    them; an answer's ``kept`` is what its own transaction moved. After each,
+    the merge rules run on what it changed (:func:`_drop_dangling_connections`).
+    The batch then makes one write to the log and one message to each tab,
+    every change but the tab's own merged into one update, the rules' changes
+    sent to every tab (:func:`_logged_and_relayed`); and then the tabs a rule
+    names are told."""
+    synced = []
+    for queued in batch:
+        if entry.closed or queued.sid not in entry.tabs:
+            queued.answer = _refused("not_synced")
+        else:
+            synced.append(queued)
+    if not synced:
+        return
+    _roll(entry)
+    clocks = _clocks(entry.doc)
+    changes: list[tuple[Optional[str], list[bytes]]] = []
+    applied: list[tuple[_Queued, dict]] = []
+    notices: list[tuple[str, dict]] = []
+    for queued in synced:
         graph = _graph_keys(entry.doc)
-        if update != b"\x00\x00":
-            with entry.doc.transaction(origin=sid):
-                entry.doc.apply_update(update)
-        kept = {str(client): clock for client, clock in _clocks(entry.doc).items()
-                if before.get(client) != clock}
-        logged = _commit(entry, skip_sid=sid)
-        logged = _drop_dangling_connections(entry, sid, me, graph) and logged
-    if not logged:
-        return _refused("not_kept")
-    return {"ok": True, "kept": kept}
+        try:
+            if queued.update != b"\x00\x00":
+                with entry.doc.transaction(origin=queued.sid):
+                    entry.doc.apply_update(queued.update)
+        except (ValueError, RuntimeError, IndexError, AssertionError):
+            logger.info("an update from %s for dataflow %s does not apply", queued.sid, entry.project_id,
+                        exc_info=True)
+            queued.answer = _refused("invalid_message")
+        now = _clocks(entry.doc)
+        observed, entry.updates = entry.updates, []
+        changes.append((queued.sid, observed))
+        if queued.answer is None:
+            applied.append((queued, {str(client): clock for client, clock in now.items()
+                                     if clocks.get(client) != clock}))
+        notices += _drop_dangling_connections(entry, queued.sid, queued.me, graph)
+        ruled, entry.updates = entry.updates, []
+        if ruled:
+            changes.append((None, ruled))
+            now = _clocks(entry.doc)
+        clocks = now
+    logged = _logged_and_relayed(entry, changes)
+    _tell(notices)
+    for queued, kept in applied:
+        queued.answer = {"ok": True, "kept": kept} if logged else _refused("not_kept")
 
 
 def _graph_keys(doc) -> tuple[frozenset, frozenset]:
@@ -1536,20 +1672,22 @@ def _graph_keys(doc) -> tuple[frozenset, frozenset]:
 
 
 def _drop_dangling_connections(entry: _OpenDoc, sid: str, me: dict,
-                               before: tuple[frozenset, frozenset]) -> bool:
+                               before: tuple[frozenset, frozenset]) -> list[tuple[str, dict]]:
     """The merge rule for a connection to a node that is gone, after the change
     the socket *sid* (the participant *me*) brought, *before* being the doc's
     node and connection ids until then.
 
     A node removed while someone drew a connection to it leaves that
     connection pointing nowhere once both changes merge, whichever came first.
-    It is taken out at once, for every tab, and the tab that drew it is told
-    who removed the node (:data:`CONNECTION_DROPPED_EVENT`). Whether the log
-    has the change."""
+    It is taken out at once, in a transaction of the rule's own, whose update
+    :func:`_apply_queued` logs and sends every tab with the rest of its batch,
+    and the tab that drew it is told who removed the node
+    (:data:`CONNECTION_DROPPED_EVENT`). The notices, each a socket and what it
+    is told, for :func:`_tell` once the change is relayed."""
     nodes_before, edges_before = before
     nodes_now, edges_now = _graph_keys(entry.doc)
     if nodes_now == nodes_before and edges_now == edges_before:
-        return True
+        return []
     for node_id in nodes_before - nodes_now:
         entry.removers.pop(node_id, None)
         entry.removers[node_id] = _user(me)
@@ -1577,7 +1715,7 @@ def _drop_dangling_connections(entry: _OpenDoc, sid: str, me: dict,
         if edge_id not in edges_now or edge_id in dangling:
             del entry.edge_authors[edge_id]
     if not dangling:
-        return True
+        return []
     order = entry.doc.get("edgeOrder", type=Array)
     with entry.doc.transaction(origin=RULES_ORIGIN):
         for edge_id in dangling:
@@ -1585,15 +1723,18 @@ def _drop_dangling_connections(entry: _OpenDoc, sid: str, me: dict,
         for index in reversed(range(len(order))):
             if order[index] in dangling:
                 del order[index]
-    logged = _commit(entry, skip_sid=None)
+    return [(drawer, {"projectId": entry.project_id, "edgeIds": edge_ids,
+                      "by": entry.removers.get(dangling[edge_ids[0]]) or _user(me)})
+            for drawer, edge_ids in drawers.items()]
+
+
+def _tell(notices: list[tuple[str, dict]]) -> None:
+    """Send each socket the notice a merge rule made for it
+    (:func:`_drop_dangling_connections`)."""
     sio = _socketio()
     if sio is not None:
-        for drawer, edge_ids in drawers.items():
-            remover = entry.removers.get(dangling[edge_ids[0]]) or _user(me)
-            sio.emit(CONNECTION_DROPPED_EVENT,
-                     {"projectId": entry.project_id, "edgeIds": edge_ids, "by": remover},
-                     to=drawer, namespace=COLLAB_NAMESPACE)
-    return logged
+        for drawer, notice in notices:
+            sio.emit(CONNECTION_DROPPED_EVENT, notice, to=drawer, namespace=COLLAB_NAMESPACE)
 
 
 def _awareness(sid: str, me: dict, project_id: str, message: bytes) -> dict:
