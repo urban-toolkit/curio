@@ -91,10 +91,6 @@ export interface SaveBody {
 
 export interface UpdateBody {
   spec?: Record<string, unknown>;
-  /** The dataflow's history alone (`nodeProvenance`, `dataflowProvenance`),
-   *  which a canvas bound to the dataflow's doc sends in place of a spec: the
-   *  server writes the doc first and answers with it. */
-  history?: Record<string, unknown>;
   outputs?: OutputRef[];
   name?: string;
   description?: string;

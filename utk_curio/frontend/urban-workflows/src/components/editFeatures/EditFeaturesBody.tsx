@@ -7,7 +7,9 @@
  * - each entry of the log can be switched off or deleted;
  * - Undo puts back the entry before in the node's Provenance drawer, and Redo
  *   the newest one after it (or Ctrl/Cmd+Z and Shift+Ctrl/Cmd+Z); neither adds
- *   an entry, and the next change branches from there;
+ *   an entry, and the next change branches from there. On a dataflow whose
+ *   history the server keeps, it puts the code back only if the node still
+ *   holds the code the Undo or Redo began from;
  * - Delete removes the picked features, and Escape clears the pick;
  * - Commit edits runs the node and every node below it, so their results
  *   have the edits; the log's foot says whether they do.
@@ -35,7 +37,10 @@ import NodeEmptyState from "../nodes/NodeEmptyState";
 import { MOD_KEY_LABEL, isTypingTarget } from "../canvasKeyBindings";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { useSharedView } from "../../hook/useSharedView";
-import { useProvenanceContext, type NodeExecRecord } from "../../providers/ProvenanceProvider";
+import { useProvenanceContext } from "../../providers/ProvenanceProvider";
+import { useNodeEntries } from "../../providers/history/useHistoryReads";
+import { useOptionalToastContext } from "../../providers/ToastProvider";
+import { historyApi } from "../../api/historyApi";
 import { autoRunTargets } from "../../providers/flow/useAutoRun";
 import { readAutkInput, autkSourcesFrom } from "../../utils/autkInput";
 import { codeEditRevision, subscribeToCodeEdits } from "../../utils/references/codeEdits";
@@ -95,7 +100,6 @@ const OP_TONE: Partial<Record<EditOp, "done" | "error">> = { add: "done", remove
 
 /** At most this many edits name an entry of the Provenance drawer, then how many more. */
 const LABEL_EDITS = 3;
-const NO_ENTRIES: NodeExecRecord[] = [];
 
 /** One layer of the input, by the table name its map reads it as. */
 export interface InputLayer {
@@ -220,7 +224,8 @@ export function EditFeaturesBody({
   const flow = useFlowContext() as any;
   // A code put back, or typed, reaches the node's data with no change of the flow's state.
   useSyncExternalStore(subscribeToCodeEdits, codeEditRevision);
-  const { provenanceGraphNodes, selectedParentExecRef, setSelectedExec } = useProvenanceContext();
+  const { setSelectedExec, chooseEntry } = useProvenanceContext();
+  const toast = useOptionalToastContext();
   const live = (flow?.nodes ?? []).find((n: any) => n.id === nodeId)?.data;
   // The Autark maps the node feeds and is linked to: it picks and draws on
   // each, and names the first.
@@ -394,16 +399,36 @@ export function EditFeaturesBody({
 
   const edits = settings?.edits ?? [];
 
-  // Undo and Redo walk the node's entries in its Provenance drawer.
-  const records = provenanceGraphNodes[nodeId] ?? NO_ENTRIES;
-  const current = selectedParentExecRef.current[nodeId];
+  // Undo and Redo walk the node's entries in its Provenance drawer. On a
+  // canvas bound to the dataflow's doc the server writes the code, only if
+  // the node still holds the code this Undo or Redo began from: someone's
+  // change after it stays, and a toast says who made it.
+  const { server, records, currentId: current } = useNodeEntries(nodeId, code);
   const undoTo = editable ? undoStep(records, current, code) : null;
   const redoTo = editable ? redoStep(records, current, code) : null;
-  const go = (step: HistoryStep | null) => {
+  const steppingRef = useRef(false);
+  const go = (step: HistoryStep | null, label: "Undo" | "Redo") => {
     if (!step || !editable) return;
-    setSelectedExec(nodeId, step.current);
     setPicked([]);
-    onWrite(step.code);
+    if (!server) {
+      setSelectedExec(nodeId, step.current);
+      onWrite(step.code);
+      return;
+    }
+    if (steppingRef.current) return;
+    steppingRef.current = true;
+    const from = code;
+    chooseEntry(nodeId, step.current, step.code);
+    void (async () => {
+      try {
+        await server.whenKept();
+        await historyApi.writeCode(server.projectId, nodeId, { from, code: step.code, label });
+      } catch (failure) {
+        toast?.showToast((failure as Error)?.message || `${label} could not be made.`, "warning");
+      } finally {
+        steppingRef.current = false;
+      }
+    })();
   };
 
   const onKeyDown = (event: React.KeyboardEvent) => {
@@ -414,8 +439,8 @@ export function EditFeaturesBody({
     let handled = true;
     if (event.key === "Escape" && picked.length > 0) setPicked([]);
     else if (event.key === "Delete" && picked.length > 0 && removePickedRef.current?.()) setPicked([]);
-    else if (mod && event.key.toLowerCase() === "z" && event.shiftKey) go(redoTo);
-    else if (mod && event.key.toLowerCase() === "z") go(undoTo);
+    else if (mod && event.key.toLowerCase() === "z" && event.shiftKey) go(redoTo, "Redo");
+    else if (mod && event.key.toLowerCase() === "z") go(undoTo, "Undo");
     else handled = false;
     // Handled here, the canvas neither deletes the node nor moves it.
     if (handled) {
@@ -474,11 +499,11 @@ export function EditFeaturesBody({
         ) : null}
         {editable ? (
           <span className={styles.history}>
-            <button type="button" className={`nodrag nopan ${styles.button}`} data-testid="interaction-undo" disabled={!undoTo} data-tooltip={`Undo (${MOD_KEY_LABEL}+Z)`} onClick={() => go(undoTo)}>
+            <button type="button" className={`nodrag nopan ${styles.button}`} data-testid="interaction-undo" disabled={!undoTo} data-tooltip={`Undo (${MOD_KEY_LABEL}+Z)`} onClick={() => go(undoTo, "Undo")}>
               <FontAwesomeIcon icon={faRotateLeft} aria-hidden />
               Undo
             </button>
-            <button type="button" className={`nodrag nopan ${styles.button}`} data-testid="interaction-redo" disabled={!redoTo} data-tooltip={`Redo (Shift+${MOD_KEY_LABEL}+Z)`} onClick={() => go(redoTo)}>
+            <button type="button" className={`nodrag nopan ${styles.button}`} data-testid="interaction-redo" disabled={!redoTo} data-tooltip={`Redo (Shift+${MOD_KEY_LABEL}+Z)`} onClick={() => go(redoTo, "Redo")}>
               <FontAwesomeIcon icon={faRotateRight} aria-hidden />
               Redo
             </button>

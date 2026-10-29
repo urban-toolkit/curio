@@ -446,9 +446,14 @@ function NodeEditor({
     // the node re-renders.
     const [restoredCode, setRestoredCode] = useState<{ code: string; nonce: number } | null>(null);
     const restoreRunRef = useRef<(runCode: string) => void>(() => undefined);
+    // The code the server put back reaches the editor through the doc.
+    const showCodeRef = useRef<() => void>(() => undefined);
+    showCodeRef.current = () => {
+        if (code || grammar) setActiveTab(resolveInitialEditorTab({ code, grammar, widgets: false }));
+    };
     restoreRunRef.current = (runCode: string) => {
         setRestoredCode((prev) => ({ code: runCode, nonce: (prev?.nonce ?? 0) + 1 }));
-        if (code || grammar) setActiveTab(resolveInitialEditorTab({ code, grammar, widgets: false }));
+        showCodeRef.current();
     };
 
     // The Provenance pill is not a tab: it opens the node's runs in the
@@ -460,6 +465,7 @@ function NodeEditor({
                 nodeId: data.nodeId,
                 title: resolveNodeDisplayLabel({ nodeType, packageTemplateLabel: data.packageTemplateLabel }),
                 restore: (runCode: string) => restoreRunRef.current(runCode),
+                showCode: () => showCodeRef.current(),
             });
             return;
         }

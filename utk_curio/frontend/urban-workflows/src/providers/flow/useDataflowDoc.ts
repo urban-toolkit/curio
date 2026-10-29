@@ -39,6 +39,10 @@
  * **A node removed while this tab edits its code** is taken off with a
  * message naming who removed it and **Put it back**, which adds it again with
  * this tab's code and the connections whose other end remains.
+ *
+ * **The history.** While the canvas is bound, the server keeps the
+ * dataflow's history (`providers/history/serverHistory.ts`), and nothing is
+ * recorded on this tab.
  */
 import React, { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import type { Edge, Node, NodeChange, ReactFlowInstance } from "reactflow";
@@ -51,6 +55,7 @@ import { normalizeScenarios, type Scenario } from "../../utils/scenarios/scenari
 import type { HandCategories } from "../../utils/dataflowCategories";
 import { CANVAS_ORIGIN, type DocBinding } from "../collab/docContext";
 import type { DataflowDocProvider } from "../collab/docProvider";
+import { serverHistory, setServerHistory, type ServerHistory } from "../history/serverHistory";
 import {
     applyDataflow,
     dataflowToDoc,
@@ -239,15 +244,15 @@ export interface DataflowDocBridge {
     /** *nodeId*'s data changed in place, with no new node (a widget's value,
      *  a selection tag): write it now. */
     noteNodeData(nodeId: string): void;
-    /** The code *code* replaced in *nodeId*, when the server or another tab
-     *  brought *code* through the doc (an agent's applied change can land
-     *  before its apply answers); asked once. */
-    codeBefore(nodeId: string, code: string): string | undefined;
 }
 
 export interface DataflowDocDeps {
     binding: DocBinding | null;
     canWrite: boolean;
+    /** Whether this tab reads and adds to the dataflow's history, which the
+     *  server keeps while the canvas is bound: an owner's and an invited
+     *  editor's do, a watcher's never. */
+    readsHistory: boolean;
     nodes: Node[];
     edges: Edge[];
     setNodes: React.Dispatch<React.SetStateAction<Node[]>>;
@@ -304,9 +309,10 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
     const docStateRef = useRef<DocState | null>(null);
     /** Each canvas node's last Trill, and what it was taken from. */
     const cacheRef = useRef(new Map<string, CachedTrill>());
-    /** The code the server or another tab last brought to each node, and the
-     *  code it replaced there. */
-    const broughtCodeRef = useRef(new Map<string, { before: string; after: string }>());
+    /** The dataflow's history while the canvas is bound to this load's doc. */
+    const historyRef = useRef<ServerHistory | null>(null);
+    /** The bridge's `whenKept`, as of this render. */
+    const whenKeptRef = useRef<() => Promise<boolean>>(async () => false);
     /** Nodes another tab drags now, and those it dropped whose place is due. */
     const remoteDragRef = useRef(new Set<string>());
     const droppedRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
@@ -672,16 +678,6 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
             }
             docStateRef.current = next;
             if (transaction.origin === CANVAS_ORIGIN) return;
-            if (transaction.origin === held) {
-                // What the server or another tab changed in a node's code.
-                for (const id of wasWhole ? next.nodes.keys() : changed.nodes) {
-                    const before = state.nodes.get(id)?.[CONTENT];
-                    const after = next.nodes.get(id)?.[CONTENT];
-                    if (typeof before === "string" && typeof after === "string" && before !== after) {
-                        broughtCodeRef.current.set(id, { before, after });
-                    }
-                }
-            }
             applyToCanvas(state, next, wasWhole ? undefined : changed);
         };
 
@@ -734,10 +730,11 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
     const unbind = useCallback(() => {
         boundRef.current?.detach();
         boundRef.current = null;
+        if (historyRef.current && serverHistory() === historyRef.current) setServerHistory(null);
+        historyRef.current = null;
         docStateRef.current = null;
         writerBaseRef.current = null;
         cacheRef.current.clear();
-        broughtCodeRef.current.clear();
         remoteDragRef.current.clear();
         droppedRef.current.forEach((timer) => clearTimeout(timer));
         droppedRef.current.clear();
@@ -758,6 +755,23 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
         // in with the next write.
         const loadedCanvas = loadedCanvasRef.current;
         writerBaseRef.current = loadedCanvas && loadedCanvas.epoch === epoch ? loadedCanvas.trill : canvasTrill();
+        // The server keeps the dataflow's history from here on: the versions
+        // this canvas recorded go (ProvenanceProvider sends the runs no save
+        // carried).
+        TrillGenerator.forgetVersions();
+        const history: ServerHistory = {
+            projectId: held.projectId,
+            reads: () => latest.current.readsHistory,
+            whenKept: () => whenKeptRef.current(),
+            codeOf: (nodeId: string) => {
+                const node = held.doc.getMap("nodes").get(nodeId);
+                if (node === undefined) return undefined;
+                const content = (nodeOut(nodeId, node) as Fields)[CONTENT];
+                return typeof content === "string" ? content : content == null ? "" : JSON.stringify(content);
+            },
+        };
+        historyRef.current = history;
+        setServerHistory(history);
     }, [applyToCanvas, attach, canvasTrill, unbind]);
 
     // Each commit: take the canvas's load, bind when due, then write what the
@@ -786,15 +800,18 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
 
     useEffect(() => () => unbind(), [unbind]);
 
+    const whenKept = async () => {
+        const held = boundRef.current?.provider;
+        if (!held || held !== provider) return false;
+        write();
+        await held.whenKept();
+        return true;
+    };
+    whenKeptRef.current = whenKept;
+
     return {
         bound: () => !!provider && boundRef.current?.provider === provider,
-        whenKept: async () => {
-            const held = boundRef.current?.provider;
-            if (!held || held !== provider) return false;
-            write();
-            await held.whenKept();
-            return true;
-        },
+        whenKept,
         noteDrag: (changes: NodeChange[]) => {
             const held = boundRef.current?.provider;
             if (!held || !latest.current.canWrite) return;
@@ -825,12 +842,6 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
             if (!boundRef.current) return;
             cacheRef.current.delete(nodeId);
             write();
-        },
-        codeBefore: (nodeId: string, code: string) => {
-            const brought = broughtCodeRef.current.get(nodeId);
-            if (!brought || brought.after !== code) return undefined;
-            broughtCodeRef.current.delete(nodeId);
-            return brought.before;
         },
     };
 }
