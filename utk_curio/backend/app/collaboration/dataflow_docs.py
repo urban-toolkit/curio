@@ -1517,11 +1517,15 @@ def _socketio():
 
 def _emit(message: bytes, project_id: str, *, to: str, skip_sid: Optional[str | list[str]] = None) -> None:
     """Send *message* to *to*, a room or a socket, but *skip_sid*, a socket
-    or a list of them."""
+    or a list of them. A doc message is a binary event, several packets, put
+    whole to each client (``extensions.emit_whole``): a socket's own thread
+    answers its updates while another relays to it."""
+    from utk_curio.backend import extensions
+
     sio = _socketio()
     if sio is not None:
-        sio.emit(EVENT, {"projectId": project_id, "message": message},
-                 to=to, skip_sid=skip_sid, namespace=COLLAB_NAMESPACE)
+        extensions.emit_whole(sio, EVENT, {"projectId": project_id, "message": message},
+                              namespace=COLLAB_NAMESPACE, to=to, skip_sid=skip_sid)
 
 
 def _framed(data: bytes) -> bytes:
