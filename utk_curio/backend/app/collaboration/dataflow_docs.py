@@ -218,10 +218,11 @@ class _OpenDoc:
         #: who removed each node lately: what a merge rule's notice names.
         self.edge_authors: dict[str, str] = {}
         self.removers: dict[str, dict] = {}
-        #: What the doc's last transaction added, removed and typed, and the
-        #: history's own state of this doc (``history.py``), while the history
-        #: records (``history.RECORDING``).
+        #: What the doc's last transaction added, removed and typed, the
+        #: observers that note it, and the history's own state of this doc
+        #: (``history.py``), while the history records (``history.RECORDING``).
         self.touched = None
+        self.watching = None
         self.history = None
         # Guarded by this module's lock.
         self.changed_at: Optional[float] = None

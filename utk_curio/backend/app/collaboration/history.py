@@ -197,7 +197,9 @@ class Change(NamedTuple):
 
 def observe(entry) -> None:
     """Note what each transaction of the open doc *entry* adds, removes and
-    types (:attr:`entry.touched`), for :func:`recorded`."""
+    types (:attr:`entry.touched`), for :func:`recorded`. The observers live
+    as long as the entry holds them (:attr:`entry.watching`): pycrdt drops an
+    observer once its type's object and its subscription are gone."""
     entry.touched = Touched()
     nodes = entry.doc.get("nodes", type=Map)
     edges = entry.doc.get("edges", type=Map)
@@ -224,8 +226,7 @@ def observe(entry) -> None:
         for key, change in (getattr(event, "keys", None) or {}).items():
             touched.edge(str(key), (change or {}).get("action", ""))
 
-    nodes.observe_deep(on_nodes)
-    edges.observe(on_edges)
+    entry.watching = (nodes, edges, nodes.observe_deep(on_nodes), edges.observe(on_edges))
 
 
 def take_touched(entry) -> Optional[Touched]:
@@ -566,7 +567,7 @@ def recorded(entry, changes: list[Change], *, point: Optional[dict] = None) -> N
 def _record(entry, change: Change, point: Optional[dict]) -> None:
     state = _state(entry)
     touched = change.touched or Touched()
-    by = _by(change.origin)
+    by = (point or {}).get("by") or _by(change.origin)
     for node in touched.contents:
         state.authors[node] = by
     if point is not None:
