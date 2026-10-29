@@ -163,12 +163,16 @@ class TestEachFamilyLandsAtOnce:
     def test_a_plan_lands_whole_in_one_write_its_nodes_connections_and_removals(
         self, client, user_and_token, tmp_curio, monkeypatch,
     ):
-        from utk_curio.backend.app.collaboration import history
+        from utk_curio.backend.app.collaboration import dataflow_docs, history
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
         project, att = _setup(client, user, token, coord=DFB)
+        # The doc open, as a tab holds it: its first points are the dataflow
+        # as it is, so what follows is the plan's alone.
+        dataflow_docs.live(_user_dir_key(user), project)
         before = len(history.points(_user_dir_key(user), project))
+        assert before, "the open made no first points"
         plan = {
             "goal": "replace the loader",
             "nodes": [{"ref": "a", "nodeType": CA, "title": "API Fetch", "intent": "fetch from the api"}],

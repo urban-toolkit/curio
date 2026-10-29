@@ -212,7 +212,7 @@ def test_the_tool_offers_each_setting_with_the_nodes_choices_and_widget_values_b
 
     contract = tools.REGISTRY[TOOL]
     assert contract.effect == "mutate"
-    assert contract.label == "Propose a settings change"
+    assert contract.label == "Change a node's settings"
     params = contract.parameters
     assert list(params["properties"]) == ["nodeId", "dataPool", "simpleVis", "spatialJoin", "widgets"]
     assert "required" not in params
@@ -494,6 +494,19 @@ class TestUndoPutsTheOldValuesBack:
         [card] = [p for t in turns for p in t.get("content") or [] if p.get("changeId") == change["changeId"]]
         assert card["status"] == "undone"
         assert _undo(client, token, project, att, change).status_code == 409
+
+    def test_undo_takes_back_a_joins_operation_the_change_picked(self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        project, att, change, _, _ = _change(
+            client, user, token, monkeypatch, target="join", spatialJoin={"predicate": "within"},
+        )
+        assert _saved(user, project)["join"]["metadata"]["spatialJoin"] == {"predicate": "within", "output": "counts"}
+        response = _undo(client, token, project, att, change)
+        assert response.status_code == 200, response.get_json()
+        # The operation goes back to the join's default, which the node holds as
+        # none; the output it kept was never the change's.
+        assert _saved(user, project)["join"]["metadata"]["spatialJoin"] == {"output": "counts"}
+        assert response.get_json()["canvas"][-1]["settings"]["spatialJoin"] == {"output": "counts"}
 
     def test_undo_puts_a_widgets_value_back_to_its_default(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
