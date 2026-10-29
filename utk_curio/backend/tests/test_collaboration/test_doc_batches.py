@@ -1,25 +1,32 @@
-"""Updates that wait for a dataflow's doc together are applied as one batch.
+"""A dataflow's doc takes its tabs' messages in batches, and no socket waits.
 
-A socket's events come one at a time, and an update is answered once the
-server has applied it, so a tab never has two updates waiting. Under a burst
-of typing in a room, what waits is the doc: an update from each of several
-tabs. The thread that finds none being applied applies every update waiting
-then, each in a transaction of its own, its tab the origin; the batch makes one
-write to the log, a record each, and one message to each tab, every change of
-the batch but the tab's own merged into one update (``dataflow_docs._update``).
+When nothing waits for the doc, a tab's update is applied at once, on its
+socket's own thread, and answered in its ack, ``{ok, kept}``. Otherwise it
+waits for the doc's thread and its ack is ``{ok, queued}`` at once, so the
+socket goes on reading, its Engine.IO pings included. The doc's thread
+applies batch after batch of what waits: each socket's updates are one
+transaction, the socket its origin; the batch makes one write to the log, a
+record a transaction, and sends each tab one message, every change of the
+batch but the tab's own merged into one update; and each socket gets one
+``yjs_kept`` message answering its updates the batch held. Awareness waits
+with the updates: a batch keeps each client's latest state and sends each tab
+one message, its own clients' left out (``dataflow_docs._take``).
+
 Each update alone was a write and a message to every other tab, which the
 stress tiers' bursts of 50 and 100 typing users could not carry (run
-40783748468).
+40783748468). With batches, but each socket waiting for its own update's
+answer, the burst of 100 still lost every socket at Engine.IO's ping timeout
+(run 40799458891).
 
 The tabs are the doc tests' (``_ydoc_client.py``), each on a Flask-SocketIO
 test client of its own, sending from a thread of its own. A burst here holds
-its first update in a slow apply, under the doc's lock, until every other
-update reached the server, and :data:`SETTLE_S` more: the time those updates'
-threads take to wait for the doc, a few locks no one holds.
+its first update in a slow apply, which holds the doc's turn, until every
+other message reached the server, and :data:`SETTLE_S` more.
 """
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 
@@ -40,10 +47,17 @@ SPEC = {
 
 #: The day the doc's log files its changes under.
 DAY = "2026-10-28"
-#: How long a held apply goes on waiting once every update reached the server.
+#: How long a held apply goes on waiting once every message reached the server.
 SETTLE_S = 0.5
+#: How long a tab's messages may take while the doc's turn is held, when none
+#: of them waits for it.
+QUEUED_S = 5.0
 #: The longest any wait here takes before the test fails: a hang is a finding.
 WAIT_S = 20.0
+#: The name of the doc's thread, while it drains what waits for the doc.
+DOC_THREAD = "dataflow-doc-batches"
+#: What a queued message is answered at once.
+QUEUED = {"ok": True, "queued": True}
 
 
 class _Room:
@@ -141,16 +155,38 @@ class _Burst:
         self.going.clear()
         threads = [threading.Thread(target=first)]
         threads[0].start()
-        _wait_for(lambda: len(self.applies) == 1, "the first update never reached its apply")
-        for send in rest:
-            threads.append(threading.Thread(target=send))
-            threads[-1].start()
-        _wait_for(lambda: len(self.arrived) == len(threads), "an update never reached the server")
-        time.sleep(SETTLE_S)
-        self.going.set()
+        try:
+            _wait_for(lambda: len(self.applies) == 1, "the first update never reached its apply")
+            for send in rest:
+                threads.append(threading.Thread(target=send))
+                threads[-1].start()
+            _wait_for(lambda: len(self.arrived) == len(threads), "an update never reached the server")
+            time.sleep(SETTLE_S)
+        finally:
+            self.going.set()
         for thread in threads:
             thread.join(WAIT_S)
             assert not thread.is_alive(), "a tab is still waiting for its update's answer"
+
+    def hold(self, first):
+        """Send *first* from a thread of its own and hold its apply, and with
+        it the doc's turn, until :meth:`let_go`; the thread."""
+        self.applies.clear()
+        self.writes.clear()
+        self.going.clear()
+        thread = threading.Thread(target=first)
+        thread.start()
+        try:
+            _wait_for(lambda: len(self.applies) == 1, "the first update never reached its apply")
+        except BaseException:
+            self.let_go(thread)
+            raise
+        return thread
+
+    def let_go(self, thread) -> None:
+        self.going.set()
+        thread.join(WAIT_S)
+        assert not thread.is_alive(), "the held update's tab is still waiting for its answer"
 
 
 def _type(text: str):
@@ -211,6 +247,18 @@ def _own_clock(tab) -> dict:
     return {str(client): dataflow_docs._clocks(tab.doc)[client]}
 
 
+def _answered(tab, count: int) -> list:
+    """The kept messages the tab got, once they answer *count* of its updates."""
+    messages: list = []
+
+    def ready():
+        messages.extend(tab.kept())
+        return sum(message["answered"] for message in messages) >= count
+
+    _wait_for(ready, f"the server's kept messages never answered {count} of the tab's updates")
+    return messages
+
+
 def _take(tabs: dict) -> dict:
     """What the server sent each tab since the last take, its updates applied."""
     taken = {}
@@ -238,6 +286,20 @@ def _code(dataflow: dict) -> str:
     return next(node for node in dataflow["nodes"] if node["id"] == "loader")["content"]
 
 
+def _states(update: bytes) -> dict:
+    """The awareness states an awareness update carries, by client id."""
+    from pycrdt import Decoder
+
+    decoder = Decoder(update)
+    states = {}
+    for _ in range(decoder.read_var_uint()):
+        client = decoder.read_var_uint()
+        decoder.read_var_uint()
+        text = decoder.read_var_string()
+        states[client] = json.loads(text) if text else None
+    return states
+
+
 def _room_of_tabs(room) -> tuple[dict, dict]:
     """Four editing tabs, two of alice's and two of bob's, and carol's, a
     watcher's; all synced, and nothing left for them to read."""
@@ -245,7 +307,13 @@ def _room_of_tabs(room) -> tuple[dict, dict]:
             (("alice", "alice"), ("ana", "alice"), ("bob", "bob"), ("bea", "bob"))}
     everyone = {**tabs, "carol": room.tab("carol")}
     _take(everyone)
+    for tab in everyone.values():
+        tab.presences.clear()
     return tabs, everyone
+
+
+def _no_doc_thread() -> bool:
+    return not [thread for thread in threading.enumerate() if thread.name == DOC_THREAD and thread.is_alive()]
 
 
 def test_a_burst_from_several_tabs_is_one_batch_one_write_and_one_message_to_each_tab(room, monkeypatch):
@@ -258,13 +326,14 @@ def test_a_burst_from_several_tabs_is_one_batch_one_write_and_one_message_to_eac
     doc_id = tabs["alice"].doc_id
 
     # An update alone is applied, logged and relayed at once, by the thread
-    # that sent it, and answered with what the doc kept.
+    # that sent it, and answered in its ack with what the doc kept.
     [ack] = tabs["alice"].edit(_type("# alone\n"))
     assert ack == {"ok": True, "kept": _own_clock(tabs["alice"])}, ack
     assert burst.applies == [threading.current_thread()] and burst.writes == [1]
     assert {name: len(got) for name, got in _take(everyone).items()} == {
         "alice": 0, "ana": 1, "bob": 1, "bea": 1, "carol": 1,
     }, "an update alone did not reach each other tab at once"
+    assert [tab.kept() for tab in tabs.values()] == [[]] * 4, "an update alone was answered twice"
 
     # A burst: alice's update holds the doc while ana's, bob's and bea's come.
     before = burst.entry.doc.get_update()
@@ -273,12 +342,18 @@ def test_a_burst_from_several_tabs_is_one_batch_one_write_and_one_message_to_eac
         tab.sent.clear()
     answers: dict = {}
     burst.run(*(_sender(tab, _type(f"# {name}\n"), answers, name) for name, tab in tabs.items()))
-    taken = _take(everyone)
 
-    for name, tab in tabs.items():
-        assert answers.get(name) == [{"ok": True, "kept": _own_clock(tab)}], (name, answers.get(name))
+    assert answers.get("alice") == [{"ok": True, "kept": _own_clock(tabs["alice"])}], answers.get("alice")
+    for name in ("ana", "bob", "bea"):
+        assert answers.get(name) == [QUEUED], (name, answers.get(name))
+    assert room.docs.wait_idle(room.project_id, WAIT_S), "the doc's thread never drained its queue"
+    for name in ("ana", "bob", "bea"):
+        assert _answered(tabs[name], 1) == [
+            {"projectId": room.project_id, "answered": 1, "kept": _own_clock(tabs[name])},
+        ], name
+    taken = _take(everyone)
     assert len(origins.seen) == 4 and len(set(origins.seen)) == 4, (
-        f"each update was not applied in a transaction of its own, its tab the origin: {origins.seen}"
+        f"each tab's update was not applied in a transaction of its own, its tab the origin: {origins.seen}"
     )
     messages = {name: len(got) for name, got in taken.items()}
     assert sum(messages.values()) < 4 * (len(everyone) - 1), (
@@ -298,10 +373,12 @@ def test_a_burst_from_several_tabs_is_one_batch_one_write_and_one_message_to_eac
     assert doc_mapping.doc_to_dataflow(burst.entry.doc) == one_by_one, "the batch left another doc"
     for name, tab in everyone.items():
         assert tab.dataflow() == one_by_one, f"{name}'s tab holds another doc than the server's"
-    assert len(room.logged(doc_id)) == 5, "the log does not hold a record for each update"
+    assert len(room.logged(doc_id)) == 5, "the log does not hold a record for each tab's change"
 
     # Every tab typing at once, a key at a time: each tab's keys stay in the
-    # order it typed them, and each is answered with what the doc kept of it.
+    # order it typed them, and each is answered once, in that order, with what
+    # the doc kept: in its own ack, or by a kept message naming the clock of
+    # the last key it answers.
     before = burst.entry.doc.get_update()
     for tab in tabs.values():
         tab.sent.clear()
@@ -312,11 +389,19 @@ def test_a_burst_from_several_tabs_is_one_batch_one_write_and_one_message_to_eac
     for thread in threads:
         thread.join(WAIT_S)
         assert not thread.is_alive(), "a tab is still waiting for its key's answer"
+    assert room.docs.wait_idle(room.project_id, WAIT_S), "the doc's thread never drained its queue"
+    for name, typed in keys.items():
+        assert len(typed) == len(f"<{name}>"), (name, typed)
+        queued = [kept for ack, kept in typed if ack == QUEUED]
+        for ack, kept in typed:
+            assert ack in (QUEUED, {"ok": True, "kept": kept}), (name, ack, kept)
+        at = 0
+        for message in _answered(tabs[name], len(queued)):
+            at += message["answered"]
+            assert message == {"projectId": room.project_id, "answered": message["answered"],
+                               "kept": queued[at - 1]}, (name, message, queued)
+        assert at == len(queued), f"{name}'s queued keys were answered {at} times, not {len(queued)}"
     _take(everyone)
-    for name, answered in keys.items():
-        assert len(answered) == len(f"<{name}>"), (name, answered)
-        for ack, kept in answered:
-            assert ack == {"ok": True, "kept": kept}, (name, ack, kept)
     one_by_one = _after(before, [update for tab in tabs.values() for update in tab.sent])
     assert doc_mapping.doc_to_dataflow(burst.entry.doc) == one_by_one
     for name, tab in everyone.items():
@@ -343,9 +428,18 @@ def test_an_update_that_does_not_apply_is_refused_alone_and_the_rest_of_its_batc
         _sender(tabs["bea"], _type("# bea\n"), answers, "bea"),
     )
 
-    assert answers.get("bob") == {"ok": False, "error": "invalid_message"}, answers.get("bob")
-    for name in ("alice", "ana", "bea"):
-        assert answers.get(name) == [{"ok": True, "kept": _own_clock(tabs[name])}], (name, answers.get(name))
+    assert answers.get("alice") == [{"ok": True, "kept": _own_clock(tabs["alice"])}], answers.get("alice")
+    assert answers.get("bob") == QUEUED, answers.get("bob")
+    for name in ("ana", "bea"):
+        assert answers.get(name) == [QUEUED], (name, answers.get(name))
+    assert room.docs.wait_idle(room.project_id, WAIT_S), "the doc's thread never drained its queue"
+    assert _answered(tabs["bob"], 1) == [{
+        "projectId": room.project_id, "answered": 1, "kept": {}, "refused": {"invalid_message": 1},
+    }], "the update that does not apply was not refused, alone"
+    for name in ("ana", "bea"):
+        assert _answered(tabs[name], 1) == [
+            {"projectId": room.project_id, "answered": 1, "kept": _own_clock(tabs[name])},
+        ], name
     assert sum(burst.writes) == 3 and len(burst.writes) < 3, (
         f"each update that applied was written to the log alone: {burst.writes}"
     )
@@ -379,3 +473,106 @@ def test_steady_typing_wakes_the_thread_that_writes_the_docs_only_when_a_write_b
     assert room.docs.flush(room.project_id) is True
     assert alice.edit(_type("!"))[0]["ok"] is True
     assert len(woken) == 2, "a change after the doc was written did not make its next write due"
+
+
+def test_a_tabs_messages_behind_a_batch_are_answered_at_once_and_its_queued_keys_merge(room, monkeypatch):
+    """While alice's update holds the doc's turn, ana types three keys and
+    moves her pointer, and each is answered at once, ``queued``: her socket
+    reads on, its pings with it. Then the doc's thread applies them as one
+    batch: her three keys one transaction and one record in the log, one
+    message to each other tab, and one kept message answering all three. The
+    thread ends once nothing waits."""
+    from utk_curio.backend.app.collaboration import doc_mapping
+
+    from ._ydoc_client import Origins
+
+    tabs, everyone = _room_of_tabs(room)
+    burst = _Burst(room, monkeypatch)
+    doc_id = tabs["alice"].doc_id
+    before = burst.entry.doc.get_update()
+    origins = Origins(room.project_id)
+    answers: dict = {}
+    keys: list = []
+    pointer: list = []
+
+    def ana_types():
+        _typist(tabs["ana"], "abc", keys)()
+        pointer.append(tabs["ana"].set_presence({"pointer": {"x": 1, "y": 2}}))
+
+    held = burst.hold(_sender(tabs["alice"], _type("# alice\n"), answers, "alice"))
+    try:
+        ana = threading.Thread(target=ana_types)
+        ana.start()
+        ana.join(QUEUED_S)
+        assert not ana.is_alive(), (
+            "ana's messages waited for the update that held the doc: her socket read nothing more meanwhile"
+        )
+    finally:
+        burst.let_go(held)
+
+    assert [ack for ack, _kept in keys] == [QUEUED] * 3, keys
+    assert pointer == [QUEUED], pointer
+    assert answers.get("alice") == [{"ok": True, "kept": _own_clock(tabs["alice"])}], answers.get("alice")
+    assert room.docs.wait_idle(room.project_id, WAIT_S), "the doc's thread never drained its queue"
+    assert _answered(tabs["ana"], 3) == [{"projectId": room.project_id, "answered": 3, "kept": keys[-1][1]}], (
+        "ana's three keys were not answered by one kept message"
+    )
+    _wait_for(_no_doc_thread, "the doc's thread did not end once nothing waited")
+    assert len(origins.seen) == 2 and len(set(origins.seen)) == 2, (
+        f"ana's three keys were not one transaction: {origins.seen}"
+    )
+    assert burst.writes == [1, 1] and len(room.logged(doc_id)) == 2, (
+        f"ana's three keys were not one record in the log: {burst.writes}"
+    )
+    assert {name: len(got) for name, got in _take(everyone).items()} == {
+        "alice": 1, "ana": 1, "bob": 2, "bea": 2, "carol": 2,
+    }, "ana's three keys did not reach each other tab as one message"
+    one_by_one = _after(before, [update for tab in tabs.values() for update in tab.sent])
+    assert doc_mapping.doc_to_dataflow(burst.entry.doc) == one_by_one
+    for name, tab in everyone.items():
+        assert tab.dataflow() == one_by_one, f"{name}'s tab holds another doc than the server's"
+    assert "abc" in _code(one_by_one) and "# alice\n" in _code(one_by_one), _code(one_by_one)
+    assert tabs["bob"].others()[tabs["ana"].doc.client_id]["pointer"] == {"x": 1, "y": 2}
+
+
+def test_awareness_waits_with_the_updates_and_each_tab_gets_each_clients_latest_state_once(room, monkeypatch):
+    """While the doc's turn is held, ana and bob each move their pointer three
+    times, each move answered at once. The batch keeps each client's latest
+    state and sends each tab one message of them, its own clients' left out:
+    a cursor's moves cost each tab a message a batch, not one a move."""
+    tabs, everyone = _room_of_tabs(room)
+    burst = _Burst(room, monkeypatch)
+    answers: dict = {}
+    moves: dict = {"ana": [], "bob": []}
+
+    def moving(name):
+        def run():
+            for x in (1, 2, 3):
+                moves[name].append(tabs[name].set_presence({"pointer": {"x": x, "y": 0}}))
+
+        return run
+
+    held = burst.hold(_sender(tabs["alice"], _type("# alice\n"), answers, "alice"))
+    try:
+        movers = [threading.Thread(target=moving(name)) for name in moves]
+        for mover in movers:
+            mover.start()
+        for mover in movers:
+            mover.join(QUEUED_S)
+            assert not mover.is_alive(), "a pointer move waited for the update that held the doc"
+    finally:
+        burst.let_go(held)
+
+    assert moves == {"ana": [QUEUED] * 3, "bob": [QUEUED] * 3}, moves
+    assert room.docs.wait_idle(room.project_id, WAIT_S), "the doc's thread never drained its queue"
+    clients = {name: tab.doc.client_id for name, tab in tabs.items()}
+    for name, tab in everyone.items():
+        tab.pump()
+        assert len(tab.presences) == 1, (
+            f"{name}'s tab got {len(tab.presences)} awareness messages for one batch of moves"
+        )
+        states = _states(tab.presences[0])
+        movers = {clients[mover] for mover in moves if mover != name}
+        assert set(states) == movers, f"{name}'s tab was sent the states of {set(states)}, not {movers}"
+        for client in movers:
+            assert states[client]["pointer"] == {"x": 3, "y": 0}, (name, states)
