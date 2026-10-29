@@ -110,6 +110,26 @@ def _diag_payload(intervene=False):
         from utk_curio.sandbox.util.memory_release import release_free_memory
         release_free_memory()
         out["after_gc_release"] = {"anon_mb": _anon_mb(), "obmalloc": _obmalloc()}
+        try:
+            from utk_curio.sandbox.util import db
+
+            raw = object.__getattribute__(db._connection, "_con")
+            cur = raw.cursor()
+            cur.execute("SET GLOBAL allocator_background_threads = true")
+            cur.close()
+            __import__("time").sleep(4)
+            out["after_duckdb_background"] = {"anon_mb": _anon_mb()}
+        except Exception as exc:  # noqa: BLE001
+            out["duckdb_background_error"] = repr(exc)
+        pa_mod = sys.modules.get("pyarrow")
+        if pa_mod is not None:
+            try:
+                pa_mod.jemalloc_set_decay_ms(0)
+                pa_mod.jemalloc_memory_pool().release_unused()
+                __import__("time").sleep(1)
+                out["after_arrow_jemalloc"] = {"anon_mb": _anon_mb()}
+            except Exception as exc:  # noqa: BLE001
+                out["arrow_jemalloc_error"] = repr(exc)
     pa = sys.modules.get("pyarrow")
     if pa is not None:
         pool = pa.default_memory_pool()
@@ -208,6 +228,8 @@ HEADER = re.compile(r"^([0-9a-f]+)-([0-9a-f]+) (\S{4}) \S+ \S+ \d+\s*(.*)$")
 
 def variant_env(env):
     env = dict(env)
+    if STATE.get("decorate"):
+        env["GLIBC_TUNABLES"] = "glibc.mem.decorate_maps=1"
     variant = STATE["variant"].replace("_thp_off", "").replace("thp_off", "baseline")
     if variant == "launch":
         from utk_curio.sandbox.isolation.lifecycle import server_environment
@@ -269,6 +291,9 @@ def classify(pid):
                     kind = "file"
                 elif path == "[heap]":
                     kind = "main_heap"
+                elif path.startswith("[anon:"):
+                    # glibc.mem.decorate_maps names glibc's own mappings.
+                    kind = "named:" + re.sub(r"[^a-z: ]", "", path[6:].lower()).strip()[:40]
                 elif path.startswith("["):
                     kind = "special"
                 elif "w" not in perms:
@@ -362,11 +387,14 @@ def main():
     parser.add_argument("--rows", type=int, default=200_000)
     parser.add_argument("--out", required=True)
     parser.add_argument("--diag", action="store_true")
+    parser.add_argument("--decorate", action="store_true",
+                        help="name glibc's mappings (glibc.mem.decorate_maps)")
     parser.add_argument("--replay-variant", default="",
                         help="comma-separated _rerun_memory variants, such as gc")
     args = parser.parse_args()
     STATE["variant"] = args.variant
     STATE["diag"] = args.diag
+    STATE["decorate"] = args.decorate
     if args.diag:
         rr._SITECUSTOMIZE = rr._SITECUSTOMIZE + DIAG_SITE
     results = []
