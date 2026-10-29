@@ -7,6 +7,7 @@ import {
   declaresCapability,
   ORCHESTRATE_CAPABILITY,
   sessionTokenTotals,
+  writtenBySomeoneElse,
   type AgentAttachment,
   type AgentSessionTurn,
   type AgentRunStatus,
@@ -61,6 +62,12 @@ import {
 export const AgentChatPanel: React.FC<{
   attachment: AgentAttachment;
   turns: AgentSessionTurn[];
+  /** The viewer's account. The owner and the editors the owner invited share
+   * the chat, and a message someone else wrote names its writer. */
+  viewerAccount?: string | null;
+  /** An invited editor's chat: an install a proposal makes waits for the
+   * owner's review in place of its Apply and Dismiss. */
+  installsWaitForOwner?: boolean;
   /**
    * Display name of what this agent is attached to, for the header.
    *
@@ -171,6 +178,8 @@ export const AgentChatPanel: React.FC<{
 }> = ({
   attachment,
   turns,
+  viewerAccount = null,
+  installsWaitForOwner = false,
   targetName = null,
   index = 1,
   total = 1,
@@ -370,6 +379,7 @@ export const AgentChatPanel: React.FC<{
     onUndoChange,
     onSolvePlanNode,
     onRunPlanNode,
+    installsWaitForOwner,
   };
 
   return (
@@ -456,9 +466,17 @@ export const AgentChatPanel: React.FC<{
         ) : (
           turns.map((t, i) =>
             t.role === "user" ? (
-              <div key={i} className={styles.msgUser}>
-                {t.text}
-              </div>
+              writtenBySomeoneElse(t.by, viewerAccount) ? (
+                // A message someone else wrote names its writer above it.
+                <div key={i} className={styles.userTurn} data-curio-writer={t.by?.name}>
+                  <div className={styles.msgWriter}>{t.by?.name}</div>
+                  <div className={styles.msgUser}>{t.text}</div>
+                </div>
+              ) : (
+                <div key={i} className={styles.msgUser}>
+                  {t.text}
+                </div>
+              )
             ) : (
               <AgentTurn
                 key={i}

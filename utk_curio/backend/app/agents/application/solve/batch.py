@@ -1203,6 +1203,7 @@ class SolveBatch:
             self.dataflow_blocks[node_id] = agents_dataflow_block.compose(
                 self.user_key, self.project_id, node_type=node.get("type"),
                 datasets=self.solve_ground.get("dataflow_datasets"), user=self.acting_user,
+                keys=agents_grounding._keys_of(self.solve_ground, self.user_key, self.acting_user),
             )
         return self.dataflow_blocks[node_id]
 
@@ -1311,7 +1312,8 @@ class SolveBatch:
             result_summary_fn=self.schema_of_artifact,
             exec_user_key=self.user_key,
             acting_user=self.acting_user,
-            secrets_fn=agents_grounding._exec_secrets_resolver(self.user_key),
+            secrets_fn=agents_grounding._exec_secrets_resolver(
+                agents_grounding._keys_of(self.solve_ground, self.user_key, self.acting_user)),
             prior_outputs_fn=lambda: {
                 nid: o["output"] for nid, o in self.wave_outputs.items() if o.get("output")
             },

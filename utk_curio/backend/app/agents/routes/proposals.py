@@ -2,6 +2,11 @@
 
 Presentation layer of the agents package (memo dev/142, B4-1; re-derived on enh/agent-catalog): the handlers
 of ``routes.py`` by resource, registered on the one ``agents_bp`` from ``routes/common.py``.
+
+An install a proposal makes changes the account of the dataflow's owner, so
+an editor the owner invited neither applies nor dismisses one: it waits for
+the owner's review (``application/editors.py``). An agent's change to the
+dataflow landed already; its Undo is the caller's own change.
 """
 
 from __future__ import annotations
@@ -10,14 +15,25 @@ from flask import g
 from flask import jsonify
 
 from utk_curio.backend.app.agents import service as agents_services
+from utk_curio.backend.app.agents.routes.common import Dataflow
+from utk_curio.backend.app.agents.routes.common import _dataflow
 from utk_curio.backend.app.agents.routes.common import _error
 from utk_curio.backend.app.agents.routes.common import _svc_error
-from utk_curio.backend.app.agents.routes.common import _working_dataflow
 from utk_curio.backend.app.agents.routes.common import agents_bp
 from utk_curio.backend.app.agents.service import AgentServiceError
 from utk_curio.backend.app.projects import repositories as projects_repo
-from utk_curio.backend.app.projects.services import _user_dir_key
 from utk_curio.backend.app.users.dependencies import require_auth
+
+
+def _owners_install(flow: Dataflow, attachment_id: str, proposal_id: str) -> None:
+    """Refuse an editor's review of an install, which is the owner's."""
+    if not flow.editor:
+        return
+    refusal = agents_services.install_refusal(
+        flow.key, flow.project_id, attachment_id, proposal_id, flow.owner_name,
+    )
+    if refusal:
+        raise AgentServiceError(refusal, 403)
 
 
 @agents_bp.route(
@@ -29,13 +45,14 @@ def apply_proposal(project_id: str, attachment_id: str, proposal_id: str):
     """Apply a pending install the person reviewed (memo dev/41): the only
     path that runs an install an agent asked for.
 
-    Explicit, owner-authenticated, revision-safe: a drifted install returns a
-    409 and marks the proposal stale. Consumes no quota."""
+    Explicit, authenticated, revision-safe: a drifted install returns a 409
+    and marks the proposal stale. Consumes no quota. An install waits for the
+    dataflow owner's own Apply."""
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        project_id = _working_dataflow(project_id)
+        flow = _dataflow(project_id)
+        _owners_install(flow, attachment_id, proposal_id)
         payload = agents_services.apply_proposal(
-            _user_dir_key(g.user), project_id, attachment_id, proposal_id
+            flow.key, flow.project_id, attachment_id, proposal_id
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
@@ -50,12 +67,13 @@ def apply_proposal(project_id: str, attachment_id: str, proposal_id: str):
 )
 @require_auth
 def dismiss_proposal(project_id: str, attachment_id: str, proposal_id: str):
-    """Dismiss a pending install without applying it."""
+    """Dismiss a pending install without applying it. An install waits for
+    the dataflow owner's own review."""
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        project_id = _working_dataflow(project_id)
+        flow = _dataflow(project_id)
+        _owners_install(flow, attachment_id, proposal_id)
         payload = agents_services.dismiss_proposal(
-            _user_dir_key(g.user), project_id, attachment_id, proposal_id
+            flow.key, flow.project_id, attachment_id, proposal_id
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
@@ -77,10 +95,9 @@ def undo_change(project_id: str, attachment_id: str, change_id: str):
     changed it after, when someone did: then nothing is undone. The answer
     carries the canvas mutations a canvas no doc binds takes."""
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        project_id = _working_dataflow(project_id)
+        flow = _dataflow(project_id)
         payload = agents_services.undo_change(
-            _user_dir_key(g.user), project_id, attachment_id, change_id, g.user
+            flow.key, flow.project_id, attachment_id, change_id, g.user
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)

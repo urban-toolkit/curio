@@ -68,7 +68,12 @@ def make_turn(
     error: bool = False,
     execution: dict | None = None,
     content: list | None = None,
+    by: dict | None = None,
 ) -> dict:
+    """One turn of a transcript. *by*, on a person's message, names who wrote
+    it, as a point of the dataflow's history names a person (``{kind,
+    account, name}``): the owner and the editors the owner invited share an
+    attachment's chat."""
     if role not in TURN_ROLES:
         raise SessionError(f"turn role must be one of {TURN_ROLES}, got {role!r}")
     turn: dict = {
@@ -76,6 +81,8 @@ def make_turn(
         "text": text,
         "ts": datetime.now(timezone.utc).isoformat(),
     }
+    if by:
+        turn["by"] = by
     if error:
         turn["error"] = True
     if execution is not None:

@@ -21,6 +21,7 @@ from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 from utk_curio.backend.app.agents.repositories import catalog_settings
 from utk_curio.backend.app.agents.repositories import project_agents
 from utk_curio.backend.app.agents.repositories import sessions
+from utk_curio.backend.app.agents.application import askers as agents_askers
 from utk_curio.backend.app.agents.application import catalog as agents_catalog
 from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
 from utk_curio.backend.app.agents.application import lifecycle as agents_lifecycle
@@ -162,6 +163,8 @@ def _prepare_run(
         "dataflow_datasets": dataflow_datasets,
         # The run's skills: what skill.read loads from and records loading.
         "skills": run_skills,
+        # Who wrote the message, which its turn names (askers.writer).
+        "writer": agents_askers.writer(),
     }
     return coord, session_id, messages, run_policy, wants_title, pins, loop_ctx
 
@@ -338,11 +341,12 @@ def _persist_exchange(
     error: bool = False,
     execution: dict | None = None,
     parts: list | None = None,
+    writer: dict | None = None,
 ) -> None:
     """Persist one exchange to the session (no-op without a session id). Error
     markers are display-only history, excluded from future context (dev/20).
     The execution record (dev/37) and content parts (dev/39) ride the agent
-    turn."""
+    turn; *writer*, who wrote the message, rides the user turn."""
     if session_id is None:
         return
     sessions.append_turns(
@@ -351,7 +355,7 @@ def _persist_exchange(
         session_id,
         attachment_id,
         [
-            sessions.make_turn("user", message),
+            sessions.make_turn("user", message, by=writer),
             sessions.make_turn("agent", reply, error=error, execution=execution, content=parts),
         ],
     )

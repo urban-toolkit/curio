@@ -351,6 +351,7 @@ class VerifiedRounds:
             self.dataflow_block = agents_dataflow_block.compose(
                 self.user_key, self.project_id, node_type=self.node_type,
                 datasets=(self.grounding_base or {}).get("dataflow_datasets"), user=self.acting_user,
+                keys=agents_grounding._keys_of(self.grounding_base, self.user_key, self.acting_user),
             ) or ""
         return self.dataflow_block or None
 

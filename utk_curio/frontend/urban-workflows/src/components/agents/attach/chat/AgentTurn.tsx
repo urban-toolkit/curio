@@ -5,6 +5,7 @@ import { faRobot } from "@fortawesome/free-solid-svg-icons";
 import {
   DATASET_SELECT_CAPABILITY,
   declaresCapability,
+  installsIntoAccount,
   NODE_BUILD_CAPABILITY,
   SKILL_USE_WORDS,
   skillsUsedBy,
@@ -55,6 +56,8 @@ export interface AgentTurnActions {
   onUndoChange?: (changeId: string) => Promise<unknown>;
   onSolvePlanNode?: (ref: string) => Promise<void>;
   onRunPlanNode?: (ref: string) => Promise<void>;
+  /** An invited editor's chat: an install waits for the owner's review. */
+  installsWaitForOwner?: boolean;
 }
 
 /**
@@ -79,6 +82,9 @@ export const AgentTurn: React.FC<{
   // #447: the failed tool calls that keep their reason under the reply.
   const failedCalls = lastingToolFailures(t);
   const usedSkills = t.error ? [] : skillsUsedBy(t.execution);
+  // An install on an invited editor's chat is the owner's to review.
+  const waitsForOwner = (part: AgentProposalPart) =>
+    Boolean(actions.installsWaitForOwner) && installsIntoAccount(part.tool);
   return (
     <div className={styles.agentRow}>
       <span className={`${styles.agentRowAvatar} ${tint}`} aria-hidden="true">
@@ -164,12 +170,15 @@ export const AgentTurn: React.FC<{
                 key={part.proposalId ?? j}
                 part={part}
                 tintClassName={tint}
+                waitsForOwner={waitsForOwner(part)}
                 onApply={
-                  part.tool === "package.install" && actions.onApplyProposal
-                    ? (proposalId) => actions.beginPackageReview(proposalId, part.pins?.dirName ?? "")
-                    : actions.onApplyProposal
+                  waitsForOwner(part)
+                    ? undefined
+                    : part.tool === "package.install" && actions.onApplyProposal
+                      ? (proposalId) => actions.beginPackageReview(proposalId, part.pins?.dirName ?? "")
+                      : actions.onApplyProposal
                 }
-                onDismiss={actions.onDismissProposal}
+                onDismiss={waitsForOwner(part) ? undefined : actions.onDismissProposal}
               />
             ))}
         </div>

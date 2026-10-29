@@ -217,11 +217,13 @@ def _run_node_loop(
     """The per-node Solve's rounds: the ONE verified-content loop, started from the node's current
     content, with the traced delegate runner (the trace lands in this node's own home)."""
     node_id = node.get("id")
+    # The saved keys of whoever asked, as the request recorded them in the base.
+    keys = agents_grounding._keys_of(grounding_base, user_key, acting_user)
     # The dataflow block of every round's content-mode run, with the datasets
     # the request read before the job started (the grounding base).
     dataflow_block = agents_dataflow_block.compose(
         user_key, project_id, node_type=node.get("type"),
-        datasets=(grounding_base or {}).get("dataflow_datasets"), user=acting_user,
+        datasets=(grounding_base or {}).get("dataflow_datasets"), user=acting_user, keys=keys,
     )
 
     def _traced(delegate_inputs, refused=None):
@@ -259,7 +261,7 @@ def _run_node_loop(
         result_summary_fn=agents_session._artifact_summary_fn(),
         exec_user_key=user_key,
         acting_user=acting_user,
-        secrets_fn=agents_grounding._exec_secrets_resolver(user_key),
+        secrets_fn=agents_grounding._exec_secrets_resolver(keys),
         resolve_source=agents_grounding._source_resolver(
             user_key, project_id, coord=coord, attachment_id=attachment_id,
             execution_id=execution_id, config=config, manifest=manifest,

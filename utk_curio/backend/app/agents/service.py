@@ -30,6 +30,11 @@ from utk_curio.backend.app.agents.application.catalog import (
 from utk_curio.backend.app.agents.application.dataset_selection import (
     record_dataset_selection,
 )
+from utk_curio.backend.app.agents.application.editors import (
+    ACCOUNT_INSTALL_TOOLS,
+    download_refusal,
+    install_refusal,
+)
 from utk_curio.backend.app.agents.application.errors import (
     AgentServiceError,
 )
@@ -151,6 +156,9 @@ __all__ = [
     "list_my_imports",
     "read_definition_bundle_anywhere",
     "record_dataset_selection",
+    "ACCOUNT_INSTALL_TOOLS",
+    "download_refusal",
+    "install_refusal",
     "AgentServiceError",
     "import_agent",
     "install_in_project",

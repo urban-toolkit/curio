@@ -31,16 +31,21 @@ export interface AgentAttachmentsContextValue
     AgentSimulationSlice,
     AgentNodeRunsSlice {
   closeChat: () => void;
+  /** An editor the owner invited drives the agents here: an install a
+   * proposal makes waits for the owner's review (`agentsOnCanvas`). */
+  installsWaitForOwner?: boolean;
 }
 
 const AgentAttachmentsContext = createContext<AgentAttachmentsContextValue | null>(null);
 
 export const AgentAttachmentsProvider: React.FC<{
-  /** When false (e.g. shared read-only view) the hook is disabled and no
+  /** When false (a watcher's read-only view) the hook is disabled and no
    * attachments are fetched. */
   enabled?: boolean;
+  /** An invited editor's canvas: an install waits for the owner's review. */
+  installsWaitForOwner?: boolean;
   children: React.ReactNode;
-}> = ({ enabled = true, children }) => {
+}> = ({ enabled = true, installsWaitForOwner = false, children }) => {
   const { projectId } = useFlowContext();
   const effectiveProjectId = enabled ? (projectId ?? null) : null;
   const state = useAgentAttachments(effectiveProjectId);
@@ -69,9 +74,10 @@ export const AgentAttachmentsProvider: React.FC<{
       ...solve,
       ...simulation,
       ...nodeRuns,
+      installsWaitForOwner,
     }),
     // `sessionValue` is a rest of `session`, whose identity already tracks its fields.
-    [state, session, setSelectedId, proposals, solve, simulation, nodeRuns],
+    [state, session, setSelectedId, proposals, solve, simulation, nodeRuns, installsWaitForOwner],
   );
 
   return <AgentAttachmentsContext.Provider value={value}>{children}</AgentAttachmentsContext.Provider>;

@@ -36,7 +36,10 @@ export const AgentReviewCard: React.FC<{
   /** The card awaits settlement only. */
   onApply?: (proposalId: string) => Promise<unknown>;
   onDismiss?: (proposalId: string) => Promise<void>;
-}> = ({ part, tintClassName, onApply, onDismiss }) => {
+  /** An install on an invited editor's chat: it waits for the dataflow
+   * owner's review, which the card says in place of Apply and Dismiss. */
+  waitsForOwner?: boolean;
+}> = ({ part, tintClassName, onApply, onDismiss, waitsForOwner = false }) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,6 +74,7 @@ export const AgentReviewCard: React.FC<{
         busy={busy}
         onApply={onApply ? () => void act(onApply) : undefined}
         onDismiss={onDismiss ? () => void act(onDismiss) : undefined}
+        waitsForOwner={waitsForOwner}
       />
       {error ? <div className={styles.error}>{error}</div> : null}
     </div>

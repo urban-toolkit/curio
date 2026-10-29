@@ -28,9 +28,9 @@ from flask import request
 from flask import send_file
 
 from utk_curio.backend.app.agents import service as agents_services
+from utk_curio.backend.app.agents.routes.common import _dataflow
 from utk_curio.backend.app.agents.routes.common import _error
 from utk_curio.backend.app.agents.routes.common import _map_agent_errors
-from utk_curio.backend.app.agents.routes.common import _working_dataflow
 from utk_curio.backend.app.agents.routes.common import agents_bp
 from utk_curio.backend.app.agents.service import AgentServiceError
 from utk_curio.backend.app.packages.routes import common as packages_routes_common
@@ -214,10 +214,9 @@ def restore_agent_skills(coord: str):
 def list_attachment_skills(project_id: str, attachment_id: str):
     """The skills the attachment's next chat run lists: what ``/`` offers in its chat."""
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        project_id = _working_dataflow(project_id, make=False)
+        flow = _dataflow(project_id, make=False)
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
     return jsonify({
-        "skills": agents_services.run_skills(_user_dir_key(g.user), project_id, attachment_id),
+        "skills": agents_services.run_skills(flow.key, flow.project_id, attachment_id),
     }), 200
