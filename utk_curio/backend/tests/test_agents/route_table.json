@@ -161,6 +161,13 @@
   "endpoint": "agents_api.update_attachment"
  },
  {
+  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/changes/<change_id>/undo",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.undo_change"
+ },
+ {
   "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/dataset-selection",
   "methods": [
    "POST"
@@ -187,27 +194,6 @@
    "POST"
   ],
   "endpoint": "agents_api.apply_proposal"
- },
- {
-  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/proposals/<proposal_id>/apply-edges",
-  "methods": [
-   "POST"
-  ],
-  "endpoint": "agents_api.apply_plan_edges"
- },
- {
-  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/proposals/<proposal_id>/apply-node",
-  "methods": [
-   "POST"
-  ],
-  "endpoint": "agents_api.apply_plan_node"
- },
- {
-  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/proposals/<proposal_id>/plan-goals",
-  "methods": [
-   "PATCH"
-  ],
-  "endpoint": "agents_api.set_plan_goal"
  },
  {
   "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/run",
