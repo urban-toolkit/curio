@@ -194,10 +194,13 @@ def _union(*boxes: dict, margin: int = 8) -> dict:
             "width": int(right - max(0, left)) + 1, "height": int(bottom - max(0, top)) + 1}
 
 
-def _quiet_pointer(page) -> None:
-    """The pointer off the dock and the nodes: no hover changes a frame."""
-    page.mouse.move(640, 740)
-    page.wait_for_timeout(300)
+def _quiet_pointers(*pages) -> None:
+    """Each page's pointer at the top bar's corner, off the canvas: no hover
+    changes a frame, and no pointer of theirs is drawn on another's canvas."""
+    for page in pages:
+        page.mouse.move(2, 2)
+    for page in pages:
+        page.wait_for_timeout(300)
 
 
 def test_the_dock_shows_who_else_is_here_with_their_role_the_node_they_edit_and_the_activity(room):
@@ -246,8 +249,9 @@ def test_the_dock_shows_who_else_is_here_with_their_role_the_node_they_edit_and_
         raise AssertionError(f"the owner's chip of the editor never said {expected!r}: {_people(owner)}") from exc
 
     # The frames: the owner's row with her agent and the people, the tooltip
-    # of the editor's chip, and the room's Activity.
-    _quiet_pointer(owner)
+    # of the editor's chip, and the room's Activity. Moving the editor's
+    # pointer away keeps the focus, and so the node they are editing.
+    _quiet_pointers(owner, editor, watcher)
     save_workflow_test_screenshot(owner, FRAMES, test_name="owners-row", clip_selector=DOCK, fit_reactflow=False)
     editor_chip = f'{CHIP}[data-collab-role="editor"]'
     tip = hover_until_tooltip_says(owner, editor_chip, "the editor's chip", [expected])
@@ -264,7 +268,7 @@ def test_the_dock_shows_who_else_is_here_with_their_role_the_node_they_edit_and_
         f"the owner's Activity lists {lines}"
     )
     assert activity.locator("button").count() == 0, "the Activity list holds a vote"
-    _quiet_pointer(owner)
+    _quiet_pointers(owner)
     save_workflow_test_screenshot(
         owner, FRAMES, test_name="activity",
         clip_rect=_union(owner.locator(DOCK).bounding_box(), activity.bounding_box()), fit_reactflow=False,
@@ -273,7 +277,7 @@ def test_the_dock_shows_who_else_is_here_with_their_role_the_node_they_edit_and_
     activity.wait_for(state="detached", timeout=10000)
 
     # The watcher's dock, under the banner.
-    _quiet_pointer(watcher)
+    _quiet_pointers(owner, editor, watcher)
     save_workflow_test_screenshot(
         watcher, FRAMES, test_name="watchers-row",
         clip_rect=_union(banner.bounding_box(), watcher.locator(DOCK).bounding_box()), fit_reactflow=False,

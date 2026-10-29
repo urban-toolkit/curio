@@ -424,6 +424,8 @@ def test_the_collab_flag_is_gone_with_no_alias(monkeypatch):
     assert "collab" not in inspect.signature(set_environment_variables).parameters
     with pytest.raises(TypeError):
         set_environment_variables(**BASE, collab=True)
+    # A start writes no such variable, whatever the shell held.
+    monkeypatch.delenv("ENABLE_COLLAB", raising=False)
     set_environment_variables(**BASE)
     assert "ENABLE_COLLAB" not in os.environ
 

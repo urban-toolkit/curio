@@ -20,13 +20,11 @@ Every tab that opens a saved dataflow (`/dataflow/<UUID>`) while signed in holds
 - **Undo is your own.** **Ctrl+Z** (**Cmd+Z** on a Mac) in a node's editor undoes your typing in that node, never someone else's. **Ctrl+Shift+Z** or **Ctrl+Y** redoes it.
 - **Everything else, live.** Adding, removing or connecting nodes, a widget's value, a scenario, a node's title, size or settings reach every other tab at once. While someone drags a node, the others see it move; it lands where they drop it.
 - **Kept as it is made.** The server keeps each change the moment it arrives and writes the dataflow a second after the last one. A tab that opens the dataflow later finds every change, the last keystroke included.
-
-A dataflow not saved yet, a hosted guest's canvas of an example, every canvas of a Curio started without `--deploy` or with `--no-project`, and the dashboard page each stay in their own tab.
-
 - **Invited editors edit.** See [Who edits](#who-edits-owner-editors-and-watchers).
 - **Who is here.** The dock at the top of the canvas, beside the canvas agents, has a chip for each other person in the dataflow, with their initials in their color. Hover one for their name, their role (owner, editor or watcher) and the node they are editing, and click it to move your view to where they point on the canvas. Your own chip is not in the row. A node someone is in shows their initials in its corner.
-- **Shared execution output.** When a node finishes running on one person's machine, the rendered output is sent to the others, so they see the same result without running it again and **without crossing the sandbox's session isolation**.
 - **Activity.** The **Activity** button at the end of that row lists who joined, who left and whose role changed, the last 200 of the room's events; see `ACTIVITY_CAP` in [`room_state.py`](../utk_curio/backend/app/collaboration/room_state.py).
+
+A dataflow not saved yet, a hosted guest's canvas of an example, every canvas of a Curio started without `--deploy` or with `--no-project`, and the dashboard page each stay in their own tab.
 
 ## Who edits: owner, editors and watchers
 
