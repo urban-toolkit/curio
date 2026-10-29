@@ -49,7 +49,7 @@ import {
 } from "../registry/projectPackagesStore";
 import { backendUrl } from "../utils/backendUrl";
 import { collabSocketTarget } from "../utils/collabSocketTarget";
-import { roleIn, writesDoc, type RoomRole } from "./collab/participants";
+import { isOwnParticipant, roleIn, writesDoc, type RoomRole } from "./collab/participants";
 import { DataflowDocProvider, KEPT_WAIT_MS } from "./collab/docProvider";
 import { CONNECTION_DROPPED_EVENT, DataflowDocContext, type DocBinding } from "./collab/docContext";
 import { HISTORY_CHANGED_EVENT } from "./history/serverHistory";
@@ -65,11 +65,12 @@ const DEFAULT_NAMESPACE = "/collab";
  * Close *socket* and drop *provider*, the doc this tab held on it, once the
  * server has every change the tab sent (at most `KEPT_WAIT_MS`): a leave that
  * asked nothing, the browser's Back among them, never drops a change still on
- * its way, which the server refuses once its socket has gone. Meanwhile the
- * socket listens for nothing but the doc's answers: the room is the tab's no
- * more.
+ * its way, which the server refuses once its socket has gone. The tab leaves
+ * everyone else's view at once all the same: its presence (its cursor, the
+ * node it edits) and *ownLocks*, the nodes it holds locked, go now, and the
+ * socket listens for nothing but the doc's answers meanwhile.
  */
-function retire(socket: Socket | null, provider: DataflowDocProvider | null): void {
+function retire(socket: Socket | null, provider: DataflowDocProvider | null, ownLocks: string[] = []): void {
     const close = () => {
         provider?.destroy();
         if (!socket) return;
@@ -85,6 +86,8 @@ function retire(socket: Socket | null, provider: DataflowDocProvider | null): vo
         return;
     }
     try {
+        provider.awareness.setLocalState(null);
+        for (const nodeId of ownLocks) socket.emit("node_unlock", { nodeId });
         socket.removeAllListeners();
     } catch {
         /* socket already gone */
@@ -230,6 +233,12 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     const role = useMemo(() => roleIn(users, participantId), [users, participantId]);
     // The dataflow's doc on this tab, once the room has joined it.
     const [docBinding, setDocBinding] = useState<DocBinding | null>(null);
+    // The locks this tab holds, as a leave reads them before the socket closes.
+    const ownLocksRef = useRef<() => string[]>(() => []);
+    ownLocksRef.current = () =>
+        Object.entries(lockedNodes)
+            .filter(([, lock]) => isOwnParticipant(participantId, lock))
+            .map(([nodeId]) => nodeId);
 
     const socketRef = useRef<Socket | null>(null);
     const namespaceRef = useRef<string>(DEFAULT_NAMESPACE);
@@ -313,7 +322,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
         socketRef.current = null;
         docProviderRef.current = null;
         setDocBinding(null);
-        retire(s, provider);
+        retire(s, provider, ownLocksRef.current());
         setConnected(false);
         setParticipantId(null);
         setUsers([]);
