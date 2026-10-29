@@ -3,7 +3,8 @@ name: Diag rerun memory flake
 # Diagnostic only, on a tmp branch that is never merged. Replays #408's
 # dataflow inside main's CI images, on ubuntu-latest as the unit (sandbox)
 # job does, and records what the replay's sandbox keeps at rest
-# (.github/diag/rerun_memory_probe.py).
+# (.github/diag/rerun_memory_probe.py). This round: the cost of glibc's fixed
+# thresholds, every setting on the same runner, interleaved.
 on:
   push:
     branches: ["tmp/rerun-memory-probe"]
@@ -12,20 +13,17 @@ permissions:
   contents: read
   packages: read
 
+env:
+  IMAGE: ghcr.io/urban-toolkit/curio-ci:a18707561b12afdc72ac779357a1bd5099516163
+
 jobs:
-  probe:
-    runs-on: ${{ matrix.os || 'ubuntu-latest' }}
-    timeout-minutes: 40
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { label: cost, image: a18707561b12afdc72ac779357a1bd5099516163, variant: launch, job: 1 }
-          - { label: cost, image: a18707561b12afdc72ac779357a1bd5099516163, variant: launch, job: 2 }
-          - { label: cost, image: a18707561b12afdc72ac779357a1bd5099516163, variant: launch_trim128k, job: 1 }
-          - { label: cost, image: a18707561b12afdc72ac779357a1bd5099516163, variant: launch_trim128k, job: 2 }
-          - { label: cost, image: a18707561b12afdc72ac779357a1bd5099516163, variant: launch_mmap4m, job: 1 }
-          - { label: cost, image: a18707561b12afdc72ac779357a1bd5099516163, variant: launch_mmap4m, job: 2 }
+        job: [1, 2]
     steps:
       - uses: actions/checkout@v6
 
@@ -36,34 +34,41 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Pull the image
-        run: docker pull --quiet "ghcr.io/urban-toolkit/curio-ci:${{ matrix.image }}"
+        run: docker pull --quiet "$IMAGE"
 
-      - name: Machine and image
+      - name: Machine
+        run: nproc; free -m; lscpu | grep -E "Model name|^CPU\(s\)"; uname -r
+
+      - name: Allocation bench, interleaved
         run: |
-          nproc; free -m; lscpu | grep -E "Model name|^CPU\(s\)"; uname -r
-          for f in enabled defrag khugepaged/max_ptes_none khugepaged/defrag shmem_enabled; do
-            echo "thp $f: $(cat /sys/kernel/mm/transparent_hugepage/$f 2>&1)"; done
-          for f in /sys/kernel/mm/transparent_hugepage/hugepages-*/enabled; do echo "mthp $f: $(cat $f)"; done
-          grep -E "AnonHugePages|ShmemHugePages" /proc/meminfo
-          docker run --rm "ghcr.io/urban-toolkit/curio-ci:${{ matrix.image }}" sh -c '
-            ldd --version | head -1
-            python -c "import pyarrow as pa; print(\"pyarrow\", pa.__version__, pa.default_memory_pool().backend_name)"
-            ARROW_DEFAULT_MEMORY_POOL=system python -c "import pyarrow as pa; print(\"with system:\", pa.default_memory_pool().backend_name)"
-            python -c "import pandas, numpy, geopandas, shapely, duckdb; print(pandas.__version__, numpy.__version__, geopandas.__version__, shapely.__version__, duckdb.__version__)"'
+          base="-e MALLOC_ARENA_MAX=16 -e ARROW_DEFAULT_MEMORY_POOL=system"
+          for round in 1 2 3; do
+            for setting in none mmap4m trim128k; do
+              case $setting in
+                none) extra="" ;;
+                mmap4m) extra="-e MALLOC_MMAP_THRESHOLD_=4194304 -e MALLOC_TRIM_THRESHOLD_=8388608" ;;
+                trim128k) extra="-e MALLOC_TRIM_THRESHOLD_=131072" ;;
+              esac
+              echo "round $round $setting"
+              docker run --rm -v "$GITHUB_WORKSPACE/.github/diag:/diag:ro" $base $extra "$IMAGE" \
+                python /diag/alloc_bench.py | tee -a "$GITHUB_STEP_SUMMARY"
+            done
+          done
 
-      - name: Probe
+      - name: Replays, interleaved
         run: |
           mkdir -p out
-          docker run --rm -v "$GITHUB_WORKSPACE/.github/diag:/diag:ro" -v "$GITHUB_WORKSPACE/out:/out" \
-            -e CURIO_ISOLATION=off -e FLASK_USE_RELOADER=0 -e CURIO_LAUNCH_CWD=/app -w /app \
-            "ghcr.io/urban-toolkit/curio-ci:${{ matrix.image }}" \
-            python /diag/rerun_memory_probe.py --variant "${{ matrix.variant }}" --label "${{ matrix.label }}" \
-              --samples "${{ matrix.samples || 3 }}" --cycles 10 ${{ matrix.diag || '' }} --replay-variant "${{ matrix.rv || '' }}" --out "/out/${{ matrix.label }}-${{ matrix.variant }}-${{ matrix.job }}.json" \
-            | tee -a "$GITHUB_STEP_SUMMARY"
+          for variant in launch launch_mmap4m launch_trim128k; do
+            docker run --rm -v "$GITHUB_WORKSPACE/.github/diag:/diag:ro" -v "$GITHUB_WORKSPACE/out:/out" \
+              -e CURIO_ISOLATION=off -e FLASK_USE_RELOADER=0 -e CURIO_LAUNCH_CWD=/app -w /app "$IMAGE" \
+              python /diag/rerun_memory_probe.py --variant "$variant" --label "bench${{ matrix.job }}" \
+                --samples 1 --cycles 10 --out "/out/bench${{ matrix.job }}-$variant.json" \
+              | tee -a "$GITHUB_STEP_SUMMARY"
+          done
 
       - uses: actions/upload-artifact@v6
         if: always()
         with:
-          name: probe-${{ matrix.label }}-${{ matrix.variant }}-${{ matrix.job }}
+          name: bench-${{ matrix.job }}
           path: out
           retention-days: 7

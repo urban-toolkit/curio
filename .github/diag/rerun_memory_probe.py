@@ -274,6 +274,21 @@ def _popen(args, **kwargs):
     proc = _real_popen(args, **kwargs)
     STATE["pid"] = proc.pid
     STATE["port"] = kwargs["env"].get("FLASK_SANDBOX_PORT")
+    STATE["maps_max"] = 0
+
+    def count_maps(pid=proc.pid):
+        import threading as _threading  # noqa: F401
+
+        while proc.poll() is None:
+            try:
+                with open(f"/proc/{pid}/maps") as handle:
+                    count = sum(1 for _ in handle)
+                STATE["maps_max"] = max(STATE.get("maps_max", 0), count)
+            except OSError:
+                return
+            time.sleep(0.05)
+
+    __import__("threading").Thread(target=count_maps, daemon=True).start()
     return proc
 
 
@@ -366,6 +381,8 @@ def _sleep(seconds):
             snap = snapshot(STATE["pid"])
         except OSError as exc:
             snap = {"error": str(exc)}
+        snap["maps_max_since_last"] = STATE.get("maps_max", 0)
+        STATE["maps_max"] = 0
         if STATE["diag"] and len(STATE["snaps"]) in (0, 1, 3, 6, STATE["cycles"]):
             snap["inside"] = _inside(intervene=len(STATE["snaps"]) == STATE["cycles"])
         STATE["snaps"].append(snap)
