@@ -80,6 +80,19 @@ Open the dataflow's link (`http://<host>:8080/dataflow/<UUID>`) in each collabor
 - **Room state:** in-memory dicts in [utk_curio/backend/app/collaboration/room_state.py](../utk_curio/backend/app/collaboration/room_state.py), guarded by a single `threading.RLock`: who is in the room, locks and activity. **Not persisted across restarts.**
 - **Each open dataflow's doc:** the dataflow itself is a Yjs doc the backend keeps in memory, synced with each tab over the same socket (the `yjs` event) and kept beside the dataflow's spec, so a restart reloads it; see [ARCHITECTURE.md § Each open dataflow's doc](ARCHITECTURE.md#each-open-dataflows-doc) and [§ The canvas bound to its doc](ARCHITECTURE.md#the-canvas-bound-to-its-doc). One backend process serves them all.
 
+### The room's events
+
+What a tab sends on the room's socket, and what the server does with it. The server answers no other event.
+
+| Event | What the server does |
+|-------|----------------------|
+| `connect` | Checks the Bearer token in the Socket.IO handshake's `auth`, and refuses a socket without a valid one. |
+| `join_session` | Puts the tab in the dataflow's room with its account's role, and answers with its participant id and the room's people, locks and activity; the others get `user_joined`. A join to a dataflow that does not exist, or a hosted guest's to an example, is refused. |
+| `node_lock` | Locks the node the tab edits, and tells the room (`node_locked`). A watcher's is refused (`read_only`). |
+| `node_unlock` | Releases the tab's lock on the node, and tells the room (`node_unlocked`). |
+| `yjs` | Syncs the dataflow's doc and everyone's presence in it, and drops a watcher's changes; see [ARCHITECTURE.md § Each open dataflow's doc](ARCHITECTURE.md#each-open-dataflows-doc). |
+| `disconnect` | Releases the tab's locks, takes it out of each doc it synced, clears its presence, and tells the room (`user_left`). |
+
 ### Backend modules
 
 | File | Role |
