@@ -49,7 +49,7 @@ Everyone in a dataflow's room has a role, which the server decides when they joi
 
 **Saving.** Every change is kept by the server as it is made, whoever makes it. **File > Save dataflow** on the owner's tab also saves the outputs the dataflow keeps and its Provenance. An editor or a watcher saves a copy with **File > Save dataflow**, as on any shared dataflow.
 
-**Hosted guests.** On a Curio started with `--deploy`, every guest shares one account, which also owns the example dataflows. Such a guest watches other accounts' dataflows. It joins no room of an example, so each guest's canvas of one stays its own, and the server refuses its saves.
+**Hosted guests.** On a Curio started with `--deploy`, every guest shares one account, which also owns the example dataflows. Such a guest watches other accounts' dataflows. It joins no room of an example, so each guest's canvas of one stays its own, and the server refuses its saves. Its agents work on its own copy of an example: their chats and what they change reach no other guest, and stay until the server restarts.
 
 ## When two people change the same thing
 
