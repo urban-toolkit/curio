@@ -14,6 +14,7 @@ from ..utils import (
     assert_vega_canvas_rendered,
     frame_node,
     hold_node_execution,
+    is_dataflow_save,
     node_locator,
     play_node,
     release_node_execution,
@@ -43,11 +44,7 @@ AUTARK_EXAMPLE = "07-autark-gpu-shader.json"
 
 def _is_project_save(response) -> bool:
     """The answered write of a dataflow save, whichever control started it."""
-    return (
-        "/api/projects" in response.url
-        and response.request.method in ("POST", "PUT")
-        and response.ok
-    )
+    return is_dataflow_save(response)
 
 
 def save_from_the_status_icon(ctx: Ctx) -> None:

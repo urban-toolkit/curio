@@ -483,21 +483,21 @@ def test_the_validator_checks_the_history_beside_a_projects_spec(tmp_curio):
 # ---------------------------------------------------------------------------
 
 def test_a_spec_that_still_holds_its_history_is_split_on_its_first_write(tmp_curio):
-    """No migration: a spec file saved with its history inside reads as it
-    is, and any write moves the history beside it, here a dataset install's.
-    A crash after the logs and before the spec file leaves that spec file,
-    which is read as it is, and its next write splits it again."""
+    """No migration in storage: a spec file saved with its history inside
+    reads as it is, and its first write, as the dataflow's doc writes it,
+    moves the history beside it. A crash after the logs and before the spec
+    file leaves that spec file, which is read as it is, and its next write
+    splits it again."""
     doc = _fixture()
     folder = storage.ensure_project_dir("1", "saved-before")
     (folder / "spec.trill.json").write_text(json.dumps(doc, indent=2), encoding="utf-8")
     assert _text(storage.read_spec("1", "saved-before")) == _text(doc)
 
     ref = {"datasetId": "data.curio.example@1"}
-    _spec, changed = storage.mutate_dataflow_datasets("1", "saved-before", lambda refs: [*refs, ref])
-    assert changed
-    _assert_split(folder, doc)
     expected = json.loads(json.dumps(doc))
     expected["dataflow"]["datasets"] = [ref]
+    storage.write_spec("1", "saved-before", expected)
+    _assert_split(folder, doc)
     assert _text(storage.read_spec("1", "saved-before")) == _text(expected)
 
     newer = storage.read_spec("1", "saved-before")
@@ -507,6 +507,29 @@ def test_a_spec_that_still_holds_its_history_is_split_on_its_first_write(tmp_cur
     assert _text(storage.read_spec("1", "saved-before")) == _text(expected)
     storage.write_spec("1", "saved-before", storage.read_spec("1", "saved-before"))
     _assert_split(folder, expected)
+    assert _text(storage.read_spec("1", "saved-before")) == _text(expected)
+
+
+def test_a_spec_that_still_holds_its_history_is_imported_by_its_first_write_through_the_doc(tmp_curio):
+    """A dataset install writes through the dataflow's doc, whose first open
+    imports the history a spec file saved with its history inside holds: then
+    the spec file holds none, the history's points hold every version, and the
+    sections are set aside, which no read finds again."""
+    doc = _fixture()
+    folder = storage.ensure_project_dir("1", "saved-before")
+    (folder / "spec.trill.json").write_text(json.dumps(doc, indent=2), encoding="utf-8")
+
+    ref = {"datasetId": "data.curio.example@1"}
+    _spec, changed = storage.mutate_dataflow_datasets("1", "saved-before", lambda refs: [*refs, ref])
+    assert changed
+    _assert_no_history_in_spec(folder)
+    assert _imported("1", "saved-before") == list(doc["dataflowProvenance"]["versions"])
+    for key in HISTORY:
+        name = storage.HISTORY_FILES[key]
+        assert not (folder / storage.HISTORY_DIR / name).exists(), f"{key} is still read beside the spec"
+        assert (folder / storage.HISTORY_DIR / storage.IMPORTED_DIR / name).is_file(), f"{key} was not set aside"
+    expected = {key: value for key, value in json.loads(json.dumps(doc)).items() if key not in HISTORY}
+    expected["dataflow"]["datasets"] = [ref]
     assert _text(storage.read_spec("1", "saved-before")) == _text(expected)
 
 
