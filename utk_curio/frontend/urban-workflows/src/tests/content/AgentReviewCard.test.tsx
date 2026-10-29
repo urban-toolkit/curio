@@ -104,8 +104,9 @@ describe("AgentReviewCard: a review of a change saved before agents edited the d
       const onApply = jest.fn().mockResolvedValue(undefined);
       const onDismiss = jest.fn().mockResolvedValue(undefined);
       render(<AgentReviewCard part={saved(tool)} onApply={onApply} onDismiss={onDismiss} />);
-      expect(screen.getByText(madeBefore())).toBeInTheDocument();
+      // No Apply: the server lands nothing from it any more.
       expect(screen.queryByRole("button", { name: "Apply" })).toBeNull();
+      expect(screen.getByText(madeBefore())).toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
       await waitFor(() => expect(onDismiss).toHaveBeenCalledWith(`saved-${tool}`));
       expect(onApply).not.toHaveBeenCalled();

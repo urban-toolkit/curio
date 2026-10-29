@@ -418,15 +418,18 @@ class TestAReviewSavedBeforeAgentsEditedDirectly:
 
     @pytest.mark.parametrize("tool", sorted(SAVED_REVIEWS))
     def test_its_apply_is_refused_saying_why_and_changes_nothing(self, client, user_and_token, tmp_curio, tool):
-        from utk_curio.backend.app.agents.application.proposals.apply import MADE_BEFORE_DIRECT_CHANGES
-
         user, token = user_and_token
         project, att, proposal_id = self._saved_review(client, user, token, tool)
         before = _saved(client, token, project)
         refused = client.post(f"/api/agents/projects/{project}/attachments/{att}/proposals/{proposal_id}/apply",
                               headers=_auth(token))
         assert refused.status_code == 409, refused.get_data(as_text=True)
-        assert refused.get_json()["error"] == MADE_BEFORE_DIRECT_CHANGES
+        said = refused.get_json()["error"]
+        # Words the card can show, not "no apply flow exists for tool ...".
+        assert "can no longer be applied" in said and "dismiss it" in said, said
+        from utk_curio.backend.app.agents.application.proposals.apply import MADE_BEFORE_DIRECT_CHANGES
+
+        assert said == MADE_BEFORE_DIRECT_CHANGES
         after = _saved(client, token, project)
         assert (after["nodes"], after["edges"]) == (before["nodes"], before["edges"])
         assert _listing(client, token, project, att)["activeProposal"]["status"] == "pending"
@@ -446,14 +449,14 @@ class TestAReviewSavedBeforeAgentsEditedDirectly:
     def test_a_plan_parked_beside_a_later_review_is_refused_and_dismissed_where_it_was_kept(
         self, client, user_and_token, tmp_curio,
     ):
-        from utk_curio.backend.app.agents.application.proposals.apply import MADE_BEFORE_DIRECT_CHANGES
-
         user, token = user_and_token
         project, att, proposal_id = self._saved_review(client, user, token, "dataflow.plan.write", parked=True)
         before = _saved(client, token, project)
         path = f"/api/agents/projects/{project}/attachments/{att}/proposals/{proposal_id}"
         refused = client.post(f"{path}/apply", headers=_auth(token))
         assert refused.status_code == 409, refused.get_data(as_text=True)
+        from utk_curio.backend.app.agents.application.proposals.apply import MADE_BEFORE_DIRECT_CHANGES
+
         assert refused.get_json()["error"] == MADE_BEFORE_DIRECT_CHANGES
         after = _saved(client, token, project)
         assert (after["nodes"], after["edges"]) == (before["nodes"], before["edges"])
