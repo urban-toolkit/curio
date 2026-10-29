@@ -357,8 +357,8 @@ class TestAChangeWaitsForAPersonInTheNode:
         monkeypatch.setattr(changes, "_LOCK_POLL_S", 0.02)
 
     @staticmethod
-    def _hold(monkeypatch, holder):
-        """*holder*, ``(user_id, name)``, holds the node ``sum`` in the room
+    def _hold(monkeypatch, holder, node="sum"):
+        """*holder*, ``(user_id, name)``, holds the node *node* in the room
         while the returned dict's ``held`` is true."""
         from utk_curio.backend.app.collaboration import room_state
 
@@ -368,7 +368,7 @@ class TestAChangeWaitsForAPersonInTheNode:
         def _snapshot(room):
             out = dict(real(room) or {})
             if state["held"]:
-                out["locks"] = {"sum": {"user_id": holder[0], "name": holder[1]}}
+                out["locks"] = {node: {"user_id": holder[0], "name": holder[1]}}
             return out
 
         monkeypatch.setattr(room_state, "snapshot", _snapshot)
@@ -409,6 +409,49 @@ class TestAChangeWaitsForAPersonInTheNode:
         assert said.startswith("[tool result] node.content.write: refused"), said
         assert "Ana" in said, said
         assert _by_id(_saved(client, token, project))["sum"]["content"] == "return input_0"
+
+    def test_a_plan_is_refused_when_the_person_changed_a_node_it_removes_while_holding_it(
+        self, client, user_and_token, tmp_curio, monkeypatch,
+    ):
+        """The plan's check that each node it removes holds the code it read
+        runs after the wait, so what the person wrote while in the node stays."""
+        import time as real_time
+        from types import SimpleNamespace
+
+        from utk_curio.backend.app.agents.application.proposals import changes
+        from utk_curio.backend.app.collaboration import dataflow_docs
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        project, att = _setup(client, user, token, coord=DFB)
+        state = self._hold(monkeypatch, ("someone-else", "Ana"), node="load")
+
+        def _sleep(seconds):
+            # Ana rewrites the node the plan removes, then leaves it.
+            if state["held"]:
+                spec = dataflow_docs.live(_user_dir_key(user), project)
+                for node in spec["dataflow"]["nodes"]:
+                    if node["id"] == "load":
+                        node["content"] = "return 10  # Ana's"
+                dataflow_docs.write(_user_dir_key(user), project, spec, dataflow_docs.person("someone-else", "edit"))
+                state["held"] = False
+
+        monkeypatch.setattr(changes, "time", SimpleNamespace(monotonic=real_time.monotonic, sleep=_sleep))
+        plan = {
+            "goal": "replace the loader",
+            "nodes": [{"ref": "a", "nodeType": CA, "title": "API Fetch", "intent": "fetch from the api"}],
+            "edges": [{"from": "a", "to": "sum"}],
+            "removeNodes": ["load"],
+        }
+        body, calls = _ask(client, token, project, att, monkeypatch, ["Here.\n" + _plan_tail(plan), "Ana changed it."])
+        assert state["held"] is False, "the plan never waited for Ana"
+        assert _cards(body) == [] and _proposals(body) == []
+        flow = _saved(client, token, project)
+        assert set(_by_id(flow)) == {"load", "sum"}
+        assert _by_id(flow)["load"]["content"] == "return 10  # Ana's"
+        assert [(e["source"], e["target"]) for e in flow["edges"]] == [("load", "sum")]
+        # The model is told why, and plans again from what the dataflow holds.
+        assert "changed after you read it" in calls[-1][-1]["content"], calls[-1][-1]["content"]
 
     def test_the_askers_own_focus_in_the_node_never_holds_their_agent_back(
         self, client, user_and_token, tmp_curio, monkeypatch,

@@ -302,6 +302,10 @@ node {node_id} took other code while you worked, so it keeps that code and nothi
 
 a node the plan removes ({label}) changed after you read it, so nothing changed: read the dataflow again and plan from what it holds now
 
+## change.plan-closes-a-cycle
+
+a connection the plan draws would now close a cycle ({cycle}) through one drawn after you read the dataflow, so nothing changed: read the dataflow again and plan from what it holds now
+
 ## mint.widgets-not-placeable
 
 params.widgets: a {label} node cannot hold widgets; a widget is placed in a node's code or spec

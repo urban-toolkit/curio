@@ -405,6 +405,29 @@ def _victims_changed(user_key: str, project_id: str, plan: dict, landing: dict) 
     return None
 
 
+def _closes_a_cycle_now(user_key: str, project_id: str, plan: dict) -> str | None:
+    """Why the plan cannot land when one of its data edges would now close a
+    cycle through a connection drawn after the mint read the dataflow, as
+    while it waited for a person in a node it removes (dev/112, DEC-070);
+    None when none would."""
+    fresh = dataflow_docs.live(user_key, project_id) or {}
+    dataflow = fresh.get("dataflow") or {}
+    edges = [e for e in dataflow.get("edges") or [] if isinstance(e, dict)]
+    closing = plan_topology.closing_plan_edges(
+        plan_topology.net_data_edges(
+            edges, plan, set(plan.get("removeNodes", [])), set(plan.get("removeEdges", [])),
+        ),
+        plan,
+    )
+    if not closing:
+        return None
+    _u, _v, path = closing[0]
+    labels = {n.get("id"): (n.get("goal") or n.get("id")) for n in dataflow.get("nodes") or [] if isinstance(n, dict)}
+    titles = {n["ref"]: n["title"] for n in plan.get("nodes", [])}
+    cycle = plan_topology.format_cycle(path, lambda x: titles.get(x) or labels.get(x) or x)
+    return agent_text.message("change.plan-closes-a-cycle", cycle=cycle)
+
+
 def _land_dataflow_plan(user_key: str, project_id: str, loop_ctx: dict, spec: dict, landing: dict, part: dict):
     """A dataflow plan, landed whole and at once (dev/52, dev/59), as the
     agent's change: its removals and the connections they cascade to, its
@@ -416,7 +439,7 @@ def _land_dataflow_plan(user_key: str, project_id: str, loop_ctx: dict, spec: di
     attachment_id = loop_ctx.get("attachment_id")
     plan = landing["plan"]
     plan_id = landing["proposalId"]
-    refusal = _victims_changed(user_key, project_id, plan, landing)
+    refusal = _victims_changed(user_key, project_id, plan, landing) or _closes_a_cycle_now(user_key, project_id, plan)
     if refusal:
         return "refused", refusal, None
     dataflow = spec.setdefault("dataflow", {})
@@ -685,11 +708,11 @@ def _plan_pins(spec: dict, plan: dict, existing_nodes: dict) -> tuple[str, dict]
 
 
 def _plan_summary(plan: dict) -> str:
-    """The review card's one-line summary: counts, and removals named (dev/112)."""
+    """The plan card's one-line summary: counts, and removals named (dev/112)."""
     remove_nodes = plan.get("removeNodes", [])
     remove_edges = plan.get("removeEdges", [])
     n_nodes, n_edges = len(plan["nodes"]), len(plan["edges"])
-    summary = f"Apply plan · {count_label(n_nodes, 'node')}, {count_label(n_edges, 'edge')}"
+    summary = f"Plan · {count_label(n_nodes, 'node')}, {count_label(n_edges, 'edge')}"
     if plan.get("scenarios"):
         summary += f", {count_label(len(plan['scenarios']), 'scenario')}"
     if remove_nodes or remove_edges:
@@ -994,8 +1017,8 @@ def _existing_plan_edge(edges: list, plan_edges: list, index: int, source: str, 
     (``toHandle``) is on that circle; one that names none is on a circle no
     other plan edge between the same two ends names, so a node fed twice by
     one node (a Spatial Join of a layer with itself) keeps both feeds. An edge
-    the plan removes (*doomed*) does not count. A row applies such an edge as
-    a no-op, and Apply plan creates none for it."""
+    the plan removes (*doomed*) does not count. A plan that lands creates none
+    for such an edge."""
     plan_edge = plan_edges[index]
     interaction = plan_topology.is_interaction_edge(plan_edge)
     named = plan_edge.get("toHandle")
