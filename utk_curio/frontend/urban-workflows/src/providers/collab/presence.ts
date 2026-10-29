@@ -9,9 +9,13 @@
  * - `drag`: the places of the nodes this tab is dragging, which the others
  *   show live; the place itself is written into the doc at the drop;
  * - `removed`: the nodes this tab just removed, so a tab that was editing one
- *   says who removed it.
+ *   says who removed it;
+ * - `cursor`: where this tab's pointer is on the canvas, in flow coordinates,
+ *   or null while it is off the canvas (`cursors.ts`); the others draw it in
+ *   this tab's color with its name.
  *
- * The server writes each state's `user`: the participant the room knows.
+ * The server writes each state's `user`: the participant the room knows. A
+ * watcher's state keeps only `cursor` and `selection`.
  */
 import type { Awareness } from "y-protocols/awareness";
 
@@ -27,12 +31,22 @@ export interface DragState {
     nodes: Record<string, { x: number; y: number }>;
 }
 
+/** A pointer on the canvas: the point of the dataflow it is on, in React
+ *  Flow's flow coordinates (the same in every tab, whatever each has panned
+ *  or zoomed to), and when it was sent, in milliseconds since the epoch. */
+export interface CursorPoint {
+    x: number;
+    y: number;
+    t: number;
+}
+
 export interface PresenceState {
     user?: PresenceUser;
     editing?: string | null;
     drag?: DragState | null;
     removed?: { nodes: string[]; at: number } | null;
     selection?: unknown;
+    cursor?: CursorPoint | null;
 }
 
 /** How long a removal note stays in this tab's state. */
@@ -123,6 +137,12 @@ export function participantColor(id: string | null | undefined): string {
     return PARTICIPANT_COLORS[hash % PARTICIPANT_COLORS.length];
 }
 
+/** The color of whoever holds the awareness state *state*, client *clientId*:
+ *  their cursor's in the code editors and on the canvas. */
+export function colorOf(clientId: number, state: PresenceState | null | undefined): string {
+    return participantColor(state?.user?.participant_id ?? String(clientId));
+}
+
 function cssString(text: string): string {
     return `"${text.replace(/[\\"]/g, (c) => `\\${c}`).replace(/[\n\r\f]/g, " ")}"`;
 }
@@ -136,7 +156,7 @@ function cssString(text: string): string {
 export function remoteCursorStyle(awareness: Awareness | null | undefined): string {
     const rules: string[] = [];
     for (const [clientId, state] of othersOf(awareness)) {
-        const color = participantColor(state.user?.participant_id ?? String(clientId));
+        const color = colorOf(clientId, state);
         rules.push(
             `.yRemoteSelection-${clientId} { background-color: ${color}33; }`,
             `.yRemoteSelectionHead-${clientId} { position: absolute; border-left: 2px solid ${color}; `

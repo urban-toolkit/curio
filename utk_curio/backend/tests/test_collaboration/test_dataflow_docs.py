@@ -345,13 +345,14 @@ def test_awareness_is_named_by_the_server_and_a_watchers_carries_no_edits(room):
         tab.sync()
     assert alice.set_presence({
         "user": {"name": "Mallory", "username": "mallory"},
-        "pointer": {"x": 1, "y": 2},
+        "cursor": {"x": 1, "y": 2, "t": 1700000000000},
         "drag": {"node": "loader", "x": 5, "y": 6},
     }) == {"ok": True}
     assert carol.set_presence({
-        "pointer": {"x": 3, "y": 4},
+        "cursor": {"x": 3.5, "y": -4, "t": 1700000000050},
         "selection": {"node": "loader", "anchor": 0, "head": 1},
         "drag": {"node": "chart", "x": 7, "y": 8},
+        "editing": "chart",
     }) == {"ok": True}
 
     seen = bob.others()
@@ -359,11 +360,12 @@ def test_awareness_is_named_by_the_server_and_a_watchers_carries_no_edits(room):
     assert by_alice["user"]["username"] == "alice" and by_alice["user"]["role"] == "owner"
     assert by_alice["user"]["participant_id"], "a state names its participant"
     assert by_alice["drag"] == {"node": "loader", "x": 5, "y": 6}, "an editor's drag shows live"
+    assert by_alice["cursor"] == {"x": 1, "y": 2, "t": 1700000000000}, "the owner's pointer shows"
     assert by_carol == {
-        "pointer": {"x": 3, "y": 4},
+        "cursor": {"x": 3.5, "y": -4, "t": 1700000000050},
         "selection": {"node": "loader", "anchor": 0, "head": 1},
         "user": {**by_carol["user"], "username": "carol", "role": "watcher"},
-    }, "a watcher's state keeps its presence and no edit"
+    }, "a watcher's state keeps its pointer and its editor cursor, and no edit"
 
     # A tab that starts later gets everyone's states, whole.
     later = room.tab("bob")
@@ -375,7 +377,7 @@ def test_awareness_clears_on_disconnect(room):
     alice, bob = room.tab("alice"), room.tab("bob")
     alice.sync()
     bob.sync()
-    alice.set_presence({"pointer": {"x": 1, "y": 1}})
+    alice.set_presence({"cursor": {"x": 1, "y": 1, "t": 1700000000000}})
     assert alice.doc.client_id in bob.others()
 
     alice.socket.disconnect(namespace=NAMESPACE)
@@ -390,16 +392,16 @@ def test_a_tab_cannot_set_another_accounts_awareness(room):
     alice, bob = room.tab("alice"), room.tab("bob")
     alice.sync()
     bob.sync()
-    alice.set_presence({"pointer": {"x": 1, "y": 1}})
+    alice.set_presence({"cursor": {"x": 1, "y": 1, "t": 1700000000000}})
 
     forged = Encoder()
     forged.write_var_uint(1)
     forged.write_var_uint(alice.doc.client_id)
     forged.write_var_uint(99)
-    forged.write_var_string(json.dumps({"pointer": {"x": 9, "y": 9}}))
+    forged.write_var_string(json.dumps({"cursor": {"x": 9, "y": 9, "t": 1700000000050}}))
     assert bob.send(create_awareness_message(forged.to_bytes())) == {"ok": True}
 
-    assert room.server_doc().awareness.states[alice.doc.client_id]["pointer"] == {"x": 1, "y": 1}
+    assert room.server_doc().awareness.states[alice.doc.client_id]["cursor"] == {"x": 1, "y": 1, "t": 1700000000000}
     assert alice.others() == {}, "bob's forged state reached alice"
 
 

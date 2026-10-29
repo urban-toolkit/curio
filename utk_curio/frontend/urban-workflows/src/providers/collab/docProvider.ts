@@ -17,7 +17,8 @@
  * - A watcher's tab never sends a change: the server would drop it anyway.
  * - Awareness is the tab's presence (`y-protocols/awareness`): its own state is
  *   sent at every change and every renewal, everyone else's comes from the
- *   server, and a disconnect clears them.
+ *   server, and a disconnect clears them. A provider that is destroyed while
+ *   its socket stays (the doc started again) clears its own for the others.
  */
 import * as Y from "yjs";
 import * as decoding from "lib0/decoding";
@@ -129,6 +130,10 @@ export class DataflowDocProvider {
 
     destroy(): void {
         if (this.destroyed) return;
+        // A doc started again on the same socket is another client, so the
+        // others drop this one's presence now, its cursor among it: the server
+        // would keep it until the socket goes.
+        if (this.socket?.connected) this.awareness.setLocalState(null);
         this.destroyed = true;
         if (this.retryTimer) clearTimeout(this.retryTimer);
         this.socket?.off(DOC_EVENT, this.onMessage);

@@ -1,7 +1,8 @@
 /* The scenario layers (#662) sit beside React Flow's renderer, whose z-index is
    4: frames and stand-in edges just under it, so nodes and edges draw over
    them; boxes and frame headers just over it. Both let pointer events through
-   except where something in them takes them. */
+   except where something in them takes them. Everyone else's pointer is a
+   layer over all of them, which takes no pointer event. */
 
 .behind,
 .front {
@@ -206,4 +207,66 @@
 
 .portOut {
   right: -6px;
+}
+
+/* Everyone else's pointer (`ParticipantCursors`), over the boxes and React
+   Flow's panels. A cursor is a point on the plane, its arrow's tip, scaled
+   back to one size; it glides to each next point over about the time between
+   two of its messages (CURSOR_EVERY_MS). */
+.cursors {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.cursor {
+  position: absolute;
+  width: 0;
+  height: 0;
+  transform-origin: 0 0;
+  transition: left 60ms linear, top 60ms linear, opacity 300ms ease;
+}
+
+/* It rested for CURSOR_IDLE_MS. */
+.cursor[data-idle="true"] {
+  opacity: 0.35;
+}
+
+.cursorArrow {
+  position: absolute;
+  left: -2px;
+  top: -2px;
+  overflow: visible;
+}
+
+.cursorArrow path {
+  fill: currentColor;
+  stroke: #fff;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.cursorName {
+  position: absolute;
+  left: 12px;
+  top: 18px;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 6px;
+  border-radius: var(--curio-radius-pill);
+  color: #fff;
+  font-family: var(--curio-font-family);
+  font-size: var(--curio-font-size-xs);
+  font-weight: 600;
+  line-height: 18px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cursor {
+    transition: none;
+  }
 }

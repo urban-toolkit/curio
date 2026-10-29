@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState } from "react";
 import { internalsSymbol, useStore, type ReactFlowState } from "reactflow";
 
+import type { DrawnCursor } from "../../providers/collab/cursors";
 import type {
   ScenarioBox,
   ScenarioCanvasView,
@@ -286,6 +287,42 @@ export function ScenarioLayers({ view, labelOf, statusOf, onExpand, onCollapse, 
         </div>
       </div>
     </>
+  );
+}
+
+/**
+ * Everyone else's pointer, on the same pan-and-zoom plane as the scenarios'
+ * layers and over everything on the canvas: each at its point of the dataflow,
+ * in its participant's color with their name, and the same size at any zoom.
+ * A cursor that moves glides to its next point; one that rests is faded.
+ */
+export function ParticipantCursors({ cursors }: { cursors: readonly DrawnCursor[] }) {
+  const [tx, ty, zoom] = useStore(transformOf);
+  if (cursors.length === 0) return null;
+  const plane = { transform: `translate(${tx}px, ${ty}px) scale(${zoom})` };
+  // Scaled back, from the arrow's tip: the point stays where the plane puts it.
+  const size = `scale(${1 / zoom})`;
+  return (
+    <div className={styles.cursors} aria-hidden="true">
+      <div className={styles.plane} style={plane}>
+        {cursors.map((cursor) => (
+          <div
+            key={cursor.clientId}
+            className={styles.cursor}
+            data-canvas-cursor={cursor.clientId}
+            data-idle={cursor.idle ? "true" : undefined}
+            style={{ left: cursor.x, top: cursor.y, transform: size, color: cursor.color }}
+          >
+            <svg className={styles.cursorArrow} width="18" height="23" viewBox="-2 -2 18 23">
+              <path d="M0 0 L0 16 L4.4 12.2 L7.3 18.8 L10.1 17.6 L7.3 11.2 L13 11.2 Z" />
+            </svg>
+            <span className={styles.cursorName} style={{ backgroundColor: cursor.color }}>
+              {cursor.name}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

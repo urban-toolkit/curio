@@ -178,7 +178,9 @@ BACKGROUND = True
 #: The awareness field the server writes: who the state is.
 USER_FIELD = "user"
 #: The awareness fields a watcher's state keeps: where it is, never an edit.
-PRESENCE_FIELDS = frozenset({"pointer", "selection"})
+#: ``cursor`` is its pointer on the canvas, ``selection`` its cursor in a code
+#: editor (y-monaco's).
+PRESENCE_FIELDS = frozenset({"cursor", "selection"})
 
 _DOC_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 _DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
