@@ -513,17 +513,10 @@ export default function UpMenu() {
                                 canvas only. */}
                             <HeaderMenuItem
                                 icon={faClone}
-                                onClick={scenarioItem(() => scenarioActions.duplicate(false))}
+                                onClick={scenarioItem(scenarioActions.duplicate)}
                                 disabled={canvasView === "notebook"}
                             >
                                 Duplicate selection
-                            </HeaderMenuItem>
-                            <HeaderMenuItem
-                                icon={faCodeBranch}
-                                onClick={scenarioItem(() => scenarioActions.duplicate(true))}
-                                disabled={canvasView === "notebook"}
-                            >
-                                Duplicate as scenario
                             </HeaderMenuItem>
                         </>
                     )}

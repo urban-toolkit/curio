@@ -292,17 +292,6 @@
   color: var(--curio-text-primary);
 }
 
-/* Step 1, before anything is selected. */
-.waiting {
-  margin: 0;
-  padding: 14px 12px;
-  border: 1px dashed var(--curio-border-strong);
-  border-radius: var(--curio-radius-md);
-  font-size: var(--curio-font-size-sm);
-  color: var(--curio-text-secondary);
-  text-align: center;
-}
-
 .member {
   display: inline-flex;
   align-items: center;
@@ -327,4 +316,18 @@
 
 .field input[aria-invalid="true"] {
   border-color: var(--curio-danger-text);
+}
+
+/* Step 3: the scenario's color, a swatch beside its label. */
+.colorField {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+.colorField input[type="color"] {
+  width: 44px;
+  height: 28px;
+  padding: 2px;
+  cursor: pointer;
 }

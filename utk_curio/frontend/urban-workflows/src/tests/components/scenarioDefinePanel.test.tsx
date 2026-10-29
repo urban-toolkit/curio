@@ -1,6 +1,6 @@
 /**
  * Define scenario, in three steps: the nodes unique to the scenario, selected
- * on the canvas; the shared context and outcomes Curio infers from them, which
+ * on the canvas and added, each list alike (rows with ×, + Add selected node); the shared context and outcomes Curio infers from them, which
  * the person confirms or edits; then its name and its scenario set, an
  * existing one or a new one. Save scenario writes it all, and nothing is
  * written before.
@@ -101,6 +101,9 @@ function renderPanel(define: NonNullable<ScenarioUi["define"]>, value = ui()) {
 
 const part = (name: string) => within(screen.getByRole("region", { name }));
 const click = (name: string) => fireEvent.click(screen.getByRole("button", { name }));
+/** "+ Add selected node" under one of the panel's lists. */
+const addTo = (name: string) =>
+  fireEvent.click(part(name).getByRole("button", { name: "+ Add selected node" }));
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -117,19 +120,30 @@ beforeEach(() => {
 });
 
 describe("defining a scenario", () => {
-  test("asks for the scenario's nodes first, and lists them as they are selected", () => {
+  test("asks for the scenario's nodes first: selected ones are added, and × takes one out", () => {
     renderPanel({ mode: "new" });
-    expect(screen.getByRole("heading", { name: "Which nodes are unique to this scenario?" })).toBeInTheDocument();
-    expect(screen.getByTestId("scenario-define-waiting")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Scenario-specific nodes" })).toBeInTheDocument();
+    expect(part("Scenario-specific nodes").getByText("None")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Next: shared context & outcomes" })).toBeDisabled();
-    select("existing");
+    select("towers", "existing");
+    // Selected only: nothing is added yet.
+    expect(part("Scenario-specific nodes").getByText("None")).toBeInTheDocument();
+    addTo("Scenario-specific nodes");
     expect(part("Scenario-specific nodes").getByText("existing")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Next: shared context & outcomes" })).toBeEnabled();
+    click("Remove towers");
+    expect(part("Scenario-specific nodes").queryByText("towers")).toBeNull();
+  });
+
+  test("the canvas selection when it opens is there already", () => {
+    renderPanel({ mode: "new", nodes: ["existing"] });
+    expect(part("Scenario-specific nodes").getByText("existing")).toBeInTheDocument();
   });
 
   test("infers its context and outcomes, then puts it in a new set named after the dataflow", () => {
     const value = renderPanel({ mode: "new" });
     select("existing");
+    addTo("Scenario-specific nodes");
     click("Next: shared context & outcomes");
     expect(screen.getByRole("listitem", { current: "step" })).toHaveTextContent("Shared context & outcomes");
     expect(part("Shared context").getByText("load")).toBeInTheDocument();
@@ -171,6 +185,7 @@ describe("defining a scenario", () => {
     mockFlow.scenarioSets = [{ id: "park", name: "Park shade" }];
     renderPanel({ mode: "new" });
     select("towers");
+    addTo("Scenario-specific nodes");
     click("Next: shared context & outcomes");
     const context = screen.getByRole("region", { name: "Shared context" });
     expect(within(context).getByText("Already in the set").parentElement).toHaveTextContent("load");
@@ -191,6 +206,7 @@ describe("defining a scenario", () => {
     mockFlow.scenarioSets = [{ id: "park", name: "Park shade" }];
     renderPanel({ mode: "new" });
     select("towers");
+    addTo("Scenario-specific nodes");
     click("Next: shared context & outcomes");
     click("Next: name & set");
     fireEvent.change(screen.getByTestId("scenario-define-name"), { target: { value: "existing " } });
@@ -207,7 +223,9 @@ describe("defining a scenario", () => {
     mockFlow.scenarioSets = [{ id: "park", name: "Park shade" }];
     renderPanel({ mode: "new" });
     select("existing");
-    expect(screen.getByTestId("scenario-define-waiting")).toBeInTheDocument();
+    addTo("Scenario-specific nodes");
+    expect(mockShowToast).toHaveBeenCalledWith("Select a node outside every scenario on the canvas first.", "warning");
+    expect(part("Scenario-specific nodes").getByText("None")).toBeInTheDocument();
   });
 
   test("a node is removed with ×, and a selected one is added", () => {
@@ -240,13 +258,12 @@ describe("Edit scenario", () => {
   test("the same three steps, starting from the scenario's nodes", () => {
     mockFlow.scenarios = [{ ...EXISTING, outcomes: ["chart"] }];
     mockFlow.scenarioSets = [{ id: "park", name: "Park shade" }];
-    select("existing");
     renderPanel({ mode: "edit", scenarioId: "e" });
     expect(screen.getByRole("dialog", { name: "Define scenario" })).toHaveTextContent("Edit scenario: Existing");
     expect(screen.getAllByRole("listitem").map((li) => li.textContent)).toEqual(
       expect.arrayContaining(["1Scenario-specific nodes", "2Shared context & outcomes", "3Name & set"]),
     );
-    expect(screen.getByText("1 node selected")).toBeInTheDocument();
+    expect(part("Scenario-specific nodes").getByText("existing")).toBeInTheDocument();
     click("Next: shared context & outcomes");
     // The same nodes: what it keeps, not inferred anew.
     expect(part("Shared outcomes").queryByText("change")).toBeNull();
@@ -259,14 +276,17 @@ describe("Edit scenario", () => {
     );
   });
 
-  test("changes its nodes, name and set, and a set it leaves empty goes", () => {
+  test("changes its nodes, name, color and set, and a set it leaves empty goes", () => {
     mockFlow.scenarios = [EXISTING];
     mockFlow.scenarioSets = [{ id: "park", name: "Park shade" }];
-    select("existing", "towers");
     renderPanel({ mode: "edit", scenarioId: "e" });
+    select("towers");
+    addTo("Scenario-specific nodes");
     click("Next: shared context & outcomes");
     click("Next: name & set");
     expect(screen.getByTestId("scenario-define-name")).toHaveValue("Existing");
+    expect(screen.getByTestId("scenario-define-color")).toHaveValue(EXISTING.color);
+    fireEvent.change(screen.getByTestId("scenario-define-color"), { target: { value: "#123456" } });
     expect(screen.getByRole("radio", { name: /Park shade/ })).toBeChecked();
     fireEvent.change(screen.getByTestId("scenario-define-name"), { target: { value: "Both" } });
     fireEvent.click(screen.getByRole("radio", { name: /Create a new scenario set/ }));
@@ -276,14 +296,13 @@ describe("Edit scenario", () => {
     expect(sets[0]).toEqual(expect.objectContaining({ name: "Park shade" }));
     expect(sets[0].id).not.toBe("park");
     expect(scenarios).toEqual([
-      expect.objectContaining({ id: "e", color: EXISTING.color, name: "Both", nodes: ["existing", "towers"], set: sets[0].id }),
+      expect.objectContaining({ id: "e", color: "#123456", name: "Both", nodes: ["existing", "towers"], set: sets[0].id }),
     ]);
   });
 
   test("its own name is fine; a sibling's is not", () => {
     mockFlow.scenarios = [EXISTING, TOWERS];
     mockFlow.scenarioSets = [{ id: "park", name: "Park shade" }];
-    select("existing");
     renderPanel({ mode: "edit", scenarioId: "e" });
     click("Next: shared context & outcomes");
     click("Next: name & set");

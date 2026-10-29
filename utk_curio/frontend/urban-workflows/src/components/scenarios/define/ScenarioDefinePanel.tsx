@@ -14,7 +14,9 @@ import styles from "./ScenarioDefinePanel.module.css";
 const STEPS = ["Scenario-specific nodes", "Shared context & outcomes", "Name & set"];
 
 type SetChoice = { kind: "new"; name: string } | { kind: "existing"; setId: string };
-type Part = "context" | "outcomes";
+type Shared = "context" | "outcomes";
+/** A list the panel edits: the scenario's own nodes, or a shared one. */
+type Part = "nodes" | Shared;
 
 /** A set id no set of *sets* has. */
 function freshSetId(sets: readonly ScenarioSet[]): string {
@@ -35,17 +37,18 @@ const selectedOf = (s: ReactFlowState) =>
  * Define scenario, beside the canvas so the canvas stays usable:
  *
  * 1. Scenario-specific nodes: the person selects on the canvas the nodes unique to the
- *    scenario; the panel lists them as they are selected.
+ *    scenario and adds them (the canvas selection when the panel opened is
+ *    there already), or removes one with ×, as in step 2.
  * 2. Shared context & outcomes: Curio infers the shared context (every node upstream
  *    of them) and the outcomes (every node downstream), which the canvas
  *    marks; the person confirms them, removes some, or adds selected nodes.
- * 3. Name & set: the scenario is named and put in one of this dataflow's
+ * 3. Name & set: the scenario is named, given a color, and put in one of this dataflow's
  *    scenario sets, or in a new one. Save scenario writes it; nothing is
  *    written before.
  *
  * Opened on a saved scenario (Edit scenario, "edit"), it is the same three
- * steps, starting from what the scenario keeps: its nodes (selected on the
- * canvas), its context and outcomes, its name and its set. Its Save changes
+ * steps, starting from what the scenario keeps: its nodes, its context and
+ * outcomes, its name, color and set. Its Save changes
  * the scenario in place, from step 2 on.
  */
 export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
@@ -59,14 +62,15 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
     [scenarios, editing],
   );
 
-  // Step 1 reads the canvas selection live; nodes already in a scenario are left out.
+  // The canvas selection, which "+ Add selected node" adds; nodes in another
+  // scenario are left out.
   const selectedKey = useStore(selectedOf);
   const selection = useMemo(
     () => (selectedKey ? selectedKey.split("\n") : []).filter((id) => !boxedByOthers.has(id)),
     [selectedKey, boxedByOthers],
   );
 
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState<number>(define.mode === "edit" ? define.step ?? 1 : 1);
   const [members, setMembers] = useState<string[]>(() =>
     editing ? editing.nodes : define.mode === "new" ? define.nodes ?? [] : [],
   );
@@ -75,9 +79,12 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
   const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
   const labelOf = (id: string) => nodeLabel(byId.get(id), id);
 
-  const [lists, setLists] = useState<Record<Part, string[]> | null>(() =>
+  const [lists, setLists] = useState<Record<Shared, string[]> | null>(() =>
     editing ? { context: editing.context ?? [], outcomes: editing.outcomes ?? [] } : null,
   );
+  // The nodes the shared lists were found from: other nodes find them anew.
+  const [listsFor, setListsFor] = useState(() => (editing ? editing.nodes.join() : ""));
+  const [color, setColor] = useState(() => editing?.color ?? nextScenarioColor(scenarios));
   const [name, setName] = useState(() => editing?.name ?? nextScenarioName(scenarios));
   const [choice, setChoice] = useState<SetChoice>(() =>
     editing?.set && scenarioSets.some((x) => x.id === editing.set)
@@ -105,37 +112,41 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
   const infer = (ids: string[]) => {
     const found = inferContextOutcomes(ids, nodeIds, edges, new Set([...boxedByOthers, ...ids]));
     setLists({ context: found.context, outcomes: found.outcomes });
+    setListsFor(ids.join());
   };
   const toReview = () => {
-    const ids = selection.length > 0 ? selection : members;
-    if (ids.length === 0) {
-      showToast("Select the nodes unique to this scenario on the canvas first.", "warning");
+    if (members.length === 0) {
+      showToast("Add the nodes unique to this scenario first.", "warning");
       return;
     }
-    // A new selection is inferred anew; going back and on keeps the edits.
-    if (!lists || ids.join() !== members.join()) infer(ids);
-    setMembers(ids);
+    // Other nodes are inferred anew; going back and on keeps the edits.
+    if (!lists || members.join() !== listsFor) infer(members);
     setStep(2);
   };
 
-  const remove = (part: Part, id: string) =>
-    setLists((now) => (now ? { ...now, [part]: now[part].filter((n) => n !== id) } : now));
+  const rowsOf = (part: Part) => (part === "nodes" ? members : lists?.[part] ?? []);
+  const remove = (part: Part, id: string) => {
+    if (part === "nodes") setMembers((now) => now.filter((n) => n !== id));
+    else setLists((now) => (now ? { ...now, [part]: now[part].filter((n) => n !== id) } : now));
+  };
+  // In the dataflow's order.
   const addSelected = (part: Part) => {
     const picked = selection.filter((id) => !boxed.has(id));
     if (picked.length === 0) {
       showToast("Select a node outside every scenario on the canvas first.", "warning");
       return;
     }
-    setLists((now) => {
-      if (!now) return now;
-      const keep = new Set([...now[part], ...picked]);
-      return { ...now, [part]: nodeIds.filter((id) => keep.has(id)) };
-    });
+    const merged = (now: string[]) => {
+      const keep = new Set([...now, ...picked]);
+      return nodeIds.filter((id) => keep.has(id));
+    };
+    if (part === "nodes") setMembers(merged);
+    else setLists((now) => (now ? { ...now, [part]: merged(now[part]) } : now));
   };
 
   const setId = choice.kind === "existing" ? choice.setId : null;
   const others = scenarios.filter((s) => setId && s.set === setId && s.id !== editing?.id);
-  const inSet = (part: Part) => new Set(others.flatMap((s) => s[part] ?? []));
+  const inSet = (part: Shared) => new Set(others.flatMap((s) => s[part] ?? []));
 
   // No two scenarios of a set share a name; a new set has none yet.
   const nameProblem = scenarioNameProblem(scenarios, scenarioSets, setId, name, editing?.id);
@@ -167,7 +178,7 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
     if (editing) {
       const next = scenarios.map((s) =>
         s.id === editing.id
-          ? { ...s, name: scenarioName, nodes: [...members], set: target, context: lists.context, outcomes: lists.outcomes }
+          ? { ...s, name: scenarioName, color, nodes: [...members], set: target, context: lists.context, outcomes: lists.outcomes }
           : s,
       );
       // A set its last scenario left goes with it.
@@ -180,7 +191,7 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
     const scenario: Scenario = {
       id: uuid(),
       name: scenarioName,
-      color: nextScenarioColor(scenarios),
+      color,
       nodes: [...members],
       set: target,
       context: lists.context,
@@ -191,31 +202,25 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
     close();
   };
 
-  const nodeRows = (ids: string[], part?: Part) => (
+  const nodeRows = (ids: string[], part: Part) => (
     <ul className={styles.rows}>
       {ids.map((id) => (
         <li key={id} className={styles.row} data-node={id}>
           <span className={styles.rowLabel}>{labelOf(id)}</span>
-          {part && (
-            <button
-              type="button"
-              className={styles.remove}
-              aria-label={`Remove ${labelOf(id)}`}
-              onClick={() => remove(part, id)}
-            >
-              ×
-            </button>
-          )}
+          <button type="button" className={styles.remove} aria-label={`Remove ${labelOf(id)}`} onClick={() => remove(part, id)}>
+            ×
+          </button>
         </li>
       ))}
     </ul>
   );
 
+  // The three lists look and work alike: rows with ×, then + Add selected node.
   const list = (part: Part, title: string, hint: string) => {
-    const rows = lists?.[part] ?? [];
-    const already = inSet(part);
+    const rows = rowsOf(part);
+    const already = part === "nodes" ? null : inSet(part);
     const groups =
-      setId && others.length > 0
+      already && setId && others.length > 0
         ? [
             { label: "Already in the set", ids: rows.filter((id) => already.has(id)) },
             { label: "New to the set", ids: rows.filter((id) => !already.has(id)) },
@@ -263,29 +268,12 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
         })}
       </ol>
       <div className={styles.body}>
-        {step === 1 && (
-          <section className={styles.part} aria-label="Scenario-specific nodes">
-            <h3 className={styles.question}>Which nodes are unique to this scenario?</h3>
-            <p className={styles.hint}>
-              Select them on the canvas: click one, or hold Shift and drag a box around several. These are the nodes
-              this scenario changes, such as a widget value, a line of code or an edited layer. Leave out the data
-              they read and the views they feed: Curio finds those next.
-              {editing ? " The scenario's nodes are selected: change the selection to change them." : null}
-            </p>
-            {selection.length === 0 ? (
-              <p className={styles.waiting} data-testid="scenario-define-waiting">
-                Waiting for a selection on the canvas…
-              </p>
-            ) : (
-              <>
-                <div className={styles.groupLabel}>
-                  {selection.length} node{selection.length === 1 ? "" : "s"} selected
-                </div>
-                {nodeRows(selection)}
-              </>
-            )}
-          </section>
-        )}
+        {step === 1 &&
+          list(
+            "nodes",
+            "Scenario-specific nodes",
+            "The nodes this scenario changes. Select them on the canvas and add them.",
+          )}
 
         {step === 2 && (
           <>
@@ -297,8 +285,8 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
               . Check {editing ? "them" : "what it found"}: remove what is not part of the comparison, or select a node
               on the canvas and add it.
             </p>
-            {list("context", "Shared context", "The nodes upstream that this scenario uses, held the same across scenarios.")}
-            {list("outcomes", "Shared outcomes", "The nodes downstream that this scenario feeds: what the scenarios are compared on.")}
+            {list("context", "Shared context", "The nodes upstream it reads, the same in every scenario.")}
+            {list("outcomes", "Shared outcomes", "The nodes downstream the scenarios are compared on.")}
             <button type="button" className={styles.link} onClick={() => infer(members)}>
               Start again from what Curio found
             </button>
@@ -321,6 +309,15 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
                   {nameProblem}
                 </span>
               )}
+            </label>
+            <label className={`${styles.field} ${styles.colorField}`}>
+              Color
+              <input
+                type="color"
+                value={color}
+                onChange={(e) => setColor(e.target.value)}
+                data-testid="scenario-define-color"
+              />
             </label>
             <fieldset className={styles.choices}>
               <legend className={styles.question}>Which scenario set does it belong to?</legend>
@@ -386,7 +383,7 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
           </button>
         )}
         {step === 1 && (
-          <button type="button" className={styles.primary} onClick={toReview} disabled={selection.length === 0 && members.length === 0}>
+          <button type="button" className={styles.primary} onClick={toReview} disabled={members.length === 0}>
             Next: shared context & outcomes
           </button>
         )}

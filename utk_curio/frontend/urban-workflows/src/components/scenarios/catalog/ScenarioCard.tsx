@@ -2,20 +2,21 @@ import React from "react";
 
 import DataflowThumbnail, { type ThumbnailHighlight } from "../../DataflowThumbnail";
 import type { ScenarioRow } from "../../../services/scenarioCatalog";
-import { ScenarioName, scenarioNodeCount } from "./scenarioFacts";
+import { ScenarioName } from "./scenarioFacts";
 import styles from "../../packages/publishing/PackageCard.module.css";
 import local from "./ScenarioCatalogDrawer.module.css";
 
 export interface ScenarioCardProps {
   scenario: ScenarioRow;
   onOpenDetails?: (scenario: ScenarioRow) => void;
-  onOpenProject?: (scenario: ScenarioRow) => void;
   /** With these, the whole card is a drag source onto the canvas. */
   onDragStart?: (event: React.DragEvent<HTMLElement>) => void;
   onDragEnd?: () => void;
   /** In the In project tab: what can be done to this dataflow's scenario, a
    *  row of buttons under the card. */
   controls?: React.ReactNode;
+  /** In the In project tab: the card's top-right corner, Delete. */
+  corner?: React.ReactNode;
   /** In the In project tab: the pointer entering (true) or leaving (false)
    *  the card, which marks the scenario's fixed context on the canvas. */
   onPoint?: (on: boolean) => void;
@@ -28,8 +29,8 @@ export interface ScenarioCardProps {
  * One scenario in the canvas Scenario Catalog drawer.
  *
  * The Model drawer's card body: an avatar with the way into the details
- * beneath it, a title and ONE meta line (its node count; the set panel it sits
- * in names the set), then the description. The avatar is
+ * beneath it, a title, then the description. The set panel it sits in
+ * names the set and leads to its project (`ScenarioSetGroup`). The avatar is
  * the project's graph, the picture that tells two scenarios apart; which of its
  * nodes the scenario holds shows in the details, which load them. In Browse
  * all the whole card is the drag source, as a model card is: dropped on the
@@ -41,10 +42,10 @@ export interface ScenarioCardProps {
 export const ScenarioCard: React.FC<ScenarioCardProps> = ({
   scenario,
   onOpenDetails,
-  onOpenProject,
   onDragStart,
   onDragEnd,
   controls,
+  corner,
   onPoint,
   highlight = null,
   testId,
@@ -95,28 +96,12 @@ export const ScenarioCard: React.FC<ScenarioCardProps> = ({
         <h3 className={styles.cardTitle}>
           <ScenarioName row={scenario} />
         </h3>
-        <div className={styles.cardMetaRow}>
-          <span className={styles.cardMetaText}>
-            {scenarioNodeCount(scenario)}
-          </span>
-        </div>
         {scenario.description ? (
           <p className={local.cardDescription}>{scenario.description}</p>
         ) : null}
       </div>
 
-      {onOpenProject ? (
-        <div className={styles.cardAction}>
-          <button
-            type="button"
-            className={local.openLink}
-            data-tooltip={`Open ${scenario.project.name}, where this scenario is edited`}
-            onClick={() => onOpenProject(scenario)}
-          >
-            Open source project
-          </button>
-        </div>
-      ) : null}
+      {corner ? <div className={local.cardCorner}>{corner}</div> : null}
 
       {controls ? <div className={local.cardControls}>{controls}</div> : null}
     </article>

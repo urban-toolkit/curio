@@ -10,6 +10,8 @@ export interface ScenarioSetGroupProps {
   count: number;
   /** False for the scenarios of no set, which takes no "Scenario set" label. */
   isSet?: boolean;
+  /** Beside the count: Browse all's Open source project. */
+  action?: React.ReactNode;
   /** Spread on the section: `data-scenario-set`, `data-scenario-group`. */
   data?: Record<`data-${string}`, string>;
   children: React.ReactNode;
@@ -17,10 +19,11 @@ export interface ScenarioSetGroupProps {
 
 /**
  * One scenario set in the Scenario Catalog drawer, in both tabs: a panel
- * headed by the set's name and how many scenarios it holds, with its
- * scenarios' cards inside it.
+ * headed by the set's name, how many scenarios it holds and, in Browse all,
+ * the way to its project; its scenarios' cards hang off a line beneath, as a
+ * tree's children do.
  */
-export function ScenarioSetGroup({ name, count, isSet = true, data, children }: ScenarioSetGroupProps) {
+export function ScenarioSetGroup({ name, count, isSet = true, action, data, children }: ScenarioSetGroupProps) {
   const nameId = useId();
   return (
     <section className={styles.group} aria-labelledby={nameId} {...data}>
@@ -34,6 +37,7 @@ export function ScenarioSetGroup({ name, count, isSet = true, data, children }: 
         <span className={styles.count} data-scenario-set-count>
           {scenarioCount(count)}
         </span>
+        {action}
       </header>
       <div className={styles.cards}>{children}</div>
     </section>

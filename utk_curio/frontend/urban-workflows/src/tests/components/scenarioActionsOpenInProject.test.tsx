@@ -1,8 +1,9 @@
 /**
- * Save dataflow as scenario and Duplicate as scenario open the Scenario
- * Catalog drawer on its In project tab, where the new scenario is listed.
- * Define scenario opens the define panel instead, which saves
- * nothing until its Save. A command that is refused opens nothing.
+ * Save dataflow as scenario opens the Scenario Catalog drawer on its In
+ * project tab, where the new scenario is listed. Define scenario opens the
+ * define panel instead, which saves nothing until its Save; Duplicate
+ * scenario opens it on the copy, at Name & set. A command that is refused
+ * opens nothing.
  *
  * The real `useScenarioActions` and the real drawer provider; the flow, the
  * canvas store, the loader and the copy are mocked.
@@ -83,7 +84,8 @@ const Commands: React.FC = () => {
     <>
       <button onClick={actions.saveSelectionAsScenario}>save the selection</button>
       <button onClick={actions.saveDataflowAsScenario}>save the dataflow</button>
-      <button onClick={() => actions.duplicate(true)}>duplicate as a scenario</button>
+      <button onClick={() => actions.duplicateScenario("s1")}>duplicate the scenario</button>
+      <button onClick={actions.duplicate}>duplicate the selection</button>
     </>
   );
 };
@@ -147,21 +149,35 @@ describe("the scenario commands open the In project tab", () => {
     await expectInProjectOpen();
   });
 
-  test("Duplicate as scenario", async () => {
+  test("Duplicate scenario copies it into its set and opens the copy at Name & set", async () => {
+    const original = {
+      id: "s1", name: "Doubled", color: "#2a9d8f", nodes: ["scale"], set: "park", context: ["load"], outcomes: [],
+    };
+    mockFlow.scenarios = [original];
+    mockFlow.scenarioSets = [{ id: "park", name: "Heights" }];
+    mockFlow.setScenarios = jest.fn((next) => {
+      mockFlow.scenarios = next;
+    });
     renderCommands();
-    fireEvent.click(screen.getByRole("button", { name: "duplicate as a scenario" }));
-    expect(mockFlow.setScenarios).toHaveBeenCalledWith([
-      expect.objectContaining({ nodes: ["scale"] }),
-      expect.objectContaining({ nodes: ["scale-copy"] }),
-    ]);
-    await expectInProjectOpen();
+    fireEvent.click(screen.getByRole("button", { name: "duplicate the scenario" }));
+    const [next] = mockFlow.setScenarios.mock.calls[0];
+    expect(next[0]).toBe(original);
+    expect(next[1]).toEqual(
+      expect.objectContaining({ nodes: ["scale-copy"], set: "park", context: ["load"], outcomes: [] }),
+    );
+    expect(next[1].color).not.toBe(original.color);
+    const panel = await screen.findByTestId("scenario-define-panel");
+    expect(within(panel).getByRole("listitem", { current: "step" })).toHaveTextContent("Name & set");
+    expect(within(panel).getByTestId("scenario-define-name")).toHaveValue(next[1].name);
+    expect(within(panel).getByRole("radio", { name: /Heights/ })).toBeChecked();
+    expect(document.querySelector(DRAWER)).toBeNull();
   });
 
   test("a command that is refused opens nothing", async () => {
     mockCanvas.nodes = [node("load", false), node("scale", false)];
     mockFlow.nodes = mockCanvas.nodes;
     renderCommands();
-    fireEvent.click(screen.getByRole("button", { name: "duplicate as a scenario" }));
+    fireEvent.click(screen.getByRole("button", { name: "duplicate the selection" }));
     expect(mockShowToast).toHaveBeenCalledWith(
       "Select the nodes to duplicate first (Shift and drag).",
       "warning",

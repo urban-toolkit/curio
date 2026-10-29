@@ -10,7 +10,7 @@ import { modalStackDepth } from "../../ModalShell";
 import { LEAVE_DATAFLOW, useLeaveGuard } from "../../../hook/useLeaveGuard";
 import { useFlowContext } from "../../../providers/FlowProvider";
 import type { DrawerTab } from "../../../services/packages";
-import { SCENARIO_SORT_OPTIONS, type ScenarioRow } from "../../../services/scenarioCatalog";
+import { SCENARIO_SORT_OPTIONS } from "../../../services/scenarioCatalog";
 import { liveScenarios } from "../../../utils/scenarios/scenarioParts";
 import { InProjectScenarios } from "./InProjectScenarios";
 import { ScenarioCard } from "./ScenarioCard";
@@ -36,7 +36,8 @@ export interface ScenarioCatalogDrawerProps {
  *
  * Browse all is every scenario saved in this account's projects, each a card
  * with its project's graph, inside a panel per scenario set headed by its name
- * and how many of the scenarios listed it holds (`ScenarioSetGroup`). The
+ * and how many of the scenarios listed it holds, with the way to its project
+ * (`ScenarioSetGroup`). The
  * groups keep the sort: each sits where its
  * first scenario would, with its scenarios in the sort's order
  * (`groupScenariosBySet`). A scenario lives in its project and is edited
@@ -111,14 +112,14 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
   );
 
   // The project already open just closes the drawer onto it.
-  const openProject = (scenario: ScenarioRow) => {
-    if (scenario.project.id === projectId) {
+  const openProject = (id: string) => {
+    if (id === projectId) {
       onRequestClose();
       return;
     }
     leave(() => {
       onRequestClose();
-      navigate(scenarioProjectPath(scenario.project.id));
+      navigate(scenarioProjectPath(id));
     });
   };
 
@@ -206,13 +207,22 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
                     count={group.items.length}
                     isSet={Boolean(group.set.id)}
                     data={{ "data-scenario-group": group.project.id, "data-scenario-set": group.set.id }}
+                    action={
+                      <button
+                        type="button"
+                        className={styles.openLink}
+                        data-tooltip={`Open ${group.project.name}, where this set's scenarios are edited`}
+                        onClick={() => openProject(group.project.id)}
+                      >
+                        Open source project
+                      </button>
+                    }
                   >
                     {group.items.map((scenario) => (
                       <ScenarioCard
                         key={scenario.key}
                         scenario={scenario}
                         onOpenDetails={openScenarioDetails}
-                        onOpenProject={openProject}
                         onDragStart={(event) => handleScenarioDragStart(scenario, event)}
                         onDragEnd={handleScenarioDragEnd}
                       />

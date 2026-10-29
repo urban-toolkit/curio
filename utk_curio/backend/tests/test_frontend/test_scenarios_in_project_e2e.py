@@ -9,10 +9,10 @@ the tab counts this dataflow's one scenario. Then:
 
 1. Pointing at its card outlines its fixed context, the loader, on the canvas,
    and nothing else; leaving the card takes the outline away.
-2. Edit scenario opens Define scenario on it, its node selected; selecting
-   the total too and saving puts the total into the scenario, and the
-   scenario's frame on the canvas grows around it; editing it again with its
-   node alone selected takes the total out.
+2. Edit scenario opens Define scenario on it, its node listed; adding the
+   selected total and saving puts the total into the scenario, and the
+   scenario's frame on the canvas grows around it; editing it again and
+   taking the total out with its × shrinks the frame back.
 3. Its details change its name and its color: the card and the frame on the
    canvas follow.
 4. Run scenario runs it: the loader, which has not run, and its lever, each
@@ -185,18 +185,24 @@ def _select_with_shift_drag(page, node_id: str) -> None:
     page.keyboard.up("Shift")
 
 
-def _edit_scenario_nodes(page, scenario_id: str, node_ids: list[str]) -> None:
-    """Edit scenario on its card, select *node_ids* on the canvas in step 1,
-    and save it from the last step; the drawer closes as the panel opens."""
+def _edit_scenario_nodes(page, scenario_id: str, *, add: str | None = None, remove: str | None = None) -> None:
+    """Edit scenario on its card, then in step 1 add *add*, selected on the
+    canvas, with + Add selected node, or take *remove* out with its ×; save
+    from the last step. The drawer closes as the panel opens."""
     scenario_card_button(page, scenario_id, "Edit scenario").click()
     panel = page.get_by_test_id("scenario-define-panel")
     expect(panel).to_be_visible(timeout=10000)
-    page.wait_for_function(f"() => ({_SELECTED_JS})().length > 0", timeout=10000)
-    page.evaluate(
-        "(ids) => window.__curio_reactFlow.setNodes((all) => all.map((n) => ({...n, selected: ids.includes(n.id)})))",
-        node_ids,
-    )
-    expect(panel).to_contain_text(f"{len(node_ids)} node{'' if len(node_ids) == 1 else 's'} selected")
+    nodes = panel.get_by_test_id("scenario-define-nodes")
+    if add:
+        page.evaluate(
+            "(id) => window.__curio_reactFlow.setNodes((all) => all.map((n) => ({...n, selected: n.id === id})))",
+            add,
+        )
+        nodes.get_by_role("button", name="+ Add selected node").click()
+        expect(nodes.locator(f'[data-node="{add}"]')).to_have_count(1)
+    if remove:
+        nodes.locator(f'[data-node="{remove}"] button').click()
+        expect(nodes.locator(f'[data-node="{remove}"]')).to_have_count(0)
     panel.get_by_role("button", name="Next: shared context & outcomes").click()
     panel.get_by_role("button", name="Next: name & set").click()
     panel.get_by_test_id("scenario-define-save").click()
@@ -239,7 +245,6 @@ def test_the_in_project_tab_adds_renames_marks_and_runs_a_scenario(
     expect(drawer.get_by_role("button", name=re.compile(r"^In project"))).to_have_text("In project1")
     card = in_project_card(page, SCENARIO)
     expect(card).to_contain_text(NAME)
-    expect(card).to_contain_text("1 node")
     assert page.evaluate(_FRAMED_JS, [SCENARIO, SCALE]), "the scenario's frame does not surround its node"
     assert not page.evaluate(_FRAMED_JS, [SCENARIO, TOTAL]), "the frame surrounds the total before it is added"
 
@@ -251,19 +256,17 @@ def test_the_in_project_tab_adds_renames_marks_and_runs_a_scenario(
     drawer.get_by_placeholder("Search scenarios, projects…").hover()
     page.wait_for_function(f"() => ({_OUTLINED_JS})('{FIXED_CLASS}').length === 0", timeout=10000)
 
-    # 2. Edit scenario: the panel starts from its node, selected on the
-    # canvas. With the total selected too, the total joins the scenario and
-    # its frame grows around it; edited again, it takes the total out.
-    _edit_scenario_nodes(page, SCENARIO, [SCALE, TOTAL])
+    # 2. Edit scenario: the panel starts from its node. The total, selected
+    # and added, joins the scenario and its frame grows around it; edited
+    # again, its × takes the total out.
+    _edit_scenario_nodes(page, SCENARIO, add=TOTAL)
     page.wait_for_function(_FRAMED_JS, arg=[SCENARIO, TOTAL], timeout=10000)
     assert page.evaluate(_FRAMED_JS, [SCENARIO, SCALE])
     open_in_project_tab(page)
-    expect(card).to_contain_text("2 nodes")
-    _edit_scenario_nodes(page, SCENARIO, [SCALE])
+    _edit_scenario_nodes(page, SCENARIO, remove=TOTAL)
     page.wait_for_function(f"(args) => !({_FRAMED_JS})(args)", arg=[SCENARIO, TOTAL], timeout=10000)
     assert page.evaluate(_FRAMED_JS, [SCENARIO, SCALE])
     open_in_project_tab(page)
-    expect(card).to_contain_text("1 node")
 
     # 3. Its details change its name and its color; the card and the frame follow.
     details = open_scenario_details(page, SCENARIO)
@@ -300,18 +303,16 @@ def test_the_in_project_tab_adds_renames_marks_and_runs_a_scenario(
 
     # The frames, before and after the total is added.
     open_in_project_tab(page)
-    expect(card).to_contain_text("1 node")
     _park_on_the_canvas(page)
     save_workflow_test_screenshot(
         page, "scenarios-in-project-before-add", test_name=TEST_NAME, fit_reactflow=False, sweep_toasts=True,
     )
-    _edit_scenario_nodes(page, SCENARIO, [SCALE, TOTAL])
+    _edit_scenario_nodes(page, SCENARIO, add=TOTAL)
     page.wait_for_function(_FRAMED_JS, arg=[SCENARIO, TOTAL], timeout=10000)
     save_dataflow_and_settle_header(page)
     [saved] = _saved_scenarios(current_server, token, project_id)
     assert (saved["name"], saved["color"], sorted(saved["nodes"])) == (NEW_NAME, NEW_COLOR, sorted([SCALE, TOTAL])), saved
     open_in_project_tab(page)
-    expect(card).to_contain_text("2 nodes")
     _park_on_the_canvas(page)
     save_workflow_test_screenshot(
         page, "scenarios-in-project-after-add", test_name=TEST_NAME, fit_reactflow=False, sweep_toasts=True,

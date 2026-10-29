@@ -3,11 +3,13 @@
 A loader feeds a branch: a Python node that scales a column, and an Autark map
 of the result. This drives the whole path in a browser:
 
-1. Select the branch (Shift and drag) and choose View, Duplicate as
-   scenario, which opens the Scenario Catalog drawer on its In project tab.
-   The copy reads the same loader, so the loader is the two scenarios' fixed
-   context, as their details say, and each copy names its original.
-2. Collapse the copy from its card: one box, its nodes hidden. Drag the box.
+1. Select the branch (Shift and drag), make it a scenario with View, Define
+   scenario, then click Duplicate scenario on its In project card: the
+   branch is copied into a new scenario of the same set, which Define
+   scenario opens on at Name & set. The copy reads the same loader, so the
+   loader is the two scenarios' fixed context, as their details say, and
+   each copy names its original.
+2. Collapse the copy on the canvas: one box, its nodes hidden. Drag the box.
 3. Run All with it collapsed: the shared loader runs once, and both branches
    run, the hidden one included.
 4. Double-click the box: it expands in place and its map is drawn.
@@ -31,12 +33,14 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
+from playwright.sync_api import expect
+
 from .utils import (
-    SandboxRuns,
     api_json,
     assert_autark_map_drawn,
     close_scenario_details,
     close_scenario_drawer,
+    collapse_scenario,
     frame_nodes,
     in_project_card,
     node_locator,
@@ -48,6 +52,7 @@ from .utils import (
     require_user_auth,
     require_webgpu,
     run_all_and_wait,
+    SandboxRuns,
     save_dataflow,
     scenario_card_button,
     scenario_part,
@@ -198,12 +203,26 @@ def test_a_branch_duplicated_as_a_scenario_collapses_runs_and_expands(
         node_locator(page, node["id"]).wait_for(state="visible", timeout=45000)
     require_webgpu(page)
 
-    # 1. Select the branch and duplicate it as a scenario.
+    # 1. Select the branch, make it a scenario, and duplicate the scenario.
     _shift_drag_around(page, [SCALE, MAP])
     selected = sorted(n["id"] for n in page.evaluate(_STORE_NODES_JS) if n["selected"])
     assert selected == [MAP, SCALE], f"the Shift-drag selected {selected}, not the branch"
-    _scenario_menu(page, "Duplicate as scenario")
-    open_in_project_tab(page, opened_by_command=True)
+    _scenario_menu(page, "Define scenario")
+    panel = page.get_by_test_id("scenario-define-panel")
+    panel.get_by_role("button", name="Next: shared context & outcomes").click()
+    panel.get_by_role("button", name="Next: name & set").click()
+    panel.get_by_test_id("scenario-define-save").click()
+    expect(panel).to_be_hidden(timeout=10000)
+    drawer = open_in_project_tab(page)
+    [original_card] = drawer.locator('[data-testid^="scenario-card-"]').all()
+    original_id = original_card.get_attribute("data-testid").removeprefix("scenario-card-")
+    scenario_card_button(page, original_id, "Duplicate scenario").click()
+    # The copy opens in Define scenario at Name & set, in the same set.
+    expect(panel).to_be_visible(timeout=10000)
+    expect(panel.get_by_role("listitem").filter(has_text="Name & set")).to_have_attribute("aria-current", "step")
+    expect(panel.get_by_role("radio").first).to_be_checked()
+    panel.get_by_test_id("scenario-define-save").click()
+    expect(panel).to_be_hidden(timeout=10000)
 
     copies = {n["copiedFrom"][-1]: n["id"] for n in page.evaluate(_STORE_NODES_JS) if n["copiedFrom"]}
     assert sorted(copies) == [MAP, SCALE], f"the copies name {sorted(copies)} as their originals"
@@ -213,13 +232,13 @@ def test_a_branch_duplicated_as_a_scenario_collapses_runs_and_expands(
     assert {"source": LOADER, "target": scale_copy, "targetHandle": "in"} in wiring, wiring
     assert {"source": scale_copy, "target": map_copy, "targetHandle": "in"} in wiring, wiring
 
-    # The drawer's scrim covers the File menu.
-    close_scenario_drawer(page)
     save_dataflow(page)
     saved = _saved_spec(current_server, session)["dataflow"]
     scenarios = saved.get("scenarios") or []
     assert [sorted(s["nodes"]) for s in scenarios] == [sorted([SCALE, MAP]), sorted([scale_copy, map_copy])], scenarios
-    original_id, copy_id = scenarios[0]["id"], scenarios[1]["id"]
+    assert scenarios[0]["id"] == original_id, scenarios
+    assert scenarios[1]["set"] == scenarios[0]["set"], scenarios
+    copy_id = scenarios[1]["id"]
     by_id = {n["id"]: n for n in saved["nodes"]}
     assert by_id[scale_copy]["metadata"].get("copiedFrom") == [SCALE], by_id[scale_copy]
     assert by_id[scale_copy]["content"] == SCALE_CODE
@@ -231,9 +250,9 @@ def test_a_branch_duplicated_as_a_scenario_collapses_runs_and_expands(
         assert "Data Loading" in context, f"scenario {scenario_id} lists {context!r} as its fixed context"
         close_scenario_details(page)
 
-    # 2. Collapse the copy: one box, its nodes hidden but still there.
-    scenario_card_button(page, copy_id, "Collapse").click()
+    # 2. Collapse the copy on the canvas: one box, its nodes hidden but still there.
     close_scenario_drawer(page)
+    collapse_scenario(page, copy_id)
     box = _frame_box(page, copy_id, [scale_copy, map_copy])
     for node_id in (scale_copy, map_copy):
         member = node_locator(page, node_id)
@@ -281,9 +300,7 @@ def test_a_branch_duplicated_as_a_scenario_collapses_runs_and_expands(
     assert_autark_map_drawn(page, map_copy, timeout=60000, attach_as="expanded after a collapsed run")
 
     # 5. Collapse it again, save, and reopen: everything is back.
-    open_in_project_tab(page)
-    scenario_card_button(page, copy_id, "Collapse").click()
-    close_scenario_drawer(page)
+    collapse_scenario(page, copy_id)
     _box(page, copy_id).wait_for(state="visible", timeout=10000)
     save_dataflow(page)
     saved = _saved_spec(current_server, session)["dataflow"]
@@ -328,9 +345,8 @@ def test_a_branch_duplicated_as_a_scenario_collapses_runs_and_expands(
 
     # 6. Collapsed once more, Run scenario runs its levers, the restored loader
     # is reused, and the map runs inside the hidden box, its canvas made there.
+    collapse_scenario(page, copy_id)
     open_in_project_tab(page)
-    scenario_card_button(page, copy_id, "Collapse").click()
-    _box(page, copy_id).wait_for(state="attached", timeout=10000)
     sent = SandboxRuns(page, session["token"], session["project"]["id"])
     # The map still shows the result it drew above, so wait for its own run,
     # which starts when the lever's new output reaches it (#892).

@@ -626,7 +626,7 @@ WRITER_SHAPES = {
         scenarios=[{"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": [AGENT_NODE["id"]]}],
     ),
     "canvas save clearing its scenarios": _flow(nodes=[AGENT_NODE], scenarios=[]),
-    # Written by TrillGenerator after Duplicate as scenario (#662): the copy
+    # Written by TrillGenerator after Duplicate scenario (#662): the copy
     # names its original, and both are scenarios.
     "canvas save with a duplicated scenario": _flow(
         nodes=[

@@ -2242,11 +2242,11 @@ def scene_scenarios(ctx: Ctx) -> None:
 
     # Baseline, collapsed into one box that lists its context and outcomes. Its
     # box is drawn where its first node stood, clear of the other scenarios.
-    tour.click(scenario_card_button(page, WHATIF_BASELINE, "Collapse"))
-    collapsed = _box(page, WHATIF_BASELINE)
-    collapsed.wait_for(state="attached", timeout=10000)
     page.keyboard.press("Escape")
     wait_for_drawer_closed(page, DRAWER_SCENARIOS)
+    tour.click(page.get_by_test_id(f"scenario-collapse-{WHATIF_BASELINE}"))
+    collapsed = _box(page, WHATIF_BASELINE)
+    collapsed.wait_for(state="attached", timeout=10000)
     _frame_with_boxes(page, [WHATIF_POOL], (230, 140, 1870, 1160))
     collapsed.wait_for(state="visible", timeout=10000)
     page.wait_for_function(

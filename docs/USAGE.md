@@ -803,34 +803,37 @@ To make one:
 
 1. Choose **View → Define scenario**. A panel opens beside the canvas and asks
    for the nodes unique to the scenario: select them on the canvas (click one,
-   or hold Shift and drag a box around several).
+   or hold Shift and drag a box around several) and click **+ Add selected
+   node**; **×** takes one out. Nodes selected before are listed already.
 2. **Next** lists the shared context and outcomes Curio found by following the
    edges, marked on the canvas. Confirm them, remove a node with **×**, or
    select one on the canvas and click **+ Add selected node**.
-3. **Next** asks for its name and its scenario set: one of this dataflow's, or a
+3. **Next** asks for its name, its color and its scenario set: one of this dataflow's, or a
    new one. **Save scenario** saves it; nothing changes before. **File → Save
    dataflow as scenario** saves the whole dataflow as one.
-3. To build an alternative, choose **View → Duplicate as scenario**. The
-   selected nodes are copied below themselves with the edges between them, every
-   edge entering the selection feeds the copy too, and the selection and the copy
-   become two scenarios. **Duplicate selection** copies the nodes without making
-   scenarios.
+
+To build an alternative, click **Duplicate scenario** on the scenario's card in
+the **In project** tab. Its nodes are copied below themselves with the edges
+between them, and every edge entering them feeds the copy too. The copy becomes
+a scenario of the same set, with the next color and the same shared context and
+outcomes, and the define panel opens on it at **Name & set**: rename it, recolor
+it, or put it in another set. **View → Duplicate selection** copies the selected
+nodes without making a scenario.
 
 Then change the copy's nodes: a widget value, a line of code. Each copy remembers
 the node it was copied from.
 
 The dataflow's scenarios are in the Scenario Catalog drawer's **In project** tab:
 click **Scenario** in the top bar, then **In project**, which shows how many the
-dataflow has. Saving a selection or duplicating it as a scenario opens that tab.
-On top of it are **Define scenario** and **Duplicate as scenario**,
-and each scenario's card offers:
+dataflow has. Saving the dataflow as a scenario opens that tab.
+On top of it is **Define scenario**, and each scenario's card offers:
 
 - **Run scenario**: run its nodes, and of the nodes feeding it only those that
   have not run or have changed since;
-- **Collapse** or **Expand**;
 - **Edit scenario**: the define panel, on what the scenario keeps: its nodes
-  are selected on the canvas, and its context, outcomes, name and set are
-  filled in. Change any step; **Save** changes it in place;
+  are listed, and its context, outcomes, name, color and set are filled
+  in. Change any step; **Save** changes it in place;
+- **Duplicate scenario**: a copy of it, as above;
 - **Delete** (the bin). Its nodes stay on the canvas.
 
 **View details** on a card renames, recolors and describes the scenario, and

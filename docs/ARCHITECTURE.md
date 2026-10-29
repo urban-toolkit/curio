@@ -285,8 +285,8 @@ moves nodes the way the dashboard page does:
   node tool (`components/nodes/NodeDeleteTool.tsx` reads the same gate). The
   connections take no focus (`edgesFocusable` in `notebookFlowProps`) and no click
   (`pointer-events: none` under the scroller's `data-curio-notebook`, `MainCanvas.css`),
-  so none is selected. The View menu's Duplicate items and the Scenario Catalog
-  drawer's Duplicate as scenario (its In project tab) are disabled there. The notebook view renders no `ToolsMenu`, only its `RunAllButton`
+  so none is selected. The View menu's Duplicate selection and the Scenario Catalog
+  drawer's Duplicate scenario (on each In project card) are disabled there. The notebook view renders no `ToolsMenu`, only its `RunAllButton`
   (`components/notebook/NotebookRunAll.tsx`, top right of the page).
 - **Dots.** `notebookHandlePlaces` anchors each dot to the cell's top (inputs, at fixed
   offsets), its middle (the interaction dot) or its bottom (outputs, `top: auto` inline,

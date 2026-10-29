@@ -109,9 +109,13 @@
   color: var(--curio-text-primary);
 }
 
-/* Delete: the icon alone, at the toolbar's end, red under the pointer. */
+/* The card's top-right corner, beside its name: Delete. */
+.cardCorner {
+  align-self: start;
+}
+
+/* Delete: the icon alone, red under the pointer. */
 .toolDanger {
-  margin-left: auto;
   width: 28px;
   padding: 0;
   justify-content: center;

@@ -78,16 +78,16 @@ from .test_scenario_drop_e2e import (
 from .test_scenarios_canvas_e2e import _box, _frame_box
 from .test_widget_tags_e2e import _open_tab, _panel
 from .utils import (
-    REPO_ROOT,
-    _COLOR_PIXELS_JS,
-    _OUTPUT_ARTIFACT_JS,
     _assert_legend_reads,
     _assert_legend_title,
+    _COLOR_PIXELS_JS,
+    _OUTPUT_ARTIFACT_JS,
     api_json,
     assert_autark_map_drawn,
     assert_vega_canvas_rendered,
     close_scenario_details,
     close_scenario_drawer,
+    collapse_scenario,
     connect_nodes,
     dismiss_toasts,
     drag_builtin_to_canvas,
@@ -99,13 +99,13 @@ from .utils import (
     open_scenario_details,
     play_node,
     read_node_error_text,
+    REPO_ROOT,
     require_owner_view,
     require_project_page,
     require_user_auth,
     require_webgpu,
     run_all_and_wait,
     save_dataflow,
-    scenario_card_button,
     scenario_part,
     set_node_code,
     stub_login_and_enter_workflow,
@@ -591,13 +591,10 @@ def test_example_06_compares_its_three_scenarios_in_the_canvas(
     _assert_tag_and_chip(page, E_COMPUTE, "1")
 
     # 2. All collapsed, Run All: the loader loads once, and every scenario runs.
-    open_in_project_tab(page)
     for scenario_id in NAMES:
-        scenario_card_button(page, scenario_id, "Collapse").click()
-        _box(page, scenario_id).wait_for(state="attached", timeout=10000)
+        collapse_scenario(page, scenario_id)
         for node_id in MEMBERS[scenario_id]:
             assert not node_locator(page, node_id).is_visible(), f"{node_id} shows inside a collapsed scenario"
-    close_scenario_drawer(page)
     python, loads, stop = _record_runs(page, DATA)
     left_out, stop_left_out = _record_batched_left_out(page)
     run_all_and_wait(page, timeout_ms=RUN_MS)

@@ -45,11 +45,10 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from .utils import (
     activate_header_icon,
     assert_autark_map_drawn,
-    close_scenario_drawer,
+    collapse_scenario,
+    expand_scenario,
     frame_nodes,
-    in_project_card,
     node_locator,
-    open_in_project_tab,
     play_node,
     read_node_error_text,
     require_owner_view,
@@ -57,7 +56,6 @@ from .utils import (
     require_user_auth,
     require_webgpu,
     run_all_and_wait,
-    scenario_card_button,
     stub_login_and_enter_workflow,
     wait_for_node_settled,
 )
@@ -399,15 +397,6 @@ def _assert_no_problems(problems: list[str]) -> None:
     )
 
 
-def _from_the_card(page, button: str) -> None:
-    """Click one of the scenario's buttons on its In project card, and close
-    the drawer again, which lies over the canvas."""
-    open_in_project_tab(page)
-    in_project_card(page, SCENARIO).wait_for(state="visible", timeout=10000)
-    scenario_card_button(page, SCENARIO, button).click()
-    close_scenario_drawer(page)
-
-
 def _leave_the_dataflow(page) -> None:
     """Back to the projects page through the top bar's logo, in the app: the
     dataflow's nodes leave this same page. Unsaved changes are discarded."""
@@ -430,38 +419,32 @@ def test_a_map_in_a_collapsed_scenario_draws_nothing_until_it_is_expanded(
     frame_nodes(page, [MAP])
     _check_idle(page, "the map, shown and idle", problems, shown=True)
 
-    # Collapsed from its In project card, its map is hidden in the box: it
-    # draws nothing.
-    _from_the_card(page, "Collapse")
+    # Collapsed on the canvas, its map is hidden in the box: it draws nothing.
+    collapse_scenario(page, SCENARIO)
     node_locator(page, MAP).wait_for(state="hidden", timeout=10000)
     _check_idle(page, "the map of a collapsed scenario", problems, shown=False)
 
-    # Expanded, it draws again, then rests. The drawer opens before the count
-    # starts, so only the Expand click is counted.
-    open_in_project_tab(page)
+    # Expanded with a double-click on its box, it draws again, then rests.
     _draws(page, "expanding the scenario", lambda: (
-        scenario_card_button(page, SCENARIO, "Expand").click(),
+        expand_scenario(page, SCENARIO),
         node_locator(page, MAP).wait_for(state="visible", timeout=10000),
     ), problems)
-    close_scenario_drawer(page)
     frame_nodes(page, [MAP])
     _check_idle(page, "the map expanded", problems, shown=True)
 
     # Run inside the collapsed box, the new map draws nothing once it settles,
     # and the one it replaced is destroyed; expanded, the new one draws (#711).
-    _from_the_card(page, "Collapse")
+    collapse_scenario(page, SCENARIO)
     node_locator(page, MAP).wait_for(state="hidden", timeout=10000)
     _keep_canvas(page, "replaced")
     run_all_and_wait(page, timeout_ms=240000)
     _assert_map_ran(page, "inside the collapsed box")
     _check_dead_map(page, "replaced", "the map Run All replaced inside the collapsed box", problems)
     _check_idle(page, "a map run inside a collapsed scenario", problems, shown=False)
-    open_in_project_tab(page)
     _draws(page, "expanding the scenario after a run inside it", lambda: (
-        scenario_card_button(page, SCENARIO, "Expand").click(),
+        expand_scenario(page, SCENARIO),
         node_locator(page, MAP).wait_for(state="visible", timeout=10000),
     ), problems)
-    close_scenario_drawer(page)
     frame_nodes(page, [MAP])
     _check_idle(page, "the map run collapsed, then expanded", problems, shown=True)
 

@@ -10,9 +10,12 @@ import React, { createContext, useContext, useMemo, useState } from "react";
  */
 /**
  * A scenario being defined in the define panel: a new one from the nodes
- * selected, or an existing one whose context and outcomes are edited.
+ * selected, or an existing one edited, from its first step or from *step*
+ * (Duplicate scenario opens its copy on Name & set).
  */
-export type ScenarioDefine = { mode: "new"; nodes?: string[] } | { mode: "edit"; scenarioId: string };
+export type ScenarioDefine =
+  | { mode: "new"; nodes?: string[] }
+  | { mode: "edit"; scenarioId: string; step?: 1 | 2 | 3 };
 
 /** The context and outcomes the define panel holds, which the canvas marks. */
 export type ScenarioPreview = { context: string[]; outcomes: string[] };

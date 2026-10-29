@@ -30,7 +30,7 @@ describe("the scenario commands", () => {
     expect(UP_MENU).not.toMatch(/<HeaderMenu\s+label="Scenarios"/);
   });
 
-  test.each(["Define scenario", "Duplicate selection", "Duplicate as scenario"])(
+  test.each(["Define scenario", "Duplicate selection"])(
     "View offers %s, to an editor only",
     (item) => {
       const view = menuSource("View", "</HeaderMenu>");
@@ -39,6 +39,10 @@ describe("the scenario commands", () => {
       expect(scenarios).toContain(item);
     },
   );
+
+  test("View has no Duplicate as scenario: a scenario is duplicated from its In project card", () => {
+    expect(menuSource("View", "</HeaderMenu>")).not.toContain("Duplicate as scenario");
+  });
 
   test("View has no Show scenarios or Hide scenarios: the scenarios are the Scenario Catalog's In project tab", () => {
     const view = menuSource("View", "</HeaderMenu>");

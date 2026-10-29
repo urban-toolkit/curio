@@ -60,6 +60,8 @@ from .scenario_drawer import (  # noqa: F401
     SCENARIO_DRAWER,
     close_scenario_details,
     close_scenario_drawer,
+    collapse_scenario,
+    expand_scenario,
     in_project_card,
     open_in_project_tab,
     open_scenario_details,

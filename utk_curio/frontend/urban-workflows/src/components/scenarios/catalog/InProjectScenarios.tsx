@@ -2,8 +2,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faClone,
-  faCompress,
-  faExpand,
   faPen,
   faPlay,
   faPlus,
@@ -41,9 +39,8 @@ type ScenarioActions = ReturnType<typeof useScenarioActions>;
 /**
  * The Scenario Catalog drawer's In project tab: the open dataflow's scenarios,
  * read off the canvas, so an unsaved one is listed too, inside a panel per
- * scenario set. On top, Define scenario and Duplicate as scenario; on each
- * card, Run scenario, Collapse or Expand, Edit scenario (Define scenario on
- * it) and Delete; in its details, its name, color and description. Pointing at a card marks the scenario's fixed context on the
+ * scenario set. On top, Define scenario; on each card, Run scenario, Edit
+ * scenario (Define scenario on it), Duplicate scenario and Delete; in its details, its name, color and description. Pointing at a card marks the scenario's fixed context on the
  * canvas. A shared viewer reads them and changes nothing.
  */
 export function InProjectScenarios({ scenarios, search, sort, presented }: InProjectScenariosProps) {
@@ -107,20 +104,13 @@ export function InProjectScenarios({ scenarios, search, sort, presented }: InPro
       {!shared ? (
         <div className={styles.inProjectActions}>
           <ToolButton icon={faPlus} label="Define scenario" primary onClick={actions.saveSelectionAsScenario} />
-          {/* Duplicating adds nodes, which happens on the canvas only. */}
-          <ToolButton
-            icon={faClone}
-            label="Duplicate as scenario"
-            onClick={() => actions.duplicate(true)}
-            disabled={notebookOn}
-          />
         </div>
       ) : null}
 
       {scenarios.length === 0 ? (
         <div className={shell.empty}>
-          This dataflow has no scenarios yet. Select nodes (Shift and drag) and save them as a scenario, or
-          duplicate them as one to compare two versions.
+          This dataflow has no scenarios yet. Click Define scenario, then select the nodes the scenario changes.
+          Duplicate a scenario to compare two versions.
         </div>
       ) : shown.length === 0 ? (
         <div className={shell.empty}>No scenarios match the current search.</div>
@@ -146,9 +136,19 @@ export function InProjectScenarios({ scenarios, search, sort, presented }: InPro
                 }}
                 onOpenDetails={() => setDetailId(scenario.id)}
                 onPoint={(on) => setHighlighted(on ? scenario.id : null)}
+                corner={
+                  shared ? undefined : (
+                    <ToolButton icon={faTrashCan} label="Delete" danger onClick={() => remove(scenario.id)} />
+                  )
+                }
                 controls={
                   shared ? undefined : (
-                    <ScenarioControls scenario={scenario} parts={parts} actions={actions} onDelete={remove} />
+                    <ScenarioControls
+                      scenario={scenario}
+                      parts={parts}
+                      actions={actions}
+                      notebookOn={notebookOn}
+                    />
                   )
                 }
               />
@@ -210,19 +210,21 @@ function ToolButton({
   );
 }
 
-/** A card's buttons. A scenario with no node left can neither run nor
- *  collapse; Edit scenario opens Define scenario on it, where its nodes,
+/** A card's buttons. A scenario with no node left can neither run nor be
+ *  duplicated; it is collapsed and expanded on the canvas. Duplicate
+ *  scenario copies its nodes into a new scenario of its set and opens the
+ *  copy in Define scenario. Edit scenario opens Define scenario on it, where its nodes,
  *  shared context and outcomes, name and set are changed. */
 function ScenarioControls({
   scenario,
   parts,
   actions,
-  onDelete,
+  notebookOn,
 }: {
   scenario: Scenario;
   parts: ScenarioParts;
   actions: ScenarioActions;
-  onDelete: (id: string) => void;
+  notebookOn: boolean;
 }) {
   const empty = parts.levers.length === 0;
   return (
@@ -234,14 +236,14 @@ function ScenarioControls({
         onClick={() => actions.runScenario(scenario.id)}
         disabled={empty}
       />
-      <ToolButton
-        icon={scenario.collapsed ? faExpand : faCompress}
-        label={scenario.collapsed ? "Expand" : "Collapse"}
-        onClick={() => actions.setCollapsed(scenario.id, !scenario.collapsed)}
-        disabled={empty}
-      />
       <ToolButton icon={faPen} label="Edit scenario" onClick={() => actions.editScenario(scenario.id)} />
-      <ToolButton icon={faTrashCan} label="Delete" danger onClick={() => onDelete(scenario.id)} />
+      {/* Duplicating adds nodes, which happens on the canvas only. */}
+      <ToolButton
+        icon={faClone}
+        label="Duplicate scenario"
+        onClick={() => actions.duplicateScenario(scenario.id)}
+        disabled={empty || notebookOn}
+      />
     </>
   );
 }

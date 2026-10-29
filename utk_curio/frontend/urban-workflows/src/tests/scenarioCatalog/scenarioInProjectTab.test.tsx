@@ -43,6 +43,7 @@ const mockActions = {
   saveSelectionAsScenario: jest.fn(),
   saveDataflowAsScenario: jest.fn(),
   duplicate: jest.fn(),
+  duplicateScenario: jest.fn(),
   runScenario: jest.fn(),
   update: jest.fn(),
   setCollapsed: jest.fn(),
@@ -166,7 +167,8 @@ describe("the Scenario Catalog drawer's In project tab", () => {
     await openInProject();
     expect(tab("In project")).toHaveAttribute("aria-pressed", "true");
     expect(within(card("s-doubled")).getByText("Doubled")).toBeInTheDocument();
-    expect(within(card("s-doubled")).getByText("1 node")).toBeInTheDocument();
+    // No node count: the card is its name and description.
+    expect(within(card("s-doubled")).queryByText(/\d+ nodes?$/)).toBeNull();
     expect(within(card("s-doubled")).getByText("Every height twice.")).toBeInTheDocument();
     expect(within(card("s-charted")).getByText("Charted")).toBeInTheDocument();
     // Browse all's listing is not In project's: its card is not here.
@@ -179,46 +181,48 @@ describe("the Scenario Catalog drawer's In project tab", () => {
     await openInProject();
     fireEvent.click(button("s-doubled", "Run scenario"));
     expect(mockActions.runScenario).toHaveBeenCalledWith("s-doubled");
-    fireEvent.click(button("s-doubled", "Collapse"));
-    expect(mockActions.setCollapsed).toHaveBeenCalledWith("s-doubled", true);
     fireEvent.click(button("s-doubled", "Edit scenario"));
     expect(mockActions.editScenario).toHaveBeenCalledWith("s-doubled");
     fireEvent.click(button("s-doubled", "Delete"));
     expect(mockActions.remove).toHaveBeenCalledWith("s-doubled");
     // Each acted on its own scenario only.
-    expect(mockActions.setCollapsed).toHaveBeenCalledTimes(1);
+    expect(mockActions.runScenario).toHaveBeenCalledTimes(1);
   });
 
-  test("a collapsed scenario's card offers Expand", async () => {
+  test("a card has no Collapse or Expand: a scenario collapses on the canvas", async () => {
     await openInProject();
-    expect(within(card("s-charted")).queryByRole("button", { name: "Collapse" })).toBeNull();
-    fireEvent.click(button("s-charted", "Expand"));
-    expect(mockActions.setCollapsed).toHaveBeenCalledWith("s-charted", false);
+    for (const id of ["s-doubled", "s-charted"]) {
+      expect(within(card(id)).queryByRole("button", { name: "Collapse" })).toBeNull();
+      expect(within(card(id)).queryByRole("button", { name: "Expand" })).toBeNull();
+    }
   });
 
-  test("a scenario with no node left can neither run nor collapse", async () => {
+  test("a scenario with no node left cannot run", async () => {
     mockFlow.scenarios = [DOUBLED, CHARTED, GONE];
     await openInProject();
     expect(tab("In project")).toHaveTextContent(/^In project3$/);
-    expect(within(card("s-gone")).getByText("0 nodes")).toBeInTheDocument();
     expect(button("s-gone", "Run scenario")).toBeDisabled();
-    expect(button("s-gone", "Collapse")).toBeDisabled();
     expect(button("s-gone", "Edit scenario")).toBeEnabled();
     expect(button("s-gone", "Delete")).toBeEnabled();
   });
 
-  test("on top of the tab, Define scenario and Duplicate as scenario", async () => {
+  test("on top of the tab, Define scenario alone", async () => {
     await openInProject();
     fireEvent.click(within(root()).getByRole("button", { name: "Define scenario" }));
     expect(mockActions.saveSelectionAsScenario).toHaveBeenCalledTimes(1);
-    fireEvent.click(within(root()).getByRole("button", { name: "Duplicate as scenario" }));
-    expect(mockActions.duplicate).toHaveBeenCalledWith(true);
+    expect(within(root()).queryByRole("button", { name: /Duplicate as scenario/ })).toBeNull();
   });
 
-  test("Duplicate as scenario is off in the notebook view, where nodes are not added", async () => {
+  test("Duplicate scenario on a card duplicates that scenario", async () => {
+    await openInProject();
+    fireEvent.click(button("s-doubled", "Duplicate scenario"));
+    expect(mockActions.duplicateScenario).toHaveBeenCalledWith("s-doubled");
+  });
+
+  test("Duplicate scenario is off in the notebook view, where nodes are not added", async () => {
     mockFlow.notebookOn = true;
     await openInProject();
-    expect(within(root()).getByRole("button", { name: "Duplicate as scenario" })).toBeDisabled();
+    expect(button("s-doubled", "Duplicate scenario")).toBeDisabled();
     expect(within(root()).getByRole("button", { name: "Define scenario" })).toBeEnabled();
   });
 
@@ -226,7 +230,7 @@ describe("the Scenario Catalog drawer's In project tab", () => {
     mockView.shared = true;
     await openInProject();
     expect(within(card("s-doubled")).getByText("Doubled")).toBeInTheDocument();
-    for (const name of ["Run scenario", "Collapse", "Expand", "Add selected", "Remove selected", "Delete"]) {
+    for (const name of ["Run scenario", "Edit scenario", "Duplicate scenario", "Delete"]) {
       expect(within(root()).queryByRole("button", { name })).toBeNull();
     }
     expect(within(root()).queryByRole("button", { name: "Define scenario" })).toBeNull();
@@ -285,7 +289,7 @@ describe("the Scenario Catalog drawer's In project tab", () => {
     fireEvent.click(tab("In project"));
     expect(
       await within(root()).findByText(
-        "This dataflow has no scenarios yet. Select nodes (Shift and drag) and save them as a scenario, or duplicate them as one to compare two versions.",
+        "This dataflow has no scenarios yet. Click Define scenario, then select the nodes the scenario changes. Duplicate a scenario to compare two versions.",
       ),
     ).toBeInTheDocument();
   });

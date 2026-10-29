@@ -58,6 +58,11 @@ function renderDrawer(presented = true, onRequestClose = jest.fn()) {
 const root = () =>
   document.querySelector('[data-curio-scenario-catalog-drawer="true"]') as HTMLElement;
 
+/** A set's panel, by its name. */
+function setPanel(name: string): HTMLElement {
+  return within(root()).getByRole("region", { name });
+}
+
 function card(key: string): HTMLElement {
   const el = root().querySelector(`[data-scenario-key="${key}"]`);
   if (!el) throw new Error(`no card for ${key}`);
@@ -124,7 +129,9 @@ describe("the canvas Scenario Catalog drawer", () => {
     expect(screen.getByRole("button", { name: "Close Scenario Catalog drawer" })).toBeInTheDocument();
     expect(await within(root()).findByText("Cool roofs")).toBeInTheDocument();
     const heat = within(card("p-heat/s-cool"));
-    expect(heat.getByText("2 nodes")).toBeInTheDocument();
+    expect(heat.queryByText(/\d+ nodes?$/)).toBeNull();
+    // Open source project is the set's, not each card's.
+    expect(heat.queryByRole("button", { name: "Open source project" })).toBeNull();
     expect(heat.getByText("Raise roof albedo across the district.")).toBeInTheDocument();
     expect(within(card("p-ex/s-cool")).getByText("Baseline")).toBeInTheDocument();
     expect(api.listCatalog).toHaveBeenCalledWith({ q: "" });
@@ -202,7 +209,7 @@ describe("the canvas Scenario Catalog drawer", () => {
   test("Open source project goes there and closes the drawer", async () => {
     const { onRequestClose } = renderDrawer();
     await within(root()).findByText("Cool roofs");
-    fireEvent.click(within(card("p-heat/s-cool")).getByRole("button", { name: "Open source project" }));
+    fireEvent.click(within(setPanel("Heat study")).getByRole("button", { name: "Open source project" }));
     await waitFor(() => expect(location).toBe("/dataflow/p-heat"));
     expect(onRequestClose).toHaveBeenCalled();
   });
@@ -211,13 +218,13 @@ describe("the canvas Scenario Catalog drawer", () => {
     mockFlow.projectDirty = true;
     const { onRequestClose } = renderDrawer();
     await within(root()).findByText("Cool roofs");
-    fireEvent.click(within(card("p-heat/s-cool")).getByRole("button", { name: "Open source project" }));
+    fireEvent.click(within(setPanel("Heat study")).getByRole("button", { name: "Open source project" }));
     const ask = screen.getByRole("dialog", { name: LEAVE_DATAFLOW.title });
     fireEvent.click(within(ask).getByRole("button", { name: "Stay here" }));
     expect(location).toBe("/dataflow/p-current");
     expect(onRequestClose).not.toHaveBeenCalled();
 
-    fireEvent.click(within(card("p-heat/s-cool")).getByRole("button", { name: "Open source project" }));
+    fireEvent.click(within(setPanel("Heat study")).getByRole("button", { name: "Open source project" }));
     fireEvent.click(screen.getByRole("button", { name: "Discard and continue" }));
     await waitFor(() => expect(location).toBe("/dataflow/p-heat"));
   });
@@ -227,7 +234,7 @@ describe("the canvas Scenario Catalog drawer", () => {
     mockFlow.projectDirty = true;
     const { onRequestClose } = renderDrawer();
     await within(root()).findByText("Cool roofs");
-    fireEvent.click(within(card("p-heat/s-cool")).getByRole("button", { name: "Open source project" }));
+    fireEvent.click(within(setPanel("Heat study")).getByRole("button", { name: "Open source project" }));
     expect(onRequestClose).toHaveBeenCalled();
     expect(screen.queryByRole("dialog", { name: LEAVE_DATAFLOW.title })).toBeNull();
     expect(location).toBe("/dataflow/p-current");

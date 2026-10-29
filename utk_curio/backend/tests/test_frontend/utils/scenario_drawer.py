@@ -1,7 +1,8 @@
 """The open dataflow's scenarios: the Scenario Catalog drawer's In project tab.
 
-Each scenario is a card there with Run scenario, Collapse or Expand, Edit
-scenario and Delete, and its details hold its name, color and
+Each scenario is a card there with Run scenario, Edit scenario and Delete
+(it collapses and expands on the canvas: `collapse_scenario`,
+`expand_scenario`), and its details hold its name, color and
 description and list its fixed context, levers and outcomes. Every scenario
 test reaches them through these helpers.
 
@@ -34,8 +35,8 @@ def open_in_project_tab(page: Page, *, opened_by_command: bool = False, timeout:
     """Show the open dataflow's scenarios, and return the drawer.
 
     The drawer opens from the top bar's Scenario Catalog button, unless it is
-    open already. Save selection as scenario, Save dataflow as scenario and
-    Duplicate as scenario open it on this tab themselves: after one of them,
+    open already. Save dataflow as scenario opens it on this tab itself:
+    after it,
     *opened_by_command* checks that it did, with no click on the button and
     no click on the tab. A drawer still sliding in or out is waited for
     first, so the button is never clicked under its scrim.
@@ -64,9 +65,22 @@ def in_project_card(page: Page, scenario_id: str):
 
 
 def scenario_card_button(page: Page, scenario_id: str, name: str):
-    """One of the card's buttons: Run scenario, Collapse, Expand, Edit
-    scenario or Delete."""
+    """One of the card's buttons: Run scenario, Edit scenario or Delete."""
     return in_project_card(page, scenario_id).get_by_role("button", name=name, exact=True)
+
+
+def collapse_scenario(page: Page, scenario_id: str, *, timeout: float = 10000) -> None:
+    """Collapse the scenario with the Collapse button above its frame on the
+    canvas (the drawer closed), and wait for its box. Dispatched, so a frame
+    scrolled out of the view collapses too."""
+    page.get_by_test_id(f"scenario-collapse-{scenario_id}").dispatch_event("click")
+    page.get_by_test_id(f"scenario-box-{scenario_id}").wait_for(state="attached", timeout=timeout)
+
+
+def expand_scenario(page: Page, scenario_id: str, *, timeout: float = 10000) -> None:
+    """Expand the collapsed scenario by double-clicking its box on the canvas."""
+    page.get_by_test_id(f"scenario-box-{scenario_id}").dispatch_event("dblclick")
+    page.get_by_test_id(f"scenario-box-{scenario_id}").wait_for(state="detached", timeout=timeout)
 
 
 def close_scenario_drawer(page: Page, *, timeout: float = 10000) -> None:
