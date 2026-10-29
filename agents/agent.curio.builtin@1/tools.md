@@ -146,7 +146,7 @@ Change the dataflow graph with a plan, by ending a reply with a dataflowPlan blo
 
 ### Native
 
-Change the dataflow graph with a plan: its arguments are the plan. The plan lands whole and at once, for everyone in the dataflow, its nodes with no code, and the user can undo it from the chat. {{include:rules/plan-rules.md}}
+Change the dataflow graph: the arguments are the plan, which lands whole; the user can undo it. {{include:rules/plan-rules.md}}
 
 ### Parameters
 

@@ -21,10 +21,10 @@ import pytest
 
 from utk_curio.backend.tests._support.agent_routes import _auth
 from utk_curio.backend.tests.test_agents.test_map_edits_grounding import _project, _seed_builtin, _write_tail
+from utk_curio.backend.tests.test_agents.test_routes_proposals import _changes, _landed_plan
 from utk_curio.backend.tests.test_agents.test_source_grounding_routes import (
     _attach,
     _install,
-    _proposals,
     _run,
     _script,
     _tool_results,
@@ -184,31 +184,36 @@ class TestTheMintSendsTheSpecBack:
         self, client, user_and_token, tmp_curio, monkeypatch,
     ):
         """The model is told why, with the remedy, and a spec the dashboard
-        carries is proposed."""
+        carries lands."""
         user, token = user_and_token
         project = _project(client, user, token, [_tile(MAP)])
         _install(client, token, project, NB)
         att = _attach(client, token, project, NB, target={"kind": "node", "targetId": "map"})
         calls = _script(monkeypatch, [
-            _write_tail("map", MAP_WITH_PARKS), _write_tail("map", MAP_STYLED), "Proposed: review it above.",
+            _write_tail("map", MAP_WITH_PARKS), _write_tail("map", MAP_STYLED), "Written.",
         ])
         body = _run(client, token, project, att, "add the parks of Boston Harbor to the map")
-        refused, proposed = _tool_results(calls[-1], "node.content.write")
+        refused, landed = _tool_results(calls[-1], "node.content.write")
         assert "refused" in refused.split("\n", 1)[0] and _message() in refused, refused
-        assert proposed.startswith("[tool result] node.content.write: proposed"), proposed
-        [proposal] = _proposals(body)
-        assert proposal["preview"] == MAP_STYLED
+        assert landed.startswith("[tool result] node.content.write: applied"), landed
+        [card] = _changes(body)
+        assert card["preview"] == MAP_STYLED
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        assert _content(_user_dir_key(user), project, "map") == MAP_STYLED
 
 
-def _solve_a_pinned_planned_map(client, user_and_token, monkeypatch, *, verify: bool, mode: str = "write") -> dict:
-    """A plan's Autark map, applied, then pinned by the user, then solved in
-    *mode* (``"propose"`` is Simulation Mode's solve, which mints reviews),
-    with the builder writing ``MAP_WITH_PARKS`` for it each time it is asked.
-    Gives the map's id (``tile``), the Solve's answer (``body``), where the
-    dataflow is stored (``key``, ``project``) and each ask of the builder for
-    the map's spec (``asked``). Nothing reaches a sandbox."""
+def _solve_a_pinned_planned_map(client, user_and_token, monkeypatch, *, verify: bool, stream: bool = False) -> dict:
+    """A plan's Autark map, landed, then pinned by the user, then solved, the
+    batch or its stream (*stream*), with the builder writing
+    ``MAP_WITH_PARKS`` for it each time it is asked. Gives the map's id
+    (``tile``), the Solve's answer (``body``), the stream's events when
+    streamed (``events``), where the dataflow is stored (``key``,
+    ``project``) and each ask of the builder for the map's spec (``asked``).
+    Nothing reaches a sandbox."""
     from utk_curio.backend.app.projects import storage as projects_storage
     from utk_curio.backend.app.projects.services import _user_dir_key
+    from utk_curio.backend.tests.test_agents.test_routes_solve import TestStreamedSolve
 
     user, token = user_and_token
     project = _project(client, user, token, [])
@@ -234,22 +239,27 @@ def _solve_a_pinned_planned_map(client, user_and_token, monkeypatch, *, verify: 
     _install(client, token, project, DFB, NB)
     att = _attach(client, token, project, DFB)
     _script(monkeypatch, [_reply])
-    [proposal] = _proposals(_run(client, token, project, att, "plan a map of the parks of Boston Harbor"))
-    applied = client.post(
-        f"/api/agents/projects/{project}/attachments/{att}/proposals/{proposal['proposalId']}/apply",
-        headers=_auth(token),
-    ).get_json()
-    tile = next(n["id"] for n in applied["appliedGraph"]["nodes"] if str(n.get("type", "")).startswith(AUTK))
+    graph = _landed_plan(_run(client, token, project, att, "plan a map of the parks of Boston Harbor"))["canvas"]
+    tile = next(n["id"] for n in graph["nodes"] if str(n.get("type", "")).startswith(AUTK))
     # The user pins the planned map before Solve fills it.
     key = _user_dir_key(user)
     spec = projects_storage.read_spec(key, project)
     next(n for n in spec["dataflow"]["nodes"] if n["id"] == tile)["dashboardPinned"] = True
     projects_storage.write_spec(key, project, spec)
-    body = client.post(
-        f"/api/agents/projects/{project}/attachments/{att}/solve",
-        json={"verify": verify, "mode": mode}, headers=_auth(token),
-    ).get_json()
-    return {"tile": tile, "body": body, "key": key, "project": project, "asked": asked}
+    events: list = []
+    if stream:
+        r = client.post(
+            f"/api/agents/projects/{project}/attachments/{att}/solve/stream",
+            json={"verify": verify}, headers=_auth(token),
+        )
+        events = TestStreamedSolve()._sse_events(r)
+        body = next(p for k, p in reversed(events) if k == "done")
+    else:
+        body = client.post(
+            f"/api/agents/projects/{project}/attachments/{att}/solve",
+            json={"verify": verify}, headers=_auth(token),
+        ).get_json()
+    return {"tile": tile, "body": body, "events": events, "key": key, "project": project, "asked": asked}
 
 
 def _content(key: str, project: str, node_id: str) -> str:
@@ -306,21 +316,21 @@ class TestSolveEndsTheNodeOnIt:
         assert _content(solved["key"], solved["project"], tile) == ""
 
     @pytest.mark.parametrize("verify", [True, False], ids=["verified", "unverified"])
-    def test_a_proposing_solve_mints_no_review_and_leaves_the_node_to_the_user(
+    def test_a_streamed_solve_writes_nothing_and_leaves_the_node_to_the_user(
         self, client, user_and_token, tmp_curio, monkeypatch, verify,
     ):
-        """Solve that proposes instead of writing (Simulation Mode's solve)
-        holds the spec to the same check: no review is minted for Apply anyway
-        to write, the result names the remedy, and the session's next turn
+        """The streamed Solve holds the spec to the same check: nothing lands
+        in the tile, the result names the remedy, and the session's next turn
         does not ask the builder for the spec again."""
         from utk_curio.backend.app.agents.domain import dashboards
 
-        solved = _solve_a_pinned_planned_map(client, user_and_token, monkeypatch, verify=verify, mode="propose")
+        solved = _solve_a_pinned_planned_map(client, user_and_token, monkeypatch, verify=verify, stream=True)
         tile = solved["tile"]
         result = solved["body"]["results"][tile]
         assert result["status"] == "failed" and "proposalId" not in result, result
         assert result["remedy"] == {"kind": dashboards.KIND, "nodeId": tile}, result
         assert len(solved["asked"]) == 1, f"the builder was asked for the spec {len(solved['asked'])} times"
+        assert not [k for k, _ in solved["events"] if k == "change"]
         assert _content(solved["key"], solved["project"], tile) == ""
 
 
@@ -337,12 +347,13 @@ class TestAPlanNamesTheTilesItRemoves:
         att = _attach(client, token, project, DFB)
         plan = {"goal": "start the map over", "removeNodes": ["map", "loader"]}
         _script(monkeypatch, ["Revising.\n```curio.v1\n" + json.dumps({"dataflowPlan": plan}) + "\n```"])
-        [proposal] = _proposals(_run(client, token, project, att, "remove the map and the loader"))
-        removals = {victim["id"]: victim for victim in proposal["plan"]["removals"]}
+        card = _landed_plan(_run(client, token, project, att, "remove the map and the loader"))
+        removals = {victim["id"]: victim for victim in card["plan"]["removals"]}
         assert removals["map"]["pinned"] is True
         assert "pinned" not in removals["loader"]
-        lines = proposal["preview"].splitlines()
+        lines = card["preview"].splitlines()
         [tile] = [line for line in lines if "Parks map" in line]
         [loader] = [line for line in lines if "Load CSV" in line]
         assert tile.endswith(f" · {AUTK} · a dashboard tile, which leaves the dashboard"), tile
         assert loader.endswith(f" · {CA}"), loader
+        assert sorted(card["canvas"]["removedNodeIds"]) == ["loader", "map"]
