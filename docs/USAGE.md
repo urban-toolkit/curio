@@ -531,7 +531,7 @@ bolt while it is on.
 **View > Provenance** opens the dataflow's version history in a drawer on the
 right. Each node or connection added or removed makes a version, and so do
 each person's typing in a node once they pause or leave its editor ("Ana
-edited"), an agent's change you applied ("Node Builder, asked by Ana"), each
+edited"), an agent's change ("Node Builder, asked by Ana"), each
 **File > Save** and each version put back.
 
 - The versions are listed in the order they were made, on a line that leads to
