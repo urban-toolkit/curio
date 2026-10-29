@@ -185,8 +185,10 @@ def test_rename_then_save_updates_the_projects_card(
 
     The name is stored twice - the project row (Projects list) and
     ``spec.dataflow.name`` (canvas title). The canvas rename wrote only the
-    second, and ``saveCurrentProject`` sent ``projectName``, which only
-    ``loadProject`` ever set. So the save faithfully re-sent the load-time name.
+    second, and a save sent ``projectName``, which only ``loadProject`` ever
+    set. So the save faithfully re-sent the load-time name. No save sends the
+    dataflow now: the doc keeps the canvas's name, and the rename sends the
+    row its name, as the Projects page's rename does.
 
     Both halves of the reported symptom are asserted: the card moves, AND no
     second project appears - the reporter noted the rename neither renamed nor
@@ -228,12 +230,23 @@ def test_rename_then_save_updates_the_projects_card(
     box = page.locator("input[type='text']").last
     box.wait_for(state="visible", timeout=10000)
     box.fill("After Rename")
-    box.press("Enter")
+    # The rename sends the project row its name, and that name alone.
+    with page.expect_response(
+        lambda r: r.request.method == "PUT"
+        and r.url.split("?")[0].rstrip("/").endswith(f"/api/projects/{pid}"),
+        timeout=20000,
+    ) as renamed_row:
+        box.press("Enter")
+    assert renamed_row.value.ok, renamed_row.value.status
+    assert renamed_row.value.request.post_data_json == {"name": "After Rename"}, (
+        renamed_row.value.request.post_data_json
+    )
 
-    # The rename diverges from disk, so the indicator must say so. Nothing said
-    # it before; that was invisible only while #229's phantom dirty flag was on.
+    # The doc keeps the canvas's name as it is made: the indicator says Saved
+    # once the server has it, and never Unsaved.
+    wait_for_changes_kept(page)
     disk = page.locator("[data-curio-save-state]")
-    expect(disk).to_have_attribute("data-curio-save-state", "unsaved", timeout=10000)
+    expect(disk).to_have_attribute("data-curio-save-state", "saved", timeout=10000)
 
     disk.click()
     expect(disk).to_have_attribute("data-curio-save-state", "saved", timeout=20000)

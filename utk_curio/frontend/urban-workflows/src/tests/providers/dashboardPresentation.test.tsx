@@ -30,13 +30,12 @@ if (!(global as any).DOMMatrixReadOnly) {
 }
 
 const mockBeginPendingInstall = jest.fn();
-const mockPersistDataflowForInstall = jest.fn().mockResolvedValue({ saved: true, failedNodeIds: [] });
+// The record of the outputs the canvas holds: a pin's, a scenario's, a run's.
+const mockRecordOutputs = jest.fn().mockResolvedValue({ saved: true, failedNodeIds: [] });
 const mockMarkDirty = jest.fn();
 const mockShowToast = jest.fn();
-const mockSaveCurrentProject = jest.fn().mockResolvedValue(undefined);
-// The save queue. It hands each save on, so what these tests say about the
-// save holds when the save goes through it.
-const mockRequestProjectSave = jest.fn(() => mockSaveCurrentProject());
+// File > Save, which no pin or tile ever makes.
+const mockSaveDataflow = jest.fn().mockResolvedValue({ id: 'project-1', created: false });
 let mockProjectId: string | null = 'project-1';
 let mockViewerMode: 'owner' | 'shared' = 'owner';
 
@@ -46,7 +45,7 @@ jest.mock('../../hook/useWorkflowOperations', () => ({
     markNodeStale: jest.fn(),
     markNodeErrored: jest.fn(),
     markDirty: mockMarkDirty,
-    persistDataflowForInstall: mockPersistDataflowForInstall,
+    recordOutputs: mockRecordOutputs,
     beginPendingInstall: mockBeginPendingInstall,
     endPendingInstall: jest.fn(),
     failPendingInstall: jest.fn(),
@@ -64,8 +63,7 @@ jest.mock('../../hook/useWorkflowOperations', () => ({
     loadSharedProject: jest.fn(),
     cleanCanvas: jest.fn(),
     discardProject: jest.fn(),
-    saveCurrentProject: mockSaveCurrentProject,
-    requestProjectSave: mockRequestProjectSave,
+    saveDataflow: mockSaveDataflow,
     projectId: mockProjectId,
     viewerMode: mockViewerMode,
   }),
@@ -175,15 +173,14 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockProjectId = 'project-1';
   mockViewerMode = 'owner';
-  mockSaveCurrentProject.mockResolvedValue(undefined);
+  mockRecordOutputs.mockResolvedValue({ saved: true, failedNodeIds: [] });
 });
 
-describe('pinning saves straight away', () => {
+describe('pinning records the outputs its tile reads straight away', () => {
   // A pin is the one edit whose whole point is to change a DIFFERENT page, and
-  // that page renders what is on disk. Left to the 30 second auto-save, "pin a
-  // tile, open the dashboard" showed "nothing is pinned yet" for up to half a
-  // minute, which reads as the feature being broken rather than as a save that
-  // has not happened yet.
+  // that page draws its tiles from the dataflow's saved outputs. The doc keeps
+  // the pin itself; the outputs behind the tile are recorded at once, so "pin
+  // a tile, open the dashboard" shows the tile drawn.
   async function pin(value = true, dashboardOn = false) {
     renderFlow(dashboardOn);
     await flush();
@@ -199,30 +196,30 @@ describe('pinning saves straight away', () => {
   beforeEach(() => jest.useFakeTimers());
   afterEach(() => jest.useRealTimers());
 
-  test('it writes the pin to disk', async () => {
+  test('it records every output the canvas holds that the dataflow records', async () => {
     await pin(true);
 
-    expect(mockSaveCurrentProject).toHaveBeenCalledTimes(1);
+    expect(mockRecordOutputs).toHaveBeenCalledTimes(1);
+    // Unscoped: the tile's sources among every output the dataflow records.
+    expect(mockRecordOutputs).toHaveBeenCalledWith();
   });
 
-  test('it saves through the save queue, so it never overlaps another save', async () => {
-    // Saved directly, the pin's save and a Save clicked within its 400 ms
-    // debounce went out together (#909, #941).
+  test('it sends no save of the dataflow: the doc keeps the pin', async () => {
+    // A whole-dataflow save and a Save clicked within its 400 ms debounce
+    // went out together (#909, #941); no pin saves the dataflow now.
     await pin(true);
 
-    expect(mockRequestProjectSave).toHaveBeenCalledTimes(1);
-    // The one save there was: the queue's.
-    expect(mockSaveCurrentProject).toHaveBeenCalledTimes(1);
+    expect(mockSaveDataflow).not.toHaveBeenCalled();
   });
 
-  test('unpinning is saved just as promptly', async () => {
-    // Otherwise the tile stays on a page the user has already removed it from.
+  test('unpinning records just as promptly', async () => {
+    // Otherwise the tile's sources stay recorded for a tile the user removed.
     await pin(false);
 
-    expect(mockSaveCurrentProject).toHaveBeenCalledTimes(1);
+    expect(mockRecordOutputs).toHaveBeenCalledTimes(1);
   });
 
-  test('a burst of pins is one save', async () => {
+  test('a burst of pins is one record', async () => {
     renderFlow(false);
     await flush();
     await act(async () => {
@@ -236,17 +233,18 @@ describe('pinning saves straight away', () => {
     await act(async () => { jest.advanceTimersByTime(500); });
     await flush();
 
-    expect(mockSaveCurrentProject).toHaveBeenCalledTimes(1);
+    expect(mockRecordOutputs).toHaveBeenCalledTimes(1);
   });
 
-  test('a dataflow that was never saved is not saved by a pin', async () => {
-    // There is no project to update, and creating one behind the user's back on
-    // a pin is not what they asked for.
+  test('a dataflow that was never saved is not made by a pin', async () => {
+    // There is no project to record into, and creating one behind the user's
+    // back on a pin is not what they asked for.
     mockProjectId = null;
 
     await pin(true);
 
-    expect(mockSaveCurrentProject).not.toHaveBeenCalled();
+    expect(mockRecordOutputs).not.toHaveBeenCalled();
+    expect(mockSaveDataflow).not.toHaveBeenCalled();
   });
 
   test('a visitor holding a link never writes', async () => {
@@ -254,22 +252,23 @@ describe('pinning saves straight away', () => {
 
     await pin(true);
 
-    expect(mockSaveCurrentProject).not.toHaveBeenCalled();
+    expect(mockRecordOutputs).not.toHaveBeenCalled();
   });
 
-  test('the dashboard itself still saves only on Save layout', async () => {
+  test('the dashboard itself writes only on Save layout', async () => {
     await pin(true, true);
 
-    expect(mockSaveCurrentProject).not.toHaveBeenCalled();
+    expect(mockRecordOutputs).not.toHaveBeenCalled();
+    expect(mockSaveDataflow).not.toHaveBeenCalled();
   });
 
-  test('a failed save says so, rather than leaving a stale dashboard', async () => {
-    mockSaveCurrentProject.mockRejectedValue(new Error('offline'));
+  test('a failed record says so, rather than leaving a stale dashboard', async () => {
+    mockRecordOutputs.mockRejectedValue(new Error('offline'));
 
     await pin(true);
 
     expect(mockShowToast).toHaveBeenCalledWith(
-      expect.stringContaining('Could not save the pin'),
+      expect.stringContaining('Could not save the outputs'),
       'error',
     );
   });
@@ -345,7 +344,7 @@ describe('which outputs get saved', () => {
     // save at all - the attempt would surface as an error toast on a page they
     // only opened to look at.
     expect(mockBeginPendingInstall).not.toHaveBeenCalled();
-    expect(mockPersistDataflowForInstall).not.toHaveBeenCalled();
+    expect(mockRecordOutputs).not.toHaveBeenCalled();
   });
 });
 

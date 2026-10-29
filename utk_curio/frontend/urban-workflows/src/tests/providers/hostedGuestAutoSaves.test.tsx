@@ -2,11 +2,11 @@
  * A hosted guest (`isHostedGuest`: a guest on a Curio started with --deploy,
  * where every visitor shares the one guest account) cannot save the dataflow.
  * Only a save the guest asks for says so: File > Save and Save a copy
- * (useWorkflowOperations.hostedGuest.test.ts). The saves Curio makes on its
- * own are skipped without a word: the install save after a node's output
- * lands, and the save after a pin changes. On dev, a guest who opened a
- * shipped example and pressed a node's play or Run All was told "Guest users
- * cannot save projects" by the first of them.
+ * (useWorkflowOperations.hostedGuest.test.ts). The writes Curio makes on its
+ * own are skipped without a word: the record of the outputs after a node's
+ * output lands, and after a pin changes. On dev, a guest who opened a shipped
+ * example and pressed a node's play or Run All was told "Guest users cannot
+ * save projects" by the first of them.
  *
  * Without --deploy the shared guest is the one local user, and it saves like a
  * signed-in account. Drives the REAL FlowProvider the way
@@ -27,12 +27,11 @@ if (!(global as any).DOMMatrixReadOnly) {
   (global as any).DOMMatrixReadOnly = class { m22 = 1; constructor() {} };
 }
 
-/** How the save queue answers a hosted guest (`saveCurrentProject`). */
+/** How the server answers a hosted guest's write (`_assert_guest_can_save`). */
 const GUEST_REFUSAL = 'Guest users cannot save projects';
 
 const mockBeginPendingInstall = jest.fn();
-const mockPersistDataflowForInstall = jest.fn();
-const mockRequestProjectSave = jest.fn();
+const mockRecordOutputs = jest.fn();
 const mockShowToast = jest.fn();
 
 jest.mock('../../hook/useWorkflowOperations', () => ({
@@ -41,7 +40,7 @@ jest.mock('../../hook/useWorkflowOperations', () => ({
     markNodeStale: jest.fn(),
     markNodeErrored: jest.fn(),
     markDirty: jest.fn(),
-    persistDataflowForInstall: mockPersistDataflowForInstall,
+    recordOutputs: mockRecordOutputs,
     beginPendingInstall: mockBeginPendingInstall,
     endPendingInstall: jest.fn(),
     failPendingInstall: jest.fn(),
@@ -59,7 +58,6 @@ jest.mock('../../hook/useWorkflowOperations', () => ({
     loadSharedProject: jest.fn(),
     cleanCanvas: jest.fn(),
     discardProject: jest.fn(),
-    requestProjectSave: mockRequestProjectSave,
     surfaceInstallWarnings: jest.fn(),
     // A saved dataflow of the viewer's own, as a shipped example is once it
     // has been seeded into the guest account: the pin's save needs both.
@@ -249,8 +247,7 @@ function toastsShown(): string[] {
 beforeEach(() => {
   jest.clearAllMocks();
   jest.useFakeTimers();
-  mockPersistDataflowForInstall.mockResolvedValue({ saved: true, failedNodeIds: [] });
-  mockRequestProjectSave.mockResolvedValue({ id: 'project-1' });
+  mockRecordOutputs.mockResolvedValue({ saved: true, failedNodeIds: [] });
 });
 
 afterEach(() => {
@@ -259,8 +256,8 @@ afterEach(() => {
 
 describe('a hosted guest', () => {
   beforeEach(() => {
-    // What the save queue does for a hosted guest.
-    mockRequestProjectSave.mockRejectedValue(new Error(GUEST_REFUSAL));
+    // What the server answers a hosted guest's record, were one sent.
+    mockRecordOutputs.mockRejectedValue(new Error(GUEST_REFUSAL));
   });
 
   it("asks for no save when a node's output lands, and says nothing", async () => {
@@ -272,7 +269,7 @@ describe('a hosted guest', () => {
     // No "Adding..." placeholder for a dataset that will never be added, and
     // no install save, whose refusal was the toast on dev.
     expect(mockBeginPendingInstall).not.toHaveBeenCalled();
-    expect(mockPersistDataflowForInstall).not.toHaveBeenCalled();
+    expect(mockRecordOutputs).not.toHaveBeenCalled();
     expect(toastsShown()).toEqual([]);
   });
 
@@ -282,9 +279,10 @@ describe('a hosted guest', () => {
 
     await pinChart(true);
 
-    // Neither the pin's save, whose refusal read "Could not save the pin", nor
-    // the note that the producer's output will be saved: for a guest it is not.
-    expect(mockRequestProjectSave).not.toHaveBeenCalled();
+    // Neither the record of the outputs the tile reads, whose refusal would
+    // be a toast, nor the note that the producer's output will be saved: for
+    // a guest it is not.
+    expect(mockRecordOutputs).not.toHaveBeenCalled();
     expect(toastsShown()).toEqual([]);
   });
 
@@ -294,7 +292,7 @@ describe('a hosted guest', () => {
 
     await pinChart(false);
 
-    expect(mockRequestProjectSave).not.toHaveBeenCalled();
+    expect(mockRecordOutputs).not.toHaveBeenCalled();
     expect(toastsShown()).toEqual([]);
   });
 
@@ -321,26 +319,26 @@ describe.each([
     expect(mockBeginPendingInstall).toHaveBeenCalledWith(
       expect.objectContaining({ producerNodeId: 'py' }),
     );
-    expect(mockPersistDataflowForInstall).toHaveBeenCalledWith(['py']);
+    expect(mockRecordOutputs).toHaveBeenCalledWith(['py']);
   });
 
-  it('saves a pin, and says which outputs will be saved', async () => {
+  it('records the outputs a pin reads, and says which outputs will be saved', async () => {
     await renderFlowAs(value);
     await addChartFedByAProducer();
 
     await pinChart(true);
 
-    expect(mockRequestProjectSave).toHaveBeenCalledTimes(1);
+    expect(mockRecordOutputs).toHaveBeenCalledTimes(1);
     expect(toastsShown().join(' ')).toContain('Data Catalog');
-    expect(toastsShown().join(' ')).not.toContain('Could not save the pin');
+    expect(toastsShown().join(' ')).not.toContain('Could not save');
   });
 
-  it('saves an unpin', async () => {
+  it('records after an unpin', async () => {
     await renderFlowAs(value);
     await addChartFedByAProducer(true);
 
     await pinChart(false);
 
-    expect(mockRequestProjectSave).toHaveBeenCalledTimes(1);
+    expect(mockRecordOutputs).toHaveBeenCalledTimes(1);
   });
 });

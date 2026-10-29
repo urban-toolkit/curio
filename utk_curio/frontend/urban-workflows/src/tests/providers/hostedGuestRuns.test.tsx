@@ -22,8 +22,8 @@ if (!(global as any).DOMMatrixReadOnly) {
 
 const mockStartRun = jest.fn().mockResolvedValue(undefined);
 const mockAttachLatestRun = jest.fn().mockResolvedValue(undefined);
-const mockPersistDataflowForInstall = jest.fn().mockResolvedValue(undefined);
-const mockRequestProjectSave = jest.fn().mockResolvedValue(undefined);
+const mockRecordOutputs = jest.fn().mockResolvedValue(undefined);
+const mockEnsureProjectId = jest.fn().mockResolvedValue('project-1');
 const mockLoadProject = jest.fn().mockResolvedValue(undefined);
 const mockLoadSharedProject = jest.fn().mockResolvedValue(undefined);
 const mockCleanCanvas = jest.fn();
@@ -45,7 +45,7 @@ jest.mock('../../hook/useWorkflowOperations', () => ({
     markNodeExecuted: jest.fn(),
     markNodeStale: jest.fn(),
     markDirty: jest.fn(),
-    persistDataflowForInstall: mockPersistDataflowForInstall,
+    recordOutputs: mockRecordOutputs,
     beginPendingInstall: jest.fn(),
     endPendingInstall: jest.fn(),
     applyRemoveChanges: jest.fn(),
@@ -65,7 +65,7 @@ jest.mock('../../hook/useWorkflowOperations', () => ({
     // The viewer's own dataflow: the condition for a run on the server that
     // is not about who is signed in. Without it every run stays in the browser.
     viewerMode: 'owner',
-    requestProjectSave: mockRequestProjectSave,
+    ensureProjectId: mockEnsureProjectId,
     surfaceInstallWarnings: jest.fn(),
   }),
 }));

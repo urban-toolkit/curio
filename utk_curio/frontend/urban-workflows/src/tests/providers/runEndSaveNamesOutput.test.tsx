@@ -1,12 +1,14 @@
 /**
- * The save that ends a run on the server names the output that ended it.
+ * The record of outputs that ends a run on the server names the output that
+ * ended it, and nothing saves the dataflow.
  *
  * A run ends in the tick its last step lands (`useServerRun.onEvent`): the
  * step's output goes through `applyNewOutput`, then `finish` flushes the
- * install save (`flushInstallSyncRef`), and that save reads what to send from
- * `outputsRef` (`buildOutputRefs`). The run has already recorded the output in
- * the dataflow (`record_node_outputs`), so a save that left it out took it back
- * out, and a reopen restored the node's output only from the run's record.
+ * outputs record (`flushInstallSyncRef`), and that record reads what to send
+ * from `outputsRef` (`buildOutputRefs`). The run has already recorded the
+ * output in the dataflow (`record_node_outputs`), so a record that left it out
+ * took it back out, and a reopen restored the node's output only from the
+ * run's record.
  *
  * Two Python Computation nodes with no edge between them, both saving their
  * output, each played on its own, as `test_computed_json_output_e2e.py` plays
@@ -30,6 +32,7 @@ if (!(global as any).DOMMatrixReadOnly) {
 const mockShowToast = jest.fn();
 const mockGetProject = jest.fn();
 const mockUpdateProject = jest.fn();
+const mockRecordOutputs = jest.fn();
 const mockStartRun = jest.fn();
 const mockFollowRun = jest.fn();
 
@@ -41,6 +44,7 @@ jest.mock('../../api/projectsApi', () => {
       ...actual.projectsApi,
       get: (...args: any[]) => mockGetProject(...args),
       update: (...args: any[]) => mockUpdateProject(...args),
+      recordOutputs: (...args: any[]) => mockRecordOutputs(...args),
     },
   };
 });
@@ -213,15 +217,15 @@ async function open() {
   expect(api.nodes.map((n: any) => n.id).sort()).toEqual([DICT, SCALAR].sort());
 }
 
-/** The node ids a save named in its outputs. */
-function named(save: any[]): string[] {
-  return (save[1]?.outputs ?? []).map((ref: any) => ref.node_id).sort();
+/** The node ids a record named in its outputs. */
+function named(record: any[]): string[] {
+  return (record[1] ?? []).map((ref: any) => ref.node_id).sort();
 }
 
 /**
  * Play *nodeId* on the server and land its one step, as the run's stream
- * delivers it; returns the saves the canvas made from then on, the one the
- * run's end flushes first.
+ * delivers it; returns the records of outputs the canvas made from then on,
+ * the one the run's end flushes first.
  */
 async function playAndLand(nodeId: string): Promise<any[][]> {
   const runId = `run-${nodeId}`;
@@ -234,11 +238,11 @@ async function playAndLand(nodeId: string): Promise<any[][]> {
       throw new Error(`the canvas never followed ${runId}; toasts: ${JSON.stringify(mockShowToast.mock.calls)}`);
     }
   });
-  // The save before the run has answered and its chain is idle, as it is
-  // long before a node's run ends.
+  // What the run's start waited for has answered, as it has long before a
+  // node's run ends.
   await flush();
   await flush();
-  const before = mockUpdateProject.mock.calls.length;
+  const before = mockRecordOutputs.mock.calls.length;
   const stream = followed.find((f) => f.runId === runId)!;
   act(() => {
     stream.onEvent({
@@ -247,7 +251,7 @@ async function playAndLand(nodeId: string): Promise<any[][]> {
     });
   });
   await flush();
-  return mockUpdateProject.mock.calls.slice(before);
+  return mockRecordOutputs.mock.calls.slice(before);
 }
 
 beforeEach(() => {
@@ -264,6 +268,9 @@ beforeEach(() => {
     id, name: 'Run end save', spec_revision: 4, spec: spec(), categories: {}, outputs: [],
     dataset_install_warnings: [],
   }));
+  mockRecordOutputs.mockImplementation(async (_id: string, outputs: unknown[]) => ({
+    outputs, dataset_install_warnings: [],
+  }));
   mockFollowRun.mockImplementation((runId: string, onEvent: (event: RunEvent) => void, signal?: AbortSignal) => {
     followed.push({ runId, onEvent });
     return new Promise<void>((resolve) => signal?.addEventListener('abort', () => resolve()));
@@ -274,24 +281,27 @@ afterEach(() => {
   jest.clearAllMocks();
 });
 
-describe('the save that ends a run on the server', () => {
+describe('the record of outputs that ends a run on the server', () => {
   test('names the output of the node the run ended on, and every output before it', async () => {
     await open();
 
     const afterDict = await playAndLand(DICT);
     const afterScalar = await playAndLand(SCALAR);
 
-    // The first save after each step is the one the run's end flushes. The
+    // The first record after each step is the one the run's end flushes. The
     // run recorded the node's output before its step reached the canvas, and
-    // a save's outputs replace the dataflow's: one that leaves the node out
+    // a record's outputs replace the dataflow's: one that leaves the node out
     // takes its output back out.
     expect(afterDict.length).toBeGreaterThan(0);
+    expect(afterDict[0][0]).toBe(PROJECT_ID);
     expect(named(afterDict[0])).toEqual([DICT]);
     expect(afterScalar.length).toBeGreaterThan(0);
     expect(named(afterScalar[0])).toEqual([DICT, SCALAR].sort());
-    const scalarRef = afterScalar[0][1].outputs.find((ref: any) => ref.node_id === SCALAR);
+    const scalarRef = afterScalar[0][1].find((ref: any) => ref.node_id === SCALAR);
     expect(scalarRef).toEqual(expect.objectContaining({
       filename: OUTPUT[SCALAR].path, data_type: OUTPUT[SCALAR].dataType,
     }));
+    // Neither run, nor its end, saved the dataflow.
+    expect(mockUpdateProject).not.toHaveBeenCalled();
   });
 });
