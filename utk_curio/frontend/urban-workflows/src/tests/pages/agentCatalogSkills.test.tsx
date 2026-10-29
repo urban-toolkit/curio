@@ -84,11 +84,14 @@ const mockSkills = [
   },
 ];
 
+const mockListImports = jest.fn(() => Promise.resolve({ agents: [] as unknown[] }));
+const mockUploadImport = jest.fn();
 jest.mock("../../services/agents/agentsApi", () => ({
   agentsApi: {
     catalog: jest.fn(() => Promise.resolve({ items: [mockAgent], agents: [mockAgent], facets: null })),
-    listImports: jest.fn(() => Promise.resolve({ agents: [] })),
+    listImports: () => mockListImports(),
     readDefinition: jest.fn(() => Promise.resolve({ manifest: {}, prompts: {} })),
+    uploadImport: (...args: unknown[]) => mockUploadImport(...args),
   },
 }));
 
@@ -99,11 +102,18 @@ const mockRead = jest.fn((name: string) =>
     files: mockSkills.find((skill) => skill.name === name)?.files ?? [],
   }),
 );
+const mockList = jest.fn(() => Promise.resolve({ skills: mockSkills as unknown[], editable: true, reason: null }));
+const mockRemoveOwn = jest.fn((name: string) => Promise.resolve({ name, removed: true, agents: [] }));
+const mockCheckImport = jest.fn();
+const mockImportSkill = jest.fn();
 jest.mock("../../services/agents/skillsApi", () => ({
   skillsApi: {
-    list: jest.fn(() => Promise.resolve({ skills: mockSkills, editable: true, reason: null })),
+    list: () => mockList(),
     read: (name: string) => mockRead(name),
     agentSkills: jest.fn(() => new Promise(() => {})),
+    removeOwnSkill: (name: string) => mockRemoveOwn(name),
+    checkImport: (...args: unknown[]) => mockCheckImport(...args),
+    importSkill: (...args: unknown[]) => mockImportSkill(...args),
   },
 }));
 
@@ -137,6 +147,16 @@ async function showSkills() {
   await renderPage();
   fireEvent.click(railRow("skills", "all-skills"));
   await waitFor(() => expect(document.querySelectorAll("article[data-skill-name]")).toHaveLength(3));
+}
+
+/** A read the test answers by hand, after the page has drawn what came
+ *  before it, as a server's answer comes. */
+function held<T>() {
+  let answer: (value: T) => void = () => {};
+  const promise = new Promise<T>((resolve) => {
+    answer = resolve;
+  });
+  return { promise, answer: (value: T) => answer(value) };
 }
 
 beforeEach(() => mockRead.mockClear());
@@ -273,5 +293,144 @@ describe("a skill's details", () => {
   it("says a core skill serves every call", async () => {
     const dialog = await openDetails("nodes");
     expect(section(dialog, "Serves").getByText("Every call of every agent: the preamble holds it.")).toBeInTheDocument();
+  });
+
+  it("exports the skill from its header, as an agent's details export the agent", async () => {
+    const dialog = await openDetails("widgets");
+    expect(within(dialog).getByRole("button", { name: "Export" })).toBeEnabled();
+  });
+});
+
+describe("the account's own skills", () => {
+  const own = {
+    ...mockSkills[2],
+    name: "street-trees",
+    description: "Use this skill when a dataflow counts street trees.",
+    license: null,
+    author: null,
+    version: null,
+    core: false,
+    source: "yours",
+    published: false,
+    publishedByYou: false,
+    publishable: true,
+    removable: true,
+    agents: [],
+  };
+
+  beforeEach(() => {
+    mockList.mockClear();
+    mockRemoveOwn.mockClear();
+  });
+
+  it("are imported from the skills' own Import skill, in place of Import agent", async () => {
+    await showSkills();
+    expect(screen.queryByRole("button", { name: "Import agent" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Import skill" }));
+    expect(await screen.findByRole("heading", { name: "Import skill" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Skill folder")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Import skill" })).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: /^All agents/ }));
+    expect(await screen.findByRole("button", { name: "Import agent" })).toBeInTheDocument();
+  });
+
+  it("say whose they are, and one held is removed from the account's skills from its drawer", async () => {
+    mockList.mockResolvedValueOnce({ skills: [...mockSkills, own], editable: true, reason: null });
+    await renderPage();
+    fireEvent.click(railRow("skills", "all-skills"));
+    await waitFor(() => expect(document.querySelectorAll("article[data-skill-name]")).toHaveLength(4));
+    const card = document.querySelector('article[data-skill-name="street-trees"]') as HTMLElement;
+    expect(within(card).getByText("you")).toBeInTheDocument();
+    expect(within(card).getByText("yours")).toBeInTheDocument();
+    fireEvent.click(card);
+    const drawer = document.querySelector('[data-curio-browse-drawer="true"]') as HTMLElement;
+    await waitFor(() => expect(within(drawer).getByRole("heading", { name: "street-trees" })).toBeInTheDocument());
+    expect(within(drawer).getByText("✓ In your skills")).toBeInTheDocument();
+    expect(within(drawer).getByText("You imported it")).toBeInTheDocument();
+    // It names no license, so its meta row draws no dot with nothing beside it.
+    const meta = drawer.querySelector(".drawerMeta") as HTMLElement;
+    expect(meta.textContent).toBe("street-trees");
+    expect(meta.querySelector(".liveDot")).toBeNull();
+    fireEvent.click(within(drawer).getByRole("button", { name: "Remove from your skills" }));
+    await waitFor(() => expect(mockRemoveOwn).toHaveBeenCalledWith("street-trees"));
+    // The skills are read again, without it.
+    await waitFor(() => expect(document.querySelectorAll("article[data-skill-name]")).toHaveLength(3));
+  });
+
+  it("offer no removal for a skill Curio ships", async () => {
+    await showSkills();
+    const drawer = document.querySelector('[data-curio-browse-drawer="true"]') as HTMLElement;
+    expect(within(drawer).queryByRole("button", { name: "Remove from your skills" })).toBeNull();
+    expect(within(drawer).getByText("Curio")).toBeInTheDocument();
+    // Its license sits beside the meta row's dot.
+    const meta = drawer.querySelector(".drawerMeta") as HTMLElement;
+    expect(meta.textContent).toBe("nodesMIT");
+    expect(meta.querySelector(".liveDot")).not.toBeNull();
+  });
+
+  it("open in the drawer once imported, after the skills are read again", async () => {
+    mockCheckImport.mockResolvedValueOnce({
+      name: own.name, givenName: own.name, description: own.description, warnings: [], leftOut: [], files: [],
+      problem: null, rename: false, replaces: false, agents: [],
+    });
+    mockImportSkill.mockResolvedValueOnce({ skill: own, agents: [], replaced: false });
+    await showSkills();
+    // The read after the import is the first to hold it, and it answers once
+    // the page has drawn the closed review, as a server's answer comes.
+    const read = held<{ skills: unknown[]; editable: boolean; reason: null }>();
+    mockList.mockImplementationOnce(() => read.promise);
+    fireEvent.click(screen.getByRole("button", { name: "Import skill" }));
+    fireEvent.change(await screen.findByLabelText("Skill files"), {
+      target: { files: [new File(["---\nname: street-trees\n---\n"], "SKILL.md")] },
+    });
+    const importButton = await screen.findByRole("button", { name: "Import" });
+    await waitFor(() => expect(importButton).toBeEnabled());
+    fireEvent.click(importButton);
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Import skill" })).toBeNull());
+    await act(async () => {});
+    await act(async () => read.answer({ skills: [...mockSkills, own], editable: true, reason: null }));
+    const drawer = document.querySelector('[data-curio-browse-drawer="true"]') as HTMLElement;
+    await waitFor(() => expect(within(drawer).queryByRole("heading", { name: "street-trees" })).not.toBeNull());
+    expect(document.querySelectorAll("article[data-skill-name]")).toHaveLength(4);
+  });
+});
+
+describe("an imported agent", () => {
+  const mine = {
+    ...mockAgent,
+    dirName: "agent.test.my-agent@1",
+    id: "agent.test.my-agent",
+    name: "My Agent",
+    imported: true,
+    publishable: true,
+    provenance: { publisher: "me", trust: "imported" },
+  };
+
+  beforeEach(() => {
+    mockListImports.mockClear();
+    mockUploadImport.mockReset();
+  });
+
+  it("opens in the drawer once the roster is read again and holds it, as an imported skill does", async () => {
+    mockUploadImport.mockResolvedValueOnce(mine);
+    await renderPage();
+    // The read after the upload is the first to hold it, and it answers once
+    // the page has drawn the closed modal, as a server's answer comes.
+    const read = held<{ agents: unknown[] }>();
+    mockListImports.mockImplementationOnce(() => read.promise);
+    fireEvent.click(screen.getByRole("button", { name: "Import agent" }));
+    fireEvent.change(await screen.findByLabelText("Package files"), {
+      target: { files: [new File([JSON.stringify({ id: mine.id, version: "1.0.0" })], "manifest.json")] },
+    });
+    const importButton = await screen.findByRole("button", { name: "Import" });
+    await waitFor(() => expect(importButton).toBeEnabled());
+    fireEvent.click(importButton);
+    await waitFor(() => expect(mockUploadImport).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Import agent package" })).toBeNull());
+    await act(async () => {});
+    await act(async () => read.answer({ agents: [mine] }));
+    const drawer = document.querySelector('[data-curio-browse-drawer="true"]') as HTMLElement;
+    await waitFor(() => expect(within(drawer).queryByRole("heading", { name: "My Agent" })).not.toBeNull());
   });
 });

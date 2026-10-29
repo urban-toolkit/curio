@@ -135,7 +135,7 @@ function NodeEditor({
     const [replacedCode, setReplacedCode] = useState<string>(""); // python or grammar with marks resolved
     const [replacedCodeDirty, setReplacedCodeDirty] = useState<number>(0); // code has to rerun every time button is pressed (having changes or not)
     const [fullscreen, setFullscreen] = useState<string>("");
-    const { dashboardOn, markDirty, markNodeStale, requestAutoRun, nodes: flowNodes } = useFlowContext();
+    const { dashboardOn, markDirty, markNodeStale, requestAutoRun, nodes: flowNodes, dataflowDoc } = useFlowContext();
     // A template that declares opensOnControls (Data Loading, Data Export)
     // shows only its controls on its Widgets tab, as a dashboard tile shows
     // them: each widget's label and control, then the behavior's own (Data
@@ -182,6 +182,8 @@ function NodeEditor({
         markNodeStale?.(data.nodeId);
         // A value tried on a dashboard never changes the dataflow (#1117).
         if (!dashboardOn) markDirty?.();
+        // Written in place, so the dataflow's doc is told: every tab gets it.
+        if (!dashboardOn) dataflowDoc?.noteNodeData?.(data.nodeId);
     };
     // An agent's applied change gives widgets new values as the Widgets tab
     // gives one (utils/nodeSettingsWriters): the node is out of date, the
@@ -220,6 +222,7 @@ function NodeEditor({
         setSelections(next);
         markNodeStale?.(data.nodeId);
         markDirty?.();
+        dataflowDoc?.noteNodeData?.(data.nodeId);
     };
     const views = useSelectionViews(data.nodeId);
     const nodeIdsKey = (Array.isArray(flowNodes) ? flowNodes : []).map((n: any) => n.id).join("\u0000");

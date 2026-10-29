@@ -5,7 +5,7 @@
  * skill serves.
  */
 
-import type { AgentExecution } from "./types";
+import type { AgentExecution, SkillSource } from "./types";
 
 /** How a reply's run came to hold a skill. */
 export type SkillUse = "handed" | "named" | "kept" | "loaded";
@@ -92,4 +92,40 @@ export function skillServes(skill: { nodeKinds: string[]; features: string[] }):
     ...skill.nodeKinds,
     ...skill.features.map((feature) => SKILL_FEATURE_WORDS[feature] ?? feature),
   ];
+}
+
+/** Whose a skill is, in the words its drawer and details show. */
+export const SKILL_SOURCE_WORDS: Record<SkillSource, string> = {
+  curio: "Curio",
+  yours: "You imported it",
+  shared: "The shared catalog",
+};
+
+/** Who a skill's card names under its name: the author its metadata gives,
+ *  else whose it is. A skill no account brought is Curio's. */
+export function skillByline(skill: { author?: string | null; source?: SkillSource }): string {
+  if (skill.author) return skill.author;
+  if (skill.source === "yours") return "you";
+  if (skill.source === "shared") return "shared catalog";
+  return "curio";
+}
+
+/** The most characters a skill's name holds (agentskills.io's specification). */
+export const SKILL_NAME_MAX = 64;
+
+/**
+ * A name to offer when the import review cannot keep a skill under its own:
+ * the name its SKILL.md gives, in lowercase letters, digits and single
+ * hyphens, and, when that is the name refused, with "-2" after it. The
+ * review checks the name again before anything is kept.
+ */
+export function suggestSkillName(review: { name: string; givenName: string }): string {
+  const slug = review.givenName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, SKILL_NAME_MAX - 2)
+    .replace(/-+$/, "");
+  const base = slug || "skill";
+  return base === review.name ? `${base}-2` : base;
 }

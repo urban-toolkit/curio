@@ -1136,7 +1136,7 @@ def update_project(
                 raise ProjectError(str(refusal), 409) from refusal
             from utk_curio.backend.app.agents.repositories.project_agents import preserve_agent_state
             from utk_curio.backend.app.agents.application.attachments import prune_orphaned_attachments
-            from utk_curio.backend.app.agents.repositories.sessions import delete_session
+            from utk_curio.backend.app.agents.repositories.sessions import delete_sessions_of
             from utk_curio.backend.app.datasets.application.ref_ownership import (
                 preserve_dataset_refs,
             )
@@ -1171,10 +1171,7 @@ def update_project(
             if pruned:
                 spec_dirty = True
                 # A transcript lives exactly as long as its attachment.
-                for rec in pruned:
-                    session_id = rec.get("sessionId")
-                    if isinstance(session_id, str):
-                        delete_session(ukey, project_id, session_id)
+                delete_sessions_of(ukey, project_id, pruned)
         # Read under the lock: a run on the server records outputs under it too.
         existing_manifest = storage.read_manifest(ukey, project_id)
         if data.outputs is not None:

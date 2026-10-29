@@ -159,9 +159,7 @@ def detach_agent(user_key: str, project_id: str, attachment_id: str) -> dict:
     if removed:
         dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._person(user_key, "attachment"))
         # A transcript lives exactly as long as its attachment (dev/20).
-        session_id = (record or {}).get("sessionId")
-        if isinstance(session_id, str):
-            sessions.delete_session(user_key, project_id, session_id)
+        sessions.delete_sessions_of(user_key, project_id, [record])
     return {"attachmentId": attachment_id, "detached": removed}
 
 

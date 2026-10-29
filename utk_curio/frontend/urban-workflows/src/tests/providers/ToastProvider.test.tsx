@@ -76,6 +76,34 @@ describe("ToastProvider", () => {
     expect(screen.getByRole("alert")).toBeInTheDocument();
   });
 
+  // React-Bootstrap writes role="alert" and aria-live="assertive" on every
+  // toast over the props it is given, so a "Saved" cut into what a screen
+  // reader was saying, as an error does.
+  it.each<[ToastVariant]>([["success"], ["info"], ["warning"]])(
+    "announces a %s toast politely, as a status, not as an alert",
+    (variant) => {
+      render(
+        <ToastProvider>
+          <Trigger message="Saved the dataflow." variant={variant} />
+        </ToastProvider>,
+      );
+      act(() => {
+        screen.getByText("fire").click();
+      });
+      const toast = screen.getByRole("status");
+      expect(toast).toHaveTextContent("Saved the dataflow.");
+      expect(toast).toHaveAttribute("aria-live", "polite");
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+      // A repeat renders the toast again, and it stays a status.
+      act(() => {
+        screen.getByText("fire").click();
+      });
+      expect(screen.getByRole("status")).toHaveAttribute("aria-live", "polite");
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    },
+  );
+
   it.each<[ToastVariant]>([["success"], ["info"], ["warning"]])(
     "auto-dismisses a %s toast after 5s",
     (variant) => {

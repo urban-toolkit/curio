@@ -2,10 +2,10 @@
 
 The owner invites an editor by username from Share > Invite editors. The
 editor opens the dataflow's link and moves its node: the move reaches the
-owner's canvas, which marks the dataflow Unsaved so its save keeps it. A
-watcher, anyone else signed in who opens the link, gets a read-only canvas:
-the banner says so and the node does not move, while the editor's next change
-reaches the watcher too.
+owner's canvas, and the server keeps it with no save, since the dataflow is
+its doc. A watcher, anyone else signed in who opens the link, gets a
+read-only canvas: the banner says so and the node does not move, while the
+editor's next change reaches the watcher too.
 
 Needs a stack started with ``--collab``: CI's e2e-collab job, which runs the
 tests marked ``needs_collab`` (``runner_split.py``), or a local run with
@@ -81,12 +81,6 @@ def _open_as(page, base: str, project_id: str, role: str) -> None:
 
 def _position(page, node_id: str = NODE):
     return page.evaluate(_POSITION_JS, node_id)
-
-
-def _save(page) -> None:
-    """Save from the top bar's save status, and wait until it reads Saved."""
-    page.locator("[data-curio-save-state]").click()
-    page.locator('[data-curio-save-state="saved"]').wait_for(timeout=30000)
 
 
 def _open_invite_editors(page, *, frame: bool = False) -> None:
@@ -192,8 +186,6 @@ def test_an_invited_editors_move_reaches_the_owner_and_a_watcher_only_watches(
         dialog.locator(f'[data-editor="{EDITOR}"]').wait_for(timeout=10000)
         dialog.get_by_role("button", name="Done").click()
         dialog.wait_for(state="detached", timeout=10000)
-        # What is on disk, so that Unsaved below is the editor's change alone.
-        _save(owner)
 
         # The editor's canvas is editable, and their move reaches the owner.
         _open_as(editor, base, project_id, "editor")
@@ -211,14 +203,17 @@ def test_an_invited_editors_move_reaches_the_owner_and_a_watcher_only_watches(
             f"the editor's drag did not move the node: {before} -> {moved}"
         )
         _wait_for_position(owner, moved, what="the editor's move never reached the owner")
-        # The owner's tab keeps it: the dataflow reads Unsaved, and its save
-        # writes the editor's position.
-        owner.locator('[data-curio-save-state="unsaved"]').wait_for(timeout=15000)
-        _save(owner)
-        saved = api_json(f"{current_server}/api/projects/{project_id}", owner_token)["spec"]
-        node = next(n for n in saved["dataflow"]["nodes"] if n["id"] == NODE)
+        # The server keeps it, with no save from anyone: the dataflow is its
+        # doc, which it writes a second after the last change.
+        node = None
+        for _ in range(30):
+            saved = api_json(f"{current_server}/api/projects/{project_id}", owner_token)["spec"]
+            node = next(n for n in saved["dataflow"]["nodes"] if n["id"] == NODE)
+            if (node["x"], node["y"]) == pytest.approx(tuple(moved), abs=0.5):
+                break
+            owner.wait_for_timeout(500)
         assert (node["x"], node["y"]) == pytest.approx(tuple(moved), abs=0.5), (
-            f"the owner's save did not keep the editor's move: {node['x']}, {node['y']} not {moved}"
+            f"the server did not keep the editor's move: {node['x']}, {node['y']} not {moved}"
         )
 
         # A watcher's canvas is read-only: the banner, and a node that stays.

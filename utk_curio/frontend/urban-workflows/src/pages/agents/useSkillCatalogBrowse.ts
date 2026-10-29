@@ -18,7 +18,19 @@ export interface SkillCatalogBrowseState {
   selectedSkill: SkillCard | null;
   /** Read the skills again: an agent's skills changed, so their users did. */
   reload: () => Promise<void>;
+  /** The skill an action is running on, or null. */
+  busyName: string | null;
+  /** Why the last action failed, as a sentence about the skill. */
+  actionError: string | null;
+  dismissActionError: () => void;
+  onPublish: (skill: SkillCard) => Promise<void>;
+  onUnpublish: (skill: SkillCard) => Promise<void>;
+  /** Delete a skill this account holds, and take it off its agents. */
+  onRemove: (skill: SkillCard) => Promise<void>;
 }
+
+/** What a skill's action is, as its failure names it. */
+type SkillVerb = "publish" | "unpublish" | "remove";
 
 /** Whether *skill* matches the search *query*: its name, its description or
  *  what it serves. */
@@ -81,6 +93,42 @@ export function useSkillCatalogBrowse(search: string, filter: SkillBrowseFilter)
     if (!filtered.some((skill) => skill.name === selectedName)) setSelectedName(undefined);
   }, [filtered, selectedName]);
 
+  const [busyName, setBusyName] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  /** Run one action, then read the skills again; a failure reads as a
+   *  sentence about the skill, over the cards, as an agent's does. */
+  const run = useCallback(
+    async (verb: SkillVerb, skill: SkillCard, action: () => Promise<unknown>) => {
+      setBusyName(skill.name);
+      setActionError(null);
+      try {
+        await action();
+        await reload();
+      } catch (err) {
+        const detail = err instanceof Error && err.message ? err.message : "unknown error";
+        setActionError(`Couldn't ${verb} ${skill.name}: ${detail}`);
+      } finally {
+        setBusyName(null);
+      }
+    },
+    [reload],
+  );
+
+  const onPublish = useCallback(
+    (skill: SkillCard) => run("publish", skill, () => skillsApi.publishSkill(skill.name)),
+    [run],
+  );
+  const onUnpublish = useCallback(
+    (skill: SkillCard) => run("unpublish", skill, () => skillsApi.unpublishSkill(skill.name)),
+    [run],
+  );
+  const onRemove = useCallback(
+    (skill: SkillCard) => run("remove", skill, () => skillsApi.removeOwnSkill(skill.name)),
+    [run],
+  );
+  const dismissActionError = useCallback(() => setActionError(null), []);
+
   return {
     loading,
     skills,
@@ -90,5 +138,11 @@ export function useSkillCatalogBrowse(search: string, filter: SkillBrowseFilter)
     setSelectedName,
     selectedSkill,
     reload,
+    busyName,
+    actionError,
+    dismissActionError,
+    onPublish,
+    onUnpublish,
+    onRemove,
   };
 }

@@ -1,7 +1,7 @@
 import React from "react";
 
 import { CatalogItemStripHeader } from "../../components/catalog/CatalogKindVisuals";
-import { skillServes, type SkillCard } from "../../services/agents";
+import { skillByline, skillServes, type SkillCard } from "../../services/agents";
 import styles from "../catalog/CatalogBrowseLayout.module.css";
 import cardStyles from "./SkillCatalogBrowseCard.module.css";
 
@@ -57,14 +57,20 @@ export function SkillCatalogBrowseCard({
       <div className={`${styles.cardStrip} ${cardStyles.strip_skill}`}>
         <CatalogItemStripHeader
           kind="skill"
-          badge={skill.core ? <span className={styles.cardFormatBadge}>core</span> : undefined}
+          badge={
+            skill.core ? (
+              <span className={styles.cardFormatBadge}>core</span>
+            ) : skill.source === "yours" || skill.source === "shared" ? (
+              <span className={styles.cardFormatBadge}>{skill.source}</span>
+            ) : undefined
+          }
         />
       </div>
 
       <div className={styles.cardBody}>
         <h2 className={styles.cardTitle}>{skill.name}</h2>
         <p className={styles.publisher}>
-          {skill.author ?? "curio"}
+          {skillByline(skill)}
           {skill.version ? ` · v${skill.version}` : null}
         </p>
         <p className={styles.cardDescription}>{skill.description}</p>

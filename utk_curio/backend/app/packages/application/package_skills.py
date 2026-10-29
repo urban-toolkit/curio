@@ -44,6 +44,34 @@ def dataflow_skill_folders(user_key: str | None, spec) -> list[tuple[str, Path]]
     return found
 
 
+def package_skill_names(user_key: str | None) -> dict[str, str]:
+    """The skills each package the account can reach ships, by name: the
+    package of each, ``<packageId>@<major>``. The account's own copies come
+    first, then the package catalog's, each in its folder's order; a name
+    two packages ship is the first's. Never raises: a store or a catalog
+    that cannot be read ships none, and the cause is logged."""
+    roots: list[tuple[str, Path]] = []
+    if user_key:
+        try:
+            majors = packages_store_reads._installed_majors_by_pkg(user_key)
+            roots += [(f"{pkg}@{major}", package_dir(user_key, f"{pkg}@{major}"))
+                      for pkg, numbers in sorted(majors.items()) for major in numbers]
+        except Exception as exc:  # noqa: BLE001 - an unreadable store holds no package
+            log.warning("Could not list the packages of %s's store for their skills: %s", user_key, exc)
+    try:
+        base = packages_catalog_dir.catalog_root().resolve()
+        if base.is_dir():
+            roots += [(entry.name, entry) for entry in sorted(base.iterdir())
+                      if entry.is_dir() and PACKAGE_DIR_RE.match(entry.name)]
+    except Exception as exc:  # noqa: BLE001 - an unreadable catalog holds no package
+        log.warning("Could not list the package catalog for its skills: %s", exc)
+    found: dict[str, str] = {}
+    for dir_name, root in roots:
+        for folder in skill_folders(root):
+            found.setdefault(folder.name, dir_name)
+    return found
+
+
 def _package_root(user_key: str | None, dir_name: str) -> Path | None:
     """The account's copy of the package *dir_name*, else the package
     catalog's; None when neither holds it or *dir_name* names no package."""

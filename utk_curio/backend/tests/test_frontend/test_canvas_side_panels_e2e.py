@@ -12,7 +12,8 @@ is on from ``/api/config/public``, so this test answers that request with the
 backend's own answer and ``enable_collab`` set: the page then shows the
 collaboration panel and its bar button as it does under ``--collab``, with
 nobody else in the room. Where the panel sits is decided by the page alone,
-which is what is under test.
+which is what is under test, with its sections: Users and Activity, and no
+Proposals, since code is typed together with no vote.
 
 The same rule, read from the source: ``canvasSidePanels.test.ts``.
 
@@ -30,14 +31,16 @@ from .utils import (
     end_routes,
     require_project_page,
     require_user_auth,
+    save_workflow_test_screenshot,
     stub_login_and_enter_workflow,
 )
 
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-#: The collaboration panel's section titles, each with its count.
-SECTIONS = ("Users", "Proposals", "Activity")
+#: The collaboration panel's section titles, each with its count. Code is
+#: typed together with no vote, so the panel holds no Proposals.
+SECTIONS = ("Users", "Activity")
 
 # Whether the point at the middle of an element hits that element: nothing
 # else is drawn over it there.
@@ -91,6 +94,9 @@ def _assert_in_place(page, collaboration) -> dict:
         assert _section_title(collaboration, section).evaluate(_ON_TOP_JS), (
             f"the collaboration panel's {section} section is covered"
         )
+    assert _section_title(collaboration, "Proposals").count() == 0, (
+        "the collaboration panel still has a Proposals section"
+    )
     return box
 
 
@@ -114,6 +120,12 @@ def test_the_collaboration_panel_opens_under_the_top_bar_and_its_button_toggles_
         collaboration = _collaboration_panel(page)
         collaboration.wait_for(state="visible", timeout=30000)
         first = _assert_in_place(page, collaboration)
+        # Its frame once the room has named this tab: Users and Activity.
+        page.locator('[data-testid="collaboration-panel"] [data-collab-role="owner"]').wait_for(timeout=30000)
+        save_workflow_test_screenshot(
+            page, "canvas-side-panels", test_name="collaboration-panel",
+            clip_selector='[data-testid="collaboration-panel"]', fit_reactflow=False,
+        )
 
         # Its bar button closes it, and opens it again where it was.
         toggle = page.get_by_role("button", name="Collaboration", exact=True)

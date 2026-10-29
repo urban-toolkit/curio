@@ -2,7 +2,14 @@ import React, { useEffect, useState } from "react";
 
 import ModalShell from "../../ModalShell";
 import { CatalogDetailHeader } from "../../catalog/CatalogDetailHeader";
-import { skillServes, skillsApi, type SkillCard, type SkillText } from "../../../services/agents";
+import {
+  SKILL_SOURCE_WORDS,
+  skillByline,
+  skillServes,
+  skillsApi,
+  type SkillCard,
+  type SkillText,
+} from "../../../services/agents";
 import styles from "./AgentDetailModal.module.css";
 
 export interface SkillDetailModalProps {
@@ -19,11 +26,31 @@ export interface SkillDetailModalProps {
  * names; the agents that use it, after this account's changes; its facts; its
  * text as an agent reads it, collapsed as an agent's prompts are; and its
  * other files. The text is the one thing the card does not carry, so it is
- * read when the window opens.
+ * read when the window opens. **Export** saves the skill as a zip of its
+ * folder, as an agent's details export the agent: a skill Curio ships with
+ * its markers filled, so it reads as the format has it in any Agent Skills
+ * tool.
  */
 export const SkillDetailModal: React.FC<SkillDetailModalProps> = ({ skill, onClose }) => {
   const [text, setText] = useState<SkillText | null>(null);
   const [textError, setTextError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  // The export's own failure, beside the button that caused it, as an
+  // agent's details show theirs.
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  const onExport = async () => {
+    if (exporting) return;
+    setExporting(true);
+    setExportError(null);
+    try {
+      await skillsApi.exportSkill(skill.name);
+    } catch (err) {
+      setExportError(err instanceof Error && err.message ? err.message : "Export failed.");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -46,6 +73,7 @@ export const SkillDetailModal: React.FC<SkillDetailModalProps> = ({ skill, onClo
   const files = text?.files ?? skill.files;
   const rows: [string, React.ReactNode][] = [
     ["Name", skill.name],
+    ["From", SKILL_SOURCE_WORDS[skill.source ?? "curio"]],
     ["Version", skill.version ?? "Not given"],
     ["Author", skill.author ?? "Not given"],
     ["License", skill.license ?? "Not given"],
@@ -59,13 +87,30 @@ export const SkillDetailModal: React.FC<SkillDetailModalProps> = ({ skill, onClo
         title={skill.name}
         subtitle={
           <>
-            {skill.author ?? "curio"}
+            {skillByline(skill)}
             {skill.version ? ` · v${skill.version}` : null}
           </>
+        }
+        actions={
+          <button
+            type="button"
+            className={styles.exportButton}
+            disabled={exporting}
+            data-tooltip="Save this skill as a zip of its folder"
+            onClick={() => void onExport()}
+          >
+            {exporting ? "Exporting…" : "Export"}
+          </button>
         }
       />
 
       <div className={styles.body}>
+        {exportError ? (
+          <p className={styles.purpose} role="alert" data-curio-export-error="true">
+            Export failed: {exportError}
+          </p>
+        ) : null}
+
         <section className={styles.section}>
           <h3 className={styles.sectionLabel}>Description</h3>
           <p className={styles.sectionText}>{skill.description}</p>

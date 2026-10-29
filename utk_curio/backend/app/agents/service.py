@@ -55,6 +55,17 @@ from utk_curio.backend.app.agents.application.skill_catalog import (
     skill_text,
     skills_listing,
 )
+from utk_curio.backend.app.agents.application.skill_lifecycle import (
+    check_import,
+    export_skill,
+    import_skill,
+    publish_skill,
+    remove_own_skill,
+    unpublish_skill,
+)
+from utk_curio.backend.app.agents.application.upload_import import (
+    SKILL_UPLOAD,
+)
 from utk_curio.backend.app.agents.application.proposals.plans import (
     apply_plan_edges,
     apply_plan_node,
@@ -159,6 +170,13 @@ __all__ = [
     "run_skills",
     "skill_text",
     "skills_listing",
+    "check_import",
+    "export_skill",
+    "import_skill",
+    "publish_skill",
+    "remove_own_skill",
+    "unpublish_skill",
+    "SKILL_UPLOAD",
     "apply_plan_edges",
     "apply_plan_node",
     "set_plan_goal",
