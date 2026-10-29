@@ -1,11 +1,14 @@
 """A dataflow's history lives beside its spec, not in it.
 
-``spec.trill.json`` holds the dataflow. Its two history sections, each node's
-runs and edits (``nodeProvenance``) and the dataflow's versions
-(``dataflowProvenance``, each a whole copy of the dataflow), are kept in logs
-in the project's ``history/`` folder (``projects/storage.py``). A save adds
-what the history gained, so an edit writes the live dataflow and not every
-version again, and every reader still gets the whole document back.
+``spec.trill.json`` holds the dataflow. The two history sections a dataflow
+carries from a file or an earlier Curio, each node's runs and edits
+(``nodeProvenance``) and the dataflow's versions (``dataflowProvenance``, each
+a whole copy of the dataflow), are kept in logs in the project's ``history/``
+folder (``projects/storage.py``), and every reader of the storage gets the
+whole document back. When the dataflow's doc first opens, they are imported as
+its points (``collaboration/history.py``), which is its history from then on:
+an edit writes the live dataflow and at most a point, no load carries the
+history, and a copy keeps it only for those who may read it.
 
 New names are read inside each test, so this module imports on a checkout
 without them and each test fails on its own.
@@ -258,12 +261,26 @@ def _put(client, token, project_id: str, body: dict) -> dict:
     return resp.get_json()
 
 
-def _opened_and_saved(client, token, project_id: str) -> dict:
-    """Open a dataflow saved with no history, as a page does, and save it with
-    the versions its load recorded and a run of each node: the first save."""
-    doc = _with_history(_get(client, token, project_id))
-    _put(client, token, project_id, {"spec": doc})
-    return doc
+def _opened(user_key: str, project_id: str) -> None:
+    """Open the dataflow's doc, as a tab or a writer does: its first open
+    imports the history it carries."""
+    from utk_curio.backend.app.collaboration import dataflow_docs
+
+    with dataflow_docs._held(project_id, user_key):
+        pass
+
+
+def _imported(user_key: str, project_id: str) -> list:
+    """The ids of the earlier versions the dataflow's points hold, in order."""
+    from utk_curio.backend.app.collaboration import history
+
+    return [point["id"] for point in history.points(user_key, project_id) if point["kind"] == "imported"]
+
+
+def _assert_no_history_in_spec(folder) -> None:
+    on_disk = json.loads((folder / "spec.trill.json").read_text(encoding="utf-8"))
+    held = [key for key in HISTORY if key in on_disk]
+    assert not held, f"the spec file still holds {held}"
 
 
 # ---------------------------------------------------------------------------
@@ -271,15 +288,19 @@ def _opened_and_saved(client, token, project_id: str) -> dict:
 # ---------------------------------------------------------------------------
 
 def test_an_edit_to_crown_heights_with_its_90_versions_writes_under_100_kib(client, user_and_token, tmp_curio):
-    """Opened, Crown Heights records 90 versions, each a whole copy of its 33
-    nodes and 57 connections, and its first save sends them. An edit after
-    that sends the whole document again, as a page saves, and writes the live
-    dataflow: no version again."""
+    """Crown Heights saved with the 90 versions its first open recorded, each a
+    whole copy of its 33 nodes and 57 connections, and a run of each node: its
+    doc's first open imports them as its points. An edit after that sends the
+    whole document again, as a page saves, and writes the live dataflow: no
+    version again."""
     user, token = user_and_token
-    project_id = _create(client, token, "Crown Heights", json.loads(CROWN_HEIGHTS.read_text(encoding="utf-8")))
-    folder = storage.project_dir(_user_dir_key(user), project_id)
-    first = _opened_and_saved(client, token, project_id)
+    user_key = _user_dir_key(user)
+    first = _with_history(json.loads(CROWN_HEIGHTS.read_text(encoding="utf-8")))
     assert len(first["dataflowProvenance"]["versions"]) == 90
+    project_id = _create(client, token, "Crown Heights", first)
+    folder = storage.project_dir(user_key, project_id)
+    _opened(user_key, project_id)
+    assert _imported(user_key, project_id) == list(first["dataflowProvenance"]["versions"])
 
     loaded = _get(client, token, project_id)
     node = next(n for n in loaded["dataflow"]["nodes"] if isinstance(n.get("content"), str) and n["content"])
@@ -292,95 +313,90 @@ def test_an_edit_to_crown_heights_with_its_90_versions_writes_under_100_kib(clie
     assert wrote < EDIT_BUDGET, (
         f"the edit wrote {wrote / KiB:.1f} KiB, the spec file being {spec_size / KiB:.1f} KiB: {how}"
     )
-    _assert_split(folder, loaded)
+    _assert_no_history_in_spec(folder)
     after = _get(client, token, project_id)
     assert next(n for n in after["dataflow"]["nodes"] if n["id"] == node["id"])["content"] == node["content"]
-    for key in HISTORY:
-        assert after[key] == first[key], f"the reopened dataflow's {key} is not the one saved"
+    assert _imported(user_key, project_id) == list(first["dataflowProvenance"]["versions"]), (
+        "the reopened dataflow's history is not the one saved"
+    )
 
 
-def test_later_saves_add_to_the_logs_and_never_write_them_again(client, user_and_token, tmp_curio):
-    """After the first save, each save adds to a log only what its history
-    gained, and one that gained nothing writes nothing to either log: an edit,
-    a node added (one version), a version put back (``latest`` moves), a run,
-    a rename and categories set from the Projects page, and a dataset write."""
+def test_later_changes_add_a_point_at_most_and_never_write_the_history_again(client, user_and_token, tmp_curio):
+    """After its first open imported its history, each change adds at most one
+    point to the dataflow's points, never writing them again, and one that
+    makes no version writes nothing to the history: an edit, a node added (a
+    version), a version put back (a version), a run (an entry), a rename and
+    categories set from the Projects page, and a dataset write. The imported
+    sections are never written again."""
+    from utk_curio.backend.app.collaboration import history
+
     user, token = user_and_token
     user_key = _user_dir_key(user)
-    project_id = _create(client, token, "Chicago Loop", json.loads(CHICAGO_LOOP.read_text(encoding="utf-8")))
+    project_id = _create(client, token, "Chicago Loop",
+                         _with_history(json.loads(CHICAGO_LOOP.read_text(encoding="utf-8"))))
     folder = storage.project_dir(user_key, project_id)
-    saved = _opened_and_saved(client, token, project_id)
-    _assert_split(folder, saved)
-    versions = folder / storage.HISTORY_DIR / storage.HISTORY_FILES["dataflowProvenance"]
-    entries = folder / storage.HISTORY_DIR / storage.HISTORY_FILES["nodeProvenance"]
+    _opened(user_key, project_id)
+    points = folder / storage.HISTORY_DIR / history.POINTS_FILE
+    aside = folder / storage.HISTORY_DIR / storage.IMPORTED_DIR
 
-    def logs() -> dict:
-        return {log.name: (log.stat().st_ino, log.read_bytes()) for log in (versions, entries)}
+    def files() -> dict:
+        held = {path.name: (path.stat().st_ino, path.read_bytes()) for path in sorted(aside.iterdir())}
+        assert sorted(held) == ["entries.jsonl", "versions.jsonl"], sorted(held)
+        return {"points": (points.stat().st_ino, points.read_bytes()), **held}
 
-    def writes_no_history(step: str, save) -> None:
-        before = logs()
-        save()
-        assert logs() == before, f"{step} wrote to a history log"
+    def no_point(step: str, change) -> None:
+        before = files()
+        change()
+        assert files() == before, f"{step} wrote to the history"
 
-    def adds_to(log, step: str, save) -> int:
-        """How many bytes *save* added to *log*, which it may not write again,
-        leaving the other log as it was."""
-        before = logs()
-        save()
-        after = logs()
-        inode, data = after[log.name]
-        assert inode == before[log.name][0], f"{step} wrote {log.name} again"
-        assert data.startswith(before[log.name][1]), f"{step} changed what {log.name} held"
-        other = next(name for name in after if name != log.name)
-        assert after[other] == before[other], f"{step} wrote to {other}"
-        return len(data) - len(before[log.name][1])
+    def one_point(step: str, change) -> None:
+        before = files()
+        change()
+        after = files()
+        inode, data = after["points"]
+        assert inode == before["points"][0], f"{step} wrote the points again"
+        assert data.startswith(before["points"][1]), f"{step} changed a point it was handed"
+        added = data[len(before["points"][1]):].count(b"\n")
+        assert added == 1, f"{step} added {added} points"
+        assert {k: v for k, v in after.items() if k != "points"} == {k: v for k, v in before.items() if k != "points"}, (
+            f"{step} wrote the imported history"
+        )
 
     edited = _get(client, token, project_id)
     node = next(n for n in edited["dataflow"]["nodes"] if isinstance(n.get("content"), str) and n["content"])
     node["content"] += "\n# an edit\n"
-    writes_no_history("an edit", lambda: _put(client, token, project_id, {"spec": edited}))
+    no_point("an edit", lambda: _put(client, token, project_id, {"spec": edited}))
 
     added = _get(client, token, project_id)
-    history = added["dataflowProvenance"]
     copy = json.loads(json.dumps(node))
     copy["id"] = "added-node"
     added["dataflow"]["nodes"].append(copy)
-    key = f"{added['dataflow']['name']}_1790000009999"
-    version = {"dataflow": json.loads(json.dumps(added["dataflow"]))}
-    history["versions"][key] = version
-    history["graph"]["nodes"].append({"id": key, "label": key, "timestamp": 1790000009999,
-                                      "preview": {"nodes": [], "edges": []}})
-    history["graph"]["edges"].append({"id": f"{history['latest']}_to_{key}", "source": history["latest"],
-                                      "target": key, "label": "Node added"})
-    history["latest"] = key
-    grew = adds_to(versions, "a node added", lambda: _put(client, token, project_id, {"spec": added}))
-    assert grew < len(json.dumps(version)) + 4 * KiB, f"a node added grew the versions log by {grew} bytes"
+    one_point("a node added", lambda: _put(client, token, project_id, {"spec": added}))
 
-    put_back = _get(client, token, project_id)
-    oldest = next(iter(put_back["dataflowProvenance"]["versions"]))
-    put_back["dataflow"]["nodes"] = put_back["dataflowProvenance"]["versions"][oldest]["dataflow"]["nodes"]
-    put_back["dataflow"]["edges"] = []
-    put_back["dataflowProvenance"]["latest"] = oldest
-    grew = adds_to(versions, "a version put back", lambda: _put(client, token, project_id, {"spec": put_back}))
-    assert grew < KiB, f"moving latest grew the versions log by {grew} bytes"
+    oldest = _imported(user_key, project_id)[0]
 
-    ran = _get(client, token, project_id)
-    target = next(iter(ran["nodeProvenance"]))
-    run = _entry(99, 1, "return input_0", inputs=["DATAFRAME"], outputs=["DATAFRAME"])
-    ran["nodeProvenance"][target].append(run)
-    grew = adds_to(entries, "a run", lambda: _put(client, token, project_id, {"spec": ran}))
-    assert grew < len(json.dumps(run)) + KiB, f"a run grew the entries log by {grew} bytes"
+    def put_back() -> None:
+        resp = client.post(f"/api/projects/{project_id}/history/{oldest}/put-back", headers=_auth(token))
+        assert resp.status_code == 200, resp.get_data(as_text=True)
 
-    writes_no_history("a rename", lambda: _put(client, token, project_id, {"name": "Renamed"}))
-    writes_no_history(
+    one_point("a version put back", put_back)
+
+    def run() -> None:
+        target = _get(client, token, project_id)["dataflow"]["nodes"][0]["id"]
+        resp = client.post(f"/api/projects/{project_id}/history/nodes/{target}/runs", headers=_auth(token),
+                           data=json.dumps({"code": "return input_0", "inputs": ["DATAFRAME"],
+                                            "outputs": ["DATAFRAME"]}))
+        assert resp.status_code == 201, resp.get_data(as_text=True)
+
+    one_point("a run", run)
+
+    no_point("a rename", lambda: _put(client, token, project_id, {"name": "Renamed"}))
+    no_point(
         "categories set", lambda: _put(client, token, project_id, {"categories": {"city": ["Chicago"]}}),
     )
-    writes_no_history(
+    no_point(
         "a dataset write", lambda: storage.mutate_dataflow_datasets(user_key, project_id, lambda refs: list(refs)),
     )
-
-    reopened = _get(client, token, project_id)
-    for key in HISTORY:
-        assert reopened[key] == ran[key], f"the reopened dataflow's {key} is not the one last saved"
 
 
 # ---------------------------------------------------------------------------
@@ -407,10 +423,12 @@ def test_a_history_of_every_shape_reads_back_as_it_was_written(tmp_curio):
     _assert_reads_back(_fixture())
 
 
-def test_loads_saves_and_the_agents_read_the_history_kept_beside_the_spec(client, user_and_token, tmp_curio):
-    """The owner's load, the shared link's load, a save's answer and the
-    agents' ``node.history.read`` all read the history the dataflow was saved
-    with, which the Provenance drawer lists from the load."""
+def test_loads_and_saves_carry_no_history_and_the_agents_read_the_imported_one(client, user_and_token, tmp_curio):
+    """The owner's load, the shared link's load and a save's answer carry no
+    history: the Provenance drawer reads it from its own routes, the owner's
+    and the editors' alone. The agents' ``node.history.read`` reads the history
+    the dataflow was saved with, imported as its points when the save opened
+    its doc."""
     from utk_curio.backend.app.agents.application import tools
     from utk_curio.backend.app.projects.node_provenance import rekey_node_provenance
 
@@ -423,10 +441,9 @@ def test_loads_saves_and_the_agents_read_the_history_kept_beside_the_spec(client
     loaded = _get(client, token, project_id)
     shared = client.get(f"/api/projects/{project_id}/shared").get_json()["spec"]
     answered = _put(client, token, project_id, {"spec": loaded})["spec"]
-    for key in HISTORY:
-        assert loaded[key] == doc[key], f"the load's {key}"
-        assert shared[key] == doc[key], f"the shared link's {key}"
-        assert answered[key] == doc[key], f"the save's answer's {key}"
+    for name, spec in (("load", loaded), ("shared link", shared), ("save's answer", answered)):
+        assert not set(spec) & set(HISTORY), (name, sorted(spec))
+    assert _imported(user_key, project_id) == list(doc["dataflowProvenance"]["versions"])
 
     node_ids = [node["id"] for node in doc["dataflow"]["nodes"]]
     keyed = rekey_node_provenance(doc["nodeProvenance"], node_ids)
@@ -512,27 +529,28 @@ def test_a_write_that_leaves_the_history_out_keeps_what_a_spec_file_held(tmp_cur
     assert _text(read) == _text({**live, **{key: doc[key] for key in HISTORY}})
 
 
-def test_a_loaded_file_a_duplicate_and_a_saved_copy_keep_the_history(client, user_and_token, db, tmp_curio):
-    """File > Load saves a dataflow file with its history as a new dataflow;
-    the Projects page's Duplicate and another account's Save a copy of the
-    shared link copy it. Each copy keeps the history, beside its own spec."""
+def test_a_loaded_file_and_a_duplicate_keep_the_history_and_a_watchers_copy_starts_its_own(
+        client, user_and_token, db, tmp_curio):
+    """File > Load saves a dataflow file with its history as a new dataflow,
+    whose first open imports it; the Projects page's Duplicate copies that
+    history with the dataflow. Another account's Save a copy of the shared link
+    starts its own: the link carries no history, and its watcher may not read
+    the dataflow's."""
     from utk_curio.backend.app.users.models import User, UserSession
 
     alice, token = user_and_token
+    alice_key = _user_dir_key(alice)
     doc = _fixture()
-
-    def kept(user, user_token: str, project_id: str) -> None:
-        _assert_split(storage.project_dir(_user_dir_key(user), project_id), doc)
-        got = _get(client, user_token, project_id)
-        for key in HISTORY:
-            assert got[key] == doc[key], (project_id, key)
+    versions = list(doc["dataflowProvenance"]["versions"])
 
     loaded = _create(client, token, "Loaded from a file", json.loads(json.dumps(doc)))
-    kept(alice, token, loaded)
+    _opened(alice_key, loaded)
+    assert _imported(alice_key, loaded) == versions
 
     duplicate = client.post(f"/api/projects/{loaded}/duplicate", headers=_auth(token))
     assert duplicate.status_code == 201, duplicate.get_data(as_text=True)
-    kept(alice, token, duplicate.get_json()["id"])
+    _opened(alice_key, duplicate.get_json()["id"])
+    assert _imported(alice_key, duplicate.get_json()["id"]) == versions
 
     bob = User(username="bob", name="Bob", email="bob@test.com")
     db.session.add(bob)
@@ -540,13 +558,15 @@ def test_a_loaded_file_a_duplicate_and_a_saved_copy_keep_the_history(client, use
     db.session.add(UserSession(user_id=bob.id, token="bob-token"))
     db.session.commit()
     shared = client.get(f"/api/projects/{loaded}/shared", headers=_auth("bob-token")).get_json()["spec"]
+    assert not set(shared) & set(HISTORY), sorted(shared)
     copy = client.post(
         "/api/projects",
         data=json.dumps({"name": "Bob's copy", "spec": shared, "copy_of": loaded}),
         headers=_auth("bob-token"),
     )
     assert copy.status_code == 201, copy.get_data(as_text=True)
-    kept(bob, "bob-token", copy.get_json()["id"])
+    _opened(_user_dir_key(bob), copy.get_json()["id"])
+    assert _imported(_user_dir_key(bob), copy.get_json()["id"]) == [], "a watcher's copy took the history"
 
 
 def test_an_example_put_back_to_its_shipped_copy_keeps_no_history(app, db, tmp_curio):
