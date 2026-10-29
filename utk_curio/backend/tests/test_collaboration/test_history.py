@@ -466,6 +466,21 @@ def test_a_run_follows_the_typing_before_it_and_a_map_editor_edit_takes_its_plac
     assert made[0]["start"] < made[0]["end"], "the edit's point holds the typing it took the place of"
 
 
+def test_a_read_before_any_tab_opened_the_dataflow_gives_it_its_first_points(kept):
+    """The drawer can ask before any tab's sync opened the dataflow's doc: the
+    read opens it, and lists the versions the open made."""
+    from utk_curio.backend.app.collaboration import history
+
+    assert not history.has_points(kept.owner_key, kept.project_id)
+    listed = _http(kept).get(f"/api/projects/{kept.project_id}/history", headers=_auth(kept)).get_json()
+    assert listed["kept"] is True, listed
+    assert [v["kind"] for v in listed["versions"]] == ["load"] * (1 + 3 + 2), listed["versions"]
+    assert listed["head"] == listed["versions"][-1]["id"]
+    entries = _http(kept).get(f"/api/projects/{kept.project_id}/history/nodes/loader",
+                              headers=_auth(kept)).get_json()
+    assert entries == {"entries": [], "current": None}, entries
+
+
 def test_an_entry_descends_from_the_one_whose_code_it_began_from_and_typing_that_changed_nothing_is_none(kept):
     """A node's next entry branches from the entry in use: after a run's code
     is put back, the typing and the run that follow descend from that run, not
