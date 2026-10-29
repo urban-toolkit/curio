@@ -28,6 +28,11 @@ client id and the sender's clock after it, and a tab holds it once its state
 vector holds that clock, which is how Yjs itself decides what a doc has: the
 server relays what its own doc observed, not the sender's bytes.
 
+**An update's answer** is its ack when the server applies it at once, and
+otherwise a :data:`KEPT_EVENT` message once its batch is applied, the ack then
+saying ``queued``. A tab's answers come in the order it sent its updates, and
+``socket yjs update`` times each from its send to its answer.
+
 A tab's doc is one any thread may use (``doc_mapping.new_doc``), behind a lock
 of its own: the user's thread edits it, and the socket's thread applies what
 the server sends.
@@ -39,6 +44,7 @@ import hashlib
 import json
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 from urllib.parse import urlsplit
@@ -98,6 +104,8 @@ EDIT_ROLES = ("owner", "editor")
 
 #: The Socket.IO event the doc's messages travel in.
 EVENT = doc_mapping.EVENT
+#: The event that answers a tab's updates the server queued, once applied.
+KEPT_EVENT = doc_mapping.KEPT_EVENT
 #: The doc's roots that hold the nodes by id, and their order.
 NODES, NODE_ORDER = "nodes", "nodeOrder"
 
@@ -189,7 +197,8 @@ class TabClient(socketio.Client):
 class SocketLink:
     """A tab's socket: connected as the canvas connects, with no reconnection,
     since a tab that reconnects is outside the room it joined until it joins
-    again; a drop is a failure instead."""
+    again; a drop is a failure instead. *on_yjs* takes the doc's messages and
+    the answers to the tab's queued updates (:data:`KEPT_EVENT`)."""
 
     def __init__(self, backend_url: str, namespace: str, token: str,
                  on_yjs: Callable, on_close: Callable):
@@ -202,6 +211,7 @@ class SocketLink:
             engineio_logger=False, request_timeout=CONNECT_TIMEOUT_S,
         )
         self._client.on(EVENT, on_yjs, namespace=namespace)
+        self._client.on(KEPT_EVENT, on_yjs, namespace=namespace)
         self._client.on("disconnect", on_close, namespace=namespace)
         origin, path = socket_target(backend_url)
         self._client.connect(
@@ -513,8 +523,10 @@ class Tab:
         self._remote = False
         self._local: list[bytes] = []
         self._have_doc = threading.Event()
+        #: The messages sent and not answered yet, oldest first: each one's
+        #: label and when it was sent. Guarded by the condition.
         self._acks = threading.Condition()
-        self._unacked = 0
+        self._waiting: deque = deque()
         self._cursor: Optional[_Cursor] = None
         self.doc.observe(self._observed)
 
@@ -526,7 +538,12 @@ class Tab:
 
     def receive(self, payload) -> None:
         """One ``yjs`` event: the server's step 1 is answered with what it
-        lacks; its step 2 and updates are applied, and the ledger told."""
+        lacks; its step 2 and updates are applied, and the ledger told. Or one
+        :data:`KEPT_EVENT` message, which answers that many of the tab's
+        queued updates."""
+        if isinstance(payload, dict) and "answered" in payload:
+            self._kept(payload)
+            return
         message = payload.get("message") if isinstance(payload, dict) else None
         if isinstance(message, bytearray):
             message = bytes(message)
@@ -565,29 +582,51 @@ class Tab:
     # -- sending ------------------------------------------------------------
 
     def _send(self, message: bytes, label: str) -> None:
-        """Send *message* in a ``yjs`` event; its answer is recorded when it comes."""
-        started = time.perf_counter()
+        """Send *message* in a ``yjs`` event; its answer is recorded when it
+        comes: its ack, or the :data:`KEPT_EVENT` message that answers it
+        when the ack says the server queued it."""
+        sent = (label, time.perf_counter())
         with self._acks:
-            self._unacked += 1
+            self._waiting.append(sent)
 
         def acked(ack=None, *_rest):
+            if isinstance(ack, dict) and ack.get("ok") is True and ack.get("queued"):
+                return  # its answer comes in a kept message
             ok = isinstance(ack, dict) and ack.get("ok") is True
-            self.record(label, time.perf_counter() - started, ok,
-                        None if ok else f"the server answered {ack!r}",
-                        None if ok else "socket")
-            with self._acks:
-                self._unacked -= 1
-                self._acks.notify_all()
+            self._answered(1, None if ok else [f"the server answered {ack!r}"])
 
         try:
             self.link.emit(EVENT, {"projectId": self.project_id, "message": message}, callback=acked)
         except Exception as exc:  # noqa: BLE001 - a dead socket is a finding
             with self._acks:
-                self._unacked -= 1
+                if sent in self._waiting:
+                    self._waiting.remove(sent)
                 self._acks.notify_all()
-            self.record(label, time.perf_counter() - started, False,
+            self.record(label, time.perf_counter() - sent[1], False,
                         f"{type(exc).__name__}: {exc}", "socket")
             raise TabFailed(label) from exc
+
+    def _kept(self, payload: dict) -> None:
+        """A :data:`KEPT_EVENT` message: it answers the tab's *answered*
+        oldest messages, those it ``refused``, by why, as failures."""
+        refused = payload.get("refused") if isinstance(payload.get("refused"), dict) else {}
+        problems = [f"the server refused it ({why})" for why, count in refused.items()
+                    for _ in range(int(count))]
+        self._answered(int(payload.get("answered") or 0), problems)
+
+    def _answered(self, count: int, problems: Optional[list] = None) -> None:
+        """The server answered the tab's *count* oldest messages, in the order
+        sent, which is the order it answers them: each is recorded with its
+        time, the first ones of *problems* as failures."""
+        now = time.perf_counter()
+        with self._acks:
+            done = [self._waiting.popleft() for _ in range(min(count, len(self._waiting)))]
+            self._acks.notify_all()
+        problems = problems or []
+        for index, (label, started) in enumerate(done):
+            problem = problems[index] if index < len(problems) else None
+            self.record(label, now - started, problem is None, problem,
+                        None if problem is None else "socket")
 
     def _call(self, label: str, event: str, data: dict, problem=None) -> dict:
         """Emit and wait for the answer; record it, and stop the tab on a
@@ -725,12 +764,12 @@ class Tab:
         """Whether the server answered every update this tab sent in *timeout*."""
         deadline = time.monotonic() + timeout
         with self._acks:
-            while self._unacked:
+            while self._waiting:
                 left = deadline - time.monotonic()
                 if left <= 0:
                     break
                 self._acks.wait(left)
-            missing = self._unacked
+            missing = len(self._waiting)
         if missing:
             self.record("socket yjs update", timeout, False,
                         f"{missing} update(s) had no answer in {timeout:.0f}s", "socket")

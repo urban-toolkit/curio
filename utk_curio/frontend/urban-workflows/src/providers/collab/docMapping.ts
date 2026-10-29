@@ -36,6 +36,7 @@ type Fields = Record<string, Json>;
 interface Layout {
     layout: number;
     event: string;
+    keptEvent: string;
     roots: Record<string, string>;
     meta: string[];
     outsideTheDoc: string[];
@@ -51,6 +52,8 @@ interface Layout {
 export const LAYOUT: Layout = layoutJson as Layout;
 /** The Socket.IO event the doc's messages travel in. */
 export const DOC_EVENT: string = LAYOUT.event;
+/** The event that answers a tab's updates the server queued, once applied. */
+export const DOC_KEPT_EVENT: string = LAYOUT.keptEvent;
 /** The `dataflow` sections the server keeps beside the doc, never in it. */
 export const OUTSIDE_THE_DOC: ReadonlySet<string> = new Set(LAYOUT.outsideTheDoc);
 /** The origin of the transaction that builds a doc from Trill. */
