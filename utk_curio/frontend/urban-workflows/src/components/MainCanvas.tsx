@@ -30,7 +30,7 @@ import { NotebookRunAll } from "./notebook/NotebookRunAll";
 import { usePosition } from "../hook/usePosition";
 
 import { useFlowContext } from "../providers/FlowProvider";
-import { useCollab } from "../providers/CollaborationProvider";
+import { useEditedByOthers } from "../providers/collab/useEditedByOthers";
 import { usePackagePalette } from "../providers/packages/PackagePaletteContext";
 import { useToastContext } from "../providers/ToastProvider";
 import {
@@ -137,7 +137,14 @@ export function MainCanvas() {
         scenarios,
         packages: dataflowPackages,
         viewerMode,
+        dataflowDoc,
+        applyRemoveChanges,
     } = useFlowContext();
+    // The canvas's binding to the dataflow's doc, read when a change lands.
+    const dataflowDocRef = useRef(dataflowDoc);
+    dataflowDocRef.current = dataflowDoc;
+    // The nodes someone else is editing: removing one asks first.
+    const editedByOthers = useEditedByOthers();
     const hostedGuest = useHostedGuest();
 
     // The scenario pointed at in the Scenario Catalog drawer's In project tab
@@ -184,10 +191,6 @@ export function MainCanvas() {
             ] as [[number, number], [number, number]],
         [extentMinX, extentMinY, extentMaxX, extentMaxY],
     );
-
-    const collab = useCollab();
-    const collabRef = useRef(collab);
-    collabRef.current = collab;
 
     const { createCodeNode } = useCode();
 
@@ -338,10 +341,30 @@ export function MainCanvas() {
     // double-click does not zoom it 2x at the pointer. A read-only canvas's
     // nodes do not drag, so they get the class here, and the double-click
     // below reaches them as it reaches an editable canvas's nodes.
-    const drawnNodes = useMemo(
-        () => (isSharedView && !notebookOn ? keepPaneOffNodes(scenarioView.nodes) : scenarioView.nodes),
-        [isSharedView, notebookOn, scenarioView.nodes],
-    );
+    // A node someone else is editing is not deleted by the Delete key: the key
+    // asks first (below).
+    const drawnNodes = useMemo(() => {
+        const drawn = isSharedView && !notebookOn ? keepPaneOffNodes(scenarioView.nodes) : scenarioView.nodes;
+        if (editedByOthers.size === 0) return drawn;
+        return drawn.map((node) => (editedByOthers.has(node.id) ? { ...node, deletable: false } : node));
+    }, [isSharedView, notebookOn, scenarioView.nodes, editedByOthers]);
+
+    // The Delete key on a selected node someone else is editing: "Ana is
+    // editing this node. Remove it anyway?" The others selected go at once,
+    // through React Flow's own delete.
+    useEffect(() => {
+        if (!graphEdits.delete || editedByOthers.size === 0) return;
+        const onKey = (event: KeyboardEvent) => {
+            if (!DEFAULT_DELETE_KEY_CODES.includes(event.key)) return;
+            const target = event.target as HTMLElement | null;
+            if (target && (target.closest("input, textarea, select, [contenteditable='true'], .monaco-editor"))) return;
+            const asked = reactFlow.getNodes().filter((node) => node.selected && editedByOthers.has(node.id));
+            if (asked.length === 0) return;
+            applyRemoveChanges(asked.map((node) => ({ id: node.id, type: "remove" as const })));
+        };
+        document.addEventListener("keydown", onKey);
+        return () => document.removeEventListener("keydown", onKey);
+    }, [graphEdits.delete, editedByOthers, reactFlow, applyRemoveChanges]);
 
     // A double-click where a press drags a node (its header, its card's edge)
     // zooms the view onto it, framed as a focus frames its nodes, on an
@@ -629,13 +652,11 @@ export function MainCanvas() {
                 change.position.x != undefined
             ) {
                 dirty = true;
-                collabRef.current.broadcastNodeUpdated({
-                    nodeId: change.id,
-                    patch: { position: change.position },
-                });
             }
         }
 
+        // A drag shows live in the others' tabs; its place is written at the drop.
+        dataflowDocRef.current?.noteDrag(changes);
         if (dirty) markDirty();
         onNodesDelete(changes);
         return onNodesChange(changes);

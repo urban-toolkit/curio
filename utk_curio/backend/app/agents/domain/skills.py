@@ -28,14 +28,21 @@ marker filled.
 - lenient, for a skill brought from elsewhere, follows agentskills.io's
   guide for clients: frontmatter that is no YAML mapping, and a missing or
   empty ``description``, refuse the skill; every other break is a warning on
-  the skill it reads, and it reads the skill anyway.
+  the skill it reads, and it reads the skill anyway. A plain value that holds
+  a colon followed by a space, which YAML refuses and other clients take, is
+  read as quoted text, with a warning.
 
 The body is the text after the line that closes the frontmatter, as written,
 without the blank lines before its first line.
+
+:func:`in_the_format` writes a skill brought from elsewhere as Curio keeps
+it: its frontmatter written anew in the format, from what a lenient read
+gives, and its body as written.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from collections.abc import Mapping
@@ -136,14 +143,17 @@ def parse(folder, *, strict: bool = True, text: str | None = None) -> Skill:
     if not strict:
         text = text.removeprefix("﻿")
     front, body, body_line = _split(text, where, strict)
-    try:
-        fields = yaml.safe_load(front)
-    except yaml.YAMLError as exc:
-        raise SkillError(f"{where}: its frontmatter is not YAML ({_one_line(exc)})") from None
-    if not isinstance(fields, dict):
-        raise SkillError(f"{where}: its frontmatter is no YAML mapping of the fields {', '.join(FIELDS)}")
+    fields, read_as_quoted = _fields(front, where, strict)
 
     problems: list[str] = []
+    if read_as_quoted:
+        one = len(read_as_quoted) == 1
+        problems.append(
+            "its frontmatter is not YAML as written: the "
+            + ("value of " if one else "values of ") + ", ".join(read_as_quoted)
+            + (" holds a colon and a space, so it was" if one else " hold a colon and a space, so they were")
+            + " read as quoted text"
+        )
     name = _name(fields, folder.name, problems)
     description = _description(fields, problems, strict, where)
     license_ = _text_field(fields, "license", problems)
@@ -186,6 +196,59 @@ def _split(text: str, where: str, strict: bool) -> tuple[str, str, int]:
     while start < len(lines) - 1 and not lines[start].strip():
         start += 1
     return "\n".join(lines[1:end]), "\n".join(lines[start:]), start + 1
+
+
+def _fields(front: str, where: str, strict: bool, loader=yaml.SafeLoader) -> tuple[dict, list[str]]:
+    """The frontmatter *front* as a mapping, read with the YAML *loader*, and
+    the fields lenient mode read as quoted text. As agentskills.io's guide for
+    clients advises, lenient mode reads frontmatter that is no YAML only
+    because a plain value holds a colon followed by a space
+    (``description: Use it when: ...``), which other clients' readers take,
+    by reading each such value as quoted text (:func:`_quoted_values`).
+    Raises :class:`SkillError` for frontmatter that is still no YAML
+    mapping."""
+    try:
+        return _mapping(yaml.load(front, Loader=loader), where), []
+    except yaml.YAMLError as exc:
+        error = _one_line(exc)
+    quoted, keys = (None, []) if strict else _quoted_values(front)
+    if quoted is not None:
+        try:
+            return _mapping(yaml.load(quoted, Loader=loader), where), keys
+        except yaml.YAMLError:
+            pass
+    raise SkillError(f"{where}: its frontmatter is not YAML ({error})")
+
+
+def _mapping(fields, where: str) -> dict:
+    if not isinstance(fields, dict):
+        raise SkillError(f"{where}: its frontmatter is no YAML mapping of the fields {', '.join(FIELDS)}")
+    return fields
+
+
+#: A line of frontmatter that gives a key a plain value on the same line.
+_PLAIN_VALUE_RE = re.compile(r"^(?P<lead>[ \t]*(?P<key>[A-Za-z0-9_][A-Za-z0-9_.-]*):[ \t]+)(?P<value>\S.*?)[ \t]*$")
+#: What starts a value that is no plain text: quotes, a block, a flow
+#: collection, an anchor, an alias, a tag or a comment.
+_NOT_PLAIN_STARTS = tuple("\"'|>[{&*!#")
+
+
+def _quoted_values(front: str) -> tuple[str | None, list[str]]:
+    """*front* with each plain value that holds a colon followed by a space,
+    or ends in one, written as single-quoted text, and the keys of those
+    values; None when there is no such value."""
+    lines = front.split("\n")
+    keys: list[str] = []
+    for at, line in enumerate(lines):
+        match = _PLAIN_VALUE_RE.match(line)
+        if match is None or match["value"].startswith(_NOT_PLAIN_STARTS):
+            continue
+        value = match["value"]
+        if ": " not in value and not value.endswith(":"):
+            continue
+        lines[at] = match["lead"] + "'" + value.replace("'", "''") + "'"
+        keys.append(match["key"])
+    return ("\n".join(lines), keys) if keys else (None, [])
 
 
 def _one_line(exc: Exception) -> str:
@@ -294,6 +357,127 @@ def _files(folder: Path) -> tuple[str, ...]:
             if not name.startswith(".") and path != SKILL_FILE:
                 found.append(path)
     return tuple(sorted(found))
+
+
+def listed_files(folder) -> tuple[str, ...]:
+    """The files of the skill in *folder* but its ``SKILL.md``, by their paths
+    there, hidden files and folders left out: what :attr:`Skill.files` holds."""
+    return _files(Path(folder))
+
+
+# --- Keeping a skill brought from elsewhere ------------------------------------
+
+
+#: Characters a YAML reader takes as a line break or refuses unescaped, which
+#: a quoted value writes as an escape.
+_ESCAPED = frozenset(chr(code) for code in range(0x7F, 0xA0)) | frozenset("  ﻿￾￿")
+
+
+def _reads_back(value: str) -> bool:
+    """Whether *value*, written plain after a key, reads back as itself."""
+    try:
+        return yaml.safe_load(f"key: {value}") == {"key": value}
+    except yaml.YAMLError:
+        return False
+
+
+def _scalar(value: str) -> str:
+    """*value* as YAML every reader takes as that text: plain when it reads
+    back so, else double-quoted. A quoted value writes each ``---`` with its
+    first hyphen escaped, since a reader that splits a ``SKILL.md`` at ``---``
+    (agentskills.io's ``skills-ref``) would end the frontmatter there."""
+    if value and value == value.strip() and "\n" not in value and "---" not in value and _reads_back(value):
+        return value
+    quoted = "".join(f"\\u{ord(c):04x}" if c in _ESCAPED else c for c in json.dumps(value, ensure_ascii=False))
+    return quoted.replace("---", "\\x2d--")
+
+
+def in_the_format(text: str, *, name: str, where: str = SKILL_FILE) -> tuple[str, tuple[str, ...]]:
+    """*text*, a ``SKILL.md`` brought from elsewhere, as Curio keeps it under
+    the name *name*, and what that left out, one line each.
+
+    *text* is read as lenient mode reads it, each value as the text it is
+    written as (``yaml.BaseLoader``, as agentskills.io's ``skills-ref``
+    reads it: ``1.10`` stays ``1.10``), and its frontmatter is written anew
+    in the format from what that read gives: *name*; its description; its
+    license and compatibility; its ``metadata``, joined by each field the
+    format does not define that holds one value, under a key the metadata
+    does not hold already; and its ``allowed-tools``, a list of tools joined
+    by spaces. A field the format does not define that holds a list or a
+    mapping, and a value of its metadata that does, is left out. Each value a
+    reader could take as anything but that text is quoted (:func:`_scalar`).
+    The body follows as written.
+
+    Raises :class:`SkillError` for a *name* that is no skill's name, for what
+    lenient mode refuses, and for what the format holds no room for: a
+    description over 1,024 characters, a compatibility over 500."""
+    if not is_name(name):
+        raise SkillError(f"{name!r} names no skill: a name is 1 to {NAME_MAX} lowercase letters, digits and "
+                         "single hyphens, with no hyphen first or last")
+    text = text.replace("\r\n", "\n").replace("\r", "\n").removeprefix("﻿")
+    front, body, _ = _split(text, where, False)
+    fields, _ = _fields(front, where, False, loader=yaml.BaseLoader)
+    description = _as_text(fields.get("description"))
+    if description is None or not description.strip():
+        raise SkillError(f"{where} gives no description, which says when to use it")
+    left_out: list[str] = []
+    too_long: list[str] = []
+    if len(description) > DESCRIPTION_MAX:
+        too_long.append(f"its description is {len(description):,} characters, more than {DESCRIPTION_MAX:,}")
+    entries = [("name", name), ("description", description)]
+    for key in ("license", "compatibility"):
+        value = _as_text(fields.get(key))
+        if value is not None and value.strip():
+            entries.append((key, value))
+        elif value is not None:
+            left_out.append(f"its {key}, which is empty")
+        elif fields.get(key) is not None:
+            left_out.append(f"its {key}, which is no text")
+    compatibility = dict(entries).get("compatibility")
+    if compatibility is not None and len(compatibility) > COMPATIBILITY_MAX:
+        too_long.append(f"its compatibility is {len(compatibility):,} characters, more than {COMPATIBILITY_MAX}")
+    if too_long:
+        raise SkillError(f"{where}: " + "; ".join(too_long))
+
+    metadata: dict[str, str] = {}
+    raw = fields.get("metadata")
+    if isinstance(raw, dict):
+        for key, value in raw.items():
+            key_text, value_text = _as_text(key), _as_text(value)
+            if key_text is None or value_text is None:
+                left_out.append(f"{key!r} of its metadata, which holds text by text keys")
+            else:
+                metadata[key_text] = value_text
+    elif raw is not None:
+        left_out.append("its metadata, which is no mapping")
+    for key, value in fields.items():
+        if key in FIELDS:
+            continue
+        key_text, value_text = _as_text(key), _as_text(value)
+        if key_text is None or value_text is None:
+            left_out.append(f"{key}, which the format does not define, and which holds more than one value")
+        elif key_text in metadata:
+            left_out.append(f"{key}, which the format does not define, since its metadata holds {key_text} already")
+        else:
+            metadata[key_text] = value_text
+    tools = fields.get("allowed-tools")
+    if isinstance(tools, list):
+        tools = " ".join(tool for tool in (_as_text(item) for item in tools) if tool)
+    elif tools is not None:
+        text_of_tools = _as_text(tools)
+        if text_of_tools is None:
+            left_out.append("its allowed-tools, which is no list of tools")
+        tools = text_of_tools
+
+    lines = [DELIMITER, *(f"{key}: {_scalar(value)}" for key, value in entries)]
+    if metadata:
+        lines.append("metadata:")
+        lines += [f"  {_scalar(key)}: {_scalar(value)}" for key, value in metadata.items()]
+    if tools:
+        lines.append(f"allowed-tools: {_scalar(tools)}")
+    lines.append(DELIMITER)
+    kept = "\n".join(lines) + "\n" + body
+    return (kept if kept.endswith("\n") else kept + "\n"), tuple(left_out)
 
 
 # --- The skills Curio ships ----------------------------------------------------

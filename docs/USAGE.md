@@ -65,7 +65,7 @@ curio setup                  # install deps and exit
 | *(none)* | Auto sign-in as shared guest, projects page shown |
 | `--no-project` | Skip both login and projects; open the canvas directly |
 | `--deploy` | Auth **and** projects on, and isolated node execution, which it requires. The only way to turn auth on, so use it locally too when you need the login page |
-| `--collab` | Real-time collaborative editing. Experimental, LAN-only. `--collab-origins` and `--collab-namespace` set the origins the backend's Socket.IO accepts and its namespace; see [COLLABORATION.md](COLLABORATION.md) |
+| `--collab` | Invited editors edit with the owner, and the people panel shows. Experimental, LAN-only. `--collab-origins` and `--collab-namespace` set the origins the backend's Socket.IO accepts and its namespace; see [COLLABORATION.md](COLLABORATION.md) |
 
 **Frontend**
 
@@ -403,6 +403,10 @@ selected: the editor's tabs (code, widgets, spec, output), **Provenance** (the
 node's runs, see [Provenance](#provenance)), the **Save output dataset** toggle,
 settings, about, pin, **Minimize** and delete.
 Code and specs sit in a gray box, and a code node's output is below its code.
+In the code or spec, **Ctrl+Z** (Cmd+Z on a Mac) undoes your own typing in that
+node, and **Ctrl+Shift+Z** or **Ctrl+Y** redoes it. When others have the
+dataflow open, their typing shows as they type, with each person's cursor in
+their color and their name over it ([Real-time collaboration](#real-time-collaboration)).
 A Data Loading node opens on its **Widgets** tab, which holds only its **Data**
 box: drop a file or a Data Catalog dataset on the node, or click **Choose file**
 to pick a file, and its code, on the **Code** tab, loads it ([Data Catalog](#data-catalog)).
@@ -1739,9 +1743,18 @@ provider, publishing, and writing your own, see [docs/AGENT-CATALOG.md](AGENT-CA
 
 ## Real-time collaboration
 
-`curio start --collab` lets multiple signed-in users edit the same project simultaneously: presence indicators, per-node soft locks, code-change proposals with peer approval, and shared execution output. The feature is disabled by default and needs no rebuild to turn on.
+Every tab that opens a saved dataflow while signed in holds one shared copy of it, which the server keeps as each change is made. A change in one tab shows in every other tab that has the dataflow open: code and specs as they are typed, with each person's cursor, and nodes, connections, widgets, scenarios and drags at once. A tab that opens the dataflow later finds every change. A hosted guest's canvas of an example, and every canvas of a Curio started with `--no-project`, stay their own.
 
-The owner decides who edits. **Share → Invite editors**, shown to the owner of a saved dataflow when collaboration is on, adds an account by its username and lists the editors, each with a button that removes it. An editor opens the dataflow's link (**Share → Copy dataflow link**) and edits it with the owner, whose tab saves it. Anyone else signed in who opens the link watches it, read-only, and a guest on a Curio started with `--deploy` only watches.
+`curio start --collab` lets the editors the owner invited edit with the owner, and shows who is in the dataflow: the people panel, a lock chip on a node someone is in, and the outputs others run. It needs no rebuild to turn on.
+
+The owner decides who edits. **Share → Invite editors**, shown to the owner of a saved dataflow when collaboration is on, adds an account by its username and lists the editors, each with a button that removes it. An editor opens the dataflow's link (**Share → Copy dataflow link**) and edits it with the owner. Anyone else signed in who opens the link watches it, read-only, and a guest on a Curio started with `--deploy` only watches.
+
+When two people change the same thing:
+
+- Removing a node someone else is typing in asks first.
+- A node someone removes while you type in it goes, with a message that names who removed it and **Put it back**.
+- A connection you draw to a node someone removes at the same moment is not kept, and a message says so.
+- A widget, and a node's place, end on one value in every tab.
 
 See [COLLABORATION.md](COLLABORATION.md) for the full architecture, security model, setup instructions, and current limitations.
 

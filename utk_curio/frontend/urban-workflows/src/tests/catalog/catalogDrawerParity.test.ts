@@ -28,6 +28,8 @@ const DRAWERS = [
   "pages/catalog/PackageBrowseDrawer.tsx",
   "pages/dataCatalog/DataCatalogBrowseDrawer.tsx",
   "pages/agents/AgentCatalogBrowseDrawer.tsx",
+  // A skill the account imported is published as its agents are.
+  "pages/agents/SkillCatalogBrowseDrawer.tsx",
 ];
 
 /**
@@ -48,9 +50,6 @@ const ALL_DRAWERS = [
   ...DRAWERS,
   "pages/discovery/DiscoveryCatalogBrowseDrawer.tsx",
   "pages/scenarios/ScenarioCatalogBrowseDrawer.tsx",
-  // A skill is read here and changed in an agent's details, so it has no
-  // publish of its own on this page either.
-  "pages/agents/SkillCatalogBrowseDrawer.tsx",
 ];
 
 describe("catalog drawer parity", () => {

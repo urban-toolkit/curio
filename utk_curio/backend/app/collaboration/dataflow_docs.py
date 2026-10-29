@@ -30,6 +30,10 @@ room (``join_session``, ``events.py``) takes part.
 * A watcher's step 2 and updates are dropped, ``read_only``: nothing is applied
   or relayed. The role is the room's (``room_state``), which a change to the
   editors updates at once (``roles.py``).
+* A change that leaves a connection pointing at a node that is gone, a node
+  removed while someone drew a connection to it, has that connection taken out
+  at once, for every tab, and the tab that drew it is told who removed the
+  node (:func:`_drop_dangling_connections`).
 * Awareness is relayed to the doc's other tabs and sent whole to a tab that
   starts. The server writes each state's ``user``, the participant the room
   knows; a socket sets only client ids no other account's socket set; a
@@ -113,8 +117,10 @@ from typing import Callable, Iterator, NamedTuple, Optional
 from flask import request
 from flask_socketio import join_room
 from pycrdt import (
+    Array,
     Awareness,
     Decoder,
+    Map,
     Encoder,
     YMessageType,
     YSyncMessageType,
@@ -145,6 +151,12 @@ LOG_DIR = "ydoc"
 POINTER_FILE = "ydoc.json"
 #: The origin of the transaction that carries a spec written outside the doc.
 SPEC_ORIGIN = "spec"
+#: The origin of the transaction a merge rule makes (:func:`_drop_dangling_connections`).
+RULES_ORIGIN = "rules"
+#: What a tab whose connection a merge rule took out is told, on its socket.
+CONNECTION_DROPPED_EVENT = "connection_dropped"
+#: How many removed nodes an open doc remembers the remover of.
+REMOVERS_KEPT = 500
 
 #: Seconds with no change before the doc is written to ``spec.trill.json``
 #: (JupyterLab's default save delay).
@@ -184,10 +196,12 @@ class _NoDataflow(Exception):
 class _Queued:
     """A tab's step 2 or update waiting for its doc (:func:`_update`)."""
 
-    __slots__ = ("sid", "update", "answer")
+    __slots__ = ("sid", "me", "update", "answer")
 
-    def __init__(self, sid: str, update: bytes):
+    def __init__(self, sid: str, me: dict, update: bytes):
         self.sid = sid
+        #: The participant the socket is, as the room knows it.
+        self.me = me
         self.update = update
         #: What the tab is answered, once its update is applied or refused.
         self.answer: Optional[dict] = None
@@ -227,6 +241,10 @@ class _OpenDoc:
         self.queue = threading.Condition(threading.Lock())
         self.queued: list[_Queued] = []
         self.applying = False
+        #: Who drew each connection, by the socket whose update added it, and
+        #: who removed each node lately: what a merge rule's notice names.
+        self.edge_authors: dict[str, str] = {}
+        self.removers: dict[str, dict] = {}
         # Guarded by this module's lock.
         self.changed_at: Optional[float] = None
         self.dirty_since: Optional[float] = None
@@ -1570,7 +1588,7 @@ def _update(sid: str, me: dict, project_id: str, message: bytes) -> dict:
     entry = _synced(project_id, sid)
     if entry is None:
         return _refused("not_synced")
-    mine = _Queued(sid, _framed(message[2:]))
+    mine = _Queued(sid, me, _framed(message[2:]))
     with entry.queue:
         entry.queued.append(mine)
         while mine.answer is None and entry.applying:
@@ -1600,9 +1618,12 @@ def _apply_queued(entry: _OpenDoc, batch: list[_Queued]) -> None:
 
     Each update is applied in a transaction of its own, its tab the origin,
     in the order the batch holds them, so each tab's stay in the order it sent
-    them; an answer's ``kept`` is what its own transaction moved. The batch
-    then makes one write to the log and one message to each tab, every
-    change but the tab's own merged into one update (:func:`_logged_and_relayed`)."""
+    them; an answer's ``kept`` is what its own transaction moved. After each,
+    the merge rules run on what it changed (:func:`_drop_dangling_connections`).
+    The batch then makes one write to the log and one message to each tab,
+    every change but the tab's own merged into one update, the rules' changes
+    sent to every tab (:func:`_logged_and_relayed`); and then the tabs a rule
+    names are told."""
     synced = []
     for queued in batch:
         if entry.closed or queued.sid not in entry.tabs:
@@ -1615,7 +1636,9 @@ def _apply_queued(entry: _OpenDoc, batch: list[_Queued]) -> None:
     clocks = _clocks(entry.doc)
     changes: list[tuple[Optional[str], list[bytes]]] = []
     applied: list[tuple[_Queued, dict]] = []
+    notices: list[tuple[str, dict]] = []
     for queued in synced:
+        graph = _graph_keys(entry.doc)
         try:
             if queued.update != b"\x00\x00":
                 with entry.doc.transaction(origin=queued.sid):
@@ -1630,10 +1653,88 @@ def _apply_queued(entry: _OpenDoc, batch: list[_Queued]) -> None:
         if queued.answer is None:
             applied.append((queued, {str(client): clock for client, clock in now.items()
                                      if clocks.get(client) != clock}))
+        notices += _drop_dangling_connections(entry, queued.sid, queued.me, graph)
+        ruled, entry.updates = entry.updates, []
+        if ruled:
+            changes.append((None, ruled))
+            now = _clocks(entry.doc)
         clocks = now
     logged = _logged_and_relayed(entry, changes)
+    _tell(notices)
     for queued, kept in applied:
         queued.answer = {"ok": True, "kept": kept} if logged else _refused("not_kept")
+
+
+def _graph_keys(doc) -> tuple[frozenset, frozenset]:
+    """The ids of the doc's nodes and of its connections."""
+    return (frozenset(doc.get("nodes", type=Map).keys()),
+            frozenset(doc.get("edges", type=Map).keys()))
+
+
+def _drop_dangling_connections(entry: _OpenDoc, sid: str, me: dict,
+                               before: tuple[frozenset, frozenset]) -> list[tuple[str, dict]]:
+    """The merge rule for a connection to a node that is gone, after the change
+    the socket *sid* (the participant *me*) brought, *before* being the doc's
+    node and connection ids until then.
+
+    A node removed while someone drew a connection to it leaves that
+    connection pointing nowhere once both changes merge, whichever came first.
+    It is taken out at once, in a transaction of the rule's own, whose update
+    :func:`_apply_queued` logs and sends every tab with the rest of its batch,
+    and the tab that drew it is told who removed the node
+    (:data:`CONNECTION_DROPPED_EVENT`). The notices, each a socket and what it
+    is told, for :func:`_tell` once the change is relayed."""
+    nodes_before, edges_before = before
+    nodes_now, edges_now = _graph_keys(entry.doc)
+    if nodes_now == nodes_before and edges_now == edges_before:
+        return []
+    for node_id in nodes_before - nodes_now:
+        entry.removers.pop(node_id, None)
+        entry.removers[node_id] = _user(me)
+    while len(entry.removers) > REMOVERS_KEPT:
+        entry.removers.pop(next(iter(entry.removers)))
+    added = edges_now - edges_before
+    for edge_id in added:
+        entry.edge_authors[edge_id] = sid
+    edges = entry.doc.get("edges", type=Map)
+    dangling: dict[str, str] = {}
+    for edge_id in edges_now:
+        edge = doc_mapping.decode(edges[edge_id])
+        if not isinstance(edge, dict):
+            continue
+        gone = [end for end in (edge.get("source"), edge.get("target"))
+                if isinstance(end, str) and end not in nodes_now]
+        if gone:
+            dangling[edge_id] = gone[0]
+    drawers: dict[str, list[str]] = {}
+    for edge_id in dangling:
+        drawer = sid if edge_id in added else entry.edge_authors.get(edge_id)
+        if drawer is not None and drawer in entry.tabs:
+            drawers.setdefault(drawer, []).append(edge_id)
+    for edge_id in list(entry.edge_authors):
+        if edge_id not in edges_now or edge_id in dangling:
+            del entry.edge_authors[edge_id]
+    if not dangling:
+        return []
+    order = entry.doc.get("edgeOrder", type=Array)
+    with entry.doc.transaction(origin=RULES_ORIGIN):
+        for edge_id in dangling:
+            del edges[edge_id]
+        for index in reversed(range(len(order))):
+            if order[index] in dangling:
+                del order[index]
+    return [(drawer, {"projectId": entry.project_id, "edgeIds": edge_ids,
+                      "by": entry.removers.get(dangling[edge_ids[0]]) or _user(me)})
+            for drawer, edge_ids in drawers.items()]
+
+
+def _tell(notices: list[tuple[str, dict]]) -> None:
+    """Send each socket the notice a merge rule made for it
+    (:func:`_drop_dangling_connections`)."""
+    sio = _socketio()
+    if sio is not None:
+        for drawer, notice in notices:
+            sio.emit(CONNECTION_DROPPED_EVENT, notice, to=drawer, namespace=COLLAB_NAMESPACE)
 
 
 def _awareness(sid: str, me: dict, project_id: str, message: bytes) -> dict:

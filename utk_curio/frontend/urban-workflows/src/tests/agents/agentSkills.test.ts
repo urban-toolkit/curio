@@ -12,12 +12,16 @@ import * as path from "path";
 
 import {
   SKILL_FEATURE_WORDS,
+  SKILL_NAME_MAX,
+  skillByline,
   skillServes,
   skillsMatching,
   skillsUsedBy,
   slashQuery,
+  suggestSkillName,
   withSlashCommand,
 } from "../../services/agents/agentSkills";
+import { skillUploadForm } from "../../services/agents/skillsApi";
 import { REPO_ROOT } from "../_support/workflowPaths";
 
 describe("the skills a reply's run used", () => {
@@ -90,5 +94,53 @@ describe("what a skill serves", () => {
     }
     expect(named.size).toBeGreaterThan(0);
     expect([...named].filter((feature) => !(feature in SKILL_FEATURE_WORDS))).toEqual([]);
+  });
+});
+
+describe("whose a skill is", () => {
+  it("names the author its metadata gives, else whose it is, never Curio for an account's", () => {
+    expect(skillByline({ author: "parks-team", source: "yours" })).toBe("parks-team");
+    expect(skillByline({ author: null, source: "yours" })).toBe("you");
+    expect(skillByline({ source: "shared" })).toBe("shared catalog");
+    expect(skillByline({ author: "curio", source: "curio" })).toBe("curio");
+    expect(skillByline({})).toBe("curio");
+  });
+});
+
+describe("the name an import review offers", () => {
+  it("is the name given in a skill name's letters, with -2 when that is the name refused", () => {
+    expect(suggestSkillName({ name: "Street Trees", givenName: "Street Trees" })).toBe("street-trees");
+    expect(suggestSkillName({ name: "widgets", givenName: "widgets" })).toBe("widgets-2");
+    expect(suggestSkillName({ name: "pdf_tools", givenName: "pdf_tools" })).toBe("pdf-tools");
+    expect(suggestSkillName({ name: "--", givenName: "--" })).toBe("skill");
+    const long = suggestSkillName({ name: "a".repeat(62), givenName: "a".repeat(80) });
+    expect(long).toBe(`${"a".repeat(62)}-2`);
+    expect(long.length).toBeLessThanOrEqual(SKILL_NAME_MAX);
+  });
+});
+
+describe("a skill's upload", () => {
+  it("sends each file with its path in what was picked, and the name and agents asked for", () => {
+    const form = skillUploadForm(
+      [
+        { path: "street-trees/SKILL.md", file: new Blob(["---"]) },
+        { path: "street-trees/references/species.md", file: new Blob(["Oak"]) },
+      ],
+      { name: "my-trees", agents: ["agent.curio.dataset-finder@1"] },
+    );
+    const files = form.getAll("files") as File[];
+    expect(files.map((file) => file.name)).toEqual(["SKILL.md", "species.md"]);
+    expect(JSON.parse(form.get("paths") as string)).toEqual([
+      "street-trees/SKILL.md",
+      "street-trees/references/species.md",
+    ]);
+    expect(form.get("name")).toBe("my-trees");
+    expect(JSON.parse(form.get("agents") as string)).toEqual(["agent.curio.dataset-finder@1"]);
+  });
+
+  it("sends no name and no agents when the review asked for neither", () => {
+    const form = skillUploadForm([{ path: "SKILL.md", file: new Blob(["---"]) }]);
+    expect(form.get("name")).toBeNull();
+    expect(form.get("agents")).toBeNull();
   });
 });

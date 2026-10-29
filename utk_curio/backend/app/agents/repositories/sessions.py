@@ -8,9 +8,10 @@ the share pipeline and canvas saves) never contains conversation content:
     {"sessionId": ..., "attachmentId": ..., "turns": [{"role", "text", ...}]}
 
 A transcript lives exactly as long as its attachment (fail-closed interim
-retention; final durations remain ``OQ-008``): detach and orphan-prune delete
-the file. A missing or unreadable file reads as an empty transcript, so
-records that predate this store need no migration.
+retention; final durations remain ``OQ-008``): every removal of attachments
+deletes their files (:func:`delete_sessions_of`). A missing or unreadable
+file reads as an empty transcript, so records that predate this store need no
+migration.
 """
 
 from __future__ import annotations
@@ -163,6 +164,18 @@ def delete_session(user_key: str, project_id: str, session_id: str) -> None:
         # Best-effort GC: a malformed legacy id or racing delete never blocks
         # the detach/prune that triggered it.
         pass
+
+
+def delete_sessions_of(user_key: str, project_id: str, records) -> None:
+    """Delete the transcript of each attachment record of *records* a write
+    took out of the dataflow: a transcript lives exactly as long as its
+    attachment. Every removal of attachments ends here, after its write:
+    a detach, removing an agent from the dataflow, a save or a plan that
+    deletes the node or the connection an agent is attached to."""
+    for record in records or ():
+        session_id = record.get("sessionId") if isinstance(record, dict) else None
+        if isinstance(session_id, str):
+            delete_session(user_key, project_id, session_id)
 
 
 def context_messages(turns: list[dict], limit: int = CONTEXT_WINDOW_TURNS) -> list[dict]:

@@ -26,6 +26,9 @@ if (!(global as any).DOMMatrixReadOnly) {
 }
 
 // ── Mocks: replace the heavy/IO collaborators, keep reactflow REAL ──────────
+// The dataflow the canvas loaded, which a canvas bound to its doc binds on
+// (`useDataflowDoc`): none unless a test binds the canvas.
+const mockLoaded: { current: any } = { current: null };
 jest.mock('../../hook/useWorkflowOperations', () => ({
   useWorkflowOperations: () => ({
     markNodeExecuted: jest.fn(),
@@ -44,6 +47,13 @@ jest.mock('../../hook/useWorkflowOperations', () => ({
     updateDefaultCode: jest.fn(),
     workflowGoal: '',
     acceptSuggestion: jest.fn(),
+    loadedDataflowRef: mockLoaded,
+    workflowGoalRef: { current: '' },
+    workflowCategoriesRef: { current: {} },
+    scenariosRef: { current: [] },
+    autoRunRef: { current: false },
+    takeDataflowFields: jest.fn(),
+    quietly: (apply: () => unknown) => apply(),
   }),
 }));
 
@@ -52,8 +62,6 @@ jest.mock('../../providers/ToastProvider', () => ({
   useToastContext: () => ({ showToast: mockShowToast }),
 }));
 
-const mockBroadcastNodeUpdated = jest.fn();
-const mockBroadcastEdgeAdded = jest.fn();
 jest.mock('../../providers/CollaborationProvider', () => ({
   useCollab: () => ({
     enabled: false,
@@ -64,9 +72,9 @@ jest.mock('../../providers/CollaborationProvider', () => ({
     signalExecDisplay: jest.fn(),
     broadcastOutputProduced: jest.fn(),
     broadcastNodeAdded: jest.fn(),
-    broadcastNodeUpdated: mockBroadcastNodeUpdated,
+    broadcastNodeUpdated: jest.fn(),
     broadcastNodeRemoved: jest.fn(),
-    broadcastEdgeAdded: mockBroadcastEdgeAdded,
+    broadcastEdgeAdded: jest.fn(),
     broadcastEdgeRemoved: jest.fn(),
     onRemote: jest.fn(),
   }),
@@ -88,6 +96,7 @@ jest.mock('../../ConnectionValidator', () => ({
 }));
 
 import FlowProvider, { useFlowContext } from '../../providers/FlowProvider';
+import type { DataflowDocProvider } from '../../providers/collab/docProvider';
 import { CURIO_UNIVERSAL_NODE_TYPE, NodeType, SupportedType } from '../../constants';
 import { registerNode } from '../../registry/nodeRegistry';
 import type { NodeDescriptor } from '../../registry/types';
@@ -144,14 +153,66 @@ const Bridge: React.FC = () => {
   );
 };
 
+const PROJECT = 'project-fan-in';
+/** The dataflow's doc, as every other tab reads it, when a test binds the canvas. */
+let held: DataflowDocProvider | null = null;
+
+/** The dataflow's doc and its mapping, required by the tests that bind the
+ *  canvas, the others needing neither. */
+function docModules() {
+  return {
+    ...require('../../providers/collab/docContext'),
+    ...require('../../providers/collab/docProvider'),
+    ...require('../../providers/collab/docMapping'),
+  };
+}
+
 function renderFlow() {
-  return render(
+  const flow = (
     <ReactFlowProvider>
       <FlowProvider>
         <Bridge />
       </FlowProvider>
-    </ReactFlowProvider>,
+    </ReactFlowProvider>
   );
+  if (!held) return render(flow);
+  const { DataflowDocContext } = docModules();
+  return render(
+    <DataflowDocContext.Provider value={{ provider: held, synced: true }}>{flow}</DataflowDocContext.Provider>,
+  );
+}
+
+/** Bind the next canvas to a doc the server synced: an empty dataflow,
+ *  loaded as such. */
+function bindToDoc() {
+  const { DataflowDocProvider: Provider, dataflowToDoc } = docModules();
+  const dataflow = { name: '', nodes: [], edges: [] };
+  held = new Provider(PROJECT, { canWrite: true }) as DataflowDocProvider;
+  dataflowToDoc(dataflow, held.doc, 'doc-1');
+  held.synced = true;
+  mockLoaded.current = { epoch: 1, projectId: PROJECT, dataflow };
+}
+
+/** The dataflow as the doc holds it. */
+function docDataflow(): any {
+  return docModules().docToDataflow(held!.doc);
+}
+
+/** *nodeId*'s code in the doc. */
+function docCode(nodeId: string): string | undefined {
+  return docDataflow().nodes.find((n: any) => n.id === nodeId)?.content;
+}
+
+/** Each value *nodeId*'s code takes in the doc from now on, one per change. */
+function watchDocCode(nodeId: string): string[] {
+  const seen: string[] = [];
+  let last = docCode(nodeId);
+  held!.doc.on('afterTransaction', () => {
+    const now = docCode(nodeId);
+    if (now !== last) seen.push(now as string);
+    last = now;
+  });
+  return seen;
 }
 
 function makeNode(id: string, nodeType: string, code = '') {
@@ -207,6 +268,9 @@ const dataOf = (id: string): any => api.nodes.find((n: any) => n.id === id)?.dat
 
 afterEach(() => {
   jest.clearAllMocks();
+  held?.destroy();
+  held = null;
+  mockLoaded.current = null;
 });
 
 async function fanIn(target = 'curio.builtin/computation-analysis@1', code = '') {
@@ -283,6 +347,7 @@ describe('deleting an edge closes the gap', () => {
   const CODE = 'x = [!! input_0 !!]\ny = [!! input_1.area !!]\nz = [!! input_2 !!]';
 
   test('later edges move up a circle, their values follow, and the chips are renumbered', async () => {
+    bindToDoc();
     await fanIn('curio.builtin/computation-analysis@1', CODE);
     await connect('a', 't');
     await connect('b', 't');
@@ -290,6 +355,8 @@ describe('deleting an edge closes the gap', () => {
     await output('a', 'artifact-a');
     await output('b', 'artifact-b');
     await output('c', 'artifact-c');
+    expect(docCode('t')).toBe(CODE);
+    const codeChanges = watchDocCode('t');
 
     await deleteEdges([api.edges.find((e: any) => e.source === 'b')!.id]);
 
@@ -302,11 +369,11 @@ describe('deleting an edge closes the gap', () => {
     const rewritten = 'x = [!! input_0 !!]\ny = [!! input_?.area !!]\nz = [!! input_1 !!]';
     expect(dataOf('t').code).toBe(rewritten);
     expect(dataOf('t').defaultCode).toBe(rewritten);
-    // Peers get the moved edge and the new code from here, once.
-    expect(mockBroadcastEdgeAdded).toHaveBeenCalledWith(
-      expect.objectContaining({ edge: expect.objectContaining({ source: 'c', targetHandle: 'in_1' }) }),
-    );
-    expect(mockBroadcastNodeUpdated).toHaveBeenCalledTimes(1);
+    // The other tabs get the moved edge and the new code from here, through
+    // the dataflow's doc, the code in one change.
+    const docEdges = docDataflow().edges;
+    expect(docEdges.map((e: any) => [e.source, e.targetHandle]).sort()).toEqual([['a', 'in'], ['c', 'in_1']]);
+    expect(codeChanges).toEqual([rewritten]);
   });
 
   test('deleting two edges at once keeps every chip on its input', async () => {
@@ -320,12 +387,17 @@ describe('deleting an edge closes the gap', () => {
   });
 
   test('the last edge goes without rewriting code that names no later input', async () => {
+    bindToDoc();
     await fanIn('curio.builtin/computation-analysis@1', 'x = [!! input_0 !!]');
     await connect('a', 't');
     await connect('b', 't');
+    expect(docCode('t')).toBe('x = [!! input_0 !!]');
+    const codeChanges = watchDocCode('t');
     await deleteEdges([api.edges.find((e: any) => e.source === 'b')!.id]);
     expect(dataOf('t').code).toBe('x = [!! input_0 !!]');
-    expect(mockBroadcastNodeUpdated).not.toHaveBeenCalled();
+    // The other tabs get no change of the code.
+    expect(codeChanges).toEqual([]);
+    expect(docDataflow().edges.map((e: any) => e.source)).toEqual(['a']);
   });
 });
 

@@ -139,6 +139,24 @@ class AgentSkillStore:
         """Drop the change of *agent_id*: its runs hold its manifest's skills."""
         self.update(user_key, agent_id, lambda _current: SkillChoice())
 
+    def forget(self, user_key: str, name: str) -> list[str]:
+        """Drop the skill *name* from every agent's change, read and written
+        under the lock: a skill the account no longer holds, so a later skill
+        of that name joins no agent unasked. Returns the agents whose change
+        named it."""
+        with self._locked(user_key):
+            choices = self.read(user_key)
+            named = sorted(agent_id for agent_id, choice in choices.items()
+                           if name in choice.added or name in choice.removed)
+            if not named:
+                return []
+            for agent_id in named:
+                current = choices[agent_id]
+                choices[agent_id] = SkillChoice(added=tuple(skill for skill in current.added if skill != name),
+                                                removed=tuple(skill for skill in current.removed if skill != name))
+            self._write(user_key, {agent_id: choice for agent_id, choice in choices.items() if choice})
+            return named
+
     def _write(self, user_key: str, choices: dict[str, SkillChoice]) -> None:
         doc = {
             "version": STORE_VERSION,

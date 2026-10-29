@@ -188,6 +188,15 @@ describe("GrammarEditor content sync (dev/70)", () => {
         expect(lastEditor().executeEdits).toHaveBeenCalledTimes(1);
     });
 
+    test("floats the node's spec from the first render, never the editor's empty \"{}\"", () => {
+        // Floated at mount, "{}" was the node's code until its spec came in,
+        // and the save that makes a dataflow loaded from a file a project,
+        // taken then, kept "{}" as the node's spec.
+        const { floatCode } = renderGrammarEditor(DEFAULT_SPEC);
+        expect(floatCode).toHaveBeenCalledWith(DEFAULT_SPEC);
+        expect(floatCode).not.toHaveBeenCalledWith("{}");
+    });
+
     test("regression: defaultValue flipping spec→undefined→spec never resets typed content", () => {
         const { floatCode, setDefaultValue } = renderGrammarEditor(DEFAULT_SPEC);
         const editor = lastEditor();

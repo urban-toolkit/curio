@@ -9,8 +9,11 @@ and import order between siblings cannot matter.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping
+from dataclasses import dataclass
 
 from utk_curio.backend.app.agents.application.errors import AgentServiceError
+from utk_curio.backend.app.agents.application import lifecycle
 from utk_curio.backend.app.agents.repositories import imports
 from utk_curio.backend.app.agents.repositories import publications
 from utk_curio.backend.app.agents.repositories import storage
@@ -19,16 +22,46 @@ from utk_curio.backend.app.agents.domain import manifest as agents_manifest
 
 
 # ── upload-import (user-authored definitions, memo dev/36) ───────────────────
-_UPLOAD_MAX_FILES = 16
+@dataclass(frozen=True)
+class UploadLimits:
+    """How much one upload of an Agent Catalog entry may hold."""
+
+    #: The most files it holds.
+    files: int
+    #: The most bytes one of its files holds.
+    file_bytes: int
+    #: The most bytes all of them hold.
+    total_bytes: int
 
 
-_UPLOAD_MAX_FILE_BYTES = 256 * 1024
+#: An agent's upload: its manifest's prompt files.
+AGENT_UPLOAD = UploadLimits(files=16, file_bytes=256 * 1024, total_bytes=1024 * 1024)
+#: A skill's upload: its ``SKILL.md`` and its other files.
+SKILL_UPLOAD = UploadLimits(files=64, file_bytes=1024 * 1024, total_bytes=4 * 1024 * 1024)
 
 
-_UPLOAD_MAX_TOTAL_BYTES = 1024 * 1024
+def _size_label(size: int) -> str:
+    return f"{size // (1024 * 1024)} MB" if size >= 1024 * 1024 else f"{size // 1024} KB"
 
 
-def upload_import(user_key: str, manifest_raw: object, prompt_files: object) -> dict:
+def check_upload(files: Mapping[str, str | bytes], limits: UploadLimits, *, noun: str) -> None:
+    """Refuse an upload of *files*, each a path to its text or bytes, past
+    *limits*, with a 413 that names the file or the total over it: an agent's
+    prompt files (:data:`AGENT_UPLOAD`) and a skill's files
+    (:data:`SKILL_UPLOAD`) alike. *noun* names the files, as "prompt files"."""
+    if len(files) > limits.files:
+        raise AgentServiceError(f"at most {limits.files} {noun}", 413)
+    total = 0
+    for rel, content in files.items():
+        size = len(content) if isinstance(content, bytes) else len(content.encode("utf-8"))
+        total += size
+        if size > limits.file_bytes:
+            raise AgentServiceError(f"{noun[:-1]} {rel!r} exceeds {_size_label(limits.file_bytes)}", 413)
+    if total > limits.total_bytes:
+        raise AgentServiceError(f"{noun} exceed {_size_label(limits.total_bytes)} total", 413)
+
+
+def upload_import(user_key: str, manifest_raw: object, prompt_files: object, *, user=None) -> dict:
     """Create a user-owned definition from an uploaded manifest + prompt texts.
 
     Fail-closed rules (memo dev/36): the manifest must pass the package
@@ -44,27 +77,19 @@ def upload_import(user_key: str, manifest_raw: object, prompt_files: object) -> 
     409 (a version is immutable), and so is a store copy of an agent Curio
     ships; the write is atomic. Success registers the coordinate in My Imports
     (upload IS an explicit account import) and returns the My Imports card,
-    publishable.
+    publishable. A hosted guest is refused (``lifecycle.refuse_hosted_guest``).
     """
 
     from utk_curio.backend.app.common.safe_paths import PathTraversalError
 
+    lifecycle.refuse_hosted_guest(user, "import agents")
     if not isinstance(manifest_raw, dict):
         raise AgentServiceError("'manifest' must be an object", 400)
     if not isinstance(prompt_files, dict) or not all(
         isinstance(k, str) and isinstance(v, str) for k, v in prompt_files.items()
     ):
         raise AgentServiceError("'prompts' must map file paths to text", 400)
-    if len(prompt_files) > _UPLOAD_MAX_FILES:
-        raise AgentServiceError(f"at most {_UPLOAD_MAX_FILES} prompt files", 413)
-    total = 0
-    for rel, text in prompt_files.items():
-        size = len(text.encode("utf-8"))
-        total += size
-        if size > _UPLOAD_MAX_FILE_BYTES:
-            raise AgentServiceError(f"prompt file {rel!r} exceeds 256 KB", 413)
-    if total > _UPLOAD_MAX_TOTAL_BYTES:
-        raise AgentServiceError("prompt files exceed 1 MB total", 413)
+    check_upload(prompt_files, AGENT_UPLOAD, noun="prompt files")
 
     manifest = dict(manifest_raw)
     if "catalog" in manifest:

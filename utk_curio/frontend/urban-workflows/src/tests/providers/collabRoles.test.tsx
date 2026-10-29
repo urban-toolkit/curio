@@ -52,6 +52,11 @@ function fakeSocket(): FakeSocket & Record<string, unknown> {
       fake.handlers[event] = fake.handlers[event] || [];
       fake.handlers[event].push(handler);
     },
+    // The dataflow's doc, which starts once the room joins the tab, takes
+    // its handler off the socket when it goes.
+    off(event: string, handler: Handler) {
+      fake.handlers[event] = (fake.handlers[event] || []).filter((h: Handler) => h !== handler);
+    },
     emit(event: string, payload: any, ack?: (answer: any) => void) {
       fake.emits.push({ event, payload, ack });
     },

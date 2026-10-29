@@ -87,6 +87,25 @@ export interface WorkflowOperationsDeps {
     // Workflow-wide default for the per-node "Save output dataset" toggle,
     // sourced from the backend (CURIO_DEFAULT_SAVE_NODE_OUTPUT) via FlowProvider.
     defaultSaveOutputDataset: boolean;
+    /**
+     * The canvas's binding to the dataflow's doc (`useDataflowDoc`), which
+     * FlowProvider fills once the bridge exists. A bound canvas's save sends
+     * its outputs and its history, never the dataflow: the doc keeps that.
+     */
+    docBridgeRef?: React.MutableRefObject<DocBridgeForSaves | null>;
+}
+
+/** What a save asks the canvas's binding to the dataflow's doc. */
+export interface DocBridgeForSaves {
+    bound(): boolean;
+    whenKept(): Promise<boolean>;
+}
+
+/** The dataflow the canvas was built from or saved as, on which load. */
+export interface LoadedDataflow {
+    epoch: number;
+    projectId: string | null;
+    dataflow: any;
 }
 
 export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
@@ -242,6 +261,31 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setProjectDirty(true);
     }, []);
 
+    /** Run *apply*, a change the dataflow's doc brought to this canvas, with
+     *  nothing it does marking the dataflow Unsaved: the doc keeps it. */
+    const quietly = useCallback(<T,>(apply: () => T): T => {
+        const was = hydratingRef.current;
+        hydratingRef.current = true;
+        try {
+            return apply();
+        } finally {
+            hydratingRef.current = was;
+        }
+    }, []);
+
+    // The dataflow the canvas was last built from or saved as, a new epoch for
+    // each: the doc's first sync on it applies what the doc changed since
+    // (useDataflowDoc). Leaving a dataflow notes none.
+    const loadedDataflowRef = useRef<LoadedDataflow | null>(null);
+    const noteLoadedDataflow = useCallback((dataflow: any, projectIdOfIt?: string | null) => {
+        loadedDataflowRef.current = {
+            epoch: (loadedDataflowRef.current?.epoch ?? 0) + 1,
+            // A load's dataflow is the one the route opened.
+            projectId: projectIdOfIt !== undefined ? projectIdOfIt : (getCurrentProjectId() ?? null),
+            dataflow,
+        };
+    }, []);
+
     // Loading sets them without dirtying; an edit on the canvas title dirties,
     // like a rename, and is written by the next save.
     const setWorkflowCategories = useCallback((next: HandCategories) => {
@@ -273,6 +317,30 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setAutoRunQuietly(on);
         markDirty();
     }, [setAutoRunQuietly, markDirty]);
+
+    /** The dataflow's own fields the doc changed (*nodeIds*: the nodes it
+     *  holds), set on the canvas as a load sets them. */
+    const takeDataflowFields = useCallback((fields: Record<string, any>, nodeIds: string[]) => {
+        if ("name" in fields && typeof fields.name === "string") {
+            setWorkflowName(fields.name);
+            projectNameRef.current = fields.name;
+            setProjectName(fields.name);
+        }
+        if ("task" in fields) {
+            workflowGoalRef.current = typeof fields.task === "string" ? fields.task : "";
+            setWorkflowGoal(workflowGoalRef.current);
+        }
+        if ("description" in fields) {
+            setWorkflowDescription(typeof fields.description === "string" ? fields.description : "");
+        }
+        if ("categories" in fields) {
+            setWorkflowCategories(fields.categories && typeof fields.categories === "object" ? fields.categories : {});
+        }
+        if ("autoRun" in fields) setAutoRunQuietly(fields.autoRun === true);
+        if ("scenarios" in fields) setScenariosQuietly(normalizeScenarios(fields.scenarios ?? [], nodeIds));
+        if ("packages" in fields && Array.isArray(fields.packages)) setPackages(fields.packages);
+        if ("datasets" in fields) setDataflowDatasets(Array.isArray(fields.datasets) ? fields.datasets : []);
+    }, [setWorkflowName, setWorkflowDescription, setWorkflowCategories, setAutoRunQuietly, setScenariosQuietly, setPackages]);
 
     // beforeunload guard
     useEffect(() => {
@@ -987,6 +1055,38 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         // persist the empty pre-load canvas over the stored dataflow.
         const routedLoad = settleRoutedLoad();
         if (routedLoad) await routedLoad;
+        // A canvas bound to the dataflow's doc saves what the doc does not
+        // hold: its outputs and its history. The doc keeps the dataflow, so the
+        // save waits until the server has every change this tab made, and its
+        // answer holds them.
+        const docBridge = deps.docBridgeRef?.current;
+        if (projectIdRef.current && !options?.savedWidgets && docBridge?.bound()) {
+            await docBridge.whenKept();
+            const history = {
+                nodeProvenance: getAllNodeProvenance(),
+                dataflowProvenance: TrillGenerator.getSerializableDataflowProvenance(),
+            };
+            const outputs = options?.omitOutputs ? undefined : buildOutputRefs();
+            const name = nameOverride || projectNameRef.current || workflowNameRef.current;
+            const dirtyAtSend = dirtyGenerationRef.current;
+            const detail = await projectsApi.update(projectIdRef.current, {
+                history,
+                ...(outputs ? { outputs } : {}),
+                name,
+                ...nextSaveOrder(),
+            });
+            baseRevisionRef.current = detail.spec_revision ?? null;
+            syncDatasetsFromSavedSpec(detail.spec);
+            setServerCategories(detail.categories ?? {});
+            if (projectNameRef.current === name) {
+                projectNameRef.current = detail.name;
+                setProjectName(detail.name);
+            }
+            notifyAgentDockRefresh();
+            setProjectSavedAt(new Date());
+            if (dirtyGenerationRef.current === dirtyAtSend) setProjectDirty(false);
+            return detail;
+        }
         const savedWidgets = options?.savedWidgets;
         const currentNodes = savedWidgets
             ? reactFlow.getNodes().map((node) => (
@@ -1074,6 +1174,8 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             // create sees the new id and updates instead of creating a duplicate
             // (setProjectId only reaches the ref on the next render).
             projectIdRef.current = detail.id;
+            // The server built the dataflow's doc from what it stored.
+            noteLoadedDataflow(detail?.spec?.dataflow ?? spec.dataflow, detail.id);
             baseRevisionRef.current = detail.spec_revision ?? null;
             syncDatasetsFromSavedSpec(detail.spec);
             setServerCategories(detail.categories ?? {});
@@ -1420,6 +1522,8 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         syncDatasetsFromSavedSpec(detail.spec);
         setServerCategories(detail.categories ?? {});
         projectIdRef.current = detail.id;
+        // The canvas is the copy's now, whose doc the server builds from it.
+        noteLoadedDataflow(detail?.spec?.dataflow ?? spec.dataflow, detail.id);
         setProjectId(detail.id);
         setProjectName(detail.name);
         setProjectSavedAt(new Date());
@@ -1489,6 +1593,8 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     }, []);
 
     const discardProject = useCallback(() => {
+        // The canvas leaves the dataflow, and its doc, before anything clears it.
+        noteLoadedDataflow(null, null);
         setProjectId(null);
         setProjectName("");
         setWorkflowName(DEFAULT_WORKFLOW_NAME);
@@ -1509,7 +1615,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setNodeExecStatus({});
         setDataflowDatasets([]);
         setViewerMode("owner");
-    }, [setWorkflowName, setWorkflowDescription, setAutoRunQuietly]);
+    }, [setWorkflowName, setWorkflowDescription, setAutoRunQuietly, noteLoadedDataflow]);
 
     // Both marks return the SAME state object when the node is already in the
     // target status. CodeEditor calls markNodeStale on every keystroke, and an
@@ -1551,13 +1657,21 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         suggestionsLeft,
         workflowGoal,
         setWorkflowGoal,
+        workflowGoalRef,
         workflowCategories,
+        workflowCategoriesRef,
         serverCategories,
         scenarios,
         // For the run's save rule, which must read the list as it is now.
         scenariosRef,
         autoRun,
+        autoRunRef,
         setAutoRun,
+        // The canvas's binding to the dataflow's doc (useDataflowDoc).
+        loadedDataflowRef,
+        noteLoadedDataflow,
+        takeDataflowFields,
+        quietly,
         packages,
         setPackages,
         addPackage,
