@@ -1,0 +1,17 @@
+{
+  "skill_name": "scout",
+  "agent": "agent.curio.node-builder@1",
+  "dataflow": "docs/examples/dataflows/chicago-rain-wind-routing.json",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Add a Raster Calculator node that gives the difference of the two scenarios' flood depths.",
+      "expected_output": "A node.create of Scout's Raster Calculator.",
+      "assertions": ["The answer proposes a node.create of curio.scout/raster-calculator."]
+    }
+  ],
+  "trigger_queries": [
+    {"query": "Add a Raster Calculator node that gives the difference of the two scenarios' flood depths.", "should_trigger": true},
+    {"query": "Rename the bars chart to Travel times.", "should_trigger": false}
+  ]
+}

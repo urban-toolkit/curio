@@ -1,0 +1,12 @@
+{
+  "skill_name": "nodes",
+  "agent": "agent.curio.dataflow-builder@1",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Plan a dataflow that loads a CSV of bus stops and shows the stops as image cards.",
+      "expected_output": "A plan with a Data Loading node feeding a Simple View node.",
+      "assertions": ["The answer proposes a dataflow plan (dataflow.plan.write)."]
+    }
+  ]
+}
