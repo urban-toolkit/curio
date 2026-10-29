@@ -11,8 +11,11 @@ A room tells its participants apart by **participant id**, one per socket,
 never by account: two tabs of one account, or two hosted guests on the one
 guest account, are two participants. A lock names the participant that holds
 it, and each participant carries the role its account has on the dataflow
-(``projects/access.py``). The socket's own id stays on the server. The
-dataflow is not here: it is the server's Yjs doc (``dataflow_docs.py``).
+(``projects/access.py``). Every guest, and every tab of a Curio with no
+sign-in, signs in to the one guest account, so the room numbers that
+account's tabs (:data:`GUEST_NUMBER`), which name each of them apart. The
+socket's own id stays on the server. The dataflow is not here: it is the
+server's Yjs doc (``dataflow_docs.py``).
 """
 
 from __future__ import annotations
@@ -80,14 +83,45 @@ def drop_identity(sid: str) -> None:
         _sid_identity.pop(sid, None)
 
 
-def add_user(room: str, sid: str, user_info: dict) -> None:
+#: The number of a tab of the guest account in its room: the lowest no other
+#: participant of the room holds when the tab joins (:func:`add_user`), free
+#: again once it leaves. Its chip, its cursor, its locks and its Activity lines
+#: say it, "Shared Guest 2"; its chip and its cursor are in that number's color.
+GUEST_NUMBER = "guest_number"
+
+
+def numbered(participant: Optional[dict]) -> dict:
+    """*participant*'s :data:`GUEST_NUMBER` as a field of its own, for what
+    names it; nothing for a participant with none."""
+    number = (participant or {}).get(GUEST_NUMBER)
+    return {} if number is None else {GUEST_NUMBER: number}
+
+
+def _free_number(users: Dict[str, dict], sid: str) -> int:
+    """The lowest number no participant in *users* but *sid*'s holds."""
+    held = {entry.get(GUEST_NUMBER) for other, entry in users.items() if other != sid}
+    number = 1
+    while number in held:
+        number += 1
+    return number
+
+
+def add_user(room: str, sid: str, user_info: dict) -> dict:
     """Put the participant *user_info* (with its ``participant_id`` and
-    ``role``) in *room* for the socket *sid*."""
+    ``role``) in *room* for the socket *sid*; the participant as the room keeps
+    it. A socket signed in to a guest account, the one every guest signs in
+    to, is numbered (:data:`GUEST_NUMBER`), and keeps its number when it joins
+    again."""
     with _lock:
         _ensure_room(room)
-        _room_users[room][sid] = dict(user_info, joined_at=_now())
+        users = _room_users[room]
+        entry = dict(user_info, joined_at=_now())
+        if (_sid_identity.get(sid) or {}).get("is_guest"):
+            entry[GUEST_NUMBER] = (users.get(sid) or {}).get(GUEST_NUMBER) or _free_number(users, sid)
+        users[sid] = entry
         _sid_index.setdefault(sid, set()).add(room)
         _room_meta[room]["last_active"] = _now()
+        return dict(entry)
 
 
 def _release_locks_of(room: str, participant_id: Optional[str]) -> List[str]:
@@ -163,7 +197,8 @@ AGENT_LOCK_FIELDS = ("agent", "writes")
 
 def try_lock(room: str, node_id: str, user_info: dict) -> Optional[dict]:
     """Acquire (or refresh) the soft lock on ``node_id`` for the participant
-    *user_info*. An agent's lock also keeps its :data:`AGENT_LOCK_FIELDS`.
+    *user_info*. An agent's lock also keeps its :data:`AGENT_LOCK_FIELDS`, and
+    a tab of the guest account's its :data:`GUEST_NUMBER`.
 
     Returns the lock record if it owns it after the call (newly or
     already), otherwise ``None`` (another participant holds it).
@@ -187,6 +222,7 @@ def try_lock(room: str, node_id: str, user_info: dict) -> Optional[dict]:
             "participant_id": participant_id,
             "since": _now(),
             **agent,
+            **numbered(user_info),
         }
         locks[node_id] = lock
         return dict(lock)

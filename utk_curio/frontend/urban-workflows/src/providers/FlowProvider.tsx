@@ -45,6 +45,7 @@ import { useToastContext } from "./ToastProvider";
 import { useCollab } from "./CollaborationProvider";
 import { CONNECTION_DROPPED_EVENT, useDocBinding } from "./collab/docContext";
 import { canvasRole } from "./collab/participants";
+import { numberedName } from "./collab/presence";
 import { useProvenanceContext } from "./ProvenanceProvider";
 import { useUserContext } from "./UserProvider";
 import { isHostedGuest } from "../components/apiSettings/useHostedGuest";
@@ -437,11 +438,12 @@ const FlowProvider = ({
     docBridgeRef.current = dataflowDoc;
     codeDocRef.current = dataflowDoc;
     // A connection this tab drew to a node someone removed meanwhile: the
-    // server took it out, and says who removed the node.
+    // server took it out, and says who removed the node, a tab of the shared
+    // guest account by its number.
     useEffect(() => {
         if (typeof collab.onRemote !== "function") return;
         return collab.onRemote(CONNECTION_DROPPED_EVENT, (payload: any) => {
-            const who = payload?.by?.name || payload?.by?.username || "Someone";
+            const who = numberedName(payload?.by?.name || payload?.by?.username || "Someone", payload?.by);
             showToast(`${who} removed that node, so this connection was not kept.`, "warning", { stay: true });
         });
     }, [collab.onRemote, showToast]);

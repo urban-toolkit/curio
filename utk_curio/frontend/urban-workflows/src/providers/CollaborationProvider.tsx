@@ -75,6 +75,8 @@ export interface CollabUser {
     /** This participant's id in the room: one per tab. */
     participant_id?: string;
     role?: RoomRole;
+    /** A tab of the shared guest account: its number in the room. */
+    guest_number?: number;
 }
 
 export interface NodeLock {
@@ -84,6 +86,8 @@ export interface NodeLock {
     /** The participant that holds the lock. */
     participant_id?: string;
     since: number;
+    /** A tab of the shared guest account's lock: its number in the room. */
+    guest_number?: number;
 }
 
 export interface ActivityEntry {
@@ -94,6 +98,16 @@ export interface ActivityEntry {
 
 /** Listener callback for "a peer applied a remote change" events. */
 export type RemoteHandler<T = unknown> = (payload: T) => void;
+
+/** Who a join's or a leave's Activity names, as the server records it
+ *  (``events.py``): the account, its name and, for a tab of the shared guest
+ *  account, its number in the room. */
+function activityWho(user: Partial<CollabUser>): Record<string, unknown> {
+    const who: Record<string, unknown> = { user_id: user.user_id, username: user.username };
+    if (user.name) who.name = user.name;
+    if (typeof user.guest_number === "number") who.guest_number = user.guest_number;
+    return who;
+}
 
 /** The room's events a change to the editors makes: one for each account
  *  whose role changed, as the server records it (``roles.py``). */
@@ -339,15 +353,13 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
             socket.on("user_joined", (payload: CollabUser & { users: CollabUser[] }) => {
                 if (payload && Array.isArray(payload.users)) {
                     setUsers(payload.users);
-                    recordActivity("user_joined", {
-                        user_id: payload.user_id, username: payload.username, name: payload.name, role: payload.role,
-                    });
+                    recordActivity("user_joined", { ...activityWho(payload), role: payload.role });
                 }
             });
             socket.on("user_left", (payload: CollabUser & { users: CollabUser[] }) => {
                 if (payload && Array.isArray(payload.users)) {
                     setUsers(payload.users);
-                    recordActivity("user_left", { user_id: payload.user_id, username: payload.username });
+                    recordActivity("user_left", activityWho(payload));
                 }
             });
             // The owner invited or removed an editor: everyone's roles, this
