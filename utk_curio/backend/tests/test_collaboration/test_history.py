@@ -559,19 +559,15 @@ def test_file_save_is_a_version_named_saved(kept):
 
 
 def test_file_saves_answer_has_the_dataflows_categories_as_it_is(kept):
-    """No tab saves the dataflow, so File > Save's version is what tells the
-    canvas title its categories, as a save's answer did."""
-    from utk_curio.backend.app.projects import services
-    from utk_curio.backend.app.collaboration import dataflow_docs
-
+    """No tab saves the dataflow, so File > Save's version tells the canvas
+    title its categories, as a save's answer did: those a load shows."""
     _synced(kept, "alice")
+    loaded = _http(kept).get(f"/api/projects/{kept.project_id}", headers=_auth(kept)).get_json()
+
     answer = _http(kept).post(f"/api/projects/{kept.project_id}/history/saved", headers=_auth(kept))
 
     assert answer.status_code == 201, answer.get_json()
-    expected = services._categories(
-        kept.users["alice"], kept.project_id, dataflow_docs.read(kept.owner_key, kept.project_id),
-    )
-    assert answer.get_json()["categories"] == expected
+    assert answer.get_json()["categories"] == loaded["project"]["categories"]
 
 
 def test_file_save_writes_the_dataflows_file_as_its_doc_holds_it(kept):

@@ -81,7 +81,7 @@ export function useServerRun({
     reactFlow, setNodes, showToast, keepDataflow, applyNewOutput, setOutputs,
     hydrateRestoredOutputs, markNodeErroredRef, playNodes, playAllStateRef,
     emittedForInputRef, outputsRef, workflowNameRef, nodeExecProv, flushInstallSyncRef,
-    surfaceInstallWarnings, outcomes,
+    surfaceInstallWarnings, outcomes, onRunEnded,
 }: {
     reactFlow: ReactFlowInstance;
     setNodes: React.Dispatch<React.SetStateAction<Node[]>>;
@@ -108,6 +108,9 @@ export function useServerRun({
     ) => void;
     /** What a step does to its node, shared with a dashboard's runs (useStepOutcomes). */
     outcomes?: StepOutcomes;
+    /** A run this tab followed ended: the canvas title asks for the dataflow's
+     *  categories as it is now (useCategoriesRefresh). */
+    onRunEnded?: () => void;
 }) {
     // True from the click until the server's part ends. UniversalNode reads it
     // with isRunActive: a map or chart draws in the run's browser part, or from
@@ -312,6 +315,7 @@ export function useServerRun({
         if (!run.startedHere && status === "needs_canvas") offerFinish(run.runId);
         setServerRunActive(false);
         if (!browserPart) void flushInstallSyncRef.current();
+        onRunEnded?.();
     };
 
     /** Stop following without ending the run; with *stopped*, a node it left running says so. */

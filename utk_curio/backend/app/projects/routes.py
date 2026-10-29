@@ -117,8 +117,8 @@ def record_outputs(project_id: str):
     """The outputs the owner's canvas holds that the dataflow records (after a
     run in the browser, a pin, a scenario), recorded in its manifest and the
     account's Data Catalog. No tab saves the dataflow, which its doc keeps.
-    Answered with the dataflow's categories as it is now, which what a run
-    made changes and the canvas title shows, as a save's answer carried them."""
+    Answered with the dataflow's categories as it is now, which the canvas
+    title shows, as a save's answer carried them (``GET .../categories``)."""
     body = request.get_json(silent=True) or {}
     raw = body.get("outputs")
     if not isinstance(raw, list):
@@ -139,8 +139,25 @@ def record_outputs(project_id: str):
     return jsonify({
         "outputs": [asdict(ref) for ref in recorded],
         "dataset_install_warnings": warnings,
-        "categories": services.dataflow_categories(g.user, project_id),
+        "categories": services.dataflow_categories(project_id),
     }), 200
+
+
+# ---------------------------------------------------------------------------
+# GET /api/projects/:id/categories - the categories the canvas title shows
+# ---------------------------------------------------------------------------
+@projects_bp.route("/<project_id>/categories", methods=["GET"])
+@require_auth
+def get_categories(project_id: str):
+    """The dataflow's categories as it is now, for every tab that opens it:
+    the owner's, an invited editor's and a watcher's, as the shared read
+    serves the dataflow to anyone who opens its link. No save answers them
+    any more, so its tabs ask again as it changes."""
+    try:
+        categories = services.dataflow_categories(project_id)
+    except NotFoundError:
+        return _error("Project not found", 404)
+    return jsonify({"categories": categories}), 200
 
 
 # ---------------------------------------------------------------------------

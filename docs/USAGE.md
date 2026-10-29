@@ -1615,7 +1615,8 @@ dataset (a GeoTIFF gives Rasters), and the tags and data types its packages, mod
 datasets declare in their manifests' `dataflowCategories` (SCOUT's give SCOUT). A package
 or dataset of your own can declare them too ([Authoring nodes](AUTHORING-NODES.md#tags-and-data-types),
 [Data Catalog](DATA-CATALOG.md#7-the-manifest)), and a new name adds an entry to the
-rail. They change when you save, and cannot be removed by hand. Add a tag, a
+rail. They follow the dataflow's changes within a few seconds, in every tab that has it
+open, and cannot be removed by hand. Add a tag, a
 city, a topic or a complexity with **+ Category** under the dataflow's title on the
 canvas, which saves with the dataflow, or with **Edit categories** on the Projects page.
 

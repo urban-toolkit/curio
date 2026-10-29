@@ -1629,17 +1629,10 @@ def load_project(user, project_id: str, *, last_results: bool = False) -> dict:
 # Shared (public-by-URL) load — no ownership check
 # ---------------------------------------------------------------------------
 
-def load_shared_project(project_id: str) -> dict:
-    """Load a project for any caller, regardless of ownership.
-
-    Used by the unauthenticated ``GET /api/projects/<id>/shared`` route to
-    power link-based sharing. A deleted project 404s because its row is gone
-    — deletion is a hard delete since Archive was removed (#261).
-
-    ``missing_outputs`` are the saved outputs the manifest lists that have no
-    file left to read (``_saved_outputs``): a dashboard that needs one says to
-    try again rather than draw its tile empty.
-    """
+def _opened_by_link(project_id: str):
+    """The dataflow anyone who opens its link reads, and its owner's storage
+    key: not found once its row or its spec is gone. A deleted project's row
+    is gone: deletion is a hard delete since Archive was removed (#261)."""
     from utk_curio.backend.app.projects.models import Project
 
     project = db.session.get(Project, project_id)
@@ -1651,6 +1644,20 @@ def load_shared_project(project_id: str) -> dict:
     # that has none.
     if storage.read_spec(ukey, project_id) is None:
         raise repo.NotFoundError(f"Project {project_id} not found")
+    return project, ukey
+
+
+def load_shared_project(project_id: str) -> dict:
+    """Load a project for any caller, regardless of ownership.
+
+    Used by the unauthenticated ``GET /api/projects/<id>/shared`` route to
+    power link-based sharing (:func:`_opened_by_link`).
+
+    ``missing_outputs`` are the saved outputs the manifest lists that have no
+    file left to read (``_saved_outputs``): a dashboard that needs one says to
+    try again rather than draw its tile empty.
+    """
+    project, ukey = _opened_by_link(project_id)
     spec, readable, missing = _saved_outputs(ukey, project_id)
     if spec is None:
         raise repo.NotFoundError(f"Project {project_id} not found")
@@ -2374,13 +2381,16 @@ def record_edit(user, project_id: str, node_id: str, label) -> dict:
     ))
 
 
-def dataflow_categories(user, project_id: str) -> dict:
-    """The owner's dataflow's categories as it is now, as File > Save's
-    version answers them (:func:`record_saved`): what a record of its
-    outputs answers, since what a run made changes them and no save follows."""
-    project = repo.get_for_user(project_id, user.id)
-    spec = dataflow_docs.read(_user_dir_key(user), project_id)
-    return _categories(project.owner or user, project_id, spec)
+def dataflow_categories(project_id: str) -> dict:
+    """The dataflow's categories as it is now (its source, and what its nodes
+    make of it), which the canvas title shows, read as a load serves them
+    (:func:`load_project`). No tab saves the dataflow, whose answer carried
+    them: every tab of it asks again as it changes, the owner's, an invited
+    editor's and a watcher's, as anyone who opens its link reads it
+    (:func:`_opened_by_link`)."""
+    project, ukey = _opened_by_link(project_id)
+    spec = _without_history(_with_effective_packages(dataflow_docs.read(ukey, project_id), ukey, project_id))
+    return _categories(project.owner, project_id, spec)
 
 
 def record_saved(user, project_id: str) -> dict:
@@ -2391,11 +2401,10 @@ def record_saved(user, project_id: str) -> dict:
     the canvas title shows, as a save's answer carried them."""
     from utk_curio.backend.app.collaboration import history
 
-    project, ukey, _role = _history_of(user, project_id)
+    _project, ukey, _role = _history_of(user, project_id)
     dataflow_docs.flush(project_id)
     answer = _history_errors(lambda: history.saved(ukey, project_id, _history_person(user)))
-    spec = dataflow_docs.read(ukey, project_id)
-    return {**answer, "categories": _categories(project.owner or user, project_id, spec)}
+    return {**answer, "categories": dataflow_categories(project_id)}
 
 
 def put_back_version(user, project_id: str, point_id: str) -> dict:

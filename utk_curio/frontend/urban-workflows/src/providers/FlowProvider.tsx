@@ -30,6 +30,7 @@ import { useRemovalAsk } from "./flow/useRemovalAsk";
 import { useInstallSave } from "./flow/useInstallSave";
 import { useLeavePageGuard } from "./flow/useSaveState";
 import { useServerRun } from "./flow/useServerRun";
+import { useCategoriesRefresh } from "./flow/useCategoriesRefresh";
 import { useStepOutcomes } from "./flow/useStepOutcomes";
 import { useDashboardRun } from "./flow/useDashboardRun";
 import { autoRunTargets, useAutoRun } from "./flow/useAutoRun";
@@ -465,6 +466,14 @@ const FlowProvider = ({
     });
     docBridgeRef.current = dataflowDoc;
     codeDocRef.current = dataflowDoc;
+    // The categories the title shows, asked again as the dataflow changes and
+    // as a run on the server ends, in every tab bound to its doc: no save
+    // answers them any more.
+    const categoriesRefresh = useCategoriesRefresh({
+        provider: boundProvider,
+        taken: workflowOps.categoriesTaken,
+        take: workflowOps.takeServerCategories,
+    });
     // Closing the tab asks while changes wait: a bound canvas's the server
     // does not have yet, or one bound to no doc that holds changes no one keeps.
     useLeavePageGuard(boundProvider, workflowOps.projectDirty);
@@ -517,6 +526,7 @@ const FlowProvider = ({
         nodeExecProv, flushInstallSyncRef,
         surfaceInstallWarnings: workflowOps.surfaceInstallWarnings,
         outcomes: stepOutcomes,
+        onRunEnded: categoriesRefresh.now,
     });
     // #1117: on a dashboard, a change to a control a pinned tile shows reruns
     // the dataflow on the server as a viewer's run, which never changes it.

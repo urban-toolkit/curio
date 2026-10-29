@@ -169,10 +169,19 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // The hand-set categories (``dataflow.categories``), saved with the dataflow,
     // read through a ref for the same reason as the goal. ``serverCategories`` is
     // the source and the automatic ones, which only the server computes: set from
-    // each load and each save's response, so they change when the dataflow saves.
+    // each load and each answer that carries them (a create, File > Save, a
+    // record of outputs), and asked again as the dataflow changes
+    // (useCategoriesRefresh). Each answer taken is counted, so an answer that
+    // a newer one overtook is dropped.
     const [workflowCategories, setWorkflowCategoriesState] = useState<HandCategories>({});
     const workflowCategoriesRef = useRef<HandCategories>({});
-    const [serverCategories, setServerCategories] = useState<DataflowCategories>({});
+    const [serverCategories, setServerCategoriesState] = useState<DataflowCategories>({});
+    const categoriesTakenRef = useRef(0);
+    const setServerCategories = useCallback((categories: DataflowCategories) => {
+        categoriesTakenRef.current += 1;
+        setServerCategoriesState(categories);
+    }, []);
+    const categoriesTaken = useCallback(() => categoriesTakenRef.current, []);
     // #662: the dataflow's scenarios (``dataflow.scenarios``), saved with it and
     // read through a ref, as the categories are. TrillGenerator holds a copy so
     // a version snapshot carries them.
@@ -1603,6 +1612,10 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         workflowCategories,
         workflowCategoriesRef,
         serverCategories,
+        // For useCategoriesRefresh: how many answers with them were taken, and
+        // the one it brings.
+        categoriesTaken,
+        takeServerCategories: setServerCategories,
         scenarios,
         // For the run's save rule, which must read the list as it is now.
         scenariosRef,

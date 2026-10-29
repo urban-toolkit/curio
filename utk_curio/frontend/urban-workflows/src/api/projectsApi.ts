@@ -179,6 +179,12 @@ export const projectsApi = {
     return apiFetch<LoadResponse>(`/api/projects/${id}/shared`);
   },
 
+  /** The dataflow's categories as it is now, which the canvas title shows:
+   *  any tab that opens the dataflow asks, a watcher's among them. */
+  categories(id: string): Promise<{ categories: DataflowCategories }> {
+    return apiFetch<{ categories: DataflowCategories }>(`/api/projects/${id}/categories`);
+  },
+
   create(body: SaveBody): Promise<ProjectDetail> {
     return sendSave((signal) =>
       apiFetch<ProjectDetail>("/api/projects", {
