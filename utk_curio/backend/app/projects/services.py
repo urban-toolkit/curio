@@ -594,14 +594,19 @@ def _carry_auto_run(new_spec, old_spec) -> None:
 
 def updated_at_of(p) -> str:
     """When the dataflow *p* last changed: its row's time, or the last write
-    of its spec when that is later. A change reaches the spec through the
-    dataflow's doc, which writes no row, and an open writes no spec unless the
-    spec is behind its doc. Given in the row's own form."""
+    of its spec when that is later, or its open doc's last change when the
+    spec does not have it yet. A change reaches the spec through the
+    dataflow's doc, which writes no row and writes the spec a moment later,
+    and an open writes no spec unless the spec is behind its doc. Given in the
+    row's own form."""
     stamp = getattr(p, "updated_at", None)
     try:
         written = (Path(getattr(p, "folder_path", None)) / storage.SPEC_FILE).stat().st_mtime
     except (OSError, TypeError, ValueError):
         written = None
+    unwritten = dataflow_docs.unwritten_change_at(str(getattr(p, "id", "")))
+    if unwritten is not None and (written is None or unwritten > written):
+        written = unwritten
     if written is not None:
         at = datetime.fromtimestamp(written, tz=timezone.utc)
         if stamp is not None and stamp.tzinfo is None:

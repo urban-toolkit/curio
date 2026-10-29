@@ -18,6 +18,7 @@ from .utils import (
     signup_e2e_user,
     stub_db_login,
     stub_login_and_enter_workflow,
+    wait_for_changes_kept,
     wait_for_projects_page,
 )
 

@@ -67,15 +67,16 @@ export function afterCommit(): Promise<void> {
 
 /** File > Save of a dataflow the canvas is bound to: a version named Saved,
  *  after every change this tab made. Its answer, with the dataflow's
- *  categories as it is now; null when no version was recorded. */
-export async function noteSaved(): Promise<SavedVersion | null> {
+ *  categories as it is now; nothing when no version was recorded, which
+ *  leaves the save as it was. */
+export async function noteSaved(): Promise<SavedVersion | undefined> {
     const server = serverHistory();
-    if (!server || !server.reads()) return null;
+    if (!server || !server.reads()) return undefined;
     await server.whenKept();
     try {
         return await historyApi.saved(server.projectId);
     } catch (error) {
         console.warn("[history] File > Save's version was not recorded:", error);
-        return null;
+        return undefined;
     }
 }

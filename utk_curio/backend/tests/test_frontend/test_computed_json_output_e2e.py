@@ -327,14 +327,31 @@ def _enable_save_toggle(page, node_id: str) -> None:
     Deliberately not left to the deployment default, which is off: "the user
     enabled the toggle" is the scenario #180 reports. Keying on the aria-label
     makes the click double as an assertion that the toggle actually flipped.
+
+    The toggle records the outputs the canvas holds a moment later (its Save
+    sends the node's output to the Data Catalog), and nothing queues that
+    record behind anything else: it is waited for here, so it never lands
+    among the records of a run started after it.
     """
     toggle = node_locator(page, node_id).locator("label:has(input#save-output-{})".format(node_id))
     toggle.wait_for(state="visible", timeout=15000)
     if "enabled" in (toggle.get_attribute("aria-label") or ""):
         return
-    toggle.click()
-    expect(toggle).to_have_attribute(
-        "aria-label", "Save output to Data Catalog enabled", timeout=10000
+    with page.expect_response(_records_outputs, timeout=30000) as recorded:
+        toggle.click()
+        expect(toggle).to_have_attribute(
+            "aria-label", "Save output to Data Catalog enabled", timeout=10000
+        )
+    assert recorded.value.ok, "the record the Save toggle made failed: {}".format(recorded.value.status)
+
+
+def _records_outputs(response) -> bool:
+    """A record of a dataflow's outputs (``POST /api/projects/<id>/outputs``)."""
+    path = response.url.split("?", 1)[0].rstrip("/")
+    return (
+        response.request.method == "POST"
+        and "/api/projects/" in path
+        and path.endswith("/outputs")
     )
 
 
@@ -637,8 +654,9 @@ def _record_ending_the_run(page, traffic: list, since: int, node_id: str) -> lis
     *node_id*'s run ends: the first record sent after the run was started,
     once it has answered.
 
-    By order, not by what it carries: nothing goes before the start, and the
-    record the run's end flushes is the next.
+    By order, not by what it carries: the Save toggles' own records were
+    answered before the runs (``_enable_save_toggle``), so the record the
+    run's end flushes is the first after its start.
     """
     deadline = time.monotonic() + 60
     while True:
