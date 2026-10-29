@@ -23,7 +23,7 @@ if (!(global as any).DOMMatrixReadOnly) {
   (global as any).DOMMatrixReadOnly = class { m22 = 1; constructor() {} };
 }
 
-const mockPersistDataflowForInstall = jest.fn().mockResolvedValue(undefined);
+const mockRecordOutputs = jest.fn().mockResolvedValue(undefined);
 const mockShowToast = jest.fn();
 const mockLoadProject = jest.fn().mockResolvedValue(undefined);
 const mockLoadSharedProject = jest.fn().mockResolvedValue(undefined);
@@ -37,7 +37,7 @@ jest.mock('../../hook/useWorkflowOperations', () => ({
     markNodeExecuted: jest.fn(),
     markNodeStale: jest.fn(),
     markDirty: jest.fn(),
-    persistDataflowForInstall: mockPersistDataflowForInstall,
+    recordOutputs: mockRecordOutputs,
     beginPendingInstall: jest.fn(),
     endPendingInstall: jest.fn(),
     applyRemoveChanges: jest.fn(),
@@ -279,14 +279,14 @@ describe('the run guard is released and visible (#271)', () => {
     // user has just agreed to discard changes - saving there would be wrong.
     await seedChain();
     await playAll();
-    mockPersistDataflowForInstall.mockClear();
+    mockRecordOutputs.mockClear();
 
     await act(async () => {
       api.cancelRun();
     });
     await flush();
 
-    expect(mockPersistDataflowForInstall).not.toHaveBeenCalled();
+    expect(mockRecordOutputs).not.toHaveBeenCalled();
   });
 
   test.each([
