@@ -1,11 +1,16 @@
 /**
- * A dataflow's versions, as `TrillGenerator` records them, turned into the
- * items its provenance history shows: numbered in the order they were made,
- * each named by the change that made it.
+ * A dataflow's versions, as `TrillGenerator` records them or the server keeps
+ * them, turned into the items its provenance history shows: numbered in the
+ * order they were made, each named by the change that made it.
  */
+import type { ServerVersion } from "../api/historyApi";
 import type { GraphPreview } from "../api/projectsApi";
 import { tryGetNodeDescriptor } from "../registry/nodeRegistry";
 import type { HistoryItem } from "./provenanceTree";
+
+/** The kinds of version that add or remove nodes and connections, which a
+ *  title names by the kind of node (`versionTitle`). */
+const GRAPH_KINDS = new Set(["load", "imported", "graph"]);
 
 /** A version (`provenanceJSON.nodes`). */
 export interface RecordedVersion {
@@ -47,6 +52,45 @@ export function versionItems(history: RecordedHistory | null | undefined): Histo
       tooltip: at ? at.toLocaleString() : undefined,
     };
   });
+}
+
+/**
+ * The versions the server keeps, oldest first, numbered from 1. A version
+ * that added or removed a node is named as `versionItems` names it; one a
+ * put-back made names the version it put back ("Put back version 8"); any
+ * other by what changed ("Ana edited", "Saved").
+ */
+export function serverVersionItems(versions: readonly ServerVersion[]): HistoryItem[] {
+  const byId = new Map(versions.map((version) => [version.id, version]));
+  const tags = new Map(versions.map((version, i) => [version.id, String(i + 1)]));
+  return versions.map((version, i) => {
+    const parent = version.parent != null ? byId.get(version.parent) : undefined;
+    const at = version.at ? new Date(version.at) : null;
+    return {
+      id: version.id,
+      parentId: parent ? parent.id : null,
+      order: i,
+      tag: tags.get(version.id) ?? String(i + 1),
+      title: serverVersionTitle(version, parent, tags),
+      when: at ? at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "",
+      tooltip: at ? at.toLocaleString() : undefined,
+    };
+  });
+}
+
+function serverVersionTitle(
+  version: ServerVersion,
+  parent: ServerVersion | undefined,
+  tags: ReadonlyMap<string, string>,
+): string {
+  if (version.kind === "putBack") {
+    const restored = version.restores ? tags.get(version.restores) : undefined;
+    return restored ? `Put back version ${restored}` : "Put back";
+  }
+  if (GRAPH_KINDS.has(version.kind) || !version.what) {
+    return versionTitle(version.what || undefined, parent?.preview, version.preview);
+  }
+  return version.what;
 }
 
 /**

@@ -35,7 +35,13 @@ export function ProvenanceDrawer({ presented, onRequestClose, onExitComplete, ta
       wide={false}
     >
       {node ? (
-        <NodeRunsProvenance key={node.nodeId} nodeId={node.nodeId} restore={node.restore} onNodeGone={onRequestClose} />
+        <NodeRunsProvenance
+          key={node.nodeId}
+          nodeId={node.nodeId}
+          restore={node.restore}
+          showCode={node.showCode}
+          onNodeGone={onRequestClose}
+        />
       ) : (
         <DataflowProvenance key="dataflow" />
       )}

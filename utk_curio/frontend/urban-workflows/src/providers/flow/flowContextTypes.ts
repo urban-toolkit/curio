@@ -218,9 +218,6 @@ export interface FlowContextProps {
         /** A node's data changed in place, with no new node (a widget's
          *  value, a selection tag): the doc takes it now. */
         noteNodeData(nodeId: string): void;
-        /** The code *code* replaced, when the doc brought *code* to the
-         *  node; asked once. */
-        codeBefore(nodeId: string, code: string): string | undefined;
     };
 }
 

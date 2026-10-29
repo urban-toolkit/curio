@@ -199,32 +199,46 @@ focus in the URL (`settingsPath`, read back by `focusFromSearch`).
 ### The provenance drawer
 
 **View > Provenance** calls `openDataflowProvenance()`, and a node's Provenance
-button `openNodeProvenance({ nodeId, title, restore })`, from
+button `openNodeProvenance({ nodeId, title, restore, showCode })`, from
 `ProvenanceDrawerProvider` (`src/providers/`; menus and nodes import the hooks
 from `provenanceDrawerContext.ts`). It mounts `ProvenanceDrawer`
 (`src/components/provenance/`): a `HeaderDrawer` on the right with the catalog
 drawers' pin (`pinnable`) and width (`wide={false}`).
+
+Whose history it shows is `providers/history/serverHistory.ts`'s one check: the
+server's while the canvas is bound to the dataflow's doc (the history's points,
+in [Each open dataflow's doc](#each-open-dataflows-doc)), read through
+`api/historyApi.ts` by `providers/history/useHistoryReads.ts`, again whenever
+the server says it changed (`history_changed`); the browser's own while it is
+not (a dataflow never saved, a hosted guest's own canvas, no sign-in).
 
 - `ProvenanceHistory` lists a history as Curio's Nest lists work, from items
   that each name the item they were made from. `utils/provenanceTree.ts` lays
   it out: the line through the newest item is the main one, and each branch is
   folded under the item it left from, nested to any depth. Every item has one
   parent, so a history is a tree, and the list shows all of it.
-- `DataflowProvenance` reads the versions `TrillGenerator.provenanceJSON`
-  holds (`utils/dataflowVersions.ts` numbers and names them) when the drawer
-  opens. A click opens a version; its **Put this version on the canvas** calls
-  `TrillGenerator.switchProvenanceTrill`, which loads it through
-  `useCode().loadTrill(trill, undefined, true)`, keeps the history and marks
-  the dataflow unsaved.
-- `NodeRunsProvenance` reads the node's runs from `ProvenanceProvider`
-  (`utils/nodeRuns.ts` names them by the kinds they read and returned). A
-  run's **Put this code back in the node** sets it as the run the next one
-  branches from (`setSelectedExec`) and calls the node's `restore`:
-  `NodeEditor` hands its editors the code as `restoredCode`, which they write
-  in through `useMonacoExternalValue`'s `applyValue`, as a collaborator's
-  applied change, and prime the widgets as a load does. It is not a new
-  default: a default equal to the loaded code is never applied. The drawer
-  closes when its node leaves the flow.
+- `DataflowProvenance` lists the versions (`utils/dataflowVersions.ts` numbers
+  and names them). On a bound canvas they are the server's, the same in every
+  tab of the owner and the editors, and a watcher's tab shows the server's
+  refusal. **Put this version on the canvas** asks the server, which puts it
+  in the doc for every tab and records a version of its own, made from the one
+  put back; the owner also gets **Clear history before this version**. On a
+  canvas bound to no doc they are `TrillGenerator.provenanceJSON`'s, read when
+  the drawer opens, and the button calls `TrillGenerator.switchProvenanceTrill`,
+  which loads the version through `useCode().loadTrill(trill, undefined, true)`,
+  keeps the history and marks the dataflow unsaved.
+- `NodeRunsProvenance` lists the node's runs and edits (`utils/nodeRuns.ts`
+  names them), the server's on a bound canvas, `ProvenanceProvider`'s
+  otherwise. On a bound canvas **Put this code back in the node** is the
+  checked code write: the server puts the code in only if the node still holds
+  what this tab showed, a refusal's toast names who changed it, and the node's
+  `showCode` opens its code. Otherwise it sets the run the next one branches
+  from (`setSelectedExec`) and calls the node's `restore`: `NodeEditor` hands
+  its editors the code as `restoredCode`, which they write in through
+  `useMonacoExternalValue`'s `applyValue`, as a collaborator's applied change,
+  and prime the widgets as a load does. It is not a new default: a default
+  equal to the loaded code is never applied. The drawer closes when its node
+  leaves the flow.
 - The Provenance button is the provenance pill among the node's tab pills, but
   not a tab: `NodeEditor`'s `handleTabSelect` sends it to the drawer.
 
@@ -1643,12 +1657,12 @@ A node's code reads a view's current selection as `[!! selection name !!]`: the 
 
 ## Provenance Tracking
 
-Curio records a per-node history (start/end time, source code, input/output types, parent entry) so users can replay a node's evolution from the canvas. The browser keeps it: [`src/providers/ProvenanceProvider.tsx`](../utk_curio/frontend/urban-workflows/src/providers/ProvenanceProvider.tsx) holds the graph in React state and persists it as part of the saved workflow JSON (`nodeProvenance`), which no server code writes.
+Curio records a dataflow's history, its versions and each node's entries (start/end time, source code, input/output types, parent entry), so users can replay a dataflow's and a node's evolution from the canvas. While the canvas is bound to the dataflow's doc, the server keeps it, as points in the doc's log (the history's points, in [Each open dataflow's doc](#each-open-dataflows-doc)): the browser records nothing then, and sends each run and each edit made in a node's body ([`src/providers/ProvenanceProvider.tsx`](../utk_curio/frontend/urban-workflows/src/providers/ProvenanceProvider.tsx)'s `nodeExecProv` and `nodeEditProv`) once the server holds every change the tab made before it. A canvas bound to no doc (a dataflow never saved, a hosted guest's own canvas, no sign-in) keeps the history in the browser, as `providers/history/serverHistory.ts`, the one check every recorder makes, says: `ProvenanceProvider` holds the entries in React state and `TrillGenerator` the versions (`provenanceJSON`, one version per node or connection added or removed), and a save carries them as `nodeProvenance` and `dataflowProvenance`, which the server imports when the dataflow has no history of its own yet. When such a canvas binds, the runs no save carried go to the server, and what the browser recorded goes.
 
-- **Entries.** An entry is a run (`nodeExecProv`) or an edit (`nodeEditProv`), which ran nothing: a change made in a Map Editor node's body, or an agent's change the user applied. A node whose code is its state registers a writer (`utils/nodeCodeWriters.ts`) and files an agent's change as its own changes; for any other node `useGraphEdits.applyNodeContent` writes the code and files the edit, named after the agent the apply names (`appliedContent.agent`), with the code it replaced (`before`), and leaves the dataflow Unsaved (`markDirty`), as the Map Editor writer does, so the next save keeps the entry; it files nothing when the code stays as it was. A node an agent proposed with its code starts with such an edit (`useAgentCanvasMutations`): a `node.create` or package draft apply names the agent on the nodes it hands the canvas (`createdNode.agent`, `createdNodes[].agent`), never on the saved node. A plan's nodes start with none, even one whose template's starter is its code, since a plan apply names no agent on them; the code later written into one is its first edit.
-- **Agents.** `node.history.read` ([`agents/application/tools.py`](../utk_curio/backend/app/agents/application/tools.py)) reads the saved spec's `nodeProvenance`, keyed by node id as a load keys it: `utils/nodeProvenanceKeys.ts` and its twin [`projects/node_provenance.py`](../utk_curio/backend/app/projects/node_provenance.py) both run `nodeProvenanceKeys.cases.json`. It lists a node's entries newest first, or gives one entry's code and the code an edit replaced, each cut to the tool's bounds with what was left out counted (`entriesElided`, `codeElided`). The Node Builder and the Dataflow Builder are granted it; the Dataflow Reader is not, since it runs only as delegated modes, which run with no tools. The skill `skills/provenance/SKILL.md`, which a chat loads when a task needs it, says what an entry is and that putting one back is the user's action. An entry filed since the last save is not in what it reads.
+- **Entries.** An entry is a run (`nodeExecProv`) or an edit (`nodeEditProv`), which ran nothing: a change made in a Map Editor node's body, a person's typing, or an agent's change the user applied. On a bound canvas the server writes an agent's applied change into the doc and records it, and the canvas files nothing (`useGraphEdits.applyNodeContent`, `agentEditProv`). On a canvas bound to no doc, a node whose code is its state registers a writer (`utils/nodeCodeWriters.ts`) and files an agent's change as its own changes; for any other node `applyNodeContent` writes the code and files the edit, named after the agent the apply names (`appliedContent.agent`), with the code it replaced (`before`), and leaves the dataflow Unsaved (`markDirty`), as the Map Editor writer does, so the next save keeps the entry; it files nothing when the code stays as it was. There a node an agent proposed with its code starts with such an edit (`useAgentCanvasMutations`): a `node.create` or package draft apply names the agent on the nodes it hands the canvas (`createdNode.agent`, `createdNodes[].agent`), never on the saved node. A plan's nodes start with none, even one whose template's starter is its code, since a plan apply names no agent on them; the code later written into one is its first edit.
+- **Agents.** `node.history.read` ([`agents/application/tools.py`](../utk_curio/backend/app/agents/application/tools.py)) reads the history's points once the dataflow has them, else the saved spec's `nodeProvenance`, keyed by node id as a load keys it: `utils/nodeProvenanceKeys.ts` and its twin [`projects/node_provenance.py`](../utk_curio/backend/app/projects/node_provenance.py) both run `nodeProvenanceKeys.cases.json`. It lists a node's entries newest first, or gives one entry's code and the code an edit replaced, each cut to the tool's bounds with what was left out counted (`entriesElided`, `codeElided`). The Node Builder and the Dataflow Builder are granted it; the Dataflow Reader is not, since it runs only as delegated modes, which run with no tools. The skill `skills/provenance/SKILL.md`, which a chat loads when a task needs it, says what an entry is and that putting one back is the user's action.
 
-The dataflow's own version history is `TrillGenerator`'s (`provenanceJSON`, one version per node or connection added or removed), saved as `dataflowProvenance`. The provenance drawer shows it (see [The provenance drawer](#the-provenance-drawer)). The server keeps both sections beside the spec file, in logs a save adds to ([Where a dataflow is kept](#where-a-dataflow-is-kept)).
+The provenance drawer shows both (see [The provenance drawer](#the-provenance-drawer)).
 
 ---
 
@@ -1662,7 +1676,7 @@ Full field reference, ownership rules, and the CLI for checking your own project
 
 ### Where a dataflow is kept
 
-[`projects/storage.py`](../utk_curio/backend/app/projects/storage.py) keeps a dataflow's document in its project folder in two parts, behind `read_spec` and `write_spec`, so every caller hands over and gets back the whole document. The one caller of `write_spec` is the dataflow's doc ([Each open dataflow's doc](#each-open-dataflows-doc)), which every writer of a dataflow goes through; `write_history` puts the two provenance sections alone on record, for a tab bound to the doc that saves its history and never its dataflow.
+[`projects/storage.py`](../utk_curio/backend/app/projects/storage.py) keeps a dataflow's document in its project folder in two parts, behind `read_spec` and `write_spec`, so every caller hands over and gets back the whole document. The one caller of `write_spec` is the dataflow's doc ([Each open dataflow's doc](#each-open-dataflows-doc)), which every writer of a dataflow goes through; `write_history` puts the two provenance sections alone on record, for a save that carries them while the dataflow has no history of its own yet, which its doc's next open imports.
 
 - **`spec.trill.json`** holds the document without its two provenance sections. Each version in `dataflowProvenance` is a whole copy of the dataflow, so the sections outgrow the dataflow: Crown Heights' load records 90 versions, about 5.7 MiB, beside an 87 KiB dataflow.
 - **`history/entries.jsonl`** holds `nodeProvenance`, and **`history/versions.jsonl`** holds `dataflowProvenance`. Each is a log of JSON lines, one record a line, that a reader replays in order:
@@ -2489,12 +2503,12 @@ The server keeps one Yjs doc per open dataflow: a pycrdt `Doc` and an `Awareness
 
 **The rules the server applies.** After each update a tab sends, `_drop_dangling_connections` (called from `_apply_updates`, after each socket's updates in a batch) removes every connection whose node at either end the doc no longer holds, with its `edgeOrder` entry, as one transaction of origin `rules`, logged and relayed to every tab with the rest of the batch. Then the tab that drew it is told `connection_dropped`, `{projectId, edgeIds, by}`, `by` naming whoever removed the node.
 
-**The history's points** ([`collaboration/history.py`](../utk_curio/backend/app/collaboration/history.py)). The log is the dataflow's one history, and a point is a place in it: who made the change there, when, and what it was, one JSON line each in `history/points.jsonl`, in the order they were made. A point names its doc, its segment and where its change starts and ends in the segment's updates, so the dataflow at a point is the doc rebuilt up to its end, and the code a change replaced is the doc at its start. One pass over a segment gives every point in it, and the dataflows rebuilt at points are cached by place. The server records the history while `history.RECORDING` is on; it is off while the canvas still records the history itself (`TrillGenerator`, `ProvenanceProvider`), so until then no change makes a point and each route that would add one answers 409.
+**The history's points** ([`collaboration/history.py`](../utk_curio/backend/app/collaboration/history.py)). The log is the dataflow's one history, and a point is a place in it: who made the change there, when, and what it was, one JSON line each in `history/points.jsonl`, in the order they were made. A point names its doc, its segment and where its change starts and ends in the segment's updates, so the dataflow at a point is the doc rebuilt up to its end, and the code a change replaced is the doc at its start. One pass over a segment gives every point in it, and the dataflows rebuilt at points are cached by place. A canvas bound to the doc records nothing itself ([The provenance drawer](#the-provenance-drawer), [Provenance Tracking](#provenance-tracking)).
 
 - **Versions.** Each write to the log (`dataflow_docs._logged_and_relayed`, for a writer's `_commit` and for a batch of tabs' updates, `_apply_updates`) hands each transaction it holds to `history.recorded`, with its origin and where its records start and end (`_spans`): the tab whose update it applied (`history.Tab`), a writer's `Actor`, `spec` or `rules`. Every transaction that adds or removes a node or a connection is a version ("Node added", "2 connections deleted"), whoever made it, and every agent's write is one, named after the agent and the account that asked it, with an edit entry on each node whose code it changed. A batch of updates applied at once is still a point per transaction and origin. A person's typing in a node is a version named after them ("Ana edited"), with an edit entry on the node, once they pause 10 s (`TYPING_PAUSE_S`, the module's writing thread) or move their awareness `editing` off the node, or their socket goes; a segment ends the typing that began in it. File > Save, a version put back and a node's code put back are versions too. A version's parent is the version on the canvas then (`head`), so after a put-back the next change branches from the version put back.
-- **Entries.** A node's run or edit is a note on a point: its id, its parent entry, run or edit, the kinds of data a run read and returned, its times and an edit's label, and a digest of its code. Its code is the node's code at the point, and a note holds code itself only where the log cannot give it. A run's point comes after the runner's typing point, and a Map Editor edit takes the place of the typing point it would have been, so one action is one entry. A node's next entry descends from its newest entry that holds the node's code, else from its newest, as `entryToContinue` reads a load.
+- **Entries.** A node's run or edit is a note on a point: its id, its parent entry, run or edit, the kinds of data a run read and returned, its times and an edit's label, and a digest of its code. Its code is the node's code at the point, and a note holds code itself only where the log cannot give it. A run's point comes after the runner's typing point, and a Map Editor edit takes the place of the typing point it would have been, so one action is one entry; typing that leaves the code as it began is none. An entry descends from the newest entry that holds the code it began from (a run, the code it ran; an edit, the code before it, which the open doc knows by its digest, `entry.codes`), else from the newest, as `entryToContinue` reads a load: after a node's code is put back, its next entry branches from the entry put back.
 - **First points.** A dataflow whose doc opens with no points gets them, each step a transaction in a doc of its own whose log holds that step: the history it carries in `nodeProvenance` and `dataflowProvenance` (the logs of [Where a dataflow is kept](#where-a-dataflow-is-kept), or a spec file that holds them, as a create of a file or a copy writes it) imported once, every version and then every entry in the order they were made, with their ids, times and parents, a version the layout has no place for left out and its children taking its parent; or, with none, the dataflow with no node, then one version a node, then one a connection whose two nodes it holds by then. `points.jsonl` is written last, whole, so a stop before it imports again on the next open, and the imported sections are then moved to `history/imported/`, read by nothing. A dataflow whose points are dropped while its doc is open gets its first points with its next change.
-- **Putting back, checked.** A version put back is one write that makes the doc hold it, for every tab (`history.put_back`). A node's code put back, and the Map Editor's Undo and Redo, write the code only if the node still holds the code the person began from, in the same transaction: the write's base holds that code, so `doc_mapping.apply_dataflow` refuses the node otherwise, and the refusal names who changed it last ("Ana changed this node after; nothing was undone.").
+- **Putting back, checked.** A version put back is one write that makes the doc hold it, for every tab (`history.put_back`), but for the dataflow's own fields `history.KEPT_BY_A_PUT_BACK` names: its name, `provenance_id` and `timestamp`, hand-set categories, `autoRun`, packages and datasets stay as the doc holds them, so a tab's next save, which sends the name it shows, renames nothing. A node's code put back, and the Map Editor's Undo and Redo, write the code only if the node still holds the code the person began from, in the same transaction: the write's base holds that code, so `doc_mapping.apply_dataflow` refuses the node otherwise, and the refusal names who changed it last ("Ana changed this node after; nothing was undone.").
 - **Clearing.** The owner clears the history before a version (`history.clear_before`): the points before it go and it is the first. Its doc's log from it on is written into a doc of its own from a checkpoint of the dataflow at it, the open doc's own log starts again from the dataflow as it is now, keeping its id so its tabs sync on, and every log no remaining point needs goes, with `history/imported/`. Garbage collection being on, no checkpoint holds deleted text, so text typed and deleted before the version is in no file of the dataflow's.
 - **Who.** The routes under `/api/projects/<id>/history` (`projects/services.py`, `project_history` and the rest) answer the owner and the editors the owner invited (`access.room_role`); a watcher and a hosted guest are refused with 403, and clearing is the owner's alone. `history_changed` goes to the owner's and editors' synced tabs only, never to the doc's room, which watchers are in. `node.history.read` reads a node's notes when the dataflow has points. The seeder drops a dataflow's points with its history (`history.drop`).
 
@@ -2527,7 +2541,7 @@ The server keeps one Yjs doc per open dataflow: a pycrdt `Doc` and an `Awareness
 | A connection to a node removed at the same moment | Dropped on the server (above); the drawer's tab says who removed the node. |
 | A widget, a node's place, size or pin | Each is one value, so the last write wins in every tab. |
 
-**Saves.** A bound canvas's save waits for `whenKept`, then sends only `history` (`nodeProvenance`, `dataflowProvenance`), the outputs it keeps and the name; the dataflow is the doc's, flushed by the server before the save writes the history.
+**Saves.** A bound canvas's save waits for `whenKept`, then sends only the outputs it keeps and the name: the dataflow is the doc's, and the history the server's. File > Save, and no other save, then adds its version (`history/saved`).
 
 ---
 
@@ -2985,7 +2999,8 @@ blocker signature, so a dataset dropped on an upstream loader is progress.
 | `src/providers/FlowProvider.tsx` | Canonical workflow state (nodes, edges, outputs, interactions) |
 | `src/providers/flow/` | FlowProvider's sections as hooks (Run All, connections, graph edits, outputs, interactions, collaboration sync, dashboard pins, auto-install, the notebook view) and its types |
 | `src/utils/notebookLayout.ts`, `src/utils/dataflowOrder.ts` | The notebook view's geometry (cells, dots, lanes, edge paths), what each view lets a viewer change in the graph, and the cell order Export as notebook shares |
-| `src/providers/ProvenanceProvider.tsx` | In-memory per-node execution history (saved with the workflow JSON) |
+| `src/providers/ProvenanceProvider.tsx` | Each node's entries: sent to the server while the canvas is bound to the dataflow's doc, kept in memory and saved with the workflow JSON otherwise |
+| `src/providers/history/` | Whose history the canvas has (`serverHistory.ts`) and the server's, read for the drawers and the Map Editor (`useHistoryReads.ts`); the routes' client is `src/api/historyApi.ts` |
 | `src/components/UniversalNode.tsx` | Single React component that renders all node types |
 | `src/components/tooltip/` | The one Curio tooltip: `TooltipLayer`, `tooltipStore`, `tooltipPlacement`, `useTooltipContent` and the Vega handler (see [Tooltips](#tooltips)) |
 | `src/registry/packagesClient.ts` | Fetch installed manifests → build `NodeDescriptor`s → register against `nodeRegistry` |
