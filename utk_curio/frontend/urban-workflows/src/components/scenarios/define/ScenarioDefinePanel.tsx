@@ -54,8 +54,9 @@ const selectedOf = (s: ReactFlowState) =>
  *
  * Opened on a saved scenario (Edit scenario, "edit"), it is the same three
  * steps, starting from what the scenario keeps: its nodes, its context and
- * outcomes, its name, color and set. Its Save changes
- * the scenario in place, from step 2 on.
+ * outcomes, its name, color and set, whose name can be changed there too
+ * (a name another set has is refused). Its Save changes the scenario in
+ * place, from step 2 on.
  */
 export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
   const { scenarios, scenarioSets, nodes, edges, setScenarios, workflowNameRef } = useFlowContext();
@@ -91,6 +92,9 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
   // The nodes the shared lists were found from: other nodes find them anew.
   const [listsFor, setListsFor] = useState(() => (editing ? editing.nodes.join() : ""));
   const [color, setColor] = useState(() => editing?.color ?? nextScenarioColor(scenarios));
+  // Edit scenario: the name typed for the existing set chosen, which Save
+  // gives that set.
+  const [setRenames, setSetRenames] = useState<Record<string, string>>({});
   const [name, setName] = useState(() => editing?.name ?? nextScenarioName(scenarios));
   const [choice, setChoice] = useState<SetChoice>(() =>
     editing?.set && scenarioSets.some((x) => x.id === editing.set)
@@ -156,8 +160,15 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
 
   // No two scenarios of a set share a name; a new set has none yet.
   const nameProblem = scenarioNameProblem(scenarios, scenarioSets, setId, name, editing?.id);
-  // No two sets of a dataflow share a name either.
-  const setProblem = choice.kind === "new" ? setNameProblem(scenarioSets, choice.name) : null;
+  // No two sets of a dataflow share a name either: a new one, or the chosen
+  // one renamed.
+  const renamed = choice.kind === "existing" ? setRenames[choice.setId] : undefined;
+  const setProblem =
+    choice.kind === "new"
+      ? setNameProblem(scenarioSets, choice.name)
+      : renamed !== undefined
+        ? setNameProblem(scenarioSets, renamed, choice.setId)
+        : null;
 
   const save = () => {
     if (!lists) return;
@@ -181,7 +192,13 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
       target = freshSetId(scenarioSets);
       sets = [...scenarioSets, { id: target, name: setName }];
     } else {
+      if (setProblem) {
+        showToast(setProblem, "warning");
+        return;
+      }
       target = choice.setId;
+      const newName = renamed?.trim();
+      if (newName) sets = scenarioSets.map((x) => (x.id === target && x.name !== newName ? { ...x, name: newName } : x));
     }
     if (editing) {
       const next = scenarios.map((s) =>
@@ -345,7 +362,24 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
                       onChange={() => setChoice({ kind: "existing", setId: s.id })}
                     />
                     <span className={styles.choiceText}>
-                      <b>{s.name}</b>
+                      {editing && on ? (
+                        <>
+                          <input
+                            aria-label="Scenario set name"
+                            value={setRenames[s.id] ?? s.name}
+                            onChange={(e) => setSetRenames((now) => ({ ...now, [s.id]: e.target.value }))}
+                            data-testid="scenario-define-existing-set-name"
+                            aria-invalid={setProblem ? true : undefined}
+                          />
+                          {setProblem && (
+                            <span className={styles.problem} role="alert">
+                              {setProblem}
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <b>{s.name}</b>
+                      )}
                       <span className={styles.dots}>
                         {its.map((x) => (
                           <span key={x.id} className={styles.member}>
@@ -376,7 +410,7 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
                       aria-invalid={setProblem ? true : undefined}
                     />
                   )}
-                  {setProblem && (
+                  {choice.kind === "new" && setProblem && (
                     <span className={styles.problem} role="alert">
                       {setProblem}
                     </span>

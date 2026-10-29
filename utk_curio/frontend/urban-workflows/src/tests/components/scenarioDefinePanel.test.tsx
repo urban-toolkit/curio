@@ -301,6 +301,25 @@ describe("Edit scenario", () => {
     ]);
   });
 
+  test("its set is renamed there; a name another set has is refused until it is changed", () => {
+    mockFlow.scenarios = [EXISTING, { ...TOWERS, set: "roads" }];
+    mockFlow.scenarioSets = [{ id: "park", name: "Park shade" }, { id: "roads", name: "Roads" }];
+    renderPanel({ mode: "edit", scenarioId: "e" });
+    click("Next: shared context & outcomes");
+    click("Next: name & set");
+    const setName = screen.getByTestId("scenario-define-existing-set-name");
+    expect(setName).toHaveValue("Park shade");
+    fireEvent.change(setName, { target: { value: " roads " } });
+    expect(screen.getByRole("alert")).toHaveTextContent('already has a scenario set "Roads"');
+    expect(screen.getByTestId("scenario-define-save")).toBeDisabled();
+
+    fireEvent.change(setName, { target: { value: "Park shade at noon" } });
+    expect(screen.queryByRole("alert")).toBeNull();
+    fireEvent.click(screen.getByTestId("scenario-define-save"));
+    const [, sets] = mockFlow.setScenarios.mock.calls[0];
+    expect(sets).toEqual([{ id: "park", name: "Park shade at noon" }, { id: "roads", name: "Roads" }]);
+  });
+
   test("its own name is fine; a sibling's is not", () => {
     mockFlow.scenarios = [EXISTING, TOWERS];
     mockFlow.scenarioSets = [{ id: "park", name: "Park shade" }];

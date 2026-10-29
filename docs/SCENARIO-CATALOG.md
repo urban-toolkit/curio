@@ -42,7 +42,7 @@ Choose **View → Define scenario**, or **Define scenario** in the drawer's **In
 
 On the canvas, each scenario's frame shows its set's name before its own.
 
-A saved scenario is changed with **Edit scenario** on its card in the drawer's **In project** tab: the define panel opens on it, with its nodes, its shared context and outcomes, and its name, color and set filled in. Change any step; **Save** changes the scenario in place from step 2 on. A set its last scenario leaves is removed. A dataflow from before scenario sets is read with its scenarios grouped by the nodes they share and their lists inferred, the way its next save keeps them.
+A saved scenario is changed with **Edit scenario** on its card in the drawer's **In project** tab: the define panel opens on it, with its nodes, its shared context and outcomes, and its name, color and set filled in; the chosen set's name can be changed there too, and a name another set of the dataflow has is refused until you change it. Change any step; **Save** changes the scenario in place from step 2 on. A set its last scenario leaves is removed. A dataflow from before scenario sets is read with its scenarios grouped by the nodes they share and their lists inferred, the way its next save keeps them.
 
 ### What ships with Curio
 
