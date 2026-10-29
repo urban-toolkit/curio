@@ -36,7 +36,8 @@ import { AgentDock } from "../../components/agents/attach/AgentDock";
 import { DataflowDocContext } from "../../providers/collab/docContext";
 import { NotebookViewContext } from "../../providers/flow/notebookViewContext";
 import { participantColor } from "../../providers/collab/presence";
-import { initialsOf, peopleOf, pointerOf, samePeople } from "../../providers/collab/people";
+import { pointerOf } from "../../providers/collab/cursors";
+import { initialsOf, peopleOf, samePeople } from "../../providers/collab/people";
 
 // The room: Ana, this tab's account, owns the dataflow; Ben edits; Cal watches.
 const ANA = { user_id: 7, username: "ana", name: "Ana Owner", participant_id: "p-ana", role: "owner" };
@@ -133,8 +134,9 @@ describe("who is here, in the canvas's dock", () => {
     const agent = screen.getByRole("button", { name: "Open chat with explainer" });
     expect(agent.className.split(" ")).toContain("avatar");
     expect(people.map((chip) => chip.className)).toEqual(["avatar", "avatar"]);
-    expect(people[0]).toHaveStyle({ color: participantColor("p-ben") });
-    expect(people[1]).toHaveStyle({ color: participantColor("p-cal") });
+    // Their color is their account's, as their cursor's is, not their tab's.
+    expect(people[0]).toHaveStyle({ color: participantColor("ben") });
+    expect(people[1]).toHaveStyle({ color: participantColor("cal") });
     expect(people.map((chip) => chip.getAttribute("data-collab-role"))).toEqual(["editor", "watcher"]);
   });
 
@@ -315,12 +317,12 @@ describe("who is who, read from awareness", () => {
   });
 
   test("a pointer is two numbers; anything else is none", () => {
-    expect(pointerOf({ pointer: { x: 1, y: -2.5, t: 9 } })).toEqual({ x: 1, y: -2.5 });
+    expect(pointerOf({ pointer: { x: 1, y: -2.5, t: 9 } })).toEqual({ x: 1, y: -2.5, t: 9 });
     expect([
       pointerOf({}),
       pointerOf({ pointer: null }),
-      pointerOf({ pointer: { x: Infinity, y: 1 } }),
-      pointerOf({ cursor: { x: 1, y: 2 } }),
+      pointerOf({ pointer: { x: Infinity, y: 1 } } as any),
+      pointerOf({ cursor: { x: 1, y: 2 } } as any),
       pointerOf(null),
     ]).toEqual([null, null, null, null, null]);
   });

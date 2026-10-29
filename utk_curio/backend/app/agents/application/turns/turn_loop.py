@@ -567,6 +567,7 @@ class AttachmentTurn:
                 delegations=self.delegations,
                 skills_loaded=self._skills_loaded(),
             ),
+            writer=self.loop_ctx.get("writer"),
         )
 
     def _skills_loaded(self) -> list[str]:
@@ -595,6 +596,7 @@ class AttachmentTurn:
             reply_text,
             execution=execution,
             parts=run_parts,
+            writer=self.loop_ctx.get("writer"),
         )
         # Title before the done frame: the reply text already streamed via
         # deltas, and the client's post-send refresh must see the title.

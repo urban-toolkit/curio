@@ -8,14 +8,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useCollab } from "../CollaborationProvider";
 import { useDocBinding } from "./docContext";
-import { peopleOf, pointerOfPerson, samePeople, type CanvasPoint, type OwnParticipant, type Person } from "./people";
+import { peopleOf, pointerOfPerson, samePeople, type OwnParticipant, type Person } from "./people";
+import type { CanvasPointer } from "./presence";
 
 const NONE: Person[] = [];
 
 export interface PeopleHere {
     people: Person[];
     /** Where *person* points on the canvas now, or null. */
-    pointerOf: (person: Person) => CanvasPoint | null;
+    pointerOf: (person: Person) => CanvasPointer | null;
 }
 
 export function usePeopleHere(): PeopleHere {

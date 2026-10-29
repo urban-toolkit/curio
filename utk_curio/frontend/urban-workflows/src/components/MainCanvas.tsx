@@ -78,6 +78,7 @@ import { useStarterContext } from "../providers/StarterProvider";
 import { tryGetNodeDescriptor } from "../registry/nodeRegistry";
 import {
   agentsApi,
+  agentsOnCanvas,
   readAgentDragCoord,
   notifyAgentDockRefresh,
   resolveAgentDropTarget,
@@ -88,7 +89,7 @@ import { clearAgentDropHover, setAgentDropHoverEdgeId } from "../utils/agentDrop
 import { attachAgentOnDrop } from "../utils/agentDropAttach";
 import { AgentDockOverlay } from "./agents/attach/AgentDockOverlay";
 import { AgentDock } from "./agents/attach/AgentDock";
-import { AgentAttachmentsProvider } from "../providers/agents";
+import { AgentAttachmentsProvider, useAgentsDataflowId } from "../providers/agents";
 import { isDrawnHidden } from "../utils/hiddenNodes";
 import { isNodeDragRegion, keepPaneOffNodes } from "../utils/nodeDragRegion";
 import { useSharedView } from "../hook/useSharedView";
@@ -120,7 +121,6 @@ export function MainCanvas() {
         nodes,
         edges,
         loading,
-        projectId,
         onNodesChange,
         onEdgesChange,
         onConnect,
@@ -341,9 +341,13 @@ export function MainCanvas() {
     // invited edits it: their changes reach the dataflow's doc, which the
     // server keeps (useSharedView).
     const isSharedView = useSharedView();
-    // The dataflow's agents are its owner's: an editor works with the canvas,
-    // not with them.
-    const ownersCanvas = !isSharedView && viewerMode !== "shared";
+    // The owner and the editors the owner invited work with the dataflow's
+    // agents, and a watcher with none; on an editor's canvas an install an
+    // agent proposes waits for the owner's review.
+    const agents = agentsOnCanvas(isSharedView ? "watcher" : viewerMode === "shared" ? "editor" : "owner");
+    // The dataflow whose agents they work with: on an editor's canvas, the
+    // one its link opened, since the flow state names none there.
+    const agentsDataflow = useAgentsDataflowId();
     // The role the dataflow's room gives this tab, once its join answered.
     const { role: roomRole } = useCollab();
     // Nodes are added (dropped), connected and deleted, and connections
@@ -627,13 +631,16 @@ export function MainCanvas() {
             // Through the save queue, so it never goes out beside another
             // save of this dataflow (#909, #941).
             attachAgentOnDrop({
-                projectId,
+                projectId: agentsDataflow,
                 target,
                 agentCoord,
                 saveProject: requestProjectSave,
                 attach: (pid, coord, t) => agentsApi.attach(pid, coord, t),
                 // A hosted guest's drop that would save says to sign in.
                 hostedGuest,
+                // An invited editor's tab saves nothing: the server's doc
+                // already holds what the editor dropped on.
+                savesHere: viewerMode !== "shared",
             })
                 .then(() => {
                     notifyAgentDockRefresh();
@@ -650,7 +657,7 @@ export function MainCanvas() {
         const position = dropPosition(event);
         revealCreated(createCodeNode(type, { position }));
         markDirty();
-    }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleFileCanvasDrop, handleModelCanvasDrop, handlePackageCardCanvasDrop, handleScenarioCanvasDrop, projectId, showToast, requestProjectSave, reactFlow, hostedGuest]);
+    }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleFileCanvasDrop, handleModelCanvasDrop, handlePackageCardCanvasDrop, handleScenarioCanvasDrop, agentsDataflow, showToast, requestProjectSave, reactFlow, hostedGuest, viewerMode]);
 
     // The Delete key reaches these through React Flow, which sends the
     // selected edges plus every edge attached to a deleted node first, then
@@ -754,7 +761,7 @@ export function MainCanvas() {
     }
 
     return (
-        <AgentAttachmentsProvider enabled={ownersCanvas}>
+        <AgentAttachmentsProvider enabled={agents.drives} installsWaitForOwner={agents.installsWaitForOwner}>
         {!loading ? <div
             style={{ width: "100vw", height: "100vh", backgroundColor: "#f0f0f0" }}
             data-curio-room-role={roomRole ?? undefined}
@@ -831,9 +838,10 @@ export function MainCanvas() {
             </ReactFlow>
             </div>
             </div>
-            {/* Who is here: on the owner's canvas with its agents and their
-                chats, on anyone else's only the people. */}
-            {ownersCanvas ? <AgentDockOverlay /> : <AgentDock belowBanner={isSharedView} />}
+            {/* Who is here: on the canvas of whoever drives the dataflow's
+                agents, the owner's or an editor's, with the agents and their
+                chats; on a watcher's only the people. */}
+            {agents.drives ? <AgentDockOverlay /> : <AgentDock belowBanner={isSharedView} />}
             </div>
 
         </div> : loadingAnimation() }

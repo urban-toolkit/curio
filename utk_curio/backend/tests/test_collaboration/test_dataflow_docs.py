@@ -160,6 +160,15 @@ def _code(dataflow: dict, node: str = "loader") -> str:
     return next(n for n in dataflow["nodes"] if n["id"] == node)["content"]
 
 
+def _imported_entries(room) -> int:
+    """How many entries of the dataflow's earlier history its points hold,
+    imported when its doc first opened (``collaboration/history.py``)."""
+    from utk_curio.backend.app.collaboration import history
+
+    return sum(len(point.get("notes") or []) for point in history.points(room.owner_key, room.project_id)
+               if point["kind"] == "importedEntry")
+
+
 def test_every_backend_serves_the_sockets(doc_app):
     """Collaboration has no switch: every backend starts Socket.IO, and a tab
     connects and joins."""
@@ -437,7 +446,7 @@ def test_the_doc_is_written_after_a_second_with_no_change_or_every_ten_seconds(r
     on_disk = room.on_disk()
     assert _code(on_disk["dataflow"]) == "ax = 1\n" + "b" * 21
     assert on_disk["dataflow"]["agents"] == SPEC["dataflow"]["agents"], "the doc dropped the agents"
-    assert on_disk["nodeProvenance"] == SPEC["nodeProvenance"], "the doc dropped the history"
+    assert _imported_entries(room) == len(SPEC["nodeProvenance"]["loader"]), "the doc dropped the history"
 
 
 def test_a_read_of_an_open_dataflow_is_its_doc(room):
@@ -448,7 +457,7 @@ def test_a_read_of_an_open_dataflow_is_its_doc(room):
 
     live = room.live()
     assert _code(live["dataflow"]) == "# live\nx = 1\n"
-    assert live["nodeProvenance"] == SPEC["nodeProvenance"]
+    assert _imported_entries(room) == len(SPEC["nodeProvenance"]["loader"]), "the history is not the dataflow's"
     assert live["dataflow"]["agents"] == SPEC["dataflow"]["agents"]
 
     room.docs.reset_for_tests()  # stopped before the spec was written
@@ -596,8 +605,9 @@ def test_a_doc_grown_too_large_is_built_anew_with_a_new_log(room, monkeypatch):
 
 def test_a_doc_hands_over_no_history_and_a_spec_that_held_its_history_keeps_it(room, monkeypatch):
     """A spec saved before the history moved beside it still holds the
-    history. The doc writes its dataflow and leaves the history out, so every
-    version stays on record, and no write of the doc reads the history."""
+    history. The doc writes its dataflow and leaves the history out, so no
+    write of the doc reads the history, and the dataflow's first open keeps
+    every version, as its points (``collaboration/history.py``)."""
     from utk_curio.backend.app.projects import storage
 
     storage.drop_history(room.owner_key, room.project_id)
@@ -627,8 +637,11 @@ def test_a_doc_hands_over_no_history_and_a_spec_that_held_its_history_keeps_it(r
     )
     on_disk = room.on_disk()
     assert _code(on_disk["dataflow"]) == "# doc\nx = 1\n"
-    assert on_disk["nodeProvenance"] == legacy["nodeProvenance"], "the doc's write erased the history"
-    assert on_disk["dataflowProvenance"] == legacy["dataflowProvenance"]
+    from utk_curio.backend.app.collaboration import history
+
+    points = history.points(room.owner_key, room.project_id)
+    assert [p["id"] for p in points if p["kind"] == "imported"] == [marker], "the doc's write erased the history"
+    assert _imported_entries(room) == len(legacy["nodeProvenance"]["loader"])
 
 
 def test_a_doc_message_needs_a_join_a_started_sync_and_frames_that_read(room):

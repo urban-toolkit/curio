@@ -2,7 +2,8 @@
  * View > Provenance opens the dataflow's versions in a drawer on the right,
  * with the catalog drawers' pin and width, listed as Curio's Nest lists work.
  * A click opens a version and shows it; only its own button puts it on the
- * canvas.
+ * canvas. On a canvas bound to the dataflow's doc, the versions and a node's
+ * entries are the server's.
  */
 import React from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -11,16 +12,56 @@ const mockLoadTrill = jest.fn();
 jest.mock("../../hook/useCode", () => ({
   useCode: () => ({ loadTrill: mockLoadTrill }),
 }));
-let mockNodes: { id: string }[] = [{ id: "n1" }];
+let mockNodes: { id: string; data?: unknown }[] = [{ id: "n1" }];
 jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => ({ workflowNameRef: { current: "Heat study" }, nodes: mockNodes }),
+}));
+jest.mock("../../api/historyApi", () => ({
+  historyApi: {
+    versions: jest.fn(),
+    entries: jest.fn(),
+    putBack: jest.fn(),
+    clearBefore: jest.fn(),
+    writeCode: jest.fn(),
+  },
+}));
+const mockShowToast = jest.fn();
+jest.mock("../../providers/ToastProvider", () => ({
+  ...jest.requireActual("../../providers/ToastProvider"),
+  useOptionalToastContext: () => ({ showToast: mockShowToast }),
+}));
+const mockRemote = new Map<string, (payload: unknown) => void>();
+jest.mock("../../providers/CollaborationProvider", () => ({
+  ...jest.requireActual("../../providers/CollaborationProvider"),
+  useCollab: () => ({
+    connected: false,
+    participantId: null,
+    role: null,
+    users: [],
+    lockedNodes: {},
+    activity: [],
+    lockNode: () => undefined,
+    unlockNode: () => undefined,
+    resolveConflict: () => undefined,
+    broadcastOutputProduced: () => undefined,
+    signalExecDisplay: () => undefined,
+    onRemote: (event: string, handler: (payload: unknown) => void) => {
+      mockRemote.set(event, handler);
+      return () => {
+        mockRemote.delete(event);
+      };
+    },
+  }),
 }));
 
 import { ProvenanceDrawerProvider, useProvenanceDrawerOptional } from "../../providers/ProvenanceDrawerProvider";
 import ProvenanceProvider, { type NodeExecRecord, useProvenanceContext } from "../../providers/ProvenanceProvider";
 import { TrillGenerator } from "../../TrillGenerator";
+import { historyApi, type ServerVersions } from "../../api/historyApi";
+import { HISTORY_CHANGED_EVENT, setServerHistory, type ServerHistory } from "../../providers/history/serverHistory";
 
 const mockRestore = jest.fn();
+const mockShowCode = jest.fn();
 
 function Opener() {
   const drawer = useProvenanceDrawerOptional()!;
@@ -31,7 +72,9 @@ function Opener() {
       </button>
       <button
         type="button"
-        onClick={() => drawer.openNodeProvenance({ nodeId: "n1", title: "Heat index", restore: mockRestore })}
+        onClick={() =>
+          drawer.openNodeProvenance({ nodeId: "n1", title: "Heat index", restore: mockRestore, showCode: mockShowCode })
+        }
       >
         Node provenance pill
       </button>
@@ -338,5 +381,201 @@ describe("the drawer opens on the version in use", () => {
     fireEvent.click(screen.getByRole("button", { name: "View provenance" }));
     await waitFor(() => expect(root()).toHaveAttribute("aria-hidden", "false"));
     await waitFor(() => expect(body().scrollTop).toBe(1300));
+  });
+});
+
+describe("on a canvas bound to the dataflow's doc, the history is the server's", () => {
+  const versions = historyApi.versions as jest.Mock;
+  const entries = historyApi.entries as jest.Mock;
+  const putBack = historyApi.putBack as jest.Mock;
+  const clearBefore = historyApi.clearBefore as jest.Mock;
+  const writeCode = historyApi.writeCode as jest.Mock;
+  const ana = { kind: "person", account: "1", name: "Ana" };
+  const graph = (ids: string[]) => ({
+    nodes: ids.map((id, i) => ({ id, type: "acme.none/x@1", x: i * 300, y: 0 })),
+    edges: [],
+  });
+  // A loaded dataflow of one node, Ana's typing, version 2 put back, and a save.
+  const answer = (canClear: boolean): ServerVersions => ({
+    versions: [
+      { id: "p1", parent: null, at: 1_700_000_000_000, kind: "load", what: "", by: null, preview: graph([]) },
+      { id: "p2", parent: "p1", at: 1_700_000_000_000, kind: "load", what: "Node added", by: null, preview: graph(["a"]) },
+      { id: "p3", parent: "p2", at: 1_700_000_060_000, kind: "typing", what: "Ana edited", by: ana, preview: graph(["a"]) },
+      { id: "p4", parent: "p2", at: 1_700_000_120_000, kind: "putBack", what: "Put back", restores: "p2", by: ana, preview: graph(["a"]) },
+      { id: "p5", parent: "p4", at: 1_700_000_180_000, kind: "saved", what: "Saved", by: ana, preview: graph(["a"]) },
+    ],
+    head: "p5",
+    kept: true,
+    canClear,
+  });
+  let whenKept: jest.Mock;
+  let held: ServerHistory;
+  const doc: Record<string, string> = { n1: "df = load()\ndf = df.tail()" };
+
+  beforeEach(() => {
+    [versions, entries, putBack, clearBefore, writeCode, mockShowToast, mockShowCode, mockRestore].forEach((m) => m.mockReset());
+    whenKept = jest.fn().mockResolvedValue(true);
+    held = { projectId: "proj", reads: () => true, whenKept, codeOf: (nodeId: string) => doc[nodeId] };
+    act(() => setServerHistory(held));
+    mockNodes = [{ id: "n1", data: { code: doc.n1 } }];
+  });
+
+  afterEach(() => {
+    act(() => setServerHistory(null));
+  });
+
+  const titles = () =>
+    Array.from(document.querySelectorAll<HTMLElement>("[data-provenance-item]")).map(
+      (el) => el.querySelector(".title")!.textContent,
+    );
+
+  test("lists the versions every tab of the dataflow lists, named by what made them, the one on the canvas marked", async () => {
+    versions.mockResolvedValue(answer(false));
+    await openDrawer();
+    await waitFor(() => expect(item("p5")).not.toBeNull());
+    expect(versions).toHaveBeenCalledWith("proj");
+    expect(shownIds()).toEqual(["p1", "p2", "p4", "p5"]);
+    expect(titles()).toEqual(["Empty dataflow", "Node added", "Put back version 2", "Saved"]);
+    expect(item("p5")).toHaveAttribute("data-provenance-current", "true");
+    // Ana's typing, left behind by the put-back, folds under version 2.
+    expect(within(item("p2")!.closest("li")!).getByRole("button", { name: /1 version on another branch/ })).toBeInTheDocument();
+    fireEvent.click(head("p5"));
+    expect(within(item("p5")!).getByText(/^Recorded .+ by Ana$/)).toBeInTheDocument();
+    expect(within(item("p5")!).getByText("On the canvas now")).toBeInTheDocument();
+  });
+
+  test("its button puts the version back for every tab, after this tab's changes, and reads the history again", async () => {
+    versions.mockResolvedValue(answer(false));
+    putBack.mockResolvedValue({ refused: [] });
+    await openDrawer();
+    await waitFor(() => expect(item("p2")).not.toBeNull());
+    fireEvent.click(head("p2"));
+    fireEvent.click(within(item("p2")!).getByRole("button", { name: "Put this version on the canvas" }));
+    await waitFor(() => expect(putBack).toHaveBeenCalledWith("proj", "p2"));
+    expect(whenKept.mock.invocationCallOrder[0]).toBeLessThan(putBack.mock.invocationCallOrder[0]);
+    await waitFor(() => expect(versions).toHaveBeenCalledTimes(2));
+    expect(mockLoadTrill).not.toHaveBeenCalled();
+    expect(mockShowToast).not.toHaveBeenCalled();
+  });
+
+  test("a put-back that kept someone's code says so", async () => {
+    versions.mockResolvedValue(answer(false));
+    putBack.mockResolvedValue({ refused: ["a"] });
+    await openDrawer();
+    await waitFor(() => expect(item("p2")).not.toBeNull());
+    fireEvent.click(head("p2"));
+    fireEvent.click(within(item("p2")!).getByRole("button", { name: "Put this version on the canvas" }));
+    await waitFor(() => expect(mockShowToast).toHaveBeenCalledWith(
+      "One node keeps the code someone wrote while this version was put back.", "warning",
+    ));
+  });
+
+  test("the owner can clear the history before any version but the first, once asked", async () => {
+    versions.mockResolvedValue(answer(true));
+    clearBefore.mockResolvedValue({ first: "p4", versions: 2 });
+    await openDrawer();
+    await waitFor(() => expect(item("p4")).not.toBeNull());
+    fireEvent.click(head("p1"));
+    expect(within(item("p1")!).queryByRole("button", { name: "Clear history before this version" })).toBeNull();
+    fireEvent.click(head("p4"));
+    fireEvent.click(within(item("p4")!).getByRole("button", { name: "Clear history before this version" }));
+    const dialog = await screen.findByRole("dialog", { name: "Clear the history before version 4?" });
+    expect(clearBefore).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Clear history" }));
+    await waitFor(() => expect(clearBefore).toHaveBeenCalledWith("proj", "p4"));
+    await waitFor(() => expect(versions).toHaveBeenCalledTimes(2));
+  });
+
+  test("an editor is offered no clearing", async () => {
+    versions.mockResolvedValue(answer(false));
+    await openDrawer();
+    await waitFor(() => expect(item("p4")).not.toBeNull());
+    fireEvent.click(head("p4"));
+    expect(within(item("p4")!).queryByRole("button", { name: "Clear history before this version" })).toBeNull();
+  });
+
+  test("a watcher's tab shows the server's refusal and lists nothing", async () => {
+    versions.mockRejectedValue(
+      Object.assign(new Error("Only the owner and the editors the owner invited see this dataflow's history."), {
+        status: 403,
+      }),
+    );
+    await openDrawer();
+    expect(
+      await screen.findByText("Only the owner and the editors the owner invited see this dataflow's history."),
+    ).toBeInTheDocument();
+    expect(shownIds()).toEqual([]);
+  });
+
+  test("the drawer reads the history again when the server says it changed", async () => {
+    versions.mockResolvedValue(answer(false));
+    await openDrawer();
+    await waitFor(() => expect(item("p5")).not.toBeNull());
+    expect(versions).toHaveBeenCalledTimes(1);
+    act(() => mockRemote.get(HISTORY_CHANGED_EVENT)!({ projectId: "proj" }));
+    await waitFor(() => expect(versions).toHaveBeenCalledTimes(2));
+    // Another dataflow's change is not this one's.
+    act(() => mockRemote.get(HISTORY_CHANGED_EVENT)!({ projectId: "other" }));
+    expect(versions).toHaveBeenCalledTimes(2);
+  });
+
+  describe("a node's entries", () => {
+    const entry = (id: number, parentId: number | null, code: string, edit?: string) => ({
+      id, parentId, code, inputs: edit ? [] : ["DATAFRAME"], outputs: edit ? [] : ["DATAFRAME"],
+      startTime: "2026-10-28T14:05:03Z", endTime: "2026-10-28T14:05:04Z", point: `p${id}`,
+      ...(edit ? { kind: "edit" as const, label: edit } : {}),
+    });
+
+    async function openRuns() {
+      entries.mockResolvedValue({
+        entries: [entry(1, null, "df = load()"), entry(2, 1, "df = load()\ndf = df.tail()", "Ana edited")],
+        current: 2,
+      });
+      render(
+        <ProvenanceProvider>
+          <ProvenanceDrawerProvider>
+            <Opener />
+          </ProvenanceDrawerProvider>
+        </ProvenanceProvider>,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Node provenance pill" }));
+      await waitFor(() => expect(root()).toHaveAttribute("aria-hidden", "false"));
+      await waitFor(() => expect(item("2")).not.toBeNull());
+    }
+
+    test("come from the server, the one in use marked", async () => {
+      await openRuns();
+      expect(entries).toHaveBeenCalledWith("proj", "n1");
+      expect(shownIds()).toEqual(["1", "2"]);
+      expect(item("2")).toHaveAttribute("data-provenance-current", "true");
+      expect(item("2")!.textContent).toMatch(/Ana edited/);
+    });
+
+    test("put the code back only if the node still holds what this tab showed, then show the code", async () => {
+      writeCode.mockResolvedValue({ ok: true });
+      await openRuns();
+      fireEvent.click(head("1"));
+      fireEvent.click(within(item("1")!).getByRole("button", { name: "Put this code back in the node" }));
+      await waitFor(() => expect(writeCode).toHaveBeenCalledWith("proj", "n1", {
+        from: "df = load()\ndf = df.tail()", code: "df = load()", label: "Code put back",
+      }));
+      expect(whenKept.mock.invocationCallOrder[0]).toBeLessThan(writeCode.mock.invocationCallOrder[0]);
+      await waitFor(() => expect(mockShowCode).toHaveBeenCalledTimes(1));
+      expect(mockRestore).not.toHaveBeenCalled();
+    });
+
+    test("a code put back after someone else's change is refused, and the toast says who", async () => {
+      writeCode.mockRejectedValue(
+        Object.assign(new Error("Ben changed this node after; nothing was undone."), { status: 409 }),
+      );
+      await openRuns();
+      fireEvent.click(head("1"));
+      fireEvent.click(within(item("1")!).getByRole("button", { name: "Put this code back in the node" }));
+      await waitFor(() => expect(mockShowToast).toHaveBeenCalledWith(
+        "Ben changed this node after; nothing was undone.", "warning",
+      ));
+      expect(mockShowCode).not.toHaveBeenCalled();
+      expect(item("2")).toHaveAttribute("data-provenance-current", "true");
+    });
   });
 });

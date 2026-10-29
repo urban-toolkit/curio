@@ -36,8 +36,8 @@ dataflow with no node, then one point a node, then one a connection.
 (:func:`clear_before`): the points before it go, and so does every log the
 remaining ones do not need, and the earlier history set aside.
 
-The history records while :data:`RECORDING` is on: ``dataflow_docs`` hands each
-change of an open doc to :func:`recorded`, under the doc's lock. Who may read it
+``dataflow_docs`` hands each change of an open doc to :func:`recorded`, under
+the doc's lock. Who may read it
 and change it is ``projects/services.py``'s to decide. ``points.jsonl`` is
 written under storage's history lock, a leaf.
 """
@@ -67,10 +67,6 @@ from utk_curio.backend.config import COLLAB_NAMESPACE
 
 logger = logging.getLogger(__name__)
 
-#: Whether the server records the history: each change of an open doc a
-#: point, and a dataflow's first points made when its doc opens.
-RECORDING = False
-
 #: Beside the spec file, in ``history/``: the points, one JSON line each.
 POINTS_FILE = "points.jsonl"
 #: What the room's owner and editors are told when the history gains a point
@@ -97,6 +93,12 @@ RUN = "run"
 HEAD = "head"
 #: The points that are no version of the dataflow.
 UNLISTED = frozenset({RUN, IMPORTED_ENTRY, HEAD})
+#: What a version put back leaves as the dataflow holds it: its name, its
+#: hand-set categories and auto-run, and the packages and datasets installed
+#: in it. The rest is the version's: its nodes, connections, goal,
+#: description and scenarios.
+KEPT_BY_A_PUT_BACK = frozenset({"name", "provenance_id", "timestamp", "categories", "autoRun",
+                                "packages", "datasets"})
 
 #: How many dataflows rebuilt at points are kept in memory.
 CACHE_SIZE = 512
@@ -199,10 +201,17 @@ def observe(entry) -> None:
     """Note what each transaction of the open doc *entry* adds, removes and
     types (:attr:`entry.touched`), for :func:`recorded`. The observers live
     as long as the entry holds them (:attr:`entry.watching`): pycrdt drops an
-    observer once its type's object and its subscription are gone."""
+    observer once its type's object and its subscription are gone. Each
+    node's code is known by its digest as the doc holds it now
+    (:attr:`entry.codes`), so a change knows the code it replaced."""
     entry.touched = Touched()
     nodes = entry.doc.get("nodes", type=Map)
     edges = entry.doc.get("edges", type=Map)
+    entry.codes = {}
+    for key in list(nodes.keys()):
+        held = _code_in(entry.doc, str(key))
+        if held is not None:
+            entry.codes[str(key)] = _sha(held)
 
     def on_nodes(events) -> None:
         touched = entry.touched
@@ -364,14 +373,17 @@ def head_of(points_: Iterable[dict]) -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 class _Typing:
-    """One person's typing in one node, since its last point."""
+    """One person's typing in one node, since its last point: *parent* is the
+    digest of the code it began from."""
 
-    __slots__ = ("node", "by", "sid", "doc", "day", "start", "end", "last")
+    __slots__ = ("node", "by", "sid", "doc", "day", "start", "end", "last", "parent")
 
-    def __init__(self, node: str, by: dict, sid: Optional[str], doc: str, day: str, start: int):
+    def __init__(self, node: str, by: dict, sid: Optional[str], doc: str, day: str, start: int,
+                 parent: Optional[str] = None):
         self.node, self.by, self.sid = node, by, sid
         self.doc, self.day, self.start, self.end = doc, day, start, start
         self.last = 0.0
+        self.parent = parent
 
 
 class _State:
@@ -565,8 +577,35 @@ def recorded(entry, changes: list[Change], *, point: Optional[dict] = None) -> N
 
 
 def _record(entry, change: Change, point: Optional[dict]) -> None:
-    state = _state(entry)
     touched = change.touched or Touched()
+    # The digest of the code each node held before the change: an entry the
+    # change makes descends from the newest entry that holds it.
+    codes = getattr(entry, "codes", None) or {}
+    before = {node: codes.get(node) for node in touched.contents}
+    try:
+        _record_change(entry, change, point, touched, before)
+    finally:
+        _remember_codes(entry, touched)
+
+
+def _remember_codes(entry, touched: Touched) -> None:
+    """The digests of the codes the change left (:attr:`entry.codes`)."""
+    codes = getattr(entry, "codes", None)
+    if not isinstance(codes, dict):
+        codes = entry.codes = {}
+    for node in touched.nodes_removed:
+        codes.pop(node, None)
+    for node in touched.contents | touched.nodes_added:
+        held = _code_in(entry.doc, node)
+        if held is None:
+            codes.pop(node, None)
+        else:
+            codes[node] = _sha(held)
+
+
+def _record_change(entry, change: Change, point: Optional[dict], touched: Touched,
+                   before: dict[str, Optional[str]]) -> None:
+    state = _state(entry)
     by = (point or {}).get("by") or _by(change.origin)
     for node in touched.contents:
         state.authors[node] = by
@@ -580,7 +619,7 @@ def _record(entry, change: Change, point: Optional[dict]) -> None:
             _add(entry, {"kind": GRAPH, "what": _graph_label(touched), "by": by,
                          **_place(entry, change.start, change.end)})
         for node in sorted(touched.typed()):
-            _typed(entry, change.origin, by, node, change)
+            _typed(entry, change.origin, by, node, change, before.get(node))
         return
     if isinstance(change.origin, dataflow_docs.Actor) and change.origin.kind == dataflow_docs.AGENT:
         if not (touched.graph() or touched.typed()):
@@ -591,7 +630,7 @@ def _record(entry, change: Change, point: Optional[dict]) -> None:
             sha = _sha(code)
             notes.append({
                 "id": state.next_note(), "node": node, "kind": _NOTE_EDIT,
-                "parentId": state.current(node, None), "label": "", "inputs": [], "outputs": [],
+                "parentId": state.current(node, before.get(node)), "label": "", "inputs": [], "outputs": [],
                 "startTime": _now_text(), "endTime": _now_text(), "sha": sha, "chars": len(code or ""),
             })
         _add(entry, {"kind": AGENT, "what": "", "by": by, **_place(entry, change.start, change.end),
@@ -602,8 +641,9 @@ def _record(entry, change: Change, point: Optional[dict]) -> None:
                      **_place(entry, change.start, change.end)})
 
 
-def _typed(entry, tab: Tab, by: dict, node: str, change: Change) -> None:
-    """Note a person's typing in *node*: their point waits for a pause."""
+def _typed(entry, tab: Tab, by: dict, node: str, change: Change, parent: Optional[str]) -> None:
+    """Note a person's typing in *node*, which began from the code whose
+    digest is *parent*: their point waits for a pause."""
     state = _state(entry)
     key = (node, _account(by))
     typing = state.typing.get(key)
@@ -611,7 +651,8 @@ def _typed(entry, tab: Tab, by: dict, node: str, change: Change) -> None:
         _close(entry, key)
         typing = None
     if typing is None:
-        typing = state.typing[key] = _Typing(node, by, tab.sid, entry.doc_id, entry.segment, change.start)
+        typing = state.typing[key] = _Typing(node, by, tab.sid, entry.doc_id, entry.segment, change.start,
+                                             parent=parent)
     typing.end = change.end
     typing.sid = tab.sid
     typing.last = dataflow_docs._clock()
@@ -621,20 +662,24 @@ def _typed(entry, tab: Tab, by: dict, node: str, change: Change) -> None:
 def _close(entry, key: tuple[str, str], *, kind: str = TYPING, label: Optional[str] = None,
            end: Optional[int] = None) -> Optional[dict]:
     """Make one person's typing in one node its point: a version named after
-    them, with an edit entry on the node."""
+    them, with an edit entry on the node, which descends from the newest
+    entry that holds the code the typing began from. Typing that left the
+    code as it began is no change, and no point."""
     state = _state(entry)
     typing = state.typing.pop(key, None)
     state.retime()
     if typing is None:
         return None
-    name = (typing.by or {}).get("name") or "Someone"
-    what = label if label is not None else f"{name} edited"
     code = _code_in(entry.doc, typing.node)
     sha = _sha(code)
+    if kind == TYPING and typing.parent is not None and sha == typing.parent:
+        return None
+    name = (typing.by or {}).get("name") or "Someone"
+    what = label if label is not None else f"{name} edited"
     at = _now_text()
     note = {
         "id": state.next_note(), "node": typing.node, "kind": _NOTE_EDIT,
-        "parentId": state.current(typing.node, None), "label": what, "inputs": [], "outputs": [],
+        "parentId": state.current(typing.node, typing.parent), "label": what, "inputs": [], "outputs": [],
         "startTime": at, "endTime": at, "sha": sha, "chars": len(code or ""),
     }
     return _add(entry, {
@@ -1109,9 +1154,18 @@ def _preview(flow: Optional[dict]) -> Optional[dict]:
     }
 
 
+def _opened(user_key: str, project_id: str) -> None:
+    """Open the dataflow's doc if it has no points yet, which gives it its
+    first ones: a read can come before any tab opened it."""
+    if not has_points(user_key, project_id):
+        with _held(user_key, project_id):
+            pass
+
+
 def versions(user_key: str, project_id: str) -> dict:
     """The dataflow's versions, in the order they were made, each with its
     graph (``preview``), and the one on the canvas (``head``)."""
+    _opened(user_key, project_id)
     folder = _folder(user_key, project_id)
     points_ = _read_points(folder)
     listed = [point for point in points_ if _listed(point) and "doc" in point]
@@ -1128,6 +1182,7 @@ def entries(user_key: str, project_id: str, node_id: str, *, code: Optional[str]
     """The entries of the node *node_id*, in the order they were made, each
     with its code, an edit's with the code it replaced, and the entry in use:
     the newest that holds *code*, the node's code now, else the newest."""
+    _opened(user_key, project_id)
     folder = _folder(user_key, project_id)
     rows = [(point, note) for point in _read_points(folder) for note in point.get("notes") or []
             if note.get("node") == node_id and "doc" in point]
@@ -1176,16 +1231,9 @@ def entry_in_use(records: list[dict], code: Optional[str]) -> Optional[int]:
 # What a tab, or a person, adds to the history
 # ---------------------------------------------------------------------------
 
-#: What a change of the history is told while the server does not keep it.
-NOT_KEPT = "This server does not keep the dataflow's history yet."
-
-
 @contextmanager
 def _held(user_key: str, project_id: str):
-    """The dataflow's open doc, with its lock held, while the history
-    records; otherwise the refusal."""
-    if not RECORDING:
-        raise HistoryError(NOT_KEPT, 409)
+    """The dataflow's open doc, with its lock held, or the refusal."""
     try:
         with dataflow_docs._held(project_id, user_key) as entry:
             yield entry
@@ -1229,7 +1277,8 @@ def note_edit(user_key: str, project_id: str, by: dict, node_id: str, label: str
         key = (node_id, _account(by))
         if key not in state.typing:
             doc_id, day, end = dataflow_docs.log_end(entry)
-            state.typing[key] = _Typing(node_id, by, None, doc_id, day, end)
+            state.typing[key] = _Typing(node_id, by, None, doc_id, day, end,
+                                        parent=(getattr(entry, "codes", None) or {}).get(node_id))
         state.typing[key].by = by
         return _close(entry, key, kind=EDIT, label=label or "Edit")
 
@@ -1244,11 +1293,10 @@ def saved(user_key: str, project_id: str, by: dict) -> dict:
 
 def put_back(user_key: str, project_id: str, point_id: str, by: dict) -> dict:
     """Put the version *point_id* back: one transaction makes the doc hold
-    it, for every tab, and a version named after it, its parent the version
-    put back. ``refused``: the nodes whose code someone changed while it was
-    being put back, which keep theirs."""
-    if not RECORDING:
-        raise HistoryError(NOT_KEPT, 409)
+    it, but for what :data:`KEPT_BY_A_PUT_BACK` names, for every tab, and a
+    version named after it, its parent the version put back. ``refused``: the
+    nodes whose code someone changed while it was being put back, which keep
+    theirs."""
     folder = _folder(user_key, project_id)
     point = next((p for p in _read_points(folder) if p["id"] == point_id and _listed(p)), None)
     if point is None:
@@ -1260,8 +1308,9 @@ def put_back(user_key: str, project_id: str, point_id: str, by: dict) -> dict:
     if spec is None:
         raise HistoryError("This dataflow has no saved spec.", 404)
     flow = spec.get("dataflow") if isinstance(spec.get("dataflow"), dict) else {}
-    spec["dataflow"] = {**{name: value for name, value in flow.items() if name in doc_mapping.OUTSIDE_THE_DOC},
-                        **target}
+    kept = doc_mapping.OUTSIDE_THE_DOC | KEPT_BY_A_PUT_BACK
+    spec["dataflow"] = {**{name: value for name, value in target.items() if name not in kept},
+                        **{name: value for name, value in flow.items() if name in kept}}
     made = {"kind": PUT_BACK, "what": "Put back", "restores": point_id, "parent": point_id, "by": by}
     written = dataflow_docs.write(user_key, project_id, spec, dataflow_docs.person(_account(by), "putBack"),
                                   point=made)
@@ -1278,8 +1327,6 @@ def write_code(user_key: str, project_id: str, by: dict, node_id: str, *, expect
     code the person's put-back, Undo or Redo began from: checked in the same
     transaction (``doc_mapping.apply_dataflow``'s code refusal). Refused, the
     node keeps what it holds, and :class:`Refused` names who changed it."""
-    if not RECORDING:
-        raise HistoryError(NOT_KEPT, 409)
     spec = dataflow_docs.live(user_key, project_id)
     if spec is None:
         raise HistoryError("This dataflow has no saved spec.", 404)
@@ -1321,8 +1368,6 @@ def clear_before(user_key: str, project_id: str, point_id: str) -> dict:
     needs goes, with the earlier history set aside. The dataflow stays as it
     is. Each new file is written before the points name it, and an old one
     goes only once they no longer do."""
-    if not RECORDING:
-        raise HistoryError(NOT_KEPT, 409)
     with dataflow_docs._spec_lock(user_key, project_id):
         with _held(user_key, project_id) as entry:
             close_typing(entry)
@@ -1377,6 +1422,25 @@ def clear_before(user_key: str, project_id: str, point_id: str) -> dict:
             _tell(entry)
     storage.drop_history_aside(user_key, project_id)
     return {"first": point_id, "versions": sum(1 for point in kept if _listed(point))}
+
+
+def copy_history(from_key: str, from_id: str, to_key: str, to_id: str) -> bool:
+    """Give the dataflow *to_id*, the account *to_key*'s new copy of the
+    dataflow *from_id*, that dataflow's history: its points, and the logs they
+    name, copied as they are, before the copy's doc first opens. What the copy
+    carries of the earlier history's sections goes: the points are its
+    history. Whether there was a history to copy."""
+    source, target = _folder(from_key, from_id), _folder(to_key, to_id)
+    copied = _read_points(source)
+    if not copied:
+        return False
+    for doc_id in sorted({point.get("doc") for point in copied if isinstance(point.get("doc"), str)}):
+        logs = source / dataflow_docs.LOG_DIR / doc_id
+        if logs.is_dir():
+            shutil.copytree(logs, target / dataflow_docs.LOG_DIR / doc_id, dirs_exist_ok=True)
+    _write_points(to_key, to_id, copied)
+    storage.drop_history_aside(to_key, to_id)
+    return True
 
 
 def drop(user_key: str, project_id: str) -> None:

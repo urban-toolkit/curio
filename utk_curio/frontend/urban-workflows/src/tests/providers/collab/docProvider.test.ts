@@ -43,6 +43,11 @@ class FakeSocket {
         for (const handler of this.handlers.yjs ?? []) handler({ projectId: PROJECT, message: message.slice().buffer });
     }
 
+    /** Any other event the server sends this socket. */
+    deliver(event: string, payload: any) {
+        for (const handler of this.handlers[event] ?? []) handler(payload);
+    }
+
     /** What this socket sent of the doc's protocol. */
     messages(): Sent[] {
         return this.sent.filter((sent) => sent.event === "yjs");
@@ -229,6 +234,49 @@ test("a change the server refuses as a watcher's turns the tab into a watcher", 
     expect(onReadOnly).toHaveBeenCalledTimes(1);
 });
 
+/** Hands the others what *socket* sent of its presence from the *from*-th
+ *  message on, as the server relays it. */
+function relayPresence(socket: FakeSocket, others: awarenessProtocol.Awareness, from = 0) {
+    for (const sent of socket.messages().slice(from).filter((m) => kindOf(m) === "awareness")) {
+        const decoder = decoding.createDecoder(sent.payload.message);
+        decoding.readVarUint(decoder);
+        awarenessProtocol.applyAwarenessUpdate(others, decoding.readVarUint8Array(decoder), "server");
+    }
+}
+
+test("a provider that goes while its socket stays takes its presence, its pointer among it, from the others", () => {
+    // A doc started again on the same socket (a reload, a new role) is a new
+    // client: the old one's pointer would otherwise stay drawn, frozen.
+    const socket = new FakeSocket();
+    const server = new FakeServer(DATAFLOW);
+    const provider = new DataflowDocProvider(PROJECT, { canWrite: true });
+    provider.attach(socket);
+    server.start(socket, socket.messages()[0]);
+    provider.awareness.setLocalStateField("pointer", { x: 1, y: 2, t: 3 });
+    const others = new awarenessProtocol.Awareness(new Y.Doc());
+    relayPresence(socket, others);
+    const clientId = provider.doc.clientID;
+    expect((others.getStates().get(clientId) as any)?.pointer).toEqual({ x: 1, y: 2, t: 3 });
+
+    const before = socket.messages().length;
+    provider.destroy();
+    relayPresence(socket, others, before);
+    expect(others.getStates().has(clientId)).toBe(false);
+    others.destroy();
+});
+
+test("a provider whose socket went sends nothing as it goes", () => {
+    const socket = new FakeSocket();
+    const server = new FakeServer(DATAFLOW);
+    const provider = new DataflowDocProvider(PROJECT, { canWrite: true });
+    provider.attach(socket);
+    server.start(socket, socket.messages()[0]);
+    socket.connected = false;
+    const before = socket.messages().length;
+    provider.destroy();
+    expect(socket.messages().length).toBe(before);
+});
+
 test("this tab's presence goes once synced, everyone else's arrives, and a disconnect clears it", () => {
     const socket = new FakeSocket();
     const server = new FakeServer(DATAFLOW);
@@ -253,4 +301,70 @@ test("this tab's presence goes once synced, everyone else's arrives, and a disco
     expect(provider.awareness.getStates().has(other.clientID)).toBe(false);
     other.destroy();
     provider.destroy();
+});
+
+/** The message that answers a tab's queued updates once their batch is applied. */
+const KEPT = "yjs_kept";
+
+/** A tab synced with *server*, its answer to the server's step 1 answered too,
+ *  so it holds nothing in flight. */
+function syncedTab(server: FakeServer): { socket: FakeSocket; provider: DataflowDocProvider } {
+    const socket = new FakeSocket();
+    const provider = new DataflowDocProvider(PROJECT, { canWrite: true });
+    provider.attach(socket);
+    server.start(socket, socket.messages()[0]);
+    for (const step2 of socket.messages().filter((m) => kindOf(m) === "step2")) server.take(step2);
+    expect(provider.isKept()).toBe(true);
+    return { socket, provider };
+}
+
+test("an update the server queued stays in flight until its kept message answers it", async () => {
+    const server = new FakeServer(DATAFLOW);
+    const { socket, provider } = syncedTab(server);
+
+    typeInto(provider.doc, "# queued\n");
+    const [update] = socket.messages().filter((m) => kindOf(m) === "update");
+    const kept = provider.whenKept(1000);
+    server.take(update, { ok: true, queued: true });
+    expect(provider.isKept()).toBe(false);
+
+    socket.deliver(KEPT, { projectId: "another-dataflow", answered: 1, kept: {} });
+    expect(provider.isKept()).toBe(false);
+    socket.deliver(KEPT, { projectId: PROJECT, answered: 1, kept: { [String(provider.doc.clientID)]: 9 } });
+    expect(provider.isKept()).toBe(true);
+    await expect(kept).resolves.toBe(true);
+    expect(docToDataflow(server.doc).nodes[0].content).toBe("# queued\nx = 1\n");
+});
+
+test("one kept message answers each update it names, even before their queued acks come", () => {
+    const server = new FakeServer(DATAFLOW);
+    const { socket, provider } = syncedTab(server);
+
+    typeInto(provider.doc, "a");
+    typeInto(provider.doc, "b");
+    typeInto(provider.doc, "c");
+    const updates = socket.messages().filter((m) => kindOf(m) === "update");
+    expect(updates).toHaveLength(3);
+    server.take(updates[0], { ok: true, queued: true });
+
+    socket.deliver(KEPT, { projectId: PROJECT, answered: 2, kept: {} });
+    expect(provider.isKept()).toBe(false);
+    server.take(updates[1], { ok: true, queued: true });
+    server.take(updates[2], { ok: true, queued: true });
+    expect(provider.isKept()).toBe(false);
+    socket.deliver(KEPT, { projectId: PROJECT, answered: 1, kept: {} });
+    expect(provider.isKept()).toBe(true);
+});
+
+test("a kept message saying the server lost this tab's sync starts the sync again", () => {
+    const server = new FakeServer(DATAFLOW);
+    const { socket, provider } = syncedTab(server);
+
+    typeInto(provider.doc, "# lost\n");
+    const [update] = socket.messages().filter((m) => kindOf(m) === "update");
+    server.take(update, { ok: true, queued: true });
+    socket.deliver(KEPT, { projectId: PROJECT, answered: 1, kept: {}, refused: { not_synced: 1 } });
+
+    expect(socket.messages().map(kindOf).filter((kind) => kind === "step1")).toHaveLength(2);
+    expect(provider.isKept()).toBe(true);
 });

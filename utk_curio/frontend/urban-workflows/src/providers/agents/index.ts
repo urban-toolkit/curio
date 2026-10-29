@@ -1,5 +1,7 @@
-/** The agents providers (memo dev/142, F2): the attachments provider and the five hooks it composes. */
+/** The agents providers (memo dev/142, F2): the attachments provider and the five hooks it composes,
+ *  and the dataflow whose agents the canvas drives. */
 export * from "./AgentAttachmentsProvider";
+export * from "./useAgentsDataflowId";
 export * from "./useAgentSession";
 export * from "./useAgentProposals";
 export * from "./useAgentSolve";

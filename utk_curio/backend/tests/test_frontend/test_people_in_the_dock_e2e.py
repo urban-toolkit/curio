@@ -8,8 +8,9 @@ the node they are editing, and a click moves the view to where they point, when
 they point somewhere on the canvas. Your own chip is not in the row.
 
 The owner, with a canvas agent, sees an editor she invited and a watcher; the
-editor sees the owner and the watcher; the watcher sees both, under the
-read-only banner. Every stack serves this: there is no switch for it.
+editor, who drives the dataflow's agents too, sees the agent, the owner and
+the watcher; the watcher sees both people and no agent, under the read-only
+banner. Every stack serves this: there is no switch for it.
 """
 
 from __future__ import annotations
@@ -44,6 +45,7 @@ AGENT = "agent.curio.dataflow-builder@1"
 
 #: The dock, the people in it, and a person's chip.
 DOCK = '[role="toolbar"][aria-label="Canvas agents"]'
+AGENT_CHIP = f'{DOCK} button[aria-label^="Open chat with"]'
 PEOPLE = f'{DOCK} [role="group"][aria-label="People here"]'
 CHIP = f"{PEOPLE} button[data-collab-participant]"
 ACTIVITY = f'{PEOPLE} button[aria-label="Activity"]'
@@ -136,6 +138,14 @@ def _people(page) -> list[dict]:
     )
 
 
+def _dock_buttons(page) -> list[str]:
+    """The names of the dock's buttons, in the row's order, but an agent's
+    Detach."""
+    return page.locator(f"{DOCK} button").evaluate_all(
+        "(buttons) => buttons.map((b) => b.getAttribute('aria-label') || '').filter((n) => !n.startsWith('Detach'))"
+    )
+
+
 def _wait_for_people(page, roles: list[str], *, what: str, timeout: float = 30000) -> list[dict]:
     """Wait until *page*'s dock shows a chip for each of *roles*, in the row's
     order, and no other."""
@@ -194,6 +204,15 @@ def _union(*boxes: dict, margin: int = 8) -> dict:
             "width": int(right - max(0, left)) + 1, "height": int(bottom - max(0, top)) + 1}
 
 
+def _frame(page, name: str, failures: list[str], **capture) -> None:
+    """One of the test's frames. A missing or moved frame is told at the
+    test's end, so every check after it still runs."""
+    try:
+        save_workflow_test_screenshot(page, FRAMES, test_name=name, fit_reactflow=False, **capture)
+    except AssertionError as error:
+        failures.append(f"{name}: {error}")
+
+
 def _quiet_pointers(*pages) -> None:
     """Each page's pointer at the top bar's corner, off the canvas: no hover
     changes a frame, and no pointer of theirs is drawn on another's canvas."""
@@ -204,6 +223,7 @@ def _quiet_pointers(*pages) -> None:
 
 
 def test_the_dock_shows_who_else_is_here_with_their_role_the_node_they_edit_and_the_activity(room):
+    frames_failed: list[str] = []
     owner = room.person(OWNER, "Dock Owner", owns=True)
     room.attach_agent()
     room.open(owner, "owner")
@@ -224,11 +244,21 @@ def test_the_dock_shows_who_else_is_here_with_their_role_the_node_they_edit_and_
     _wait_for_people(editor, ["owner", "watcher"], what="the editor's dock")
     _wait_for_people(watcher, ["editor", "owner"], what="the watcher's dock")
     # The owner's agent keeps its chip, before the people.
-    named = owner.locator(f"{DOCK} button").evaluate_all(
-        "(buttons) => buttons.map((b) => b.getAttribute('aria-label')).filter((n) => !n.startsWith('Detach'))"
-    )
+    named = _dock_buttons(owner)
     assert named[0].startswith("Open chat with"), named
     assert named[1:] == ["Dock Editor (editor)", "Dock Watcher (watcher)", "Activity"], named
+    # The editor drives the dataflow's agents too: the same agent's chip, then
+    # the people. The watcher has no agent, only the people.
+    try:
+        editor.locator(AGENT_CHIP).first.wait_for(timeout=30000)
+    except Exception as exc:  # noqa: BLE001 - said in the test's words
+        raise AssertionError(f"the editor's dock shows no agent: {_dock_buttons(editor)}") from exc
+    named = _dock_buttons(editor)
+    assert named[0].startswith("Open chat with"), named
+    assert named[-3:] == ["Dock Owner (owner)", "Dock Watcher (watcher)", "Activity"], named
+    assert _dock_buttons(watcher) == ["Dock Editor (editor)", "Dock Owner (owner)", "Activity"], (
+        f"the watcher's dock is not the people alone: {_dock_buttons(watcher)}"
+    )
 
     # A watcher's dock sits under the read-only banner, nothing over it.
     banner = watcher.get_by_test_id("shared-view-banner")
@@ -252,12 +282,12 @@ def test_the_dock_shows_who_else_is_here_with_their_role_the_node_they_edit_and_
     # of the editor's chip, and the room's Activity. Moving the editor's
     # pointer away keeps the focus, and so the node they are editing.
     _quiet_pointers(owner, editor, watcher)
-    save_workflow_test_screenshot(owner, FRAMES, test_name="owners-row", clip_selector=DOCK, fit_reactflow=False)
+    _frame(owner, "owners-row", frames_failed, clip_selector=DOCK)
     editor_chip = f'{CHIP}[data-collab-role="editor"]'
     tip = hover_until_tooltip_says(owner, editor_chip, "the editor's chip", [expected])
-    save_workflow_test_screenshot(
-        owner, FRAMES, test_name="chip-tooltip",
-        fit_reactflow=False, keep_tooltip=True, clip_rect=tooltip_close_up(owner, tip),
+    _frame(
+        owner, "chip-tooltip", frames_failed,
+        keep_tooltip=True, clip_rect=tooltip_close_up(owner, tip),
         pixel_threshold=CLOSEUP_PIXEL_THRESHOLD, max_diff_ratio=CLOSEUP_MAX_DIFF_RATIO, closeup=True,
     )
     owner.locator(ACTIVITY).click()
@@ -269,19 +299,17 @@ def test_the_dock_shows_who_else_is_here_with_their_role_the_node_they_edit_and_
     )
     assert activity.locator("button").count() == 0, "the Activity list holds a vote"
     _quiet_pointers(owner)
-    save_workflow_test_screenshot(
-        owner, FRAMES, test_name="activity",
-        clip_rect=_union(owner.locator(DOCK).bounding_box(), activity.bounding_box()), fit_reactflow=False,
-    )
+    _frame(owner, "activity", frames_failed,
+           clip_rect=_union(owner.locator(DOCK).bounding_box(), activity.bounding_box()))
     owner.keyboard.press("Escape")
     activity.wait_for(state="detached", timeout=10000)
 
     # The watcher's dock, under the banner.
     _quiet_pointers(owner, editor, watcher)
-    save_workflow_test_screenshot(
-        watcher, FRAMES, test_name="watchers-row",
-        clip_rect=_union(banner.bounding_box(), watcher.locator(DOCK).bounding_box()), fit_reactflow=False,
-    )
+    _frame(watcher, "watchers-row", frames_failed,
+           clip_rect=_union(banner.bounding_box(), watcher.locator(DOCK).bounding_box()))
+
+    assert not frames_failed, "\n".join(frames_failed)
 
 
 def test_a_click_on_a_persons_chip_moves_the_view_to_where_they_point(room):

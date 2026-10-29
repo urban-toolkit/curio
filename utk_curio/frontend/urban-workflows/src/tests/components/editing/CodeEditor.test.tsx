@@ -95,8 +95,8 @@ jest.mock("../../../providers/FlowProvider", () => ({
 jest.mock("../../../providers/ProvenanceProvider", () => ({
     useProvenanceContext: () => ({ nodeExecProv: jest.fn() }),
 }));
-// Collaboration off, unless a test turns it on: `onRemote` then keeps each
-// handler, which the test fires as the room would.
+// In no room, unless a test joins one: `onRemote` keeps each handler, which
+// the test fires as the room would.
 const mockCollabHandlers: Record<string, (payload: any) => void> = {};
 const mockCollabOff = () => ({
     connected: false,

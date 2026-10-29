@@ -1,13 +1,15 @@
 """Playwright E2E: going back to a version and editing starts a branch in the provenance drawer.
 
-Every version is made from one other: the one on the canvas when the edit
-happened. So putting an earlier version back and editing makes the new version
-from that one, and the versions made after it are left on a branch. The drawer
-keeps the line to the newest version and folds that branch under the version
-it left from; opened, the fold lists those versions in the order they were
-made, on a rail of their own. A history where each version has one parent is a
-tree, and the list shows any tree this way; here the branch is made through
-the canvas, not written into a file.
+Every version is made from one other: the one on the canvas when the change
+happened. Putting an earlier version back is a version of its own, made from
+the one put back, and the edit after it is made from the put-back, so the
+versions made after the one put back are left on a branch. The drawer keeps
+the line to the newest version and folds that branch under the version it left
+from; opened, the fold lists those versions in the order they were made, on a
+rail of their own. A history where each version has one parent is a tree, and
+the list shows any tree this way; here the branch is made through the canvas,
+not written into a file. The dataflow is saved, so its history is the
+server's.
 
 It runs on the fixed catalog date, so the times the drawer shows read the same
 in every frame.
@@ -124,32 +126,39 @@ def test_a_provenance_branch_folds_under_the_version_it_left_from(
         "a loaded dataflow's history is one chain, yet the drawer folds a branch"
     )
 
-    # Version 8 back on the canvas: every node, one connection.
+    # Version 8 back on the canvas: every node, one connection. The put-back
+    # is the version in use, made from version 8.
     back = panel.locator(f'[data-provenance-item="{chain[BACK_TO - 1]}"]')
     open_version(page, back)
     back.get_by_role("button", name="Put this version on the canvas", exact=True).click()
-    expect(back).to_have_attribute("data-provenance-current", "true")
+    put_back = panel.locator('[data-provenance-current="true"]')
+    expect(put_back).to_contain_text(f"Put back version {BACK_TO}", timeout=20000)
+    put_back_id = put_back.get_attribute("data-provenance-item")
+    assert put_back_id not in chain, f"putting version {BACK_TO} back made no version of its own"
     _close(page)
     page.wait_for_function(
         "() => document.querySelectorAll('.react-flow__edge').length === 1", timeout=15000,
     )
     assert canvas_graph(page) == {"nodes": nodes, "edges": 1}, canvas_graph(page)
 
-    # One edit on the canvas, made from version 8.
+    # One edit on the canvas, made from the put-back.
     frame_nodes(page, [FIRST_TRANSFORM, SECOND_TRANSFORM])
     connect_nodes(page, FIRST_TRANSFORM, SECOND_TRANSFORM)
 
     panel = _open(page)
+    expect(panel.locator("[data-provenance-item]")).to_have_count(BACK_TO + 2, timeout=20000)
     listed = _listed(page)
     made = [version for version in listed if version not in chain]
-    assert len(made) == 1, f"one connection should make one version, not {made}"
-    newest = made[0]
+    assert made[:1] == [put_back_id] and len(made) == 2, (
+        f"the put-back and the one connection should make two versions, not {made}"
+    )
+    newest = made[1]
     left_behind = chain[BACK_TO:]
 
-    # The line to the newest version runs through version 8, and the versions
-    # made after 8 are folded under it.
-    assert listed == chain[:BACK_TO] + [newest], (
-        f"the drawer should list versions 1 to {BACK_TO}, then the new one: {listed}"
+    # The line to the newest version runs through version 8 and the put-back,
+    # and the versions made after 8 are folded under it.
+    assert listed == chain[:BACK_TO] + [put_back_id, newest], (
+        f"the drawer should list versions 1 to {BACK_TO}, the put-back, then the new one: {listed}"
     )
     item = panel.locator(f'[data-provenance-item="{newest}"]')
     expect(item).to_have_attribute("data-provenance-current", "true")
@@ -164,7 +173,7 @@ def test_a_provenance_branch_folds_under_the_version_it_left_from(
     # made, on a rail of their own.
     fold.click()
     expect(fold).to_have_attribute("aria-expanded", "true")
-    assert _listed(page) == chain[:BACK_TO] + left_behind + [newest], _listed(page)
+    assert _listed(page) == chain[:BACK_TO] + left_behind + [put_back_id, newest], _listed(page)
     branch = panel.locator('[data-provenance-line="1"]')
     expect(branch).to_have_count(1)
     assert _ids(branch.locator("[data-provenance-item]")) == left_behind

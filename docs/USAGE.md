@@ -530,31 +530,46 @@ bolt while it is on.
 ## Provenance
 
 **View > Provenance** opens the dataflow's version history in a drawer on the
-right. Each node or connection added or removed makes a version.
+right. Each node or connection added or removed makes a version, and so do
+each person's typing in a node once they pause or leave its editor ("Ana
+edited"), an agent's change you applied ("Node Builder, asked by Ana"), each
+**File > Save** and each version put back.
 
 - The versions are listed in the order they were made, on a line that leads to
   the newest. Versions made from an earlier one you went back to fold under the
   version they left from; click the fold to show them.
 - The pin keeps the drawer open when you click outside it or press Escape.
 
-Click a version to open it: its thumbnail, when it was recorded, and its nodes
-and connections. **Put this version on the canvas** goes back to it. The history
-stays, the dataflow reads **Unsaved**, and the next change branches from that
-version.
+Click a version to open it: its thumbnail, when it was recorded and by whom,
+and its nodes and connections. **Put this version on the canvas** goes back to
+it; putting it back is a version of its own, made from the one you went back
+to, so the next change branches from there.
+
+A saved dataflow's history is kept by Curio, the same for you and the editors
+you invited, and it shows each change as it is made. Putting a version back
+changes everyone's canvas, and the dataflow keeps its name, its categories,
+**Run stale nodes automatically**, and the packages and datasets installed in
+it. Only the owner sees **Clear history before this
+version**, which removes the versions before it; someone who only watches the
+dataflow sees no history. A dataflow not saved yet keeps its history in its
+tab: putting a version back there leaves the dataflow **Unsaved**, and its
+first save keeps the history.
 
 A node's **Provenance** button, in its header, lists the node's runs in the same
 drawer, with the same folds. Each run reads what it took in and gave back
 ("In: DATAFRAME | Out: GEODATAFRAME", or ERROR for a run that failed). Click a
 run to open it: when it ran, for how long, and its code. **Put this code back in
-the node** puts that code in the node's editor without running it, and the
-node's next run branches from that run.
+the node** puts that code in the node without running it, and the node's next
+run branches from that run. On a saved dataflow it does so only if the node
+still holds the code you saw: if someone changed it meanwhile, nothing changes,
+and Curio says who did. A Map Editor node's **Undo** and **Redo** work the same
+way.
 
-A change an agent made to the node's code that you applied is an entry too,
-named after the agent, such as **Node Builder**, and a node an agent proposed
-with its code starts with one. Open it to see when it was made and the code it left, and
-put that code back as you would a run's. The Node Builder and the Dataflow
-Builder read these histories as the dataflow was last saved, so you can ask
-either what changed in a node since a run.
+Your typing in a node is an entry too, named after you, and so is a change an
+agent made to the node's code that you applied, named after the agent, such as
+**Node Builder**. Open one to see when it was made and the code it left, and put
+that code back as you would a run's. The Node Builder and the Dataflow Builder
+read these histories, so you can ask either what changed in a node since a run.
 
 ## Widgets
 
@@ -1742,7 +1757,7 @@ provider, publishing, and writing your own, see [docs/AGENT-CATALOG.md](AGENT-CA
 
 ## Real-time collaboration
 
-Every tab that opens a saved dataflow while signed in holds one shared copy of it, which the server keeps as each change is made. A change in one tab shows in every other tab that has the dataflow open: code and specs as they are typed, with each person's cursor, and nodes, connections, widgets, scenarios and drags at once. A tab that opens the dataflow later finds every change. A hosted guest's canvas of an example, and every canvas of a Curio started without `--deploy` or with `--no-project`, stay their own.
+Every tab that opens a saved dataflow while signed in holds one shared copy of it, which the server keeps as each change is made. A change in one tab shows in every other tab that has the dataflow open: code and specs as they are typed, with each person's cursor, and nodes, connections, widgets, scenarios and drags at once. Each person's pointer shows on the others' canvases too, in their color with their name, and fades while it rests. A tab that opens the dataflow later finds every change. A hosted guest's canvas of an example, and every canvas of a Curio started without `--deploy` or with `--no-project`, stay their own.
 
 Who is here shows in the dock at the top of the canvas, beside the canvas agents: a chip for each other person, with their initials in their color. Hover one for their name, their role and the node they are editing, and click it to move your view to where they point on the canvas. The **Activity** button at the end of the row lists who joined, who left and whose role changed. A node someone is in shows their initials in its corner.
 
