@@ -85,12 +85,12 @@ SAFE_READ_TOOLS = (
 # baseline captures is what surfaced the ordering: with node.create ahead of
 # dataflow.plan.write, agent.curio.dataflow-builder - whose whole capability is
 # dataflow.orchestrate - minted a single node instead of a plan. node.create
-# sits ahead of node.content.write for the same reason and one more: applying it
+# sits ahead of node.content.write for the same reason and one more: landing it
 # puts a NEW NODE on the canvas, which is the most visible proof an agent did
 # something. The spread this produces is deliberate: a plan and two node
 # creations. Since node content is the Node Builder's mode, no card's first
-# match is node.content.write; TestAgentReviewCard (test_agent_chat_e2e.py)
-# applies a content replacement in the browser.
+# match is node.content.write; TestAgentChangeCard (test_agent_chat_e2e.py)
+# lands a content replacement in the browser and undoes it.
 MINTABLE_TOOLS = ("dataflow.plan.write", "node.create", "node.content.write")
 
 # What each mint writes, so the apply assertion and the scripted params cannot

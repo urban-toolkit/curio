@@ -435,7 +435,7 @@ Two families of baseline live in that folder:
   `package-metadata-roundtrip`, `package-export-drawer`, `save-as-modal`,
   `library-manager`, `node-catalog-drawer`, `data-catalog-drawer`,
   `agent-catalog-drawer`, `agent-run` (one per built-in agent, plus a
-  `_chat` companion for the four that mutate), `agent-review-card`,
+  `_chat` companion for the four that mutate), `agent-change-card`,
   `dataset-export`, `dataset-lineage`, `autark-grammar-edit`,
   `multi-input-authoring`, `canvas-delete-key`, `projects-page-scroll`,
   `global-imports`, `uhvi-install`, `data-pool-scroll`,
