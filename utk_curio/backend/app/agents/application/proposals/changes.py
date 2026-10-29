@@ -40,6 +40,8 @@ import uuid
 from utk_curio.backend.app.agents.application import attachments
 from utk_curio.backend.app.agents.application.errors import AgentServiceError
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
+from utk_curio.backend.app.agents.application.proposals import apply as agents_apply
+from utk_curio.backend.app.agents.application.proposals import plans as agents_plans
 from utk_curio.backend.app.agents.domain import agent_text
 from utk_curio.backend.app.agents.domain import node_settings
 from utk_curio.backend.app.agents.domain import widget_grammar
@@ -107,9 +109,6 @@ def land(user_key: str, project_id: str, loop_ctx: dict, spec: dict, proposal: d
     while a person holds a node it changes. Returns the tool's ``(status,
     text for the model, the change's card)``: :data:`LANDED`, or ``refused``
     with no card when nothing changed."""
-    from utk_curio.backend.app.agents.application.proposals import apply as agents_apply
-    from utk_curio.backend.app.agents.application.proposals import plans as agents_plans
-
     held = wait_for_people(project_id, _nodes_it_changes(proposal), loop_ctx.get("asker_id"))
     if held:
         return "refused", agent_text.message("change.person-editing", name=held), None
@@ -355,6 +354,4 @@ def _undo_settings(user_key, project_id, attachment_id, change, by, label) -> li
 
 
 def _undo_plan(user_key, project_id, attachment_id, change, by, label) -> list[dict]:
-    from utk_curio.backend.app.agents.application.proposals import plans as agents_plans
-
     return agents_plans._undo_plan(user_key, project_id, attachment_id, change, by)

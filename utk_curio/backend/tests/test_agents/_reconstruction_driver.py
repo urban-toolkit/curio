@@ -383,13 +383,13 @@ class InProcessDriver:
             required_packages=frozenset(str(p) for p in required.get("packages") or ()),
         )
         applied = []
+        # A plan landed with the turn; only installs wait for review.
         for proposal in turn.proposals:
             decision = policy.decide(proposal)
             if decision.pending:
                 self.left_pending.append((decision.tool, decision.target))
                 continue
-            label = "plan" if decision.tool == "dataflow.plan.write" else decision.tool
-            applied.append((label, self.apply(proposal)))
+            applied.append((decision.tool, self.apply(proposal)))
         return applied
 
     def solve(self, node_ids: Iterable | None = None, *, verify: bool = True) -> SolveResult:
