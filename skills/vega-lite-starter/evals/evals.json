@@ -6,7 +6,7 @@
     {
       "id": 1,
       "target": {"kind": "node", "node": "scores-chart"},
-      "prompt": "Chart what's coming into this node. Neighborhood scores hands it side (object, four values over 12 rows), accessibility (float64) and coverage (float64).",
+      "prompt": "Write the Scores chart's Vega-Lite spec. The node before it, Neighborhood scores, returns three columns: side (object, four values over 12 rows), accessibility (float64) and coverage (float64).",
       "expected_output": "A content change of Scores chart holding the starter bar chart: side on x as nominal, accessibility on y as quantitative with an explicit \"aggregate\": \"mean\", and no data field.",
       "assertions": [
         "The answer makes a content change of node scores-chart (node.content.write) holding a Vega-Lite spec.",
@@ -18,7 +18,7 @@
     {
       "id": 2,
       "target": {"kind": "node", "node": "counts-chart"},
-      "prompt": "Chart this node's input. Hourly counts hands it hour (datetime64[ns]), pedestrians (int64) and cyclists (int64), one row per hour.",
+      "prompt": "Write the Counts chart's Vega-Lite spec. The node before it, Hourly counts, returns one row per hour with three columns: hour (datetime64[ns]), pedestrians (int64) and cyclists (int64).",
       "expected_output": "A content change of Counts chart holding the starter line chart: hour on x as temporal and pedestrians, the first quantitative column, on y as quantitative, with no data field.",
       "assertions": [
         "The answer makes a content change of node counts-chart (node.content.write) holding a Vega-Lite spec.",
@@ -30,7 +30,7 @@
     {
       "id": 3,
       "target": {"kind": "node", "node": "roofs-chart"},
-      "prompt": "Chart what comes into this node. Roof sizes hands it roof_id (object, a different id on each of its 12 rows) and VEGETATED_SQFT (float64).",
+      "prompt": "Write the Roofs chart's Vega-Lite spec. The node before it, Roof sizes, returns 12 rows with two columns: roof_id (object, a different id on each row) and VEGETATED_SQFT (float64).",
       "expected_output": "A content change of Roofs chart holding the starter histogram: roof_id left out as an identifier, VEGETATED_SQFT binned on x and \"aggregate\": \"count\" on y, as a bar mark.",
       "assertions": [
         "The answer makes a content change of node roofs-chart (node.content.write) holding a Vega-Lite spec.",

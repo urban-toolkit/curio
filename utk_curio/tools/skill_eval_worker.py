@@ -16,8 +16,10 @@ runs, so no sandbox either.
   is written nowhere: not in an LLM configuration, not in the state folder.
 - **A run:** a fresh dataflow (the test case's, or an empty one) under a
   name that says nothing of the skill, its agent installed and attached, the
-  message sent to the chat route a browser sends it to, and the session read
-  back.
+  message sent to the chat route a browser sends it to, with the context a
+  browser's chat composes beside it (``evaluation/run_context.py``: the node
+  the agent is attached to, or the whole dataflow, as the agent's reads
+  say), and the session read back.
 - **Without the skill:** the run's skills leave it out wherever a run gets
   one (``skill_runs._pool``: its catalog, what it is handed, its
   instruction's and its capabilities' skills, the dataflow's packages'), and
@@ -70,7 +72,7 @@ from utk_curio.backend.app.agents.application import attachments, skill_runs  # 
 from utk_curio.backend.app.agents.application.turns import prompts, titles  # noqa: E402
 from utk_curio.backend.app.agents.domain import agent_text  # noqa: E402
 from utk_curio.backend.app.agents.domain import skills as skill_format  # noqa: E402
-from utk_curio.backend.app.agents.evaluation import skill_evals  # noqa: E402
+from utk_curio.backend.app.agents.evaluation import run_context, skill_evals  # noqa: E402
 from utk_curio.backend.app.agents.evaluation.report import scrub  # noqa: E402
 from utk_curio.backend.app.agents.infrastructure import provider_config, providers  # noqa: E402
 from utk_curio.backend.extensions import db  # noqa: E402
@@ -419,7 +421,9 @@ class Worker:
                 self._json("POST", f"/api/packages/projects/{project_id}/install", {"dirName": dir_name})
         return project_id
 
-    def _attach(self, project_id: str, context: skill_evals.Context) -> str:
+    def _attach(self, project_id: str, context: skill_evals.Context) -> dict:
+        """The attachment of *context*'s agent to its target, as the attach
+        route answers it: its id, its target and the reads its agent declares."""
         base = f"/api/agents/projects/{project_id}"
         status, body = self._json("POST", f"{base}/install", {"coord": context.agent})
         if status >= 400:
@@ -429,7 +433,17 @@ class Worker:
         status, body = self._json("POST", f"{base}/attachments", {"coord": context.agent, "target": target})
         if status >= 400 or "attachmentId" not in body:
             raise RuntimeError(f"{context.agent} could not be attached ({status}): {body.get('error')}")
-        return body["attachmentId"]
+        return body
+
+    @staticmethod
+    def _request(message: str, attachment: dict, spec: dict) -> dict:
+        """What a browser sends to run *message* on *attachment*: the message,
+        and beside it the context its chat composes of the canvas, when the
+        agent's reads compose any (``agentsApi.runAttachment``)."""
+        flow = spec.get("dataflow") if isinstance(spec.get("dataflow"), dict) else {}
+        context = run_context.compose(attachment.get("reads") or [], attachment.get("target"), spec,
+                                      name=str(flow.get("name") or ""), goal=str(flow.get("task") or ""))
+        return {"message": message, "context": context} if context else {"message": message}
 
     def _text_of(self, name: str) -> str | None:
         """The skill *name* as a run holds it, to look for in what it was sent."""
@@ -492,11 +506,14 @@ class Worker:
             record.pop(key, None)
         try:
             project_id = self._project(task.context)
-            attachment_id = self._attach(project_id, task.context)
+            attachment = self._attach(project_id, task.context)
+            attachment_id = attachment["attachmentId"]
             before = self._spec(project_id)
             url = f"/api/agents/projects/{project_id}/attachments/{attachment_id}/run"
+            request = self._request(message, attachment, before)
+            record["contextChars"] = len(request.get("context") or "")
             try:
-                status, body = self._json("POST", url, {"message": message})
+                status, body = self._json("POST", url, request)
                 record["stoppedEarly"] = False
                 if status >= 400:
                     record["error"] = f"the run answered {status}: {body.get('error') or body}"
