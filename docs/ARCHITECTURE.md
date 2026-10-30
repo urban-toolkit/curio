@@ -1465,7 +1465,10 @@ A run of an editor the dataflow's owner invited reads the owner's folder too,
 after the editor's own, so a node of the owner's packages imports the
 libraries they need and the editor's own copy of a library comes first. The backend sends the
 owner's storage key in `/exec`'s `library_keys` for such a run alone
-(`node_exec.library_keys_of`); the sandbox keeps the plain storage keys other
+(`node_exec.library_keys_of`), from a play and a run on the server as from an
+agent's run, a Run node's, a Solve's or a validation's, which names the
+account it is for, as a play does (`runner.run_through_node`); the sandbox
+keeps the plain storage keys other
 than the run's own (`supervisor.library_keys`), and `execute_isolated` hands
 the child the folders in that order (`protocol.build_exec_request`, then
 `child._add_overlay_to_path`). The owner's folder is located, never prepared
