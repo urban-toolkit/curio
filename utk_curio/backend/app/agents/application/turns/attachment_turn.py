@@ -35,8 +35,11 @@ def run_attachment(
         user_key, project_id, attachment_id, message, config, run_context, streaming=False
     )
     try:
-        for _event in turn.rounds():
-            pass  # a blocking turn emits nothing
+        # The agent is in the dataflow's room while it works, and gone before
+        # the reply is answered.
+        with turn.at_work():
+            for _event in turn.rounds():
+                pass  # a blocking turn emits nothing
     except Exception as exc:
         turn.settle_error(exc)
         raise AgentServiceError(f"agent run failed: {turn.redacted(exc)}", 502) from exc

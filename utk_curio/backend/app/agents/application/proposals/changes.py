@@ -9,7 +9,13 @@ transaction, so every tab bound to the doc gets it at once and the history
 records it as the agent's (``collaboration/history.py``: "Node Builder, asked by
 Ana"). A tab no doc binds takes it from the run's stream (:func:`take_landed`).
 Before a change lands on nodes a person holds (their focus in the node,
-``room_state``'s soft lock), it waits for them, up to :data:`LOCK_WAIT_S`.
+``room_state``'s soft lock), it waits for them, up to :data:`LOCK_WAIT_S`: for
+anyone but the person who asked (``agent_peers.wait_for_people``). A node's
+code, spec, widgets or settings land held by the agent the change is by, in the
+dataflow's room (``in_the_room``): it takes the node's lock, names the node in
+its state, writes, and keeps both a second while a tab is bound, so every tab
+shows the node's code as it lands. Its ``change`` event says what the agent's
+state said (``writing``), for a tab no doc binds.
 
 The attachment keeps its changes (``changes``, the last :data:`CHANGES_KEPT`),
 each with what its Undo needs, and the turn carries each one's card (a part of
@@ -39,6 +45,7 @@ import uuid
 
 from utk_curio.backend.app.agents.application import attachments
 from utk_curio.backend.app.agents.application.errors import AgentServiceError
+from utk_curio.backend.app.agents.application import in_the_room as agents_room
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application.proposals import apply as agents_apply
 from utk_curio.backend.app.agents.application.proposals import plans as agents_plans
@@ -46,9 +53,9 @@ from utk_curio.backend.app.agents.domain import agent_text
 from utk_curio.backend.app.agents.domain import node_settings
 from utk_curio.backend.app.agents.domain import widget_grammar
 from utk_curio.backend.app.agents.repositories import sessions
+from utk_curio.backend.app.collaboration import agent_peers
 from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.collaboration import history
-from utk_curio.backend.app.collaboration import room_state
 from utk_curio.backend.app.execution.code_references import normalize_widgets
 from utk_curio.common import shared_constants
 
@@ -78,33 +85,21 @@ _LOCK_POLL_S = 0.25
 
 # ── waiting on a person ──────────────────────────────────────────────────────
 
-def _holder(project_id: str, node_ids: list, asker) -> str | None:
-    """The name of a person, not the one who asked, whose lock holds one of
-    *node_ids*, or None."""
-    if not node_ids:
-        return None
-    locks = room_state.snapshot(room_state.room_for(project_id)).get("locks") or {}
-    for node_id in node_ids:
-        lock = locks.get(node_id)
-        if lock and (asker is None or str(lock.get("user_id")) != str(asker)):
-            return str(lock.get("name") or lock.get("username") or "Someone")
-    return None
-
-
-def wait_for_people(project_id: str, node_ids: list, asker=None) -> str | None:
-    """Wait while a person other than *asker*, the account that asked, holds
+def wait_for_people(project_id: str, node_ids: list, asker=None, *, sign_in: str | None = None,
+                    peer: agent_peers.Peer | None = None) -> str | None:
+    """Wait while someone other than *asker*, the account that asked, holds
     one of *node_ids*, as one person waits for another to leave a node, up to
     :data:`LOCK_WAIT_S`: the name of who still holds one then, or None. A run
     outside a request (a job's thread) names its asker; a request's is its
-    user."""
+    user. On the guest account, *sign_in* is the sign-in that asked: another
+    guest's lock holds the agent back. *peer*, the agent at work, never holds
+    itself back; another agent's lock holds it (``agent_peers.wait_for_people``)."""
     if asker is None:
         asker = getattr(agents_spec_reads._acting_user(), "id", None)
-    deadline = time.monotonic() + LOCK_WAIT_S
-    while True:
-        holder = _holder(project_id, node_ids, asker)
-        if holder is None or time.monotonic() >= deadline:
-            return holder
-        time.sleep(_LOCK_POLL_S)
+    return agent_peers.wait_for_people(
+        project_id, node_ids, asker, asker_sign_in=sign_in, peer=peer,
+        within=LOCK_WAIT_S, poll=_LOCK_POLL_S, clock=time.monotonic, sleep=time.sleep,
+    )
 
 
 # ── landing ──────────────────────────────────────────────────────────────────
@@ -112,19 +107,57 @@ def wait_for_people(project_id: str, node_ids: list, asker=None) -> str | None:
 def land(user_key: str, project_id: str, loop_ctx: dict, spec: dict, proposal: dict, part: dict):
     """Land the change *proposal* holds, which its mint checked against
     *spec*, the dataflow it read; *part* is what its card shows. Waits first
-    while a person holds a node it changes. Returns the tool's ``(status,
-    text for the model, the change's card)``: :data:`LANDED`, or ``refused``
-    with no card when nothing changed."""
-    held = wait_for_people(project_id, _nodes_it_changes(proposal), loop_ctx.get("asker_id"))
-    if held:
-        return "refused", agent_text.message("change.person-editing", name=held), None
+    while a person holds a node it changes. A node's content or settings land
+    held by the change's agent in the room (:func:`_land_held`). Returns the
+    tool's ``(status, text for the model, the change's card)``:
+    :data:`LANDED`, or ``refused`` with no card when nothing changed."""
+    kind = KIND_OF_TOOL[proposal["tool"]]
     lander = {
         CONTENT: agents_apply.land_content,
         SETTINGS: agents_apply.land_settings,
         NODE: agents_apply.land_node,
         PLAN: agents_plans._land_dataflow_plan,
-    }[KIND_OF_TOOL[proposal["tool"]]]
+    }[kind]
+    if kind in (CONTENT, SETTINGS):
+        return _land_held(user_key, project_id, loop_ctx, spec, proposal, part, lander)
+    held = wait_for_people(project_id, _nodes_it_changes(proposal), loop_ctx.get("asker_id"),
+                           sign_in=agents_room.asker_of(loop_ctx).sign_in)
+    if held:
+        return "refused", agent_text.message("change.person-editing", name=held), None
     return lander(user_key, project_id, loop_ctx, spec, proposal, part)
+
+
+def _land_held(user_key: str, project_id: str, loop_ctx: dict, spec: dict, proposal: dict, part: dict, lander):
+    """Land a node's content or settings as the agent the change is by, the
+    agent of its attachment, at work in the room (joined for the write, or
+    the run's own): after anyone else in the node, it takes the node's lock,
+    names the node in its state, writes, and keeps both a second while a tab
+    is bound. Each ``change`` event of the write carries what its state said
+    (``writing``)."""
+    nodes = _nodes_it_changes(proposal)
+    who = agents_room.asker_of(loop_ctx)
+    with agents_room.at_work(user_key, project_id, loop_ctx.get("attachment_id"), spec=spec, who=who) as peer:
+        held = wait_for_people(project_id, nodes, loop_ctx.get("asker_id"), sign_in=who.sign_in, peer=peer)
+        if held:
+            return "refused", agent_text.message("change.person-editing", name=held), None
+        if peer is None:
+            return lander(user_key, project_id, loop_ctx, spec, proposal, part)
+        writes = (agents_room.content_writes(spec, proposal["nodeId"]) if proposal["tool"] == "node.content.write"
+                  else agents_room.settings_writes(proposal.get("settings")))
+        # The wait is done: the lock now, or the name of who took it meanwhile.
+        with agent_peers.holding(peer, nodes, writes, within=0) as hold:
+            if hold.held_by is not None:
+                return "refused", agent_text.message("change.person-editing", name=hold.held_by), None
+            before = len(loop_ctx.get("_landed") or [])
+            outcome = lander(user_key, project_id, loop_ctx, spec, proposal, part)
+            if outcome[0] != LANDED:
+                hold.keep = False  # nothing landed: nothing to show a second
+                return outcome
+            hold.did = tuple(("changed", "node", node_id) for node_id in nodes)
+            writing = agents_room.writing(peer, hold)
+            for entry in (loop_ctx.get("_landed") or [])[before:]:
+                entry["writing"] = writing
+            return outcome
 
 
 def _nodes_it_changes(proposal: dict) -> list:

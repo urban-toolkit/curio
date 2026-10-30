@@ -173,6 +173,21 @@ def participant(room: str, sid: str) -> Optional[dict]:
         return dict(entry) if entry is not None else None
 
 
+def sign_in_of(room: str, participant_id: Optional[str]) -> Optional[str]:
+    """The sign-in of the socket that is *participant_id* in *room*, as text:
+    the id of the session its handshake signed in with, which tells apart the
+    tabs of the one guest account in different browsers. ``None`` when no
+    socket of the room is that participant."""
+    if participant_id is None:
+        return None
+    with _lock:
+        for sid, entry in (_room_users.get(room) or {}).items():
+            if entry.get("participant_id") == participant_id:
+                session = (_sid_identity.get(sid) or {}).get("token_session_id")
+                return None if session is None else str(session)
+    return None
+
+
 def set_user_role(room: str, user_id, role: str) -> Tuple[bool, List[str]]:
     """Give every participant of the account *user_id* in *room* the role
     *role*. Returns whether any changed, and the nodes whose locks they
