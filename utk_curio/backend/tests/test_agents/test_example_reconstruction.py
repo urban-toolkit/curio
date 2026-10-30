@@ -582,8 +582,8 @@ class TestResolutionModePackageTemplates:
         phase["name"] = "plan"
         driver.with_attachment(dfb)
         second = driver.run_turn("go ahead with the plan")
-        assert second.plan_proposal, second.reply[:200]
-        driver.apply(second.plan_proposal)
+        # The plan landed with the reply, as the agent's change.
+        assert second.plan_change, second.reply[:200]
         driver.solve()
         spec = driver.read_spec()
         built = {
@@ -822,7 +822,7 @@ class TestSolveOutcomesAreReadHonestly:
             "utk_curio.backend.app.execution.runner._http_exec", _exec
         )
         turn = driver.run_turn(fixture.prompt)
-        driver.apply(turn.plan_proposal)
+        assert turn.plan_change, turn.reply[:200]
         solve = driver.solve()
         outcomes = attempt_mod.execution_outcomes(
             solve.results, actual_spec=driver.read_spec(), templates=TEMPLATES

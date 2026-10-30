@@ -43,13 +43,14 @@ def keys_account(user_key: str, user=None) -> str:
     return _storage_key(asker) if asker is not None else user_key
 
 
-def account(user_key: str) -> str:
+def account(user_key: str, user=None) -> str:
     """Who a change made for the request to the dataflow *user_key* stores
     is by, as a change's :class:`~utk_curio.backend.app.collaboration.dataflow_docs.Actor`
     names its account: the person who asked, an editor the owner invited among
-    them. The dataflow's own *user_key* for its owner, whose storage key it is,
-    and outside a request."""
-    asker = person()
+    them: *user*, the asker a job took when it started, else the request's
+    account. The dataflow's own *user_key* for its owner, whose storage key it
+    is, and when no one is known: a job's thread holds no request."""
+    asker = user if user is not None else person()
     if asker is None or getattr(asker, "id", None) is None or _storage_key(asker) == user_key:
         return user_key
     return str(asker.id)

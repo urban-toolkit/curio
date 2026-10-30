@@ -1,25 +1,21 @@
 import React from "react";
 
-import type { AgentProposalPart } from "../../../../services/agents";
-import { countLabel } from "../../../../utils/countLabel";
 import styles from "../AgentReviewCard.module.css";
-import { removalsTitle } from "./reviewCardText";
+import { removalsTitle, tilesLeftLine, type PlanDisplay } from "./reviewCardText";
 
-/** A dataflow plan's summary (dev/52: counts + goal at a glance) and, when the
- * plan removes anything, DEC-049.2's removals block — every victim by NAME
+/** A landed plan's goal (its card's lines count what it added) and, when the
+ * plan removed anything, DEC-049.2's removals block: every victim by NAME
  * with a content flag; dev/112: removed CONNECTIONS named too. */
-export const PlanSummary: React.FC<{ part: AgentProposalPart }> = ({ part }) => {
+export const PlanSummary: React.FC<{ part: PlanDisplay }> = ({ part }) => {
   if (part.tool !== "dataflow.plan.write" || !part.plan) return null;
   const plan = part.plan;
   const removes = (plan.removals?.length ?? 0) > 0 || (plan.removedEdges?.length ?? 0) > 0;
+  const tilesLeft = tilesLeftLine(plan.removals ?? []);
   return (
     <>
-      <div className={styles.meta}>
-        {countLabel(plan.nodes.length, "node")} · {countLabel(plan.edgeCount, "connection")}
-        {plan.scenarios?.length ? ` · ${countLabel(plan.scenarios.length, "scenario")}` : ""} · {plan.goal}
-      </div>
+      {plan.goal ? <div className={styles.meta}>{plan.goal}</div> : null}
       {removes ? (
-        <div className={styles.removals} role="group" aria-label="Nodes and connections this plan removes">
+        <div className={styles.removals} role="group" aria-label="Nodes and connections this plan removed">
           <div className={styles.removalsTitle}>
             {removalsTitle(plan.removals?.length ?? 0, plan.removedEdges?.length ?? 0, plan.cascadeCount ?? 0)}
           </div>
@@ -29,7 +25,7 @@ export const PlanSummary: React.FC<{ part: AgentProposalPart }> = ({ part }) => 
                 {victim.label}
                 {victim.nodeType ? ` · ${victim.nodeType}` : ""}
                 {victim.pinned ? " · dashboard tile" : ""}
-                {victim.contentChars > 0 ? ` (contains ${victim.contentChars} chars of content)` : " (empty)"}
+                {victim.contentChars > 0 ? ` (contained ${victim.contentChars} chars of content)` : " (empty)"}
               </li>
             ))}
             {(plan.removedEdges ?? []).map((edge) => (
@@ -40,6 +36,7 @@ export const PlanSummary: React.FC<{ part: AgentProposalPart }> = ({ part }) => 
               </li>
             ))}
           </ul>
+          {tilesLeft ? <div className={styles.meta}>{tilesLeft}</div> : null}
         </div>
       ) : null}
     </>

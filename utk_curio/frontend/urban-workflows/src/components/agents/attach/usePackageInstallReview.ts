@@ -25,13 +25,8 @@ export interface PackageInstallCandidate {
   conflicts: ResolveConflict[];
 }
 
-/** The slice of the apply result this hook reads (dev/105 A3). */
-export interface ApplyFollowUps {
-  followUpProposals?: string[];
-}
-
 export function usePackageInstallReview(
-  applyProposal?: (proposalId: string) => Promise<ApplyFollowUps | void>,
+  applyProposal?: (proposalId: string) => Promise<unknown>,
 ): {
   candidate: PackageInstallCandidate | null;
   busy: boolean;
@@ -100,16 +95,8 @@ export function usePackageInstallReview(
     setBusy(true);
     try {
       if (!applyProposal) throw new Error("applying proposals is not available here");
-      const result = await applyProposal(candidate.proposalId);
-      // dev/105 A3: the install apply queued the Researcher's note cards
-      // below the install card; walk them ONE AT A TIME — each apply paints
-      // its node and refreshes the transcript before the next card is
-      // applied, so the progression is real events, not timers. A failing
-      // step stops the walk; the remaining cards stay pending, applicable
-      // by hand — nothing is lost.
-      for (const followUpId of result?.followUpProposals ?? []) {
-        await applyProposal(followUpId);
-      }
+      // An install that carries notes places them itself, once it is applied.
+      await applyProposal(candidate.proposalId);
       setCandidate(null);
       settle();
     } catch (err) {

@@ -3,7 +3,7 @@
   "name": "Node Builder",
   "category": "node",
   "version": "1.0.0",
-  "purpose": "Create a node, or rewrite a node's content, as a proposal you review. On a connection it suggests what could go there. It installs or writes the node packages your nodes need.",
+  "purpose": "Create a node, or rewrite a node's content, as a change you can undo from its chat. On a connection it suggests what could go there. It installs or writes the node packages your nodes need.",
   "catalog": {
     "listed": true,
     "order": 4

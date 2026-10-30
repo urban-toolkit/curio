@@ -1,9 +1,9 @@
 # Messages
 
 What the runtime tells a model about what the model wrote: a tool call it does
-not run, a proposal it does not make or makes for the user's review, a plan, a
-request, code or a document it sends back for another attempt, and the notes a
-next attempt is given. One section per message, by the id the check reads it
+not run, a change it makes to the dataflow or does not, an install it proposes
+for the user's review, a plan, a request, code or a document it sends back for
+another attempt, and the notes a next attempt is given. One section per message, by the id the check reads it
 by. A `{name}` is a value the check fills when it says the message, such as a
 node's id or the problems it found; a section names each value its check
 gives, and only those.
@@ -255,7 +255,7 @@ proposal {proposal_id} created: {summary} (artifact {digest}…). It awaits the 
 
 ## mint.no-conversation
 
-proposals need a persistent conversation; this attachment has none
+changes and proposals need a persistent conversation; this attachment has none
 
 ## mint.no-proposal-flow
 
@@ -272,11 +272,43 @@ params.content must be a non-empty string
 
 ## mint.content-too-large
 
-params.content exceeds the proposal size bound
+params.content exceeds the content size bound
 
-## mint.content-write-proposed
+## change.content-written
 
-proposal {proposal_id} created for node {node_id}; it awaits the user's explicit review: do NOT assume it was applied
+node {node_id} now holds your code, for everyone in the dataflow; the user can undo it from this chat. Summarize the change in one or two sentences, and do NOT restate the code
+
+## change.settings-written
+
+the settings of node {node_id} changed as you gave them, for everyone in the dataflow; the user can undo it from this chat
+
+## change.node-added
+
+a new {label} node, {node_id}, is on the canvas, for everyone in the dataflow; the user can undo it from this chat
+
+## change.plan-landed
+
+the plan is on the canvas, for everyone in the dataflow; the user can undo it from this chat: {result}
+
+## change.changed-meanwhile
+
+node {node_id} took other code while you worked, so it keeps that code and nothing changed: read it again and write from what it holds now
+
+## change.person-editing
+
+{name} is editing a node this change touches, so nothing changed: tell the user, who can ask again once {name} is done
+
+## change.plan-victim-changed
+
+a node the plan removes ({label}) changed after you read it, so nothing changed: read the dataflow again and plan from what it holds now
+
+## change.plan-closes-a-cycle
+
+a connection the plan draws would now close a cycle ({cycle}) through one drawn after you read the dataflow, so nothing changed: read the dataflow again and plan from what it holds now
+
+## change.plan-scenario-taken
+
+the scenario {name} the plan saves takes a name or a node of a scenario saved after you read the dataflow, so nothing changed: read the dataflow again and plan from what it holds now
 
 ## mint.widgets-not-placeable
 
@@ -289,10 +321,6 @@ params.content: a {label} node starts from its template's own content, which a n
 ## mint.appearance-invalid
 
 params.appearance: {exc}
-
-## mint.node-create-proposed
-
-proposal {proposal_id} created for a new {label} node; it awaits the user's explicit review: do NOT assume it was applied
 
 ## mint.specialist-no-conversation
 
@@ -324,7 +352,7 @@ edges[{i}].toHandle {handle}: this node's inputs are {circles}
 
 ## plan.no-conversation
 
-proposals need a persistent conversation
+a plan needs a persistent conversation
 
 ## plan.nodes-carry-content
 
@@ -441,10 +469,6 @@ params names no setting to change: give {keys}
 ## node-settings.changes-nothing
 
 params changes nothing: the {label} node already has {settings}
-
-## mint.settings-write-proposed
-
-proposal {proposal_id} created for the settings of node {node_id}; it awaits the user's explicit review: do NOT assume it was applied
 
 ## plan.widgets-not-placeable
 
@@ -1100,7 +1124,7 @@ refused by the egress policy
 
 ## grounding.candidates-pending
 
-dataset candidates are shown to the user for review: do not propose a node in this turn; end your reply by asking the user to select and confirm a source, then build from the confirmed one on the next turn
+dataset candidates are shown to the user to choose from: do not add a node in this turn; end your reply by asking the user to select and confirm a source, then build from the confirmed one on the next turn
 
 ## grounding.hint-catalog-search
 
@@ -1164,7 +1188,7 @@ the agent asked for datasets
 
 ## dataset.candidates-shown
 
-{total} dataset candidate(s) are shown to the user for review; external rows carry the runtime's verification verdict.{note} Do NOT propose a node in this turn: ask the user to select and confirm; you will build from the confirmed source on the next turn.
+{total} dataset candidate(s) are shown to the user to choose from; external rows carry the runtime's verification verdict.{note} Do NOT add a node in this turn: ask the user to select and confirm; you will build from the confirmed source on the next turn.
 
 ## dataset.candidates-unconfirmed
 
@@ -1178,9 +1202,9 @@ The project's Data Catalog as catalog.search returned it
 
 The Data Catalog listing was empty or unavailable: the catalog lane must stay empty; say so.
 
-## delegate.content-not-minted
+## delegate.content-not-written
 
-the generated content could not become a reviewed proposal ({error}). Report this honestly: nothing was changed and nothing awaits review
+the generated content could not be written into the node ({error}). Report this honestly: nothing was changed
 
 ## delegate.content-not-minted-unknown
 
@@ -1194,9 +1218,9 @@ in this conversation
 
 at the node's own {home_name} agent
 
-## delegate.content-minted
+## delegate.content-written
 
-the generated content was minted as reviewed proposal {proposal_id} for node {node_id} ({where}); it awaits the user's explicit Apply: summarize the change in one or two sentences, do NOT restate the code, and do NOT say it was applied
+the generated content is in node {node_id} ({where}), for everyone in the dataflow; the user can undo it from that chat. Summarize the change in one or two sentences, and do NOT restate the code
 
 ## delegate.reuse-existing-enlisted
 
@@ -1242,13 +1266,13 @@ no installed notes template was available
 
 {answer}notes skipped: {reason}. Ask the Researcher (attached to a node or the canvas) to enlist or author a notes package; its own runs hold the reuse ladder a delegate cannot reach
 
-## delegate.notes-none-proposed
+## delegate.notes-none-added
 
-{answer}no notes could be proposed: {last_refusal}
+{answer}no notes could be added: {last_refusal}
 
-## delegate.notes-proposed
+## delegate.notes-added
 
-{answer}{count} reviewed note proposal(s) created{refusal}: they await the user's explicit Apply; do NOT claim the notes exist
+{answer}{count} note(s) are on the canvas{refusal}, for everyone in the dataflow; the user can undo each from this chat
 
 ## delegate.draft-empty
 

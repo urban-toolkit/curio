@@ -336,7 +336,7 @@ arguments in [Functions node code calls](../skills/node-functions/SKILL.md).
 
 Curio resolves the name when the node runs, on Play and when an agent's Solve
 runs it, and hands the value to the sandbox for that run only. The key never
-appears in your saved dataflow, in proposals, in the chat or in the run log, and
+appears in your saved dataflow, in an agent's changes, in the chat or in the run log, and
 a key the code prints is redacted. A node that names a key you have not saved
 fails with one sentence naming the key. When an agent's Solve reaches an
 endpoint that wants a key you have not saved, the failure offers **Add key for
@@ -538,7 +538,7 @@ bolt while it is on.
 **View > Provenance** opens the dataflow's version history in a drawer on the
 right. Each node or connection added or removed makes a version, and so do
 each person's typing in a node once they pause or leave its editor ("Ana
-edited"), an agent's change you applied ("Node Builder, asked by Ana"), each
+edited"), an agent's change ("Node Builder, asked by Ana"), each
 **File > Save** and each version put back.
 
 - The versions are listed in the order they were made, on a line that leads to
@@ -572,10 +572,11 @@ and Curio says who did. A Map Editor node's **Undo** and **Redo** work the same
 way.
 
 Your typing in a node is an entry too, named after you, and so is a change an
-agent made to the node's code that you applied, named after the agent, such as
-**Node Builder**. Open one to see when it was made and the code it left, and put
-that code back as you would a run's. The Node Builder and the Dataflow Builder
-read these histories, so you can ask either what changed in a node since a run.
+agent made to the node's code, named after the agent, such as **Node Builder**;
+a node an agent added with its code starts with one. Open one to see when it was
+made and the code it left, and put that code back as you would a run's. The Node
+Builder and the Dataflow Builder read these histories, so you can ask either
+what changed in a node since a run.
 
 ## Widgets
 
@@ -1720,9 +1721,13 @@ the dock at the top of the canvas.
 
 Click an agent to open its chat panel. From there you can rename the
 conversation, clear it, cycle through every attached agent with the ‹ › arrows,
-and edit the initial intent the agent starts from. Agents that propose changes
-(new nodes, edges, node content, packages) put them up for review first: nothing
-lands on your canvas until you apply it.
+and edit the initial intent the agent starts from. A change an agent makes to
+your dataflow (a node's code or settings, a new node, a plan) lands at once, for
+everyone on the dataflow, as your own edit does; it waits while someone else is
+working in the node it changes. Its card in the chat has **Undo**, which puts
+back what it replaced, unless someone changed it after: then Undo says who, and
+nothing changes. An install (a package, a dataset, a download, an agent) waits
+for your review: nothing installs until you apply it.
 
 Type `/` at the start of a message to list the agent's
 [skills](AGENT-CATALOG.md#skills). Pick one with the arrow keys and Enter, or a
@@ -1732,12 +1737,18 @@ Escape closes the list. A line under each reply names the skills its run used;
 hover a name to see how the run came to hold it.
 
 The **Dataflow Builder** is the composite agent that plans a whole dataflow. Its
-strip adds planning phases, per-node progress, and **Solve**, which fills in the
-planned nodes in one batch: it runs each node's code in the sandbox, corrects
-it when the run fails, and writes only code that ran. Applying a plan also
-gives every created node a **Node Builder**, and every data-loading node a
-**Dataset Finder**, which Solve asks for candidates when the node's source is
-not settled. See [Solve](AGENT-CATALOG.md#solve) in the Agent Catalog guide.
+plan lands whole, nodes, connections and removals at once, as one change you
+can undo. Its strip then offers **Build & validate plan**, which fills the
+plan's nodes in order: each node's code is run in the sandbox, and code that
+passes lands, with its **Undo**, before the next node; the first failure pauses
+the build with nothing written after it, and **Resume** continues from there.
+**Step** does one action at a time. The strip also has per-node progress and
+**Solve**, which fills in the planned nodes in one batch: it runs each node's
+code in the sandbox, corrects it when the run fails, and writes only code that
+ran. A plan also gives every created node a **Node Builder**, and every
+data-loading node a **Dataset Finder**, which Solve asks for candidates when
+the node's source is not settled. See [Solve](AGENT-CATALOG.md#solve) in the
+Agent Catalog guide.
 A plan can also declare the widgets each node's code reads, and save
 [scenarios](#scenarios), including a copy of one with a widget value changed;
 see [Widgets and scenarios](AGENT-CATALOG.md#widgets-and-scenarios).

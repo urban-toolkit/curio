@@ -83,8 +83,9 @@ def _script(monkeypatch, replies: list[str]) -> None:
 
 def _agent_adds_a_node(client, token: str, project_id: str, monkeypatch) -> tuple[str, str]:
     """The visitor signed in as *token* attaches the Node Builder to the
-    canvas, asks it for a node and applies what it proposed: the attachment's
-    id and the new node's."""
+    canvas and asks it for a node, which lands at once: the attachment's id
+    and the new node's. A guest's tab joins no room, so no doc binds it: the
+    reply carries the node for it, as the stream's change event does."""
     installed = client.post(f"/api/agents/projects/{project_id}/install",
                             json={"coord": COORD}, headers=_auth(token))
     assert installed.status_code == 201, installed.get_data(as_text=True)
@@ -96,13 +97,11 @@ def _agent_adds_a_node(client, token: str, project_id: str, monkeypatch) -> tupl
     run = client.post(f"/api/agents/projects/{project_id}/attachments/{att_id}/run",
                       json={"message": "add a node"}, headers=_auth(token))
     assert run.status_code == 200, run.get_data(as_text=True)
-    proposal = next(p for p in run.get_json()["content"] if p["type"] == "proposal")
-    applied = client.post(
-        f"/api/agents/projects/{project_id}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply",
-        headers=_auth(token),
-    )
-    assert applied.status_code == 200, applied.get_data(as_text=True)
-    return att_id, applied.get_json()["createdNode"]["id"]
+    body = run.get_json()
+    assert not [p for p in body["content"] if p["type"] == "proposal"]
+    [landed] = body["changes"]
+    assert landed["canvas"]["kind"] == "node-created"
+    return att_id, landed["canvas"]["node"]["id"]
 
 
 def _canvas_nodes(client, token: str, project_id: str) -> dict:
@@ -135,17 +134,13 @@ def test_one_hosted_guests_agent_work_never_reaches_the_next_guest(client, share
     assert not on_disk["dataflow"].get("agentAttachments")
 
     # A later turn of the same visitor's agent reads its copy: it finds the
-    # node its own earlier turn added, and changes it there alone.
+    # node its own earlier turn added, and changes it there alone, at once.
     _script(monkeypatch, [WRITE % node_id, "Changed."])
     run = client.post(f"/api/agents/projects/{shared_example}/attachments/{att_id}/run",
                       json={"message": "change it"}, headers=_auth(VISITOR_A))
     assert run.status_code == 200, run.get_data(as_text=True)
-    proposal = next(p for p in run.get_json()["content"] if p["type"] == "proposal")
-    applied = client.post(
-        f"/api/agents/projects/{shared_example}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply",
-        headers=_auth(VISITOR_A),
-    )
-    assert applied.status_code == 200, applied.get_data(as_text=True)
+    [change] = [p for p in run.get_json()["content"] if p["type"] == "change"]
+    assert change["kind"] == "content"
     assert _canvas_nodes(client, VISITOR_A, shared_example)[node_id]["content"] == "print('mine, again')"
     assert set(_canvas_nodes(client, VISITOR_B, shared_example)) == {"n1"}
 
@@ -160,6 +155,26 @@ def test_two_hosted_guests_agents_each_keep_their_own_work(client, shared_exampl
     assert set(_canvas_nodes(client, VISITOR_B, shared_example)) == {"n1", b_node}
     assert [a["attachmentId"] for a in _attachments(client, VISITOR_A, shared_example)] == [a_att]
     assert [a["attachmentId"] for a in _attachments(client, VISITOR_B, shared_example)] == [b_att]
+
+
+def test_a_hosted_guests_undo_takes_the_node_off_their_copy_alone(client, shared_example, monkeypatch):
+    from utk_curio.backend.app.projects import visitor_copies  # noqa: F401 - what main lacks
+
+    att_id, node_id = _agent_adds_a_node(client, VISITOR_A, shared_example, monkeypatch)
+    _b_att, b_node = _agent_adds_a_node(client, VISITOR_B, shared_example, monkeypatch)
+    turns = client.get(f"/api/agents/projects/{shared_example}/attachments/{att_id}/session",
+                       headers=_auth(VISITOR_A)).get_json()["turns"]
+    change_id = next(p["changeId"] for t in turns for p in t.get("content") or [] if p.get("type") == "change")
+    undone = client.post(f"/api/agents/projects/{shared_example}/attachments/{att_id}/changes/{change_id}/undo",
+                         headers=_auth(VISITOR_A))
+    assert undone.status_code == 200, undone.get_data(as_text=True)
+    # The guest's tab, which no doc binds, takes the removal from the answer.
+    assert undone.get_json()["canvas"] == [{
+        "kind": "plan-removals", "planId": f"undo:{change_id}", "removedNodeIds": [node_id], "removedEdgeIds": [],
+    }]
+    assert set(_canvas_nodes(client, VISITOR_A, shared_example)) == {"n1"}
+    # The other guest's node, on their own copy, stays.
+    assert set(_canvas_nodes(client, VISITOR_B, shared_example)) == {"n1", b_node}
 
 
 def test_the_copies_go_when_the_server_starts(client, shared_example, monkeypatch):

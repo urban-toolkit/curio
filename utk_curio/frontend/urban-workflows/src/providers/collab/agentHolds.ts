@@ -20,13 +20,14 @@
 import { useEffect, useSyncExternalStore } from "react";
 
 import { agentHolding, type AgentHold } from "./participants";
+import { editingOf } from "./presence";
 
 let held: ReadonlyMap<string, AgentHold> = new Map();
 const listeners = new Set<() => void>();
 
 function sameHold(a: AgentHold, b: AgentHold): boolean {
-    return a.participantId === b.participantId && a.name === b.name && a.category === b.category
-        && a.askedBy === b.askedBy && a.writes === b.writes;
+    return a.participantId === b.participantId && a.attachmentId === b.attachmentId && a.name === b.name
+        && a.category === b.category && a.askedBy === b.askedBy && a.writes === b.writes;
 }
 
 /** *next*, keeping each hold that did not change as it was, so a node whose
@@ -68,9 +69,8 @@ export function useAgentHold(nodeId: string | null | undefined): AgentHold | nul
  *  writing nothing. */
 export function agentWriting(state: unknown): { nodeIds: string[]; hold: AgentHold } | null {
     if (!state || typeof state !== "object") return null;
-    const { user, editing, writes } = state as { user?: unknown; editing?: unknown; writes?: unknown };
-    const nodeIds = (Array.isArray(editing) ? editing : [editing])
-        .filter((nodeId): nodeId is string => typeof nodeId === "string" && nodeId !== "");
+    const { user, writes } = state as { user?: unknown; writes?: unknown };
+    const nodeIds = editingOf(state);
     if (nodeIds.length === 0 || !user || typeof user !== "object") return null;
     const hold = agentHolding({ ...(user as Record<string, unknown>), writes });
     return hold ? { nodeIds, hold } : null;

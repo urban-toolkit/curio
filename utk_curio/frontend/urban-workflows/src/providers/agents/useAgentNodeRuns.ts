@@ -1,12 +1,13 @@
 /**
  * Running and validating one node from chat (memo dev/142, F2 — extracted
  * from `AgentAttachmentsProvider`): the real run through the node (dev/71,
- * journaled) and the validate-node stream (dev/67-7). The result card and any
- * journal-derived state arrive by refetch.
+ * journaled) and the validate-node stream (dev/67-7), whose code that passed
+ * lands as the agent's change and reaches a canvas no doc binds. The result
+ * card and any journal-derived state arrive by refetch.
  */
 import { useCallback, useMemo } from "react";
 
-import { agentsApi } from "../../services/agents";
+import { agentsApi, bridgeLandedChangeEvent } from "../../services/agents";
 
 type NodeTarget = { ref?: string; nodeId?: string };
 type OnEvent = (name: string, payload: Record<string, unknown>) => void;
@@ -40,7 +41,10 @@ export function useAgentNodeRuns(opts: {
       const pid = projectRef.current;
       if (!pid) throw new Error("no project");
       try {
-        return await agentsApi.validateNode(pid, attachmentId, target, onEvent ?? (() => undefined));
+        return await agentsApi.validateNode(pid, attachmentId, target, (name, payload) => {
+          bridgeLandedChangeEvent(name, payload);
+          onEvent?.(name, payload);
+        });
       } finally {
         await refreshAfterMutation(attachmentId);
       }

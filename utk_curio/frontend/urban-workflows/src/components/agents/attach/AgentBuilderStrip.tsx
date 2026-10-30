@@ -7,13 +7,14 @@ import { BatchActions } from "./builderStrip/BatchActions";
 import { MissingSpecialistReview } from "./builderStrip/MissingSpecialistReview";
 import { NodeRunPills } from "./builderStrip/NodeRunPills";
 import { PhaseChips } from "./builderStrip/PhaseChips";
-import { PlanReviewActions } from "./builderStrip/PlanReviewActions";
+import { PlanBuildActions } from "./builderStrip/PlanBuildActions";
 import { PlanningTemplates } from "./builderStrip/PlanningTemplates";
 import { SolveFeedback } from "./builderStrip/SolveFeedback";
 import {
   batchDetailFor,
   distinctLines,
   passLineText,
+  planLeftToBuild,
   remediesByHost,
   selectionRemediesOf,
   sessionEndingText,
@@ -71,13 +72,12 @@ export const AgentBuilderStrip: React.FC<{
    * revert to pending. Omitted → no Cancel control. */
   onCancelSolve?: () => Promise<void>;
   onComposePrompt: (prompt: string) => void;
-  /** The dev/41 system review actions — surfaced here during plan_review
-   * (dev/53) so the Apply control lives where the phase indicator points,
-   * targeting the activeProposal mirror (works even when a transcript part
-   * is missing). Omitted → the transcript card is the only review surface. */
+  /** The dev/41 review actions of an install this agent needs (a missing
+   * specialist, dev/106), surfaced here where the phase indicator points.
+   * Omitted → the transcript card is the only review surface. */
   onApplyProposal?: (proposalId: string) => Promise<unknown>;
   onDismissProposal?: (proposalId: string) => Promise<void>;
-  /** dev/67-9: the Simulation Mode driver — step or auto (Build & validate). */
+  /** dev/67-9: Build & validate over the landed plan: step or auto. */
   onSimulate?: (mode: "step" | "auto") => Promise<unknown>;
   onCancelSimulate?: () => Promise<void>;
   /** dev/67-9: the running simulation's narration line. */
@@ -181,14 +181,9 @@ export const AgentBuilderStrip: React.FC<{
     }
   };
 
-  // The pending plan review, from the fast mirror (dev/41); dev/67-9: a plan
-  // PARKED behind a content review still drives the simulation controls.
-  const planReview =
-    attachment.activeProposal &&
-    attachment.activeProposal.tool === "dataflow.plan.write" &&
-    attachment.activeProposal.status === "pending"
-      ? attachment.activeProposal
-      : (attachment.planProposal?.status === "pending" ? attachment.planProposal : null);
+  // The plan that landed, while any of its nodes is left to build: Build &
+  // validate and Step work on it.
+  const landedPlan = planLeftToBuild(attachment.planProposal, session) ? attachment.planProposal! : null;
   const pauseReason = session.pauseReason ?? null;
   // dev/106: the missing-specialist review, from the mirror.
   const installReview =
@@ -236,10 +231,7 @@ export const AgentBuilderStrip: React.FC<{
     }
   };
 
-  const review = async (
-    fn?: (proposalId: string) => Promise<unknown>,
-    proposalId: string | undefined = planReview?.proposalId,
-  ) => {
+  const review = async (fn: ((proposalId: string) => Promise<unknown>) | undefined, proposalId: string) => {
     if (!fn || !proposalId || reviewBusy) return;
     setReviewBusy(true);
     setError(null);
@@ -312,16 +304,13 @@ export const AgentBuilderStrip: React.FC<{
           onDismiss={onDismissProposal ? () => void review(onDismissProposal, installReview.proposalId) : undefined}
         />
       ) : null}
-      {planReview && (onSimulate || onApplyProposal || onDismissProposal) ? (
-        <PlanReviewActions
-          review={planReview}
+      {landedPlan && onSimulate ? (
+        <PlanBuildActions
+          plan={landedPlan}
           paused={Boolean(pauseReason)}
           simBusy={simBusy}
-          reviewBusy={reviewBusy}
-          onSimulate={onSimulate ? (mode) => void simulate(mode) : undefined}
+          onSimulate={(mode) => void simulate(mode)}
           onCancelSimulate={onCancelSimulate ? () => void onCancelSimulate() : undefined}
-          onApply={onApplyProposal ? () => void review(onApplyProposal) : undefined}
-          onDismiss={onDismissProposal ? () => void review(onDismissProposal) : undefined}
         />
       ) : null}
       <BatchActions

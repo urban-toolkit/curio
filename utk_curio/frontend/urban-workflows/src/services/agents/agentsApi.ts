@@ -22,14 +22,14 @@ import type {
   AgentDatasetPick,
   AgentDatasetSelection,
   AgentInstallResponse,
+  AgentLandedChange,
   AgentListResponse,
-  AgentPlanEdgesResult,
-  AgentPlanNodeApplyResult,
   AgentProposalStatus,
   AgentRunSkillPins,
   AgentSession,
   AgentSolveResult,
   AgentTarget,
+  AgentUndoResult,
   AgentUsage,
   CatalogSettingsResponse,
 } from "./types";
@@ -193,8 +193,8 @@ export const agentsApi = {
     );
   },
 
-  /** Apply a pending review proposal (memo dev/41) — the only mutation path;
-   * revision-safe (409 when the target drifted, marking the proposal stale). */
+  /** Apply a pending install the person reviewed (memo dev/41); revision-safe
+   * (409 when the target drifted, marking the proposal stale). */
   applyProposal(
     projectId: string,
     attachmentId: string,
@@ -206,18 +206,17 @@ export const agentsApi = {
     );
   },
 
-  /** Apply ONE planned node from a pending plan proposal (dev/67-5,
-   * Simulation Mode: create). The proposal stays pending until every ref is
-   * applied or it is dismissed; edges are the connection stage's (67-8). */
-  applyPlanNode(
+  /** Undo a change the attachment's agent made, as the caller's own change,
+   * by its kind; a 409 says who changed it after (nothing was undone). The
+   * answer carries the canvas mutations a canvas no doc binds takes. */
+  undoChange(
     projectId: string,
     attachmentId: string,
-    proposalId: string,
-    ref: string
-  ): Promise<AgentPlanNodeApplyResult> {
+    changeId: string
+  ): Promise<AgentUndoResult> {
     return apiFetch(
-      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/proposals/${encodeURIComponent(proposalId)}/apply-node`,
-      { method: "POST", body: JSON.stringify({ ref }) }
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/changes/${encodeURIComponent(changeId)}/undo`,
+      { method: "POST" }
     );
   },
 
@@ -235,42 +234,7 @@ export const agentsApi = {
     );
   },
 
-  /** Apply plan edges — the connection review stage (dev/67-8). Omitted
-   * indices apply every not-yet-applied edge; refusals are per-edge and
-   * named; `createdEdges` feeds the canvas bridge. */
-  applyPlanEdges(
-    projectId: string,
-    attachmentId: string,
-    proposalId: string,
-    indices?: number[]
-  ): Promise<AgentPlanEdgesResult> {
-    return apiFetch(
-      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/proposals/${encodeURIComponent(proposalId)}/apply-edges`,
-      { method: "POST", body: JSON.stringify(indices ? { edges: indices } : {}) }
-    );
-  },
-
-  /** Edit one planned node's goal before creation (dev/67-5): an audited
-   * review-stage overlay — the pinned plan bytes stay immutable. */
-  savePlanGoal(
-    projectId: string,
-    attachmentId: string,
-    proposalId: string,
-    ref: string,
-    goal: string
-  ): Promise<{
-    proposalId: string;
-    ref: string;
-    goal: string;
-    editedGoals: Record<string, string>;
-  }> {
-    return apiFetch(
-      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/proposals/${encodeURIComponent(proposalId)}/plan-goals`,
-      { method: "PATCH", body: JSON.stringify({ ref, goal }) }
-    );
-  },
-
-  /** Dismiss a pending review proposal without applying it. */
+  /** Dismiss a pending install without applying it. */
   dismissProposal(
     projectId: string,
     attachmentId: string,
@@ -319,6 +283,8 @@ export const agentsApi = {
     skills?: AgentRunSkillPins;
     /** The skills the run loaded with skill.read. */
     skillsLoaded?: string[];
+    /** The changes that landed, which a streamed run sends as `change` events. */
+    changes?: AgentLandedChange[];
   }> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/run`,
@@ -343,9 +309,10 @@ export const agentsApi = {
     message: string,
     onDelta: (text: string) => void,
     /** Optional observer for the dev/41 tool/review events (`tool_requested`,
-     * `tool_started`, `tool_result`, `review_required`) and the dev/80
-     * interim `usage` events — transient display only; the durable state
-     * arrives with `done`/rehydration. */
+     * `tool_started`, `tool_result`, `review_required`), the `change` event of
+     * each change that landed (its canvas mutations, for a canvas no doc
+     * binds) and the dev/80 interim `usage` events. The durable state arrives
+     * with `done`/rehydration. */
     onEvent?: (name: string, payload: Record<string, unknown>) => void,
     /** Ephemeral grounded context (memo dev/44) — composed fresh per send. */
     context?: string | null
@@ -393,6 +360,7 @@ export const agentsApi = {
           event === "tool_started" ||
           event === "tool_result" ||
           event === "review_required" ||
+          event === "change" ||
           event === "delegate_requested" ||
           event === "delegate_started" ||
           event === "delegate_result" ||
@@ -429,15 +397,12 @@ export const agentsApi = {
     attachmentId: string,
     onEvent: (name: string, payload: Record<string, unknown>) => void,
     nodeIds?: string[],
-    signal?: AbortSignal,
-    /** dev/67-6: "propose" mints reviewed content proposals instead of
-     * writing — the Simulation Mode solve stage. Default: classic write. */
-    mode?: "write" | "propose"
+    signal?: AbortSignal
   ): Promise<AgentSolveResult> {
     let result: AgentSolveResult | null = null;
     await postSseStream(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/solve/stream`,
-      { ...(nodeIds ? { nodeIds } : {}), ...(mode ? { mode } : {}) },
+      nodeIds ? { nodeIds } : {},
       (event, payload) => {
         if (event === "done") result = payload as unknown as AgentSolveResult;
         else if (event === "error")
@@ -451,12 +416,12 @@ export const agentsApi = {
   },
 
   /**
-   * The Simulation Mode driver (dev/67-9, DEC-054): `step` performs the next
-   * single action; `auto` chains create → validate → auto-approve-on-PASS →
-   * connections, pausing on any failure. Canvas mutations ride the stream
-   * (`node_created`/`node_content_applied`/`edges_created`) — the caller
-   * dispatches them. Resolves with the `done` payload (status
-   * completed|stepped|paused|cancelled + builderSession).
+   * Build & validate over the plan that landed (dev/67-9, DEC-054): `step`
+   * performs the next single action; `auto` validates then approves each node
+   * in plan order, pausing at the first failure. Code that passes lands as
+   * the agent's change, whose `change` event rides the stream; the caller
+   * dispatches its canvas mutations. Resolves with the `done` payload
+   * (status completed|stepped|paused|cancelled + builderSession).
    */
   async simulate(
     projectId: string,
@@ -522,12 +487,12 @@ export const agentsApi = {
   },
 
   /**
-   * Generate → execute-through → validate → self-correct → propose for ONE
-   * node (dev/67-7, Simulation Mode: validate). Streams lifecycle events
+   * Generate → execute-through → validate → self-correct for ONE node
+   * (dev/67-7, Build & validate). Streams lifecycle events
    * (`validation_started`, `generation_round`, `node_executed`,
-   * `round_verdict`) and resolves with the `done` payload — verdict,
-   * evidence, rounds, and the minted proposal id (PASS or FAIL: the user
-   * decides on the review card).
+   * `round_verdict`, and `change` when its code passed and landed) and
+   * resolves with the `done` payload: verdict, evidence, rounds, and the
+   * landed change's id. Code that failed is not written.
    */
   async validateNode(
     projectId: string,
@@ -554,11 +519,12 @@ export const agentsApi = {
 
   /**
    * dev/115 (DEC-073, Amendment A2): the per-node Solve — run the node's
-   * CURRENT code in the sandbox, fix what fails, run again; a node with
-   * content lands as an already-executed content review, an empty node is
-   * written on PASS. Streams `solve_node_started` → `generation_round` /
-   * `node_executed` / `round_verdict` → `done`. Detached on the server:
-   * closing the stream does not stop the run (`attachJobStream` re-attaches).
+   * CURRENT code in the sandbox, fix what fails, run again; corrected code
+   * that passed lands as the agent's change with its Undo (its `change`
+   * event rides the stream), an empty node is written on PASS. Streams
+   * `solve_node_started` → `generation_round` / `node_executed` /
+   * `round_verdict` → `done`. Detached on the server: closing the stream
+   * does not stop the run (`attachJobStream` re-attaches).
    */
   async solveNodeStream(
     projectId: string,

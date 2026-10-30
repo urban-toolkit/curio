@@ -2,7 +2,7 @@
 
 Measures whether the Dataflow Builder and its delegates can RECONSTRUCT one of
 Curio's shipped example dataflows from a natural-language prompt, by scoring
-the graph the production path actually produced (plan -> review/apply ->
+the graph the production path actually produced (a plan that lands ->
 background Solve -> persisted ``spec.trill.json``) against the example, and by
 naming what the agent contract cannot express instead of lowering the bar.
 
