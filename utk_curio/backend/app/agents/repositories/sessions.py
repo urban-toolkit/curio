@@ -17,11 +17,14 @@ migration.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 
 from utk_curio.backend.app.projects import storage as projects_storage
+
+log = logging.getLogger(__name__)
 
 # Session ids are service-minted ``uuid4().hex``; the pattern keeps any value
 # that reaches the filesystem a single safe path segment.
@@ -188,16 +191,42 @@ def delete_session(user_key: str, project_id: str, session_id: str) -> None:
         pass
 
 
+#: What else ends with a removed attachment: each called with the dataflow's
+#: key, its id and the attachment ids, after their transcripts are deleted.
+#: The chat turns register theirs (``turns/turn_jobs.py``): an attachment's
+#: asks end with it.
+_removal_hooks: list = []
+
+
+def when_removed(hook) -> None:
+    """Call *hook* with ``(user_key, project_id, attachment_ids)`` each time
+    attachments leave a dataflow (:func:`delete_sessions_of`)."""
+    if hook not in _removal_hooks:
+        _removal_hooks.append(hook)
+
+
 def delete_sessions_of(user_key: str, project_id: str, records) -> None:
     """Delete the transcript of each attachment record of *records* a write
     took out of the dataflow: a transcript lives exactly as long as its
     attachment. Every removal of attachments ends here, after its write:
     a detach, removing an agent from the dataflow, a save or a plan that
-    deletes the node or the connection an agent is attached to."""
+    deletes the node or the connection an agent is attached to. What else
+    ends with them is told (:func:`when_removed`)."""
+    removed = []
     for record in records or ():
-        session_id = record.get("sessionId") if isinstance(record, dict) else None
+        if not isinstance(record, dict):
+            continue
+        session_id = record.get("sessionId")
         if isinstance(session_id, str):
             delete_session(user_key, project_id, session_id)
+        if isinstance(record.get("attachmentId"), str):
+            removed.append(record["attachmentId"])
+    if removed:
+        for hook in list(_removal_hooks):
+            try:
+                hook(user_key, project_id, removed)
+            except Exception:  # noqa: BLE001 - what else ends never blocks the removal
+                log.exception("what ends with attachments %s of %s failed", removed, project_id)
 
 
 def context_messages(turns: list[dict], limit: int = CONTEXT_WINDOW_TURNS) -> list[dict]:

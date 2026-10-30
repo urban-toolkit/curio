@@ -186,6 +186,17 @@ def _followed(flow, token, ask_id, *, att=None) -> list[dict]:
     return _envelopes(r.get_data(as_text=True))
 
 
+def _end(flow, token, ask_id, *, att=None) -> dict:
+    """How the ask ended, once it has: its last event, which the ask as it
+    stood holds when it had ended before the follow began."""
+    envelopes = _followed(flow, token, ask_id, att=att)
+    last = envelopes[-1]
+    if last["event"] == "snapshot":
+        assert last["data"]["state"] == "ended", last
+        return last["data"]["events"][-1]
+    return last
+
+
 def _session(flow, token, *, att=None) -> dict:
     r = flow.client.get(f"/api/agents/projects/{flow.project}/attachments/{att or flow.att}/session",
                         headers=_auth(token))
@@ -226,8 +237,7 @@ def test_the_turn_route_answers_at_once_and_the_turn_runs_on_the_server(flow, mo
     assert model.calls[0][0] != threading.get_ident(), "the turn ran in the request that asked it"
 
     held.go.set()
-    envelopes = _followed(flow, ALICE, ask_id)
-    assert envelopes[-1]["event"] == "done", [e["event"] for e in envelopes]
+    assert _end(flow, ALICE, ask_id)["event"] == "done"
     turns = _session(flow, ALICE)["turns"]
     assert _said(turns) == [("user", "What does it do?"), ("agent", "It sums its input.")]
     assert turns[0]["by"] == _person(flow.bob)
@@ -284,8 +294,7 @@ def test_a_second_ask_waits_its_turn_and_reads_the_turn_before_it(flow, monkeypa
     assert len(model.calls) == 1, "the second turn started while the first ran"
 
     first.go.set()
-    envelopes = _followed(flow, BOB, two)
-    assert envelopes[0]["event"] == "snapshot" and envelopes[-1]["event"] == "done", [e["event"] for e in envelopes]
+    assert _end(flow, BOB, two)["event"] == "done"
     assert _said(_session(flow, ALICE)["turns"]) == [
         ("user", "What does the sum do?"), ("agent", "Looking at the sum. It adds the loader's rows."),
         ("user", "Does it use every row?"), ("agent", "Yes, every row."),
@@ -318,8 +327,8 @@ def test_asks_to_two_attachments_run_side_by_side(flow, monkeypatch):
 
     on_sum.go.set()
     on_loader.go.set()
-    assert _followed(flow, ALICE, first)[-1]["event"] == "done"
-    assert _followed(flow, BOB, second, att=loader)[-1]["event"] == "done"
+    assert _end(flow, ALICE, first)["event"] == "done"
+    assert _end(flow, BOB, second, att=loader)["event"] == "done"
     assert _said(_session(flow, ALICE)["turns"])[-1] == ("agent", "The sum.")
     assert _said(_session(flow, ALICE, att=loader)["turns"])[-1] == ("agent", "The loader.")
 
@@ -348,7 +357,7 @@ def test_only_whoever_asked_withdraws_a_waiting_ask(flow, monkeypatch):
     assert flow.client.delete(path, headers=_auth(BOB)).status_code == 409
 
     first.go.set()
-    assert _followed(flow, ALICE, one)[-1]["event"] == "done"
+    assert _end(flow, ALICE, one)["event"] == "done"
     assert _said(_session(flow, ALICE)["turns"]) == [("user", "First?"), ("agent", "Here.")]
     assert len(model.calls) == 1, "a withdrawn ask reached the model"
 
@@ -371,13 +380,37 @@ def test_the_owner_stops_an_editors_running_turn_and_a_watcher_cannot(flow, monk
     assert stopping.get_json()["stopping"] is True
 
     held.go.set()
-    done = _followed(flow, BOB, ask_id)[-1]
+    done = _end(flow, BOB, ask_id)
     assert done["event"] == "done" and done["data"]["stopped"] == {"by": _person(flow.alice)}, done
     turns = _session(flow, BOB)["turns"]
     assert _said(turns) == [("user", "Rewrite the sum."), ("agent", "I will rewrite it.")]
     assert turns[1]["execution"]["status"] == "stopped"
     assert turns[1]["execution"]["stoppedBy"] == _person(flow.alice)
     assert flow.client.post(path, headers=_auth(ALICE)).status_code == 409
+
+
+def test_an_attachment_removed_ends_its_asks(flow, monkeypatch):
+    """alice detaches the agent while its turn runs and bob's ask waits: his
+    ask is withdrawn, never reaching the model, and the running turn stops at
+    its next step, as its chat goes with it."""
+    held = _Held(before=("Working on it.",), after=(" Still working.",))
+    model = _Model(monkeypatch, held, "Never said.")
+    one, two = uuid.uuid4().hex, uuid.uuid4().hex
+
+    r1 = _ask(flow, ALICE, "First?", ask_id=one)
+    assert r1.status_code == 202, r1.get_data(as_text=True)
+    assert held.entered.wait(WAIT_S)
+    r2 = _ask(flow, BOB, "Second?", ask_id=two)
+    assert (r2.status_code, r2.get_json().get("state")) == (202, "waiting"), r2.get_data(as_text=True)
+
+    detached = flow.client.delete(f"/api/agents/projects/{flow.project}/attachments/{flow.att}",
+                                  headers=_auth(ALICE))
+    assert detached.status_code == 200, detached.get_data(as_text=True)
+    assert _end(flow, BOB, two)["event"] == "withdrawn"
+    held.go.set()
+    done = _end(flow, ALICE, one)
+    assert done["event"] == "done" and done["data"]["stopped"] == {"by": None}, done
+    assert len(model.calls) == 1, "a withdrawn ask reached the model"
 
 
 # ---------------------------------------------------------------------------
@@ -410,7 +443,7 @@ def test_every_event_of_a_turn_reaches_the_owners_and_editors_tabs_and_no_watche
         ask_id = uuid.uuid4().hex
         r = _ask(flow, BOB, "Rewrite the sum.", ask_id=ask_id)
         assert r.status_code == 202, r.get_data(as_text=True)
-        assert _followed(flow, BOB, ask_id)[-1]["event"] == "done"
+        assert _end(flow, BOB, ask_id)["event"] == "done"
 
         for name in ("alice", "bob"):
             told = _told(tabs[name])
@@ -450,7 +483,7 @@ def test_an_editors_turn_on_the_server_is_named_after_the_editor_and_holds_only_
 
     r = _ask(flow, BOB, "Rewrite the sum.", ask_id=ask_id)
     assert r.status_code == 202, r.get_data(as_text=True)
-    assert _followed(flow, BOB, ask_id)[-1]["event"] == "done"
+    assert _end(flow, BOB, ask_id)["event"] == "done"
 
     asked = _texts(model.calls[0][1])
     assert "bobs-weather" in asked and "alices-census" not in asked

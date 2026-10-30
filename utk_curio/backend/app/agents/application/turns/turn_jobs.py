@@ -24,7 +24,8 @@ follows an ask over HTTP instead (:func:`follow`).
 Whoever asked can withdraw a waiting ask (:func:`withdraw`). Whoever asked,
 the owner or any editor can stop a running turn (:func:`stop`): it stops at
 its next step (``turn_loop.Stop``), and what it said and landed until then
-stays.
+stays. An attachment that leaves the dataflow ends its asks with it
+(:func:`end_asks_of`).
 
 Asks live in this process, as every job does: a restart drops the waiting
 ones and ends the running ones.
@@ -51,6 +52,7 @@ from utk_curio.backend.app.agents.application.turns import turn_loop
 from utk_curio.backend.app.agents.infrastructure import agent_jobs
 from utk_curio.backend.app.agents.infrastructure import provider_config
 from utk_curio.backend.app.agents.infrastructure import testing_provider
+from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.collaboration import roles
 from utk_curio.common.redaction import redact
 
@@ -366,6 +368,28 @@ def stop_all() -> list:
     for each in running:
         each.stop.ask(None)
     return [each.job for each in running if each.job is not None]
+
+
+def end_asks_of(user_key: str, project_id: str, attachment_ids) -> None:
+    """The asks of attachments that left the dataflow end with them, as their
+    chats do: each waiting ask withdrawn, and each running turn stopped at its
+    next step. Called by every removal of attachments
+    (``sessions.delete_sessions_of``)."""
+    gone = set(attachment_ids or ())
+    with _lock:
+        lines = [line for (key, project, attachment), line in _lines.items()
+                 if key == user_key and project == project_id and attachment in gone]
+        waiting = [each for line in lines for each in line.waiting]
+        for line in lines:
+            line.waiting.clear()
+        running = [line.running for line in lines if line.running is not None]
+    for each in waiting:
+        _publish(each, WITHDRAWN, {"by": None})
+    for each in running:
+        each.stop.ask(None)
+
+
+sessions.when_removed(end_asks_of)
 
 
 def forget_all() -> None:
