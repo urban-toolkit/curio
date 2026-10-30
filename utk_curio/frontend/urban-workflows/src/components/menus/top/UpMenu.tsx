@@ -51,6 +51,7 @@ import DataflowCategoryInput from "../../projects/DataflowCategoryInput";
 import { projectsApi, type ProjectSummary } from "../../../api/projectsApi";
 import { SHARE_UUID_RE } from "../../../utils/shareLinks";
 import { useScenarioActions } from "../../scenarios/useScenarioActions";
+import { OPENING_TITLE, useProjectLoadState } from "../../projectLoadState";
 
 export default function UpMenu() {
     const [isEditing, setIsEditing] = useState(false);
@@ -116,6 +117,11 @@ export default function UpMenu() {
         expandStatus,
         setExpandStatus,
     } = useNodeActionsContext();
+    // The dataflow the link names is still on its way: the title says so,
+    // since its name is not known yet, and the name and the categories cannot
+    // be changed until it is in, which would put its own over them.
+    const opening = useProjectLoadState() === "loading";
+    const title = opening ? OPENING_TITLE : workflowName;
     const { showToast } = useToastContext();
     // The id the Share links are built from. A shared viewer has no
     // ``projectId`` (the dataflow is not open for editing in their workspace),
@@ -586,7 +592,7 @@ export default function UpMenu() {
                     : styles.workflowNameContainer}
                 data-curio-canvas-title="true"
             >
-                {isEditing && !isSharedView ? (
+                {isEditing && !isSharedView && !opening ? (
                     <input
                         type="text"
                         value={workflowName}
@@ -601,10 +607,10 @@ export default function UpMenu() {
                         className={styles.workflowNameStyle}
                         // The whole name, which the title cuts short beside
                         // the agents' dock.
-                        data-tooltip={workflowName}
-                        onClick={() => { if (!isSharedView) setIsEditing(true); }}
+                        data-tooltip={title}
+                        onClick={() => { if (!isSharedView && !opening) setIsEditing(true); }}
                     >
-                        {workflowName}
+                        {title}
                     </h1>
                 )}
                 {/* The dataflow's categories. The automatic ones come from the
@@ -613,7 +619,7 @@ export default function UpMenu() {
                     className={styles.workflowCategories}
                     categories={serverCategories ?? {}}
                     hand={workflowCategories ?? {}}
-                    onChange={isSharedView ? undefined : updateDataflowCategories}
+                    onChange={isSharedView || opening ? undefined : updateDataflowCategories}
                     suggestionItems={categorySuggestions}
                     onOpenAdd={loadCategorySuggestions}
                     maxVisible={6}
