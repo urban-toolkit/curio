@@ -555,6 +555,7 @@ def invoke_handler(
     limits: WorkerLimits | None = None,
     overlay_dir: Path | None = None,
     cancel: threading.Event | None = None,
+    package_key: str | None = None,
 ) -> dict[str, Any]:
     """Invoke one declared handler of an installed package — the ONLY way
     package server code runs (memo dev/91 §8.1).
@@ -564,6 +565,12 @@ def invoke_handler(
     :class:`BackendRuntimeError` with the memo's status matrix: 404 unknown
     package/backend/handler, 409 digest drift, 413/422 payload bounds,
     503 no worker slot, 507 data dir over cap, 502 worker/contract failure.
+
+    *package_key* is the store the package is read from, *user_key*'s when
+    None: the dataflow owner's, for an editor she invited calling a package
+    her dataflow uses (``application/backend_invoke.py``). The package and its
+    library overlay are then read from her store, read-only, while the data
+    dir, the ledger and the breaker stay *user_key*'s.
 
     Four steps (memo dev/143 B3): the READ phase under the target lock, the
     quarantine gate, the worker slot, then the worker run whose outcome the
@@ -575,8 +582,10 @@ def invoke_handler(
     # so an invocation never observes the installer's non-atomic rmtree+move
     # window or a files-vs-pin mismatch. Microseconds of hold time; the
     # sandbox worker always runs OUTSIDE the lock.
-    with target_lock(user_key, dir_name):
-        inv = _read_installed_backend(user_key, dir_name, handler, expected_entry_digest, overlay_dir)
+    with target_lock(package_key or user_key, dir_name):
+        inv = _read_installed_backend(
+            user_key, dir_name, handler, expected_entry_digest, overlay_dir, package_key=package_key,
+        )
     worker_limits = limits or LIMITS_BY_TIMEOUT_CLASS.get(
         inv.timeout_class, LIMITS_BY_TIMEOUT_CLASS["standard"]
     )
@@ -607,11 +616,15 @@ def invoke_handler(
 def _read_installed_backend(
     user_key: str, dir_name: str, handler: str,
     expected_entry_digest: str | None, overlay_dir: Path | None,
+    *, package_key: str | None = None,
 ) -> _Invocation:
     """The READ phase: the manifest, the declared handler, the pinned entry, the
-    data-dir cap, the backend tree and the overlay — every refusal with its status."""
+    data-dir cap, the backend tree and the overlay, every refusal with its
+    status. The package and its overlay are read from *package_key*'s store,
+    *user_key*'s when None; the data dir is *user_key*'s."""
+    source_key = package_key or user_key
     try:
-        pkg_path = package_dir(user_key, dir_name)
+        pkg_path = package_dir(source_key, dir_name)
     except Exception as exc:  # PackageIdError/PathTraversalError — bad name
         raise BackendRuntimeError(f"invalid package directory name: {exc}", 404) from exc
     if not pkg_path.is_dir():
@@ -664,7 +677,7 @@ def _read_installed_backend(
     # invocation never sees a half-built overlay). The explicit parameter
     # stays the test seam and always wins.
     if overlay_dir is None:
-        candidate = overlay_dir_for(user_key, dir_name)
+        candidate = overlay_dir_for(source_key, dir_name)
         if candidate.is_dir():
             overlay_dir = candidate
     return _Invocation(

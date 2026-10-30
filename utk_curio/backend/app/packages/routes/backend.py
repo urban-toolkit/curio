@@ -7,7 +7,7 @@ call the use case and serialize (``schemas.responses``); every exception is mapp
 
 from __future__ import annotations
 
-from flask import jsonify, request
+from flask import g, jsonify, request
 
 from utk_curio.backend.app.users.dependencies import require_auth
 from utk_curio.backend.app.packages.application import backend_invoke as packages_backend_invoke
@@ -15,12 +15,27 @@ from utk_curio.backend.app.packages.routes.common import _map_package_errors, pa
 from utk_curio.backend.app.packages.schemas import requests
 
 
+def _dataflow_owners(body):
+    """For a call that names its dataflow (``dataflowId``): the owner's
+    packages that dataflow uses, when she invited the caller to edit it
+    (``node_exec.owners_packages_for``, the rule a run's modules follow);
+    None for anyone else and for a call that names no dataflow."""
+    dataflow_id = body.get("dataflowId") if isinstance(body, dict) else None
+    if not isinstance(dataflow_id, str) or not dataflow_id:
+        return None
+    from utk_curio.backend.app.execution.node_exec import owners_packages_for
+
+    return owners_packages_for(g.user, dataflow_id)
+
+
 @packages_bp.route("/<dir_name>/backend/<handler>", methods=["POST"])
 @require_auth
 @_map_package_errors
 def invoke_package_backend(dir_name: str, handler: str):
     """Invoke one declared backend handler (memo dev/91 §3) — the ONLY caller
-    surface for package server code. Body: ``{"payload": <JSON>}``.
+    surface for package server code. Body: ``{"payload": <JSON>}``, and the
+    ``dataflowId`` of the canvas that calls it: an editor the dataflow's owner
+    invited then calls the owner's copy of a package the dataflow uses.
 
     The memo's §6 status matrix: 404 unknown package/backend/handler, 403 is
     impossible here by construction (an undeclared-permission backend cannot
@@ -28,5 +43,9 @@ def invoke_package_backend(dir_name: str, handler: str):
     payload bounds, 503 no worker slot, 507 data dir over cap, 502 honest
     sanitized worker/contract failure. A well-formed ``ok: false`` reply
     (handler-error) returns 200 — the envelope IS the diagnosis."""
-    payload = requests.invoke_payload(request.content_length, request.get_json(silent=True))
-    return jsonify(packages_backend_invoke.invoke_backend_handler(user_key(), dir_name, handler, payload)), 200
+    body = request.get_json(silent=True)
+    payload = requests.invoke_payload(request.content_length, body)
+    owners = _dataflow_owners(body)
+    return jsonify(packages_backend_invoke.invoke_backend_handler(
+        user_key(), dir_name, handler, payload, **({"owners": owners} if owners is not None else {}),
+    )), 200
