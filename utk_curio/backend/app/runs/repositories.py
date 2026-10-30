@@ -134,12 +134,16 @@ def get_run(run_id: str) -> Optional[DataflowRun]:
 def list_project_runs(
     project_id: str,
     *,
+    user_id: Optional[int] = None,
     whole_dataflow: Optional[bool] = None,
     limit: int = 50,
     offset: int = 0,
 ) -> List[DataflowRun]:
-    """A dataflow's runs, newest first; *whole_dataflow* narrows to one kind."""
+    """A dataflow's runs, newest first: *user_id*'s, or every account's for
+    None; *whole_dataflow* narrows to one kind."""
     query = DataflowRun.query.filter_by(project_id=project_id)
+    if user_id is not None:
+        query = query.filter(DataflowRun.user_id == user_id)
     query = _of_kind(query, whole_dataflow)
     return (
         query.order_by(DataflowRun.created_at.desc(), DataflowRun.id.desc())

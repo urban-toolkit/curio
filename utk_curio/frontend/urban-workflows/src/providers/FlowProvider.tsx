@@ -7,6 +7,7 @@ import React, {
     useMemo,
     useRef,
     useEffect,
+    useSyncExternalStore,
 } from "react";
 import {
     applyEdgeChanges,
@@ -48,6 +49,8 @@ import { useCollab } from "./CollaborationProvider";
 import { CONNECTION_DROPPED_EVENT, useDocBinding } from "./collab/docContext";
 import type { DataflowDocProvider } from "./collab/docProvider";
 import { canvasRole } from "./collab/participants";
+import { agentsDataflowId } from "../services/agents/agentEditors";
+import { getCurrentProjectId, subscribe as onOpenedDataflow } from "../registry/projectPackagesStore";
 import { useProvenanceContext } from "./ProvenanceProvider";
 import { useUserContext } from "./UserProvider";
 import { isHostedGuest } from "../components/apiSettings/useHostedGuest";
@@ -501,17 +504,40 @@ const FlowProvider = ({
         isDashboardSource, workflowOps, flushInstallSyncRef, hostedGuest,
     });
 
-    // Runs go to the server for whoever may save the dataflow, since a run
-    // records its outputs in it. Hosted guests, viewers of a shared dataflow
-    // and `--no-project` keep the run in the browser, and so does a canvas
-    // with nobody signed in, which cannot save either.
+    // Resolves once the server has every change this tab made, or gives up
+    // after a moment.
+    const whenChangesKept = (): Promise<boolean> => {
+        if (!dataflowDoc.bound() || boundProvider?.isKept()) return Promise.resolve(true);
+        // Offline, what waits in the tab is lost on leaving: ask at once.
+        if (collab.connected === false) return Promise.resolve(false);
+        return Promise.race([
+            dataflowDoc.whenKept(),
+            new Promise<boolean>((resolve) => setTimeout(() => resolve(false), LEAVE_WAIT_MS)),
+        ]);
+    };
+    // The dataflow the route opened: an invited editor's tab saves none of its
+    // own, so its `projectId` is null, and its runs run this one.
+    const opened = useSyncExternalStore(onOpenedDataflow, getCurrentProjectId);
+    // Runs go to the server for whoever edits the dataflow: its owner, and an
+    // editor the owner invited (canvasRole, the role the agents ask). Hosted
+    // guests, watchers and `--no-project` keep the run in the browser, and so
+    // does a canvas with nobody signed in.
     const runsOnServer =
         !dashboardOn &&
         !isStandaloneDashboard() &&
         !skipProjectPage &&
         user != null &&
         !hostedGuest &&
-        workflowOps.viewerMode === "owner";
+        role !== "watcher";
+    // The dataflow a run on the server runs, once the server has every change
+    // this tab made: the owner's, a dataflow not saved yet made first
+    // (ensureProjectId), or the one an invited editor's link opened, which the
+    // editor's changes reach through its doc (agentsDataflowId).
+    const keepRunDataflow = async (): Promise<string | null> => {
+        if (role !== "editor") return workflowOps.ensureProjectId();
+        await whenChangesKept();
+        return agentsDataflowId(role, workflowOps.projectId, getCurrentProjectId());
+    };
     // What a step of a run on the server does to its node: one set for the
     // canvas's runs and a dashboard viewer's.
     const stepOutcomes = useStepOutcomes({
@@ -520,7 +546,7 @@ const FlowProvider = ({
     });
     const serverRun = useServerRun({
         reactFlow, setNodes, showToast,
-        keepDataflow: workflowOps.ensureProjectId,
+        keepDataflow: keepRunDataflow,
         applyNewOutput, setOutputs, hydrateRestoredOutputs, markNodeErroredRef,
         playNodes, playAllStateRef, emittedForInputRef, outputsRef, workflowNameRef,
         nodeExecProv, flushInstallSyncRef,
@@ -569,6 +595,19 @@ const FlowProvider = ({
     const stopRuns = () => { autoRunner.dropWaiting(); cancelRun(); serverRun.stopRun(); };
     // Opening another dataflow leaves a run on the server going.
     const leaveRuns = () => { autoRunner.dropWaiting(); cancelRun(); serverRun.detachRun(); };
+    // An invited editor's canvas follows the editor's last run of the
+    // dataflow once its room says it edits it, as the owner's load does
+    // (ProjectLoader): a run still going is followed, and one waiting for a
+    // tab offers to finish it. Once for each dataflow.
+    const editorRunsOf = runsOnServer && role === "editor"
+        ? agentsDataflowId(role, workflowOps.projectId, opened)
+        : null;
+    const attachedRunsOfRef = useRef<string | null>(null);
+    useEffect(() => {
+        if (!editorRunsOf || attachedRunsOfRef.current === editorRunsOf) return;
+        attachedRunsOfRef.current = editorRunsOf;
+        void serverRun.attachLatestRun(editorRunsOf);
+    }, [editorRunsOf]);
 
     const nodeActionsValue = useMemo<NodeActionsContextProps>(() => ({
         workflowNameRef,
@@ -667,15 +706,7 @@ const FlowProvider = ({
                 ...workflowOps,
                 boundDoc: boundProvider,
                 recordOutputsSoon: () => savePinChangeRef.current(),
-                whenChangesKept: () => {
-                    if (!dataflowDoc.bound() || boundProvider?.isKept()) return Promise.resolve(true);
-                    // Offline, what waits in the tab is lost on leaving: ask at once.
-                    if (collab.connected === false) return Promise.resolve(false);
-                    return Promise.race([
-                        dataflowDoc.whenKept(),
-                        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), LEAVE_WAIT_MS)),
-                    ]);
-                },
+                whenChangesKept,
                 applyRemoveChanges,
                 dataflowDoc: {
                     bound: dataflowDoc.bound,
