@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 
 import { useFlowContext } from "../../../providers/FlowProvider";
+import { useAgentsDataflowId } from "../../../providers/agents/useAgentsDataflowId";
 import { buildSaveableLiveOutputs } from "../../../utils/saveOutputDataset";
 import { DatasetDetailModal } from "./DatasetDetailModal";
 import { DatasetDetailsProvider, type DatasetDetailsRequest } from "./DatasetDetailsProvider";
@@ -15,7 +16,11 @@ const CanvasDatasetDetailModal: React.FC<{
   request: DatasetDetailsRequest;
   onClose: () => void;
 }> = ({ request, onClose }) => {
-  const { projectId, projectDirty, whenChangesKept, outputs, nodes, defaultSaveOutputDataset } = useFlowContext();
+  const { projectDirty, whenChangesKept, outputs, nodes, defaultSaveOutputDataset } = useFlowContext();
+  // The dataflow the details read, as the palette and the drawer list it
+  // (`useAgentsDataflowId`): on an invited editor's canvas, the one its route
+  // opened, so one of its datasets opens and previews.
+  const dataflowId = useAgentsDataflowId();
   const liveOutputs = useMemo(
     () => buildSaveableLiveOutputs(outputs, nodes, defaultSaveOutputDataset),
     // Captured once per opening: a new array each render would refetch the
@@ -29,7 +34,7 @@ const CanvasDatasetDetailModal: React.FC<{
       unsavedChanges={projectDirty}
       whenChangesKept={whenChangesKept}
       datasetId={request.datasetId}
-      dataflowId={projectId}
+      dataflowId={dataflowId}
       liveOutputs={liveOutputs}
       fallbackDataset={request.fallbackDataset ?? null}
       inAllProjects={request.inAllProjects}
