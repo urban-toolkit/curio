@@ -22,6 +22,7 @@ from utk_curio.backend.app.agents.application import spec_reads as agents_spec_r
 from utk_curio.backend.app.agents.application.proposals import store as agents_store
 from utk_curio.backend.app.agents.application.solve import session as agents_session
 from utk_curio.backend.app.agents.application.turns import prompts as agents_prompts
+from utk_curio.backend.app.agents.application.turns import turn_jobs
 from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.collaboration import dataflow_docs
 
@@ -203,16 +204,32 @@ def update_attachment_title(
 
 
 def get_attachment_session(user_key: str, project_id: str, attachment_id: str) -> dict:
-    """The attachment's persisted transcript (empty for a session with no file)."""
+    """The attachment's persisted transcript (empty for a session with no
+    file), and its asks as they stand (``turn_jobs.asks_of``): the running
+    turn's message and reply so far, then the asks waiting their turn. The
+    asks are read first: a turn that ends meanwhile is in the transcript, and
+    leaves the asks (by its execution id), so a tab never shows it twice or
+    misses it."""
     spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
     record = agents_spec_reads._record_or_404(spec, attachment_id)
+    asks = turn_jobs.asks_of(user_key, project_id, attachment_id)
     session_id = record.get("sessionId")
     turns = (
         sessions.read_turns(user_key, project_id, session_id)
         if isinstance(session_id, str)
         else []
     )
-    return {"attachmentId": attachment_id, "sessionId": session_id, "turns": turns}
+    settled = {(turn.get("execution") or {}).get("executionId") for turn in turns if isinstance(turn, dict)}
+    asks = [each for each in asks if not _settled_in(each, settled)]
+    return {"attachmentId": attachment_id, "sessionId": session_id, "turns": turns, "asks": asks}
+
+
+def _settled_in(asked: dict, settled: set) -> bool:
+    """Whether the ask *asked* (its view) ended with an execution the
+    transcript holds."""
+    execution_id = next((event["data"].get("executionId") for event in asked.get("events") or []
+                         if event.get("event") == "execution"), None)
+    return execution_id is not None and execution_id in settled
 
 
 def clear_attachment_session(user_key: str, project_id: str, attachment_id: str) -> dict:

@@ -99,7 +99,9 @@ export type RunStatusDisplay =
       /** "<label> (<model>)": the configuration that answered, from the pins. */
       answeredBy?: string;
     }
-  | { kind: "error"; durationMs?: number };
+  | { kind: "error"; durationMs?: number }
+  /** Someone stopped the turn; what it said and landed until then stays. */
+  | { kind: "stopped"; durationMs?: number; by?: string };
 
 /**
  * ONE agent turn's execution status (dev/80 amendment: the status is
@@ -115,6 +117,12 @@ export function turnStatusDisplay(
   if (turn.role !== "agent") return null;
   if (turn.error) return { kind: "error", durationMs: turn.execution?.durationMs };
   if (!turn.execution) return null;
+  if (turn.execution.status === "stopped")
+    return {
+      kind: "stopped",
+      durationMs: turn.execution.durationMs,
+      ...(turn.execution.stoppedBy?.name ? { by: turn.execution.stoppedBy.name } : {}),
+    };
   return {
     kind: "done",
     durationMs: turn.execution.durationMs,
