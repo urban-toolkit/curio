@@ -12,7 +12,8 @@ an editor she invited; his store holds his bus stops, his package
 ``ai.test.bobs-tools@1`` and his model ``ai.test.bobs-model@1``.
 
 A change of bob's that puts another item of alice's in the dataflow's lists
-(its datasets, its lockfile, a node of a package, a model bound to a node),
+(its datasets, collections among them, its lockfile, a node of a package, a
+model bound to a node),
 made in his tab or by an agent run he asked for, does not put it within reach
 of his runs: a play, a run on the server and his agent's run read it from his
 own store, which does not hold it, and his chat holds none of the skills of a
@@ -475,6 +476,42 @@ def _folder(key: str, dir_name: str) -> str:
     return str(package_dir(key, dir_name))
 
 
+def _collection(user, tmp_path, monkeypatch) -> dict:
+    """A collection of *user*'s Data Catalog, added as the Discovery Catalog
+    adds one (``StorageAcquire._add_collection``), its index the shipped
+    noise recordings', its source the committed Discovery Catalog's; the
+    catalog item."""
+    import uuid
+
+    from utk_curio.backend.app.datasets.service import DatasetCatalogService
+    from utk_curio.backend.app.discovery.infrastructure import storage as discovery_storage
+
+    monkeypatch.setenv(discovery_storage.ENV_ROOT, str(REPO / "discovery"))
+    noise = REPO / "datasets" / "data.curio.storage-noise@1"
+    manifest = json.loads((noise / "manifest.json").read_text(encoding="utf-8"))
+    staged = tmp_path / f"index-{uuid.uuid4().hex}.parquet"
+    shutil.copyfile(noise / "data" / "index.parquet", staged)
+    return DatasetCatalogService(user)._mutations._install_imported_path(
+        staged, "index.parquet", "collection", title=manifest["name"],
+        discovery_source=manifest["discoverySource"], row_count=manifest["rowCount"],
+        collection=manifest["collection"],
+    )
+
+
+def _collection_run(client, flow, sandbox, who: str, item: dict) -> dict:
+    """*who*'s run of a node that loads the collection *item* on alice's
+    dataflow: what it sent the sandbox."""
+    sent = len(sandbox.sent)
+    resp = client.post("/processPythonCode", json={
+        "code": f'    c0 = curio_load_collection("{item["id"]}")\n    return c0\n',
+        "nodeType": "PYTHON_COMPUTATION", "dataflowId": flow.pid,
+        "input": {"path": "", "dataType": "str"}, "saveOutputDataset": False,
+    }, headers=_auth(flow.tokens[who]))
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert len(sandbox.sent) == sent + 1, "the run reached no sandbox"
+    return sandbox.sent[-1]
+
+
 def _hub_dataset(tmp_path, monkeypatch) -> dict:
     """A dataset of the shared catalog, which every account browses."""
     from utk_curio.backend.app.datasets.domain.manifest import DatasetManifest, write_manifest
@@ -521,6 +558,30 @@ def test_a_dataset_of_hers_an_editor_lists_loads_in_his_runs_only_once_she_adds_
     paths = _loaded(client, flow, sandbox, "bob", flow.salaries)
     assert set(paths) == {flow.salaries["id"]}, f"bob's run resolved {paths}"
     assert Path(paths[flow.salaries["id"]]).read_bytes() == SALARIES
+
+
+def test_a_collection_of_hers_an_editor_lists_loads_in_his_runs_only_once_she_adds_it(
+    app, client, flow, sandbox, tmp_path, monkeypatch,
+):
+    """bob's tab lists a collection of alice's Data Catalog in her dataflow's
+    datasets. His run of a node that loads it gets neither its index nor its
+    files, while alice's run gets both. Once alice adds it herself, with Add
+    to project, bob's run gets it from her store."""
+    collection = _collection(flow.alice, tmp_path, monkeypatch)
+    _edit(_tab(app, flow, "bob"), lambda dataflow: dataflow["datasets"].append(_ref(collection)))
+    assert _ref(collection) in _on_disk(flow)["datasets"]
+
+    body = _collection_run(client, flow, sandbox, "bob", collection)
+    assert body["collections"] == {}, f"bob's run resolved the collections {body['collections']}"
+    assert collection["id"] not in body["dataset_paths"]
+    assert set(_collection_run(client, flow, sandbox, "alice", collection)["collections"]) == {collection["id"]}
+
+    resp = client.post(f"/api/dataflows/{flow.pid}/datasets/install", json={"datasetId": collection["id"]},
+                       headers=_auth(flow.tokens["alice"]))
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    body = _collection_run(client, flow, sandbox, "bob", collection)
+    assert set(body["collections"]) == {collection["id"]}, f"bob's run resolved the collections {body['collections']}"
+    assert collection["id"] in body["dataset_paths"]
 
 
 def test_a_package_of_hers_an_editor_adds_runs_from_her_store_only_once_she_adds_it(
