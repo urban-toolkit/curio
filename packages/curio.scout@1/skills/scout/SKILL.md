@@ -1,13 +1,13 @@
 ---
 name: scout
 description: >-
-  Use this skill whenever a dataflow uses Scout (curio.scout@1) and the user asks how to compute,
-  chart, set or wire something there, even if they name no Scout node: math or statistics over
-  rasters, such as two scenarios' difference or a mean over some cells, a buildings layer
-  rasterized for the shadow model, or a chart comparing scenarios. It gives the Raster
-  Calculator's calls and its rules on grids, masks and zones, what Rasterize Buildings writes and
-  which of its settings the shadow model needs, and how Scout's fifteen charts read one input per
-  scenario, set their column widgets, and color and order the scenarios.
+  Use this skill when a dataflow uses Scout (curio.scout@1) and a task writes, wires or fixes one
+  of its nodes: a Raster Calculator, for math or statistics over rasters on one grid, such as the
+  difference of two scenarios' flood depths; Rasterize Buildings, for a buildings layer as the
+  height raster an Autark map draws and Deep Umbra reads; or one of its fifteen Vega-Lite charts
+  that compare scenarios, one input per scenario. It gives the Raster Calculator's calls and its
+  rules on grids, masks and zones, what Rasterize Buildings writes, and how a chart reads its
+  stacked inputs, sets its column widgets, and colors and orders its scenarios.
 license: MIT
 compatibility: Written for Curio's agents, on a dataflow that uses Curio's Scout package, curio.scout@1.
 metadata:

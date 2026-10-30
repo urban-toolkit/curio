@@ -1,11 +1,11 @@
 ---
 name: data-sources
 description: >-
-  Use this skill whenever the user wants data brought into a node, or read in another way: a file
-  on their computer, a dataset of their Data Catalog, a web API, feed or download link, data behind
-  a key, or made-up sample data, even if they only name the data they want. It gives the sources
-  node code may read, in their order, how to read each, what to check before trusting a URL, and
-  what to do when no source can be confirmed. Finding what a catalog holds is not this skill.
+  Use this skill when node code reads data from a file, a Data Catalog dataset, a URL or an API,
+  such as a node that loads data or fetches it. It gives the sources such code may read, in their
+  order: a path the user typed, a catalog dataset through its loader line, a URL the runtime
+  verified, a key-gated host through a saved key, and made-up data only when the user asked for it,
+  and what to do when no source can be grounded.
 license: MIT
 compatibility: Written for Curio's agents, their tools and node code.
 metadata:

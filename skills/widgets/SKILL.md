@@ -1,11 +1,10 @@
 ---
 name: widgets
 description: >-
-  Use this skill whenever the user wants to set a value without editing code: a slider, dropdown,
-  checkbox, text box or date in a node's Widgets tab, a dataset dropped on a node, or one value
-  several nodes share, even if they never say widget. It says how a node declares its widgets,
-  what each reference becomes in its code or spec, what a dataset widget holds, and how a new value
-  reaches a node already on the canvas.
+  Use this skill when a node declares, places or changes a widget, such as a threshold, a year or
+  a dataset the user sets without editing code, or when several nodes share one value. It says how
+  a node declares its widgets, how its code or spec places each by its reference, what a dataset
+  widget holds, and how new values reach a node already on the canvas.
 license: MIT
 compatibility: Written for Curio's agents, their tools and node code.
 metadata:

@@ -1,11 +1,10 @@
 ---
 name: provenance
 description: >-
-  Use this skill whenever the user asks about a node's past, even when node.history.read could
-  answer: who or which agent changed it, when it changed or ran, what its code was before, how two
-  versions differ, or how to undo a change or get an earlier version back. It says what a node's
-  history holds, how to read and compare its entries, where the user puts one back, and what to
-  answer without the history. It is about a node's own edits and runs, not about dates in its data.
+  Use this skill when a task asks what changed in a node, when it changed or who changed it, or
+  asks to bring back earlier code. It says what a node's history holds, the runs and edits in it,
+  the entry an agent's change makes, how to read and compare entries, and that putting an
+  entry back is the user's action.
 license: MIT
 compatibility: Written for Curio's agents, their tools and node code.
 metadata:
