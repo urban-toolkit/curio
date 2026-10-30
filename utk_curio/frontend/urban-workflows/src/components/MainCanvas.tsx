@@ -63,6 +63,7 @@ import {
     hasModelDrag,
     packageCardNodeOptions,
     readModelDragPayload,
+    type ModelDragPayload,
 } from "../services/packages/modelApplication";
 import {
     endPackageCardDrag,
@@ -70,9 +71,14 @@ import {
     readPackageCardDragPayload,
     type PackageCardNode,
 } from "../services/packages/packageCardDrag";
-import { usePackageCardDrop } from "./packages/usePackageCardDrop";
+import { usePackageCardDrop, type PackageCardDrop } from "./packages/usePackageCardDrop";
 import { useHostedGuest } from "./apiSettings/useHostedGuest";
-import { endScenarioDrag, hasScenarioDrag, readScenarioDragPayload } from "../services/scenarioCatalog/scenarioDrag";
+import {
+    endScenarioDrag,
+    hasScenarioDrag,
+    readScenarioDragPayload,
+    type ScenarioDragPayload,
+} from "../services/scenarioCatalog/scenarioDrag";
 import { useScenarioDrop } from "./scenarios/useScenarioDrop";
 import { packageStarterCode } from "../adapters/node/packageNodeBehavior";
 import { useStarterContext } from "../providers/StarterProvider";
@@ -101,6 +107,20 @@ import { scenarioCanvasView } from "../utils/scenarios/scenarioCanvasView";
 import { BOX_WIDTH, boxLayout } from "./scenarios/ScenarioLayers";
 import { CanvasScenarioLayers } from "./scenarios/CanvasScenarioLayers";
 import { useScenarioUi } from "./scenarios/scenarioUi";
+import { useProjectLoadState } from "./projectLoadState";
+import { useDropsWhileOpening } from "../hook/useDropsWhileOpening";
+
+/** What a drop on the canvas carries, read while its event lasts: the browser
+ *  keeps a drag's data only for its drop, and a card's own drag lets its
+ *  payload go at its end. */
+type CanvasDrop =
+    | { kind: "dataset"; dataset: DatasetDragPayload; position: XYPosition }
+    | { kind: "files"; files: File[]; position: XYPosition }
+    | { kind: "package"; dropped: PackageCardDrop }
+    | { kind: "model"; model: ModelDragPayload }
+    | { kind: "scenario"; scenario: ScenarioDragPayload; position: XYPosition }
+    | { kind: "agent"; agentCoord: string; target: AgentDropTarget }
+    | { kind: "node"; type: NodeType; position: XYPosition };
 
 const FILL_STYLE: React.CSSProperties = { width: "100%", height: "100%" };
 // The notebook is a white page, as a Jupyter notebook is, under its cells.
@@ -352,6 +372,9 @@ export function MainCanvas() {
     const agentsDataflow = useAgentsDataflowId();
     // The role the dataflow's room gives this tab, once its join answered.
     const { role: roomRole } = useCollab();
+    // How far the load of the dataflow the route names has got: what is
+    // dropped before it is in waits for it (useDropsWhileOpening).
+    const loadState = useProjectLoadState();
     // Nodes are added (dropped), connected and deleted, and connections
     // removed, on the canvas only, by whoever edits it; the notebook view
     // changes no graph. A node's Delete node tool reads the same rule.
@@ -495,37 +518,10 @@ export function MainCanvas() {
     // (useAskTheOwner): a dataset she lists, or one of the shared catalog,
     // asks nothing.
     const askTheOwner = useAskTheOwner();
-    const handleCanvasDrop = useCallback((event: React.DragEvent) => {
-        event.preventDefault();
-        event.stopPropagation();
-        const dataset = readDatasetDragPayload(event.dataTransfer);
-        if (!dataset) return;
-        const nodeId = createLoaderFor(dataset, dropPosition(event));
-        if (askTheOwner) void askTheOwner(dataset, { nodeId });
-    }, [dropPosition, createLoaderFor, askTheOwner]);
 
     // A file from the computer dropped on the empty canvas: imported into the
     // Data Catalog and this dataflow, then made a Data Loading node as a card is.
     const importDataFile = useDataFileImport();
-    const handleFileCanvasDrop = useCallback((event: React.DragEvent) => {
-        event.preventDefault();
-        event.stopPropagation();
-        const position = dropPosition(event);
-        const files = Array.from(event.dataTransfer.files || []);
-        void importDataFile(files).then((dataset) => {
-            if (dataset) createLoaderFor(dataset, position);
-        });
-    }, [dropPosition, importDataFile, createLoaderFor]);
-
-    // A model dragged onto the empty canvas is its package's card (it carries
-    // both drags): the card drop below makes its package's node. Only a model
-    // whose package has no node at all gets here.
-    const handleModelCanvasDrop = useCallback((event: React.DragEvent) => {
-        event.preventDefault();
-        event.stopPropagation();
-        const model = readModelDragPayload(event.dataTransfer);
-        if (model) showToast(`${model.name} has no node to add.`, "warning");
-    }, [showToast]);
 
     // A package's card from the Node Catalog drawer becomes one of the
     // package's nodes: its one node, or the one picked from a menu of its
@@ -557,15 +553,6 @@ export function MainCanvas() {
         createNode: createPackageNode,
         showToast,
     });
-    const handlePackageCardCanvasDrop = useCallback((event: React.DragEvent) => {
-        event.preventDefault();
-        event.stopPropagation();
-        const card = readPackageCardDragPayload(event.dataTransfer);
-        endPackageCardDrag();
-        if (!card) return;
-        dropPackageCard({ card, position: dropPosition(event), at: { x: event.clientX, y: event.clientY } });
-    }, [dropPosition, dropPackageCard]);
-
     // A scenario from the Scenario Catalog arrives as a copy: its box where it
     // was dropped, its context as fixed data (useScenarioDrop). The notebook
     // view shows its cells. On the canvas the box is drawn beside React Flow,
@@ -573,17 +560,6 @@ export function MainCanvas() {
     // view moves as far as it takes to bring the box into sight (#769).
     const dropScenario = useScenarioDrop();
     const [boxToReveal, setBoxToReveal] = useState<string | null>(null);
-    const handleScenarioCanvasDrop = useCallback((event: React.DragEvent) => {
-        event.preventDefault();
-        event.stopPropagation();
-        const scenario = readScenarioDragPayload(event.dataTransfer);
-        endScenarioDrag();
-        if (!scenario) return;
-        void dropScenario(scenario, dropPosition(event)).then((dropped) => {
-            if (!dropped || revealNodes(dropped.nodes)) return;
-            setBoxToReveal(dropped.scenario);
-        });
-    }, [dropScenario, dropPosition, revealNodes]);
     useEffect(() => {
         if (!boxToReveal) return;
         const box = scenarioView.boxes.find((b) => b.scenario.id === boxToReveal);
@@ -592,28 +568,45 @@ export function MainCanvas() {
         revealRectInView(reactFlow, { x: box.x, y: box.y, width: BOX_WIDTH, height: boxLayout(box).height });
     }, [boxToReveal, scenarioView.boxes, reactFlow]);
 
-    const handleDrop = useCallback((event: React.DragEvent) => {
-        if (hasDatasetDrag(event.dataTransfer)) {
-            handleCanvasDrop(event);
-            return;
+    // What a drop on the canvas carries, read while its event lasts, and where
+    // it was dropped, each kind told apart in the order it always was: a
+    // dataset, a file, a package's card, a model, a scenario, an agent, then
+    // a node's tile.
+    const readDrop = useCallback((event: React.DragEvent): CanvasDrop | null => {
+        const data = event.dataTransfer;
+        if (hasDatasetDrag(data)) {
+            event.preventDefault();
+            event.stopPropagation();
+            const dataset = readDatasetDragPayload(data);
+            return dataset ? { kind: "dataset", dataset, position: dropPosition(event) } : null;
         }
-        if (hasFileDrag(event.dataTransfer)) {
-            handleFileCanvasDrop(event);
-            return;
+        if (hasFileDrag(data)) {
+            event.preventDefault();
+            event.stopPropagation();
+            return { kind: "files", files: Array.from(data.files || []), position: dropPosition(event) };
         }
-        if (hasPackageCardDrag(event.dataTransfer)) {
-            handlePackageCardCanvasDrop(event);
-            return;
+        if (hasPackageCardDrag(data)) {
+            event.preventDefault();
+            event.stopPropagation();
+            const card = readPackageCardDragPayload(data);
+            endPackageCardDrag();
+            if (!card) return null;
+            return { kind: "package", dropped: { card, position: dropPosition(event), at: { x: event.clientX, y: event.clientY } } };
         }
-        if (hasModelDrag(event.dataTransfer)) {
-            handleModelCanvasDrop(event);
-            return;
+        if (hasModelDrag(data)) {
+            event.preventDefault();
+            event.stopPropagation();
+            const model = readModelDragPayload(data);
+            return model ? { kind: "model", model } : null;
         }
-        if (hasScenarioDrag(event.dataTransfer)) {
-            handleScenarioCanvasDrop(event);
-            return;
+        if (hasScenarioDrag(data)) {
+            event.preventDefault();
+            event.stopPropagation();
+            const scenario = readScenarioDragPayload(data);
+            endScenarioDrag();
+            return scenario ? { kind: "scenario", scenario, position: dropPosition(event) } : null;
         }
-        const agentCoord = readAgentDragCoord(event.dataTransfer);
+        const agentCoord = readAgentDragCoord(data);
         if (agentCoord) {
             event.preventDefault();
             clearAgentDropHover();
@@ -629,44 +622,96 @@ export function MainCanvas() {
                 clientX: event.clientX,
                 clientY: event.clientY,
             });
-            const where =
-                target.kind === "node"
-                    ? "the node"
-                    : target.kind === "connection"
-                        ? "the connection"
-                        : "the canvas";
-            // For a node target, the server holds the (possibly freshly-added)
-            // node before the attach is checked against the dataflow:
-            // otherwise the attach 400s. See attachAgentOnDrop.
-            attachAgentOnDrop({
-                projectId: agentsDataflow,
-                target,
-                agentCoord,
-                keepDataflow: ensureProjectId,
-                attach: (pid, coord, t) => agentsApi.attach(pid, coord, t),
-                // A hosted guest's drop that would save says to sign in.
-                hostedGuest,
-                // An invited editor's tab makes no dataflow: it waits for the
-                // server to have what the editor changed, then attaches.
-                savesHere: viewerMode !== "shared",
-                whenKept: whenChangesKept,
-            })
-                .then(() => {
-                    notifyAgentDockRefresh();
-                    markDirty();
-                    showToast(`Agent attached to ${where}.`, "success");
-                })
-                // A refusal says how to show itself (the sign-in note is a warning).
-                .catch((e: any) => showToast(e?.message || "Attach failed.", e?.toastVariant ?? "error"));
-            return;
+            return { kind: "agent", agentCoord, target };
         }
         event.preventDefault();
-        const type = event.dataTransfer.getData("application/reactflow") as NodeType;
-        if (!type) return;
-        const position = dropPosition(event);
-        revealCreated(createCodeNode(type, { position }));
-        markDirty();
-    }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleFileCanvasDrop, handleModelCanvasDrop, handlePackageCardCanvasDrop, handleScenarioCanvasDrop, agentsDataflow, showToast, ensureProjectId, whenChangesKept, reactFlow, hostedGuest, viewerMode]);
+        const type = data.getData("application/reactflow") as NodeType;
+        return type ? { kind: "node", type, position: dropPosition(event) } : null;
+    }, [dropPosition, reactFlow, screenToFlowPosition]);
+
+    // What a drop makes on the canvas.
+    const landDrop = useCallback((drop: CanvasDrop) => {
+        switch (drop.kind) {
+            case "dataset": {
+                const nodeId = createLoaderFor(drop.dataset, drop.position);
+                if (askTheOwner) void askTheOwner(drop.dataset, { nodeId });
+                return;
+            }
+            case "files":
+                void importDataFile(drop.files).then((dataset) => {
+                    if (dataset) createLoaderFor(dataset, drop.position);
+                });
+                return;
+            case "package":
+                dropPackageCard(drop.dropped);
+                return;
+            case "model":
+                // A model dragged onto the empty canvas is its package's card
+                // (it carries both drags): the card drop makes its package's
+                // node. Only a model whose package has no node at all gets here.
+                showToast(`${drop.model.name} has no node to add.`, "warning");
+                return;
+            case "scenario":
+                void dropScenario(drop.scenario, drop.position).then((dropped) => {
+                    if (!dropped || revealNodes(dropped.nodes)) return;
+                    setBoxToReveal(dropped.scenario);
+                });
+                return;
+            case "agent": {
+                const { agentCoord, target } = drop;
+                const where =
+                    target.kind === "node"
+                        ? "the node"
+                        : target.kind === "connection"
+                            ? "the connection"
+                            : "the canvas";
+                // For a node target, the server holds the (possibly freshly-added)
+                // node before the attach is checked against the dataflow:
+                // otherwise the attach 400s. See attachAgentOnDrop.
+                attachAgentOnDrop({
+                    projectId: agentsDataflow,
+                    target,
+                    agentCoord,
+                    keepDataflow: ensureProjectId,
+                    attach: (pid, coord, t) => agentsApi.attach(pid, coord, t),
+                    // A hosted guest's drop that would save says to sign in.
+                    hostedGuest,
+                    // An invited editor's tab makes no dataflow: it waits for the
+                    // server to have what the editor changed, then attaches.
+                    savesHere: viewerMode !== "shared",
+                    whenKept: whenChangesKept,
+                })
+                    .then(() => {
+                        notifyAgentDockRefresh();
+                        markDirty();
+                        showToast(`Agent attached to ${where}.`, "success");
+                    })
+                    // A refusal says how to show itself (the sign-in note is a warning).
+                    .catch((e: any) => showToast(e?.message || "Attach failed.", e?.toastVariant ?? "error"));
+                return;
+            }
+            case "node":
+                revealCreated(createCodeNode(drop.type, { position: drop.position }));
+                markDirty();
+        }
+    }, [createLoaderFor, askTheOwner, importDataFile, dropPackageCard, showToast, dropScenario, revealNodes, agentsDataflow, ensureProjectId, hostedGuest, viewerMode, whenChangesKept, markDirty, revealCreated, createCodeNode]);
+
+    // While the dataflow the route names is still opening, a drop waits for
+    // it, then is made by the canvas it opened as: the load would replace
+    // what a drop made before it, and until the dataflow is in, the canvas
+    // takes the owner's way, which refused an invited editor's file as the
+    // dataflow still opening. A canvas that opens read-only lets it go.
+    const keepWhileOpening = useDropsWhileOpening<CanvasDrop>(
+        { load: loadState, viewerMode, roomRole },
+        (drop) => {
+            if (graphEdits.drop) landDrop(drop);
+        },
+    );
+
+    const handleDrop = useCallback((event: React.DragEvent) => {
+        const drop = readDrop(event);
+        if (drop && !keepWhileOpening(drop)) landDrop(drop);
+    }, [readDrop, keepWhileOpening, landDrop]);
 
     // The Delete key reaches these through React Flow, which sends the
     // selected edges plus every edge attached to a deleted node first, then
