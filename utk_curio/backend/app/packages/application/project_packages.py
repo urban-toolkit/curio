@@ -82,19 +82,17 @@ def _lockfile_or_empty(user_key: str, project_id: str) -> set[str]:
         return set()
 
 
-def _write_lockfile(user_key: str, project_id: str, dirs: Iterable[str], *, by: str | None = None) -> dict:
+def _write_lockfile(user_key: str, project_id: str, dirs: Iterable[str]) -> dict:
     # Hold the per-project spec lock across the read-modify-write so a concurrent
     # dataset mutation (replace_dataflow_datasets) or project save can't
     # clobber the package lockfile (or vice versa). The lockfile is written
     # through the dataflow's doc, its one writer, so a tab in its room gets it.
-    # *by* is the account whose change it is, the owner's (*user_key*) unless
-    # an editor she invited makes it.
     with projects_storage.spec_write_lock(user_key, project_id):
         spec = dataflow_docs.live(user_key, project_id)
         if spec is None:
             raise PackageServiceError(f"project {project_id} has no spec", 404)
         set_project_packages(spec, dirs)
-        dataflow_docs.write(user_key, project_id, spec, dataflow_docs.person(by or user_key, "packages"))
+        dataflow_docs.write(user_key, project_id, spec, dataflow_docs.person(user_key, "packages"))
         return spec
 
 
@@ -188,13 +186,9 @@ def remove_unused_package(user_key: str, dir_name: str) -> None:
 
 
 def uninstall_from_project(
-    user_key: str, project_id: str, dir_name: str, *, editor_key: str | None = None,
+    user_key: str, project_id: str, dir_name: str,
 ) -> dict:
     """Drop *dir_name* from *project_id*'s lockfile and run the prune sweep.
-
-    An editor the owner invited (*editor_key*, the editor's account) removes
-    the package from her dataflow as he deletes a node of it: his own change to
-    it, which prunes nothing from her store, nor from his.
 
     Returns ``{"packages": [...], "pruned": [...], "removedFromDefaults": [...]}``.
     """
@@ -225,9 +219,7 @@ def uninstall_from_project(
     current = get_project_lockfile(user_key, project_id)
     if dir_name in current:
         current.discard(dir_name)
-        _write_lockfile(user_key, project_id, current, by=editor_key)
-    if editor_key is not None:
-        return {"packages": sorted(current), "pruned": [], "removedFromDefaults": []}
+        _write_lockfile(user_key, project_id, current)
 
     prune = packages_prune.prune_unreferenced_packages(user_key, {dir_name})
     return {

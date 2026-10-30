@@ -64,10 +64,6 @@ export interface UsePackageCatalogOptions {
   refreshRegistry?: () => Promise<void>;
   /** A prefix for the console warning that accompanies every action error (the drawer logs; the page does not). */
   logLabel?: string;
-  /** On the owner's dataflow, the dataflow an invited editor's canvas opened:
-   *  his Remove from project takes a package out of it, as his own change, and
-   *  saves no dataflow of his. */
-  editorsDataflowId?: string | null;
 }
 
 export interface PackageCatalogState {
@@ -161,7 +157,6 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
     onInstalledToProject = noop,
     refreshRegistry = resolved,
     logLabel,
-    editorsDataflowId = null,
   } = options;
   const projectId = scope.kind === "project" ? scope.projectId : null;
 
@@ -453,9 +448,8 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
     // Removing from a dataflow that has never been saved is a real request, not
     // a no-op: the package is in the palette because the account defaults put it
     // there, and taking it out has to be recorded somewhere. Save first, exactly
-    // as adding does. An invited editor's canvas saves none: it removes from the
-    // owner's dataflow it opened.
-    const id = editorsDataflowId ?? await ensureSavedProjectId("Couldn't save dataflow before removing", "remove");
+    // as adding does.
+    const id = await ensureSavedProjectId("Couldn't save dataflow before removing", "remove");
     if (!id) return;
     setCardActionDir(pkg.dirName);
     setActionError(null);
@@ -488,7 +482,7 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
     } finally {
       setCardActionDir(null);
     }
-  }, [scope.kind, editorsDataflowId, ensureSavedProjectId, onInstalledToProject, refreshRegistry, reload, reportActionError, showToast]);
+  }, [scope.kind, ensureSavedProjectId, onInstalledToProject, refreshRegistry, reload, reportActionError, showToast]);
 
   const removeFromAccount = useCallback(async (pkg: PackagePayload) => {
     setCardActionDir(pkg.dirName);

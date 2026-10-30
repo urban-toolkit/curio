@@ -2650,7 +2650,7 @@ File ingestion is **not** here - it lives in the datasets blueprint as `POST /ap
 | `/api/packages/catalog` | GET | List packages available in the catalog source (`?kind=` and the row fields as above) |
 | `/api/packages/projects/<id>` | GET | Read a project's per-project lockfile |
 | `/api/packages/projects/<id>/install` | POST | Install a package into a project (copies files, pip-installs `manifest.dependencies.python`) |
-| `/api/packages/projects/<id>/<dirName>` | DELETE | Uninstall a package from a project (ref-counted prune + pip uninstall of unique deps). An invited editor's takes it out of the owner's lockfile as the editor's own change and prunes nothing from any store |
+| `/api/packages/projects/<id>/<dirName>` | DELETE | Uninstall a package from a project (ref-counted prune + pip uninstall of unique deps) |
 | `/api/packages/<dirName>` | DELETE | Remove a package from the user's store and from every lockfile. With `?unusedOnly=true` (the catalog pages' Remove from account), **409** while a dataflow uses it, and its defaults entry goes too |
 | `/api/packages/<dirName>/file/<path>` | GET | Serve a static file from the user's installed copy (behavior bundles, icons, …) |
 | `/api/packages/<dirName>/weights-license` | GET | A model package's weights license text, as `{"text": ...}`, from the user's copy or the catalog's. **404** when the weights have no license file |

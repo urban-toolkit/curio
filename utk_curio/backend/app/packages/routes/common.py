@@ -92,16 +92,6 @@ def require_project(project_id: str) -> None:
         raise PackageServiceError("project not found", 404) from None
 
 
-def editors_dataflow_store(project_id: str) -> str | None:
-    """The key of the store of the dataflow *project_id*'s owner when the
-    caller is an editor she invited; None for anyone else, its owner among
-    them. A dataflow that is gone is "project not found" (404)."""
-    from utk_curio.backend.app.projects import access
-
-    project, store_key = _opened_by_link(project_id)
-    return store_key if access.agents_role(g.user, project) == access.EDITOR else None
-
-
 def opened_dataflow_packages(project_id: str):
     """The packages the dataflow *project_id* uses, as its owner's store holds
     them (``project_packages.OwnersPackages``), for anyone who may open the

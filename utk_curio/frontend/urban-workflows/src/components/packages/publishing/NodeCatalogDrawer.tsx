@@ -51,7 +51,6 @@ import { modalStackDepth } from "../../ModalShell";
 import ConfirmDialog from "../../ConfirmDialog";
 import { EditorRequestsSection } from "../../catalog/EditorRequestsSection";
 import { useAskForPackage } from "../../collab/useAskTheOwner";
-import { useAgentsDataflowId } from "../../../providers/agents";
 
 
 export interface NodeCatalogDrawerProps {
@@ -178,10 +177,8 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   // On the owner's dataflow, an invited editor's Add of a package or a model
   // asks her to add it (`useAskForPackage`): her review applies it. A card he
   // drops on her canvas asks her too, and makes its node at once
-  // (`usePackageCardDrop`). His Remove from project takes a package out of
-  // her dataflow as his own change, and deletes it from no account.
+  // (`usePackageCardDrop`).
   const askForPackage = useAskForPackage();
-  const openedDataflowId = useAgentsDataflowId();
 
   const {
     installed, catalogByDir, catalog, catalogPublishedDirs, busy, cardActionDir, actionError, restartNoticeText,
@@ -202,7 +199,6 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     onInstalledToProject: setCurrentProjectPackages,
     refreshRegistry: refreshPackageRegistry,
     logLabel: "NodeCatalogDrawer",
-    editorsDataflowId: askForPackage ? openedDataflowId : null,
   });
 
   const onAdd = useCallback((pkg: PackagePayload) => {
@@ -322,21 +318,6 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
 
   const onPickArchive = useCallback(
     async (file: File) => {
-      // On the owner's dataflow, an invited editor's import goes into his own
-      // account, as his dropped file goes into his Data Catalog, and asks her
-      // to add the package.
-      if (askForPackage) {
-        setImportBusy(true);
-        try {
-          const imported = await importArchive(file, null);
-          if (imported) {
-            await askForPackage({ dirName: imported.package.dirName, name: imported.package.name }, { add: true });
-          }
-        } finally {
-          setImportBusy(false);
-        }
-        return;
-      }
       // Save first, so the import lands in THIS dataflow's lockfile and not
       // only in the account store (the "not scoped to a project" half of #220).
       const intoProjectId = await ensureProjectId("Couldn't save dataflow before importing", "import");
@@ -369,7 +350,32 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
         setImportBusy(false);
       }
     },
-    [askForPackage, ensureProjectId, importArchive, reportActionError],
+    [ensureProjectId, importArchive, reportActionError],
+  );
+
+  /**
+   * On the owner's dataflow, an invited editor's Import package: the archive's
+   * package goes into his own account, as a file he drops goes into his Data
+   * Catalog, and asks her to add it. His canvas saves no dataflow of his, so
+   * nothing lands in a lockfile here. A throw after the upload is reported, as
+   * `onPickArchive` reports it.
+   */
+  const importAndAskTheOwner = useCallback(
+    async (file: File) => {
+      if (!askForPackage) return;
+      setImportBusy(true);
+      try {
+        const imported = await importArchive(file, null);
+        if (imported) {
+          await askForPackage({ dirName: imported.package.dirName, name: imported.package.name }, { add: true });
+        }
+      } catch (err) {
+        reportActionError(`Couldn't import ${file.name}`, err);
+      } finally {
+        setImportBusy(false);
+      }
+    },
+    [askForPackage, importArchive, reportActionError],
   );
 
   /**
@@ -400,15 +406,6 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   );
 
   const onUninstall = useCallback(async (pkg: PackagePayload) => {
-    if (askForPackage) {
-      setConfirmAction({
-        title: `Remove ${pkg.name}?`,
-        body: `Remove ${pkg.name} (${pkg.dirName}) from this dataflow?\n\nIt stays in the account of the dataflow's owner, and in yours.`,
-        confirmLabel: "Remove",
-        run: () => performUninstall(pkg),
-      });
-      return;
-    }
     const codeWarning = codeOnlyWarning(
       packageKind === "model" ? await modelCodeOnlyUsers(pkg) : [],
       "model",
@@ -431,7 +428,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
       confirmLabel: "Remove",
       run: () => performUninstall(pkg),
     });
-  }, [askForPackage, packageKind, modelCodeOnlyUsers, performUninstall]);
+  }, [packageKind, modelCodeOnlyUsers, performUninstall]);
 
   const anyBusy = busy || importBusy;
   // dev/92 B-2: the restart-honesty line (backend-declared, never inferred) from
@@ -619,7 +616,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
 
           <DrawerFooter
             busy={anyBusy}
-            onSideload={(file) => void onPickArchive(file)}
+            onSideload={(file) => void (askForPackage ? importAndAskTheOwner(file) : onPickArchive(file))}
           >
             {/* A node, not a model, is written from a Python function. */}
             {packageKind === "node" ? (
