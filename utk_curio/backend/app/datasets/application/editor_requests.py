@@ -111,7 +111,7 @@ def _owners_alone(flow: _Dataflow) -> None:
     review, as an install an agent asks for does."""
     if flow.owner:
         return
-    from utk_curio.backend.app.agents.service import owners_review
+    from utk_curio.backend.app.projects.access import owners_review
 
     raise DatasetCatalogError(owners_review(flow.owner_name), 403)
 

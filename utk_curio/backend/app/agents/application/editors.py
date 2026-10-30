@@ -15,13 +15,15 @@ account rather than the dataflow:
 An editor who asks for either is refused with a 403 that names the owner. The
 same review holds what an editor asks the owner to add to the dataflow from
 the editor's own Data Catalog (``datasets/application/editor_requests.py``),
-and only the owner applies or dismisses it too (:func:`owners_review`).
+and only the owner applies or dismisses it too, refused in the same words
+(``projects/access.py``, :func:`owners_review`).
 """
 
 from __future__ import annotations
 
 from utk_curio.backend.app.agents.application import attachments
 from utk_curio.backend.app.projects import storage as projects_storage
+from utk_curio.backend.app.projects.access import owners_review
 from utk_curio.common import shared_constants
 
 #: The tools whose Apply installs into an account, which the dataflow's owner reviews.
@@ -39,15 +41,6 @@ def install_refusal(user_key: str, project_id: str, attachment_id: str, proposal
     if not isinstance(proposal, dict) or proposal.get("tool") not in ACCOUNT_INSTALL_TOOLS:
         return None
     return owners_review(owner)
-
-
-def owners_review(owner: str) -> str:
-    """What an editor the owner invited is told who applies or dismisses an
-    install, which waits for *owner*, the dataflow's owner by name."""
-    return (
-        f"This install waits for {owner}, who owns this dataflow: an install changes "
-        "their account, so they review it."
-    )
 
 
 def download_refusal(owner: str) -> str:

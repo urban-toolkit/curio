@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 
 from playwright.sync_api import expect
 
+from .test_computed_json_output_e2e import _record_toasts
 from .test_data_loading_drop_e2e import _drop_file
 from .utils import (
     CANVAS_DROP_TARGET,
@@ -49,6 +50,9 @@ if TYPE_CHECKING:
 FRAMES = "editor-data-request"
 OWNER = "data_request_owner_e2e"
 EDITOR = "data_request_editor_e2e"
+#: alice's dataflow, empty, which a tab's title names once the tab loaded it.
+NAME = "Bus plan"
+TITLE = "[data-curio-canvas-title] h1"
 LOADER_TYPE = "curio.builtin/data-loading"
 BUS_STOPS = "stop_id,routes\n1,22\n2,29\n3,36\n"
 #: A node's dataset pill while the dataset it loads waits for the owner.
@@ -59,13 +63,24 @@ DRAWER_ROOT = '[data-curio-dataset-catalog-drawer="true"]'
 
 
 def _spec() -> dict:
-    return {"name": "Bus plan", "dataflow": {"name": "Bus plan", "nodes": [], "edges": []}}
+    return {"name": NAME, "dataflow": {"name": NAME, "nodes": [], "edges": []}}
 
 
 def _open_as(page, base: str, project_id: str, role: str) -> None:
-    """Open the dataflow's link and wait for its room to name this tab's role."""
+    """Open the dataflow's link and wait for the tab to load it and for its
+    room to name this tab's role.
+
+    The room answers apart from the load, and often first. Until the load is
+    in, an editor's canvas acts as an owner's: a file dropped then asks the
+    owner nothing, and is refused as the dataflow still opening. The dataflow
+    is empty, so no node of it says the load is in: its name in the title does.
+    """
     page.goto(f"{base}/dataflow/{project_id}", timeout=120000)
     page.locator(CANVAS_DROP_TARGET).wait_for(state="visible", timeout=60000)
+    try:
+        expect(page.locator(TITLE)).to_have_text(NAME, timeout=60000)
+    except AssertionError as exc:
+        raise AssertionError(f"the {role}'s tab never loaded the dataflow its link opened") from exc
     try:
         page.locator(f'[data-curio-room-role="{role}"]').wait_for(state="attached", timeout=30000)
     except Exception as exc:  # noqa: BLE001 - said in the test's words
@@ -98,7 +113,7 @@ def test_an_editors_dropped_file_waits_for_the_owner_who_applies_it(
         owner, editor = owner_ctx.new_page(), editor_ctx.new_page()
         stubbed = stub_db_login(
             owner, frontend_url=base, backend_url=current_server,
-            username=OWNER, name="Alice", project_name="Bus plan", project_spec=_spec(),
+            username=OWNER, name="Alice", project_name=NAME, project_spec=_spec(),
         )
         project_id, owner_token = stubbed["project"]["id"], stubbed["token"]
         editor_token = stub_db_login(
@@ -110,6 +125,8 @@ def test_an_editors_dropped_file_waits_for_the_owner_who_applies_it(
         _open_as(editor, base, project_id, "editor")
 
         # bob drops his file on the empty canvas: a Data Loading node that loads it.
+        # What his tab tells him is kept, for a drop that makes nothing.
+        _record_toasts(editor)
         before = {node["id"] for node in canvas_nodes(editor)}
         _drop_file(editor, CANVAS_DROP_TARGET, "bus_stops.csv", BUS_STOPS, at=(170, 200))
         try:
@@ -117,7 +134,8 @@ def test_an_editors_dropped_file_waits_for_the_owner_who_applies_it(
                 "(n) => window.__curio_reactFlow.getNodes().length > n", arg=len(before), timeout=60000,
             )
         except Exception as exc:  # noqa: BLE001 - said in the test's words
-            raise AssertionError("bob's dropped file made no node on alice's dataflow") from exc
+            told = editor.evaluate("() => window.__curioToastLog || []")
+            raise AssertionError(f"bob's dropped file made no node on alice's dataflow; his tab said {told}") from exc
         [loader] = [node["id"] for node in canvas_nodes(editor) if node["id"] not in before]
         dataset_id = dataset_widget_state(editor, loader)["value"]
         assert str(dataset_id).startswith("imported."), dataset_id

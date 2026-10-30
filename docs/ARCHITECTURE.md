@@ -2903,7 +2903,7 @@ configuration, while the saved keys a run lists and resolves are the asker's own
 editor's Apply or Dismiss of an install, a tool of `src/contracts/agentInstalls.json`, is **403**: it waits for the owner
 (`agents/application/editors.py`). The same review holds an editor's request for a dataset of the editor's own, a
 `dataset.install` the Data Catalog routes keep (`datasets/application/editor_requests.py`), whose Apply and Dismiss are
-the owner's alone, refused to an editor in the same words (`editors.owners_review`). See [AGENT-CATALOG.md](AGENT-CATALOG.md)
+the owner's alone, refused to an editor in the same words (`projects/access.py`, `owners_review`). See [AGENT-CATALOG.md](AGENT-CATALOG.md)
 for the user-facing model, the manifest contract, and the storage layers.
 
 Catalog and account scope:
