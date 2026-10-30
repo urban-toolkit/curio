@@ -1,9 +1,10 @@
 ---
 name: reuse-first
 description: >-
-  Use this skill when a task needs a node type: a node to create, a plan step, or a package to
-  recommend, propose or write. It gives the node type ladder, taken in order: a template the run is
-  given, then a package to add, then a package the Node Builder writes.
+  Use this skill whenever the user asks for a new step, chart, node, reusable node or package, or a
+  plan of next steps, before choosing what kind of node each becomes, even for a simple one. It
+  gives the order Curio takes: a template already listed, then a package from the Node Catalog,
+  and only then a package written for it. Changing nodes already on the canvas is not this skill.
 license: MIT
 compatibility: Written for Curio's agents, their tools and node code.
 metadata:

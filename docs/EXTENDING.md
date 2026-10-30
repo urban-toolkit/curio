@@ -735,8 +735,9 @@ A skill tells Curio's agents how to do a specific task: instructions, procedural
 ---
 name: widgets
 description: >-
-  Use this skill when a node declares, places or changes a widget, such as a threshold, a year or
-  a dataset the user sets without editing code, or when several nodes share one value.
+  Use this skill whenever the user wants to set a value without editing code: a slider, dropdown,
+  checkbox, text box or date in a node's Widgets tab, a dataset dropped on a node, or one value
+  several nodes share, even if they never say widget.
 license: MIT
 compatibility: Written for Curio's agents, their tools and node code.
 metadata:
@@ -747,7 +748,7 @@ metadata:
 ```
 
 - `name`: the folder's name, 1 to 64 lowercase letters, digits and hyphens, with no hyphen first or last and none twice in a row.
-- `description`: when to use the skill, in 1 to 1,024 characters. Start it with "Use this skill when", name the task in the words a user or a node's goal uses for it, and say what the skill gives. In the format, the description is what an agent reads of a skill before it loads it, so it says when to use the skill, not only what the skill is.
+- `description`: when to use the skill, in 1 to 1,024 characters. Start it with "Use this skill when", name the task in the words a user types for it, not in the words of the skill's own mechanics, including requests that never name the skill's subject ("even if they never say widget"), and say what the skill gives beyond the tools that could answer alone. Where a near task belongs to another skill, say so. In the format, the description is what an agent reads of a skill before it loads it, so it says when to use the skill, not only what the skill is ([optimizing descriptions](https://agentskills.io/skill-creation/optimizing-descriptions)).
 - `license`, `compatibility` (at most 500 characters) and `metadata`, strings by string keys, which holds Curio's facts about the skill: Curio's skills give `MIT`, the compatibility above, and `author` and `version`, the version quoted so YAML reads it as a string. Three more keys say what the skill serves, each a list of names with a space between each: `curio-behaviors`, the node behaviors (a template's `behavior`, such as `code`, `vega`, `autk-grammar` or `edit-features`) whose nodes a run writing one is handed the skill for; `curio-features`, the features of a dataflow (`scenario-boxes`, `interaction-edges`, `pinned-tiles`) a run reading one with them is handed it for; and `curio-refusals`, the kinds a Solve check records when it refuses an attempt, whose next attempt is handed the skill. A package's skill can name a fourth, `curio-templates` (below). The format's `allowed-tools` is allowed too, and Curio's skills leave it out.
 - A value that holds `: ` or ` #` goes in a folded block (`>-`), as the description above does, or in quotes: YAML reads those as a field's end and a comment.
 

@@ -1,11 +1,11 @@
 ---
 name: scenarios
 description: >-
-  Use this skill when a dataflow compares alternatives as scenarios, or when a task makes, reads
-  or compares one. It says what a scenario's boundary, levers, fixed context and outcomes are, how
-  a copy pairs with the scenario it comes from, how a chart stacks each scenario's outcome and
-  colors it with the scenario chips, and how a scenario dragged in from another project names
-  where it came from.
+  Use this skill whenever the user wants a what-if: another version of the analysis beside the
+  current one, a new alternative, or a comparison of alternatives in one chart or table, even if
+  they never say scenario. Use it too for questions about the scenario boxes on the canvas: what
+  they share or change, which nodes may go in one, where one came from, and how charts color and
+  order them. It says how a scenario is bounded and copied, and how its outcomes are compared.
 license: MIT
 compatibility: Written for Curio's agents, their tools and node code.
 metadata:

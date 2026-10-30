@@ -1,11 +1,12 @@
 ---
 name: interaction-edges
 description: >-
-  Use this skill when linking views so a selection in one shows in another, when a table or
-  several views must show a selection, or when selections must be merged. It says when two views
-  link directly by an Interaction edge and when a Data Pool goes between them, how a pool combines
-  selections, how a chart shows the rows it receives as selected, and how a point or an interval
-  selection matches rows.
+  Use this skill whenever the user wants views to react to each other: a click, brush or pick in
+  one chart, map or table highlights or narrows what another shows, several views share one
+  selection, or a selection reaches the wrong view, even if they never say interaction or link. It
+  says when two views link directly by an Interaction edge and when a Data Pool goes between them,
+  how a pool combines selections, and how a view shows the rows it receives as selected. Code that
+  computes on the selected rows is selection-chips, not this skill.
 license: MIT
 compatibility: Written for Curio's agents, their tools and node code.
 metadata:

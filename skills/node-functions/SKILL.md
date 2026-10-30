@@ -1,11 +1,12 @@
 ---
 name: node-functions
 description: >-
-  Use this skill when a node's Python or JavaScript code calls a function Curio gives node code:
-  loading a Data Catalog dataset, collection or file, loading or running a Model Catalog model,
-  reading a saved key, writing a file the node returns, deriving a file from a collection's file,
-  editing map features, or reading one layer of an input. It lists every curio_ function with the
-  engines that have it and each argument, saying which arguments name a catalog's item.
+  Use this skill whenever node code must reach something Curio holds rather than a plain path or
+  URL, even if the user names no function: one file of a dataset bundle, the files of a
+  collection, a model of their Model Catalog, a key saved in API Settings, a file the node writes
+  for download, part of a raster, or one layer of an input. It lists every curio_ function node
+  code calls, with the engines that have it and each argument, saying which arguments name a
+  catalog's item.
 license: MIT
 compatibility: Written for Curio's agents, their tools and node code.
 metadata:

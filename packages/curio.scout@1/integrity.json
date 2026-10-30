@@ -2,7 +2,7 @@
   "sha256": {
     "README.md": "a2c340881bc6ccbebed3e8f38d207f39c0060566848731651b79e7359b532b18",
     "manifest.json": "79ddc6ccd3cab02d89b1229e86195b26c6081d72dce2f4770f6ceb9d73414c9f",
-    "skills/scout/SKILL.md": "cedbbcab3361460f41790afb4aa6a62bd5e82db1a8bfee51d36122f7f09ae5cc",
+    "skills/scout/SKILL.md": "1e94e05749a3d5f190561fd70088da28245abb7a86735e2d4e680d05af2a9560",
     "skills/scout/evals/evals.json": "d87d2ac7c9f74c728383957266dc878cc345e94ef82bf4466a9d78cf1bb297e1",
     "sources/bars-with-error-bars.vl.json": "105bdd303f0ce00a341ca49d0f7a135dd2734adb58571e650316caba60829f4c",
     "sources/bars.vl.json": "412fd46bf856d3753026ac82bb314d876afe4c72bb36adc63a2aae6382641b62",

@@ -5,37 +5,38 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "Add a new node after the Data Pool that keeps the top N zip codes by vegetated square feet, where I set N with a slider from 5 to 25 in the node's Widgets tab, starting at 10.",
-      "expected_output": "One new node whose code keeps the top N zip codes, N read through a widget reference, and a slider widget declared from 5 to 25 with 10 as its default.",
+      "target": {"kind": "node", "node": "f9e2b9af-23e6-4db3-9140-38bfecd6afc5"},
+      "prompt": "Add a node after this one that keeps only the zip codes I tick in a list of checkboxes: 60601, 60614 and 60622, all ticked to start.",
+      "expected_output": "One new node whose code keeps the rows whose zip is among the ticked ones, from a checkbox group widget whose choices are the three zip codes and whose default holds all three; the code places the widget's reference on its own, as the list it becomes, such as isin([!! zips !!]).",
       "assertions": [
-        "The answer creates one new node (a node.create, or a plan with one node), not only an explanation.",
-        "The new node declares a widget of type slider with a minimum of 5, a maximum of 25 and a default of 10.",
-        "The code it writes uses the count through a widget reference written as [!! <name> !!], with no number typed in its place.",
-        "The name in the code's widget reference is the name of the declared widget."
+        "The answer creates one new node (node.create) that declares a widget of type checkbox-group or multi-select whose choices are 60601, 60614 and 60622.",
+        "That widget's default is a list holding all three zip codes.",
+        "The code places the widget's reference on its own where a list of values is used, such as .isin([!! zips !!]) with the widget's own name.",
+        "The code neither splits, parses nor quotes the reference to make a list of it: no .split(, no json.loads or eval, and no quotes around the reference."
       ]
     },
     {
       "id": 2,
-      "dataflow": "docs/examples/dataflows/widget.json",
-      "prompt": "Set the Number Multiplier of the multiplier node to 25.",
-      "expected_output": "A node.settings.write change to the multiplier node that sets its number_multiplier widget to 25, with its code left as it is.",
+      "target": {"kind": "node", "node": "a1abfa78-6517-4606-9660-c7eeeeb49851"},
+      "prompt": "Add a node after this one with a box I can tick to drop the roofs under 1,000 vegetated square feet. When it is not ticked, every roof stays. Start with it ticked.",
+      "expected_output": "One new node whose code drops the roofs under 1,000 VEGETATED_SQFT while a checkbox widget is ticked and returns every roof when it is not, the checkbox declared with true as its default and read through its reference on its own, as the true or false value it becomes.",
       "assertions": [
-        "The answer uses node.settings.write on node f325441e-55be-4415-aa1b-b2055f590de2.",
-        "The change it makes sets the widget number_multiplier to 25.",
-        "The answer writes no new code for the node and no new node."
+        "The answer creates one new node (node.create) that declares a widget of type checkbox with a default of true.",
+        "The code uses the widget's reference on its own as a true or false value, such as if [!! drop_small !!]: with the widget's own name.",
+        "The code never compares the reference with a text, such as \"true\" or \"True\", and never puts it in quotes.",
+        "When the box is not ticked, the code returns every roof."
       ]
     },
     {
       "id": 3,
-      "agent": "agent.curio.dataflow-builder@1",
-      "dataflow": "docs/examples/dataflows/multi-input.json",
-      "prompt": "Both loading nodes should scale their column b by the same factor, and I want to set that factor in one place with a slider from 1 to 5. Can you plan that?",
-      "expected_output": "A dataflow plan with one node that declares the factor as a slider widget from 1 to 5 and returns its value, connected to each node that scales column b, so the factor is declared once.",
+      "dataflow": "docs/examples/dataflows/widget.json",
+      "target": {"kind": "node", "node": "c8c48cdb-323d-4f80-ace9-7ac358277f90"},
+      "prompt": "Make this node multiply column b by 25 instead.",
+      "expected_output": "This node multiplies by the value its input brings from the multiplier node's number_multiplier widget, so the answer sets that widget to 25 on the multiplier node (f325441e-55be-4415-aa1b-b2055f590de2) with node.settings.write, and no code types 25 in the widget's place.",
       "assertions": [
-        "The answer writes a dataflow plan (dataflow.plan.write).",
-        "The plan declares the factor as a widget on exactly one node, of type slider, with a minimum of 1 and a maximum of 5.",
-        "The node that holds the factor's widget is connected to every node that scales column b.",
-        "No other node in the plan declares a widget for the same factor."
+        "The answer uses node.settings.write on node f325441e-55be-4415-aa1b-b2055f590de2 to set its widget number_multiplier to 25.",
+        "No code the answer writes holds the number 25: it changes no node's code to type the factor in place of the widget.",
+        "The answer creates no new node."
       ]
     }
   ],
