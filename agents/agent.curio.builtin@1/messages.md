@@ -28,16 +28,16 @@ put the plan in a ```curio.v1 fenced block as the VERY LAST thing in your reply 
 
 ## tool-round.tool-fence
 
-put the tool request in a ```curio.v1 fenced block as the VERY LAST thing in your reply (not ```json, and with no text after it)
+put the request in a ```curio.v1 fenced block as the VERY LAST thing in your reply (not ```json, and with no text after it)
 
 ## tool-round.tool-invalid-native
 
-[tool validation] Your tool request was invalid and was NOT shown to the user. Fix exactly these problems and call the tool with the COMPLETE corrected arguments:
+[tool validation] Your request was invalid and was NOT shown to the user. Fix exactly these problems and call the tool with the COMPLETE corrected arguments:
 {listed}
 
 ## tool-round.tool-invalid
 
-[tool validation] Your tool request block was invalid and was NOT shown to the user. Fix exactly these problems and resend the COMPLETE corrected block (same fence syntax):
+[tool validation] Your request block was invalid and was NOT shown to the user. Fix exactly these problems and resend the COMPLETE corrected block (same fence syntax):
 {listed}
 
 ## tool-round.not-granted

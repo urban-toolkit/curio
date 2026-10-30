@@ -130,18 +130,19 @@ def _tool_correction_message(errors: list[str], *, native: bool = False) -> dict
     }
 
 
-def _tool_cap_card(errors: list[str]) -> dict:
+def _tool_cap_card(errors: list[str], *, title: str = "Proposal not created") -> dict:
     """The visible outcome of a request attempt that never became proposable.
 
     Distinct from :func:`_round_cap_cutoff_card`, which reports a *valid*
     request dangling at the round cap. This one reports a request the runtime
-    could never turn into a proposal, and it is the ONLY thing the user sees
-    of that block — see ``_handle_tool_reply`` for why the raw JSON is dropped.
+    could never turn into a proposal, or a delegation it could never make
+    (*title* says which), and it is the ONLY thing the user sees of that
+    block: see ``_handle_tool_reply`` for why the raw JSON is dropped.
     """
     return {
         "type": "card",
         "kind": "error",
-        "title": "Proposal not created",
+        "title": title,
         "lines": [e[:300] for e in errors[:10]],
     }
 
@@ -159,7 +160,8 @@ def _handle_tool_reply(
     rounds_used: int,
 ) -> tuple[str, list, str | None, dict | None]:
     """In-loop toolRequest recovery (#245) — the dev/56 fence-agnostic scan and
-    the dev/54 correction rounds that plans already have, for tool requests.
+    the dev/54 correction rounds that plans already have, for tool requests,
+    and for a delegation's ``delegateRequest`` the same way.
 
     Consulted ONLY after ``extract_content`` produced no request and
     ``_handle_plan_reply`` returned ``"none"``, so every existing path is
@@ -176,34 +178,52 @@ def _handle_tool_reply(
     None)`` — budget exhausted: fail loudly, never silently.
     """
     granted = loop_ctx.get("granted") or []
-    if not granted:
-        # A run with no tools cannot be attempting one — an agent quoting the
-        # protocol keeps the pre-#245 fail-open behaviour exactly.
+    # The capabilities the run may delegate: a delegation names one, as a tool
+    # request names a granted tool.
+    delegable = loop_ctx.get("delegable") or []
+    if not granted and not delegable:
+        # A run with no tools and no delegates cannot be attempting either: an
+        # agent quoting the protocol keeps the pre-#245 fail-open behaviour exactly.
         return "none", parts, None, None
 
     def _claimed(payload: object) -> bool:
-        """A request is ours to correct only when it names a GRANTED tool.
+        """A request is ours to correct only when it names a GRANTED tool, or,
+        for a delegation, a capability the run may delegate.
 
         Without this the runtime would 'correct' a model that merely echoed
         the literal ``{"tool": "<tool id>", "params": {}}`` out of the tail
-        instruction — which is valid JSON — burning rounds on nothing.
+        instruction (valid JSON) and burn rounds on nothing.
         """
+        delegation = payload.get("delegateRequest") if isinstance(payload, dict) else None
+        if isinstance(delegation, dict):
+            return delegation.get("capability") in delegable
         tool = _requested_tool_of(payload)
         return tool is not None and tool in granted
+
+    def _names_ours(text: str, delegation: bool) -> bool:
+        """Whether broken JSON names a granted tool or, for a delegation, a
+        capability the run may delegate, so a malformed block about something
+        else stays the model's text."""
+        return any(f'"{name}"' in text for name in (delegable if delegation else granted))
 
     visible_override: str | None = None
     fence_guidance = agent_text.message("tool-round.tool-fence")
 
     _, tail_body = content.split_tail(reply)
     errors = content.tool_tail_diagnosis(tail_body)
+    delegation = bool(errors) and '"delegateRequest"' in tail_body
     if errors:
-
         try:
-            tool = _requested_tool_of((_json.loads(tail_body) or {}).get("toolRequest"))
-        except (ValueError, TypeError, AttributeError):
-            tool = None
-        if tool is not None and tool not in granted:
-            return "none", parts, None, None
+            payload = _json.loads(tail_body)
+        except (ValueError, TypeError):
+            payload = None
+        if delegation:
+            if not (_claimed(payload) if isinstance(payload, dict) else _names_ours(tail_body, True)):
+                return "none", parts, None, None
+        else:
+            tool = _requested_tool_of(payload.get("toolRequest")) if isinstance(payload, dict) else None
+            if tool is not None and tool not in granted:
+                return "none", parts, None, None
     else:
         # No terminal-tail attempt (or a valid one, which never reaches here):
         # scan every fence, wherever the model put it.
@@ -211,15 +231,19 @@ def _handle_tool_reply(
         if raw is None:
             return "none", parts, None, None
         if isinstance(raw, str):
-            # Broken JSON: claim it only when it names a granted tool, so a
-            # malformed block about something else stays the model's text.
-            if not any(f'"{t}"' in raw for t in granted):
+            # Broken JSON: claim it only when it names what the run holds.
+            delegation = '"delegateRequest"' in raw
+            if not _names_ours(raw, delegation):
                 return "none", parts, None, None
             errors = (content.tool_tail_diagnosis(raw) or []) + [fence_guidance]
         else:
             if not _claimed(raw):
                 return "none", parts, None, None
-            request, request_errors = content.parse_tool_request_verbose(raw)
+            delegation = "delegateRequest" in raw
+            request, request_errors = (
+                content.parse_delegate_request_verbose(raw["delegateRequest"]) if delegation
+                else content.parse_tool_request_verbose(raw)
+            )
             if request is not None:
                 return "request", parts, stripped, request
             errors = request_errors + [fence_guidance]
@@ -235,7 +259,8 @@ def _handle_tool_reply(
     # precisely why, which is more actionable than the JSON ever was.
     if visible_override is None:
         visible_override, _ = content.split_tail(reply)
-    return "cap", list(parts) + [_tool_cap_card(errors)], visible_override, None
+    card = _tool_cap_card(errors, title="Delegation not made" if delegation else "Proposal not created")
+    return "cap", list(parts) + [card], visible_override, None
 
 
 # How many tool executions one run may make (memo dev/41): total provider
