@@ -6,7 +6,8 @@ the Dataset Finder. Her store holds the package ``ai.test.street-lights@1``,
 whose node loads a dataset and whose skill serves that node. bob, an editor
 she invited, adds the package to her dataflow from his tab, with that node.
 His Solve of the node runs on a job's thread, which holds no request, and
-resolves the node's source first: it asks the Dataset Finder for candidates.
+resolves the node's source first: with nothing in the Data Catalog to ground
+it, the Solve asks the Dataset Finder for candidates.
 The Solve hands that run its asker, its ``acting_user``, so bob's holds only
 the skills of the packages alice added herself, which the package bob added is
 not, while alice's Solve holds its skill. Once alice adds a node of the
@@ -183,10 +184,24 @@ def _strings(value) -> list:
     return []
 
 
+def _finder_asked(flow) -> bool:
+    """Whether a Solve asked the Dataset Finder for the source of the node
+    ``lights``: the Finder's attachment on the node, which asking makes."""
+    from utk_curio.backend.app.agents.application import dataset_resolution
+    from utk_curio.backend.app.projects import storage as projects_storage
+
+    spec = projects_storage.read_spec(flow.key, flow.pid)
+    return dataset_resolution.finder_attachment(spec, "lights", user_key=flow.key) is not None
+
+
 def _solve_told(client, flow, monkeypatch, who: str) -> str:
     """*who*'s Solve of the node ``lights``, to its end: what the runs it made
     were told, every text of each call's messages and options, the Dataset
-    Finder's first."""
+    Finder's first. The Data Catalog the Solve grounds sources in lists
+    nothing, so nothing grounds the node's source before the Finder is asked."""
+    from utk_curio.backend.app.agents.application.turns import grounding
+
+    monkeypatch.setattr(grounding, "_catalog_listing_items", lambda project_id: [])
     calls: list = []
 
     def _model(config, messages, **kwargs):
@@ -227,7 +242,9 @@ def test_an_editors_solve_asks_the_dataset_finder_with_the_skills_of_her_package
 
     _edit(app, flow, "bob", bobs_change)
 
-    assert WORDS not in _solve_told(client, flow, monkeypatch, "bob")
+    bobs = _solve_told(client, flow, monkeypatch, "bob")
+    assert _finder_asked(flow), "bob's Solve did not ask the Dataset Finder"
+    assert WORDS not in bobs
     assert WORDS in _solve_told(client, flow, monkeypatch, "alice")
 
     _edit(app, flow, "alice", lambda dataflow: dataflow.__setitem__(
