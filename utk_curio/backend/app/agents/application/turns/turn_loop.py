@@ -17,12 +17,17 @@ rounds with what the runtime makes of their success: code written, drafts,
 candidates, notes (dev/73/90/95/114), each change that lands as a ``change``
 event, settlement and the persisted exchange, the title, and
 review_required/content/done.
+
+The rounds are the agent's work in the dataflow's room (:meth:`at_work`): it
+joins as they begin, with who asked and the skills its run holds, and leaves
+as they end, before the reply's settlement and its last events.
 """
 
 from __future__ import annotations
 
 import time
 import uuid
+from contextlib import ExitStack
 
 from utk_curio.backend.app.agents.application.tool_rounds import ParamRefusal
 from utk_curio.backend.app.agents.application.tool_rounds import _RunConversation
@@ -33,6 +38,7 @@ from utk_curio.backend.app.agents.infrastructure.providers import NativeToolsRef
 from utk_curio.backend.app.agents.infrastructure.providers import ToolCall
 from utk_curio.backend.app.agents.repositories import ledger
 from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
+from utk_curio.backend.app.agents.application import in_the_room as agents_room
 from utk_curio.backend.app.agents.application import skill_runs as agents_skill_runs
 from utk_curio.backend.app.agents.application import tool_rounds as agents_tool_rounds
 from utk_curio.backend.app.agents.application.proposals import changes as agents_changes
@@ -66,6 +72,9 @@ class AttachmentTurn:
         # grounding gate cannot read it from the session; a path the user typed
         # is the one human-trusted source of a local path.
         self.loop_ctx["message"] = message
+        # Who asked, as the agent's peer in the room names them, read here in
+        # the request: the changes the turn lands wait for anyone else.
+        self.loop_ctx["room_asker"] = agents_room.asker()
         self.execution_id = uuid.uuid4().hex
         # Atomic admission (dev/40): after validation (an invalid request never
         # consumes quota), before provider dispatch (a denied run never reaches a
@@ -97,6 +106,17 @@ class AttachmentTurn:
     def _emit(self, name: str, payload):
         if self.streaming:
             yield (name, payload)
+
+    def at_work(self):
+        """The turn's agent at work in the dataflow's room for its rounds
+        (``in_the_room.at_work``): named after its manifest, asked by whoever
+        sent the message, holding the skills its run holds. A skill it loads
+        joins them (``tool_rounds``)."""
+        return agents_room.at_work(
+            self.user_key, self.project_id, self.attachment_id,
+            coord=self.coord, manifest=self.loop_ctx.get("manifest"), who=self.loop_ctx["room_asker"],
+            skills=agents_room.held_skills(self.loop_ctx.get("skills")),
+        )
 
     # ── the loop ────────────────────────────────────────────────────────────
 
@@ -388,7 +408,10 @@ class AttachmentTurn:
         )
         if resolution is not None:
             yield from self._emit("delegate_started", {"capability": req["capability"], "coord": resolution.coord})
-            status, text, child, home_att, delegate_summary = self._run_delegate(req, resolution)
+            # The delegate is at work in the room from its run until what it
+            # made has landed.
+            with ExitStack() as stay:
+                status, text, child, home_att, delegate_summary = self._run_delegate(req, resolution, stay)
             # dev/72: the parent keeps the compact, linkable entry.
             self.minted.append(agents_delegates._delegation_part_for(
                 resolution, req["capability"], status, delegate_summary, home_att,
@@ -416,11 +439,12 @@ class AttachmentTurn:
             )
         self._re_prompt(result, native_calls, req, status, text, final=final, result_msg=result_msg)
 
-    def _run_delegate(self, req: dict, resolution):
+    def _run_delegate(self, req: dict, resolution, stay=None):
         """Run the resolved delegate and mint what its success PROVES exists
         (dev/73 review, dev/90 draft, dev/114 candidates, dev/95 notes) —
-        runtime-minted, never the model's second step. Returns
-        (status, text, child, home_att, summary)."""
+        runtime-minted, never the model's second step. The delegate is at work
+        in the dataflow's room while *stay*, the caller's ``ExitStack``, holds
+        it. Returns (status, text, child, home_att, summary)."""
         loop_ctx = self.loop_ctx
         inputs = req.get("inputs") or {}
         # dev/73: node-scoped content generation homes its trace AND its
@@ -463,6 +487,8 @@ class AttachmentTurn:
                 self.user_key, self.project_id, req["capability"], enriched,
                 datasets=loop_ctx.get("dataflow_datasets"),
             ),
+            stay=stay,
+            who=loop_ctx["room_asker"],
         )
         self.delegations.append(child)
         delegate_summary = text
@@ -639,7 +665,10 @@ class AttachmentTurn:
         # with the record that will land on the transcript.
         yield ("execution", {"executionId": self.execution_id})
         try:
-            yield from self.rounds()
+            # The agent is in the room while it works, and gone before its
+            # reply's last events: a reply on screen means it left.
+            with self.at_work():
+                yield from self.rounds()
         except Exception as exc:  # provider failure mid-stream
             self.settle_error(exc)
             yield ("error", f"agent run failed: {self.redacted(exc)}")
