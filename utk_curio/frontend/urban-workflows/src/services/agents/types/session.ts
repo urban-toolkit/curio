@@ -52,7 +52,11 @@ export interface AgentExecution {
   };
   usage: AgentUsage | null;
   durationMs?: number;
-  status: "ok" | "error";
+  /** `stopped`: someone stopped the turn; what it said and landed until
+   * then stays. */
+  status: "ok" | "error" | "stopped";
+  /** Who stopped a stopped turn; null when the server ended it. */
+  stoppedBy?: AgentTurnWriter | null;
   /** The tool calls the run made, in order; absent when it made none. */
   toolCalls?: AgentToolCall[];
   /** The skills skill.read loaded during the run; absent when it loaded none. */
@@ -146,4 +150,37 @@ export interface AgentSession {
   attachmentId: string;
   sessionId: string | null;
   turns: AgentSessionTurn[];
+  /** The asks as they stand: the running turn's first, then those waiting
+   * their turn, in order. Absent from an old server. */
+  asks?: AgentAskView[];
+}
+
+/** One event of an ask, as the room and a follow of the ask carry it
+ * (`turn_jobs.EVENT`): `seq` is its place among the ask's events. Its
+ * `event` is `asked`, `started` or `withdrawn`, one of its turn's own
+ * stream's (`execution`, `delta`, `tool_result`, `change`, ..., `done`,
+ * `error`), or, first in a follow, `snapshot`, whose `data` is the ask's
+ * view. */
+export interface AgentTurnEnvelope {
+  projectId: string;
+  attachmentId: string;
+  askId: string;
+  seq: number;
+  event: string;
+  data: Record<string, unknown>;
+}
+
+/** An ask as it stands, for a tab that opens while it waits or runs: its
+ * message and writer, the reply's text so far and its turn's other events
+ * so far, each with its `seq`; `seq` is its last event's. */
+export interface AgentAskView {
+  askId: string;
+  by: AgentTurnWriter | null;
+  message: string;
+  state: "waiting" | "running" | "ended";
+  askedAt: number;
+  startedAt: number | null;
+  seq: number;
+  text: string;
+  events: Array<{ seq: number; event: string; data: Record<string, unknown> }>;
 }

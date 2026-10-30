@@ -1202,14 +1202,85 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
     expect(screen.getByLabelText(/session token usage/i)).toHaveTextContent("1.6k tokens");
   });
 
-  it("while running the send button keeps its loading glyph and is disabled", () => {
-    renderPanel({ runStatus: runningStatus() });
+  it("while a turn runs, Send stays ready: the message is asked and waits its turn", async () => {
+    const onSend = jest.fn().mockResolvedValue(undefined);
+    renderPanel({ runStatus: runningStatus(), onSend });
     fireEvent.change(screen.getByPlaceholderText(/message this agent/i), {
       target: { value: "queued question" },
     });
     const send = screen.getByRole("button", { name: "Send" });
-    expect(send).toBeDisabled();
-    expect(send).toHaveTextContent("…");
+    expect(send).not.toBeDisabled();
+    expect(send).not.toHaveTextContent("…");
+    fireEvent.click(send);
+    expect(onSend).toHaveBeenCalledWith("queued question");
+    await waitFor(() => expect(screen.getByPlaceholderText(/message this agent/i)).toHaveValue(""));
+  });
+
+  it("while a turn runs, Stop asks for it to stop, once, and goes with the turn", async () => {
+    let finish: () => void = () => undefined;
+    const onStopTurn = jest.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const { rerender, props } = renderPanel({
+      runStatus: runningStatus(), turns: [{ role: "user", text: "q1" }], onStopTurn,
+    });
+    const stop = screen.queryByRole("button", { name: "Stop" });
+    expect(stop).toBeInTheDocument();
+    fireEvent.click(stop as HTMLElement);
+    expect(onStopTurn).toHaveBeenCalledTimes(1);
+    const stopping = screen.getByRole("button", { name: "Stopping…" });
+    expect(stopping).toBeDisabled();
+    fireEvent.click(stopping);
+    expect(onStopTurn).toHaveBeenCalledTimes(1);
+    await act(async () => finish());
+    rerender(<AgentChatPanel {...props} runStatus={{ phase: "done", startedAt: Date.now(), durationMs: 10 }} />);
+    expect(screen.queryByRole("button", { name: /^Stop/ })).not.toBeInTheDocument();
+  });
+
+  it("a stopped reply says who stopped it and after how long", () => {
+    renderPanel({
+      turns: [
+        { role: "user", text: "Rewrite the sum." },
+        {
+          role: "agent",
+          text: "I will rewrite it.",
+          execution: {
+            executionId: "e-stopped",
+            usage: null,
+            status: "stopped",
+            durationMs: 8000,
+            stoppedBy: { kind: "person", account: "7", name: "Ana" },
+          },
+        },
+      ],
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("Stopped by Ana after 8s");
+  });
+
+  it("the asks waiting their turn follow the transcript, each named by its writer, and its asker may withdraw their own", async () => {
+    const onWithdrawAsk = jest.fn().mockResolvedValue(undefined);
+    renderPanel({
+      runStatus: runningStatus(),
+      turns: [{ role: "user", text: "q1" }],
+      viewerAccount: "3",
+      waitingAsks: [
+        { askId: "k-bob", by: { kind: "person", account: "7", name: "Bob" }, message: "And the map?", status: "waiting" },
+        { askId: "k-mine", by: { kind: "person", account: "3", name: "Ana" }, message: "Mine too.", status: "waiting" },
+        { askId: "k-now", by: null, message: "Just sent.", status: "sending" },
+      ],
+      onWithdrawAsk,
+    });
+    expect(screen.queryByText("And the map?")).toBeInTheDocument();
+    const bobs = screen.getByText("And the map?").closest("[data-agent-ask]") as HTMLElement;
+    expect(bobs).toHaveAttribute("data-agent-ask-status", "waiting");
+    expect(within(bobs).getByText("Bob")).toBeInTheDocument();
+    expect(within(bobs).getByText(/Waiting its turn/)).toBeInTheDocument();
+    expect(within(bobs).queryByRole("button", { name: "Withdraw" })).not.toBeInTheDocument();
+    const mine = screen.getByText("Mine too.").closest("[data-agent-ask]") as HTMLElement;
+    expect(within(mine).queryByText("Ana")).not.toBeInTheDocument();
+    const just = screen.getByText("Just sent.").closest("[data-agent-ask]") as HTMLElement;
+    expect(within(just).queryByText(/Waiting its turn/)).not.toBeInTheDocument();
+    fireEvent.click(within(mine).getByRole("button", { name: "Withdraw" }));
+    expect(onWithdrawAsk).toHaveBeenCalledWith("k-mine");
+    await waitFor(() => expect(within(mine).getByRole("button", { name: "Withdraw" })).toBeDisabled());
   });
 
   it("a wired-idle status re-enables send even while another chat's send is in flight (cycling leak fix)", async () => {
