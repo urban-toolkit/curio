@@ -90,8 +90,9 @@ def script_agent_replies(
 
 def held_agent_calls(backend_url: str) -> dict:
     """The holds scripted calls wait on now, each with how many calls wait on
-    it: a turn whose reply is held is at its model call."""
-    return _get_json(f"{backend_url}/api/testing/agent-script")["held"]
+    it: a turn whose reply is held is at its model call. The read names
+    ``held`` only while a call is held."""
+    return _get_json(f"{backend_url}/api/testing/agent-script").get("held", {})
 
 
 def release_agent_hold(backend_url: str, name: str) -> dict:

@@ -733,28 +733,27 @@ def agent_script_read():
 
     ``calls`` holds ``{configId, model}`` for each of those calls: which LLM
     configuration answered it. ``offered`` holds ``{tools, toolChoice}`` for
-    each: the native tools it offered, none on the fenced protocol. ``held``
-    names the holds calls wait on now, each with how many wait on it.
+    each: the native tools it offered, none on the fenced protocol. ``held``,
+    there only while calls wait on a hold, names each such hold with how many
+    wait on it.
 
     Response: ``{"pending": n, "captured": [[{role, content}, ...], ...],
-    "calls": [{configId, model}, ...], "offered": [{tools, toolChoice}, ...],
-    "held": {name: n}}``
+    "calls": [{configId, model}, ...], "offered": [{tools, toolChoice}, ...]}``,
+    and ``"held": {name: n}`` while a call is held.
     """
     denied = _scripted_guard()
     if denied is not None:
         return denied
-    return (
-        jsonify(
-            {
-                "pending": testing_provider.pending(),
-                "captured": testing_provider.captured(),
-                "calls": testing_provider.calls(),
-                "offered": testing_provider.offered(),
-                "held": testing_provider.held(),
-            }
-        ),
-        200,
-    )
+    body = {
+        "pending": testing_provider.pending(),
+        "captured": testing_provider.captured(),
+        "calls": testing_provider.calls(),
+        "offered": testing_provider.offered(),
+    }
+    held = testing_provider.held()
+    if held:
+        body["held"] = held
+    return jsonify(body), 200
 
 
 @testing_bp.route("/agent-script/release", methods=["POST"])
