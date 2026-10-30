@@ -658,6 +658,9 @@ def agent_script_push():
         native tools; without it they use the fenced protocol.
       * ``nodeIds`` - optional list of uuids: the ids the next nodes an apply
         creates are given, in order (``testing_provider.push_node_ids``).
+      * ``attachmentId`` - optional: the replies answer only the runs of this
+        attachment, before the shared queue, so two agents working at once
+        each take their own (``testing_provider.push_replies``).
       * ``reset`` - drop anything queued and captured first. Defaults to true,
         which is what a test almost always wants: a leftover reply from a
         previous test would be consumed by this one and the failure would point
@@ -695,9 +698,12 @@ def agent_script_push():
         isinstance(n, str) and _UUID_RE.fullmatch(n) for n in node_ids
     ):
         return jsonify({"error": "'nodeIds' must be a list of uuids"}), 400
+    attachment = body.get("attachmentId")
+    if attachment is not None and not (isinstance(attachment, str) and attachment):
+        return jsonify({"error": "'attachmentId' must be an attachment's id"}), 400
     if body.get("reset", True):
         testing_provider.reset()
-    testing_provider.push_replies(*replies)
+    testing_provider.push_replies(*replies, attachment=attachment)
     testing_provider.push_node_ids(*node_ids)
     if by_intent:
         testing_provider.route_by_intent(by_intent)

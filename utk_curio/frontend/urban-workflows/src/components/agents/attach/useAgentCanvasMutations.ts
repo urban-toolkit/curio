@@ -202,9 +202,12 @@ export function useAgentCanvasMutations(): void {
     if (mutation.kind === "graph-created") {
       // dev/52: a whole applied plan — bulk nodes + edges through the same
       // provider paths a manual build uses, then a fit (a plan deserves a
-      // framing, not a center). Idempotent per plan id.
-      if (processedRef.current.has(mutation.planId)) return;
-      processedRef.current.add(mutation.planId);
+      // framing, not a center). Idempotent per plan id, or per step of it:
+      // a canvas no doc binds takes a plan a step at a time, each step
+      // framed as it lands.
+      const key = typeof mutation.step === "number" ? `${mutation.planId}:${mutation.step}` : mutation.planId;
+      if (processedRef.current.has(key)) return;
+      processedRef.current.add(key);
       const live = new Set(getNodes().map((n) => n.id));
       // Removals FIRST (dev/59), through the reviewed path.
       removeReviewed(live, mutation.removedNodeIds, mutation.removedEdgeIds);

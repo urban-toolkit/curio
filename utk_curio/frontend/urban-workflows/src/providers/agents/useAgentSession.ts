@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { AgentRemedy } from "../../services/agents";
-import { agentsApi, bridgeLandedChangeEvent, notifyAgentChangesLanded, type AgentAttachmentsState } from "../../services/agents";
+import { agentsApi, bridgeLandedChangeEvent, type AgentAttachmentsState } from "../../services/agents";
 import type { AgentRunSkillPins, AgentSessionTurn, AgentToolCall, AgentUsage } from "../../services/agents/types";
 import type { AgentRunStatus } from "../../services/agents/agentRunStatus";
 
@@ -275,8 +275,8 @@ export function useAgentSession(
           try {
             const result = await state.run(attachmentId, message, context);
             // What landed, which the stream would have sent as change events.
-            for (const landed of (result as { changes?: Array<{ canvas: unknown }> }).changes ?? []) {
-              notifyAgentChangesLanded(landed.canvas);
+            for (const landed of (result as { changes?: Array<Record<string, unknown>> }).changes ?? []) {
+              bridgeLandedChangeEvent("change", landed);
             }
             const { execution, content } = landTurn(result, []);
             appendTurns(attachmentId, [

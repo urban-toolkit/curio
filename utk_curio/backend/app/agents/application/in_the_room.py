@@ -11,6 +11,10 @@ Each write of a node's code, spec, widgets or settings is held by the agent the
 change is by, its attachment's (``changes.land``): it waits for anyone else in
 the node, takes the node's lock, names the node in its ``editing`` and what it
 writes in ``writes``, writes, and keeps them a second while a tab is bound.
+A node it adds, by itself or in a plan, is dragged in from its template's tile
+(:func:`drag_in`) and lands as the drop ends, one action at a time
+(:func:`act`); a run's ``change`` event says what each drag looked like
+(:func:`dragged`), so a canvas no doc binds plays it too.
 
 Who asked is read in the request that asked (:func:`asker`), since a job's
 thread holds no request and reads no account row: their account and name, as
@@ -28,8 +32,10 @@ from typing import Iterator, Optional
 from utk_curio.backend.app.agents.application import askers as agents_askers
 from utk_curio.backend.app.agents.application import attachments
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
+from utk_curio.backend.app.agents.infrastructure import testing_provider
 from utk_curio.backend.app.collaboration import agent_peers
 from utk_curio.backend.app.execution import workflow_spec
+from utk_curio.backend.app.packages.domain.package_id import BUILTIN_PACKAGE_ID
 
 
 @dataclass(frozen=True)
@@ -70,7 +76,9 @@ def at_work(user_key: str, project_id: Optional[str], attachment_id: Optional[st
     already has there. It is named after its manifest (*manifest*, else the
     one *coord* names, else the coord of the attachment in *spec*), asked by
     *who* (else the request's asker), and holds *skills*. ``None`` when there
-    is no attachment to name it by."""
+    is no attachment to name it by. In a test run, the model's calls the
+    block makes answer from the replies scripted for its attachment
+    (``testing_provider.answering``)."""
     if not project_id or not attachment_id:
         yield None
         return
@@ -90,7 +98,7 @@ def at_work(user_key: str, project_id: Optional[str], attachment_id: Optional[st
                  "category": getattr(manifest, "category", None) or None,
                  "asked_by": who.asked_by, "asker_sign_in": who.sign_in}
     with agent_peers.at_work(user_key, project_id, attachment_id=str(attachment_id), skills=skills,
-                             **named) as joined:
+                             **named) as joined, testing_provider.answering(attachment_id):
         yield joined
 
 
@@ -132,3 +140,43 @@ def writing(peer: agent_peers.Peer, hold: agent_peers.Holding) -> dict:
     (``user``, ``editing``, ``writes``): a run's ``change`` event carries it,
     so a canvas no doc binds shows it as the room's tabs did."""
     return {"user": copy.deepcopy(peer.user), "editing": copy.deepcopy(hold.node), "writes": hold.writes}
+
+
+def drag_in(node_type: str, at: dict, label: Optional[str]) -> dict:
+    """The drag that adds a node of *node_type*, as a person drags it in:
+    from its template's tile (the Built-in palette's for the base package's
+    templates, else the Packages palette's), dropped where the node's
+    top-left lands, *at* (``x``, ``y``). *label* names what it carries."""
+    node_type = str(node_type)
+    palette = "builtin" if node_type.startswith(f"{BUILTIN_PACKAGE_ID}/") else "packages"
+    return {
+        "kind": "add",
+        "from": {"palette": palette, "item": node_type},
+        "onto": None,
+        "node": {"type": node_type, "label": label or node_type},
+        "to": {"x": at["x"], "y": at["y"]},
+    }
+
+
+def act(peer: Optional[agent_peers.Peer], action: agent_peers.Action, *, user_key: str,
+        project_id: str) -> agent_peers.Acted:
+    """*action*, the agent's one action then (``agent_peers.act``): its drag,
+    its targets checked again, its write. With no peer, when there is no
+    attachment to name the agent by, its targets are checked and its write
+    made, with no drag."""
+    if peer is not None:
+        return agent_peers.act(peer, action)
+    gone = agent_peers.gone(user_key, project_id, action.targets)
+    if gone:
+        return agent_peers.Acted(False, left=action.what, gone=gone)
+    return agent_peers.Acted(True, result=action.write())
+
+
+def dragged(peer: Optional[agent_peers.Peer], acted: agent_peers.Acted) -> Optional[dict]:
+    """What the agent's state in the room said while it played the drag of
+    *acted* (``user``, ``pointer``, ``carrying``), for a run's ``change``
+    event: a canvas no doc binds plays the same drag before it takes the
+    change. ``None`` for an action that played none."""
+    if peer is None or not acted.dragged:
+        return None
+    return {"user": copy.deepcopy(peer.user), **copy.deepcopy(acted.dragged)}

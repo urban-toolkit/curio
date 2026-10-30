@@ -3,11 +3,16 @@
 A mutate tool that changes the dataflow lands as soon as its checks pass:
 ``node.content.write``, ``node.settings.write``, ``node.create`` and
 ``dataflow.plan.write``, and the runtime's own writes of them (a delegated
-node's code, notes, a validated node's code). It is one write through the
+node's code, notes, a validated node's code). Each lands through the
 dataflow's doc (``dataflow_docs.write``), the agent the origin of its
 transaction, so every tab bound to the doc gets it at once and the history
 records it as the agent's (``collaboration/history.py``: "Node Builder, asked by
-Ana"). A tab no doc binds takes it from the run's stream (:func:`take_landed`).
+Ana"). A node's code or settings and a new node are one write; a plan is one
+write a step, each under the change's id (``plans._land_dataflow_plan``). A new
+node is dragged in from its template's tile as a person drags it, and lands as
+the drop ends, the agent's one action then (``in_the_room.act``). A tab no doc
+binds takes the change from the run's stream (:func:`take_landed`), playing
+its drags first.
 Before a change lands on nodes a person holds (their focus in the node,
 ``room_state``'s soft lock), it waits for them, up to :data:`LOCK_WAIT_S`: for
 anyone but the person who asked (``agent_peers.wait_for_people``). A node's
@@ -28,9 +33,10 @@ history's checked writes:
   gave it;
 * settings get their old values back, as a new point, only while they hold
   what the agent set;
-* a plan puts back the version before it (``history.put_back``), only while
-  nothing outside its own nodes changed since: so a node it removed comes back
-  with its connections.
+* a plan puts back the version before its first write (``history.put_back``),
+  only while nobody changed the dataflow between its writes and nothing
+  outside its own nodes changed since: so a node it removed comes back with
+  its connections.
 
 Refused, nothing changes, and the answer says who changed it.
 """
@@ -108,23 +114,31 @@ def land(user_key: str, project_id: str, loop_ctx: dict, spec: dict, proposal: d
     """Land the change *proposal* holds, which its mint checked against
     *spec*, the dataflow it read; *part* is what its card shows. Waits first
     while a person holds a node it changes. A node's content or settings land
-    held by the change's agent in the room (:func:`_land_held`). Returns the
-    tool's ``(status, text for the model, the change's card)``:
-    :data:`LANDED`, or ``refused`` with no card when nothing changed."""
+    held by the change's agent in the room (:func:`_land_held`); a new node
+    and a plan land as that agent's actions, one at a time, each new node
+    dragged in (:func:`_land_played`). Returns the tool's ``(status, text
+    for the model, the change's card)``: :data:`LANDED`, or ``refused`` with
+    no card when nothing changed."""
     kind = KIND_OF_TOOL[proposal["tool"]]
-    lander = {
-        CONTENT: agents_apply.land_content,
-        SETTINGS: agents_apply.land_settings,
-        NODE: agents_apply.land_node,
-        PLAN: agents_plans._land_dataflow_plan,
-    }[kind]
-    if kind in (CONTENT, SETTINGS):
-        return _land_held(user_key, project_id, loop_ctx, spec, proposal, part, lander)
-    held = wait_for_people(project_id, _nodes_it_changes(proposal), loop_ctx.get("asker_id"),
-                           sign_in=agents_room.asker_of(loop_ctx).sign_in)
-    if held:
-        return "refused", agent_text.message("change.person-editing", name=held), None
-    return lander(user_key, project_id, loop_ctx, spec, proposal, part)
+    if kind == CONTENT:
+        return _land_held(user_key, project_id, loop_ctx, spec, proposal, part, agents_apply.land_content)
+    if kind == SETTINGS:
+        return _land_held(user_key, project_id, loop_ctx, spec, proposal, part, agents_apply.land_settings)
+    lander = agents_apply.land_node if kind == NODE else agents_plans._land_dataflow_plan
+    return _land_played(user_key, project_id, loop_ctx, spec, proposal, part, lander)
+
+
+def _land_played(user_key: str, project_id: str, loop_ctx: dict, spec: dict, proposal: dict, part: dict, lander):
+    """Land a new node or a plan as the agent the change is by, at work in
+    the room (joined for the landing, or the run's own): after anyone else in
+    a node it removes, its actions one at a time (``in_the_room.act``)."""
+    who = agents_room.asker_of(loop_ctx)
+    with agents_room.at_work(user_key, project_id, loop_ctx.get("attachment_id"), spec=spec, who=who) as peer:
+        held = wait_for_people(project_id, _nodes_it_changes(proposal), loop_ctx.get("asker_id"),
+                               sign_in=who.sign_in, peer=peer)
+        if held:
+            return "refused", agent_text.message("change.person-editing", name=held), None
+        return lander(user_key, project_id, loop_ctx, spec, proposal, part, peer=peer)
 
 
 def _land_held(user_key: str, project_id: str, loop_ctx: dict, spec: dict, proposal: dict, part: dict, lander):
@@ -178,12 +192,17 @@ def new_change(tool: str, summary: str, **fields) -> dict:
 
 def keep(spec: dict, attachment_id: str | None, change: dict) -> None:
     """Keep *change* on the attachment that made it, in *spec*, which the
-    change's own write writes."""
+    change's own write writes. A change kept already, such as a plan landing
+    a step at a time, is kept as it is now, where it was."""
     record = attachments.get_attachment(spec, attachment_id) if attachment_id else None
     if record is None:
         return
     kept = [c for c in record.get("changes") or [] if isinstance(c, dict)]
-    kept.append(change)
+    at = next((i for i, c in enumerate(kept) if c.get("changeId") == change["changeId"]), None)
+    if at is None:
+        kept.append(change)
+    else:
+        kept[at] = change
     record["changes"] = kept[-CHANGES_KEPT:]
 
 
@@ -220,15 +239,22 @@ def card(part: dict, change: dict, lines: list[str]) -> dict:
     return out
 
 
-def landed(loop_ctx: dict, change: dict, canvas: dict | list) -> None:
+def landed(loop_ctx: dict, change: dict, canvas: dict | list, *, steps: list | None = None) -> None:
     """Note that *change* landed, for the run's stream: a tab no doc binds
-    takes *canvas*, its canvas mutation, through its canvas bridge."""
-    loop_ctx.setdefault("_landed", []).append({
+    takes *canvas*, its canvas mutation, through its canvas bridge. *steps*,
+    for a change played as the agent's actions, say how the room's tabs saw it
+    land, in order: each step's canvas mutation, with ``dragged``, the drag
+    played before it (``in_the_room.dragged``), when it had one; a tab no doc
+    binds plays them in place of *canvas*."""
+    entry = {
         "changeId": change["changeId"],
         "attachmentId": loop_ctx.get("attachment_id"),
         "tool": change["tool"],
         "canvas": canvas,
-    })
+    }
+    if steps:
+        entry["steps"] = [{key: value for key, value in step.items() if value is not None} for step in steps]
+    loop_ctx.setdefault("_landed", []).append(entry)
 
 
 def take_landed(loop_ctx: dict) -> list[dict]:

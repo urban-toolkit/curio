@@ -8,6 +8,9 @@
  * change lands on the server through the dataflow's doc, so a canvas the doc
  * binds has it already: its mutation is marked `landed`, which only a canvas no
  * doc binds takes (a hosted guest's, a dataflow open without collaboration).
+ * There, a change the agent landed in steps (a new node dragged in, a plan a
+ * step at a time) plays each step as the room's tabs saw it: its drag, then
+ * its mutation, one change after another.
  * The server's answer or stream is the only payload source: the bridge never
  * re-derives it. The catalog and dock refresh signals mirror the dataset
  * catalog's refresh-event convention: dispatched after an install/uninstall or
@@ -22,7 +25,8 @@ import type {
   AgentSimpleVisSetting,
   AgentSpatialJoinSetting,
 } from "./types/proposal";
-import { holdAgentsOfChange } from "../../providers/collab/agentHolds";
+import { agentsSeenThroughAwareness, holdAgentsOfChange } from "../../providers/collab/agentHolds";
+import { playChangeDrag } from "../../providers/collab/agentDrags";
 
 export type AgentCreatedNode = {
   id: string;
@@ -82,6 +86,9 @@ type AgentCanvasMutationBody =
        * before inserts wire to survivors). */
       kind: "graph-created";
       planId: string;
+      /** One step of the plan, as it landed, by its place in the plan: a
+       *  canvas no doc binds takes a plan a step at a time. */
+      step?: number;
       nodes: AgentCreatedNode[];
       edges: Array<{
         id: string;
@@ -152,15 +159,65 @@ export function notifyAgentChangesLanded(canvas: unknown): number {
   return mutations.length;
 }
 
+/** What a canvas no doc binds still has to play of the changes that landed,
+ * in order: each a drag to play first, or none, then what lands. */
+const toPlay: Array<{ dragged?: unknown; land: () => void }> = [];
+let playing = false;
+
+function playNext(): void {
+  const next = toPlay.shift();
+  if (!next) {
+    playing = false;
+    return;
+  }
+  playing = true;
+  const land = () => {
+    try {
+      next.land();
+    } finally {
+      playNext();
+    }
+  };
+  if (next.dragged) playChangeDrag(next.dragged, land);
+  else land();
+}
+
 /** A run's stream event, when it says a change landed: its canvas mutations
- * go to the canvas bridge (`notifyAgentChangesLanded`). Before them, on a
- * canvas no doc binds, the nodes the agent wrote show what it wrote, as its
- * state in the room said it (`writing`, `providers/collab/agentHolds`). True
- * when it was one. */
+ * go to the canvas bridge (`notifyAgentChangesLanded`). A canvas the dataflow's
+ * doc binds saw the agent's drags and writes through the doc's awareness, and
+ * has the change: it takes the whole change at once. On a canvas no doc binds,
+ * the change plays as the room's tabs saw it, after the changes before it:
+ * each of its `steps` in turn, the agent's drag first when the step had one
+ * (`playChangeDrag`), then the step's mutation; and the nodes the agent wrote
+ * show what it wrote just before they land, as its state in the room said it
+ * (`writing`, `providers/collab/agentHolds`). True when it was one. */
 export function bridgeLandedChangeEvent(name: string, payload: Record<string, unknown>): boolean {
   if (name !== "change") return false;
-  holdAgentsOfChange(payload.writing);
-  notifyAgentChangesLanded(payload.canvas);
+  if (agentsSeenThroughAwareness()) {
+    holdAgentsOfChange(payload.writing);
+    notifyAgentChangesLanded(payload.canvas);
+    return true;
+  }
+  const steps = Array.isArray(payload.steps) ? (payload.steps as Array<Record<string, unknown>>) : null;
+  if (steps && steps.length > 0) {
+    steps.forEach((step, i) =>
+      toPlay.push({
+        dragged: step?.dragged,
+        land: () => {
+          if (i === 0) holdAgentsOfChange(payload.writing);
+          notifyAgentChangesLanded(step?.canvas);
+        },
+      }),
+    );
+  } else {
+    toPlay.push({
+      land: () => {
+        holdAgentsOfChange(payload.writing);
+        notifyAgentChangesLanded(payload.canvas);
+      },
+    });
+  }
+  if (!playing) playNext();
   return true;
 }
 
