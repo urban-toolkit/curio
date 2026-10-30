@@ -46,7 +46,6 @@ import {
     whenProjectSettled,
 } from "../registry/projectPackagesStore";
 import { tryGetNodeDescriptor } from "../registry/nodeRegistry";
-import { refreshPackageRegistry } from "../registry/packageRegistryBootstrap";
 import { isRegistryReady } from "../registry/registryReadiness";
 import type { WidgetDef } from "../utils/widgets/widgetModel";
 
@@ -387,6 +386,10 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             // A package someone else added (the owner's Add, her Apply of an
             // editor's request) is one this tab's registry has not read: on an
             // editor's canvas it comes from her copies, on hers from her store.
+            // Required here, when needed: the registry brings every node kind's code.
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            const { refreshPackageRegistry } = require("../registry/packageRegistryBootstrap") as
+                typeof import("../registry/packageRegistryBootstrap");
             void refreshPackageRegistry();
         }
         if ("datasets" in fields) setDataflowDatasets(Array.isArray(fields.datasets) ? fields.datasets : []);

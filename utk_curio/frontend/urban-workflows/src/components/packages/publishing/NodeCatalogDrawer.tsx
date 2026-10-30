@@ -322,6 +322,21 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
 
   const onPickArchive = useCallback(
     async (file: File) => {
+      // On the owner's dataflow, an invited editor's import goes into his own
+      // account, as his dropped file goes into his Data Catalog, and asks her
+      // to add the package.
+      if (askForPackage) {
+        setImportBusy(true);
+        try {
+          const imported = await importArchive(file, null);
+          if (imported) {
+            await askForPackage({ dirName: imported.package.dirName, name: imported.package.name }, { add: true });
+          }
+        } finally {
+          setImportBusy(false);
+        }
+        return;
+      }
       // Save first, so the import lands in THIS dataflow's lockfile and not
       // only in the account store (the "not scoped to a project" half of #220).
       const intoProjectId = await ensureProjectId("Couldn't save dataflow before importing", "import");
@@ -354,7 +369,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
         setImportBusy(false);
       }
     },
-    [ensureProjectId, importArchive, reportActionError],
+    [askForPackage, ensureProjectId, importArchive, reportActionError],
   );
 
   /**
