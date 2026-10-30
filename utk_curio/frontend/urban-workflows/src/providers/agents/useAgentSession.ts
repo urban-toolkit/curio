@@ -637,8 +637,14 @@ export function useAgentSession(
         via: inRoomRef.current ? "room" : "stream",
       };
       asks[ask.askId] = ask;
-      if (busy) setWaiting(attachmentId, { askId: ask.askId, by: null, message, status: "sending" });
-      else startAsk(ask, Date.now());
+      if (busy) {
+        // The room says whether the server holds it back; its own stream says
+        // nothing until its turn starts, and an earlier ask is ahead of it.
+        if (ask.via === "stream") ask.state = "waiting";
+        setWaiting(attachmentId, {
+          askId: ask.askId, by: null, message, status: ask.via === "stream" ? "waiting" : "sending",
+        });
+      } else startAsk(ask, Date.now());
       const live = () => Boolean(asksRef.current[attachmentId]?.[ask.askId]);
       if (inRoomRef.current) {
         // The room brings every event of it, this tab's own ask's too.

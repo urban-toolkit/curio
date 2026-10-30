@@ -399,6 +399,39 @@ describe("an ask this tab made before the room held it", () => {
     expect(api.getSession).toHaveBeenCalledTimes(1);
   });
 
+  it("waits its turn behind a turn that runs, and runs once its stream starts", async () => {
+    outOfTheRoom();
+    const stream = heldStream();
+    api.getSession.mockResolvedValue({
+      attachmentId: "a1",
+      sessionId: "s1",
+      turns: [{ role: "user", text: "earlier" }],
+      asks: [
+        {
+          askId: "k1", by: BOB, message: "What about the map?", state: "running", askedAt: 1, startedAt: 2, seq: 1,
+          text: "", events: [],
+        },
+      ],
+    });
+    renderHarness();
+    await openChat();
+    await act(async () => {
+      fireEvent.click(screen.getByText("send"));
+    });
+    expect(api.runAttachmentStream).toHaveBeenCalledWith(
+      "p1", "a1", "Mine now.", expect.any(Function), expect.any(Function), undefined,
+      expect.stringMatching(/^[0-9a-f]{32}$/),
+    );
+    expect(screen.getByTestId("waiting").textContent).toBe("Mine now.:waiting");
+    expect(screen.getByTestId("turns")).not.toHaveTextContent("Mine now.");
+    act(() => {
+      stream.event("execution", { executionId: "e8" });
+      stream.delta("Now.");
+    });
+    expect(screen.getByTestId("waiting").textContent).toBe("");
+    expect(screen.getByTestId("turns").textContent?.endsWith("|user:Mine now.|agent:Now.")).toBe(true);
+  });
+
   it("keeps the ask as its stream brings it when the chat is read again", async () => {
     outOfTheRoom();
     const stream = heldStream();
