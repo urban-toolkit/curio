@@ -302,6 +302,10 @@ export const ProjectLoader: React.FC<{
         return;
       }
 
+      // Another account's dataflow, opened from its link: the registry then
+      // draws the nodes of its packages this account does not hold, from its
+      // owner's copies (refreshPackageRegistry).
+      let openedFromLink: string | undefined;
       try {
         // A canvas opens with the results it was left with, each node its
         // owner's runs ran showing its newest kept result; a dashboard with
@@ -328,6 +332,7 @@ export const ProjectLoader: React.FC<{
           try {
             const result = await loadSharedProject(id);
             applyResult(result, { trusted: false });
+            openedFromLink = id;
             setLoadState("loaded");
           } catch (sharedErr) {
             console.error("Failed to load shared project:", sharedErr);
@@ -356,7 +361,7 @@ export const ProjectLoader: React.FC<{
       // lockfile (or stays empty on failure). Re-refresh so the palette
       // intersects with the lockfile the store learned from loadParsedTrill.
       try {
-        await refreshPackageRegistry();
+        await (openedFromLink ? refreshPackageRegistry({ openedFromLink }) : refreshPackageRegistry());
       } catch {
         /* ditto: descriptor-miss surfaces per-node */
       }

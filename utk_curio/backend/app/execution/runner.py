@@ -307,7 +307,10 @@ def run_through_node(
     *user_key*'s). When that account is an editor the owner of the dataflow,
     whose key *user_key* is, invited, the packages and models the dataflow
     uses come from her store, and any other from the editor's
-    (:func:`_acting_store`).
+    (:func:`_acting_store`). The sandbox is handed that account's key, in
+    place of *exec_user_key*, as a play hands it, and for such an editor the
+    owner's after it (``library_keys``): under fork isolation the run reads
+    the account's node libraries, then hers.
 
     dev/115: ``dataset_paths`` (``{datasetId: absolutePath}`` for the code's
     ``curio_data_path("<id>")`` calls) and ``exec_user_key`` ride the
@@ -396,6 +399,8 @@ def run_through_node(
     # For an editor the owner invited: the packages and models the dataflow
     # uses, read from the owner's store as the editor's Play reads them.
     acting_key, owners = _acting_store(user_key, project_id, acting_user)
+    from utk_curio.backend.app.execution.node_exec import library_keys_of
+
     for index, node in enumerate(ordered):
         if progress is not None:
             progress(node.id, index, len(ordered))
@@ -465,8 +470,14 @@ def run_through_node(
             payload["dataset_paths"] = dict(dataset_paths)
         if dataset_formats:
             payload["dataset_formats"] = dict(dataset_formats)
-        if exec_user_key:
-            payload["user_key"] = exec_user_key
+        # The account the run is for, as a play names it: under fork isolation
+        # the run reads that account's node libraries, and for an editor the
+        # owner invited, hers after his (``node_exec.library_keys_of``).
+        sandbox_key = acting_key or exec_user_key
+        if sandbox_key:
+            payload["user_key"] = sandbox_key
+        if is_py:
+            payload.update(library_keys_of(owners))
         if secrets:
             # dev/116: the connection keys the candidate names, resolved by the
             # caller in the request thread; the sandbox injects curio_secret().

@@ -302,6 +302,7 @@ def run_delegate(
     attachment_id: str | None,
     dataflow_block: str | None = None,
     refused: str | None = None,
+    asker=None,
     uses_skills=None,
 ) -> tuple[str, str, dict]:
     """One synchronous, depth-1 child run (DEC-046 — direct provider-port code).
@@ -318,9 +319,12 @@ def run_delegate(
     The child is handed the skills its task needs (``skill_runs.for_delegated``),
     and *refused*, the kind a check recorded when it refused the round before
     (a Solve round's), adds the skills of what that check guards. Only the
-    runtime passes it, as it does *dataflow_block*. *uses_skills*, when given,
-    is told the names of the skills the child holds before it asks its
-    provider: its agent at work in the dataflow's room lists them.
+    runtime passes it, as it does *dataflow_block*. *asker* is the person a
+    job's thread runs the child for, which the request names otherwise: an
+    editor's child holds the skills of the packages the owner added.
+    *uses_skills*, when given, is told the names of the skills the child
+    holds before it asks its provider: its agent at work in the dataflow's
+    room lists them.
 
     Returns ``(status, result_text, child_record)``: ``status`` is
     ``"ok"``/``"error"``, ``result_text`` is the bounded child reply (or the
@@ -349,7 +353,7 @@ def run_delegate(
                   "llm": provider_config.llm_pin(config)}
     try:
         child = _prepare_child(user_key, project_id, coord, capability, inputs, config,
-                               attachment_id=attachment_id, child_id=child_id, refused=refused)
+                               attachment_id=attachment_id, child_id=child_id, refused=refused, asker=asker)
     except _NoInstruction:
         return (
             "error",
@@ -406,7 +410,8 @@ class _ChildRun:
 
 
 def _prepare_child(user_key: str, project_id: str, coord: str, capability: str, inputs: dict, config,
-                   *, attachment_id: str | None, child_id: str, refused: str | None = None) -> _ChildRun:
+                   *, attachment_id: str | None, child_id: str, refused: str | None = None,
+                   asker=None) -> _ChildRun:
     """Resolve the child: its definition and instruction (the capability is the mode: a merged
     agent runs that capability's own instruction), the skills it is handed, the reply schema
     when the document has one and the provider takes it, the effective policy, the DEC-031
@@ -425,7 +430,7 @@ def _prepare_child(user_key: str, project_id: str, coord: str, capability: str, 
     examples_block = worked_examples.delegated_block(coord, capability, spec, inputs)
     # What the task needs, handed: a tool-less run cannot load a skill.
     run_skills = skill_runs.for_delegated(
-        user_key, project_id, manifest, capability, inputs, spec, preamble, refused=refused,
+        user_key, project_id, manifest, capability, inputs, spec, preamble, refused=refused, asker=asker,
     )
     handed = skill_runs.skills_text(run_skills)
 

@@ -402,11 +402,17 @@ function CodeEditor({
         // selection, widget value or code changed while it runs leaves the
         // node stale.
         const runKey = runKeyOf(code, data.widgets, data.selections);
+        // The dataflow the run is of, by the rule its agents follow
+        // (useAgentsDataflowId): the one the owner's canvas saves, the one an
+        // invited editor's route opened, and none on a watcher's canvas. The
+        // run then reads the dataflow's datasets and saved outputs, and an
+        // editor's the packages it uses, from the owner's store.
+        const runDataflowId = agentsDataflowId(canvasRole(viewerMode, collab), projectId, getCurrentProjectId());
         if (backendRun) {
             // dev/91: a backendHandler template Runs through the package
             // backend sandbox — registry-driven dispatch, never another
             // hardcoded template-id literal.
-            void backendRun({ content: replacedCode, input: data.input }).then((outcome) => {
+            void backendRun({ content: replacedCode, input: data.input, dataflowId: runDataflowId }).then((outcome) => {
                 if (outcome.ok) {
                     setOutputCallback({ code: "success", content: outcome.content, runKey });
                     markNodeExecuted(data.nodeId);
@@ -420,11 +426,6 @@ function CodeEditor({
         const interpreter = (isJsNode && data.jsInterpreter)
             ? data.jsInterpreter
             : data.pythonInterpreter;
-        // The dataflow the run is of, by the rule its agents follow
-        // (useAgentsDataflowId): the one the owner's canvas saves, the one an
-        // invited editor's route opened, and none on a watcher's canvas. The
-        // run then reads the dataflow's datasets and saved outputs.
-        const runDataflowId = agentsDataflowId(canvasRole(viewerMode, collab), projectId, getCurrentProjectId());
         interpreter.interpretCode(
             code,
             replacedCode,

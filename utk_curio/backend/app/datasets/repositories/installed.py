@@ -62,14 +62,25 @@ class InstalledDatasetRepository:
 
     def _dataflow_refs(self, dataflow_id: str) -> tuple[str, list[dict[str, Any]]]:
         """The key of the store the dataflow's datasets are in, and the refs
-        its spec lists."""
+        its spec lists. For an editor the owner invited, a ref to a folder of
+        her store counts only when she put it in the dataflow herself
+        (``collaboration.owner_uses``): one an editor's change wrote names
+        nothing of hers. A ref with no folder is read only within the read
+        roots (``CatalogListing._ref_paths_in_the_read_roots``)."""
         from utk_curio.backend.app.projects import storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
 
         project, store_key = self._dataflow_store(dataflow_id)
         spec = storage.read_spec(store_key, project.id) or {}
         dataflow = spec.get("dataflow") if isinstance(spec, dict) else {}
         refs = dataflow.get("datasets", []) if isinstance(dataflow, dict) else []
-        return store_key, [r for r in refs if isinstance(r, dict)]
+        refs = [r for r in refs if isinstance(r, dict)]
+        if store_key != _user_dir_key(self.user):
+            from utk_curio.backend.app.collaboration import owner_uses
+
+            hers = owner_uses.recorded(store_key, project.id)
+            refs = [r for r in refs if not r.get("dirName") or hers.dataset(r.get("dirName"))]
+        return store_key, refs
 
     def list_refs(self, dataflow_id: str | None) -> list[dict[str, Any]]:
         if not dataflow_id:

@@ -360,6 +360,17 @@ def owners_packages_for(user, dataflow_id: str | None):
         return None
 
 
+def library_keys_of(owners) -> dict:
+    """``{"library_keys": [<the owner's storage key>]}`` for a run of an
+    editor the dataflow's owner invited (*owners*, :func:`owners_packages_for`),
+    else nothing. Under fork isolation each account's node libraries are a
+    folder of their own, and the sandbox puts the owner's on the run's import
+    path, read-only, after the editor's own (``sandbox/isolation/runner.py``),
+    so a node of her packages imports the libraries she installed for them.
+    Without isolation every run shares one interpreter and this is ignored."""
+    return {"library_keys": [owners.store_key]} if owners is not None else {}
+
+
 def resolve_secrets(code: str, user) -> dict:
     """Resolve the connection keys *code* reaches as ``curio_secret("<name>")``
     (memo dev/116) to their values: the ``dataset_paths`` twin, minus the disk.
@@ -621,9 +632,8 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
             run.code, user_key, user=user, dataflow_id=run.dataflow_id,
         )
         exec_secrets = resolve_secrets(run.code, user)
-        package_modules = resolve_package_modules(
-            run.node_type, user_key, run.dataflow_id, owners=owners_packages_for(user, run.dataflow_id),
-        )
+        owners = owners_packages_for(user, run.dataflow_id)
+        package_modules = resolve_package_modules(run.node_type, user_key, run.dataflow_id, owners=owners)
         body.update({
             "dataset_paths": dataset_paths,
             "dataset_formats": dataset_formats,
@@ -637,6 +647,9 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
             **({"models": exec_models} if exec_models else {}),
             # And only when the node's package ships modules beside its templates.
             **({"package_modules": package_modules} if package_modules else {}),
+            # And only for an editor's run of the owner's dataflow: her node
+            # libraries, which an isolated run reads after the editor's own.
+            **library_keys_of(owners),
         })
     else:
         endpoint = '/execJs'

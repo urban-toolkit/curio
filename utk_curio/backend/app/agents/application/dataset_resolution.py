@@ -492,9 +492,15 @@ def initiate(
     parent_attachment_id: str | None = None,
     mission: str | None = None,
     catalog_rows: list | None = None,
+    asker=None,
 ) -> dict:
     """Run ONE ``dataset.discover`` delegation for *node* and leave its
     candidates awaiting the user in that node's own Dataset Finder chat.
+
+    *asker* is the person the run is for, which a Solve's thread names (its
+    ``acting_user``) where no request does: the delegated run holds the
+    skills of the dataflow's packages as that person's runs do
+    (``delegation.run_delegate``).
 
     Server-initiated: the model does not choose this, which is why the Dataset
     Finder is a declared hard dependency of both composites (``DEC-068``'s
@@ -587,6 +593,7 @@ def initiate(
         parent_coord=parent_coord,
         attachment_id=parent_attachment_id,
         node_id=node_id,
+        asker=asker,
     )
     if status != "ok":
         return {"status": "unavailable", "attachmentId": attachment_id,

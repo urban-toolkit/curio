@@ -35,7 +35,7 @@ import { useFlowContext } from '../providers/FlowProvider';
 import { NodeAgentBadges } from './agents/attach/NodeAgentBadges';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { useCollab } from '../providers/CollaborationProvider';
-import { agentHolding, agentWithAsker, isOwnParticipant } from '../providers/collab/participants';
+import { agentHolding, agentWithAsker, canvasRole, isOwnParticipant } from '../providers/collab/participants';
 import { initialsOf } from '../providers/collab/people';
 import { guestNumberOf, numberedName } from '../providers/collab/presence';
 import { agentCategoryIcon, agentCategoryKey } from './menus/nodes/agentsPalette/agentCategoryStyle';
@@ -179,9 +179,9 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const setOutputCallback = behavior.setOutputCallbackOverride ?? nodeState.setOutput;
   const output = behavior.outputOverride ?? nodeState.output
   const showLoading = behavior.showLoading ?? false;
-  const disablePlay = behavior.disablePlay ?? adapter.container.disablePlay ?? false;
+  const playDisabledByTemplate = behavior.disablePlay ?? adapter.container.disablePlay ?? false;
 
-  const { signalNodeExecDone, dashboardOn, dashboardStopped, projectId, edges: flowEdges, isRunActive, serverRunActive, nodes: flowNodes } = useFlowContext();
+  const { signalNodeExecDone, dashboardOn, dashboardStopped, projectId, edges: flowEdges, isRunActive, serverRunActive, nodes: flowNodes, viewerMode } = useFlowContext();
   // In the notebook view the node is a cell: the page's width and as tall as
   // its content, its dots on the right edge where the bar draws its
   // connections, no cardinality markers.
@@ -190,6 +190,11 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const kindConfig = readCanvasTemplateConfig({ data });
   const editorTabs = resolveEditorTabFlags(descriptor, kindConfig);
   const collab = useCollab();
+  // A node drawn from the dataflow owner's copy of a package she holds and
+  // this account does not (`ownersCopy`) has no Play on a watcher's canvas: a
+  // watcher's runs read none of her packages. An invited editor's runs do.
+  const disablePlay = playDisabledByTemplate
+    || (descriptor.package?.ownersCopy === true && canvasRole(viewerMode, collab) === "watcher");
   const lastTriggerExecRef = useRef<number>(data.triggerExec ?? 0);
   // The input this node's content was last compiled against, by a run or by the
   // restore path below, so neither repeats the other's work.

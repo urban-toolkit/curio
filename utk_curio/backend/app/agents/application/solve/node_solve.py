@@ -279,6 +279,7 @@ def _run_node_loop(
             home_create=False,
             dataflow_block=dataflow_block,
             refused=refused,
+            asker=acting_user,
         )
         return st, tx, ch
 
@@ -309,6 +310,7 @@ def _run_node_loop(
             execution_id=execution_id, config=config, manifest=manifest,
             extra_texts=(str((spec.get("dataflow") or {}).get("task") or ""),),
             catalog_rows=catalog_rows,
+            asker=acting_user,
         ),
     )
     return outcome

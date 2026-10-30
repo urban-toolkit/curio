@@ -28,6 +28,8 @@ export interface BackendRunOutcome {
 export type PackageBackendRun = (args: {
     content?: string;
     input?: unknown;
+    /** The dataflow the run is of, as a play names it (`agentsDataflowId`). */
+    dataflowId?: string | null;
 }) => Promise<BackendRunOutcome>;
 
 /**
@@ -43,12 +45,12 @@ export function usePackageBackendRun(nodeType: NodeTemplateId): PackageBackendRu
     return useMemo(() => {
         if (!handler || !packageId || major === undefined) return null;
         const dirName = `${packageId}@${major}`;
-        const run: PackageBackendRun = async ({ content, input }) => {
+        const run: PackageBackendRun = async ({ content, input, dataflowId }) => {
             try {
-                const res = await invokePackageBackend(dirName, handler, {
-                    content: content ?? "",
-                    input: input ?? null,
-                });
+                const body = { content: content ?? "", input: input ?? null };
+                const res = await (dataflowId
+                    ? invokePackageBackend(dirName, handler, body, dataflowId)
+                    : invokePackageBackend(dirName, handler, body));
                 if (res.reply.ok) {
                     return { ok: true, content: JSON.stringify(res.reply.result, null, 2) };
                 }
