@@ -224,7 +224,7 @@ def test_an_editor_starts_follows_and_cancels_a_run_on_the_owners_dataflow(clien
     assert going["status"] == "running" and going["projectId"] == project_id
     alices_read = client.get(f"/api/runs/{run_id}", headers=auth_headers(people.tokens["alice"]))
     assert alices_read.status_code == 200, alices_read.get_data(as_text=True)
-    assert alices_read.get_json()["startedBy"] == {"username": "bob", "name": "Bob"}
+    assert alices_read.get_json().get("startedBy") == {"username": "bob", "name": "Bob"}
     carol = people.tokens["carol"]
     assert client.get(f"/api/runs/{run_id}", headers=auth_headers(carol)).status_code == 404
     assert client.post(f"/api/runs/{run_id}/cancel", headers=auth_headers(carol)).status_code == 404
@@ -312,7 +312,7 @@ def test_the_owner_lists_every_run_of_her_dataflow_and_an_editor_his_own(client,
 
     resp = client.get(f"/api/projects/{project_id}/runs", headers=auth_headers(people.tokens["alice"]))
     assert resp.status_code == 200, resp.get_data(as_text=True)
-    assert [(run["id"], run["startedBy"]) for run in resp.get_json()["runs"]] == [
+    assert [(run["id"], run.get("startedBy")) for run in resp.get_json()["runs"]] == [
         (bobs, {"username": "bob", "name": "Bob"}),
         (alices, {"username": people.alice.username, "name": people.alice.name}),
     ]
