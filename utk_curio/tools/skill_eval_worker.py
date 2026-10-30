@@ -85,7 +85,7 @@ GRADER_ATTEMPTS = 3
 #: How long a run, or the grader, waits before each new try after the model's
 #: server failed it (a 5xx or a lost connection): two more tries at most.
 RETRY_WAITS_S = (15, 45)
-#: The most characters of one proposed change the grader is shown.
+#: The most characters of one text of a change the grader is shown.
 PREVIEW_MAX_CHARS = 16000
 #: The name every run's dataflow has, which says nothing of what it tests.
 PROJECT_NAME = "My dataflow"
@@ -155,8 +155,8 @@ class _Seams:
         pool, resolve, read = skill_runs._pool, prompts._resolve_prompt_text, skill_runs.read
         for_chat, for_delegated, chat_turn = skill_runs.for_chat, skill_runs.for_delegated, providers.run_chat_turn
 
-        def _pool(user_key, manifest, preamble, spec=None):
-            usable, placed, found, packages = pool(user_key, manifest, preamble, spec)
+        def _pool(user_key, manifest, preamble, spec=None, **kwargs):
+            usable, placed, found, packages = pool(user_key, manifest, preamble, spec, **kwargs)
             name = seams.left_out
             if name:
                 usable = {key: skill for key, skill in usable.items() if key != name}
@@ -258,6 +258,57 @@ def _write(path: Path, data) -> None:
 
 #: What a kept proposal holds for its review's bookkeeping, which the grader is not shown.
 _BOOKKEEPING = ("proposalId", "mintSequenceId", "contentSha256", "pins", "status")
+#: What a node holds of where the canvas draws it, which no change the grader reads is about.
+_LAYOUT = frozenset({"x", "y", "position", "positionAbsolute", "width", "height", "measured", "selected",
+                     "dragging", "zIndex", "style"})
+
+
+def _node_view(node: dict) -> dict:
+    return {key: _clip(value) for key, value in node.items() if key not in _LAYOUT}
+
+
+def _by_id(items) -> dict:
+    return {str(item.get("id")): item for item in items or [] if isinstance(item, dict) and item.get("id") is not None}
+
+
+def _differences(before: dict, after: dict) -> dict:
+    """What differs between two views of one node, key by key, and inside its
+    ``metadata``, each as its value before and after."""
+    found = {}
+    for key in sorted(set(before) | set(after)):
+        old, new = before.get(key), after.get(key)
+        if old == new:
+            continue
+        if key == "metadata" and isinstance(old, dict) and isinstance(new, dict):
+            for inner in sorted(set(old) | set(new)):
+                if old.get(inner) != new.get(inner):
+                    found[f"metadata.{inner}"] = {"before": _clip(old.get(inner)), "after": _clip(new.get(inner))}
+        else:
+            found[key] = {"before": _clip(old), "after": _clip(new)}
+    return found
+
+
+def _dataflow_changes(before: dict, after: dict) -> dict:
+    """The nodes, connections and scenarios *after* added, changed or removed
+    against *before*, two specs of one dataflow; only the kinds that hold one."""
+    flows = [(spec.get("dataflow") if isinstance(spec.get("dataflow"), dict) else {}) for spec in (before, after)]
+    out: dict = {}
+    for key in ("nodes", "edges", "scenarios"):
+        old, new = _by_id(flows[0].get(key)), _by_id(flows[1].get(key))
+        added = [_node_view(new[i]) for i in new if i not in old]
+        removed = [{k: old[i].get(k) for k in ("id", "type", "title", "name", "source", "target") if k in old[i]}
+                   for i in old if i not in new]
+        changed = []
+        for i in new:
+            if i in old:
+                differs = _differences(_node_view(old[i]), _node_view(new[i]))
+                if differs:
+                    changed.append({"id": i, **{k: new[i].get(k) for k in ("type", "title", "name") if k in new[i]},
+                                    "changes": differs})
+        for name, found in (("added", added), ("changed", changed), ("removed", removed)):
+            if found:
+                out.setdefault(key, {})[name] = found
+    return out
 
 
 def _clip(value):
@@ -275,14 +326,18 @@ def _clip(value):
 _PROVIDER_STATUS_RE = re.compile(r"Error code: (\d{3})")
 #: A model server's answers that say "try again later".
 _TRY_AGAIN = (408, 429)
+#: What the run route answers when the turn's model call failed (``run_attachment``),
+#: or a proxy before it did; a 500 is Curio's own failure, which a new try repeats.
+_PROVIDER_FAILED = (502, 503, 504)
 
 
 def _transient(status: int | None, error: str | None) -> bool:
     """Whether a run that answered *status* failed for a reason a later try
     may not meet: a lost connection, a timeout or the model's server failing
-    (a 5xx, 408 or 429 from it). The route answers 502 for every failed turn,
-    so a 4xx the provider names, such as a request too long, is not one."""
-    if status is None or status < 500:
+    (a 5xx, 408 or 429 from it). The route answers 502 for every turn whose
+    model call failed, so a 4xx the provider names, such as a request too
+    long, is not one."""
+    if status not in _PROVIDER_FAILED:
         return False
     found = _PROVIDER_STATUS_RE.search(error or "")
     return not (found and 400 <= int(found.group(1)) < 500 and int(found.group(1)) not in _TRY_AGAIN)
@@ -428,15 +483,17 @@ class Worker:
 
     def _attempt(self, task: skill_evals.Task, message: str, folder: Path, record: dict):
         """One attempt at *task*'s run, on a dataflow and an attachment of its
-        own; returns ``(the run's status or None, its reply, project id,
-        attachment id)``, and notes on *record* how it ended."""
+        own; returns ``(the run's status or None, its reply, project id, the
+        dataflow before the message)``, and notes on *record* how it ended."""
         body: dict = {}
+        before: dict = {}
         status = project_id = attachment_id = None
         for key in ("error", "stoppedEarly", "handedOff"):
             record.pop(key, None)
         try:
             project_id = self._project(task.context)
             attachment_id = self._attach(project_id, task.context)
+            before = self._spec(project_id)
             url = f"/api/agents/projects/{project_id}/attachments/{attachment_id}/run"
             try:
                 status, body = self._json("POST", url, {"message": message})
@@ -452,7 +509,7 @@ class Worker:
             _write(folder / "transcript.json", scrub(session.get("turns") or [], values=self.secrets))
         except Exception as exc:  # noqa: BLE001 - a run that cannot start is an error, not a crash
             record["error"] = f"{type(exc).__name__}: {exc}"
-        return status, body, project_id, attachment_id
+        return status, body, project_id, before
 
     def run(self, task: skill_evals.Task, *, hand: bool = False) -> dict:
         """Run *task* and write its files; returns its record. A run the model's
@@ -472,7 +529,7 @@ class Worker:
                              watch=task.skill if trigger and self.stop_early else None,
                              stop_at_hand_off=trigger and self.stop_early)
             attempt_started = time.monotonic()
-            status, body, project_id, attachment_id = self._attempt(task, message, folder, record)
+            status, body, project_id, before = self._attempt(task, message, folder, record)
             if not _transient(status, record.get("error")) or len(failed) >= len(RETRY_WAITS_S):
                 break
             failed.append(record["error"])
@@ -499,11 +556,11 @@ class Worker:
         if task.kind == skill_evals.TRIGGER:
             record["triggered"] = record["loaded"]
         else:
-            proposals = self._proposals(project_id, attachment_id, body)
-            self._outputs(folder, body, proposals)
+            changes = self._changes(before, project_id, body)
+            self._outputs(folder, body, changes)
             _write(folder / "timing.json", timing)
             if "error" not in record:
-                grading = self._grade(task, body, proposals)
+                grading = self._grade(task, body, changes)
                 record["grading"] = grading
                 if grading.get("error"):
                     record["error"] = f"the grader failed: {grading['error']}"
@@ -514,36 +571,34 @@ class Worker:
 
     # --- the answer, and its grade ----------------------------------------------------
 
-    def _proposals(self, project_id: str | None, attachment_id: str | None, body: dict) -> list[dict]:
-        """What the run proposed, as its dataflow keeps each proposal for
-        review (its code or spec, its widgets, its plan), else as its reply's
-        cards show them. The dataflow is the run's own, so every attachment's
-        proposals are the run's: a node's content written by a delegate waits
-        for review on that node's agent, not on the chat's."""
-        found: list = []
-        if project_id and attachment_id:
-            _, project = self._json("GET", f"/api/projects/{project_id}")
-            spec = project.get("spec") if isinstance(project.get("spec"), dict) else {}
-            for record in attachments.list_attachments(spec):
-                found += [record.get("planProposal"), record.get("activeProposal"),
-                          *(record.get("queuedProposals") or [])]
-        seen: set = set()
-        kept = []
-        for proposal in found:
-            if not isinstance(proposal, dict) or proposal.get("status") == "superseded":
-                continue
-            if proposal.get("proposalId") in seen:
-                continue
-            seen.add(proposal.get("proposalId"))
-            kept.append({key: _clip(value) for key, value in proposal.items() if key not in _BOOKKEEPING})
-        if kept:
-            return kept
-        return [{"tool": part.get("tool"), "summary": part.get("summary"), "content": _clip(part.get("preview"))}
-                for part in body.get("content") or [] if isinstance(part, dict) and part.get("type") == "proposal"]
+    def _spec(self, project_id: str | None) -> dict:
+        """The run's dataflow as the server keeps it now."""
+        if not project_id:
+            return {}
+        _, project = self._json("GET", f"/api/projects/{project_id}")
+        return project.get("spec") if isinstance(project.get("spec"), dict) else {}
 
-    def _outputs(self, folder: Path, body: dict, proposals: list[dict]) -> None:
+    def _changes(self, before: dict, project_id: str | None, body: dict) -> dict:
+        """What the run did to its dataflow, which landed when the agent made it
+        (``changed``: the nodes, connections and scenarios it added, changed or
+        removed, with what it gave them; ``cards``: what its turn's change cards
+        say), and the installs it asked for, which wait for the user's review
+        (``awaiting_review``). The dataflow is the run's own, so all of it is the
+        run's: a node's code a delegate wrote lands on that node too."""
+        after = self._spec(project_id)
+        pending = []
+        for record in attachments.list_attachments(after):
+            for proposal in (record.get("planProposal"), record.get("activeProposal"),
+                             *(record.get("queuedProposals") or [])):
+                if isinstance(proposal, dict) and proposal.get("status") == "pending":
+                    pending.append({key: _clip(value) for key, value in proposal.items() if key not in _BOOKKEEPING})
+        cards = [{key: part[key] for key in ("tool", "kind", "summary", "lines", "nodeId", "nodeType") if key in part}
+                 for part in body.get("content") or [] if isinstance(part, dict) and part.get("type") == "change"]
+        return {"changed": _dataflow_changes(before, after), "cards": cards, "awaiting_review": pending}
+
+    def _outputs(self, folder: Path, body: dict, changes: dict) -> None:
         _write(folder / "outputs" / "reply.md", scrub(str(body.get("reply") or ""), values=self.secrets) + "\n")
-        _write(folder / "outputs" / "proposals.json", scrub(proposals, values=self.secrets))
+        _write(folder / "outputs" / "changes.json", scrub(changes, values=self.secrets))
 
     def _calls(self, folder: Path) -> list[dict]:
         """The tools the run called, from its turn's record in the transcript,
@@ -559,14 +614,14 @@ class Worker:
                 for call in execution.get("toolCalls") or []
                 if isinstance(call, dict) and call.get("tool") != skill_runs.TOOL]
 
-    def _grade(self, task: skill_evals.Task, body: dict, proposals: list[dict]) -> dict:
+    def _grade(self, task: skill_evals.Task, body: dict, changes: dict) -> dict:
         folder = self.results / task.path
         values = {
             "prompt": task.message,
             "expected_output": task.expected_output or "",
             "assertions": "\n".join(f"{at}. {text}" for at, text in enumerate(task.assertions, start=1)),
             "reply": str(body.get("reply") or "").strip(),
-            "proposals": json.dumps(proposals, indent=2, ensure_ascii=False),
+            "changes": json.dumps(changes, indent=2, ensure_ascii=False),
             "tools": json.dumps(self._calls(folder), ensure_ascii=False),
         }
         where = f"{agent_text.PAGE_PREFIX}{GRADER_PAGE}"

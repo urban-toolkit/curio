@@ -12,7 +12,7 @@
         "Each finding, on the dataset id and on each of the two fields, is labeled VERIFIED, REPORTED or UNVERIFIED.",
         "Each finding names the URL that was probed for it.",
         "The answer says the checks were made now, in this session.",
-        "The answer proposes no notes (no node.create)."
+        "The answer creates no notes (no node.create)."
       ]
     },
     {

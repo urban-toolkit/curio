@@ -8,7 +8,7 @@
       "prompt": "My dashboard won't open. It says the Loop buildings map tile loads its own data. Can you fix it so the page opens?",
       "expected_output": "A dataflow plan that moves the map's data section (the Chicago Loop OSM load) into a node of its own upstream of the pinned Loop buildings map, such as an Autark node whose spec holds only that section, wired into the map so the tile draws that node's output; the answer says the map's spec then drops its data section, and the map stays pinned.",
       "assertions": [
-        "The answer proposes a dataflow plan that adds a node upstream of the map to load the Chicago Loop buildings the map's data section loads now, such as an Autark node (curio.builtin/autk-grammar) whose spec holds only that section.",
+        "The answer writes a dataflow plan that adds a node upstream of the map to load the Chicago Loop buildings the map's data section loads now, such as an Autark node (curio.builtin/autk-grammar) whose spec holds only that section.",
         "The plan connects that new node into the Loop buildings map (loop-map) with a data edge.",
         "The answer says the map's own spec must then drop its \"data\" section and draw the new node's output instead.",
         "The answer neither unpins nor removes the map, and does not give unpinning it as the fix."
@@ -30,10 +30,10 @@
       "id": 3,
       "agent": "agent.curio.node-builder@1",
       "prompt": "Put the roofs table on the dashboard too, next to the chart.",
-      "expected_output": "No proposal: the answer says only the user pins a node, and tells them to pin the Roofs table with the pin in its header.",
+      "expected_output": "No change: the answer says only the user pins a node, and tells them to pin the Roofs table with the pin in its header.",
       "assertions": [
         "The answer tells the user to pin the Roofs table themselves, with the pin in the node's header.",
-        "The answer proposes no change: no node.create, node.settings.write, node.content.write or dataflow plan.",
+        "The answer makes no change: no node.create, node.settings.write, node.content.write or dataflow plan.",
         "The answer does not claim the table is now pinned or on the dashboard."
       ]
     },
@@ -42,7 +42,7 @@
       "prompt": "Delete the zip code bar chart, we don't need it anymore.",
       "expected_output": "A dataflow plan whose removeNodes holds roofs-chart and nothing else, and an answer that restates the removal and says the chart's tile leaves the dashboard with it.",
       "assertions": [
-        "The answer proposes a dataflow plan whose removeNodes holds roofs-chart.",
+        "The answer writes a dataflow plan whose removeNodes holds roofs-chart.",
         "The plan removes no other node.",
         "The answer says removing the chart also takes its tile off the dashboard."
       ]

@@ -348,6 +348,6 @@ def test_the_graders_words_are_a_page_of_the_base_entry_with_a_place_for_each_va
     assert "skill-evals.md" in agent_text.pages()
     assert agent_text.section("skill-evals.md", "grader").startswith("You grade one answer")
     values = {name: f"<{name}>" for name in
-              ("prompt", "expected_output", "assertions", "reply", "proposals", "tools")}
+              ("prompt", "expected_output", "assertions", "reply", "changes", "tools")}
     filled = agent_text.fill(agent_text.section("skill-evals.md", "grader-task"), values, "skill-evals.md")
     assert all(f"<{name}>" in filled for name in values)

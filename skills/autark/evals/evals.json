@@ -8,7 +8,7 @@
       "prompt": "Add an Autark histogram of the buildings' heights that I can brush, fed by the OpenStreetMap layers node.",
       "expected_output": "One new Autark node whose document is a single plot: a bar mark with a binning-1d transform over height, its dataRef table_osm_buildings (the name the OpenStreetMap layers node gives its buildings), a brush event, and neither a data section nor a map.",
       "assertions": [
-        "The answer proposes one new node (node.create) of type curio.builtin/autk-grammar.",
+        "The answer creates one new node (node.create) of type curio.builtin/autk-grammar.",
         "Its document has a \"plot\" with \"mark\": \"bar\", a \"binning-1d\" transform and an \"axis\" that names height.",
         "The plot's \"dataRef\" is table_osm_buildings, the name the OpenStreetMap layers node gives its buildings.",
         "The document has no \"data\" section that loads OpenStreetMap again, and no \"map\": it reads its input and draws one view.",
@@ -19,9 +19,9 @@
       "id": 2,
       "target": {"kind": "node", "node": "d517325b-266b-575d-ab48-2685bb889536"},
       "prompt": "Also show a bar chart of the stations by accessibility under the map, in this same node.",
-      "expected_output": "No document with both a map and a plot: the answer says an Autark node draws one view, so the bar chart goes in an Autark node of its own, linked to the map with an interaction edge. Any plot it proposes is in a new Autark node, a bar over the stations' ada values.",
+      "expected_output": "No document with both a map and a plot: the answer says an Autark node draws one view, so the bar chart goes in an Autark node of its own, linked to the map with an interaction edge. Any plot it writes is in a new Autark node, a bar over the stations' ada values.",
       "assertions": [
-        "No proposed document holds both a \"map\" and a \"plot\".",
+        "No document it writes holds both a \"map\" and a \"plot\".",
         "The answer says an Autark node draws one view, one map or one plot, so the bar chart goes in an Autark node of its own.",
         "The answer says the two views can be linked with an interaction edge.",
         "The answer offers the bar chart as a node of its own: a new node (node.create) of type curio.builtin/autk-grammar whose plot has \"mark\": \"bar\" over the stations' ada values, or the steps to add one."
@@ -32,7 +32,7 @@
       "prompt": "Add an Autark map of the CTA 'L' lines alone, fed by the CTA 'L' lines node and colored by each line's legend code.",
       "expected_output": "One new Autark node whose document is a map with one layer that reads the node's first input (dataRef input_0, or the chip [!! input_0 !!]), colored by legend as categories, with no data section.",
       "assertions": [
-        "The answer proposes one new node (node.create) of type curio.builtin/autk-grammar.",
+        "The answer creates one new node (node.create) of type curio.builtin/autk-grammar.",
         "Its document is a \"map\" with one layerRef whose \"dataRef\" is the node's first input: input_0, or the chip [!! input_0 !!].",
         "That layer colors by the legend column as categories: \"getFnv\": \"legend\" with \"getFnvType\": \"categorical\".",
         "The document has no \"data\" section: the lines reach the node on its input and are not loaded again from a file or a URL."

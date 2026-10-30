@@ -9,9 +9,9 @@
       "prompt": "Add a node that loads the Chicago Energy Usage 2010 dataset from the Data Catalog.",
       "expected_output": "One node.create of a Data Loading node whose code loads the dataset by its Data Catalog id, data.cityofchicago.energy-usage-2010, with the loader line catalog.search gives, and names no file path or URL.",
       "assertions": [
-        "The answer proposes one node.create of type curio.builtin/data-loading.",
-        "The proposed code loads the dataset by its id, data.cityofchicago.energy-usage-2010, through curio_load_data or curio_data_path.",
-        "The proposed code names no file path on disk and no URL.",
+        "The answer makes one node.create of type curio.builtin/data-loading.",
+        "The code it writes loads the dataset by its id, data.cityofchicago.energy-usage-2010, through curio_load_data or curio_data_path.",
+        "The code it writes names no file path on disk and no URL.",
         "The run calls catalog.search."
       ]
     },
@@ -21,10 +21,10 @@
       "prompt": "Add a node that pulls today's air quality readings for Chicago from the AirNow API.",
       "expected_output": "No node: AirNow's API needs a key and the account has no saved key for its host, so the answer names that host as needing one and stops, telling the user to save a Node code key for it, with no key or placeholder written in any code.",
       "assertions": [
-        "No node.create proposal is kept for review.",
+        "The answer creates no node (no node.create).",
         "The answer names the AirNow API host as one that needs a saved key.",
         "The answer tells the user to save a key for that host (a Node code key in API Settings) before a node can read it.",
-        "No proposed code holds an API key value or a placeholder such as YOUR_API_KEY."
+        "No code it writes holds an API key value or a placeholder such as YOUR_API_KEY."
       ]
     },
     {
@@ -34,7 +34,7 @@
       "prompt": "I don't have the real numbers yet. Make up about 50 fake green roofs with a zip code and a vegetated area so I can try the chart.",
       "expected_output": "One node.create whose code builds about 50 made-up roofs in the code, with a zip code and a vegetated area each, reading no file, dataset or URL, and whose title says the data is made up.",
       "assertions": [
-        "The answer proposes a node.create whose code builds the roofs in the code, reading no file, dataset or URL.",
+        "The answer makes a node.create whose code builds the roofs in the code, reading no file, dataset or URL.",
         "The node's title says the data is made up (for example synthetic, fake, sample or made-up).",
         "The code makes rows with a zip code column and a vegetated area column."
       ]
@@ -45,8 +45,8 @@
       "prompt": "Add a node that downloads Chicago's building footprints straight from the city's open data portal API.",
       "expected_output": "No node yet: the run holds no verified URL for that data, so the answer writes no portal URL from memory; it asks the Dataset Finder for candidates (or the user for a URL) and lets the user pick and confirm a source before any node is built.",
       "assertions": [
-        "No node.create proposal is kept for review in this turn.",
-        "The answer proposes no code with a portal URL written from memory.",
+        "The answer creates no node in this turn (no node.create).",
+        "The answer writes no code with a portal URL written from memory.",
         "The answer asks the user to pick or confirm a source (a candidate the Dataset Finder found, or a URL the user gives) before a node is built."
       ]
     }

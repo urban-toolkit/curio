@@ -7,10 +7,10 @@
       "id": 1,
       "dataflow": "docs/examples/dataflows/default-workflow.json",
       "prompt": "Add a node that loads the trees.parquet and cta_stations.geojson files of the Chicago Loop Layers dataset and keeps the trees within 50 m of a CTA 'L' station.",
-      "expected_output": "One proposed Python node whose code loads each file on its own, curio_load_data(\"data.curio.chicago-loop-layers\", part=\"trees.parquet\") and curio_load_data(\"data.curio.chicago-loop-layers\", part=\"cta_stations.geojson\"), and returns the trees within 50 m of a station, opening no file by a path of its own.",
+      "expected_output": "One new Python node whose code loads each file on its own, curio_load_data(\"data.curio.chicago-loop-layers\", part=\"trees.parquet\") and curio_load_data(\"data.curio.chicago-loop-layers\", part=\"cta_stations.geojson\"), and returns the trees within 50 m of a station, opening no file by a path of its own.",
       "assertions": [
-        "The answer proposes one new node (node.create) of a Python code template, such as Python Computation, Data Transformation or Data Loading.",
-        "The proposed code loads the trees with curio_load_data(\"data.curio.chicago-loop-layers\", part=\"trees.parquet\"): the dataset's id and the file's name, each written as a string.",
+        "The answer creates one new node (node.create) of a Python code template, such as Python Computation, Data Transformation or Data Loading.",
+        "The code it writes loads the trees with curio_load_data(\"data.curio.chicago-loop-layers\", part=\"trees.parquet\"): the dataset's id and the file's name, each written as a string.",
         "The code loads the stations the same way, with part=\"cta_stations.geojson\".",
         "The code opens no file by a path of its own: no gpd.read_file, pd.read_parquet or curio_data_path for either file.",
         "The code returns the trees that lie within 50 m of a station."
@@ -20,10 +20,10 @@
       "id": 2,
       "dataflow": "docs/examples/dataflows/default-workflow.json",
       "prompt": "Add a node that reads only the cells of the SCOUT flood depth raster for 2050 to 2080 without NbS that lie inside this box: north 41.53, south 41.50, west -90.60, east -90.55. Return the mean depth of the cells that hold one.",
-      "expected_output": "One proposed Python node whose code reads the window with curio_load_data(\"data.scout.flood-depth-2050-2080-no-nbs\", bounds=(-90.60, 41.50, -90.55, 41.53)), the box ordered west, south, east, north, and returns the mean of the cells that hold a depth.",
+      "expected_output": "One new Python node whose code reads the window with curio_load_data(\"data.scout.flood-depth-2050-2080-no-nbs\", bounds=(-90.60, 41.50, -90.55, 41.53)), the box ordered west, south, east, north, and returns the mean of the cells that hold a depth.",
       "assertions": [
-        "The answer proposes one new node (node.create) of a Python code template.",
-        "The proposed code calls curio_load_data with the dataset id \"data.scout.flood-depth-2050-2080-no-nbs\" and a bounds argument.",
+        "The answer creates one new node (node.create) of a Python code template.",
+        "The code it writes calls curio_load_data with the dataset id \"data.scout.flood-depth-2050-2080-no-nbs\" and a bounds argument.",
         "The bounds are ordered west, south, east, north: (-90.60, 41.50, -90.55, 41.53), not in the order the prompt named them.",
         "The code makes no window of its own: it opens no raster by a path (no rasterio.open on curio_data_path or a file name) and builds no rasterio window from the box.",
         "The code reads the cells from the dataset curio_load_data returns, leaves out the cells with no value (masked or nodata), and returns their mean."
@@ -33,10 +33,10 @@
       "id": 3,
       "dataflow": "docs/examples/dataflows/default-workflow.json",
       "prompt": "In a Python node, label the Lincoln Park street photos with the street-scene segmentation model in my Model Catalog, and give me each photo's share of vegetation and of sky, with a link to its overlay.",
-      "expected_output": "One proposed Python node whose code reads the photos with curio_load_collection(\"data.curio.mapillary-sample\"), loads the model with curio_load_model(\"model.curio.ddrnet23-slim\"), and labels the photos with curio_segment(photos, model, classes=[\"vegetation\", \"sky\"]), returning its rows with vegetation_pct, sky_pct and overlay_url.",
+      "expected_output": "One new Python node whose code reads the photos with curio_load_collection(\"data.curio.mapillary-sample\"), loads the model with curio_load_model(\"model.curio.ddrnet23-slim\"), and labels the photos with curio_segment(photos, model, classes=[\"vegetation\", \"sky\"]), returning its rows with vegetation_pct, sky_pct and overlay_url.",
       "assertions": [
-        "The answer proposes one new node (node.create) of a Python code template.",
-        "The proposed code reads the photos with curio_load_collection(\"data.curio.mapillary-sample\").",
+        "The answer creates one new node (node.create) of a Python code template.",
+        "The code it writes reads the photos with curio_load_collection(\"data.curio.mapillary-sample\").",
         "The code loads the model with curio_load_model and the model's id written as a string, model.curio.ddrnet23-slim (with or without @1).",
         "The code labels the photos by calling curio_segment with the collection's rows and the loaded model, with classes naming vegetation and sky; it runs no model session and counts no pixels itself.",
         "The code returns the rows curio_segment gives, or a part of them that keeps vegetation_pct, sky_pct and overlay_url."
@@ -46,10 +46,10 @@
       "id": 4,
       "dataflow": "docs/examples/dataflows/default-workflow.json",
       "prompt": "In a Python node, take one frame every half second from the video in the Example street survey collection, and return the frames as rows a Simple View can show as cards.",
-      "expected_output": "One proposed Python node whose code reads the collection with curio_load_collection(\"data.curio.storage-survey\"), takes the video's row, and for each frame at 0, 500, 1000 ms and on gets where to write it from curio_derived_file(dataset_id, file_id, t_ms, kind=\"video\"), writes the frame there, and returns the rows curio_derived_file gives.",
+      "expected_output": "One new Python node whose code reads the collection with curio_load_collection(\"data.curio.storage-survey\"), takes the video's row, and for each frame at 0, 500, 1000 ms and on gets where to write it from curio_derived_file(dataset_id, file_id, t_ms, kind=\"video\"), writes the frame there, and returns the rows curio_derived_file gives.",
       "assertions": [
-        "The answer proposes one new node (node.create) of a Python code template.",
-        "The proposed code reads the collection with curio_load_collection(\"data.curio.storage-survey\") and takes the video's row from it.",
+        "The answer creates one new node (node.create) of a Python code template.",
+        "The code it writes reads the collection with curio_load_collection(\"data.curio.storage-survey\") and takes the video's row from it.",
         "For each frame, the code calls curio_derived_file with the row's dataset_id and file_id, the frame's time in milliseconds (0, 500, 1000, ...) and kind=\"video\".",
         "The code writes each frame image to the path in the row curio_derived_file returns, and makes no folder or file path of its own (no tempfile, no hard-coded directory).",
         "The code returns the frames' rows, which carry the thumbnail and image_url that curio_derived_file gives."

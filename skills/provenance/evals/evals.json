@@ -6,30 +6,30 @@
     {
       "id": 1,
       "prompt": "Put the transformation node back the way it was before my last edit.",
-      "expected_output": "The answer reads the transformation node's history (node.history.read), which a freshly opened project holds no edits in, invents no earlier code, and says putting an earlier version back is the user's own action from the node's Provenance drawer; it claims no restore and proposes no content change.",
+      "expected_output": "The answer reads the transformation node's history (node.history.read), which a freshly opened project holds no edits in, invents no earlier code, and says putting an earlier version back is the user's own action from the node's Provenance drawer; it claims no restore and makes no content change.",
       "assertions": [
         "The run calls node.history.read.",
         "The answer says the user puts an earlier version back from the node's Provenance drawer.",
         "The answer does not claim it restored, reverted or undid the node's code.",
-        "The answer proposes no change to the transformation node's content (no node.content.write)."
+        "The answer makes no change to the transformation node's content (no node.content.write)."
       ]
     },
     {
       "id": 2,
       "prompt": "Before my last edit the transformation node had this code, and it worked. Please put it back:\n\njoined = input_0\nbig = joined[joined['VEGETATED_SQFT'] > 1000]\ntop_5 = big.groupby('zip')['VEGETATED_SQFT'].sum().reset_index().sort_values(by='VEGETATED_SQFT', ascending=False).head(5)\nreturn top_5",
-      "expected_output": "A node.content.write proposal for the transformation node (f9e2b9af-23e6-4db3-9140-38bfecd6afc5) holding the pasted code, which waits for the user's review, with no claim that the code is already back and no new node.",
+      "expected_output": "A node.content.write change to the transformation node (f9e2b9af-23e6-4db3-9140-38bfecd6afc5) that writes the pasted code, which lands at once as the agent's change, with the answer saying the user can undo it, and no new node.",
       "assertions": [
-        "The answer proposes node.content.write for node f9e2b9af-23e6-4db3-9140-38bfecd6afc5.",
-        "The proposed content keeps the pasted code's logic: roofs over 1000 vegetated square feet, summed by zip, the top 5 returned.",
-        "The answer says the change waits for the user's review and does not claim the code is already back.",
-        "The answer proposes no new node."
+        "The answer uses node.content.write on node f9e2b9af-23e6-4db3-9140-38bfecd6afc5.",
+        "The content it writes keeps the pasted code's logic: roofs over 1000 vegetated square feet, summed by zip, the top 5 returned.",
+        "The answer says the code is back in the node as its change, which the user can undo.",
+        "The answer creates no new node."
       ]
     },
     {
       "id": 3,
       "agent": "agent.curio.researcher@1",
       "prompt": "Who changed the bar chart's spec last, and what did it look like before?",
-      "expected_output": "The Researcher cannot read a node's history, so it names no author and shows no earlier spec; it points the user to the chart node's Provenance drawer, which lists each run and edit, an applied agent change as an edit named after the agent.",
+      "expected_output": "The Researcher cannot read a node's history, so it names no author and shows no earlier spec; it points the user to the chart node's Provenance drawer, which lists each run and edit, an agent's change as an edit named after the agent.",
       "assertions": [
         "The answer names no person or agent as the chart's last editor and shows no earlier spec.",
         "The answer points the user to the chart node's Provenance drawer to see its edits.",

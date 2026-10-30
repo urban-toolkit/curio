@@ -8,9 +8,9 @@
       "prompt": "Add a Vega-Lite map of the neighborhoods colored by their accessibility score, fed by the Data Pool.",
       "expected_output": "One new Vega-Lite node whose spec is a geoshape map colored by accessibility, with no data field and no projection written (the frame is in EPSG:3395 metres, which Curio fits itself), and no node that converts the GeoDataFrame.",
       "assertions": [
-        "The answer proposes one new node (node.create) of type curio.builtin/vis-vega.",
+        "The answer creates one new node (node.create) of type curio.builtin/vis-vega.",
         "Its spec uses \"mark\": \"geoshape\" and colors by the field accessibility as quantitative.",
-        "The spec has no \"data\" field, and the answer proposes no node that converts the GeoDataFrame (no shapely mapping, no x/y or longitude/latitude columns, no plain DataFrame).",
+        "The spec has no \"data\" field, and the answer creates no node that converts the GeoDataFrame (no shapely mapping, no x/y or longitude/latitude columns, no plain DataFrame).",
         "The spec writes no projection, or only {\"type\": \"identity\", \"reflectY\": true}; it writes no mercator, albersUsa or other projection for longitude and latitude, since the frame is in EPSG:3395 metres."
       ]
     },
@@ -19,9 +19,9 @@
       "prompt": "Vega-Lite can't draw geometries, right? Add a node that turns the neighborhoods' polygons into plain longitude and latitude columns so I can map them in a chart.",
       "expected_output": "No conversion node: the answer says a Vega-Lite node draws the GeoDataFrame as it is with a geoshape mark, and offers such a spec instead of flattening the frame.",
       "assertions": [
-        "No proposed node's code converts the geometry into plain columns: no shapely.geometry.mapping, no centroid x/y or longitude/latitude columns, no GeoDataFrame flattened into a plain DataFrame.",
+        "No new node's code converts the geometry into plain columns: no shapely.geometry.mapping, no centroid x/y or longitude/latitude columns, no GeoDataFrame flattened into a plain DataFrame.",
         "The answer says a Vega-Lite node draws the GeoDataFrame as it is, with \"mark\": \"geoshape\".",
-        "The answer proposes a Vega-Lite spec with \"mark\": \"geoshape\" over the neighborhoods' frame and no \"data\" field, or tells the user that such a spec is all the map needs."
+        "The answer writes a Vega-Lite spec with \"mark\": \"geoshape\" over the neighborhoods' frame and no \"data\" field, or tells the user that such a spec is all the map needs."
       ]
     },
     {
@@ -31,10 +31,10 @@
       "prompt": "Draw the zip code areas colored by roofs, with each area's centroid as a dot on top. Zip code areas hands this node zip, roofs, its active geometry and a second geometry column, centroid.",
       "expected_output": "A content change of Zip code map whose spec layers two geoshape marks: the areas colored by roofs, and the centroids drawn by naming their column, \"shape\": {\"field\": \"centroid\", \"type\": \"geojson\"}.",
       "assertions": [
-        "The answer proposes a content change of node zip-map (node.content.write) whose spec is a \"layer\" of two \"geoshape\" marks.",
+        "The answer makes a content change of node zip-map (node.content.write) whose spec is a \"layer\" of two \"geoshape\" marks.",
         "The layer that draws the centroids names their column: \"shape\": {\"field\": \"centroid\", \"type\": \"geojson\"}.",
         "The layer that draws the areas colors by roofs as quantitative.",
-        "The centroids are not drawn from longitude and latitude fields or with x and y encodings, and no node is proposed to add such columns."
+        "The centroids are not drawn from longitude and latitude fields or with x and y encodings, and no node is added to make such columns."
       ]
     }
   ],

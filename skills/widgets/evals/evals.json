@@ -6,11 +6,11 @@
     {
       "id": 1,
       "prompt": "Add a new node after the Data Pool that keeps the top N zip codes by vegetated square feet, where I set N with a slider from 5 to 25 in the node's Widgets tab, starting at 10.",
-      "expected_output": "One proposed node whose code keeps the top N zip codes, N read through a widget reference, and a slider widget declared from 5 to 25 with 10 as its default.",
+      "expected_output": "One new node whose code keeps the top N zip codes, N read through a widget reference, and a slider widget declared from 5 to 25 with 10 as its default.",
       "assertions": [
-        "The answer proposes one new node (a node.create, or a plan with one node), not only an explanation.",
-        "The proposal declares a widget of type slider with a minimum of 5, a maximum of 25 and a default of 10.",
-        "The proposed code uses the count through a widget reference written as [!! <name> !!], with no number typed in its place.",
+        "The answer creates one new node (a node.create, or a plan with one node), not only an explanation.",
+        "The new node declares a widget of type slider with a minimum of 5, a maximum of 25 and a default of 10.",
+        "The code it writes uses the count through a widget reference written as [!! <name> !!], with no number typed in its place.",
         "The name in the code's widget reference is the name of the declared widget."
       ]
     },
@@ -18,11 +18,11 @@
       "id": 2,
       "dataflow": "docs/examples/dataflows/widget.json",
       "prompt": "Set the Number Multiplier of the multiplier node to 25.",
-      "expected_output": "A node.settings.write proposal for the multiplier node that sets its number_multiplier widget to 25, with its code left as it is.",
+      "expected_output": "A node.settings.write change to the multiplier node that sets its number_multiplier widget to 25, with its code left as it is.",
       "assertions": [
-        "The answer proposes node.settings.write for node f325441e-55be-4415-aa1b-b2055f590de2.",
-        "The proposed change sets the widget number_multiplier to 25.",
-        "The answer proposes no new code for the node and no new node."
+        "The answer uses node.settings.write on node f325441e-55be-4415-aa1b-b2055f590de2.",
+        "The change it makes sets the widget number_multiplier to 25.",
+        "The answer writes no new code for the node and no new node."
       ]
     },
     {
@@ -32,7 +32,7 @@
       "prompt": "Both loading nodes should scale their column b by the same factor, and I want to set that factor in one place with a slider from 1 to 5. Can you plan that?",
       "expected_output": "A dataflow plan with one node that declares the factor as a slider widget from 1 to 5 and returns its value, connected to each node that scales column b, so the factor is declared once.",
       "assertions": [
-        "The answer proposes a dataflow plan (dataflow.plan.write).",
+        "The answer writes a dataflow plan (dataflow.plan.write).",
         "The plan declares the factor as a widget on exactly one node, of type slider, with a minimum of 1 and a maximum of 5.",
         "The node that holds the factor's widget is connected to every node that scales column b.",
         "No other node in the plan declares a widget for the same factor."

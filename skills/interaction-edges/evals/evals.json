@@ -8,7 +8,7 @@
       "prompt": "Put a map of the green roofs next to the zip code bar chart, so that clicking a zip code's bar lights up that zip code's roofs on the map.",
       "expected_output": "A dataflow plan that adds a map of the roofs (an Autark map, or a Vega-Lite map) and one interaction edge between the bar chart and the map, with no Data Pool between them, and that says the selection matches roofs by the zip column, since the chart's bars are zip code totals and the map's features are single roofs.",
       "assertions": [
-        "The answer proposes a dataflow plan (dataflow.plan.write) that adds a map node fed with the roofs, of type curio.builtin/autk-grammar or curio.builtin/vis-vega.",
+        "The answer writes a dataflow plan (dataflow.plan.write) that adds a map node fed with the roofs, of type curio.builtin/autk-grammar or curio.builtin/vis-vega.",
         "The plan adds an edge of kind interaction between the bar chart (b601d363-50fd-4209-bee2-9997dcb050f3) and the new map.",
         "The plan adds no new Data Pool node.",
         "The answer or the map node's intent says the two views match selections by the zip column (for example the map layer selecting by zip through selectFields), because the chart's bars are zip code totals and the map's features are single roofs."
@@ -19,7 +19,7 @@
       "prompt": "Under the chart, add a plain table that lists the roofs of the zip codes I click in the bar chart.",
       "expected_output": "A dataflow plan that adds a Simple View whose rows come from a Data Pool (the one on the canvas or a new one) that the bar chart is linked to by an interaction edge, since a Simple View shows a selection only through a pool, which marks the clicked roofs in its interacted column.",
       "assertions": [
-        "The answer proposes a dataflow plan that adds a node of type curio.builtin/vis-simple.",
+        "The answer writes a dataflow plan that adds a node of type curio.builtin/vis-simple.",
         "The Simple View's data comes from a Data Pool, directly or through a node that keeps the pool's selected rows.",
         "The plan links the bar chart (b601d363-50fd-4209-bee2-9997dcb050f3) to that same Data Pool with an edge of kind interaction.",
         "The answer or a node's intent says the clicked roofs are the pool's rows whose \"interacted\" column is \"1\"."
@@ -31,11 +31,11 @@
       "dataflow": "docs/examples/dataflows/interaction-autark.json",
       "target": {"kind": "node", "node": "ia-pool"},
       "prompt": "Right now the pool only keeps the newest selection. I want it to keep just the buildings that are both brushed in the height histogram and picked on the 3D map.",
-      "expected_output": "A node.settings.write proposal for the pool ia-pool that sets its dataPool betweenCharts to MERGE_AND, with no new node and no new content.",
+      "expected_output": "A node.settings.write change to the pool ia-pool that sets its dataPool betweenCharts to MERGE_AND, with no new node and no new content.",
       "assertions": [
-        "The answer proposes node.settings.write for node ia-pool.",
-        "The proposed change sets the pool's dataPool betweenCharts to MERGE_AND.",
-        "The answer proposes no new node and no new content for the pool."
+        "The answer uses node.settings.write on node ia-pool.",
+        "The change it makes sets the pool's dataPool betweenCharts to MERGE_AND.",
+        "The answer creates no new node and no new content for the pool."
       ]
     },
     {
@@ -43,7 +43,7 @@
       "prompt": "Connect the bar chart back to the Data Loading node with an interaction edge, so that clicking a zip code makes the loader load only that zip code's roofs.",
       "expected_output": "No interaction edge into the loader: the answer says an interaction edge carries selections between views (Vega-Lite, Autark, Simple View, Data Pool, Map Editor), never into a Data Loading node, and offers another way, such as linking the chart to the Data Pool, which marks the clicked zip codes' roofs for the nodes it feeds.",
       "assertions": [
-        "The answer proposes no edge of kind interaction into the Data Loading node (a1abfa78-6517-4606-9660-c7eeeeb49851).",
+        "The answer adds no edge of kind interaction into the Data Loading node (a1abfa78-6517-4606-9660-c7eeeeb49851).",
         "The answer says an interaction edge links views, Data Pools or Map Editors, and cannot go into a Data Loading node.",
         "The answer offers another way to get only the clicked zip code's roofs, such as linking the chart to a Data Pool whose marked rows a later node keeps."
       ]

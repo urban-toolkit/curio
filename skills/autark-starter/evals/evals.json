@@ -9,7 +9,7 @@
       "prompt": "Fill in this map for me, I'll style it later. City blocks hands it land_use (object), population (int64), median_rent (float64) and the blocks' polygons as its geometry.",
       "expected_output": "A content change of Blocks map holding the starter document: a map with one layer that reads input_0 and is colored by population, the first quantitative column, with \"title\" and \"getFnv\": \"population\", \"getFnvType\": \"quantitative\" and \"colorMapInterpolator\": \"interpolateViridis\", and no data section.",
       "assertions": [
-        "The answer proposes a content change of node blocks-map (node.content.write) whose document has a \"map\" with exactly one layerRef.",
+        "The answer makes a content change of node blocks-map (node.content.write) whose document has a \"map\" with exactly one layerRef.",
         "That layer reads the node's input: its \"dataRef\" is input_0, or the chip [!! input_0 !!].",
         "The layer is colored by population, the first quantitative column: \"getFnv\": \"population\" with \"getFnvType\": \"quantitative\".",
         "The layer sets \"colorMapInterpolator\": \"interpolateViridis\" and a \"title\" that names population.",
@@ -22,7 +22,7 @@
       "prompt": "Start this map off with what's wired into it. City blocks is on its first circle and Parks on its second, both GeoDataFrames of polygons.",
       "expected_output": "A content change of Blocks and parks map holding the starter document for two tables: a map with one layerRef per table, input_0 and input_1, and no data section.",
       "assertions": [
-        "The answer proposes a content change of node blocks-parks-map (node.content.write) whose document has a \"map\".",
+        "The answer makes a content change of node blocks-parks-map (node.content.write) whose document has a \"map\".",
         "The map has exactly two layerRefs, one per input table: \"dataRef\" input_0 (or [!! input_0 !!]) and input_1 (or [!! input_1 !!]).",
         "The document has no \"data\" section: both tables come from the node's inputs."
       ]
@@ -33,9 +33,9 @@
       "prompt": "Fill in this map. Air sensors hands it sensor_id (object), LATITUDE (float64), LONGITUDE (float64) and pm25 (float64).",
       "expected_output": "No Autark document for Sensors map: the answer says a map draws only tables with geometry, that the sensors table has no geometry column, and that the Air sensors node should return a GeoDataFrame with its active geometry set, points built from LONGITUDE and LATITUDE.",
       "assertions": [
-        "The answer proposes no Autark document for node sensors-map.",
+        "The answer writes no Autark document for node sensors-map.",
         "The answer says the map cannot draw the sensors table because the table has no geometry column.",
-        "The answer says the Air sensors node should return a GeoDataFrame with its active geometry set, points built from LONGITUDE and LATITUDE; a proposed change to that node may do so."
+        "The answer says the Air sensors node should return a GeoDataFrame with its active geometry set, points built from LONGITUDE and LATITUDE; a change to that node may do so."
       ]
     }
   ],

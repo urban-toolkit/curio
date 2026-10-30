@@ -9,8 +9,8 @@
       "prompt": "Add one chart that compares the two scenarios' shadow lengths building by building, each scenario drawn in its box's color, and keep those colors in step if I recolor a box later. I'll connect each scenario's Shadow lengths node to it myself.",
       "expected_output": "One node.create of a Vega-Lite node whose spec reads its inputs stacked, \"data\": {\"name\": \"[!! inputs !!]\"}, puts the buildings on an axis and colors the scenario_name field with \"scale\": [!! scenario colors !!], writing no colors of its own for the scenarios.",
       "assertions": [
-        "The answer proposes one node.create of type curio.builtin/vis-vega.",
-        "The proposed spec reads its data as the stacked inputs: \"data\": {\"name\": \"[!! inputs !!]\"}.",
+        "The answer makes one node.create of type curio.builtin/vis-vega.",
+        "The spec it writes reads its data as the stacked inputs: \"data\": {\"name\": \"[!! inputs !!]\"}.",
         "The spec colors by the scenario_name field with \"scale\": [!! scenario colors !!].",
         "The spec writes neither box's color (#3567c7 or #e86a3c) nor any other list of colors for the scenarios."
       ]
@@ -21,7 +21,7 @@
       "prompt": "Compare this bar chart as it is with a version where every b value is doubled. Keep the two as scenarios and show both versions side by side in one chart.",
       "expected_output": "A dataflow plan with a node that scales b by a factor widget and a chart, saved as one scenario; a duplicate of it whose values set the factor to 2; the loading node outside both, as their fixed context; and one Vega-Lite chart outside both scenarios, fed by each scenario's outcome on an input circle of its own.",
       "assertions": [
-        "The answer proposes a dataflow plan whose scenarios list holds a selection and a second scenario whose duplicateOf names the first.",
+        "The answer writes a dataflow plan whose scenarios list holds a selection and a second scenario whose duplicateOf names the first.",
         "The loading node 8d428948-f5e4-485b-9812-51a4212678a7 is in neither scenario.",
         "The duplicate's values set a widget of a copied node to 2, and the node it copies declares that widget.",
         "The side-by-side chart is a node of type curio.builtin/vis-vega outside both scenarios, wired from both scenarios' outcomes, one data edge from each."
@@ -36,7 +36,7 @@
         "The answer says a node belongs to one scenario at most, so Compare cannot be in both.",
         "The answer says Compare should stay outside both scenario boxes.",
         "The answer says Compare reads each scenario's outcome, the Shadow lengths of Real heights and of Twice as tall, on an input circle of its own.",
-        "The answer proposes no change that puts Compare in a scenario."
+        "The answer makes no change that puts Compare in a scenario."
       ]
     },
     {
@@ -46,7 +46,7 @@
       "expected_output": "The answer says the scenario chips work in a chart's or a map's spec, not in Python or JavaScript code, puts no scenario chip in Python, and offers to color the scenarios in a Vega-Lite spec with \"scale\": [!! scenario colors !!] instead.",
       "assertions": [
         "The answer says the scenario chips are for a chart's or a map's spec, not for Python code.",
-        "No proposed Python code holds a scenario chip such as [!! scenario colors !!].",
+        "No Python code it writes holds a scenario chip such as [!! scenario colors !!].",
         "The answer offers the scenario colors chip in a chart's spec as the way to color the scenarios."
       ]
     }

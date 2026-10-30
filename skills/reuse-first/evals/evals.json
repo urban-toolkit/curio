@@ -9,10 +9,10 @@
       "prompt": "Build whatever this needs: for each zip code, the share of its green roofs that have more than 10,000 square feet of vegetation.",
       "expected_output": "One node.create of a listed built-in Python template (Data Transformation or Python Computation) whose code computes the share per zip code; no package installed, drafted or asked for, and no claim that a new node type is needed.",
       "assertions": [
-        "The answer proposes one node.create whose nodeType is curio.builtin/data-transformation or curio.builtin/computation-analysis.",
+        "The answer makes one node.create whose nodeType is curio.builtin/data-transformation or curio.builtin/computation-analysis.",
         "The answer proposes no package: no package.install and no package.draft.apply.",
         "The answer does not say a new node type or package has to be written for this.",
-        "The proposed code computes, for each zip code, the share of roofs whose VEGETATED_SQFT is above 10,000."
+        "The code it writes computes, for each zip code, the share of roofs whose VEGETATED_SQFT is above 10,000."
       ]
     },
     {

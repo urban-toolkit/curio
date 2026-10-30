@@ -12,7 +12,8 @@ writes, under ``--out``, one folder per run of the tool:
 - ``<skill>/triggers/q<NN>/run-<k>/``: each trigger run's record and
   transcript, and ``<skill>/triggers.json``, each query's trigger rate;
 - ``<skill>/eval-<id>/with_skill/run-<k>/`` and ``without_skill/``:
-  ``outputs/`` (the reply and the proposed changes), ``transcript.json``,
+  ``outputs/`` (the reply, and ``changes.json``: what the run changed in its
+  dataflow and the installs it asked for), ``transcript.json``,
   ``timing.json``, ``grading.json`` and ``run.json``, and
   ``<skill>/benchmark.json``;
 - ``summary.json`` and ``summary.md``; ``logs/``, each worker's warnings.
