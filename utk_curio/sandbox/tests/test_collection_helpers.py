@@ -73,6 +73,28 @@ class TestTheHelpers(unittest.TestCase):
         self.assertEqual(frame.loc[0, "path"], str(objects / f"{'a' * 16}.jpg"))
         self.assertTrue(pd.isna(frame.loc[1, "path"]))
 
+    def test_a_file_that_is_not_here_has_the_path_none(self):
+        """A row's ``path`` is None for a file this execution cannot open, as
+        documented, so ``if row["path"]:`` reads it as missing. pandas stores
+        a column of strings with NaN for it, and NaN is truthy."""
+        objects = self.tmp / "objects"
+        objects.mkdir()
+        (objects / f"{'a' * 16}.jpg").write_bytes(b"x")
+        cached = self.helpers({"c1": {"objects": str(objects)}})["curio_load_collection"]("c1")
+        rows = ROWS + [{"file_id": "d" * 16, "relpath": "../outside.jpg", "name": "outside.jpg",
+                        "ext": "jpg", "kind": "image"}]
+        write_index(self.index, rows)
+        in_place = self.helpers({"c1": {"root": "/srv/media"}})["curio_load_collection"]("c1")
+        self.assertEqual(
+            {
+                "uncached": [cached.loc[1, "path"], cached.loc[2, "path"]],
+                "outside its root": in_place.loc[3, "path"],
+            },
+            {"uncached": [None, None], "outside its root": None},
+        )
+        self.assertEqual(cached.loc[0, "path"], str(objects / f"{'a' * 16}.jpg"))
+        self.assertFalse(any(row["path"] for _, row in cached.iloc[1:].iterrows()))
+
     def test_an_index_with_positions_is_a_geodataframe(self):
         write_index(self.index, ROWS, geo=True)
         frame = self.helpers({"c1": {"root": "/r"}})["curio_load_collection"]("c1")
