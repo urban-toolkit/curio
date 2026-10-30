@@ -41,7 +41,10 @@ model makes natively, each ``{"name", "arguments", "id"}`` (``name`` is the
 tool id or its native name, ``id`` optional), or ``{"error", "status"}``,
 which the call raises as that endpoint error. A native call can only answer a
 call that offered tools (:func:`script_chat_capabilities`), and what each call
-offered is recorded (:func:`offered`).
+offered is recorded (:func:`offered`). An entry with ``"hold": <name>`` keeps
+the call that takes it waiting, as a slow model does, until the test releases
+that name (:func:`release`), at most :data:`HOLD_MAX_S`; :func:`held` names
+the holds a call waits on now, and :func:`reset` releases every one.
 
 When nothing matches, :data:`FALLBACK_REPLY` is returned rather than raising:
 a test that forgot to script one leg of a multi-turn conversation should fail
@@ -92,6 +95,13 @@ _DEFAULT_CHAT_CAPABILITIES = {"tools": False, "structuredOutput": False}
 _chat_capabilities: dict = dict(_DEFAULT_CHAT_CAPABILITIES)
 #: Ids for scripted calls that name none, unique for the process.
 _call_ids = itertools.count(1)
+#: The longest a held call waits for its release: a test that never releases
+#: its hold fails at its own wait, and no thread waits forever.
+HOLD_MAX_S = 120.0
+#: Each hold by name: released once its event is set (:func:`release`).
+_holds: dict[str, threading.Event] = {}
+#: How many calls wait on each hold now (:func:`held`).
+_holding: dict[str, int] = {}
 #: Ids the next nodes an apply creates are given (:func:`next_node_id`).
 _node_ids: deque = deque()
 
@@ -201,7 +211,8 @@ def _routed_reply(messages: list):
 
 
 def reset() -> None:
-    """Drop anything still queued and everything captured. Call between tests."""
+    """Drop anything still queued and everything captured, and release every
+    hold, so no call waits for a test that is over. Call between tests."""
     with _lock:
         _queue.clear()
         _by_attachment.clear()
@@ -212,6 +223,47 @@ def reset() -> None:
         _chat_capabilities.clear()
         _chat_capabilities.update(_DEFAULT_CHAT_CAPABILITIES)
         _node_ids.clear()
+        _release_every_hold()
+
+
+def release_holds() -> None:
+    """Release every hold, keeping what is queued: a reset between tests
+    lets no call wait for a test that is over."""
+    with _lock:
+        _release_every_hold()
+
+
+def _release_every_hold() -> None:
+    """Under the lock."""
+    for hold in _holds.values():
+        hold.set()
+    _holds.clear()
+
+
+def release(name: str) -> None:
+    """Let the calls held on *name* answer, and every later one that takes a
+    reply held on it, until :func:`reset`."""
+    with _lock:
+        _holds.setdefault(str(name), threading.Event()).set()
+
+
+def held() -> dict[str, int]:
+    """The holds calls wait on now, each with how many calls wait on it."""
+    with _lock:
+        return {name: count for name, count in _holding.items() if count}
+
+
+def _wait_for_release(name: str) -> None:
+    """Keep this call waiting until *name* is released (:func:`release`, or a
+    :func:`reset`), at most :data:`HOLD_MAX_S`."""
+    with _lock:
+        hold = _holds.setdefault(name, threading.Event())
+        _holding[name] = _holding.get(name, 0) + 1
+    try:
+        hold.wait(HOLD_MAX_S)
+    finally:
+        with _lock:
+            _holding[name] -= 1
 
 
 def push_node_ids(*node_ids: str) -> None:
@@ -304,7 +356,8 @@ def run_scripted_turn(
     tool_choice: str = "auto",
     reply_schema: dict | None = None,
 ):
-    """Return the next scripted reply as a turn and record its token usage.
+    """Return the next scripted reply as a turn and record its token usage,
+    once its hold, when it has one, is released.
 
     ``messages`` does not choose the reply - the queue does, so a test's
     scripting stays independent of prompt wording: the queue of the attachment
@@ -347,6 +400,8 @@ def run_scripted_turn(
         reply, usage = routed, None
     else:
         reply, usage = queued if queued is not None else (FALLBACK_REPLY, None)
+    if isinstance(reply, dict) and reply.get("hold"):
+        _wait_for_release(str(reply["hold"]))
     if isinstance(reply, dict) and reply.get("error") is not None:
         # A failed call is not charged, so it reports no usage.
         raise ScriptedEndpointError(str(reply["error"]), int(reply.get("status") or 500))
