@@ -149,6 +149,17 @@ export function datasetRequestPart(request: DatasetRequest): AgentProposalPart {
   };
 }
 
+/** What the owner's Apply of a request does, as its card says it in place of
+ * the line an agent's dataset install has: the dataset is copied into her
+ * Data Catalog, from the editor's or from the shared one, and added to the
+ * dataflow (`editor_requests.apply`). Said to her, and on an editor's canvas
+ * of her. */
+export function datasetRequestEffect(viewer: DatasetRequestViewer | null): string {
+  return viewer === "owner"
+    ? "Applying copies this dataset into your Data Catalog and adds it to this dataflow."
+    : "Applying copies this dataset into the Data Catalog of the dataflow's owner and adds it to this dataflow.";
+}
+
 /** What a node that loads the dataset of *request* says of it: on an editor's
  * canvas it waits for the dataflow's owner, and on hers she is asked. */
 export function datasetRequestWaitText(request: DatasetRequest, viewer: DatasetRequestViewer | null): string {

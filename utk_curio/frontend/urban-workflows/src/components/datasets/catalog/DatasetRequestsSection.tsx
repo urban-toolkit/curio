@@ -4,6 +4,7 @@ import { AgentReviewCard } from "../../agents/content/AgentReviewCard";
 import { installsIntoAccount } from "../../../services/agents/agentEditors";
 import { notifyDatasetCatalogRefresh } from "../../../services/datasetCatalog/datasetCatalogApi";
 import {
+  datasetRequestEffect,
   datasetRequestPart,
   datasetRequestsApi,
   reloadDatasetRequests,
@@ -18,8 +19,9 @@ import styles from "./DatasetCatalogDrawer.module.css";
  * top of the Data Catalog drawer (`datasetRequests.ts`). Each is the review
  * card an install an agent asks for has (`AgentReviewCard`), under the name of
  * who asked: the owner applies or dismisses it, and on an editor's canvas the
- * card says it waits for her, as an install does in an editor's chat. Nothing
- * renders while no request waits.
+ * card says it waits for her, as an install does in an editor's chat. In place
+ * of the line an agent's dataset install has, the card says what her Apply
+ * does (`datasetRequestEffect`). Nothing renders while no request waits.
  */
 export const DatasetRequestsSection: React.FC = () => {
   const { dataflowId, viewer, requests } = useHeldDatasetRequests();
@@ -53,6 +55,7 @@ export const DatasetRequestsSection: React.FC = () => {
             <AgentReviewCard
               part={datasetRequestPart(request)}
               waitsForOwner={waits}
+              effect={datasetRequestEffect(viewer)}
               onApply={
                 owner
                   ? () =>

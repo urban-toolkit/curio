@@ -4,8 +4,10 @@
  *
  * - alice's Data Catalog drawer shows his request on the review card an
  *   install an agent asks for has, under his name, with Apply and Dismiss, and
- *   her canvas tells her of it; her Apply and Dismiss go to the request;
- * - on bob's canvas the same card says it waits for the dataflow's owner;
+ *   her canvas tells her of it; her Apply and Dismiss go to the request; the
+ *   card says what her Apply does, not the line of an agent's install;
+ * - on bob's canvas the same card says it waits for the dataflow's owner, and
+ *   what her Apply will do;
  * - a node that loads the dataset asked for says on its dataset pill that it
  *   waits for the owner, on both canvases.
  *
@@ -75,6 +77,10 @@ const BOBS_REQUEST = {
   nodeIds: ["bus-loader"],
 };
 const NO_FACETS = { origin: { source_node: 0, computed: 0, imported: 0, hub: 0 }, format: {} };
+/** What alice's Apply does, as her card says it, and as bob's says it of her. */
+const OWNERS_APPLY = "Applying copies this dataset into your Data Catalog and adds it to this dataflow.";
+const EDITORS_VIEW_OF_HER_APPLY =
+  "Applying copies this dataset into the Data Catalog of the dataflow's owner and adds it to this dataflow.";
 
 type Canvas = "owner" | "editor";
 const CANVASES: Record<Canvas, { flow: Record<string, unknown>; role: string }> = {
@@ -144,6 +150,9 @@ describe("bob's request in alice's review", () => {
 
     expect(screen.getByText("Asked by Bob")).toBeInTheDocument();
     expect(within(card).getByText(BOBS_REQUEST.preview)).toBeInTheDocument();
+    // What her Apply does, in place of the line an agent's dataset install has.
+    expect(await within(card).findByText(OWNERS_APPLY)).toBeInTheDocument();
+    expect(within(card).queryByText(/no agent is installed/)).toBeNull();
     expect(within(card).getByRole("button", { name: "Dismiss" })).toBeInTheDocument();
     expect(mockShowToast).toHaveBeenCalledWith(
       "Bob asks you to add Bus stops to this dataflow.",
@@ -186,6 +195,8 @@ describe("bob's request in alice's review", () => {
     // Found once bob's canvas has read the requests.
     expect(await within(card).findByText("Waits for the dataflow's owner to review it: an install changes their account."))
       .toBeInTheDocument();
+    expect(within(card).getByText(EDITORS_VIEW_OF_HER_APPLY)).toBeInTheDocument();
+    expect(within(card).queryByText(/no agent is installed/)).toBeNull();
     expect(within(card).queryByRole("button", { name: "Apply" })).toBeNull();
     expect(within(card).queryByRole("button", { name: "Dismiss" })).toBeNull();
     expect(mockShowToast).not.toHaveBeenCalledWith(expect.stringContaining("asks you"), expect.anything(), expect.anything());
