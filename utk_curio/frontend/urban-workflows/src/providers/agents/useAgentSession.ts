@@ -326,7 +326,7 @@ export function useAgentSession(
       }
       if (name === "usage") {
         // dev/80: interim provider-reported usage sums feed the live token
-        // counter — Actuals only (dev/37), never a system line.
+        // counter, Actuals only (dev/37), never a system line.
         const usage = usageOf(data);
         if (!usage) return;
         setRunStatus((prev) => {

@@ -405,8 +405,8 @@ class AttachmentTurn:
                     withheld += delta
                     close = withheld.find("\n```", len(marker))
                     if close != -1 and withheld[close + 4 :].strip():
-                        # Closed fence followed by more content: not terminal —
-                        # flush the closed block verbatim and rescan the rest.
+                        # Closed fence followed by more content: not terminal,
+                        # so flush the closed block verbatim and rescan the rest.
                         shown.append(withheld[: close + 4])
                         yield ("delta", withheld[: close + 4])
                         buf = withheld[close + 4 :]
@@ -730,7 +730,7 @@ class AttachmentTurn:
 
     def stream(self):
         """The turn's events: the dev/37 execution handshake, the loop's
-        events, then review_required / content / done — or error. A stopped
+        events, then review_required / content / done, or error. A stopped
         turn's done says who stopped it (``stopped``)."""
         # The typed-envelope handshake (memo dev/37): the execution identity
         # arrives before the first delta so a client can correlate the stream

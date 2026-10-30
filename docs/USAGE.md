@@ -1730,6 +1730,13 @@ back what it replaced, unless someone changed it after: then Undo says who, and
 nothing changes. An install (a package, a dataset, a download, an agent) waits
 for your review: nothing installs until you apply it.
 
+Each message runs on the server: close or reload the tab and the agent goes on,
+its reply in the chat when you come back. Everyone who edits the dataflow sees
+it as it runs. One message of a chat runs at a time: one you send while another
+runs waits its turn (*Waiting its turn*), and **Withdraw** takes it back before
+it starts. **Stop** stops the message that runs at its next step, keeping what
+it said and changed so far.
+
 Type `/` at the start of a message to list the agent's
 [skills](AGENT-CATALOG.md#skills). Pick one with the arrow keys and Enter, or a
 click, or keep typing its name, then write the rest of your message: the skill

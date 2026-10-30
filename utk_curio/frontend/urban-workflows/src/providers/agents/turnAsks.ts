@@ -106,7 +106,7 @@ export function toolCallOf(payload: Record<string, unknown>): AgentToolCall {
 }
 
 /** Transient system lines (dev/41 tools; dev/48 delegates; dev/54 plan
- * revisions): live during the run, gone on finalize — the durable record is
+ * revisions): live during the run, gone on finalize; the durable record is
  * the execution. dev/72: the delegate event names the delegate. A tool that
  * did not succeed shows its reason, the line the reply keeps (#447). */
 export function toolActivityLine(name: string, payload: Record<string, unknown>): string | null {
