@@ -880,25 +880,35 @@ def plan_tail_diagnosis(tail_body: str | None) -> list[str] | None:
     return errors
 
 
+#: The keys a request block wraps its request in: a tool's, then a delegation's.
+REQUEST_KEYS = ("toolRequest", "delegateRequest")
+
+
 def tool_tail_diagnosis(tail_body: str | None) -> list[str] | None:
-    """Classify a terminal tail body as a toolRequest attempt (#245).
+    """Classify a terminal tail body as a request attempt (#245): a
+    ``toolRequest``, or a ``delegateRequest`` the same way.
 
     The ``plan_tail_diagnosis`` twin, and the same three-way contract:
-    ``None`` — not a request attempt, so generic fail-open applies untouched;
-    ``[]`` — a valid request; ``[errors]`` — a request attempt with correctable
+    ``None``: not a request attempt, so generic fail-open applies untouched;
+    ``[]``: a valid request; ``[errors]``: a request attempt with correctable
     problems, JSON breakage included, which is exactly what the corrective
     round feeds back.
     """
-    if not isinstance(tail_body, str) or '"toolRequest"' not in tail_body:
+    if not isinstance(tail_body, str) or not any(f'"{key}"' in tail_body for key in REQUEST_KEYS):
         return None
     try:
         payload = json.loads(tail_body)
     except (ValueError, TypeError) as exc:
         return [agent_text.message("request.block-not-json", exc=exc)]
-    if not isinstance(payload, dict) or "toolRequest" not in payload:
+    if not isinstance(payload, dict):
         return None
-    _, errors = parse_tool_request_verbose(payload["toolRequest"])
-    return errors
+    if "toolRequest" in payload:
+        _, errors = parse_tool_request_verbose(payload["toolRequest"])
+        return errors
+    if "delegateRequest" in payload:
+        _, errors = parse_delegate_request_verbose(payload["delegateRequest"])
+        return errors
+    return None
 
 
 def extract_tool_request_attempt(reply: str) -> tuple[str, object]:
@@ -911,17 +921,18 @@ def extract_tool_request_attempt(reply: str) -> tuple[str, object]:
     and for a mutate tool that text is a whole source file rendered as chat.
 
     Scans every fenced block for a request payload: ``{"toolRequest": …}`` or
-    the bare ``{"tool": …, "params": {…}}`` object. Returns
-    ``(reply_with_the_block_stripped, payload)`` where payload is the raw
-    request dict, the unparseable block body (``str`` — so the JSON error still
-    feeds back), or ``None`` when the reply carries no request attempt. The
-    caller owns the grant check: this is grammar, not authority.
+    the bare ``{"tool": …, "params": {…}}`` object, and a delegation's
+    ``{"delegateRequest": …}``, which keeps its wrapper so the caller knows it
+    for one. Returns ``(reply_with_the_block_stripped, payload)`` where payload
+    is the raw request dict, the unparseable block body (``str``, so the JSON
+    error still feeds back), or ``None`` when the reply carries no request
+    attempt. The caller owns the grant check: this is grammar, not authority.
     """
     if not isinstance(reply, str) or "```" not in reply:
         return reply, None
     for match in reversed(list(_FENCE_RE.finditer(reply))):
         body = match.group(1)
-        marked = '"toolRequest"' in body
+        marked = any(f'"{key}"' in body for key in REQUEST_KEYS)
         if not marked and '"tool"' not in body:
             continue
         if len(body.encode("utf-8")) > PLAN_TAIL_MAX_BYTES:
@@ -937,6 +948,8 @@ def extract_tool_request_attempt(reply: str) -> tuple[str, object]:
             continue
         if isinstance(payload.get("toolRequest"), dict):
             return stripped, payload["toolRequest"]
+        if isinstance(payload.get("delegateRequest"), dict):
+            return stripped, {"delegateRequest": payload["delegateRequest"]}
         # The wrapper-less form: a bare request object. Claimed only on the
         # full shape, so a chatty JSON block never parses as one by accident.
         if isinstance(payload.get("tool"), str) and isinstance(payload.get("params"), dict):
@@ -947,7 +960,9 @@ def extract_tool_request_attempt(reply: str) -> tuple[str, object]:
 def parse_delegate_request_verbose(raw: object) -> tuple[dict | None, list[str]]:
     """Validate one ``delegateRequest`` payload, naming what is wrong: the
     sibling :func:`parse_tool_request_verbose` has for tools. A native
-    ``delegate`` call reads the errors back; a fenced block fails open."""
+    ``delegate`` call reads the errors back, and a block the reply's parts do
+    not take gets them in a correction round, as a tool request's block does
+    (``tool_rounds._handle_tool_reply``)."""
     if not isinstance(raw, dict):
         return None, [agent_text.message("request.delegate-not-object")]
     capability = raw.get("capability")
