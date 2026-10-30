@@ -22,6 +22,10 @@ jest.mock("../../services/agents/agentsApi", () => ({
     detachAttachment: jest.fn(),
     runAttachment: jest.fn(),
     runAttachmentStream: jest.fn(),
+    askTurn: jest.fn(),
+    followTurn: jest.fn(),
+    stopTurn: jest.fn(),
+    withdrawTurn: jest.fn(),
     updateAttachmentIntent: jest.fn(),
     updateAttachmentTitle: jest.fn(),
     getSession: jest.fn(),
@@ -39,6 +43,32 @@ jest.mock("../../services/agents/agentsApi", () => ({
     cancelSimulate: jest.fn(),
   },
 }));
+
+/** A follow of an ask (`followTurn`) that says *envelopes*, the ask's id
+ * and attachment filled in from the call. */
+function followed(...envelopes: Array<{ seq: number; event: string; data: Record<string, unknown> }>) {
+  return async (
+    pid: string,
+    attachmentId: string,
+    askId: string,
+    onEnvelope: (envelope: { projectId: string; attachmentId: string; askId: string; seq: number; event: string; data: Record<string, unknown> }) => void,
+  ) => {
+    for (const envelope of envelopes) onEnvelope({ projectId: pid, attachmentId, askId, ...envelope });
+  };
+}
+
+/** The ask as a follow's first envelope says it: running, with its turn's
+ * execution so far. */
+function runningView(executionId: string) {
+  return {
+    seq: 2,
+    event: "snapshot",
+    data: {
+      askId: "x", by: null, message: "hi", state: "running", askedAt: 1, startedAt: 1, seq: 2, text: "",
+      events: [{ seq: 2, event: "execution", data: { executionId } }],
+    },
+  };
+}
 
 import { MemoryRouter } from "react-router-dom";
 
@@ -178,6 +208,10 @@ beforeEach(() => {
     onDelta("sh");
     return { reply: "fresh", executionId: "e1", usage: { inputTokens: 7, outputTokens: 9 } };
   });
+  // No room holds this tab (no CollaborationProvider): it follows its own
+  // asks over HTTP, and a follow finds no ask unless a test scripts one.
+  api.followTurn.mockRejectedValue(Object.assign(new Error("no such ask for this attachment"), { status: 404 }));
+  api.askTurn.mockResolvedValue({ askId: "x", attachmentId: "a1", state: "running" });
   api.detachAttachment.mockResolvedValue({ attachmentId: "a1", detached: true });
   api.clearSession.mockResolvedValue({ attachmentId: "a1", sessionId: "s1", turns: [] });
   api.updateAttachmentIntent.mockResolvedValue({ ...attachment, intent: "x", intentEdited: true });
@@ -268,8 +302,14 @@ describe("AgentAttachmentsProvider chat state", () => {
     expect(screen.getByTestId("executions")).toHaveTextContent("∅|∅|∅|∅");
   });
 
-  it("a pre-delta stream failure falls back to the blocking run once", async () => {
+  it("a pre-delta stream failure follows the ask by its id, never asking again", async () => {
+    // The turn runs on the server: a broken answer leaves it running there,
+    // so the tab follows that ask instead of asking a second time.
     api.runAttachmentStream.mockRejectedValue(new Error("stream broke"));
+    api.followTurn.mockImplementation(
+      followed(runningView("e3"), { seq: 3, event: "delta", data: { text: "fresh" } },
+               { seq: 4, event: "done", data: { reply: "fresh", executionId: "e3", usage: null } }),
+    );
     renderProvider();
     fireEvent.click(screen.getByText("open"));
     await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
@@ -277,19 +317,26 @@ describe("AgentAttachmentsProvider chat state", () => {
     await waitFor(() =>
       expect(screen.getByTestId("turns")).toHaveTextContent("user:hi|agent:fresh"),
     );
-    expect(api.runAttachment).toHaveBeenCalledTimes(1);
+    expect(api.followTurn).toHaveBeenCalledTimes(1);
+    const askId = api.runAttachmentStream.mock.calls[0][6];
+    expect(askId).toMatch(/^[0-9a-f]{32}$/);
+    expect(api.followTurn.mock.calls[0].slice(0, 3)).toEqual(["p1", "a1", askId]);
+    expect(api.runAttachment).not.toHaveBeenCalled();
+    expect(api.runAttachmentStream).toHaveBeenCalledTimes(1);
   });
 
-  it("a failed run (stream + fallback) appends an error turn", async () => {
+  it("a broken stream whose ask cannot be followed appends the stream's error turn", async () => {
     api.runAttachmentStream.mockRejectedValue(new Error("stream broke"));
-    api.runAttachment.mockRejectedValue(new Error("provider down"));
+    api.followTurn.mockRejectedValue(Object.assign(new Error("no such ask for this attachment"), { status: 404 }));
     renderProvider();
     fireEvent.click(screen.getByText("open"));
     await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
     fireEvent.click(screen.getByText("send"));
     await waitFor(() =>
-      expect(screen.getByTestId("turns")).toHaveTextContent("agent:(error) provider down"),
+      expect(screen.getByTestId("turns")).toHaveTextContent("user:hi|agent:(error) stream broke"),
     );
+    expect(api.followTurn).toHaveBeenCalledTimes(1);
+    expect(api.runAttachment).not.toHaveBeenCalled();
   });
 
   it("an HTTP error (quota 429) renders directly without a fallback", async () => {
@@ -466,10 +513,11 @@ describe("AgentAttachmentsProvider grounded context (memo dev/44)", () => {
       expect.any(Function),
       expect.any(Function),
       "LIVE-TRILL",
+      expect.stringMatching(/^[0-9a-f]{32}$/),
     );
   });
 
-  it("the blocking fallback carries the same context", async () => {
+  it("a broken stream sends the message and its context once: the ask is followed, never asked again", async () => {
     api.runAttachmentStream.mockRejectedValue(new Error("stream broke"));
     renderProvider();
     fireEvent.click(screen.getByText("open"));
@@ -477,7 +525,12 @@ describe("AgentAttachmentsProvider grounded context (memo dev/44)", () => {
     await act(async () => {
       fireEvent.click(screen.getByText("send-ctx"));
     });
-    expect(api.runAttachment).toHaveBeenCalledWith("p1", "a1", "hi", "LIVE-TRILL");
+    expect(api.runAttachmentStream).toHaveBeenCalledTimes(1);
+    expect(api.runAttachmentStream.mock.calls[0][5]).toBe("LIVE-TRILL");
+    const askId = api.runAttachmentStream.mock.calls[0][6];
+    expect(api.followTurn.mock.calls.map((call) => call.slice(0, 3))).toEqual([["p1", "a1", askId]]);
+    expect(api.runAttachment).not.toHaveBeenCalled();
+    expect(api.askTurn).not.toHaveBeenCalled();
   });
 });
 
@@ -514,13 +567,16 @@ describe("AgentAttachmentsProvider apply→canvas bridge (memo dev/48 §3.3)", (
     await waitFor(() => expect(api.listAttachments).toHaveBeenCalled());
   });
 
-  it("the blocking fallback's reply carries what landed, and the canvas takes it as the stream's events", async () => {
+  it("a change a followed ask lands after the tab follows it reaches the canvas, marked landed", async () => {
     const canvas = { kind: "node-content-applied" as const, nodeId: "n1", content: "print(2)", agent: "Node Builder" };
     api.runAttachmentStream.mockRejectedValue(new Error("stream broke"));
-    api.runAttachment.mockResolvedValue({
-      attachmentId: "a1", coord: "c", reply: "written",
-      changes: [{ changeId: "c1", attachmentId: "a1", tool: "node.content.write", canvas }],
-    });
+    api.followTurn.mockImplementation(
+      followed(
+        runningView("e1"),
+        { seq: 3, event: "change", data: { changeId: "c1", attachmentId: "a1", tool: "node.content.write", canvas } },
+        { seq: 4, event: "done", data: { reply: "written", executionId: "e1", usage: null } },
+      ),
+    );
     renderProvider();
     fireEvent.click(screen.getByText("open"));
     await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
@@ -528,6 +584,7 @@ describe("AgentAttachmentsProvider apply→canvas bridge (memo dev/48 §3.3)", (
       fireEvent.click(screen.getByText("send"));
     });
     expect(events).toEqual([{ ...canvas, landed: true }]);
+    expect(api.runAttachment).not.toHaveBeenCalled();
   });
 
   it("an Undo posts the change, hands its answer's canvas mutations on marked landed, and refreshes", async () => {
@@ -905,39 +962,45 @@ describe("AgentAttachmentsProvider lines that stay under a reply (#447, #243)", 
   });
 });
 
-describe("AgentAttachmentsProvider stream fallback payload parity (dev/53)", () => {
-  it("a pre-delta stream failure keeps the content parts (the change card renders)", async () => {
+describe("AgentAttachmentsProvider follow payload parity (dev/53)", () => {
+  it("a pre-delta stream failure's followed ask keeps the content parts (the change card renders)", async () => {
     api.runAttachmentStream.mockRejectedValue(new Error("stream transport failed"));
-    api.runAttachment.mockResolvedValue({
-      attachmentId: "a1",
-      coord: "agent.curio.dataflow-builder@1",
-      reply: "Here is the plan.",
-      executionId: "e7",
-      usage: { inputTokens: 5, outputTokens: 6 },
-      content: [
-        {
-          type: "change",
-          changeId: "c9",
-          tool: "dataflow.plan.write",
-          kind: "plan",
-          planId: "plan-9",
-          summary: "Plan · 2 nodes, 1 edges",
-          preview: "Load…",
-          status: "applied",
-          lines: ["+2 nodes · +1 connection"],
+    api.followTurn.mockImplementation(
+      followed(runningView("e7"), {
+        seq: 3,
+        event: "done",
+        data: {
+          reply: "Here is the plan.",
+          executionId: "e7",
+          usage: { inputTokens: 5, outputTokens: 6 },
+          content: [
+            {
+              type: "change",
+              changeId: "c9",
+              tool: "dataflow.plan.write",
+              kind: "plan",
+              planId: "plan-9",
+              summary: "Plan · 2 nodes, 1 edges",
+              preview: "Load…",
+              status: "applied",
+              lines: ["+2 nodes · +1 connection"],
+            },
+          ],
         },
-      ],
-    } as never);
+      }),
+    );
     renderProvider();
     await act(async () => {
       fireEvent.click(screen.getByText("send"));
     });
+    expect(api.followTurn).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId("turns")).toHaveTextContent("Here is the plan.");
-    // The fallback turn carries the parts AND the execution record.
+    // The followed turn carries the parts AND the execution record.
     expect(screen.getByTestId("contents")).toHaveTextContent("change");
     expect(screen.getByTestId("executions")).toHaveTextContent("e7:5/6");
     // A change that landed still triggers the listing reload (its changes, its plan).
     expect(api.listAttachments.mock.calls.length).toBeGreaterThan(1);
+    expect(api.runAttachment).not.toHaveBeenCalled();
   });
 });
 
@@ -1269,26 +1332,26 @@ describe("AgentAttachmentsProvider run status (memo dev/80)", () => {
     );
   });
 
-  it("a failed run (stream + fallback) finalizes to error", async () => {
+  it("a broken stream whose ask cannot be followed finalizes to error", async () => {
     api.runAttachmentStream.mockRejectedValue(new Error("stream broke"));
-    api.runAttachment.mockRejectedValue(new Error("run failed too"));
+    api.followTurn.mockRejectedValue(Object.assign(new Error("no such ask for this attachment"), { status: 404 }));
     renderProvider();
     await act(async () => {
       fireEvent.click(screen.getByText("send"));
     });
+    expect(api.followTurn).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId("run-status")).toHaveTextContent("error:ms:∅:∅");
   });
 
-  it("the blocking fallback still finalizes done", async () => {
+  it("a followed ask still finalizes done", async () => {
     api.runAttachmentStream.mockRejectedValue(new Error("stream broke"));
-    api.runAttachment.mockResolvedValue({
-      attachmentId: "a1",
-      coord: "c",
-      reply: "fresh",
-      executionId: "e2",
-      usage: { inputTokens: 1, outputTokens: 2 },
-      durationMs: 55,
-    } as never);
+    api.followTurn.mockImplementation(
+      followed(runningView("e2"), {
+        seq: 3,
+        event: "done",
+        data: { reply: "fresh", executionId: "e2", usage: { inputTokens: 1, outputTokens: 2 }, durationMs: 55 },
+      }),
+    );
     renderProvider();
     await act(async () => {
       fireEvent.click(screen.getByText("send"));

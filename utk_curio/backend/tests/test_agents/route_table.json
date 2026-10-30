@@ -280,6 +280,34 @@
   "endpoint": "agents_api.solve_attachment_stream"
  },
  {
+  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/turns",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.ask_turn"
+ },
+ {
+  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/turns/<ask_id>",
+  "methods": [
+   "DELETE"
+  ],
+  "endpoint": "agents_api.withdraw_turn"
+ },
+ {
+  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/turns/<ask_id>/stop",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.stop_turn"
+ },
+ {
+  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/turns/<ask_id>/stream",
+  "methods": [
+   "GET"
+  ],
+  "endpoint": "agents_api.follow_turn"
+ },
+ {
   "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/validate-node",
   "methods": [
    "POST"

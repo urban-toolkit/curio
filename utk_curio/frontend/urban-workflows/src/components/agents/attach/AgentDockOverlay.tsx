@@ -205,6 +205,9 @@ export const AgentDockOverlay: React.FC = () => {
               onClose={ctx.closeChat}
               toolActivity={ctx.toolActivity[shown.attachmentId] ?? []}
               runStatus={ctx.runStatus[shown.attachmentId] ?? null}
+              waitingAsks={ctx.waitingAsks[shown.attachmentId] ?? []}
+              onStopTurn={() => ctx.stopTurn(shown.attachmentId)}
+              onWithdrawAsk={(askId) => ctx.withdrawAsk(shown.attachmentId, askId)}
               onApplyProposal={(proposalId) =>
                 ctx.applyProposal(shown.attachmentId, proposalId)
               }
