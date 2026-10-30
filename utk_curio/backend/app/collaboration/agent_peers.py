@@ -199,6 +199,12 @@ class Peer:
             return {verb: {thing: len(done) for thing, done in things.items()}
                     for verb, things in self._did.items()}
 
+    def note(self, did) -> None:
+        """Count *did*, each ``(verb, thing, id)``, in what it did, for a
+        write whose ids are known only once it is made (an action's
+        :attr:`Action.did` is counted as it lands)."""
+        self._note(did)
+
     def _note(self, did) -> None:
         with self._lock:
             for verb, thing, ident in did:
@@ -477,6 +483,10 @@ class Acted(NamedTuple):
     left: Optional[str] = None
     held_by: Optional[str] = None
     gone: tuple = ()
+    #: The drag it played before it landed, as the peer's state carried it:
+    #: ``pointer`` and ``carrying``. A run's change event says it, so a canvas
+    #: no doc binds plays the same drag.
+    dragged: Optional[dict] = None
 
 
 class Holding:
@@ -622,7 +632,7 @@ def act(peer: Peer, action: Action) -> Acted:
                 with peer._lock:
                     peer._send({"pointer": None, "carrying": None})
         peer._note(action.did)
-        return Acted(True, result=result)
+        return Acted(True, result=result, dragged=copy.deepcopy(drag) if drag is not None else None)
 
 
 def _dragged(drag: dict) -> dict:
@@ -650,10 +660,15 @@ def _dragged(drag: dict) -> dict:
 
 
 def _gone(peer: Peer, targets) -> tuple:
-    """The *targets* gone from the dataflow as it is now."""
+    """The *targets* gone from the peer's dataflow as it is now."""
+    return gone(peer.user_key, peer.project_id, targets)
+
+
+def gone(user_key: str, project_id: str, targets) -> tuple:
+    """The *targets*, node ids, gone from the dataflow as it is now."""
     if not targets:
         return ()
-    spec = dataflow_docs.live(peer.user_key, peer.project_id)
+    spec = dataflow_docs.live(user_key, project_id)
     nodes = ((spec or {}).get("dataflow") or {}).get("nodes") or []
     present = {node.get("id") for node in nodes if isinstance(node, dict)}
     return tuple(target for target in targets if target not in present)

@@ -14,6 +14,7 @@ This folder is the base entry of the Agent Catalog: the pages every agent Curio 
 - `keyword-types.md`: the keyword types Curio ships, the default of the Agent Catalog's Keyword types setting.
 - `autark-grammar.md`: the words of the preamble's section on Autark documents, one section per line, which the runtime fills from the vendored Autark schema.
 - `messages.md`: what a check tells a model when it refuses or corrects what the model wrote: a tool call the runtime does not run, a proposal it does not make, a plan, a request, code or a document it sends back for another attempt. One section per message, by its id.
+- `skill-evals.md`: the words of the model that grades a skill evaluation's answers against the assertions of the skill's `evals/evals.json` ([EXTENDING § Evaluating a skill](../../docs/EXTENDING.md#evaluating-a-skill)). No agent run reads it.
 
 An agent names a page as `curio:<path>`, its path in this folder, such as `curio:default_preamble.md`. A user's agent may name one too.
 

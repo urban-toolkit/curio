@@ -284,4 +284,4 @@ class TestTheCli:
             if getattr(action, "choices", None) and "list" in (action.choices or {})
         ]
         assert actions, "the subcommand action was not found"
-        assert set(actions[0].choices) == {"list", "run", "export"}
+        assert set(actions[0].choices) == {"list", "run", "export", "skills"}

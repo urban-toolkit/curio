@@ -310,6 +310,14 @@ a connection the plan draws would now close a cycle ({cycle}) through one drawn 
 
 the scenario {name} the plan saves takes a name or a node of a scenario saved after you read the dataflow, so nothing changed: read the dataflow again and plan from what it holds now
 
+## change.plan-stopped
+
+someone removed {gone} while the plan landed, so the plan stopped there: {left} did not land, and what landed before stays. Tell the user what was left undone; they can undo the plan from this chat, or ask you again
+
+## change.plan-target-removed
+
+someone removed {gone} before the plan could join it, so nothing changed: read the dataflow again and plan from what it holds now
+
 ## mint.widgets-not-placeable
 
 params.widgets: a {label} node cannot hold widgets; a widget is placed in a node's code or spec

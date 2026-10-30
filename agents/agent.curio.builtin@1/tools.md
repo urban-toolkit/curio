@@ -142,11 +142,11 @@ Resolve one or more catalog packages against this account's installed set. Param
 
 ## dataflow.plan.write
 
-Change the dataflow graph with a plan, by ending a reply with a dataflowPlan block (not a toolRequest). The plan lands whole and at once, for everyone in the dataflow, its nodes with no code, and the user can undo it from the chat: {"dataflowPlan": {"goal": "...", "nodes": [{"ref": "n1", "nodeType": "<packageId>/<templateId>", "title": "...", "intent": "...", "widgets": [...], "spatialJoin": {...}, "dataPool": {...}, "simpleVis": {...}}], "edges": [{"from": "n1", "to": "<ref or existing node id>", "kind": "data"|"interaction"}], "scenarios": [...], "removeNodes": ["<existing node id>"], "removeEdges": ["<existing edge id>"]}}. {{include:rules/plan-rules.md}}
+Change the dataflow graph with a plan, by ending a reply with a dataflowPlan block (not a toolRequest). The plan is checked whole, then lands step by step for everyone in the dataflow, its nodes with no code, and the user can undo it from the chat as one change; when someone removes a node it joins meanwhile, it stops there and its result says what was left undone: {"dataflowPlan": {"goal": "...", "nodes": [{"ref": "n1", "nodeType": "<packageId>/<templateId>", "title": "...", "intent": "...", "widgets": [...], "spatialJoin": {...}, "dataPool": {...}, "simpleVis": {...}}], "edges": [{"from": "n1", "to": "<ref or existing node id>", "kind": "data"|"interaction"}], "scenarios": [...], "removeNodes": ["<existing node id>"], "removeEdges": ["<existing edge id>"]}}. {{include:rules/plan-rules.md}}
 
 ### Native
 
-Change the dataflow graph: the arguments are the plan, which lands whole; the user can undo it. {{include:rules/plan-rules.md}}
+Change the dataflow graph: the arguments are the plan, which lands step by step; the user can undo it. {{include:rules/plan-rules.md}}
 
 ### Parameters
 

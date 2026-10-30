@@ -2,6 +2,8 @@
 
 An agent's change to the dataflow lands at once (``changes.py``): ``land_content``,
 ``land_settings`` and ``land_node`` here, ``plans._land_dataflow_plan`` for a plan.
+A new node, a note among them, is dragged in from its template's tile by the
+agent at work in the room and lands as the drop ends.
 An install changes the account, so it waits for the person who asked: a package,
 a package draft, a dataset, a Discovery download, an agent in the dataflow. Its
 Apply (``apply_proposal``) and its Dismiss are the person's.
@@ -23,6 +25,7 @@ from utk_curio.backend.app.agents.repositories import project_agents
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import catalog as agents_catalog
 from utk_curio.backend.app.agents.application import dataset_resolution as agents_dataset_resolution
+from utk_curio.backend.app.agents.application import in_the_room as agents_room
 from utk_curio.backend.app.agents.application import lifecycle as agents_lifecycle
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application.proposals import acquire as agents_acquire
@@ -33,6 +36,7 @@ from utk_curio.backend.app.agents.application.proposals import store as agents_s
 from utk_curio.backend.app.agents.domain import agent_text
 from utk_curio.backend.app.agents.domain import node_settings
 from utk_curio.backend.app.agents.infrastructure import testing_provider
+from utk_curio.backend.app.collaboration import agent_peers
 from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.collaboration import history
 
@@ -734,9 +738,13 @@ def _insert_node(
     return created
 
 
-def land_node(user_key: str, project_id: str, loop_ctx: dict, spec: dict, proposal: dict, part: dict):
+def land_node(user_key: str, project_id: str, loop_ctx: dict, spec: dict, proposal: dict, part: dict, *,
+              peer=None):
     """``node.create``, landed: ONE new node of the template the mint checked,
-    its id server-minted here (never from a param), as the agent's change."""
+    its id server-minted here (never from a param), as the agent's change. A
+    note is one. The node is placed first, then *peer*, the agent at work,
+    drags it in from its template's tile to that place, and it lands as the
+    drop ends (``in_the_room.act``)."""
     attachment_id = loop_ctx.get("attachment_id")
     node_type = proposal["nodeType"]
     created = _insert_node(
@@ -751,11 +759,17 @@ def land_node(user_key: str, project_id: str, loop_ctx: dict, spec: dict, propos
         created=[{"id": created["id"], "type": node_type, "content": created.get("content") or ""}],
     )
     agents_changes.keep(spec, attachment_id, change)
-    dataflow_docs.write(user_key, project_id, spec, agents_changes.actor(user_key, spec, loop_ctx, "apply"))
-    agents_changes.landed(loop_ctx, change, {
-        "kind": "node-created", "node": _created_for_canvas(created, _writer(user_key, spec, loop_ctx)),
-    })
     label = proposal.get("label") or node_type
+    acted = agents_room.act(peer, agent_peers.Action(
+        what=f"node.create {created['id']}",
+        write=lambda: dataflow_docs.write(user_key, project_id, spec,
+                                          agents_changes.actor(user_key, spec, loop_ctx, "apply")),
+        drag=agents_room.drag_in(node_type, created, proposal.get("title") or label),
+        did=(("added", "node", created["id"]),),
+    ), user_key=user_key, project_id=project_id)
+    canvas = {"kind": "node-created", "node": _created_for_canvas(created, _writer(user_key, spec, loop_ctx))}
+    agents_changes.landed(loop_ctx, change, canvas,
+                          steps=[{"canvas": canvas, "dragged": agents_room.dragged(peer, acted)}])
     lines = [f"{label} · {node_type}", f"node {created['id']}"]
     return (agents_changes.LANDED,
             agent_text.message("change.node-added", node_id=repr(created["id"]), label=label),

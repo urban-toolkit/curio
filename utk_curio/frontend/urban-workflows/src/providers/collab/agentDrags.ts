@@ -30,6 +30,10 @@
  * person drops. Under reduced motion it waits at the drop point instead. The
  * time is this tab's, from when the drag arrived: another machine's clock can be
  * off by minutes.
+ *
+ * A canvas no doc binds (a hosted guest's example) has no awareness to read:
+ * there, a run's `change` event says what each drag looked like, and the change
+ * plays it as the room's tabs saw it (`playChangeDrag`) before it lands.
  */
 import {
     PALETTE_ATTR,
@@ -185,6 +189,19 @@ function shown(element: HTMLElement): boolean {
     return true;
 }
 
+/** An item without the major a node type can carry (`@1`): a palette's tiles
+ *  name types with it, a dataflow's nodes without. */
+function unversioned(item: string): string {
+    return item.replace(/@\d+$/, "");
+}
+
+/** Whether an element naming *named* (its `data-palette-item`, items apart by
+ *  spaces) names *item*, in either spelling of a node type. */
+function namesItem(named: string, item: string): boolean {
+    const wanted = unversioned(item);
+    return named.split(/\s+/).some((one) => one === item || unversioned(one) === wanted);
+}
+
 /** The element that shows *from* on this tab's page, if one does: its card in
  *  an open drawer, which is in front of the rail, else its tile or row in an
  *  open palette. */
@@ -192,7 +209,7 @@ function shownItem(page: StartPage, from: PaletteItem): { element: HTMLElement; 
     let tile: HTMLElement | null = null;
     for (const element of Array.from(page.document.querySelectorAll<HTMLElement>(`[${PALETTE_ITEM_ATTR}]`))) {
         if (element.getAttribute(PALETTE_ATTR) !== from.palette) continue;
-        if (!(element.getAttribute(PALETTE_ITEM_ATTR) ?? "").split(/\s+/).includes(from.item)) continue;
+        if (!namesItem(element.getAttribute(PALETTE_ITEM_ATTR) ?? "", from.item)) continue;
         if (!shown(element)) continue;
         if (!element.closest(`[${TOOLS_PALETTE_DROPDOWN_ATTR}]`)) return { element, where: "card" };
         tile ??= element;
@@ -381,6 +398,62 @@ export function dragPoint(drag: PlayedDrag, now: number, origin: Point, view: Vi
     const start = at.on === "dataflow" ? at : flowPointOf(at, origin, view);
     const part = eased(Math.max(0, (now - drag.seenAt) / drag.carrying.ms));
     return { x: start.x + (drag.drop.x - start.x) * part, y: start.y + (drag.drop.y - start.y) * part };
+}
+
+// ── A drag a run's change event says, on a canvas no doc binds ─────────────
+
+/** The drags of changes being played, as the states a peer's awareness would
+ *  hold: one per agent, under a client id no tab holds. */
+let changeStates: ReadonlyArray<readonly [number, PresenceState]> = [];
+const changeListeners = new Set<() => void>();
+/** A client id for each agent, by its participant id: below 0, which no tab's is. */
+const agentClients = new Map<string, number>();
+
+/** The drags a canvas no doc binds plays from runs' change events now. */
+export function changeDragStates(): ReadonlyArray<readonly [number, PresenceState]> {
+    return changeStates;
+}
+
+export function subscribeChangeDrags(listener: () => void): () => void {
+    changeListeners.add(listener);
+    return () => {
+        changeListeners.delete(listener);
+    };
+}
+
+function publishChangeStates(next: ReadonlyArray<readonly [number, PresenceState]>): void {
+    changeStates = next;
+    changeListeners.forEach((listener) => listener());
+}
+
+/**
+ * Play *dragged*, the drag a run's `change` event says the agent played before
+ * its change landed (its `user`, its `pointer` at the drop point and what it
+ * was `carrying`, as its state in the room held them), on a canvas no doc
+ * binds: the drag layer draws it as it draws a peer's, from this tab's own
+ * start, for its `ms`; then *dropped* is called, as the drop ends. A drag that
+ * says nothing a drag can be is no drag: *dropped* is called at once. How long
+ * it plays, in ms.
+ */
+export function playChangeDrag(dragged: unknown, dropped: () => void): number {
+    const raw = (dragged && typeof dragged === "object" ? dragged : {}) as Record<string, unknown>;
+    const state = { user: raw.user, pointer: raw.pointer, [CARRYING_FIELD]: raw[CARRYING_FIELD] } as PresenceState;
+    const carrying = carryingOf(state);
+    const drop = pointerOf(state);
+    if (!carrying || !drop) {
+        dropped();
+        return 0;
+    }
+    const who = String((raw.user as { participant_id?: unknown } | undefined)?.participant_id ?? "agent");
+    if (!agentClients.has(who)) agentClients.set(who, -(agentClients.size + 1));
+    const clientId = agentClients.get(who)!;
+    const played: readonly [number, PresenceState] = [clientId, { ...state, pointer: { ...drop, t: Date.now() } }];
+    publishChangeStates([...changeStates.filter(([id]) => id !== clientId), played]);
+    setTimeout(() => {
+        publishChangeStates(changeStates.filter((entry) => entry !== played));
+        dropped();
+    }, carrying.ms);
+    return carrying.ms;
 }
 
 /** Whether two lists of drags draw the same. */

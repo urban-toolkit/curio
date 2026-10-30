@@ -1,0 +1,63 @@
+{
+  "skill_name": "package-contract",
+  "agent": "agent.curio.node-builder@1",
+  "dataflow": "docs/examples/dataflows/data-pool-vega-2.json",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I'm building my own node package whose node fits a scikit-learn regression on the server. What has to go in its manifest for that, and where in the backend file do I import sklearn so the package passes its checks?",
+      "expected_output": "The backend contract: a top-level backend object with an entry under backend/ and a handlers list, each handler named to match ^[a-z][a-z0-9-]{0,63}$ with a timeoutClass of quick or standard; the server-code permission, and server-network only if the code reaches the network; backendHandler on the template that runs it; scikit-learn declared as a python dependency and imported inside the handler function, since it is installed at Apply and missing when the build's probe loads the entry.",
+      "assertions": [
+        "The answer says the manifest needs a top-level backend object with an entry file under backend/ and a list of handlers.",
+        "The answer gives each handler a timeoutClass of quick or standard.",
+        "The answer names the server-code permission, and adds server-network only when the code reaches the network.",
+        "The answer says to import sklearn inside the handler function rather than at module level, because declared dependencies are installed at Apply and are missing when the build's probe loads the entry.",
+        "The answer says the template that runs the handler declares backendHandler with the handler's name."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Write me a node package whose backend keeps a websocket server running between runs, so the map can stream updates from it, and have the backend read my weather service's API key from an environment variable.",
+      "expected_output": "No draft that smuggles either need in: a server kept running is outside the backend contract (each worker serves one request, socket servers are blocked) and the worker holds no secrets or credentials; the answer reports both as findings, naming what they wait on in Curio (the activation lifecycle for a resident service, secret mediation for the key).",
+      "assertions": [
+        "The answer says a server kept running between runs is not allowed in a package's backend, since each worker serves one request and socket servers are blocked.",
+        "The answer says the backend worker cannot read an API key, since no secrets or credentials exist there.",
+        "The answer reports these needs as findings, naming what they wait on in Curio (an activation lifecycle for a resident service, or secret mediation for the key), rather than code that works around them.",
+        "The answer proposes no package draft that holds a websocket server or code that reads the key."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Will this pass the build? It's the backend file of my package, which declares geopandas as a python dependency:\n\n```python\nimport subprocess\nimport geopandas as gpd\n\ndef handle(payload):\n    gdf = gpd.read_file(payload['input'])\n    subprocess.run(['ogr2ogr', '-f', 'GeoJSON', 'out.json', 'in.json'])\n    return gdf.buffer(50).to_json()\n```",
+      "expected_output": "No: the module-level import of geopandas fails the build's probe, since a declared dependency is installed only at Apply, so it moves inside handle; the policy scan blocks subprocess; and payload['input'] is the upstream JSON itself, not a file path. A fixed version imports geopandas inside handle, drops subprocess and builds the frame from that JSON.",
+      "assertions": [
+        "The answer says the module-level import of geopandas fails the build's probe and must move inside handle.",
+        "The answer says the policy scan blocks subprocess.",
+        "The answer says payload['input'] holds the upstream JSON itself, not a path to a file.",
+        "Any fixed code the answer gives imports geopandas inside handle and calls no subprocess."
+      ]
+    }
+  ],
+  "trigger_queries": [
+    {"query": "Write a package whose node runs a heavy scikit-learn clustering of the roofs on the server.", "should_trigger": true},
+    {"query": "My custom node needs rasterio, which can't run in the browser. How do I declare its backend handler?", "should_trigger": true},
+    {"query": "Which timeout class should my package's backend handler use for a two-minute geopandas overlay?", "should_trigger": true},
+    {"query": "the build says my package probe failed with ModuleNotFoundError: No module named 'sklearn' at import. why??", "should_trigger": true},
+    {"query": "Can my package's server code call an outside geocoding API, and what permission does that take?", "should_trigger": true},
+    {"query": "I want my node package to keep a background job running that refreshes a cache every hour.", "should_trigger": true},
+    {"query": "Turn the transformation's code into a node type of its own that does its pandas work in a server-side handler.", "should_trigger": true},
+    {"query": "What does the payload look like that my package handler gets when its node runs?", "should_trigger": true},
+    {"query": "My package backend shells out to gdal with subprocess. Will the review let that through?", "should_trigger": true},
+    {"query": "Extend my installed package with a template that parses PDF reports in Python on the server.", "should_trigger": true},
+    {"query": "Install the Scout package in this project.", "should_trigger": false},
+    {"query": "Write a package with a sticky-note style node that only shows markdown, no Python at all.", "should_trigger": false},
+    {"query": "Add a Python node that clusters the roofs with scikit-learn.", "should_trigger": false},
+    {"query": "Which packages in the Node Catalog have nodes for weather data?", "should_trigger": false},
+    {"query": "Why does my Python node fail with ModuleNotFoundError: No module named 'sklearn'?", "should_trigger": false},
+    {"query": "Load the roofs from the city's API with the key I saved.", "should_trigger": false},
+    {"query": "Rewrite the transformation node's code with pandas named aggregations.", "should_trigger": false},
+    {"query": "Make a custom node type whose body draws a gauge with React.", "should_trigger": false},
+    {"query": "Run the clustering as JavaScript in a JS Computation node instead.", "should_trigger": false},
+    {"query": "Add a model from the Model Catalog that segments roof images.", "should_trigger": false}
+  ]
+}

@@ -91,7 +91,11 @@ it, so every change reaches the doc's tabs and its log:
   :func:`write`: one short transaction, its :class:`Actor` the origin, applies
   only what the writer changed. A node's code lands only where the doc still
   holds the code the writer was handed; otherwise the doc keeps its own and
-  the writer is told (:attr:`Written.refused`). The agents' sections
+  the writer is told (:attr:`Written.refused`). A connection the writer draws
+  to a node someone removed meanwhile is taken out in the writer's own
+  transaction, by the rule a tab's change meets
+  (:func:`_drop_dangling_connections`), so it never lands pointing nowhere,
+  and the writer is told (:attr:`Written.dropped`). The agents' sections
   (``doc_mapping.OUTSIDE_THE_DOC``) are written beside the doc, and a change
   to them alone is written to the file alone.
 * The whole-dataflow PUT is the one deliberate exception (:func:`put`): its
@@ -1226,6 +1230,9 @@ class Written(NamedTuple):
     #: The nodes whose code the doc kept: each held other code than the
     #: writer was handed, so the writer's did not land.
     refused: tuple = ()
+    #: The connections the writer drew that did not land: an end of each was
+    #: a node someone removed before the write.
+    dropped: tuple = ()
 
 
 def _has_spec(user_key: str, project_id: str) -> bool:
@@ -1271,6 +1278,7 @@ def live(user_key: str, project_id: str) -> Optional[Live]:
 
 def write(user_key: str, project_id: str, spec: Live, actor: Actor, *,
           on_refused: Optional[Callable[[tuple], None]] = None,
+          on_dropped: Optional[Callable[[tuple], None]] = None,
           point: Optional[dict] = None) -> Written:
     """Write what a writer changed in *spec*, which :func:`live` handed it,
     since then (or since its last write): one short transaction on the
@@ -1285,6 +1293,11 @@ def write(user_key: str, project_id: str, spec: Live, actor: Actor, *,
       those ids before the file is written, so the writer can say so in the
       sections it writes beside the doc. Any other change lands as a person's
       does.
+    * A connection the writer drew lands only where the doc still holds both
+      its ends, checked in the same transaction: one to a node someone
+      removed after the writer read the dataflow is taken out there, and is
+      in :attr:`Written.dropped`; *on_dropped*, given, is called with those
+      ids before the file is written, as *on_refused* is.
     * The agents' sections are written beside the doc
       (:func:`_merged_beside`). A change to them alone is written to the file
       alone: a tab gets none of it, and the doc reads the file's next
@@ -1305,7 +1318,8 @@ def write(user_key: str, project_id: str, spec: Live, actor: Actor, *,
     if doc_mapping.same(_writable(spec), spec.base):
         spec.written = Written(False)
         return spec.written
-    written = _write(user_key, project_id, spec.base, spec, actor, on_refused=on_refused, point=point)
+    written = _write(user_key, project_id, spec.base, spec, actor, on_refused=on_refused, on_dropped=on_dropped,
+                     point=point)
     spec.base = copy.deepcopy(_writable(spec))
     spec.written = written
     return written
@@ -1418,9 +1432,11 @@ def _drop_pointer(user_key: str, project_id: str) -> None:
 
 def _write(user_key: str, project_id: str, base: dict, mine, actor: Actor, *,
            on_refused: Optional[Callable[[tuple], None]] = None,
+           on_dropped: Optional[Callable[[tuple], None]] = None,
            history: Optional[dict] = None, point: Optional[dict] = None) -> Written:
     """What :func:`write` and :func:`put` write: the change from *base* to
-    *mine*, under the spec lock."""
+    *mine*, under the spec lock. A connection it draws whose end the doc no
+    longer holds is taken out in its own transaction (:func:`_dangling`)."""
     if not _has_spec(user_key, project_id):
         return Written(False)
     with _spec_lock(user_key, project_id):
@@ -1445,10 +1461,16 @@ def _write(user_key: str, project_id: str, base: dict, mine, actor: Actor, *,
                     return Written(False)
                 _catch_up(entry, file)
                 _roll(entry)
+                drawn = _drawn(base, theirs)
                 with entry.doc.transaction(origin=actor):
                     refused = tuple(doc_mapping.apply_dataflow(
                         entry.doc, doc_mapping.owned(_dataflow_of(base)), doc_mapping.owned(_dataflow_of(theirs)),
                     ))
+                    # Checked again here, under the doc's lock: a node removed
+                    # after the writer read the dataflow takes the writer's
+                    # connections to it out, as the rule a tab's change meets.
+                    dropped = tuple(_dangling(entry.doc, drawn))
+                    _take_out(entry.doc, dropped)
                 owner_uses.noted(entry, by_owner=_by_its_owner(user_key, actor))
                 _commit(entry, skip_sid=None, origin=actor, point=point)
                 if refused:
@@ -1457,9 +1479,15 @@ def _write(user_key: str, project_id: str, base: dict, mine, actor: Actor, *,
                                     project_id, node_id, actor.what or actor.kind)
                     if on_refused is not None:
                         on_refused(refused)
-                        theirs = _writable(mine)
+                if dropped:
+                    logger.info("dataflow %s: %s drew %d connection(s) to a node removed meanwhile; none landed",
+                                project_id, actor.what or actor.kind, len(dropped))
+                    if on_dropped is not None:
+                        on_dropped(dropped)
+                if (refused and on_refused is not None) or (dropped and on_dropped is not None):
+                    theirs = _writable(mine)
                 _written(entry, file, _merged_beside(file.spec, base, theirs), history=history)
-                return Written(True, refused)
+                return Written(True, refused, dropped)
         except _NoDataflow:
             return Written(False)
         except doc_mapping.DocMappingError:
@@ -2124,16 +2152,7 @@ def _drop_dangling_connections(entry: _OpenDoc, sid: str, me: dict,
     added = edges_now - edges_before
     for edge_id in added:
         entry.edge_authors[edge_id] = sid
-    edges = entry.doc.get("edges", type=Map)
-    dangling: dict[str, str] = {}
-    for edge_id in edges_now:
-        edge = doc_mapping.decode(edges[edge_id])
-        if not isinstance(edge, dict):
-            continue
-        gone = [end for end in (edge.get("source"), edge.get("target"))
-                if isinstance(end, str) and end not in nodes_now]
-        if gone:
-            dangling[edge_id] = gone[0]
+    dangling = _dangling(entry.doc)
     drawers: dict[str, list[str]] = {}
     for edge_id in dangling:
         drawer = sid if edge_id in added else entry.edge_authors.get(edge_id)
@@ -2144,16 +2163,56 @@ def _drop_dangling_connections(entry: _OpenDoc, sid: str, me: dict,
             del entry.edge_authors[edge_id]
     if not dangling:
         return []
-    order = entry.doc.get("edgeOrder", type=Array)
     with entry.doc.transaction(origin=RULES_ORIGIN):
-        for edge_id in dangling:
-            del edges[edge_id]
-        for index in reversed(range(len(order))):
-            if order[index] in dangling:
-                del order[index]
+        _take_out(entry.doc, dangling)
     return [(drawer, {"projectId": entry.project_id, "edgeIds": edge_ids,
                       "by": entry.removers.get(dangling[edge_ids[0]]) or _user(me)})
             for drawer, edge_ids in drawers.items()]
+
+
+def _dangling(doc, edge_ids=None) -> dict[str, str]:
+    """The connections of *doc*, of *edge_ids* only when given, that point at
+    a node it does not hold: each with its first end that is gone."""
+    nodes = frozenset(doc.get("nodes", type=Map).keys())
+    edges = doc.get("edges", type=Map)
+    out: dict[str, str] = {}
+    for edge_id in (list(edges.keys()) if edge_ids is None else edge_ids):
+        if edge_id not in edges:
+            continue
+        edge = doc_mapping.decode(edges[edge_id])
+        if not isinstance(edge, dict):
+            continue
+        gone = [end for end in (edge.get("source"), edge.get("target"))
+                if isinstance(end, str) and end not in nodes]
+        if gone:
+            out[edge_id] = gone[0]
+    return out
+
+
+def _take_out(doc, edge_ids) -> None:
+    """Take the connections *edge_ids* out of *doc*, and out of its order, in
+    the transaction the caller holds."""
+    if not edge_ids:
+        return
+    edges = doc.get("edges", type=Map)
+    order = doc.get("edgeOrder", type=Array)
+    for edge_id in edge_ids:
+        if edge_id in edges:
+            del edges[edge_id]
+    for index in reversed(range(len(order))):
+        if order[index] in edge_ids:
+            del order[index]
+
+
+def _drawn(base: dict, mine: dict) -> list[str]:
+    """The connections *mine* holds that *base* does not: the ones a writer
+    drew, by id."""
+    def ids(spec: dict) -> set[str]:
+        return {str(edge.get("id")) for edge in _dataflow_of(spec).get("edges") or []
+                if isinstance(edge, dict) and edge.get("id") is not None}
+
+    before = ids(base)
+    return sorted(edge_id for edge_id in ids(mine) if edge_id not in before)
 
 
 def _tell(notices: list[tuple[str, dict]]) -> None:
