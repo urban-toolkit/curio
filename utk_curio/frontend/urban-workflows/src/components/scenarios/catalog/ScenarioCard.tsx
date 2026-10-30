@@ -9,9 +9,6 @@ import local from "./ScenarioCatalogDrawer.module.css";
 export interface ScenarioCardProps {
   scenario: ScenarioRow;
   onOpenDetails?: (scenario: ScenarioRow) => void;
-  /** With these, the whole card is a drag source onto the canvas. */
-  onDragStart?: (event: React.DragEvent<HTMLElement>) => void;
-  onDragEnd?: () => void;
   /** In the In project tab: what can be done to this dataflow's scenario, a
    *  row of buttons under the card. */
   controls?: React.ReactNode;
@@ -34,18 +31,16 @@ export interface ScenarioCardProps {
  * beneath it, a title, then the description. The set panel it sits in
  * names the set and leads to its project (`ScenarioSetGroup`). The avatar is
  * the project's graph, the picture that tells two scenarios apart; which of its
- * nodes the scenario holds shows in the details, which load them. In Browse
- * all the whole card is the drag source, as a model card is: dropped on the
- * canvas, the scenario arrives as a copy, and the card changes nothing in its
- * project, where the scenario is edited. In the In project tab the scenario is
+ * nodes the scenario holds shows in the details, which load them. A card is
+ * never dragged: in Browse all, a set's "Pick scenarios to drag" handle drags
+ * the scenarios checked on its cards, which arrive on the canvas as copies and
+ * change nothing in their project. In the In project tab the scenario is
  * this dataflow's: the card marks its nodes on the graph and carries its
  * buttons.
  */
 export const ScenarioCard: React.FC<ScenarioCardProps> = ({
   scenario,
   onOpenDetails,
-  onDragStart,
-  onDragEnd,
   controls,
   corner,
   check,
@@ -54,18 +49,14 @@ export const ScenarioCard: React.FC<ScenarioCardProps> = ({
   testId,
 }) => {
   const detailsLabel = `View ${scenario.name} (${scenario.project.name}) details`;
-  const draggable = Boolean(onDragStart);
 
   return (
     <article
-      className={draggable ? `${styles.card} ${styles.cardDraggable}` : styles.card}
+      className={styles.card}
       /* Same attribute the browse cards carry, so a scenario shares one
          identifier across surfaces. */
       data-scenario-key={scenario.key}
       data-testid={testId}
-      draggable={draggable || undefined}
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
       onMouseEnter={onPoint ? () => onPoint(true) : undefined}
       onMouseLeave={onPoint ? () => onPoint(false) : undefined}
     >

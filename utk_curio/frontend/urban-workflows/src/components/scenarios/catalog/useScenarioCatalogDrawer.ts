@@ -35,9 +35,9 @@ function dragBadge(event: DragEvent<HTMLElement>, text: string) {
  * remove or delete. What is left is the search, the sort, the details being
  * viewed, and the drag onto the canvas.
  *
- * A card drags its scenario alone. To drag several, a set is put in select
- * mode ("Pick scenarios to drag"), one set at a time: its cards show checkboxes and
- * no longer drag, and the one handle in its header drags the checked ones.
+ * A card is never dragged. A set is put in select mode ("Pick scenarios to
+ * drag"), one set at a time: its cards show checkboxes, and the one handle in
+ * its header drags the checked ones, one scenario or several.
  */
 export function useScenarioCatalogDrawer(presented: boolean) {
   const [search, setSearch] = useState("");
@@ -93,9 +93,6 @@ export function useScenarioCatalogDrawer(presented: boolean) {
   }, []);
 
   /** A card's drag: its scenario alone. */
-  const handleScenarioDragStart = useCallback((scenario: ScenarioRow, event: DragEvent<HTMLElement>) => {
-    writeScenarioDragData(event.dataTransfer, beginScenarioDrag([scenario]));
-  }, []);
 
   /** The select-mode handle's drag: the checked scenarios, in the listing's order. */
   const handleCheckedDragStart = useCallback(
@@ -121,7 +118,6 @@ export function useScenarioCatalogDrawer(presented: boolean) {
     catalog,
     items,
     groups,
-    handleScenarioDragStart,
     handleScenarioDragEnd,
     handleCheckedDragStart,
     isSelecting,

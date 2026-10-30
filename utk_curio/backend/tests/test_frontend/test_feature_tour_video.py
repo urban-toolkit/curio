@@ -2319,11 +2319,18 @@ def scene_scenario_drop(ctx: Ctx) -> None:
     tour.beat(1800)
     tour.still("scenario-drawer")
 
-    card_box = card.bounding_box()
+    # A card is never dragged: its set's handle drags the scenarios checked.
+    panel = drawer.locator("section[data-scenario-set]").filter(
+        has=page.locator(f'[data-scenario-key="{source}/{WHATIF_TWICE}"]'),
+    )
+    tour.click(panel.get_by_role("button", name="Pick scenarios to drag"))
+    tour.click(card.get_by_role("checkbox"))
+    handle = panel.locator("[data-scenario-drag-handle]")
+    handle_box = handle.bounding_box()
     pane = page.locator(CANVAS_DROP_TARGET).bounding_box()
     _drag_on_camera(
         ctx,
-        (card_box["x"] + 40, card_box["y"] + 20),
+        (handle_box["x"] + 20, handle_box["y"] + handle_box["height"] / 2),
         (pane["x"] + 320, pane["y"] + 240),
         dragging=f'{DRAWER_SCENARIOS}[data-dragging="true"]',
     )

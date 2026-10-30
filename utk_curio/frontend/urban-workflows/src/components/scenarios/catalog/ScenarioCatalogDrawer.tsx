@@ -84,7 +84,6 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
     catalog,
     items,
     groups,
-    handleScenarioDragStart,
     handleScenarioDragEnd,
     handleCheckedDragStart,
     isSelecting,
@@ -167,7 +166,7 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
             kind="scenario"
             title="Scenario Catalog"
             titleId="scenario-catalog-title"
-            subtitle="Saved selections of nodes from your projects. Drag one onto the canvas to copy it here."
+            subtitle="Saved selections of nodes from your projects. Pick scenarios of a set and drag them onto the canvas to copy them here."
             closeAriaLabel="Close Scenario Catalog drawer"
           />
 
@@ -215,8 +214,11 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
                     count={group.items.length}
                     isSet={Boolean(group.set.id)}
                     data={{ "data-scenario-group": group.project.id, "data-scenario-set": group.set.id }}
+                    // Every set drags through its handle; a card never drags. A
+                    // group of no set (a listing from before sets) drags one
+                    // scenario at a time, so it offers the handle only alone.
                     select={
-                      group.set.id && group.items.length > 1
+                      group.set.id || group.items.length === 1
                         ? {
                             active: isSelecting(group.items[0]),
                             checked: group.items.filter(isChecked).length,
@@ -245,17 +247,13 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
                         scenario={scenario}
                         highlight={rowHighlight(scenario)}
                         onOpenDetails={openScenarioDetails}
-                        // In select mode the card is checked, not dragged: the
-                        // set's handle drags what is checked.
+                        // In select mode the card is checked; the set's handle
+                        // drags what is checked.
                         check={
                           isSelecting(scenario)
                             ? { checked: isChecked(scenario), onChange: (on) => setRowsChecked([scenario], on) }
                             : undefined
                         }
-                        onDragStart={
-                          isSelecting(scenario) ? undefined : (event) => handleScenarioDragStart(scenario, event)
-                        }
-                        onDragEnd={handleScenarioDragEnd}
                       />
                     ))}
                   </ScenarioSetGroup>

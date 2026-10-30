@@ -96,7 +96,7 @@ function SelectBar({
           type="button"
           className={styles.selectStart}
           onClick={onStart}
-          data-tooltip="Pick scenarios of this set to drag onto the canvas together"
+          data-tooltip="Pick scenarios of this set to drag onto the canvas"
         >
           Pick scenarios to drag
         </button>

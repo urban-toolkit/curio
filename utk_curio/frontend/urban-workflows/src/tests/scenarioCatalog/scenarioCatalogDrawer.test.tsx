@@ -1,6 +1,6 @@
 /**
  * The canvas Scenario Catalog drawer: fetched only while open, read-only, its
- * cards dragged onto the canvas, and the way to a scenario's project asks
+ * scenarios dragged onto the canvas by their set's handle (never by a card), and the way to a scenario's project asks
  * first when the dataflow behind it has unsaved changes. Browse all lists the
  * cards under the dataflow each comes from (from komar41's #914).
  */
@@ -137,21 +137,28 @@ describe("the canvas Scenario Catalog drawer", () => {
     expect(api.listCatalog).toHaveBeenCalledWith({ q: "" });
   });
 
-  test("a card is dragged onto the canvas as its scenario, and offers nothing that edits", async () => {
+  test("a card is not dragged, and offers nothing that edits; its set's handle drags it", async () => {
     renderDrawer();
     await within(root()).findByText("Cool roofs");
     const heat = card("p-heat/s-cool");
-    expect(heat).toHaveAttribute("draggable", "true");
+    expect(heat).not.toHaveAttribute("draggable");
     expect(within(heat).queryByRole("button", { name: /delete|rename|remove/i })).toBeNull();
+
+    // Even a scenario alone in its group is dragged by the handle.
+    fireEvent.click(within(setPanel("Heat study")).getByRole("button", { name: "Pick scenarios to drag" }));
+    fireEvent.click(within(heat).getByRole("checkbox", { name: "Select Cool roofs" }));
+    const handle = setPanel("Heat study").querySelector("[data-scenario-drag-handle]") as HTMLElement;
+    expect(handle).toHaveTextContent("Drag 1 scenario");
 
     const data: Record<string, string> = {};
     const dataTransfer = {
       setData: (type: string, value: string) => { data[type] = value; },
       getData: (type: string) => data[type] ?? "",
+      setDragImage: jest.fn(),
       types: [] as string[],
       effectAllowed: "",
     };
-    fireEvent.dragStart(heat, { dataTransfer });
+    fireEvent.dragStart(handle, { dataTransfer });
     // The canvas reads this type (MainCanvas, useScenarioDrop).
     // A scenario of no set drags alone, named after its project.
     expect(JSON.parse(data["application/x-curio-scenario"])).toEqual({
@@ -165,7 +172,7 @@ describe("the canvas Scenario Catalog drawer", () => {
     // While it is dragged the scrim lets the drag through to the canvas.
     expect(root()).toHaveAttribute("data-dragging", "true");
 
-    fireEvent.dragEnd(heat);
+    fireEvent.dragEnd(handle);
     expect(root()).not.toHaveAttribute("data-dragging");
   });
 
@@ -196,14 +203,15 @@ describe("the canvas Scenario Catalog drawer", () => {
 
     beforeEach(() => api.listCatalog.mockResolvedValue({ items: rows() }));
 
-    test("no checkboxes until Pick scenarios to drag; a card drags its scenario alone", async () => {
+    test("no checkboxes until Pick scenarios to drag, and a card never drags", async () => {
       renderDrawer();
       await within(root()).findByText("Towers");
       expect(within(root()).queryByRole("checkbox")).toBeNull();
-      expect(dragFrom(card("p-heat/s-b")).scenarioIds).toEqual(["s-b"]);
+      expect(card("p-heat/s-b")).not.toHaveAttribute("draggable");
+      expect(dragFrom(card("p-heat/s-b"))).toBeNull();
     });
 
-    test("in select mode the checked scenarios drag by the set's handle, and the cards do not drag", async () => {
+    test("in select mode the checked scenarios drag by the set's handle", async () => {
       renderDrawer();
       await within(root()).findByText("Towers");
       fireEvent.click(within(setPanel("Park shade")).getByRole("button", { name: "Pick scenarios to drag" }));

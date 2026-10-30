@@ -94,7 +94,7 @@ Read Curio's worked examples: shipped dataflows that show how nodes, code and sp
 
 ## scenarios.search
 
-Search the Scenario Catalog: the scenarios saved in this account's projects, this dataflow's own among them. Params (optional): {"q": "<text>"}; q matches a scenario's name, its description and its project's name. Returns scenario rows with key, name, description, project (the name of the project it is saved in), nodeCount and inThisDataflow (true for this dataflow's own scenarios); when it stops short, scenariosElided says how many rows it left out. A scenario of another project comes into this dataflow, with its saved results, when the user drags its card in from Scenario, Browse all: name the scenario and its project and tell the user so, rather than rebuilding it. Reads no network.
+Search the Scenario Catalog: the scenarios saved in this account's projects, this dataflow's own among them. Params (optional): {"q": "<text>"}; q matches a scenario's name, its description and its project's name. Returns scenario rows with key, name, description, project (the name of the project it is saved in), nodeCount and inThisDataflow (true for this dataflow's own scenarios); when it stops short, scenariosElided says how many rows it left out. A scenario of another project comes into this dataflow, with its saved results, when the user drags it in from Scenario, Browse all (Pick scenarios to drag on its set, then the set's handle): name the scenario and its project and tell the user so, rather than rebuilding it. Reads no network.
 
 ### Parameters
 

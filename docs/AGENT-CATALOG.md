@@ -378,7 +378,7 @@ Applying the whole plan saves its scenarios. Applied node by node, a copy can be
 
 An agent that reads the dataflow sees each scenario with its set, its levers (its own nodes), and the shared context and outcomes it keeps, each node's widget values, each node's [selection tags](USAGE.md#selection-tags), with the view each reads and how many rows it holds, and what each Spatial Join, Data Pool and Simple View is set to when it is not the node's default. For a scenario dragged in from another project, it sees the project and the scenario it came from, by their names now, or that the project or the scenario is gone.
 
-The **Dataflow Builder** finds the scenarios in your [Scenario Catalog](SCENARIO-CATALOG.md). Asked for a scenario of another project, such as *Towers removed* from *Loop shadow*, it names the scenario and its project and tells you to drag it in from **Scenario**, **Browse all**, where it arrives with its saved results, rather than rebuilding it.
+The **Dataflow Builder** finds the scenarios in your [Scenario Catalog](SCENARIO-CATALOG.md). Asked for a scenario of another project, such as *Towers removed* from *Loop shadow*, it names the scenario and its project and tells you to drag it in from **Scenario**, **Browse all** (with **Pick scenarios to drag** on its set), where it arrives with its saved results, rather than rebuilding it.
 
 ### Map Editor
 
