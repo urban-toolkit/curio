@@ -12,7 +12,7 @@ import {
 } from "../../services/packages/packageAddRequests";
 import type { PackageCardDragPayload, PackageCardNode } from "../../services/packages/packageCardDrag";
 import type { ToastVariant } from "../../providers/ToastProvider";
-import type { AskForPackage } from "../collab/useAskTheOwner";
+import type { AskForPackage } from "./useAskForPackage";
 
 /**
  * A package's card dropped on the canvas from the Node Catalog drawer, or a

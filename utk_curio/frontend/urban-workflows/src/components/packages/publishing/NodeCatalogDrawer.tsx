@@ -50,7 +50,7 @@ import styles from "./NodeCatalogDrawer.module.css";
 import { modalStackDepth } from "../../ModalShell";
 import ConfirmDialog from "../../ConfirmDialog";
 import { EditorRequestsSection } from "../../catalog/EditorRequestsSection";
-import { useAskForPackage } from "../../collab/useAskTheOwner";
+import { useAskForPackage } from "../useAskForPackage";
 
 
 export interface NodeCatalogDrawerProps {

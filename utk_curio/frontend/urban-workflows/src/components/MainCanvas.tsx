@@ -58,7 +58,8 @@ import {
     type DatasetDragPayload,
 } from "../services/datasetCatalog";
 import { hasFileDrag, useDataFileImport } from "./datasets/useDataFileImport";
-import { useAskForPackage, useAskTheOwner } from "./collab/useAskTheOwner";
+import { useAskTheOwner } from "./datasets/useAskTheOwner";
+import { useAskForPackage } from "./packages/useAskForPackage";
 import {
     hasModelDrag,
     packageCardNodeOptions,

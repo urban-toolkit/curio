@@ -59,7 +59,8 @@ import {
 import { datasetWidgetBindings, datasetWidgetReadBy } from "../utils/widgets/datasetWidgets";
 import { DatasetWidgetContext, type DatasetWidgetNode } from "./editing/widgets/datasetWidgetContext";
 import { hasFileDrag, useDataFileImport } from "./datasets/useDataFileImport";
-import { useAskForPackage, useAskTheOwner } from "./collab/useAskTheOwner";
+import { useAskTheOwner } from "./datasets/useAskTheOwner";
+import { useAskForPackage } from "./packages/useAskForPackage";
 import { packageStarterCode } from "../adapters/node/packageNodeBehavior";
 import {
     applyModelToNodeData,
