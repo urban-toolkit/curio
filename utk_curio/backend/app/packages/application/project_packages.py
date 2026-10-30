@@ -29,6 +29,37 @@ from utk_curio.backend.app.packages.domain.errors import PackageServiceError
 from utk_curio.backend.app.packages.application.seeding import BUILTIN_PACKAGE_ID
 
 
+class OwnersPackages:
+    """The packages of a dataflow's owner that a run of an editor she invited
+    reads from her store, *store_key*: those the dataflow *project_id* uses
+    (``prune.dataflow_packages``), read from its spec there the first time the
+    run asks. Nothing of them is copied into the editor's store, and her other
+    packages are not read.
+
+    A run hands this to ``python_modules.modules_for_node`` and
+    ``model_packages.resolve_model_dirs`` (*owners*), which resolve a package
+    or a model the dataflow uses from her store, as her own run does, and any
+    other from the editor's."""
+
+    def __init__(self, store_key: str, project_id: str):
+        self.store_key = store_key
+        self.project_id = project_id
+        self._used: frozenset[str] | None = None
+
+    @property
+    def used(self) -> frozenset[str]:
+        """The dirNames of the packages the dataflow uses."""
+        if self._used is None:
+            spec = projects_storage.read_spec(self.store_key, self.project_id)
+            majors = packages_store_reads._installed_majors_by_pkg(self.store_key)
+            self._used = frozenset(packages_prune.dataflow_packages(spec, majors))
+        return self._used
+
+    def uses(self, dir_name: str | None) -> bool:
+        """Whether the dataflow uses the package *dir_name*."""
+        return dir_name is not None and dir_name in self.used
+
+
 def get_project_lockfile(user_key: str, project_id: str) -> set[str]:
     """Read the project's declared package dirNames (with backfill for legacy specs)."""
     spec = projects_storage.read_spec(user_key, project_id)

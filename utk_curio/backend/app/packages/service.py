@@ -29,6 +29,7 @@ from utk_curio.backend.app.packages.application.defaults_install import (
 )
 from utk_curio.backend.app.packages.domain.errors import PackageServiceError
 from utk_curio.backend.app.packages.application.project_packages import (
+    OwnersPackages,
     detach_from_all_projects,
     get_project_lockfile,
     install_to_project,
@@ -190,6 +191,7 @@ __all__ = [
     "get_project_lockfile",
     "install_to_project",
     "uninstall_from_project",
+    "OwnersPackages",
     "InstallOutcome",
     "provision_declared_deps",
     "provision_python_deps",

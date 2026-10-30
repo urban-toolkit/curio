@@ -157,7 +157,37 @@ def dependency_module_names(user_key: str, package_deps: object) -> frozenset[st
     return frozenset(names)
 
 
-def modules_for_node(user_key: str | None, node_type: object, project_id: str | None = None) -> dict | list | None:
+def _node_dir_name(user_key: str | None, node_type: object, project_id: str | None) -> str | None:
+    """The installed ``<packageId>@<major>`` of *user_key*'s store a node of
+    *node_type* comes from, as :func:`modules_for_node` finds it; None for a
+    built-in node and for a package the store does not hold."""
+    if not user_key or not isinstance(node_type, str):
+        return None
+    package_id, _, template_id = packages_templates.canonical_template_id(node_type).partition("/")
+    if not template_id or package_id == BUILTIN_PACKAGE_ID:
+        return None
+    majors_by_pkg = packages_store_reads._installed_majors_by_pkg(user_key)
+    return _installed_dir_for(node_type, package_id, majors_by_pkg, _dataflow_pins(user_key, project_id, majors_by_pkg))
+
+
+def _store_of_node(user_key: str | None, node_type: object, project_id: str | None, owners) -> str | None:
+    """The store whose copy of its package a node of *node_type* runs with:
+    the dataflow owner's (*owners*, ``project_packages.OwnersPackages``) when
+    the dataflow uses the package her store holds for the node, else
+    *user_key*'s."""
+    if owners is None:
+        return user_key
+    try:
+        if owners.uses(_node_dir_name(owners.store_key, node_type, project_id)):
+            return owners.store_key
+    except Exception as exc:  # noqa: BLE001 - the run's own store still answers
+        log.warning("Could not read the packages dataflow %s uses for a run of %s: %s", project_id, node_type, exc)
+    return user_key
+
+
+def modules_for_node(
+    user_key: str | None, node_type: object, project_id: str | None = None, *, owners=None,
+) -> dict | list | None:
     """What a node of *node_type* may import, for the sandbox.
 
     ``{"root": <the package's sources folder>, "names": [...]}`` when the
@@ -168,7 +198,13 @@ def modules_for_node(user_key: str | None, node_type: object, project_id: str | 
     and for every built-in node before any disk read. Never raises: a node
     whose modules could not be resolved still runs, and its import fails with
     Python's own message naming the module.
+
+    With *owners* (``project_packages.OwnersPackages``), the run is one of an
+    editor the owner of the dataflow *project_id* invited: a node of a package
+    the dataflow uses gets what her own run hands it, from her store, and any
+    other node what *user_key*'s store holds for it.
     """
+    user_key = _store_of_node(user_key, node_type, project_id, owners)
     if not user_key or not isinstance(node_type, str):
         return None
     package_id, _, template_id = packages_templates.canonical_template_id(node_type).partition("/")
