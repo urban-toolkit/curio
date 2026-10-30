@@ -342,6 +342,34 @@ def test_the_endpoint_comes_from_three_variables_and_no_output_may_hold_it(tmp_p
     assert "eval-host" not in loopback.secrets() and loopback.secrets()["eval-endpoint"] == "127.0.0.1:9"
 
 
+def test_a_change_card_tells_the_grader_whether_it_offers_its_undo():
+    """The grader reads each change card of a run's reply as the chat shows
+    it: what it says, and ``undo``, whether it offers its Undo, which the
+    chat's card does while its change has an id and is not undone. Anything
+    else the reply holds is no change card."""
+    skill_evals = _skill_evals()
+    change_cards = getattr(skill_evals, "change_cards", None)
+    assert change_cards is not None, "the grader is not told whether a change card offers its Undo"
+    content = [
+        {"type": "text", "text": "The code is back."},
+        {"type": "change", "changeId": "c1", "status": "applied", "tool": "node.content.write", "kind": "content",
+         "summary": "Replaced the content of the node", "lines": ["Data Transformation node"], "nodeId": "n1",
+         "preview": "return 1"},
+        {"type": "change", "changeId": "c2", "status": "undone", "tool": "node.create", "kind": "node",
+         "summary": "Added a node", "lines": [], "nodeId": "n2", "nodeType": "curio.builtin/data-transformation"},
+        {"type": "change", "status": "applied", "tool": "node.settings.write", "kind": "settings",
+         "summary": "Changed the node's settings", "lines": [], "nodeId": "n3"},
+    ]
+    assert change_cards(content) == [
+        {"tool": "node.content.write", "kind": "content", "summary": "Replaced the content of the node",
+         "lines": ["Data Transformation node"], "nodeId": "n1", "undo": True},
+        {"tool": "node.create", "kind": "node", "summary": "Added a node", "lines": [], "nodeId": "n2",
+         "nodeType": "curio.builtin/data-transformation", "undo": False},
+        {"tool": "node.settings.write", "kind": "settings", "summary": "Changed the node's settings", "lines": [],
+         "nodeId": "n3", "undo": False},
+    ]
+
+
 def test_the_graders_words_are_a_page_of_the_base_entry_with_a_place_for_each_value():
     from utk_curio.backend.app.agents.domain import agent_text
 
