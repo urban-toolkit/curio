@@ -17,6 +17,7 @@ from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import catalog as agents_catalog
+from utk_curio.backend.app.agents.application import in_the_room as agents_room
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application.proposals import acquire as agents_acquire
 from utk_curio.backend.app.agents.application.proposals import changes as agents_changes
@@ -110,6 +111,7 @@ def validate_node_stream(
         home_session_id=home_session_id,
         # Captured here, in the request: the rounds validate on a thread.
         acting_user=agents_spec_reads._acting_user(),
+        room_asker=agents_room.asker(),
     )
 
 
@@ -129,12 +131,14 @@ def _validate_events(
     home_attachment_id: str | None = None,
     home_session_id: str | None = None,
     acting_user=None,
+    room_asker: agents_room.Asker | None = None,
 ):
     """The validate-node body over the ONE verified-content loop (dev/115):
     the loop streams its rounds live; this body owns the framing turns, the
     reviewed mint with the validation block, the per-node ledger, and the
     finally that clears the in-flight guard on every exit, disconnect
-    included."""
+    included. Its agent is at work in the dataflow's room until the node's
+    state is settled, before ``done`` (``in_the_room``)."""
     node_id = node.get("id")
     execution_id = uuid.uuid4().hex
     label = (node.get("goal") or node_id)[:60]
@@ -143,56 +147,57 @@ def _validate_events(
         parent_name=agents_spec_reads._agent_name(user_key, coord) or coord,
     )
     try:
-        yield "validation_started", {"nodeId": node_id, "executionId": execution_id}
-        outcome = yield from agents_rounds._verified_content_rounds(
-            user_key, project_id,
-            spec=spec, node=node, resolution=resolution, config=config,
-            parent_execution_id=execution_id, parent_coord=coord,
-            attachment_id=attachment_id, exec_fn=exec_fn,
-            grounding_loop_ctx={
-                "attachment_id": attachment_id, "session_id": session_id,
-                "granted": [], "manifest": None,
-            },
-            dataset_paths_fn=lambda codes, formats: agents_grounding._exec_dataset_paths(
-                project_id, *codes, formats=formats,
-            ),
-            exec_user_key=user_key,
-            acting_user=acting_user,
-            secrets_fn=agents_grounding._exec_secrets_resolver(
-                agents_grounding._keys_of(None, user_key, acting_user)),
-            resolve_source=agents_grounding._source_resolver(
-                user_key, project_id, coord=coord, attachment_id=attachment_id,
-                execution_id=execution_id, config=config,
-                extra_texts=(str((spec.get("dataflow") or {}).get("task") or ""),),
-            ),
-        )
-        rounds_used = outcome["rounds"]
-        candidate = outcome["candidate"]
-        rounds_trace = outcome["roundsTrace"]
-        done: dict = {
-            "verdict": outcome["verdict"],
-            "evidence": outcome["evidence"],
-            "rounds": rounds_used,
-            "nodeId": node_id,
-            "attempts": outcome["attempts"],
-        }
-        if agents_rounds._ended_on_an_answer(outcome):
-            # The builder's one-line answer is no content: nothing is written
-            # into the node.
-            _say_the_answer(user_key, project_id, attachment_id, session_id,
-                            home_attachment_id, home_session_id, spec, node, label, outcome)
-        elif candidate and _writes(done):
-            yield from _land_validated(user_key, project_id, attachment_id, session_id,
-                                       home_attachment_id, home_session_id,
-                                       node_id, label, candidate, done, rounds_used, rounds_trace,
-                                       resolution=resolution, asker=acting_user)
-        elif candidate and done["verdict"] in ("fail", "not-executable"):
-            # Code that failed its check is not written: its attempts, each
-            # with the code it ran, stay in the node's agent chat.
-            done["verdict"] = "fail"
-            _say_it_failed(user_key, project_id, attachment_id, session_id, home_attachment_id, home_session_id,
-                           spec, node, label, outcome, rounds_trace)
-        done["builderSession"] = _settle_node_state(user_key, project_id, attachment_id, ref, done["verdict"])
+        with agents_room.at_work(user_key, project_id, attachment_id, spec=spec, coord=coord, who=room_asker):
+            yield "validation_started", {"nodeId": node_id, "executionId": execution_id}
+            outcome = yield from agents_rounds._verified_content_rounds(
+                user_key, project_id,
+                spec=spec, node=node, resolution=resolution, config=config,
+                parent_execution_id=execution_id, parent_coord=coord,
+                attachment_id=attachment_id, exec_fn=exec_fn,
+                grounding_loop_ctx={
+                    "attachment_id": attachment_id, "session_id": session_id,
+                    "granted": [], "manifest": None,
+                },
+                dataset_paths_fn=lambda codes, formats: agents_grounding._exec_dataset_paths(
+                    project_id, *codes, formats=formats,
+                ),
+                exec_user_key=user_key,
+                acting_user=acting_user,
+                secrets_fn=agents_grounding._exec_secrets_resolver(
+                    agents_grounding._keys_of(None, user_key, acting_user)),
+                resolve_source=agents_grounding._source_resolver(
+                    user_key, project_id, coord=coord, attachment_id=attachment_id,
+                    execution_id=execution_id, config=config,
+                    extra_texts=(str((spec.get("dataflow") or {}).get("task") or ""),),
+                ),
+            )
+            rounds_used = outcome["rounds"]
+            candidate = outcome["candidate"]
+            rounds_trace = outcome["roundsTrace"]
+            done: dict = {
+                "verdict": outcome["verdict"],
+                "evidence": outcome["evidence"],
+                "rounds": rounds_used,
+                "nodeId": node_id,
+                "attempts": outcome["attempts"],
+            }
+            if agents_rounds._ended_on_an_answer(outcome):
+                # The builder's one-line answer is no content: nothing is written
+                # into the node.
+                _say_the_answer(user_key, project_id, attachment_id, session_id,
+                                home_attachment_id, home_session_id, spec, node, label, outcome)
+            elif candidate and _writes(done):
+                yield from _land_validated(user_key, project_id, attachment_id, session_id,
+                                           home_attachment_id, home_session_id,
+                                           node_id, label, candidate, done, rounds_used, rounds_trace,
+                                           resolution=resolution, asker=acting_user, room_asker=room_asker)
+            elif candidate and done["verdict"] in ("fail", "not-executable"):
+                # Code that failed its check is not written: its attempts, each
+                # with the code it ran, stay in the node's agent chat.
+                done["verdict"] = "fail"
+                _say_it_failed(user_key, project_id, attachment_id, session_id, home_attachment_id, home_session_id,
+                               spec, node, label, outcome, rounds_trace)
+            done["builderSession"] = _settle_node_state(user_key, project_id, attachment_id, ref, done["verdict"])
         yield "done", done
     finally:
         # Disconnect-safe: the in-flight guard never wedges the attachment.
@@ -270,18 +275,20 @@ def _trace_card(done: dict, rounds_used: int, rounds_trace: list) -> dict:
 
 def _land_validated(user_key, project_id, attachment_id, session_id, home_attachment_id, home_session_id,
                     node_id, label, candidate, done: dict, rounds_used: int, rounds_trace: list,
-                    *, resolution=None, asker=None):
+                    *, resolution=None, asker=None, room_asker=None):
     """Write the code that passed its check into its node, as the agent's
     change with its Undo, through the ``node.content.write`` mint and its
     checks, at the NODE's agent when it exists (dev/72). Its card carries the
     validation block (verdict, rounds, attempts). Yields its ``change``
     event; writes the change's id, or why it did not land, into *done*.
     *asker*: the person the job took when it started, whom the change names
-    and whose own focus in the node never holds it back."""
+    and whose own focus in the node never holds it back; *room_asker*, the
+    same as the room names them, whom the node's agent at work for the write
+    says asked it."""
     change_attachment = home_attachment_id or attachment_id
     change_session = home_session_id or session_id
     ctx = {"attachment_id": change_attachment, "session_id": change_session,
-           "asker_id": getattr(asker, "id", None), "asker": asker}
+           "asker_id": getattr(asker, "id", None), "asker": asker, "room_asker": room_asker}
     status, text, part = agents_mint._mint_node_content_write(
         user_key, project_id, ctx,
         {"tool": "node.content.write", "params": {"nodeId": node_id, "content": candidate}},

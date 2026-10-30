@@ -11,7 +11,8 @@ everyone's. Its fields:
   ``agent``: ``attachmentId``, ``coord``, ``category`` and ``askedBy``, the
   person who asked it, ``{account, name}``.
 * ``skills``: the skills its run holds and has loaded.
-* ``editing``: the node it is writing, from just before the write to a second
+* ``editing``: the node it is writing, or the list of the nodes one hold
+  writes at once (a Solve wave's), from just before the write to a second
   after, whether it holds that node's lock or writes under its asker's (a node
   its asker holds stays the asker's); ``None`` otherwise.
 * ``writes``: with ``editing``, what it writes there (:data:`WRITES`);
@@ -30,7 +31,9 @@ and :data:`LEFT_EVENT`, with what it did, sent to the room's tabs as they
 happen and kept for a join's snapshot (``room_state.record_activity``).
 
 :func:`act` plays the peer's actions one at a time, in the order they come: it
-waits while someone else holds a node it changes (:func:`wait_for_people`),
+waits while someone else holds a node it changes (:func:`wait_for_people`:
+anyone but the person who asked, whose own locks are told by their account, or
+on the guest account, which every guest signs in to, by their sign-in),
 takes their locks, plays its drag, checks its targets again, names the node in
 ``editing`` and ``writes``, writes, keeps the locks and those two a second and
 lets go. :func:`holding` is the same hold around a write its caller makes, with
@@ -130,8 +133,13 @@ class Peer:
     """An agent at work in a dataflow's room (:func:`at_work`)."""
 
     def __init__(self, user_key: str, project_id: str, attachment_id: str, *,
-                 coord: str, name: str, category: Optional[str], asked_by: dict):
+                 coord: str, name: str, category: Optional[str], asked_by: dict,
+                 asker_sign_in: Optional[str] = None):
         self.user_key = str(user_key)
+        #: On the guest account, the sign-in of the person who asked, whose
+        #: own locks never hold the agent back; ``None`` tells them by account.
+        #: Kept on the server: no state or event of the room names it.
+        self.asker_sign_in = _text(asker_sign_in)
         self.project_id = project_id
         self.room = room_state.room_for(project_id)
         self.attachment_id = attachment_id
@@ -221,7 +229,8 @@ def _text(value) -> Optional[str]:
 
 @contextmanager
 def at_work(user_key: str, project_id: str, *, attachment_id: str, coord: str, name: str,
-            category: Optional[str], asked_by: dict, skills=()) -> Iterator[Peer]:
+            category: Optional[str], asked_by: dict, skills=(),
+            asker_sign_in: Optional[str] = None) -> Iterator[Peer]:
     """The agent of *attachment_id* at work in *project_id*'s room for the
     block: the dataflow's peer of the attachment, which joins as the first
     block that needs it begins and leaves as the last one ends. A block nested
@@ -229,9 +238,11 @@ def at_work(user_key: str, project_id: str, *, attachment_id: str, coord: str, n
 
     *user_key* is the dataflow's owner's storage key, *name* and *category*
     the agent's manifest's, and *asked_by* the person who asked
-    (:func:`asker`)."""
+    (:func:`asker`). *asker_sign_in*, on the guest account, is their sign-in
+    (``room_state.sign_in_of``), which tells their own locks from another
+    guest's; ``None`` tells them by account."""
     peer = _enter(user_key, project_id, str(attachment_id), coord=coord, name=name,
-                  category=category, asked_by=asked_by, skills=skills)
+                  category=category, asked_by=asked_by, skills=skills, asker_sign_in=asker_sign_in)
     try:
         yield peer
     finally:
@@ -244,14 +255,15 @@ def peer_of(project_id: str, attachment_id: str) -> Optional[Peer]:
         return _peers.get((project_id, str(attachment_id)))
 
 
-def _enter(user_key, project_id, attachment_id, *, coord, name, category, asked_by, skills) -> Peer:
+def _enter(user_key, project_id, attachment_id, *, coord, name, category, asked_by, skills,
+           asker_sign_in=None) -> Peer:
     key = (project_id, attachment_id)
     with _lock:
         peer = _peers.get(key)
         joining = peer is None
         if joining:
             peer = _peers[key] = Peer(user_key, project_id, attachment_id, coord=coord, name=name,
-                                      category=category, asked_by=asked_by)
+                                      category=category, asked_by=asked_by, asker_sign_in=asker_sign_in)
         peer._entries += 1
     if joining:
         try:
@@ -329,42 +341,51 @@ def _emit(event: str, payload: dict, room: str) -> None:
 # Locks, and waiting for people
 # ---------------------------------------------------------------------------
 
-def _holder(project_id: str, node_ids, asker_account, peer: Optional[Peer]) -> Optional[str]:
+def _holder(project_id: str, node_ids, asker_account, peer: Optional[Peer],
+            asker_sign_in: Optional[str] = None) -> Optional[str]:
     """The name of someone whose lock holds one of *node_ids*: anyone but the
     person who asked (their own focus never holds their agent back), and but
-    *peer* itself. Another agent's lock holds."""
+    *peer* itself. Another agent's lock holds. The asker's own locks are those
+    of their account, or, when *asker_sign_in* names their sign-in (the guest
+    account's, which every guest signs in to), those of their sign-in alone:
+    another guest's lock holds."""
     if not node_ids:
         return None
-    locks = room_state.snapshot(room_state.room_for(project_id)).get("locks") or {}
+    room = room_state.room_for(project_id)
+    locks = room_state.snapshot(room).get("locks") or {}
     for node_id in node_ids:
         lock = locks.get(node_id)
         if not lock:
             continue
         if peer is not None and lock.get("participant_id") == peer.participant_id:
             continue
-        if asker_account is not None and str(lock.get("user_id")) == str(asker_account):
+        if asker_account is not None and str(lock.get("user_id")) == str(asker_account) and (
+            asker_sign_in is None or room_state.sign_in_of(room, lock.get("participant_id")) == str(asker_sign_in)
+        ):
             continue
         return str(lock.get("name") or lock.get("username") or "Someone")
     return None
 
 
-def wait_for_people(project_id: str, node_ids, asker_account=None, *, peer: Optional[Peer] = None,
+def wait_for_people(project_id: str, node_ids, asker_account=None, *, asker_sign_in: Optional[str] = None,
+                    peer: Optional[Peer] = None,
                     within: Optional[float] = None, poll: Optional[float] = None,
                     clock: Optional[Callable[[], float]] = None,
                     sleep: Optional[Callable[[float], None]] = None) -> Optional[str]:
     """Wait while someone else holds one of *node_ids*, as one person waits for
     another to leave a node: anyone but *asker_account*, the account that asked
-    (``None``: anyone), and but *peer*. Up to *within* seconds
-    (:data:`LOCK_WAIT_S`), looking again every *poll* (:data:`LOCK_POLL_S`).
-    The name of who still holds one then, or ``None``. No lock is held while
-    it waits."""
+    (``None``: anyone), and but *peer*. On the guest account, *asker_sign_in*
+    is the sign-in that asked, and only that sign-in's locks are the asker's.
+    Up to *within* seconds (:data:`LOCK_WAIT_S`), looking again every *poll*
+    (:data:`LOCK_POLL_S`). The name of who still holds one then, or ``None``.
+    No lock is held while it waits."""
     within = LOCK_WAIT_S if within is None else within
     poll = LOCK_POLL_S if poll is None else poll
     clock = clock or _clock
     sleep = sleep or _sleep
     deadline = clock() + within
     while True:
-        holder = _holder(project_id, node_ids, asker_account, peer)
+        holder = _holder(project_id, node_ids, asker_account, peer, asker_sign_in)
         if holder is None or clock() >= deadline:
             return holder
         sleep(poll)
@@ -385,7 +406,7 @@ def _locked(peer: Peer, node_ids: tuple, writes: str) -> tuple[list[str], Option
         if lock is not None:
             taken.append((node_id, lock))
             continue
-        someone = _holder(peer.project_id, [node_id], peer.asker_account, peer)
+        someone = _holder(peer.project_id, [node_id], peer.asker_account, peer, peer.asker_sign_in)
         if someone is not None:
             for node, _lock_record in taken:
                 if node not in already:
@@ -469,13 +490,18 @@ class Holding:
         self.held_by = held_by
         #: The nodes whose lock it took: a node its asker holds stays theirs.
         self.nodes = taken
-        #: The node its write writes, as the peer's ``editing`` names it, and
-        #: what it writes there, as its ``writes`` does.
-        self.node = nodes[0] if nodes else None
+        #: What its write writes, as the peer's ``editing`` names it: the
+        #: node, or the list of every node a hold of several writes (a Solve
+        #: wave); and what it writes there, as its ``writes`` does.
+        self.node = (nodes[0] if len(nodes) == 1 else list(nodes)) if nodes else None
         self.writes = writes
         #: Whether ``editing``, ``writes`` and the locks are kept a second
         #: after the block (a write that did not happen shows nothing).
         self.keep = True
+        #: What the block's write did, as :attr:`Action.did` says it, which
+        #: the block sets once it wrote; :func:`holding` notes it for the
+        #: agent's leave (:data:`LEFT_EVENT`) when the block ends.
+        self.did: tuple = ()
         self._shown = False
 
     def writing(self) -> None:
@@ -508,14 +534,18 @@ def holding(peer: Peer, nodes=(), writes: Optional[str] = None, *,
             within: Optional[float] = None) -> Iterator[Holding]:
     """Hold *nodes* for a write the block makes, the peer's one action then:
     wait while someone else holds one (:func:`wait_for_people`), take their
-    locks, and name the first in the peer's ``editing`` and ``writes`` for the
-    block. After the block, keep those and the locks a second while a tab is
-    bound, then let go. The block writes nothing when :attr:`Holding.held_by`
-    names who still held one. Started under the dataflow's spec lock, it
-    raises ``RuntimeError``: the block takes that lock for its write."""
+    locks, and name them in the peer's ``editing`` (the node, or the list of
+    them all) and ``writes`` for the block. After the block, keep those and
+    the locks a second while a tab is bound, then let go. The block writes
+    nothing when :attr:`Holding.held_by` names who still held one, and what it
+    wrote (:attr:`Holding.did`) counts in what the agent did unless it left
+    :attr:`Holding.keep` off. Started under the dataflow's spec lock, it raises
+    ``RuntimeError``: the block takes that lock for its write."""
     with _hold(peer, nodes, writes, within) as hold:
         hold.writing()
         yield hold
+        if hold._shown and hold.keep:
+            peer._note(hold.did)
 
 
 @contextmanager
@@ -546,8 +576,8 @@ def _wait_and_lock(peer: Peer, nodes: tuple, writes: str, within: float) -> tupl
     """Wait for people, then lock: again, while someone takes a node first."""
     deadline = _clock() + within
     while True:
-        holder = wait_for_people(peer.project_id, nodes, peer.asker_account, peer=peer,
-                                 within=max(0.0, deadline - _clock()))
+        holder = wait_for_people(peer.project_id, nodes, peer.asker_account, asker_sign_in=peer.asker_sign_in,
+                                 peer=peer, within=max(0.0, deadline - _clock()))
         if holder is not None:
             return holder, []
         taken, holder = _locked(peer, nodes, writes)
@@ -563,7 +593,7 @@ def act(peer: Peer, action: Action) -> Acted:
     turn: wait while someone else holds one of its nodes, take their locks,
     play its drag (``pointer`` and ``carrying`` in the peer's state for
     :data:`DRAG_MS` while a tab is bound), check that the dataflow still holds
-    its targets, name its first node in the peer's ``editing`` and ``writes``,
+    its targets, name its nodes in the peer's ``editing`` and ``writes``,
     write, keep those and the locks a second while a tab is bound, and let go.
     An action whose nodes someone still holds, or whose targets went, writes
     nothing and says what it left undone. Started under the dataflow's spec

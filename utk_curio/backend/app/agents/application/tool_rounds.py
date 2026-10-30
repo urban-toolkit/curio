@@ -21,6 +21,7 @@ from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 from utk_curio.backend.app.agents.infrastructure.providers import ToolCall
 from utk_curio.backend.app.agents.application.proposals import mint as agents_mint
 from utk_curio.backend.app.agents.application.proposals import plans as agents_plans
+from utk_curio.backend.app.agents.application import in_the_room as agents_room
 from utk_curio.backend.app.agents.application import skill_runs as agents_skill_runs
 from utk_curio.backend.app.agents.domain import agent_text
 
@@ -359,6 +360,9 @@ def _execute_tool_request(
             status, text = agents_skill_runs.read(loop_ctx["skills"], req.get("params") or {})
             if status == "refused":
                 text = ParamRefusal(text)
+            else:
+                # The agent at work in the room lists what it loaded.
+                agents_room.uses_skills(project_id, loop_ctx.get("attachment_id"), loop_ctx["skills"].loaded)
         elif contract.effect == "mutate":
             status, text, part = agents_mint._mint_proposal(user_key, project_id, loop_ctx, req)
             if part is not None:

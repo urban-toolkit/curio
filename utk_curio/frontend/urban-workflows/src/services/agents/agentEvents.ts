@@ -22,6 +22,7 @@ import type {
   AgentSimpleVisSetting,
   AgentSpatialJoinSetting,
 } from "./types/proposal";
+import { holdAgentsOfChange } from "../../providers/collab/agentHolds";
 
 export type AgentCreatedNode = {
   id: string;
@@ -152,9 +153,13 @@ export function notifyAgentChangesLanded(canvas: unknown): number {
 }
 
 /** A run's stream event, when it says a change landed: its canvas mutations
- * go to the canvas bridge (`notifyAgentChangesLanded`). True when it was one. */
+ * go to the canvas bridge (`notifyAgentChangesLanded`). Before them, on a
+ * canvas no doc binds, the nodes the agent wrote show what it wrote, as its
+ * state in the room said it (`writing`, `providers/collab/agentHolds`). True
+ * when it was one. */
 export function bridgeLandedChangeEvent(name: string, payload: Record<string, unknown>): boolean {
   if (name !== "change") return false;
+  holdAgentsOfChange(payload.writing);
   notifyAgentChangesLanded(payload.canvas);
   return true;
 }

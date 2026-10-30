@@ -16,6 +16,7 @@ from utk_curio.backend.app.agents.application import attachments
 from utk_curio.backend.app.agents.application.errors import AgentServiceError
 from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 from utk_curio.backend.app.agents.application import catalog as agents_catalog
+from utk_curio.backend.app.agents.application import in_the_room as agents_room
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application.proposals import plans as agents_plans
 from utk_curio.backend.app.agents.application.proposals import store as agents_store
@@ -133,6 +134,7 @@ def simulate_stream(
     return _simulate_events(
         user_key, project_id, attachment_id, config, plan_proposal_id,
         simulate_execution_id, mode, stop, exec_fn,
+        coord=record.get("coord", ""), room_asker=agents_room.asker(),
     )
 
 
@@ -146,13 +148,19 @@ def _simulate_events(
     mode: str,
     stop,
     exec_fn,
+    *,
+    coord: str | None = None,
+    room_asker: agents_room.Asker | None = None,
 ):
     """The driver body: read fresh state, one action, persist, emit,
     repeated in auto until completion, a pause, or cancellation. Each code
     that lands rides the stream as a ``change`` event, so a canvas no doc
-    binds applies it live."""
+    binds applies it live. The plan's agent (*coord*) is at work in the
+    dataflow's room while it runs, asked by *room_asker*, and leaves before
+    ``done``."""
     yield from SimulationDriver(
         user_key, project_id, attachment_id, config, plan_proposal_id, simulate_execution_id, mode, stop, exec_fn,
+        coord=coord, room_asker=room_asker,
     ).events()
 
 
@@ -162,7 +170,7 @@ class SimulationDriver:
     cancellation. Each action is a named step; the loop in :meth:`events` only sequences them."""
 
     def __init__(self, user_key, project_id, attachment_id, config, plan_proposal_id,
-                 simulate_execution_id, mode, stop, exec_fn):
+                 simulate_execution_id, mode, stop, exec_fn, *, coord=None, room_asker=None):
         self.user_key = user_key
         self.project_id = project_id
         self.attachment_id = attachment_id
@@ -172,6 +180,9 @@ class SimulationDriver:
         self.mode = mode
         self.stop = stop
         self.exec_fn = exec_fn
+        # The plan's agent at work in the room (its coord) and who asked it.
+        self.coord: str | None = coord
+        self.room_asker: agents_room.Asker | None = room_asker
 
     # ── state ────────────────────────────────────────────────────────────────
     def _fresh(self):
@@ -230,6 +241,18 @@ class SimulationDriver:
 
     # ── the loop ─────────────────────────────────────────────────────────────
     def events(self):
+        # The plan's agent is in the room while Build & validate works, and
+        # leaves before ``done``; each validation's run of it shares its peer.
+        with agents_room.at_work(self.user_key, self.project_id, self.attachment_id,
+                                 coord=self.coord, who=self.room_asker):
+            done = yield from self._actions()
+            _, _, final_session, _ = self._fresh()
+            done["builderSession"] = final_session
+        yield "done", done
+
+    def _actions(self):
+        """The actions, one at a time, until completion, a pause, a
+        cancellation or the cap; returns the done payload."""
         done: dict = self._completed()
         try:
             yield "simulate_started", {
@@ -263,9 +286,7 @@ class SimulationDriver:
                         "reason": {"kind": "action-cap", "message": "action cap reached"}}
         finally:
             self._clear_in_flight()
-        _, _, final_session, _ = self._fresh()
-        done["builderSession"] = final_session
-        yield "done", done
+        return done
 
     def _perform(self, action: dict, ref):
         """One action; a returned dict is the done payload that stops the loop."""

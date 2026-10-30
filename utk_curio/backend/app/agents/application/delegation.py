@@ -302,6 +302,7 @@ def run_delegate(
     attachment_id: str | None,
     dataflow_block: str | None = None,
     refused: str | None = None,
+    uses_skills=None,
 ) -> tuple[str, str, dict]:
     """One synchronous, depth-1 child run (DEC-046 — direct provider-port code).
 
@@ -317,7 +318,9 @@ def run_delegate(
     The child is handed the skills its task needs (``skill_runs.for_delegated``),
     and *refused*, the kind a check recorded when it refused the round before
     (a Solve round's), adds the skills of what that check guards. Only the
-    runtime passes it, as it does *dataflow_block*.
+    runtime passes it, as it does *dataflow_block*. *uses_skills*, when given,
+    is told the names of the skills the child holds before it asks its
+    provider: its agent at work in the dataflow's room lists them.
 
     Returns ``(status, result_text, child_record)``: ``status`` is
     ``"ok"``/``"error"``, ``result_text`` is the bounded child reply (or the
@@ -356,6 +359,9 @@ def run_delegate(
     except Exception as exc:  # resolution/policy failure - data, not an error
         return ("error", agent_text.message("delegate.could-not-start", coord=coord, exc=exc), _record("error", {}, pins))
     pins = child.pins
+    if uses_skills is not None:
+        held = pins.get("skills") or {}
+        uses_skills([name for key in ("handed", "kept", "named") for name in held.get(key) or []])
 
     usage_sink: dict = {}
     task = {"role": "user", "content": _frame_inputs(parent_coord, capability, inputs)}
