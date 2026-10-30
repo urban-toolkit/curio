@@ -583,18 +583,25 @@ class CatalogListing:
         from utk_curio.backend.app.datasets.domain.catalog_item import execution_format
 
         resolved: dict[str, str] = {}
-        for dataset_id, item in self._listed_from_the_owners_store(dataflow_id).items():
-            if dataset_id not in dataset_ids:
-                continue
+
+        def resolve(dataset_id: str, item: dict[str, Any]) -> None:
             try:
                 path = self._paths._resolve_item_path(item)
             except Exception:  # noqa: BLE001 - one bad item must not drop the rest
-                logger.warning("Could not resolve execution path for dataset %s", dataset_id, exc_info=True)
-                continue
+                logger.warning(
+                    "Could not resolve execution path for dataset %s", dataset_id,
+                    exc_info=True,
+                )
+                return
             if path and Path(path).is_file():
                 resolved[dataset_id] = path
                 if formats is not None:
                     formats[dataset_id] = execution_format(item)
+
+        owners = self._listed_from_the_owners_store(dataflow_id)
+        for dataset_id in dataset_ids:
+            if dataset_id in owners:
+                resolve(dataset_id, owners[dataset_id])
         pending = self._resolve_execution_paths_from_index(
             [dataset_id for dataset_id in dataset_ids if dataset_id not in resolved], resolved, formats,
         )
@@ -613,26 +620,13 @@ class CatalogListing:
         items = [item for item in result["items"] if item.get("id")]
         by_id = {item["id"]: item for item in items}
 
-        def resolve(dataset_id: str, item: dict[str, Any]) -> None:
-            try:
-                path = self._paths._resolve_item_path(item)
-            except Exception:  # noqa: BLE001 - one bad item must not drop the rest
-                logger.warning(
-                    "Could not resolve execution path for dataset %s", dataset_id,
-                    exc_info=True,
-                )
-                return
-            if path and Path(path).is_file():
-                resolved[dataset_id] = path
-                if formats is not None:
-                    formats[dataset_id] = execution_format(item)
-
         for dataset_id in pending:
             if is_layer_group_id(dataset_id):
                 members = members_of(dataset_id, items)
                 for member in members:
                     if member["id"] not in resolved:
-                        resolve(member["id"], member)
+                        # A layer the dataflow lists from the owner's store is hers.
+                        resolve(member["id"], owners.get(member["id"], member))
                 if members and formats is not None:
                     formats[dataset_id] = layer_group_execution_format(members)
                 continue

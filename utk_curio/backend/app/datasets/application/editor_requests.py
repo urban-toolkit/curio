@@ -347,9 +347,10 @@ def apply(user, project_id: str, request_id: str) -> dict[str, Any]:
     """The owner's Apply of a request: the dataset's folders are copied from
     the asker's store into hers, unless hers holds them already, and the
     dataset is added to the dataflow as her Add to project adds it, as her
-    change. A dataset the asker's store no longer holds, or one that cannot be
-    added, is not applied: the request goes, with a 409 that says why, and
-    what this Apply copied goes with it."""
+    change. A request whose asker no longer edits the dataflow, a dataset the
+    asker's store no longer holds, or one that cannot be added, is not
+    applied: the request goes, with a 409 that says why, and what this Apply
+    copied goes with it."""
     from utk_curio.backend.app.datasets.application.catalog_service import DatasetCatalogService
 
     flow = _Dataflow(user, project_id)
@@ -357,6 +358,12 @@ def apply(user, project_id: str, request_id: str) -> dict[str, Any]:
     with _lock(flow.project_id):
         request = _taken(flow, request_id)
         asker = (request.get("by") or {}).get("name") or "the editor"
+        if not _still_editing(flow, request):
+            raise DatasetCatalogError(
+                f"{request.get('datasetName') or request.get('datasetId')} could not be added: "
+                f"{asker} no longer edits this dataflow.",
+                409,
+            )
         copied: list[Path] = []
         try:
             for dir_name in request.get("dirNames") or []:
@@ -380,6 +387,26 @@ def apply(user, project_id: str, request_id: str) -> dict[str, Any]:
         "installedDataset": {"id": item.get("id") or request["datasetId"],
                              "name": request.get("datasetName") or item.get("title")},
     }
+
+
+def _still_editing(flow: _Dataflow, request: dict[str, Any]) -> bool:
+    """Whether the account that asked still edits the dataflow, and the store
+    the request copies from is that account's: a request stands only while its
+    asker is an editor the owner invited."""
+    from utk_curio.backend.app.projects import access
+    from utk_curio.backend.app.projects.services import _user_dir_key
+    from utk_curio.backend.app.users.models import User
+    from utk_curio.backend.extensions import db
+
+    account = (request.get("by") or {}).get("account")
+    try:
+        asker = db.session.get(User, int(account))
+    except (TypeError, ValueError):
+        return False
+    if asker is None or access.agents_role(asker, flow.project) != access.EDITOR:
+        return False
+    store = request.get("store")
+    return store is None or store == _user_dir_key(asker)
 
 
 def _copy(from_key: str, to_key: str, dir_name: str) -> Path | None:
