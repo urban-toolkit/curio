@@ -15,9 +15,10 @@ A change of bob's that puts another item of alice's in the dataflow's lists
 (its datasets, its lockfile, a node of a package, a model bound to a node),
 made in his tab or by an agent run he asked for, does not put it within reach
 of his runs: a play, a run on the server and his agent's run read it from his
-own store, which does not hold it. Once alice puts it in herself (her tab, Add
-to project, an agent run she asked for), his runs read it from her store. His
-own items and the shared catalog's load as before, and alice's runs read all of
+own store, which does not hold it, and his chat holds none of the skills of a
+package of hers he added. Once alice puts it in herself (her tab, Add to
+project, an agent run she asked for), his runs read it from her store. His own
+items and the shared catalog's load as before, and alice's runs read all of
 hers.
 
 A tab is a pycrdt doc syncing over a Flask-SocketIO test client
@@ -399,6 +400,69 @@ def _agents_change(app, flow, who: str, edit) -> None:
         assert dataflow_docs.write(flow.key, flow.pid, spec, actor).wrote
 
 
+def _owners_model(client, flow) -> None:
+    """alice's LLM configuration, which her agents answer with whoever asks
+    them; its key is a stand-in, no real key."""
+    resp = client.post("/api/agents/llm/configs", json={
+        "label": "Owner's model", "apiType": "openai_compatible", "baseUrl": "https://llm.example.test/v1",
+        "apiKey": "not-a-real-llm-key-alice", "model": "owners-model",
+    }, headers=_auth(flow.tokens["alice"]))
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+    resp = client.put("/api/agents/llm/default", json={"configId": resp.get_json()["config"]["id"]},
+                      headers=_auth(flow.tokens["alice"]))
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+
+
+def _chat_skills(client, flow, who: str) -> list:
+    """The skills *who*'s next chat run on alice's dataflow lists, by name."""
+    resp = client.get(f"/api/agents/projects/{flow.pid}/attachments/{ATTACHMENT}/skills",
+                      headers=_auth(flow.tokens[who]))
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    return [skill["name"] for skill in resp.get_json()["skills"]]
+
+
+def _strings(value) -> list:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [text for item in value.values() for text in _strings(item)]
+    if isinstance(value, (list, tuple)):
+        return [text for item in value for text in _strings(item)]
+    return []
+
+
+def _told(client, flow, monkeypatch, who: str) -> str:
+    """What the model is told in *who*'s chat run on alice's dataflow, the
+    owner's model answering with a scripted reply: every text of each call's
+    messages and options."""
+    from utk_curio.backend.app.agents.application.turns import titles
+
+    calls: list = []
+
+    def _model(config, messages, **kwargs):
+        if messages and messages[0].get("content") == titles.title_prompt():
+            return "Title"
+        calls.append("\n".join(_strings([messages, kwargs])))
+        return "Here is what the node does."
+
+    monkeypatch.setattr("utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn", _model)
+    resp = client.post(f"/api/agents/projects/{flow.pid}/attachments/{ATTACHMENT}/run",
+                       json={"message": "What does this node do?"}, headers=_auth(flow.tokens[who]))
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert calls, "the chat asked its model nothing"
+    return "\n".join(calls)
+
+
+def _scout_skill(flow):
+    """A skill alice's copy of Scout ships, as a run reads it."""
+    from utk_curio.backend.app.agents.domain import skills as skill_format
+    from utk_curio.backend.app.packages.repositories.store import package_dir
+
+    folders = sorted(path for path in (package_dir(flow.key, SCOUT_DIR) / "skills").iterdir() if path.is_dir())
+    assert folders, "Scout ships no skill"
+    return skill_format.parse(folders[0])
+
+
 def _sources(key: str, dir_name: str) -> str:
     from utk_curio.backend.app.packages.repositories.store import package_dir
 
@@ -588,3 +652,34 @@ def test_an_item_she_takes_out_stays_out_of_an_editors_reach_when_he_puts_it_bac
     assert trees in _on_disk(flow)["datasets"]
     assert _loaded(client, flow, sandbox, "bob", flow.trees) == {}
     assert set(_loaded(client, flow, sandbox, "alice", flow.trees)) == {flow.trees["id"]}
+
+
+# ---------------------------------------------------------------------------
+# The skills of her packages in an editor's chat
+# ---------------------------------------------------------------------------
+
+def test_a_package_an_editor_adds_to_her_lockfile_brings_no_skill_into_his_chat_until_she_adds_it(
+    app, client, flow, monkeypatch,
+):
+    """bob's tab adds alice's Scout to her dataflow's lockfile. His chat
+    neither lists the skill her Scout ships nor tells its model the skill's
+    words, while alice's chat does both. Once alice adds a node of Scout
+    herself, bob's chat lists the skill and tells its model too."""
+    from xml.sax.saxutils import escape
+
+    scout = _scout_skill(flow)
+    words = escape(scout.description)
+    _owners_model(client, flow)
+    _edit(_tab(app, flow, "bob"), lambda dataflow: dataflow.__setitem__(
+        "packages", [*dataflow["packages"], SCOUT_DIR],
+    ))
+    assert SCOUT_DIR in _on_disk(flow)["packages"]
+
+    assert scout.name not in _chat_skills(client, flow, "bob")
+    assert words not in _told(client, flow, monkeypatch, "bob")
+    assert scout.name in _chat_skills(client, flow, "alice")
+    assert words in _told(client, flow, monkeypatch, "alice")
+
+    _edit(_tab(app, flow, "alice"), _with_node(_node("calc-2")))
+    assert scout.name in _chat_skills(client, flow, "bob")
+    assert words in _told(client, flow, monkeypatch, "bob")
