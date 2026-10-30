@@ -1,24 +1,24 @@
 import React from "react";
-import { subscribeApiSettingsRequests } from "../../components/apiSettings/apiSettingsRequest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 import { AgentReviewCard, nodeKindExecutable } from "../../components/agents/content/AgentReviewCard";
 import type { AgentProposalPart } from "../../services/agents";
 
+/** An install an agent asked for: it changes the account, so it waits for review. */
 const part = (status: AgentProposalPart["status"] = "pending"): AgentProposalPart => ({
   type: "proposal",
   proposalId: "p1",
-  tool: "node.content.write",
-  summary: "Replace the content of node 'n1'",
-  preview: "print(2)",
-  pins: { nodeId: "n1", contentSha256: "abc" },
+  tool: "dataset.install",
+  summary: "Install dataset · Cities",
+  preview: "Cities · csv · imported",
+  pins: { datasetId: "imported.abc@1" },
   status,
 });
 
-describe("AgentReviewCard (review-before-apply, memo dev/41)", () => {
+describe("AgentReviewCard (an install's review, memo dev/41)", () => {
   it("pending renders the preview and the system review controls", () => {
     render(<AgentReviewCard part={part()} onApply={jest.fn()} onDismiss={jest.fn()} />);
-    expect(screen.getByText("print(2)")).toBeInTheDocument();
+    expect(screen.getByText("Cities · csv · imported")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Apply" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Dismiss" })).toBeInTheDocument();
   });
@@ -49,11 +49,11 @@ describe("AgentReviewCard (review-before-apply, memo dev/41)", () => {
   });
 
   it("a failed apply surfaces the error (e.g. the 409 stale conflict)", async () => {
-    const onApply = jest.fn().mockRejectedValue(new Error("the node changed since this was proposed"));
+    const onApply = jest.fn().mockRejectedValue(new Error("the dataset is no longer available"));
     render(<AgentReviewCard part={part()} onApply={onApply} />);
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
     await waitFor(() =>
-      expect(screen.getByText(/node changed since/)).toBeInTheDocument(),
+      expect(screen.getByText(/no longer available/)).toBeInTheDocument(),
     );
   });
 
@@ -71,22 +71,69 @@ describe("AgentReviewCard (review-before-apply, memo dev/41)", () => {
   });
 });
 
-describe("AgentReviewCard — dev/48 proposal kinds", () => {
-  it("node.create shows the creation effect line", () => {
-    const create: AgentProposalPart = {
-      type: "proposal",
-      proposalId: "p2",
-      tool: "node.create",
-      summary: "Create a new Computation Analysis node",
-      preview: "print('new')",
-      pins: { nodeType: "curio.builtin/computation-analysis" },
-      status: "pending",
-    };
-    render(<AgentReviewCard part={create} onApply={jest.fn()} onDismiss={jest.fn()} />);
-    expect(screen.getByText("Create a new Computation Analysis node")).toBeInTheDocument();
-    expect(screen.getByText("Applying adds this node to the canvas.")).toBeInTheDocument();
+describe("AgentReviewCard: a review of a change saved before agents edited the dataflow directly", () => {
+  /** Every tool whose work now lands as the agent's change; the first test
+   * holds it to the shared file (contracts/agentChanges.json). */
+  const CHANGE_TOOLS = ["dataflow.plan.write", "node.content.write", "node.create", "node.settings.write"];
+
+  /** What such a card says in place of Apply, read inside each test, so a
+   * checkout without it fails each test on its own. */
+  const madeBefore = (): string =>
+    require("../../components/agents/content/reviewCard/reviewCardText").MADE_BEFORE_DIRECT_EDITS;
+
+  /** A review the agent made of *tool* before its work landed by itself, as a
+   * saved chat still holds it: pending, never applied. */
+  const saved = (tool: string, status: AgentProposalPart["status"] = "pending"): AgentProposalPart => ({
+    type: "proposal",
+    proposalId: `saved-${tool}`,
+    tool,
+    summary: `Saved review · ${tool}`,
+    preview: "print('the agent wrote this before')",
+    pins: { nodeId: "n1" },
+    status,
   });
 
+  it("the kinds here are the tools the shared file names", () => {
+    const { AGENT_CHANGE_TOOLS } = require("../../services/agents/agentChanges");
+    expect([...AGENT_CHANGE_TOOLS].sort()).toEqual(CHANGE_TOOLS);
+  });
+
+  it.each(CHANGE_TOOLS)(
+    "a pending %s review says it can no longer be applied and keeps Dismiss alone",
+    async (tool) => {
+      const onApply = jest.fn().mockResolvedValue(undefined);
+      const onDismiss = jest.fn().mockResolvedValue(undefined);
+      render(<AgentReviewCard part={saved(tool)} onApply={onApply} onDismiss={onDismiss} />);
+      // No Apply: the server lands nothing from it any more.
+      expect(screen.queryByRole("button", { name: "Apply" })).toBeNull();
+      expect(screen.getByText(madeBefore())).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+      await waitFor(() => expect(onDismiss).toHaveBeenCalledWith(`saved-${tool}`));
+      expect(onApply).not.toHaveBeenCalled();
+    },
+  );
+
+  it("one already dismissed keeps its outcome label and nothing more", () => {
+    const words = madeBefore();
+    expect(words).toEqual(expect.any(String));
+    const { container } = render(
+      <AgentReviewCard part={saved("node.create", "dismissed")} onApply={jest.fn()} onDismiss={jest.fn()} />,
+    );
+    expect(screen.getByText("Dismissed")).toBeInTheDocument();
+    expect(screen.queryByText(words)).toBeNull();
+    expect(container.querySelector("button")).toBeNull();
+  });
+
+  it("an install keeps its Apply and says nothing of when it was made", () => {
+    const words = madeBefore();
+    expect(words).toEqual(expect.any(String));
+    render(<AgentReviewCard part={part()} onApply={jest.fn()} onDismiss={jest.fn()} />);
+    expect(screen.getByRole("button", { name: "Apply" })).toBeInTheDocument();
+    expect(screen.queryByText(words)).toBeNull();
+  });
+});
+
+describe("AgentReviewCard: dev/48 install kinds", () => {
   it("project.install states the install-only effect", () => {
     const install: AgentProposalPart = {
       type: "proposal",
@@ -152,8 +199,8 @@ describe("AgentReviewCard — dev/48 proposal kinds", () => {
     expect(screen.queryByLabelText("Why a new node type is needed")).toBeNull();
   });
 
-  it("plain node.content.write cards carry no effect line (unchanged dev/41 shape)", () => {
-    render(<AgentReviewCard part={part()} onApply={jest.fn()} />);
+  it("an install kind with no effect line of its own carries none (a Discovery download)", () => {
+    render(<AgentReviewCard part={{ ...part(), tool: "discovery.acquire" }} onApply={jest.fn()} />);
     expect(screen.queryByText(/Applying/)).toBeNull();
   });
 });
@@ -176,674 +223,6 @@ describe("AgentReviewCard — dev/50 dataset.install kind", () => {
   });
 });
 
-describe("AgentReviewCard — dev/52 dataflow.plan.write kind", () => {
-  it("renders summary-first counts, the node list, and the dynamic effect line", () => {
-    const plan: AgentProposalPart = {
-      type: "proposal",
-      proposalId: "p6",
-      tool: "dataflow.plan.write",
-      summary: "Apply plan · 2 nodes, 1 edges",
-      preview: "Load · curio.builtin/data-loading — load it\nAnalyze · curio.builtin/computation-analysis — crunch it",
-      pins: { baseGraphDigest: "abc" },
-      status: "pending",
-      plan: {
-        goal: "heat analysis",
-        nodes: [
-          { ref: "a", nodeType: "curio.builtin/data-loading", title: "Load", intent: "load it" },
-          { ref: "b", nodeType: "curio.builtin/computation-analysis", title: "Analyze", intent: "crunch it" },
-        ],
-        edgeCount: 1,
-      },
-    };
-    render(<AgentReviewCard part={plan} onApply={jest.fn()} onDismiss={jest.fn()} />);
-    expect(screen.getByText("2 nodes · 1 connection · heat analysis")).toBeInTheDocument();
-    expect(screen.getByText(/Load · curio.builtin\/data-loading/)).toBeInTheDocument();
-    expect(
-      screen.getByText("Applying adds these 2 connected nodes to the canvas; existing work is untouched."),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Apply" })).toBeInTheDocument();
-  });
-});
-
-describe("AgentReviewCard — dev/59 destructive revision (DEC-049.2)", () => {
-  const revision: AgentProposalPart = {
-    type: "proposal",
-    proposalId: "p7",
-    tool: "dataflow.plan.write",
-    summary: "Apply plan · 1 nodes, 1 edges, removes 1 node",
-    preview: "API Fetch · curio.builtin/computation-analysis — fetch\n− Remove: Load CSV",
-    pins: { baseGraphDigest: "abc" },
-    status: "pending",
-    plan: {
-      goal: "replace the loader",
-      nodes: [{ ref: "a", nodeType: "curio.builtin/computation-analysis", title: "API Fetch", intent: "fetch" }],
-      edgeCount: 1,
-      removals: [
-        { id: "old-loader", label: "Load CSV", nodeType: "curio.builtin/computation-analysis", contentChars: 10 },
-        { id: "scratch", label: "Scratch", contentChars: 0 },
-      ],
-      cascadeCount: 1,
-    },
-  };
-
-  it("names every victim with a content flag and the cascade", () => {
-    render(<AgentReviewCard part={revision} onApply={jest.fn()} onDismiss={jest.fn()} />);
-    const section = screen.getByRole("group", { name: "Nodes and connections this plan removes" });
-    expect(section).toHaveTextContent("Removes 2 nodes (and 1 connected edge)");
-    expect(section).toHaveTextContent("Load CSV · curio.builtin/computation-analysis (contains 10 chars of content");
-    expect(section).toHaveTextContent("Scratch (empty)");
-    expect(
-      screen.getByText("Applying adds 1 node and removes 2. Removal deletes their content and cannot be undone."),
-    ).toBeInTheDocument();
-  });
-
-  it("names removed CONNECTIONS too, with the interaction kind (dev/112)", () => {
-    const edgeOnly: AgentProposalPart = {
-      ...revision,
-      summary: "Apply plan · 0 nodes, 1 edges, removes 1 connection",
-      plan: {
-        goal: "convert the feedback edge",
-        nodes: [],
-        edgeCount: 1,
-        edges: [{ from: "vis", to: "pool", kind: "interaction", fromLabel: "Metric Distribution", toLabel: "Time Data Pool" }],
-        removedEdges: [{ id: "e5", fromLabel: "Metric Distribution", toLabel: "Pool Input Merge" }],
-      },
-    };
-    render(<AgentReviewCard part={edgeOnly} onApply={jest.fn()} onDismiss={jest.fn()} />);
-    const section = screen.getByRole("group", { name: "Nodes and connections this plan removes" });
-    expect(section).toHaveTextContent("Removes 1 connection");
-    expect(section).toHaveTextContent("Metric Distribution → Pool Input Merge");
-    expect(
-      screen.getByText("Applying adds 1 connection and removes 1; nodes and their content are untouched."),
-    ).toBeInTheDocument();
-  });
-
-  it("additive plans render no Removes section (regression)", () => {
-    const additive = { ...revision, plan: { ...revision.plan!, removals: undefined, cascadeCount: undefined } };
-    render(<AgentReviewCard part={additive} onApply={jest.fn()} />);
-    expect(screen.queryByRole("group", { name: "Nodes and connections this plan removes" })).toBeNull();
-    expect(screen.getByText(/existing work is untouched/)).toBeInTheDocument();
-  });
-});
-
-describe("AgentReviewCard — dev/67-5 per-node plan review (Simulation Mode: create)", () => {
-  const planPart = (): AgentProposalPart => ({
-    type: "proposal",
-    proposalId: "p7",
-    tool: "dataflow.plan.write",
-    summary: "Apply plan · 2 nodes, 1 edges",
-    preview: "should not render when per-node rows do",
-    pins: { baseGraphDigest: "abc" },
-    status: "pending",
-    plan: {
-      goal: "heat analysis",
-      nodes: [
-        { ref: "a", nodeType: "curio.builtin/data-loading", title: "Load",
-          intent: "load it", expects: "in: none · out: dataframe" },
-        { ref: "b", nodeType: "curio.builtin/computation-analysis", title: "Analyze",
-          intent: "crunch it" },
-      ],
-      edgeCount: 1,
-    },
-  });
-
-  it("renders per-node rows with editable goals, expects, and per-node Apply", () => {
-    render(
-      <AgentReviewCard
-        part={planPart()}
-        onApplyPlanNode={jest.fn()}
-        onSavePlanGoal={jest.fn()}
-        planNodeState={{ appliedRefs: [], editedGoals: {} }}
-      />,
-    );
-    // Rows replace the raw preview — no generated code surface on plans.
-    expect(screen.queryByText(/should not render/)).toBeNull();
-    expect(screen.getByText("in: none · out: dataframe")).toBeInTheDocument();
-    expect(screen.getByLabelText("Goal for Load")).toHaveValue("load it");
-    expect(screen.getByRole("button", { name: "Create node Load" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Create node Analyze" })).toBeEnabled();
-  });
-
-  it("an edited goal saves on blur and an applied ref renders Created ✓", async () => {
-    const onSavePlanGoal = jest.fn().mockResolvedValue(undefined);
-    render(
-      <AgentReviewCard
-        part={planPart()}
-        onApplyPlanNode={jest.fn()}
-        onSavePlanGoal={onSavePlanGoal}
-        planNodeState={{ appliedRefs: ["a"], editedGoals: { b: "crunch 2024 only" } }}
-      />,
-    );
-    // Applied ref: no Apply button, Created marker, goal locked.
-    expect(screen.queryByRole("button", { name: "Create node Load" })).toBeNull();
-    expect(screen.getByText("Created ✓")).toBeInTheDocument();
-    expect(screen.getByLabelText("Goal for Load")).toBeDisabled();
-    // The edited goal overlay renders; a new edit saves on blur.
-    const goalB = screen.getByLabelText("Goal for Analyze");
-    expect(goalB).toHaveValue("crunch 2024 only");
-    fireEvent.change(goalB, { target: { value: "crunch 2025 instead" } });
-    fireEvent.blur(goalB);
-    await waitFor(() =>
-      expect(onSavePlanGoal).toHaveBeenCalledWith("p7", "b", "crunch 2025 instead"),
-    );
-  });
-
-  it("per-node Apply targets the row's ref", async () => {
-    const onApplyPlanNode = jest.fn().mockResolvedValue(undefined);
-    render(
-      <AgentReviewCard
-        part={planPart()}
-        onApplyPlanNode={onApplyPlanNode}
-        onSavePlanGoal={jest.fn()}
-        planNodeState={{ appliedRefs: [], editedGoals: {} }}
-      />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Create node Analyze" }));
-    await waitFor(() => expect(onApplyPlanNode).toHaveBeenCalledWith("p7", "b"));
-  });
-
-  it("without the per-node callback the classic preview renders (regression)", () => {
-    render(<AgentReviewCard part={planPart()} onApply={jest.fn()} />);
-    expect(screen.getByText(/should not render when per-node rows do/)).toBeInTheDocument();
-  });
-});
-
-describe("AgentReviewCard: #662 a plan's widgets and scenarios", () => {
-  const scenarioPart = (): AgentProposalPart => ({
-    type: "proposal",
-    proposalId: "p-scn",
-    tool: "dataflow.plan.write",
-    summary: "Apply plan · 3 nodes, 3 edges, 2 scenarios",
-    preview: "",
-    pins: { baseGraphDigest: "abc" },
-    status: "pending",
-    plan: {
-      goal: "compare two building heights",
-      nodes: [
-        { ref: "buildings", nodeType: "curio.builtin/computation-analysis", title: "Buildings", intent: "heights" },
-        {
-          ref: "shadows", nodeType: "curio.builtin/computation-analysis", title: "Shadows", intent: "shadow lengths",
-          widgets: [{ name: "height_factor", type: "number", default: 1 }], scenario: "Real heights",
-        },
-        {
-          ref: "shadows_tall", nodeType: "curio.builtin/computation-analysis", title: "Shadows", intent: "shadow lengths",
-          widgets: [{ name: "height_factor", type: "number", default: 1, value: 2 }],
-          scenario: "Twice as tall", copyOf: "shadows",
-        },
-      ],
-      edgeCount: 3,
-      scenarios: [
-        { name: "Real heights", color: "#3567c7", nodes: [{ ref: "shadows", label: "Shadows" }] },
-        {
-          name: "Twice as tall", color: "#e86a3c", description: "every building doubled",
-          nodes: [{ ref: "shadows_tall", label: "Shadows" }], duplicateOf: "Real heights",
-          values: { shadows_tall: { height_factor: 2 } },
-        },
-      ],
-    },
-  });
-
-  it("names each scenario with its nodes, what a duplicate copies and the value it changes", () => {
-    render(<AgentReviewCard part={scenarioPart()} onApply={jest.fn()} />);
-    const group = screen.getByRole("group", { name: "Scenarios this plan saves" });
-    expect(group).toHaveTextContent("Real heights");
-    const twin = screen.getByLabelText("Scenario Twice as tall");
-    expect(twin).toHaveTextContent("a copy of Real heights · Shadows · sets height_factor 2");
-    expect(twin).toHaveTextContent("every building doubled");
-    // Counted at a glance, and the effect line says what Apply saves.
-    expect(screen.getByText(/· 2 scenarios ·/)).toBeInTheDocument();
-    expect(screen.getByText(/It saves 2 scenarios\./)).toBeInTheDocument();
-  });
-
-  it("a copy's row reads apart from its original's and waits for it", () => {
-    render(
-      <AgentReviewCard
-        part={scenarioPart()}
-        onApplyPlanNode={jest.fn()}
-        onSavePlanGoal={jest.fn()}
-        planNodeState={{ appliedRefs: [], editedGoals: {} }}
-      />,
-    );
-    expect(screen.getByText("in Twice as tall · a copy of Shadows")).toBeInTheDocument();
-    expect(screen.getByText('widgets: height_factor (number, 2)')).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Create node Shadows (Real heights)" })).toBeEnabled();
-    const copy = screen.getByRole("button", { name: "Create node Shadows (Twice as tall)" });
-    expect(copy).toBeDisabled();
-    expect(copy).toHaveAttribute("data-tooltip", "create 'Shadows' first");
-  });
-
-  it("once its original exists the copy can be created, and a saved scenario says so", () => {
-    render(
-      <AgentReviewCard
-        part={scenarioPart()}
-        onApplyPlanNode={jest.fn()}
-        onSavePlanGoal={jest.fn()}
-        planNodeState={{ appliedRefs: ["shadows"], editedGoals: {}, scenarioStates: { "0": "applied" } }}
-      />,
-    );
-    expect(screen.getByRole("button", { name: "Create node Shadows (Twice as tall)" })).toBeEnabled();
-    expect(screen.getByLabelText("Scenario Real heights")).toHaveTextContent("Saved ✓");
-    expect(screen.getByLabelText("Scenario Twice as tall")).not.toHaveTextContent("Saved");
-  });
-
-  it("a plan without scenarios renders no Scenarios section (regression)", () => {
-    const part = scenarioPart();
-    delete part.plan!.scenarios;
-    render(<AgentReviewCard part={part} onApply={jest.fn()} />);
-    expect(screen.queryByRole("group", { name: "Scenarios this plan saves" })).toBeNull();
-    expect(screen.queryByText(/It saves/)).toBeNull();
-  });
-});
-
-describe("AgentReviewCard: a planned Spatial Join says how it joins", () => {
-  const joinPart = () =>
-    ({
-      type: "proposal",
-      proposalId: "p-join",
-      tool: "dataflow.plan.write",
-      summary: "Apply plan · 3 nodes, 2 edges",
-      preview: "",
-      pins: { baseGraphDigest: "abc" },
-      status: "pending",
-      plan: {
-        goal: "count sidewalk labels per neighborhood",
-        nodes: [
-          { ref: "labels", nodeType: "curio.builtin/data-loading", title: "Labels", intent: "label points" },
-          { ref: "hoods", nodeType: "curio.builtin/data-loading", title: "Neighborhoods", intent: "polygons" },
-          {
-            ref: "join", nodeType: "curio.builtin/spatial-join", title: "Labels per neighborhood",
-            intent: "count the labels within each neighborhood",
-            spatialJoin: { predicate: "within", output: "counts" },
-          },
-        ],
-        edgeCount: 2,
-      },
-    }) as AgentProposalPart;
-
-  it("its row names the operation and the output the plan sets, and no other row names one", () => {
-    render(
-      <AgentReviewCard
-        part={joinPart()}
-        onApplyPlanNode={jest.fn()}
-        onSavePlanGoal={jest.fn()}
-        planNodeState={{ appliedRefs: [], editedGoals: {} }}
-      />,
-    );
-    expect(screen.getByText("operation within, output counts")).toBeInTheDocument();
-    expect(screen.getAllByText(/^operation /)).toHaveLength(1);
-  });
-});
-
-describe("AgentReviewCard: a planned Data Pool and Simple View say their settings in their own words", () => {
-  const settingsPart = () =>
-    ({
-      type: "proposal",
-      proposalId: "p-settings",
-      tool: "dataflow.plan.write",
-      summary: "Apply plan · 4 nodes, 3 edges",
-      preview: "",
-      pins: { baseGraphDigest: "abc" },
-      status: "pending",
-      plan: {
-        goal: "show the overlays of the photos picked in both charts",
-        nodes: [
-          { ref: "photos", nodeType: "curio.builtin/data-loading", title: "Photos", intent: "street photos" },
-          {
-            ref: "pool", nodeType: "curio.builtin/data-pool", title: "Picked photos",
-            intent: "the photos picked in both charts", dataPool: { betweenCharts: "MERGE_AND" },
-          },
-          {
-            ref: "either", nodeType: "curio.builtin/data-pool", title: "Either chart",
-            intent: "the photos picked in either chart",
-            dataPool: { insideChart: "MERGE_OR", betweenCharts: "MERGE_OR" },
-          },
-          {
-            ref: "view", nodeType: "curio.builtin/vis-simple", title: "Overlays",
-            intent: "the overlay of each picked photo", simpleVis: { imageColumn: "overlay_url" },
-          },
-        ],
-        edgeCount: 3,
-      },
-    }) as unknown as AgentProposalPart;
-
-  it("a pool's row names its modes as its selects do, a view's its image column, and no other row names one", () => {
-    render(
-      <AgentReviewCard
-        part={settingsPart()}
-        onApplyPlanNode={jest.fn()}
-        onSavePlanGoal={jest.fn()}
-        planNodeState={{ appliedRefs: [], editedGoals: {} }}
-      />,
-    );
-    expect(screen.getByText("Conflict between visualizations: Merge (AND)")).toBeInTheDocument();
-    expect(
-      screen.getByText("Conflict inside visualization: Merge (OR); Conflict between visualizations: Merge (OR)"),
-    ).toBeInTheDocument();
-    expect(screen.getAllByText(/^Conflict /)).toHaveLength(2);
-    expect(screen.getByText("Image column: overlay_url")).toBeInTheDocument();
-    expect(screen.getAllByText(/^Image column: /)).toHaveLength(1);
-  });
-});
-
-describe("AgentReviewCard: a settings change names the node and says each change in the node's own words", () => {
-  // The lines are the backend's (agents/domain/node_settings.describe_change
-  // and widget_grammar.describe_value), each in its node's words.
-  const settingsPart = (settingLines: string[]) =>
-    ({
-      type: "proposal",
-      proposalId: "p-change",
-      tool: "node.settings.write",
-      summary: "Change the settings of the Data Pool node · Picked photos",
-      preview: settingLines.join("\n"),
-      pins: { nodeId: "pool", settingsSha256: "abc" },
-      status: "pending",
-      settingLines,
-    }) as unknown as AgentProposalPart;
-
-  it("the header names the node, each change is a line of its own, and the card says what Apply does", () => {
-    const lines = ["Conflict inside visualization: Overwrite", "Conflict between visualizations: Merge (AND)"];
-    render(<AgentReviewCard part={settingsPart(lines)} onApply={jest.fn()} onDismiss={jest.fn()} />);
-    expect(screen.getByText("Change the settings of the Data Pool node · Picked photos")).toBeInTheDocument();
-    for (const line of lines) expect(screen.getAllByText(line)).toHaveLength(1);
-    expect(
-      screen.getByText("Applying makes only these changes, as picking them in the node does; its code is untouched."),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Apply" })).toBeInTheDocument();
-  });
-
-  it.each([
-    ["a view's image column", "Image column: overlay_url"],
-    ["every image column", "Image column: all"],
-    ["a join's operation", "operation within"],
-    ["a widget's value, by its label", "Combine: max"],
-  ])("%s reads as its node says it, once", (_what, line) => {
-    render(<AgentReviewCard part={settingsPart([line])} onApply={jest.fn()} />);
-    expect(screen.getAllByText(line)).toHaveLength(1);
-  });
-});
-
-describe("AgentReviewCard — dev/67-7 validation block", () => {
-  const validated = (verdict: "pass" | "fail", evidence = {}): AgentProposalPart => ({
-    ...part(),
-    validation: { verdict, rounds: verdict === "pass" ? 1 : 3, evidence },
-  });
-
-  it("renders PASS with the output type", () => {
-    render(
-      <AgentReviewCard
-        part={validated("pass", { outputDataType: "dataframe" })}
-        onApply={jest.fn()}
-      />,
-    );
-    expect(screen.getByText("PASS")).toBeInTheDocument();
-    expect(screen.getByText(/output: dataframe/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Apply" })).toBeInTheDocument();
-  });
-
-  it("renders FAIL with the traceback and labels Apply honestly", () => {
-    render(
-      <AgentReviewCard
-        part={validated("fail", { kind: "execution-error", stderrTail: "Traceback: KeyError" })}
-        onApply={jest.fn()}
-      />,
-    );
-    expect(screen.getByText("FAIL")).toBeInTheDocument();
-    expect(screen.getByText("Traceback: KeyError")).toBeInTheDocument();
-    // Apply stays available — honesty over gatekeeping, labeled plainly.
-    expect(screen.getByRole("button", { name: "Apply anyway" })).toBeInTheDocument();
-  });
-
-  it("names an upstream blocker instead of blaming the node", () => {
-    render(
-      <AgentReviewCard
-        part={validated("fail", { kind: "upstream-blocker", blockerLabel: "Load CSV" })}
-        onApply={jest.fn()}
-      />,
-    );
-    expect(screen.getByText(/Upstream node Load CSV failed/)).toBeInTheDocument();
-  });
-
-  it("proposals without validation render exactly as before (regression)", () => {
-    render(<AgentReviewCard part={part()} onApply={jest.fn()} />);
-    expect(screen.queryByText("PASS")).toBeNull();
-    expect(screen.getByRole("button", { name: "Apply" })).toBeInTheDocument();
-  });
-});
-
-describe("AgentReviewCard — dev/67-8 connection review stage", () => {
-  const planWithEdges = (): AgentProposalPart => ({
-    type: "proposal",
-    proposalId: "p8",
-    tool: "dataflow.plan.write",
-    summary: "Apply plan · 2 nodes, 2 edges",
-    preview: "…",
-    pins: { baseGraphDigest: "abc" },
-    status: "pending",
-    plan: {
-      goal: "g",
-      nodes: [
-        { ref: "a", nodeType: "t", title: "Load", intent: "load" },
-        { ref: "b", nodeType: "t", title: "Merge", intent: "merge" },
-      ],
-      edgeCount: 2,
-      edges: [
-        { from: "a", to: "b", toHandle: "in_0", fromLabel: "Load", toLabel: "Merge" },
-        { from: "b", to: "existing-1", fromLabel: "Merge", toLabel: "Old Analyze" },
-      ],
-    },
-  });
-
-  it("renders named rows, gates on endpoint creation, and connects per edge", async () => {
-    const onApplyPlanEdges = jest.fn().mockResolvedValue(undefined);
-    render(
-      <AgentReviewCard
-        part={planWithEdges()}
-        onApplyPlanNode={jest.fn()}
-        onApplyPlanEdges={onApplyPlanEdges}
-        planNodeState={{ appliedRefs: ["a"], editedGoals: {}, edgeStates: {} }}
-      />,
-    );
-    // The whole pair shows on hover too, handle included (#511).
-    expect(screen.getByText("Load → Merge [in_0]")).toHaveAttribute("data-tooltip", "Load → Merge [in_0]");
-    // Edge 0: target ref "b" not created yet → disabled with the reason.
-    const first = screen.getByRole("button", { name: "Connect Load to Merge" });
-    expect(first).toBeDisabled();
-    expect(first).toHaveAttribute("data-tooltip", "create 'Merge' first");
-    // Edge 1: source ref "b" not created either → disabled; existing-id
-    // endpoints alone never block.
-    expect(screen.getByRole("button", { name: "Connect Merge to Old Analyze" })).toBeDisabled();
-    // With both refs created, rows enable and target their index.
-    render(
-      <AgentReviewCard
-        part={planWithEdges()}
-        onApplyPlanNode={jest.fn()}
-        onApplyPlanEdges={onApplyPlanEdges}
-        planNodeState={{ appliedRefs: ["a", "b"], editedGoals: {}, edgeStates: {} }}
-      />,
-    );
-    const enabled = screen.getAllByRole("button", { name: "Connect Load to Merge" })[1] ??
-      screen.getAllByRole("button", { name: "Connect Load to Merge" })[0];
-    fireEvent.click(enabled);
-    await waitFor(() => expect(onApplyPlanEdges).toHaveBeenCalledWith("p8", [0]));
-  });
-
-  it("shows per-edge states and Connect all", async () => {
-    const onApplyPlanEdges = jest.fn().mockResolvedValue(undefined);
-    render(
-      <AgentReviewCard
-        part={planWithEdges()}
-        onApplyPlanNode={jest.fn()}
-        onApplyPlanEdges={onApplyPlanEdges}
-        planNodeState={{
-          appliedRefs: ["a", "b"],
-          editedGoals: {},
-          edgeStates: { "0": "applied", "1": "refused" },
-        }}
-      />,
-    );
-    expect(screen.getByText("Connected ✓")).toBeInTheDocument();
-    expect(screen.getByText("Refused ✗")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Connect all" }));
-    await waitFor(() => expect(onApplyPlanEdges).toHaveBeenCalledWith("p8", undefined));
-  });
-});
-
-describe("AgentReviewCard — dev/71 progressive lifecycle rows", () => {
-  const progressivePlan = (): AgentProposalPart => ({
-    type: "proposal",
-    proposalId: "p9",
-    tool: "dataflow.plan.write",
-    summary: "Apply plan · 2 nodes, 1 edges",
-    preview: "…",
-    pins: { baseGraphDigest: "abc" },
-    status: "pending",
-    plan: {
-      goal: "g",
-      nodes: [
-        { ref: "a", nodeType: "t", title: "Load", intent: "load" },
-        { ref: "b", nodeType: "t", title: "Analyze", intent: "crunch" },
-      ],
-      edgeCount: 1,
-      edges: [{ from: "a", to: "b", fromLabel: "Load", toLabel: "Analyze" }],
-    },
-  });
-
-  const renderRows = (state: {
-    appliedRefs: string[];
-    nodeStates?: Record<string, string>;
-    edgeStates?: Record<string, string>;
-  }, handlers: { onSolve?: jest.Mock; onRun?: jest.Mock } = {}) =>
-    render(
-      <AgentReviewCard
-        part={progressivePlan()}
-        onApplyPlanNode={jest.fn()}
-        onSolvePlanNode={handlers.onSolve ?? jest.fn()}
-        onRunPlanNode={handlers.onRun ?? jest.fn()}
-        planNodeState={{ editedGoals: {}, ...state }}
-      />,
-    );
-
-  it("rows name their dependencies", () => {
-    renderRows({ appliedRefs: [] });
-    expect(screen.getByText("needs: Load")).toBeInTheDocument();
-  });
-
-  it("Solve gates on connected + solved dependencies, with the blocker named", () => {
-    // b created but the edge not applied → disabled, names the connection.
-    renderRows({
-      appliedRefs: ["a", "b"],
-      nodeStates: { a: "created", b: "created" },
-      edgeStates: {},
-    });
-    const solveB = screen.getByRole("button", { name: "Solve node Analyze" });
-    expect(solveB).toBeDisabled();
-    expect(solveB).toHaveAttribute("data-tooltip", "needs 'Load' connected first");
-  });
-
-  it("Solve enables when the edge is applied and upstream is approved", async () => {
-    const onSolve = jest.fn().mockResolvedValue(undefined);
-    renderRows(
-      {
-        appliedRefs: ["a", "b"],
-        nodeStates: { a: "approved", b: "created" },
-        edgeStates: { "0": "applied" },
-      },
-      { onSolve },
-    );
-    const solveB = screen.getByRole("button", { name: "Solve node Analyze" });
-    expect(solveB).toBeEnabled();
-    fireEvent.click(solveB);
-    await waitFor(() => expect(onSolve).toHaveBeenCalledWith("b"));
-    // Upstream approved rows show Run, not Solve.
-    expect(screen.queryByRole("button", { name: "Solve node Load" })).toBeNull();
-    expect(screen.getByText("Solved ✓")).toBeInTheDocument();
-  });
-
-  it("Run appears on approved rows and targets the ref", async () => {
-    const onRun = jest.fn().mockResolvedValue(undefined);
-    renderRows(
-      {
-        appliedRefs: ["a", "b"],
-        nodeStates: { a: "approved", b: "approved" },
-        edgeStates: { "0": "applied" },
-      },
-      { onRun },
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Run through node Analyze" }));
-    await waitFor(() => expect(onRun).toHaveBeenCalledWith("b"));
-  });
-});
-
-describe("AgentReviewCard — dev/72 review-chip icon-link to the node agent", () => {
-  const plan = (): AgentProposalPart => ({
-    type: "proposal",
-    proposalId: "p10",
-    tool: "dataflow.plan.write",
-    summary: "Apply plan · 1 node",
-    preview: "…",
-    pins: { baseGraphDigest: "abc" },
-    status: "pending",
-    plan: {
-      goal: "g",
-      nodes: [{ ref: "a", nodeType: "t", title: "Load", intent: "load" }],
-      edgeCount: 0,
-      edges: [],
-    },
-  });
-
-  it("the chip links to the homed review's agent chat", () => {
-    const onOpenAgentChat = jest.fn();
-    render(
-      <AgentReviewCard
-        part={plan()}
-        onApplyPlanNode={jest.fn()}
-        onOpenAgentChat={onOpenAgentChat}
-        delegateExists={(id) => id === "att-nb"}
-        planNodeState={{
-          appliedRefs: ["a"],
-          editedGoals: {},
-          nodeStates: { a: "solving" },
-          nodeProposals: { a: { proposalId: "cp1", attachmentId: "att-nb" } },
-        }}
-      />,
-    );
-    expect(screen.getByText("Content review pending")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /open the node agent's chat/i }));
-    expect(onOpenAgentChat).toHaveBeenCalledWith("att-nb");
-  });
-
-  it("legacy builder-homed (string) and stale homes render no link", () => {
-    const { rerender } = render(
-      <AgentReviewCard
-        part={plan()}
-        onApplyPlanNode={jest.fn()}
-        onOpenAgentChat={jest.fn()}
-        planNodeState={{
-          appliedRefs: ["a"],
-          editedGoals: {},
-          nodeStates: { a: "solving" },
-          nodeProposals: { a: "cp1" },
-        }}
-      />,
-    );
-    expect(screen.queryByRole("button", { name: /open the node agent/i })).toBeNull();
-    rerender(
-      <AgentReviewCard
-        part={plan()}
-        onApplyPlanNode={jest.fn()}
-        onOpenAgentChat={jest.fn()}
-        delegateExists={() => false}
-        planNodeState={{
-          appliedRefs: ["a"],
-          editedGoals: {},
-          nodeStates: { a: "solving" },
-          nodeProposals: { a: { proposalId: "cp1", attachmentId: "gone" } },
-        }}
-      />,
-    );
-    expect(screen.queryByRole("button", { name: /open the node agent/i })).toBeNull();
-  });
-});
 
 describe("AgentReviewCard backend trust edge (memo dev/91 §5)", () => {
   const backendPart = (network = false): AgentProposalPart => ({
@@ -1028,298 +407,11 @@ describe("dependency home line (memo dev/97)", () => {
 });
 
 
-describe("AgentReviewCard — dev/114 (DEC-072) the Source block", () => {
-  const withSource = (source: AgentProposalPart["source"], tool = "node.create"): AgentProposalPart => ({
-    ...part(),
-    tool,
-    summary: "Create a new Data Loading node",
-    pins: { nodeType: "curio.builtin/data-loading" },
-    source,
-  });
-
-  it("names a Data Catalog source by title, format and id", () => {
-    render(
-      <AgentReviewCard
-        part={withSource({
-          kind: "catalog",
-          label: "Data Catalog · Census ACS 5-year (parquet)",
-          refs: [{ kind: "catalog", value: 'curio_data_path("imported.acs@1")',
-                   datasetId: "imported.acs@1", title: "Census ACS 5-year", format: "parquet" }],
-        })}
-        onApply={jest.fn()}
-      />,
-    );
-    const block = screen.getByRole("group", { name: "Data source" });
-    expect(block).toHaveTextContent("Source · Data Catalog");
-    expect(block).toHaveTextContent("Census ACS 5-year (parquet) · imported.acs@1");
-  });
-
-  it("shows an external URL with the runtime's verification chip", () => {
-    render(
-      <AgentReviewCard
-        part={withSource({
-          kind: "external",
-          label: "External · https://api.noaa.gov/climate · verified",
-          refs: [{ kind: "external", value: "https://api.noaa.gov/climate",
-                   verification: { status: "verified", httpStatus: 200 } }],
-        })}
-        onApply={jest.fn()}
-      />,
-    );
-    const block = screen.getByRole("group", { name: "Data source" });
-    expect(block).toHaveTextContent("Source · External source");
-    expect(block).toHaveTextContent("https://api.noaa.gov/climate");
-    expect(screen.getByText("Verified ✓")).toBeInTheDocument();
-  });
-
-  it("says a credential-gated endpoint is gated and a user path is unchecked", () => {
-    render(
-      <AgentReviewCard
-        part={withSource({
-          kind: "mixed",
-          label: "…",
-          refs: [
-            { kind: "external", value: "https://api.x.gov/v1", requirement: "credential-gated",
-              verification: { status: "unreachable", httpStatus: 401 } },
-            { kind: "user-path", value: "data/tracts.geojson" },
-          ],
-        })}
-        onApply={jest.fn()}
-      />,
-    );
-    const block = screen.getByRole("group", { name: "Data source" });
-    expect(block).toHaveTextContent("Source · Several sources");
-    expect(block).toHaveTextContent("https://api.x.gov/v1 · credential-gated");
-    expect(block).toHaveTextContent("data/tracts.geojson (not checked by Curio)");
-  });
-
-  it("labels synthetic data as generated in the node", () => {
-    render(
-      <AgentReviewCard
-        part={withSource({ kind: "synthetic", label: "Synthetic · generated in the node, no external source",
-                           refs: [{ kind: "synthetic" }] })}
-        onApply={jest.fn()}
-      />,
-    );
-    expect(screen.getByRole("group", { name: "Data source" })).toHaveTextContent(
-      "Source · Synthetic data",
-    );
-    expect(screen.getByText(/generated in the node, no external source/)).toBeInTheDocument();
-  });
-
-  it("renders no Source block when the proposal carries none (older/other cards unchanged)", () => {
-    render(<AgentReviewCard part={part()} onApply={jest.fn()} />);
-    expect(screen.queryByRole("group", { name: "Data source" })).toBeNull();
-  });
-
-  it("source text is model-derived data and renders inert", () => {
-    const { container } = render(
-      <AgentReviewCard
-        part={withSource({ kind: "user-path", label: "x",
-                           refs: [{ kind: "user-path", value: "<img src=x onerror=\"window.__srcPwned=1\">" }] })}
-        onApply={jest.fn()}
-      />,
-    );
-    expect(container.querySelector("img")).toBeNull();
-    expect(container.textContent).toContain("<img src=x");
-  });
-});
-
-describe("AgentReviewCard — dev/115 the verification attempt trail", () => {
-  const executed: AgentProposalPart = {
-    ...part(),
-    tool: "node.content.write",
-    summary: "Replace the content of node 'n1'",
-    validation: {
-      verdict: "pass",
-      rounds: 2,
-      evidence: { kind: "executed", outputDataType: "dataframe", durationMs: 4120 },
-      attempts: [
-        { round: 1, verdict: "fail", kind: "execution-error", source: "current content",
-          detail: "node 'n1' failed", stderrTail: "requests.exceptions.HTTPError: 400 Client Error" },
-        { round: 2, verdict: "pass", kind: "executed", source: "generated", outputDataType: "dataframe", durationMs: 4120 },
-      ],
-    },
-  };
-
-  it("lists every round under a collapsed disclosure, errors nested", () => {
-    render(<AgentReviewCard part={executed} onApply={jest.fn()} />);
-    const summary = screen.getByText("Verification · 2 attempts");
-    expect(summary.closest("details")).not.toHaveAttribute("open");
-    const list = screen.getByRole("list", { name: "Verification attempts" });
-    expect(list).toHaveTextContent("Round 1 · fail · execution-error · the node's current code");
-    expect(list).toHaveTextContent("Round 2 · pass ✓");
-    expect(list).toHaveTextContent("output: dataframe · 4.1 s");
-    expect(list).toHaveTextContent("400 Client Error");
-    // PASS still enables Apply: the code on the card is the code that ran.
-    expect(screen.getByRole("button", { name: "Apply" })).not.toBeDisabled();
-  });
-
-  it("a failed round names what the endpoint actually answered (dev/115 field fix)", () => {
-    const withEndpoint = {
-      ...executed,
-      validation: {
-        ...executed.validation,
-        verdict: "pass",
-        rounds: 2,
-        attempts: [
-          { ...executed.validation!.attempts![0],
-            endpointEvidence: 'https://api.census.gov/data/2022/acs/acs5?get=NAME → verified 200: answered an HTML page titled "Missing Key"' },
-          executed.validation!.attempts![1],
-        ],
-      },
-    };
-    render(<AgentReviewCard part={withEndpoint} onApply={jest.fn()} />);
-    const list = screen.getByRole("list", { name: "Verification attempts" });
-    expect(list).toHaveTextContent('Endpoint: https://api.census.gov/data/2022/acs/acs5?get=NAME → verified 200: answered an HTML page titled "Missing Key"');
-    // A passing round never carries one.
-    expect(list.textContent!.match(/Endpoint:/g)).toHaveLength(1);
-  });
-
-  it("a data-loading node.create says what Solve will do after Apply", () => {
-    render(
-      <AgentReviewCard
-        part={{ ...part(), tool: "node.create", pins: { nodeType: "curio.builtin/data-loading", executable: true },
-          source: { kind: "catalog", label: "Data Catalog · Heat", refs: [{ kind: "catalog", datasetId: "d1", title: "Heat" }] } }}
-        onApply={jest.fn()}
-      />,
-    );
-    expect(screen.getByText(/Applying adds this node to the canvas\./)).toHaveTextContent(
-      /Solve runs it in the sandbox and fixes errors before its code is trusted/,
-    );
-  });
-
-  it("no trail renders without attempts (older validation blocks unchanged)", () => {
-    render(<AgentReviewCard part={{ ...executed, validation: { verdict: "pass", rounds: 1 } }} onApply={jest.fn()} />);
-    expect(screen.queryByText(/Verification · /)).toBeNull();
-  });
-});
-
-
-describe("AgentReviewCard — dev/116 connection keys", () => {
-  it("a secret ref reads as a connection key by name — never a value", () => {
-    render(
-      <AgentReviewCard
-        part={{ ...part(), tool: "node.create", pins: { nodeType: "curio.builtin/data-loading" },
-          source: { kind: "mixed", label: "External · … · Connection key · census", refs: [
-            { kind: "external", value: "https://api.census.gov/data", verification: { status: "verified", httpStatus: 200 } },
-            { kind: "secret", value: 'curio_secret("census")', name: "census", host: "api.census.gov", delivery: "query:key" },
-          ] } }}
-        onApply={jest.fn()}
-      />,
-    );
-    const block = screen.getByRole("group", { name: "Data source" });
-    expect(block).toHaveTextContent("Connection key · census · api.census.gov");
-    expect(block).not.toHaveTextContent("query:key");
-  });
-
-  it("a credential-gated external ref shows the saved-key hint", () => {
-    render(
-      <AgentReviewCard
-        part={{ ...part(), tool: "node.create",
-          source: { kind: "external", label: "x", refs: [
-            { kind: "external", value: "https://api.census.gov/data", requirement: "credential-gated",
-              hint: "a connection key 'census' is saved for this host — use api_key = curio_secret(\"census\")",
-              verification: { status: "unreachable", httpStatus: 401 } },
-          ] } }}
-        onApply={jest.fn()}
-      />,
-    );
-    expect(screen.getByRole("group", { name: "Data source" })).toHaveTextContent(/credential-gated \(a connection key 'census' is saved/);
-  });
-
-  it("a failed attempt with a missing-key remedy offers Add key for the host, which asks for the settings form", () => {
-    const seen: unknown[] = [];
-    const off = subscribeApiSettingsRequests((f) => seen.push(f));
-    const failed: AgentProposalPart = {
-      ...part(), tool: "node.content.write",
-      validation: { verdict: "fail", rounds: 2, evidence: { kind: "source-missing", detail: "the content builder declined: needs a key" },
-        attempts: [
-          { round: 1, verdict: "fail", kind: "execution-error", detail: "node failed", stderrTail: "JSONDecodeError" },
-          { round: 2, verdict: "fail", kind: "source-missing", detail: "the content builder declined: The Census API requires an API key",
-            remedy: { kind: "connection-key", host: "api.census.gov", suggestedName: "census" } },
-        ] },
-    };
-    render(<AgentReviewCard part={failed} onApply={jest.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: "Add key for api.census.gov" }));
-    expect(seen).toEqual([{ section: "connection-keys", host: "api.census.gov", suggestedName: "census" }]);
-    off();
-  });
-
-  it("a use-connection-key remedy is a sentence, not a button", () => {
-    const failed: AgentProposalPart = {
-      ...part(), tool: "node.content.write",
-      validation: { verdict: "fail", rounds: 2, attempts: [
-        { round: 2, verdict: "fail", kind: "source-missing", detail: "declined",
-          remedy: { kind: "use-connection-key", host: "api.census.gov", name: "census" } },
-      ] },
-    };
-    render(<AgentReviewCard part={failed} onApply={jest.fn()} />);
-    expect(screen.queryByRole("button", { name: /Add key/ })).toBeNull();
-    expect(screen.getByText(/A connection key "census" is saved for api.census.gov. Solve again/)).toBeInTheDocument();
-  });
-});
-
-
-describe("AgentReviewCard — dev/118 every executable kind", () => {
-  const source = { kind: "external", label: "x", refs: [{ kind: "external", value: "https://a.org", verification: { status: "verified" } }] };
-
-  it("the node.create effect line reads the roster's executable flag (dev/119)", () => {
-    // The ROSTER decides, not the name: a python kind the legacy list never
-    // held is executable when its template says so, and a builtin kind whose
-    // template has no code is not.
-    const { unmount } = render(
-      <AgentReviewCard part={{ ...part(), tool: "node.create", pins: { nodeType: "some.pkg/custom-python@1", executable: true }, source }} onApply={jest.fn()} />,
-    );
-    expect(screen.getByText(/Solve runs it in the sandbox and fixes errors/)).toBeInTheDocument();
-    unmount();
-    const second = render(
-      <AgentReviewCard part={{ ...part(), tool: "node.create", pins: { nodeType: "curio.builtin/spatial-join@1", executable: false }, source }} onApply={jest.fn()} />,
-    );
-    expect(screen.getByText(/has no code to run: Solve writes it, the browser or its own service renders it; it is never called verified/)).toBeInTheDocument();
-    second.unmount();
-    // A part minted before the flag, on a kind the registry has never seen:
-    // the card says nothing rather than guessing.
-    render(
-      <AgentReviewCard part={{ ...part(), tool: "node.create", pins: { nodeType: "ghost.pkg/unknown@1" }, source }} onApply={jest.fn()} />,
-    );
-    expect(screen.queryByText(/Solve runs it in the sandbox/)).toBeNull();
-    expect(screen.queryByText(/has no code to run/)).toBeNull();
-  });
-
-  it("nodeKindExecutable falls back to the registry descriptor for parts minted before the flag", () => {
+describe("nodeKindExecutable (dev/118, dev/119)", () => {
+  it("reads the roster's flag, and falls back to the registry descriptor for a part minted before it", () => {
     expect(nodeKindExecutable({ nodeType: "x", executable: true })).toBe(true);
     expect(nodeKindExecutable({ nodeType: "x", executable: false })).toBe(false);
     expect(nodeKindExecutable({ nodeType: "ghost.pkg/unknown@1" })).toBeNull();
     expect(nodeKindExecutable(undefined)).toBeNull();
-  });
-
-  it("a not-executable attempt and a reused upstream are said in words", () => {
-    render(
-      <AgentReviewCard
-        part={{ ...part(), tool: "node.content.write",
-          validation: { verdict: "pass", rounds: 2, attempts: [
-            { round: 1, verdict: "fail", kind: "execution-error", detail: "boom", reusedNodes: ["load"] },
-            { round: 2, verdict: "pass", kind: "executed", outputDataType: "dataframe", reusedNodes: ["load"], reuseRetried: true },
-          ] } }}
-        onApply={jest.fn()}
-      />,
-    );
-    const list = screen.getByRole("list", { name: "Verification attempts" });
-    expect(list).toHaveTextContent("Round 1 · fail · execution-error");
-    expect(list.textContent!.match(/reused 1 upstream result/g)).toHaveLength(2);
-    expect(list).toHaveTextContent("(re-run whole once)");
-    render(
-      <AgentReviewCard
-        part={{ ...part(), tool: "node.content.write",
-          validation: { verdict: "not-executable", rounds: 1, attempts: [
-            { round: 1, verdict: "not-executable", kind: "not-executable", detail: "vis-vega has no code the sandbox could run" },
-          ] } }}
-        onApply={jest.fn()}
-      />,
-    );
-    expect(screen.getAllByRole("list", { name: "Verification attempts" })[1]).toHaveTextContent(
-      "Round 1 · not executable: no code to run, nothing ran",
-    );
   });
 });

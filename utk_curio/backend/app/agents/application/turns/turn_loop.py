@@ -10,12 +10,13 @@ which is silent unless ``streaming`` is set. The only genuinely different
 stage, the provider round, is two methods (:meth:`_blocking_round`,
 :meth:`_streaming_round`) with one result shape.
 
-Nothing about WHAT a turn does changed: admission before dispatch (dev/40),
-the native-tools fallback to the fenced protocol, the round cap and free
-parameter refusals (dev/105 D2), the plan and tool correction rounds
-(dev/54, #245), delegate rounds with their runtime-minted
-reviews/drafts/candidates/notes (dev/73/90/95/114), settlement and the
-persisted exchange, the title, review_required/content/done.
+What a turn does: admission before dispatch (dev/40), the native-tools
+fallback to the fenced protocol, the round cap and free parameter refusals
+(dev/105 D2), the plan and tool correction rounds (dev/54, #245), delegate
+rounds with what the runtime makes of their success: code written, drafts,
+candidates, notes (dev/73/90/95/114), each change that lands as a ``change``
+event, settlement and the persisted exchange, the title, and
+review_required/content/done.
 """
 
 from __future__ import annotations
@@ -34,6 +35,7 @@ from utk_curio.backend.app.agents.repositories import ledger
 from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
 from utk_curio.backend.app.agents.application import skill_runs as agents_skill_runs
 from utk_curio.backend.app.agents.application import tool_rounds as agents_tool_rounds
+from utk_curio.backend.app.agents.application.proposals import changes as agents_changes
 from utk_curio.backend.app.agents.application.turns import delegates as agents_delegates
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.application.turns import policy as agents_policy
@@ -82,9 +84,8 @@ class AttachmentTurn:
         self.tool_calls: list = []
         self.delegations: list = []
         self.minted: list = []
-        # dev/73: reviews minted at a FOREIGN home (the node's agent) — they
-        # never ride the parent turn's parts, but still pause at review.
-        self.homed_reviews: list = []
+        # The changes that landed, which a blocking run's reply carries.
+        self.landed: list = []
         self.folded: list[str] = []
         self.final_parts: list = []
         self.conversation = _RunConversation(messages, self.loop_ctx)
@@ -132,6 +133,7 @@ class AttachmentTurn:
                 req = token
             if req is None:
                 outcome = yield from self._reply_without_request(result)
+                yield from self._emit_landed()
                 if outcome == CONTINUE:
                     continue
                 if outcome == BREAK:
@@ -147,8 +149,20 @@ class AttachmentTurn:
                 break  # dangling read request at the cap: dropped, text kept
             if req["type"] == "delegateRequest":
                 yield from self._delegate_round(req, result, native_calls)
+                yield from self._emit_landed()
                 continue
             yield from self._tool_round(req, result, native_calls)
+            yield from self._emit_landed()
+
+    def _emit_landed(self):
+        """Each change that landed since the last round, as a ``change``
+        event: a tab no doc binds takes its canvas mutation, and every tab
+        knows its chat holds a new change. A blocking run answers them with
+        its reply (``changes``)."""
+        for landed in agents_changes.take_landed(self.loop_ctx):
+            if not self.streaming:
+                self.landed.append(landed)
+            yield from self._emit("change", landed)
 
     def _native_call_request(self, native_calls: list, result: dict):
         """The round's request is its first native call. Returns the parsed
@@ -453,9 +467,9 @@ class AttachmentTurn:
         self.delegations.append(child)
         delegate_summary = text
         if status == "ok" and gen_node_id:
-            # dev/73: generation success ⇒ the review EXISTS — runtime-minted,
-            # never the model's second step.
-            review_part, review_home, text = agents_delegates._mint_content_review_from_delegate(
+            # dev/73: generation success: the runtime writes the code into
+            # the node, never the model's second step.
+            change_part, change_home, text = agents_delegates._mint_content_review_from_delegate(
                 self.user_key, self.project_id,
                 node_id=gen_node_id,
                 generated_text=text,
@@ -465,15 +479,10 @@ class AttachmentTurn:
                 delegate_coord=resolution.coord,
             )
             delegate_summary = text
-            if review_part is not None:
-                delegate_summary = (
-                    f"reviewed content change proposed for node "
-                    f"{gen_node_id!r} — awaits Apply"
-                )
-                if review_home == loop_ctx.get("attachment_id"):
-                    self.minted.append(review_part)
-                else:
-                    self.homed_reviews.append((review_part, review_home))
+            if change_part is not None:
+                delegate_summary = f"content written into node {gen_node_id!r}"
+                if change_home == loop_ctx.get("attachment_id"):
+                    self.minted.append(change_part)
         elif status == "ok" and req["capability"] in agents_delegates.PACKAGE_AUTHORING_CAPABILITIES:
             # dev/90: authoring success ⇒ the reviewed draft EXISTS —
             # runtime-minted from the child's payload, never the model's
@@ -517,10 +526,7 @@ class AttachmentTurn:
             delegate_summary = text
             if note_parts:
                 self.minted.extend(note_parts)
-                delegate_summary = (
-                    f"{len(note_parts)} reviewed note proposal(s) "
-                    "— await Apply"
-                )
+                delegate_summary = f"{len(note_parts)} note(s) added"
             status = notes_outcome
         return status, text, child, home_att, delegate_summary
 
@@ -619,6 +625,8 @@ class AttachmentTurn:
             "content": run_parts,
             **({"skills": held} if held else {}),
             **({"skillsLoaded": execution["skillsLoaded"]} if execution.get("skillsLoaded") else {}),
+            # What the streamed run sends as change events, for a tab no doc binds.
+            **({"changes": list(self.landed)} if self.landed else {}),
         }
 
     # ── the streaming envelope ──────────────────────────────────────────────
@@ -637,28 +645,16 @@ class AttachmentTurn:
             yield ("error", f"agent run failed: {self.redacted(exc)}")
             return
         payload = self.settle_ok()
-        # A pending mutation pauses at review (dev/03:344 review_required).
+        # An install waits for the person's review (dev/03:344 review_required).
         for part in self.minted:
             if part.get("type") != "proposal":
-                continue  # dev/72: delegation entries ride the content event
+                continue  # dev/72: delegation entries and changes ride the content event
             yield (
                 "review_required",
                 {
                     "proposalId": part["proposalId"],
                     "tool": part["tool"],
                     "summary": part["summary"],
-                },
-            )
-        # dev/73: reviews homed at the node's agent pause visibly too — the
-        # client refreshes and the parent's delegation entry links there.
-        for part, review_home in self.homed_reviews:
-            yield (
-                "review_required",
-                {
-                    "proposalId": part["proposalId"],
-                    "tool": part["tool"],
-                    "summary": part["summary"],
-                    "attachmentId": review_home,
                 },
             )
         if payload["content"]:

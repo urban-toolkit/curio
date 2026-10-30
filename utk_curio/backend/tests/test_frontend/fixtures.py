@@ -53,7 +53,7 @@ _SHARED_SESSION_CLASSES = (
     # stubs its own project per test; truncating between methods would
     # invalidate the token the browser is still holding.
     "TestPaletteShowsWhatWasProvisioned",
-    "TestReviewCardAndApply",
+    "TestThePlansCard",
     "TestSolveProgressAndReconnection",
     # #662: the scripted Dataflow Builder's two-scenario build stubs its
     # account in a class-scoped session, as the reconstruction classes do.

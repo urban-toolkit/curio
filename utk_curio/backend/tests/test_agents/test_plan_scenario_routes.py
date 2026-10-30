@@ -1,7 +1,6 @@
 """A Dataflow Builder plan's widgets and scenarios (#662) through the real
-mint, the review card and both applies: the whole plan at once, and node by
-node, where a scenario is saved with the last of its nodes. The node.create
-lane's widgets too.
+mint and the plan as it lands, whole, with its scenarios checked again after
+it waited for a person. The node.create lane's widgets too.
 
 The plan grammar is in ``test_plan_scenarios.py``. The helpers are the plan
 route tests' own, reached through their module so this one collects none of
@@ -65,7 +64,8 @@ def _reply(plan: dict) -> str:
     return "Here is the plan.\n```curio.v1\n" + json.dumps({"dataflowPlan": plan}) + "\n```"
 
 
-def _mint(client, user, token, project_id, monkeypatch, plan=None, *, replies=None, before_run=None):
+def _land(client, user, token, project_id, monkeypatch, plan=None, *, replies=None, before_run=None):
+    """The plan the turn landed (its change card, with ``canvas``), or None."""
     helper = routes.TestDataflowPlanMint()
     att_id, calls = helper._setup(
         client, user, token, project_id, monkeypatch,
@@ -75,8 +75,10 @@ def _mint(client, user, token, project_id, monkeypatch, plan=None, *, replies=No
         before_run()
     r = helper._run(client, token, project_id, att_id)
     assert r.status_code == 200, r.get_json()
-    proposal = next((p for p in r.get_json()["content"] if p["type"] == "proposal"), None)
-    return att_id, proposal, calls
+    body = r.get_json()
+    assert not [p for p in body["content"] if p["type"] == "proposal"], "a plan waited for review"
+    landed = any(p.get("kind") == "plan" for p in routes._changes(body))
+    return att_id, (routes._landed_plan(body) if landed else None), calls
 
 
 def _spec(user, project_id) -> dict:
@@ -90,23 +92,15 @@ def _write_spec(user, project_id, spec) -> None:
     projects_storage.write_spec(_user_dir_key(user), project_id, spec)
 
 
-def _apply(client, token, project_id, att_id, proposal_id):
-    return routes.TestDataflowPlanApply()._apply(client, token, project_id, att_id, proposal_id)
-
-
-def _apply_node(client, token, project_id, att_id, proposal_id, ref):
-    return routes.TestPerNodePlanApply()._apply_node(client, token, project_id, att_id, proposal_id, ref)
-
-
-class TestTheReview:
+class TestThePlanCard:
     def test_the_card_names_each_scenario_its_nodes_the_copy_and_the_lever(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
         user, token = user_and_token
-        _, proposal, _ = _mint(client, user, token, alice_project, monkeypatch)
-        assert proposal["status"] == "pending"
-        assert proposal["summary"] == "Apply plan · 4 nodes, 4 edges, 2 scenarios"
-        plan = proposal["plan"]
+        _, card, _ = _land(client, user, token, alice_project, monkeypatch)
+        assert card["status"] == "applied"
+        assert card["summary"] == "Plan · 4 nodes, 4 edges, 2 scenarios"
+        plan = card["plan"]
         # The two scenarios take the canvas's first two colors, in turn.
         assert plan["scenarios"] == [
             {"name": "Real heights", "color": "#3567c7", "description": "the heights as mapped",
@@ -125,7 +119,7 @@ class TestTheReview:
         labels = {(e["fromLabel"], e["toLabel"]) for e in plan["edges"]}
         assert ("Buildings", "Shadows (Twice as tall)") in labels
         assert ("Shadows (Real heights)", "Compare") in labels
-        assert "Scenario Twice as tall (a copy of Real heights): Shadows" in proposal["preview"]
+        assert "Scenario Twice as tall (a copy of Real heights): Shadows" in card["preview"]
 
     def test_a_node_another_scenario_holds_is_refused_and_the_model_told_why(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
@@ -141,14 +135,14 @@ class TestTheReview:
         bad["scenarios"] = [{"name": "Mine", "nodes": ["n1", "shadows"]}]
         fixed = _plan(scenarios=None)
         fixed["scenarios"] = [{"name": "Mine", "nodes": ["shadows"]}]
-        _, proposal, calls = _mint(
+        _, card, calls = _land(
             client, user, token, alice_project, monkeypatch,
             replies=[_reply(bad), _reply(fixed)], before_run=held,
         )
         feedback = calls[1][-1]["content"]
         assert "'n1' is already in the scenario 'Baseline': a node belongs to one scenario" in feedback
-        # The corrected plan minted, and takes the color the dataflow's own scenario does not wear.
-        assert proposal["plan"]["scenarios"][0]["color"] == "#e86a3c"
+        # The corrected plan landed, and takes the color the dataflow's own scenario does not wear.
+        assert card["plan"]["scenarios"][0]["color"] == "#e86a3c"
 
     def test_a_scenario_named_like_one_the_dataflow_has_is_refused_and_the_model_told_why(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
@@ -165,13 +159,13 @@ class TestTheReview:
         renamed = _plan()
         renamed["scenarios"][0]["name"] = "Mapped heights"
         renamed["scenarios"][1]["duplicateOf"] = "Mapped heights"
-        _, proposal, calls = _mint(
+        _, card, calls = _land(
             client, user, token, alice_project, monkeypatch,
             replies=[_reply(_plan()), _reply(renamed)], before_run=named,
         )
-        assert len(calls) == 2, "a plan naming a scenario as the dataflow already does was minted"
+        assert len(calls) == 2, "a plan naming a scenario as the dataflow already does landed"
         assert "the dataflow already has a scenario named 'Real heights'" in calls[1][-1]["content"]
-        assert [s["name"] for s in proposal["plan"]["scenarios"]] == ["Mapped heights", "Twice as tall"]
+        assert [s["name"] for s in card["plan"]["scenarios"]] == ["Mapped heights", "Twice as tall"]
 
     def test_widgets_on_a_node_that_holds_no_code_are_refused(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
@@ -180,24 +174,23 @@ class TestTheReview:
         pooled = _plan(scenarios=None)
         pooled["nodes"].append({"ref": "pool", "nodeType": POOL, "title": "Pool", "intent": "hold it",
                                 "widgets": [dict(FACTOR)]})
-        _, _, calls = _mint(
+        _, card, calls = _land(
             client, user, token, alice_project, monkeypatch,
             replies=[_reply(pooled), _reply(_plan(scenarios=None))],
         )
         assert "plan node 'pool' (Data Pool) cannot hold widgets" in calls[1][-1]["content"]
+        assert "pool" not in {n["ref"] for n in card["plan"]["nodes"]}
 
 
-class TestThePlanApply:
-    def test_the_apply_writes_the_widgets_the_lineage_and_both_scenarios(
+class TestThePlanLands:
+    def test_the_plan_writes_the_widgets_the_lineage_and_both_scenarios(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
         from utk_curio.backend.app.projects.scenarios import scenario_problems
 
         user, token = user_and_token
-        att_id, proposal, _ = _mint(client, user, token, alice_project, monkeypatch)
-        r = _apply(client, token, alice_project, att_id, proposal["proposalId"])
-        assert r.status_code == 200, r.get_json()
-        body = r.get_json()
+        _att_id, card, _ = _land(client, user, token, alice_project, monkeypatch)
+        canvas = card["canvas"]
         spec = _spec(user, alice_project)
         nodes = [n for n in spec["dataflow"]["nodes"] if n["id"] != "n1"]
         shadows = next(n for n in nodes if n["goal"].startswith("Shadows") and "copiedFrom" not in n.get("metadata", {}))
@@ -206,12 +199,12 @@ class TestThePlanApply:
         assert copy["metadata"] == {"widgets": [{**FACTOR, "value": 2}], "copiedFrom": [shadows["id"]]}
         assert copy["goal"] == shadows["goal"]
         assert spec["dataflow"]["scenarios"] == [
-            {"id": body["appliedGraph"]["scenarios"][0]["id"], "name": "Real heights", "color": "#3567c7",
+            {"id": canvas["scenarios"][0]["id"], "name": "Real heights", "color": "#3567c7",
              "description": "the heights as mapped", "nodes": [shadows["id"]]},
-            {"id": body["appliedGraph"]["scenarios"][1]["id"], "name": "Twice as tall", "color": "#e86a3c",
+            {"id": canvas["scenarios"][1]["id"], "name": "Twice as tall", "color": "#e86a3c",
              "nodes": [copy["id"]]},
         ]
-        assert body["appliedGraph"]["scenarios"] == spec["dataflow"]["scenarios"]
+        assert canvas["scenarios"] == spec["dataflow"]["scenarios"]
         assert scenario_problems(spec) == []
         # The copy reads the same context, and the comparison reads both on circles of its own.
         buildings = next(n for n in nodes if n["goal"].startswith("Buildings"))
@@ -220,7 +213,7 @@ class TestThePlanApply:
         assert (buildings["id"], copy["id"]) in into
         assert {into[(shadows["id"], compare["id"])], into[(copy["id"], compare["id"])]} == {"in", "in_1"}
         # The bridge carries the widgets and the lineage to the live canvas.
-        created = {n["id"]: n for n in body["appliedGraph"]["nodes"]}
+        created = {n["id"]: n for n in canvas["nodes"]}
         assert created[copy["id"]]["metadata"]["copiedFrom"] == [shadows["id"]]
         # And the agent reads the scenarios back with their parts.
         from utk_curio.backend.app.agents.application import tools
@@ -232,76 +225,84 @@ class TestThePlanApply:
         read = {s["name"]: s for s in json.loads(text)["scenarios"]}
         assert read["Twice as tall"]["context"] == [buildings["id"]]
         assert read["Twice as tall"]["levers"] == read["Twice as tall"]["outcomes"] == [copy["id"]]
+        # The planner's ledger says which scenarios are saved, across reloads.
+        cards = client.get(f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)).get_json()
+        planner = next(c for c in cards["attachments"] if c["attachmentId"] == _att_id)
+        assert planner["planProposal"]["scenarioStates"] == {"0": "applied", "1": "applied"}
 
-    def test_a_scenario_whose_node_was_taken_since_the_mint_is_not_saved(
+    def _wait_for_ana_in_n2(self, user, project_id, monkeypatch, scenario):
+        """The canvas gets a second node, n2, the plan removes; Ana holds it and,
+        while the plan waits for her, saves *scenario*, then leaves."""
+        import time as real_time
+        from types import SimpleNamespace
+
+        from utk_curio.backend.app.agents.application.proposals import changes
+        from utk_curio.backend.app.collaboration import dataflow_docs
+        from utk_curio.backend.app.collaboration import room_state
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        held = {"by": "Ana"}
+        real_snapshot = room_state.snapshot
+
+        def _snapshot(room):
+            out = dict(real_snapshot(room) or {})
+            if held["by"]:
+                out["locks"] = {"n2": {"user_id": "someone-else", "name": held["by"]}}
+            return out
+
+        def _sleep(seconds):
+            if held["by"]:
+                spec = dataflow_docs.live(_user_dir_key(user), project_id)
+                spec["dataflow"]["scenarios"] = [dict(scenario)]
+                dataflow_docs.write(_user_dir_key(user), project_id, spec, dataflow_docs.person("someone-else", "edit"))
+                held["by"] = None
+
+        def second_node():
+            spec = _spec(user, project_id)
+            spec["dataflow"]["nodes"].append({"id": "n2", "content": "print(2)", "x": 10, "y": 400})
+            _write_spec(user, project_id, spec)
+
+        monkeypatch.setattr(room_state, "snapshot", _snapshot)
+        monkeypatch.setattr(changes, "time", SimpleNamespace(monotonic=real_time.monotonic, sleep=_sleep))
+        return held, second_node
+
+    def test_a_scenario_whose_node_was_taken_while_the_plan_waited_refuses_it(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
-        """The shape digest covers ids only: a scenario edit between mint and
-        apply is caught by the apply's own check, and the scenario is refused,
-        never written over the user's."""
+        """A scenario a person saved while the plan waited for them, holding a
+        node the plan's scenario names: the plan lands nothing, never a
+        scenario written over the person's."""
         user, token = user_and_token
-        mine = _plan(scenarios=None)
+        mine = _plan(scenarios=None, removeNodes=["n2"])
         mine["scenarios"] = [{"name": "Mine", "nodes": ["n1", "shadows"]}]
-        att_id, proposal, _ = _mint(client, user, token, alice_project, monkeypatch, mine)
+        held, second_node = self._wait_for_ana_in_n2(
+            user, alice_project, monkeypatch, {"id": "s0", "name": "Theirs", "color": "#3567c7", "nodes": ["n1"]},
+        )
+        _, card, calls = _land(client, user, token, alice_project, monkeypatch,
+                               replies=[_reply(mine), "Ana saved one."], before_run=second_node)
+        assert held["by"] is None, "the plan never waited for Ana"
+        assert card is None
+        assert "the scenario Mine the plan saves" in calls[-1][-1]["content"]
         spec = _spec(user, alice_project)
-        spec["dataflow"]["scenarios"] = [{"id": "s0", "name": "Theirs", "color": "#3567c7", "nodes": ["n1"]}]
-        _write_spec(user, alice_project, spec)
-        body = _apply(client, token, alice_project, att_id, proposal["proposalId"]).get_json()
-        assert "scenarios" not in body["appliedGraph"]
-        assert [s["name"] for s in _spec(user, alice_project)["dataflow"]["scenarios"]] == ["Theirs"]
+        assert [s["name"] for s in spec["dataflow"]["scenarios"]] == ["Theirs"]
+        assert {n["id"] for n in spec["dataflow"]["nodes"]} == {"n1", "n2"}
 
-    def test_a_scenario_whose_name_was_taken_since_the_mint_is_not_saved(
+    def test_a_scenario_whose_name_was_taken_while_the_plan_waited_refuses_it(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
-        """The user named a scenario as the plan does between the mint and the
-        apply: the apply checks names again, as it checks nodes, and the plan's
-        scenario is refused, never saved beside the user's under one name."""
+        """The person named a scenario as the plan does while it waited for
+        them: the plan's is never saved beside theirs under one name."""
         user, token = user_and_token
-        mine = _plan(scenarios=None)
+        mine = _plan(scenarios=None, removeNodes=["n2"])
         mine["scenarios"] = [{"name": "Mine", "nodes": ["shadows"]}]
-        att_id, proposal, _ = _mint(client, user, token, alice_project, monkeypatch, mine)
-        spec = _spec(user, alice_project)
-        spec["dataflow"]["scenarios"] = [{"id": "s0", "name": "Mine", "color": "#3567c7", "nodes": ["n1"]}]
-        _write_spec(user, alice_project, spec)
-        body = _apply(client, token, alice_project, att_id, proposal["proposalId"]).get_json()
-        assert "scenarios" not in body["appliedGraph"]
+        held, second_node = self._wait_for_ana_in_n2(
+            user, alice_project, monkeypatch, {"id": "s0", "name": "Mine", "color": "#3567c7", "nodes": ["n1"]},
+        )
+        _, card, calls = _land(client, user, token, alice_project, monkeypatch,
+                               replies=[_reply(mine), "Ana saved one."], before_run=second_node)
+        assert held["by"] is None, "the plan never waited for Ana"
+        assert card is None
         assert [s["id"] for s in _spec(user, alice_project)["dataflow"]["scenarios"]] == ["s0"]
-
-
-class TestTheNodeByNodeApply:
-    def test_a_copy_waits_for_its_original_and_each_scenario_is_saved_with_its_last_node(
-        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
-    ):
-        user, token = user_and_token
-        att_id, proposal, _ = _mint(client, user, token, alice_project, monkeypatch)
-        pid = proposal["proposalId"]
-        early = _apply_node(client, token, alice_project, att_id, pid, "shadows_tall")
-        assert early.status_code == 409
-        assert "create 'Shadows' first" in early.get_json()["error"]
-
-        assert "createdScenarios" not in _apply_node(client, token, alice_project, att_id, pid, "buildings").get_json()
-        first = _apply_node(client, token, alice_project, att_id, pid, "shadows").get_json()
-        assert [s["name"] for s in first["createdScenarios"]] == ["Real heights"]
-        assert first["scenarioStates"] == {"0": "applied"}
-        original = first["createdNode"]
-        assert original["metadata"] == {"widgets": [FACTOR]}
-
-        second = _apply_node(client, token, alice_project, att_id, pid, "shadows_tall").get_json()
-        assert second["createdNode"]["metadata"] == {"widgets": [{**FACTOR, "value": 2}], "copiedFrom": [original["id"]]}
-        assert [s["name"] for s in second["createdScenarios"]] == ["Twice as tall"]
-        assert second["status"] == "pending"  # compare and its edges are still to come
-        spec = _spec(user, alice_project)
-        assert [s["nodes"] for s in spec["dataflow"]["scenarios"]] == [[original["id"]], [second["createdNode"]["id"]]]
-
-        last = _apply_node(client, token, alice_project, att_id, pid, "compare").get_json()
-        assert last["status"] == "applied"  # every node, edge and scenario of the plan exists
-        # The review mirror carries which scenarios are saved, across reloads.
-        from utk_curio.backend.app.agents.application import attachments
-        from utk_curio.backend.app.agents.application.proposals import store
-
-        stored = attachments.get_active_proposal(_spec(user, alice_project), att_id)
-        assert stored["proposalId"] == pid
-        assert store._proposal_summary(stored)["scenarioStates"] == {"0": "applied", "1": "applied"}
 
 
 class TestNodeCreateWidgets:
@@ -314,14 +315,11 @@ class TestNodeCreateWidgets:
             content="return input_0 * [!! factor !!]", widgets=[{"name": "factor", "type": "number", "default": 2}],
         )
         att_id, _ = helper._setup(client, user=user, token=token, project_id=alice_project, monkeypatch=monkeypatch,
-                                  replies=[reply, "Proposed: review it above."])
-        proposal = helper._proposal_from_run(helper._run(client, token, alice_project, att_id))
-        assert proposal["summary"].endswith("· widgets factor")
-        resp = client.post(
-            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply",
-            headers=_auth(token),
-        )
-        created = resp.get_json()["createdNode"]
+                                  replies=[reply, "Added it."])
+        body = helper._run(client, token, alice_project, att_id).get_json()
+        [card] = routes._changes(body)
+        assert card["summary"].endswith("· widgets factor")
+        created = helper._created(body)
         assert created["metadata"] == {"widgets": [{"name": "factor", "type": "number", "default": 2}]}
         stored = next(n for n in helper._spec_nodes(user, alice_project) if n["id"] == created["id"])
         assert stored["metadata"]["widgets"] == [{"name": "factor", "type": "number", "default": 2}]
@@ -335,5 +333,5 @@ class TestNodeCreateWidgets:
         att_id, calls = helper._setup(client, user=user, token=token, project_id=alice_project,
                                       monkeypatch=monkeypatch, replies=[reply, "done"])
         r = helper._run(client, token, alice_project, att_id)
-        assert all(p["type"] != "proposal" for p in r.get_json()["content"])
+        assert all(p["type"] not in ("proposal", "change") for p in r.get_json()["content"])
         assert "params.widgets[0] ('f'): A slider needs a minimum and a maximum." in calls[1][-1]["content"]

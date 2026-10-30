@@ -1,15 +1,15 @@
 import React from "react";
 
-import type { AgentProposalPart } from "../../../../services/agents";
+import type { AgentChangePart } from "../../../../services/agents";
 import { AddKeyAction } from "../../../connectionKeys/AddKeyAction";
 import styles from "../AgentReviewCard.module.css";
 
-type Validation = NonNullable<AgentProposalPart["validation"]>;
+type Validation = NonNullable<AgentChangePart["validation"]>;
 
-/** dev/67-7: the validation verdict — real runtime evidence, rendered inert.
- * PASS or FAIL, Apply stays available (labeled honestly). dev/115: the
- * engineering loop's trail — every round the runtime ran (or refused before
- * running), how it failed, and that a fix followed. Collapsed by default. */
+/** dev/67-7: the validation verdict of code that landed: real runtime
+ * evidence, rendered inert. dev/115: the engineering loop's trail: every
+ * round the runtime ran (or refused before running), how it failed, and that
+ * a fix followed. Collapsed by default. */
 export const ValidationBlock: React.FC<{ validation: Validation }> = ({ validation }) => (
   <div
     className={`${styles.validation} ${validation.verdict === "pass" ? styles.validationPass : styles.validationFail}`}

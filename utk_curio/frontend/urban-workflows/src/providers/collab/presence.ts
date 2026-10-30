@@ -3,7 +3,8 @@
  * nothing into the doc and is gone when the tab leaves:
  *
  * - `editing`: the node whose editor has the focus, which asks before anyone
- *   removes it;
+ *   removes it; an agent at work's, the node it writes, or the nodes one of
+ *   its actions writes at once, as a list (`editingOf`);
  * - `selection`: the cursor in that editor (y-monaco's), drawn in the others'
  *   editors in this tab's color;
  * - `drag`: the places of the nodes this tab is dragging, which the others
@@ -47,7 +48,8 @@ export interface CanvasPointer {
 
 export interface PresenceState {
     user?: PresenceUser;
-    editing?: string | null;
+    /** A tab's one node, or the nodes an agent writes at once. */
+    editing?: string | string[] | null;
     drag?: DragState | null;
     removed?: { nodes: string[]; at: number } | null;
     selection?: unknown;
@@ -88,10 +90,20 @@ export function nameOf(state: PresenceState | null | undefined): string {
     return numberedName((user?.name || user?.username || "Someone").toString(), user);
 }
 
-/** The names of everyone else editing *nodeId*'s code. */
+/** The nodes *state*'s participant is editing: a tab's one node, or each of
+ *  the nodes an agent's action writes at once, which its `editing` lists
+ *  (`agent_peers.py`). */
+export function editingOf(state: { editing?: unknown } | null | undefined): string[] {
+    const editing = state?.editing;
+    return (Array.isArray(editing) ? editing : [editing])
+        .filter((nodeId): nodeId is string => typeof nodeId === "string" && nodeId !== "");
+}
+
+/** The names of everyone else editing *nodeId*'s code, an agent writing it
+ *  among them. */
 export function editorsOf(awareness: Awareness | null | undefined, nodeId: string): string[] {
     return othersOf(awareness)
-        .filter(([, state]) => state.editing === nodeId)
+        .filter(([, state]) => editingOf(state).includes(nodeId))
         .map(([, state]) => nameOf(state));
 }
 

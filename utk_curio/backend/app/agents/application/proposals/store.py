@@ -43,11 +43,11 @@ def _proposal_summary(proposal: object) -> dict | None:
         "summary": proposal.get("summary"),
         "status": proposal.get("status"),
     }
-    # dev/67-5: the per-node review state survives reloads through the mirror.
+    # A landed plan: each ref the plan placed, with the node it is, which its
+    # rows' Solve and Run read.
     if proposal.get("tool") == "dataflow.plan.write":
-        summary["editedGoals"] = dict(proposal.get("editedGoals") or {})
-        summary["appliedRefs"] = list(proposal.get("appliedRefs") or [])
-        summary["edgeStates"] = dict(proposal.get("edgeStates") or {})
+        summary["appliedRefs"] = list(proposal.get("appliedNodeIds") or {})
+        summary["nodeIds"] = dict(proposal.get("appliedNodeIds") or {})
         # #662: which of the plan's scenarios are saved, when it has any.
         if proposal.get("scenarioStates"):
             summary["scenarioStates"] = dict(proposal["scenarioStates"])
@@ -112,41 +112,14 @@ def _log_applied_turn(
     )
 
 
-def _pending_plan_proposal(spec: dict, attachment_id: str, proposal_id: str) -> dict:
-    """The dev/67-5 per-node review preamble: the attachment's active
-    dataflow-plan proposal, pending, matching *proposal_id* — or the honest
-    404/409."""
-    proposal = attachments.get_active_proposal(spec, attachment_id)
-    if proposal is None or proposal.get("proposalId") != proposal_id:
-        # dev/67-9: the plan may be PARKED while a content review occupies
-        # the active slot — its stages stay addressable.
-        record = attachments.get_attachment(spec, attachment_id)
-        parked = (record or {}).get("planProposal")
-        if isinstance(parked, dict) and parked.get("proposalId") == proposal_id:
-            proposal = parked
-        else:
-            raise AgentServiceError(f"proposal {proposal_id!r} not found", 404)
-    status = proposal.get("status")
-    if status != "pending":
-        raise AgentServiceError(
-            f"this proposal is {status!r} and can no longer be worked on", 409
-        )
-    if proposal.get("tool") != "dataflow.plan.write":
-        raise AgentServiceError("this proposal is not a dataflow plan", 409)
-    return proposal
-
-
 def _plan_proposal_any(spec: dict, attachment_id: str, proposal_id: str):
-    """The plan proposal in ANY status (active or parked) — dev/71: the
-    structure may complete (status applied) while content work continues;
-    the driver and per-row lifecycle still need the plan."""
-    proposal = attachments.get_active_proposal(spec, attachment_id)
-    if isinstance(proposal, dict) and proposal.get("proposalId") == proposal_id:
-        return proposal
+    """The plan the attachment's agent landed, *proposal_id* (dev/71: its
+    nodes' content work goes on after it lands): what Build & validate and
+    the rows' Solve and Run work on. None when it holds another, or none."""
     record = attachments.get_attachment(spec, attachment_id)
-    parked = (record or {}).get("planProposal")
-    if isinstance(parked, dict) and parked.get("proposalId") == proposal_id:
-        return parked
+    plan = (record or {}).get("planProposal")
+    if isinstance(plan, dict) and plan.get("proposalId") == proposal_id:
+        return plan
     return None
 
 
@@ -158,19 +131,16 @@ def _store_proposal(
     proposal: dict,
     part: dict,
 ) -> None:
-    """Shared proposal persistence (dev/41 semantics + dev/90 A16): a mint
-    from a LATER reply supersedes every still-pending proposal in both places
-    each lives (mirror/queue + transcript part) — but siblings minted in the
-    SAME reply form one jointly-pending sequence: the first keeps the active
-    slot, the rest queue behind it. Without the queue, a reply proposing a
-    question note then an answer note silently killed the question — its
-    card kept a live Apply button pointing at a dead proposal (the same-turn
-    part was not yet persisted, so the supersede status never landed)."""
+    """Shared persistence of an install's proposal (dev/41 semantics + dev/90
+    A16): a mint from a LATER reply supersedes every still-pending proposal
+    in both places each lives (mirror/queue + transcript part), but siblings
+    minted in the SAME reply form one jointly-pending sequence: the first
+    keeps the active slot, the rest queue behind it, so each card's Apply
+    points at a live proposal."""
     attachment_id = loop_ctx["attachment_id"]
     session_id = loop_ctx["session_id"]
     # The mint sequence identity: one id per run loop, created lazily at the
-    # first mint — solve/simulate children each carry their OWN loop_ctx, so
-    # their one-at-a-time supersession (dev/67-9) is untouched.
+    # first mint.
     proposal["mintSequenceId"] = loop_ctx.setdefault("_mint_sequence_id", uuid.uuid4().hex)
     record = attachments.get_attachment(spec, attachment_id)
     actor = dataflow_docs.by_agent((record or {}).get("coord"), user_key, "proposal")
@@ -178,16 +148,6 @@ def _store_proposal(
     previous = attachments.get_active_proposal(spec, attachment_id)
     if previous is not None and previous.get("status") == "pending":
         if (
-            previous.get("tool") == "dataflow.plan.write"
-            and proposal.get("tool") != "dataflow.plan.write"
-            and record is not None
-        ):
-            # dev/67-9: the plan PARKS while per-node content reviews occupy
-            # the active slot — its per-node/edge stages stay addressable
-            # (_pending_plan_proposal falls back to the parked slot); it is
-            # never silently superseded by its own sequence.
-            record["planProposal"] = previous
-        elif (
             record is not None
             and previous.get("mintSequenceId") == proposal["mintSequenceId"]
         ):
@@ -211,7 +171,5 @@ def _store_proposal(
                     )
             if record is not None:
                 record.pop("queuedProposals", None)
-    if proposal.get("tool") == "dataflow.plan.write" and record is not None:
-        record.pop("planProposal", None)  # a new plan replaces any parked one
     attachments.set_active_proposal(spec, attachment_id, proposal)
     dataflow_docs.write(user_key, project_id, spec, actor)

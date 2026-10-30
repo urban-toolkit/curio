@@ -29,7 +29,8 @@
  * everyone) syncs its saved dataflows' docs as any signed-in tab does.
  *
  * The room's events, the join's and each one after it, are its Activity
- * (``activity``), which the canvas's dock lists.
+ * (``activity``), which the canvas's dock lists: who joined and left, whose
+ * role changed, and each agent at work's join and leave.
  */
 
 import React, {
@@ -144,6 +145,10 @@ function activityWho(user: Partial<CollabUser>): Record<string, unknown> {
     if (typeof user.guest_number === "number") who.guest_number = user.guest_number;
     return who;
 }
+
+/** An agent at work's join and leave in the room, as the server sends and
+ *  records them (``agent_peers.JOINED_EVENT`` and ``LEFT_EVENT``). */
+const AGENT_EVENTS = ["agent_joined", "agent_left"] as const;
 
 /** The room's events a change to the editors makes: one for each account
  *  whose role changed, as the server records it (``roles.py``). */
@@ -389,6 +394,16 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
                     recordActivity("user_left", activityWho(payload));
                 }
             });
+            // An agent at work joins and leaves as the server runs it
+            // (``agent_peers.py``), in no list of the room's people: its join
+            // names it and who asked it, its leave also what it did (``did``).
+            // Each is kept as the server keeps it, so it reads the same as it
+            // comes and from a later join's snapshot.
+            for (const kind of AGENT_EVENTS) {
+                socket.on(kind, (payload: Record<string, unknown>) => {
+                    if (payload && typeof payload === "object" && !Array.isArray(payload)) recordActivity(kind, payload);
+                });
+            }
             // The owner invited or removed an editor: everyone's roles, this
             // tab's among them.
             socket.on("roles_changed", (payload: { users: CollabUser[] }) => {
