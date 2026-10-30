@@ -1,0 +1,65 @@
+{
+  "skill_name": "vega-lite-starter",
+  "agent": "agent.curio.node-builder@1",
+  "dataflow": "evals/files/scores-counts-roofs.json",
+  "evals": [
+    {
+      "id": 1,
+      "target": {"kind": "node", "node": "scores-chart"},
+      "prompt": "Chart what's coming into this node. Neighborhood scores hands it side (object, four values over 12 rows), accessibility (float64) and coverage (float64).",
+      "expected_output": "A content change of Scores chart holding the starter bar chart: side on x as nominal, accessibility on y as quantitative with an explicit \"aggregate\": \"mean\", and no data field.",
+      "assertions": [
+        "The answer makes a content change of node scores-chart (node.content.write) holding a Vega-Lite spec.",
+        "The spec draws \"mark\": \"bar\" with side on x as nominal.",
+        "The spec puts accessibility on y as quantitative with an explicit \"aggregate\": \"mean\".",
+        "The spec has no \"data\" field."
+      ]
+    },
+    {
+      "id": 2,
+      "target": {"kind": "node", "node": "counts-chart"},
+      "prompt": "Chart this node's input. Hourly counts hands it hour (datetime64[ns]), pedestrians (int64) and cyclists (int64), one row per hour.",
+      "expected_output": "A content change of Counts chart holding the starter line chart: hour on x as temporal and pedestrians, the first quantitative column, on y as quantitative, with no data field.",
+      "assertions": [
+        "The answer makes a content change of node counts-chart (node.content.write) holding a Vega-Lite spec.",
+        "The spec draws \"mark\": \"line\" with hour on x as temporal.",
+        "The spec puts pedestrians, the first quantitative column, on y as quantitative, and does not fold cyclists in beside it.",
+        "The spec has no \"data\" field."
+      ]
+    },
+    {
+      "id": 3,
+      "target": {"kind": "node", "node": "roofs-chart"},
+      "prompt": "Chart what comes into this node. Roof sizes hands it roof_id (object, a different id on each of its 12 rows) and VEGETATED_SQFT (float64).",
+      "expected_output": "A content change of Roofs chart holding the starter histogram: roof_id left out as an identifier, VEGETATED_SQFT binned on x and \"aggregate\": \"count\" on y, as a bar mark.",
+      "assertions": [
+        "The answer makes a content change of node roofs-chart (node.content.write) holding a Vega-Lite spec.",
+        "roof_id is on no axis or channel of the spec: the chart draws no bar per roof.",
+        "The spec draws \"mark\": \"bar\" with VEGETATED_SQFT binned on x (\"bin\": true or a bin object).",
+        "The spec puts \"aggregate\": \"count\" on y."
+      ]
+    }
+  ],
+  "trigger_queries": [
+    {"query": "The Scores chart is still empty. What chart would Curio start it with, from the scores' columns? Explain before writing it.", "should_trigger": true},
+    {"query": "What chart fits what the Hourly counts node returns best, by Curio's default? Just tell me.", "should_trigger": true},
+    {"query": "What would the default chart of the roof sizes be, and why that one?", "should_trigger": true},
+    {"query": "what would curio draw by default for the counts? dont write it yet", "should_trigger": true},
+    {"query": "What would be a sensible first chart of the roof sizes, given their columns? Describe it, I don't mind what it is.", "should_trigger": true},
+    {"query": "My bar charts keep drawing one bar per row. Why, and what should the Scores chart's spec do instead?", "should_trigger": true},
+    {"query": "Which Vega-Lite chart would Curio start the neighborhood scores with, before I decide on a design?", "should_trigger": true},
+    {"query": "Which columns of the roof sizes are worth charting, and which should a chart leave out?", "should_trigger": true},
+    {"query": "For the empty Counts chart node, what would a reasonable default be, a line or bars, and on which axes?", "should_trigger": true},
+    {"query": "How would each of the three chart nodes start on its own? Begin with the Scores chart, and don't change them yet.", "should_trigger": true},
+    {"query": "Put the neighborhood scores on an Autark map.", "should_trigger": false},
+    {"query": "Link the Scores chart to the Counts chart so a click in one highlights rows in the other.", "should_trigger": false},
+    {"query": "Let me pick the Scores chart's bar color from a dropdown.", "should_trigger": false},
+    {"query": "Pin the Counts chart to the dashboard.", "should_trigger": false},
+    {"query": "Make the Hourly counts node also return each hour's share of cyclists among all trips.", "should_trigger": false},
+    {"query": "Write a node that saves the roof sizes to a CSV I can download.", "should_trigger": false},
+    {"query": "What did the Scores chart look like before my last edit?", "should_trigger": false},
+    {"query": "Compare the counts with and without the night hours as two scenarios.", "should_trigger": false},
+    {"query": "Make the Scores chart a scatter of coverage on x against accessibility on y, colored by side, with a tooltip of all three columns.", "should_trigger": false},
+    {"query": "Add a node whose code keeps only the neighborhoods I click in the Scores chart.", "should_trigger": false}
+  ]
+}
