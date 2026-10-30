@@ -147,6 +147,7 @@ export const NodeContainer = ({
         markNodeStale,
         requestAutoRun,
         defaultSaveOutputDataset,
+        recordOutputsSoon,
     } = useFlowContext();
     // A notebook cell is never minimized or resized: its width comes from the
     // column and its height from its content, and the node's own size stays its
@@ -414,6 +415,9 @@ export const NodeContainer = ({
         saveOutput: saveOutputDataset,
         onSaveOutputChange: (next: boolean) => {
             updateDataNode(nodeId, { ...data, saveOutputDataset: next });
+            // The output the node holds goes to the Data Catalog once its Save
+            // is on, and its recorded output goes once it is off.
+            recordOutputsSoon?.();
         },
         onPlay: () => {
             playNodesUpTo(data.nodeId);

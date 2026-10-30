@@ -14,13 +14,13 @@ from ..utils import (
     assert_vega_canvas_rendered,
     frame_node,
     hold_node_execution,
-    is_dataflow_save,
     node_locator,
     play_node,
     release_node_execution,
     run_all_and_wait,
     run_all_button,
     run_node_and_wait,
+    save_answer,
     settle_header_after_save,
     wait_for_held_node_execution,
     wait_for_node_done,
@@ -42,9 +42,15 @@ from .provenance import PROVENANCE_EXAMPLE
 AUTARK_EXAMPLE = "07-autark-gpu-shader.json"
 
 
-def _is_project_save(response) -> bool:
-    """The answered write of a dataflow save, whichever control started it."""
-    return is_dataflow_save(response)
+def _is_outputs_record(response) -> bool:
+    """The answered record of the outputs a canvas holds, which a pin change
+    starts by itself (``POST /api/projects/<id>/outputs``)."""
+    return (
+        "/api/projects/" in response.url
+        and response.url.rstrip("/").endswith("/outputs")
+        and response.request.method == "POST"
+        and response.ok
+    )
 
 
 def save_from_the_status_icon(ctx: Ctx) -> None:
@@ -55,18 +61,19 @@ def save_from_the_status_icon(ctx: Ctx) -> None:
     save gets: the save icon, the Data Catalog count and the category chips.
     """
     page = ctx.page
-    with page.expect_response(_is_project_save, timeout=30000) as saved:
-        ctx.click(page.locator("[data-curio-save-state]").first, force=True)
-    settle_header_after_save(page, saved.value.json())
+    saved = save_answer(
+        page, lambda: ctx.click(page.locator("[data-curio-save-state]").first, force=True),
+    )
+    settle_header_after_save(page, saved)
 
 
 def toggle_dashboard_pin(ctx: Ctx, button) -> None:
-    """Click Pin or Unpin, and wait for the save the change starts by itself.
+    """Click Pin or Unpin, and wait for the record the change starts by itself.
 
-    A pin change saves the dataflow 400 ms after the click
+    A pin change records the outputs its tiles read 400 ms after the click
     (``useDashboardPinSave``), so a save clicked sooner would race it.
     """
-    with ctx.page.expect_response(_is_project_save, timeout=30000):
+    with ctx.page.expect_response(_is_outputs_record, timeout=30000):
         ctx.click(button)
 
 

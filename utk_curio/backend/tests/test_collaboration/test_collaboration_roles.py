@@ -196,6 +196,44 @@ def test_without_deploy_the_shared_guest_edits_its_own_dataflows(collab_app, mon
     assert ack["ok"] is True and ack.get("role") == "owner", ack
 
 
+def test_without_deploy_the_shared_guests_tab_syncs_its_dataflows_doc_and_what_it_types_is_kept(
+    collab_app, monkeypatch,
+):
+    """A Curio with no sign-in binds its canvas as a signed-in tab does, since no
+    tab saves a dataflow: the shared guest's tab syncs its own dataflow's doc,
+    and the server applies what it types."""
+    from pycrdt import Map
+
+    from utk_curio.backend import config
+    from utk_curio.backend.app.collaboration import dataflow_docs
+    from utk_curio.backend.app.projects import storage
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    from ._ydoc_client import synced_tab
+
+    monkeypatch.setattr(config, "CURIO_NO_AUTH", True)
+    application, _socketio, _ = collab_app
+    with application.app_context():
+        guest, session = make_user(config.CURIO_SHARED_GUEST_USERNAME, is_guest=True)
+        token = session.token
+        project_id = make_project(guest)
+        ukey = _user_dir_key(guest)
+        storage.write_spec(ukey, project_id, {"dataflow": {"name": "Local", "nodes": [
+            {"id": "loader", "type": "curio.builtin/computation-analysis", "x": 0, "y": 0, "content": "x = 1\n"},
+        ], "edges": []}})
+    tab = synced_tab(application, token, project_id)
+
+    def change(doc):
+        doc.get("nodes", type=Map)["loader"]["content"].insert(0, "# local\n")
+
+    acks = tab.edit(change)
+
+    assert acks and all(ack.get("ok") for ack in acks), acks
+    with application.app_context():
+        live = dataflow_docs.read(ukey, project_id)
+    assert live["dataflow"]["nodes"][0]["content"] == "# local\nx = 1\n"
+
+
 def test_a_removed_editor_watches_at_once_and_on_their_next_join(collab_app):
     from utk_curio.backend.app.projects import access
     from utk_curio.backend.app.users.models import User

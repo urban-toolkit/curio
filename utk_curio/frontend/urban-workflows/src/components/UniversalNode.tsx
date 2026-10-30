@@ -36,6 +36,8 @@ import { NodeAgentBadges } from './agents/attach/NodeAgentBadges';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { useCollab } from '../providers/CollaborationProvider';
 import { agentHolding, agentWithAsker, isOwnParticipant } from '../providers/collab/participants';
+import { initialsOf } from '../providers/collab/people';
+import { guestNumberOf, numberedName } from '../providers/collab/presence';
 import { agentCategoryIcon, agentCategoryKey } from './menus/nodes/agentsPalette/agentCategoryStyle';
 import badgeStyles from './agents/attach/AgentAvatarBadge.module.css';
 import ErrorBoundary from "./ErrorBoundary";
@@ -229,6 +231,12 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   // person's holds their initials.
   const lockingAgent = lockedByOther ? agentHolding(lockInfo) : null;
   const lockingTint = lockingAgent ? agentCategoryKey(lockingAgent.category) : null;
+  // A tab of the shared guest account is named by its number, with the
+  // initials its chip in the dock has: "Shared Guest 2", S2.
+  const lockingName = numberedName(lockInfo?.name || lockInfo?.username || "Someone", lockInfo);
+  const lockingLetters = guestNumberOf(lockInfo) !== null
+    ? initialsOf(lockingName)
+    : (lockInfo?.username || "?").slice(0, 2).toUpperCase();
 
   useEffect(() => {
     const current = data.triggerExec ?? 0;
@@ -486,7 +494,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
         // It takes the pointer, so its tooltip shows on hover.
         <div
           className={lockingTint ? `collab-lock-chip ${badgeStyles[`tint_${lockingTint}` as keyof typeof badgeStyles]}` : "collab-lock-chip"}
-          data-tooltip={`Editing: ${lockingAgent ? agentWithAsker(lockingAgent) : lockInfo?.name || lockInfo?.username}`}
+          data-tooltip={`Editing: ${lockingAgent ? agentWithAsker(lockingAgent) : lockingName}`}
           data-lock-agent={lockingTint ?? undefined}
           style={{
             position: "absolute",
@@ -510,7 +518,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
           {lockingAgent ? (
             <FontAwesomeIcon icon={agentCategoryIcon(lockingAgent.category)} aria-hidden="true" />
           ) : (
-            (lockInfo?.username || "?").slice(0, 2).toUpperCase()
+            lockingLetters
           )}
         </div>
       )}

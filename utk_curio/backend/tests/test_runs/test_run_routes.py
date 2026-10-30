@@ -131,9 +131,9 @@ def _events(client, token, run_id):
 class TestARunGoesOnWithNoBrowser:
     def test_it_runs_every_node_and_records_each_step(self, client, user_and_token, sandbox):
         user, token = user_and_token
-        project_id, revision = _create(client, token, [_node("a"), _node("b")], [_edge("a", "b")])
+        project_id, _revision = _create(client, token, [_node("a"), _node("b")], [_edge("a", "b")])
 
-        started = _start(client, token, project_id, specRevision=revision)
+        started = _start(client, token, project_id)
         assert started.status_code == 202, started.get_data(as_text=True)
         run_id = started.get_json()["id"]
         assert [s["nodeId"] for s in started.get_json()["steps"]] == ["a", "b"]
@@ -253,11 +253,26 @@ class TestRefusals:
         for run_id in runs:
             _wait(run_id)
 
-    def test_a_revision_that_is_not_the_saved_one_is_refused(self, client, user_and_token, sandbox):
+    def test_a_run_takes_the_dataflow_as_it_is_whatever_revision_a_tab_last_saw(
+        self, client, user_and_token, sandbox,
+    ):
+        """No tab saves before a run: the run starts from the dataflow as its doc
+        holds it, a change made since the tab last read it included."""
+        from utk_curio.backend.app.collaboration import dataflow_docs
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
         user, token = user_and_token
         project_id, revision = _create(client, token, [_node("a")])
-        resp = _start(client, token, project_id, specRevision=revision + 7)
-        assert resp.status_code == 409 and resp.get_json()["specRevision"] == revision
+        ukey = _user_dir_key(user)
+        spec = dataflow_docs.live(ukey, project_id)
+        spec["dataflow"]["nodes"][0]["content"] = "# node a\nreturn 42"
+        dataflow_docs.write(ukey, project_id, spec, dataflow_docs.person(user.id, "edit"))
+
+        started = _start(client, token, project_id, specRevision=revision)
+        assert started.status_code == 202, started.get_data(as_text=True)
+        _wait(started.get_json()["id"])
+        assert "return 42" in sandbox.bodies["a"]["code"]
+        assert _get(client, token, started.get_json()["id"])["specRevision"] > revision
 
     def test_another_users_runs_and_dataflows_are_not_found(self, client, db, user_and_token, sandbox):
         from utk_curio.backend.app.users.models import User, UserSession
@@ -326,9 +341,9 @@ class TestRunningSeveralNodes:
 
     def test_only_the_targets_and_the_ancestors_not_reused_run(self, client, user_and_token, sandbox):
         user, token = user_and_token
-        project_id, revision = _create(client, token, self.NODES, self.EDGES)
+        project_id, _revision = _create(client, token, self.NODES, self.EDGES)
         started = _start(
-            client, token, project_id, specRevision=revision,
+            client, token, project_id,
             targets=["b", "d"], reuse={"a": {"path": "art-a-kept", "dataType": "dataframe"}},
         )
         assert started.status_code == 202, started.get_data(as_text=True)
@@ -729,9 +744,9 @@ class TestAPackageNodesModules:
             "name": "Package modules", "spec": {"dataflow": dataflow}, "outputs": [],
         }), headers=_auth(token))
         assert resp.status_code == 201, resp.get_data(as_text=True)
-        project_id, revision = resp.get_json()["id"], resp.get_json()["spec_revision"]
+        project_id = resp.get_json()["id"]
 
-        run_id = _start(client, token, project_id, specRevision=revision).get_json()["id"]
+        run_id = _start(client, token, project_id).get_json()["id"]
         _wait(run_id)
         assert _get(client, token, run_id)["status"] == "succeeded"
         assert "package_modules" not in sandbox.bodies["a"]

@@ -41,6 +41,10 @@ export interface ScenarioDetailModalProps {
   /** The dataflow behind the modal has changes not yet saved, so opening
    *  another project asks first. Set only on the canvas. */
   unsavedChanges?: boolean;
+  /** A dataflow bound to its doc: opening another project waits for the
+   *  server to have its last change, and asks only when it cannot. Set only
+   *  on the canvas. */
+  whenChangesKept?: () => Promise<boolean>;
   /** Runs as the modal leaves for the source project, so the canvas drawer
    *  under it closes too. */
   onLeave?: () => void;
@@ -78,6 +82,7 @@ export const ScenarioDetailModal: React.FC<ScenarioDetailModalProps> = ({
   scenarioId,
   fallbackScenario = null,
   unsavedChanges = false,
+  whenChangesKept,
   onLeave,
   onClose,
   inProject,
@@ -86,6 +91,7 @@ export const ScenarioDetailModal: React.FC<ScenarioDetailModalProps> = ({
   const { pathname } = useLocation();
   const { leave, dialog: leaveDialog } = useLeaveGuard(unsavedChanges, LEAVE_DATAFLOW, {
     layer: "overlay",
+    settle: whenChangesKept,
   });
   const fetched = useScenarioDetails(inProject ? null : projectId, inProject ? null : scenarioId);
   const details: ScenarioDetails | null = inProject ? inProject.details : fetched.details;

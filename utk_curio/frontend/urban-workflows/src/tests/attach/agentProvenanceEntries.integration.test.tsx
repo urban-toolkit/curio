@@ -39,7 +39,7 @@ jest.mock('../../hook/useWorkflowOperations', () => ({
     markNodeExecuted: jest.fn(),
     markNodeStale: jest.fn(),
     markDirty: mockMarkDirty,
-    persistDataflowForInstall: jest.fn().mockResolvedValue(undefined),
+    recordOutputs: jest.fn().mockResolvedValue(undefined),
     beginPendingInstall: jest.fn(),
     endPendingInstall: jest.fn(),
     applyRemoveChanges: jest.fn(),

@@ -1,7 +1,6 @@
 """Flask blueprint: /api/projects - all endpoints require @require_auth."""
 from __future__ import annotations
 
-import re
 from dataclasses import asdict
 from flask import Blueprint, current_app, g, jsonify, request
 
@@ -66,17 +65,6 @@ def _optional_int(value):
         return None
 
 
-_TAB_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
-
-
-def _optional_tab(value):
-    """A tab id as the page makes one (a UUID), or ``None`` for anything else,
-    which leaves the save unchecked, as a malformed basis does."""
-    if isinstance(value, str) and _TAB_ID.fullmatch(value):
-        return value
-    return None
-
-
 # ---------------------------------------------------------------------------
 # PUT /api/projects/:id - update
 # ---------------------------------------------------------------------------
@@ -104,9 +92,6 @@ def update_project(project_id: str):
                 body.get("baseRevision", body.get("base_revision"))
             ),
             categories=body.get("categories"),
-            # Which tab sent this save, and its number among the tab's saves.
-            save_tab=_optional_tab(body.get("saveTab", body.get("save_tab"))),
-            save_number=_optional_int(body.get("saveNumber", body.get("save_number"))),
             # A tab bound to the dataflow's doc sends its history, not the dataflow.
             history=body.get("history"),
         )
@@ -121,6 +106,92 @@ def update_project(project_id: str):
         return _error(str(exc), exc.status)
 
     return jsonify(asdict(detail)), 200
+
+
+# ---------------------------------------------------------------------------
+# POST /api/projects/:id/outputs - the outputs a canvas holds
+# ---------------------------------------------------------------------------
+@projects_bp.route("/<project_id>/outputs", methods=["POST"])
+@require_auth
+def record_outputs(project_id: str):
+    """The outputs the owner's canvas holds that the dataflow records (after a
+    run in the browser, a pin, a scenario), recorded in its manifest and the
+    account's Data Catalog. No tab saves the dataflow, which its doc keeps.
+    Answered with the dataflow's categories as it is now, which the canvas
+    title shows, as a save's answer carried them (``GET .../categories``)."""
+    body = request.get_json(silent=True) or {}
+    raw = body.get("outputs")
+    if not isinstance(raw, list):
+        return _error("'outputs' must list a node's output each")
+    try:
+        outputs = [OutputRef(**o) if isinstance(o, dict) else o for o in raw]
+    except TypeError as exc:
+        return _error(str(exc))
+    warnings: list = []
+    try:
+        recorded = services.record_node_outputs(
+            g.user, project_id, outputs, warnings, sign_in=get_current_token(), canvas=True,
+        )
+    except NotFoundError:
+        return _error("Project not found", 404)
+    except ProjectError as exc:
+        return _error(str(exc), exc.status)
+    return jsonify({
+        "outputs": [asdict(ref) for ref in recorded],
+        "dataset_install_warnings": warnings,
+        "categories": services.dataflow_categories(project_id),
+    }), 200
+
+
+# ---------------------------------------------------------------------------
+# GET /api/projects/:id/categories - the categories the canvas title shows
+# ---------------------------------------------------------------------------
+@projects_bp.route("/<project_id>/categories", methods=["GET"])
+@require_auth
+def get_categories(project_id: str):
+    """The dataflow's categories as it is now, for every tab that opens it:
+    the owner's, an invited editor's and a watcher's, as the shared read
+    serves the dataflow to anyone who opens its link. No save answers them
+    any more, so its tabs ask again as it changes."""
+    try:
+        categories = services.dataflow_categories(project_id)
+    except NotFoundError:
+        return _error("Project not found", 404)
+    return jsonify({"categories": categories}), 200
+
+
+# ---------------------------------------------------------------------------
+# PUT /api/projects/:id/name - an invited editor's rename
+# ---------------------------------------------------------------------------
+@projects_bp.route("/<project_id>/name", methods=["PUT"])
+@require_auth
+def rename_shared_dataflow(project_id: str):
+    """The dataflow's name, from an invited editor's canvas: the project row
+    and the dataflow both, as the owner's name-only PUT renames them."""
+    body = request.get_json(silent=True) or {}
+    try:
+        answer = services.rename_shared_dataflow(g.user, project_id, body.get("name"))
+    except NotFoundError:
+        return _error("Project not found", 404)
+    except ProjectError as exc:
+        return _error(str(exc), exc.status)
+    return jsonify(answer), 200
+
+
+# ---------------------------------------------------------------------------
+# PUT /api/projects/:id/dashboard/layout - the dashboard's Save layout
+# ---------------------------------------------------------------------------
+@projects_bp.route("/<project_id>/dashboard/layout", methods=["PUT"])
+@require_auth
+def save_dashboard_layout(project_id: str):
+    body = request.get_json(silent=True) or {}
+    try:
+        answer = services.save_dashboard_layout(g.user, project_id, body.get("tiles"))
+    except NotFoundError:
+        return _error("Project not found", 404)
+    except ProjectError as exc:
+        return _error(str(exc), exc.status)
+    return jsonify(answer), 200
 
 
 # ---------------------------------------------------------------------------

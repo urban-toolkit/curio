@@ -1,5 +1,12 @@
 import { renderHook, act } from "@testing-library/react";
 
+/**
+ * After a run, a pin or a scenario, the canvas records the outputs it holds
+ * that the dataflow records (`recordOutputs`, `POST /api/projects/<id>/outputs`),
+ * which installs each in the Data Catalog: no tab saves the dataflow. A
+ * dataflow not saved yet is made first, once, whoever asks.
+ */
+
 // ── Mock the hook's heavy collaborators ───────────────────────────────────────
 // Keep datasetCatalogApi REAL so notifyDatasetCatalogRefresh exercises the
 // production code path.
@@ -18,7 +25,7 @@ jest.mock("../../providers/UserProvider", () => ({
   useUserContext: () => ({ user: null, enableUserAuth: false }),
 }));
 jest.mock("../../api/projectsApi", () => ({
-  projectsApi: { create: jest.fn(), update: jest.fn() },
+  projectsApi: { create: jest.fn(), update: jest.fn(), recordOutputs: jest.fn() },
 }));
 jest.mock("../../TrillGenerator", () => ({
   TrillGenerator: {
@@ -32,8 +39,7 @@ jest.mock("../../utils/saveOutputDataset", () => ({
 }));
 jest.mock("../../registry/projectPackagesStore", () => ({
   getCurrentProjectPackagesList: jest.fn(() => []),
-  // No routed dataflow and nothing loading: saves take their id from the
-  // hook's own state, as they do once a load has landed.
+  // No routed dataflow and nothing loading: the id is the hook's own.
   getCurrentProjectId: jest.fn(() => undefined),
   whenProjectSettled: jest.fn(async () => {}),
   setCurrentProject: jest.fn(),
@@ -45,7 +51,6 @@ import { useWorkflowOperations } from "../../hook/useWorkflowOperations";
 import { projectsApi } from "../../api/projectsApi";
 import { TrillGenerator } from "../../TrillGenerator";
 import { DATASET_CATALOG_REFRESH_EVENT } from "../../services/datasetCatalog/datasetCatalogApi";
-import { AGENT_DOCK_REFRESH_EVENT } from "../../services/agents";
 
 const makeDeps = () =>
   ({
@@ -69,11 +74,21 @@ const makeDeps = () =>
     defaultSaveOutputDataset: false,
   }) as any;
 
+const CREATED = { id: "proj-1", name: "wf", spec: { dataflow: { datasets: [], packages: [] } } };
+
+/** What the record answers: the outputs it recorded, and those it could not install. */
+const recorded = (warnings: Array<{ node_id: string; filename: string; reason: string }> = []) => ({
+  outputs: [],
+  dataset_install_warnings: warnings,
+});
+
 let warnSpy: jest.SpyInstance;
 
 beforeEach(() => {
   jest.clearAllMocks();
   (TrillGenerator.generateTrill as jest.Mock).mockReturnValue({ dataflow: { datasets: [] } });
+  (projectsApi.create as jest.Mock).mockResolvedValue(CREATED);
+  (projectsApi.recordOutputs as jest.Mock).mockResolvedValue(recorded());
   warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
 });
 
@@ -82,12 +97,7 @@ afterEach(() => {
 });
 
 describe("ensureProjectId", () => {
-  it("creates+saves the project once for a brand-new dataflow and returns its id", async () => {
-    (projectsApi.create as jest.Mock).mockResolvedValue({
-      id: "proj-1",
-      name: "wf",
-      spec: { dataflow: { datasets: [], packages: [] } },
-    });
+  it("creates the project once for a brand-new dataflow and returns its id", async () => {
     const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
 
     let id: string | null = null;
@@ -105,6 +115,8 @@ describe("ensureProjectId", () => {
     });
     expect(id2).toBe("proj-1");
     expect(projectsApi.create).toHaveBeenCalledTimes(1);
+    // Neither call saved the dataflow.
+    expect(projectsApi.update).not.toHaveBeenCalled();
   });
 
   it("de-dupes concurrent callers so two rapid installs create only one project", async () => {
@@ -122,11 +134,11 @@ describe("ensureProjectId", () => {
       p1 = result.current.ensureProjectId();
       p2 = result.current.ensureProjectId();
     });
-    // Both observed the in-flight save; only one POST went out.
+    // Both observed the in-flight create; only one POST went out.
     expect(projectsApi.create).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      resolveCreate({ id: "proj-1", name: "wf", spec: { dataflow: { packages: [] } } });
+      resolveCreate(CREATED);
       await Promise.all([p1, p2]);
     });
     await expect(p1!).resolves.toBe("proj-1");
@@ -134,7 +146,7 @@ describe("ensureProjectId", () => {
     expect(projectsApi.create).toHaveBeenCalledTimes(1);
   });
 
-  it("toasts and returns null when the save fails", async () => {
+  it("toasts and returns null when the create fails", async () => {
     (projectsApi.create as jest.Mock).mockRejectedValue(new Error("nope"));
     const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
 
@@ -147,17 +159,11 @@ describe("ensureProjectId", () => {
   });
 });
 
-describe("saveCurrentProject", () => {
-  it("re-hydrates the datasets mirror from the saved spec — the backend-owned section wins over a drifted mirror (dev/81)", async () => {
+describe("a create", () => {
+  it("re-hydrates the datasets mirror from the spec the server stored: the backend-owned section wins over a drifted mirror (dev/81)", async () => {
+    // The backend seeded a dataset this client's mirror never saw.
     (projectsApi.create as jest.Mock).mockResolvedValue({
-      id: "proj-1",
-      name: "wf",
-      spec: { dataflow: { datasets: [], packages: [] } },
-    });
-    // The backend carried forward an install this client's mirror never saw.
-    (projectsApi.update as jest.Mock).mockResolvedValue({
-      id: "proj-1",
-      name: "wf",
+      ...CREATED,
       spec: { dataflow: { datasets: [{ datasetId: "imported.x1" }], packages: [] } },
     });
     const dispatch = jest.spyOn(window, "dispatchEvent");
@@ -165,9 +171,6 @@ describe("saveCurrentProject", () => {
 
     await act(async () => {
       await result.current.ensureProjectId();
-    });
-    await act(async () => {
-      await result.current.saveCurrentProject();
     });
 
     expect(result.current.dataflowDatasets).toEqual([{ datasetId: "imported.x1" }]);
@@ -177,116 +180,95 @@ describe("saveCurrentProject", () => {
     );
     dispatch.mockRestore();
   });
+});
 
-  it("fires the agent-dock refresh after an update save so pruned attachment tiles disappear", async () => {
-    // The backend prunes attachments for deleted nodes on save; the dock must
-    // reconcile from the persisted spec without a reload.
-    (projectsApi.create as jest.Mock).mockResolvedValue({
-      id: "proj-1",
-      name: "wf",
-      spec: { dataflow: { datasets: [], packages: [] } },
-    });
-    (projectsApi.update as jest.Mock).mockResolvedValue({
-      id: "proj-1",
-      name: "wf",
-      spec: { dataflow: { datasets: [], packages: [] } },
-    });
+describe("recordOutputs (no execution-time install payload)", () => {
+  it("makes the project the first time, then records into it", async () => {
     const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
+    await act(async () => {
+      await result.current.recordOutputs();
+    });
+    expect(projectsApi.create).toHaveBeenCalledTimes(1);
+    expect(projectsApi.recordOutputs).toHaveBeenCalledWith("proj-1", []);
+    expect(projectsApi.update).not.toHaveBeenCalled();
+  });
 
-    // Create pins the project id so the next save takes the UPDATE branch.
+  it("shows the categories the record answers on the canvas title: what a run made changes them, and no save follows", async () => {
+    const categories = { auto: { tags: ["Tables", "Pandas"], data_type: "dataframe" } };
+    (projectsApi.recordOutputs as jest.Mock).mockResolvedValue({ ...recorded(), categories });
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
     await act(async () => {
       await result.current.ensureProjectId();
     });
 
-    const dispatch = jest.spyOn(window, "dispatchEvent");
     await act(async () => {
-      await result.current.saveCurrentProject();
+      await result.current.recordOutputs();
     });
 
-    expect(projectsApi.update).toHaveBeenCalledTimes(1);
-    expect(dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: AGENT_DOCK_REFRESH_EVENT }),
-    );
-    dispatch.mockRestore();
+    expect(result.current.serverCategories).toEqual(categories);
   });
 
-  it("serializes concurrent saves on a new dataflow into one create + one update (no duplicate projects)", async () => {
-    // Two producing nodes finishing back-to-back must not both POST a create.
-    let resolveCreate: (v: any) => void = () => {};
-    (projectsApi.create as jest.Mock).mockImplementation(
-      () => new Promise((res) => { resolveCreate = res; }),
-    );
-    (projectsApi.update as jest.Mock).mockResolvedValue({
-      id: "proj-1",
-      name: "wf",
-      spec: { dataflow: { datasets: [], packages: [] } },
-    });
-    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
-
-    await act(async () => {
-      const a = result.current.persistDataflowForInstall();
-      const b = result.current.persistDataflowForInstall();
-      resolveCreate({ id: "proj-1", name: "wf", spec: { dataflow: { datasets: [], packages: [] } } });
-      await Promise.all([a, b]);
-    });
-
-    expect(projectsApi.create).toHaveBeenCalledTimes(1);
-    expect(projectsApi.update).toHaveBeenCalledTimes(1); // the chained second save
-  });
-});
-
-describe("persistDataflowForInstall (no execution-time install payload)", () => {
-  it("creates the project the first time so the save-time install surfaces", async () => {
-    (projectsApi.create as jest.Mock).mockResolvedValue({
-      id: "proj-1",
-      name: "wf",
-      spec: { dataflow: { datasets: [], packages: [] } },
-    });
-    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
-    await act(async () => {
-      await result.current.persistDataflowForInstall();
-    });
-    expect(projectsApi.create).toHaveBeenCalledTimes(1);
-  });
-
-  it("updates an already-saved project (same save the disk icon performs)", async () => {
-    (projectsApi.create as jest.Mock).mockResolvedValue({
-      id: "proj-1",
-      name: "wf",
-      spec: { dataflow: { datasets: [], packages: [] } },
-    });
-    (projectsApi.update as jest.Mock).mockResolvedValue({
-      id: "proj-1",
-      name: "wf",
-      spec: { dataflow: { datasets: [{ datasetId: "computed.n1@1" }], packages: [] } },
-    });
+  it("records into an already-saved project, and saves nothing", async () => {
     const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
     // Establish the project, then a second producing run with no install payload.
     await act(async () => {
       await result.current.ensureProjectId();
     });
     await act(async () => {
-      await result.current.persistDataflowForInstall();
+      await result.current.recordOutputs();
     });
     expect(projectsApi.create).toHaveBeenCalledTimes(1);
-    expect(projectsApi.update).toHaveBeenCalledTimes(1);
+    expect(projectsApi.recordOutputs).toHaveBeenCalledTimes(1);
+    expect(projectsApi.update).not.toHaveBeenCalled();
   });
 
-  it("warns the user when the save reports datasets it couldn't install", async () => {
-    // Vector 3 fix: a computed output the backend silently skipped (e.g. its
-    // artifact was missing) now comes back in dataset_install_warnings, and we
-    // surface it instead of letting the dataset vanish without a trace.
-    (projectsApi.create as jest.Mock).mockResolvedValue({
-      id: "proj-1",
-      name: "wf",
-      spec: { dataflow: { datasets: [], packages: [] } },
-      dataset_install_warnings: [
-        { node_id: "n1", filename: "out.parquet", reason: "output artifact not found at save time" },
-      ],
+  it("makes one dataflow for records that come at once on a new one, and each records", async () => {
+    // Two producing nodes finishing back-to-back must not both POST a create.
+    let resolveCreate: (v: any) => void = () => {};
+    (projectsApi.create as jest.Mock).mockImplementation(
+      () => new Promise((res) => { resolveCreate = res; }),
+    );
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
+
+    await act(async () => {
+      const a = result.current.recordOutputs();
+      const b = result.current.recordOutputs();
+      resolveCreate(CREATED);
+      await Promise.all([a, b]);
     });
+
+    expect(projectsApi.create).toHaveBeenCalledTimes(1);
+    expect(projectsApi.recordOutputs).toHaveBeenCalledTimes(2);
+  });
+
+  it("refreshes the Data Catalog after a record", async () => {
+    const dispatch = jest.spyOn(window, "dispatchEvent");
     const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
     await act(async () => {
-      await result.current.persistDataflowForInstall();
+      await result.current.ensureProjectId();
+    });
+    dispatch.mockClear();
+
+    await act(async () => {
+      await result.current.recordOutputs();
+    });
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: DATASET_CATALOG_REFRESH_EVENT }),
+    );
+    dispatch.mockRestore();
+  });
+
+  it("warns the user when the record reports datasets it couldn't install", async () => {
+    // Vector 3 fix: a computed output the backend silently skipped (e.g. its
+    // artifact was missing) comes back in dataset_install_warnings, and we
+    // surface it instead of letting the dataset vanish without a trace.
+    (projectsApi.recordOutputs as jest.Mock).mockResolvedValue(recorded([
+      { node_id: "n1", filename: "out.parquet", reason: "output artifact not found at save time" },
+    ]));
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
+    await act(async () => {
+      await result.current.recordOutputs();
     });
     expect(mockShowToast).toHaveBeenCalledWith(
       expect.stringContaining("couldn't be generated"),
@@ -295,90 +277,80 @@ describe("persistDataflowForInstall (no execution-time install payload)", () => 
   });
 
   it("does not warn when there are no install failures", async () => {
-    (projectsApi.create as jest.Mock).mockResolvedValue({
-      id: "proj-1",
-      name: "wf",
-      spec: { dataflow: { datasets: [], packages: [] } },
-      dataset_install_warnings: [],
-    });
     const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
     await act(async () => {
-      await result.current.persistDataflowForInstall();
+      await result.current.recordOutputs();
     });
     expect(mockShowToast).not.toHaveBeenCalled();
   });
 });
 
-describe("persistDataflowForInstall reports what it achieved (#352)", () => {
+describe("recordOutputs reports what it achieved (#352)", () => {
   // The placeholder clear used to hang off `.finally`, so it fired identically
   // whether the datasets installed, failed to install, or the save threw. This
   // return value is what lets the caller tell those apart.
   it("names the producers whose dataset did not install", async () => {
-    (projectsApi.create as jest.Mock).mockResolvedValue({
-      id: "proj-1",
-      name: "wf",
-      spec: { dataflow: { datasets: [], packages: [] } },
-      dataset_install_warnings: [
-        { node_id: "n1", filename: "out.parquet", reason: "output artifact not found at save time" },
-      ],
-    });
+    (projectsApi.recordOutputs as jest.Mock).mockResolvedValue(recorded([
+      { node_id: "n1", filename: "out.parquet", reason: "output artifact not found at save time" },
+    ]));
     const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
     let outcome: any;
     await act(async () => {
-      outcome = await result.current.persistDataflowForInstall(["n1", "n2"]);
+      outcome = await result.current.recordOutputs(["n1", "n2"]);
     });
     expect(outcome).toEqual({ saved: true, failedNodeIds: ["n1"] });
   });
 
   it("names none when every dataset installed", async () => {
-    (projectsApi.create as jest.Mock).mockResolvedValue({
-      id: "proj-1",
-      name: "wf",
-      spec: { dataflow: { datasets: [], packages: [] } },
-      dataset_install_warnings: [],
-    });
     const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
     let outcome: any;
     await act(async () => {
-      outcome = await result.current.persistDataflowForInstall(["n1"]);
+      outcome = await result.current.recordOutputs(["n1"]);
     });
     expect(outcome).toEqual({ saved: true, failedNodeIds: [] });
   });
 
   it("ignores a warning about a node this sync did not cover", async () => {
-    // Same scoping rule the toast uses (#180): a save re-sends refs for every
+    // Same scoping rule the toast uses (#180): a record re-sends refs for every
     // toggle-enabled node, so an unscoped list would fail placeholders for
     // nodes the user never ran.
-    (projectsApi.create as jest.Mock).mockResolvedValue({
-      id: "proj-1",
-      name: "wf",
-      spec: { dataflow: { datasets: [], packages: [] } },
-      dataset_install_warnings: [
-        { node_id: "other", filename: "x.parquet", reason: "stale" },
-      ],
-    });
+    (projectsApi.recordOutputs as jest.Mock).mockResolvedValue(recorded([
+      { node_id: "other", filename: "x.parquet", reason: "stale" },
+    ]));
     const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
     let outcome: any;
     await act(async () => {
-      outcome = await result.current.persistDataflowForInstall(["n1"]);
+      outcome = await result.current.recordOutputs(["n1"]);
     });
     expect(outcome.failedNodeIds).toEqual([]);
   });
 
-  it("fails every covered producer when the save itself throws", async () => {
+  it("fails every covered producer when the record itself throws", async () => {
     // Nothing was written, so nothing succeeded - and the old code cleared all
     // of them anyway, on a path that had already swallowed the error.
-    (projectsApi.create as jest.Mock).mockRejectedValue(new Error("network down"));
+    (projectsApi.recordOutputs as jest.Mock).mockRejectedValue(new Error("network down"));
     const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
     let outcome: any;
     await act(async () => {
-      outcome = await result.current.persistDataflowForInstall(["n1", "n2"]);
+      outcome = await result.current.recordOutputs(["n1", "n2"]);
     });
     expect(outcome).toEqual({ saved: false, failedNodeIds: ["n1", "n2"] });
     expect(mockShowToast).toHaveBeenCalledWith(
       expect.stringContaining("network down"),
       "error",
     );
+  });
+
+  it("fails every covered producer when the dataflow could not be made for it", async () => {
+    (projectsApi.create as jest.Mock).mockRejectedValue(new Error("nope"));
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
+    let outcome: any;
+    await act(async () => {
+      outcome = await result.current.recordOutputs(["n1", "n2"]);
+    });
+    expect(outcome).toEqual({ saved: false, failedNodeIds: ["n1", "n2"] });
+    expect(projectsApi.recordOutputs).not.toHaveBeenCalled();
+    expect(mockShowToast).toHaveBeenCalledWith("nope", "error");
   });
 });
 
@@ -495,16 +467,10 @@ describe("pendingInstalls store", () => {
   });
 });
 
-describe("persistDataflowForInstall - warning scoping (#180)", () => {
+describe("recordOutputs - warning scoping (#180)", () => {
   const respondWith = (
     warnings: Array<{ node_id: string; filename: string; reason: string }>,
-  ) =>
-    (projectsApi.create as jest.Mock).mockResolvedValue({
-      id: "proj-1",
-      name: "wf",
-      spec: { dataflow: { datasets: [], packages: [] } },
-      dataset_install_warnings: warnings,
-    });
+  ) => (projectsApi.recordOutputs as jest.Mock).mockResolvedValue(recorded(warnings));
 
   const STALE = {
     node_id: "n-untouched",
@@ -523,7 +489,7 @@ describe("persistDataflowForInstall - warning scoping (#180)", () => {
     respondWith([STALE]);
     const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
     await act(async () => {
-      await result.current.persistDataflowForInstall(["n-ran"]);
+      await result.current.recordOutputs(["n-ran"]);
     });
     expect(mockShowToast).not.toHaveBeenCalled();
   });
@@ -532,7 +498,7 @@ describe("persistDataflowForInstall - warning scoping (#180)", () => {
     respondWith([STALE]);
     const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
     await act(async () => {
-      await result.current.persistDataflowForInstall(["n-ran"]);
+      await result.current.recordOutputs(["n-ran"]);
     });
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("n-untouched"));
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("stale.parquet"));
@@ -542,7 +508,7 @@ describe("persistDataflowForInstall - warning scoping (#180)", () => {
     respondWith([RAN]);
     const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
     await act(async () => {
-      await result.current.persistDataflowForInstall(["n-ran"]);
+      await result.current.recordOutputs(["n-ran"]);
     });
     expect(mockShowToast).toHaveBeenCalledWith(
       expect.stringContaining("couldn't be generated"),
@@ -554,7 +520,7 @@ describe("persistDataflowForInstall - warning scoping (#180)", () => {
     respondWith([STALE, RAN]);
     const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
     await act(async () => {
-      await result.current.persistDataflowForInstall(["n-ran"]);
+      await result.current.recordOutputs(["n-ran"]);
     });
     expect(mockShowToast).toHaveBeenCalledTimes(1);
     // Singular copy proves the filter ran BEFORE the count, not just before the
@@ -569,7 +535,7 @@ describe("persistDataflowForInstall - warning scoping (#180)", () => {
     respondWith([STALE, RAN]);
     const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
     await act(async () => {
-      await result.current.persistDataflowForInstall();
+      await result.current.recordOutputs();
     });
     expect(mockShowToast).toHaveBeenCalledWith(
       expect.stringContaining("2 datasets couldn't be generated"),

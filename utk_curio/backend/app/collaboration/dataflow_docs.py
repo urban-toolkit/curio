@@ -280,6 +280,9 @@ class _OpenDoc:
         self.changed_at: Optional[float] = None
         self.dirty_since: Optional[float] = None
         self.idle_since: Optional[float] = None
+        #: The last change's Unix time, which the dataflow's "Updated" shows
+        #: until ``spec.trill.json`` is written (:func:`unwritten_change_at`).
+        self.changed_wall: Optional[float] = None
 
     def folder(self) -> Path:
         return storage.project_dir(self.user_key, self.project_id)
@@ -763,6 +766,7 @@ def _changed(entry: _OpenDoc) -> None:
     with _wake:
         now = _clock()
         entry.changed_at = now
+        entry.changed_wall = time.time()
         due = entry.dirty_since is None
         if due:
             entry.dirty_since = now
@@ -955,6 +959,18 @@ def _close(entry: _OpenDoc) -> bool:
             if _docs.get(entry.project_id) is entry:
                 del _docs[entry.project_id]
     return True
+
+
+def unwritten_change_at(project_id: str) -> Optional[float]:
+    """When the open doc last changed, as a Unix time, while
+    ``spec.trill.json`` does not hold that change yet: the file is written a
+    second after the last change (:data:`SAVE_IDLE_S`), so until then only the
+    doc knows the dataflow changed. ``None`` for a doc not open or written."""
+    entry = _open_entry(project_id)
+    if entry is None:
+        return None
+    with _lock:
+        return entry.changed_wall if entry.dirty_since is not None else None
 
 
 def flush(project_id: str) -> bool:
@@ -1656,13 +1672,15 @@ def _relay_states(entry: _OpenDoc, own: dict[str, set[int]]) -> None:
 
 
 def _user(me: dict) -> dict:
-    """Who an awareness state is, as the room knows the participant."""
+    """Who an awareness state is, as the room knows the participant: a tab of
+    the guest account with its number (``room_state.GUEST_NUMBER``)."""
     return {
         "participant_id": me.get("participant_id"),
         "user_id": me.get("user_id"),
         "username": me.get("username"),
         "name": me.get("name"),
         "role": me.get("role"),
+        **room_state.numbered(me),
     }
 
 

@@ -32,7 +32,7 @@ export const ModelsPaletteDropdown = memo(function ModelsPaletteDropdown({
 }) {
   // `packages` is the dataflow's lockfile, the one the drawer's Add, Remove
   // and Import write; the drawer's In project tab reads the same list.
-  const { projectDirty, packages: dataflowPackages } = useFlowContext();
+  const { projectDirty, whenChangesKept, packages: dataflowPackages } = useFlowContext();
   const { openModelCatalogDrawer } = useModelCatalogDrawer();
   // Fetched with the rail, as the other palettes are, so the trigger's count
   // is right before the palette is first opened.
@@ -139,6 +139,7 @@ export const ModelsPaletteDropdown = memo(function ModelsPaletteDropdown({
         <PackageDetailModal
           pkg={detailModel}
           unsavedChanges={projectDirty}
+          whenChangesKept={whenChangesKept}
           onClose={() => setDetailModel(null)}
         />
       ) : null}

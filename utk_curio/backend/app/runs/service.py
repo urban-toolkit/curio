@@ -239,14 +239,13 @@ def start_run(
     target_node_id: Optional[str] = None,
     target_node_ids: Optional[list] = None,
     reuse: Optional[dict] = None,
-    spec_revision: Optional[int] = None,
     trigger: Optional[str] = None,
     rerun_of: Optional[str] = None,
 ) -> DataflowRun:
-    """Run *project_id*'s saved dataflow, one node of it, or several nodes
-    (*target_node_ids*: an automatic run, #845), on a thread of its own.
-    Refused for a user who may not save it, for a revision that is not the
-    saved one, while the dataflow already runs, and past the account's cap."""
+    """Run *project_id*'s dataflow as its doc holds it, one node of it, or
+    several nodes (*target_node_ids*: an automatic run, #845), on a thread of
+    its own. Refused for a user who may not save it, while the dataflow already
+    runs, and past the account's cap."""
     from flask import current_app
 
     from utk_curio.backend.app.collaboration import dataflow_docs
@@ -272,12 +271,8 @@ def start_run(
     spec = dataflow_docs.read(ukey, project_id)
     if spec is None:
         raise RunError("Dataflow not found.", 404)
+    # The revision the run starts from, which its record keeps.
     current = storage.spec_revision(ukey, project_id)
-    if spec_revision is not None and int(spec_revision) != current:
-        raise RunError(
-            "The dataflow changed since this tab saved it. Save it again, then run.",
-            409, specRevision=current,
-        )
     try:
         plan = plan_run(
             spec, target_node_id=target_node_id, target_node_ids=target_node_ids, reuse=reuse,

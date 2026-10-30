@@ -7,7 +7,7 @@ import { faListUl } from "@fortawesome/free-solid-svg-icons";
 import { useCollab, type ActivityEntry, type CollabUser } from "../../../providers/CollaborationProvider";
 import { useNotebookViewContext } from "../../../providers/flow/notebookViewContext";
 import type { Person } from "../../../providers/collab/people";
-import type { CanvasPointer } from "../../../providers/collab/presence";
+import { numberedName, type CanvasPointer } from "../../../providers/collab/presence";
 import { resolveNodeDisplayLabel } from "../../../utils/palettePackageFactoryDraft";
 import badgeStyles from "./AgentAvatarBadge.module.css";
 import styles from "./AgentDock.module.css";
@@ -37,11 +37,12 @@ export function personText(person: Pick<Person, "name" | "role">, editingLabel: 
 
 const ROLE_WORDS: Record<string, string> = { owner: "the owner", editor: "an editor", watcher: "a watcher" };
 
-/** One of the room's events, as the Activity list says it. */
+/** One of the room's events, as the Activity list says it: a tab of the
+ *  shared guest account by the number its event names. */
 export function activityText(entry: ActivityEntry, users: ReadonlyArray<CollabUser>): string {
   const payload = (entry.payload ?? {}) as Record<string, unknown>;
   const listed = typeof payload.user_id === "number" ? users.find((user) => user.user_id === payload.user_id) : undefined;
-  const who = String(payload.name || listed?.name || payload.username || listed?.username || "Someone");
+  const who = numberedName(String(payload.name || listed?.name || payload.username || listed?.username || "Someone"), payload);
   const role = typeof payload.role === "string" ? payload.role : null;
   switch (entry.kind) {
     case "user_joined":
