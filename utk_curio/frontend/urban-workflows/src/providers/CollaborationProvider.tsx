@@ -58,6 +58,7 @@ import { HISTORY_CHANGED_EVENT } from "./history/serverHistory";
 import { EDITOR_REQUESTS_CHANGED_EVENT } from "../services/editorRequests";
 import { remoteCursorStyle } from "./collab/presence";
 import { useAgentsWriting } from "./collab/agentHolds";
+import { AGENT_TURN_EVENT } from "./agents/turnAsks";
 
 export type { RoomRole } from "./collab/participants";
 
@@ -186,8 +187,11 @@ export interface CollabContextValue {
      * Subscribe to incoming remote events. Returns an unsubscribe fn.
      * Event names mirror the backend's outgoing events: the room's
      * (``events.py``, ``roles.py``), ``connection_dropped``
-     * (``dataflow_docs.py``), ``history_changed`` (``history.py``) and
-     * ``editor_requests_changed`` (``projects/editor_requests.py``).
+     * (``dataflow_docs.py``), ``history_changed`` (``history.py``),
+     * ``editor_requests_changed`` (``projects/editor_requests.py``)
+     * and ``agent_turn``, each event of an agent's chat turn
+     * (``turns/turn_jobs.py``), which only the owner's and the editors'
+     * tabs are told.
      */
     onRemote: (event: string, handler: RemoteHandler) => () => void;
 }
@@ -226,6 +230,7 @@ const REMOTE_EVENTS = [
     CONNECTION_DROPPED_EVENT,
     HISTORY_CHANGED_EVENT,
     EDITOR_REQUESTS_CHANGED_EVENT,
+    AGENT_TURN_EVENT,
 ] as const;
 
 export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({

@@ -23,7 +23,11 @@ never the source of truth for anything but liveness and the event log; the
 persisted ``builderSession`` remains the record.
 
 The registry itself is ``common/job_registry.py``, shared with dataflow runs;
-this module keys it by attachment.
+this module keys it by attachment. A chat turn is a job too, in a registry of
+its own (:func:`start_turn`): one turn of an attachment at a time, as one
+Solve is, and none refused for the account's other turns, since the turns of
+an attachment wait for each other instead (``turns/turn_jobs.py``), and asks
+to different attachments run side by side.
 """
 
 from __future__ import annotations
@@ -58,9 +62,42 @@ _REGISTRY = JobRegistry(
 )
 
 
+#: The registry of chat turns: one live turn per attachment, and no cap on an
+#: account's turns at once.
+_TURNS = JobRegistry(
+    name="agent-turn",
+    kinds=("turn",),
+    max_active_per_user=None,
+    finished_ttl_seconds=FINISHED_TTL_SECONDS,
+    max_events=MAX_EVENTS_PER_JOB,
+    busy_message="a turn is already running for this attachment",
+    cap_message="",
+)
+
+
 def reset_registry() -> None:
     """Test seam: drop every job (threads already running finish unobserved)."""
     _REGISTRY.reset()
+    _TURNS.reset()
+
+
+def start_turn(*, user_key: str, project_id: str, attachment_id: str, job_id: str,
+               events: Iterator[tuple[str, Any]], app_context=None, redact_values: dict | None = None,
+               on_finish=None) -> Job:
+    """Drive one chat turn's *events* on a thread of its own, as
+    :func:`start_job` drives a Solve's: the attachment's one live turn, its
+    failure a terminal ``error`` event with *redact_values* taken out, and
+    *on_finish* called once it is no longer live."""
+    return _TURNS.start(
+        user_key=user_key, project_id=project_id, key=attachment_id, kind="turn",
+        job_id=job_id, events=events, app_context=app_context,
+        redact_values=redact_values, on_finish=on_finish,
+    )
+
+
+def live_turns() -> list[Job]:
+    """Every chat turn this process still runs, whoever asked it."""
+    return _TURNS.live_jobs()
 
 
 def is_live(job_id: object) -> bool:
