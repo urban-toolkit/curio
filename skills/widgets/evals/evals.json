@@ -36,7 +36,8 @@
       "assertions": [
         "The answer uses node.settings.write on node f325441e-55be-4415-aa1b-b2055f590de2 to set its widget number_multiplier to 25.",
         "The reply tells the user the factor is now set in the multiplier node's Number Multiplier widget, where they can change it later.",
-        "No code the answer writes holds the number 25: it changes no node's code to type the factor in place of the widget."
+        "No code the answer writes holds the number 25: it changes no node's code to type the factor in place of the widget.",
+        "The answer creates no new node."
       ]
     },
     {
