@@ -15,8 +15,9 @@ let mockCollab: { role: string | null };
 jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => mockFlow,
 }));
+// The room tells this canvas nothing here: no ask's events reach it.
 jest.mock("../../providers/CollaborationProvider", () => ({
-  useCollab: () => mockCollab,
+  useCollab: () => ({ participantId: null, onRemote: () => () => undefined, ...mockCollab }),
 }));
 jest.mock("../../services/packages/packagesApi", () => ({ packagesApi: {} }));
 jest.mock("../../services/agents/agentsApi", () => ({

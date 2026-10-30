@@ -276,6 +276,13 @@ def users_in(room: str) -> List[dict]:
         return [dict(entry) for entry in (_room_users.get(room) or {}).values()]
 
 
+def edit_sids(room: str) -> List[str]:
+    """The sockets in *room* whose participant edits the dataflow, its owner's
+    and its editors' (:data:`EDIT_ROLES`), by the roles they have now."""
+    with _lock:
+        return [sid for sid, entry in (_room_users.get(room) or {}).items() if entry.get("role") in EDIT_ROLES]
+
+
 def is_member(room: str, sid: str) -> bool:
     with _lock:
         return sid in (_room_users.get(room) or {})
