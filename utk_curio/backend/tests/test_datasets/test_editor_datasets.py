@@ -10,6 +10,12 @@ not a dataset her dataflow does not list, not a file a dataflow's ref names by
 a path, and none for erin or carol. An editor reads the owner's dataset and does
 not publish it, and an editor's run writes nothing into the editor's store.
 
+The collections the dataflow lists (``curio_load_collection``) load the same
+way: for bob, from alice's store, their files where her store keeps them,
+beside his own collections and the shared ones; for erin and carol, none of
+alice's. bob's canvas reads their files through her dataflow too, as Simple
+View and the details show them, and no other media of hers.
+
 Names main lacks are imported inside the tests, so the module imports there and
 each test fails on its own.
 """
@@ -257,6 +263,304 @@ def test_an_editors_run_of_the_owners_dataflow_saves_nothing_in_the_editors_stor
     assert editors.get_json().get("installedDataset") is None, editors.get_json()
     assert [folder.name for folder in list_user_datasets(bob_key)] == []
     assert not projects_storage.project_dir(bob_key, flow.pid).exists()
+
+
+# ---------------------------------------------------------------------------
+# The collections the dataflow lists
+# ---------------------------------------------------------------------------
+
+#: The repository, whose ``datasets/``, ``discovery/`` and ``docs/examples/``
+#: the unit tests read.
+REPO = Path(__file__).resolve().parents[4]
+#: The shipped collection whose index the collections below copy: three noise
+#: recordings, kept in a folder of the example storage source.
+NOISE = REPO / "datasets" / "data.curio.storage-noise@1"
+#: A collection of the shared catalog, which every account reads.
+SHARED_COLLECTION = "data.curio.storage-orthos"
+#: A service source: the images of a collection added from it are kept in the
+#: media folder of the store that holds the collection.
+SERVICE = "source.mapillary.imagery@1"
+
+
+@pytest.fixture()
+def shipped_discovery(monkeypatch):
+    """The committed Discovery Catalog, pinned as ``test_discovery`` pins it."""
+    from utk_curio.backend.app.discovery.infrastructure import storage
+
+    monkeypatch.setenv(storage.ENV_ROOT, str(REPO / "discovery"))
+
+
+def _a_collection(user, tmp_path, *, source_id: str | None = None) -> str:
+    """A collection of *user*'s Data Catalog, added as the Discovery Catalog
+    adds one (``StorageAcquire._add_collection``), its index the noise
+    recordings'; its id. *source_id* names another source its files are of."""
+    import shutil
+    import uuid
+
+    from utk_curio.backend.app.datasets.service import DatasetCatalogService
+
+    manifest = json.loads((NOISE / "manifest.json").read_text(encoding="utf-8"))
+    source = {"sourceId": source_id} if source_id else {}
+    staged = tmp_path / f"index-{uuid.uuid4().hex}.parquet"
+    shutil.copyfile(NOISE / "data" / "index.parquet", staged)
+    item = DatasetCatalogService(user)._mutations._install_imported_path(
+        staged, "index.parquet", "collection", title=manifest["name"],
+        discovery_source={**manifest["discoverySource"], **source},
+        row_count=manifest["rowCount"], collection={**manifest["collection"], **source},
+    )
+    return item["id"]
+
+
+def _load_collections(client, sandbox, token, project_id, *collection_ids) -> dict:
+    """Run a node that loads *collection_ids* on the dataflow *project_id*;
+    what the sandbox was sent for it."""
+    code = "".join(f'    c{i} = curio_load_collection("{c}")\n' for i, c in enumerate(collection_ids))
+    resp = client.post("/processPythonCode", data=json.dumps({
+        "code": code + "    return c0\n",
+        "nodeType": "PYTHON_COMPUTATION",
+        "dataflowId": project_id,
+        "input": {"path": "", "dataType": "str"},
+        "saveOutputDataset": False,
+    }), headers=auth_headers(token))
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    return sandbox.bodies[-1]
+
+
+def _rows(body: dict, collection_id: str):
+    """The rows a run sent *body* gets from ``curio_load_collection``, built
+    by the sandbox's own helper."""
+    from utk_curio.sandbox.util.collections import make_collection_helpers
+
+    helpers = make_collection_helpers(
+        lambda dataset_id: body["dataset_paths"][dataset_id], body["collections"], body["media_dir"],
+    )
+    return helpers["curio_load_collection"](collection_id)
+
+
+def _files(rows) -> list[str]:
+    """The rows' paths that name a file this machine holds. A file not here
+    has no path: None, or NaN where pandas stores the column as strings."""
+    return [path for path in rows["path"] if isinstance(path, str) and Path(path).is_file()]
+
+
+@pytest.mark.parametrize("source", ["folder", "service"])
+def test_an_editors_run_loads_a_collection_the_owners_dataflow_lists(
+    client, flow, sandbox, shipped_discovery, tmp_path, source,
+):
+    """alice adds a collection to her dataflow. bob's run of a node that loads
+    it on her dataflow gets its index from her store and its files: a folder's
+    where its source keeps them, a service's where alice's store keeps them.
+    The node reads them, and what it derives goes to bob's own media folder."""
+    import pandas as pd
+
+    from utk_curio.backend.app.discovery.application import cache_collection
+    from utk_curio.backend.app.discovery.infrastructure import media_dirs
+
+    alice_key, bob_key = str(flow.people.alice.id), str(flow.people.bob.id)
+    collection = _a_collection(flow.people.alice, tmp_path, source_id=SERVICE if source == "service" else None)
+    _install(client, flow.tokens["alice"], flow.pid, collection)
+    if source == "service":
+        # Its first recording came down with it, into alice's media folder.
+        first = pd.read_parquet(NOISE / "data" / "index.parquet").iloc[0]
+        cached = cache_collection.objects_dir(alice_key, collection) / f"{first.file_id}.{first.ext}"
+        cached.write_bytes(b"RIFF")
+
+    body = _load_collections(client, sandbox, flow.tokens["bob"], flow.pid, collection)
+
+    assert set(body["collections"]) == {collection}, f"bob's run resolved the collections {body['collections']}"
+    rows = _rows(body, collection)
+    readable = _files(rows)
+    if source == "folder":
+        assert len(readable) == len(rows) == 3, list(rows["path"])
+    else:
+        assert body["collections"][collection]["objects"] == str(
+            cache_collection.objects_dir(alice_key, collection, create=False)
+        )
+        assert readable == [str(cached)], list(rows["path"])
+        assert not (media_dirs.media_work_root(bob_key) / "objects" / collection).exists()
+    assert body["media_dir"] == str(media_dirs.media_work_root(bob_key))
+
+
+def test_an_editors_own_collection_and_a_shared_one_load_beside_the_dataflows(
+    client, flow, sandbox, shipped_discovery, tmp_path,
+):
+    """bob's run on alice's dataflow loads, beside the collection her dataflow
+    lists, his own collection and the shared catalog's."""
+    listed = _a_collection(flow.people.alice, tmp_path)
+    _install(client, flow.tokens["alice"], flow.pid, listed)
+    own = _a_collection(flow.people.bob, tmp_path)
+
+    body = _load_collections(client, sandbox, flow.tokens["bob"], flow.pid, listed, own, SHARED_COLLECTION)
+
+    loaded = {listed, own, SHARED_COLLECTION}
+    assert set(body["collections"]) == loaded, f"bob's run resolved the collections {body['collections']}"
+    assert set(body["dataset_paths"]) == loaded, body["dataset_paths"]
+    for collection in loaded:
+        rows = _rows(body, collection)
+        assert len(_files(rows)) == len(rows) > 0, (collection, list(rows["path"]))
+
+
+def test_a_collection_of_the_owners_her_dataflow_does_not_list_stays_hers(
+    client, flow, sandbox, shipped_discovery, tmp_path,
+):
+    """bob's run loads the collection alice's dataflow lists and not another
+    of hers that it does not list: neither its files nor its index. alice's
+    run on her dataflow loads both."""
+    listed = _a_collection(flow.people.alice, tmp_path)
+    _install(client, flow.tokens["alice"], flow.pid, listed)
+    unlisted = _a_collection(flow.people.alice, tmp_path)
+
+    bobs = _load_collections(client, sandbox, flow.tokens["bob"], flow.pid, listed, unlisted)
+    assert set(bobs["collections"]) == {listed}, f"bob's run resolved the collections {bobs['collections']}"
+    assert set(bobs["dataset_paths"]) == {listed}, bobs["dataset_paths"]
+
+    alices = _load_collections(client, sandbox, flow.tokens["alice"], flow.pid, listed, unlisted)
+    assert set(alices["collections"]) == {listed, unlisted}, alices["collections"]
+    assert set(alices["dataset_paths"]) == {listed, unlisted}, alices["dataset_paths"]
+
+
+def test_a_watcher_and_an_uninvited_account_get_nothing_from_the_owners_store(
+    client, flow, sandbox, shipped_discovery, tmp_path,
+):
+    """One node on alice's dataflow loads the collection her dataflow lists
+    and a collection of the runner's own. bob, her editor, reads both. erin,
+    an editor she took off her list and so a watcher, and carol, never
+    invited, read their own and nothing of alice's store: neither the
+    collection nor its index, as in a run that names no dataflow."""
+    listed = _a_collection(flow.people.alice, tmp_path)
+    _install(client, flow.tokens["alice"], flow.pid, listed)
+    owns = {who: _a_collection(getattr(flow.people, who), tmp_path) for who in ("bob", "erin", "carol")}
+
+    read = {}
+    for who, own in owns.items():
+        body = _load_collections(client, sandbox, flow.tokens[who], flow.pid, listed, own)
+        read[who] = {"collections": sorted(body["collections"]), "indexes": sorted(body["dataset_paths"])}
+
+    assert read == {
+        "bob": {"collections": sorted([listed, owns["bob"]]), "indexes": sorted([listed, owns["bob"]])},
+        "erin": {"collections": [owns["erin"]], "indexes": [owns["erin"]]},
+        "carol": {"collections": [owns["carol"]], "indexes": [owns["carol"]]},
+    }
+
+
+def test_an_editors_solve_runs_the_collection_the_owners_dataflow_lists(
+    client, flow, shipped_discovery, tmp_path, monkeypatch,
+):
+    """Solve checks the code an agent writes in bob's chat by running it on a
+    thread of its own (``validation.validate_candidate``). That run gets the
+    collection alice's dataflow lists, as bob's Play does."""
+    from utk_curio.backend.app.agents.domain import validation
+    from utk_curio.backend.app.execution import runner
+
+    listed = _a_collection(flow.people.alice, tmp_path)
+    _install(client, flow.tokens["alice"], flow.pid, listed)
+    sent: dict = {}
+
+    def run_through_node(*_args, **kwargs):
+        sent.update(kwargs)
+        return {"ok": False, "order": [], "nodes": {}, "infrastructure": "the sandbox is not asked here"}
+
+    monkeypatch.setattr(runner, "run_through_node", run_through_node)
+    bob = flow.people.bob
+    spec = {"dataflow": {"nodes": [{"id": "photos", "type": "curio.builtin/data-loading", "content": ""}], "edges": []}}
+    validation.validate_candidate(
+        str(flow.people.alice.id), flow.pid, spec, "photos",
+        f'photos = curio_load_collection("{listed}")\nreturn photos',
+        exec_user_key=str(bob.id), acting_user=bob,
+    )
+
+    assert set(sent.get("collections") or {}) == {listed}, (
+        f"Solve's run of bob's node resolved the collections {sent.get('collections')}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Their files, as an editor's canvas shows them (Simple View, the details)
+# ---------------------------------------------------------------------------
+
+def _media(client, token, collection, file_id, *, variant="thumb", dataflow=None):
+    """A collection's file as the browser asks for it, through *dataflow*."""
+    through = f"&dataflowId={dataflow}" if dataflow else ""
+    return client.get(
+        f"/api/datasets/{collection}/media/{file_id}?variant={variant}{through}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+
+def _first_recording():
+    """The first row of the noise recordings' index, and the file it names."""
+    import pandas as pd
+
+    row = pd.read_parquet(NOISE / "data" / "index.parquet").iloc[0]
+    return row, REPO / "docs" / "examples" / "data" / "storage" / row.relpath
+
+
+def test_an_editors_canvas_shows_the_files_of_a_collection_the_owners_dataflow_lists(
+    client, flow, shipped_discovery, tmp_path,
+):
+    """bob's canvas reads, through alice's dataflow, the files of a collection
+    it lists: a recording's thumbnail for its Simple View card, the recording
+    itself, the signed link its Play asks for, and the collection's status in
+    its details. Without the dataflow it reads none of them, as before."""
+    collection = _a_collection(flow.people.alice, tmp_path)
+    _install(client, flow.tokens["alice"], flow.pid, collection)
+    row, _recording = _first_recording()
+    bob = flow.tokens["bob"]
+
+    thumb = _media(client, bob, collection, row.file_id, dataflow=flow.pid)
+    assert thumb.status_code == 200 and thumb.mimetype == "image/jpeg", thumb.get_data(as_text=True)[:300]
+    original = _media(client, bob, collection, row.file_id, variant="original", dataflow=flow.pid)
+    assert original.status_code == 200 and original.mimetype == "audio/wav", original.get_data(as_text=True)[:300]
+    link = client.post(
+        f"/api/datasets/{collection}/media/{row.file_id}/link?dataflowId={flow.pid}", headers=auth_headers(bob),
+    )
+    assert link.status_code == 200, link.get_data(as_text=True)
+    played = client.get(link.get_json()["url"])
+    assert played.status_code == 200 and played.mimetype == "audio/wav", played.get_data(as_text=True)[:300]
+    status = client.get(f"/api/discovery/collections/{collection}?dataflowId={flow.pid}", headers=auth_headers(bob))
+    assert status.status_code == 200, status.get_data(as_text=True)
+    assert status.get_json()["fileCount"] == 3 and len(status.get_json()["samples"]) == 3
+
+    assert _media(client, bob, collection, row.file_id).status_code == 404
+
+
+def test_an_editors_canvas_reads_no_other_media_of_the_owners(client, flow, shipped_discovery, tmp_path):
+    """A service's collection keeps its files in the media folder of the store
+    that holds it. Through alice's dataflow, bob reads those of the collection
+    it lists, from her folder, and nothing else of her media: not a collection
+    of hers the dataflow does not list, not a clip her own run derived, which
+    his runs did not. A clip he derived from it, in his own folder, he reads.
+    carol, never invited, reads none of it."""
+    import shutil
+
+    from utk_curio.backend.app.discovery.application import cache_collection
+    from utk_curio.backend.app.discovery.infrastructure import media_dirs
+    from utk_curio.sandbox.util.collections import derived_relpath
+
+    alice_key, bob_key = str(flow.people.alice.id), str(flow.people.bob.id)
+    listed = _a_collection(flow.people.alice, tmp_path, source_id=SERVICE)
+    _install(client, flow.tokens["alice"], flow.pid, listed)
+    unlisted = _a_collection(flow.people.alice, tmp_path, source_id=SERVICE)
+    row, recording = _first_recording()
+    # Its recordings came down with each collection, into alice's media folder.
+    for collection in (listed, unlisted):
+        shutil.copyfile(recording, cache_collection.objects_dir(alice_key, collection) / f"{row.file_id}.wav")
+    clip = f"{row.file_id}@1000"
+    alices_clip = media_dirs.media_work_root(alice_key) / derived_relpath("clips", listed, row.file_id, 1000, "wav")
+    alices_clip.parent.mkdir(parents=True)
+    shutil.copyfile(recording, alices_clip)
+    bob = flow.tokens["bob"]
+
+    served = _media(client, bob, listed, row.file_id, variant="original", dataflow=flow.pid)
+    assert served.status_code == 200 and served.mimetype == "audio/wav", served.get_data(as_text=True)[:300]
+    assert _media(client, bob, unlisted, row.file_id, variant="original", dataflow=flow.pid).status_code == 404
+    assert _media(client, bob, listed, clip, variant="original", dataflow=flow.pid).status_code == 404
+    bobs_clip = media_dirs.media_work_root(bob_key) / derived_relpath("clips", listed, row.file_id, 1000, "wav")
+    bobs_clip.parent.mkdir(parents=True)
+    shutil.copyfile(recording, bobs_clip)
+    assert _media(client, bob, listed, clip, variant="original", dataflow=flow.pid).status_code == 200
+    carol = flow.tokens["carol"]
+    assert _media(client, carol, listed, row.file_id, variant="original", dataflow=flow.pid).status_code == 404
 
 
 # ---------------------------------------------------------------------------

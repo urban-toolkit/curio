@@ -132,7 +132,7 @@ def validate_candidate(
     # The candidate as the run writes it, with the node's widgets.
     collections, media_dir = resolve_spec_collections(
         spec_dict, exec_user_key or user_key, node_run_code({**node, "content": candidate_content}),
-        user=acting_user,
+        user=acting_user, dataflow_id=project_id,
     )
     report = runner.run_through_node(
         user_key, project_id, spec_dict, node_id,
