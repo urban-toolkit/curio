@@ -64,7 +64,7 @@ Agents find your scenarios too: asked for a scenario of another project, the [Da
 
 **I want to find a study I made.** Open the **Scenario Catalog** tab and search for the scenario's name, its description or its project's name.
 
-**I want to change a scenario.** Click **Open source project**, change its nodes on the canvas, and save the dataflow. The catalog shows the change.
+**I want to change a scenario.** Click **Open source project** and change its nodes on the canvas. The catalog shows the change.
 
 **I want to know what a scenario produced.** Click **View details**. Each outcome lists the output its project saved, by name, format and size. An outcome with **No saved output** has not run since the scenario was defined.
 

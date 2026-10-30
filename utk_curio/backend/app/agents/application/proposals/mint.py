@@ -8,8 +8,6 @@ and import order between siblings cannot matter.
 
 from __future__ import annotations
 
-import hashlib
-import json
 import uuid
 
 from utk_curio.backend.app.agents.application import source_grounding
@@ -22,6 +20,7 @@ from utk_curio.backend.app.agents.domain import widget_grammar
 from utk_curio.backend.app.agents.application import tool_rounds as agents_tool_rounds
 from utk_curio.backend.app.agents.application.proposals import acquire as agents_acquire
 from utk_curio.backend.app.agents.application.proposals import cards as agents_cards
+from utk_curio.backend.app.agents.application.proposals import changes as agents_changes
 from utk_curio.backend.app.agents.application.proposals import plan_scenarios as agents_plan_scenarios
 from utk_curio.backend.app.agents.application.proposals import plans as agents_plans
 from utk_curio.backend.app.agents.application.proposals import store as agents_store
@@ -529,15 +528,14 @@ def _mint_package_draft_apply(
 def _mint_proposal(
     user_key: str, project_id: str, loop_ctx: dict, req: dict
 ) -> tuple[str, str, dict | None]:
-    """Turn a granted mutate toolRequest into a review proposal (memos dev/41,
-    dev/48 — a per-tool dispatch over one shared persistence path).
-
-    The loop never executes a mutation (`DEC-006`): validation failures come
-    back as tool results the model recovers from; success mints a ``proposal``
-    part (persisted with the turn) plus the attachment's ``activeProposal``
-    mirror, carrying the tool's revision-safety basis the apply endpoint
-    re-checks (`REQ-REVIEW-001`).
-    Returns ``(status, text_for_model, proposal_part | None)``."""
+    """Run a granted mutate toolRequest (memos dev/41, dev/48: a per-tool
+    dispatch). Its checks come first, and a failure comes back as a tool
+    result the model recovers from. A change to the dataflow then lands at
+    once, as the agent's change (``changes.land``): its ``change`` part rides
+    the turn. An install changes the account, so it becomes a ``proposal``
+    part, persisted with the turn, plus the attachment's ``activeProposal``
+    mirror, which the person applies (`REQ-REVIEW-001`).
+    Returns ``(status, text_for_model, part | None)``."""
     session_id = loop_ctx.get("session_id")
     if not isinstance(session_id, str):
         return "refused", agent_text.message("mint.no-conversation"), None
@@ -646,59 +644,26 @@ def _mint_node_content_write(
     unpublishable = dashboards.refusal(user_key, project_id, node, proposed)
     if unpublishable:
         return agents_tool_rounds._refuse_params(unpublishable)
-    basis = hashlib.sha256((node.get("content") or "").encode("utf-8")).hexdigest()
-    proposal_id = uuid.uuid4().hex
     # The node as the user knows it, the way node.create names one: its kind,
-    # and its title when it has one. The id is for the pins (#506).
+    # and its title when it has one (#506).
     node_name = _node_display_name(node, entry)
-    summary = f"Replace the content of the {node_name}"
-    part = content.make_proposal_part(
-        proposal_id=proposal_id,
-        tool="node.content.write",
-        summary=summary,
-        preview=proposed,
-        pins={"nodeId": node_id, "contentSha256": basis},
-    )
-    proposal = {
-        "proposalId": proposal_id,
+    summary = f"Replaced the content of the {node_name}"
+    part = {"tool": "node.content.write", "summary": summary, "preview": proposed}
+    change = {
         "tool": "node.content.write",
         "nodeId": node_id,
         "nodeName": node_name,
         "content": proposed,
-        "contentSha256": basis,
         "summary": summary,
-        "status": "pending",
     }
     if verdict.source:
         part["source"] = verdict.source
-        proposal["source"] = verdict.source
-    agents_store._store_proposal(user_key, project_id, spec, loop_ctx, proposal, part)
-    return (
-        "proposed",
-        agent_text.message("mint.content-write-proposed", proposal_id=proposal_id, node_id=repr(node_id)),
-        part,
-    )
+    return agents_changes.land(user_key, project_id, loop_ctx, spec, change, part)
 
 
 #: What node.settings.write changes, in the order its schema lists them: the
 #: settings ``node_settings`` walks, then the node's widget values.
 _SETTING_PARAMS = ("dataPool", "simpleVis", "spatialJoin", "widgets")
-
-
-def _settings_basis(node: dict, change: dict) -> str:
-    """The digest of what *change* touches on *node*, as the node reads it:
-    its type, each setting the change names as the node does it
-    (``node_settings.saved``) and each widget it gives a value to. The apply
-    takes it again, so a setting changed since the review stales the card and
-    one the change does not touch leaves it as it is."""
-    metadata = node.get("metadata") if isinstance(node.get("metadata"), dict) else {}
-    values = change.get("widgets") or {}
-    touched = {
-        "type": node.get("type"),
-        "settings": {key: setting for key, setting in node_settings.saved(metadata).items() if key in change},
-        "widgets": [widget for widget in normalize_widgets(metadata.get("widgets")) if widget["name"] in values],
-    }
-    return hashlib.sha256(json.dumps(touched, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
 def _mint_node_settings_write(
@@ -707,8 +672,8 @@ def _mint_node_settings_write(
     """A change of one existing node's settings: a Data Pool's modes, a Simple
     View's image column, a Spatial Join's operation and output, and the values
     of its widgets, each judged by its node's own rule on a node whose
-    template keeps it, worded for the card as the node words it, and pinned to
-    what it touches (``_settings_basis``)."""
+    template keeps it, worded for the card as the node words it, then landed
+    as the agent's change (``apply.land_settings``)."""
     params = req.get("params") or {}
     taken = ("nodeId", *_SETTING_PARAMS)
     unknown = sorted(str(key) for key in set(params) - set(taken))
@@ -756,36 +721,19 @@ def _mint_node_settings_write(
         ))
     if values is not None:
         change["widgets"] = values
-    basis = _settings_basis(node, change)
-    proposal_id = uuid.uuid4().hex
     node_name = _node_display_name(node, entry)
-    summary = f"Change the settings of the {node_name}"
-    part = content.make_proposal_part(
-        proposal_id=proposal_id,
-        tool="node.settings.write",
-        summary=summary,
-        preview="\n".join(lines),
-        pins={"nodeId": node_id, "settingsSha256": basis},
-    )
+    summary = f"Changed the settings of the {node_name}"
     # The card's lines, each change in its node's own words.
-    part["settingLines"] = lines
-    proposal = {
-        "proposalId": proposal_id,
+    part = {"tool": "node.settings.write", "summary": summary, "preview": "\n".join(lines), "settingLines": lines}
+    landing = {
         "tool": "node.settings.write",
         "nodeId": node_id,
         "nodeName": node_name,
         "settings": change,
         "settingLines": lines,
-        "settingsSha256": basis,
         "summary": summary,
-        "status": "pending",
     }
-    agents_store._store_proposal(user_key, project_id, spec, loop_ctx, proposal, part)
-    return (
-        "proposed",
-        agent_text.message("mint.settings-write-proposed", proposal_id=proposal_id, node_id=repr(node_id)),
-        part,
-    )
+    return agents_changes.land(user_key, project_id, loop_ctx, spec, landing, part)
 
 
 def _node_create_widgets(entry: dict, raw: object) -> tuple[list, list[str]]:
@@ -933,51 +881,39 @@ def _mint_node_create(
     spec = dataflow_docs.live(user_key, project_id)
     if spec is None:
         return "refused", agent_text.message("mint.no-saved-spec"), None
-    proposal_id = uuid.uuid4().hex
-    summary = f"Create a new {entry['label']} node" + (f" · {title}" if title else "")
+    summary = f"Created a new {entry['label']} node" + (f" · {title}" if title else "")
     if widgets:
         summary += " · widgets " + ", ".join(w["name"] for w in widgets)
     for words in node_settings.describe(settings):
         summary += " · " + words
-    part = content.make_proposal_part(
-        proposal_id=proposal_id,
-        tool="node.create",
-        summary=summary,
-        preview=proposed,
-        # dev/119 (DEC-076): the roster's own answer to "can the sandbox run
-        # this kind" rides the card — display, never a revision pin — so no
-        # frontend file keeps a list of executable kinds.
-        pins={"nodeType": entry["id"], "executable": bool(entry.get("executable"))},
-    )
-    proposal = {
-        "proposalId": proposal_id,
+    # dev/119 (DEC-076): the roster's own answer to "can the sandbox run this
+    # kind" rides the card, so no frontend file keeps a list of executable kinds.
+    part = {"tool": "node.create", "summary": summary, "preview": proposed,
+            "nodeType": entry["id"], "executable": bool(entry.get("executable"))}
+    landing = {
         "tool": "node.create",
         "nodeType": entry["id"],
+        "label": entry["label"],
         "content": proposed,
         "summary": summary,
-        "status": "pending",
     }
     if verdict is not None and verdict.source:
-        # dev/114: what the code opens/fetches and how it was grounded — the
-        # card's Source block; display + provenance, never a pin.
+        # dev/114: what the code opens/fetches and how it was grounded: the
+        # card's Source block, display and provenance.
         part["source"] = verdict.source
-        proposal["source"] = verdict.source
     if goal:
-        proposal["goal"] = goal
+        landing["goal"] = goal
     if title:
-        proposal["title"] = title
+        landing["title"] = title
     if appearance:
-        proposal["appearance"] = appearance
+        landing["appearance"] = appearance
     if widgets:
-        proposal["widgets"] = widgets
-    proposal.update(settings)
-    agents_store._store_proposal(user_key, project_id, spec, loop_ctx, proposal, part)
-    loop_ctx["_note_creates"] = loop_ctx.get("_note_creates", 0) + 1  # A13 index
-    return (
-        "proposed",
-        agent_text.message("mint.node-create-proposed", proposal_id=proposal_id, label=entry['label']),
-        part,
-    )
+        landing["widgets"] = widgets
+    landing.update(settings)
+    outcome = agents_changes.land(user_key, project_id, loop_ctx, spec, landing, part)
+    if outcome[0] == agents_changes.LANDED:
+        loop_ctx["_note_creates"] = loop_ctx.get("_note_creates", 0) + 1  # A13 index
+    return outcome
 
 
 def _mint_row_access(row: dict) -> None:

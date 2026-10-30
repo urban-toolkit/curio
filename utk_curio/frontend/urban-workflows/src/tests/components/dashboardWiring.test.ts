@@ -61,8 +61,10 @@ describe("the dataflow's bar", () => {
   });
 
   it("puts Share before the save status, where a user reads left to right", () => {
+    // The save status is a component of its own, which carries the state.
+    expect(read("components/menus/top/SaveStatus.tsx")).toContain("data-curio-save-state=");
     const share = upMenu.indexOf("<ShareMenu");
-    const saveStatus = upMenu.indexOf("data-curio-save-state=");
+    const saveStatus = upMenu.indexOf("<SaveStatus ");
     expect(share).toBeGreaterThan(-1);
     expect(saveStatus).toBeGreaterThan(share);
   });

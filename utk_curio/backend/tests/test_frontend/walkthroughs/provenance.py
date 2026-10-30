@@ -212,10 +212,10 @@ def provenance_reverting_to_a_previous_version(ctx: Ctx) -> None:
         # it for the shot and open it again for the next version. The first
         # version is empty, and an empty canvas has nothing to fit.
         close_provenance(ctx)
-        # A revert is an edit, so the header reads "Unsaved" until the 30 s
-        # autosave, which lands on whichever frame the runner's speed puts it
-        # near. Save the version on the canvas so every frame shows its own
-        # saved header and categories. File > Save is a version of its own.
+        # A revert is an edit, which the header shows as the server takes it,
+        # on whichever frame the runner's speed puts it near. Save the version
+        # on the canvas so every frame shows its own saved header and
+        # categories. File > Save is a version of its own.
         save_dataflow_and_settle_header(page)
         assert_header_shows_save(page)
         added += 1

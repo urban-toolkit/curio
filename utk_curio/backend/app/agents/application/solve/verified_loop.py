@@ -120,7 +120,8 @@ class VerifiedRounds:
         self.dataflow_block: str | None = None
         # A runner takes a round's inputs and, as ``refused``, the kind the
         # check that refused the round before recorded, which hands the run
-        # the skills that answer that check (``skill_runs.answering``).
+        # the skills that answer that check (``skill_runs.answering``). The
+        # run is the acting account's, whose package skills it holds.
         self.run_delegate = delegate_runner or (
             lambda inputs, refused=None: delegation.run_delegate(
                 user_key, project_id, resolution.coord,
@@ -130,6 +131,7 @@ class VerifiedRounds:
                 attachment_id=attachment_id,
                 dataflow_block=self._dataflow_block(),
                 refused=refused,
+                asker=self.acting_user,
             )
         )
         self.node_id = node.get("id")

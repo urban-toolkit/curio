@@ -68,12 +68,12 @@ def _attachment_card(spec: dict, record: dict, user_key: str) -> dict:
         # client composes "<name>: <title>" at display time.
         "title": record.get("title") or None,
         "titleEdited": bool(record.get("titleEdited")),
-        # Review proposal mirror (memo dev/41) — status card wiring only; the
+        # An install's review mirror (memo dev/41): status card wiring only; the
         # transcript's proposal part remains the display record. dev/90 A16:
         # when the slot settled but a same-reply sibling is still pending in
         # the queue, the summary shows THAT one (read-only promote).
         "activeProposal": agents_store._proposal_summary(agents_store._effective_active_proposal(record)),
-        # dev/67-9: the parked plan (pending while content reviews cycle).
+        # The plan the agent landed, whose nodes Build & validate and Solve fill.
         "planProposal": agents_store._proposal_summary(record.get("planProposal")),
         # The Dataflow Builder orchestration session (dev/52 DR-2) — drives
         # the phase-aware builder panel; absent for every other agent.
@@ -86,6 +86,14 @@ def _attachment_card(spec: dict, record: dict, user_key: str) -> dict:
 
 def list_project_attachments(user_key: str, project_id: str) -> list[dict]:
     spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
+    # A node or a connection removed on a canvas bound to the dataflow's doc
+    # takes its attachments with it here, and their transcripts (dev/32): no
+    # tab saves the dataflow, whose save pruned them, and its canvas lists the
+    # attachments again once the server has the removal.
+    pruned = attachments.prune_orphaned_attachments(spec)
+    if pruned:
+        dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._person(user_key, "attachment"))
+        sessions.delete_sessions_of(user_key, project_id, pruned)
     records = attachments.list_attachments(spec)
     # dev/115 (DEC-021): a session left "solving" by a process that is gone is
     # reconciled to "interrupted" the first time anyone reads it.

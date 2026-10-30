@@ -63,6 +63,7 @@ jest.mock("../../registry/projectPackagesStore", () => ({
 }));
 
 import { ProjectLoader } from "../../components/ProjectLoader";
+import { refreshPackageRegistry } from "../../registry/packageRegistryBootstrap";
 
 const SPEC_WITH_DEPS = {
   dataflow: { nodes: [], edges: [], packages: ["ai.utk.uhvi@1"] },
@@ -100,6 +101,23 @@ it("renders a shared project but never installs its declared deps", async () => 
   expect(mockLoadTrill.mock.calls[0][0]).toBe(SPEC_WITH_DEPS);
   // …but nothing is installed on their behalf.
   expect(mockEnsureWorkflowDeps).not.toHaveBeenCalled();
+});
+
+it("refreshes the registry with a shared project's id, which draws the nodes of its owner's packages", async () => {
+  mockLoadProject.mockRejectedValue(notFound());
+  mockLoadSharedProject.mockResolvedValue({ spec: SPEC_WITH_DEPS, outputs: [] });
+  renderLoader();
+  // The packages the dataflow uses, read-only from its owner's store, which an
+  // invited editor's runs use; still nothing is installed.
+  await waitFor(() => expect(refreshPackageRegistry).toHaveBeenLastCalledWith({ openedFromLink: mockRouteId }));
+  expect(mockEnsureWorkflowDeps).not.toHaveBeenCalled();
+});
+
+it("refreshes the registry of the owner's own project with no such id", async () => {
+  mockLoadProject.mockResolvedValue({ spec: SPEC_WITH_DEPS, outputs: [] });
+  renderLoader();
+  await waitFor(() => expect(refreshPackageRegistry).toHaveBeenCalledTimes(2));
+  expect(jest.mocked(refreshPackageRegistry).mock.calls).toEqual([[], []]);
 });
 
 it("does not fall back to the share endpoint on a non-404 failure", async () => {

@@ -18,6 +18,13 @@ unexpected errors alike.
 Session-level helpers (waves, blocker signatures, the deadline check, the
 waiting summary, the progress-event table) stay in :mod:`session` and are
 called through that module so a test patches them in one place.
+
+The batch is its agent's work in the dataflow's room (``in_the_room``): it
+joins as the session starts and leaves once its last persist is written,
+before ``done``. Each persist holds the nodes whose code it writes
+(:meth:`_wave_held`): it waits for anyone else in them, takes their locks and
+names them all in the agent's ``editing`` before it takes the spec lock, and
+lets them go after it leaves it.
 """
 
 from __future__ import annotations
@@ -26,11 +33,14 @@ import logging
 import queue as _queue
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 
+from utk_curio.backend.app.agents.application import askers as agents_askers
 from utk_curio.backend.app.agents.application import attachments
 from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
 from utk_curio.backend.app.agents.application import dataset_resolution as agents_dataset_resolution
 from utk_curio.backend.app.agents.application import delegation
+from utk_curio.backend.app.agents.application import in_the_room as agents_room
 from utk_curio.backend.app.agents.application import source_grounding
 from utk_curio.backend.app.agents.application.errors import AgentServiceError
 from utk_curio.backend.app.agents.domain import content
@@ -38,6 +48,7 @@ from utk_curio.backend.app.agents.domain import dashboards
 from utk_curio.backend.app.agents.domain import failure_text
 from utk_curio.backend.app.agents.domain.counts import count_label
 from utk_curio.backend.app.agents.domain import map_edits
+from utk_curio.backend.app.collaboration import agent_peers
 from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.agents.domain import node_context
 from utk_curio.backend.app.agents.domain.manifest import AgentManifest
@@ -64,6 +75,9 @@ log = logging.getLogger(__name__)
 #: Why a node Solve wrote keeps its own code: it took other code, someone's
 #: edit, after the wave read it (``dataflow_docs.write``'s refusal).
 CHANGED_MEANWHILE = "its code changed while Solve worked on it; that code stays"
+#: Why a node Solve solved is left as it was: someone other than whoever asked
+#: was still in it when the wait for them ended (:meth:`SolveBatch._wave_held`).
+PERSON_EDITING = "{name} was editing it, so Solve wrote nothing there"
 
 
 class SolveBatch:
@@ -86,18 +100,21 @@ class SolveBatch:
         stop,
         *,
         spec: dict | None = None,
-        mode: str = "write",
-        return_phase: str | None = None,
         verify: bool = True,
         grounding_base: dict | None = None,
         dataset_paths: dict | None = None,
         retry_of: str | None = None,
         catalog_rows: list | None = None,
         acting_user=None,
+        room_asker: agents_room.Asker | None = None,
     ):
         self.user_key = user_key
         self.project_id = project_id
         self.attachment_id = attachment_id
+        # Who asked, as the room names them (read in the request), and the
+        # batch's agent at work in the room while :meth:`events` runs.
+        self.room_asker = room_asker
+        self.peer: agent_peers.Peer | None = None
         self.config = config
         self.targets = targets
         self.nodes_by_id = nodes_by_id
@@ -107,8 +124,6 @@ class SolveBatch:
         self.solve_execution_id = solve_execution_id
         self.stop = stop
         self.spec = spec
-        self.mode = mode
-        self.return_phase = return_phase
         self.verify = verify
         self.retry_of = retry_of
         self.catalog_rows = catalog_rows
@@ -280,7 +295,7 @@ class SolveBatch:
         # record is merged: a result carrying attempts always wins; one without
         # them keeps the earlier trail and updates only the reason.
         previous = dict(self.results.get(node_id) or {})
-        if previous.get("status") in ("solved", "proposed") and status != "verified":
+        if previous.get("status") == "solved" and status != "verified":
             # dev/131: a session NEVER un-solves a node. A later pass exists to
             # pick up work that became possible, not to downgrade a node whose
             # content already landed (a slice bound or a cancellation arriving
@@ -632,8 +647,8 @@ class SolveBatch:
     def _unwritten_answer(self, node: dict, text_out: str) -> str | None:
         """The error a node fails with when the builder answered in one line
         instead of writing its code, or None. The verified loop reports that
-        line, and so do the paths that write or propose content without
-        running it: it is never written, or offered for review, as code."""
+        line, and so does the path that writes content without running it: it
+        is never written as code."""
         if self.content_kind(node) != workflow_spec.CONTENT_KIND_CODE:
             return None
         answered = agents_rounds._one_line_answer(text_out, data_loading=self.is_data_loading(node))
@@ -693,8 +708,10 @@ class SolveBatch:
         ``solvingSince`` is refreshed so the stale marker means "no wave
         completed for 15 minutes". A process that dies between waves leaves
         every persisted wave in place (DEC-021: nothing replayed; Retry
-        continues). The re-read spec is what the next wave runs against."""
-        with projects_storage.spec_write_lock(self.user_key, self.project_id):
+        continues). The re-read spec is what the next wave runs against. The
+        nodes it writes are held by the batch's agent from before the spec
+        lock until after it (:meth:`_wave_held`)."""
+        with self._wave_held(), projects_storage.spec_write_lock(self.user_key, self.project_id):
             spec_doc = agents_spec_reads._live_spec_or_404(self.user_key, self.project_id)
             record = agents_spec_reads._record_or_404(spec_doc, self.attachment_id)
             session = record.get("builderSession") or {}
@@ -714,10 +731,66 @@ class SolveBatch:
             )
         self.current["spec"] = spec_doc
 
+    @contextmanager
+    def _wave_held(self):
+        """The nodes the next persist writes, the solved contents it has not
+        written yet, held for the write by the batch's agent at work in the
+        room, before the spec lock is taken and until after it is left: after
+        anyone else in them (not whoever asked), their locks, all of them
+        named in its ``editing`` and kept a second after while a tab is bound.
+        A node someone else still holds when the wait ends is left as it was,
+        skipped with why (:data:`PERSON_EDITING`), and the others are held."""
+        peer = self.peer
+        nodes = [item["nodeId"] for item in self.applied_contents if item["nodeId"] not in self.persisted]
+        if peer is None or peer.left or not nodes:
+            yield
+            return
+        writes = self._writes_of(nodes)
+        with agent_peers.holding(peer, nodes, writes) as hold:
+            if hold.held_by is None:
+                yield
+                hold.did = self._wrote(nodes)
+                return
+            hold.keep = False
+        held = {}
+        for node_id in nodes:
+            name = agent_peers.wait_for_people(self.project_id, [node_id], peer.asker_account,
+                                               asker_sign_in=peer.asker_sign_in, peer=peer, within=0)
+            if name:
+                held[node_id] = name
+        free = [node_id for node_id in nodes if node_id not in held]
+        with agent_peers.holding(peer, free, writes, within=0) as hold:
+            if hold.held_by is not None:
+                hold.keep = False
+                held.update({node_id: hold.held_by for node_id in free})
+            for node_id, name in held.items():
+                self.persisted.add(node_id)
+                self.results[node_id] = {"status": "skipped", "reason": PERSON_EDITING.format(name=name)}
+            yield
+            hold.did = self._wrote(free)
+
+    def _wrote(self, node_ids: list[str]) -> tuple:
+        """What a persist did to *node_ids*, as the agent's leave counts it:
+        each node whose code it wrote, which stays solved."""
+        return tuple(("changed", "node", node_id) for node_id in node_ids
+                     if (self.results.get(node_id) or {}).get("status") == "solved")
+
+    def _writes_of(self, node_ids: list[str]) -> str:
+        """What a persist of *node_ids*' content writes, as the agent's lock
+        and state name it: ``spec`` when each is a document (a grammar
+        node), else ``code``."""
+        kinds = {self.content_kind(self.nodes_by_id.get(node_id) or {}) for node_id in node_ids}
+        return "spec" if kinds == {workflow_spec.CONTENT_KIND_GRAMMAR} else "code"
+
     def _actor(self) -> dataflow_docs.Actor:
         """Who the batch's writes are by: the agent that writes its content,
-        asked by the account."""
-        return dataflow_docs.by_agent(getattr(self.resolution, "coord", None) or self.coord, self.user_key, "solve")
+        asked by the person who started the Solve (``acting_user``, taken in
+        the request, since the job's thread holds none), an invited editor
+        among them (``askers.account``)."""
+        return dataflow_docs.by_agent(
+            getattr(self.resolution, "coord", None) or self.coord,
+            agents_askers.account(self.user_key, self.acting_user), "solve",
+        )
 
     def _changed_meanwhile(self, node_ids: tuple, node_runs: dict) -> None:
         """The nodes whose code the dataflow kept (``dataflow_docs.write``):
@@ -740,9 +813,8 @@ class SolveBatch:
         cancelled = self.stop.is_set()
         session, applied = self._finish_persist()
         solved = sum(1 for r in self.results.values() if r["status"] == "solved")
-        proposed = sum(1 for r in self.results.values() if r["status"] == "proposed")
         if isinstance(self.session_id, str):
-            self._append_transcript_card(solved, proposed, cancelled)
+            self._append_transcript_card(solved, cancelled)
         self.payload_out.update({
             "attachmentId": self.attachment_id,
             "executionId": self.solve_execution_id,
@@ -751,48 +823,30 @@ class SolveBatch:
             "builderSession": session,
             "cancelled": cancelled,
             "notAttempted": sorted(self.unstarted),
-            "mode": self.mode,
         })
         if self.batch_reason:
             self.payload_out["reason"] = self.batch_reason
         return self.payload_out
 
     def _finish_persist(self) -> tuple[dict, list]:
-        with projects_storage.spec_write_lock(self.user_key, self.project_id):
+        with self._wave_held(), projects_storage.spec_write_lock(self.user_key, self.project_id):
             spec = agents_spec_reads._live_spec_or_404(self.user_key, self.project_id)
             record = agents_spec_reads._record_or_404(spec, self.attachment_id)
             session = record.get("builderSession") or {}
             node_runs = session.get("nodeRuns") or {}
             self.apply_contents(spec)
-            ids_to_ref = {
-                nid: ref for ref, nid in (session.get("nodeIds") or {}).items()
-            }
-            node_states = session.get("nodeStates")
             for node_id, outcome in self.results.items():
-                if outcome["status"] == "proposed":
-                    # dev/67-6: nothing was written — the node stays pending
-                    # until the user applies the content proposal; the plan row
-                    # advances to "solving" (a review awaits).
-                    ref = ids_to_ref.get(node_id)
-                    if node_states is not None and ref is not None:
-                        node_states[ref] = "solving"
-                    continue
                 if node_id in node_runs:
                     node_runs[node_id] = outcome["status"] if outcome["status"] != "skipped" else "skipped"
             session["nodeRuns"] = node_runs
             session.pop("solvingSince", None)
             session.pop("solveExecutionId", None)
             session.pop("cancelRequested", None)
-            if self.mode == "propose" and self.return_phase not in (None, "", "solving"):
-                # The propose batch resolved nothing — the session returns to the
-                # phase the solve interrupted (typically "simulating").
-                session["phase"] = self.return_phase
-            else:
-                session["phase"] = (
-                    "ready"
-                    if all(s not in ("pending", "failed") for s in node_runs.values())
-                    else "applied"
-                )
+            session["phase"] = (
+                "ready"
+                if all(s not in ("pending", "failed") for s in node_runs.values())
+                else "applied"
+            )
             record["builderSession"] = session
             dataflow_docs.write(
                 self.user_key, self.project_id, spec, self._actor(),
@@ -852,7 +906,7 @@ class SolveBatch:
             lines.append(f"reason: {self.batch_reason}")
         return lines, attempt_parts
 
-    def _append_transcript_card(self, solved: int, proposed: int, cancelled: bool) -> None:
+    def _append_transcript_card(self, solved: int, cancelled: bool) -> None:
         lines, attempt_parts = self._transcript_lines(cancelled)
         config = self.config
         sessions.append_turns(
@@ -860,11 +914,7 @@ class SolveBatch:
             [
                 sessions.make_turn(
                     "agent",
-                    (
-                        f"Proposed content for {proposed} of {len(self.targets)} plan nodes."
-                        if self.mode == "propose"
-                        else f"Solved {solved} of {len(self.targets)} plan nodes."
-                    )
+                    f"Solved {solved} of {len(self.targets)} plan nodes."
                     + (f" Cancelled: {len(self.unstarted)} not attempted." if cancelled else ""),
                     content=[{
                         "type": "card",
@@ -888,29 +938,41 @@ class SolveBatch:
 
     def events(self):
         try:
-            yield "solve_started", {"executionId": self.solve_execution_id, "targets": list(self.targets)}
-            self.resolution = delegation.resolve(
-                self.user_key, self.project_id, self.manifest, "node.content.generate"
-            ) if self.manifest is not None else delegation.Resolution("unresolvable")
-            if self.resolution.outcome != "ok":
-                yield from self._blocked_by_resolution()
-            else:
-                self.goals = [
-                    str(self.nodes_by_id[t].get("goal") or "") for t in self.targets if t in self.nodes_by_id
-                ]
-                yield from self._run_passes()
-            payload = self.finish()
-            # dev/131: every session ends in exactly one of three ways, and says so.
-            payload["endedBy"] = self.ended_by
-            payload["passes"] = self.passes_run
-            payload["waiting"] = agents_session._session_waiting_summary(
-                self.results,
-                [nid for nid, r in self.results.items() if (r or {}).get("status") in ("pending", "failed")],
-            )
+            # The batch's agent is in the room while it works: its last
+            # persist is written before it leaves, and ``done`` after.
+            with agents_room.at_work(self.user_key, self.project_id, self.attachment_id, coord=self.coord,
+                                     manifest=self.manifest, who=self.room_asker) as self.peer:
+                try:
+                    payload = yield from self._session()
+                finally:
+                    self.finish()  # every way out writes its last persist in the room
             yield "done", payload
         finally:
             agents_session._SOLVE_CANCEL_EVENTS.pop(self.solve_execution_id, None)
             self.finish()
+
+    def _session(self):
+        """The session's events, then its done payload (returned)."""
+        yield "solve_started", {"executionId": self.solve_execution_id, "targets": list(self.targets)}
+        self.resolution = delegation.resolve(
+            self.user_key, self.project_id, self.manifest, "node.content.generate"
+        ) if self.manifest is not None else delegation.Resolution("unresolvable")
+        if self.resolution.outcome != "ok":
+            yield from self._blocked_by_resolution()
+        else:
+            self.goals = [
+                str(self.nodes_by_id[t].get("goal") or "") for t in self.targets if t in self.nodes_by_id
+            ]
+            yield from self._run_passes()
+        payload = self.finish()
+        # dev/131: every session ends in exactly one of three ways, and says so.
+        payload["endedBy"] = self.ended_by
+        payload["passes"] = self.passes_run
+        payload["waiting"] = agents_session._session_waiting_summary(
+            self.results,
+            [nid for nid, r in self.results.items() if (r or {}).get("status") in ("pending", "failed")],
+        )
+        return payload
 
     def _blocked_by_resolution(self):
         # Missing specialist: ONE reviewed install proposal (not per node),
@@ -1148,165 +1210,9 @@ class SolveBatch:
                     yield event_name, {"nodeId": node_id, **progress}
                 continue
             remaining -= 1
-            if self.mode == "propose" and status == "verified":
-                yield from self._propose_from_verified(node_id, text)
-                continue
-            if self.mode == "propose" and status == "solved":
-                yield from self._propose_from_solved(node_id, text, child)
-                continue
             event = self.record_outcome(node_id, status, text, child)
             if event is not None:
                 yield "node_result", event
-
-    def _propose_from_verified(self, node_id: str, outcome: dict):
-        # dev/115: an EXECUTED review — the validation block
-        # (verdict, rounds, attempts) rides the part, PASS or
-        # FAIL (dev/67-7's labeled choice); a sandbox outage
-        # mints nothing and the node stays pending.
-        if agents_rounds._ended_on_an_answer(outcome) or (outcome.get("evidence") or {}).get("kind") == dashboards.KIND:
-            # The builder's one-line answer is no content, and a pinned tile's
-            # spec that loads its own data is refused: nothing is minted for
-            # Apply anyway to write, and the node fails as it does when Solve
-            # writes (a refused tile then waits for the user).
-            event = self.record_outcome(node_id, "verified", outcome, None)
-            if event is not None:
-                yield "node_result", event
-            return
-        for c in outcome.get("delegations") or []:
-            if c is not None:
-                self.delegations.append(c)
-        if outcome.get("verdict") == "infrastructure":
-            event = self.record_outcome(node_id, "verified", outcome, None)
-            if event is not None:
-                yield "node_result", event
-            return
-        validation_block = {
-            "verdict": outcome.get("verdict"),
-            "rounds": outcome.get("rounds"),
-            "evidence": outcome.get("evidence") or {},
-            "attempts": outcome.get("attempts") or [],
-        }
-        part, home_att, mint_text = agents_delegates._mint_content_review_from_delegate(
-            self.user_key, self.project_id,
-            node_id=node_id,
-            generated_text=outcome.get("candidate") or "",
-            parent_attachment_id=self.attachment_id,
-            parent_session_id=self.session_id,
-            local_turn=True,
-            validation=validation_block,
-            grounding_base=self.solve_ground,
-            delegate_coord=getattr(self.resolution, "coord", None),
-        )
-        if part is not None:
-            self.results[node_id] = {
-                "status": "proposed",
-                "proposalId": part["proposalId"],
-                "proposalAttachmentId": home_att,
-                "verdict": validation_block["verdict"],
-                "rounds": validation_block["rounds"],
-                "attempts": validation_block["attempts"],
-            }
-            yield "node_result", {
-                "nodeId": node_id,
-                "status": "proposed",
-                "proposalId": part["proposalId"],
-                "proposalAttachmentId": home_att,
-                "verdict": validation_block["verdict"],
-                "rounds": validation_block["rounds"],
-            }
-        else:
-            self.results[node_id] = {"status": "failed", "error": mint_text[:300]}
-            yield "node_result", {
-                "nodeId": node_id, "status": "failed", "error": mint_text[:300],
-            }
-
-    def _propose_from_solved(self, node_id: str, text, child):
-        # dev/67-6 (Simulation Mode: solve): nothing is
-        # written — the child's content mints a reviewed
-        # node.content.write proposal through the EXISTING
-        # machinery (digest-pinned against the current
-        # content). dev/72: the review lives with the node's
-        # agent when one exists (find-only — the drain never
-        # writes the spec beyond the mint's own write).
-        if child is not None:
-            self.delegations.append(child)
-        # dev/114: the gate runs on the batch base BEFORE the
-        # mint so the node's failure names the source.
-        text_out = content.extract_node_content(text)
-        node = self.nodes_by_id.get(node_id) or {}
-        err = self._gate_unverified(node_id, text_out)
-        if not err:
-            # A pinned tile's spec that loads its own data is refused before
-            # the mint, and the node waits for the user, as when Solve writes.
-            unpublishable = dashboards.refusal(self.user_key, self.project_id, node, text_out)
-            if unpublishable:
-                failed = {"status": "failed", "error": unpublishable[:300], "remedy": dashboards.remedy(node_id)}
-                self.results[node_id] = failed
-                yield "node_result", {"nodeId": node_id, **failed}
-                return
-            err = self._unwritten_answer(node, text_out)
-        if err:
-            self.results[node_id] = {"status": "failed", "error": err[:300]}
-            yield "node_result", {"nodeId": node_id, "status": "failed", "error": err[:300]}
-            return
-        # dev/73: the shared content→review sequence (also the
-        # chat loops' — one mint policy, three callers).
-        part, home_att, mint_text = agents_delegates._mint_content_review_from_delegate(
-            self.user_key, self.project_id,
-            node_id=node_id,
-            generated_text=text,
-            parent_attachment_id=self.attachment_id,
-            parent_session_id=self.session_id,
-            local_turn=True,
-            # #880: a job thread cannot list the Data Catalog, so the mint's
-            # gate grounds against the batch's listing, as the verified path does.
-            grounding_base=self.solve_ground,
-            delegate_coord=getattr(self.resolution, "coord", None),
-        )
-        if part is not None:
-            self.results[node_id] = {
-                "status": "proposed",
-                "proposalId": part["proposalId"],
-                "proposalAttachmentId": home_att,
-            }
-            node = self.nodes_by_id.get(node_id) or {}
-            node_label = (node.get('goal') or node_id)[:60]
-            if home_att != self.attachment_id and isinstance(self.session_id, str):
-                # The agent that wrote it, as its manifest names it.
-                delegate = getattr(self.resolution, "manifest", None)
-                delegate_coord = getattr(self.resolution, "coord", None) or ""
-                delegate_name = getattr(delegate, "name", None) or delegate_coord
-                sessions.append_turns(
-                    self.user_key, self.project_id, self.session_id, self.attachment_id,
-                    [sessions.make_turn(
-                        "agent",
-                        f"Proposed content for {node_label!r}: "
-                        f"the review lives in the node's {delegate_name}.",
-                        content=[content.make_delegation_part(
-                            capability="node.content.generate",
-                            coord=delegate_coord,
-                            name=delegate_name,
-                            category=getattr(delegate, "category", "") or "",
-                            attachment_id=home_att,
-                            status="ok",
-                            summary=f"content proposed for {node_label!r}",
-                        )],
-                    )],
-                )
-            yield "node_result", {
-                "nodeId": node_id,
-                "status": "proposed",
-                "proposalId": part["proposalId"],
-                "proposalAttachmentId": home_att,
-            }
-        else:
-            self.results[node_id] = {
-                "status": "failed", "error": mint_text[:300]
-            }
-            yield "node_result", {
-                "nodeId": node_id, "status": "failed",
-                "error": mint_text[:300],
-            }
 
     # ── the worker (runs on the pool) ───────────────────────────────────────
 
@@ -1370,6 +1276,7 @@ class SolveBatch:
                 node_id=node_id,
                 home_create=False,  # workers never write the spec
                 dataflow_block=self._dataflow_block(node_id),
+                asker=self.acting_user,
             )
             queue.put(
                 (node_id, "solved" if status == "ok" else "failed", text, child)
@@ -1429,6 +1336,7 @@ class SolveBatch:
                 home_create=False,  # workers never write the spec
                 dataflow_block=self._dataflow_block(_node_id),
                 refused=refused,
+                asker=self.acting_user,
             )
             return st, tx, ch
 
@@ -1509,6 +1417,7 @@ class SolveBatch:
                 manifest=self.manifest,
                 extra_texts=(str((self.spec.get("dataflow") or {}).get("task") or ""),),
                 catalog_rows=self.catalog_rows,
+                asker=self.acting_user,
             ),
             # dev/131: this node may not outlive the session, so its budget is
             # what is left of the session's, and spending it is the session's stop.

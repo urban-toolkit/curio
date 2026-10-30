@@ -18,6 +18,7 @@ from utk_curio.backend.app.agents.infrastructure import agent_jobs
 from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import catalog as agents_catalog
+from utk_curio.backend.app.agents.application import in_the_room as agents_room
 from utk_curio.backend.app.agents.application import lifecycle as agents_lifecycle
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application.proposals import acquire as agents_acquire
@@ -28,6 +29,7 @@ from utk_curio.backend.app.agents.application.turns import grounding as agents_g
 from utk_curio.backend.app.agents.application.turns import policy as agents_policy
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
 from utk_curio.backend.app.execution import workflow_spec
+from utk_curio.backend.app.collaboration import agent_peers
 from utk_curio.backend.app.collaboration import dataflow_docs
 
 
@@ -45,16 +47,17 @@ def solve_node_stream(
     agent (any attachment whose manifest resolves ``node.content.generate``).
 
     Round 0 executes the node's CURRENT content as-is; corrections run the
-    shared loop. A node that already had content lands as a reviewed
-    ``node.content.write`` that has already passed (DEC-006 — an existing
-    node's content changes only through review); an EMPTY node is written
-    directly on PASS; exhaustion mints nothing and says so; a sandbox outage
-    says "not verified". Detached like the batch: the request subscribes.
+    shared loop. Corrected code that passed lands in a node that already had
+    content as the agent's change, through ``node.content.write`` and its
+    checks, with its Undo; an EMPTY node is written directly on PASS;
+    exhaustion writes nothing and says so; a sandbox outage says "not
+    verified". Detached like the batch: the request subscribes.
 
     Eager validation (404/409 stay JSON); the generator yields
-    ``solve_node_started`` → the loop's ``generation_round`` /
-    ``node_executed`` / ``round_verdict`` → ``done {verdict, rounds,
-    attempts, unchanged?, written?, proposalId?, proposalAttachmentId?}``.
+    ``solve_node_started``, the loop's ``generation_round`` /
+    ``node_executed`` / ``round_verdict``, a ``change`` when corrected code
+    lands, and ``done {verdict, rounds, attempts, unchanged?, written?,
+    changeId?, changeAttachmentId?}``.
     """
     spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
     record = agents_spec_reads._record_or_404(spec, attachment_id)
@@ -97,6 +100,8 @@ def solve_node_stream(
         catalog_rows=agents_grounding._catalog_rows_for_discovery(user_key, project_id),
         templates=templates,
         acting_user=agents_spec_reads._acting_user(),
+        # Who asked, as the room names them, read here: the job's thread holds no request.
+        room_asker=agents_room.asker(),
     )
     job = agent_jobs.start_job(
         user_key=user_key, project_id=project_id, attachment_id=attachment_id,
@@ -125,8 +130,48 @@ def _solve_node_events(
     templates: dict | None = None,
     catalog_rows: list | None = None,
     acting_user=None,
+    room_asker: agents_room.Asker | None = None,
 ):
-    """The per-node Solve body (dev/115 A2) over the ONE verified loop."""
+    """The per-node Solve (dev/115 A2): its agent at work in the dataflow's
+    room (``in_the_room.at_work``) from its start until it has said its
+    verdict, then the changes it landed, for a canvas no doc binds, and done."""
+    with agents_room.at_work(user_key, project_id, attachment_id, coord=coord, manifest=manifest,
+                             who=room_asker) as peer:
+        done = yield from _solved_node(
+            user_key, project_id, attachment_id, config, spec, node, resolution, coord, session_id,
+            execution_id, exec_fn, manifest=manifest, grounding_base=grounding_base,
+            dataset_paths=dataset_paths, templates=templates, catalog_rows=catalog_rows,
+            acting_user=acting_user, room_asker=room_asker, peer=peer,
+        )
+    for landed in done.pop("landed", None) or []:
+        yield "change", landed
+    yield "done", done
+
+
+def _solved_node(
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    config: ProviderConfig,
+    spec: dict,
+    node: dict,
+    resolution,
+    coord: str,
+    session_id,
+    execution_id: str,
+    exec_fn,
+    *,
+    manifest,
+    grounding_base: dict,
+    dataset_paths: dict,
+    templates: dict | None = None,
+    catalog_rows: list | None = None,
+    acting_user=None,
+    room_asker: agents_room.Asker | None = None,
+    peer: agent_peers.Peer | None = None,
+):
+    """The per-node Solve body (dev/115 A2) over the ONE verified loop; returns
+    its done payload, with the changes it landed (``landed``)."""
     node_id = node.get("id")
     label = (node.get("goal") or node_id)[:60]
     started = time.monotonic()
@@ -163,7 +208,7 @@ def _solve_node_events(
     trail_lines = _trail_lines(attempts)
     text, card_kind, parts = _conclude(
         user_key, project_id, attachment_id, session_id, spec, node, label, had_content,
-        grounding_base, outcome, done,
+        grounding_base, outcome, done, asker=acting_user, room_asker=room_asker, peer=peer,
     )
     card = {
         "type": "card", "kind": card_kind,
@@ -184,7 +229,7 @@ def _solve_node_events(
     if isinstance(session_id, str):
         _append_solve_turn(user_key, project_id, attachment_id, session_id, coord, config, execution_id,
                            started, text, card_kind, card, parts, outcome, verdict)
-    yield "done", done
+    return done
 
 
 def _not_executable_outcome(node: dict, label: str, kind: str) -> dict:
@@ -234,6 +279,7 @@ def _run_node_loop(
             home_create=False,
             dataflow_block=dataflow_block,
             refused=refused,
+            asker=acting_user,
         )
         return st, tx, ch
 
@@ -264,6 +310,7 @@ def _run_node_loop(
             execution_id=execution_id, config=config, manifest=manifest,
             extra_texts=(str((spec.get("dataflow") or {}).get("task") or ""),),
             catalog_rows=catalog_rows,
+            asker=acting_user,
         ),
     )
     return outcome
@@ -307,11 +354,34 @@ def _write_empty_node(user_key, project_id, node_id, candidate: str, *, actor=No
     return False
 
 
+def _write_empty_node_held(user_key, project_id, spec, node_id, candidate: str, *, actor=None,
+                           peer: agent_peers.Peer | None = None) -> tuple[bool, str | None]:
+    """:func:`_write_empty_node`, held by the Solve's agent at work in the room
+    (``agent_peers.holding``): after anyone else in the node (not whoever
+    asked), it takes the node's lock and names the node in its state for the
+    write and a second after. ``(written, who still held the node)``: nothing
+    is written while someone else still holds it once the wait ends."""
+    if peer is None:
+        return _write_empty_node(user_key, project_id, node_id, candidate, actor=actor), None
+    with agent_peers.holding(peer, [node_id], agents_room.content_writes(spec, node_id)) as hold:
+        if hold.held_by is not None:
+            return False, hold.held_by
+        written = _write_empty_node(user_key, project_id, node_id, candidate, actor=actor)
+        hold.keep = written
+        hold.did = (("changed", "node", node_id),)
+        return written, None
+
+
 def _conclude(user_key, project_id, attachment_id, session_id, spec, node, label, had_content,
-              grounding_base, outcome: dict, done: dict) -> tuple[str, str, list]:
+              grounding_base, outcome: dict, done: dict, asker=None, room_asker=None,
+              peer=None) -> tuple[str, str, list]:
     """What the per-node Solve says and shows for its verdict: the text, the card kind and the
-    content parts (the minted review when PASS proposes; the caller adds the attempt trail).
-    Writes the verdict-specific fields (unchanged, written, proposal ids, remedy) into *done*."""
+    content parts (the change's card when PASS writes corrected code; the caller adds the attempt
+    trail). Writes the verdict-specific fields (unchanged, written, change ids, remedy) into *done*,
+    and the change's canvas mutation as ``landed``, for the stream. *asker*: the person the job
+    took when it started, whom a change it writes names, an invited editor among them;
+    *room_asker*, the same as the room names them. *peer*: the Solve's agent at work in the room,
+    which holds the node it writes."""
     node_id = node.get("id")
     verdict = outcome["verdict"]
     attempts = outcome["attempts"]
@@ -328,19 +398,24 @@ def _conclude(user_key, project_id, attachment_id, session_id, spec, node, label
     elif verdict == "pass" and not had_content:
         # An empty node (a plan placeholder solved from its own agent) is
         # written directly on PASS — parity with the Dataflow Builder's Solve.
-        written = _write_empty_node(
-            user_key, project_id, node_id, outcome["candidate"],
-            actor=agents_spec_reads._agent_actor(user_key, spec, attachment_id, "solve"),
+        written, held_by = _write_empty_node_held(
+            user_key, project_id, spec, node_id, outcome["candidate"],
+            actor=agents_spec_reads._agent_actor(user_key, spec, attachment_id, "solve", asker), peer=peer,
         )
         done["written"] = written
         text = (
             f"Solved {label!r}: the code ran successfully after {rounds} round"
             f"{'s' if rounds != 1 else ''} and was written to the node."
             if written else
+            f"Solved {label!r}: the code ran successfully, but {held_by} is editing the node, so nothing was written."
+            if held_by else
             f"Solved {label!r}: the code ran successfully, but the node gained content meanwhile — nothing written."
         )
         card_kind = "result"
     elif verdict == "pass":
+        # The job's thread holds no request: the change waits for anyone but
+        # the account that asked, and is named after it.
+        stream: dict = {"asker_id": getattr(asker, "id", None), "asker": asker, "room_asker": room_asker}
         part, home_att, _mint_text = agents_delegates._mint_content_review_from_delegate(
             user_key, project_id,
             node_id=node_id,
@@ -348,21 +423,23 @@ def _conclude(user_key, project_id, attachment_id, session_id, spec, node, label
             parent_attachment_id=attachment_id,
             parent_session_id=session_id,
             local_turn=False,
+            parent_loop_ctx=stream,
             validation={"verdict": verdict, "rounds": rounds,
                         "evidence": outcome["evidence"], "attempts": attempts},
             grounding_base=grounding_base,
         )
+        done["landed"] = list(stream.get("_landed") or [])
         if part is not None:
-            done["proposalId"] = part["proposalId"]
-            done["proposalAttachmentId"] = home_att
+            done["changeId"] = part["changeId"]
+            done["changeAttachmentId"] = home_att
             if home_att == attachment_id:
                 parts.append(part)
             text = (
                 f"Solved {label!r}: the corrected code ran successfully after {rounds} "
-                f"round{'s' if rounds != 1 else ''} — review and apply it below."
+                f"round{'s' if rounds != 1 else ''} and was written to the node."
             )
         else:
-            text = f"Solved {label!r} but the review could not be minted — nothing was changed."
+            text = f"Solved {label!r}, but the code could not be written: nothing was changed."
         card_kind = "result"
     elif verdict == "infrastructure":
         text = (

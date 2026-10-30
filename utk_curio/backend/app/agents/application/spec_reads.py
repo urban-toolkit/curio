@@ -40,14 +40,16 @@ def _live_spec_or_404(user_key: str, project_id: str) -> dataflow_docs.Live:
     return spec
 
 
-def _agent_actor(user_key: str, spec: dict | None, attachment_id: str | None, what: str) -> dataflow_docs.Actor:
+def _agent_actor(user_key: str, spec: dict | None, attachment_id: str | None, what: str,
+                 asker=None) -> dataflow_docs.Actor:
     """Who a change an attachment's agent writes is by: the agent the
     attachment binds, asked by the person who asked, an editor the owner
     invited among them (``askers.account``), the origin of its transaction on
-    the dataflow's doc."""
+    the dataflow's doc. On a job's thread, which holds no request, *asker* is
+    the person the job took when it started."""
     record = attachments.get_attachment(spec, attachment_id) if spec and attachment_id else None
     return dataflow_docs.by_agent(
-        str((record or {}).get("coord") or "") or None, agents_askers.account(user_key), what,
+        str((record or {}).get("coord") or "") or None, agents_askers.account(user_key, asker), what,
     )
 
 

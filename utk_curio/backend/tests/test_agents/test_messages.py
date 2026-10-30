@@ -235,8 +235,6 @@ _CUT_RE = re.compile(r"(?<=[.;:!?])\s+|\n|\{[a-z][a-z0-9_]*\}")
 SHARED_WITH_USERS = {
     ("utk_curio/backend/app/agents/application/dataset_resolution.py",
      "external rows carry the runtime's verification verdict."): "the Dataset Finder's chat record of its candidates",
-    ("utk_curio/backend/app/agents/application/proposals/plans.py",
-     "the node template registry is unavailable:"): "the reason an Apply gives",
     ("utk_curio/backend/app/packages/application/templates.py",
      "the node template registry is unavailable:"): "the node templates' own error",
     ("utk_curio/backend/app/agents/application/solve/batch.py",

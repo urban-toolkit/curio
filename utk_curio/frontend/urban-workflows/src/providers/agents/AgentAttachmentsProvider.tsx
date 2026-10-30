@@ -18,7 +18,7 @@ import { useAgentNodeRuns, type AgentNodeRunsSlice } from "./useAgentNodeRuns";
  *
  * Since memo dev/142 (F2) the provider COMPOSES five hooks, one per concern —
  * `useAgentSession` (chat, transcripts, the streamed send and its run status),
- * `useAgentProposals` (review-before-apply and the canvas bridge),
+ * `useAgentProposals` (an install's review, a change's Undo, the canvas bridge),
  * `useAgentSolve` (the batch, the per-node Solve, the job re-attach),
  * `useAgentSimulation`, `useAgentNodeRuns` — and the context value keeps every
  * key it had, so no consumer changed.
@@ -56,7 +56,7 @@ export const AgentAttachmentsProvider: React.FC<{
   const state = useAgentAttachments(effectiveProjectId);
   const session = useAgentSession(effectiveProjectId, state);
   const { projectRef, refreshAfterMutation, setSelectedId, ...sessionValue } = session;
-  const proposals = useAgentProposals({ effectiveProjectId, projectRef, reload: state.reload, refreshAfterMutation });
+  const proposals = useAgentProposals({ effectiveProjectId, projectRef, refreshAfterMutation });
   const solve = useAgentSolve({ projectRef, attachments: state.attachments, refreshAfterMutation });
   const simulation = useAgentSimulation({ projectRef, refreshAfterMutation });
   const nodeRuns = useAgentNodeRuns({ projectRef, refreshAfterMutation });

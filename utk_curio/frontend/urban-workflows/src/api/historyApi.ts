@@ -1,5 +1,13 @@
 import { apiFetch } from "../utils/authApi";
+import type { DataflowCategories } from "../utils/dataflowCategories";
 import type { GraphPreview } from "./projectsApi";
+
+/** File > Save's version, with the dataflow's categories as it is now, which
+ *  the canvas title shows. */
+export interface SavedVersion {
+  categories?: DataflowCategories;
+  [key: string]: unknown;
+}
 
 /** Who made a version or an entry (`collaboration/history.py`): a person, or
  *  an agent with the account that asked it. */
@@ -104,8 +112,8 @@ export const historyApi = {
   },
 
   /** File > Save: a version named Saved. */
-  saved(projectId: string): Promise<unknown> {
-    return apiFetch(`${base(projectId)}/saved`, post());
+  saved(projectId: string): Promise<SavedVersion> {
+    return apiFetch<SavedVersion>(`${base(projectId)}/saved`, post());
   },
 
   /** Put the version back on the canvas, for every tab. `refused`: the nodes

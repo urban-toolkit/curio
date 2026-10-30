@@ -6,7 +6,7 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import { DatasetCatalogDrawer } from "../../components/datasets/catalog";
-import { useFlowContext } from "../FlowProvider";
+import { useAgentsDataflowId } from "../agents/useAgentsDataflowId";
 import { prefetchDatasetCatalog } from "../../services/datasetCatalog";
 import { isStandaloneDashboard } from "../../standalone/dashboardPayload";
 import { useSlideDrawerPresentation } from "../../hook/useSlideDrawerPresentation";
@@ -20,7 +20,8 @@ type DatasetCatalogDrawerContextValue = {
 const DatasetCatalogDrawerContext = createContext<DatasetCatalogDrawerContextValue | null>(null);
 
 export function DatasetCatalogDrawerProvider({ children }: { children: React.ReactNode }) {
-  const { projectId } = useFlowContext();
+  // The dataflow both surfaces list (`useAgentsDataflowId`).
+  const dataflowId = useAgentsDataflowId();
   const {
     mounted,
     presented,
@@ -33,22 +34,22 @@ export function DatasetCatalogDrawerProvider({ children }: { children: React.Rea
   // user interacts with them: the drawer default query (includeHub) and the
   // dataset palette query (no hub) that drives the trigger counter.
   useEffect(() => {
-    if (!projectId) return;
+    if (!dataflowId) return;
     // A standalone dashboard shows neither surface: there is no drawer to open
     // and no palette to count. Warming a cache nothing reads would be two
     // requests from a page whose whole claim is that it makes none.
     if (isStandaloneDashboard()) return;
     prefetchDatasetCatalog({
-      dataflowId: projectId,
+      dataflowId,
       includeHub: true,
       sort: "recent",
     });
     prefetchDatasetCatalog({
-      dataflowId: projectId,
+      dataflowId,
       includeHub: false,
       sort: "recent",
     });
-  }, [projectId]);
+  }, [dataflowId]);
 
   // Gated on `mounted`, like its two peers: `presented` goes false a frame
   // into the exit slide, which released the lock while the drawer was still

@@ -7,6 +7,7 @@ import React, {
     useMemo,
     useRef,
     useEffect,
+    useSyncExternalStore,
 } from "react";
 import {
     applyEdgeChanges,
@@ -28,7 +29,9 @@ import { useSelectionTags } from "./flow/useSelectionTags";
 import { useDataflowDoc } from "./flow/useDataflowDoc";
 import { useRemovalAsk } from "./flow/useRemovalAsk";
 import { useInstallSave } from "./flow/useInstallSave";
+import { useLeavePageGuard } from "./flow/useSaveState";
 import { useServerRun } from "./flow/useServerRun";
+import { useCategoriesRefresh } from "./flow/useCategoriesRefresh";
 import { useStepOutcomes } from "./flow/useStepOutcomes";
 import { useDashboardRun } from "./flow/useDashboardRun";
 import { autoRunTargets, useAutoRun } from "./flow/useAutoRun";
@@ -44,13 +47,22 @@ import { useWorkflowOperations, type DocBridgeForSaves } from "../hook/useWorkfl
 import { useToastContext } from "./ToastProvider";
 import { useCollab } from "./CollaborationProvider";
 import { CONNECTION_DROPPED_EVENT, useDocBinding } from "./collab/docContext";
+import type { DataflowDocProvider } from "./collab/docProvider";
 import { canvasRole } from "./collab/participants";
+import { numberedName } from "./collab/presence";
+import { agentsDataflowId } from "../services/agents/agentEditors";
+import { getCurrentProjectId, subscribe as onOpenedDataflow } from "../registry/projectPackagesStore";
 import { useProvenanceContext } from "./ProvenanceProvider";
 import { useUserContext } from "./UserProvider";
 import { isHostedGuest } from "../components/apiSettings/useHostedGuest";
 import { DEFAULT_SAVE_OUTPUT_DATASET } from "../utils/saveOutputDataset";
 import { writeNodeSettings, type NodeSettings } from "../utils/nodeSettingsWriters";
 import { authApi } from "../utils/authApi";
+import { refreshAgentsWhenKept } from "./flow/agentDockAfterRemovals";
+
+/** How long leaving a dataflow bound to its doc waits for the server to keep
+ *  this tab's last change before it asks whether to leave without it. */
+const LEAVE_WAIT_MS = 3000;
 
 export type { IOutput, IInteraction, IPropagation, NodeExecOutcome } from "./flow/flowTypes";
 export type { NodeActionsContextProps } from "./flow/flowContextTypes";
@@ -142,6 +154,8 @@ export const FlowContext = createContext<FlowContextProps>({
     projectName: "",
     projectDirty: false,
     projectSavedAt: null,
+    boundDoc: null,
+    whenChangesKept: async () => true,
     nodeExecStatus: {},
     viewerMode: "owner",
     workflowCategories: {},
@@ -152,11 +166,11 @@ export const FlowContext = createContext<FlowContextProps>({
     updateDataflowCategories: () => {},
     setScenarios: () => {},
     setAutoRun: () => {},
-    saveCurrentProject: async () => {},
-    requestProjectSave: async () => {},
+    saveDataflow: async () => ({ id: "", created: false }),
+    saveDashboardLayout: async () => {},
     saveAsNewProject: async () => {},
     ensureProjectId: async () => null,
-    persistDataflowForInstall: async () => ({ saved: false, failedNodeIds: [] }),
+    recordOutputs: async () => ({ saved: false, failedNodeIds: [] }),
     loadProject: async () => {},
     loadSharedProject: async () => {},
     discardProject: () => {},
@@ -233,21 +247,20 @@ const FlowProvider = ({
     const markNodeStaleRef = useRef<(nodeId: string) => void>(() => {});
     const markNodeErroredRef = useRef<(nodeId: string) => void>(() => {});
     const markDirtyRef = useRef<() => void>(() => {});
-    // Saves the project right after a pin changes (assigned below, next to
-    // markDirtyRef). Pinning is the one edit whose entire purpose is to change
-    // a DIFFERENT page, and that page renders what is on disk, so leaving it to
-    // the 30 second auto-save meant "pin a tile, open the dashboard" showed
-    // "nothing is pinned yet" for up to half a minute. That reads as a broken
-    // feature rather than as a save that has not happened yet.
+    // Records, right after a pin or a scenario changes (assigned below, next to
+    // markDirtyRef), the outputs a pinned tile or a scenario reads: the
+    // dashboard draws its tiles from the dataflow's saved outputs, and the
+    // doc keeps the pin itself.
     const savePinChangeRef = useRef<() => void>(() => {});
     // Set after workflowOps exists; called from applyNewOutput (a genuine runtime
     // output, NOT project load — load writes outputs via setOutputs directly) to
     // auto-install + surface a produced dataset without a manual disk-icon save.
     const scheduleInstallSyncRef = useRef<(nodeId: string) => void>(() => {});
-    // Forces the debounced install-save to run NOW (assigned below, next to
-    // scheduleInstallSyncRef). The Play-All runner calls it on completion and the
-    // provider calls it on unmount so the final burst is never lost to the timer.
-    const flushInstallSyncRef = useRef<() => void>(() => {});
+    // Forces the debounced outputs record to run NOW (assigned below, next to
+    // scheduleInstallSyncRef), resolving once it is done. The Play-All runner
+    // calls it on completion, File > Save before its version, and the provider
+    // on unmount, so the final burst is never lost to the timer.
+    const flushInstallSyncRef = useRef<() => Promise<void> | void>(() => {});
     const [defaultSaveOutputDataset, setDefaultSaveOutputDataset] = useState(
         DEFAULT_SAVE_OUTPUT_DATASET,
     );
@@ -359,11 +372,22 @@ const FlowProvider = ({
     // The doc an agent's applied code is the server's in, once the canvas binds.
     const codeDocRef = useRef<AppliedCodeDoc | null>(null);
     const {
-        applyNodeContent, addNode, propagateDownstreamInputs, applyOutput, onEdgesDelete, onNodesDelete,
+        applyNodeContent, addNode, propagateDownstreamInputs, applyOutput,
+        onEdgesDelete: dropEdges, onNodesDelete: dropNodes,
     } = useGraphEdits({
         setNodes, setEdges, reactFlow, workflowNameRef, outputsRef, markNodeStaleRef, setOutputs,
         agentEditProv, markDirtyRef, codeDocRef,
     });
+    // A node or a connection removed takes the agents attached to it along,
+    // once the server has the removal (agentDockAfterRemovals.ts).
+    const onNodesDelete = useCallback((...removed: Parameters<typeof dropNodes>) => {
+        dropNodes(...removed);
+        void refreshAgentsWhenKept(docBridgeRef.current?.whenKept);
+    }, [dropNodes]);
+    const onEdgesDelete = useCallback((...removed: Parameters<typeof dropEdges>) => {
+        dropEdges(...removed);
+        void refreshAgentsWhenKept(docBridgeRef.current?.whenKept);
+    }, [dropEdges]);
 
     const { onConnect, isValidConnection } = useConnect({
         markDirtyRef, reactFlow, showToast, markNodeStaleRef, applyOutput, setEdges,
@@ -405,6 +429,8 @@ const FlowProvider = ({
         onConnect, addNode,
         defaultSaveOutputDataset,
         docBridgeRef,
+        flushOutputsRef: flushInstallSyncRef,
+        recordSourcesRef: savePinChangeRef,
     });
 
     markNodeExecutedRef.current = workflowOps.markNodeExecuted;
@@ -416,8 +442,16 @@ const FlowProvider = ({
     // The canvas and the dataflow's doc, both ways. A watcher's canvas takes
     // the doc's changes and writes none, and has no history to read.
     const role = canvasRole(workflowOps.viewerMode, collab);
+    // The doc the canvas is bound to, for what the top bar says of it.
+    const [boundProvider, setBoundProvider] = useState<DataflowDocProvider | null>(null);
     const dataflowDoc = useDataflowDoc({
         binding: dashboardOn ? null : docBinding,
+        bindable: !dashboardOn,
+        onBound: (provider) => {
+            setBoundProvider(provider);
+            workflowOps.noteBound?.();
+        },
+        onUnbound: () => setBoundProvider(null),
         canWrite: role !== "watcher" && !!docBinding?.provider.canWrite,
         readsHistory: role !== "watcher",
         nodes, edges, setNodes, setEdges, reactFlow,
@@ -436,12 +470,24 @@ const FlowProvider = ({
     });
     docBridgeRef.current = dataflowDoc;
     codeDocRef.current = dataflowDoc;
+    // The categories the title shows, asked again as the dataflow changes and
+    // as a run on the server ends, in every tab bound to its doc: no save
+    // answers them any more.
+    const categoriesRefresh = useCategoriesRefresh({
+        provider: boundProvider,
+        taken: workflowOps.categoriesTaken,
+        take: workflowOps.takeServerCategories,
+    });
+    // Closing the tab asks while changes wait: a bound canvas's the server
+    // does not have yet, or one bound to no doc that holds changes no one keeps.
+    useLeavePageGuard(boundProvider, workflowOps.projectDirty);
     // A connection this tab drew to a node someone removed meanwhile: the
-    // server took it out, and says who removed the node.
+    // server took it out, and says who removed the node, a tab of the shared
+    // guest account by its number.
     useEffect(() => {
         if (typeof collab.onRemote !== "function") return;
         return collab.onRemote(CONNECTION_DROPPED_EVENT, (payload: any) => {
-            const who = payload?.by?.name || payload?.by?.username || "Someone";
+            const who = numberedName(payload?.by?.name || payload?.by?.username || "Someone", payload?.by);
             showToast(`${who} removed that node, so this connection was not kept.`, "warning", { stay: true });
         });
     }, [collab.onRemote, showToast]);
@@ -460,17 +506,40 @@ const FlowProvider = ({
         isDashboardSource, workflowOps, flushInstallSyncRef, hostedGuest,
     });
 
-    // Runs go to the server for whoever may save the dataflow, since a run
-    // saves it first and records its outputs in it. Hosted guests, viewers of
-    // a shared dataflow and `--no-project` keep the run in the browser, and so
-    // does a canvas with nobody signed in, which cannot save either.
+    // Resolves once the server has every change this tab made, or gives up
+    // after a moment.
+    const whenChangesKept = (): Promise<boolean> => {
+        if (!dataflowDoc.bound() || boundProvider?.isKept()) return Promise.resolve(true);
+        // Offline, what waits in the tab is lost on leaving: ask at once.
+        if (collab.connected === false) return Promise.resolve(false);
+        return Promise.race([
+            dataflowDoc.whenKept(),
+            new Promise<boolean>((resolve) => setTimeout(() => resolve(false), LEAVE_WAIT_MS)),
+        ]);
+    };
+    // The dataflow the route opened: an invited editor's tab saves none of its
+    // own, so its `projectId` is null, and its runs run this one.
+    const opened = useSyncExternalStore(onOpenedDataflow, getCurrentProjectId);
+    // Runs go to the server for whoever edits the dataflow: its owner, and an
+    // editor the owner invited (canvasRole, the role the agents ask). Hosted
+    // guests, watchers and `--no-project` keep the run in the browser, and so
+    // does a canvas with nobody signed in.
     const runsOnServer =
         !dashboardOn &&
         !isStandaloneDashboard() &&
         !skipProjectPage &&
         user != null &&
         !hostedGuest &&
-        workflowOps.viewerMode === "owner";
+        role !== "watcher";
+    // The dataflow a run on the server runs, once the server has every change
+    // this tab made: the owner's, a dataflow not saved yet made first
+    // (ensureProjectId), or the one an invited editor's link opened, which the
+    // editor's changes reach through its doc (agentsDataflowId).
+    const keepRunDataflow = async (): Promise<string | null> => {
+        if (role !== "editor") return workflowOps.ensureProjectId();
+        await whenChangesKept();
+        return agentsDataflowId(role, workflowOps.projectId, getCurrentProjectId());
+    };
     // What a step of a run on the server does to its node: one set for the
     // canvas's runs and a dashboard viewer's.
     const stepOutcomes = useStepOutcomes({
@@ -479,12 +548,13 @@ const FlowProvider = ({
     });
     const serverRun = useServerRun({
         reactFlow, setNodes, showToast,
-        requestProjectSave: workflowOps.requestProjectSave,
+        keepDataflow: keepRunDataflow,
         applyNewOutput, setOutputs, hydrateRestoredOutputs, markNodeErroredRef,
         playNodes, playAllStateRef, emittedForInputRef, outputsRef, workflowNameRef,
         nodeExecProv, flushInstallSyncRef,
         surfaceInstallWarnings: workflowOps.surfaceInstallWarnings,
         outcomes: stepOutcomes,
+        onRunEnded: categoriesRefresh.now,
     });
     // #1117: on a dashboard, a change to a control a pinned tile shows reruns
     // the dataflow on the server as a viewer's run, which never changes it.
@@ -527,6 +597,19 @@ const FlowProvider = ({
     const stopRuns = () => { autoRunner.dropWaiting(); cancelRun(); serverRun.stopRun(); };
     // Opening another dataflow leaves a run on the server going.
     const leaveRuns = () => { autoRunner.dropWaiting(); cancelRun(); serverRun.detachRun(); };
+    // An invited editor's canvas follows the editor's last run of the
+    // dataflow once its room says it edits it, as the owner's load does
+    // (ProjectLoader): a run still going is followed, and one waiting for a
+    // tab offers to finish it. Once for each dataflow.
+    const editorRunsOf = runsOnServer && role === "editor"
+        ? agentsDataflowId(role, workflowOps.projectId, opened)
+        : null;
+    const attachedRunsOfRef = useRef<string | null>(null);
+    useEffect(() => {
+        if (!editorRunsOf || attachedRunsOfRef.current === editorRunsOf) return;
+        attachedRunsOfRef.current = editorRunsOf;
+        void serverRun.attachLatestRun(editorRunsOf);
+    }, [editorRunsOf]);
 
     const nodeActionsValue = useMemo<NodeActionsContextProps>(() => ({
         workflowNameRef,
@@ -609,7 +692,6 @@ const FlowProvider = ({
                 requestAutoRun: autoRunner.requestAutoRun,
                 runDownstream,
                 dashboardOpened: dashboardOn ? dashboardRun.opened : undefined,
-                dashboardSavedWidgets: dashboardRun.savedWidgets,
 
                 // NEW CODE
                 dashboardPins,
@@ -624,6 +706,9 @@ const FlowProvider = ({
                 loading,
 
                 ...workflowOps,
+                boundDoc: boundProvider,
+                recordOutputsSoon: () => savePinChangeRef.current(),
+                whenChangesKept,
                 applyRemoveChanges,
                 dataflowDoc: {
                     bound: dataflowDoc.bound,

@@ -3,7 +3,8 @@
  * nothing into the doc and is gone when the tab leaves:
  *
  * - `editing`: the node whose editor has the focus, which asks before anyone
- *   removes it;
+ *   removes it; an agent at work's, the node it writes, or the nodes one of
+ *   its actions writes at once, as a list (`editingOf`);
  * - `selection`: the cursor in that editor (y-monaco's), drawn in the others'
  *   editors in this tab's color;
  * - `drag`: the places of the nodes this tab is dragging, which the others
@@ -14,8 +15,9 @@
  *   or null while it is off the canvas (`cursors.ts`); the others draw it as a
  *   cursor in this tab's color with its name.
  *
- * The server writes each state's `user`: the participant the room knows. A
- * watcher's state keeps only `pointer` and `selection`.
+ * The server writes each state's `user`: the participant the room knows, and
+ * a tab of the shared guest account with its number in the room. A watcher's
+ * state keeps only `pointer` and `selection`.
  */
 import type { Awareness } from "y-protocols/awareness";
 
@@ -25,6 +27,10 @@ export interface PresenceUser {
     username?: string | null;
     name?: string | null;
     role?: string | null;
+    /** A tab of the shared guest account, which every guest and every tab of
+     *  a Curio with no sign-in signs in to: its number in the room, which the
+     *  server gives it (`room_state.GUEST_NUMBER`). */
+    guest_number?: number | null;
 }
 
 export interface DragState {
@@ -42,7 +48,8 @@ export interface CanvasPointer {
 
 export interface PresenceState {
     user?: PresenceUser;
-    editing?: string | null;
+    /** A tab's one node, or the nodes an agent writes at once. */
+    editing?: string | string[] | null;
     drag?: DragState | null;
     removed?: { nodes: string[]; at: number } | null;
     selection?: unknown;
@@ -63,16 +70,40 @@ export function othersOf(awareness: Awareness | null | undefined): Array<[number
     return out;
 }
 
+/** The number of a tab of the shared guest account in its room, or null for
+ *  anyone else: what tells one guest's tab from another's. */
+export function guestNumberOf(user: { guest_number?: unknown } | null | undefined): number | null {
+    const number = user?.guest_number;
+    return typeof number === "number" && Number.isInteger(number) && number > 0 ? number : null;
+}
+
+/** *name*, the name of whoever *user* is, with their number when they are a
+ *  tab of the shared guest account: "Shared Guest 2". */
+export function numberedName(name: string, user: { guest_number?: unknown } | null | undefined): string {
+    const number = guestNumberOf(user);
+    return number === null ? name : `${name} ${number}`;
+}
+
 /** The name a state's participant goes by. */
 export function nameOf(state: PresenceState | null | undefined): string {
     const user = state?.user;
-    return (user?.name || user?.username || "Someone").toString();
+    return numberedName((user?.name || user?.username || "Someone").toString(), user);
 }
 
-/** The names of everyone else editing *nodeId*'s code. */
+/** The nodes *state*'s participant is editing: a tab's one node, or each of
+ *  the nodes an agent's action writes at once, which its `editing` lists
+ *  (`agent_peers.py`). */
+export function editingOf(state: { editing?: unknown } | null | undefined): string[] {
+    const editing = state?.editing;
+    return (Array.isArray(editing) ? editing : [editing])
+        .filter((nodeId): nodeId is string => typeof nodeId === "string" && nodeId !== "");
+}
+
+/** The names of everyone else editing *nodeId*'s code, an agent writing it
+ *  among them. */
 export function editorsOf(awareness: Awareness | null | undefined, nodeId: string): string[] {
     return othersOf(awareness)
-        .filter(([, state]) => state.editing === nodeId)
+        .filter(([, state]) => editingOf(state).includes(nodeId))
         .map(([, state]) => nameOf(state));
 }
 
@@ -140,11 +171,15 @@ export function participantColor(id: string | null | undefined): string {
 /**
  * A person's color, from their account: the same in every tab, in each of
  * their own tabs, and after a reload or a reconnect, each of which makes them
- * a new participant with a new id. What names no account takes its
- * participant's color, then *fallback*'s. The room's list of people and the
- * awareness states both carry what it reads.
+ * a new participant with a new id. Every guest is the one shared guest
+ * account, so a tab of it takes its number's color instead, the n-th, which is
+ * the same in every tab. What names no account takes its participant's color,
+ * then *fallback*'s. The room's list of people and the awareness states both
+ * carry what it reads.
  */
 export function personColor(user: PresenceUser | null | undefined, fallback?: string): string {
+    const number = guestNumberOf(user);
+    if (number !== null) return PARTICIPANT_COLORS[(number - 1) % PARTICIPANT_COLORS.length];
     const account = user?.username || (typeof user?.user_id === "number" ? `user ${user.user_id}` : "");
     return participantColor(account || user?.participant_id || fallback);
 }

@@ -21,6 +21,7 @@ from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 from utk_curio.backend.app.agents.infrastructure.providers import ToolCall
 from utk_curio.backend.app.agents.application.proposals import mint as agents_mint
 from utk_curio.backend.app.agents.application.proposals import plans as agents_plans
+from utk_curio.backend.app.agents.application import in_the_room as agents_room
 from utk_curio.backend.app.agents.application import skill_runs as agents_skill_runs
 from utk_curio.backend.app.agents.domain import agent_text
 
@@ -59,8 +60,8 @@ def _handle_plan_reply(
     Returns ``(kind, payload, visible_override)``: ``("none", parts, None)``
     — not a plan situation (ungranted agents keep the informational part;
     generic fail-open untouched); ``("mint", parts, override?)`` — the
-    proposal was minted (appended to *minted*; the override strips a scanned
-    fence block from the persisted text, dev/56); ``("correct", errors,
+    plan landed (its change card appended to *minted*; the override strips a
+    scanned fence block from the persisted text, dev/56); ``("correct", errors,
     None)`` — feed the errors back and re-round (shares the MAX_TOOL_ROUNDS
     budget); ``("cap", parts+card, None)`` — budget exhausted: fail loudly,
     never silently."""
@@ -93,8 +94,8 @@ def _handle_plan_reply(
                     )
                     if part is not None:
                         minted.append(part)
-                        # The review card is the plan's home — the raw JSON
-                        # block is stripped from the persisted text.
+                        # The plan's card is its home: the raw JSON block is
+                        # stripped from the persisted text.
                         return "mint", parts, stripped
                     errors = [error_text, fence_guidance]
                 else:
@@ -104,7 +105,7 @@ def _handle_plan_reply(
     card = {
         "type": "card",
         "kind": "error",
-        "title": "Plan not proposable",
+        "title": "Plan could not be made",
         "lines": [e[:300] for e in errors[:10]],
     }
     return "cap", [p for p in parts if p.get("type") != "dataflowPlan"] + [card], None
@@ -276,8 +277,8 @@ def _refuse_params(text: str) -> tuple[str, str, None]:
 
 
 # The mutate tools _mint_proposal dispatches (dev/73): a request for one of
-# these dangling at the round cap is a cut-off PROPOSAL — surfaced as an
-# error card, never silently dropped under the reply's confident prose.
+# these dangling at the round cap is a cut-off change or install, surfaced
+# as an error card, never silently dropped under the reply's confident prose.
 MUTATE_PROPOSAL_TOOLS = frozenset({
     "node.content.write",
     "node.settings.write",
@@ -295,10 +296,10 @@ def _round_cap_cutoff_card(tool: str) -> dict:
     return {
         "type": "card",
         "kind": "error",
-        "title": "Proposal step cut off",
+        "title": "Request cut off",
         "lines": [
-            f"the run hit its tool-round limit before the {tool} proposal "
-            "could be created — ask the agent to continue",
+            f"the run hit its tool-round limit before the {tool} request "
+            "could be made: ask the agent to continue",
         ],
     }
 
@@ -321,13 +322,15 @@ def _execute_tool_request(
 ) -> tuple[str, str]:
     """Handle one model toolRequest inside the loop (memo dev/41).
 
-    Only granted read contracts execute; a granted mutate contract mints a
-    review proposal (never executes — `DEC-006`); everything else resolves to
-    a synthetic result the model can recover from — loudly to the model,
-    invisibly to the user, never a run error. Appends to ``tool_calls`` (the
-    execution record's tool history) and ``minted`` (proposal parts for the
-    persisted turn). A granted call that failed also records the line the chat
-    may show for it (:func:`_failure_fields`, #447)."""
+    A granted read contract executes; a granted mutate contract runs its
+    mint: a change to the dataflow lands as the agent's change, and an
+    install becomes a proposal the person reviews (`DEC-006`). Everything
+    else resolves to a synthetic result the model can recover from: loudly
+    to the model, invisibly to the user, never a run error. Appends to
+    ``tool_calls`` (the execution record's tool history) and ``minted`` (the
+    change and proposal parts for the persisted turn). A granted call that
+    failed also records the line the chat may show for it
+    (:func:`_failure_fields`, #447)."""
     tool_id = req.get("tool", "")
     started = time.monotonic()
     granted = tool_id in loop_ctx["granted"]
@@ -357,6 +360,9 @@ def _execute_tool_request(
             status, text = agents_skill_runs.read(loop_ctx["skills"], req.get("params") or {})
             if status == "refused":
                 text = ParamRefusal(text)
+            else:
+                # The agent at work in the room lists what it loaded.
+                agents_room.uses_skills(project_id, loop_ctx.get("attachment_id"), loop_ctx["skills"].loaded)
         elif contract.effect == "mutate":
             status, text, part = agents_mint._mint_proposal(user_key, project_id, loop_ctx, req)
             if part is not None:
@@ -397,8 +403,9 @@ def _delegate_result_message(
     return {"role": "user", "content": f"[delegate result] {who}: {status}\n{text}{suffix}"}
 
 
-#: The statuses of a result that is not an error.
-_NATIVE_OK_STATUSES = frozenset({"ok", "proposed"})
+#: The statuses of a result that is not an error: a read, an install
+#: proposed for review, a change that landed (``changes.LANDED``).
+_NATIVE_OK_STATUSES = frozenset({"ok", "proposed", "applied"})
 
 #: How long a failed call's reason may be: one line under the reply (#447).
 _FAILURE_REASON_MAX_CHARS = 300

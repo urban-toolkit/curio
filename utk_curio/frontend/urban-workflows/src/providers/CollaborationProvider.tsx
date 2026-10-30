@@ -5,8 +5,9 @@
  * ``projectPackagesStore.subscribe``, opening one socket per project id once a
  * tab is signed in, emitting ``join_session`` on connect, and tearing the
  * socket down when the user navigates to a different project (or away from
- * the canvas). Every backend serves the socket, and the dataflow's Yjs doc
- * travels on it (``collab/docProvider.ts``).
+ * the canvas), once the server has the tab's last change on it. Every
+ * backend serves the socket, and the dataflow's Yjs doc travels on it
+ * (``collab/docProvider.ts``).
  *
  * Identity is anchored in the backend Bearer token sent through the
  * Socket.IO ``auth`` handshake. We never trust user-supplied identity
@@ -24,11 +25,12 @@
  * Once joined, the tab syncs the dataflow's doc, which ``DataflowDocContext``
  * hands the canvas. A change of the tab's role, either way, and a doc the
  * server built anew, start the doc again from the server's. A Curio with no
- * sign-in (``curio_no_auth``, or no projects page) joins no room and starts no
- * doc: each canvas stays its own there.
+ * sign-in (``curio_no_auth``, where the shared guest is signed in for
+ * everyone) syncs its saved dataflows' docs as any signed-in tab does.
  *
  * The room's events, the join's and each one after it, are its Activity
- * (``activity``), which the canvas's dock lists.
+ * (``activity``), which the canvas's dock lists: who joined and left, whose
+ * role changed, and each agent at work's join and leave.
  */
 
 import React, {
@@ -50,7 +52,7 @@ import {
 import { backendUrl } from "../utils/backendUrl";
 import { collabSocketTarget } from "../utils/collabSocketTarget";
 import { roleIn, writesDoc, type RoomRole } from "./collab/participants";
-import { DataflowDocProvider } from "./collab/docProvider";
+import { DataflowDocProvider, KEPT_WAIT_MS } from "./collab/docProvider";
 import { CONNECTION_DROPPED_EVENT, DataflowDocContext, type DocBinding } from "./collab/docContext";
 import { HISTORY_CHANGED_EVENT } from "./history/serverHistory";
 import { remoteCursorStyle } from "./collab/presence";
@@ -61,6 +63,41 @@ export type { RoomRole } from "./collab/participants";
 const BACKEND_URL = backendUrl();
 // The backend's --collab-namespace, until /api/config/public reports it.
 const DEFAULT_NAMESPACE = "/collab";
+
+/**
+ * Close *socket* and drop *provider*, the doc this tab held on it, once the
+ * server has every change the tab sent (at most `KEPT_WAIT_MS`): a leave that
+ * asked nothing, the browser's Back among them, never drops a change still on
+ * its way, which the server refuses once its socket has gone. Its presence
+ * (its cursor, the node it edits) goes at once all the same, and the socket
+ * listens for nothing but the doc's answers meanwhile. Its locks go one way
+ * only: with its socket, which the server lets go of them for and names them
+ * to the room (``user_left``'s ``released_locks``).
+ */
+function retire(socket: Socket | null, provider: DataflowDocProvider | null): void {
+    const close = () => {
+        provider?.destroy();
+        if (!socket) return;
+        try {
+            socket.removeAllListeners();
+            socket.disconnect();
+        } catch {
+            /* socket already gone */
+        }
+    };
+    if (!socket || !provider || !socket.connected || provider.isKept()) {
+        close();
+        return;
+    }
+    try {
+        provider.awareness.setLocalState(null);
+        socket.removeAllListeners();
+    } catch {
+        /* socket already gone */
+    }
+    provider.listenAgain();
+    void provider.whenKept(KEPT_WAIT_MS).then(close, close);
+}
 /** The style element that colors everyone else's cursor in the code editors. */
 const CURSOR_STYLE_ID = "curio-remote-cursors";
 /** How many of the room's events a tab keeps, as the server does
@@ -75,6 +112,8 @@ export interface CollabUser {
     /** This participant's id in the room: one per tab. */
     participant_id?: string;
     role?: RoomRole;
+    /** A tab of the shared guest account: its number in the room. */
+    guest_number?: number;
 }
 
 export interface NodeLock {
@@ -84,6 +123,8 @@ export interface NodeLock {
     /** The participant that holds the lock. */
     participant_id?: string;
     since: number;
+    /** A tab of the shared guest account's lock: its number in the room. */
+    guest_number?: number;
 }
 
 export interface ActivityEntry {
@@ -94,6 +135,20 @@ export interface ActivityEntry {
 
 /** Listener callback for "a peer applied a remote change" events. */
 export type RemoteHandler<T = unknown> = (payload: T) => void;
+
+/** Who a join's or a leave's Activity names, as the server records it
+ *  (``events.py``): the account, its name and, for a tab of the shared guest
+ *  account, its number in the room. */
+function activityWho(user: Partial<CollabUser>): Record<string, unknown> {
+    const who: Record<string, unknown> = { user_id: user.user_id, username: user.username };
+    if (user.name) who.name = user.name;
+    if (typeof user.guest_number === "number") who.guest_number = user.guest_number;
+    return who;
+}
+
+/** An agent at work's join and leave in the room, as the server sends and
+ *  records them (``agent_peers.JOINED_EVENT`` and ``LEFT_EVENT``). */
+const AGENT_EVENTS = ["agent_joined", "agent_left"] as const;
 
 /** The room's events a change to the editors makes: one for each account
  *  whose role changed, as the server records it (``roles.py``). */
@@ -190,9 +245,6 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     // The room's list as this tab last drew it, which a change to the editors
     // is read against.
     const usersRef = useRef<CollabUser[]>([]);
-    // A Curio with no sign-in (the shared guest signed in for everyone, or no
-    // projects page): each canvas stays its own, in no room.
-    const noSignInRef = useRef<boolean>(false);
     const projectIdRef = useRef<string | undefined>(getCurrentProjectId());
     // The dataflow whose room refused this tab: no socket is opened for it
     // again until another dataflow opens.
@@ -201,7 +253,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     const docProviderRef = useRef<DataflowDocProvider | null>(null);
 
     // ------------------------------------------------------------------
-    // Read the namespace, and whether there is sign-in, once.
+    // Read the namespace once.
     // ------------------------------------------------------------------
     useEffect(() => {
         let cancelled = false;
@@ -210,7 +262,6 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
             .then((cfg) => {
                 if (cancelled) return;
                 namespaceRef.current = cfg.collab_namespace || DEFAULT_NAMESPACE;
-                noSignInRef.current = Boolean(cfg.curio_no_auth || cfg.skip_project_page || cfg.curio_no_project);
                 setConfigLoaded(true);
             })
             .catch(() => {
@@ -265,22 +316,17 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
 
     const closeSocket = useCallback(() => {
         const s = socketRef.current;
-        if (s) {
-            try {
-                s.removeAllListeners();
-                s.disconnect();
-            } catch {
-                /* socket already gone */
-            }
-        }
+        const provider = docProviderRef.current;
         socketRef.current = null;
-        dropDoc();
+        docProviderRef.current = null;
+        setDocBinding(null);
+        retire(s, provider);
         setConnected(false);
         setParticipantId(null);
         setUsers([]);
         setLockedNodes({});
         setActivity([]);
-    }, [dropDoc]);
+    }, []);
 
     const installSocketListeners = useCallback(
         (socket: Socket) => {
@@ -307,7 +353,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
                             setUsers(ack.snapshot.users);
                             setLockedNodes(ack.snapshot.locks);
                             setActivity(ack.snapshot.activity);
-                            if (socketRef.current === socket && !noSignInRef.current) {
+                            if (socketRef.current === socket) {
                                 startDoc(socket, projectId, ack.role ?? null);
                             }
                         } else if (ack && ack.ok === false && socketRef.current === socket) {
@@ -339,17 +385,25 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
             socket.on("user_joined", (payload: CollabUser & { users: CollabUser[] }) => {
                 if (payload && Array.isArray(payload.users)) {
                     setUsers(payload.users);
-                    recordActivity("user_joined", {
-                        user_id: payload.user_id, username: payload.username, name: payload.name, role: payload.role,
-                    });
+                    recordActivity("user_joined", { ...activityWho(payload), role: payload.role });
                 }
             });
             socket.on("user_left", (payload: CollabUser & { users: CollabUser[] }) => {
                 if (payload && Array.isArray(payload.users)) {
                     setUsers(payload.users);
-                    recordActivity("user_left", { user_id: payload.user_id, username: payload.username });
+                    recordActivity("user_left", activityWho(payload));
                 }
             });
+            // An agent at work joins and leaves as the server runs it
+            // (``agent_peers.py``), in no list of the room's people: its join
+            // names it and who asked it, its leave also what it did (``did``).
+            // Each is kept as the server keeps it, so it reads the same as it
+            // comes and from a later join's snapshot.
+            for (const kind of AGENT_EVENTS) {
+                socket.on(kind, (payload: Record<string, unknown>) => {
+                    if (payload && typeof payload === "object" && !Array.isArray(payload)) recordActivity(kind, payload);
+                });
+            }
             // The owner invited or removed an editor: everyone's roles, this
             // tab's among them.
             socket.on("roles_changed", (payload: { users: CollabUser[] }) => {
@@ -437,14 +491,12 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
 
     // Follow the current project once the namespace is known. On every
     // project change close the socket and reconnect with the new room.
-    // Closing is the whole story - the backend's ``disconnect`` handler
-    // releases this sid's locks, emits ``user_left`` to the old room and
-    // clears its presence in the doc, so there is nothing to send first.
+    // Closing waits only for the server to have this tab's last change
+    // (``retire``); the backend's ``disconnect`` handler then releases this
+    // sid's locks, emits ``user_left`` to the old room and clears its
+    // presence in the doc, so there is nothing else to send first.
     useEffect(() => {
         if (!configLoaded) return;
-        // With no sign-in a tab binds no doc, so it has no one to show and
-        // nothing to join a room for.
-        if (noSignInRef.current) return;
         const reconcile = () => {
             const nextId = getCurrentProjectId();
             const prevId = projectIdRef.current;

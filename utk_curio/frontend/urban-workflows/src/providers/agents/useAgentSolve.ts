@@ -9,7 +9,7 @@
  */
 import { useCallback, useMemo, useRef, useState } from "react";
 
-import { agentsApi, notifyAgentCanvasMutation } from "../../services/agents";
+import { agentsApi, bridgeLandedChangeEvent, notifyAgentCanvasMutation } from "../../services/agents";
 import type { AgentAttachment, AgentRemedy, AgentSolveResult, AgentSolveWave } from "../../services/agents/types";
 
 export type AgentSolveWaiting = Array<{ nodeId: string; kind: string; reason?: string; attachmentId?: string | null }>;
@@ -94,6 +94,8 @@ export function useAgentSolve(opts: {
       setSolveRemedies(drop);
     };
     return (name: string, payload: Record<string, unknown>) => {
+      // A change an agent made landed: a canvas no doc binds takes it.
+      if (bridgeLandedChangeEvent(name, payload)) return;
       if (name === "solve_pass" || name === "solve_waiting") {
         // dev/131: the session keeps making passes; `waiting` names the nodes
         // it is blocked on, and a "dataset-selection" kind means the USER is
@@ -237,6 +239,7 @@ export function useAgentSolve(opts: {
           await agentsApi.attachJobStream(
             pid, attachmentId,
             (name, payload) => {
+              if (bridgeLandedChangeEvent(name, payload)) return;
               const round = typeof payload.round === "number" ? payload.round : null;
               const line =
                 name === "generation_round" ? `Round ${round ?? "?"}: generating…`
@@ -267,6 +270,8 @@ export function useAgentSolve(opts: {
       narrateNodeSolve(attachmentId, "Starting: running the node's current code…");
       try {
         return await agentsApi.solveNodeStream(pid, attachmentId, nodeId, (name, payload) => {
+          // Corrected code that passed landed as the agent's change.
+          if (bridgeLandedChangeEvent(name, payload)) return;
           const round = typeof payload.round === "number" ? payload.round : null;
           const line =
             name === "generation_round"

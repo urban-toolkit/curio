@@ -1,28 +1,17 @@
 import React from "react";
 
-import type { AgentProposalPart } from "../../../../services/agents";
 import styles from "../AgentReviewCard.module.css";
-import { planEdgeRowState, type PlanNodeReviewState } from "./reviewCardText";
+import type { PlanDisplay } from "./reviewCardText";
 
-/** dev/67-8 (Simulation Mode: connect): edges reviewed BY NAME in a vertical
- * list — you always know which two nodes a click connects. */
-export const PlanEdgesList: React.FC<{
-  part: AgentProposalPart;
-  planNodeState?: PlanNodeReviewState;
-  /** The index being connected, "all", or null when idle. */
-  edgeBusy: string | null;
-  onApplyEdges: (indices?: number[]) => Promise<void>;
-}> = ({ part, planNodeState, edgeBusy, onApplyEdges }) => (
+/** The connections a landed plan drew, BY NAME in a vertical list: you always
+ * know which two nodes each one connects. */
+export const PlanEdgesList: React.FC<{ part: PlanDisplay }> = ({ part }) => (
   <div className={styles.planEdges} role="group" aria-label="Planned connections">
     <div className={styles.planEdgesHead}>
       <span>Connections</span>
-      <button type="button" className={styles.apply} disabled={edgeBusy !== null} onClick={() => void onApplyEdges()}>
-        {edgeBusy === "all" ? "Connecting…" : "Connect all"}
-      </button>
     </div>
     <ul className={styles.planEdgesList}>
-      {part.plan!.edges!.map((edge, index) => {
-        const { state, blockedBy } = planEdgeRowState(part, edge, index, planNodeState);
+      {(part.plan?.edges ?? []).map((edge, index) => {
         const names =
           `${edge.fromLabel} ${edge.kind === "interaction" ? "⇄" : "→"} ${edge.toLabel}` +
           (edge.toHandle ? ` [${edge.toHandle}]` : "") +
@@ -34,22 +23,6 @@ export const PlanEdgesList: React.FC<{
             <span className={styles.planEdgeNames} data-tooltip={names}>
               {names}
             </span>
-            {state === "applied" ? (
-              <span className={styles.planNodeCreated}>Connected ✓</span>
-            ) : state === "refused" ? (
-              <span className={styles.planEdgeRefused}>Refused ✗</span>
-            ) : (
-              <button
-                type="button"
-                className={styles.apply}
-                disabled={edgeBusy !== null || blockedBy !== null}
-                data-tooltip={blockedBy ? `create '${blockedBy}' first` : undefined}
-                aria-label={`Connect ${edge.fromLabel} to ${edge.toLabel}`}
-                onClick={() => void onApplyEdges([index])}
-              >
-                {edgeBusy === String(index) ? "Connecting…" : "Connect"}
-              </button>
-            )}
           </li>
         );
       })}

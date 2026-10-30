@@ -155,6 +155,43 @@ def dir_name_from_model_ref(
     return f"{package_id}@{max(majors)}" if majors else None
 
 
+def named_package(node_type: object) -> str | None:
+    """The package a node of *node_type* comes from, as the type names it:
+    ``<packageId>@<major>`` for a versioned type, the bare ``<packageId>``
+    for an unversioned one, which runs whichever major is installed. None for
+    a type of any other shape."""
+    if not isinstance(node_type, str):
+        return None
+    m = _NODE_TYPE_VERSIONED_RE.match(node_type)
+    if m:
+        return f"{m.group(1)}@{m.group(2)}"
+    m = _NODE_TYPE_UNVERSIONED_RE.match(node_type)
+    return m.group(1) if m else None
+
+
+def named_model_package(model_id: object) -> str | None:
+    """The model package a node's ``modelRefs`` entry names, as it names it:
+    ``<id>@<major>``, or the bare ``<id>``; None for an id of any other shape
+    (the ids :func:`dir_name_from_model_ref` reads)."""
+    if not isinstance(model_id, str):
+        return None
+    package_id, at, major = model_id.partition("@")
+    if not re.fullmatch(_PKG_ID, package_id):
+        return None
+    if not at:
+        return package_id
+    return f"{package_id}@{major}" if re.fullmatch(_MAJOR, major) else None
+
+
+def names_package(named: Iterable[str], dir_name: str) -> bool:
+    """Whether *named*, packages as a dataflow names them (a lockfile's
+    entries, :func:`named_package`, :func:`named_model_package`), names the
+    installed package *dir_name*: by its ``<packageId>@<major>``, or by its
+    bare ``<packageId>``, which names whichever major is installed."""
+    named = named if isinstance(named, (set, frozenset)) else set(named)
+    return dir_name in named or dir_name.partition("@")[0] in named
+
+
 #: Reads the model ids a node's code names through literal
 #: ``curio_load_model("<id>")`` calls (``datasets.domain.code_refs``, which the
 #: callers hand in: this module imports no other feature).

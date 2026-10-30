@@ -18,6 +18,9 @@
  *   and answered once its batch is applied, by a `yjs_kept` message,
  *   `{projectId, answered, kept}`, which answers that many of the tab's
  *   updates. It may come before the `queued` ack of the last one it answers.
+ * - Changes sent on a socket that dropped before the server answered them,
+ *   and those of a sync the server lost, may not be the server's: they are
+ *   not kept until the next start's sync has carried what the server lacks.
  * - A watcher's tab never sends a change: the server would drop it anyway.
  * - Awareness is the tab's presence (`y-protocols/awareness`): its own state is
  *   sent at every change and every renewal, everyone else's comes from the
@@ -107,6 +110,10 @@ export class DataflowDocProvider {
     private destroyed = false;
     private held: Uint8Array[] = [];
     private inFlight = 0;
+    /** Sent changes the server may not hold (a socket dropped with some
+     *  unanswered, a sync the server lost): the next start's sync carries
+     *  them, and until it is answered they are not kept. */
+    private unconfirmed = false;
     private keptWaiters: Array<(kept: boolean) => void> = [];
     private retryTimer: ReturnType<typeof setTimeout> | null = null;
     private readonly options: DocProviderOptions;
@@ -137,13 +144,27 @@ export class DataflowDocProvider {
     }
 
     /** The socket dropped: nothing is sent until the room joins this tab again,
-     *  and everyone else's presence goes. */
+     *  and everyone else's presence goes. What it carried unanswered is not
+     *  kept until the next sync has carried it. */
     detach(): void {
         this.joined = false;
         this.started = false;
+        if (this.inFlight > 0) this.unconfirmed = true;
         this.settleInFlight();
         const others = Array.from(this.awareness.getStates().keys()).filter((id) => id !== this.doc.clientID);
         if (others.length) awarenessProtocol.removeAwarenessStates(this.awareness, others, this);
+    }
+
+    /** The room's listeners left the socket (its tab left the dataflow): listen
+     *  again for the server's answers to this tab's changes, which are waited
+     *  for before the socket closes. */
+    listenAgain(): void {
+        const socket = this.socket;
+        if (!socket || this.destroyed) return;
+        socket.off(DOC_EVENT, this.onMessage);
+        socket.off(DOC_KEPT_EVENT, this.onKept);
+        socket.on(DOC_EVENT, this.onMessage);
+        socket.on(DOC_KEPT_EVENT, this.onKept);
     }
 
     destroy(): void {
@@ -186,7 +207,7 @@ export class DataflowDocProvider {
 
     /** Whether every change this tab made is with the server. */
     isKept(): boolean {
-        return this.synced && this.inFlight === 0 && this.held.length === 0;
+        return this.synced && !this.unconfirmed && this.inFlight === 0 && this.held.length === 0;
     }
 
     private start(): void {
@@ -210,6 +231,9 @@ export class DataflowDocProvider {
             const first = !this.synced;
             this.docId = ack.docId ?? this.docId;
             this.synced = true;
+            // The server's step 1 came before this answer, and what it lacked
+            // of this tab's changes went in answer to it, counted in flight.
+            this.unconfirmed = false;
             this.sendHeld();
             this.sendAwareness();
             if (first) this.options.onSynced?.();
@@ -259,6 +283,7 @@ export class DataflowDocProvider {
             this.options.onReadOnly?.();
         } else if (refused.not_synced) {
             // The server lost this tab's sync: a new one carries what they brought.
+            this.unconfirmed = true;
             this.started = false;
             this.start();
         }
@@ -315,6 +340,7 @@ export class DataflowDocProvider {
                 } else if (ack.error === "not_synced" && socket === this.socket) {
                     // The server lost this tab's sync (a backend that restarted):
                     // a new one carries what this change brought.
+                    this.unconfirmed = true;
                     this.started = false;
                     this.start();
                 }

@@ -96,6 +96,10 @@ A package can also be dragged onto the canvas by its card in the drawer. For a p
 
 A Python node that calls a key-gated API reads the key by name, never as a literal: `api_key = curio_secret("<name>")` returns the key saved under that name as a **Node code** key on the **API keys** tab of **API Settings** (see [USAGE.md](USAGE.md#keys-for-node-code)). Like `curio_data_path("<id>")`, the name travels with the dataflow, and the value reaches the sandbox for the run only.
 
+On a dataflow you edit at its owner's invitation ([COLLABORATION.md](COLLABORATION.md#who-edits-owner-editors-and-watchers)), a run of yours of a node of a package the owner added to the dataflow, a play, a run on the server or one its agents make, takes the package's Python modules from the owner's copy, as the owner's runs do. A node of any other package runs with your own copy. Nothing is added to your account, and the owner's packages stay the owner's to publish, export and remove.
+
+Your canvas of such a dataflow draws the nodes of a package the owner added to it that you do not have from the owner's copy, and so does the canvas of anyone who watches it, where those nodes have no play button. Your palette lists that package too, without the buttons that act on your own copy (details, export, metadata, publish). A node whose package runs code on the server calls the owner's copy of it. Under fork isolation your runs also import the Python libraries the owner installed, after your own, so a library you installed yourself comes first.
+
 ---
 
 ## 4. Creating a package from a canvas node

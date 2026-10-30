@@ -1,9 +1,24 @@
 """Scenes on a dataflow's name and save state."""
 from __future__ import annotations
 
-from ..utils import api_json, canvas_nodes, drag_builtin_to_canvas, wait_for_projects_page
+import re
+
+from ..utils import (
+    api_json,
+    canvas_nodes,
+    drag_builtin_to_canvas,
+    wait_for_changes_kept,
+    wait_for_projects_page,
+)
 from .framework import Ctx, walkthrough
 from .provenance import PROVENANCE_EXAMPLE
+
+
+def _session_token(page) -> str:
+    """The ``session_token`` cookie the app itself authenticates with
+    (utils/authApi), read off the live context rather than threaded through
+    Ctx, which the video runner shares."""
+    return next(c["value"] for c in page.context.cookies() if c["name"] == "session_token")
 
 
 # ---------------------------------------------------------------------------
@@ -50,16 +65,25 @@ def renaming_a_dataflow_renames_it_everywhere(ctx: Ctx) -> None:
     box.wait_for(state="visible", timeout=10000)
     box.fill("Renamed Dataflow")
     # Commit on blur - the path #270 was reported on; Enter is the other one.
-    box.blur()
+    # The rename sends the project row its name, which the list reads.
+    with page.expect_response(
+        lambda r: r.request.method == "PUT"
+        and re.search(r"/api/projects/[0-9a-f-]{36}$", r.url.split("?")[0].rstrip("/")) is not None,
+        timeout=20000,
+    ) as renamed_row:
+        box.blur()
+    assert renamed_row.value.ok, renamed_row.value.status
 
+    # The doc keeps the rename as it is made, so the indicator says Saved
+    # once the server has it: then, and only then, is the user told so.
     disk = page.locator("[data-curio-save-state]")
+    wait_for_changes_kept(page)
     state = disk.get_attribute("data-curio-save-state")
-    assert state == "unsaved", (
-        f"the rename left the indicator reading {state!r}; a rename diverges "
-        f"from disk and has to say so, or the user is told their edit is saved"
+    assert state == "saved", (
+        f"the rename left the indicator reading {state!r} once the server had it"
     )
     ctx.focus(disk, hold=900)
-    ctx.say("Unsaved, as it should be", "The rename is an edit like any other.")
+    ctx.say("Saved as it is made", "The server keeps the rename, as every edit.")
     ctx.capture("renamed-on-canvas")
 
     ctx.say("Save it", "")
@@ -87,12 +111,8 @@ def renaming_a_dataflow_renames_it_everywhere(ctx: Ctx) -> None:
     ctx.say("And back the other way",
             "Renaming from the list has to reach the canvas title too.")
     # Straight through the API: the subject is what the canvas reads back, not
-    # the context menu that gets there. The token is the `session_token` cookie
-    # the app itself authenticates with (utils/authApi), read off the live
-    # context rather than threaded through Ctx, which the video runner shares.
-    token = next(
-        c["value"] for c in page.context.cookies() if c["name"] == "session_token"
-    )
+    # the context menu that gets there.
+    token = _session_token(page)
     listed = api_json(f"{ctx.backend}/api/projects", token)
     target = next(p for p in listed if p["name"] == "Renamed Dataflow")
     api_json(
@@ -137,7 +157,8 @@ def a_loaded_dataflow_is_not_dirty(ctx: Ctx) -> None:
 
     At the suite's default 0.10 an amber disk and a green one are the same
     picture, so a single wide shot could document the fix without ever being
-    able to police it. The pair is what makes the two states legible in review.
+    able to police it. The pair is what makes the state legible in review:
+    green on opening, and green again once the server has the edit.
 
     The runner has already entered `/dataflow/<id>` through the real
     ProjectLoader path, so this scene only has to read the result.
@@ -172,12 +193,16 @@ def a_loaded_dataflow_is_not_dirty(ctx: Ctx) -> None:
     drag_builtin_to_canvas(page, "#tile-computation-analysis", at=(150, 150))
     assert len(canvas_nodes(page)) == before + 1, "the drop created no node"
 
-    page.wait_for_function(
-        "() => document.querySelector('[data-curio-save-state]')"
-        "?.getAttribute('data-curio-save-state') === 'unsaved'",
-        timeout=15000,
+    # The guard covers the load's own replay, not the user's edits: the doc
+    # keeps the edit as it is made, so the server has the node, with no save.
+    wait_for_changes_kept(page)
+    match = re.search(r"/dataflow/([0-9a-f-]{36})", page.url)
+    assert match, f"not on a saved dataflow: {page.url}"
+    kept = api_json(f"{ctx.backend}/api/projects/{match.group(1)}", _session_token(page))
+    assert len(kept["spec"]["dataflow"]["nodes"]) == before + 1, (
+        "the server does not have the node the edit added"
     )
     ctx.focus(disk, hold=1200)
-    ctx.say("Amber, as it should be",
-            "The guard covers the load's own replay, not the user's edits.")
+    ctx.say("Green, and kept",
+            "The server has the new node: what you see is on the server.")
     ctx.capture("after-an-edit")

@@ -100,9 +100,15 @@ it, so every change reaches the doc's tabs and its log:
 * The file is written at once, from the doc, each part that reads as the file
   holds it kept as the file holds it.
 
+**What the owner put in.** Each transaction's origin says whether the items of
+the owner's store it names anew (a dataset, a package, a model) are within her
+editors' reach: those the owner's tab, a writer for her account or a spec
+written outside the doc names are, and those an editor's tab or a writer for an
+editor names are not (``owner_uses.py``, :func:`_by_its_owner`).
+
 **Locks**, in this order: the spec lock (``storage.spec_write_lock``), then a
-doc's lock, then this module's own; storage's history lock and a doc's queue
-of updates (:attr:`_OpenDoc.queue`) are leaves. The spec
+doc's lock, then this module's own; storage's history lock, a doc's queue
+of updates (:attr:`_OpenDoc.queue`) and ``owner_uses``' lock are leaves. The spec
 lock is never asked for while a doc's lock is held, and the thread that writes
 the docs touches no database. A writer under the spec lock already (a
 read-modify-write that must not interleave) is not made to ask for it again.
@@ -146,7 +152,7 @@ from pycrdt import (
     write_message,
 )
 
-from utk_curio.backend.app.collaboration import doc_mapping, history, room_state
+from utk_curio.backend.app.collaboration import doc_mapping, history, owner_uses, room_state
 from utk_curio.backend.app.collaboration.events import (
     READ_ONLY_REFUSAL,
     _project,
@@ -276,10 +282,19 @@ class _OpenDoc:
         self.watching = None
         self.codes = None
         self.history = None
+        #: The items of the owner's store the doc names, whether a transaction
+        #: since may have changed them, and the observers that note it
+        #: (``owner_uses.py``).
+        self.uses = None
+        self.uses_touched = False
+        self.uses_watching = None
         # Guarded by this module's lock.
         self.changed_at: Optional[float] = None
         self.dirty_since: Optional[float] = None
         self.idle_since: Optional[float] = None
+        #: The last change's Unix time, which the dataflow's "Updated" shows
+        #: until ``spec.trill.json`` is written (:func:`unwritten_change_at`).
+        self.changed_wall: Optional[float] = None
 
     def folder(self) -> Path:
         return storage.project_dir(self.user_key, self.project_id)
@@ -612,6 +627,7 @@ def _catch_up(entry: _OpenDoc, file: "storage.SpecFile") -> None:
         logger.error("dataflow %s: a spec written outside its doc has a node field the doc has no "
                      "place for; the doc keeps its own", entry.project_id, exc_info=True)
         refused = []
+    owner_uses.noted(entry, by_owner=_by_its_owner(entry.user_key, SPEC_ORIGIN))
     for node_id in refused:
         logger.warning("dataflow %s: node %s's code changed outside its doc and in it; the doc's stays",
                        entry.project_id, node_id)
@@ -633,6 +649,7 @@ def _attach(entry: _OpenDoc, doc) -> None:
     doc.observe(entry.on_update)
     entry.awareness.observe(entry.on_awareness)
     history.observe(entry)
+    owner_uses.watch(entry)
 
 
 def _built_anew(entry: _OpenDoc, dataflow: dict) -> None:
@@ -763,6 +780,7 @@ def _changed(entry: _OpenDoc) -> None:
     with _wake:
         now = _clock()
         entry.changed_at = now
+        entry.changed_wall = time.time()
         due = entry.dirty_since is None
         if due:
             entry.dirty_since = now
@@ -957,6 +975,18 @@ def _close(entry: _OpenDoc) -> bool:
     return True
 
 
+def unwritten_change_at(project_id: str) -> Optional[float]:
+    """When the open doc last changed, as a Unix time, while
+    ``spec.trill.json`` does not hold that change yet: the file is written a
+    second after the last change (:data:`SAVE_IDLE_S`), so until then only the
+    doc knows the dataflow changed. ``None`` for a doc not open or written."""
+    entry = _open_entry(project_id)
+    if entry is None:
+        return None
+    with _lock:
+        return entry.changed_wall if entry.dirty_since is not None else None
+
+
 def flush(project_id: str) -> bool:
     """Write the open doc's changes now. Whether it wrote ``spec.trill.json``."""
     entry = _open_entry(project_id)
@@ -1146,6 +1176,25 @@ def by_curio(by, what: str) -> Actor:
     return Actor(CURIO, str(by), None, what)
 
 
+#: The room's role of the account that owns the dataflow (``projects/access.OWNER``).
+_OWNER_ROLE = "owner"
+
+
+def _by_its_owner(user_key: str, origin) -> bool:
+    """Whether a change of *origin* to the dataflow the store *user_key*
+    holds is its owner's own, which puts what it names of her store within
+    her editors' reach (``owner_uses.py``): her tab's (the room's owner), a
+    writer's for her account (her request, an agent run she asked for,
+    Curio's own change for her), or a spec written on the server outside the
+    doc. An editor's tab, and a writer's for an editor, an agent run an
+    editor asked for among them, are not; nor is a merge rule's."""
+    if isinstance(origin, history.Tab):
+        return (origin.me or {}).get("role") == _OWNER_ROLE
+    if isinstance(origin, Actor):
+        return origin.by == str(user_key)
+    return origin == SPEC_ORIGIN
+
+
 def _writable(spec) -> dict:
     """*spec* but its history, which no writer writes."""
     return {key: value for key, value in spec.items() if key not in storage.HISTORY_KEYS}
@@ -1316,10 +1365,12 @@ def create(user_key: str, project_id: str, spec: dict, actor: Actor) -> Live:
                         doc_mapping.apply_dataflow(
                             entry.doc, doc_mapping.doc_to_dataflow(entry.doc), doc_mapping.owned(_dataflow_of(mine)),
                         )
+                    owner_uses.noted(entry, by_owner=_by_its_owner(user_key, actor))
                     _commit(entry, skip_sid=None, origin=actor)
                     _written(entry, file, mine, history={
                         key: spec[key] for key in storage.HISTORY_KEYS if key in spec
                     })
+                    _made_anew(user_key, project_id, actor)
                     return Live(mine, user_key=user_key, project_id=project_id)
         except (_NoDataflow, doc_mapping.DocMappingError):
             pass
@@ -1330,7 +1381,21 @@ def create(user_key: str, project_id: str, spec: dict, actor: Actor) -> Live:
     # A doc that opens before its pointer goes reads this file's revision as a
     # write outside it and catches up to it (:func:`_catch_up`).
     _drop_pointer(user_key, project_id)
+    _made_anew(user_key, project_id, actor)
     return Live(mine, user_key=user_key, project_id=project_id)
+
+
+def _made_anew(user_key: str, project_id: str, actor: Actor) -> None:
+    """The record of what the owner put in a dataflow made anew
+    (``owner_uses.py``): when its owner made it, the record is dropped and
+    made again from what it names when it is next read or changed. Made by
+    anyone else, it keeps its record, and one it had none of is recorded with
+    nothing of hers."""
+    if _by_its_owner(user_key, actor):
+        owner_uses.forget(user_key, project_id)
+    else:
+        nothing = owner_uses.entries({})
+        owner_uses.changed(user_key, project_id, nothing, nothing, by_owner=False)
 
 
 def _dataflow_of(spec: dict) -> dict:
@@ -1361,7 +1426,7 @@ def _write(user_key: str, project_id: str, base: dict, mine, actor: Actor, *,
     with _spec_lock(user_key, project_id):
         theirs = _writable(mine)
         if not doc_mapping.mappable(doc_mapping.owned(_dataflow_of(theirs))):
-            return _without_doc(user_key, project_id, base, theirs, history)
+            return _without_doc(user_key, project_id, base, theirs, history, actor)
         if doc_mapping.same(doc_mapping.owned(_dataflow_of(base)), doc_mapping.owned(_dataflow_of(theirs))):
             # Nothing the doc holds: the sections beside it, to the file alone.
             file = storage.read_spec_file(user_key, project_id)
@@ -1384,6 +1449,7 @@ def _write(user_key: str, project_id: str, base: dict, mine, actor: Actor, *,
                     refused = tuple(doc_mapping.apply_dataflow(
                         entry.doc, doc_mapping.owned(_dataflow_of(base)), doc_mapping.owned(_dataflow_of(theirs)),
                     ))
+                owner_uses.noted(entry, by_owner=_by_its_owner(user_key, actor))
                 _commit(entry, skip_sid=None, origin=actor, point=point)
                 if refused:
                     for node_id in refused:
@@ -1397,14 +1463,16 @@ def _write(user_key: str, project_id: str, base: dict, mine, actor: Actor, *,
         except _NoDataflow:
             return Written(False)
         except doc_mapping.DocMappingError:
-            return _without_doc(user_key, project_id, base, theirs, history)
+            return _without_doc(user_key, project_id, base, theirs, history, actor)
 
 
-def _without_doc(user_key: str, project_id: str, base: dict, mine: dict, history: Optional[dict]) -> Written:
+def _without_doc(user_key: str, project_id: str, base: dict, mine: dict, history: Optional[dict],
+                 actor: Actor) -> Written:
     """A write the doc has no place for (``doc_mapping.DocMappingError``),
     made to the file alone as before the doc: each member the writer changed
-    is the writer's. The doc is forgotten, so it is built anew from the file
-    when it next opens, which says why no tab can sync it."""
+    is the writer's, *actor* its maker for the record of what the owner put
+    in (``owner_uses.py``). The doc is forgotten, so it is built anew from the
+    file when it next opens, which says why no tab can sync it."""
     logger.warning("dataflow %s: a write the doc's layout has no place for is written to the file alone",
                    project_id)
     entry = _open_entry(project_id)
@@ -1418,6 +1486,8 @@ def _without_doc(user_key: str, project_id: str, base: dict, mine: dict, history
     if history:
         out.update(history)
     storage.write_spec(user_key, project_id, out)
+    owner_uses.changed(user_key, project_id, owner_uses.entries(_dataflow_of(file.spec)),
+                       owner_uses.entries(_dataflow_of(out)), by_owner=_by_its_owner(user_key, actor))
     return Written(True)
 
 
@@ -1656,13 +1726,15 @@ def _relay_states(entry: _OpenDoc, own: dict[str, set[int]]) -> None:
 
 
 def _user(me: dict) -> dict:
-    """Who an awareness state is, as the room knows the participant."""
+    """Who an awareness state is, as the room knows the participant: a tab of
+    the guest account with its number (``room_state.GUEST_NUMBER``)."""
     return {
         "participant_id": me.get("participant_id"),
         "user_id": me.get("user_id"),
         "username": me.get("username"),
         "name": me.get("name"),
         "role": me.get("role"),
+        **room_state.numbered(me),
     }
 
 
@@ -1978,12 +2050,15 @@ def _apply_updates(entry: _OpenDoc, updates: dict[str, list[_Queued]], answers: 
                     logger.info("an update from %s for dataflow %s does not apply", sid, entry.project_id,
                                 exc_info=True)
                     _refuse(answers, sid, "invalid_message")
+        tab = history.Tab(sid, items[-1].me)
+        owner_uses.noted(entry, by_owner=_by_its_owner(entry.user_key, tab))
         now = _clocks(entry.doc)
         observed, entry.updates = entry.updates, []
         changes.append((sid, observed))
-        taken.append((history.Tab(sid, items[-1].me), history.take_touched(entry)))
+        taken.append((tab, history.take_touched(entry)))
         answer["kept"] = {str(client): clock for client, clock in now.items() if clocks.get(client) != clock}
         notices += _drop_dangling_connections(entry, sid, items[-1].me, graph)
+        owner_uses.noted(entry, by_owner=_by_its_owner(entry.user_key, RULES_ORIGIN))
         ruled, entry.updates = entry.updates, []
         if ruled:
             changes.append((None, ruled))

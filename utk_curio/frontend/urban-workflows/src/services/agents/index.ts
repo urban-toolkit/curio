@@ -23,5 +23,6 @@ export * from "./builderTemplates";
 export * from "./agentListUtils";
 export * from "./agentCapabilities";
 export * from "./agentEditors";
+export * from "./agentChanges";
 export * from "./buildUploadPayload";
 export * from "./sanitizeAgentContent";

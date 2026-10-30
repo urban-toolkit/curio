@@ -26,7 +26,9 @@ its own), so each such canvas stays its own.
 
 Each socket is one participant, with an id of its own that its join answers
 with: two tabs of one account, or two hosted guests on the one guest account,
-are told apart by it (``room_state.py``).
+are told apart by it (``room_state.py``). A tab of the guest account is
+numbered in the room too, and the join and the leave name it by its number in
+the room's events and its Activity.
 
 The room key is always ``project:<uuid>``; the project UUID matches the
 canonical project identifier surfaced by the frontend
@@ -75,6 +77,18 @@ def _project(project_id: str):
     from utk_curio.backend.extensions import db
 
     return db.session.get(Project, project_id)
+
+
+def _who(participant: dict) -> dict:
+    """Who a join's or a leave's Activity record names, and the leave's event:
+    the account, its name, and a tab of the guest account's number, so a line
+    names a tab that has left as it named it while it was here."""
+    return {
+        "user_id": participant.get("user_id"),
+        "username": participant.get("username"),
+        "name": participant.get("name"),
+        **room_state.numbered(participant),
+    }
 
 
 def register(sio):
@@ -159,18 +173,14 @@ def register(sio):
             sio.emit(
                 "user_left",
                 {
-                    "user_id": info.get("user_id"),
-                    "username": info.get("username"),
+                    **_who(info),
                     "participant_id": info.get("participant_id"),
                     "released_locks": info.get("released_locks", []),
                     "users": users,
                 },
                 to=room, namespace=ns,
             )
-            room_state.record_activity(room, "user_left", {
-                "user_id": info.get("user_id"),
-                "username": info.get("username"),
-            })
+            room_state.record_activity(room, "user_left", _who(info))
 
     # ------------------------------------------------------------------
     # Room membership
@@ -203,14 +213,12 @@ def register(sio):
             "participant_id": sess["participant_id"],
             "role": role,
         }
-        room_state.add_user(room, request.sid, user_info)
-        room_state.record_activity(room, "user_joined", {
-            "user_id": sess["user_id"], "username": sess["username"], "role": role,
-        })
+        me = room_state.add_user(room, request.sid, user_info)
+        room_state.record_activity(room, "user_joined", {**_who(me), "role": role})
         snap = room_state.snapshot(room)
         sio.emit(
             "user_joined",
-            {**user_info, "users": snap["users"]},
+            {**user_info, **room_state.numbered(me), "users": snap["users"]},
             to=room, skip_sid=request.sid, namespace=ns,
         )
         return {

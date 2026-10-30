@@ -157,7 +157,37 @@ def dependency_module_names(user_key: str, package_deps: object) -> frozenset[st
     return frozenset(names)
 
 
-def modules_for_node(user_key: str | None, node_type: object, project_id: str | None = None) -> dict | list | None:
+def _node_dir_name(user_key: str | None, node_type: object, project_id: str | None) -> str | None:
+    """The installed ``<packageId>@<major>`` of *user_key*'s store a node of
+    *node_type* comes from, as :func:`modules_for_node` finds it; None for a
+    built-in node and for a package the store does not hold."""
+    if not user_key or not isinstance(node_type, str):
+        return None
+    package_id, _, template_id = packages_templates.canonical_template_id(node_type).partition("/")
+    if not template_id or package_id == BUILTIN_PACKAGE_ID:
+        return None
+    majors_by_pkg = packages_store_reads._installed_majors_by_pkg(user_key)
+    return _installed_dir_for(node_type, package_id, majors_by_pkg, _dataflow_pins(user_key, project_id, majors_by_pkg))
+
+
+def _store_of_node(user_key: str | None, node_type: object, project_id: str | None, owners) -> str | None:
+    """The store whose copy of its package a node of *node_type* runs with:
+    the dataflow owner's (*owners*, ``project_packages.OwnersPackages``) when
+    the dataflow uses the package her store holds for the node, else
+    *user_key*'s."""
+    if owners is None:
+        return user_key
+    try:
+        if owners.uses(_node_dir_name(owners.store_key, node_type, project_id)):
+            return owners.store_key
+    except Exception as exc:  # noqa: BLE001 - the run's own store still answers
+        log.warning("Could not read the packages dataflow %s uses for a run of %s: %s", project_id, node_type, exc)
+    return user_key
+
+
+def modules_for_node(
+    user_key: str | None, node_type: object, project_id: str | None = None, *, owners=None,
+) -> dict | list | None:
     """What a node of *node_type* may import, for the sandbox.
 
     ``{"root": <the package's sources folder>, "names": [...]}`` when the
@@ -168,7 +198,13 @@ def modules_for_node(user_key: str | None, node_type: object, project_id: str | 
     and for every built-in node before any disk read. Never raises: a node
     whose modules could not be resolved still runs, and its import fails with
     Python's own message naming the module.
+
+    With *owners* (``project_packages.OwnersPackages``), the run is one of an
+    editor the owner of the dataflow *project_id* invited: a node of a package
+    the dataflow uses gets what her own run hands it, from her store, and any
+    other node what *user_key*'s store holds for it.
     """
+    user_key = _store_of_node(user_key, node_type, project_id, owners)
     if not user_key or not isinstance(node_type, str):
         return None
     package_id, _, template_id = packages_templates.canonical_template_id(node_type).partition("/")
@@ -204,10 +240,14 @@ def _python_code_templates(manifest) -> list[dict]:
     ]
 
 
-def _store_modules(user_key: str, project_id: str | None, majors_by_pkg: dict[str, list[int]]) -> dict[str, dict]:
+def _store_modules(
+    user_key: str, project_id: str | None, majors_by_pkg: dict[str, list[int]],
+    only: AbstractSet[str] | None = None,
+) -> dict[str, dict]:
     """:func:`module_index` for the packages of *user_key*'s store: each
     package as an unversioned node type finds it, with the modules a run
-    hands its nodes (:func:`_module_sources`)."""
+    hands its nodes (:func:`_module_sources`). With *only*, the packages of
+    those ``<packageId>@<major>`` alone."""
     pins = _dataflow_pins(user_key, project_id, majors_by_pkg)
     index: dict[str, dict] = {}
     with package_seed_lock(user_key):
@@ -215,6 +255,8 @@ def _store_modules(user_key: str, project_id: str | None, majors_by_pkg: dict[st
         for package_id in sorted(majors_by_pkg):
             dir_name = _dir_for_package(package_id, majors_by_pkg, pins)
             if package_id == BUILTIN_PACKAGE_ID or dir_name is None:
+                continue
+            if only is not None and dir_name not in only:
                 continue
             try:
                 held.append((dir_name, load_package_manifest(package_dir(user_key, dir_name))))
@@ -261,7 +303,7 @@ def _catalog_modules() -> dict[str, dict]:
     return index
 
 
-def module_index(user_key: str | None, project_id: str | None = None) -> dict[str, dict]:
+def module_index(user_key: str | None, project_id: str | None = None, *, owners=None) -> dict[str, dict]:
     """Every module a package ships, by its name: ``{"package", "added",
     "templates"}``.
 
@@ -271,14 +313,31 @@ def module_index(user_key: str | None, project_id: str | None = None) -> dict[st
     :func:`modules_for_node` hands modules to a run, the Python code templates
     of that package and of every package that depends on it; for a package of
     the catalog the store does not hold, its own. The built-in package ships
-    none. Never raises: what cannot be read adds nothing."""
+    none. Never raises: what cannot be read adds nothing.
+
+    With *owners* (``project_packages.OwnersPackages``), the index is that of
+    a run of an editor the owner of the dataflow *project_id* invited, as
+    :func:`modules_for_node` hands such a run its modules: those of the
+    packages the dataflow uses, from her store, then those of the editor's,
+    *user_key*'s, then the catalog's. Her other packages add nothing."""
     index: dict[str, dict] = {}
     installed: set[str] = set()
+    if owners is not None:
+        try:
+            used = owners.used
+            index = _store_modules(
+                owners.store_key, project_id,
+                packages_store_reads._installed_majors_by_pkg(owners.store_key), only=used,
+            )
+            installed = {dir_name.rsplit("@", 1)[0] for dir_name in used}
+        except Exception as exc:  # noqa: BLE001 - the dataflow's packages add nothing then
+            log.warning("Could not read the modules of the packages dataflow %s uses: %s", project_id, exc)
     if user_key:
         try:
             majors_by_pkg = packages_store_reads._installed_majors_by_pkg(user_key)
-            installed = set(majors_by_pkg)
-            index = _store_modules(user_key, project_id, majors_by_pkg)
+            installed |= set(majors_by_pkg)
+            for name, entry in _store_modules(user_key, project_id, majors_by_pkg).items():
+                index.setdefault(name, entry)
         except Exception as exc:  # noqa: BLE001 - an unreadable store ships no module
             log.warning("Could not read the modules of %s's packages: %s", user_key, exc)
     try:

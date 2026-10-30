@@ -294,6 +294,7 @@ def _source_resolver(
     manifest=None,
     extra_texts=(),
     catalog_rows: list | None = None,
+    asker=None,
 ):
     """dev/126: the callable the content loop consults BEFORE generating for a
     data-loading node — the one place resolution initiates discovery.
@@ -304,6 +305,11 @@ def _source_resolver(
     ``dataset.discover`` delegation whose candidates await the user in that
     node's own Dataset Finder chat; a node already awaiting the user spends
     nothing at all.
+
+    *asker* is whoever the Solve runs for (its ``acting_user``): its job's
+    thread holds no request, so the Dataset Finder's run is handed it, and an
+    editor's run holds the skills of the packages the owner added
+    (``dataset_resolution.initiate``).
     """
     parent_manifest = manifest if manifest is not None else agents_catalog._resolve_definition(user_key, coord)
 
@@ -360,6 +366,7 @@ def _source_resolver(
                 if t
             )[:2000],
             catalog_rows=catalog_rows,
+            asker=asker,
         )
         if started["status"] == "awaiting":
             return {"state": "awaiting", "detail": started["detail"],
@@ -637,9 +644,10 @@ def _grounding_context(
     reachable, package_modules = None, None
     if code_engine == "python" and node_type:
         package_modules = (
-            base_of["package_modules"] if "package_modules" in base_of else _package_modules(user_key, project_id)
+            base_of["package_modules"] if "package_modules" in base_of
+            else _package_modules(user_key, project_id, keys)
         )
-        reachable = _reachable_modules(user_key, node_type, project_id)
+        reachable = _reachable_modules(user_key, node_type, project_id, keys)
     texts.extend(t for t in extra_texts if isinstance(t, str) and t.strip())
     budget = _run_egress_budget(loop_ctx)
     cache: dict = loop_ctx.setdefault("_probe_cache", {})
@@ -945,22 +953,47 @@ def _model_refs(user_key: str) -> dict[str, tuple[int, ...]]:
     return {model_id: tuple(sorted(majors)) for model_id, majors in models.items()}
 
 
-def _package_modules(user_key: str, project_id: str) -> dict:
+def _editors_owners(user_key: str, project_id: str, keys: str | None):
+    """For a run an editor the dataflow's owner invited asked for, whose
+    storage key *keys* (:func:`_keys_of`) is not the owner's *user_key*: the
+    owner's packages the dataflow uses (``packages.OwnersPackages``), which
+    the editor's runs read from her store. None for the owner's own run. The
+    agents' routes admitted the editor (``access.agents_role``), so no
+    database is asked: a Solve's job runs on a thread of its own."""
+    if not keys or not project_id or keys == user_key:
+        return None
+    from utk_curio.backend.app.packages import service as packages_services
+
+    return packages_services.OwnersPackages(user_key, project_id)
+
+
+def _package_modules(user_key: str, project_id: str, keys: str | None = None) -> dict:
     """Every module a package ships, by name, with the nodes that import it
-    (``packages.module_index``). It never raises: what it cannot read adds
+    (``packages.module_index``). For an editor's run (*keys*), those of the
+    dataflow's packages and the editor's own, as the run gets them, and none
+    of the owner's other packages. It never raises: what it cannot read adds
     nothing, so the gate judges no import of it."""
     from utk_curio.backend.app.packages import service as packages_services
 
-    return packages_services.module_index(user_key, project_id)
+    owners = _editors_owners(user_key, project_id, keys)
+    if owners is None:
+        return packages_services.module_index(user_key, project_id)
+    return packages_services.module_index(keys, project_id, owners=owners)
 
 
-def _reachable_modules(user_key: str, node_type: object, project_id: str) -> frozenset[str]:
+def _reachable_modules(user_key: str, node_type: object, project_id: str,
+                       keys: str | None = None) -> frozenset[str]:
     """The modules a run hands a node of *node_type* (``packages.modules_for_node``,
     the run's own reader): those of its package and of the packages it
-    depends on. A built-in node gets none."""
+    depends on, for an editor's run (*keys*) as that run gets them. A
+    built-in node gets none."""
     from utk_curio.backend.app.packages import service as packages_services
 
-    found = packages_services.modules_for_node(user_key, node_type, project_id)
+    owners = _editors_owners(user_key, project_id, keys)
+    if owners is None:
+        found = packages_services.modules_for_node(user_key, node_type, project_id)
+    else:
+        found = packages_services.modules_for_node(keys, node_type, project_id, owners=owners)
     sources = found if isinstance(found, list) else [found] if isinstance(found, dict) else []
     return frozenset(name for source in sources for name in source.get("names") or ())
 
@@ -1023,9 +1056,10 @@ def _solve_grounding_base(
     thread (workers hold no request context): catalog paths, the mission and
     plan texts (the human-authored intents), the session-free verified
     map (empty: Solve has no candidates transcript of its own), the
-    account's models and the modules its packages ship, and the saved keys
-    of whoever asked for the Solve, with the storage key they are under
-    (``"keys"``, :func:`_keys_of`)."""
+    account's models and the modules its packages ship (an invited
+    editor's: :func:`_package_modules`), and the saved keys of whoever asked
+    for the Solve, with the storage key they are under (``"keys"``,
+    :func:`_keys_of`)."""
     dataflow = (spec or {}).get("dataflow") or {}
     texts = [str(dataflow.get("task") or ""), str(dataflow.get("name") or "")]
     for node_id in targets:
@@ -1042,7 +1076,7 @@ def _solve_grounding_base(
         "keys": keys,
         "secrets": _connection_key_refs(keys),
         "models": _model_refs(user_key),
-        "package_modules": _package_modules(user_key, project_id),
+        "package_modules": _package_modules(user_key, project_id, keys),
         # The dataflow's datasets with their lines, for the dataflow block
         # each node's content-mode runs are given, from the same listing.
         "dataflow_datasets": agents_dataflow_block.datasets_in(items),

@@ -425,9 +425,8 @@ class TestEveryRunThatWritesCodeGetsTheBlock:
                             lambda endpoint, payload: {"stdout": [], "stderr": "",
                                                        "output": {"path": "art-1", "dataType": "dataframe"}})
         r = client.post(f"/api/agents/projects/{pid}/attachments/{att}/run", json={"message": "plan"}, headers=_auth(token))
-        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
-        client.post(f"/api/agents/projects/{pid}/attachments/{att}/proposals/{proposal['proposalId']}/apply-node",
-                    json={"ref": "load"}, headers=_auth(token))
+        # The plan landed with the reply: its node is on the canvas.
+        assert routes_proposals._landed_plan(r.get_json())["canvas"]["nodes"]
         r = client.post(f"/api/agents/projects/{pid}/attachments/{att}/validate-node",
                         json={"ref": "load"}, headers=_auth(token))
         assert r.status_code == 200, r.get_json()

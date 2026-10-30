@@ -2,7 +2,7 @@
  * Pure derivations the chat panel renders from (memo dev/142, F4 — split out
  * of `AgentChatPanel.tsx`): the per-turn status meta, the failed tool calls
  * a reply keeps lines for, whether a canvas agent's reply changed nothing,
- * the plan-row state a review card gets from the attachment's mirrors, the
+ * the plan-row state a landed plan's card gets from the attachment, the
  * header's target label, and the newest turn's suggested prompts.
  */
 import {
@@ -11,8 +11,8 @@ import {
   ORCHESTRATE_CAPABILITY,
   turnStatusDisplay,
   type AgentAttachment,
+  type AgentChangePart,
   type AgentDelegationPart,
-  type AgentProposalPart,
   type AgentSessionTurn,
   type AgentToolCall,
   type AgentSuggestedPromptsPart,
@@ -61,8 +61,9 @@ export function turnMetaFor(
   return null;
 }
 
-/** The statuses of a tool call that succeeded (a mutate tool's is "proposed"). */
-const SUCCEEDED = new Set(["ok", "proposed"]);
+/** The statuses of a tool call that succeeded: a change that landed is
+ * "applied", an install waiting for its review "proposed". */
+const SUCCEEDED = new Set(["ok", "proposed", "applied"]);
 
 /**
  * #447: the failed tool calls whose reason stays under a reply, live and after
@@ -70,7 +71,7 @@ const SUCCEEDED = new Set(["ok", "proposed"]);
  * for a tool the agent is not granted is refused to the model only). An
  * egress refusal always keeps its line; any other failure keeps it only when
  * no later call of the same tool in that turn succeeded, so a request the
- * model corrected leaves nothing beside the proposal that followed.
+ * model corrected leaves nothing beside the change that followed.
  */
 export function lastingToolFailures(turn: AgentSessionTurn): AgentToolCall[] {
   const calls = turn.execution?.toolCalls ?? [];
@@ -87,16 +88,17 @@ export function lastingToolFailures(turn: AgentSessionTurn): AgentToolCall[] {
 const CANVAS_CAPABILITIES = [NODE_BUILD_CAPABILITY, ORCHESTRATE_CAPABILITY];
 
 /**
- * #243: a canvas agent's reply that holds no proposal changed nothing on the
- * canvas, and says so, so a reply that claims a new node is never the only
- * account. Read from the transcript, so it holds after a reload too:
+ * #243: a canvas agent's reply that holds no change and no install's review
+ * changed nothing on the canvas, and says so, so a reply that claims a new
+ * node is never the only account. Read from the transcript, so it holds after
+ * a reload too:
  * - only a reply to the user's message: a Solve verdict or an apply result
  *   follows no message, and a task another agent delegated here carries that
  *   run's id (`parentExecutionId`);
  * - only once the reply landed with its execution record, so a reply still
  *   streaming says nothing yet;
  * - a delegation that went through hands the change to the agent it names,
- *   whose chat holds the review, so that reply says nothing either.
+ *   whose chat holds its card, so that reply says nothing either.
  */
 export function canvasUnchangedFor(attachment: AgentAttachment, turns: AgentSessionTurn[], i: number): boolean {
   const t = turns[i];
@@ -104,30 +106,26 @@ export function canvasUnchangedFor(attachment: AgentAttachment, turns: AgentSess
   if (t.role !== "agent" || t.error || !t.execution || "parentExecutionId" in t.execution) return false;
   if (turns[i - 1]?.role !== "user") return false;
   return !(t.content ?? []).some(
-    (p) => p.type === "proposal" || (p.type === "delegation" && (p as AgentDelegationPart).status === "ok"),
+    (p) =>
+      p.type === "proposal" ||
+      p.type === "change" ||
+      (p.type === "delegation" && (p as AgentDelegationPart).status === "ok"),
   );
 }
 
-/** dev/67-5/67-9: the mirror's per-node state feeds the part whose proposal
- * it mirrors — active OR parked behind a content review. */
+/** A landed plan's card gets the plan's per-node state: the attachment's
+ * plan (`planProposal`) and builder session, while they are this plan's. */
 export function planNodeStateFor(
   attachment: AgentAttachment,
-  part: AgentProposalPart,
+  part: AgentChangePart,
 ): PlanNodeReviewState | undefined {
-  const mirror =
-    attachment.activeProposal?.proposalId === part.proposalId
-      ? attachment.activeProposal
-      : attachment.planProposal?.proposalId === part.proposalId
-        ? attachment.planProposal
-        : null;
-  return mirror
+  const plan = part.planId && attachment.planProposal?.proposalId === part.planId ? attachment.planProposal : null;
+  return plan
     ? {
-        appliedRefs: mirror.appliedRefs ?? [],
-        editedGoals: mirror.editedGoals ?? {},
-        edgeStates: mirror.edgeStates ?? {},
+        appliedRefs: plan.appliedRefs ?? [],
         nodeStates: attachment.builderSession?.nodeStates ?? {}, // dev/71: the lifecycle ledger
-        nodeProposals: attachment.builderSession?.nodeProposals ?? {}, // dev/72: where each review lives
-        scenarioStates: mirror.scenarioStates ?? {}, // #662: which scenarios are saved
+        nodeChanges: attachment.builderSession?.nodeChanges ?? {}, // dev/72: where each node's change lives
+        scenarioStates: plan.scenarioStates ?? {}, // #662: which scenarios are saved
       }
     : undefined;
 }

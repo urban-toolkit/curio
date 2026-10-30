@@ -1,4 +1,4 @@
-"""Playwright: one baseline screenshot per agent, plus the review round trip.
+"""Playwright: one baseline screenshot per agent, plus a change and its Undo.
 
 ``test_agent_runs_e2e.py`` is the correctness gate - it proves every built-in
 installs, attaches, composes its own prompt and runs, and it does so headless in
@@ -74,7 +74,7 @@ from .utils import (
 )
 
 SCREENSHOT_STEM = "agent-run"
-REVIEW_STEM = "agent-review-card"
+CHANGE_STEM = "agent-change-card"
 NATIVE_STEM = "agent-native-call"
 
 # The gallery baseline is the chat panel, not the viewport. A full-page capture
@@ -160,8 +160,8 @@ def _open_dataflow_with_agent(
     parameter pay for the drawer's own coverage. The browser's job starts at the
     rendered attachment.
 
-    *node_ids* are the ids the nodes an Apply creates are given (see
-    :func:`_created_node_id`).
+    *node_ids* are the ids the nodes the agent's change creates are given
+    (see :func:`_created_node_id`).
     """
     page, backend, token = session["page"], session["backend"], session["token"]
     # stub-project is keyed on the USERNAME, not the token, so the session has
@@ -197,10 +197,10 @@ def _open_dataflow_with_agent(
 
 
 def _created_node_id(spec: AgentManifest) -> str:
-    """The id the node this agent's Apply creates is given, the same every run.
+    """The id the node this agent's change creates is given, the same every run.
 
-    The applied turn prints it ("Applied: node created (<id>)."), and that line
-    sits near the width of the chat. A fresh uuid4 wraps it or not by how wide
+    The change card prints it ("node <id>"), and that line sits near the
+    width of the chat. A fresh uuid4 wraps it or not by how wide
     its letters render, one line more or less, and the transcript, pinned to the
     bottom, then moves everything above that line by a line height, so the
     ``_chat`` frame changed from run to run with nothing else changed.
@@ -211,9 +211,9 @@ def _created_node_id(spec: AgentManifest) -> str:
 def _saved_nodes(backend, token, project_id) -> list:
     """The nodes as the SERVER has them.
 
-    Read from the saved dataflow rather than the React Flow store: an Apply that
-    only reached the browser's state would be a bug, and the store cannot tell
-    us that. ``canvas_nodes`` exists for store questions; this is a persistence
+    Read from the saved dataflow rather than the React Flow store: a change
+    that only reached the browser's state would be a bug, and the store cannot
+    tell us that. ``canvas_nodes`` exists for store questions; this is a persistence
     question.
     """
     saved = api_json(f"{backend}/api/projects/{project_id}", token)
@@ -224,8 +224,8 @@ def _wait_for_saved(backend, token, project_id, predicate, *, what: str, timeout
     """Poll the saved dataflow until *predicate* holds, or fail saying what it
     was waiting for.
 
-    Apply answers before the project save that carries it to disk, so the
-    change lands on a later round trip.
+    The page can show a change before a later round trip reads it back from
+    disk, so this waits instead of reading once.
     """
     deadline = time.time() + timeout
     nodes: list = []
@@ -240,35 +240,13 @@ def _wait_for_saved(backend, token, project_id, predicate, *, what: str, timeout
     )
 
 
-def _apply_the_proposal(page, panel, tool: str):
-    """Press the review control this proposal kind offers, and wait for the POST.
-
-    A plan is applied per node (``apply-node``) rather than in one shot, so its
-    control is the planned row's own button; every other kind has the card's
-    single Apply. Matched without ``r.ok`` so a rejected apply reports its
-    status instead of timing out with nothing to say.
-    """
-    if tool == "dataflow.plan.write":
-        control = panel.get_by_role(
-            "button", name=f"Create node {PLAN_NODE_TITLES[0]}"
-        ).first
-        expected = "/apply-node"
-    else:
-        control = panel.get_by_role("button", name=re.compile(r"^Apply")).first
-        expected = "/apply"
-    expect(control).to_be_visible(timeout=30000)
-    with page.expect_response(
-        lambda r: "/proposals/" in r.url
-        and r.url.endswith(expected)
-        and r.request.method == "POST",
-        timeout=40000,
-    ) as info:
-        control.click()
-    response = info.value
-    assert response.ok, (
-        f"applying {tool} failed with HTTP {response.status}: "
-        f"{response.text()[:300]}"
-    )
+def _the_change_landed(panel):
+    """The card of the change the turn's agent landed, with its Undo: an
+    agent's node, code or plan lands with its reply and needs no Apply."""
+    card = panel.get_by_role("group", name=re.compile(r"^Change: ")).first
+    expect(card).to_be_visible(timeout=30000)
+    expect(card.get_by_role("button", name="Undo")).to_be_visible(timeout=10000)
+    return card
 
 
 def _open_chat(page, spec):
@@ -340,10 +318,10 @@ class TestAgentChatGallery:
             )
             return
 
-        # A mutate-capable agent gets held to the real thing: apply its proposal
-        # and prove the CANVAS changed. Testing that a chat looks right would
-        # stop one step short of what the agent is for.
-        _apply_the_proposal(page, panel, tool)
+        # A mutate-capable agent gets held to the real thing: its change lands
+        # with the reply, and the CANVAS changed. Testing that a chat looks
+        # right would stop one step short of what the agent is for.
+        _the_change_landed(panel)
 
         if tool == "node.content.write":
             node_id = _mint_node_id(spec)
@@ -353,24 +331,25 @@ class TestAgentChatGallery:
                     n["id"] == node_id and PROPOSED_CONTENT in (n.get("content") or "")
                     for n in nodes
                 ),
-                what=f"the proposed content for node {node_id}",
+                what=f"the agent's content for node {node_id}",
             )
             # And the canvas shows it, through the node's own Monaco instance.
             assert PROPOSED_CONTENT in read_node_code(page, node_id), (
-                "the applied content is on the server but not on the canvas"
+                "the agent's content is on the server but not on the canvas"
             )
         else:
-            # node.create and an applied plan node both ADD a node.
+            # node.create ADDS a node; a plan adds all of its nodes at once.
+            count = len(PLAN_NODE_TITLES) if tool == "dataflow.plan.write" else 1
             expected_content = (
                 CREATED_CONTENT if tool == "node.create" else None
             )
             after = _wait_for_saved(
                 backend, token, project_id,
-                lambda nodes: len(nodes) > len(before),
-                what=f"a node added by {tool}",
+                lambda nodes: len(nodes) >= len(before) + count,
+                what=f"the node(s) added by {tool}",
             )
             added = [n for n in after if n["id"] not in {b["id"] for b in before}]
-            assert len(added) == 1, f"expected one new node, got {len(added)}"
+            assert len(added) == count, f"expected {count} new node(s), got {len(added)}"
             if expected_content is not None:
                 assert expected_content in (added[0].get("content") or ""), (
                     f"the new node carries {added[0].get('content')!r}"
@@ -381,20 +360,18 @@ class TestAgentChatGallery:
                     f"the new node is {added[0]['id']}, not the scripted id "
                     f"{created_id}"
                 )
-            # The canvas really renders it, not just the saved spec.
-            expect(page.locator(f'[data-id="{added[0]["id"]}"]')).to_be_visible(
-                timeout=20000
-            )
+            # The canvas really renders them, not just the saved spec.
+            for node in added:
+                expect(page.locator(f'[data-id="{node["id"]}"]')).to_be_visible(
+                    timeout=20000
+                )
             if created_id is not None:
-                # And the chat names it: the result turn is in the capture.
-                expect(panel.get_by_text(
-                    f"Applied: node created ({created_id})."
-                )).to_be_visible(timeout=20000)
+                # And the change card names it: it is in the capture.
+                expect(panel.get_by_text(f"node {created_id}")).to_be_visible(timeout=20000)
 
         dismiss_toasts(page)
         # Two captures, because there are two things worth seeing. First the
-        # chat: the card flipped to "Applied" and the runtime's result turn
-        # naming the node and proposal it created.
+        # chat: the change card, naming what it changed, with its Undo.
         save_workflow_test_screenshot(
             page, SCREENSHOT_STEM, test_name=f"{spec.agent_id}_chat",
             clip_selector=CHAT_PANEL_SELECTOR,
@@ -411,15 +388,16 @@ class TestAgentChatGallery:
         )
 
 
-class TestAgentReviewCard:
-    """A proposal is reviewed, then applied - the one claim no capture makes.
+class TestAgentChangeCard:
+    """A change lands with its reply, and its Undo takes it back: the one
+    claim no capture makes.
 
     Deliberately its own class, so it gets a clean DB and a fresh user: it
     asserts against the saved dataflow, and sharing the gallery's long-lived
     session would leave that assertion reading state 21 projects deep.
     """
 
-    def test_review_before_apply_proposal_renders_and_applies(
+    def test_a_change_lands_with_the_reply_and_its_undo_puts_the_code_back(
         self, page, frontend_server, current_server,
     ):
         require_project_page()
@@ -429,13 +407,13 @@ class TestAgentReviewCard:
             if s.agent_id == "agent.curio.node-builder"
         )
         assert "node.content.write" in _tool_ids(spec), (
-            "this test needs an agent that can propose a content replacement; "
+            "this test needs an agent that writes a node's content; "
             f"{spec.agent_id} no longer declares node.content.write"
         )
 
         page.emulate_media(reduced_motion="reduce")
         login = stub_db_user(
-            current_server, username="agentreview", name="Agent Review User",
+            current_server, username="agentchange", name="Agent Change User",
         )
         install_session_cookie(page, frontend_server, login["token"])
         use_scripted_llm(current_server, login["token"])
@@ -443,7 +421,7 @@ class TestAgentReviewCard:
         session = {
             "page": page, "frontend": frontend_server,
             "backend": current_server, "token": login["token"],
-            "username": "agentreview",
+            "username": "agentchange",
         }
         node_id = DATA_NODE_ID if _node_requires(spec) else CODE_NODE_ID
         replies = [
@@ -454,55 +432,10 @@ class TestAgentReviewCard:
                 f'{{"nodeId": "{node_id}", "content": "{PROPOSED_CONTENT}"}}}}}}'
             )
             + "\n```",
-            "I have proposed the change for your review.",
+            "The node holds the new code.",
         ]
         project_id, _attachment_id, _base = _open_dataflow_with_agent(
-            session, spec, project_name="Agent Review", replies=replies,
-        )
-
-        panel = _open_chat(page, spec)
-        _send(panel, "Rewrite this node for me.")
-
-        # 1. The review card renders, and it offers an Apply.
-        apply_button = panel.get_by_role("button", name=re.compile(r"^Apply"))
-        expect(apply_button.first).to_be_visible(timeout=30000)
-
-        # 2. Nothing has changed yet (DEC-006: a mutate request mints a review,
-        #    it never executes). Read the server, not the canvas - this is the
-        #    state an Apply is supposed to be the only path to.
-        saved = api_json(
-            f"{current_server}/api/projects/{project_id}", login["token"]
-        )
-        before = next(
-            n for n in saved["spec"]["dataflow"]["nodes"] if n["id"] == node_id
-        )
-        assert PROPOSED_CONTENT not in (before.get("content") or ""), (
-            "the proposal was applied before the user approved it"
-        )
-
-        dismiss_toasts(page)
-        save_workflow_test_screenshot(
-            page, REVIEW_STEM, test_name="pending_review",
-        )
-
-        # 3. Apply, and the node really changes.
-        # Matched WITHOUT r.ok on purpose. Requiring it turns a rejected apply
-        # into a 30-second "waiting for event" timeout that names nothing; this
-        # way the status is asserted where it can be reported. A 401 here means
-        # the session died mid-test - the usual cause is a second E2E run
-        # sharing this stack's ports and test DB, whose own e2e_clean_db
-        # truncates user_session out from under this one.
-        with page.expect_response(
-            lambda r: "/proposals/" in r.url
-            and r.url.endswith("/apply")
-            and r.request.method == "POST",
-            timeout=30000,
-        ) as apply_response:
-            apply_button.first.click()
-        response = apply_response.value
-        assert response.ok, (
-            f"the apply request failed with HTTP {response.status}: "
-            f"{response.text()[:300]}"
+            session, spec, project_name="Agent Change", replies=replies,
         )
 
         def _content_now() -> str:
@@ -514,26 +447,57 @@ class TestAgentReviewCard:
             )
             return node.get("content") or ""
 
-        # The apply response has returned, but the project save that carries it
-        # to disk is a separate round trip.
-        deadline = 30
-        for _ in range(deadline * 4):
-            if PROPOSED_CONTENT in _content_now():
-                break
-            page.wait_for_timeout(250)
-        assert PROPOSED_CONTENT in _content_now(), (
-            f"Apply did not reach the saved dataflow; node {node_id} still holds "
-            f"{_content_now()!r}"
-        )
-        # And the canvas shows it, through the node's own Monaco instance (the
-        # gallery's content leg did this for the content writer's card).
+        def _wait_for(predicate, what: str) -> None:
+            for _ in range(30 * 4):
+                if predicate(_content_now()):
+                    return
+                page.wait_for_timeout(250)
+            raise AssertionError(f"{what}; node {node_id} holds {_content_now()!r}")
+
+        before = _content_now()
+        assert PROPOSED_CONTENT not in before
+
+        panel = _open_chat(page, spec)
+        _send(panel, "Rewrite this node for me.")
+
+        # 1. The change card renders with its Undo, and the node holds the
+        #    agent's code at once: no Apply is the path to it.
+        card = _the_change_landed(panel)
+        _wait_for(lambda content: PROPOSED_CONTENT in content, "the change never reached the saved dataflow")
+        # And the canvas shows it, through the node's own Monaco instance.
         assert PROPOSED_CONTENT in read_node_code(page, node_id), (
-            "the applied content is on the server but not on the canvas"
+            "the change is on the server but not on the canvas"
         )
 
         dismiss_toasts(page)
         save_workflow_test_screenshot(
-            page, REVIEW_STEM, test_name="applied",
+            page, CHANGE_STEM, test_name="landed",
+        )
+
+        # 2. Undo, and the node holds its code before again. Matched WITHOUT
+        #    r.ok on purpose: a refused Undo reports its status here instead of
+        #    timing out with nothing to say.
+        with page.expect_response(
+            lambda r: "/changes/" in r.url
+            and r.url.endswith("/undo")
+            and r.request.method == "POST",
+            timeout=30000,
+        ) as undo_response:
+            card.get_by_role("button", name="Undo").click()
+        response = undo_response.value
+        assert response.ok, (
+            f"the Undo request failed with HTTP {response.status}: "
+            f"{response.text()[:300]}"
+        )
+        expect(card.get_by_text("Undone", exact=True)).to_be_visible(timeout=20000)
+        _wait_for(lambda content: content == before, "the Undo never reached the saved dataflow")
+        assert PROPOSED_CONTENT not in read_node_code(page, node_id), (
+            "the Undo is on the server but not on the canvas"
+        )
+
+        dismiss_toasts(page)
+        save_workflow_test_screenshot(
+            page, CHANGE_STEM, test_name="undone",
         )
 
 
@@ -612,15 +576,15 @@ class TestNodeAttachedChatHeader:
 
 
 class TestNativeToolCall:
-    """A turn whose model calls its tool natively renders and applies like a
-    fenced one: the reply, the review card, and the node Apply adds.
+    """A turn whose model calls its tool natively renders and lands like a
+    fenced one: the reply, the change card, and the node it adds.
 
     What reached the model is read back from the scripted provider, since the
     page cannot show how the tool was asked for. Its own class, so it gets a
-    clean DB and a fresh user, as the review-card test does.
+    clean DB and a fresh user, as the change-card test does.
     """
 
-    def test_a_native_create_call_is_reviewed_and_applied(
+    def test_a_native_create_call_lands_its_node(
         self, page, frontend_server, current_server,
     ):
         from utk_curio.backend.app.agents.application import tools
@@ -652,10 +616,9 @@ class TestNativeToolCall:
         panel = _open_chat(page, spec)
         _send(panel, "Add a node that prints a line.")
 
-        # 1. The reply and the review card render, as for a fenced request.
+        # 1. The reply and the change card render, as for a fenced request.
         expect(panel.get_by_text(VISIBLE_PROSE, exact=False)).to_be_visible(timeout=30000)
-        apply_button = panel.get_by_role("button", name=re.compile(r"^Apply"))
-        expect(apply_button.first).to_be_visible(timeout=30000)
+        _the_change_landed(panel)
 
         # 2. It really was a native call: the tool was offered, the system turn
         #    taught no fenced syntax, and a tool message answered the call.
@@ -666,27 +629,22 @@ class TestNativeToolCall:
         result = captured[1][-1]
         assert result["role"] == "tool" and result["is_error"] is False, result
 
-        # 3. Nothing changed before the review (DEC-006).
-        assert _saved_nodes(current_server, login["token"], project_id) == before
-
-        dismiss_toasts(page)
-        save_workflow_test_screenshot(
-            page, NATIVE_STEM, test_name="pending_review",
-            clip_selector=CHAT_PANEL_SELECTOR,
-        )
-
-        # 4. Apply, and the node the call proposed is saved and on the canvas.
-        _apply_the_proposal(page, panel, tool)
+        # 3. The node the call added is saved and on the canvas, at once.
         after = _wait_for_saved(
             current_server, login["token"], project_id,
             lambda nodes: len(nodes) > len(before),
-            what="the node the native call proposed",
+            what="the node the native call added",
         )
         added = [n for n in after if n["id"] not in {b["id"] for b in before}]
         assert len(added) == 1 and CREATED_CONTENT in (added[0].get("content") or ""), added
         expect(page.locator(f'[data-id="{added[0]["id"]}"]')).to_be_visible(timeout=20000)
 
         dismiss_toasts(page)
+        save_workflow_test_screenshot(
+            page, NATIVE_STEM, test_name="landed",
+            clip_selector=CHAT_PANEL_SELECTOR,
+        )
+
         panel.get_by_role("button", name="Close chat").click()
         expect(page.locator(CHAT_PANEL_SELECTOR)).to_have_count(0, timeout=10000)
         leave_agent_badge(page)

@@ -6,7 +6,8 @@
  * Widgets tab when it opens on its controls; a tab a person picked before, or
  * while the agent wrote, stays. The notebook view's cells turn the same way.
  * The node's lock chip shows the agent's glyph in its tint, and says on hover
- * who is editing and who asked.
+ * who is editing and who asked; a tab of the shared guest account's names it
+ * by its number.
  *
  * The room is the real CollaborationProvider on a fake socket, as
  * collabRoles.test.tsx has it, and the agent reaches this tab as the server
@@ -20,6 +21,11 @@
  * Each node is UniversalNode with its real NodeEditor. The lines are marked
  * where y-monaco takes a change into the editor (`useYMonacoBinding`), with
  * y-monaco stubbed as in yMonacoUndoPerEditor.test.tsx.
+ *
+ * A canvas no doc binds (a hosted guest's example) has no awareness: there a
+ * run's `change` events say what the agent wrote, as its state in the room
+ * said it (`writing`), and reach the node through the same bridge every run's
+ * stream calls (`bridgeLandedChangeEvent`).
  */
 import React from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -168,6 +174,7 @@ import { DOC_EVENT, dataflowToDoc, replaceText } from "../../providers/collab/do
 import { useYMonacoBinding } from "../../components/editing/useYMonacoBinding";
 import { TooltipLayer } from "../../components/tooltip/TooltipLayer";
 import { setTooltipTimings } from "../../components/tooltip/tooltipStore";
+import { bridgeLandedChangeEvent } from "../../services/agents/agentEvents";
 import type { WidgetDef } from "../../utils/widgets/widgetModel";
 
 type Handler = (payload?: any) => void;
@@ -556,6 +563,73 @@ describe("what the agent changed, marked as it lands", () => {
   });
 });
 
+describe("what the agent changed, marked until it lets go of the node", () => {
+  test("a widget it set is marked no more once the agent lets go, before the moment ends", async () => {
+    const { socket, again } = await inTheRoom(<Node data={PYTHON} />);
+    agentWrites(socket, "rows", "widgets");
+    again(<Node data={{ ...PYTHON, widgets: [{ ...ROWS, value: "five" }, LIMIT] }} />);
+    expect(markedWidgets("rows")).toEqual(["rows"]);
+
+    // The agent's second after its write is over: what shows after its reply
+    // is the node as it is.
+    agentWrites(socket, null);
+    expect(markedWidgets("rows")).toEqual([]);
+  });
+
+  test("lines it wrote are marked no more once the agent lets go, before the moment ends", async () => {
+    const CODE = "n = 3\nrows = input_0[:n]\nreturn rows\n";
+    const AGENTS = "n = 3\nrows = input_0.head(n)\nreturn rows\n";
+    const MONACO = { KeyMod: { CtrlCmd: 2048, Shift: 1024 }, KeyCode: { KeyZ: 56, KeyY: 55 } };
+    const decorations = { set: jest.fn(), clear: jest.fn() };
+    const model = { getValue: () => CODE, onDidChangeContent: () => ({ dispose() {} }) };
+    const editor = {
+      getModel: () => model,
+      addAction: () => ({ dispose() {} }),
+      onDidFocusEditorText: () => ({ dispose() {} }),
+      onDidBlurEditorText: () => ({ dispose() {} }),
+      hasTextFocus: () => false,
+      trigger: jest.fn(),
+      createDecorationsCollection: jest.fn(() => decorations),
+    };
+    const Bound = () => {
+      useYMonacoBinding(editor, MONACO, "rows", { canWrite: true, baselineRef: { current: CODE } });
+      return null;
+    };
+    const provider = new DataflowDocProvider("project-1", { canWrite: true });
+    dataflowToDoc({
+      name: "",
+      nodes: [{ id: "rows", type: "curio.builtin/computation-analysis", x: 0, y: 0, content: CODE }],
+      edges: [],
+    }, provider.doc, "doc-1");
+    provider.synced = true;
+    /** The server writes *code* into the node, as it writes an agent's change. */
+    const serverWrites = (code: string) => {
+      const server = new Y.Doc();
+      Y.applyUpdate(server, Y.encodeStateAsUpdate(provider.doc));
+      const updates: Uint8Array[] = [];
+      server.on("update", (update: Uint8Array) => updates.push(update));
+      const content = (server.getMap("nodes").get("rows") as Y.Map<unknown>).get("content") as Y.Text;
+      server.transact(() => replaceText(content, code));
+      for (const update of updates) Y.applyUpdate(provider.doc, update, provider);
+    };
+
+    const { socket } = await inTheRoom(
+      <DataflowDocContext.Provider value={{ provider, synced: true }}>
+        <Bound />
+      </DataflowDocContext.Provider>,
+    );
+    await waitFor(() => expect(mockBindings).toHaveLength(1));
+    agentWrites(socket, "rows", "code");
+    act(() => serverWrites(AGENTS));
+    expect(decorations.set).toHaveBeenCalledTimes(1);
+    expect(decorations.clear).not.toHaveBeenCalled();
+
+    agentWrites(socket, null);
+    expect(decorations.clear).toHaveBeenCalled();
+    provider.destroy();
+  });
+});
+
 describe("the node's lock chip", () => {
   test("an agent's shows its glyph in its tint, turns no tab for a setting, and says on hover who is editing and who asked", async () => {
     const restore = setTooltipTimings({ show: 0 });
@@ -611,5 +685,77 @@ describe("the node's lock chip", () => {
 
     expect(lockChip("rows")).toBeNull();
     expect(lockChip("loader")?.getAttribute("data-tooltip")).toBe("Editing: Cara");
+  });
+
+  test("a tab of the shared guest account's names it by its number, as its chip in the dock does", async () => {
+    // Every guest signs in to the one shared guest account, so the room
+    // numbers its tabs, and a lock carries the number of the tab that holds it.
+    const guestsLock = {
+      user_id: 3, username: "guest_shared", name: "Shared Guest", participant_id: "p-guest-2", since: 1, guest_number: 2,
+    };
+    await inTheRoom(<><Node data={PYTHON} /><Node data={LOADER} /></>, { locks: { rows: guestsLock, loader: ANAS_LOCK } });
+
+    expect([lockChip("rows")?.getAttribute("data-tooltip"), lockChip("rows")?.textContent]).toEqual([
+      "Editing: Shared Guest 2", "S2",
+    ]);
+    // An account's lock keeps its letters and its name.
+    expect([lockChip("loader")?.getAttribute("data-tooltip"), lockChip("loader")?.textContent]).toEqual([
+      "Editing: Ana", "AN",
+    ]);
+  });
+});
+
+describe("on a canvas no doc binds, from a run's change events", () => {
+  // A node of its own, so a hold this suite leaves behind turns no other test's.
+  const GUESTS_LOADER = { ...LOADER, nodeId: "guests-loader" };
+
+  /** A run's `change` event for the Node Builder's code in *nodeId*, as the
+   *  server streams it: its canvas mutation, and what its state in the room
+   *  said while it wrote. */
+  function codeChange(nodeId: string) {
+    return {
+      changeId: "change-1",
+      attachmentId: "att-node-builder",
+      tool: "node.content.write",
+      canvas: { kind: "node-content-applied", nodeId, content: "data = 1\nreturn data", agent: "Node Builder" },
+      writing: { user: NODE_BUILDER, editing: nodeId, writes: "code" },
+    };
+  }
+
+  test("a node that opens on its controls shows its code from the moment an agent's change lands, then its Widgets tab again", async () => {
+    // A hosted guest's example: the canvas is in no room, so no doc binds it.
+    render(<CollaborationProvider><Node data={GUESTS_LOADER} /></CollaborationProvider>);
+    await waitFor(() => expect(sockets).toHaveLength(1));
+    expect(tabShown("guests-loader")).toBe("widgets");
+    jest.useFakeTimers();
+
+    act(() => {
+      bridgeLandedChangeEvent("change", codeChange("guests-loader"));
+    });
+    expect(tabShown("guests-loader")).toBe("code");
+    expect(within(paneShown("guests-loader")).queryByTestId("monaco")).not.toBeNull();
+
+    // The second the server keeps a node after its write, as the room's tabs see it.
+    act(() => {
+      jest.advanceTimersByTime(999);
+    });
+    expect(tabShown("guests-loader")).toBe("code");
+    act(() => {
+      jest.advanceTimersByTime(1);
+    });
+    expect(tabShown("guests-loader")).toBe("widgets");
+    expect(paneShown("guests-loader").querySelector("[data-widget-controls]")).not.toBeNull();
+  });
+
+  test("a canvas the doc binds takes what agents write from the doc's awareness alone", async () => {
+    await inTheRoom(<Node data={GUESTS_LOADER} />);
+    expect(tabShown("guests-loader")).toBe("widgets");
+
+    // The change event comes after the agent let go of the node: the
+    // awareness said what it wrote while it wrote it.
+    act(() => {
+      bridgeLandedChangeEvent("change", codeChange("guests-loader"));
+    });
+    expect(tabShown("guests-loader")).toBe("widgets");
   });
 });

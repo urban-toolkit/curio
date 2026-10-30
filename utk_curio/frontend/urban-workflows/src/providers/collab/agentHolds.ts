@@ -16,17 +16,25 @@
  * (`useAgentsWriting`): read again at each change of a state, in the same
  * task, so a change the agent writes right after its state finds its node
  * held when it lands.
+ *
+ * A canvas no doc binds (a hosted guest's example) has no awareness to read:
+ * there, each `change` event of a run says what the agent's state said as it
+ * wrote (`writing`), and the node is held from just before the change lands
+ * until `AGENT_CHANGE_HOLD_MS` after (`holdAgentsOfChange`), as the room's
+ * tabs see it. While a doc's awareness feeds the store, it alone says what
+ * agents write.
  */
 import { useEffect, useSyncExternalStore } from "react";
 
 import { agentHolding, type AgentHold } from "./participants";
+import { editingOf } from "./presence";
 
 let held: ReadonlyMap<string, AgentHold> = new Map();
 const listeners = new Set<() => void>();
 
 function sameHold(a: AgentHold, b: AgentHold): boolean {
-    return a.participantId === b.participantId && a.name === b.name && a.category === b.category
-        && a.askedBy === b.askedBy && a.writes === b.writes;
+    return a.participantId === b.participantId && a.attachmentId === b.attachmentId && a.name === b.name
+        && a.category === b.category && a.askedBy === b.askedBy && a.writes === b.writes;
 }
 
 /** *next*, keeping each hold that did not change as it was, so a node whose
@@ -68,12 +76,32 @@ export function useAgentHold(nodeId: string | null | undefined): AgentHold | nul
  *  writing nothing. */
 export function agentWriting(state: unknown): { nodeIds: string[]; hold: AgentHold } | null {
     if (!state || typeof state !== "object") return null;
-    const { user, editing, writes } = state as { user?: unknown; editing?: unknown; writes?: unknown };
-    const nodeIds = (Array.isArray(editing) ? editing : [editing])
-        .filter((nodeId): nodeId is string => typeof nodeId === "string" && nodeId !== "");
+    const { user, writes } = state as { user?: unknown; writes?: unknown };
+    const nodeIds = editingOf(state);
     if (nodeIds.length === 0 || !user || typeof user !== "object") return null;
     const hold = agentHolding({ ...(user as Record<string, unknown>), writes });
     return hold ? { nodeIds, hold } : null;
+}
+
+/** How long a run's `change` event holds the node it names, after it lands:
+ *  the second the server keeps a node after an agent's write
+ *  (`agent_peers.KEEP_AFTER_WRITE_S`). */
+export const AGENT_CHANGE_HOLD_MS = 1000;
+
+/** What the doc's awareness says agents are writing. */
+let fromAwareness: ReadonlyMap<string, AgentHold> = new Map();
+/** What runs' `change` events say agents just wrote, each until its moment
+ *  ends, on a canvas no doc binds. */
+const fromChanges = new Map<string, { hold: AgentHold; timer: ReturnType<typeof setTimeout> }>();
+/** How many docs' awarenesses feed the store now. */
+let awarenessFeeds = 0;
+
+function republish(): void {
+    const next = new Map(fromAwareness);
+    fromChanges.forEach(({ hold }, nodeId) => {
+        if (!next.has(nodeId)) next.set(nodeId, hold);
+    });
+    publish(settle(next));
 }
 
 /** What the doc's awareness says agents are writing: *awareness*'s states,
@@ -84,7 +112,34 @@ export function holdAgentsOf(awareness: { getStates(): Map<number, unknown> } | 
         const writing = agentWriting(state);
         if (writing) for (const nodeId of writing.nodeIds) next.set(nodeId, writing.hold);
     });
-    publish(settle(next));
+    fromAwareness = next;
+    republish();
+}
+
+/**
+ * What a run's `change` event says the agent wrote (*writing*: its `user`,
+ * `editing` and `writes`, as its state in the room said them while it
+ * wrote), on a canvas no doc binds: each node it names is held now, before
+ * the change lands, until *ms* after. A canvas a doc's awareness feeds takes
+ * nothing from it, since the awareness said it already, while the agent
+ * wrote. Whether it held anything.
+ */
+export function holdAgentsOfChange(writing: unknown, ms: number = AGENT_CHANGE_HOLD_MS): boolean {
+    if (awarenessFeeds > 0) return false;
+    const found = agentWriting(writing);
+    if (!found) return false;
+    for (const nodeId of found.nodeIds) {
+        const was = fromChanges.get(nodeId);
+        if (was) clearTimeout(was.timer);
+        const timer = setTimeout(() => {
+            if (fromChanges.get(nodeId)?.timer !== timer) return;
+            fromChanges.delete(nodeId);
+            republish();
+        }, ms);
+        fromChanges.set(nodeId, { hold: found.hold, timer });
+    }
+    republish();
+    return true;
 }
 
 /** Keep what agents are writing in step with *awareness*: at once, and at
@@ -96,10 +151,12 @@ export function useAgentsWriting(awareness: {
 } | null | undefined): void {
     useEffect(() => {
         if (!awareness) return undefined;
+        awarenessFeeds += 1;
         const read = () => holdAgentsOf(awareness);
         read();
         awareness.on("change", read);
         return () => {
+            awarenessFeeds -= 1;
             awareness.off("change", read);
             holdAgentsOf(null);
         };

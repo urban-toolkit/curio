@@ -336,7 +336,7 @@ arguments in [Functions node code calls](../skills/node-functions/SKILL.md).
 
 Curio resolves the name when the node runs, on Play and when an agent's Solve
 runs it, and hands the value to the sandbox for that run only. The key never
-appears in your saved dataflow, in proposals, in the chat or in the run log, and
+appears in your saved dataflow, in an agent's changes, in the chat or in the run log, and
 a key the code prints is redacted. A node that names a key you have not saved
 fails with one sentence naming the key. When an agent's Solve reaches an
 endpoint that wants a key you have not saved, the failure offers **Add key for
@@ -482,9 +482,9 @@ opens them again.
 **Run All** runs every node. A node's **Play** button, or Ctrl+Enter (Cmd+Enter
 on a Mac), runs that node and the nodes above it whose output is out of date.
 
-On your own dataflow, a run saves the dataflow first and then runs on the
-server, so it goes on when you close the tab. A dataflow you never saved is
-saved under its title by its first run.
+On your own dataflow, and on one whose owner invited you to edit it, a run is
+made on the server, so it goes on when you close the tab. A dataflow you never
+saved is saved under its title by its first run.
 
 - Charts, maps and the other nodes that draw in the browser draw while the
   dataflow is open.
@@ -500,16 +500,22 @@ saved under its title by its first run.
   starts; a node already running finishes, and its result is not kept.
 
 A dataflow opened while it runs shows the run going on. Opened afterwards, in
-any browser and after signing in again, each code node shows the last result you
-ran it to, for 7 days, as long as its code, its inputs, your packages and the
-datasets it reads are unchanged; charts and maps below it draw from it. A node
-with no such result shows its saved output, if its **Save output dataset**
-toggle is on. Nodes below an Autark compute node or a Spatial Join wait for a
-run. After Curio is upgraded, only saved outputs come back. A dashboard shows
-its saved outputs.
+any browser and after signing in again, each code node of your own dataflow
+shows the last result you ran it to, for 7 days, as long as its code, its
+inputs, your packages and the datasets it reads are unchanged; charts and maps
+below it draw from it. A node with no such result shows its saved output, if its
+**Save output dataset** toggle is on. Nodes below an Autark compute node or a
+Spatial Join wait for a run. After Curio is upgraded, only saved outputs come
+back. A dashboard shows its saved outputs.
 
-Guests, viewers of a shared dataflow, and a Curio started with `--no-project`
-run dataflows in the browser, and a run stops when its tab closes.
+An invited editor's runs are the editor's own: their results show on the
+editor's canvas, not the owner's, and the dataflow's saved outputs stay those of
+the owner's runs. Opened afterwards, the dataflow shows the editor its saved
+outputs.
+
+Guests, anyone who watches another account's dataflow, and a Curio started with
+`--no-project` run dataflows in the browser, and a run stops when its tab
+closes.
 
 ### Running stale nodes automatically
 
@@ -523,16 +529,16 @@ bolt while it is on.
 - The setting is saved with the dataflow and is off for a new one.
 - Code you type, a new connection, and a selection in a chart do not start a
   run: the nodes they change wait for **Run** or **Run All**.
-- It is offered where a run goes on the server: not to guests, viewers of a
-  shared dataflow, a Curio started with `--no-project`, or a dashboard, which
-  runs a changed control on its own ([Dashboards](#dashboards)).
+- It is offered where a run goes on the server: not to guests, anyone who
+  watches another account's dataflow, a Curio started with `--no-project`, or a
+  dashboard, which runs a changed control on its own ([Dashboards](#dashboards)).
 
 ## Provenance
 
 **View > Provenance** opens the dataflow's version history in a drawer on the
 right. Each node or connection added or removed makes a version, and so do
 each person's typing in a node once they pause or leave its editor ("Ana
-edited"), an agent's change you applied ("Node Builder, asked by Ana"), each
+edited"), an agent's change ("Node Builder, asked by Ana"), each
 **File > Save** and each version put back.
 
 - The versions are listed in the order they were made, on a line that leads to
@@ -566,10 +572,11 @@ and Curio says who did. A Map Editor node's **Undo** and **Redo** work the same
 way.
 
 Your typing in a node is an entry too, named after you, and so is a change an
-agent made to the node's code that you applied, named after the agent, such as
-**Node Builder**. Open one to see when it was made and the code it left, and put
-that code back as you would a run's. The Node Builder and the Dataflow Builder
-read these histories, so you can ask either what changed in a node since a run.
+agent made to the node's code, named after the agent, such as **Node Builder**;
+a node an agent added with its code starts with one. Open one to see when it was
+made and the code it left, and put that code back as you would a run's. The Node
+Builder and the Dataflow Builder read these histories, so you can ask either
+what changed in a node since a run.
 
 ## Widgets
 
@@ -1550,13 +1557,11 @@ saved with the dataflow, and a tile with none runs the nodes before it on the se
 the page opens.
 
 - **Pin** the nodes to show, with the pin control in each node's header. Pinning saves
-  the dataflow, and saves the outputs feeding those nodes to your Data Catalog, which is
-  what the page draws from later.
+  the outputs feeding those nodes to your Data Catalog, which is what the page draws
+  from later.
 - **Open** it from **Share → Open dashboard**, which opens a new tab. The same menu
   copies either link, and invites editors to the dataflow
   ([Real-time collaboration](#real-time-collaboration)).
-- **Save the dataflow** after changing anything else the page shows, such as a chart's
-  spec: the page shows what is on disk.
 - **Controls**: a pinned node's widgets show on its tile, above a chart or map and in
   place of a code node's code, and anyone viewing the page can change them. A chart or
   map draws again with a new value of its own widget.
@@ -1618,7 +1623,8 @@ dataset (a GeoTIFF gives Rasters), and the tags and data types its packages, mod
 datasets declare in their manifests' `dataflowCategories` (SCOUT's give SCOUT). A package
 or dataset of your own can declare them too ([Authoring nodes](AUTHORING-NODES.md#tags-and-data-types),
 [Data Catalog](DATA-CATALOG.md#7-the-manifest)), and a new name adds an entry to the
-rail. They change when you save, and cannot be removed by hand. Add a tag, a
+rail. They follow the dataflow's changes within a few seconds, in every tab that has it
+open, and cannot be removed by hand. Add a tag, a
 city, a topic or a complexity with **+ Category** under the dataflow's title on the
 canvas, which saves with the dataflow, or with **Edit categories** on the Projects page.
 
@@ -1715,9 +1721,13 @@ the dock at the top of the canvas.
 
 Click an agent to open its chat panel. From there you can rename the
 conversation, clear it, cycle through every attached agent with the ‹ › arrows,
-and edit the initial intent the agent starts from. Agents that propose changes
-(new nodes, edges, node content, packages) put them up for review first: nothing
-lands on your canvas until you apply it.
+and edit the initial intent the agent starts from. A change an agent makes to
+your dataflow (a node's code or settings, a new node, a plan) lands at once, for
+everyone on the dataflow, as your own edit does; it waits while someone else is
+working in the node it changes. Its card in the chat has **Undo**, which puts
+back what it replaced, unless someone changed it after: then Undo says who, and
+nothing changes. An install (a package, a dataset, a download, an agent) waits
+for your review: nothing installs until you apply it.
 
 Type `/` at the start of a message to list the agent's
 [skills](AGENT-CATALOG.md#skills). Pick one with the arrow keys and Enter, or a
@@ -1727,12 +1737,18 @@ Escape closes the list. A line under each reply names the skills its run used;
 hover a name to see how the run came to hold it.
 
 The **Dataflow Builder** is the composite agent that plans a whole dataflow. Its
-strip adds planning phases, per-node progress, and **Solve**, which fills in the
-planned nodes in one batch: it runs each node's code in the sandbox, corrects
-it when the run fails, and writes only code that ran. Applying a plan also
-gives every created node a **Node Builder**, and every data-loading node a
-**Dataset Finder**, which Solve asks for candidates when the node's source is
-not settled. See [Solve](AGENT-CATALOG.md#solve) in the Agent Catalog guide.
+plan lands whole, nodes, connections and removals at once, as one change you
+can undo. Its strip then offers **Build & validate plan**, which fills the
+plan's nodes in order: each node's code is run in the sandbox, and code that
+passes lands, with its **Undo**, before the next node; the first failure pauses
+the build with nothing written after it, and **Resume** continues from there.
+**Step** does one action at a time. The strip also has per-node progress and
+**Solve**, which fills in the planned nodes in one batch: it runs each node's
+code in the sandbox, corrects it when the run fails, and writes only code that
+ran. A plan also gives every created node a **Node Builder**, and every
+data-loading node a **Dataset Finder**, which Solve asks for candidates when
+the node's source is not settled. See [Solve](AGENT-CATALOG.md#solve) in the
+Agent Catalog guide.
 A plan can also declare the widgets each node's code reads, and save
 [scenarios](#scenarios), including a copy of one with a widget value changed;
 see [Widgets and scenarios](AGENT-CATALOG.md#widgets-and-scenarios).
@@ -1757,11 +1773,11 @@ provider, publishing, and writing your own, see [docs/AGENT-CATALOG.md](AGENT-CA
 
 ## Real-time collaboration
 
-Every tab that opens a saved dataflow while signed in holds one shared copy of it, which the server keeps as each change is made. A change in one tab shows in every other tab that has the dataflow open: code and specs as they are typed, with each person's cursor, and nodes, connections, widgets, scenarios and drags at once. Each person's pointer shows on the others' canvases too, in their color with their name, and fades while it rests. A tab that opens the dataflow later finds every change. A hosted guest's canvas of an example, and every canvas of a Curio started without `--deploy` or with `--no-project`, stay their own.
+Every tab that opens a saved dataflow while signed in holds one shared copy of it, which the server keeps as each change is made. A change in one tab shows in every other tab that has the dataflow open: code and specs as they are typed, with each person's cursor, and nodes, connections, widgets, scenarios and drags at once. Each person's pointer shows on the others' canvases too, in their color with their name, and fades while it rests. A tab that opens the dataflow later finds every change. A hosted guest's canvas of an example stays its own.
 
 Who is here shows in the dock at the top of the canvas, beside the canvas agents: a chip for each other person, with their initials in their color. Hover one for their name, their role and the node they are editing, and click it to move your view to where they point on the canvas. The **Activity** button at the end of the row lists who joined, who left and whose role changed. A node someone is in shows their initials in its corner.
 
-The owner decides who edits. **Share → Invite editors**, shown to the owner of a saved dataflow, adds an account by its username and lists the editors, each with a button that removes it. An editor opens the dataflow's link (**Share → Copy dataflow link**) and edits it with the owner. Anyone else signed in who opens the link watches it, read-only, and a guest on a Curio started with `--deploy` only watches.
+The owner decides who edits. **Share → Invite editors**, shown to the owner of a saved dataflow, adds an account by its username and lists the editors, each with a button that removes it. An editor opens the dataflow's link (**Share → Copy dataflow link**) and edits it with the owner, and the editor's runs go to the server as the owner's do ([Running a dataflow](#running-a-dataflow)). Anyone else signed in who opens the link watches it, read-only, and a guest on a Curio started with `--deploy` only watches.
 
 When two people change the same thing:
 

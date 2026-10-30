@@ -10,14 +10,15 @@ import path from "path";
  *
  * Read from the source: the strings are spread across maps, template literals
  * and JSX text, and a render would only cover the branches a fixture reaches.
- * The card is AgentReviewCard.tsx plus the pieces under reviewCard/.
+ * The cards are AgentReviewCard.tsx (an install's) and AgentChangeCard.tsx (an
+ * agent's change) plus the pieces under reviewCard/ they share.
  */
 const CONTENT = path.resolve(__dirname, "../../components/agents/content");
 const PIECES = fs
   .readdirSync(path.join(CONTENT, "reviewCard"))
   .filter((name) => /\.tsx?$/.test(name))
   .map((name) => path.join("reviewCard", name));
-const CARD = ["AgentReviewCard.tsx", ...PIECES].map((file) => ({
+const CARD = ["AgentReviewCard.tsx", "AgentChangeCard.tsx", ...PIECES].map((file) => ({
   file,
   text: fs.readFileSync(path.join(CONTENT, file), "utf8"),
 }));

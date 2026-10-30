@@ -1,19 +1,21 @@
 import React, { useLayoutEffect, useState } from "react";
 import clsx from "clsx";
 import type { AgentAttachment } from "../../../services/agents";
+import type { Person } from "../../../providers/collab/people";
 import { usePeopleHere } from "../../../providers/collab/usePeopleHere";
 import { AgentAvatarBadge } from "./AgentAvatarBadge";
-import { PeopleHere } from "./PeopleHere";
+import { PeopleHere, useAgentAtWorkText } from "./PeopleHere";
 import styles from "./AgentDock.module.css";
 
 /**
  * The canvas's dock, centered at the top of the canvas: who is here. The
  * canvas agents, as the same avatar chips as the node badges (per the
  * concept), and beside them a chip for each other person in the dataflow's
- * room, read from its doc's awareness, with the Activity button at the row's
- * end (`PeopleHere`). Clicking an agent's avatar opens its chat; the hover ✕
- * detaches. Your own chip is not in the row, so with nobody else and no canvas
- * agent the dock renders nothing.
+ * room, read from its doc's awareness, and for each agent at work there, with
+ * the Activity button at the row's end (`PeopleHere`). A canvas agent at work
+ * keeps its one chip, shown at work. Clicking an agent's avatar opens its
+ * chat; the hover ✕ detaches. Your own chip is not in the row, so with nobody
+ * else and no canvas agent the dock renders nothing.
  *
  * The goal field here is NOT a chat composer, which is what #227 assumed when
  * it asked which of several attached agents answers a question typed into it.
@@ -65,6 +67,14 @@ function usePublishedLeftEdge(dock: HTMLElement | null, onTheTitlesRow: boolean)
 const NO_AGENTS: AgentAttachment[] = [];
 const noop = () => undefined;
 
+type BadgeProps = React.ComponentProps<typeof AgentAvatarBadge>;
+
+/** A canvas agent at work, *work* in the room: its one chip, shown at work. */
+function AgentAtWorkBadge({ work, ...badge }: Omit<BadgeProps, "atWork"> & { work: Person }) {
+  const atWork = useAgentAtWorkText(work);
+  return <AgentAvatarBadge {...badge} atWork={atWork} />;
+}
+
 export const AgentDock: React.FC<{
   /** The canvas agents: the owner's canvas has them, anyone else's none. */
   attachments?: AgentAttachment[];
@@ -92,6 +102,16 @@ export const AgentDock: React.FC<{
   // Under a read-only canvas's banner the dock is below the title's row.
   usePublishedLeftEdge(dock, !belowBanner);
   if (attachments.length === 0 && !showGoal && here.people.length === 0) return null;
+  // A canvas agent at work is its chip among the canvas agents, shown at
+  // work, never a second one in the row.
+  const docked = new Set(attachments.map((a) => a.attachmentId));
+  const working = new Map<string, Person>();
+  const inRow = here.people.filter((person) => {
+    const attachmentId = person.agent?.attachmentId;
+    if (!attachmentId || !docked.has(attachmentId)) return true;
+    working.set(attachmentId, person);
+    return false;
+  });
   return (
     <div
       ref={setDock}
@@ -128,16 +148,21 @@ export const AgentDock: React.FC<{
           />
         </span>
       )}
-      {attachments.map((a) => (
-        <AgentAvatarBadge
-          key={a.attachmentId}
-          attachment={a}
-          active={selectedId === a.attachmentId}
-          onOpen={() => onSelect(a.attachmentId)}
-          onDetach={() => onDetach(a.attachmentId)}
-        />
-      ))}
-      {here.people.length > 0 && <PeopleHere people={here.people} pointerOf={here.pointerOf} />}
+      {attachments.map((a) => {
+        const badge = {
+          attachment: a,
+          active: selectedId === a.attachmentId,
+          onOpen: () => onSelect(a.attachmentId),
+          onDetach: () => onDetach(a.attachmentId),
+        };
+        const work = working.get(a.attachmentId);
+        return work
+          ? <AgentAtWorkBadge key={a.attachmentId} {...badge} work={work} />
+          : <AgentAvatarBadge key={a.attachmentId} {...badge} />;
+      })}
+      {/* The Activity button ends the row whenever someone else is here, a
+          canvas agent at work among them. */}
+      {here.people.length > 0 && <PeopleHere people={inRow} pointerOf={here.pointerOf} onOpenAgent={onSelect} />}
     </div>
   );
 };

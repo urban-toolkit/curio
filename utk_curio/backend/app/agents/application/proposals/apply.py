@@ -1,7 +1,13 @@
-"""Apply and dismiss: the review-before-apply gate dispatching each proposal kind to its writer (memo dev/41).
+"""An agent's changes to the dataflow, landed; and the installs a person reviews, applied or dismissed.
+
+An agent's change to the dataflow lands at once (``changes.py``): ``land_content``,
+``land_settings`` and ``land_node`` here, ``plans._land_dataflow_plan`` for a plan.
+An install changes the account, so it waits for the person who asked: a package,
+a package draft, a dataset, a Discovery download, an agent in the dataflow. Its
+Apply (``apply_proposal``) and its Dismiss are the person's.
 
 Application layer of the agents package (memo dev/142, B2; re-derived on enh/agent-catalog): cut from
-``services.py`` by responsibility; every function keeps its name and body. Sibling modules are reached
+``services.py`` by responsibility. Sibling modules are reached
 module-qualified (``agents_<module>.name``) so a test that patches the owner is seen by every caller,
 and import order between siblings cannot matter.
 """
@@ -9,7 +15,6 @@ and import order between siblings cannot matter.
 from __future__ import annotations
 
 import copy
-import hashlib
 import uuid
 
 from utk_curio.backend.app.agents.application import attachments
@@ -21,39 +26,45 @@ from utk_curio.backend.app.agents.application import dataset_resolution as agent
 from utk_curio.backend.app.agents.application import lifecycle as agents_lifecycle
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application.proposals import acquire as agents_acquire
+from utk_curio.backend.app.agents.application.proposals import changes as agents_changes
 from utk_curio.backend.app.agents.application.proposals import mint as agents_mint
 from utk_curio.backend.app.agents.application.proposals import plans as agents_plans
 from utk_curio.backend.app.agents.application.proposals import store as agents_store
-from utk_curio.backend.app.agents.application.turns import roster as agents_roster
+from utk_curio.backend.app.agents.domain import agent_text
 from utk_curio.backend.app.agents.domain import node_settings
-from utk_curio.backend.app.agents.domain import widget_grammar
 from utk_curio.backend.app.agents.infrastructure import testing_provider
 from utk_curio.backend.app.collaboration import dataflow_docs
-from utk_curio.backend.app.execution.code_references import normalize_widgets
+from utk_curio.backend.app.collaboration import history
+
+#: Why the Apply of a review of a change (``changes.CHANGE_TOOLS``) saved
+#: before agents changed the dataflow directly is refused: the card says the
+#: same and offers Dismiss alone (``reviewCardText.MADE_BEFORE_DIRECT_EDITS``).
+MADE_BEFORE_DIRECT_CHANGES = (
+    "This review was made before agents edited the dataflow directly, so it can no longer "
+    "be applied: dismiss it and ask the agent again."
+)
 
 
-#: What an Apply of a node's new code says when the node changed since the
-#: proposal: before the Apply read it, or before its write landed.
-NODE_CHANGED = "the node changed since this was proposed; ask the agent to propose again"
-
-
-# ── review-before-apply (memo dev/41) ────────────────────────────────────────
+# ── an install, reviewed (memo dev/41) ───────────────────────────────────────
 def apply_proposal(
     user_key: str, project_id: str, attachment_id: str, proposal_id: str
 ) -> dict:
-    """Apply a pending proposal — the ONLY path that executes a mutate tool.
+    """Apply a pending install the person reviewed: the one path that runs an
+    install an agent asked for.
 
-    Explicit, authenticated, revision-safe (`REQ-REVIEW-001`/`DEC-006`): the
-    pinned revision basis is re-checked against current state (content digest
-    for ``node.content.write``; what it touches of the node for
-    ``node.settings.write``; template availability for ``node.create``);
+    Explicit, authenticated, revision-safe (`REQ-REVIEW-001`/`DEC-006`): what
+    it installs is checked again against the catalog and the dataflow now;
     drift marks the proposal ``stale`` and returns 409 instead of applying.
-    Success executes the domain-owned write under the project's spec write
-    path, logs a result-card turn (docs/08 — results are logged as chat
-    turns), and consumes no quota (deterministic, no provider work). No
-    model/tool/user *text* can reach this path — only this endpoint."""
+    Success runs the install's own flow, logs a result-card turn (docs/08:
+    results are logged as chat turns), and consumes no quota (deterministic,
+    no provider work). No model/tool/user *text* can reach this path, only
+    this endpoint. A review of a change saved before agents changed the
+    dataflow directly is refused with :data:`MADE_BEFORE_DIRECT_CHANGES`,
+    and nothing changes: it can only be dismissed."""
     spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
     record = agents_spec_reads._record_or_404(spec, attachment_id)
+    if _review_saved_before(spec, attachment_id, proposal_id) is not None:
+        raise AgentServiceError(MADE_BEFORE_DIRECT_CHANGES, 409)
     # DEC-080 (dev/126): a plan apply attaches the plan-node agents, so the
     # closure is completed BEFORE the apply reads the lockfile it consults.
     if agents_lifecycle._repair_required_closure(
@@ -71,19 +82,7 @@ def apply_proposal(
     if status != "pending":
         raise AgentServiceError(f"this proposal is {status!r} and can no longer be applied", 409)
     session_id = record.get("sessionId")
-    tool = proposal.get("tool", "node.content.write")
-    if tool == "node.create":
-        return _apply_node_create(
-            user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
-        )
-    if tool == "node.content.write":
-        return _apply_node_content_write(
-            user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
-        )
-    if tool == "node.settings.write":
-        return _apply_node_settings_write(
-            user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
-        )
+    tool = proposal.get("tool")
     if tool == "project.install":
         return _apply_project_install(
             user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
@@ -104,41 +103,38 @@ def apply_proposal(
         return _apply_package_draft(
             user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
         )
-    if tool == "dataflow.plan.write":
-        return agents_plans._apply_dataflow_plan(
-            user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
-        )
     raise AgentServiceError(f"no apply flow exists for tool {tool!r}", 409)
 
 
-def _apply_node_content_write(
-    user_key: str,
-    project_id: str,
-    attachment_id: str,
-    proposal_id: str,
-    spec: dict,
-    proposal: dict,
-    session_id: object,
-) -> dict:
-    """The dev/41 apply: one node's content, digest-checked, nothing else."""
+def _review_saved_before(spec: dict, attachment_id: str, proposal_id: str) -> dict | None:
+    """The pending review *proposal_id* of a change (a tool of
+    ``changes.CHANGE_TOOLS``) saved before agents changed the dataflow
+    directly, wherever it was kept: the active slot, the queue behind it, or
+    a plan parked beside a later review (``planProposal``). None for any
+    other proposal. What it would write is the agent's to make again, never
+    landed from an old review: it can only be dismissed."""
+    proposal = attachments.find_proposal(spec, attachment_id, proposal_id)
+    if proposal is None:
+        parked = (attachments.get_attachment(spec, attachment_id) or {}).get("planProposal")
+        proposal = parked if isinstance(parked, dict) and parked.get("proposalId") == proposal_id else None
+    if (isinstance(proposal, dict) and proposal.get("status") == "pending"
+            and proposal.get("tool") in agents_changes.CHANGE_TOOLS):
+        return proposal
+    return None
 
-    node_id = proposal.get("nodeId")
+
+def _node_in(spec: dict, node_id: object) -> dict | None:
     nodes = (spec.get("dataflow") or {}).get("nodes") or []
-    node = next((n for n in nodes if isinstance(n, dict) and n.get("id") == node_id), None)
-    current = (node.get("content") if node is not None else None) or ""
-    basis = hashlib.sha256(current.encode("utf-8")).hexdigest()
-    if node is None or basis != proposal.get("contentSha256"):
-        raise agents_store._mark_stale(
-            user_key, project_id, proposal_id, spec, proposal, session_id,
-            NODE_CHANGED,
-        )
-    # The domain-owned mutation (ADR-AG-007): one node's content, nothing else.
-    node["content"] = proposal.get("content", "")
-    proposal["status"] = "applied"
-    # dev/67-6: when this node is a plan node, applying its content resolves
-    # the Simulation Mode ledger — the row is approved, the run solved.
-    # dev/72: the proposal may live on the NODE's agent while the ledger
-    # lives on the BUILDER — find the ledger wherever it is.
+    return next((n for n in nodes if isinstance(n, dict) and n.get("id") == node_id), None)
+
+
+def _resolve_plan_ledger(spec: dict, node_id: str):
+    """When *node_id* is a node of a plan, the code an agent writes into it
+    resolves the plan's ledger: its row approved, its run solved, and the
+    plan ready once nothing is left pending (dev/67-6, dev/71). The ledger
+    may live on the agent that planned it while the code comes from the
+    node's own (dev/72): found wherever it is. Returns what puts the ledger
+    back, for a write that is refused."""
     session: dict = {}
     ref = None
     for ledger_record in attachments.list_attachments(spec):
@@ -151,133 +147,106 @@ def _apply_node_content_write(
             session = ledger_session
             ref = candidate_ref
             break
-    reviewed = copy.deepcopy(session)
+    before = copy.deepcopy(session)
     if ref is not None:
         (session.get("nodeStates") or {})[ref] = "approved"
         runs = session.get("nodeRuns")
         if isinstance(runs, dict) and node_id in runs:
             runs[node_id] = "solved"
-        # dev/71: the structure may have completed before the content did —
-        # the last approval flips the phase to ready.
         if session.get("phase") in ("applied", "simulating") and isinstance(runs, dict):
             if not any(st in ("pending", "failed") for st in runs.values()):
                 session["phase"] = "ready"
 
-    def _changed_meanwhile(_refused: tuple) -> None:
-        # The node took other code after the review read it: nothing applied.
-        proposal["status"] = "stale"
+    def restore() -> None:
         session.clear()
-        session.update(reviewed)
+        session.update(before)
 
-    if dataflow_docs.write(
-        user_key, project_id, spec, _applied_by(user_key, spec, attachment_id), on_refused=_changed_meanwhile,
-    ).refused:
-        raise agents_store._mark_stale(
-            user_key, project_id, proposal_id, spec, proposal, session_id, NODE_CHANGED,
-        )
-    # A proposal minted before #506 carries no name; its id is all there is.
-    node_name = proposal.get("nodeName") or f"node {node_id}"
-    agents_store._log_applied_turn(
-        user_key, project_id, session_id, attachment_id, proposal_id,
-        f"Applied: {node_name} content updated.",
-        "Applied: node content updated",
-        [node_name, f"proposal {proposal_id[:8]}"],
-    )
-    applied = {"nodeId": node_id, "content": proposal.get("content", "")}
-    # The agent that wrote it: the change is an entry of the node's history
-    # named after it.
-    writer = _writer_name(user_key, spec, attachment_id)
-    if writer:
-        applied["agent"] = writer
-    return {
-        "attachmentId": attachment_id,
-        "proposalId": proposal_id,
-        "status": "applied",
-        "mutationApplied": True,
-        # The frontend canvas bridge (dev/48 §3.3) applies this to the LIVE
-        # node too, so the next canvas save can't clobber the mutation.
-        "appliedContent": applied,
-    }
+    return restore
+
+
+def _writer(user_key: str, spec: dict, loop_ctx: dict) -> str | None:
+    """The name of the agent a change is by, as its manifest names it: the
+    agent of the attachment that made it. The canvas names the change's
+    entry in a node's history after it."""
+    return _writer_name(user_key, spec, loop_ctx.get("attachment_id"))
+
+
+def land_content(user_key: str, project_id: str, loop_ctx: dict, spec: dict, proposal: dict, part: dict):
+    """``node.content.write``, landed: one node's code, nothing else, as the
+    agent's change. Refused when the node took other code after the mint read
+    it, the check a person's put-back has: the node keeps its code."""
+    attachment_id = loop_ctx.get("attachment_id")
+    node_id = proposal["nodeId"]
+    node = _node_in(spec, node_id)
+    before = node.get("content") or ""
+    node["content"] = proposal.get("content", "")
+    restore = _resolve_plan_ledger(spec, node_id)
+    change = agents_changes.new_change("node.content.write", proposal["summary"], nodeId=node_id,
+                                       before=before, content=node["content"])
+    agents_changes.keep(spec, attachment_id, change)
+
+    def _changed_meanwhile(_refused: tuple) -> None:
+        restore()
+        agents_changes.forget(spec, attachment_id, change["changeId"])
+
+    written = dataflow_docs.write(user_key, project_id, spec, agents_changes.actor(user_key, spec, loop_ctx, "apply"),
+                                  on_refused=_changed_meanwhile)
+    if written.refused:
+        return "refused", agent_text.message("change.changed-meanwhile", node_id=repr(node_id)), None
+    writer = _writer(user_key, spec, loop_ctx)
+    agents_changes.landed(loop_ctx, change, {
+        "kind": "node-content-applied", "nodeId": node_id, "content": node["content"],
+        **({"agent": writer} if writer else {}),
+    })
+    # A change minted before #506 carries no name; its id is all there is.
+    lines = [proposal.get("nodeName") or f"node {node_id}"]
+    return (agents_changes.LANDED, agent_text.message("change.content-written", node_id=repr(node_id)),
+            agents_changes.card(part, change, lines))
 
 
 def _applied_by(user_key: str, spec: dict, attachment_id: str) -> dataflow_docs.Actor:
-    """Who an applied proposal's change is by: the agent of the attachment
-    that proposed it, asked by the account that applied it."""
+    """Who an applied install's change is by: the agent of the attachment
+    that asked for it, asked by the account that applied it."""
     return agents_spec_reads._agent_actor(user_key, spec, attachment_id, "apply")
 
 
 def _writer_name(user_key: str, spec: dict, attachment_id: str) -> str | None:
-    """The name of the agent that wrote what an apply applies, as its manifest
-    names it, or None. The canvas names the change's entry in the node's
-    history after it."""
+    """The name of the agent of *attachment_id*, as its manifest names it, or
+    None. The canvas names the entry of a node it made after it."""
     return agents_spec_reads._agent_name(
         user_key, str((attachments.get_attachment(spec, attachment_id) or {}).get("coord") or ""),
     )
 
 
 def _created_for_canvas(created: dict, writer: str | None) -> dict:
-    """A node an apply created, as the canvas bridge takes it: a copy, naming
+    """A node an agent created, as the canvas bridge takes it: a copy, naming
     the agent that wrote it, whose history the canvas starts named after it.
     The spec's node carries no name."""
     return {**created, "agent": writer} if writer else dict(created)
 
 
-def _apply_node_settings_write(
-    user_key: str,
-    project_id: str,
-    attachment_id: str,
-    proposal_id: str,
-    spec: dict,
-    proposal: dict,
-    session_id: object,
-) -> dict:
-    """A change of one existing node's settings, checked against what the
-    review pinned (``mint._settings_basis``): the settings it names, as the
-    node reads them, and the widgets it gives values to. Each is written into
-    the saved node as the node stores it once picked; the canvas makes the
-    same change through the node's own setters (``appliedSettings``)."""
-    node_id = proposal.get("nodeId")
-    change = proposal.get("settings") or {}
-    nodes = (spec.get("dataflow") or {}).get("nodes") or []
-    node = next((n for n in nodes if isinstance(n, dict) and n.get("id") == node_id), None)
-    if node is None or agents_mint._settings_basis(node, change) != proposal.get("settingsSha256"):
-        raise agents_store._mark_stale(
-            user_key, project_id, proposal_id, spec, proposal, session_id,
-            "the node's settings changed since this was proposed; ask the agent to propose again",
-        )
-    # The domain-owned mutation: the settings it names, nothing else.
-    metadata = node.get("metadata") if isinstance(node.get("metadata"), dict) else {}
-    node_settings.write(metadata, change)
-    if "widgets" in change:
-        metadata["widgets"] = widget_grammar.with_values(normalize_widgets(metadata.get("widgets")), change["widgets"])
-    if metadata:
-        node["metadata"] = metadata
-    else:
-        node.pop("metadata", None)
-    proposal["status"] = "applied"
-    dataflow_docs.write(user_key, project_id, spec, _applied_by(user_key, spec, attachment_id))
-    node_name = proposal.get("nodeName") or f"node {node_id}"
-    agents_store._log_applied_turn(
-        user_key, project_id, session_id, attachment_id, proposal_id,
-        f"Applied: {node_name} settings changed.",
-        "Applied: node settings changed",
-        [node_name, *(proposal.get("settingLines") or []), f"proposal {proposal_id[:8]}"],
+def land_settings(user_key: str, project_id: str, loop_ctx: dict, spec: dict, proposal: dict, part: dict):
+    """``node.settings.write``, landed: the settings it names, each written
+    into the saved node as the node stores it once picked, as the agent's
+    change, with a point of the history of its own. The canvas makes the same
+    change through the node's own setters."""
+    attachment_id = loop_ctx.get("attachment_id")
+    node_id = proposal["nodeId"]
+    settings = proposal.get("settings") or {}
+    node = _node_in(spec, node_id)
+    undo_steps = agents_changes.settings_undone(node, settings)
+    agents_changes.write_settings(node, settings)
+    change = agents_changes.new_change(
+        "node.settings.write", proposal["summary"], nodeId=node_id, settings=settings, undo=undo_steps,
+        basisAfter=agents_changes.settings_basis(node, settings),
     )
-    applied = {"nodeId": node_id, "settings": change}
-    # The agent that proposed it, as its manifest names it.
-    writer = _writer_name(user_key, spec, attachment_id)
-    if writer:
-        applied["agent"] = writer
-    return {
-        "attachmentId": attachment_id,
-        "proposalId": proposal_id,
-        "status": "applied",
-        "mutationApplied": True,
-        # The canvas bridge hands each setting to the live node's own setter,
-        # so the node makes the change as a pick in it does, and the next
-        # canvas save writes what the spec holds now.
-        "appliedSettings": applied,
-    }
+    agents_changes.keep(spec, attachment_id, change)
+    dataflow_docs.write(user_key, project_id, spec, agents_changes.actor(user_key, spec, loop_ctx, "apply"),
+                        point={"kind": history.AGENT, "what": ""})
+    agents_changes.landed(loop_ctx, change, {"kind": "node-settings-applied", "nodeId": node_id, "settings": settings})
+    lines = [proposal.get("nodeName") or f"node {node_id}", *(proposal.get("settingLines") or [])]
+    return (agents_changes.LANDED, agent_text.message("change.settings-written", node_id=repr(node_id)),
+            agents_changes.card(part, change, lines))
 
 
 def _apply_dataset_install(
@@ -398,10 +367,9 @@ def _apply_package_install(
     proposal["status"] = "applied"
     dataflow_docs.write(user_key, project_id, spec, _applied_by(user_key, spec, attachment_id))
     name = str(proposal.get("packageName") or dir_name)
-    # dev/105 A3: the findings that rode the request become the A16 sequence
-    # of node.create cards BELOW this one — minted pending, applied one at a
-    # time by the frontend walk so each note lands before the next card.
-    follow_ups, note_parts, notes_line = _queue_enlisted_notes(
+    # dev/105 A3: the findings that rode the request become notes of the
+    # enlisted package, each the agent's change, their cards below this one.
+    created, note_parts, notes_line = _enlisted_notes(
         user_key, project_id, spec, attachment_id, session_id, dir_name,
         proposal.get("notes") or [],
     )
@@ -420,12 +388,12 @@ def _apply_package_install(
         "installedPackage": {"dirName": dir_name, "name": name},
         **({"importErrors": install["importErrors"]}
            if install.get("importErrors") else {}),
-        # dev/105 A4: the lockfile CHANGED — the frontend must refresh its
-        # package registry + project-packages store BEFORE the follow-up notes
-        # paint, or they render "Loading node…" for a type it does not hold.
+        # dev/105 A4: the lockfile CHANGED: the frontend refreshes its package
+        # registry and project-packages store BEFORE it paints the notes, or
+        # they render "Loading node..." for a type it does not hold.
         "requiresRegistryRefresh": True,
-        # dev/105 A3: ordered — the frontend applies them one after another.
-        "followUpProposals": follow_ups,
+        # The notes, in row order, for a canvas no doc binds.
+        "createdNodes": created,
     }
 
 
@@ -452,7 +420,7 @@ def _broken_library_line(import_errors, dependency_error=None) -> str:
     return f" But {named}. Nodes needing it will fail until it is repaired."
 
 
-def _queue_enlisted_notes(
+def _enlisted_notes(
     user_key: str,
     project_id: str,
     spec: dict,
@@ -460,16 +428,15 @@ def _queue_enlisted_notes(
     session_id: object,
     dir_name: str,
     notes: list,
-) -> tuple[list[str], list[dict], str]:
-    """dev/105 A3: mint the enlisted package's notes as ONE pending A16
-    sequence of ``node.create`` proposals (row order) — through the ordinary
-    mint, so titles and the A13 colors are exactly the commit-6 path — and
-    return ``(proposal ids, proposal parts, log suffix)``. Nothing is
-    inserted into the graph here; each card is applied by the frontend walk,
-    one at a time. Honest degradation: no rows, no presentation template, or
-    a row that fails to mint is SAID in the suffix, never silent."""
+) -> tuple[list[dict], list[dict], str]:
+    """dev/105 A3: the enlisted package's notes, in row order, each landed
+    through the ordinary ``node.create`` mint (so titles and the A13 colors
+    are exactly its) as the agent's change. Returns ``(the nodes for the
+    canvas, their change cards, log suffix)``. Honest degradation: no rows,
+    no presentation template, or a row the mint refuses is SAID in the
+    suffix, never silent."""
     if not notes:
-        return [], [], " No notes rode this request — ask the Researcher to create them."
+        return [], [], " No notes rode this request: ask the Researcher to create them."
     from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
     from utk_curio.backend.app.packages.service import ManifestError, is_note_template
     from utk_curio.backend.app.packages.repositories.store import user_packages_dir
@@ -482,7 +449,7 @@ def _queue_enlisted_notes(
     if template is None:
         return [], [], (
             f" Notes skipped: {manifest.package_id} has no presentation (note) "
-            "template — ask the Researcher to author one."
+            "template: ask the Researcher to author one."
         )
     record = agents_spec_reads._record_or_404(spec, attachment_id)
     loop_ctx = {
@@ -492,7 +459,6 @@ def _queue_enlisted_notes(
         "manifest": agents_catalog._resolve_definition(user_key, record.get("coord", "")),
     }
     node_type = f"{manifest.package_id}/{template.template_id}"
-    ids: list[str] = []
     parts: list[dict] = []
     skipped: list[str] = []
     for row in notes:
@@ -503,15 +469,15 @@ def _queue_enlisted_notes(
             **({"appearance": row["appearance"]} if row.get("appearance") else {}),
         }}
         status, text, part = agents_mint._mint_node_create(user_key, project_id, loop_ctx, req)
-        if status == "proposed" and part is not None:
-            ids.append(part["proposalId"])
+        if status == agents_changes.LANDED and part is not None:
             parts.append(part)
         else:
             skipped.append(f"{row.get('title') or 'Note'}: {text}")
-    line = f" {len(ids)} note{'s' if len(ids) != 1 else ''} queued below." if ids else ""
+    created = [landed["canvas"]["node"] for landed in agents_changes.take_landed(loop_ctx)]
+    line = f" {len(parts)} note{'s' if len(parts) != 1 else ''} added below." if parts else ""
     if skipped:
-        line += " Skipped — " + "; ".join(skipped) + "."
-    return ids, parts, line
+        line += " Skipped: " + "; ".join(skipped) + "."
+    return created, parts, line
 
 
 def _apply_package_draft(
@@ -768,28 +734,11 @@ def _insert_node(
     return created
 
 
-def _apply_node_create(
-    user_key: str,
-    project_id: str,
-    attachment_id: str,
-    proposal_id: str,
-    spec: dict,
-    proposal: dict,
-    session_id: object,
-) -> dict:
-    """The dev/48 apply: insert ONE new node of a re-validated template.
-
-    The node id is server-minted HERE (collision-impossible, never from any
-    param); the template is re-validated against the packages registry — a
-    package uninstalled between mint and apply is the creation analogue of
-    dev/41's digest drift (409 + ``stale``)."""
-    node_type = proposal.get("nodeType")
-    entry, err = agents_roster._available_template(user_key, project_id, node_type)
-    if entry is None:
-        raise agents_store._mark_stale(
-            user_key, project_id, proposal_id, spec, proposal, session_id,
-            f"the node type is no longer available ({err}) — ask the agent to propose again",
-        )
+def land_node(user_key: str, project_id: str, loop_ctx: dict, spec: dict, proposal: dict, part: dict):
+    """``node.create``, landed: ONE new node of the template the mint checked,
+    its id server-minted here (never from a param), as the agent's change."""
+    attachment_id = loop_ctx.get("attachment_id")
+    node_type = proposal["nodeType"]
     created = _insert_node(
         spec, node_type, proposal.get("content", ""), proposal.get("goal"),
         appearance=proposal.get("appearance"),  # dev/89: typed round-trip
@@ -797,34 +746,34 @@ def _apply_node_create(
         widgets=proposal.get("widgets"),  # #662: what its code's references name
         settings=node_settings.of(proposal),  # a join's operation, a pool's modes, a view's image column
     )
-    proposal["status"] = "applied"
-    dataflow_docs.write(user_key, project_id, spec, _applied_by(user_key, spec, attachment_id))
-    agents_store._log_applied_turn(
-        user_key, project_id, session_id, attachment_id, proposal_id,
-        f"Applied: node created ({created['id']}).",
-        "Applied: node created",
-        [f"{entry['label']} · {node_type}", f"node {created['id']}", f"proposal {proposal_id[:8]}"],
+    change = agents_changes.new_change(
+        "node.create", proposal["summary"], nodeId=created["id"],
+        created=[{"id": created["id"], "type": node_type, "content": created.get("content") or ""}],
     )
-    return {
-        "attachmentId": attachment_id,
-        "proposalId": proposal_id,
-        "status": "applied",
-        "mutationApplied": True,
-        # Consumed by the frontend canvas bridge (dev/48 §3.3) — the apply
-        # response is the only carrier of the created node.
-        "createdNode": _created_for_canvas(created, _writer_name(user_key, spec, attachment_id)),
-    }
+    agents_changes.keep(spec, attachment_id, change)
+    dataflow_docs.write(user_key, project_id, spec, agents_changes.actor(user_key, spec, loop_ctx, "apply"))
+    agents_changes.landed(loop_ctx, change, {
+        "kind": "node-created", "node": _created_for_canvas(created, _writer(user_key, spec, loop_ctx)),
+    })
+    label = proposal.get("label") or node_type
+    lines = [f"{label} · {node_type}", f"node {created['id']}"]
+    return (agents_changes.LANDED,
+            agent_text.message("change.node-added", node_id=repr(created["id"]), label=label),
+            agents_changes.card(part, change, lines))
 
 
 def dismiss_proposal(
     user_key: str, project_id: str, attachment_id: str, proposal_id: str
 ) -> dict:
-    """Dismiss a pending proposal (keeps its outcome visible on the card)."""
+    """Dismiss a pending install (keeps its outcome visible on the card), or
+    a review of a change saved before agents changed the dataflow directly,
+    a plan parked beside a later review among them."""
     spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
     record = agents_spec_reads._record_or_404(spec, attachment_id)
     # dev/90 A16: a queued same-reply sibling is dismissible by id too.
     attachments.reconcile_proposal_queue(spec, attachment_id)
-    proposal = attachments.find_proposal(spec, attachment_id, proposal_id)
+    proposal = (attachments.find_proposal(spec, attachment_id, proposal_id)
+                or _review_saved_before(spec, attachment_id, proposal_id))
     if proposal is None:
         raise AgentServiceError(f"proposal {proposal_id!r} not found", 404)
     if proposal.get("status") != "pending":
@@ -833,13 +782,6 @@ def dismiss_proposal(
         )
     proposal["status"] = "dismissed"
     attachments.reconcile_proposal_queue(spec, attachment_id)
-    # A dismissed plan review returns the builder session to its prior phase
-    # (dev/52 DR-2): applied when an earlier plan landed, else idle.
-    if proposal.get("tool") == "dataflow.plan.write":
-        session = record.get("builderSession") or {}
-        session["phase"] = "applied" if session.get("appliedPlanId") else "idle"
-        session.pop("planProposalId", None)
-        record["builderSession"] = session
     dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._person(user_key, "dismiss"))
     session_id = record.get("sessionId")
     if isinstance(session_id, str):
