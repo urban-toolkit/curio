@@ -435,8 +435,11 @@ def _strings(value) -> list:
 def _told(client, flow, monkeypatch, who: str) -> str:
     """What the model is told in *who*'s chat run on alice's dataflow, the
     owner's model answering with a scripted reply: every text of each call's
-    messages and options."""
+    messages and options. As in the agents' suite (``test_agents/conftest.py``),
+    the endpoint is never asked whether it calls tools natively: the run
+    speaks the fenced protocol, whose system turn lists the chat's skills."""
     from utk_curio.backend.app.agents.application.turns import titles
+    from utk_curio.backend.app.agents.infrastructure import providers
 
     calls: list = []
 
@@ -446,7 +449,9 @@ def _told(client, flow, monkeypatch, who: str) -> str:
         calls.append("\n".join(_strings([messages, kwargs])))
         return "Here is what the node does."
 
-    monkeypatch.setattr("utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn", _model)
+    monkeypatch.setattr(providers, "probe_native_tools",
+                        lambda config, usage_out=None: (None, "not asked in the test suite"))
+    monkeypatch.setattr(providers, "run_chat_turn", _model)
     resp = client.post(f"/api/agents/projects/{flow.pid}/attachments/{ATTACHMENT}/run",
                        json={"message": "What does this node do?"}, headers=_auth(flow.tokens[who]))
     assert resp.status_code == 200, resp.get_data(as_text=True)
