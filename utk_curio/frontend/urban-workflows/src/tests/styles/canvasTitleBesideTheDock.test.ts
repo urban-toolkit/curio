@@ -63,11 +63,15 @@ describe("the canvas title beside the agents' dock", () => {
   });
 
   it("gives the whole name as its tooltip", () => {
-    // The title's own element: the heading drawn with the style above.
+    // The title's own element: the heading drawn with the style above. Its
+    // tooltip is the text it shows: the dataflow's whole name, or, while the
+    // dataflow its link names is still opening, that it is opening.
     const heading = UP_MENU.slice(
       UP_MENU.indexOf("className={styles.workflowNameStyle}"),
       UP_MENU.indexOf("</h1>", UP_MENU.indexOf("className={styles.workflowNameStyle}")),
     );
-    expect(heading).toContain("data-tooltip={workflowName}");
+    expect(heading).toContain("data-tooltip={title}");
+    expect(heading).toContain("{title}");
+    expect(UP_MENU).toMatch(/const title = opening \? OPENING_TITLE : workflowName;/);
   });
 });
