@@ -118,22 +118,30 @@ def _paced(monkeypatch, *, on_wait=None) -> list:
     return waits
 
 
+def _graph_of(spec: dict) -> tuple:
+    """*spec*'s nodes and connections, by id and by their ends."""
+    flow = spec.get("dataflow") or {}
+    return (sorted(node["id"] for node in flow.get("nodes") or []),
+            sorted((edge["source"], edge["target"]) for edge in flow.get("edges") or []))
+
+
 def _graph(key: str, project: str) -> tuple:
     """The dataflow's nodes and connections now, by id and by their ends."""
     from utk_curio.backend.app.collaboration import dataflow_docs
 
-    flow = dataflow_docs.live(key, project)["dataflow"]
-    return (sorted(node["id"] for node in flow["nodes"]),
-            sorted((edge["source"], edge["target"]) for edge in flow.get("edges") or []))
+    return _graph_of(dataflow_docs.live(key, project))
 
 
 def _recording(monkeypatch, project: str, key: str, timeline: list) -> None:
     """Record, in order, each drag an agent's state shows as it starts (its
     ``carrying``, its ``pointer``, and on which thread) and as it ends, each
-    write that changes the dataflow's nodes or connections (what it leaves,
-    the change its history point names, and on which thread), and each
-    agent's leave with what it did. An agent's first state, as it joins,
-    carries nothing yet and ends no drag, so it is not one."""
+    write that changes the dataflow's nodes or connections (what the dataflow
+    holds after it, the change its history point names, and on which thread),
+    and each agent's leave with what it did. Whether a write changes them is
+    read from the writer's own change (the spec it was handed against the one
+    it writes), so another writer's write at the same time is never taken for
+    it. An agent's first state, as it joins, carries nothing yet and ends no
+    drag, so it is not one."""
     from utk_curio.backend.app.collaboration import dataflow_docs, room_state
 
     real_state, real_write, real_activity = dataflow_docs.set_agent_state, dataflow_docs.write, room_state.record_activity
@@ -148,13 +156,11 @@ def _recording(monkeypatch, project: str, key: str, timeline: list) -> None:
         return real_state(at_project, client_id, fields, joining=joining)
 
     def write(user_key, project_id, spec, actor, **kwargs):
-        if project_id != project:
-            return real_write(user_key, project_id, spec, actor, **kwargs)
-        before = _graph(key, project)
+        graph = project_id == project and _graph_of(spec.base) != _graph_of(spec)
         written = real_write(user_key, project_id, spec, actor, **kwargs)
-        after = _graph(key, project)
-        if after != before:
-            timeline.append(("write", *after, (kwargs.get("point") or {}).get("change"), threading.current_thread().name))
+        if graph:
+            timeline.append(("write", *_graph(key, project), (kwargs.get("point") or {}).get("change"),
+                             threading.current_thread().name))
         return written
 
     def record_activity(room, kind, payload):
@@ -426,10 +432,14 @@ def test_two_agents_queues_play_side_by_side_each_in_its_own_order(file_backed, 
     timeline: list = []
     _recording(monkeypatch, project, _key(user), timeline)
     bodies: dict = {}
+    failed: dict = {}
 
     def ask(name, att, message):
-        response = _run(client, token, project, att, message)
-        bodies[name] = (response.status_code, response.get_json())
+        # ``_run`` asserts the answer is a 200 and gives its body.
+        try:
+            bodies[name] = _run(client, token, project, att, message)
+        except BaseException as exc:  # noqa: BLE001 - what failed is the finding
+            failed[name] = repr(exc)
 
     threads = [threading.Thread(target=ask, args=("planner", planner, "plan it"), name="planner", daemon=True),
                threading.Thread(target=ask, args=("builder", builder, "add two"), name="builder", daemon=True)]
@@ -439,7 +449,7 @@ def test_two_agents_queues_play_side_by_side_each_in_its_own_order(file_backed, 
         thread.join(60)
         assert not thread.is_alive(), f"the {thread.name}'s run never ended"
 
-    assert {name: status for name, (status, _body) in bodies.items()} == {"planner": 200, "builder": 200}, bodies
+    assert failed == {} and set(bodies) == {"planner", "builder"}, f"a turn did not answer: {failed}"
     moves = _only(timeline, "drag", "dropped")
     by_agent = {name: [entry for entry in moves if entry[-1] == name] for name in replies}
     assert [entry[1]["node"]["label"] for entry in by_agent["planner"] if entry[0] == "drag"] == ["Fetch", "Clean"]
@@ -452,7 +462,7 @@ def test_two_agents_queues_play_side_by_side_each_in_its_own_order(file_backed, 
     firsts_dropped = [moves.index(by_agent[name][1]) for name in replies]
     assert max(firsts) < min(firsts_dropped), f"the two agents' drags did not play side by side: {moves}"
     # The plan is one change, all of it the planner's; the builder's nodes are changes of its own.
-    card = _the_card(bodies["planner"][1])
+    card = _the_card(bodies["planner"])
     plan_points = [point for point in history.points(_key(user), project)[before:]
                    if point.get("change") == card["changeId"]]
     assert len(plan_points) == 4, plan_points
@@ -460,7 +470,7 @@ def test_two_agents_queues_play_side_by_side_each_in_its_own_order(file_backed, 
     assert len(plan_writes) == 4 and {entry[4] for entry in plan_writes} == {"planner"}, plan_writes
     builder_writes = [entry for entry in _only(timeline, "write") if entry[4] == "builder"]
     assert len(builder_writes) == 2 and {entry[3] for entry in builder_writes} == {None}, builder_writes
-    builder_cards = [part for part in bodies["builder"][1]["content"] if part["type"] == "change"]
+    builder_cards = [part for part in bodies["builder"]["content"] if part["type"] == "change"]
     assert [part["kind"] for part in builder_cards] == ["node", "node"], builder_cards
     assert card["changeId"] not in {part["changeId"] for part in builder_cards}
     flow = _saved(client, token, project)
