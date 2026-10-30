@@ -1672,13 +1672,15 @@ def _relay_states(entry: _OpenDoc, own: dict[str, set[int]]) -> None:
 
 
 def _user(me: dict) -> dict:
-    """Who an awareness state is, as the room knows the participant."""
+    """Who an awareness state is, as the room knows the participant: a tab of
+    the guest account with its number (``room_state.GUEST_NUMBER``)."""
     return {
         "participant_id": me.get("participant_id"),
         "user_id": me.get("user_id"),
         "username": me.get("username"),
         "name": me.get("name"),
         "role": me.get("role"),
+        **room_state.numbered(me),
     }
 
 

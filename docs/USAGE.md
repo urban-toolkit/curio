@@ -482,8 +482,9 @@ opens them again.
 **Run All** runs every node. A node's **Play** button, or Ctrl+Enter (Cmd+Enter
 on a Mac), runs that node and the nodes above it whose output is out of date.
 
-On your own dataflow, a run is made on the server, so it goes on when you close
-the tab. A dataflow you never saved is saved under its title by its first run.
+On your own dataflow, and on one whose owner invited you to edit it, a run is
+made on the server, so it goes on when you close the tab. A dataflow you never
+saved is saved under its title by its first run.
 
 - Charts, maps and the other nodes that draw in the browser draw while the
   dataflow is open.
@@ -499,16 +500,22 @@ the tab. A dataflow you never saved is saved under its title by its first run.
   starts; a node already running finishes, and its result is not kept.
 
 A dataflow opened while it runs shows the run going on. Opened afterwards, in
-any browser and after signing in again, each code node shows the last result you
-ran it to, for 7 days, as long as its code, its inputs, your packages and the
-datasets it reads are unchanged; charts and maps below it draw from it. A node
-with no such result shows its saved output, if its **Save output dataset**
-toggle is on. Nodes below an Autark compute node or a Spatial Join wait for a
-run. After Curio is upgraded, only saved outputs come back. A dashboard shows
-its saved outputs.
+any browser and after signing in again, each code node of your own dataflow
+shows the last result you ran it to, for 7 days, as long as its code, its
+inputs, your packages and the datasets it reads are unchanged; charts and maps
+below it draw from it. A node with no such result shows its saved output, if its
+**Save output dataset** toggle is on. Nodes below an Autark compute node or a
+Spatial Join wait for a run. After Curio is upgraded, only saved outputs come
+back. A dashboard shows its saved outputs.
 
-Guests, viewers of a shared dataflow, and a Curio started with `--no-project`
-run dataflows in the browser, and a run stops when its tab closes.
+An invited editor's runs are the editor's own: their results show on the
+editor's canvas, not the owner's, and the dataflow's saved outputs stay those of
+the owner's runs. Opened afterwards, the dataflow shows the editor its saved
+outputs.
+
+Guests, anyone who watches another account's dataflow, and a Curio started with
+`--no-project` run dataflows in the browser, and a run stops when its tab
+closes.
 
 ### Running stale nodes automatically
 
@@ -522,9 +529,9 @@ bolt while it is on.
 - The setting is saved with the dataflow and is off for a new one.
 - Code you type, a new connection, and a selection in a chart do not start a
   run: the nodes they change wait for **Run** or **Run All**.
-- It is offered where a run goes on the server: not to guests, viewers of a
-  shared dataflow, a Curio started with `--no-project`, or a dashboard, which
-  runs a changed control on its own ([Dashboards](#dashboards)).
+- It is offered where a run goes on the server: not to guests, anyone who
+  watches another account's dataflow, a Curio started with `--no-project`, or a
+  dashboard, which runs a changed control on its own ([Dashboards](#dashboards)).
 
 ## Provenance
 
@@ -1770,7 +1777,7 @@ Every tab that opens a saved dataflow while signed in holds one shared copy of i
 
 Who is here shows in the dock at the top of the canvas, beside the canvas agents: a chip for each other person, with their initials in their color. Hover one for their name, their role and the node they are editing, and click it to move your view to where they point on the canvas. The **Activity** button at the end of the row lists who joined, who left and whose role changed. A node someone is in shows their initials in its corner.
 
-The owner decides who edits. **Share → Invite editors**, shown to the owner of a saved dataflow, adds an account by its username and lists the editors, each with a button that removes it. An editor opens the dataflow's link (**Share → Copy dataflow link**) and edits it with the owner. Anyone else signed in who opens the link watches it, read-only, and a guest on a Curio started with `--deploy` only watches.
+The owner decides who edits. **Share → Invite editors**, shown to the owner of a saved dataflow, adds an account by its username and lists the editors, each with a button that removes it. An editor opens the dataflow's link (**Share → Copy dataflow link**) and edits it with the owner, and the editor's runs go to the server as the owner's do ([Running a dataflow](#running-a-dataflow)). Anyone else signed in who opens the link watches it, read-only, and a guest on a Curio started with `--deploy` only watches.
 
 When two people change the same thing:
 
