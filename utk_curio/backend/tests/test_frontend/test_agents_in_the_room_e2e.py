@@ -73,27 +73,36 @@ def _write_tail(node_id: str, content: str) -> str:
 
 
 # What the page shows, each time it changes: the agents' chips in the dock,
-# and each node's tab and lock chip; with whether an agent's cursor is drawn,
-# and every agent state that points or carries something.
+# and each node's tab and lock chip, and whether an agent's state in the
+# room names the node; with whether an agent's cursor is drawn, and every
+# agent state that points or carries something.
 _RECORD_JS = """(nodes) => {
     const log = [];
     const moved = [];
     window.__curio_in_the_room = {log, moved};
+    const awareness = window.__curio_awareness;
     const snapshot = () => {
         const dock = document.querySelector('[role="toolbar"][aria-label="Canvas agents"]');
         const chips = Array.from(dock ? dock.querySelectorAll('[data-collab-agent]') : [])
             .map((chip) => chip.getAttribute('aria-label'));
         const tabs = {};
         const locks = {};
+        const editing = {};
         for (const id of nodes) {
             const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
             const tab = node && node.querySelector('.nav-link.active');
             const lock = node && node.querySelector('.collab-lock-chip');
             tabs[id] = tab ? tab.getAttribute('data-rr-ui-event-key') : null;
             locks[id] = lock ? lock.getAttribute('data-tooltip') : null;
+            editing[id] = false;
+        }
+        for (const state of awareness.getStates().values()) {
+            if (!state || !state.user || !state.user.agent) continue;
+            const named = Array.isArray(state.editing) ? state.editing : [state.editing];
+            for (const id of nodes) if (named.includes(id)) editing[id] = true;
         }
         const cursors = document.querySelectorAll('[data-agent-cursor], [data-agent-ghost]').length;
-        return {chips, tabs, locks, cursors};
+        return {chips, tabs, locks, editing, cursors};
     };
     let last = '';
     const record = () => {
@@ -106,7 +115,6 @@ _RECORD_JS = """(nodes) => {
     };
     record();
     new MutationObserver(record).observe(document.body, {subtree: true, childList: true, attributes: true});
-    const awareness = window.__curio_awareness;
     awareness.on('change', () => {
         for (const state of awareness.getStates().values()) {
             if (state && state.user && state.user.agent && (state.pointer || state.carrying)) {
@@ -237,14 +245,21 @@ def _wait_for_tab(page, node_id: str, tab: str, what: str) -> None:
 
 
 def _code_while_held(log: list, node_id: str, what: str) -> None:
-    """In *log*, *node_id* showed its code while the agent held it, and only
-    then: each snapshot that shows its code shows the agent's lock on it."""
-    held = [s for s in log if (s["locks"][node_id] or "").startswith(f"Editing: Node Builder (asked by {OWNER_NAME})")]
+    """In *log*, *node_id* showed its Widgets tab before the agent came, its
+    code while the agent held it, and its code only then: each snapshot that
+    shows its code has the agent's lock on it or its state naming it, or is
+    the one next to such a snapshot (the lock and the state reach the page as
+    two messages, which can draw a frame apart)."""
+    lock = f"Editing: Node Builder (asked by {OWNER_NAME})"
+    held = [index for index, s in enumerate(log) if (s["locks"][node_id] or "").startswith(lock)]
     assert held, f"{what} never showed the agent's lock on {node_id}: {log}"
-    assert any(s["tabs"][node_id] == "code" for s in held), (
+    by_agent = [index for index, s in enumerate(log) if index in held or s["editing"][node_id]]
+    assert any(log[index]["tabs"][node_id] == "code" for index in by_agent), (
         f"{what} never showed {node_id}'s code while the agent held it: {log}"
     )
-    stray = [s for s in log if s["tabs"][node_id] == "code" and s not in held]
+    assert log[0]["tabs"][node_id] == "widgets", f"{what} did not show {node_id}'s Widgets tab before: {log[0]}"
+    near = {index + step for index in by_agent for step in (-1, 0, 1)}
+    stray = [s for index, s in enumerate(log) if s["tabs"][node_id] == "code" and index not in near]
     assert not stray, f"{what} showed {node_id}'s code while the agent did not hold it: {stray}"
 
 
