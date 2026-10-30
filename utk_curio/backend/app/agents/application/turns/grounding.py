@@ -294,6 +294,7 @@ def _source_resolver(
     manifest=None,
     extra_texts=(),
     catalog_rows: list | None = None,
+    asker=None,
 ):
     """dev/126: the callable the content loop consults BEFORE generating for a
     data-loading node — the one place resolution initiates discovery.
@@ -304,6 +305,11 @@ def _source_resolver(
     ``dataset.discover`` delegation whose candidates await the user in that
     node's own Dataset Finder chat; a node already awaiting the user spends
     nothing at all.
+
+    *asker* is whoever the Solve runs for (its ``acting_user``): its job's
+    thread holds no request, so the Dataset Finder's run is handed it, and an
+    editor's run holds the skills of the packages the owner added
+    (``dataset_resolution.initiate``).
     """
     parent_manifest = manifest if manifest is not None else agents_catalog._resolve_definition(user_key, coord)
 
@@ -360,6 +366,7 @@ def _source_resolver(
                 if t
             )[:2000],
             catalog_rows=catalog_rows,
+            asker=asker,
         )
         if started["status"] == "awaiting":
             return {"state": "awaiting", "detail": started["detail"],

@@ -267,6 +267,7 @@ def _run_node_loop(
             execution_id=execution_id, config=config, manifest=manifest,
             extra_texts=(str((spec.get("dataflow") or {}).get("task") or ""),),
             catalog_rows=catalog_rows,
+            asker=acting_user,
         ),
     )
     return outcome
