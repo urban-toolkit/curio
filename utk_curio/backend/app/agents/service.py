@@ -123,6 +123,13 @@ from utk_curio.backend.app.agents.application.turns.attachment_turn import (
     run_attachment,
     stream_attachment,
 )
+from utk_curio.backend.app.agents.application.turns.turn_jobs import (
+    ask_at_once as ask_turn,
+    follow as follow_turn,
+    stop as stop_turn,
+    stop_all as stop_turns,
+    withdraw as withdraw_turn,
+)
 from utk_curio.backend.app.agents.application.turns.delegates import (
     PACKAGE_AUTHORING_CAPABILITIES,
 )
@@ -213,6 +220,11 @@ __all__ = [
     "ParamRefusal",
     "run_attachment",
     "stream_attachment",
+    "ask_turn",
+    "follow_turn",
+    "stop_turn",
+    "stop_turns",
+    "withdraw_turn",
     "PACKAGE_AUTHORING_CAPABILITIES",
     "CONTEXT_MAX_CHARS",
     "DEPLOYMENT_MAX_OUTPUT_TOKENS",
