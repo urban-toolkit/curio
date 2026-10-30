@@ -132,23 +132,27 @@ def _graph(key: str, project: str) -> tuple:
     return _graph_of(dataflow_docs.live(key, project))
 
 
-def _recording(monkeypatch, project: str, key: str, timeline: list) -> None:
+def _thread_name() -> str:
+    return threading.current_thread().name
+
+
+def _recording(monkeypatch, project: str, key: str, timeline: list, name_of=_thread_name) -> None:
     """Record, in order, each drag an agent's state shows as it starts (its
-    ``carrying``, its ``pointer``, and on which thread) and as it ends, each
-    write that changes the dataflow's nodes or connections (what the dataflow
-    holds after it, the change its history point names, and on which thread),
-    and each agent's leave with what it did. Whether a write changes them is
-    read from the writer's own change (the spec it was handed against the one
-    it writes), so another writer's write at the same time is never taken for
-    it. An agent's first state, as it joins, carries nothing yet and ends no
-    drag, so it is not one."""
+    ``carrying``, its ``pointer``, and on which thread, as *name_of* names it)
+    and as it ends, each write that changes the dataflow's nodes or
+    connections (what the dataflow holds after it, the change its history
+    point names, and on which thread), and each agent's leave with what it
+    did. Whether a write changes them is read from the writer's own change
+    (the spec it was handed against the one it writes), so another writer's
+    write at the same time is never taken for it. An agent's first state, as
+    it joins, carries nothing yet and ends no drag, so it is not one."""
     from utk_curio.backend.app.collaboration import dataflow_docs, room_state
 
     real_state, real_write, real_activity = dataflow_docs.set_agent_state, dataflow_docs.write, room_state.record_activity
 
     def set_agent_state(at_project, client_id, fields, *, joining=False):
         if at_project == project and not joining and "carrying" in fields:
-            name = threading.current_thread().name
+            name = name_of()
             if fields["carrying"]:
                 timeline.append(("drag", copy.deepcopy(fields["carrying"]), copy.deepcopy(fields["pointer"]), name))
             else:
@@ -160,7 +164,7 @@ def _recording(monkeypatch, project: str, key: str, timeline: list) -> None:
         written = real_write(user_key, project_id, spec, actor, **kwargs)
         if graph:
             timeline.append(("write", *_graph(key, project), (kwargs.get("point") or {}).get("change"),
-                             threading.current_thread().name))
+                             name_of()))
         return written
 
     def record_activity(room, kind, payload):
@@ -399,7 +403,9 @@ def test_two_agents_queues_play_side_by_side_each_in_its_own_order(file_backed, 
     nodes of its own, both asked at once. Each agent's drags start only once
     its last one dropped, in its own order and carrying only its own nodes,
     while the other agent's drags go on beside them; the plan's points all
-    name the plan, and neither agent's node lands in the other's change."""
+    name the plan, and neither agent's node lands in the other's change.
+    Each turn runs on a thread of its own, a job's, named here after its
+    agent at its first model call, by the message the agent was asked."""
     from utk_curio.backend.app.collaboration import history
 
     client, user, token = file_backed
@@ -411,26 +417,35 @@ def test_two_agents_queues_play_side_by_side_each_in_its_own_order(file_backed, 
         "builder": [_tail("node.create", nodeType=CA, content="return 'one'", title="One"),
                     _tail("node.create", nodeType=CA, content="return 'two'", title="Two"), "Added two."],
     }
+    asked = {"plan it": "planner", "add two": "builder"}
+    agents: dict = {}
+
+    def agent() -> str:
+        """The agent whose turn runs on this thread."""
+        return agents.get(threading.get_ident(), threading.current_thread().name)
 
     def answer(config, messages, **kwargs):
         from utk_curio.backend.app.agents.application.turns import titles
 
         if messages and messages[0].get("content") == titles.title_prompt():
             return "Title"
-        return replies[threading.current_thread().name].pop(0)
+        message = next(m.get("content") for m in reversed(messages)
+                       if m.get("role") == "user" and m.get("content") in asked)
+        name = agents.setdefault(threading.get_ident(), asked[message])
+        return replies[name].pop(0)
 
     monkeypatch.setattr("utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn", answer)
     started = {name: threading.Event() for name in replies}
 
     def side_by_side(_waited: int) -> None:
-        name = threading.current_thread().name
+        name = agent()
         started[name].set()
         other = next(n for n in replies if n != name)
         assert started[other].wait(WAIT_S), f"the {other}'s queue never began while the {name}'s played"
 
     _paced(monkeypatch, on_wait=side_by_side)
     timeline: list = []
-    _recording(monkeypatch, project, _key(user), timeline)
+    _recording(monkeypatch, project, _key(user), timeline, name_of=agent)
     bodies: dict = {}
     failed: dict = {}
 

@@ -37,6 +37,7 @@ import queue
 import re
 import threading
 import time
+import traceback
 import uuid
 from collections import deque
 from dataclasses import dataclass, field
@@ -51,6 +52,7 @@ from utk_curio.backend.app.agents.infrastructure import agent_jobs
 from utk_curio.backend.app.agents.infrastructure import provider_config
 from utk_curio.backend.app.agents.infrastructure import testing_provider
 from utk_curio.backend.app.collaboration import roles
+from utk_curio.common.redaction import redact
 
 log = logging.getLogger(__name__)
 
@@ -118,6 +120,11 @@ class Ask:
     result: Optional[dict] = None
     #: Why it failed: its message, and the status a blocking ask answers.
     failure: Optional[tuple] = None
+    #: What interrupted its turn that is no failure (a ``BaseException``,
+    #: such as an evaluation's seam stopping a run it has seen enough of):
+    #: raised again to whoever waits for the turn, as it reached the request
+    #: the turn used to run in (:func:`settled`).
+    interruption: Optional[BaseException] = None
     job: object = field(default=None, repr=False)
     #: Held while one of its events is told, so they are told in order; a
     #: thread may hold it around telling one (:func:`ask`).
@@ -230,10 +237,9 @@ def settled(asked: Ask, events: Iterator[dict]) -> dict:
     It waits for the turn's thread too, so nothing of the turn runs after."""
     for _envelope in events:
         pass
-    job = asked.job
-    thread = getattr(job, "thread", None)
-    if thread is not None and thread is not threading.current_thread():
-        thread.join(_JOIN_S)
+    _join(asked)
+    if asked.interruption is not None:
+        raise asked.interruption
     if asked.result is not None:
         return asked.result
     message, status = asked.failure or ("agent run failed", 502)
@@ -259,10 +265,7 @@ def own_events(asked: Ask, events: Iterator[dict]) -> Iterator[tuple[str, dict]]
         close = getattr(events, "close", None)
         if close is not None:
             close()
-    job = asked.job
-    thread = getattr(job, "thread", None)
-    if thread is not None and thread is not threading.current_thread():
-        thread.join(_JOIN_S)
+    _join(asked)
 
 
 # ---------------------------------------------------------------------------
@@ -297,7 +300,21 @@ def follow(user_key: str, project_id: str, attachment_id: str, ask_id: str) -> I
         over = found.state == ENDED
         if not over:
             found.followers.append(followed)
-    return _drained(found, followed, first=first, over=over)
+    return _ended(found, _drained(found, followed, first=first, over=over))
+
+
+def _ended(asked: Ask, events: Iterator[dict]) -> Iterator[dict]:
+    """*events* of *asked*, then a wait for its turn's thread, so nothing of
+    the turn runs after the last of them is read."""
+    yield from events
+    _join(asked)
+
+
+def _join(asked: Ask) -> None:
+    """Wait, a while at most, for *asked*'s turn's thread to be over."""
+    thread = getattr(asked.job, "thread", None)
+    if thread is not None and thread is not threading.current_thread():
+        thread.join(_JOIN_S)
 
 
 def stop(user_key: str, project_id: str, attachment_id: str, ask_id: str) -> dict:
@@ -367,14 +384,11 @@ def _start(asked: Ask) -> None:
     """Run *asked*'s turn as a job, now its line's turn is free; the next ask
     waiting starts once the job is over (:func:`_after`)."""
     _publish(asked, STARTED, {"startedAt": time.time()})
-    secrets = {name: value for name, value in (
-        ("llm-api-key", getattr(asked.config, "api_key", None)), ("session", asked.asking.token),
-    ) if value}
     try:
         asked.job = agent_jobs.start_turn(
             user_key=asked.user_key, project_id=asked.project_id, attachment_id=asked.attachment_id,
             job_id=asked.ask_id, events=_turn(asked), app_context=asked.app.app_context,
-            redact_values=secrets, on_finish=lambda _job: _after(asked),
+            redact_values=_secrets(asked), on_finish=lambda _job: _after(asked),
         )
     except agent_jobs.JobRefused as exc:
         # A turn of the attachment no line holds is still live: this ask
@@ -406,9 +420,16 @@ def _turn(asked: Ask) -> Iterator[tuple]:
         with agents_askers.as_asked(asked.asking):
             yield from _turn_events(asked)
     except Exception as exc:  # noqa: BLE001 - a turn's failure is its end, never its line's
-        log.exception("turn %s of attachment %s failed", asked.ask_id, asked.attachment_id)
-        text = f"agent run failed: {provider_config.redact_error(exc, asked.config)}"
+        secrets = _secrets(asked)
+        log.error("turn %s of attachment %s failed:\n%s", asked.ask_id, asked.attachment_id,
+                  redact(traceback.format_exc(), secrets))
+        text = redact(f"agent run failed: {provider_config.redact_error(exc, asked.config)}", secrets)
         yield "error", _publish(asked, "error", {"error": text}, status=502)
+    except GeneratorExit:
+        raise
+    except BaseException as exc:  # noqa: BLE001 - an interruption, not a failure: whoever waits gets it
+        asked.interruption = exc
+        yield "error", _publish(asked, "error", {"error": "agent run failed: the turn was interrupted"}, status=502)
     finally:
         with asked.lock:
             over = asked.state == ENDED
@@ -476,6 +497,14 @@ def _keep(asked: Ask, envelope: dict, status: Optional[int]) -> None:
             asked.failure = (data.get("error"), status or 502)
         elif name == WITHDRAWN:
             asked.failure = ("the ask was withdrawn before its turn", 409)
+
+
+def _secrets(asked: Ask) -> dict:
+    """What no event or log line of *asked*'s turn may carry: the model's key
+    and the asker's sign-in token."""
+    return {name: value for name, value in (
+        ("llm-api-key", getattr(asked.config, "api_key", None)), ("session", asked.asking.token),
+    ) if value}
 
 
 def _addressed(asked: Ask) -> dict:

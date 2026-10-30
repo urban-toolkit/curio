@@ -121,13 +121,18 @@ def _fresh_agent_jobs(monkeypatch):
     per-attachment guard or the per-user cap in an unrelated test). A chat
     turn is a job too: a test's turns are stopped and waited for before its
     patches are undone, so none takes the next test's scripted replies."""
-    from utk_curio.backend.app.agents.application.turns import turn_jobs
+    try:
+        from utk_curio.backend.app.agents.application.turns import turn_jobs
+    except ImportError:  # a checkout whose turns run in their request
+        turn_jobs = None
 
     agent_jobs.reset_registry()
-    turn_jobs.forget_all()
+    if turn_jobs is not None:
+        turn_jobs.forget_all()
     yield
-    for job in turn_jobs.stop_all():
-        if job.thread is not None:
-            job.thread.join(30)
-    turn_jobs.forget_all()
+    if turn_jobs is not None:
+        for job in turn_jobs.stop_all():
+            if job.thread is not None:
+                job.thread.join(30)
+        turn_jobs.forget_all()
     agent_jobs.reset_registry()
