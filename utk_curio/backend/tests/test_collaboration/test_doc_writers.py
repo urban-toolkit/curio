@@ -110,6 +110,79 @@ def test_a_writer_changes_only_what_it_changed_and_a_tab_gets_it(room):
     assert _imported_entries(room) == len(SPEC["nodeProvenance"]["loader"]), "the write touched the history"
 
 
+def _remove_node(node_id: str, *edge_ids: str):
+    """A tab's change: *node_id* removed, with the connections *edge_ids*."""
+    def change(doc):
+        from pycrdt import Map
+
+        del doc.get("nodes", type=Map)[node_id]
+        for edge_id in edge_ids:
+            del doc.get("edges", type=Map)[edge_id]
+
+    return change
+
+
+def _connection(edge_id: str, source: str, target: str) -> dict:
+    return {"id": edge_id, "source": source, "target": target, "sourceHandle": "out", "targetHandle": "in"}
+
+
+def test_a_writers_connection_to_a_node_removed_before_its_write_never_lands(room):
+    """A writer reads the dataflow, adds a node and draws two connections, one
+    of them into the chart; alice removes the chart before the write. Inside
+    the write, under the doc's lock, each connection the writer drew is
+    checked again: the one into the chart is taken out in the writer's own
+    transaction, so no tab, no file and no record of the log holds a
+    connection to a node that is gone, and the writer is told. The other one
+    lands. A second writer is told through its callback before the file is
+    written, as one whose code was refused is."""
+    from utk_curio.backend.app.collaboration.dataflow_docs import by_agent, live, write
+
+    alice = room.tab("alice")
+    alice.sync()
+    spec = live(room.owner_key, room.project_id)
+    spec["dataflow"]["nodes"].append({"id": "extra", "type": "curio.builtin/code", "x": 600, "y": 20, "content": ""})
+    spec["dataflow"]["edges"] += [_connection("into-chart", "extra", "chart"), _connection("into-extra", "loader", "extra")]
+    alice.edit(_remove_node("chart", "e1"))
+
+    written = write(room.owner_key, room.project_id, spec, by_agent(BUILDER, room.owner_key, "plan"))
+
+    seen = alice.dataflow()
+    assert sorted(edge["id"] for edge in seen["edges"]) == ["into-extra"], (
+        f"a connection the writer drew landed pointing at a node that is gone: {seen['edges']}"
+    )
+    assert sorted(node["id"] for node in seen["nodes"]) == ["extra", "loader"]
+    on_disk = room.on_disk()["dataflow"]
+    assert sorted(edge["id"] for edge in on_disk["edges"]) == ["into-extra"], on_disk["edges"]
+    assert not _ever_logged(room, "into-chart"), "a record of the log holds the connection to the removed chart"
+    assert getattr(written, "dropped", None) == ("into-chart",), written
+
+    # A second writer reads, alice removes the node it draws into, and its
+    # callback is told before the file is written.
+    spec = live(room.owner_key, room.project_id)
+    spec["dataflow"]["edges"].append(_connection("into-extra-again", "loader", "extra"))
+    alice.edit(_remove_node("extra", "into-extra"))
+    told: list = []
+    written = write(room.owner_key, room.project_id, spec, by_agent(BUILDER, room.owner_key, "plan"),
+                    on_dropped=told.extend)
+    assert told == ["into-extra-again"] and written.dropped == ("into-extra-again",), (told, written)
+    assert room.on_disk()["dataflow"]["edges"] == [], room.on_disk()["dataflow"]["edges"]
+
+
+def _ever_logged(room, edge_id: str) -> bool:
+    """Whether the open doc's log, at any of its records today, holds the
+    connection *edge_id*."""
+    from utk_curio.backend.app.collaboration import dataflow_docs, doc_mapping
+
+    entry = dataflow_docs._open_entry(room.project_id)
+    assert entry is not None, "the server holds no doc of the dataflow"
+    doc = dataflow_docs.rebuilt(room.owner_key, room.project_id, entry.doc_id, entry.segment, upto=0)
+    for update in dataflow_docs.logged_updates(room.owner_key, room.project_id, entry.doc_id, entry.segment):
+        doc.apply_update(update)
+        if edge_id in {edge.get("id") for edge in doc_mapping.doc_to_dataflow(doc).get("edges") or []}:
+            return True
+    return False
+
+
 def test_a_writer_writes_the_spec_it_was_handed_and_nothing_when_it_changed_nothing(room):
     """What a writer hands back is the spec it was handed, which knows what it
     read; a copy is refused rather than written over what changed meanwhile.

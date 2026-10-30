@@ -158,7 +158,7 @@ class TestEachFamilyLandsAtOnce:
         new_id = landed["canvas"]["node"]["id"]
         assert _by_id(_saved(client, token, project))[new_id]["content"] == "return 2"
 
-    def test_a_plan_lands_whole_in_one_write_its_nodes_connections_and_removals(
+    def test_a_plan_lands_a_step_at_a_time_as_one_change_its_removals_nodes_and_connections(
         self, client, user_and_token, tmp_curio, monkeypatch,
     ):
         from utk_curio.backend.app.collaboration import dataflow_docs, history
@@ -173,6 +173,7 @@ class TestEachFamilyLandsAtOnce:
             pass
         before = len(history.points(_user_dir_key(user), project))
         assert before, "the open made no first points"
+        head = history.points(_user_dir_key(user), project)[-1]["id"]
         plan = {
             "goal": "replace the loader",
             "nodes": [{"ref": "a", "nodeType": CA, "title": "API Fetch", "intent": "fetch from the api"}],
@@ -189,10 +190,16 @@ class TestEachFamilyLandsAtOnce:
         [new_id] = [node_id for node_id in ids if node_id != "sum"]
         assert ids[new_id]["content"] == ""
         assert [(e["source"], e["target"]) for e in flow["edges"]] == [(new_id, "sum")]
-        # One transaction, one point of the history, the agent's.
+        # One point of the history a step, the removal, the node, the
+        # connection, each the agent's and naming the plan's one change, one
+        # right after another, the first made from the version before it.
         points = history.points(_user_dir_key(user), project)
-        assert len(points) == before + 1, points[before:]
-        assert points[-1]["by"]["kind"] == "agent", points[-1]
+        assert len(points) == before + 3, points[before:]
+        steps = points[before:]
+        assert all(point["by"]["kind"] == "agent" for point in steps), steps
+        assert all(point.get("change") == card["changeId"] for point in steps), steps
+        assert all(history.follows(_user_dir_key(user), project, a, b) for a, b in zip(steps, steps[1:])), steps
+        assert steps[0]["parent"] == head, (steps[0], head)
         # The planner's session holds the plan its Build & validate works on.
         listing = _listing(client, token, project, att)
         assert listing["planProposal"]["proposalId"] == card["planId"]

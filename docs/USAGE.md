@@ -1724,7 +1724,8 @@ conversation, clear it, cycle through every attached agent with the ‹ › arro
 and edit the initial intent the agent starts from. A change an agent makes to
 your dataflow (a node's code or settings, a new node, a plan) lands at once, for
 everyone on the dataflow, as your own edit does; it waits while someone else is
-working in the node it changes. Its card in the chat has **Undo**, which puts
+working in the node it changes. A new node is dragged in from its tile in the
+tool rail, and lands as the drop ends. Its card in the chat has **Undo**, which puts
 back what it replaced, unless someone changed it after: then Undo says who, and
 nothing changes. An install (a package, a dataset, a download, an agent) waits
 for your review: nothing installs until you apply it.
@@ -1737,8 +1738,10 @@ Escape closes the list. A line under each reply names the skills its run used;
 hover a name to see how the run came to hold it.
 
 The **Dataflow Builder** is the composite agent that plans a whole dataflow. Its
-plan lands whole, nodes, connections and removals at once, as one change you
-can undo. Its strip then offers **Build & validate plan**, which fills the
+plan lands as one change you can undo: first the nodes and connections it
+removes, then its nodes, dragged in from their tiles one after another, then its
+connections. When someone removes a node the plan connects while it lands, the
+plan stops there, and its card says what was left undone. Its strip then offers **Build & validate plan**, which fills the
 plan's nodes in order: each node's code is run in the sandbox, and code that
 passes lands, with its **Undo**, before the next node; the first failure pauses
 the build with nothing written after it, and **Resume** continues from there.

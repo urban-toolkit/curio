@@ -96,6 +96,13 @@ const fromChanges = new Map<string, { hold: AgentHold; timer: ReturnType<typeof 
 /** How many docs' awarenesses feed the store now. */
 let awarenessFeeds = 0;
 
+/** Whether a doc's awareness says what agents do on this canvas: a canvas the
+ *  doc binds saw an agent's drags and writes as they happened, and a canvas no
+ *  doc binds plays them from a run's change events. */
+export function agentsSeenThroughAwareness(): boolean {
+    return awarenessFeeds > 0;
+}
+
 function republish(): void {
     const next = new Map(fromAwareness);
     fromChanges.forEach(({ hold }, nodeId) => {

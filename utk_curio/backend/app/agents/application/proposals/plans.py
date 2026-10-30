@@ -1,4 +1,4 @@
-"""Dataflow plans: minting, fan-in validation, landing whole and its Undo, node-agent attachment, and layout.
+"""Dataflow plans: minting, fan-in validation, landing step by step as one change and its Undo, node-agent attachment, and layout.
 
 Application layer of the agents package (memo dev/142, B2; re-derived on enh/agent-catalog): cut from
 ``services.py`` by responsibility. Sibling modules are reached
@@ -16,6 +16,7 @@ import uuid
 
 from utk_curio.backend.app.agents.application import attachments
 from utk_curio.backend.app.agents.application import delegation
+from utk_curio.backend.app.agents.application import in_the_room as agents_room
 from utk_curio.backend.app.agents.application.errors import AgentServiceError
 from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.domain import content
@@ -29,6 +30,7 @@ from utk_curio.backend.app.agents.application import spec_reads as agents_spec_r
 from utk_curio.backend.app.execution.workflow_spec import slot_handle_id
 from utk_curio.backend.app.agents.application.proposals import changes as agents_changes
 from utk_curio.backend.app.agents.application.proposals import plan_scenarios
+from utk_curio.backend.app.collaboration import agent_peers
 from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.collaboration import doc_mapping
 from utk_curio.backend.app.collaboration import history
@@ -445,17 +447,28 @@ def _scenarios_taken_now(user_key: str, project_id: str, plan: dict) -> str | No
     return None
 
 
-def _land_dataflow_plan(user_key: str, project_id: str, loop_ctx: dict, spec: dict, landing: dict, part: dict):
-    """A dataflow plan, landed whole and at once (dev/52, dev/59), as the
-    agent's change: its removals and the connections they cascade to, its
-    nodes (at the mint-time layout, each with its template's starter or no
-    code, and its agents, dev/126), its connections and its scenarios, in ONE
-    write, so one transaction of the doc. Unlisted nodes keep their ids,
-    places and code by construction. The planner's session then holds the
-    plan, whose nodes Build & validate and Solve fill."""
-    attachment_id = loop_ctx.get("attachment_id")
+def _land_dataflow_plan(user_key: str, project_id: str, loop_ctx: dict, spec: dict, landing: dict, part: dict, *,
+                        peer=None):
+    """A dataflow plan (dev/52, dev/59), checked whole, then landed as the
+    agent's actions, one at a time (``in_the_room.act``), as one change:
+
+    1. its removals and the connections they cascade to, with no motion;
+    2. each new node in plan order, dragged in from its template's tile by
+       *peer*, the agent at work in the room, and landed as its drop ends,
+       at the mint-time layout with no code and with its agents (dev/126);
+    3. its connections, the starters of the nodes whose template's starter
+       is their code, and its scenarios, with no motion, once every node
+       they join is there.
+
+    Each step is one write of the dataflow's doc, a point of the history
+    naming the change's id, so Undo, Provenance and the reply take the plan
+    as one change. The last step checks again that every node it joins is
+    still there: one someone removed meanwhile stops the plan, what landed
+    stays, and the result and the card say what was left undone. Unlisted
+    nodes keep their ids, places and code by construction. The planner's
+    session holds the plan as far as it landed, whose nodes Build & validate
+    and Solve fill."""
     plan = landing["plan"]
-    plan_id = landing["proposalId"]
     refusal = (
         _victims_changed(user_key, project_id, plan, landing)
         or _closes_a_cycle_now(user_key, project_id, plan)
@@ -463,56 +476,277 @@ def _land_dataflow_plan(user_key: str, project_id: str, loop_ctx: dict, spec: di
     )
     if refusal:
         return "refused", refusal, None
-    dataflow = spec.setdefault("dataflow", {})
-    nodes = dataflow.setdefault("nodes", [])
-    edges = dataflow.setdefault("edges", [])
-    spec_nodes_by_id = {n.get("id"): n for n in nodes if isinstance(n, dict)}
-    remove_node_set = set(plan.get("removeNodes", []))
-    planner = attachments.get_attachment(spec, attachment_id) or {}
-    # What the planner held before: the Undo of this plan puts both back.
-    session_before = copy.deepcopy(planner.get("builderSession") or {})
-    plan_before = copy.deepcopy(planner.get("planProposal"))
-    removed_edge_ids, pruned = _remove_plan_victims(spec, nodes, edges, remove_node_set, plan.get("removeEdges", []))
-    starters = _content_starters(user_key, project_id, plan.get("nodes", []))
-    declared = _declared_widgets(user_key, project_id, plan.get("nodes", []))
-    plan_agents = _plan_node_agents(user_key, spec, agents_spec_reads._definition(user_key, planner.get("coord", "")))
-    created_nodes, attached_results, ref_to_id = _create_plan_nodes(
-        user_key, spec, nodes, plan, landing, starters,
-        agents=plan_agents, templates=_roster_templates(user_key, project_id), declared=declared,
-    )
-    created_edges = _create_plan_edges(
-        user_key, project_id, plan_id, spec, landing, loop_ctx.get("session_id"), plan, nodes, edges, ref_to_id,
-        spec_nodes_by_id,
-    )
-    created_scenarios = plan_scenarios.apply_scenarios(spec, landing, ref_to_id, final=True)
-    record, node_runs = _plan_apply_session(
-        spec, attachment_id, plan_id, created_nodes, remove_node_set, ref_to_id, starters,
-    )
-    if record is not None:
-        # Build & validate and the rows' Solve and Run work on this plan.
-        record["builderSession"]["planProposalId"] = plan_id
-        record["planProposal"] = {**landing, "status": "applied", "appliedNodeIds": dict(ref_to_id)}
-    change = agents_changes.new_change(
-        "dataflow.plan.write", landing["summary"], planId=plan_id,
-        nodeIds=[n["id"] for n in created_nodes], edgeIds=[str(e["id"]) for e in created_edges],
-        removedNodeIds=sorted(remove_node_set), removedEdgeIds=sorted(removed_edge_ids),
-        scenarioIds=[s.get("id") for s in created_scenarios if isinstance(s, dict) and s.get("id")],
-        session=session_before,
-        **({"planBefore": plan_before} if isinstance(plan_before, dict) else {}),
-    )
-    agents_changes.keep(spec, attachment_id, change)
-    dataflow_docs.write(user_key, project_id, spec, agents_changes.actor(user_key, spec, loop_ctx, "plan"),
-                        point={"kind": history.AGENT, "what": "", "change": change["changeId"]})
-    sessions.delete_sessions_of(user_key, project_id, pruned)
-    agents_changes.landed(loop_ctx, change, {
-        "kind": "graph-created", "planId": plan_id, "nodes": created_nodes, "edges": created_edges,
-        "removedNodeIds": sorted(remove_node_set), "removedEdgeIds": sorted(removed_edge_ids),
-        **({"scenarios": created_scenarios} if created_scenarios else {}),
-    })
-    text, lines = _plan_landed_lines(spec, created_nodes, created_edges, remove_node_set, removed_edge_ids,
-                                     node_runs, attached_results, created_scenarios)
+    steps = _PlanSteps(user_key, project_id, loop_ctx, spec, landing)
+    left = steps.play(peer)
+    if not steps.landed:
+        gone = steps.named(left.gone if left is not None else ())
+        return "refused", agent_text.message("change.plan-target-removed", gone=gone), None
+    agents_changes.landed(loop_ctx, steps.change, steps.canvas(), steps=steps.landed)
+    text, lines = _plan_landed_lines(steps.spec, steps.created, steps.edges, steps.removed_nodes, steps.removed_edges,
+                                     steps.node_runs, steps.attached, steps.scenarios)
+    if left is not None:
+        what, gone = steps.left_undone(), steps.named(left.gone)
+        text = agent_text.message("change.plan-stopped", gone=gone, left=what) + " " + text
+        # Before the Topology verdict, which the card ends with.
+        lines.insert(len(lines) - 1, f"Left undone: {what}, since {gone} was removed")
     return (agents_changes.LANDED, agent_text.message("change.plan-landed", result=text),
-            agents_changes.card(part, change, lines))
+            agents_changes.card(part, steps.change, lines))
+
+
+class _Gone(Exception):
+    """The dataflow itself went while a plan landed: no later step lands."""
+
+
+class _PlanSteps:
+    """A plan, landed a step at a time (:func:`_land_dataflow_plan`): each
+    step's write, and what landed so far, which every write keeps on the
+    planner's attachment as the change and the session it holds."""
+
+    def __init__(self, user_key: str, project_id: str, loop_ctx: dict, spec: dict, landing: dict):
+        self.user_key, self.project_id, self.loop_ctx, self.landing = user_key, project_id, loop_ctx, landing
+        self.plan = landing["plan"]
+        self.plan_id = landing["proposalId"]
+        self.attachment_id = loop_ctx.get("attachment_id")
+        self.remove_node_set = set(self.plan.get("removeNodes", []))
+        planner = attachments.get_attachment(spec, self.attachment_id) or {}
+        # What the planner held before: the Undo of this plan puts both back.
+        self.session_before = copy.deepcopy(planner.get("builderSession") or {})
+        plan_before = copy.deepcopy(planner.get("planProposal"))
+        self.starters = _content_starters(user_key, project_id, self.plan.get("nodes", []))
+        self.plan_agents = _plan_node_agents(
+            user_key, spec, agents_spec_reads._definition(user_key, planner.get("coord", "")),
+        )
+        self.templates = _roster_templates(user_key, project_id)
+        # The plan's nodes, laid out on the dataflow its removals leave.
+        self.before = copy.deepcopy((spec.get("dataflow") or {}).get("nodes") or [])
+        after = copy.deepcopy(spec)
+        flow = after.setdefault("dataflow", {})
+        _remove_plan_victims(after, flow.setdefault("nodes", []), flow.setdefault("edges", []),
+                             self.remove_node_set, self.plan.get("removeEdges", []))
+        self.planned, self.ref_to_id = _planned_nodes(
+            flow["nodes"], self.plan, landing, self.starters,
+            declared=_declared_widgets(user_key, project_id, self.plan.get("nodes", [])),
+        )
+        planned_ids = {created["id"] for _ref, created in self.planned}
+        #: The refs whose node is on the canvas: those a row applied, then each as it lands.
+        self.landed_refs = {ref: node_id for ref, node_id in self.ref_to_id.items() if node_id not in planned_ids}
+        #: The planned nodes whose template's starter is their code, which the last step gives them.
+        self.starting = [ref for ref, _created in self.planned if ref in self.starters]
+        self.change = agents_changes.new_change(
+            "dataflow.plan.write", landing["summary"], planId=self.plan_id, nodeIds=[], edgeIds=[],
+            removedNodeIds=[], removedEdgeIds=[], scenarioIds=[], session=self.session_before,
+            **({"planBefore": plan_before} if isinstance(plan_before, dict) else {}),
+        )
+        self.point = {"kind": history.AGENT, "what": "", "change": self.change["changeId"]}
+        # What landed so far.
+        self.created: list[dict] = []
+        self.attached: list[dict] = []
+        self.edges: list[dict] = []
+        self.scenarios: list[dict] = []
+        self.removed_nodes: set = set()
+        self.removed_edges: set = set()
+        self.started: set = set()
+        #: The connections the last step drew whose end went just before its
+        #: write, which the write took out (``dataflow_docs.Written.dropped``).
+        self.dropped: list[dict] = []
+        self.node_runs: dict = {}
+        self.spec = spec
+        #: Each step that landed, as the room's tabs saw it (``changes.landed``).
+        self.landed: list[dict] = []
+
+    # ── the steps ──────────────────────────────────────────────────────────
+
+    def play(self, peer):
+        """Play the plan's steps in order, as *peer*'s actions. What left the
+        last one undone (``agent_peers.Acted``), or None when every step
+        landed."""
+        steps = []
+        if self.remove_node_set or self.plan.get("removeEdges"):
+            steps.append(agent_peers.Action(what=f"plan {self.plan_id}: removals", write=self._removals))
+        for ref, created in self.planned:
+            title = next((n.get("title") for n in self.plan.get("nodes", []) if n["ref"] == ref), None)
+            steps.append(agent_peers.Action(
+                what=f"plan {self.plan_id}: node {ref}", write=self._node(ref, created),
+                drag=agents_room.drag_in(created["type"], created, title),
+                did=(("added", "node", created["id"]),),
+            ))
+        if self.plan.get("edges") or self.plan.get("scenarios") or self.starting:
+            steps.append(agent_peers.Action(
+                what=f"plan {self.plan_id}: connections", write=self._connections, targets=self._joined(),
+            ))
+        for action in steps:
+            try:
+                acted = agents_room.act(peer, action, user_key=self.user_key, project_id=self.project_id)
+            except _Gone:
+                return agent_peers.Acted(False, left=action.what)
+            if not acted.landed:
+                return acted
+            mutation, did = acted.result
+            if peer is not None and did:
+                peer.note(did)
+            self.landed.append({"canvas": mutation, "dragged": agents_room.dragged(peer, acted)})
+            if self.dropped:
+                ends = [edge[end] for edge in self.dropped for end in ("source", "target")]
+                gone = agent_peers.gone(self.user_key, self.project_id, tuple(dict.fromkeys(ends)))
+                return agent_peers.Acted(False, left=action.what, gone=gone)
+        return None
+
+    def _joined(self) -> tuple:
+        """The nodes the last step joins, which must all still be there: each
+        connection's ends, each scenario's nodes, each node it gives its
+        starter."""
+        ends = [self.ref_to_id.get(edge[end], edge[end]) for edge in self.plan.get("edges", []) for end in ("from", "to")]
+        ends += [self.ref_to_id.get(m, m) for s in self.plan.get("scenarios") or [] for m in s.get("nodes") or []]
+        ends += [self.ref_to_id[ref] for ref in self.starting]
+        return tuple(dict.fromkeys(ends))
+
+    def _live(self):
+        spec = dataflow_docs.live(self.user_key, self.project_id)
+        if spec is None:
+            raise _Gone()
+        return spec
+
+    def _write(self, spec, **kwargs):
+        actor = agents_changes.actor(self.user_key, spec, self.loop_ctx, "plan")
+        written = dataflow_docs.write(self.user_key, self.project_id, spec, actor, point=self.point, **kwargs)
+        self.spec = spec
+        return written
+
+    def _removals(self):
+        spec = self._live()
+        flow = spec.setdefault("dataflow", {})
+        nodes = flow.setdefault("nodes", [])
+        present = {n.get("id") for n in nodes if isinstance(n, dict)}
+        removed_edges, pruned = _remove_plan_victims(spec, nodes, flow.setdefault("edges", []),
+                                                     self.remove_node_set, self.plan.get("removeEdges", []))
+        self.removed_nodes, self.removed_edges = set(self.remove_node_set), set(removed_edges)
+        self._keep(spec)
+        self._write(spec)
+        sessions.delete_sessions_of(self.user_key, self.project_id, pruned)
+        did = [("removed", "node", n) for n in sorted(self.remove_node_set & present)]
+        did += [("removed", "connection", e) for e in sorted(removed_edges)]
+        return self._step({"nodes": [], "edges": [], "removedNodeIds": sorted(self.remove_node_set),
+                           "removedEdgeIds": sorted(removed_edges)}), did
+
+    def _node(self, ref: str, created: dict):
+        def write():
+            spec = self._live()
+            node = copy.deepcopy(created)
+            if ref in self.starters:
+                node["content"] = ""  # its starter lands with the connections
+            spec.setdefault("dataflow", {}).setdefault("nodes", []).append(node)
+            self.attached.append(_attach_plan_node_agents(
+                self.user_key, spec, node["id"], node["type"], agents=self.plan_agents, templates=self.templates,
+            ))
+            self.created.append(copy.deepcopy(node))
+            self.landed_refs[ref] = node["id"]
+            self._keep(spec)
+            self._write(spec)
+            return self._step({"nodes": [node], "edges": []}), ()
+        return write
+
+    def _connections(self):
+        spec = self._live()
+        flow = spec.setdefault("dataflow", {})
+        nodes, edges = flow.setdefault("nodes", []), flow.setdefault("edges", [])
+        by_id = {n.get("id"): n for n in nodes if isinstance(n, dict)}
+        started = {}
+        for ref in self.starting:
+            node_id = self.landed_refs.get(ref)
+            if node_id in by_id:
+                by_id[node_id]["content"] = self.starters[ref]["content"]
+                started[node_id] = self.starters[ref]["content"]
+        self.edges = _create_plan_edges(
+            self.user_key, self.project_id, self.plan_id, spec, self.landing, self.loop_ctx.get("session_id"),
+            self.plan, nodes, edges, self.ref_to_id, by_id,
+        )
+        self.scenarios = plan_scenarios.apply_scenarios(spec, self.landing, self.ref_to_id, final=True)
+        for node in self.created:
+            if node["id"] in started:
+                node["content"] = started[node["id"]]
+        self.started |= set(started)
+        self._keep(spec)
+
+        def dropped(edge_ids: tuple) -> None:
+            # An end went after the check: those connections did not land.
+            self.dropped = [e for e in self.edges if str(e.get("id")) in edge_ids]
+            self.edges = [e for e in self.edges if str(e.get("id")) not in edge_ids]
+            self._keep(spec)
+
+        self._write(spec, on_dropped=dropped)
+        did = [("added", "connection", str(e["id"])) for e in self.edges]
+        did += [("added", "scenario", s["id"]) for s in self.scenarios if isinstance(s, dict) and s.get("id")]
+        step = self._step({"nodes": [], "edges": copy.deepcopy(self.edges),
+                           **({"scenarios": copy.deepcopy(self.scenarios)} if self.scenarios else {})})
+        filled = [{"kind": "node-content-applied", "nodeId": node_id, "content": content}
+                  for node_id, content in started.items()]
+        return ([step, *filled] if filled else step), did
+
+    def _step(self, mutation: dict) -> dict:
+        """One step's canvas mutation, for a canvas no doc binds, which takes
+        each step in turn."""
+        return {"kind": "graph-created", "planId": self.plan_id, "step": len(self.landed), **mutation}
+
+    # ── what landed ────────────────────────────────────────────────────────
+
+    def _keep(self, spec) -> None:
+        """Keep, in *spec*, the plan as far as it landed: its change on the
+        planner's attachment, and the planner's session and plan, which
+        Build & validate and Solve work on."""
+        change = self.change
+        change["nodeIds"] = [n["id"] for n in self.created]
+        change["edgeIds"] = [str(e["id"]) for e in self.edges]
+        change["removedNodeIds"] = sorted(self.removed_nodes)
+        change["removedEdgeIds"] = sorted(self.removed_edges)
+        change["scenarioIds"] = [s.get("id") for s in self.scenarios if isinstance(s, dict) and s.get("id")]
+        agents_changes.keep(spec, self.attachment_id, change)
+        record = attachments.get_attachment(spec, self.attachment_id)
+        if record is None:
+            return
+        record["builderSession"] = copy.deepcopy(self.session_before)
+        # A planned node holds its starter once the last step gave it; a row's holds it already.
+        started = {ref: s for ref, s in self.starters.items()
+                   if ref not in self.starting or self.landed_refs.get(ref) in self.started}
+        record, self.node_runs = _plan_apply_session(
+            spec, self.attachment_id, self.plan_id, self.created, self.remove_node_set, self.landed_refs, started,
+        )
+        if record is not None:
+            # Build & validate and the rows' Solve and Run work on this plan.
+            record["builderSession"]["planProposalId"] = self.plan_id
+            record["planProposal"] = {**self.landing, "status": "applied", "appliedNodeIds": dict(self.landed_refs)}
+
+    def canvas(self) -> dict:
+        """The plan as it landed, as one canvas mutation, for a canvas the
+        dataflow's doc binds, which has it already and frames it."""
+        return {
+            "kind": "graph-created", "planId": self.plan_id, "nodes": copy.deepcopy(self.created),
+            "edges": copy.deepcopy(self.edges), "removedNodeIds": sorted(self.removed_nodes),
+            "removedEdgeIds": sorted(self.removed_edges),
+            **({"scenarios": copy.deepcopy(self.scenarios)} if self.scenarios else {}),
+        }
+
+    def named(self, node_ids) -> str:
+        """The nodes *node_ids* by name: a planned node's title, else an
+        existing node's goal or title, else its id."""
+        titles = {self.ref_to_id.get(n["ref"]): n.get("title") for n in self.plan.get("nodes", [])}
+        nodes = {n.get("id"): n for n in self.before if isinstance(n, dict)}
+        names = [repr(titles.get(i) or (nodes.get(i) or {}).get("goal") or (nodes.get(i) or {}).get("title") or i)
+                 for i in node_ids or ()]
+        return ", ".join(names) or "a node"
+
+    def left_undone(self) -> str:
+        """What the last step would have landed, in a few words: only the
+        connections its write took out, when it landed the rest."""
+        if self.dropped:
+            return count_label(len(self.dropped), "connection")
+        parts = []
+        if self.plan.get("edges"):
+            parts.append(count_label(len(self.plan["edges"]), "connection"))
+        if self.plan.get("scenarios"):
+            parts.append(count_label(len(self.plan["scenarios"]), "scenario"))
+        if self.starting:
+            parts.append(f"the starter of {count_label(len(self.starting), 'node')}")
+        return " and ".join([", ".join(parts[:-1]), parts[-1]] if len(parts) > 1 else parts)
 
 
 def _normal(value):
@@ -549,29 +783,34 @@ def _outside_the_plan(dataflow: dict, change: dict) -> dict:
 
 def _undo_plan(user_key: str, project_id: str, attachment_id: str, change: dict, by: dict) -> list[dict]:
     """Undo a plan an agent landed: put back the version the dataflow had
-    before it (``history.put_back``), for every tab, so what it removed comes
+    before its first write, the parent of the first point naming the
+    change (``history.put_back``), for every tab, so what it removed comes
     back with its connections and what it added goes. Refused, with nothing
-    changed, unless the dataflow outside the plan's own nodes is still what
-    the plan left: a put-back would erase what a person did after. The
-    planner's session goes back to what it was."""
+    changed, when someone changed the dataflow between its writes, or when
+    the dataflow outside the plan's own nodes is no longer what the plan
+    left: a put-back would erase what a person did. The planner's session
+    goes back to what it was."""
     from utk_curio.backend.app.projects import storage as projects_storage
 
+    change_id = change["changeId"]
     with projects_storage.spec_write_lock(user_key, project_id):
         points = history.points(user_key, project_id)
-        index = next((i for i, p in enumerate(points) if p.get("change") == change["changeId"]), None)
-        if index is None or not points[index].get("parent"):
+        steps = [i for i, p in enumerate(points) if p.get("change") == change_id]
+        if not steps or not points[steps[0]].get("parent"):
             raise AgentServiceError("This plan is not in the dataflow's history; nothing was undone.", 409)
-        then = history.dataflow_at(user_key, project_id, points[index]["id"])
-        before = history.dataflow_at(user_key, project_id, points[index]["parent"])
+        first, last = points[steps[0]], points[steps[-1]]
+        for at, after in zip(steps, steps[1:]):
+            if not history.follows(user_key, project_id, points[at], points[after]):
+                raise _changed_after(points[at + 1:], change_id)
+        then = history.dataflow_at(user_key, project_id, last["id"])
+        before = history.dataflow_at(user_key, project_id, first["parent"])
         now = dataflow_docs.live(user_key, project_id)
         if then is None or before is None or now is None:
             raise AgentServiceError("This plan's version can no longer be rebuilt; nothing was undone.", 409)
         if _outside_the_plan(then, change) != _outside_the_plan(now.get("dataflow") or {}, change):
-            later = next((p.get("by") for p in points[index + 1:] if (p.get("by") or {}).get("name")), None)
-            name = (later or {}).get("name") or "Someone"
-            raise AgentServiceError(f"{name} changed this dataflow after; nothing was undone.", 409)
+            raise _changed_after(points[steps[-1] + 1:], change_id)
         try:
-            history.put_back(user_key, project_id, points[index]["parent"], by)
+            history.put_back(user_key, project_id, first["parent"], by)
         except history.HistoryError as exc:
             raise AgentServiceError(str(exc), exc.status) from exc
     spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
@@ -596,6 +835,16 @@ def _undo_plan(user_key: str, project_id: str, attachment_id: str, change: dict,
         "removedNodeIds": list(change.get("nodeIds") or []),
         "removedEdgeIds": list(change.get("edgeIds") or []),
     }]
+
+
+def _changed_after(points: list, change_id: str) -> AgentServiceError:
+    """The refusal of a plan's Undo when someone changed the dataflow after
+    its first write, named after the first of *points* by a person or
+    another agent."""
+    later = next((p.get("by") for p in points if p.get("change") != change_id and (p.get("by") or {}).get("name")),
+                 None)
+    name = (later or {}).get("name") or "Someone"
+    return AgentServiceError(f"{name} changed this dataflow after; nothing was undone.", 409)
 
 
 def _plan_revision_errors(plan: dict, existing_nodes: dict, existing_edges: list) -> list[str]:
@@ -1139,17 +1388,15 @@ def _remove_plan_victims(spec: dict, nodes: list, edges: list, remove_node_set: 
     return removed_edge_ids, pruned
 
 
-def _create_plan_nodes(user_key, spec: dict, nodes: list, plan: dict, proposal: dict,
-                       starters: dict, *, agents: list[dict] | None = None,
-                       templates: dict | None = None,
-                       declared: dict | None = None) -> tuple[list, list, dict]:
-    """The plan's new nodes at the mint-time layout (+ review-stage overlays). A ref a row applied
-    is a node of the dataflow already: it is not created again, and its id seeds the edge
-    resolution, as a connection already there is not drawn again (``_create_plan_edges``). Each
-    created node gets its agents (*agents*, ``_plan_node_agents``) in THIS apply's single spec
-    write (dev/126). A ref in *starters* starts with its template's starter and widgets
-    (``_content_starters``); every other ref with its template's declared widgets (*declared*,
-    ``_declared_widgets``)."""
+def _planned_nodes(nodes: list, plan: dict, proposal: dict, starters: dict, *,
+                   declared: dict | None = None) -> tuple[list[tuple[str, dict]], dict]:
+    """The plan's new nodes, each as it is once the plan landed, in plan order with its ref, at
+    the mint-time layout (+ review-stage overlays), laid out beside *nodes*, the dataflow its
+    removals leave, which it appends them to; nothing is written. A ref a row applied is a node
+    of the dataflow already: it is not created again, and its id seeds the edge resolution, as a
+    connection already there is not drawn again (``_create_plan_edges``). A ref in *starters*
+    holds its template's starter and widgets (``_content_starters``); every other ref its
+    template's declared widgets (*declared*, ``_declared_widgets``). Each plan ref's node id."""
     right = _right_edge(nodes)
     ys = [n.get("y") for n in nodes if isinstance(n, dict) and isinstance(n.get("y"), (int, float))]
     base_x = (right + _NODE_H_GUTTER) if right is not None else 80.0
@@ -1163,8 +1410,7 @@ def _create_plan_nodes(user_key, spec: dict, nodes: list, plan: dict, proposal: 
     edited_goals = proposal.get("editedGoals") or {}
     ref_to_id: dict[str, str] = dict(proposal.get("appliedNodeIds") or {})
     in_dataflow = {n.get("id") for n in nodes if isinstance(n, dict) and n.get("id")}
-    created_nodes: list[dict] = []
-    attached_results: list[dict] = []
+    planned: list[tuple[str, dict]] = []
     for plan_node in plan.get("nodes", []):
         depth = depths.get(plan_node["ref"], 0)
         row = rows.get(depth, 0)
@@ -1192,16 +1438,8 @@ def _create_plan_nodes(user_key, spec: dict, nodes: list, plan: dict, proposal: 
         if metadata:
             created["metadata"] = metadata
         nodes.append(created)
-        created_nodes.append(created)
-        # dev/126: the whole-plan apply gives every created node its agents,
-        # in THIS apply's single spec write — the per-node path has done so
-        # since dev/71 and the two must not disagree.
-        attached_results.append(
-            _attach_plan_node_agents(
-                user_key, spec, node_id, plan_node["nodeType"], agents=agents, templates=templates,
-            )
-        )
-    return created_nodes, attached_results, ref_to_id
+        planned.append((plan_node["ref"], created))
+    return planned, ref_to_id
 
 
 def _create_plan_edges(user_key, project_id, proposal_id, spec: dict, proposal: dict, session_id, plan: dict,

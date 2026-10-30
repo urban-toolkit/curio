@@ -17,7 +17,10 @@ FIFO. Each call pops one reply; the queue is per-process and cleared by
 :func:`reset`. :func:`route_by_intent` adds replies keyed by what a delegated
 call asks for: Solve requests one node's content per call, in wave order and
 interleaved with other delegations, so a position in the queue cannot know
-which node it answers, but the call's ``intent`` can.
+which node it answers, but the call's ``intent`` can. Replies pushed for an
+attachment answer only the calls of that attachment's runs (each run says
+whose it is, :func:`answering`), first, before the shared queue: two agents
+working at once each take their own, never each other's.
 
 Out-of-process e2e reaches the same FIFO over HTTP, through
 ``/api/testing/agent-script`` (see ``app/testing/routes.py``). A previous
@@ -51,6 +54,7 @@ import itertools
 import json
 import threading
 from collections import deque
+from contextlib import contextmanager
 
 #: Returned when neither the queue nor the script has an answer. Deliberately
 #: inert prose: it carries no ```curio.v1``` block, so it parses as a plain
@@ -68,6 +72,11 @@ MAX_CAPTURED = 64
 
 _lock = threading.Lock()
 _queue: deque = deque()
+#: Replies pushed for one attachment, by its id: its runs' calls take them
+#: before the shared queue's.
+_by_attachment: dict[str, deque] = {}
+#: The attachments whose runs this thread is in, innermost last (:func:`answering`).
+_answering = threading.local()
 _captured: deque = deque(maxlen=MAX_CAPTURED)
 #: Which LLM configuration each call answered with: ``{configId, model}``, in
 #: the same order as ``_captured``.
@@ -107,17 +116,42 @@ def enabled() -> bool:
     return _is_testing()
 
 
-def push_reply(reply: str | dict, *, usage: dict | None = None) -> None:
+def push_reply(reply: str | dict, *, usage: dict | None = None, attachment: str | None = None) -> None:
     """Queue one reply for the next completion call: its text, or an entry
-    (see the module docstring)."""
+    (see the module docstring). With *attachment*, only a call of that
+    attachment's runs takes it."""
     with _lock:
-        _queue.append((reply, usage))
+        queue = _by_attachment.setdefault(str(attachment), deque()) if attachment else _queue
+        queue.append((reply, usage))
 
 
-def push_replies(*replies: str | dict) -> None:
-    """Queue several replies, consumed in order."""
+def push_replies(*replies: str | dict, attachment: str | None = None) -> None:
+    """Queue several replies, consumed in order, for *attachment*'s runs when
+    it is given."""
     for reply in replies:
-        push_reply(reply)
+        push_reply(reply, attachment=attachment)
+
+
+@contextmanager
+def answering(attachment_id):
+    """The block is a run of the attachment *attachment_id*: the model's calls
+    this thread makes in it take the replies pushed for that attachment
+    first. Nothing outside a test run."""
+    if not attachment_id or not enabled():
+        yield
+        return
+    stack = _answering.__dict__.setdefault("attachments", [])
+    stack.append(str(attachment_id))
+    try:
+        yield
+    finally:
+        stack.pop()
+
+
+def _answering_for() -> str | None:
+    """The attachment whose run this thread's call is in, if any."""
+    stack = getattr(_answering, "attachments", None)
+    return stack[-1] if stack else None
 
 
 def route_by_intent(routes: dict) -> None:
@@ -170,6 +204,7 @@ def reset() -> None:
     """Drop anything still queued and everything captured. Call between tests."""
     with _lock:
         _queue.clear()
+        _by_attachment.clear()
         _captured.clear()
         _calls.clear()
         _offered.clear()
@@ -250,9 +285,10 @@ def last_messages() -> list | None:
 
 
 def pending() -> int:
-    """How many scripted replies are still queued."""
+    """How many scripted replies are still queued, for any attachment's runs
+    or none's."""
     with _lock:
-        return len(_queue)
+        return len(_queue) + sum(len(queue) for queue in _by_attachment.values())
 
 
 def run_scripted_completion(messages: list, usage_out: dict | None = None, config=None) -> str:
@@ -271,7 +307,9 @@ def run_scripted_turn(
     """Return the next scripted reply as a turn and record its token usage.
 
     ``messages`` does not choose the reply - the queue does, so a test's
-    scripting stays independent of prompt wording. It is recorded, though, so a
+    scripting stays independent of prompt wording: the queue of the attachment
+    whose run makes the call (:func:`answering`) while it holds a reply, else
+    the shared one. It is recorded, though, so a
     test can assert what actually reached the model (see :func:`captured`), as
     are the tools the call offered and the reply schema it carried
     (:func:`offered`). A reply to a call with a reply schema is scripted as the
@@ -302,7 +340,9 @@ def run_scripted_turn(
             "replySchema": (reply_schema or {}).get("name"),
         })
         routed = _routed_reply(messages)
-        queued = None if routed is not None else (_queue.popleft() if _queue else None)
+        own = _by_attachment.get(_answering_for() or "")
+        queue = own if own else _queue
+        queued = None if routed is not None else (queue.popleft() if queue else None)
     if routed is not None:
         reply, usage = routed, None
     else:

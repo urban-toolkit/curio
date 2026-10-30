@@ -7,7 +7,8 @@
  * The drags are drawn on the pan-and-zoom plane the pointers are drawn on, in a
  * layer of their own over the tool rail and the catalog drawers, since a drag
  * starts in them. Mounted by `CanvasCursors`, a child of React Flow, which it
- * reads the view and the nodes from.
+ * reads the view and the nodes from. On a canvas no doc binds, the drags are
+ * those a run's change events play (`changeDragStates`).
  */
 import React, { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
@@ -17,10 +18,12 @@ import type { Awareness } from "y-protocols/awareness";
 import {
     AGENT_DRAGS_ATTR,
     DragTracker,
+    changeDragStates,
     dragPoint,
     dragStart,
     motionEndsAt,
     sameDrags,
+    subscribeChangeDrags,
     type DragGhost,
     type PlayedDrag,
     type StartPage,
@@ -37,16 +40,13 @@ function prefersReducedMotion(): boolean {
         && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-/** The drags others in *awareness* are playing, each with its start in this
- *  tab, read from the page when it arrives. */
+/** The drags others in *awareness* are playing, and those runs' change events
+ *  play on a canvas no doc binds, each with its start in this tab, read from
+ *  the page when it arrives. */
 function usePlayedDrags(awareness: Awareness | null): PlayedDrag[] {
     const store = useStoreApi();
     const [drags, setDrags] = useState<PlayedDrag[]>(NONE);
     useEffect(() => {
-        if (!awareness) {
-            setDrags(NONE);
-            return;
-        }
         const page: StartPage = {
             document,
             nodeBox: (id) => {
@@ -58,13 +58,15 @@ function usePlayedDrags(awareness: Awareness | null): PlayedDrag[] {
         };
         const tracker = new DragTracker((carrying) => dragStart(carrying, page), prefersReducedMotion);
         const read = () => {
-            const next = tracker.read(othersOf(awareness), Date.now());
+            const next = tracker.read([...othersOf(awareness), ...changeDragStates()], Date.now());
             setDrags((prev) => (sameDrags(prev, next) ? prev : next.length ? next : NONE));
         };
         read();
-        awareness.on("change", read);
+        awareness?.on("change", read);
+        const unsubscribe = subscribeChangeDrags(read);
         return () => {
-            awareness.off("change", read);
+            awareness?.off("change", read);
+            unsubscribe();
         };
     }, [awareness, store]);
     return drags;

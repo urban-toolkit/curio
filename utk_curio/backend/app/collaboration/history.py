@@ -1116,6 +1116,26 @@ def _replay(folder: Path, doc_id: str, day: str, offsets: list[int]) -> dict[int
     return out
 
 
+def follows(user_key: str, project_id: str, earlier: dict, later: dict) -> bool:
+    """Whether nothing reached the log between the points *earlier* and
+    *later*: *later*'s records start where *earlier*'s end, in the same doc;
+    on a later day's segment, as its first records, while *earlier*'s segment
+    holds nothing after it. A change made of several writes (an agent's plan,
+    a step at a time) is one only while each of its points follows the one
+    before."""
+    if "doc" not in earlier or "doc" not in later or earlier["doc"] != later["doc"]:
+        return False
+    if earlier["day"] == later["day"]:
+        return later["start"] == earlier["end"]
+    if later["day"] < earlier["day"] or later["start"] != 0:
+        return False
+    try:
+        _checkpoint, records = dataflow_docs.segment_in(_folder(user_key, project_id), earlier["doc"], earlier["day"])
+    except (OSError, ValueError):
+        return False
+    return (records[-1][0] if records else 0) == earlier["end"]
+
+
 def dataflow_at(user_key: str, project_id: str, point_id: str) -> Optional[dict]:
     """The dataflow as it stood at the point *point_id*, the part the doc
     holds; ``None`` for no such point, or one whose log cannot be read."""
@@ -1164,17 +1184,28 @@ def _opened(user_key: str, project_id: str) -> None:
 
 def versions(user_key: str, project_id: str) -> dict:
     """The dataflow's versions, in the order they were made, each with its
-    graph (``preview``), and the one on the canvas (``head``)."""
+    graph (``preview``), and the one on the canvas (``head``). A change made
+    of several writes, each a point naming it (an agent's plan, landed a step
+    at a time), is one version while no other version came between its
+    points: its last point, made from the version before its first."""
     _opened(user_key, project_id)
     folder = _folder(user_key, project_id)
     points_ = _read_points(folder)
     listed = [point for point in points_ if _listed(point) and "doc" in point]
     flows = _dataflows_at(folder, [(point["doc"], point["day"], point["end"]) for point in listed])
     out = []
+    last_change = None
     for point in listed:
         row = {name: point[name] for name in ("id", "parent", "at", "by", "kind", "what", "restores") if name in point}
         row["preview"] = _preview(flows.get((point["doc"], point["day"], point["end"])))
+        change = point.get("change")
+        if change and change == last_change and out and point.get("parent") == out[-1]["id"]:
+            first = out.pop()
+            row.pop("parent", None)
+            if "parent" in first:
+                row["parent"] = first["parent"]
         out.append(row)
+        last_change = change
     return {"versions": out, "head": head_of(points_)}
 
 
