@@ -1,5 +1,6 @@
 """Flask blueprint for dataflow runs on the server. Every route requires sign-in,
-and a user sees only the runs they started."""
+and a user sees only the runs they started: a dataflow's owner and the editors
+the owner invited each run it, and list, follow and cancel their own runs."""
 from __future__ import annotations
 
 import json
@@ -94,7 +95,7 @@ def get_run(run_id: str):
         run = service.get_run(g.user, run_id)
     except RunError as exc:
         return _error(exc)
-    current = service.current_code_hashes(g.user, run.project_id)
+    current = service.current_code_hashes(run.project_id)
     return jsonify(service.run_payload(run, steps=True, current=current))
 
 
