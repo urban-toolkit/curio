@@ -10,7 +10,7 @@
  * stayed "Missing node package" on every other canvas until a reload. Now the
  * tab reads its registry again whenever the lockfile changes, and only then.
  */
-import { renderHook, act } from "@testing-library/react";
+import { renderHook, act, waitFor } from "@testing-library/react";
 
 jest.mock("reactflow", () => ({
   useReactFlow: () => ({ getNodes: () => [], getEdges: () => [] }),
@@ -73,14 +73,18 @@ beforeEach(() => {
   jest.clearAllMocks();
 });
 
-test("a lockfile the room changes refreshes the registry, and a change that leaves it alone does not", () => {
+test("a lockfile the room changes refreshes the registry, and a change that leaves it alone does not", async () => {
   const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
 
-  act(() => result.current.takeDataflowFields({ name: "Bus plan" }, []));
+  await act(async () => {
+    result.current.takeDataflowFields({ name: "Bus plan" }, []);
+    // Long enough for a registry the change would load to be asked.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  });
   expect(refreshPackageRegistry).not.toHaveBeenCalled();
 
   act(() => result.current.takeDataflowFields({ packages: ["curio.builtin@1", "test.bus-counts@1"] }, []));
 
   expect(setCurrentProjectPackages).toHaveBeenCalledWith(["curio.builtin@1", "test.bus-counts@1"]);
-  expect(refreshPackageRegistry).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(refreshPackageRegistry).toHaveBeenCalledTimes(1));
 });
