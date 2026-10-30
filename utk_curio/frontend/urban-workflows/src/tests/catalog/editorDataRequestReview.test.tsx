@@ -101,7 +101,8 @@ beforeEach(() => {
   sent = [];
   mockShowToast.mockClear();
   global.fetch = jest.fn(async (url: RequestInfo | URL, opts: RequestInit = {}) => {
-    const path = String(url).replace(/^https?:\/\/[^/]+/, "");
+    // The route, whatever backend address the page was built with.
+    const path = String(url).replace(/^.*?(?=\/api\/)/, "");
     const method = (opts.method ?? "GET").toUpperCase();
     sent.push({ method, path });
     return { ok: true, status: 200, json: async () => answer(method, path) } as unknown as Response;
