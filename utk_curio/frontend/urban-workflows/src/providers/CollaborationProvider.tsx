@@ -55,6 +55,7 @@ import { roleIn, writesDoc, type RoomRole } from "./collab/participants";
 import { DataflowDocProvider, KEPT_WAIT_MS } from "./collab/docProvider";
 import { CONNECTION_DROPPED_EVENT, DataflowDocContext, type DocBinding } from "./collab/docContext";
 import { HISTORY_CHANGED_EVENT } from "./history/serverHistory";
+import { DATASET_REQUESTS_CHANGED_EVENT } from "../services/datasetCatalog/datasetRequests";
 import { remoteCursorStyle } from "./collab/presence";
 import { useAgentsWriting } from "./collab/agentHolds";
 import { AGENT_TURN_EVENT } from "./agents/turnAsks";
@@ -186,8 +187,9 @@ export interface CollabContextValue {
      * Subscribe to incoming remote events. Returns an unsubscribe fn.
      * Event names mirror the backend's outgoing events: the room's
      * (``events.py``, ``roles.py``), ``connection_dropped``
-     * (``dataflow_docs.py``), ``history_changed`` (``history.py``) and
-     * ``agent_turn``, each event of an agent's chat turn
+     * (``dataflow_docs.py``), ``history_changed`` (``history.py``),
+     * ``dataset_requests_changed`` (``datasets/application/editor_requests.py``)
+     * and ``agent_turn``, each event of an agent's chat turn
      * (``turns/turn_jobs.py``), which only the owner's and the editors'
      * tabs are told.
      */
@@ -227,6 +229,7 @@ const REMOTE_EVENTS = [
     "node_unlocked",
     CONNECTION_DROPPED_EVENT,
     HISTORY_CHANGED_EVENT,
+    DATASET_REQUESTS_CHANGED_EVENT,
     AGENT_TURN_EVENT,
 ] as const;
 

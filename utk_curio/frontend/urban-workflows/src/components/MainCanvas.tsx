@@ -58,6 +58,7 @@ import {
     type DatasetDragPayload,
 } from "../services/datasetCatalog";
 import { hasFileDrag, useDataFileImport } from "./datasets/useDataFileImport";
+import { useAskTheOwner } from "./datasets/useAskTheOwner";
 import {
     hasModelDrag,
     packageCardNodeOptions,
@@ -471,7 +472,7 @@ export function MainCanvas() {
     // template's starter as its code. Like a value set in that widget, it runs
     // when automatic runs are on.
     const { getStarters } = useStarterContext();
-    const createLoaderFor = useCallback((dataset: DatasetDragPayload, position: XYPosition) => {
+    const createLoaderFor = useCallback((dataset: DatasetDragPayload, position: XYPosition): string | undefined => {
         const descriptor = tryGetNodeDescriptor(NodeType.DATA_LOADING);
         const options =
             buildDatasetWidgetNodeOptions(dataset, position, descriptor?.widgets, packageStarterCode(descriptor, getStarters))
@@ -486,14 +487,22 @@ export function MainCanvas() {
         markDirty();
         // A node still waiting for its starter has nothing to run yet.
         if (created && options.code !== undefined) requestAutoRun?.([created.id]);
+        return created?.id;
     }, [getStarters, revealCreated, createCodeNode, markDirty, showToast, openDatasetDetails, requestAutoRun]);
 
+    // On the owner's dataflow, an invited editor's card of his own Data
+    // Catalog asks her to add it, as his file drop and his Add to project do
+    // (useAskTheOwner): a dataset she lists, or one of the shared catalog,
+    // asks nothing.
+    const askTheOwner = useAskTheOwner();
     const handleCanvasDrop = useCallback((event: React.DragEvent) => {
         event.preventDefault();
         event.stopPropagation();
         const dataset = readDatasetDragPayload(event.dataTransfer);
-        if (dataset) createLoaderFor(dataset, dropPosition(event));
-    }, [dropPosition, createLoaderFor]);
+        if (!dataset) return;
+        const nodeId = createLoaderFor(dataset, dropPosition(event));
+        if (askTheOwner) void askTheOwner(dataset, { nodeId });
+    }, [dropPosition, createLoaderFor, askTheOwner]);
 
     // A file from the computer dropped on the empty canvas: imported into the
     // Data Catalog and this dataflow, then made a Data Loading node as a card is.

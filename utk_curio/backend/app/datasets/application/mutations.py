@@ -1121,7 +1121,14 @@ class CatalogMutations:
         the user's file - the opposite of what a detach-from-projects action
         promises, and the same accidental deletion the per-dataflow flow was
         criticised for.
+
+        An editor the dataflow's owner invited removes the dataset from her
+        dataflow as he deletes a node of it: his own change to the dataflow
+        (:meth:`_uninstall_as_an_editor`), which deletes nothing in any store.
         """
+        project, store_key = self.installed._dataflow_store(dataflow_id)
+        if store_key != self._paths._user_key():
+            return self._uninstall_as_an_editor(project, store_key, dataflow_id, dataset_id)
         # An OSM group id uninstalls every member layer.
         if is_layer_group_id(dataset_id):
             member_ids = self._layer_group_member_ids(dataflow_id, dataset_id)
@@ -1182,6 +1189,42 @@ class CatalogMutations:
                 self._remove_orphaned_imported_store_dir(dataset_id, dir_name)
 
         return {"datasets": next_refs}
+
+    def _uninstall_as_an_editor(
+        self, project: Any, store_key: str, dataflow_id: str, dataset_id: str,
+    ) -> dict[str, Any]:
+        """An invited editor's Remove from project: the refs to *dataset_id*,
+        each of its layers' for a layer group, leave the owner's dataflow as
+        the editor's own change to it (``dataflow_docs.person``), as a node he
+        deletes does. Nothing is deleted from the owner's store, nor from his:
+        an upload of hers no other dataflow uses stays hers, though her own
+        removal of it would delete it (:meth:`_remove_orphaned_imported_store_dir`)."""
+        from utk_curio.backend.app.collaboration import dataflow_docs
+        from utk_curio.backend.app.projects import storage as project_storage
+
+        members = (
+            set(self._layer_group_member_ids(dataflow_id, dataset_id))
+            if is_layer_group_id(dataset_id) else {dataset_id}
+        )
+        removed: list[dict[str, Any]] = []
+
+        def _drop(refs: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
+            kept = [ref for ref in refs if not ({ref.get("datasetId"), ref.get("id")} & members)]
+            if len(kept) == len(refs):
+                return None
+            removed.extend(ref for ref in refs if ref not in kept)
+            return kept
+
+        result = project_storage.mutate_dataflow_datasets(
+            store_key, project.id, _drop,
+            actor=dataflow_docs.person(self._paths._user_key(), "datasets"),
+        )
+        if result is None:
+            raise DatasetCatalogError("Dataflow not found", 404)
+        if not removed:
+            raise DatasetCatalogError("Dataset is not installed in this dataflow", 404)
+        spec, _changed = result
+        return {"datasets": (spec.get("dataflow") or {}).get("datasets") or []}
 
     def _remove_orphaned_imported_store_dir(self, dataset_id: str, dir_name: str) -> None:
         """Delete an imported dataset's user-store folder when nothing else uses it.
