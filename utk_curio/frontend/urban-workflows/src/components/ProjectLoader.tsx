@@ -330,7 +330,10 @@ export const ProjectLoader: React.FC<{
         // this is the same failure through the /dataflow/:id route.
         if (status === 404) {
           try {
-            const result = await loadSharedProject(id);
+            // A canvas of an editor the owner invited opens with the results
+            // his own runs kept, as hers opens with hers; anyone else, and a
+            // dashboard, with the saved outputs.
+            const result = await loadSharedProject(id, { lastResults: !presentation });
             applyResult(result, { trusted: false });
             openedFromLink = id;
             setLoadState("loaded");

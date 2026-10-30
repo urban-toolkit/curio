@@ -510,8 +510,8 @@ back. A dashboard shows its saved outputs.
 
 An invited editor's runs are the editor's own: their results show on the
 editor's canvas, not the owner's, and the dataflow's saved outputs stay those of
-the owner's runs. Opened afterwards, the dataflow shows the editor its saved
-outputs.
+the owner's runs. Opened afterwards, the dataflow shows the editor the last
+result he ran each code node to, for 7 days, as it shows the owner hers.
 
 Guests, anyone who watches another account's dataflow, and a Curio started with
 `--no-project` run dataflows in the browser, and a run stops when its tab

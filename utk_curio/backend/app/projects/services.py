@@ -1647,11 +1647,34 @@ def _opened_by_link(project_id: str):
     return project, ukey
 
 
-def load_shared_project(project_id: str) -> dict:
+def _editors_last_results(user, project, ukey: str, spec, readable: list) -> list:
+    """The outputs *project* opens with for *user* when the owner invited
+    them to edit it: each node their own runs kept a result for showing the
+    newest such result (``runs/reopen.py``), else *readable*, its saved
+    outputs, which everyone else opening its link gets."""
+    from utk_curio.backend.app.projects import access
+
+    if user is None or access.agents_role(user, project) != access.EDITOR:
+        return readable
+    from utk_curio.backend.app.runs.reopen import last_results as kept_results
+
+    try:
+        return kept_results(
+            project.owner, ukey, project.id, spec, readable, editor=user, editor_key=_user_dir_key(user),
+        )
+    except Exception:  # noqa: BLE001 - a dataflow always opens, with its saved outputs at least
+        logger.exception("could not find an editor's kept results of dataflow %s", project.id)
+        return readable
+
+
+def load_shared_project(project_id: str, *, user=None, last_results: bool = False) -> dict:
     """Load a project for any caller, regardless of ownership.
 
     Used by the unauthenticated ``GET /api/projects/<id>/shared`` route to
-    power link-based sharing (:func:`_opened_by_link`).
+    power link-based sharing (:func:`_opened_by_link`). With *last_results*,
+    an editor the owner invited (*user*, signed in) opens it as his canvas
+    left it: each node his runs ran showing his newest kept result
+    (:func:`_editors_last_results`); anyone else gets the saved outputs.
 
     ``missing_outputs`` are the saved outputs the manifest lists that have no
     file left to read (``_saved_outputs``): a dashboard that needs one says to
@@ -1677,11 +1700,12 @@ def load_shared_project(project_id: str) -> dict:
     )
     # Don't leak server filesystem layout to shared-link visitors.
     detail.folder_path = ""
+    shown = _editors_last_results(user, project, ukey, spec, readable) if last_results else readable
 
     return {
         "project": detail,
         "spec": spec,
-        "outputs": [_output_ref_dict(r) for r in readable],
+        "outputs": [_output_ref_dict(r) for r in shown],
         "missing_outputs": [_output_ref_dict(r) for r in missing],
     }
 

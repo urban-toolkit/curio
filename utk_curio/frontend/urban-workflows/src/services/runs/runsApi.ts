@@ -49,6 +49,8 @@ export interface Run {
   id: string;
   projectId: string;
   projectName: string | null;
+  /** Who started it: the dataflow's owner lists every account's runs of it. */
+  startedBy?: { username: string; name: string } | null;
   /** `auto`: a widget change ran the nodes it touched (#845). */
   trigger: "all" | "node" | "rerun" | "auto";
   targetNodeId: string | null;
@@ -112,9 +114,14 @@ export const runsApi = {
     });
   },
 
-  /** The dataflow's runs, newest first. */
-  async listForProject(projectId: string, { limit = 1 } = {}): Promise<Run[]> {
-    const body = await apiFetch<{ runs: Run[] }>(`/api/projects/${projectId}/runs?limit=${limit}`);
+  /**
+   * The dataflow's runs, newest first: every account's for its owner, an
+   * editor's own for him. `mine` keeps the caller's own.
+   */
+  async listForProject(projectId: string, { limit = 1, mine = false } = {}): Promise<Run[]> {
+    const body = await apiFetch<{ runs: Run[] }>(
+      `/api/projects/${projectId}/runs?limit=${limit}${mine ? "&mine=1" : ""}`,
+    );
     return body.runs ?? [];
   },
 
