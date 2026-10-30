@@ -115,10 +115,19 @@ def _pinned_repair_budget(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _fresh_agent_jobs():
+def _fresh_agent_jobs(monkeypatch):
     """dev/115: the detached-job registry is process state — every test starts
     with none and leaves none behind (a leaked live job would hit the
-    per-attachment guard or the per-user cap in an unrelated test)."""
+    per-attachment guard or the per-user cap in an unrelated test). A chat
+    turn is a job too: a test's turns are stopped and waited for before its
+    patches are undone, so none takes the next test's scripted replies."""
+    from utk_curio.backend.app.agents.application.turns import turn_jobs
+
     agent_jobs.reset_registry()
+    turn_jobs.forget_all()
     yield
+    for job in turn_jobs.stop_all():
+        if job.thread is not None:
+            job.thread.join(30)
+    turn_jobs.forget_all()
     agent_jobs.reset_registry()

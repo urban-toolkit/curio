@@ -29,6 +29,8 @@ import type {
   AgentSession,
   AgentSolveResult,
   AgentTarget,
+  AgentTurnEnvelope,
+  AgentTurnWriter,
   AgentUndoResult,
   AgentUsage,
   CatalogSettingsResponse,
@@ -315,7 +317,10 @@ export const agentsApi = {
      * with `done`/rehydration. */
     onEvent?: (name: string, payload: Record<string, unknown>) => void,
     /** Ephemeral grounded context (memo dev/44) — composed fresh per send. */
-    context?: string | null
+    context?: string | null,
+    /** The ask's id, chosen by this tab: the same ask when it is asked
+     * again, which a follow of it finds (`followTurn`). */
+    askId?: string
   ): Promise<{
     reply: string;
     executionId?: string;
@@ -327,6 +332,8 @@ export const agentsApi = {
     skills?: AgentRunSkillPins;
     /** The skills the run loaded with skill.read. */
     skillsLoaded?: string[];
+    /** Who stopped the turn, when someone did. */
+    stopped?: { by: AgentTurnWriter | null };
   }> {
     let reply: string | null = null;
     let executionId: string | undefined;
@@ -335,10 +342,11 @@ export const agentsApi = {
     let content: AgentContentPart[] | undefined;
     let skills: AgentRunSkillPins | undefined;
     let skillsLoaded: string[] | undefined;
+    let stopped: { by: AgentTurnWriter | null } | undefined;
 
     await postSseStream(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/run/stream`,
-      context ? { message, context } : { message },
+      { message, ...(context ? { context } : {}), ...(askId ? { askId } : {}) },
       (event, raw) => {
         const payload = raw as {
           text?: string;
@@ -351,6 +359,7 @@ export const agentsApi = {
           content?: AgentContentPart[];
           skills?: AgentRunSkillPins;
           skillsLoaded?: string[];
+          stopped?: { by: AgentTurnWriter | null };
         };
         if (event === "delta" && payload.text) onDelta(payload.text);
         else if (event === "execution") executionId = payload.executionId;
@@ -377,11 +386,84 @@ export const agentsApi = {
           content = payload.content ?? content;
           skills = payload.skills;
           skillsLoaded = payload.skillsLoaded;
+          stopped = payload.stopped;
         } else if (event === "error") throw new Error(payload.error || "agent run failed");
       }
     );
     if (reply === null) throw new Error("stream ended without a reply");
-    return { reply, executionId, usage, durationMs, content, skills, skillsLoaded };
+    return { reply, executionId, usage, durationMs, content, skills, skillsLoaded, ...(stopped ? { stopped } : {}) };
+  },
+
+  /**
+   * Ask one turn of an attached agent, answered at once: the turn runs on
+   * the server, now (`running`) or once the asks before it on the
+   * attachment are done (`waiting`), and goes on when this tab closes. Its
+   * events reach the tabs of the dataflow's room that edit it
+   * (`agent_turn`); a tab no room holds follows it (`followTurn`). `askId`,
+   * chosen by this tab, names the ask: asked again, it is the same ask.
+   */
+  askTurn(
+    projectId: string,
+    attachmentId: string,
+    askId: string,
+    message: string,
+    context?: string | null
+  ): Promise<{ askId: string; attachmentId: string; state: "running" | "waiting" | "ended" }> {
+    return apiFetch(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/turns`,
+      { method: "POST", body: JSON.stringify({ message, ...(context ? { context } : {}), askId }) }
+    );
+  },
+
+  /**
+   * Follow one ask: `onEnvelope` gets the ask as it stands (an envelope whose
+   * `event` is `snapshot` and whose `data` is its view), then each of its
+   * events, in the room's envelope, until it ends. 404 for an ask the
+   * attachment does not have.
+   */
+  async followTurn(
+    projectId: string,
+    attachmentId: string,
+    askId: string,
+    onEnvelope: (envelope: AgentTurnEnvelope) => void,
+    signal?: AbortSignal
+  ): Promise<void> {
+    await postSseStream(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/turns/${encodeURIComponent(askId)}/stream`,
+      undefined,
+      (event, payload) => {
+        if (event === "turn") onEnvelope(payload as unknown as AgentTurnEnvelope);
+      },
+      signal,
+      "GET"
+    );
+  },
+
+  /** Stop a running turn: whoever asked it, the owner or an editor. It stops
+   * at its next step, and its end names who stopped it. 409 when it is not
+   * running. */
+  stopTurn(
+    projectId: string,
+    attachmentId: string,
+    askId: string
+  ): Promise<{ askId: string; attachmentId: string; stopping: boolean }> {
+    return apiFetch(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/turns/${encodeURIComponent(askId)}/stop`,
+      { method: "POST" }
+    );
+  },
+
+  /** Withdraw a waiting ask, for whoever asked it alone. 409 once its turn
+   * started. */
+  withdrawTurn(
+    projectId: string,
+    attachmentId: string,
+    askId: string
+  ): Promise<{ askId: string; attachmentId: string; withdrawn: boolean }> {
+    return apiFetch(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/turns/${encodeURIComponent(askId)}`,
+      { method: "DELETE" }
+    );
   },
 
   /**
