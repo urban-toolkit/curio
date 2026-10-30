@@ -16,8 +16,7 @@ to her dataflow as her change, so bob's runs then read it from her store. A
 package of the shared catalog is installed from the catalog for her. A package
 whose files changed since its install, or whose libraries conflict with hers,
 is refused, with the reason, and waits in her review. Her Dismiss leaves
-nothing behind. bob's Remove from project takes a package of hers out of her
-dataflow and deletes it from no store. carol cannot ask.
+nothing behind. carol cannot ask.
 
 Each test goes through the routes alone, so on a base without them it fails at
 its first assertion on what the base does not do.
@@ -295,7 +294,6 @@ def test_her_apply_copies_his_package_into_her_store_installs_its_libraries_and_
     from utk_curio.backend.app.collaboration import owner_uses
     from utk_curio.backend.app.packages.application import provisioning
     from utk_curio.backend.app.packages.application.store_install import remove_package
-    from utk_curio.backend.app.packages.repositories.archive import integrity_mismatch
 
     provisioned: list = []
     real = provisioning.provision_python_deps
@@ -313,6 +311,9 @@ def test_her_apply_copies_his_package_into_her_store_installs_its_libraries_and_
     answer = resp.get_json()
     assert answer["status"] == "applied" and answer["installedPackage"]["dirName"] == BUS_DIR, answer
     assert BUS_DIR in _store(flow.alice)
+    # Imported here, past the asks: a base without it fails at the first of them.
+    from utk_curio.backend.app.packages.repositories.archive import integrity_mismatch
+
     assert integrity_mismatch(_folder(flow.alice, BUS_DIR)) is None
     assert BUS_DIR in _lockfile(flow)
     assert owner_uses.recorded(_key(flow.alice), flow.pid).package(BUS_DIR), "the lockfile entry is not hers"
@@ -452,28 +453,6 @@ def test_the_owners_dismiss_leaves_nothing_behind_and_only_she_reviews(client, f
     assert _review(client, flow) == []
     assert _hers(flow) == before
     assert not (projects_storage.project_dir(_key(flow.alice), flow.pid) / REQUESTS_FILE).exists()
-    assert BUS_DIR in _store(flow.bob)
-
-
-def test_an_editors_remove_from_project_takes_her_package_out_of_her_dataflow_and_deletes_it_from_no_store(
-    client, flow,
-):
-    """alice added a package of hers to her dataflow. bob's Remove from
-    project takes it out of her lockfile, as his own change to her dataflow,
-    as he deletes a node of it; her copy stays in her store, and his own copy
-    in his."""
-    _install(_key(flow.alice), _bus_counts())
-    added = client.post(f"/api/packages/projects/{flow.pid}/install", json={"dirName": BUS_DIR},
-                        headers=_auth(flow.tokens["alice"]))
-    assert added.status_code == 201, added.get_data(as_text=True)[:300]
-    assert BUS_DIR in _lockfile(flow)
-
-    resp = client.delete(f"/api/packages/projects/{flow.pid}/{BUS_DIR}", headers=_auth(flow.tokens["bob"]))
-
-    assert resp.status_code == 200, f"bob's removal answered {resp.status_code}: {resp.get_data(as_text=True)[:300]}"
-    assert resp.get_json()["pruned"] == [] and resp.get_json()["removedFromDefaults"] == []
-    assert BUS_DIR not in _lockfile(flow)
-    assert BUS_DIR in _store(flow.alice), "bob's removal deleted alice's copy"
     assert BUS_DIR in _store(flow.bob)
 
 

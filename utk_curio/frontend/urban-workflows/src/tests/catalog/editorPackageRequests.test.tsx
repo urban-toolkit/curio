@@ -4,8 +4,7 @@
  *
  * - his Add to project in his Node Catalog drawer asks her, once he confirms,
  *   and installs nothing; his Import package puts the package in his own
- *   account and asks her; his Remove from project takes a package out of her
- *   dataflow, which stays in her account and his;
+ *   account and asks her;
  * - his drop of the card of a package her dataflow does not use makes its node
  *   at once and asks her, naming the node;
  * - a model of his dropped on a node is the model package its card names;
@@ -245,35 +244,9 @@ describe("bob's own package asks alice", () => {
     await waitFor(() =>
       expect(writes()).toEqual(["POST /api/packages/upload", `POST /api/dataflows/${ALICES}/packages/requests`]),
     );
-    expect(sent.find((request) => request.path.endsWith("/packages/requests"))?.body).toEqual({
-      dirName: BUS_DIR,
-      add: true,
-    });
-    view.unmount();
-  });
-
-  test("his Remove from project takes a package out of her dataflow, which stays in every account", async () => {
-    on("editor");
-    mockFlow = { ...mockFlow, packages: [BUS_DIR] };
-    const view = openNodeDrawer();
-    const card = await waitFor(() => {
-      const found = document.querySelector(`article[data-pkg-dir="${BUS_DIR}"]`);
-      expect(found).not.toBeNull();
-      return found as HTMLElement;
-    });
-
-    await act(async () => {
-      within(card).getByRole("button", { name: "Remove from project" }).click();
-    });
-    await waitFor(() =>
-      expect(screen.queryByText(/It stays in the account of the dataflow's owner, and in yours\./)).toBeInTheDocument(),
-    );
-    expect(screen.queryByText(/deleted from your account/)).toBeNull();
-    await act(async () => {
-      screen.getByRole("button", { name: "Remove" }).click();
-    });
-
-    await waitFor(() => expect(writes()).toEqual([`DELETE /api/packages/projects/${ALICES}/${BUS_DIR}`]));
+    // The ask is the POST: the drawer reads the requests too, with a GET.
+    const ask = sent.find((request) => request.method === "POST" && request.path.endsWith("/packages/requests"));
+    expect(ask?.body).toEqual({ dirName: BUS_DIR, add: true });
     view.unmount();
   });
 

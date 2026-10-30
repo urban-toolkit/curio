@@ -232,7 +232,7 @@ def test_an_editors_own_package_waits_for_the_owner_who_applies_it(
         assert applied.value.status == 200, applied.value.text()[:600]
         expect(drawer.locator(REQUESTS)).to_have_count(0, timeout=60000)
         _close_node_catalog(owner)
-        lockfile = api_json(f"{current_server}/api/projects/{project_id}", owner_token)["spec"]["dataflow"]["packages"]
+        lockfile = api_json(f"{current_server}/api/packages/projects/{project_id}", owner_token)["packages"]
         assert BUS_DIR in lockfile, lockfile
         assert BUS_DIR in [p["dirName"] for p in api_json(f"{current_server}/api/packages", owner_token)["packages"]]
 
