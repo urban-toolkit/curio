@@ -345,6 +345,8 @@ While you drag a palette row across the canvas, the connection that would receiv
 
 A connection agent is listed in **both** places. The badge says *which* connection the agent is about; the dock is the roster, always reachable. Detaching works from either.
 
+While an agent works on the dataflow, it is in the dataflow's room as one more participant, as people are (see [COLLABORATION.md](COLLABORATION.md)). Every tab's dock has a chip for it, with its glyph in its category's color and a dot while it works, the tab of whoever asked it included, and a node agent's too, whose badge stays under its node. Hover the chip for who asked the agent, the nodes it is writing and the skills it is using: *Node Builder (asked by Ana), editing Map Editor, using map-edits*. A canvas or connection agent at work keeps its one chip in the dock, which shows the same and still opens its chat. Clicking an agent's chip opens its chat; on a watcher's canvas, it moves the view to the node the agent is writing. The dock's **Activity** list says when the agent joined and who asked it, and what it did as it left: *Dataflow Builder left: added 3 nodes and 2 connections*.
+
 Not every agent accepts every target: an agent declares which kinds it works with. A `canvas` agent dropped on a node is refused. Of the four catalog agents, the Node Builder is the one that accepts a connection.
 
 The Researcher reads the dataflow as it is on screen with every message, and when it is attached to a node, that node's content, what feeds it and its last run.
@@ -369,7 +371,7 @@ The reverse holds too. Removing an agent that another added agent requires is re
 
 ### Invited editors
 
-The editors the dataflow's owner invited (**Share > Invite editors**, see [COLLABORATION.md](COLLABORATION.md#who-edits-owner-editors-and-watchers)) work with its agents as the owner does: they add and attach agents, chat, apply what an agent proposes and run **Solve**. Anyone else who opens the dataflow's link watches: no agent, chat or badge shows on their canvas, and the server refuses their requests to the agents. A guest on a hosted Curio works with the agents of the examples, each guest on a copy of its own, and watches every other dataflow.
+The editors the dataflow's owner invited (**Share > Invite editors**, see [COLLABORATION.md](COLLABORATION.md#who-edits-owner-editors-and-watchers)) work with its agents as the owner does: they add and attach agents, chat, apply what an agent proposes and run **Solve**. Anyone else who opens the dataflow's link watches: no agent's badge or chat shows on their canvas, only the chip in the dock of an agent at work, and the server refuses their requests to the agents. A guest on a hosted Curio works with the agents of the examples, each guest on a copy of its own, and watches every other dataflow.
 
 - **The owner's model and key.** An editor's runs answer with the owner's LLM configurations: the one the owner's **API Settings** choose for each agent, else the owner's default ([LLM configurations](#4-llm-configurations)). The agents' skills and the catalog settings they read are the owner's too.
 - **The editor's own saved keys.** An agent in an editor's chat or Solve is told the names of the editor's Node code keys, never the owner's, and a key it names that only the owner saved gives it nothing. The Discovery Catalog sends the editor's own Data source keys, and an editor's searches of the Scenario Catalog and the Discovery Catalog read the editor's own account.
