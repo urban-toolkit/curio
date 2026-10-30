@@ -81,7 +81,9 @@ def _create_tail(title: str) -> str:
 # What Ben's page shows, each time it changes: every agent's state in the room
 # (its client, what it carries and where it drops it), the drags drawn (whose,
 # where each starts, where its ghost is), the nodes and connections his tab's
-# doc holds, and the agents' chips in the dock. The doc and the agents' states
+# doc holds, and the agents at work in the dock: an agent's chip among the
+# people, or, for an agent on the canvas, which keeps its one badge, that
+# badge shown at work, each by what it says. The doc and the agents' states
 # reach the page in the order the server sends them, on one socket, so a
 # node's landing is read from the doc, never from the canvas, which draws it a
 # frame later.
@@ -108,7 +110,9 @@ _RECORD_JS = """() => {
         }));
         const dock = document.querySelector('[role="toolbar"][aria-label="Canvas agents"]');
         const chips = Array.from(dock ? dock.querySelectorAll('[data-collab-agent]') : [])
-            .map((chip) => chip.getAttribute('aria-label'));
+            .map((chip) => chip.getAttribute('aria-label'))
+            .concat(Array.from(dock ? dock.querySelectorAll('[data-agent-at-work="true"]') : [])
+                .map((badge) => badge.getAttribute('data-tooltip')));
         return {agents, drags, nodes: Array.from(doc.getMap('nodes').keys()).sort(),
                 edges: doc.getMap('edges').size, chips};
     };
@@ -238,9 +242,12 @@ def _recorded(page) -> list:
 
 
 def _wait_until_gone(page, what: str) -> None:
+    """Wait until no agent is at work in *page*'s dock, by its chip or by its
+    badge on the canvas, and no drag is drawn."""
     try:
         page.wait_for_function(
             """() => !document.querySelector('[role="toolbar"][aria-label="Canvas agents"] [data-collab-agent]')
+                && !document.querySelector('[role="toolbar"][aria-label="Canvas agents"] [data-agent-at-work="true"]')
                 && !document.querySelector('[data-agent-drag]')""",
             timeout=15000,
         )

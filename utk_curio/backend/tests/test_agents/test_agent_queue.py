@@ -23,6 +23,8 @@ from __future__ import annotations
 import copy
 import threading
 
+import pytest
+
 from utk_curio.backend.tests.test_agents.test_agent_changes import (
     _ask,
     _by_id,
@@ -57,6 +59,35 @@ def _key(user) -> str:
     from utk_curio.backend.app.projects.services import _user_dir_key
 
     return _user_dir_key(user)
+
+
+@pytest.fixture()
+def file_backed(tmp_curio, tmp_path):
+    """The app on a SQLite file, its client, and alice with her token, for two
+    requests at once: as on a server, each thread gets a connection of its own.
+    The in-memory engine the other tests use hands every thread the same
+    connection, which SQLite does not let two threads use at once
+    (``test_datasets``' ``file_db_app``)."""
+    from utk_curio.backend.app import create_app
+    from utk_curio.backend.app.users.models import User, UserSession
+    from utk_curio.backend.extensions import db
+    from utk_curio.backend.tests._unit_fixtures import TestConfig
+
+    class FileTestConfig(TestConfig):
+        SQLALCHEMY_DATABASE_URI = f"sqlite:///{tmp_path / 'agents.db'}"
+
+    application = create_app(FileTestConfig)
+    with application.app_context():
+        db.create_all()
+        user = User(username="alice", name="Alice", email="alice@test.com")
+        db.session.add(user)
+        db.session.flush()
+        db.session.add(UserSession(user_id=user.id, token="alice-token-123"))
+        db.session.commit()
+        yield application.test_client(), user, "alice-token-123"
+        db.session.remove()
+        db.drop_all()
+        db.engine.dispose()
 
 
 def _opened(user, project) -> int:
@@ -101,13 +132,14 @@ def _recording(monkeypatch, project: str, key: str, timeline: list) -> None:
     ``carrying``, its ``pointer``, and on which thread) and as it ends, each
     write that changes the dataflow's nodes or connections (what it leaves,
     the change its history point names, and on which thread), and each
-    agent's leave with what it did."""
+    agent's leave with what it did. An agent's first state, as it joins,
+    carries nothing yet and ends no drag, so it is not one."""
     from utk_curio.backend.app.collaboration import dataflow_docs, room_state
 
     real_state, real_write, real_activity = dataflow_docs.set_agent_state, dataflow_docs.write, room_state.record_activity
 
     def set_agent_state(at_project, client_id, fields, *, joining=False):
-        if at_project == project and "carrying" in fields:
+        if at_project == project and not joining and "carrying" in fields:
             name = threading.current_thread().name
             if fields["carrying"]:
                 timeline.append(("drag", copy.deepcopy(fields["carrying"]), copy.deepcopy(fields["pointer"]), name))
@@ -356,7 +388,7 @@ def test_node_create_is_dragged_from_its_tile_and_lands_as_its_drop_ends(client,
     assert step["dragged"]["carrying"] == carrying and step["canvas"]["node"]["id"] == new_id, step
 
 
-def test_two_agents_queues_play_side_by_side_each_in_its_own_order(client, user_and_token, tmp_curio, monkeypatch):
+def test_two_agents_queues_play_side_by_side_each_in_its_own_order(file_backed, monkeypatch):
     """The Dataflow Builder lands its plan while the Node Builder adds two
     nodes of its own, both asked at once. Each agent's drags start only once
     its last one dropped, in its own order and carrying only its own nodes,
@@ -364,7 +396,7 @@ def test_two_agents_queues_play_side_by_side_each_in_its_own_order(client, user_
     name the plan, and neither agent's node lands in the other's change."""
     from utk_curio.backend.app.collaboration import history
 
-    user, token = user_and_token
+    client, user, token = file_backed
     project, planner = _setup(client, user, token, coord=DFB)
     builder = _attach(client, token, project, NB, target={"kind": "node", "targetId": "sum"})
     before = _opened(user, project)
