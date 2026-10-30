@@ -59,6 +59,7 @@ import {
 import { datasetWidgetBindings, datasetWidgetReadBy } from "../utils/widgets/datasetWidgets";
 import { DatasetWidgetContext, type DatasetWidgetNode } from "./editing/widgets/datasetWidgetContext";
 import { hasFileDrag, useDataFileImport } from "./datasets/useDataFileImport";
+import { useAskTheOwner } from "./datasets/useAskTheOwner";
 import { packageStarterCode } from "../adapters/node/packageNodeBehavior";
 import {
     applyModelToNodeData,
@@ -437,6 +438,7 @@ export const NodeContainer = ({
     // its dataset widget shows.
     const [dropping, setDropping] = useState(false);
     const importDataFile = useDataFileImport();
+    const askTheOwner = useAskTheOwner();
 
     // A dataset reaching this node, dropped as a Data Catalog card or as a
     // file it has just imported: it sets the dataset widget the node's code
@@ -513,6 +515,9 @@ export const NodeContainer = ({
         e.preventDefault();
         e.stopPropagation();
         takeDatasetRef.current(dataset);
+        // On the owner's dataflow, an invited editor's card of his own Data
+        // Catalog asks her to add it, as his drop on the canvas does.
+        if (askTheOwner) void askTheOwner(dataset, { nodeId });
     };
     const canApplyRef = useRef(false);
     canApplyRef.current = canApplyDatasetToNode(data);

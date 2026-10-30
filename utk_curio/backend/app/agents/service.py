@@ -34,6 +34,7 @@ from utk_curio.backend.app.agents.application.editors import (
     ACCOUNT_INSTALL_TOOLS,
     download_refusal,
     install_refusal,
+    owners_review,
 )
 from utk_curio.backend.app.agents.application.errors import (
     AgentServiceError,
@@ -159,6 +160,7 @@ __all__ = [
     "ACCOUNT_INSTALL_TOOLS",
     "download_refusal",
     "install_refusal",
+    "owners_review",
     "AgentServiceError",
     "import_agent",
     "install_in_project",

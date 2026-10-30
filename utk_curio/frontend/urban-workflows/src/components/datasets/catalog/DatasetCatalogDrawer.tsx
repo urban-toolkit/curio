@@ -9,6 +9,7 @@ import {
 import { drawerPendingInstalls } from "../../../services/datasetCatalog/pendingInstallView";
 import { DatasetCard } from "./DatasetCard";
 import { DatasetInstallingCard } from "./DatasetInstallingCard";
+import { DatasetRequestsSection } from "./DatasetRequestsSection";
 import { useDatasetCatalogDrawer } from "./useDatasetCatalogDrawer";
 import { PackageSearchRow } from "components/packages/publishing/PackageSearchRow";
 import shell from "components/packages/publishing/CatalogDrawerShell.module.css";
@@ -182,6 +183,9 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
           </nav>
 
           <main className={shell.scrollBody}>
+            {/* What the dataflow's editors asked its owner to add, which she
+                reviews here: nothing while no request waits. */}
+            <DatasetRequestsSection />
             {catalog.error ? <div className={shell.error}>{catalog.error}</div> : null}
             {catalog.loading && items.length === 0 ? (
               <div className={styles.skeletonList} aria-busy="true" aria-label="Loading datasets">
