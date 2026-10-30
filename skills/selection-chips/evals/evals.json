@@ -1,0 +1,64 @@
+{
+  "skill_name": "selection-chips",
+  "agent": "agent.curio.node-builder@1",
+  "dataflow": "evals/files/roofs-picked-zips.json",
+  "evals": [
+    {
+      "id": 1,
+      "target": {"kind": "node", "node": "c3a1f0d2-7b64-4e19-9a2e-5d8b1c6e4f70"},
+      "prompt": "Make this node keep only the roofs in the zip codes I click in the bar chart.",
+      "expected_output": "A content change of this node whose code places the selection reference [!! selection picked_zips !!] and keeps the rows of its input whose zip is in that list, with no zip code typed in.",
+      "assertions": [
+        "The answer makes a content change of node c3a1f0d2-7b64-4e19-9a2e-5d8b1c6e4f70 (node.content.write), not a new node.",
+        "The code it writes places the selection reference [!! selection picked_zips !!] where it uses the clicked zip codes.",
+        "The code keeps the rows of its input whose zip value is in that list, such as input_0[input_0[\"zip\"].isin(picked)], and returns them.",
+        "No zip code value, such as 60607 or 60614, is typed into the code."
+      ]
+    },
+    {
+      "id": 2,
+      "target": {"kind": "node", "node": "e8d24b91-3f05-4c7a-b6d1-0a9c27e5f413"},
+      "prompt": "Make this node compute the mean only over the zip codes I click in the bar chart.",
+      "expected_output": "No selection reference in this node's code: the answer says the node has no selection tag yet and that the user adds one in its Widgets tab, under Selections, with the bar chart as its view and zip as its column. It does not borrow picked_zips, another node's tag, and types no zip codes.",
+      "assertions": [
+        "No code it writes for node e8d24b91-3f05-4c7a-b6d1-0a9c27e5f413 places a selection reference; in particular it does not use picked_zips, the tag of another node.",
+        "The answer says this node has no selection tag yet, and that the user adds one in the node's Widgets tab, picking the bar chart as its view and zip as its column.",
+        "No code it writes types zip codes in place of the selection."
+      ]
+    },
+    {
+      "id": 3,
+      "target": {"kind": "node", "node": "c3a1f0d2-7b64-4e19-9a2e-5d8b1c6e4f70"},
+      "prompt": "Make this node keep the roofs of the zip codes I click in the bar chart, and every roof while nothing is clicked.",
+      "expected_output": "A content change of this node whose code places [!! selection picked_zips !!], returns its input unchanged when that list is empty, and otherwise keeps the rows whose zip is in it.",
+      "assertions": [
+        "The answer makes a content change of node c3a1f0d2-7b64-4e19-9a2e-5d8b1c6e4f70 (node.content.write).",
+        "The code it writes places the selection reference [!! selection picked_zips !!].",
+        "When that list is empty, the code returns its input's rows unchanged, testing for an empty list (such as `if not picked` or `len(picked) == 0`), not only for None.",
+        "Otherwise the code keeps the rows whose zip value is in the list, and no zip code is typed into the code."
+      ]
+    }
+  ],
+  "trigger_queries": [
+    {"query": "How can the 'Roofs in the picked zip codes' node keep only the roofs of the zips I click in the bar chart? Explain before changing it.", "should_trigger": true},
+    {"query": "how does a python node get the ids of the bars i selected", "should_trigger": true},
+    {"query": "How would a node of its own sum the vegetated square feet of whatever zip codes are clicked in the chart? What does its code read?", "should_trigger": true},
+    {"query": "Can the transformation code use my chart selection instead of hard-coded zip codes? How would it read it?", "should_trigger": true},
+    {"query": "What does the picked zip codes node's code get when nothing is clicked in the bar chart, and how should it keep every roof then?", "should_trigger": true},
+    {"query": "Could a CSV export hold only the roofs of the zip codes I've selected in the chart? How would it know the selection?", "should_trigger": true},
+    {"query": "How would Mean roof size average only over the zips I shift-click in the chart?", "should_trigger": true},
+    {"query": "Can a node's code read which buildings I brushed on an Autark map, by their building_id?", "should_trigger": true},
+    {"query": "How does a node count the roofs in the zip codes currently selected in the bar chart?", "should_trigger": true},
+    {"query": "Which selections do the nodes on the canvas have, and which one should the picked zip codes node filter the roofs by?", "should_trigger": true},
+    {"query": "When I click a bar, highlight that zip's roofs in a table next to the chart.", "should_trigger": false},
+    {"query": "Link the bar chart to a new map so hovering a zip highlights it there.", "should_trigger": false},
+    {"query": "Merge the selections of two charts so only the rows picked in both stay highlighted.", "should_trigger": false},
+    {"query": "Let me choose zip codes from a dropdown in the node instead of typing them.", "should_trigger": false},
+    {"query": "Make the clicked bars red and the others gray.", "should_trigger": false},
+    {"query": "Change the chart's selection from a click to a brush along the x axis.", "should_trigger": false},
+    {"query": "Show the top 5 zip codes instead of 10.", "should_trigger": false},
+    {"query": "What changed in the transformation node since yesterday?", "should_trigger": false},
+    {"query": "Pin the bar chart to the dashboard.", "should_trigger": false},
+    {"query": "Put the roofs on an Autark map where I can pick them.", "should_trigger": false}
+  ]
+}

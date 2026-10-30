@@ -1,0 +1,64 @@
+{
+  "skill_name": "widgets",
+  "agent": "agent.curio.node-builder@1",
+  "dataflow": "docs/examples/dataflows/data-pool-vega-2.json",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Add a new node after the Data Pool that keeps the top N zip codes by vegetated square feet, where I set N with a slider from 5 to 25 in the node's Widgets tab, starting at 10.",
+      "expected_output": "One new node whose code keeps the top N zip codes, N read through a widget reference, and a slider widget declared from 5 to 25 with 10 as its default.",
+      "assertions": [
+        "The answer creates one new node (a node.create, or a plan with one node), not only an explanation.",
+        "The new node declares a widget of type slider with a minimum of 5, a maximum of 25 and a default of 10.",
+        "The code it writes uses the count through a widget reference written as [!! <name> !!], with no number typed in its place.",
+        "The name in the code's widget reference is the name of the declared widget."
+      ]
+    },
+    {
+      "id": 2,
+      "dataflow": "docs/examples/dataflows/widget.json",
+      "prompt": "Set the Number Multiplier of the multiplier node to 25.",
+      "expected_output": "A node.settings.write change to the multiplier node that sets its number_multiplier widget to 25, with its code left as it is.",
+      "assertions": [
+        "The answer uses node.settings.write on node f325441e-55be-4415-aa1b-b2055f590de2.",
+        "The change it makes sets the widget number_multiplier to 25.",
+        "The answer writes no new code for the node and no new node."
+      ]
+    },
+    {
+      "id": 3,
+      "agent": "agent.curio.dataflow-builder@1",
+      "dataflow": "docs/examples/dataflows/multi-input.json",
+      "prompt": "Both loading nodes should scale their column b by the same factor, and I want to set that factor in one place with a slider from 1 to 5. Can you plan that?",
+      "expected_output": "A dataflow plan with one node that declares the factor as a slider widget from 1 to 5 and returns its value, connected to each node that scales column b, so the factor is declared once.",
+      "assertions": [
+        "The answer writes a dataflow plan (dataflow.plan.write).",
+        "The plan declares the factor as a widget on exactly one node, of type slider, with a minimum of 1 and a maximum of 5.",
+        "The node that holds the factor's widget is connected to every node that scales column b.",
+        "No other node in the plan declares a widget for the same factor."
+      ]
+    }
+  ],
+  "trigger_queries": [
+    {"query": "Could the top 10 in the transformation node be something I change with a slider instead of editing the code? 5 to 25 is enough. How would that work?", "should_trigger": true},
+    {"query": "can i pick the year from a dropdown (2019, 2020, 2021) instead of hardcoding it in the python? how", "should_trigger": true},
+    {"query": "What would a node that keeps only the roofs above a minimum vegetated area, set without touching code, declare and read? Default 5000 sq ft.", "should_trigger": true},
+    {"query": "How can the people using this dataflow choose which zip codes to keep from a list of checkboxes, with no code edits?", "should_trigger": true},
+    {"query": "The 10 is buried in the code. How do I get it into the node's Widgets tab?", "should_trigger": true},
+    {"query": "Two of my nodes need the same buffer distance in meters. Where do I keep it so that changing it once updates both?", "should_trigger": true},
+    {"query": "How does a loading node load whatever CSV of roofs my colleague drops on it, without its code naming the file?", "should_trigger": true},
+    {"query": "Set the count slider on the transformation node to 15.", "should_trigger": true},
+    {"query": "my manager wants to try different cutoffs for what counts as a big green roof without calling me every time. whats the way to make that adjustable", "should_trigger": true},
+    {"query": "How would a toggle turn outlier removal on and off in a cleaning step before the chart?", "should_trigger": true},
+    {"query": "When I click a bar in the chart, show the roofs of that zip code in a table next to it.", "should_trigger": false},
+    {"query": "Load the Chicago building footprints from the Data Catalog into a new node.", "should_trigger": false},
+    {"query": "Make the bars green and sort them from largest to smallest.", "should_trigger": false},
+    {"query": "Put the green roofs on a map of Chicago, colored by vegetated area.", "should_trigger": false},
+    {"query": "What did the transformation node look like before my last edit?", "should_trigger": false},
+    {"query": "Pin the chart to the dashboard so my team can see it.", "should_trigger": false},
+    {"query": "Write a node that downloads the green roofs CSV straight from the city's open data portal.", "should_trigger": false},
+    {"query": "Why does the transformation node fail with a KeyError on 'zip'?", "should_trigger": false},
+    {"query": "Change the chart's title to 'Top zip codes by green roof area'.", "should_trigger": false},
+    {"query": "Add a Map Editor node that removes the buildings under three floors as a what-if.", "should_trigger": false}
+  ]
+}
