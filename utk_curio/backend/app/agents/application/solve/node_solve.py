@@ -279,6 +279,7 @@ def _run_node_loop(
             home_create=False,
             dataflow_block=dataflow_block,
             refused=refused,
+            asker=acting_user,
         )
         return st, tx, ch
 

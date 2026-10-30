@@ -487,6 +487,7 @@ class AttachmentTurn:
                 self.user_key, self.project_id, req["capability"], enriched,
                 datasets=loop_ctx.get("dataflow_datasets"),
             ),
+            asker=loop_ctx.get("asker"),
             stay=stay,
             who=loop_ctx["room_asker"],
         )

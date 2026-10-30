@@ -1276,6 +1276,7 @@ class SolveBatch:
                 node_id=node_id,
                 home_create=False,  # workers never write the spec
                 dataflow_block=self._dataflow_block(node_id),
+                asker=self.acting_user,
             )
             queue.put(
                 (node_id, "solved" if status == "ok" else "failed", text, child)
@@ -1335,6 +1336,7 @@ class SolveBatch:
                 home_create=False,  # workers never write the spec
                 dataflow_block=self._dataflow_block(_node_id),
                 refused=refused,
+                asker=self.acting_user,
             )
             return st, tx, ch
 
