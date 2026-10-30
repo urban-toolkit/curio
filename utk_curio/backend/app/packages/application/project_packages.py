@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from utk_curio.backend.app.collaboration import dataflow_docs
+from utk_curio.backend.app.collaboration import dataflow_docs, owner_uses
 from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
 from utk_curio.backend.app.projects import storage as projects_storage
 from utk_curio.backend.app.packages.domain.package_id import PACKAGE_DIR_RE
@@ -32,9 +32,10 @@ from utk_curio.backend.app.packages.application.seeding import BUILTIN_PACKAGE_I
 class OwnersPackages:
     """The packages of a dataflow's owner that a run of an editor she invited
     reads from her store, *store_key*: those the dataflow *project_id* uses
-    (``prune.dataflow_packages``), read from its spec there the first time the
-    run asks. Nothing of them is copied into the editor's store, and her other
-    packages are not read.
+    (``prune.dataflow_packages``) that she put in it herself
+    (``collaboration.owner_uses``), read from its spec there the first time
+    the run asks. Nothing of them is copied into the editor's store, and her
+    other packages are not read, nor one only an editor's change named.
 
     A run hands this to ``python_modules.modules_for_node`` and
     ``model_packages.resolve_model_dirs`` (*owners*), which resolve a package
@@ -48,11 +49,14 @@ class OwnersPackages:
 
     @property
     def used(self) -> frozenset[str]:
-        """The dirNames of the packages the dataflow uses."""
+        """The dirNames of the packages the dataflow uses that its owner put in it."""
         if self._used is None:
             spec = projects_storage.read_spec(self.store_key, self.project_id)
             majors = packages_store_reads._installed_majors_by_pkg(self.store_key)
-            self._used = frozenset(packages_prune.dataflow_packages(spec, majors))
+            hers = owner_uses.recorded(self.store_key, self.project_id)
+            self._used = frozenset(
+                dir_name for dir_name in packages_prune.dataflow_packages(spec, majors) if hers.package(dir_name)
+            )
         return self._used
 
     def uses(self, dir_name: str | None) -> bool:
