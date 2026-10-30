@@ -268,6 +268,57 @@ def test_the_owners_apply_copies_the_dataset_into_her_store_and_his_run_reads_it
     assert {i["id"]: i for i in listing.get_json()["items"]}[flow.bus_stops["id"]]["installed"] is True
 
 
+def test_a_layer_group_she_applies_is_read_by_his_runs_from_her_store(client, flow, sandbox):
+    """bob's file of two layers is a layer group of his Data Catalog. alice's
+    Apply of his request for the group copies both layers into her store and
+    lists both in her dataflow, and bob's run of the group reads each layer
+    from her store, not his."""
+    from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
+    from utk_curio.backend.app.datasets.service import DatasetCatalogService
+
+    group = "gpkg.xtransitlayers"
+    layers = [
+        DatasetCatalogService(flow.bob)._mutations._install_imported_bytes(
+            body, f"transit_{name}.csv", "csv", title=f"Transit ({name})", group_id=group, layer_name=name,
+        )
+        for name, body in (("stops", BUS_STOPS), ("routes", b"route,stops\n22,40\n"))
+    ]
+    request = _asked(client, flow, "bob", group, add=True)
+    assert request["datasetId"] == group
+
+    resp = _apply(client, flow, "alice", request["proposalId"])
+
+    assert resp.status_code == 200, resp.get_data(as_text=True)[:300]
+    assert {layer["dirName"] for layer in layers} <= _store(flow.alice)
+    assert {layer["id"] for layer in layers} <= set(_listed(flow))
+    _run(client, flow.tokens["bob"], flow.pid, group)
+    paths = sandbox.bodies[-1]["dataset_paths"]
+    for layer in layers:
+        assert layer["id"] in paths, f"bob's run of the group resolved {paths}"
+        hers = dataset_dir(_key(flow.alice), layer["dirName"]).resolve()
+        assert Path(paths[layer["id"]]).resolve().is_relative_to(hers), (
+            f"bob's run read {layer['id']} from {paths[layer['id']]}, not alice's store"
+        )
+
+
+def test_a_request_of_an_editor_she_took_off_her_list_is_not_applied(client, flow):
+    """alice takes bob off her editors after he asked for his bus stops: her
+    Apply of his request is refused, copies nothing into her store, lists
+    nothing in her dataflow, and the request leaves her review."""
+    from utk_curio.backend.app.projects import access
+
+    before = _hers(flow)
+    request = _asked(client, flow, "bob", flow.bus_stops["id"], add=True)
+    access.remove_editor(flow.alice, flow.pid, flow.bob.id)
+
+    resp = _apply(client, flow, "alice", request["proposalId"])
+
+    assert resp.status_code == 409, resp.get_data(as_text=True)[:300]
+    assert "no longer edits this dataflow" in resp.get_json()["error"]
+    assert _hers(flow) == before
+    assert _review(client, flow) == []
+
+
 def test_the_owners_dismiss_leaves_nothing_behind_and_the_editor_reviews_nothing(client, flow):
     """bob can neither apply nor dismiss his own request: it waits for alice,
     as an install an agent asks for does. alice's Dismiss takes it out of her
