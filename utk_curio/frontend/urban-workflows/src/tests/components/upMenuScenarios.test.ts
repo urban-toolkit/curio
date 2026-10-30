@@ -54,8 +54,8 @@ describe("the scenario commands", () => {
     expect(UP_MENU).not.toContain("useScenarioUi");
   });
 
-  test("File saves the whole dataflow as a scenario, for an editor only", () => {
+  test("File no longer saves the whole dataflow as a scenario", () => {
     const file = menuSource("File", /<HeaderMenu\s+label="View"/);
-    expect(file).toMatch(/\{!isSharedView && \(\s*<HeaderMenuItem[^>]*saveDataflowAsScenario[\s\S]*?Save dataflow as scenario/);
+    expect(file).not.toContain("Save dataflow as scenario");
   });
 });

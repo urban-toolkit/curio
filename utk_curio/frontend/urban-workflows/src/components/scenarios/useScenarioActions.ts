@@ -11,7 +11,6 @@ import type { Scenario, SharedKind } from "../../utils/scenarios/scenarioModel";
 import { updateSharedLook } from "../../utils/scenarios/scenarioSets";
 import { duplicateSelection } from "../../utils/scenarios/duplicateSelection";
 import {
-  createScenario,
   deleteScenario,
   nextScenarioColor,
   nextScenarioName,
@@ -53,12 +52,8 @@ export function useScenarioActions() {
   const { loadTrill } = useCode();
   const reactFlow = useReactFlow();
   const { showToast } = useToastContext();
-  const { openScenarioCatalogDrawer, closeScenarioCatalogDrawer } = useScenarioCatalogDrawer();
+  const { closeScenarioCatalogDrawer } = useScenarioCatalogDrawer();
   const { setDefine } = useScenarioUi();
-  const showInProject = useCallback(
-    () => openScenarioCatalogDrawer({ tab: "installed" }),
-    [openScenarioCatalogDrawer],
-  );
 
   const selectedIds = useCallback(
     () => reactFlow.getNodes().filter((n) => n.selected && !isDrawnHidden(n)).map((n) => n.id),
@@ -106,18 +101,6 @@ export function useScenarioActions() {
     },
     [scenarios, closeScenarioCatalogDrawer, setScenarios, setDefine],
   );
-
-  const saveDataflowAsScenario = useCallback(() => {
-    const all = reactFlow.getNodes().map((n) => n.id);
-    if (all.length === 0) {
-      showToast("The dataflow has no nodes to save as a scenario.", "warning");
-      return;
-    }
-    const edit = createScenario(scenarios, all, { id: uuid() });
-    if (apply(edit, edit.scenarios ? `Saved the dataflow as "${edit.scenarios.at(-1)!.name}".` : undefined)) {
-      showInProject();
-    }
-  }, [reactFlow, scenarios, apply, showToast, showInProject]);
 
   /** Copy *ids* below them, with the edges between them, and wire every edge
    *  entering them into the copy too; the copy's ids by original id. */
@@ -243,7 +226,6 @@ export function useScenarioActions() {
   return {
     saveSelectionAsScenario,
     editScenario,
-    saveDataflowAsScenario,
     duplicate,
     duplicateScenario,
     runScenario,

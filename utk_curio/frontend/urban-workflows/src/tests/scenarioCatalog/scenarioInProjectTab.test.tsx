@@ -41,7 +41,6 @@ jest.mock("../../providers/FlowProvider", () => ({
 
 const mockActions = {
   saveSelectionAsScenario: jest.fn(),
-  saveDataflowAsScenario: jest.fn(),
   duplicate: jest.fn(),
   duplicateScenario: jest.fn(),
   runScenario: jest.fn(),

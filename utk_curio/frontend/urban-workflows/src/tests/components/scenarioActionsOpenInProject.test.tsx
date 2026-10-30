@@ -1,7 +1,6 @@
 /**
- * Save dataflow as scenario opens the Scenario Catalog drawer on its In
- * project tab, where the new scenario is listed. Define scenario opens the
- * define panel instead, which saves nothing until its Save; Duplicate
+ * Define scenario opens the define panel, which saves nothing until its
+ * Save; Duplicate
  * scenario opens it on the copy, at Name & set. A command that is refused
  * opens nothing.
  *
@@ -83,7 +82,6 @@ const Commands: React.FC = () => {
   return (
     <>
       <button onClick={actions.saveSelectionAsScenario}>save the selection</button>
-      <button onClick={actions.saveDataflowAsScenario}>save the dataflow</button>
       <button onClick={() => actions.duplicateScenario("s1")}>duplicate the scenario</button>
       <button onClick={actions.duplicate}>duplicate the selection</button>
     </>
@@ -100,14 +98,6 @@ function renderCommands() {
       </ScenarioUiProvider>
     </MemoryRouter>,
   );
-}
-
-async function expectInProjectOpen() {
-  await waitFor(() =>
-    expect(document.querySelector(DRAWER)).toHaveAttribute("aria-hidden", "false"),
-  );
-  const drawer = document.querySelector(DRAWER) as HTMLElement;
-  expect(within(drawer).getByRole("button", { name: /^In project/ })).toHaveAttribute("aria-pressed", "true");
 }
 
 beforeEach(() => {
@@ -131,22 +121,13 @@ beforeEach(() => {
   api.listCatalog.mockResolvedValue({ items: [] });
 });
 
-describe("the scenario commands open the In project tab", () => {
+describe("the scenario commands", () => {
   test("Define scenario opens the define panel and saves nothing yet", async () => {
     renderCommands();
     fireEvent.click(screen.getByRole("button", { name: "save the selection" }));
     expect(await screen.findByTestId("scenario-define-panel")).toBeInTheDocument();
     expect(mockFlow.setScenarios).not.toHaveBeenCalled();
     expect(document.querySelector(DRAWER)).toBeNull();
-  });
-
-  test("Save dataflow as scenario", async () => {
-    renderCommands();
-    fireEvent.click(screen.getByRole("button", { name: "save the dataflow" }));
-    expect(mockFlow.setScenarios).toHaveBeenCalledWith([
-      expect.objectContaining({ nodes: ["load", "scale"] }),
-    ]);
-    await expectInProjectOpen();
   });
 
   test("Duplicate scenario copies it into its set, with its context and no outcomes, and opens the copy at Name & set", async () => {

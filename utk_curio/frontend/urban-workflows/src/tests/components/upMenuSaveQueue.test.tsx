@@ -51,7 +51,6 @@ jest.mock("../../components/menus/top/ShareMenu", () => ({ __esModule: true, def
 jest.mock("../../components/projects/DataflowCategoryInput", () => ({ __esModule: true, default: () => null }));
 jest.mock("../../components/scenarios/useScenarioActions", () => ({
   useScenarioActions: () => ({
-    saveDataflowAsScenario: jest.fn(),
     saveSelectionAsScenario: jest.fn(),
     duplicate: jest.fn(),
   }),

@@ -809,8 +809,7 @@ To make one:
    edges, marked on the canvas. Confirm them, remove a node with **×**, or
    select one on the canvas and click **+ Add selected node**.
 3. **Next** asks for its name, its color and its scenario set: one of this dataflow's, or a
-   new one. **Save scenario** saves it; nothing changes before. **File → Save
-   dataflow as scenario** saves the whole dataflow as one.
+   new one. **Save scenario** saves it; nothing changes before.
 
 To build an alternative, click **Duplicate scenario** on the scenario's card in
 the **In project** tab. Its nodes are copied below themselves with the edges

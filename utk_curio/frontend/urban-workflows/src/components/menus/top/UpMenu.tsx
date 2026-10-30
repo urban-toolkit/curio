@@ -17,7 +17,6 @@ import {
     faCircleCheck,
     faClockRotateLeft,
     faClone,
-    faCodeBranch,
     faCubes,
     faObjectGroup,
     faFileArrowDown,
@@ -425,14 +424,6 @@ export default function UpMenu() {
                     <HeaderMenuItem icon={faFileExport} onClick={exportAsJupyterNotebook}>
                         Export as notebook
                     </HeaderMenuItem>
-                    {!isSharedView && (
-                        <HeaderMenuItem
-                            icon={faCodeBranch}
-                            onClick={scenarioItem(scenarioActions.saveDataflowAsScenario)}
-                        >
-                            Save dataflow as scenario
-                        </HeaderMenuItem>
-                    )}
                     <HeaderMenuDivider />
                     {/* The Python environment the nodes run in. Not a
                         catalog, so not among the catalog buttons. */}

@@ -52,7 +52,7 @@ No scenario ships with Curio. The catalog lists the scenarios in your own projec
 
 | Layer | On disk | Written by |
 |---|---|---|
-| **A project's scenarios and sets** | `dataflow.scenarios` and `dataflow.scenarioSets` in the project's saved dataflow; each scenario names its `set` and keeps its `context` and `outcomes` | **Define scenario**, **Save dataflow as scenario**, **Duplicate scenario**, a scenario dragged in from the catalog, and the canvas drawer's **In project** tab, saved with the dataflow. |
+| **A project's scenarios and sets** | `dataflow.scenarios` and `dataflow.scenarioSets` in the project's saved dataflow; each scenario names its `set` and keeps its `context` and `outcomes` | **Define scenario**, **Duplicate scenario**, a scenario dragged in from the catalog, and the canvas drawer's **In project** tab, saved with the dataflow. |
 | **Their saved results** | Your Data Catalog, as the project's saved outputs | Running the project: a scenario's fixed context and outcomes save their outputs. A scenario dragged into a dataflow brings copies of them, saved as that dataflow's own. |
 
 ---

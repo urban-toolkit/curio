@@ -31,24 +31,15 @@ _SETTLED_JS = """(root) => {
 }"""
 
 
-def open_in_project_tab(page: Page, *, opened_by_command: bool = False, timeout: float = 15000):
+def open_in_project_tab(page: Page, *, timeout: float = 15000):
     """Show the open dataflow's scenarios, and return the drawer.
 
     The drawer opens from the top bar's Scenario Catalog button, unless it is
-    open already. Save dataflow as scenario opens it on this tab itself:
-    after it,
-    *opened_by_command* checks that it did, with no click on the button and
-    no click on the tab. A drawer still sliding in or out is waited for
+    open already. A drawer still sliding in or out is waited for
     first, so the button is never clicked under its scrim.
     """
     page.wait_for_function(_SETTLED_JS, arg=SCENARIO_DRAWER, timeout=timeout)
     drawer = page.locator(_OPEN)
-    if opened_by_command:
-        expect(drawer).to_have_count(1, timeout=timeout)
-        expect(drawer.get_by_role("button", name=_IN_PROJECT_TAB)).to_have_attribute(
-            "aria-pressed", "true", timeout=timeout
-        )
-        return drawer
     if drawer.count() == 0:
         page.get_by_role("button", name="Scenario Catalog", exact=True).click()
     expect(drawer).to_have_count(1, timeout=timeout)
