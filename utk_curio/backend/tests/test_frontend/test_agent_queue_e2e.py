@@ -79,42 +79,38 @@ def _create_tail(title: str) -> str:
 
 
 # What Ben's page shows, each time it changes: every agent's state in the room
-# (what it carries and where it drops it), the drags drawn (where each starts,
-# where its ghost is), the canvas's nodes with their places and how many
-# connections it holds, and the agents' chips in the dock. With
-# ``removeOnFirstDrag``, the node it names is removed through the canvas, as
-# a person's Delete removes it, the moment an agent's first drag reaches the
-# page.
-_RECORD_JS = """(opts) => {
+# (its client, what it carries and where it drops it), the drags drawn (whose,
+# where each starts, where its ghost is), the nodes and connections his tab's
+# doc holds, and the agents' chips in the dock. The doc and the agents' states
+# reach the page in the order the server sends them, on one socket, so a
+# node's landing is read from the doc, never from the canvas, which draws it a
+# frame later.
+_RECORD_JS = """() => {
     const log = [];
-    const queue = {log, removed: false};
-    window.__curio_queue = queue;
+    window.__curio_queue = {log};
     const awareness = window.__curio_awareness;
-    const flow = () => window.__curio_reactFlow;
+    const doc = awareness.doc;
     const snapshot = () => {
         const agents = [];
-        for (const state of awareness.getStates().values()) {
-            if (!state || !state.user || !state.user.agent) continue;
+        awareness.getStates().forEach((state, client) => {
+            if (!state || !state.user || !state.user.agent) return;
             const carrying = state.carrying || null;
             agents.push({
-                att: state.user.agent.attachmentId,
+                client, att: state.user.agent.attachmentId,
                 carrying: carrying ? {id: carrying.id, kind: carrying.kind, from: carrying.from,
                                       label: carrying.node ? carrying.node.label : null} : null,
                 pointer: carrying && state.pointer ? {x: state.pointer.x, y: state.pointer.y} : null,
             });
-        }
-        const drags = Array.from(document.querySelectorAll('[data-agent-drag]')).map((el) => {
-            const ghost = el.querySelector('[data-agent-ghost]');
-            return {start: el.getAttribute('data-drag-start'), kind: el.getAttribute('data-drag-kind'),
-                    left: parseFloat(el.style.left), top: parseFloat(el.style.top),
-                    ghost: ghost ? ghost.getAttribute('data-agent-ghost') : null};
         });
-        const nodes = (flow() ? flow().getNodes() : []).map((n) => ({id: n.id, x: n.position.x, y: n.position.y}));
-        const edges = flow() ? flow().getEdges().length : 0;
+        const drags = Array.from(document.querySelectorAll('[data-agent-drag]')).map((el) => ({
+            client: Number(el.getAttribute('data-agent-drag')), start: el.getAttribute('data-drag-start'),
+            left: parseFloat(el.style.left), top: parseFloat(el.style.top),
+        }));
         const dock = document.querySelector('[role="toolbar"][aria-label="Canvas agents"]');
         const chips = Array.from(dock ? dock.querySelectorAll('[data-collab-agent]') : [])
             .map((chip) => chip.getAttribute('aria-label'));
-        return {agents, drags, nodes, edges, chips};
+        return {agents, drags, nodes: Array.from(doc.getMap('nodes').keys()).sort(),
+                edges: doc.getMap('edges').size, chips};
     };
     let last = '';
     const record = () => {
@@ -127,19 +123,16 @@ _RECORD_JS = """(opts) => {
     };
     record();
     new MutationObserver(record).observe(document.body, {subtree: true, childList: true, attributes: true});
-    awareness.on('change', () => {
-        if (opts.removeOnFirstDrag && !queue.removed) {
-            for (const state of awareness.getStates().values()) {
-                if (state && state.user && state.user.agent && state.carrying) {
-                    queue.removed = true;
-                    flow().deleteElements({nodes: [{id: opts.removeOnFirstDrag}]});
-                    break;
-                }
-            }
-        }
-        record();
-    });
+    awareness.on('change', record);
+    doc.on('update', record);
 }"""
+
+#: Whether an agent's state in Ben's room carries a drag now.
+_CARRYING_JS = """() => Array.from(window.__curio_awareness.getStates().values())
+    .some((state) => state && state.user && state.user.agent && state.carrying)"""
+
+_SELECT_ONLY_JS = """(id) => window.__curio_reactFlow.setNodes(
+    (nodes) => nodes.map((node) => ({ ...node, selected: node.id === id })))"""
 
 
 class _Room:
@@ -213,7 +206,7 @@ def room(app_frontend: "FrontendPage", current_server: str, browser):
         opened.close()
 
 
-def _ready(room: _Room, **record):
+def _ready(room: _Room):
     """Ana's tab and Ben's on her dataflow, the Dataflow Builder on its
     canvas, Ben's Built-in palette open, his tab recording what it shows. The
     planner's attachment id, and Ana's and Ben's tabs."""
@@ -225,8 +218,19 @@ def _ready(room: _Room, **record):
     room.open(editor, "editor")
     open_tools_palette(editor, "builtin")
     editor.locator(f'[data-palette="builtin"][data-palette-item^="{CA}"]').first.wait_for(state="visible", timeout=15000)
-    editor.evaluate(_RECORD_JS, record)
+    editor.evaluate(_RECORD_JS)
     return planner, owner, editor
+
+
+def _delete_with_the_key(page, node_id: str) -> None:
+    """Select *node_id* alone and press Delete, as a person removes a node."""
+    page.evaluate("() => document.activeElement && document.activeElement.blur && document.activeElement.blur()")
+    page.evaluate(_SELECT_ONLY_JS, node_id)
+    page.wait_for_function(
+        """(id) => !!window.__curio_reactFlow.getNodes().find((n) => n.id === id && n.selected)""",
+        arg=node_id, timeout=10000,
+    )
+    page.keyboard.press("Delete")
 
 
 def _recorded(page) -> list:
@@ -246,47 +250,61 @@ def _wait_until_gone(page, what: str) -> None:
 
 def _drags_of(log: list, att: str) -> list[dict]:
     """The drags *att*'s agent played, in the order they began: each its
-    carrying, its drop point, and the indices of the snapshots it was in."""
+    carrying, its drop point, its agent's client, and the indices of the
+    snapshots it was in."""
     drags: dict = {}
     for index, snapshot in enumerate(log):
         for agent in snapshot["agents"]:
             if agent["att"] == att and agent["carrying"]:
-                drag = drags.setdefault(agent["carrying"]["id"], {**agent["carrying"], "drop": agent["pointer"], "at": []})
+                drag = drags.setdefault(agent["carrying"]["id"], {
+                    **agent["carrying"], "drop": agent["pointer"], "client": agent["client"], "at": [],
+                })
                 drag["at"].append(index)
     return sorted(drags.values(), key=lambda drag: drag["at"][0])
 
 
-def _near(a: dict, x: float, y: float) -> bool:
-    return abs(a["x"] - x) < 0.5 and abs(a["y"] - y) < 0.5
+def _near(x: float, y: float, drop: dict) -> bool:
+    return abs(x - drop["x"]) < 0.5 and abs(y - drop["y"]) < 0.5
 
 
-def _landed_at(log: list, drop: dict) -> int | None:
-    """The first snapshot whose canvas holds a node at *drop*, a new one's top-left."""
-    for index, snapshot in enumerate(log):
-        if any(node["id"] != SINK and _near(node, drop["x"], drop["y"]) for node in snapshot["nodes"]):
-            return index
-    return None
+def _node_at(saved: dict, drop: dict, label: str) -> str | None:
+    """The saved node a drag of *label* dropped at *drop*: its top-left there,
+    and its title, or its goal's first word, the label (two agents' nodes can
+    take one place)."""
+    return next((node["id"] for node in saved["nodes"] if _near(node["x"], node["y"], drop) and (
+        node.get("title") == label or (node.get("goal") or "").split(" ")[0] == label)), None)
 
 
-def _assert_dragged_one_at_a_time(log: list, att: str, labels: list[str], what: str) -> list[dict]:
+def _landed_at(log: list, node_id: str) -> int | None:
+    """The first snapshot whose doc holds the node *node_id*."""
+    return next((index for index, snapshot in enumerate(log) if node_id in snapshot["nodes"]), None)
+
+
+def _assert_dragged_one_at_a_time(log: list, saved: dict, att: str, labels: list[str], what: str) -> list[dict]:
     """*att*'s agent dragged one node per label, in that order, each from the
     Built-in palette's tile of its type, its ghost drawn at its drop point
-    while it played (reduced motion), its node landing only once its drag
-    began and before the next one began. Its drags."""
+    while it played (reduced motion), its node, the one *saved* holds at that
+    drop point, landing only once its drag began and before the next one
+    began. Its drags."""
     drags = _drags_of(log, att)
     assert [drag["label"] for drag in drags] == labels, f"{what}: the drags were {drags}"
     for drag in drags:
         assert (drag["kind"], drag["from"]) == ("add", {"palette": "builtin", "item": CA}), drag
-        drawn = [log[index]["drags"] for index in drag["at"] if log[index]["drags"]]
-        assert drawn, f"{what}: no ghost was drawn for {drag['label']}"
-        for shown in drawn:
-            mine = [d for d in shown if _near({"x": d["left"], "y": d["top"]}, drag["drop"]["x"], drag["drop"]["y"])]
-            assert mine and all(d["start"] == "tile" for d in mine), (
-                f"{what}: {drag['label']}'s ghost was not at its drop point, from its tile: {shown}"
-            )
+        ghosts = [d for index in drag["at"] for d in log[index]["drags"] if d["client"] == drag["client"]]
+        assert any(d["start"] == "tile" and _near(d["left"], d["top"], drag["drop"]) for d in ghosts), (
+            f"{what}: {drag['label']}'s ghost was never drawn at its drop point, from its tile: {ghosts}"
+        )
+    # Every ghost of the agent's drawn in Ben's tab started at its tile and
+    # waited at one of its drops, as reduced motion has it.
+    clients = {drag["client"] for drag in drags}
+    drawn = [d for snapshot in log for d in snapshot["drags"] if d["client"] in clients]
+    assert all(d["start"] == "tile" and any(_near(d["left"], d["top"], drag["drop"]) for drag in drags)
+               for d in drawn), f"{what}: a ghost moved or started away from its tile: {drawn}"
     for current, following in zip(drags, drags[1:] + [None]):
-        landed = _landed_at(log, current["drop"])
-        assert landed is not None, f"{what}: {current['label']} never landed at its drop point"
+        node_id = _node_at(saved, current["drop"], current["label"])
+        assert node_id is not None, f"{what}: no node landed at {current['label']}'s drop point: {saved['nodes']}"
+        landed = _landed_at(log, node_id)
+        assert landed is not None, f"{what}: {current['label']} never reached Ben's doc"
         assert landed > current["at"][0], f"{what}: {current['label']} landed before its drag began"
         if following is not None:
             assert landed < following["at"][0], (
@@ -308,11 +326,12 @@ def test_a_second_tab_sees_the_agent_drag_a_plans_nodes_one_at_a_time_then_its_c
     assert any(label.startswith(f"Dataflow Builder (asked by {OWNER_NAME})") for label in chips), (
         f"Ben's dock never showed the Dataflow Builder at work: {chips}"
     )
-    drags = _assert_dragged_one_at_a_time(log, planner, TITLES, "Ben's tab")
+    drags = _assert_dragged_one_at_a_time(log, room.saved(), planner, TITLES, "Ben's tab")
     # The connections land after the last node, with no motion.
-    connected = next(index for index, snapshot in enumerate(log) if snapshot["edges"] > 0)
+    connected = next((index for index, snapshot in enumerate(log) if snapshot["edges"] > 0), None)
+    assert connected is not None, f"no connection of the plan reached Ben's doc: {log[-1]}"
     assert connected > drags[-1]["at"][-1], f"a connection landed while a node was still being dragged: {log}"
-    assert not log[connected]["drags"] and all(not a["carrying"] for a in log[connected]["agents"]), log[connected]
+    assert all(not agent["carrying"] for agent in log[connected]["agents"]), log[connected]
     assert log[-1]["edges"] == 3 and len(log[-1]["nodes"]) == 4, log[-1]
     assert log[-1]["chips"] == [], f"Ben's dock still shows the agent: {log[-1]}"
     # Ben's Activity: the agent joined, asked by Ana, then left saying what it did.
@@ -325,20 +344,32 @@ def test_a_second_tab_sees_the_agent_drag_a_plans_nodes_one_at_a_time_then_its_c
 
 
 def test_a_node_removed_under_a_queued_action_stops_the_queue_with_a_chat_line(room):
-    planner, owner, editor = _ready(room, removeOnFirstDrag=SINK)
+    planner, owner, editor = _ready(room)
     script_agent_replies(room.backend, _plan_reply(), attachment=planner)
+    replies: dict = {}
+    asking = threading.Thread(
+        target=lambda: replies.update(plan=room.ask(planner, "Plan the parks' analysis.")), daemon=True,
+    )
+    asking.start()
+    # Ben removes Sum as the agent's first drag reaches his tab: the plan's
+    # connection to it is still queued.
+    try:
+        editor.wait_for_function(_CARRYING_JS, timeout=60000)
+    except Exception as exc:  # noqa: BLE001 - said in the test's words
+        raise AssertionError("no drag of the agent's reached Ben's tab") from exc
+    _delete_with_the_key(editor, SINK)
+    asking.join(150)
+    assert not asking.is_alive() and "plan" in replies, "the Dataflow Builder's turn never answered"
 
-    reply = room.ask(planner, "Plan the parks' analysis.")
-
-    assert editor.evaluate("() => window.__curio_queue.removed"), "Ben's tab never removed Sum during a drag"
-    [card] = [part for part in reply["content"] if part.get("type") == "change"]
+    saved = room.saved()
+    assert SINK not in {node["id"] for node in saved["nodes"]}, "Ben's removal of Sum never reached the server"
+    [card] = [part for part in replies["plan"]["content"] if part.get("type") == "change"]
     line = f"Left undone: 3 connections, since '{SINK_GOAL}' was removed"
     assert card["status"] == "applied" and line in card["lines"], card
     _wait_until_gone(editor, "Ben's tab")
     # The plan's three nodes still landed, one at a time; none of its connections did.
     log = _recorded(editor)
-    _assert_dragged_one_at_a_time(log, planner, TITLES, "Ben's tab")
-    saved = room.saved()
+    _assert_dragged_one_at_a_time(log, saved, planner, TITLES, "Ben's tab")
     assert sorted(node.get("goal", "").split(" ")[0] for node in saved["nodes"]) == sorted(TITLES), saved["nodes"]
     assert saved["edges"] == [], f"a connection of the stopped plan landed: {saved['edges']}"
     # Ana's chat shows the change's card, saying what was left undone.
@@ -376,12 +407,13 @@ def test_two_agents_queues_play_side_by_side_without_mixing(room):
     assert len([p for p in replies["builder"]["content"] if p.get("type") == "change"]) == 2, replies["builder"]
     _wait_until_gone(editor, "Ben's tab")
     log = _recorded(editor)
-    plans = _assert_dragged_one_at_a_time(log, planner, TITLES, "the Dataflow Builder")
-    builds = _assert_dragged_one_at_a_time(log, builder, ["One", "Two"], "the Node Builder")
+    saved = room.saved()
+    plans = _assert_dragged_one_at_a_time(log, saved, planner, TITLES, "the Dataflow Builder")
+    builds = _assert_dragged_one_at_a_time(log, saved, builder, ["One", "Two"], "the Node Builder")
+    assert plans[0]["client"] != builds[0]["client"], "the two agents shared one state in the room"
     # Side by side: each agent's drags began before the other's last one ended.
     assert plans[0]["at"][0] < builds[-1]["at"][-1] and builds[0]["at"][0] < plans[-1]["at"][-1], (
         f"the two agents' drags did not play side by side: {plans} {builds}"
     )
-    saved = room.saved()
     assert sorted(node.get("title") or "" for node in saved["nodes"] if node.get("title") in ("One", "Two")) == ["One", "Two"]
     assert len(saved["nodes"]) == 6 and len(saved["edges"]) == 3, saved

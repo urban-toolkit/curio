@@ -200,9 +200,9 @@ def keep(spec: dict, attachment_id: str | None, change: dict) -> None:
     kept = [c for c in record.get("changes") or [] if isinstance(c, dict)]
     at = next((i for i, c in enumerate(kept) if c.get("changeId") == change["changeId"]), None)
     if at is None:
-        kept.append(copy.deepcopy(change))
+        kept.append(change)
     else:
-        kept[at] = copy.deepcopy(change)
+        kept[at] = change
     record["changes"] = kept[-CHANGES_KEPT:]
 
 

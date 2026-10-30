@@ -146,7 +146,9 @@ function planChange() {
 
 const drags = () => Array.from(document.querySelectorAll<HTMLElement>("[data-agent-drag]"));
 const at = (element: HTMLElement) => [parseFloat(element.style.left), parseFloat(element.style.top)];
-const steps = () => landed.map((mutation) => (mutation.kind === "graph-created" ? mutation.step : mutation.kind));
+/** The step a plan's mutation is, if it is one step of it. */
+const stepOf = (mutation: AgentCanvasMutation) => (mutation as { step?: number }).step;
+const steps = () => landed.map((mutation) => (mutation.kind === "graph-created" ? stepOf(mutation) : mutation.kind));
 
 describe("a change on a canvas no doc binds plays its drags before it lands", () => {
     test("a plan's steps land in order, each new node once its drop ended, never the whole plan at once", () => {
@@ -176,7 +178,7 @@ describe("a change on a canvas no doc binds plays its drags before it lands", ()
         expect(steps()).toEqual([0, 1, 2, 3]);
         expect(drags()).toHaveLength(0);
         expect(landed.every((mutation) => mutation.landed === true)).toBe(true);
-        expect(landed.some((mutation) => mutation.kind === "graph-created" && mutation.step === undefined)).toBe(false);
+        expect(landed.some((mutation) => mutation.kind === "graph-created" && stepOf(mutation) === undefined)).toBe(false);
     });
 
     test("a change that comes while another plays waits for it", () => {
@@ -216,7 +218,8 @@ describe("a change on a canvas no doc binds plays its drags before it lands", ()
         });
 
         expect(landed).toHaveLength(1);
-        expect(landed[0].kind === "graph-created" && landed[0].step).toBe(undefined);
+        expect(landed[0].kind).toBe("graph-created");
+        expect(stepOf(landed[0])).toBe(undefined);
         expect(drags()).toHaveLength(0);
         awareness.destroy();
     });
