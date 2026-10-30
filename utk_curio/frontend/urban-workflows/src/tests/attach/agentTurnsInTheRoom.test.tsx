@@ -8,6 +8,8 @@
  * followed like anyone's; a second ask while a turn runs waits its turn, and
  * its asker can withdraw it; Stop asks the server to stop the turn that runs.
  * An event that skips one, or a join of the room again, reads the chat again.
+ * An ask this tab made before the room held it follows its own stream alone,
+ * and a read of the chat keeps it as that stream brings it.
  */
 import React from "react";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -143,9 +145,34 @@ async function openChat() {
   await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("user:earlier"));
 }
 
+/** The answer of an ask this tab follows by its own stream, held open: the
+ * test sends its events and ends it. */
+function heldStream() {
+  const held = {
+    delta: (_text: string) => undefined as void,
+    event: (_name: string, _payload: Record<string, unknown>) => undefined as void,
+    finish: (_result: Record<string, unknown>) => undefined as void,
+  };
+  api.runAttachmentStream.mockImplementation((_p, _a, _m, onDelta, onEvent) => {
+    held.delta = (text) => onDelta(text);
+    held.event = (name, payload) => onEvent?.(name, payload);
+    return new Promise((resolve) => {
+      held.finish = (result) => resolve(result as never);
+    });
+  });
+  return held;
+}
+
+/** The tab is away from the dataflow's room, or not yet in it. */
+function outOfTheRoom() {
+  mockCollab.role = null;
+  mockCollab.participantId = null;
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockRoom.clear();
+  mockCollab.role = "owner";
   mockCollab.participantId = "tab-1";
   mockWithdrawId = "";
   api.listAttachments.mockResolvedValue({ attachments: [attachment] } as never);
@@ -288,14 +315,125 @@ describe("a turn followed through the room", () => {
 
   it("a tab that joins the room again reads its open chats again", async () => {
     const { rerender } = renderHarness();
+    const again = () =>
+      rerender(
+        <AgentAttachmentsProvider>
+          <Harness />
+        </AgentAttachmentsProvider>,
+      );
     await openChat();
     expect(api.getSession).toHaveBeenCalledTimes(1);
+    // Away from the room, the tab has no id there; back, it has a new one.
+    mockCollab.participantId = null;
+    again();
+    expect(api.getSession).toHaveBeenCalledTimes(1);
     mockCollab.participantId = "tab-2";
+    again();
+    await waitFor(() => expect(api.getSession).toHaveBeenCalledTimes(2));
+  });
+
+  it("this tab's own ask that an earlier turn holds back waits its turn after it", async () => {
+    renderHarness();
+    await openChat();
+    await act(async () => {
+      fireEvent.click(screen.getByText("send"));
+    });
+    expect(api.askTurn).toHaveBeenCalledTimes(1);
+    const askId = api.askTurn.mock.calls[0][2];
+    expect(screen.getByTestId("turns").textContent).toBe("user:earlier|user:Mine now.");
+    api.getSession.mockResolvedValue({
+      attachmentId: "a1",
+      sessionId: "s1",
+      turns: [{ role: "user", text: "earlier" }],
+      asks: [
+        {
+          askId: "k1", by: BOB, message: "What about the map?", state: "running", askedAt: 1, startedAt: 2, seq: 1,
+          text: "", events: [],
+        },
+        { askId, by: ANA, message: "Mine now.", state: "waiting", askedAt: 3, startedAt: null, seq: 0, text: "", events: [] },
+      ],
+    });
+    tell({ askId, seq: 0, event: "asked", data: { by: ANA, message: "Mine now.", askedAt: 3, waiting: true } });
+    await waitFor(() => expect(screen.getByTestId("waiting").textContent).toBe("Mine now.:waiting"));
+    expect(screen.getByTestId("turns").textContent).toBe("user:earlier|user:Bob:What about the map?");
+  });
+});
+
+describe("an ask this tab made before the room held it", () => {
+  it("follows its own stream, and the room's events of it show nothing twice", async () => {
+    outOfTheRoom();
+    const stream = heldStream();
+    const { rerender } = renderHarness();
+    await openChat();
+    await act(async () => {
+      fireEvent.click(screen.getByText("send"));
+    });
+    expect(api.runAttachmentStream).toHaveBeenCalledWith(
+      "p1", "a1", "Mine now.", expect.any(Function), expect.any(Function), undefined,
+      expect.stringMatching(/^[0-9a-f]{32}$/),
+    );
+    const askId = api.runAttachmentStream.mock.calls[0][6] as string;
+    expect(api.askTurn).not.toHaveBeenCalled();
+    // The room holds the tab now, and tells it the same ask's events.
+    mockCollab.role = "owner";
+    mockCollab.participantId = "tab-1";
     rerender(
       <AgentAttachmentsProvider>
         <Harness />
       </AgentAttachmentsProvider>,
     );
-    await waitFor(() => expect(api.getSession).toHaveBeenCalledTimes(2));
+    act(() => {
+      stream.event("execution", { executionId: "e7" });
+      stream.delta("Here.");
+    });
+    tell({ askId, seq: 0, event: "asked", data: { by: ANA, message: "Mine now.", askedAt: 1, waiting: false } });
+    tell({ askId, seq: 1, event: "started", data: { startedAt: 2 } });
+    tell({ askId, seq: 2, event: "execution", data: { executionId: "e7" } });
+    tell({ askId, seq: 3, event: "delta", data: { text: "Here." } });
+    tell({ askId, seq: 4, event: "done", data: { reply: "Here.", executionId: "e7", usage: null } });
+    await act(async () => {
+      stream.finish({ reply: "Here.", executionId: "e7", usage: null });
+    });
+    expect(screen.getByTestId("turns").textContent).toBe("user:earlier|user:Mine now.|agent:Here.");
+    expect(screen.getByTestId("executions").textContent).toBe("∅|∅|e7");
+    expect(api.getSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the ask as its stream brings it when the chat is read again", async () => {
+    outOfTheRoom();
+    const stream = heldStream();
+    renderHarness();
+    await openChat();
+    await act(async () => {
+      fireEvent.click(screen.getByText("send"));
+    });
+    expect(api.runAttachmentStream).toHaveBeenCalledWith(
+      "p1", "a1", "Mine now.", expect.any(Function), expect.any(Function), undefined,
+      expect.stringMatching(/^[0-9a-f]{32}$/),
+    );
+    const askId = api.runAttachmentStream.mock.calls[0][6] as string;
+    act(() => {
+      stream.event("execution", { executionId: "e7" });
+      stream.delta("Her");
+    });
+    api.getSession.mockResolvedValue({
+      attachmentId: "a1",
+      sessionId: "s1",
+      turns: [{ role: "user", text: "earlier" }, { role: "agent", text: "older" }],
+      asks: [
+        { askId, by: ANA, message: "Mine now.", state: "running", askedAt: 1, startedAt: 2, seq: 3, text: "Her", events: [] },
+      ],
+    });
+    // An event that skips one reads the chat again while the stream runs.
+    tell({ askId: "k1", seq: 2, event: "delta", data: { text: "skipped one" } });
+    await waitFor(() =>
+      expect(screen.getByTestId("turns").textContent).toBe("user:earlier|agent:older|user:Mine now.|agent:Her"),
+    );
+    act(() => stream.delta("e."));
+    await act(async () => {
+      stream.finish({ reply: "Here.", executionId: "e7", usage: null });
+    });
+    expect(screen.getByTestId("turns").textContent).toBe("user:earlier|agent:older|user:Mine now.|agent:Here.");
+    expect(screen.getByTestId("executions").textContent).toBe("∅|∅|∅|e7");
   });
 });

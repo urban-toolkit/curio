@@ -113,9 +113,13 @@ export function useAgentSession(
 
   const collab = useCollab();
   // A tab the dataflow's room holds follows every ask through it; any other
-  // follows its own asks over HTTP.
+  // follows its own asks over HTTP. Once the room held it, it stays the
+  // room's while it reconnects: a join reads its chats again.
+  const roomedForRef = useRef<string | null>(null);
+  if (collab.role !== null && effectiveProjectId) roomedForRef.current = effectiveProjectId;
   const inRoomRef = useRef(false);
-  inRoomRef.current = collab.role !== null;
+  inRoomRef.current =
+    collab.role !== null || (effectiveProjectId !== null && roomedForRef.current === effectiveProjectId);
 
   // Project switch: sessions are project-private — drop the chat state.
   useEffect(() => {
@@ -198,12 +202,16 @@ export function useAgentSession(
     [appendTurns, dropWaiting],
   );
 
+  // Read through a ref, so the handlers below stay stable.
+  const rereadLater = useRef<(attachmentId: string) => void>(() => undefined);
+
   /** The ask is over: no longer followed. A turn's live tool lines go with
    * it (*ran*): they are transient, and the durable record is
    * execution.toolCalls (dev/41). */
   const forgetAsk = useCallback(
     (ask: LiveAsk, ran: boolean = ask.state === "running") => {
-      delete (asksRef.current[ask.attachmentId] ?? {})[ask.askId];
+      const asks = asksRef.current[ask.attachmentId] ?? {};
+      if (asks[ask.askId] === ask) delete asks[ask.askId];
       dropWaiting(ask.attachmentId, ask.askId);
       if (ran) setToolActivity((prev) => ({ ...prev, [ask.attachmentId]: [] }));
     },
@@ -284,9 +292,6 @@ export function useAgentSession(
     [appendTurns, replaceLastAgentTurn, forgetAsk],
   );
 
-  // Read through a ref, so the handlers below stay stable.
-  const rereadLater = useRef<(attachmentId: string) => void>(() => undefined);
-
   /** What one event of an ask does to the chat. *quiet*: an event read with
    * the ask as it stood, which happened before this tab saw it, so a change
    * does not play on its canvas again. */
@@ -294,13 +299,17 @@ export function useAgentSession(
     (ask: LiveAsk, name: string, data: Record<string, unknown>, quiet = false) => {
       const attachmentId = ask.attachmentId;
       if (name === "asked") {
-        if (ask.state === "running") return;
         if (ask.inTranscript) {
           // This tab placed its own message at the transcript's end, but an
           // earlier turn runs first: the chat as it stands says where.
-          if (data.waiting) rereadLater.current(attachmentId);
+          if (data.waiting) {
+            ask.state = "waiting";
+            ask.inTranscript = false;
+            rereadLater.current(attachmentId);
+          }
           return;
         }
+        if (ask.state === "running") return;
         ask.state = "waiting";
         setWaiting(attachmentId, {
           askId: ask.askId, by: ask.by, message: ask.message, status: data.waiting ? "waiting" : "asked",
@@ -344,6 +353,10 @@ export function useAgentSession(
         failAsk(ask, typeof data.error === "string" ? data.error : "agent run failed");
         return;
       }
+      if (name === "execution") {
+        if (typeof data.executionId === "string") ask.executionId = data.executionId;
+        return;
+      }
       // A change the agent made landed on the server: a canvas no doc binds
       // takes it now, before the reply ends.
       if (name === "change") {
@@ -366,7 +379,8 @@ export function useAgentSession(
   /** One of an ask's events through the room: applied once, in order. An
    * ask this tab follows is its own or one of a chat it read; a chat it has
    * not read shows nothing of others' asks, though their end may move the
-   * listing. An event that skips one, or one of an ask this tab never saw
+   * listing. An ask this tab follows by its own stream takes none of the
+   * room's. An event that skips one, or one of an ask this tab never saw
    * asked, reads the chat again. */
   const applyEnvelope = useCallback(
     (env: AgentTurnEnvelope) => {
@@ -378,6 +392,7 @@ export function useAgentSession(
       }
       const asks = (asksRef.current[attachmentId] ??= {});
       let ask = asks[env.askId];
+      if (ask?.via === "stream") return;
       if (!ask && !hydratedRef.current.has(attachmentId)) {
         if (env.event === "done") {
           const content = (env.data as TurnEnd).content ?? [];
@@ -396,7 +411,7 @@ export function useAgentSession(
         ask = asks[env.askId] = {
           askId: env.askId, attachmentId, by: data.by ?? null, message: String(data.message ?? ""),
           state: "waiting", seq: -1, startedAt: Date.now(), streamed: "", toolCalls: [],
-          sawProposal: false, inTranscript: false,
+          sawProposal: false, inTranscript: false, via: "room",
         };
       }
       if (env.seq <= ask.seq) return;
@@ -411,14 +426,21 @@ export function useAgentSession(
   );
 
   /** The chat as it stands on the server: its transcript, then its running
-   * turn's message and reply so far, and the asks waiting their turn. */
+   * turn's message and reply so far, and the asks waiting their turn. An ask
+   * this tab follows by its own stream stays as that stream brought it, after
+   * them, until its turn is in the transcript. */
   const restore = useCallback((attachmentId: string, turns: AgentSessionTurn[], views: AgentAskView[]) => {
+    const settled = new Set(turns.map((turn) => turn.execution?.executionId));
+    const own = Object.values(asksRef.current[attachmentId] ?? {}).filter(
+      (ask) => ask.via === "stream" && !(ask.executionId && settled.has(ask.executionId)),
+    );
     const asks: Record<string, LiveAsk> = {};
     const restored = [...turns];
     const waiting: WaitingAsk[] = [];
     let running: { ask: LiveAsk; liveUsage: AgentUsage | null } | null = null;
     let lines: string[] = [];
     for (const view of views) {
+      if (own.some((ask) => ask.askId === view.askId)) continue;
       const ask = liveAskOf(attachmentId, view);
       asks[ask.askId] = ask;
       if (ask.state !== "running") {
@@ -438,17 +460,31 @@ export function useAgentSession(
       }
       running = { ask, liveUsage };
     }
+    let ownRuns = false;
+    for (const ask of own) {
+      asks[ask.askId] = ask;
+      if (!ask.inTranscript) {
+        waiting.push({
+          askId: ask.askId, by: ask.by, message: ask.message, status: ask.state === "asking" ? "sending" : "waiting",
+        });
+        continue;
+      }
+      restored.push(userTurnOf(ask));
+      if (ask.streamed) restored.push({ role: "agent", text: ask.streamed });
+      if (ask.state === "running") ownRuns = true;
+    }
     asksRef.current[attachmentId] = asks;
     setTranscripts((prev) => ({ ...prev, [attachmentId]: restored }));
     setWaitingAsks((prev) => ({ ...prev, [attachmentId]: waiting }));
-    setToolActivity((prev) => ({ ...prev, [attachmentId]: lines }));
+    // The tool lines and the strip of a turn this tab streams stay its own.
+    if (!ownRuns) setToolActivity((prev) => ({ ...prev, [attachmentId]: lines }));
     if (running) {
       const { ask, liveUsage } = running;
       setRunStatus((prev) => ({
         ...prev,
         [attachmentId]: { phase: "running", startedAt: ask.startedAt, ...(liveUsage ? { liveUsage } : {}) },
       }));
-    } else {
+    } else if (!ownRuns) {
       setRunStatus((prev) => {
         if (prev[attachmentId]?.phase !== "running") return prev;
         const { [attachmentId]: _drop, ...rest } = prev;
@@ -525,11 +561,14 @@ export function useAgentSession(
   );
   // A tab that joins the room again may have missed events while it was
   // away: it reads its chats again.
+  // A tab away from the room has no id there: the join is the next id that
+  // differs from the last one it had.
   const joinedRef = useRef<string | null>(null);
   useEffect(() => {
+    if (!participantId) return;
     const before = joinedRef.current;
     joinedRef.current = participantId;
-    if (!participantId || !before || before === participantId) return;
+    if (!before || before === participantId) return;
     for (const attachmentId of Array.from(hydratedRef.current)) reread(attachmentId);
   }, [participantId, reread]);
 
@@ -595,6 +634,7 @@ export function useAgentSession(
       const ask: LiveAsk = {
         askId: newAskId(), attachmentId, by: null, message, state: "asking", seq: -1,
         startedAt: Date.now(), streamed: "", toolCalls: [], sawProposal: false, inTranscript: false,
+        via: inRoomRef.current ? "room" : "stream",
       };
       asks[ask.askId] = ask;
       if (busy) setWaiting(attachmentId, { askId: ask.askId, by: null, message, status: "sending" });

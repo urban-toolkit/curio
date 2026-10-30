@@ -42,6 +42,12 @@ export interface LiveAsk {
   /** Its message is the transcript's: its turn runs, or this tab placed it
    * there when it asked of an agent that had nothing to do. */
   inTranscript: boolean;
+  /** How this tab follows it, one way only: through the room, or, for an
+   * ask this tab made before the room held it, through that ask's own
+   * stream, whose events the room's then never repeat. */
+  via: "room" | "stream";
+  /** Its turn's execution, once its turn said it. */
+  executionId?: string;
 }
 
 /** An ask waiting its turn, as the chat lists it after the transcript. */
@@ -90,6 +96,7 @@ export function liveAskOf(attachmentId: string, view: AgentAskView): LiveAsk {
     toolCalls: [],
     sawProposal: false,
     inTranscript: view.state === "running",
+    via: "room",
   };
 }
 

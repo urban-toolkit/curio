@@ -310,11 +310,11 @@ export const agentsApi = {
     attachmentId: string,
     message: string,
     onDelta: (text: string) => void,
-    /** Optional observer for the dev/41 tool/review events (`tool_requested`,
-     * `tool_started`, `tool_result`, `review_required`), the `change` event of
-     * each change that landed (its canvas mutations, for a canvas no doc
-     * binds) and the dev/80 interim `usage` events. The durable state arrives
-     * with `done`/rehydration. */
+    /** Optional observer for the turn's `execution` handshake, the dev/41
+     * tool/review events (`tool_requested`, `tool_started`, `tool_result`,
+     * `review_required`), the `change` event of each change that landed (its
+     * canvas mutations, for a canvas no doc binds) and the dev/80 interim
+     * `usage` events. The durable state arrives with `done`/rehydration. */
     onEvent?: (name: string, payload: Record<string, unknown>) => void,
     /** Ephemeral grounded context (memo dev/44) — composed fresh per send. */
     context?: string | null,
@@ -362,8 +362,11 @@ export const agentsApi = {
           stopped?: { by: AgentTurnWriter | null };
         };
         if (event === "delta" && payload.text) onDelta(payload.text);
-        else if (event === "execution") executionId = payload.executionId;
-        else if (event === "content") content = payload.parts;
+        else if (event === "execution") {
+          // The turn's identity, which the transcript's record of it will carry.
+          executionId = payload.executionId;
+          onEvent?.(event, payload as Record<string, unknown>);
+        } else if (event === "content") content = payload.parts;
         else if (
           event === "tool_requested" ||
           event === "tool_started" ||
