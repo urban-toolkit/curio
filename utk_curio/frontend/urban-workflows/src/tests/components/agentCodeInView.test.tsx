@@ -21,6 +21,11 @@
  * Each node is UniversalNode with its real NodeEditor. The lines are marked
  * where y-monaco takes a change into the editor (`useYMonacoBinding`), with
  * y-monaco stubbed as in yMonacoUndoPerEditor.test.tsx.
+ *
+ * A canvas no doc binds (a hosted guest's example) has no awareness: there a
+ * run's `change` events say what the agent wrote, as its state in the room
+ * said it (`writing`), and reach the node through the same bridge every run's
+ * stream calls (`bridgeLandedChangeEvent`).
  */
 import React from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -169,6 +174,7 @@ import { DOC_EVENT, dataflowToDoc, replaceText } from "../../providers/collab/do
 import { useYMonacoBinding } from "../../components/editing/useYMonacoBinding";
 import { TooltipLayer } from "../../components/tooltip/TooltipLayer";
 import { setTooltipTimings } from "../../components/tooltip/tooltipStore";
+import { bridgeLandedChangeEvent } from "../../services/agents/agentEvents";
 import type { WidgetDef } from "../../utils/widgets/widgetModel";
 
 type Handler = (payload?: any) => void;
@@ -629,5 +635,60 @@ describe("the node's lock chip", () => {
     expect([lockChip("loader")?.getAttribute("data-tooltip"), lockChip("loader")?.textContent]).toEqual([
       "Editing: Ana", "AN",
     ]);
+  });
+});
+
+describe("on a canvas no doc binds, from a run's change events", () => {
+  // A node of its own, so a hold this suite leaves behind turns no other test's.
+  const GUESTS_LOADER = { ...LOADER, nodeId: "guests-loader" };
+
+  /** A run's `change` event for the Node Builder's code in *nodeId*, as the
+   *  server streams it: its canvas mutation, and what its state in the room
+   *  said while it wrote. */
+  function codeChange(nodeId: string) {
+    return {
+      changeId: "change-1",
+      attachmentId: "att-node-builder",
+      tool: "node.content.write",
+      canvas: { kind: "node-content-applied", nodeId, content: "data = 1\nreturn data", agent: "Node Builder" },
+      writing: { user: NODE_BUILDER, editing: nodeId, writes: "code" },
+    };
+  }
+
+  test("a node that opens on its controls shows its code from the moment an agent's change lands, then its Widgets tab again", async () => {
+    // A hosted guest's example: the canvas is in no room, so no doc binds it.
+    render(<CollaborationProvider><Node data={GUESTS_LOADER} /></CollaborationProvider>);
+    await waitFor(() => expect(sockets).toHaveLength(1));
+    expect(tabShown("guests-loader")).toBe("widgets");
+    jest.useFakeTimers();
+
+    act(() => {
+      bridgeLandedChangeEvent("change", codeChange("guests-loader"));
+    });
+    expect(tabShown("guests-loader")).toBe("code");
+    expect(within(paneShown("guests-loader")).queryByTestId("monaco")).not.toBeNull();
+
+    // The second the server keeps a node after its write, as the room's tabs see it.
+    act(() => {
+      jest.advanceTimersByTime(999);
+    });
+    expect(tabShown("guests-loader")).toBe("code");
+    act(() => {
+      jest.advanceTimersByTime(1);
+    });
+    expect(tabShown("guests-loader")).toBe("widgets");
+    expect(paneShown("guests-loader").querySelector("[data-widget-controls]")).not.toBeNull();
+  });
+
+  test("a canvas the doc binds takes what agents write from the doc's awareness alone", async () => {
+    await inTheRoom(<Node data={GUESTS_LOADER} />);
+    expect(tabShown("guests-loader")).toBe("widgets");
+
+    // The change event comes after the agent let go of the node: the
+    // awareness said what it wrote while it wrote it.
+    act(() => {
+      bridgeLandedChangeEvent("change", codeChange("guests-loader"));
+    });
+    expect(tabShown("guests-loader")).toBe("widgets");
   });
 });
