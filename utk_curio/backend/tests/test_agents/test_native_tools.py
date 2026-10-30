@@ -55,6 +55,22 @@ TEMPLATES = [
     },
 ]
 
+#: gemma4's whole reply in a run on native tools (the live skill evaluation,
+#: widgets case 3): its delegation written as a fenced block, one closing brace short.
+BROKEN_DELEGATION = (
+    '```curio.v1\n{"delegateRequest": {"capability": "node.content.generate", "inputs": {"context": {"nodeId": '
+    '"c8c48cdb-323d-4f80-ace9-7ac358277f90", "currentContent": "import pandas as pd\\r\\n\\r\\ndf = None\\r\\n'
+    'mult = None\\r\\n\\r\\n# The dataframe and the multiplier, on the two input circles\\r\\n'
+    'for item in (input_0, input_1):\\r\\n    if isinstance(item, pd.DataFrame):\\r\\n        df = item\\r\\n'
+    "    elif isinstance(item, dict) and 'multiplier' in item:\\r\\n        mult = item['multiplier']\\r\\n\\r\\n"
+    "# Defaults\\r\\nif df is None:\\r\\n    df = pd.DataFrame({'a': [], 'b': []})\\r\\nif mult is None:\\r\\n"
+    "    mult = 1\\r\\n\\r\\ndf = df.copy()\\r\\nif 'b' in df.columns:\\r\\n"
+    "    df['b'] = pd.to_numeric(df['b'], errors='coerce') * float(mult)\\r\\n\\r\\n"
+    "df.metadata = {'name': 'Multiplied Numbers'}\\r\\nreturn df\\r\\n\"}, "
+    "\"intent\": \"Modify the node to multiply column 'b' by 25 instead of using a multiplier from the input.\", "
+    "\"nodeType\": \"curio.builtin/computation-analysis\"}}\n```"
+)
+
 
 @pytest.fixture()
 def project(client, user_and_token):
@@ -411,6 +427,30 @@ class TestDelegation:
         assert result["is_error"] is True
         assert result["content"] == (
             "refused: no delegate of this agent declares capability 'nothing.declares.this'")
+
+    def test_a_delegation_block_a_brace_short_gets_a_correction_round_then_delegates(
+        self, client, headers, project,
+    ):
+        """The block never reaches the user: as a broken tool request's block
+        does (#245), it gets a correction round that names the broken JSON, and
+        the corrected call delegates."""
+        att = _attach(client, headers, project, NB)
+        block = BROKEN_DELEGATION.split("\n", 1)[1].rsplit("\n", 1)[0]
+        corrected = json.loads(block + "}")["delegateRequest"]
+        testing_provider.route_by_intent({"multiply column 'b' by 25": "return input_0"})
+        testing_provider.push_replies(
+            BROKEN_DELEGATION,
+            {"toolCalls": [_call("delegate", corrected, "d1")]},
+            "The new node's code is written.",
+        )
+        body = _run(client, headers, project, att)
+        assert "delegateRequest" not in body["reply"], body["reply"]
+        correction = _run_calls()[1][-1]
+        assert correction["role"] == "user", correction
+        assert correction["content"].startswith("[tool validation]"), correction["content"]
+        assert "not valid JSON" in correction["content"], correction["content"]
+        (entry,) = [p for p in body["content"] if p["type"] == "delegation"]
+        assert (entry["capability"], entry["status"]) == ("node.content.generate", "ok"), entry
 
 
 class TestTheFallback:
