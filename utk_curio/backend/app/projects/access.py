@@ -12,8 +12,9 @@ Three roles, decided on the server:
 participant joins and again for each change the participant sends
 (``collaboration/events.py``), and refuses a watcher's. A change to the list
 reaches the room at once (:func:`_tell_the_room`). The dataflow's agents ask
-it too (:func:`agents_role`): the owner and the editors drive them, and a
-watcher is refused.
+it too (:func:`agents_role`), and so do its runs on the server
+(``runs/service.py``): the owner and the editors drive them, and a watcher is
+refused.
 
 Only the owner manages the list, and no guest does: the shared guest owns the
 examples every hosted guest opens, so a check on ownership alone would let any
