@@ -1,11 +1,11 @@
 {
   "skill_name": "node-control",
   "agent": "agent.curio.node-builder@1",
-  "dataflow": "docs/examples/dataflows/multi-input.json",
+  "dataflow": "evals/files/two-tables.json",
   "evals": [
     {
       "id": 1,
-      "prompt": "Add a node after the one whose code is just `return input_0, input_1`. It hands on both loaded tables at once; the new node should return a small table with the row count of each.",
+      "prompt": "Add a node after the one whose code is just `return input_0, input_1`. The new node should return a small table with the row count of each of the two loaded tables.",
       "expected_output": "One new Python node whose code reads the two tables by indexing its one input, input_0[0] and input_0[1], reads no input_1, and returns a table of the two counts.",
       "assertions": [
         "The answer creates one new node (node.create) of a Python code template, such as Python Computation or Data Transformation.",
@@ -16,27 +16,27 @@
     },
     {
       "id": 2,
-      "dataflow": "docs/examples/dataflows/vega.json",
-      "prompt": "Add a Python node after the bar chart that returns the rows whose b is above 50.",
-      "expected_output": "One new Python node whose code reads, from its input, the table the bar chart passes on (columns a and b) and returns the rows with b above 50, without rebuilding the table or sending the user back to the loading node.",
+      "dataflow": "evals/files/osm-layers.json",
+      "prompt": "Add a Python node after the OpenStreetMap layers node that returns a one-row table with how many buildings its table_osm_buildings layer holds.",
+      "expected_output": "One new Python node whose code reads the buildings from its input through the layer chip [!! input_0:table_osm_buildings !!], which runs as curio_layer(input_0, \"table_osm_buildings\", 0), and returns that layer's row count in a one-row table, without loading the buildings again or sending the user to load them in a node of their own.",
       "assertions": [
         "The answer creates one new node (node.create) of a Python code template.",
-        "The code it writes reads the table from its input, the rows the bar chart passes on with columns a and b, and returns those whose b is above 50, such as input_0[input_0[\"b\"] > 50].",
-        "The code rebuilds no table by hand (no new DataFrame of the nine rows) and parses no Vega-Lite spec.",
-        "The answer does not say the chart has no data to pass on, and does not tell the user to wire the new node to the loading node instead."
+        "The code it writes reads the buildings from its input through the layer chip [!! input_0:table_osm_buildings !!], or curio_layer(input_0, \"table_osm_buildings\", 0), and returns how many rows that layer has.",
+        "The code loads no data of its own (no OpenStreetMap file, URL or Data Catalog dataset) and parses no Autark spec.",
+        "The answer does not say the OpenStreetMap layers node has nothing to pass on, and does not tell the user to load the buildings in another node instead."
       ]
     },
     {
       "id": 3,
-      "dataflow": "docs/examples/dataflows/vega.json",
+      "dataflow": "evals/files/bars.json",
       "target": {"kind": "node", "node": "4d414f97-fad3-4ac7-9e1d-53725eb61f70"},
       "prompt": "Add two more bars to this chart: J with 60 and K with 33.",
-      "expected_output": "No data in the spec: the answer adds the rows in the loading node's Python code, whose DataFrame gains J = 60 and K = 33, since the chart draws the table the node before it returns.",
+      "expected_output": "No data in the spec: the answer adds the rows in the Python code of the node before the chart, whose DataFrame gains J = 60 and K = 33, since the chart draws the table the node before it returns.",
       "assertions": [
         "No Vega-Lite spec it writes has a \"data\" field or inline \"values\".",
-        "The answer adds the rows in the loading node's Python code (node 8d428948-f5e4-485b-9812-51a4212678a7), whose DataFrame gains J with 60 and K with 33 in columns a and b and is still returned, or tells the user to add them there.",
+        "The answer adds the rows in the Python code of the node before the chart (node 8d428948-f5e4-485b-9812-51a4212678a7), whose DataFrame gains J with 60 and K with 33 in columns a and b and is still returned, or tells the user to add them there.",
         "The answer says the chart draws the table the node before it returns, so the new rows go in that node.",
-        "The answer creates no new node: the new bars come from rows of the existing loading node."
+        "The answer creates no new node: the new bars come from rows of the existing node before the chart."
       ]
     }
   ]

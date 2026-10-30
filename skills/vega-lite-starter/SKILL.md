@@ -28,8 +28,9 @@ the mark it writes and what it shows. First match wins:
 
 Column roles come from pandas dtypes, checked in this order:
 {{starter.dtype_roles}}. A column of any other dtype has no role.
-Never chart `__row_index__`, and avoid a nominal column that has one distinct
-value per row: it is an identifier and produces one bar per row.
+Never chart `__row_index__`. A nominal column with a different value on every
+row is an identifier: it takes no role, so it is left out before the ladder is
+matched, since charting it draws one bar per row.
 
 Always state an aggregate on a bar chart. Without one, Vega-Lite silently draws
 one bar per row.
