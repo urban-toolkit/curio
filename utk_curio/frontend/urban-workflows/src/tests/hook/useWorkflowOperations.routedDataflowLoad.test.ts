@@ -105,16 +105,16 @@ beforeEach(() => {
   });
 });
 
-describe("saving while the routed dataflow is still loading", () => {
-  it("updates the routed dataflow instead of creating a second one", async () => {
+describe("an action on the dataflow while the routed one is still loading", () => {
+  it("waits for the routed dataflow and acts on it instead of creating a second one", async () => {
     // The bug, in the order CI hit it: the route has resolved, the load has not
-    // landed, and the drawer saves to get an id to install into.
+    // landed, and the drawer asks for an id to install into.
     routeTo(ROUTED);
     const { result } = renderOps();
 
-    let save: Promise<any>;
+    let id: Promise<string | null>;
     await act(async () => {
-      save = result.current.saveCurrentProject();
+      id = result.current.ensureProjectId();
       // A microtask is all an unfixed build needs to POST /api/projects.
       await Promise.resolve();
     });
@@ -124,37 +124,13 @@ describe("saving while the routed dataflow is still loading", () => {
     await act(async () => {
       await result.current.loadProject(ROUTED);
       settleProjectLoad(ROUTED);
-      await save;
+      await expect(id).resolves.toBe(ROUTED);
     });
 
     expect(projectsApi.create).not.toHaveBeenCalled();
-    expect(projectsApi.update).toHaveBeenCalledTimes(1);
-    expect((projectsApi.update as jest.Mock).mock.calls[0][0]).toBe(ROUTED);
-  });
-
-  it("serializes the canvas after the wait, not before it", async () => {
-    // The wait sits ahead of the canvas read for this reason. Waiting after it
-    // would name the right dataflow and then persist the empty pre-load canvas
-    // over the stored one, turning a duplicate into a wipe.
-    routeTo(ROUTED);
-    const { result } = renderOps();
-
-    let save: Promise<any>;
-    await act(async () => {
-      save = result.current.saveCurrentProject();
-      await Promise.resolve();
-    });
-
-    await act(async () => {
-      await result.current.loadProject(ROUTED);
-      // Nodes exist by the time the latch opens, which is what ProjectLoader
-      // guarantees by settling only after the spec is applied.
-      settleProjectLoad(ROUTED);
-      await save;
-    });
-
-    const [, body] = (projectsApi.update as jest.Mock).mock.calls[0];
-    expect(body.spec).toBeDefined();
+    // Nothing of the canvas is sent for it: the pre-load canvas can never
+    // land over the stored dataflow.
+    expect(projectsApi.update).not.toHaveBeenCalled();
   });
 
   it("reports rather than forking when the load settles with no id", async () => {
@@ -165,14 +141,17 @@ describe("saving while the routed dataflow is still loading", () => {
     const { result } = renderOps();
 
     let err: unknown;
+    let id: string | null = "unset";
     await act(async () => {
       settleProjectLoad(ROUTED);
-      await result.current.saveCurrentProject().catch((e: unknown) => {
+      await result.current.saveDataflow().catch((e: unknown) => {
         err = e;
       });
+      id = await result.current.ensureProjectId();
     });
 
     expect((err as Error)?.message).toMatch(/still opening/i);
+    expect(id).toBeNull();
     expect(projectsApi.create).not.toHaveBeenCalled();
     expect(projectsApi.update).not.toHaveBeenCalled();
   });
@@ -184,7 +163,7 @@ describe("saving while the routed dataflow is still loading", () => {
     const { result } = renderOps();
 
     await act(async () => {
-      await result.current.saveCurrentProject();
+      await result.current.saveDataflow();
     });
 
     expect(projectsApi.create).toHaveBeenCalledTimes(1);
@@ -193,7 +172,7 @@ describe("saving while the routed dataflow is still loading", () => {
 
   it("does not wait once the dataflow is loaded", async () => {
     // The common case has to stay synchronous-ish: a latch left open by a load
-    // that already delivered its id would stall every later save.
+    // that already delivered its id would stall every later action.
     routeTo(ROUTED);
     const { result } = renderOps();
     await act(async () => {
@@ -202,10 +181,10 @@ describe("saving while the routed dataflow is still loading", () => {
     });
 
     await act(async () => {
-      await result.current.saveCurrentProject();
+      await expect(result.current.ensureProjectId()).resolves.toBe(ROUTED);
     });
 
-    expect(projectsApi.update).toHaveBeenCalledTimes(1);
+    expect(projectsApi.update).not.toHaveBeenCalled();
     expect(projectsApi.create).not.toHaveBeenCalled();
   });
 });

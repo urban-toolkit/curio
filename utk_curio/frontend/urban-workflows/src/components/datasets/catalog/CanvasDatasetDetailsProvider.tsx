@@ -15,7 +15,7 @@ const CanvasDatasetDetailModal: React.FC<{
   request: DatasetDetailsRequest;
   onClose: () => void;
 }> = ({ request, onClose }) => {
-  const { projectId, projectDirty, outputs, nodes, defaultSaveOutputDataset } = useFlowContext();
+  const { projectId, projectDirty, whenChangesKept, outputs, nodes, defaultSaveOutputDataset } = useFlowContext();
   const liveOutputs = useMemo(
     () => buildSaveableLiveOutputs(outputs, nodes, defaultSaveOutputDataset),
     // Captured once per opening: a new array each render would refetch the
@@ -27,6 +27,7 @@ const CanvasDatasetDetailModal: React.FC<{
     <DatasetDetailModal
       canvasAvailable
       unsavedChanges={projectDirty}
+      whenChangesKept={whenChangesKept}
       datasetId={request.datasetId}
       dataflowId={projectId}
       liveOutputs={liveOutputs}

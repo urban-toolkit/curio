@@ -1,8 +1,8 @@
 /**
  * Whose history this tab's canvas has: the server's, while the canvas is
  * bound to the dataflow's doc (`useDataflowDoc`), or the browser's own, while
- * it is not (a dataflow never saved, a hosted guest's own canvas, no sign-in,
- * the dashboard).
+ * it is not (a dataflow never saved, a hosted guest's own canvas, the
+ * dashboard).
  *
  * The one check the browser's recorders make (`ProvenanceProvider`'s entries,
  * `TrillGenerator`'s versions): a canvas bound to the doc records nothing
@@ -13,7 +13,7 @@
  */
 import { useSyncExternalStore } from "react";
 
-import { historyApi } from "../../api/historyApi";
+import { historyApi, type SavedVersion } from "../../api/historyApi";
 
 /** What the server tells the owner's and the editors' tabs when the history
  *  changed (`history.py`'s `CHANGED_EVENT`): the drawers read it again. */
@@ -66,14 +66,17 @@ export function afterCommit(): Promise<void> {
 }
 
 /** File > Save of a dataflow the canvas is bound to: a version named Saved,
- *  after every change this tab made. */
-export async function noteSaved(): Promise<void> {
+ *  after every change this tab made. Its answer, with the dataflow's
+ *  categories as it is now; nothing when no version was recorded, which
+ *  leaves the save as it was. */
+export async function noteSaved(): Promise<SavedVersion | undefined> {
     const server = serverHistory();
-    if (!server || !server.reads()) return;
+    if (!server || !server.reads()) return undefined;
     await server.whenKept();
     try {
-        await historyApi.saved(server.projectId);
+        return await historyApi.saved(server.projectId);
     } catch (error) {
         console.warn("[history] File > Save's version was not recorded:", error);
+        return undefined;
     }
 }

@@ -7,8 +7,8 @@ import type { DataflowCategories, HandCategories } from "../../utils/dataflowCat
 import type { NotebookPane } from "../../utils/notebookLayout";
 import type { NodeSettings } from "../../utils/nodeSettingsWriters";
 import type { Scenario } from "../../utils/scenarios/scenarioModel";
-import type { WidgetDef } from "../../utils/widgets/widgetModel";
 import type { IInteraction, IOutput, IPropagation, NodeExecOutcome } from "./flowTypes";
+import type { DataflowDocProvider } from "../collab/docProvider";
 import type { CanvasView } from "./useNotebookView";
 
 export interface FlowContextProps {
@@ -100,8 +100,17 @@ export interface FlowContextProps {
     // Project state
     projectId: string | null;
     projectName: string;
+    /** A canvas bound to no doc holds changes no one keeps: a dataflow not
+     *  saved yet, a hosted guest's own canvas, the dashboard's layout. */
     projectDirty: boolean;
     projectSavedAt: Date | null;
+    /** The dataflow's doc the canvas is bound to, or null: what the top bar's
+     *  Saved, Saving... or Offline reads (`useSaveState`). */
+    boundDoc: DataflowDocProvider | null;
+    /** Resolves true once no change this tab made waits for the server (at
+     *  once on a canvas bound to no doc), false when it could not reach the
+     *  server in time. */
+    whenChangesKept: () => Promise<boolean>;
     nodeExecStatus: Record<string, "stale" | "executed" | "errored">;
     viewerMode: "owner" | "shared";
 
@@ -109,8 +118,8 @@ export interface FlowContextProps {
     workflowCategories: HandCategories;
     /** Source and automatic categories, from the last load or save. */
     serverCategories: DataflowCategories;
-    /** The dataflow's scenarios (#662), saved with it. Member ids of nodes
-     * deleted since the last save are dropped when it saves. */
+    /** The dataflow's scenarios (#662), saved with it. A member's id names a
+     * node the canvas may no longer hold until the list is written again. */
     scenarios: Scenario[];
     /** "Run stale nodes automatically" (#845), saved with the dataflow; off by default. */
     autoRun: boolean;
@@ -118,25 +127,27 @@ export interface FlowContextProps {
     // Project operations
     /** Rename the open dataflow, writing BOTH name stores (#230). False if blank. */
     renameDataflow: (name: string) => boolean;
-    /** Replace the hand-set categories; the dataflow is dirty until the next save. */
+    /** Replace the hand-set categories. */
     updateDataflowCategories: (next: HandCategories) => void;
-    /** Replace the scenarios; the dataflow is dirty until the next save. */
+    /** Replace the scenarios; the outputs they read are saved a moment later. */
     setScenarios: (next: Scenario[]) => void;
-    /** Turn auto-run on or off; the dataflow is dirty until the next save. */
+    /** Turn auto-run on or off. */
     setAutoRun: (on: boolean) => void;
-    /** Save now, whatever else is saving. Only the save queue and the dashboard's
-     * Save layout call it; everything else uses `requestProjectSave`. */
-    saveCurrentProject: (
-        nameOverride?: string,
-        options?: { omitOutputs?: boolean; savedWidgets?: ReadonlyMap<string, WidgetDef[]> },
-    ) => Promise<any>;
-    /** Save once every save already requested has answered, so no two saves of
-     * the open dataflow go out at once (#909, #941). Resolves to the save's
-     * answer, or rejects with its error. */
-    requestProjectSave: () => Promise<any>;
+    /** File > Save: makes a dataflow not saved yet, and gives a saved one a
+     * version named Saved once the server holds every change. Rejects with
+     * the reason it could not. */
+    saveDataflow: () => Promise<{ id: string; created: boolean }>;
+    /** The dashboard's Save layout: each tile's place and size, and nothing else. */
+    saveDashboardLayout: () => Promise<void>;
     saveAsNewProject: (name: string, copyOf?: string | null) => Promise<any>;
+    /** The dataflow's id for an action on the server's copy of it, once the
+     * server holds every change; a dataflow not saved yet is made first. */
     ensureProjectId: () => Promise<string | null>;
-    persistDataflowForInstall: (nodeIds?: readonly string[]) => Promise<InstallSyncOutcome>;
+    /** Record the outputs the canvas holds that the dataflow records. */
+    recordOutputs: (nodeIds?: readonly string[]) => Promise<InstallSyncOutcome>;
+    /** The same, a moment from now: after a pin, a scenario or a node's Save
+     *  output switched (`useDashboardPinSave`). */
+    recordOutputsSoon?: () => void;
     /** Open the owner's dataflow; with `lastResults`, with the results its canvas was left with. */
     loadProject: (id: string, options?: { lastResults?: boolean }) => Promise<any>;
     loadSharedProject: (id: string) => Promise<any>;
@@ -181,9 +192,6 @@ export interface FlowContextProps {
     /** A dashboard opened (#1117): what its nodes are saved with is kept, and a tile with
      * no saved output runs the nodes before it. Only on a dashboard. */
     dashboardOpened?: (projectId: string) => void;
-    /** The widgets each pinned node is saved with, which Save layout writes in place of
-     * the values a dashboard's viewer tried (#1117). */
-    dashboardSavedWidgets?: () => ReadonlyMap<string, WidgetDef[]> | undefined;
     defaultSaveOutputDataset: boolean;
     setDefaultSaveOutputDataset: (value: boolean) => void;
 
