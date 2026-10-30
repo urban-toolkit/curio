@@ -36,6 +36,7 @@ import { IntentMessage } from "./chat/IntentMessage";
 import { PendingReplyRow } from "./chat/PendingReplyRow";
 import { SuggestedPromptsRow } from "./chat/SuggestedPromptsRow";
 import { useConversationTitle } from "./chat/useConversationTitle";
+import { WaitingAskRow } from "./chat/WaitingAskRow";
 import {
   canvasUnchangedFor,
   suggestedPromptsOf,
@@ -43,6 +44,7 @@ import {
   targetTooltipFor,
   turnMetaFor,
 } from "./chat/chatPanelDerived";
+import type { WaitingAsk } from "../../../providers/agents/turnAsks";
 
 /**
  * Chat panel for one attached agent, styled to the approved concept screens
@@ -101,12 +103,19 @@ export const AgentChatPanel: React.FC<{
   /** Transient tool-activity lines for the in-flight send (memo dev/41). */
   toolActivity?: string[];
   /** This attachment's live run status (memo dev/80) — drives the status
-   * strip and the per-attachment send disable. Pass null for "wired, idle"
-   * (the send busy state then follows the provider, keyed per attachment);
-   * omit entirely to fall back to the panel-local sending flag. Without it
-   * the strip still derives a finished state from the last turn's execution
-   * record. */
+   * strip. Pass null for "wired, idle": the provider then follows each
+   * attachment's asks, and a running turn never holds the composer back, as
+   * an ask sent meanwhile waits its turn; omit entirely to fall back to the
+   * panel-local sending flag. Without it the strip still derives a finished
+   * state from the last turn's execution record. */
   runStatus?: AgentRunStatus | null;
+  /** The asks waiting their turn after the running one, in order. */
+  waitingAsks?: WaitingAsk[];
+  /** Stop the running turn: whoever asked it, the owner or an editor may.
+   * Omitted → no Stop. */
+  onStopTurn?: () => Promise<void>;
+  /** Withdraw a waiting ask the viewer asked. Omitted → no Withdraw. */
+  onWithdrawAsk?: (askId: string) => Promise<void>;
   /** Opens the shared settings modal at the Attached-instance scope (memo
    * dev/42) — the labeled cog beneath the header (the docs/08 anatomy slot;
    * never in the DEC-042 header itself). Omitted → no cog. */
@@ -195,6 +204,9 @@ export const AgentChatPanel: React.FC<{
   onClose,
   toolActivity = [],
   runStatus,
+  waitingAsks = [],
+  onStopTurn,
+  onWithdrawAsk,
   onApplyProposal,
   onDismissProposal,
   onUndoChange,
@@ -294,11 +306,22 @@ export const AgentChatPanel: React.FC<{
     () => sessionTokenTotals(turns, runInFlight ? runStatus?.liveUsage : null),
     [turns, runInFlight, runStatus?.liveUsage],
   );
-  // Per-attachment send disable (dev/80): when the provider wires a status
-  // (null = wired, idle) the busy state follows it, keyed by attachment — so
-  // cycling agents mid-run no longer leaks the panel-local `sending` flag
-  // into another chat. Unwired (tests, previews): the local flag governs.
-  const sendBusy = runStatus === undefined ? sending : runInFlight;
+  // A running turn never holds the composer back: a message sent meanwhile is
+  // asked at once and waits its turn on the server. When the provider wires a
+  // status (null = wired, idle) it follows each attachment's asks, so the
+  // panel-local `sending` flag never leaks into another chat as agents are
+  // cycled. Unwired (tests, previews): the local flag governs.
+  const sendBusy = runStatus === undefined ? sending : false;
+  // Stop asked for the running turn: it stops at its next step.
+  const [stopping, setStopping] = useState(false);
+  useEffect(() => {
+    if (!runInFlight) setStopping(false);
+  }, [runInFlight]);
+  const stop = () => {
+    if (!onStopTurn || stopping) return;
+    setStopping(true);
+    onStopTurn().catch(() => setStopping(false));
+  };
 
   const suggested = useMemo(() => suggestedPromptsOf(turns), [turns]);
 
@@ -503,6 +526,16 @@ export const AgentChatPanel: React.FC<{
         {runInFlight && !streamingTurnVisible && runStatus ? (
           <PendingReplyRow tint={tint} startedAt={runStatus.startedAt} />
         ) : null}
+        {runInFlight && onStopTurn ? (
+          <div className={styles.systemLine}>
+            <button type="button" className={styles.retry} onClick={stop} disabled={stopping} data-agent-turn-stop="">
+              {stopping ? "Stopping…" : "Stop"}
+            </button>
+          </div>
+        ) : null}
+        {waitingAsks.map((ask) => (
+          <WaitingAskRow key={ask.askId} ask={ask} viewerAccount={viewerAccount} onWithdraw={onWithdrawAsk} />
+        ))}
       </div>
       <TranscriptJumpButton
         visible={!atBottom}

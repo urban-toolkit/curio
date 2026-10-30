@@ -393,8 +393,10 @@ def reset_db():
     The agent jobs still running are stopped first, as the user's Stop does,
     and waited for within the same bound: a Solve session keeps making passes
     until its deadline, so the test that started one can end with it running,
-    and its calls would take the replies the next test scripts. One still
-    running after the wait is named in ``agent_jobs_still_running``.
+    and its calls would take the replies the next test scripts. So are chat
+    turns, which run as jobs too: every scripted hold released, every waiting
+    ask withdrawn, every running turn stopped. One still running after the
+    wait is named in ``agent_jobs_still_running``.
 
     Response: ``{"truncated": [...], "stores_cleared": [...], "waited_for":
     [...], "waited_seconds": n, "still_running": [...], "agent_jobs": [...],
@@ -428,8 +430,9 @@ def reset_db():
         # and a held run's stream would hold this reset for the whole wait.
         run_jobs.set_hold(False)
         # Stopped before the wait: a page's stream of a job is a request in
-        # flight until the job ends.
-        stopped_jobs = agents_service.stop_agent_jobs()
+        # flight until the job ends. Chat turns too: their scripted holds
+        # released and their waiting asks withdrawn first, so none starts.
+        stopped_jobs = agents_service.stop_agent_jobs() + agents_service.stop_turns()
         if waited_for:
             log.info("reset-db waits for %d request(s) in flight: %s",
                      len(waited_for), ", ".join(waited_for))
@@ -609,7 +612,7 @@ _UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 
 def _reply_entry_error(entry: object) -> str | None:
     """Why *entry* is not a scripted reply, or None when it is one: a string,
-    ``{text, toolCalls}`` or ``{error, status}``."""
+    ``{text, toolCalls, hold}`` or ``{error, status}``."""
     if isinstance(entry, str):
         return None
     if not isinstance(entry, dict):
@@ -620,10 +623,12 @@ def _reply_entry_error(entry: object) -> str | None:
         if not isinstance(entry["error"], str) or not isinstance(entry.get("status", 500), int):
             return "an error reply is {'error': <string>, 'status': <int>}"
         return None
-    if set(entry) - {"text", "toolCalls"}:
-        return "a reply object takes only 'text' and 'toolCalls'"
+    if set(entry) - {"text", "toolCalls", "hold"}:
+        return "a reply object takes only 'text', 'toolCalls' and 'hold'"
     if not isinstance(entry.get("text", ""), str):
         return "'text' must be a string"
+    if "hold" in entry and not (isinstance(entry["hold"], str) and entry["hold"]):
+        return "'hold' must name the hold the call waits on"
     calls = entry.get("toolCalls", [])
     if not isinstance(calls, list):
         return "'toolCalls' must be a list"
@@ -649,7 +654,8 @@ def agent_script_push():
         per round. A reply is its text, ``{"text", "toolCalls"}`` for native
         tool calls (each ``{"name", "arguments", "id"}``, ``id`` optional), or
         ``{"error", "status"}`` for an endpoint error (see
-        ``testing_provider``).
+        ``testing_provider``). ``"hold": <name>`` in a reply object keeps the
+        call that takes it waiting until ``/agent-script/release`` names it.
       * ``byIntent`` - optional ``{substring: reply}``. A delegated call whose
         ``intent`` contains a key gets that reply instead of the next queued
         one (see ``testing_provider.route_by_intent``).
@@ -727,25 +733,44 @@ def agent_script_read():
 
     ``calls`` holds ``{configId, model}`` for each of those calls: which LLM
     configuration answered it. ``offered`` holds ``{tools, toolChoice}`` for
-    each: the native tools it offered, none on the fenced protocol.
+    each: the native tools it offered, none on the fenced protocol. ``held``,
+    there only while calls wait on a hold, names each such hold with how many
+    wait on it.
 
     Response: ``{"pending": n, "captured": [[{role, content}, ...], ...],
-    "calls": [{configId, model}, ...], "offered": [{tools, toolChoice}, ...]}``
+    "calls": [{configId, model}, ...], "offered": [{tools, toolChoice}, ...]}``,
+    and ``"held": {name: n}`` while a call is held.
     """
     denied = _scripted_guard()
     if denied is not None:
         return denied
-    return (
-        jsonify(
-            {
-                "pending": testing_provider.pending(),
-                "captured": testing_provider.captured(),
-                "calls": testing_provider.calls(),
-                "offered": testing_provider.offered(),
-            }
-        ),
-        200,
-    )
+    body = {
+        "pending": testing_provider.pending(),
+        "captured": testing_provider.captured(),
+        "calls": testing_provider.calls(),
+        "offered": testing_provider.offered(),
+    }
+    held = testing_provider.held()
+    if held:
+        body["held"] = held
+    return jsonify(body), 200
+
+
+@testing_bp.route("/agent-script/release", methods=["POST"])
+def agent_script_release():
+    """Let the calls held on a name answer (``testing_provider.release``).
+
+    Body: ``{"hold": <name>}``. Response: ``{"held": {name: n}}``, the holds
+    calls still wait on.
+    """
+    denied = _scripted_guard()
+    if denied is not None:
+        return denied
+    name = (request.get_json(silent=True) or {}).get("hold")
+    if not (isinstance(name, str) and name):
+        return jsonify({"error": "'hold' must name a hold"}), 400
+    testing_provider.release(name)
+    return jsonify({"held": testing_provider.held()}), 200
 
 
 @testing_bp.route("/agent-script", methods=["DELETE"])

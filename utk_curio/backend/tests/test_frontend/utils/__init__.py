@@ -286,6 +286,8 @@ from .scripted_llm import (  # noqa: F401
     SCRIPTED_LABEL,
     use_scripted_llm,
     script_agent_replies,
+    held_agent_calls,
+    release_agent_hold,
     captured_agent_prompts,
     captured_agent_calls,
     captured_agent_offers,
