@@ -325,6 +325,35 @@ def test_her_apply_copies_his_package_into_her_store_installs_its_libraries_and_
     assert _modules(client, flow, sandbox, "bob") == hers
 
 
+def test_her_apply_names_his_package_in_a_lockfile_that_named_none_as_her_change(client, flow, sandbox):
+    """alice's lockfile names no package, so her dataflow's packages are read
+    from its nodes, and the node bob's drop made of his package counts it in.
+    Her Apply still adds it to her lockfile as her change: her record of what
+    the dataflow uses holds it, and bob's runs read her copy once his own is
+    gone."""
+    from utk_curio.backend.app.collaboration import dataflow_docs, owner_uses
+    from utk_curio.backend.app.packages.application.store_install import remove_package
+
+    alice, bob = _key(flow.alice), _key(flow.bob)
+    with dataflow_docs.writing(alice, flow.pid, dataflow_docs.person(alice, "packages")) as spec:
+        spec["dataflow"]["packages"] = []
+    # bob's drop of his package's card: his change, which puts nothing of
+    # alice's within his reach.
+    with dataflow_docs.writing(alice, flow.pid, dataflow_docs.person(bob, "nodes")) as spec:
+        spec["dataflow"]["nodes"].append({"id": "bus-node", "type": BUS_NODE, "content": "return 1\n", "in": "DEFAULT",
+                                          "out": "DEFAULT", "goal": "", "x": 0, "y": 0})
+    request = _asked(client, flow, "bob", BUS_DIR, nodeId="bus-node")
+    assert _lockfile(flow) == []
+
+    resp = _apply(client, flow, "alice", request["proposalId"])
+
+    assert resp.status_code == 200, resp.get_data(as_text=True)[:300]
+    assert BUS_DIR in _lockfile(flow), "her Apply left her lockfile naming no package"
+    assert owner_uses.recorded(alice, flow.pid).package(BUS_DIR), "the lockfile entry is not hers"
+    remove_package(bob, BUS_DIR)
+    assert _modules(client, flow, sandbox, "bob") == {"root": _sources(flow.alice, BUS_DIR), "names": ["bus_helpers"]}
+
+
 def test_his_own_model_comes_to_her_model_catalog_with_its_weights(client, flow, sandbox):
     """bob's own model asks alice as a package does. Her Apply copies it into
     her store with its weights and adds it to her dataflow, and his play of a
