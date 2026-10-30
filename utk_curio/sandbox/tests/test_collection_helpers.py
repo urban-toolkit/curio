@@ -76,24 +76,22 @@ class TestTheHelpers(unittest.TestCase):
     def test_a_file_that_is_not_here_has_the_path_none(self):
         """A row's ``path`` is None for a file this execution cannot open, as
         documented, so ``if row["path"]:`` reads it as missing. pandas stores
-        a column of strings with NaN for it, and NaN is truthy."""
+        a column of strings with NaN for it, and NaN is truthy. The index has
+        a ``bytes`` column, as every index ``index_collection`` writes does."""
+        outside = {"file_id": "d" * 16, "relpath": "../outside.jpg", "name": "outside.jpg",
+                   "ext": "jpg", "kind": "image"}
+        write_index(self.index, [{**row, "bytes": 100} for row in ROWS + [outside]])
         objects = self.tmp / "objects"
         objects.mkdir()
         (objects / f"{'a' * 16}.jpg").write_bytes(b"x")
         cached = self.helpers({"c1": {"objects": str(objects)}})["curio_load_collection"]("c1")
-        rows = ROWS + [{"file_id": "d" * 16, "relpath": "../outside.jpg", "name": "outside.jpg",
-                        "ext": "jpg", "kind": "image"}]
-        write_index(self.index, rows)
         in_place = self.helpers({"c1": {"root": "/srv/media"}})["curio_load_collection"]("c1")
         self.assertEqual(
-            {
-                "uncached": [cached.loc[1, "path"], cached.loc[2, "path"]],
-                "outside its root": in_place.loc[3, "path"],
-            },
-            {"uncached": [None, None], "outside its root": None},
+            {"uncached": cached["path"].tolist()[1:], "outside its root": in_place["path"].tolist()[3]},
+            {"uncached": [None, None, None], "outside its root": None},
         )
-        self.assertEqual(cached.loc[0, "path"], str(objects / f"{'a' * 16}.jpg"))
-        self.assertFalse(any(row["path"] for _, row in cached.iloc[1:].iterrows()))
+        self.assertEqual(cached["path"].tolist()[0], str(objects / f"{'a' * 16}.jpg"))
+        self.assertEqual([bool(row["path"]) for _, row in cached.iterrows()], [True, False, False, False])
 
     def test_an_index_with_positions_is_a_geodataframe(self):
         write_index(self.index, ROWS, geo=True)
