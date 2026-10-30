@@ -243,12 +243,13 @@ function drop(target: HTMLElement, dataTransfer: unknown) {
   fireEvent.drop(target, { dataTransfer, clientX: 300, clientY: 200 });
 }
 
-/** What the canvas made of the drops so far. */
+/** What the canvas made of the drops so far: copies, since a mock's list of
+ *  calls grows in place. */
 function made() {
   return {
     nodes: mockCreateCodeNode.mock.calls.map(([type]) => type),
-    imports: mockImport.mock.calls,
-    asks: mockAsk.mock.calls,
+    imports: mockImport.mock.calls.map((call) => [...call]),
+    asks: mockAsk.mock.calls.map((call) => [...call]),
   };
 }
 
