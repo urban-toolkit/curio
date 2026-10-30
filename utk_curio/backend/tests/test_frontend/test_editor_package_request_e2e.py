@@ -84,7 +84,8 @@ BUS_MANIFEST = {
     }],
 }
 BUS_FILES = {
-    "sources/count.py": "from bus_helpers import buses\nreturn buses()\n",
+    # Printed too: a node's output box shows what it prints, never its value.
+    "sources/count.py": "from bus_helpers import buses\nprint(buses())\nreturn buses()\n",
     "sources/bus_helpers.py": "def buses():\n    return 'buses at the stop: 12'\n",
 }
 
