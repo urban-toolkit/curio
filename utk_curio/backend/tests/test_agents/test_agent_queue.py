@@ -394,7 +394,8 @@ def test_node_create_is_dragged_from_its_tile_and_lands_as_its_drop_ends(client,
     assert step["dragged"]["carrying"] == carrying and step["canvas"]["node"]["id"] == new_id, step
 
 
-def test_two_agents_queues_play_side_by_side_each_in_its_own_order(file_backed, monkeypatch):
+@pytest.mark.parametrize("round_", range(10))
+def test_two_agents_queues_play_side_by_side_each_in_its_own_order(file_backed, monkeypatch, round_):
     """The Dataflow Builder lands its plan while the Node Builder adds two
     nodes of its own, both asked at once. Each agent's drags start only once
     its last one dropped, in its own order and carrying only its own nodes,
