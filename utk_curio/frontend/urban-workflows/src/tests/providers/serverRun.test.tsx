@@ -556,6 +556,15 @@ describe("a canvas opened after a run", () => {
     expect(deps.showToast).not.toHaveBeenCalled();
   });
 
+  it("asks for its own last run, since the owner's list of her dataflow's runs holds her editors' too", async () => {
+    api.listForProject.mockResolvedValue([]);
+    const { hook } = harness([{ id: "a" }]);
+
+    await act(async () => { await hook.result.current.attachLatestRun("p1"); });
+
+    expect(api.listForProject.mock.calls).toEqual([["p1", { limit: 1, mine: true }]]);
+  });
+
   it("follows a run that is still going", async () => {
     const live = stream();
     api.listForProject.mockResolvedValue([run("r1", [], { status: "running" })]);
