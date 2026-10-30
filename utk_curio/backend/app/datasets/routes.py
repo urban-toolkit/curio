@@ -330,58 +330,6 @@ def uninstall_dataset(dataflow_id: str, dataset_id: str):
     return jsonify(payload), 200
 
 
-# ---------------------------------------------------------------------------
-# An invited editor's own dataset, asked of the owner (editor_requests.py)
-# ---------------------------------------------------------------------------
-
-@datasets_bp.route("/dataflows/<dataflow_id>/datasets/requests", methods=["GET"])
-@require_auth
-@_map_catalog_errors
-def list_dataset_requests(dataflow_id: str):
-    """The requests the owner has not reviewed, for her and her editors."""
-    from utk_curio.backend.app.datasets.application import editor_requests
-
-    return jsonify({"requests": editor_requests.pending(g.user, dataflow_id)}), 200
-
-
-@datasets_bp.route("/dataflows/<dataflow_id>/datasets/requests", methods=["POST"])
-@require_auth
-@_map_catalog_errors
-def ask_for_dataset(dataflow_id: str):
-    """An invited editor asks the owner to add a dataset of his own Data
-    Catalog to her dataflow (``{datasetId, nodeId?, add?}``): 201 with the
-    request, or 200 when nothing needs asking. 403 for anyone but an editor
-    and the owner, 409 for the owner herself."""
-    from utk_curio.backend.app.datasets.application import editor_requests
-
-    body = request.get_json(silent=True) or {}
-    payload = editor_requests.ask(
-        g.user, dataflow_id, body.get("datasetId"), node_id=body.get("nodeId"), add=bool(body.get("add")),
-    )
-    return jsonify(payload), 201 if payload.get("requested") else 200
-
-
-@datasets_bp.route("/dataflows/<dataflow_id>/datasets/requests/<request_id>/apply", methods=["POST"])
-@require_auth
-@_map_catalog_errors
-def apply_dataset_request(dataflow_id: str, request_id: str):
-    """The owner's Apply: the dataset is copied into her store and added to
-    the dataflow. An editor's is refused with 403, as for an install."""
-    from utk_curio.backend.app.datasets.application import editor_requests
-
-    return jsonify(editor_requests.apply(g.user, dataflow_id, request_id)), 200
-
-
-@datasets_bp.route("/dataflows/<dataflow_id>/datasets/requests/<request_id>", methods=["DELETE"])
-@require_auth
-@_map_catalog_errors
-def dismiss_dataset_request(dataflow_id: str, request_id: str):
-    """The owner's Dismiss: the request goes and nothing else changes."""
-    from utk_curio.backend.app.datasets.application import editor_requests
-
-    return jsonify(editor_requests.dismiss(g.user, dataflow_id, request_id)), 200
-
-
 @datasets_bp.route("/datasets/<dataset_id>", methods=["DELETE"])
 @require_auth
 @_map_catalog_errors

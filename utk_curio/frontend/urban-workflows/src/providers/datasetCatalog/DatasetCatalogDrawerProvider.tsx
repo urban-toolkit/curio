@@ -14,10 +14,13 @@ import { useFlowContext } from "../FlowProvider";
 import { useToastContext } from "../ToastProvider";
 import { prefetchDatasetCatalog } from "../../services/datasetCatalog";
 import {
-  DATASET_REQUESTS_CHANGED_EVENT,
-  loadDatasetRequests,
-  type DatasetRequest,
-} from "../../services/datasetCatalog/datasetRequests";
+  EDITOR_REQUESTS_CHANGED_EVENT,
+  loadEditorRequests,
+  openRequestsReview,
+  requestCatalog,
+  requestsToldText,
+  type EditorRequest,
+} from "../../services/editorRequests";
 import { isStandaloneDashboard } from "../../standalone/dashboardPayload";
 import { useSlideDrawerPresentation } from "../../hook/useSlideDrawerPresentation";
 
@@ -61,11 +64,13 @@ export function DatasetCatalogDrawerProvider({ children }: { children: React.Rea
     });
   }, [dataflowId]);
 
-  // The datasets the dataflow's editors asked its owner to add (`datasetRequests.ts`),
-  // which the drawer shows and a node that loads one marks: read for the owner's
-  // canvas and an editor's, and again each time the room says they changed.
-  // The owner is told of each request she was not told of yet, with a way to
-  // review it here.
+  // What the dataflow's editors asked its owner to add (`editorRequests.ts`),
+  // datasets and packages, which each catalog drawer shows and a node a
+  // request names marks: read for the owner's canvas and an editor's, and
+  // again each time the room says they changed. The owner is told of each
+  // request she was not told of yet, with a way to review it in the drawer
+  // of its kind: this one for a dataset, the Node or Model Catalog's for a
+  // package (`openRequestsReview`).
   const { viewerMode } = useFlowContext();
   const collab = useCollab();
   const role = canvasRole(viewerMode, collab);
@@ -77,24 +82,24 @@ export function DatasetCatalogDrawerProvider({ children }: { children: React.Rea
   const told = useRef<{ dataflowId: string | null; ids: Set<string> }>({ dataflowId: null, ids: new Set() });
   useEffect(() => {
     if (isStandaloneDashboard()) return;
-    const tellTheOwner = (requests: DatasetRequest[]) => {
+    const tellTheOwner = (requests: EditorRequest[]) => {
       if (viewer !== "owner" || !dataflowId) return;
       if (told.current.dataflowId !== dataflowId) told.current = { dataflowId, ids: new Set() };
       const fresh = requests.filter((request) => !told.current.ids.has(request.proposalId));
       for (const request of requests) told.current.ids.add(request.proposalId);
       if (fresh.length === 0) return;
-      tell.current.showToast(
-        fresh.length === 1
-          ? `${fresh[0].by.name} asks you to add ${fresh[0].datasetName} to this dataflow.`
-          : `${fresh.length} datasets your editors asked for wait for your review.`,
-        "info",
-        { action: { label: "Review", onClick: () => tell.current.open() } },
-      );
+      const catalog = requestCatalog(fresh[0]);
+      tell.current.showToast(requestsToldText(fresh), "info", {
+        action: {
+          label: "Review",
+          onClick: () => (catalog === "datasets" ? tell.current.open() : openRequestsReview(catalog)),
+        },
+      });
     };
-    const load = () => void loadDatasetRequests(dataflowId, viewer).then(tellTheOwner);
+    const load = () => void loadEditorRequests(dataflowId, viewer).then(tellTheOwner);
     load();
     if (!dataflowId || !viewer || typeof onRemote !== "function") return;
-    return onRemote(DATASET_REQUESTS_CHANGED_EVENT, load);
+    return onRemote(EDITOR_REQUESTS_CHANGED_EVENT, load);
   }, [dataflowId, viewer, onRemote]);
 
   // Gated on `mounted`, like its two peers: `presented` goes false a frame

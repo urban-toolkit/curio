@@ -49,6 +49,9 @@ import { useDrawerDragThrough } from "./useDrawerDragThrough";
 import styles from "./NodeCatalogDrawer.module.css";
 import { modalStackDepth } from "../../ModalShell";
 import ConfirmDialog from "../../ConfirmDialog";
+import { EditorRequestsSection } from "../../catalog/EditorRequestsSection";
+import { useAskForPackage } from "../../collab/useAskTheOwner";
+import { useAgentsDataflowId } from "../../../providers/agents";
 
 
 export interface NodeCatalogDrawerProps {
@@ -145,7 +148,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   // actions here are mutually exclusive from the user's point of view, and a
   // single slot keeps the "what am I confirming" state next to the copy.
   const [confirmAction, setConfirmAction] = useState<{
-    title: string; body: string; confirmLabel: string; run: () => Promise<void>;
+    title: string; body: string; confirmLabel: string; run: () => Promise<void>; destructive?: boolean;
   } | null>(null);
 
   /**
@@ -172,6 +175,14 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     }
   }, []);
 
+  // On the owner's dataflow, an invited editor's Add of a package or a model
+  // asks her to add it (`useAskForPackage`): her review applies it. A card he
+  // drops on her canvas asks her too, and makes its node at once
+  // (`usePackageCardDrop`). His Remove from project takes a package out of
+  // her dataflow as his own change, and deletes it from no account.
+  const askForPackage = useAskForPackage();
+  const openedDataflowId = useAgentsDataflowId();
+
   const {
     installed, catalogByDir, catalog, catalogPublishedDirs, busy, cardActionDir, actionError, restartNoticeText,
     installCandidate, installMode, conflictReport, effectiveProjectId, ensureProjectId, kindOfDir,
@@ -191,7 +202,24 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     onInstalledToProject: setCurrentProjectPackages,
     refreshRegistry: refreshPackageRegistry,
     logLabel: "NodeCatalogDrawer",
+    editorsDataflowId: askForPackage ? openedDataflowId : null,
   });
+
+  const onAdd = useCallback((pkg: PackagePayload) => {
+    if (!askForPackage) {
+      void onInstall(pkg);
+      return;
+    }
+    setConfirmAction({
+      title: `Ask to add ${pkg.name}?`,
+      body: `Ask the dataflow's owner to add ${pkg.name} to this dataflow? It is added once the owner applies your request.`,
+      confirmLabel: "Ask the owner",
+      destructive: false,
+      run: async () => {
+        await askForPackage({ dirName: pkg.dirName, name: pkg.name }, { add: true });
+      },
+    });
+  }, [askForPackage, onInstall]);
 
   /** dirNames the current project has declared in its lockfile. Drives the
    * Install vs Uninstall affordance per card. */
@@ -357,6 +385,15 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   );
 
   const onUninstall = useCallback(async (pkg: PackagePayload) => {
+    if (askForPackage) {
+      setConfirmAction({
+        title: `Remove ${pkg.name}?`,
+        body: `Remove ${pkg.name} (${pkg.dirName}) from this dataflow?\n\nIt stays in the account of the dataflow's owner, and in yours.`,
+        confirmLabel: "Remove",
+        run: () => performUninstall(pkg),
+      });
+      return;
+    }
     const codeWarning = codeOnlyWarning(
       packageKind === "model" ? await modelCodeOnlyUsers(pkg) : [],
       "model",
@@ -379,7 +416,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
       confirmLabel: "Remove",
       run: () => performUninstall(pkg),
     });
-  }, [packageKind, modelCodeOnlyUsers, performUninstall]);
+  }, [askForPackage, packageKind, modelCodeOnlyUsers, performUninstall]);
 
   const anyBusy = busy || importBusy;
   // dev/92 B-2: the restart-honesty line (backend-declared, never inferred) from
@@ -448,6 +485,10 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
           />
 
           <div className={shell.scrollBody}>
+            {/* What the dataflow's editors asked its owner to add, of this
+                catalog's kind, which she reviews here: nothing while no
+                request waits. */}
+            <EditorRequestsSection catalog={packageKind} />
             {noticeText ? (
               <div className={styles.noticeBanner} role="status">
                 <span className={styles.errorBannerText}>{noticeText}</span>
@@ -499,7 +540,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
                       busy={anyBusy}
                       cardActionDir={cardActionDir}
                       onOpenDetails={setDetailPkg}
-                      onInstall={(p) => void onInstall(p)}
+                      onInstall={(p) => onAdd(p)}
                       onUpdate={(p) => void onUpdate(p)}
                       onUninstall={(p) => onUninstall(p)}
                       hasProject={Boolean(projectId)}
@@ -546,7 +587,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
                           // No publish/unpublish here: account-level decisions
                           // live in the Node Catalog page's detail drawer.
                           onOpenDetails={setDetailPkg}
-                          onInstall={(p) => void onInstall(p)}
+                          onInstall={(p) => onAdd(p)}
                           onUpdate={(p) => void onUpdate(p)}
                           onUninstall={(p) => onUninstall(p)}
                           hasProject={Boolean(projectId)}
@@ -618,7 +659,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
           title={confirmAction.title}
           body={confirmAction.body}
           confirmLabel={confirmAction.confirmLabel}
-          destructive
+          destructive={confirmAction.destructive ?? true}
           layer="overlay"
           onCancel={() => setConfirmAction(null)}
           onConfirm={() => {

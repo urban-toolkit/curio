@@ -32,7 +32,7 @@ import {
 import { buildSaveableLiveOutputs } from "../../../utils/saveOutputDataset";
 import { resolveComputedInstallTitle } from "../../../utils/palettePackageFactoryDraft";
 import { addDatasetToDataflow, dataflowRefFromCatalogItem } from "./dataflowDatasetRef";
-import { useAskTheOwner } from "../useAskTheOwner";
+import { useAskTheOwner } from "../../collab/useAskTheOwner";
 import { permanentDeletionNotice } from "../../../services/retentionCopy";
 import { codeOnlyDataflows, codeOnlyWarning } from "../../../services/codeOnlyUsage";
 import type { DrawerTab } from "./datasetCatalogDrawerTypes";

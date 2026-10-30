@@ -12,6 +12,7 @@ import {
 } from "../../services/packages/packageAddRequests";
 import type { PackageCardDragPayload, PackageCardNode } from "../../services/packages/packageCardDrag";
 import type { ToastVariant } from "../../providers/ToastProvider";
+import type { AskForPackage } from "../collab/useAskTheOwner";
 
 /**
  * A package's card dropped on the canvas from the Node Catalog drawer, or a
@@ -25,7 +26,9 @@ import type { ToastVariant } from "../../providers/ToastProvider";
  * added goes through the open drawer's own Add first (the review, then the
  * install of its libraries), and the node is made once it is added. A row of
  * the Tools panel's Models dropdown is a model the dataflow has, so it makes
- * its node at once.
+ * its node at once. On the owner's dataflow an invited editor's drop
+ * (*askTheOwner*) makes the node at once and asks her to add the package: the
+ * node waits for her review (`editorRequests.ts`).
  */
 
 /** A card's drop on the canvas. */
@@ -41,14 +44,16 @@ export interface PackageCardDropOptions {
   /** The packages the open dataflow has added (its lockfile). */
   dataflowPackages: readonly string[] | null | undefined;
   hostedGuest: boolean;
-  /** Make *node* at *position*. */
-  createNode: (node: PackageCardNode, position: XYPosition) => void;
+  /** Make *node* at *position*; the node made, by its id. */
+  createNode: (node: PackageCardNode, position: XYPosition) => string | undefined | void;
   showToast: (message: string, variant?: ToastVariant) => void;
+  /** On the owner's dataflow, an invited editor's ask of a package of his: set on his canvas alone. */
+  askTheOwner?: AskForPackage | null;
 }
 
 /** A drop of a card of a package with several nodes, waiting for a pick. */
 interface PendingPick extends PackageCardDrop {
-  action: "create" | "add";
+  action: "create" | "add" | "ask";
 }
 
 export function usePackageCardDrop({
@@ -56,6 +61,7 @@ export function usePackageCardDrop({
   hostedGuest,
   createNode,
   showToast,
+  askTheOwner = null,
 }: PackageCardDropOptions): { drop: (dropped: PackageCardDrop) => void; menu: React.ReactNode } {
   const [pending, setPending] = useState<PendingPick | null>(null);
 
@@ -63,6 +69,11 @@ export function usePackageCardDrop({
     (action: PendingPick["action"], card: PackageCardDragPayload, node: PackageCardNode, position: XYPosition) => {
       if (action === "create") {
         createNode(node, position);
+        return;
+      }
+      if (action === "ask") {
+        const nodeId = createNode(node, position);
+        void askTheOwner?.({ dirName: card.dirName, name: card.name }, nodeId ? { nodeId } : {});
         return;
       }
       const request: PackageAddRequest = {
@@ -74,7 +85,7 @@ export function usePackageCardDrop({
       const catalog = card.kind === "model" ? "Model Catalog" : "Node Catalog";
       showToast(`Add ${card.name} to this dataflow from the ${catalog} first.`, "warning");
     },
-    [createNode, showToast],
+    [createNode, showToast, askTheOwner],
   );
 
   const drop = useCallback(
@@ -83,6 +94,7 @@ export function usePackageCardDrop({
       const action = packageDropAction({
         inDataflow: (dataflowPackages ?? []).includes(card.dirName),
         hostedGuest,
+        asksTheOwner: !!askTheOwner,
       });
       if (action === "refuse") {
         showToast(guestAddRefusal(card.name), "warning");
@@ -94,7 +106,7 @@ export function usePackageCardDrop({
       }
       setPending({ ...dropped, action });
     },
-    [dataflowPackages, hostedGuest, showToast, make],
+    [dataflowPackages, hostedGuest, showToast, make, askTheOwner],
   );
 
   const dismiss = useCallback(() => setPending(null), []);

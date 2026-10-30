@@ -24,7 +24,7 @@ import {
   type DatasetDragPayload,
 } from "../../services/datasetCatalog";
 import { addDatasetToDataflow } from "./catalog/dataflowDatasetRef";
-import { useAskTheOwner } from "./useAskTheOwner";
+import { useAskTheOwner } from "../collab/useAskTheOwner";
 
 /** Whether a drag carries files from the computer. */
 export function hasFileDrag(dataTransfer: DataTransfer | null | undefined): boolean {

@@ -46,6 +46,7 @@ import {
     whenProjectSettled,
 } from "../registry/projectPackagesStore";
 import { tryGetNodeDescriptor } from "../registry/nodeRegistry";
+import { refreshPackageRegistry } from "../registry/packageRegistryBootstrap";
 import { isRegistryReady } from "../registry/registryReadiness";
 import type { WidgetDef } from "../utils/widgets/widgetModel";
 
@@ -381,7 +382,13 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         }
         if ("autoRun" in fields) setAutoRunQuietly(fields.autoRun === true);
         if ("scenarios" in fields) setScenariosQuietly(normalizeScenarios(fields.scenarios ?? [], nodeIds));
-        if ("packages" in fields && Array.isArray(fields.packages)) setPackages(fields.packages);
+        if ("packages" in fields && Array.isArray(fields.packages)) {
+            setPackages(fields.packages);
+            // A package someone else added (the owner's Add, her Apply of an
+            // editor's request) is one this tab's registry has not read: on an
+            // editor's canvas it comes from her copies, on hers from her store.
+            void refreshPackageRegistry();
+        }
         if ("datasets" in fields) setDataflowDatasets(Array.isArray(fields.datasets) ? fields.datasets : []);
     }, [setWorkflowName, setWorkflowDescription, setWorkflowCategories, setAutoRunQuietly, setScenariosQuietly, setPackages]);
 

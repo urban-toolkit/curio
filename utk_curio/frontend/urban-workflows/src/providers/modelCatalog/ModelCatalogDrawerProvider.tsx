@@ -7,6 +7,7 @@ import React, {
 import { createPortal } from "react-dom";
 import { ModelCatalogDrawer } from "../../components/models/catalog";
 import { useSlideDrawerPresentation } from "../../hook/useSlideDrawerPresentation";
+import { useOpensForRequests } from "../../services/editorRequests";
 
 type ModelCatalogDrawerContextValue = {
   openModelCatalogDrawer: () => void;
@@ -29,6 +30,9 @@ export function ModelCatalogDrawerProvider({ children }: { children: React.React
     close: closeModelCatalogDrawer,
     finishExit: finishClose,
   } = useSlideDrawerPresentation();
+  // The review of the models the dataflow's editors asked its owner to add
+  // waits in this drawer (`openRequestsReview`).
+  useOpensForRequests("model", openModelCatalogDrawer);
 
   // Gated on `mounted`, like its peers: `presented` goes false a frame into
   // the exit slide, and releasing the lock then let the page jump behind it.

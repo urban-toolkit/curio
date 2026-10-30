@@ -59,12 +59,13 @@ import {
 import { datasetWidgetBindings, datasetWidgetReadBy } from "../utils/widgets/datasetWidgets";
 import { DatasetWidgetContext, type DatasetWidgetNode } from "./editing/widgets/datasetWidgetContext";
 import { hasFileDrag, useDataFileImport } from "./datasets/useDataFileImport";
-import { useAskTheOwner } from "./datasets/useAskTheOwner";
+import { useAskForPackage, useAskTheOwner } from "./collab/useAskTheOwner";
 import { packageStarterCode } from "../adapters/node/packageNodeBehavior";
 import {
     applyModelToNodeData,
     canApplyModelToNode,
     hasModelDrag,
+    modelDropRequest,
     modelSwapRefusal,
     nodeModelType,
     readModelDragPayload,
@@ -439,6 +440,7 @@ export const NodeContainer = ({
     const [dropping, setDropping] = useState(false);
     const importDataFile = useDataFileImport();
     const askTheOwner = useAskTheOwner();
+    const askForPackage = useAskForPackage();
 
     // A dataset reaching this node, dropped as a Data Catalog card or as a
     // file it has just imported: it sets the dataset widget the node's code
@@ -559,6 +561,10 @@ export const NodeContainer = ({
         sendCodeToWidgets?.(applied.code);
         markDirty();
         showToast(`Model set to ${model.name}`, "success");
+        // On the owner's dataflow, an invited editor's model asks her to add
+        // it, unless her dataflow has it: the node waits for her review.
+        const asked = askForPackage ? modelDropRequest(e.dataTransfer) : null;
+        if (askForPackage && asked) void askForPackage(asked, { nodeId });
     };
 
     useEffect(() => {
@@ -877,6 +883,7 @@ export const NodeContainer = ({
                                 pkg={packageDescriptor.package}
                                 category={packageDescriptor.category}
                                 suggestionActive={suggestionActive}
+                                nodeId={nodeId}
                             />
                         ) : null}
 

@@ -14,6 +14,7 @@ from utk_curio.backend.app.packages.application import catalog as packages_catal
 from utk_curio.backend.app.packages.application import project_packages as packages_project_packages
 from utk_curio.backend.app.packages.routes.common import (
     _map_package_errors,
+    editors_dataflow_store,
     opened_dataflow_packages,
     packages_bp,
     require_project,
@@ -62,6 +63,13 @@ def install_to_project_route(project_id: str):
 @require_auth
 @_map_package_errors
 def uninstall_from_project_route(project_id: str, dir_name: str):
-    """Drop a package from one project's lockfile; auto-prune the user store."""
+    """Drop a package from one project's lockfile; auto-prune the user store.
+    An editor the owner invited drops it from her dataflow as his own change,
+    which prunes nothing from her store."""
+    owners = editors_dataflow_store(project_id)
+    if owners is not None:
+        return jsonify(packages_project_packages.uninstall_from_project(
+            owners, project_id, dir_name, editor_key=user_key(),
+        )), 200
     require_project(project_id)
     return jsonify(packages_project_packages.uninstall_from_project(user_key(), project_id, dir_name)), 200
