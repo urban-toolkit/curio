@@ -106,15 +106,27 @@ def prune_unreferenced_packages(
     return {"pruned": pruned, "removedFromDefaults": removed_from_defaults}
 
 
-def packages_in_use(user_key: str, candidates: Iterable[str] | None = None) -> set[str]:
-    """The package dirNames this user's projects use: each project's lockfile,
-    with the backfill from its canvas nodes (``project_packages``), and the
-    model packages its nodes are bound to (``metadata.modelRefs``,
-    ``model_ref_packages``). With *candidates*, the scan stops once every one
-    of them has been found.
+def dataflow_packages(spec, installed_majors) -> set[str]:
+    """The package dirNames the dataflow *spec* uses: its lockfile, with the
+    backfill from its canvas nodes (``project_packages``), and the model
+    packages its nodes are bound to (``metadata.modelRefs``,
+    ``model_ref_packages``), each read against *installed_majors*, the majors
+    its owner's store holds.
 
-    The one rule for "a dataflow uses this package": the prune above keeps
-    what it returns, and Remove from account refuses it.
+    The one rule for "a dataflow uses this package": :func:`packages_in_use`
+    holds it for each of an account's dataflows, and a run of an editor the
+    dataflow's owner invited reads these from the owner's store
+    (``project_packages.OwnersPackages``).
+    """
+    return project_packages(spec, installed_majors) | model_ref_packages(spec, installed_majors, model_ids_in_code)
+
+
+def packages_in_use(user_key: str, candidates: Iterable[str] | None = None) -> set[str]:
+    """The package dirNames this user's projects use, each project's by
+    :func:`dataflow_packages`. With *candidates*, the scan stops once every
+    one of them has been found.
+
+    The prune above keeps what it returns, and Remove from account refuses it.
     """
     user_id = _user_id(user_key)
     wanted = set(candidates) if candidates is not None else None
@@ -124,8 +136,7 @@ def packages_in_use(user_key: str, candidates: Iterable[str] | None = None) -> s
         spec = projects_storage.read_spec(user_key, project.id)
         if spec is None:
             continue
-        referenced.update(project_packages(spec, installed_majors))
-        referenced.update(model_ref_packages(spec, installed_majors, model_ids_in_code))
+        referenced.update(dataflow_packages(spec, installed_majors))
         if wanted is not None and wanted.issubset(referenced):
             break  # short-circuit: every candidate has at least one reference
     return referenced
