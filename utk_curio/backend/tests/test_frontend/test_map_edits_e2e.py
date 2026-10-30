@@ -240,7 +240,7 @@ def _spec(last_code: str = COUNT_CODE, last_title: str = "Count", *, linked: boo
         return {
             "id": node_id, "type": node_type, "x": x, "y": y, "content": content, "title": title,
             "in": "DEFAULT", "out": "DEFAULT", "goal": "",
-            "metadata": {"keywords": [], "packageTemplateLabel": title, **(metadata or {})},
+            "metadata": {"keywords": [], **(metadata or {})},
         }
 
     def edge(source, target):
@@ -1343,7 +1343,7 @@ def test_the_chicago_loop_layers_take_a_point_a_reshaped_road_and_a_property_on_
     nodes = {node["id"]: node for node in spec["dataflow"]["nodes"]}
     (edit_id,) = [n for n, node in nodes.items() if node["type"] == EDIT_TYPE]
     (map_id,) = [n for n, node in nodes.items() if node["type"] == MAP_TYPE and '"map"' in node["content"]]
-    title = nodes[map_id]["metadata"]["packageTemplateLabel"]
+    title = nodes[map_id]["title"]
     _enter(page, app_frontend, current_server, spec, "map_edits_chicago_e2e", name=spec["dataflow"]["name"])
     run_all_and_wait(page, timeout_ms=RUN_MS)
     for node_id, node in nodes.items():
@@ -1515,7 +1515,7 @@ def test_a_chicago_building_of_several_parts_is_reshaped_one_part_at_a_time(
     nodes = {node["id"]: node for node in spec["dataflow"]["nodes"]}
     (edit_id,) = [n for n, node in nodes.items() if node["type"] == EDIT_TYPE]
     (map_id,) = [n for n, node in nodes.items() if node["type"] == MAP_TYPE and '"map"' in node["content"]]
-    title = nodes[map_id]["metadata"]["packageTemplateLabel"]
+    title = nodes[map_id]["title"]
     _enter(page, app_frontend, current_server, spec, "map_edits_parts_e2e", name=spec["dataflow"]["name"])
     run_all_and_wait(page, timeout_ms=RUN_MS)
     for node_id, node in nodes.items():
@@ -1726,7 +1726,7 @@ def test_a_chicago_building_corner_dragged_across_its_far_side_is_refused_and_th
     nodes = {node["id"]: node for node in spec["dataflow"]["nodes"]}
     (edit_id,) = [n for n, node in nodes.items() if node["type"] == EDIT_TYPE]
     (map_id,) = [n for n, node in nodes.items() if node["type"] == MAP_TYPE and '"map"' in node["content"]]
-    title = nodes[map_id]["metadata"]["packageTemplateLabel"]
+    title = nodes[map_id]["title"]
     _enter(page, app_frontend, current_server, spec, "map_edits_crossing_e2e", name=spec["dataflow"]["name"])
     run_all_and_wait(page, timeout_ms=RUN_MS)
     for node_id, node in nodes.items():
@@ -2641,7 +2641,7 @@ def test_a_chicago_building_of_several_parts_takes_a_height_on_one_part_chosen_i
     nodes = {node["id"]: node for node in spec["dataflow"]["nodes"]}
     (edit_id,) = [n for n, node in nodes.items() if node["type"] == EDIT_TYPE]
     (map_id,) = [n for n, node in nodes.items() if node["type"] == MAP_TYPE and '"map"' in node["content"]]
-    title = nodes[map_id]["metadata"]["packageTemplateLabel"]
+    title = nodes[map_id]["title"]
     _enter(page, app_frontend, current_server, spec, "map_edits_parts_form_e2e", name=spec["dataflow"]["name"])
     run_all_and_wait(page, timeout_ms=RUN_MS)
     for node_id, node in nodes.items():

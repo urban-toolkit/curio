@@ -16,8 +16,7 @@
         "in": "DEFAULT",
         "goal": "Load NYC's building footprints around 1550 Bedford Avenue with their roof heights in metres.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Load existing buildings"
+          "keywords": []
         },
         "title": "Load existing buildings"
       },
@@ -31,8 +30,7 @@
         "in": "DEFAULT",
         "goal": "Load Block 1259, across Eastern Parkway from the site, Franklin Avenue to Bedford Avenue.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Load Block 1259 outline"
+          "keywords": []
         },
         "title": "Load Block 1259 outline"
       },
@@ -46,8 +44,7 @@
         "in": "DEFAULT",
         "goal": "Load NYC's street centerlines around the site, each drawn as wide as its roadway.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Load streets"
+          "keywords": []
         },
         "title": "Load streets"
       },
@@ -61,8 +58,7 @@
         "in": "DEFAULT",
         "goal": "For every day of 2027, count from 1.5 hours after sunrise to 1.5 hours before sunset in New York time, in 10-minute steps, with the sun's direction and height at each.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "List the year's sun steps"
+          "keywords": []
         },
         "title": "List the year's sun steps"
       },
@@ -93,8 +89,7 @@
                 "display": "radio"
               }
             }
-          ],
-          "packageTemplateLabel": "List the day's sun steps"
+          ]
         },
         "title": "List the day's sun steps",
         "dashboardPinned": true,
@@ -113,8 +108,7 @@
         "in": "DEFAULT",
         "goal": "Cover the area with 3 m cells and keep the open ground, the cells outside every existing building, marking the ones on Block 1259.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Make open-ground grid"
+          "keywords": []
         },
         "title": "Make open-ground grid"
       },
@@ -128,8 +122,7 @@
         "in": "DEFAULT",
         "goal": "Make the box around every building that the maps load first, so Autark keeps their layers whole.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Map extent (keeps layers whole)"
+          "keywords": []
         },
         "title": "Map extent (keeps layers whole)"
       },
@@ -143,8 +136,7 @@
         "in": "DEFAULT",
         "goal": "Draw this scenario's buildings into a heights grid on the ground cells, with Block 1259's open cells as the spots the block step reads.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Prepare buildings for the GPU"
+          "keywords": []
         },
         "title": "Prepare buildings for the GPU"
       },
@@ -158,8 +150,7 @@
         "in": "DEFAULT",
         "goal": "On the GPU, march from every ground cell toward the sun at every 10-minute step of the day and add up the minutes a roof blocks it.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Cast sun rays on the GPU"
+          "keywords": []
         },
         "title": "Cast sun rays on the GPU"
       },
@@ -173,8 +164,7 @@
         "in": "DEFAULT",
         "goal": "On the GPU, at every step of the day, find the share of Block 1259's open ground a roof keeps from the sun.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Cast sun rays on Block 1259"
+          "keywords": []
         },
         "title": "Cast sun rays on Block 1259"
       },
@@ -188,8 +178,7 @@
         "in": "DEFAULT",
         "goal": "On the GPU, for every day of 2027, find the minutes a roof keeps the sun from Block 1259's open ground over the day's window, on average.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Cast sun rays on Block 1259 through the year"
+          "keywords": []
         },
         "title": "Cast sun rays on Block 1259 through the year"
       },
@@ -203,8 +192,7 @@
         "in": "DEFAULT",
         "goal": "Keep each open-ground cell's minutes in shadow and their share of the day's window.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Read shadow per cell"
+          "keywords": []
         },
         "title": "Read shadow per cell"
       },
@@ -218,8 +206,7 @@
         "in": "DEFAULT",
         "goal": "Keep the share of Block 1259's open ground in shadow at each step, with its time.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Read shadow on the block per step"
+          "keywords": []
         },
         "title": "Read shadow on the block per step"
       },
@@ -233,8 +220,7 @@
         "in": "DEFAULT",
         "goal": "Add up each day's time in shadow on Block 1259's open ground, a row per day of the year.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Read shadow on the block per day"
+          "keywords": []
         },
         "title": "Read shadow on the block per day"
       },
@@ -248,8 +234,7 @@
         "in": "DEFAULT",
         "goal": "Gather the cells in shadow into classes of the share of the day's window for the map.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Keep shaded cells for the map"
+          "keywords": []
         },
         "title": "Keep shaded cells for the map"
       },
@@ -263,8 +248,7 @@
         "in": "DEFAULT",
         "goal": "Map the shadow on the open ground without the proposed building, with the buildings, Block 1259 and the streets.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Map: without the proposed building"
+          "keywords": []
         },
         "title": "Map: without the proposed building",
         "width": 980,
@@ -285,8 +269,7 @@
         "in": "DEFAULT",
         "goal": "Add the proposed building on the vacant site, in two parts: its base to 135 ft, 30 ft back from Eastern Parkway, and its upper floors to 185 ft, set back above the base. Redraw or raise a part here before Commit edits.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Add proposed tower (1550 Bedford Ave)"
+          "keywords": []
         },
         "title": "Add proposed tower (1550 Bedford Ave)",
         "dashboardPinned": true,
@@ -308,8 +291,7 @@
           "keywords": [],
           "copiedFrom": [
             "6eaa947f-44ae-52e9-9c1d-ab93da3bf2d1"
-          ],
-          "packageTemplateLabel": "Prepare buildings for the GPU"
+          ]
         },
         "title": "Prepare buildings for the GPU"
       },
@@ -326,8 +308,7 @@
           "keywords": [],
           "copiedFrom": [
             "7e4abb6d-a6df-538b-ba78-eff580600cbd"
-          ],
-          "packageTemplateLabel": "Cast sun rays on the GPU"
+          ]
         },
         "title": "Cast sun rays on the GPU"
       },
@@ -344,8 +325,7 @@
           "keywords": [],
           "copiedFrom": [
             "50a5d9e8-a6f1-5386-b26a-4ad8e5076c17"
-          ],
-          "packageTemplateLabel": "Cast sun rays on Block 1259"
+          ]
         },
         "title": "Cast sun rays on Block 1259"
       },
@@ -362,8 +342,7 @@
           "keywords": [],
           "copiedFrom": [
             "d01c6cc7-690f-5186-9730-0b3821fe7c85"
-          ],
-          "packageTemplateLabel": "Cast sun rays on Block 1259 through the year"
+          ]
         },
         "title": "Cast sun rays on Block 1259 through the year"
       },
@@ -380,8 +359,7 @@
           "keywords": [],
           "copiedFrom": [
             "755fbc3c-68d1-50cf-ae8e-f72f9dac8413"
-          ],
-          "packageTemplateLabel": "Read shadow per cell"
+          ]
         },
         "title": "Read shadow per cell"
       },
@@ -398,8 +376,7 @@
           "keywords": [],
           "copiedFrom": [
             "ca233f8e-302e-5e89-977a-c93dd5f2abba"
-          ],
-          "packageTemplateLabel": "Read shadow on the block per step"
+          ]
         },
         "title": "Read shadow on the block per step"
       },
@@ -416,8 +393,7 @@
           "keywords": [],
           "copiedFrom": [
             "95b43de1-57a0-507a-8770-4c476dd1f4ec"
-          ],
-          "packageTemplateLabel": "Read shadow on the block per day"
+          ]
         },
         "title": "Read shadow on the block per day"
       },
@@ -434,8 +410,7 @@
           "keywords": [],
           "copiedFrom": [
             "6336c9a7-c75a-527f-9b35-254eb952b512"
-          ],
-          "packageTemplateLabel": "Keep shaded cells for the map"
+          ]
         },
         "title": "Keep shaded cells for the map"
       },
@@ -452,8 +427,7 @@
           "keywords": [],
           "copiedFrom": [
             "58433a36-c808-5c66-98dc-1b82661d8944"
-          ],
-          "packageTemplateLabel": "Map: with the proposed building"
+          ]
         },
         "title": "Map: with the proposed building",
         "width": 980,
@@ -474,8 +448,7 @@
         "in": "DEFAULT",
         "goal": "Subtract each open-ground cell's minutes in shadow without the proposed building from its minutes with it.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Shade the tower adds"
+          "keywords": []
         },
         "title": "Shade the tower adds"
       },
@@ -489,8 +462,7 @@
         "in": "DEFAULT",
         "goal": "Keep the cells the proposed building shades and set the map's color scale.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Keep added shade for the map"
+          "keywords": []
         },
         "title": "Keep added shade for the map"
       },
@@ -504,8 +476,7 @@
         "in": "DEFAULT",
         "goal": "Map the shade the proposed building adds that day, with Block 1259, the buildings and the streets.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Map: shade the tower adds"
+          "keywords": []
         },
         "title": "Map: shade the tower adds",
         "width": 980,
@@ -526,8 +497,7 @@
         "in": "DEFAULT",
         "goal": "Plot the share of Block 1259's open ground in shadow through the day picked, a line per scenario, with the day's window.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Plot: shadow on Block 1259 through the day"
+          "keywords": []
         },
         "title": "Plot: shadow on Block 1259 through the day",
         "width": 980,
@@ -548,8 +518,7 @@
         "in": "DEFAULT",
         "goal": "Plot Block 1259's open ground's time in shadow on each day of 2027, a line per scenario.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Plot: shadow on Block 1259 each day of 2027"
+          "keywords": []
         },
         "title": "Plot: shadow on Block 1259 each day of 2027",
         "width": 980,
@@ -570,8 +539,7 @@
         "in": "DEFAULT",
         "goal": "Average the shade the proposed building adds to Block 1259's open ground a day over each month, with the standard deviation.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Compare the scenarios by month"
+          "keywords": []
         },
         "title": "Compare the scenarios by month"
       },
@@ -585,8 +553,7 @@
         "in": "DEFAULT",
         "goal": "Show, for each month, the shade the proposed building adds to Block 1259's open ground a day.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Table: shade added on Block 1259 by month"
+          "keywords": []
         },
         "title": "Table: shade added on Block 1259 by month",
         "width": 980,

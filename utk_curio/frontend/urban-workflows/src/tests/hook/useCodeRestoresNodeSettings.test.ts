@@ -12,9 +12,9 @@
  * list survives every save (TrillGenerator reads `node.data`) and dies on
  * every load. That is how the Spatial Join in example 15 ran with the default
  * `name` property although the file said `zip` (#262), and how a Simple View
- * pinned to one image column (#276) forgot the choice on reopen. A renamed
- * node header (`metadata.packageTemplateLabel`, #412) must take the same path,
- * and so must the rest of the node settings modal's config
+ * pinned to one image column (#276) forgot the choice on reopen. The node's
+ * title, its one name, must take the same path (an older save's renamed header,
+ * `metadata.packageTemplateLabel`, read as it), and so must the rest of the node settings modal's config
  * (`metadata.packageTemplateConfig`, #412), which goes through a converter on
  * the way in, and a Data Pool's conflict modes (`metadata.dataPool`, #581).
  */
@@ -35,7 +35,7 @@ function generateCodeNodeSource(): string {
 }
 
 const RESTORED_KEYS = [
-    "spatialJoin", "simpleVis", "packageTemplateLabel", "packageTemplateConfig", "dataPool", "widgets", "copiedFrom",
+    "spatialJoin", "simpleVis", "packageTemplateConfig", "dataPool", "widgets", "copiedFrom",
     "selections",
 ];
 
@@ -64,13 +64,22 @@ describe("per-node settings survive a load", () => {
         },
     );
 
+    test("the title is read off the spec, an older save's renamed header first, and written into node.data", () => {
+        expect(USE_CODE).toMatch(/const savedTitle = savedNodeTitle\(node\);/);
+        expect(USE_CODE).toMatch(/nodeMeta\.title = savedTitle;/);
+        const factory = generateCodeNodeSource();
+        expect(factory).toMatch(/^\s*title = undefined,\s*$/m);
+        expect(factory).toMatch(/title: initialNodeTitle\(nodeType, title\),/);
+    });
+
     test("the options type declares each, so a new call site cannot drop them silently", () => {
         const typeStart = USE_CODE.indexOf("CreateCodeNodeOptions");
         const typeEnd = USE_CODE.indexOf("interface IUseCode", typeStart);
         const typeBlock = USE_CODE.slice(typeStart, typeEnd);
         expect(typeBlock).toMatch(/spatialJoin\?: \{ predicate\?: string; output\?: "pairs" \| "counts" \};/);
         expect(typeBlock).toMatch(/simpleVis\?: \{ imageColumn\?: string \};/);
-        expect(typeBlock).toMatch(/packageTemplateLabel\?: string;/);
+        expect(typeBlock).toMatch(/title\?: string;/);
+        expect(typeBlock).not.toMatch(/packageTemplateLabel/);
         expect(typeBlock).toMatch(/packageTemplateConfig\?: Partial<CanvasTemplateConfig>;/);
         expect(typeBlock).toMatch(/dataPool\?: \{ insideChart\?: string; betweenCharts\?: string \};/);
         expect(typeBlock).toMatch(/widgets\?: WidgetDef\[\];/);

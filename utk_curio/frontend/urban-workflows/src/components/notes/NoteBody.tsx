@@ -1,6 +1,7 @@
 /**
- * The Note node's body: its title and its text as simple markdown, on its
- * color. Edit opens a form for the three; a new, empty note opens on it. On
+ * The Note node's body: its text as simple markdown, on its color. Its title,
+ * a node's one name, is its heading, which the node's header shows, so the
+ * body does not show it again. Edit opens a form for the three; a new, empty note opens on it. On
  * the dashboard and on a read-only canvas a note is shown, never edited.
  *
  * What it holds is what an agent's note holds, so a save writes it the same
@@ -119,14 +120,13 @@ export function NoteBody({ data }: { data: any }) {
   } as React.CSSProperties;
   return (
     <div role="note" aria-label={title || "Note"} className={`nodrag nopan nowheel ${styles.note}`} style={style}>
-      {title ? <p className={styles.title}>{title}</p> : null}
       {text.trim() ? (
         <div className={styles.body}>
           <NoteMarkdown text={text} />
         </div>
-      ) : !title ? (
+      ) : (
         <p className={styles.empty}>An empty note.</p>
-      ) : null}
+      )}
       {editable ? (
         <button type="button" className={styles.edit} aria-label="Edit note" onClick={() => setEditing(true)}>
           Edit

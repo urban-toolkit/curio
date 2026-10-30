@@ -128,9 +128,9 @@
         "in": "DEFAULT",
         "goal": "Take the scenario's route.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Route"
-        }
+          "keywords": []
+        },
+        "title": "Route"
       },
       {
         "id": "c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36",
@@ -142,9 +142,9 @@
         "in": "DEFAULT",
         "goal": "Take that route's metrics.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Route metrics"
-        }
+          "keywords": []
+        },
+        "title": "Route metrics"
       },
       {
         "id": "3a6c2e8f-7d1b-4f45-a9c3-6b8e0d2f5a74",
@@ -157,11 +157,11 @@
         "goal": "Take the scenario's route.",
         "metadata": {
           "keywords": [],
-          "packageTemplateLabel": "Route",
           "copiedFrom": [
             "7b3f9d2a-5e8c-4b17-9d4a-1e6f3c8b2a05"
           ]
-        }
+        },
+        "title": "Route"
       },
       {
         "id": "e9b5d3a1-2f8c-4a76-8e1d-4c7b9f0a6e23",
@@ -174,11 +174,11 @@
         "goal": "Take that route's metrics.",
         "metadata": {
           "keywords": [],
-          "packageTemplateLabel": "Route metrics",
           "copiedFrom": [
             "c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36"
           ]
-        }
+        },
+        "title": "Route metrics"
       },
       {
         "id": "6c0e8a4d-3b9f-4d21-a7e5-9f2b6d1c8e40",
@@ -190,9 +190,9 @@
         "in": "DEFAULT",
         "goal": "Draw both scenarios' routes over the roads, each in its scenario's color.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Routes map"
-        }
+          "keywords": []
+        },
+        "title": "Routes map"
       },
       {
         "id": "1f8b6d2c-4e9a-4b53-9c7f-2a5e8d0b3f16",
@@ -205,7 +205,6 @@
         "goal": "Chart the two routes' duration, in minutes, a bar per scenario.",
         "metadata": {
           "keywords": [],
-          "packageTemplateLabel": "Duration",
           "widgets": [
             {
               "name": "y",
@@ -239,7 +238,8 @@
               "value": "mean of duration"
             }
           ]
-        }
+        },
+        "title": "Duration"
       },
       {
         "id": "4d9a7f3e-8c2b-4e16-a5d0-7b3f1e9c6a82",
@@ -252,7 +252,6 @@
         "goal": "Chart the two routes' distance, in kilometres, a bar per scenario.",
         "metadata": {
           "keywords": [],
-          "packageTemplateLabel": "Distance",
           "widgets": [
             {
               "name": "y",
@@ -286,7 +285,8 @@
               "value": "mean of distance"
             }
           ]
-        }
+        },
+        "title": "Distance"
       },
       {
         "id": "a2e6c9f4-5b1d-4f38-8d7a-0c4e9b2f5d67",
@@ -299,7 +299,6 @@
         "goal": "Chart the two routes' rain exposure, a bar per scenario.",
         "metadata": {
           "keywords": [],
-          "packageTemplateLabel": "Rain exposure",
           "widgets": [
             {
               "name": "y",
@@ -333,7 +332,8 @@
               "value": "mean of rain_exposure"
             }
           ]
-        }
+        },
+        "title": "Rain exposure"
       },
       {
         "id": "b7f3a1d8-6e4c-4a29-9b2e-5d8a0f3c7e14",
@@ -346,7 +346,6 @@
         "goal": "Chart the two routes' wind exposure, a bar per scenario.",
         "metadata": {
           "keywords": [],
-          "packageTemplateLabel": "Wind exposure",
           "widgets": [
             {
               "name": "y",
@@ -380,7 +379,8 @@
               "value": "mean of wind_exposure"
             }
           ]
-        }
+        },
+        "title": "Wind exposure"
       }
     ],
     "edges": [

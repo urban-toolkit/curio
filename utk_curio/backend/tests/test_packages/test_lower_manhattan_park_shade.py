@@ -371,7 +371,7 @@ def test_the_package_nodes_are_as_the_palette_drops_them():
     season = _season(spec)
     assert season["type"] == PYTHON
     # Its header and the chips it feeds name it Season, not its type's name.
-    assert season["metadata"]["packageTemplateLabel"] == "Season"
+    assert season["title"] == "Season"
     assert season["metadata"]["widgets"] == umbra_template["widgets"]
     assert season["content"].rstrip("\n").endswith("\nreturn [!! season !!]"), season["content"]
     around = nodes["park-shade-around"]

@@ -200,7 +200,7 @@ def _settings(spec: dict) -> dict:
     members = _members(spec)
     fed = {edge["target"] for edge in spec["dataflow"]["edges"]}
     found = {
-        node["metadata"]["packageTemplateLabel"]: node["id"] for node in spec["dataflow"]["nodes"]
+        node["title"]: node["id"] for node in spec["dataflow"]["nodes"]
         if node["type"] == PYTHON_TYPE and node["id"] not in members and node["id"] not in fed
     }
     assert sorted(found) == ["Projection period", "Region"], found

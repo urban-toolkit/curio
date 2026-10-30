@@ -75,7 +75,7 @@ def _spec() -> dict:
                 "id": YEARS, "type": "curio.builtin/computation-analysis", "x": 0, "y": 0,
                 "content": BEFORE, "title": "Years", "in": "DEFAULT", "out": "DEFAULT",
                 "goal": "Keep every year",
-                "metadata": {"keywords": [], "packageTemplateLabel": "Years"},
+                "metadata": {"keywords": []},
             }],
             "edges": [],
         }

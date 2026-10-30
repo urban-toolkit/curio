@@ -1268,6 +1268,8 @@ class TestDataflowPlanApply:
         assert load["x"] == 10 + 525 + 120
         assert analyze["x"] == load["x"] + 525 + 120
         assert load["content"] == "" and load["goal"] == "Load — load the data"
+        # The plan's name for each node is its title, the name its header shows.
+        assert (load["title"], analyze["title"]) == ("Load", "Analyze")
         # Builder session: applied phase, both nodes pending for Solve.
         session = body["builderSession"]
         assert session["phase"] == "applied"
@@ -1643,6 +1645,7 @@ class TestPerNodePlanApply:
         assert r.get_json()["editedGoals"] == {ref: "Load ONLY the 2024 heat data"}
         body = self._apply_node(client, token, alice_project, att_id, proposal["proposalId"], ref).get_json()
         assert body["createdNode"]["goal"] == "Load ONLY the 2024 heat data"
+        assert body["createdNode"]["title"] == "Load"
 
     def test_goal_edit_guards(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token

@@ -506,7 +506,7 @@ def _setting_nodes(spec: dict) -> dict:
     ones in no scenario that no edge reaches, Region and Projection period."""
     members = _members(spec)
     return {
-        node["metadata"]["packageTemplateLabel"]: node for node in spec["nodes"]
+        node["title"]: node for node in spec["nodes"]
         if node["type"] == PYTHON and node["id"] not in members and not _feeds(spec, node["id"])
     }
 
@@ -1093,7 +1093,7 @@ def test_the_changes_and_the_charts_hold_what_they_compare():
     for (part, mode), node in found.items():
         assert _feeds(spec, node["id"]) == {"in": parts["no-nbs"][part]["id"], "in_1": parts["nbs"][part]["id"]}
         assert node["id"] not in _members(spec)
-    labels = {key: node["metadata"]["packageTemplateLabel"] for key, node in found.items()}
+    labels = {key: node["title"] for key, node in found.items()}
     assert labels == {
         ("choose", "difference"): "Depth change", ("statistics", "chart"): "Median flood depth",
         ("tract depth", "difference"): "Depth change per tract", ("tract depth", "chart"): "Vulnerability against depth",
@@ -1106,7 +1106,7 @@ def test_the_changes_and_the_charts_hold_what_they_compare():
     assert 'before, after = input_0.set_index("FIPS"), input_1.set_index("FIPS")\n' in tract_change["content"]
     assert "\nout[numbers] = (now - was).abs()\n" in tract_change["content"]
     for node in (depth_change, tract_change):
-        assert set(node["metadata"]) == {"keywords", "packageTemplateLabel"}, node["metadata"]
+        assert set(node["metadata"]) == {"keywords"}, node["metadata"]
     manifest = json.loads((CALCULATOR_STARTER.parent.parent / "manifest.json").read_text(encoding="utf-8"))
     templates = {f"{manifest['id']}/{t['id']}": t for t in manifest["templates"]}
     widgets = {
@@ -1123,7 +1123,7 @@ def test_the_changes_and_the_charts_hold_what_they_compare():
         template = templates[node_type]
         assert chart["type"] == node_type, key
         assert chart["content"] == (CALCULATOR_STARTER.parent.parent / template["source"]).read_text(encoding="utf-8")
-        assert set(chart["metadata"]) == {"keywords", "packageTemplateLabel", "widgets"}, chart["metadata"]
+        assert set(chart["metadata"]) == {"keywords", "widgets"}, chart["metadata"]
         assert [{k: v for k, v in w.items() if k != "value"} for w in chart["metadata"]["widgets"]] == template["widgets"]
         assert {w["name"]: w["value"] for w in chart["metadata"]["widgets"]} == values, key
 
@@ -1226,7 +1226,7 @@ def _run_loaders(run, settings: dict) -> tuple[dict, str | None]:
         output, error = run(nodes[node_id], "", "", widgets)
         if error:
             return loaded, error
-        assert output["dataType"] == kinds[nodes[node_id]["metadata"]["packageTemplateLabel"]], output
+        assert output["dataType"] == kinds[nodes[node_id]["title"]], output
         loaded[node_id] = output["path"]
     for loader in _nodes(LOADING):
         fed = [loaded[source] for source in _fed_in_circle_order(spec, loader["id"])]

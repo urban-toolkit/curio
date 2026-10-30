@@ -21,6 +21,7 @@ import { normalizeSelections } from "./utils/references/selectionTags";
 import { normalizeScenarios, type Scenario, type ScenarioSet } from "./utils/scenarios/scenarioModel";
 import { normalizeScenarioSets } from "./utils/scenarios/scenarioSets";
 import { registeredCategory } from "./utils/graphPreviewCategories";
+import { initialNodeTitle } from "./utils/nodeTitle";
 
 export class TrillGenerator {
 
@@ -361,16 +362,6 @@ export class TrillGenerator {
                 trill_node.metadata.simpleVis = { imageColumn: node.data.simpleVis.imageColumn };
             }
 
-            // #412: a renamed node header (the header's rename and the config
-            // modal both write data.packageTemplateLabel) persists at
-            // metadata.packageTemplateLabel.
-            if(typeof node.data.packageTemplateLabel === "string" && node.data.packageTemplateLabel.trim()){
-                if(trill_node.metadata == undefined)
-                    trill_node.metadata = {};
-
-                trill_node.metadata.packageTemplateLabel = node.data.packageTemplateLabel.trim();
-            }
-
             // #412: the rest of what the node settings modal saved
             // (data.packageTemplateConfig) persists at
             // metadata.packageTemplateConfig, without the code copy and the
@@ -425,8 +416,11 @@ export class TrillGenerator {
                 trill_node.metadata.selections = selections;
             }
 
-            if(typeof node.data.title === "string" && node.data.title)
-                trill_node.title = node.data.title;
+            // The node's one name (utils/nodeTitle.ts): its title, else its
+            // template's label, so a saved node always says what it is called.
+            const title = initialNodeTitle(node.data.nodeType, node.data.title);
+            if(title)
+                trill_node.title = title;
 
             if(node.data.appliedDatasets != undefined){
                 for(const dataset of Object.values(node.data.appliedDatasets)){

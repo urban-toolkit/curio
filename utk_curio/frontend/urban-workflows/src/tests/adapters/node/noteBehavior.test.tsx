@@ -58,7 +58,7 @@ describe("the Note node", () => {
     expect(behavior?.disablePlay).toBe(true);
   });
 
-  test("shows its title and its text as simple markdown, on its color", () => {
+  test("shows its text as simple markdown, on its color; its title is its header's, not shown again", () => {
     render(
       <Harness
         data={{
@@ -69,7 +69,7 @@ describe("the Note node", () => {
       />,
     );
     const note = screen.getByRole("note", { name: "Cool roofs in Chicago" });
-    expect(within(note).getByText("Cool roofs in Chicago")).toBeInTheDocument();
+    expect(within(note).queryByText("Cool roofs in Chicago")).toBeNull();
     expect(within(note).getByRole("heading", { name: "Findings" })).toBeInTheDocument();
     expect(within(note).getByText("Roof surface:").tagName).toBe("STRONG");
     expect(within(note).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["one", "two"]);

@@ -31,6 +31,11 @@ function labelOf(data: any): string | null {
     }
 }
 
+/** The kind of node, as its template names it, whatever its title. */
+function kindOf(data: any): string | null {
+    return labelOf({ ...data, title: undefined });
+}
+
 export function useInputScope(data: any): {
     inputs: InputScope[];
     /** Wired circles that hold no value yet. */
@@ -98,7 +103,7 @@ export function useInputScope(data: any): {
     const signature = JSON.stringify(computed);
     const inputs = useMemo(() => computed, [signature, readCount]);
 
-    const sources = inputSourcesFor(data.nodeId, edges, nodes, valueOf, labelOf, flow?.nodeExecStatus ?? {});
+    const sources = inputSourcesFor(data.nodeId, edges, nodes, valueOf, kindOf, flow?.nodeExecStatus ?? {});
     const computedPreviews: Record<number, InputPreviewState> = {};
     for (const [slot, source] of Object.entries(sources)) {
         const preview = previewOf(valueOf(Number(slot)));

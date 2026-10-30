@@ -200,7 +200,7 @@ class TestFailuresStayOnTheirBranch:
     def test_a_failure_skips_what_it_feeds_and_the_other_branch_finishes(self):
         recorder, events, finished = run(spec(
             # The reason names the node as its header does: here, renamed (#775).
-            [node("a"), node("bad", metadata={"packageTemplateLabel": "Clean rows"}),
+            [node("a"), node("bad", title="Clean rows"),
              node("after"), node("other")],
             [edge("a", "bad"), edge("bad", "after"), edge("a", "other")],
         ), Recorder(fail={"bad"}))
@@ -292,7 +292,7 @@ class TestNodesTheServerDoesNotRun:
     def test_data_only_the_browser_makes_leaves_the_run_needing_the_canvas(self):
         recorder, events, finished = run(spec(
             [node("shade", AUTARK, COMPUTE_SPEC,
-                  metadata={"packageTemplateLabel": "Shade roads"}),
+                  title="Shade roads"),
              node("count"), node("chart", "curio.builtin/vis-vega", "{}")],
             [edge("shade", "count"), edge("count", "chart")],
         ))
@@ -311,7 +311,7 @@ class TestNodesTheServerDoesNotRun:
         recorder, events, finished = run(spec(
             [node("a"),
              node("gone", gone, "return curio_stack_scenarios([])",
-                  metadata={"packageTemplateLabel": "Compare Scenarios"}),
+                  title="Compare Scenarios"),
              node("chart", "curio.builtin/vis-vega", "{}"),
              node("other")],
             [edge("a", "gone"), edge("gone", "chart"), edge("a", "other")],

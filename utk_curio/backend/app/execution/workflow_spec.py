@@ -262,10 +262,9 @@ class NodeSpec:
     #: #662: the node's selection tags (``metadata.selections``), each holding
     #: the ids its ``[!! selection name !!]`` references resolve to.
     selections: list = field(default_factory=list)
-    #: Its title, and its renamed header (``metadata.packageTemplateLabel``):
-    #: what an input it feeds from no scenario box is named by.
+    #: Its title (``node_names.saved_node_title``): what an input it feeds
+    #: from no scenario box is named by.
     title: str = ""
-    template_label: str = ""
 
     @property
     def has_play_button(self) -> bool:
@@ -343,7 +342,7 @@ class WorkflowSpec:
 
     def node_label(self, node_id: str) -> str:
         """What the canvas names the node *node_id* as an input's label: its
-        title, else its header as ``node_names.display_label`` writes it, its
+        name as ``node_names.display_label`` writes it, its title else its
         template's label looked up by the canonical template id as
         ``node_names.saved_node_label`` looks it up, else the first characters
         of its id; ``nodeLabel`` in ``components/scenarios/scenarioLabels.ts``."""
@@ -353,10 +352,8 @@ class WorkflowSpec:
         node = next((n for n in self.nodes if n.id == node_id), None)
         if node is None:
             return node_id[:8]
-        if isinstance(node.title, str) and node.title.strip():
-            return node.title.strip()
         template = (self.labels or {}).get(canonical_template_id(node.raw_type)) if node.raw_type else None
-        return display_label(node.raw_type, node.template_label, template) or node_id[:8]
+        return display_label(node.raw_type, node.title, template) or node_id[:8]
 
     def input_scenarios(self, node_id: str) -> dict:
         """The label each wired circle of *node_id* carries, by circle: the id,
@@ -522,10 +519,10 @@ def parse_workflow(filepath: str) -> WorkflowSpec:
 
 
 def _names_of(node: dict) -> dict:
-    """A saved node's title and renamed header, for ``NodeSpec``."""
-    metadata = node.get("metadata") if isinstance(node.get("metadata"), dict) else {}
-    title, header = node.get("title"), metadata.get("packageTemplateLabel")
-    return {"title": title if isinstance(title, str) else "", "template_label": header if isinstance(header, str) else ""}
+    """A saved node's title, for ``NodeSpec``."""
+    from utk_curio.backend.app.execution.node_names import saved_node_title
+
+    return {"title": saved_node_title(node)}
 
 
 def _scenarios_of(dataflow: dict, nodes: list) -> list:

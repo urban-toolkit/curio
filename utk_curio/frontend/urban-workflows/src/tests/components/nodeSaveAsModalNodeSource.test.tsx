@@ -84,7 +84,7 @@ function setStoreNode(label?: string) {
         type: "curio.builtin/computation-analysis",
         data: {
           nodeType: "curio.builtin/computation-analysis",
-          ...(label ? { packageTemplateLabel: label } : {}),
+          ...(label ? { title: label } : {}),
         },
       },
     ],

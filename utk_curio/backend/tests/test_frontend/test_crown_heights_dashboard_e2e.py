@@ -293,7 +293,7 @@ def _ids() -> dict[str, str]:
     ids = {key: str(uuid.uuid5(NAMESPACE, key)) for key in LABELS}
     missing = sorted(key for key, node_id in ids.items() if node_id not in nodes)
     assert not missing, f"the example has no node of the keys {missing!r}"
-    titles = {key: (nodes[node_id].get("metadata") or {}).get("packageTemplateLabel") for key, node_id in ids.items()}
+    titles = {key: nodes[node_id].get("title") for key, node_id in ids.items()}
     retitled = {key: title for key, title in titles.items() if title != LABELS[key]}
     assert not retitled, f"the example titles these nodes otherwise: {retitled!r}"
     pinned = sorted(key for key, node_id in ids.items() if nodes[node_id].get("dashboardPinned"))

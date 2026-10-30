@@ -172,10 +172,9 @@ describe("TrillGenerator node header (#412)", () => {
     TrillGenerator.reset();
   });
 
-  test("persists a renamed header at metadata.packageTemplateLabel", () => {
-    // The header's rename writes data.packageTemplateLabel, and the header
-    // reads it back. The serializer wrote only data.title, so the rename
-    // lasted until the dataflow was reopened.
+  test("saves a node's one name as its title, and never metadata.packageTemplateLabel", () => {
+    // The header's rename writes data.title, the node's one name, and the
+    // header reads it back.
     const spec = TrillGenerator.generateTrill(
       [
         {
@@ -184,17 +183,18 @@ describe("TrillGenerator node header (#412)", () => {
           data: {
             nodeId: "renamed-1",
             nodeType: "curio.builtin/computation-analysis",
-            packageTemplateLabel: "Clean the parcels",
+            title: "  Clean the parcels ",
           },
         },
         {
-          // A blank label is no label: the header falls back to the type's.
+          // A blank title is no title: the node is saved with its template's
+          // label, none here, where the registry knows no template.
           type: "CURIO_UNIVERSAL_NODE",
           position: { x: 5, y: 5 },
           data: {
             nodeId: "blank-1",
             nodeType: "curio.builtin/computation-analysis",
-            packageTemplateLabel: "   ",
+            title: "   ",
           },
         },
       ],
@@ -203,7 +203,9 @@ describe("TrillGenerator node header (#412)", () => {
     );
 
     const byId = Object.fromEntries(spec.dataflow.nodes.map((n: any) => [n.id, n]));
-    expect(byId["renamed-1"].metadata.packageTemplateLabel).toBe("Clean the parcels");
+    expect(byId["renamed-1"].title).toBe("Clean the parcels");
+    expect(byId["renamed-1"].metadata).toBeUndefined();
+    expect(byId["blank-1"]).not.toHaveProperty("title");
     expect(byId["blank-1"].metadata).toBeUndefined();
   });
 
@@ -235,7 +237,7 @@ describe("TrillGenerator node header (#412)", () => {
             nodeId: "configured-1",
             nodeType: "curio.builtin/computation-analysis",
             code: "return input_0.dropna()",
-            packageTemplateLabel: "Clean the parcels",
+            title: "Clean the parcels",
             packageTemplateConfig: config,
           },
         },
@@ -310,7 +312,7 @@ describe("TrillGenerator writes no node comments", () => {
           data: {
             nodeId: "renamed-1",
             nodeType: "curio.builtin/computation-analysis",
-            packageTemplateLabel: "Clean the parcels",
+            title: "Clean the parcels",
             comments,
           },
         },
@@ -321,7 +323,8 @@ describe("TrillGenerator writes no node comments", () => {
 
     const byId = Object.fromEntries(spec.dataflow.nodes.map((n: any) => [n.id, n]));
     expect(byId["discussed-1"].metadata).toBeUndefined();
-    expect(byId["renamed-1"].metadata).toEqual({ packageTemplateLabel: "Clean the parcels" });
+    expect(byId["renamed-1"].metadata).toBeUndefined();
+    expect(byId["renamed-1"].title).toBe("Clean the parcels");
   });
 });
 

@@ -397,7 +397,7 @@ describe("UnresolvedNode in the notebook view", () => {
     ];
     // A package node's own label: how resolveNodeDisplayLabel names a node
     // without consulting the registry (a numeric type id).
-    mockNodes = [{ id: "load", data: { nodeId: "load", nodeType: "1024", packageTemplateLabel: "Load roads" } }];
+    mockNodes = [{ id: "load", data: { nodeId: "load", nodeType: "1024", title: "Load roads" } }];
   });
 
   it.each([

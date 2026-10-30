@@ -41,14 +41,18 @@ spec
 
 `content` holds the node's payload: Python or JavaScript source, or a grammar
 document. A Note (`curio.builtin/note`) holds its text there, in simple
-markdown; the other presentation-only templates have no `content`. A Note shows
-`title` above its text, on the color in `metadata.appearance`;
+markdown; the other presentation-only templates have no `content`. A Note's
+`title` is its heading, shown in its header; its text is on the color in
+`metadata.appearance`;
 `appearance.backgroundColor` accepts a palette name *or* a `#rrggbb` value,
 because agents are instructed to supply either.
 
-`metadata.packageTemplateLabel` is the node's header when the user has renamed
-it. It is written only when non-blank; without it the header shows the
-template's label.
+`title` is the node's one name, the one its header shows. A node starts with its
+template's label and keeps it until the user renames the header or an agent
+names it; a save writes it for every node that has one, and a Note has none
+until its author gives it one. `metadata.packageTemplateLabel` is deprecated: a
+dataflow saved before `title` was the one name holds a renamed header there,
+which is read on load in place of `title` and never written again.
 
 `metadata.packageTemplateConfig` is what the node settings modal saved for the
 node: its title, description, editor mode, engine, which editor tabs it shows,

@@ -78,7 +78,7 @@ jest.mock("../../../providers/CollaborationProvider", () => ({
     }),
 }));
 jest.mock("../../../utils/palettePackageFactoryDraft", () => ({
-    resolveNodeDisplayLabel: (data: any) => data?.packageTemplateLabel ?? "Node",
+    resolveNodeDisplayLabel: (data: any) => data?.title ?? "Node",
 }));
 let mockBackendRun: any = null;
 jest.mock("../../../hook/usePackageBackendRun", () => ({
@@ -96,7 +96,7 @@ function upstreamFailed() {
     mockFlow = {
         edges: [{ id: "up->n1", source: "up", target: "n1" }],
         nodeExecStatus: { up: "errored" },
-        nodes: [{ id: "up", data: { nodeId: "up", nodeType: "curio.builtin/data-loading", packageTemplateLabel: "Load parcels" } }],
+        nodes: [{ id: "up", data: { nodeId: "up", nodeType: "curio.builtin/data-loading", title: "Load parcels" } }],
     };
 }
 

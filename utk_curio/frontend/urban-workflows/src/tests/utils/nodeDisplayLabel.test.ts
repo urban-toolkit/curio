@@ -35,11 +35,11 @@ describe("resolveNodeDisplayLabel (node-type → display name)", () => {
     expect(resolveNodeDisplayLabel({ nodeType: NodeType.DATA_TRANSFORMATION })).toBeTruthy();
   });
 
-  test("a custom node title (packageTemplateLabel) wins over the type label", () => {
+  test("a custom node title (title) wins over the type label", () => {
     expect(
       resolveNodeDisplayLabel({
         nodeType: NodeType.DATA_TRANSFORMATION,
-        packageTemplateLabel: "My Cleaner",
+        title: "My Cleaner",
       }),
     ).toBe("My Cleaner");
   });
@@ -48,7 +48,7 @@ describe("resolveNodeDisplayLabel (node-type → display name)", () => {
     expect(
       resolveNodeDisplayLabel({
         nodeType: "1782498496720" as unknown as NodeType,
-        packageTemplateLabel: "Join Step",
+        title: "Join Step",
       }),
     ).toBe("Join Step");
   });
@@ -74,7 +74,7 @@ describe("resolveNodeDisplayLabel names a node as a run on the server does (#775
     expect(
       resolveNodeDisplayLabel({
         nodeType: "ai.test.names/zonal-mean@1" as any,
-        packageTemplateLabel: "Mean by tract",
+        title: "Mean by tract",
       }),
     ).toBe("Mean by tract");
   });

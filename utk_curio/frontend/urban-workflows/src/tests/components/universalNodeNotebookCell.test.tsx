@@ -126,7 +126,7 @@ jest.mock("../../providers/FlowProvider", () => ({
     isRunActive: false,
     // A package node's own label: how resolveNodeDisplayLabel names a node
     // without consulting the registry (a numeric type id).
-    nodes: [{ id: "load", data: { nodeId: "load", nodeType: "1024", packageTemplateLabel: "Load roads" } }],
+    nodes: [{ id: "load", data: { nodeId: "load", nodeType: "1024", title: "Load roads" } }],
   }),
 }));
 jest.mock("../../providers/CollaborationProvider", () => ({

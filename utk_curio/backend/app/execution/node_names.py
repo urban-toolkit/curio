@@ -6,10 +6,14 @@ cases both sides run. The name titles the node's computed dataset whichever
 path saves it (a save, a node's play, a run on the server), and is what a run
 on the server calls the node in its steps and skip reasons.
 
-- :func:`display_label`: the node's renamed header, else its template's label,
-  else its type in words without the version. A purely numeric type is a node
-  id rather than a template: the renamed header names it, else the id itself.
-- :func:`saved_node_label`: the same, for a node as a saved dataflow holds it.
+- :func:`display_label`: the node's title, else its template's label, else its
+  type in words without the version. A purely numeric type is a node id rather
+  than a template: the title names it, else the id itself.
+- :func:`saved_node_title`: the title a saved node holds. ``title`` is the one
+  name a node has; a dataflow saved before it was holds a renamed header at
+  ``metadata.packageTemplateLabel`` (or ``data.packageTemplateLabel``), which
+  wins over a ``title`` beside it, as the canvas reads it on load.
+- :func:`saved_node_label`: :func:`display_label` of a saved node.
 - :func:`template_labels`: each template's label by unversioned id, for the
   templates a project can use (what the canvas's registry holds).
 """
@@ -44,8 +48,7 @@ def humanize_node_type(node_type) -> str:
 
 
 def display_label(node_type, custom_label=None, template_label=None) -> str:
-    """The name of a node of *node_type*: *custom_label* (its renamed header),
-    else *template_label* (its template's label), else the type in words."""
+    """The name of a node of *node_type*: *custom_label* (its title), else *template_label* (its template's label), else the type in words."""
     custom = _label_text(custom_label)
     if custom:
         return custom
@@ -55,21 +58,29 @@ def display_label(node_type, custom_label=None, template_label=None) -> str:
     return _label_text(template_label) or humanize_node_type(type_text)
 
 
+def saved_node_title(node: Mapping) -> str:
+    """The title a saved node holds, trimmed, or "": its ``title``, after the
+    renamed header a dataflow saved before ``title`` was the one name holds at
+    ``metadata.packageTemplateLabel`` (or the older ``data.packageTemplateLabel``)."""
+    data = node.get("data") if isinstance(node.get("data"), dict) else {}
+    metadata = node.get("metadata") if isinstance(node.get("metadata"), dict) else {}
+    return (
+        _label_text(metadata.get("packageTemplateLabel"))
+        or _label_text(data.get("packageTemplateLabel"))
+        or _label_text(node.get("title"))
+    )
+
+
 def saved_node_label(node: Mapping, labels: Optional[Mapping[str, str]] = None) -> str:
-    """:func:`display_label` of a node as a saved dataflow holds it: the renamed
-    header at ``metadata.packageTemplateLabel`` (or the older
-    ``data.packageTemplateLabel``), the type at ``type`` (or ``data.nodeType``),
-    and the template's label looked up in *labels* by unversioned id."""
+    """:func:`display_label` of a node as a saved dataflow holds it: its title
+    (:func:`saved_node_title`), the type at ``type`` (or ``data.nodeType``), and
+    the template's label looked up in *labels* by unversioned id."""
     from utk_curio.backend.app.packages.service import canonical_template_id
 
     data = node.get("data") if isinstance(node.get("data"), dict) else {}
-    metadata = node.get("metadata") if isinstance(node.get("metadata"), dict) else {}
-    custom = _label_text(metadata.get("packageTemplateLabel")) or _label_text(
-        data.get("packageTemplateLabel")
-    )
     node_type = node.get("type") or data.get("nodeType")
     template = (labels or {}).get(canonical_template_id(node_type)) if node_type else None
-    return display_label(node_type, custom, template)
+    return display_label(node_type, saved_node_title(node), template)
 
 
 def template_labels(user_key: str, project_id: str) -> dict:

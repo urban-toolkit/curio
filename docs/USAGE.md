@@ -398,7 +398,9 @@ with its catalog: [Node Catalog](#node-catalog), [Data Catalog](#data-catalog),
 ## Inside a node
 
 A node's header shows **Play** at its left, the node's name and kind, and its run
-status. Its other buttons show while the pointer is over the node or the node is
+status. The name starts as the node's kind, such as "Python Computation"; click it
+to rename the node. The new name is what the node is called everywhere: in
+scenario boxes, input chips, its computed dataset and the saved dataflow. Its other buttons show while the pointer is over the node or the node is
 selected: the editor's tabs (code, widgets, spec, output), **Provenance** (the
 node's runs, see [Provenance](#provenance)), the **Save output dataset** toggle,
 settings, about, pin, **Minimize** and delete.
@@ -460,7 +462,7 @@ would drag it, such as its header, to zoom the view onto it.
 ## Notes
 
 A **Note** node holds a title and a short text on a color, to explain a part of
-the dataflow. Drag **Note** from the **Built-in** palette onto the canvas, write
+the dataflow. Its title shows in its header. Drag **Note** from the **Built-in** palette onto the canvas, write
 its title and text, pick its color and click **Save**. **Edit** on the note
 opens them again.
 

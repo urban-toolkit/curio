@@ -27,7 +27,7 @@ let mockUser: any = { user: { name: "Owner", is_guest: false }, enableUserAuth: 
 let mockReactFlowProps: any = null;
 const mockShowToast = jest.fn();
 const mockReactFlowInstance = {
-  getNode: (id: string) => ({ id, data: { nodeId: id, packageTemplateLabel: "Renamed meanwhile" } }),
+  getNode: (id: string) => ({ id, data: { nodeId: id, title: "Renamed meanwhile" } }),
   getNodes: () => [],
   fitView: jest.fn(),
   setViewport: jest.fn(),
@@ -411,7 +411,7 @@ describe("the canvas", () => {
     // not clobbered by a stale copy.
     expect(mockFlow.updateDataNode).toHaveBeenCalledWith("chart", {
       nodeId: "chart",
-      packageTemplateLabel: "Renamed meanwhile",
+      title: "Renamed meanwhile",
       dashboardX: 40,
       dashboardY: 80,
     });

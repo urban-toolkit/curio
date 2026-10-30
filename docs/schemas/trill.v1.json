@@ -260,7 +260,7 @@
         },
         "title": {
           "type": "string",
-          "description": "Optional display title, set by agents when they create a node. A curio.builtin/note node shows it above its text, and its author sets it there. Emitted only when non-empty."
+          "description": "The node's name, the one its header shows: its template's label when the node is made, then what the user renames the header to or an agent names it. A curio.builtin/note node's title is its heading, shown in its header, and has none until its author gives one. Emitted only when non-empty."
         },
         "width": {
           "type": "number",
@@ -318,7 +318,7 @@
         "data": {
           "type": "object",
           "deprecated": true,
-          "description": "DEPRECATED React Flow-shaped sub-object. No current writer emits it into a trill file, but projects/services.py still reads 'data.packageTemplateLabel' and 'data.nodeType' when titling computed datasets, so a spec carrying it must stay valid.",
+          "description": "DEPRECATED React Flow-shaped sub-object. No current writer emits it into a trill file, but execution/node_names.py still reads 'data.packageTemplateLabel' (a renamed header from before `title` was a node's one name) and 'data.nodeType' when naming a node, so a spec carrying it must stay valid.",
           "additionalProperties": true,
           "properties": {
             "packageTemplateLabel": { "type": "string" },
@@ -408,7 +408,8 @@
         "packageTemplateLabel": {
           "type": "string",
           "minLength": 1,
-          "description": "The node's renamed header (#412). Absent means the header shows its template's label."
+          "deprecated": true,
+          "description": "DEPRECATED. The node's renamed header (#412), before `title` was a node's one name. Read on load, where it wins over `title`; never written."
         },
         "packageTemplateConfig": {
           "type": "object",

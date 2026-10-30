@@ -185,7 +185,7 @@ def _spec(code: str, name: str) -> dict:
             "nodes": [
                 node(BASE, PYTHON_TYPE, 0, 0, code, "Outcome", _factor(1)),
                 node(TALL, PYTHON_TYPE, 0, 520, code, "Outcome", {**_factor(2), "copiedFrom": [BASE]}),
-                node(CALCULATOR, CALCULATOR_TYPE, 760, 0, SIGNED_CODE, metadata={"packageTemplateLabel": "Ramp change"}),
+                node(CALCULATOR, CALCULATOR_TYPE, 760, 0, SIGNED_CODE, "Ramp change"),
                 node(MAP, MAP_TYPE, 760, 560, json.dumps(MAP_SPEC, indent=2)),
                 node(DIFFERENCE_MAP, MAP_TYPE, 1440, 0, json.dumps(DIFFERENCE_MAP_SPEC, indent=2)),
             ],

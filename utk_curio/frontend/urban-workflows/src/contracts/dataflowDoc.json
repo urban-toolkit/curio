@@ -58,7 +58,6 @@
     "appearance": "appearance",
     "spatialJoin": "spatialJoin",
     "simpleVis": "simpleVis",
-    "packageTemplateLabel": "packageTemplateLabel",
     "packageTemplateConfig": "packageTemplateConfig",
     "dataPool": "dataPool",
     "widgets": "@widgets",

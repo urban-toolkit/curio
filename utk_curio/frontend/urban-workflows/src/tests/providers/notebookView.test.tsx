@@ -298,7 +298,7 @@ describe('the notebook view shows the nodes as cells', () => {
       api.onNodesChange(
         rf.getNodes().map((n: any) => {
           const { workflowPosition, ...rest } = n.data;
-          return { type: 'reset', item: { ...n, data: { ...rest, packageTemplateLabel: 'Renamed' } } };
+          return { type: 'reset', item: { ...n, data: { ...rest, title: 'Renamed' } } };
         }) as any,
       );
     });

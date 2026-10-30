@@ -111,7 +111,7 @@ function makeNode(id: string, label: string = `Node ${id}`) {
     data: {
       nodeId: id,
       nodeType: 'curio.builtin/computation-analysis',
-      packageTemplateLabel: label,
+      title: label,
       output: { code: '', content: '' },
     },
   } as any;

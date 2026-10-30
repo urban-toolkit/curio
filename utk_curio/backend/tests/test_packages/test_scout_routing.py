@@ -775,7 +775,7 @@ def test_the_shipped_dataflows_bars_chart_the_four_metrics():
     charted = []
     for node in charts:
         assert node["content"] == starter, node["id"]
-        assert set(node["metadata"]) == {"keywords", "packageTemplateLabel", "widgets"}, node["metadata"]
+        assert set(node["metadata"]) == {"keywords", "widgets"}, node["metadata"]
         widgets = node["metadata"]["widgets"]
         assert [{k: v for k, v in w.items() if k != "value"} for w in widgets] == template["widgets"]
         values = {w["name"]: w.get("value", w["default"]) for w in widgets}
@@ -788,7 +788,7 @@ def test_the_shipped_dataflows_bars_chart_the_four_metrics():
         # A chart feeds nothing.
         assert [e["target"] for e in spec["edges"] if e["source"] == node["id"]] == []
     assert charted == EXAMPLE_CHARTS
-    assert [n["metadata"]["packageTemplateLabel"] for n in charts] == CHART_LABELS
+    assert [n["title"] for n in charts] == CHART_LABELS
     # Each chart's id is the Compare node's it replaced.
     assert [n["id"][:8] for n in charts] == ["1f8b6d2c", "4d9a7f3e", "a2e6c9f4", "b7f3a1d8"]
 

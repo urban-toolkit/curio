@@ -61,14 +61,13 @@ CLOSEUP_STEM = "minimized-node-chip"
 
 
 def _node(node_id: str, x: int, y: int, title: str | None = None, minimized: bool = False) -> dict:
-    metadata: dict = {"keywords": []}
-    if title:
-        metadata["packageTemplateLabel"] = title
     node = {
         "id": node_id, "type": "curio.builtin/computation-analysis", "x": x, "y": y,
         "content": "return 1\n", "in": "DEFAULT", "out": "DEFAULT", "goal": "",
-        "metadata": metadata,
+        "metadata": {"keywords": []},
     }
+    if title:
+        node["title"] = title
     if minimized:
         node["minimized"] = True
     return node

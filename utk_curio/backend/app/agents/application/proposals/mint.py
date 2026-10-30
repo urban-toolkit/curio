@@ -585,11 +585,14 @@ def _mint_plan_from_params(
 
 def _node_display_name(node: dict, entry: dict | None) -> str:
     """The words a card uses for an existing node: "Python Computation node",
-    or "Python Computation node · Load boundaries" when the node has a title."""
+    or "Python Computation node · Load boundaries" when the node's title is
+    not its template's label."""
+    from utk_curio.backend.app.execution.node_names import saved_node_title
+
     label = (entry or {}).get("label")
     name = f"{label} node" if isinstance(label, str) and label.strip() else "node"
-    title = node.get("title")
-    return name + (f" · {title}" if isinstance(title, str) and title.strip() else "")
+    title = saved_node_title(node)
+    return name + (f" · {title}" if title and title != (label or "").strip() else "")
 
 
 def _target_node_id(loop_ctx: dict, params: dict) -> str | None:

@@ -397,7 +397,7 @@ describe("a step only a browser runs", () => {
     test("the step that could not run is named as its header names it", async () => {
         const gpu = {
             id: "gpu",
-            data: { nodeId: "gpu", nodeType: "curio.builtin/autk-grammar@1", packageTemplateLabel: "Cast sun rays on the GPU" },
+            data: { nodeId: "gpu", nodeType: "curio.builtin/autk-grammar@1", title: "Cast sun rays on the GPU" },
         };
         const { hook, run, outcomes } = await aRunLeavingTheGpuStep((_outputs, hooks) => {
             hooks.onNodeDone("gpu", { failed: true, message: "WebGPU is not available in this browser." });

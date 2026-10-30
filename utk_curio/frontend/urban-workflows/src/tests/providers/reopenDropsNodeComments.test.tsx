@@ -231,7 +231,8 @@ describe('a saved dataflow whose node carries comments', () => {
     await reopen();
 
     const node = loadedNode(DISCUSSED);
-    expect(node.data.packageTemplateLabel).toBe(LABEL);
+    // A renamed header saved before `title` was a node's one name is its title.
+    expect(node.data.title).toBe(LABEL);
     expect(mockShowToast.mock.calls.filter(([, kind]) => kind === 'error')).toEqual([]);
     // Checked last, so a canvas that still loads them fails here and nowhere earlier.
     expect(node.data).not.toHaveProperty('comments');
@@ -248,7 +249,8 @@ describe('a saved dataflow whose node carries comments', () => {
     const [savedId, saved] = mockUpdateProject.mock.calls[mockUpdateProject.mock.calls.length - 1];
     expect(savedId).toBe(PROJECT_ID);
     const savedNode = saved.spec.dataflow.nodes.find((n: any) => n.id === DISCUSSED);
-    expect(savedNode.metadata.packageTemplateLabel).toBe(LABEL);
+    expect(savedNode.title).toBe(LABEL);
+    expect(savedNode.metadata ?? {}).not.toHaveProperty('packageTemplateLabel');
     // Checked last, so a canvas that still saves them fails here and nowhere earlier.
     expect(savedNode.metadata).not.toHaveProperty('comments');
   });

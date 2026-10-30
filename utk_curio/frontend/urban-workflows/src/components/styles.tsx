@@ -850,15 +850,16 @@ export const NodeContainer = ({
                             <NodeRunControls {...runControls} part="play" />
                         ) : null}
 
-                        {/* Node title — editable on package nodes (same visibility as PACKAGE pills) */}
+                        {/* The node's title, its one name: any node's can be renamed
+                            on the canvas; the settings cog stays a package node's. */}
                         <EditableNodeHeaderLabel
                             displayLabel={headerKindLabel}
-                            editable={showPackageNodeActions}
+                            editable={!dashboardOn && !suggestionActive}
                             showConfig={showPackageNodeActions}
                             executed={nodeExecStatus[nodeId] === "executed"}
                             keywordHighlighted={!!data.keywordHighlighted}
                             onLabelCommit={(label) => {
-                                updateDataNode(nodeId, { ...data, packageTemplateLabel: label });
+                                updateDataNode(nodeId, { ...data, title: label });
                             }}
                             onConfigure={() => setConfigOpen(true)}
                         />
@@ -1076,13 +1077,13 @@ export const NodeContainer = ({
                 nodeId={nodeId}
                 nodeType={data.nodeType}
                 storedConfig={readCanvasTemplateConfig({ data })}
-                storedLabel={data.packageTemplateLabel}
+                storedLabel={data.title}
                 templateCode={code ?? data.defaultCode ?? ""}
                 onClose={() => setConfigOpen(false)}
                 onSave={(config: CanvasTemplateConfig) => {
                     updateDataNode(nodeId, {
                         ...data,
-                        packageTemplateLabel: config.label.trim(),
+                        title: config.label.trim() || undefined,
                         packageTemplateConfig: config,
                     });
                     setConfigOpen(false);

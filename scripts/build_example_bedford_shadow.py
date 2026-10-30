@@ -873,11 +873,12 @@ def node(key, type_, x, y, content, goal, title=None, widgets=None, copied=None,
     if copied:
         metadata["copiedFrom"] = [nid(copied)]
     entry = {"id": nid(key), "type": type_, "x": x, "y": y, "content": content, "out": "DEFAULT",
-             "in": "DEFAULT", "goal": goal, "metadata": metadata}
+             "in": "DEFAULT", "goal": goal}
+    if metadata:
+        entry["metadata"] = metadata
     if title:
+        # The node's one name, what its header shows in place of its type's name.
         entry["title"] = title
-        # What the node's header shows in place of its type's name (#412).
-        metadata["packageTemplateLabel"] = title
     if size:
         entry["width"], entry["height"] = size
     return entry

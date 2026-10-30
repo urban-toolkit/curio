@@ -1049,6 +1049,8 @@ def _created_plan_node(proposal: dict, plan_node: dict, ref: str, nodes: list,
     created = {
         "id": str(uuid.uuid4()),
         "type": plan_node["nodeType"],
+        # The plan's name for it is the node's title, the name its header shows.
+        "title": plan_node["title"],
         "content": starter["content"] if starter else "",
         "goal": goal_text,
         "x": float(pos.get("x", 80.0)),
@@ -1760,6 +1762,7 @@ def _create_plan_nodes(user_key, spec: dict, nodes: list, plan: dict, proposal: 
         created = {
             "id": node_id,
             "type": plan_node["nodeType"],
+            "title": plan_node["title"],
             "content": starter["content"] if starter else plan_node.get("content", ""),
             "goal": edited_goals.get(plan_node["ref"])
             or f"{plan_node['title']} — {plan_node['intent']}",

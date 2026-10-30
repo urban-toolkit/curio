@@ -215,7 +215,7 @@ def test_the_flood_dataflows_averages_by_period_are_raster_calculators():
     the region, a JSON value its circles take too. No node of the dataflow
     calls the old helpers."""
     spec = json.loads(FLOOD.read_text(encoding="utf-8"))["dataflow"]
-    averages = [n for n in spec["nodes"] if (n.get("metadata") or {}).get("packageTemplateLabel") == AVERAGE]
+    averages = [n for n in spec["nodes"] if n.get("title") == AVERAGE]
     assert len(averages) == 2, [n["id"] for n in averages]
     for node in averages:
         assert node["type"] == CALCULATOR, (node["id"], node["type"])

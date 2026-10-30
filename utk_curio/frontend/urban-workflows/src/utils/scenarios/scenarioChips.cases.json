@@ -1,5 +1,5 @@
 {
-  "about": "Dataflows, a node of each, and the spec its scenario chips, and the chip of the dataset its inputs are stacked in, [!! inputs !!], resolve to from the dataflow's boxes, nodes and edges: each wired input's label is the box its feeding node is in, ranked by the dataflow's list of boxes, or its node's title, renamed header or type for a node in no box, in grey. Read by src/tests/NotebookConvertor.test.ts, as the notebook export writes each spec, and by utk_curio/backend/tests/test_execution/test_scenario_chips.py, as the server resolves a node's references for a run and for the agents' check (WorkflowSpec.node_code). A case may carry \"labels\", each template's label by its unversioned id, which name an untitled node as its header does: the browser reads them from the node registry, the server from the project's templates.",
+  "about": "Dataflows, a node of each, and the spec its scenario chips, and the chip of the dataset its inputs are stacked in, [!! inputs !!], resolve to from the dataflow's boxes, nodes and edges: each wired input's label is the box its feeding node is in, ranked by the dataflow's list of boxes, or its node's title (a renamed header saved before title was a node's one name, else its title) or type for a node in no box, in grey. Read by src/tests/NotebookConvertor.test.ts, as the notebook export writes each spec, and by utk_curio/backend/tests/test_execution/test_scenario_chips.py, as the server resolves a node's references for a run and for the agents' check (WorkflowSpec.node_code). A case may carry \"labels\", each template's label by its unversioned id, which name an untitled node as its header does: the browser reads them from the node registry, the server from the project's templates.",
   "cases": [
     {
       "name": "a chart's chips list the boxes in the order the dataflow lists them, then an input from no box by its node's title, in grey",
@@ -165,7 +165,7 @@
       "expected": "{\"map\": {\"layerRefs\": [{\"dataRef\": \"input_0\", \"title\": \"Roads\", \"color\": \"#8a8f98\"}, {\"dataRef\": \"input_1\", \"width\": 80, \"title\": \"Fastest route\", \"color\": \"#42A5F5\"}, {\"dataRef\": \"input_2\", \"width\": 40, \"title\": \"Weather-aware route\", \"color\": \"#00838F\"}]}}"
     },
     {
-      "name": "an input from no box whose node has no title is named by its renamed header, and a box with no nodes still counts in the order",
+      "name": "an input from no box whose node was saved with a renamed header, before title was its one name, is named by it, and a box with no nodes still counts in the order",
       "grammar": "vega-lite",
       "node": "chart",
       "dataflow": {

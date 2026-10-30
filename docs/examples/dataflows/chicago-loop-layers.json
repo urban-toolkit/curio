@@ -19,8 +19,7 @@
         "in": "DEFAULT",
         "goal": "Load the census tracts that meet downtown Chicago, with CDC/ATSDR's Social Vulnerability Index 2020.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Census tracts (SVI)"
+          "keywords": []
         },
         "title": "Census tracts (SVI)"
       },
@@ -34,8 +33,7 @@
         "in": "DEFAULT",
         "goal": "Load OpenStreetMap's parks, water, roads and buildings of downtown Chicago.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "OpenStreetMap layers"
+          "keywords": []
         },
         "title": "OpenStreetMap layers"
       },
@@ -49,8 +47,7 @@
         "in": "DEFAULT",
         "goal": "Load the CTA 'L' rail lines of downtown Chicago.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "CTA 'L' lines"
+          "keywords": []
         },
         "title": "CTA 'L' lines"
       },
@@ -64,8 +61,7 @@
         "in": "DEFAULT",
         "goal": "Load OpenStreetMap's mapped trees of downtown Chicago.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Trees"
+          "keywords": []
         },
         "title": "Trees"
       },
@@ -79,8 +75,7 @@
         "in": "DEFAULT",
         "goal": "Load the CTA 'L' stations of downtown Chicago, accessible or not.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "CTA 'L' stations"
+          "keywords": []
         },
         "title": "CTA 'L' stations"
       },
@@ -94,8 +89,7 @@
         "in": "DEFAULT",
         "goal": "Draw every layer on one map: tracts by social vulnerability, buildings by height, parks, water, roads, the 'L', trees and stations.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Downtown Chicago layers"
+          "keywords": []
         },
         "title": "Downtown Chicago layers",
         "width": 960,
@@ -111,8 +105,7 @@
         "in": "DEFAULT",
         "goal": "Read the map's layers, by the geometry of their features, and add, reshape, move, change or remove their features on the map, add properties, or make a new layer.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Edit the map's layers"
+          "keywords": []
         },
         "title": "Edit the map's layers",
         "width": 661,

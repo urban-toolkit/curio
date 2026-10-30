@@ -194,9 +194,9 @@ export function normalizeTemplateLabel(label: string): string {
   return label.trim().toLowerCase();
 }
 
-/** Canvas-local template title; falls back to registry descriptor label. */
+/** The node's title (its one name); falls back to registry descriptor label. */
 export function canvasTemplateLabelFromNode(node: { data: object }, desc: NodeDescriptor): string {
-  const raw = (node.data as { packageTemplateLabel?: unknown })?.packageTemplateLabel;
+  const raw = (node.data as { title?: unknown })?.title;
   if (typeof raw === "string" && raw.trim()) return raw.trim();
   return desc.label || canonicalTemplateSlugForDescriptor(desc);
 }
@@ -206,17 +206,17 @@ export function canvasTemplateLabelFromNode(node: { data: object }, desc: NodeDe
  * header. Single source of truth so the node header and the computed-dataset
  * title it produces never drift apart.
  *
- * The node's renamed header (``packageTemplateLabel``), else its registered
- * template's label, else its type in words without the version; a purely
- * numeric ``nodeType`` is a node id, named by its header or itself. The rule is
+ * The node's title (``data.title``, its one name: utils/nodeTitle.ts), else
+ * its registered template's label, else its type in words without the version;
+ * a purely numeric ``nodeType`` is a node id, named by its title or itself. The rule is
  * ``nodeDisplayLabel``, which the backend twins, so a run on the server and a
  * save name a node's computed dataset the same way (#775).
  */
 export function resolveNodeDisplayLabel(
-  data: { nodeType: NodeTemplateId; packageTemplateLabel?: string | null },
+  data: { nodeType: NodeTemplateId; title?: string | null },
 ): string {
   const desc = tryGetNodeDescriptor(data.nodeType);
-  return nodeDisplayLabel(data.nodeType, data.packageTemplateLabel, desc?.label);
+  return nodeDisplayLabel(data.nodeType, data.title, desc?.label);
 }
 
 /**

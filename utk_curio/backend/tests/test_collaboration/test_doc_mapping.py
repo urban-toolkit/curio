@@ -252,7 +252,7 @@ def _written_by_generate_trill() -> dict[str, list[str]]:
 
 
 #: Fewer than these would mean the reading of the sources broke, not the layout.
-_AT_LEAST = {"dataflow": 12, "node": 19, "metadata": 14, "edge": 7, "scenario": 8, "widget": 6}
+_AT_LEAST = {"dataflow": 12, "node": 19, "metadata": 13, "edge": 7, "scenario": 8, "widget": 6}
 
 
 def test_every_field_generate_trill_writes_has_its_place_in_the_doc():

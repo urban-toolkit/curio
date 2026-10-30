@@ -1391,7 +1391,7 @@ class TestResearcher:
         # takes, and the node.create text the chat holds names those params
         # (the second live test's notes were white and headed "Note" because
         # the contract named only nodeType/content/goal).
-        assert '"title": "<short header shown on the node>"' in tools_text
+        assert '"title": "<the node\'s name, shown in its header>"' in tools_text
         assert '"appearance": {"backgroundColor"' in tools_text
         assert "a note template renders title and backgroundColor, so give both for notes" in tools_text
         # Its notes go on the built-in Note, which every dataflow can hold.

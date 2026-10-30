@@ -1,5 +1,5 @@
 {
-  "description": "What a node is called: the name its canvas header shows, which also titles its computed dataset. Read by src/tests/utils/nodeDisplayLabelCases.test.ts (nodeDisplayLabel) and by backend/tests/test_execution/test_node_names.py (execution/node_names.py display_label). customLabel is the node's renamed header (packageTemplateLabel); templateLabel is its template's label from the package manifest, absent when no installed template matches the type.",
+  "description": "What a node is called: the name its canvas header shows, which also titles its computed dataset. Read by src/tests/utils/nodeDisplayLabelCases.test.ts (nodeDisplayLabel) and by backend/tests/test_execution/test_node_names.py (execution/node_names.py display_label). customLabel is the node's title (title, its one name); templateLabel is its template's label from the package manifest, absent when no installed template matches the type.",
   "cases": [
     {
       "name": "a built-in node takes its template's label",
@@ -14,21 +14,21 @@
       "label": "Python Computation"
     },
     {
-      "name": "a renamed header wins over the template's label",
+      "name": "a title wins over the template's label",
       "nodeType": "curio.builtin/computation-analysis@1",
       "customLabel": "Dict output",
       "templateLabel": "Python Computation",
       "label": "Dict output"
     },
     {
-      "name": "a renamed header is trimmed",
+      "name": "a title is trimmed",
       "nodeType": "curio.builtin/data-loading@1",
       "customLabel": "  Census tracts  ",
       "templateLabel": "Data Loading",
       "label": "Census tracts"
     },
     {
-      "name": "a blank renamed header is ignored",
+      "name": "a blank title is ignored",
       "nodeType": "curio.builtin/data-loading@1",
       "customLabel": "   ",
       "templateLabel": "Data Loading",
@@ -67,7 +67,7 @@
       "label": "Data Pool"
     },
     {
-      "name": "a numeric type is a node id: the renamed header names it",
+      "name": "a numeric type is a node id: the title names it",
       "nodeType": "1782498496720",
       "customLabel": "Join Step",
       "label": "Join Step"

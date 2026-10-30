@@ -101,7 +101,7 @@ def _node(node_type: str, header) -> dict:
         "saveOutputDataset": True,
     }
     if header:
-        node["metadata"] = {"packageTemplateLabel": header}
+        node["title"] = header
     return node
 
 

@@ -455,7 +455,7 @@ function NodeEditor({
         if (eventKey === "provenance") {
             provenanceDrawer?.openNodeProvenance({
                 nodeId: data.nodeId,
-                title: resolveNodeDisplayLabel({ nodeType, packageTemplateLabel: data.packageTemplateLabel }),
+                title: resolveNodeDisplayLabel({ nodeType, title: data.title }),
                 restore: (runCode: string) => restoreRunRef.current(runCode),
             });
             return;

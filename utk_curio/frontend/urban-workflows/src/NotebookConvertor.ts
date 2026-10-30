@@ -12,6 +12,7 @@ import { inputTableName } from "./contracts/autkGrammar";
 import { normalizeScenarios } from "./utils/scenarios/scenarioModel";
 import { inputScenarios } from "./utils/scenarios/inputScenarios";
 import { NO_SCENARIO_COLOR, type ScenarioLabel } from "./utils/scenarios/scenarioColors";
+import { savedNodeTitle } from "./utils/nodeTitle";
 
 // ── Trill types ──────────────────────────────────────────────────────────────
 
@@ -639,7 +640,7 @@ function canvasNodeOf(node: TrillNode): { id: string; type: string; data: Record
   return {
     id: node.id,
     type: node.type,
-    data: { title: node.title, nodeType: node.type, packageTemplateLabel: node.metadata?.packageTemplateLabel },
+    data: { title: savedNodeTitle(node), nodeType: node.type },
   };
 }
 

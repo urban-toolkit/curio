@@ -17,15 +17,11 @@
   cursor: text;
 }
 
-.title {
-  margin: 0 0 6px;
-  padding-right: 44px;
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.body > :first-child {
+/* Clear of the Edit button in the corner. */
+.body > :first-child,
+.empty {
   margin-top: 0;
+  padding-right: 44px;
 }
 
 .body p,
