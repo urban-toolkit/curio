@@ -35,8 +35,8 @@ jest.mock("../../providers/CollaborationProvider", () => ({
 import { AgentDock } from "../../components/agents/attach/AgentDock";
 import { DataflowDocContext } from "../../providers/collab/docContext";
 import { NotebookViewContext } from "../../providers/flow/notebookViewContext";
-import { participantColor } from "../../providers/collab/presence";
-import { pointerOf } from "../../providers/collab/cursors";
+import { PARTICIPANT_COLORS, othersOf, participantColor, remoteCursorStyle } from "../../providers/collab/presence";
+import { CursorTracker, pointerOf } from "../../providers/collab/cursors";
 import { initialsOf, peopleOf, samePeople } from "../../providers/collab/people";
 
 // The room: Ana, this tab's account, owns the dataflow; Ben edits; Cal watches.
@@ -306,6 +306,92 @@ describe("who is here, in the canvas's dock", () => {
     dock({ belowBanner: true });
 
     expect(screen.getByRole("toolbar", { name: "Canvas agents" })).toHaveClass("dock", "dockBelowBanner");
+  });
+});
+
+// Every guest, and every tab of a Curio with no sign-in, signs in to the one
+// shared guest account, so the room numbers its tabs (`room_state.add_user`).
+const GUEST = { user_id: 3, username: "guest_shared", name: "Shared Guest", role: "watcher" };
+const GUEST_1 = { ...GUEST, participant_id: "p-guest-1", guest_number: 1 };
+const GUEST_2 = { ...GUEST, participant_id: "p-guest-2", guest_number: 2 };
+
+/** Everyone else as *own*'s tab reads them: each one's name and color. */
+function namesAndColors(own: { participantId: string; userId: number }): string[][] {
+  return peopleOf(mine, own).map((person) => [person.name, person.color]);
+}
+
+/** Each person's chip in the dock: its name and the initials it shows. */
+function labelsAndInitials(): Array<Array<string | null>> {
+  return chips().map((chip) => [chip.getAttribute("aria-label"), chip.textContent]);
+}
+
+describe("every tab of the shared guest account is someone in the dock", () => {
+  test("two tabs of the guest account each see one chip for the other, named and colored by its number", () => {
+    // The first guest's tab: the second's state reaches it, and an older one of its own.
+    mockCollab = { participantId: "p-guest-1", users: [GUEST_1, GUEST_2], activity: [] };
+    joins({ user: GUEST_2, pointer: { x: 5, y: 6, t: 1 } });
+    joins({ user: GUEST_1 });
+
+    expect(namesAndColors({ participantId: "p-guest-1", userId: 3 })).toEqual([["Shared Guest 2", PARTICIPANT_COLORS[1]]]);
+    const first = dock();
+    expect(labelsAndInitials()).toEqual([["Shared Guest 2 (watcher)", "S2"]]);
+    expect(chips()[0]).toHaveStyle({ color: PARTICIPANT_COLORS[1] });
+    // Its cursor on the canvas and in the code editors says the same.
+    const cursors = new CursorTracker().read(othersOf(mine), 0);
+    expect(cursors.map((cursor) => [cursor.name, cursor.color])).toEqual([["Shared Guest 2", PARTICIPANT_COLORS[1]]]);
+    expect(remoteCursorStyle(mine)).toContain('content: "Shared Guest 2"');
+    first.unmount();
+
+    // The second guest's tab sees the first.
+    mine = awareness();
+    mockCollab = { participantId: "p-guest-2", users: [GUEST_1, GUEST_2], activity: [] };
+    joins({ user: GUEST_1 });
+
+    expect(namesAndColors({ participantId: "p-guest-2", userId: 3 })).toEqual([["Shared Guest 1", PARTICIPANT_COLORS[0]]]);
+    dock();
+    expect(labelsAndInitials()).toEqual([["Shared Guest 1 (watcher)", "S1"]]);
+    expect(chips()[0]).toHaveStyle({ color: PARTICIPANT_COLORS[0] });
+  });
+
+  test("an account's other tab stays you, while each guest's tab is someone of its own", () => {
+    joins({ user: { ...ANA, participant_id: "p-ana-2" } });
+    joins({ user: GUEST_2 });
+    joins({ user: GUEST_1 });
+    mockCollab = { ...mockCollab, users: [ANA, GUEST_1, GUEST_2] };
+
+    expect(namesAndColors({ participantId: "p-ana", userId: 7 })).toEqual([
+      ["Shared Guest 1", PARTICIPANT_COLORS[0]],
+      ["Shared Guest 2", PARTICIPANT_COLORS[1]],
+    ]);
+    dock();
+    expect(labelsAndInitials()).toEqual([
+      ["Shared Guest 1 (watcher)", "S1"],
+      ["Shared Guest 2 (watcher)", "S2"],
+    ]);
+  });
+
+  test("the Activity names a guest's tab by the number its event carries, also once it has left", () => {
+    // The first guest's tab has left; the second's is still here.
+    const guest = { user_id: 3, username: "guest_shared", name: "Shared Guest" };
+    mockCollab = {
+      ...mockCollab,
+      users: [ANA, GUEST_2],
+      activity: [
+        { kind: "user_joined", ts: 1, payload: { ...guest, role: "watcher", guest_number: 1 } },
+        { kind: "user_joined", ts: 2, payload: { ...guest, role: "watcher", guest_number: 2 } },
+        { kind: "user_left", ts: 3, payload: { ...guest, guest_number: 1 } },
+      ],
+    };
+    joins({ user: GUEST_2 });
+    dock();
+    fireEvent.click(screen.getByRole("button", { name: "Activity" }));
+
+    const list = screen.getByRole("region", { name: "Activity" });
+    expect(within(list).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
+      "Shared Guest 1 left",
+      "Shared Guest 2 joined (watcher)",
+      "Shared Guest 1 joined (watcher)",
+    ]);
   });
 });
 

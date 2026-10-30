@@ -49,6 +49,7 @@ import { useCollab } from "./CollaborationProvider";
 import { CONNECTION_DROPPED_EVENT, useDocBinding } from "./collab/docContext";
 import type { DataflowDocProvider } from "./collab/docProvider";
 import { canvasRole } from "./collab/participants";
+import { numberedName } from "./collab/presence";
 import { agentsDataflowId } from "../services/agents/agentEditors";
 import { getCurrentProjectId, subscribe as onOpenedDataflow } from "../registry/projectPackagesStore";
 import { useProvenanceContext } from "./ProvenanceProvider";
@@ -481,11 +482,12 @@ const FlowProvider = ({
     // does not have yet, or one bound to no doc that holds changes no one keeps.
     useLeavePageGuard(boundProvider, workflowOps.projectDirty);
     // A connection this tab drew to a node someone removed meanwhile: the
-    // server took it out, and says who removed the node.
+    // server took it out, and says who removed the node, a tab of the shared
+    // guest account by its number.
     useEffect(() => {
         if (typeof collab.onRemote !== "function") return;
         return collab.onRemote(CONNECTION_DROPPED_EVENT, (payload: any) => {
-            const who = payload?.by?.name || payload?.by?.username || "Someone";
+            const who = numberedName(payload?.by?.name || payload?.by?.username || "Someone", payload?.by);
             showToast(`${who} removed that node, so this connection was not kept.`, "warning", { stay: true });
         });
     }, [collab.onRemote, showToast]);
