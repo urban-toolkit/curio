@@ -31,6 +31,24 @@ def person():
         return None
 
 
+def sign_in() -> str | None:
+    """The request's sign-in, as text: the id of the session its token names,
+    which tells apart the browsers of one account, those of the guest account
+    every guest signs in to among them (``room_state.sign_in_of`` reads a
+    socket's). None outside a request, or for a request no session signs."""
+    try:
+        from flask import has_request_context
+
+        if not has_request_context():
+            return None
+        from utk_curio.backend.app.users.dependencies import get_current_session
+
+        session = get_current_session()
+    except Exception:  # noqa: BLE001 - not under Flask, or no session to read
+        return None
+    return str(session.id) if session is not None and session.id is not None else None
+
+
 def _storage_key(user) -> str:
     from utk_curio.backend.app.projects.services import _user_dir_key
 

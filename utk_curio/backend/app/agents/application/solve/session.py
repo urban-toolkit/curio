@@ -27,6 +27,7 @@ from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import catalog as agents_catalog
 from utk_curio.backend.app.agents.application import dataset_resolution as agents_dataset_resolution
+from utk_curio.backend.app.agents.application import in_the_room as agents_room
 from utk_curio.backend.app.agents.application import lifecycle as agents_lifecycle
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application.proposals import acquire as agents_acquire
@@ -309,6 +310,8 @@ def solve_attachment_stream(
         grounding_base=solve_ground, dataset_paths=solve_dataset_paths,
         catalog_rows=solve_catalog_rows, acting_user=solve_user,
         retry_of=retry_of if isinstance(retry_of, str) else None,
+        # Who asked, as the room names them, read here: the job's thread holds no request.
+        room_asker=agents_room.asker(),
     )
     # dev/115 (DEC-021, single-process slice): the batch runs as a detached
     # job — the request only SUBSCRIBES (replay + tail); a disconnect no
@@ -341,6 +344,7 @@ def _solve_events(
     retry_of: str | None = None,
     catalog_rows: list | None = None,
     acting_user=None,
+    room_asker: agents_room.Asker | None = None,
 ):
     """The solve batch stream (dev/63 → dev/118 → dev/131): one
     :class:`solve.batch.SolveBatch` over *targets*, its events relayed. Kept a
@@ -352,7 +356,7 @@ def _solve_events(
         session_id, solve_execution_id, stop,
         spec=spec, verify=verify,
         grounding_base=grounding_base, dataset_paths=dataset_paths, retry_of=retry_of,
-        catalog_rows=catalog_rows, acting_user=acting_user,
+        catalog_rows=catalog_rows, acting_user=acting_user, room_asker=room_asker,
     )
     yield from batch.events()
 

@@ -17,8 +17,9 @@
  *   is editing asks first.
  * - **An agent's change** to the node's code or spec, landing while the agent
  *   is writing the node (`collab/agentHolds`), has its lines marked for a
- *   moment in the agent's tint (`agentChangeMarks`): decorations of the
- *   editor's own, which never reach its text or the doc.
+ *   moment in the agent's tint (`agentChangeMarks`), until the agent lets go
+ *   of the node at the latest: decorations of the editor's own, which never
+ *   reach its text or the doc.
  *
  * Nothing binds while the canvas is not bound to a doc (a dataflow never
  * saved, a hosted guest's own canvas, the dashboard): the editor is then
@@ -31,7 +32,7 @@ import { CANVAS_ORIGIN, useDocBinding } from "../../providers/collab/docContext"
 import { CONTENT, replaceText } from "../../providers/collab/docMapping";
 import { markBound } from "../../providers/collab/boundTexts";
 import { setEditing } from "../../providers/collab/presence";
-import { agentHoldOf } from "../../providers/collab/agentHolds";
+import { agentHoldOf, subscribeAgentHolds } from "../../providers/collab/agentHolds";
 import { agentCategoryKey } from "../menus/nodes/agentsPalette/agentCategoryStyle";
 import { changedLinesBetween, dropLineMarks, markChangedLines } from "./agentChangeMarks";
 
@@ -186,9 +187,15 @@ export function useYMonacoBinding(
                 markChangedLines(editor, changedLinesBetween(before, shown), agentCategoryKey(hold.category));
             };
             ytext.observe(onLanded);
+            // The marks go when the agent lets go of the node, at the latest:
+            // what a tab shows once the agent is done is the node as it is.
+            const unheld = subscribeAgentHolds(() => {
+                if (!agentHoldOf(nodeId)) dropLineMarks(editor);
+            });
             const bound = markBound(doc, nodeId);
             const release = () => {
                 ytext.unobserve(onLanded);
+                unheld();
                 dropLineMarks(editor);
                 bound();
             };

@@ -26,6 +26,7 @@ from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.domain import node_context
 from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 from utk_curio.backend.app.agents.repositories import sessions
+from utk_curio.backend.app.agents.application import in_the_room as agents_room
 from utk_curio.backend.app.agents.application import lifecycle as agents_lifecycle
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application import tools as agents_tools
@@ -256,6 +257,8 @@ def _run_delegate_traced(
     dataflow_block: str | None = None,
     refused: str | None = None,
     asker=None,
+    stay=None,
+    who: agents_room.Asker | None = None,
 ) -> tuple[str, str, dict, str | None]:
     """One delegated task, TRACED (memo dev/72): the DEC-046 seam stays pure —
     this wrapper resolves the task's home attachment, writes the framed task
@@ -267,7 +270,13 @@ def _run_delegate_traced(
     An agent that hands work to one of its own modes and names no node opens
     no chat of its own: like an internal agent's, its record rides the
     parent's turn. *dataflow_block*, *refused* and *asker* go to the child as
-    ``delegation.run_delegate`` says."""
+    ``delegation.run_delegate`` says.
+
+    With *stay*, an ``ExitStack`` the caller holds while it lands what the
+    run made, the delegate is at work in the dataflow's room as the agent of
+    its home (else of the parent's attachment, whose peer it then shares),
+    asked by *who*, with the skills its run is handed, until the caller lets
+    it go."""
     home_attachment_id: str | None = None
     home_session_id: str | None = None
     try:
@@ -284,6 +293,11 @@ def _run_delegate_traced(
                     dataflow_docs.write(user_key, project_id, spec, dataflow_docs.by_agent(coord, user_key, "delegate"))
     except Exception:
         home_attachment_id = home_session_id = None
+    peer = None
+    if stay is not None:
+        peer = stay.enter_context(agents_room.at_work(
+            user_key, project_id, home_attachment_id or attachment_id, coord=coord, who=who,
+        ))
     # Without a name, the id's last segment: my-helper for agent.acme.my-helper.
     parent_label = parent_name or parent_coord.split("@", 1)[0].rsplit(".", 1)[-1]
     if isinstance(home_session_id, str):
@@ -307,6 +321,7 @@ def _run_delegate_traced(
         dataflow_block=dataflow_block,
         refused=refused,
         asker=asker,
+        uses_skills=peer.use_skills if peer is not None else None,
     )
     if isinstance(home_session_id, str):
         try:
@@ -443,7 +458,7 @@ def _mint_content_review_from_delegate(
     mint_ctx = {
         k: v for k, v in (parent_loop_ctx or {}).items()
         if k in ("message", "previous_message", "_verified_urls", "_egress_budget", "_probe_cache",
-                 "granted", "manifest", "asker_id", "asker")
+                 "granted", "manifest", "asker_id", "asker", "room_asker")
     }
     mint_ctx.update({"attachment_id": home_att, "session_id": home_sess})
     if parent_loop_ctx is not None:

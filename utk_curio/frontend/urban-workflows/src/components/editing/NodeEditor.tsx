@@ -223,6 +223,11 @@ function NodeEditor({
         const timer = setTimeout(() => setWidgetMarks(null), AGENT_MARK_MS);
         return () => clearTimeout(timer);
     }, [widgetMarks]);
+    // The marks go when the agent lets go of the node, at the latest: what a
+    // tab shows once the agent is done is the node as it is.
+    useEffect(() => {
+        if (!hold) setWidgetMarks(null);
+    }, [hold]);
     // A fresh node takes its template's starter and widgets after it mounts:
     // it turns to its Widgets tab when they arrive, once, unless the user has
     // picked a tab.
