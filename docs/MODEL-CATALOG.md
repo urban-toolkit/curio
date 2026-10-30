@@ -60,7 +60,7 @@ The weather GNN, SCOUT's weather graph network, is about 52 KB. Its package, `mo
 
 A node runs a model whose package is in your store: one you added, one a dataflow that names it brought, or one installed for the examples. A model whose package your store does not hold stops the node, with a message saying to add it.
 
-On a dataflow you edit at its owner's invitation ([COLLABORATION.md](COLLABORATION.md#who-edits-owner-editors-and-watchers)), a node also runs the models the dataflow uses, those its lockfile names and those dropped onto its nodes, from the owner's store, without your adding them: in a play, a run on the server and a run its agents make for you. No other model of the owner's runs, and the owner's models stay the owner's to publish, export and remove.
+On a dataflow you edit at its owner's invitation ([COLLABORATION.md](COLLABORATION.md#who-edits-owner-editors-and-watchers)), a node also runs the models the owner added to the dataflow, those its lockfile names and those dropped onto its nodes, from the owner's store, without your adding them: in a play, a run on the server and a run its agents make for you. No other model of the owner's runs, and the owner's models stay the owner's to publish, export and remove.
 
 An agent writes only models your store holds into a node, and asks you to add any other.
 

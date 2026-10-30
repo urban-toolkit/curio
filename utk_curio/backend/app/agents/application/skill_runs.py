@@ -74,6 +74,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from xml.sax.saxutils import escape, quoteattr
 
+from utk_curio.backend.app.agents.application import askers as agents_askers
 from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
 from utk_curio.backend.app.agents.application import tools
 from utk_curio.backend.app.agents.domain import agent_text
@@ -83,6 +84,7 @@ from utk_curio.backend.app.agents.domain import plan_topology
 from utk_curio.backend.app.agents.domain import skills as skill_format
 from utk_curio.backend.app.agents.infrastructure import agent_skills as agent_skill_store
 from utk_curio.backend.app.agents.repositories import user_skills
+from utk_curio.backend.app.collaboration import owner_uses
 from utk_curio.backend.app.packages import service as packages_services
 
 log = logging.getLogger(__name__)
@@ -261,7 +263,8 @@ def placed_in(preamble: str | None, shipped: Mapping[str, skill_format.Skill]) -
 
 
 def package_skills(user_key: str | None, spec, shipped: Mapping[str, skill_format.Skill],
-                   held: Iterable[skill_format.Skill] = ()) -> tuple[tuple[str, skill_format.Skill], ...]:
+                   held: Iterable[skill_format.Skill] = (), *, project_id: str | None = None,
+                   asker=None) -> tuple[tuple[str, skill_format.Skill], ...]:
     """The skills of the packages the dataflow *spec* uses, as
     ``(<packageId>@<major>, skill)``: the packages in the lockfile's order,
     each one's skills by name (``packages.dataflow_skill_folders``), each
@@ -270,10 +273,21 @@ def package_skills(user_key: str | None, spec, shipped: Mapping[str, skill_forma
     holds (*held*), then the first package's. A package's skill of a name
     taken so is left out, and a warning names it, its package and whose
     skill runs hold by that name. One that cannot be read is left out and
-    logged."""
+    logged.
+
+    A run for an editor the owner invited (*asker*, else the request's
+    account, ``askers.editor``) of the dataflow *project_id* holds only the
+    skills of the packages its owner added to it herself
+    (``collaboration.owner_uses``), as the editor's runs use only her packages
+    she added; the owner's runs hold every package's."""
     held_names = {skill.name for skill in held}
+    hers = None
+    if user_key and project_id and agents_askers.editor(user_key, asker):
+        hers = owner_uses.recorded(user_key, project_id)
     found: dict[str, tuple[str, skill_format.Skill]] = {}
     for dir_name, folder in packages_services.dataflow_skill_folders(user_key, spec):
+        if hers is not None and not hers.package(dir_name):
+            continue
         try:
             skill = skill_format.parse(folder)
         except (OSError, ValueError) as exc:  # a SkillError, or a file that is not UTF-8
@@ -294,19 +308,20 @@ def package_skills(user_key: str | None, spec, shipped: Mapping[str, skill_forma
 
 
 def _pool(user_key: str | None, manifest, preamble: str | None,
-          spec=None) -> tuple[dict, frozenset[str], tuple[skill_format.Skill, ...], dict[str, str]]:
+          spec=None, *, project_id: str | None = None,
+          asker=None) -> tuple[dict, frozenset[str], tuple[skill_format.Skill, ...], dict[str, str]]:
     """Every skill an agent of the account *user_key* may hold
     (:func:`usable_skills`), the ones *preamble* holds, the skills a run may
     hold that it does not (the agent's, after what the account changed of
-    them, then those of the packages the dataflow *spec* uses,
-    :func:`package_skills`), and the package each of those comes from,
-    ``<packageId>@<major>``, by the skill's name."""
+    them, then those of the packages the dataflow *spec*, *project_id*, uses,
+    :func:`package_skills`, for the run's *asker*), and the package each of
+    those comes from, ``<packageId>@<major>``, by the skill's name."""
     shipped = shipped_skills()
     usable = usable_skills(user_key, shipped)
     placed = placed_in(preamble, shipped)
     agents = agent_skills(manifest, shipped, choice=account_choice(user_key, manifest), usable=usable)
     own = tuple(skill for skill in agents if skill.name not in placed)
-    packaged = package_skills(user_key, spec, shipped, own)
+    packaged = package_skills(user_key, spec, shipped, own, project_id=project_id, asker=asker)
     return usable, placed, (*own, *(skill for _, skill in packaged)), {
         skill.name: dir_name for dir_name, skill in packaged
     }
@@ -441,15 +456,17 @@ def _instruction_skills(manifest) -> tuple[str, ...]:
 
 
 def for_chat(user_key: str, project_id: str, manifest, spec, target, preamble: str | None,
-             prior_turns, *, message: str | None = None) -> RunSkills:
+             prior_turns, *, message: str | None = None, asker=None) -> RunSkills:
     """The skills of a chat run of the agent *manifest* defines, on the
     dataflow *spec*, attached to *target*, whose preamble is *preamble*,
     after the turns *prior_turns* of its conversation, for its *message*: the
-    catalog of its skills and of the dataflow's packages, the ones serving
-    the behavior and the template of the node it is attached to, then its
-    instruction's own, those its conversation loaded or named before, and
-    those *message* names (:func:`named_in`) that it does not hold already."""
-    usable, placed, pool, packages = _pool(user_key, manifest, preamble, spec)
+    catalog of its skills and of the dataflow's packages (for an editor who
+    asks, *asker* else the request's account, those the owner added,
+    :func:`package_skills`), the ones serving the behavior and the template of
+    the node it is attached to, then its instruction's own, those its
+    conversation loaded or named before, and those *message* names
+    (:func:`named_in`) that it does not hold already."""
+    usable, placed, pool, packages = _pool(user_key, manifest, preamble, spec, project_id=project_id, asker=asker)
     node_id = target.get("targetId") if isinstance(target, dict) and target.get("kind") == "node" else None
     node_type = agents_dataflow_block.node_type_of(spec, node_id) if node_id else None
     handed = list(serving(
@@ -485,15 +502,17 @@ def named_in(message: str | None, listed: Iterable[str]) -> list[str]:
 
 
 def for_delegated(user_key: str, project_id: str, manifest, capability: str, inputs, spec,
-                  preamble: str | None, *, refused: str | None = None) -> RunSkills:
+                  preamble: str | None, *, refused: str | None = None, asker=None) -> RunSkills:
     """The skills a delegated run of *capability* of the agent *manifest*
     defines is handed, with *inputs*, in the dataflow *spec*: those serving
-    what it works on, of its agent and of the dataflow's packages, those
-    answering the check that refused its last round (*refused*, the kind that
-    refusal records), then the capability's own, then, for a capability with
-    no instruction of its own, which runs the agent's instruction, the
-    instruction's. It lists none: it holds no tool."""
-    usable, placed, pool, packages = _pool(user_key, manifest, preamble, spec)
+    what it works on, of its agent and of the dataflow's packages (for an
+    editor who asks, *asker* else the request's account, those the owner
+    added, :func:`package_skills`), those answering the check that refused
+    its last round (*refused*, the kind that refusal records), then the
+    capability's own, then, for a capability with no instruction of its own,
+    which runs the agent's instruction, the instruction's. It lists none: it
+    holds no tool."""
+    usable, placed, pool, packages = _pool(user_key, manifest, preamble, spec, project_id=project_id, asker=asker)
     behaviors: set[str] = set()
     features: set[str] = set()
     templates: list[object] = []

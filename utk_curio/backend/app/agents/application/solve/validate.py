@@ -169,6 +169,7 @@ def _validate_events(
                     user_key, project_id, coord=coord, attachment_id=attachment_id,
                     execution_id=execution_id, config=config,
                     extra_texts=(str((spec.get("dataflow") or {}).get("task") or ""),),
+                    asker=acting_user,
                 ),
             )
             rounds_used = outcome["rounds"]

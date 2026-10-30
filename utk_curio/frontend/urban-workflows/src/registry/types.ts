@@ -61,6 +61,11 @@ export interface NodePackageMeta {
   lineage?: NodePackageLineage;
   /** When true, the package rejects factory-install / Save-As writes (manifest `readOnly`). */
   readOnly?: boolean;
+  /** When true, the package is not this account's: the canvas of another
+   *  account's dataflow, opened from its link, draws its nodes from the
+   *  owner's copy (`GET /api/packages/dataflows/<id>`). An invited editor's
+   *  runs use that copy; a watcher's canvas has no Play for its nodes. */
+  ownersCopy?: boolean;
   /** Canonical creation instant from manifest `createdAt`. */
   createdAt?: string;
   /** Parsed ``createdAt`` for ordering (palette + Nodes Hub). */

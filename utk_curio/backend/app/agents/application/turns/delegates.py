@@ -256,6 +256,7 @@ def _run_delegate_traced(
     home_create: bool = True,
     dataflow_block: str | None = None,
     refused: str | None = None,
+    asker=None,
     stay=None,
     who: agents_room.Asker | None = None,
 ) -> tuple[str, str, dict, str | None]:
@@ -268,7 +269,7 @@ def _run_delegate_traced(
 
     An agent that hands work to one of its own modes and names no node opens
     no chat of its own: like an internal agent's, its record rides the
-    parent's turn. *dataflow_block* and *refused* go to the child as
+    parent's turn. *dataflow_block*, *refused* and *asker* go to the child as
     ``delegation.run_delegate`` says.
 
     With *stay*, an ``ExitStack`` the caller holds while it lands what the
@@ -319,6 +320,7 @@ def _run_delegate_traced(
         attachment_id=attachment_id,
         dataflow_block=dataflow_block,
         refused=refused,
+        asker=asker,
         uses_skills=peer.use_skills if peer is not None else None,
     )
     if isinstance(home_session_id, str):
@@ -1069,6 +1071,7 @@ def _draft_corrector(
                 user_key, project_id, req["capability"], enriched,
                 datasets=loop_ctx.get("dataflow_datasets"),
             ),
+            asker=loop_ctx.get("asker"),
         )
         delegations.append(child)
         return status, text

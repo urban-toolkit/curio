@@ -1276,6 +1276,7 @@ class SolveBatch:
                 node_id=node_id,
                 home_create=False,  # workers never write the spec
                 dataflow_block=self._dataflow_block(node_id),
+                asker=self.acting_user,
             )
             queue.put(
                 (node_id, "solved" if status == "ok" else "failed", text, child)
@@ -1335,6 +1336,7 @@ class SolveBatch:
                 home_create=False,  # workers never write the spec
                 dataflow_block=self._dataflow_block(_node_id),
                 refused=refused,
+                asker=self.acting_user,
             )
             return st, tx, ch
 
@@ -1415,6 +1417,7 @@ class SolveBatch:
                 manifest=self.manifest,
                 extra_texts=(str((self.spec.get("dataflow") or {}).get("task") or ""),),
                 catalog_rows=self.catalog_rows,
+                asker=self.acting_user,
             ),
             # dev/131: this node may not outlive the session, so its budget is
             # what is left of the session's, and spending it is the session's stop.
