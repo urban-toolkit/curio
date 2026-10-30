@@ -152,6 +152,10 @@ def _prepare_run(
         # delegatesTo resolution inside the loop.
         "coord": coord,
         "manifest": manifest,
+        # The capabilities the run is offered to delegate, which make a block
+        # of the model's a delegation to correct, as a granted tool makes one a
+        # tool request (tool_rounds._handle_tool_reply).
+        "delegable": [capability for capability, _name in entries],
         # The tool protocol (_RunConversation): the native tools offered, and
         # the fenced system turn a refusal of them falls back to.
         "native_tools": native_tools,
