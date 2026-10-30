@@ -3,10 +3,11 @@
  * (`agentEditors.ts`). A message someone else wrote names its writer above
  * it, and the viewer's own messages name nobody. On an editor's chat an
  * install a proposal makes waits for the dataflow owner's review, which its
- * card says in place of Apply and Dismiss; any other proposal keeps them.
+ * card says in place of Apply and Dismiss; any other proposal keeps them. An
+ * agent's change landed with no review, and its Undo is the editor's too.
  */
 import React from "react";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 jest.mock("../../providers/FlowProvider", () => ({
@@ -135,16 +136,41 @@ describe("an install an editor's chat holds", () => {
     expect(card(summary).queryByText(WAITS_FOR_OWNER)).toBeNull();
   });
 
-  it("a proposal that installs nothing keeps Apply and Dismiss on an editor's chat", () => {
+  it("a proposal that installs nothing into the account keeps Apply and Dismiss on an editor's chat", () => {
+    // An agent added to this dataflow alone, the one review left that is not
+    // the owner's account's: a node, its code or a plan lands with no review.
+    const summary = "Install Node Builder in this project";
     renderPanel({
-      turns: [proposalTurn("node.create", "Create a node")],
+      turns: [proposalTurn("project.install", summary)],
       installsWaitForOwner: true,
       onApplyProposal: jest.fn().mockResolvedValue(undefined),
       onDismissProposal: jest.fn().mockResolvedValue(undefined),
     });
-    expect(card("Create a node").getByRole("button", { name: "Apply" })).toBeInTheDocument();
-    expect(card("Create a node").getByRole("button", { name: "Dismiss" })).toBeInTheDocument();
-    expect(card("Create a node").queryByText(WAITS_FOR_OWNER)).toBeNull();
+    expect(card(summary).getByRole("button", { name: "Apply" })).toBeInTheDocument();
+    expect(card(summary).getByRole("button", { name: "Dismiss" })).toBeInTheDocument();
+    expect(card(summary).queryByText(WAITS_FOR_OWNER)).toBeNull();
+  });
+
+  it("an agent's change on an editor's chat landed already: its card offers Undo and waits for no one", () => {
+    const summary = "Replaced the content of the Python node · n1";
+    const onUndoChange = jest.fn().mockResolvedValue(undefined);
+    renderPanel({
+      turns: [{
+        role: "agent",
+        text: "I wrote the node's code.",
+        content: [{
+          type: "change", changeId: "c1", tool: "node.content.write", kind: "content", summary,
+          preview: "print(2)", status: "applied", lines: ["n1"], nodeId: "n1",
+        }],
+      } as unknown as AgentSessionTurn],
+      installsWaitForOwner: true,
+      onUndoChange,
+    });
+    const changed = within(screen.getByRole("group", { name: `Change: ${summary}` }));
+    expect(changed.queryByText(WAITS_FOR_OWNER)).toBeNull();
+    expect(changed.queryByRole("button", { name: "Apply" })).toBeNull();
+    fireEvent.click(changed.getByRole("button", { name: "Undo" }));
+    expect(onUndoChange).toHaveBeenCalledWith("c1");
   });
 });
 

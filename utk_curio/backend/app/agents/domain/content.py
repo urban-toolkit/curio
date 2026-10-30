@@ -1031,8 +1031,8 @@ def parse_parts(body: str) -> list[dict] | None:
         # A content-class tool's enlarged tail is spent on its CONTENT FIELD;
         # parse_tool_request_verbose still holds every other param to the
         # classic cap, so a padded non-content param cannot ride it (#245).
-    if "proposal" in payload or "proposals" in payload:
-        return None  # never accepted from the model (memo dev/41 §4.1)
+    if any(key in payload for key in ("proposal", "proposals", "change", "changes")):
+        return None  # runtime parts, never accepted from the model (memo dev/41 §4.1)
     if "toolRequest" in payload and "delegateRequest" in payload:
         return None  # one request per reply (memo dev/48)
     if "toolRequest" in payload:

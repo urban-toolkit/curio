@@ -208,15 +208,7 @@ export const AgentDockOverlay: React.FC = () => {
               onApplyProposal={(proposalId) =>
                 ctx.applyProposal(shown.attachmentId, proposalId)
               }
-              onApplyPlanNode={(proposalId, ref) =>
-                ctx.applyPlanNode(shown.attachmentId, proposalId, ref)
-              }
-              onSavePlanGoal={(proposalId, ref, goal) =>
-                ctx.savePlanGoal(shown.attachmentId, proposalId, ref, goal)
-              }
-              onApplyPlanEdges={async (proposalId, indices) => {
-                await ctx.applyPlanEdges(shown.attachmentId, proposalId, indices);
-              }}
+              onUndoChange={(changeId) => ctx.undoChange(shown.attachmentId, changeId)}
               onSolvePlanNode={async (ref) => {
                 await ctx.validateNode(shown.attachmentId, { ref });
               }}

@@ -5,6 +5,7 @@ import { LEAVE_DATAFLOW, useLeaveGuard } from "../../../hook/useLeaveGuard";
 import {
   attachmentDisplayName,
   declaresCapability,
+  landsAsAChange,
   ORCHESTRATE_CAPABILITY,
   sessionTokenTotals,
   writtenBySomeoneElse,
@@ -109,20 +110,15 @@ export const AgentChatPanel: React.FC<{
   /** Opens the shared settings modal at the Attached-instance scope (memo
    * dev/42) — the labeled cog beneath the header (the docs/08 anatomy slot;
    * never in the DEC-042 header itself). Omitted → no cog. */
-  /** Review-before-apply actions (memo dev/41); omitted → cards render inert. */
-  /** Resolves with the apply result when the caller has one (dev/105 A3: the
-   * package install review walks `followUpProposals` from it). */
-  onApplyProposal?: (proposalId: string) => Promise<{ followUpProposals?: string[] } | void>;
+  /** An install's review actions (memo dev/41); omitted → its cards render inert. */
+  onApplyProposal?: (proposalId: string) => Promise<unknown>;
   onDismissProposal?: (proposalId: string) => Promise<void>;
-  /** dev/67-5: per-node plan review actions (Simulation Mode: create). */
-  onApplyPlanNode?: (proposalId: string, ref: string) => Promise<void>;
-  onSavePlanGoal?: (proposalId: string, ref: string, goal: string) => Promise<void>;
-  /** dev/67-8: the connection review stage. */
-  onApplyPlanEdges?: (proposalId: string, indices?: number[]) => Promise<void>;
-  /** dev/71: per-row Solve/Run on the plan card. */
+  /** Undo a change this agent made; omitted → its change cards offer none. */
+  onUndoChange?: (changeId: string) => Promise<unknown>;
+  /** dev/71: per-row Solve/Run on a landed plan's card. */
   onSolvePlanNode?: (ref: string) => Promise<void>;
   onRunPlanNode?: (ref: string) => Promise<void>;
-  /** dev/67-9: the Simulation Mode driver + its narration. */
+  /** dev/67-9: Build & validate over the landed plan + its narration. */
   onSimulate?: (mode: "step" | "auto") => Promise<unknown>;
   onCancelSimulate?: () => Promise<void>;
   simulationActivity?: string;
@@ -201,9 +197,7 @@ export const AgentChatPanel: React.FC<{
   runStatus,
   onApplyProposal,
   onDismissProposal,
-  onApplyPlanNode,
-  onSavePlanGoal,
-  onApplyPlanEdges,
+  onUndoChange,
   onSolvePlanNode,
   onRunPlanNode,
   onSimulate,
@@ -278,10 +272,11 @@ export const AgentChatPanel: React.FC<{
 
   // Per-reply execution status (memo dev/80, amended: the status rides each
   // agent message, not a global strip). The review chip derives from the
-  // attachment's proposal mirrors — it self-clears on apply/dismiss — and
-  // marks only the NEWEST reply.
+  // attachment's install mirror: it self-clears on apply/dismiss: and
+  // marks only the NEWEST reply. A review of a change saved before agents
+  // changed the dataflow directly awaits nothing: it can only be dismissed.
   const pendingReview =
-    attachment.activeProposal?.status === "pending" || attachment.planProposal?.status === "pending";
+    attachment.activeProposal?.status === "pending" && !landsAsAChange(attachment.activeProposal.tool);
   const runInFlight = runStatus?.phase === "running";
   const lastAgentIdx = useMemo(() => {
     for (let i = turns.length - 1; i >= 0; i--) if (turns[i].role === "agent") return i;
@@ -386,9 +381,7 @@ export const AgentChatPanel: React.FC<{
     onApplyProposal,
     beginPackageReview: packageReview.beginReview,
     onDismissProposal,
-    onApplyPlanNode,
-    onSavePlanGoal,
-    onApplyPlanEdges,
+    onUndoChange,
     onSolvePlanNode,
     onRunPlanNode,
     installsWaitForOwner,

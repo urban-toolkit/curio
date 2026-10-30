@@ -154,13 +154,11 @@ class _Harness:
         monkeypatch.setattr("utk_curio.backend.app.execution.runner._http_exec", _exec)
         r = client.post(f"/api/agents/projects/{self.pid}/attachments/{self.att}/run",
                         json={"message": "plan it"}, headers=_auth(token))
-        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
-        applied = client.post(
-            f"/api/agents/projects/{self.pid}/attachments/{self.att}/proposals/"
-            f"{proposal['proposalId']}/apply", headers=_auth(token),
-        ).get_json()
+        # The plan landed with the reply; its nodes are what the reply hands a
+        # canvas no doc binds.
+        graph = routes_proposals._landed_plan(r.get_json())["canvas"]
         self.ids = {
-            str(n["type"]): n["id"] for n in applied["appliedGraph"]["nodes"]
+            str(n["type"]): n["id"] for n in graph["nodes"]
         }
 
     def solve(self):

@@ -4,17 +4,17 @@
 Manifest ``tools`` entries are untrusted *requirements*, never grants
 (`DEC-017`, `REQ-PERM-001`); this module owns what actually exists and what a
 run may be granted. Per `ADR-AG-007` a contract only *names* a domain-owned
-operation — the read executors below are thin wrappers over the owning
-domain's functions (``projects.storage``, ``project_agents``), and the one
-mutate contract is executed **only** by the review-before-apply apply endpoint
-(memo dev/41), never here and never by the model loop.
+operation: the read executors below are thin wrappers over the owning
+domain's functions (``projects.storage``, ``project_agents``), and a mutate
+contract runs through its mint (``proposals/mint.py``), never here.
 
 Grant policy: ``granted = requested ∩ registry ∩ policy``. ``read`` contracts
-execute inside the bounded run loop; ``mutate`` contracts are grantable **for
-proposal purposes only** — requesting one mints a review proposal, and
-execution authority lives solely in the authenticated apply endpoint
-(`DEC-006`/`REQ-REVIEW-001` — the gate is structural, not a flag). Granted ids
-are pinned on the execution record (``pins.tools``, `REQ-CAP-002`).
+execute inside the bounded run loop; a granted ``mutate`` contract runs its
+mint's checks, and then a change to the dataflow lands as the agent's change
+(``proposals/changes.py``), while an install becomes a proposal whose only
+execution authority is the authenticated apply endpoint (`DEC-006`/
+`REQ-REVIEW-001`: the gate is structural, not a flag). Granted ids are pinned
+on the execution record (``pins.tools``, `REQ-CAP-002`).
 
 **Native tools.** Each contract carries the JSON Schema of its params. A run
 whose LLM configuration calls tools natively (``chat_capabilities``) is offered
@@ -406,7 +406,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="node.content.write",
         contract_version="1",
         effect="mutate",
-        label="Propose a content change",
+        label="Write a node's content",
         parameter_schema=lambda say: _object(
             {"nodeId": _node_id(say), "content": _text(say("content"))},
             "content",
@@ -415,13 +415,13 @@ REGISTRY: dict[str, ToolContract] = {
     # Consumers: the Node Builder and the Dataflow Builder. A node already on
     # the canvas: a Data Pool's modes, a Simple View's image column, a Spatial
     # Join's operation and output and its widget values, each judged by its
-    # node's own rule; the apply writes them, and the canvas makes the change
+    # node's own rule; the change lands at once, and the canvas makes it
     # through the node's own setters.
     "node.settings.write": ToolContract(
         id="node.settings.write",
         contract_version="1",
         effect="mutate",
-        label="Propose a settings change",
+        label="Change a node's settings",
         parameter_schema=lambda say: _object({
             "nodeId": _node_id(say),
             "dataPool": _data_pool(say),
@@ -544,13 +544,13 @@ REGISTRY: dict[str, ToolContract] = {
     ),
     # dev/52, consumer: the Dataflow Builder. The DR-1 graph-level
     # mutation: the model emits a `dataflowPlan` tail block (not a
-    # toolRequest) and the runtime mints the reviewed plan proposal from it;
-    # the authenticated apply endpoint inserts the whole ADDITIVE graph.
+    # toolRequest), and the runtime checks the plan whole and lands it whole,
+    # as the agent's change (``proposals/plans._land_dataflow_plan``).
     "dataflow.plan.write": ToolContract(
         id="dataflow.plan.write",
         contract_version="1",
         effect="mutate",
-        label="Propose a plan",
+        label="Write a plan",
         parameter_schema=lambda say: _object(
             {
                 "goal": _text(say("goal")),
@@ -636,7 +636,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="node.create",
         contract_version="1",
         effect="mutate",
-        label="Propose a node",
+        label="Add a node",
         parameter_schema=lambda say: _object(
             {
                 "nodeType": _text(say("nodeType")),

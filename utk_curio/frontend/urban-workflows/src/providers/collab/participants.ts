@@ -87,6 +87,8 @@ const AGENT_WRITES: ReadonlySet<string> = new Set<AgentWrites>(["code", "spec", 
 export interface AgentHold {
   /** The agent's participant in the room. */
   participantId: string | null;
+  /** Its attachment to the dataflow, whose chat is its. */
+  attachmentId: string | null;
   /** Its name, from its manifest: the lock is named after it. */
   name: string;
   /** Its category, which gives its glyph and its tint. */
@@ -109,10 +111,11 @@ export function agentHolding(lock: unknown): AgentHold | null {
   if (!lock || typeof lock !== "object") return null;
   const { agent, name, participant_id: participantId, writes } = lock as Record<string, unknown>;
   if (!agent || typeof agent !== "object") return null;
-  const { category, askedBy } = agent as { category?: unknown; askedBy?: unknown };
+  const { attachmentId, category, askedBy } = agent as { attachmentId?: unknown; category?: unknown; askedBy?: unknown };
   const asker = askedBy && typeof askedBy === "object" ? (askedBy as Record<string, unknown>) : {};
   return {
     participantId: text(participantId),
+    attachmentId: text(attachmentId),
     name: text(name) ?? "An agent",
     category: text(category),
     askedBy: text(asker.name) ?? text(asker.account),

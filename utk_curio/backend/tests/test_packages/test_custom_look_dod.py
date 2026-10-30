@@ -670,7 +670,7 @@ class TestReuseFirstNoteCreation:
             '{"nodeType": "ai.agent.postit/postit-note@1", "content": '
             '"**Finding:** 19\\u00b0C cooler on white roofs\\n- [source](https://heat.test/cool-roofs)", '
             '"goal": "Cool roofs in Chicago"}}}\n```',
-            "Note placed for review.",
+            "Note placed.",
         ]
         script["calls"] = 0
         run2 = client.post(
@@ -678,16 +678,11 @@ class TestReuseFirstNoteCreation:
             json={"message": "how much do cool roofs lower summer surface temperatures in Chicago?"},
             headers=self._auth(token))
         parts = run2.get_json()["content"]
-        note_proposal = next(p for p in parts if p["type"] == "proposal")
-        assert note_proposal["tool"] == "node.create"
-        # The pinned nodeType is the listing's UNVERSIONED canonical.
-        assert note_proposal["pins"]["nodeType"] == "ai.agent.postit/postit-note"
-
-        resp = client.post(
-            f"/api/agents/projects/{pid}/attachments/{att_id}"
-            f"/proposals/{note_proposal['proposalId']}/apply",
-            headers=self._auth(token))
-        assert resp.status_code == 200, resp.get_data(as_text=True)
+        assert all(p["type"] != "proposal" for p in parts)
+        note_card = next(p for p in parts if p["type"] == "change")
+        assert note_card["tool"] == "node.create"
+        # The landed nodeType is the listing's UNVERSIONED canonical.
+        assert note_card["nodeType"] == "ai.agent.postit/postit-note"
         with client.application.app_context():
             user_key = _user_dir_key(user)
         spec = projects_storage.read_spec(user_key, pid)

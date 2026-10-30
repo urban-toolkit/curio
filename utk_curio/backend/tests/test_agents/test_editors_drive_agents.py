@@ -199,6 +199,7 @@ def test_a_watcher_is_refused_and_sees_nothing_private(client, people, flow, scr
         ("post", f"{base}/attachments/{flow.att}/run/stream", {"message": "hello"}),
         ("delete", f"{base}/attachments/{flow.att}/session", None),
         ("post", f"{base}/attachments/{flow.att}/solve", {}),
+        ("post", f"{base}/attachments/{flow.att}/changes/any-change/undo", None),
         ("get", base, None),
         ("post", f"{base}/install", {"coord": COORD}),
     ):
@@ -468,25 +469,100 @@ def test_an_editors_dataset_selection_waits_for_the_owner_to_download(client, pe
 def test_an_editors_agent_change_is_a_point_named_after_the_editor(client, people, flow, script, monkeypatch):
     from utk_curio.backend.app.collaboration import dataflow_docs, history
 
-    monkeypatch.setattr(history, "RECORDING", True, raising=False)
-    # The doc opens again on a server that records the history, so its first
-    # points come before the agent's change.
-    dataflow_docs.close(flow.pid)
     script.replies[:] = [
         '```curio.v1\n{"toolRequest": {"tool": "node.content.write", '
         '"params": {"nodeId": "n1", "content": "print(2)"}}}\n```',
-        "Proposed: review it above.",
+        "Written: the node prints two.",
     ]
     ran = _run(client, flow, BOB_TOKEN, "Print two instead.")
     assert ran.status_code == 200, ran.get_data(as_text=True)
-    proposal = next(p for p in ran.get_json()["content"] if p["type"] == "proposal")
-    r = client.post(
-        f"/api/agents/projects/{flow.pid}/attachments/{flow.att}/proposals/{proposal['proposalId']}/apply",
-        headers=_auth(BOB_TOKEN),
-    )
-    assert r.status_code == 200, r.get_data(as_text=True)
+    # The change lands with bob's reply, as his own edit would: no review
+    # waits for him or for alice.
+    content = ran.get_json()["content"]
+    assert [p for p in content if p["type"] == "proposal"] == []
+    [change] = [p for p in content if p["type"] == "change"]
+    assert (change["kind"], change["status"], change["nodeId"]) == ("content", "applied", "n1")
+    live = dataflow_docs.live(flow.owner_key, flow.pid)
+    assert [n["content"] for n in live["dataflow"]["nodes"] if n["id"] == "n1"] == ["print(2)"]
 
     newest = history.points(flow.owner_key, flow.pid)[-1]
     assert (newest["kind"], newest["by"]) == ("agent", {"kind": "agent", "account": str(people.bob.id), "agent": COORD})
     listed = client.get(f"/api/projects/{flow.pid}/history", headers=_auth(BOB_TOKEN)).get_json()
     assert listed["versions"][-1]["what"] == "Node Builder, asked by Bob"
+
+    # bob's Undo of it is his own change, a point named after him.
+    undone = client.post(
+        f"/api/agents/projects/{flow.pid}/attachments/{flow.att}/changes/{change['changeId']}/undo",
+        headers=_auth(BOB_TOKEN),
+    )
+    assert undone.status_code == 200, undone.get_data(as_text=True)
+    assert undone.get_json()["status"] == "undone"
+    live = dataflow_docs.live(flow.owner_key, flow.pid)
+    assert [n["content"] for n in live["dataflow"]["nodes"] if n["id"] == "n1"] == ["print(1)"]
+    newest = history.points(flow.owner_key, flow.pid)[-1]
+    assert (newest["kind"], newest["what"], newest["by"]) == (
+        "code", "Undid Node Builder's change", {"kind": "person", "account": str(people.bob.id), "name": "Bob"})
+
+
+# ---------------------------------------------------------------------------
+# An editor's Solve is named after the editor
+# ---------------------------------------------------------------------------
+
+def _versions(client, pid) -> list:
+    return client.get(f"/api/projects/{pid}/history", headers=_auth(BOB_TOKEN)).get_json()["versions"]
+
+
+def _entries(client, pid, node_id) -> list:
+    return client.get(f"/api/projects/{pid}/history/nodes/{node_id}", headers=_auth(BOB_TOKEN)).get_json()["entries"]
+
+
+#: What the Node Builder writes into a computation node here: data the code
+#: makes itself, which opens no file, so it grounds with no Data Catalog.
+DERIVED = "import pandas as pd\nreturn pd.DataFrame({'tract': [1, 2], 'heat': [30.5, 31.0]})"
+
+
+def test_an_editors_solve_of_one_node_is_named_after_the_editor(client, people, monkeypatch, tmp_curio):
+    """bob solves an empty computation node of alice's dataflow from the
+    node's agent. The Solve runs as a job, on a thread that holds no request,
+    so it names the person it took when it started: the code it writes is a
+    version named "Node Builder, asked by Bob", and the node's entry is by
+    Bob, not alice."""
+    from utk_curio.backend.app.projects import access
+    from utk_curio.backend.tests.test_agents.test_verified_rounds import CA, TestSolveNode
+
+    helper = TestSolveNode()
+    ctx = helper._setup(client, people.alice, people.alice_token, monkeypatch, content="",
+                        child_replies=[DERIVED], node_type=CA)
+    access.add_editor(people.alice, ctx["pid"], "bob")
+    done = helper._solve_node(client, BOB_TOKEN, ctx)[-1][1]
+    assert done["verdict"] == "pass" and done.get("written") is True, done
+
+    newest = _versions(client, ctx["pid"])[-1]
+    assert newest["what"] == "Node Builder, asked by Bob", newest
+    entries = _entries(client, ctx["pid"], "n1")
+    assert entries and (entries[-1].get("by") or {}).get("name") == "Bob", entries
+
+
+def test_an_editors_solve_of_a_plan_is_named_after_the_editor(client, people, monkeypatch, tmp_curio,
+                                                               alice_project):
+    """bob solves the plan of computation nodes alice's Dataflow Builder
+    landed. The batch writes on a job's thread too: each version it makes,
+    and each node's entry, is by Bob."""
+    from utk_curio.backend.app.projects import access
+    from utk_curio.backend.tests.test_agents.test_routes_solve import TestSolve
+
+    helper = TestSolve()
+    att, _canvas, _calls = helper._applied_plan(client, people.alice, people.alice_token, alice_project, monkeypatch)
+    access.add_editor(people.alice, alice_project, "bob")
+    before = len(_versions(client, alice_project))
+    solved = helper._solve(client, BOB_TOKEN, alice_project, att)
+    assert solved.status_code == 200, solved.get_data(as_text=True)
+    body = solved.get_json()
+    assert {result["status"] for result in body["results"].values()} == {"solved"}, body
+
+    made = _versions(client, alice_project)[before:]
+    assert made and all(str(version.get("what")).endswith(", asked by Bob") for version in made), made
+    assert body["appliedContents"], body
+    for item in body["appliedContents"]:
+        entries = _entries(client, alice_project, item["nodeId"])
+        assert entries and (entries[-1].get("by") or {}).get("name") == "Bob", entries
