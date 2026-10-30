@@ -17,6 +17,12 @@ hers: bob's runs get neither. erin's and carol's runs get nothing of her store.
 The agents bob drives hold the skills of the dataflow's packages. Nothing is
 added to bob's store, and he cannot publish, export or remove her package.
 
+What bob works with follows the same rule: every canvas of her dataflow lists
+the packages it uses from her store, so his and a watcher's draw their nodes;
+his call of her package's backend runs her copy; his agent judges a node's
+imports by the modules his runs get; and his runs name her node libraries for
+an isolated sandbox to read after his own.
+
 The sandbox is a fake behind ``node_exec.sandbox_request``, and an agent's run
 reaches a fake behind ``runner._http_exec``. The module is here, beside the
 other runs' tests, for their database in a file: a run on the server writes
@@ -382,3 +388,218 @@ def test_an_editor_runs_her_package_and_cannot_publish_export_or_remove_it(
     assert list(catalog.iterdir()) == []
     hers = {TOOLS_DIR, f"{FLOOD_MODEL}@1", f"{PRIVATE_MODEL}@1", SCOUT_DIR}
     assert not hers & {folder.name for folder in list_user_packages(_key(flow.people.bob))}
+
+
+# ---------------------------------------------------------------------------
+# What the editor works with: the canvas, the package backends, the agents'
+# gate and the node libraries
+# ---------------------------------------------------------------------------
+
+#: alice's package with a backend handler, which her dataflow uses too.
+COUNTER = "ai.test.flood-counter"
+COUNTER_DIR = f"{COUNTER}@1"
+#: A package of bob's own, which alice's dataflow does not use.
+TIDE = "ai.test.tide-tools"
+TIDE_DIR = f"{TIDE}@1"
+
+
+@pytest.fixture()
+def counter(flow):
+    """alice's package with a backend, pinned as an install pins it, which her
+    dataflow's lockfile names too."""
+    from utk_curio.backend.app.packages.infrastructure import backend_runtime
+    from utk_curio.backend.app.packages.repositories.store import user_packages_dir
+    from utk_curio.backend.app.projects import storage as projects_storage
+
+    _write(user_packages_dir(flow.key) / COUNTER_DIR, {
+        "manifest.json": json.dumps({
+            "id": COUNTER, "version": "1.0.0", "name": "Flood counter", "publisher": "Test", "license": "MIT",
+            "compatibility": {"major": 1}, "permissions": ["server-code"],
+            "dependencies": {"packages": {}, "python": {}, "js": {}},
+            "backend": {"entry": "backend/handler.py", "handlers": [{"name": "word-count", "timeoutClass": "quick"}]},
+            "templates": [{
+                "id": "count", "label": "Count", "category": "computation", "engine": "python", "editor": "code",
+                "behavior": "code", "hasCode": True, "inputPorts": [],
+                "outputPorts": [{"types": ["JSON"], "cardinality": "1"}], "source": "sources/count.py",
+            }],
+        }),
+        "sources/count.py": "return 1\n",
+        "backend/handler.py": (
+            "def _count(payload):\n"
+            "    return {'words': len(str(payload.get('text', '')).split())}\n"
+            "HANDLERS = {'word-count': _count}\n"
+        ),
+    })
+    assert backend_runtime.record_entry_pin(flow.key, COUNTER_DIR)
+    spec = projects_storage.read_spec(flow.key, flow.pid)
+    spec["dataflow"]["packages"].append(COUNTER_DIR)
+    projects_storage.write_spec(flow.key, flow.pid, spec)
+    return COUNTER_DIR
+
+
+def _tide_package(key: str) -> None:
+    """bob's own package: one Python node and the module beside it."""
+    from utk_curio.backend.app.packages.repositories.store import user_packages_dir
+
+    _write(user_packages_dir(key) / TIDE_DIR, {
+        "manifest.json": json.dumps({
+            "id": TIDE, "version": "1.0.0", "name": "Tide tools", "publisher": "Test", "license": "MIT",
+            "compatibility": {"major": 1}, "dependencies": {"packages": {}, "python": {}, "js": {}},
+            "templates": [{
+                "id": "tide", "label": "Tide", "category": "computation", "engine": "python", "editor": "code",
+                "behavior": "code", "hasCode": True, "inputPorts": [],
+                "outputPorts": [{"types": ["JSON"], "cardinality": "1"}], "source": "sources/tide.py",
+            }],
+        }),
+        "sources/tide.py": "return 1\n",
+        "sources/tide_helpers.py": "def level(value):\n    return value\n",
+    })
+
+
+def test_every_canvas_of_her_dataflow_lists_the_packages_it_uses_from_her_store(client, flow):
+    """The canvas of alice's dataflow lists the packages it uses as her store
+    holds them, each read-only, so it draws their nodes: hers, bob's, whom she
+    invited, and those of erin and carol, who open it by its link and watch.
+    Her package and her model are listed, and Scout and her second model,
+    which it does not use, are not. Only their manifests are read: her
+    package's README is not listed. Nothing is added to anyone's store. A
+    dataflow that is gone lists nothing, and no one signed out reads it."""
+    from utk_curio.backend.app.packages.repositories.store import list_user_packages, package_dir
+
+    (package_dir(flow.key, TOOLS_DIR) / "README.md").write_text("Her notes on the flood tools.\n", encoding="utf-8")
+    listed = {}
+    for who in ("alice", "bob", "erin", "carol"):
+        resp = client.get(f"/api/packages/dataflows/{flow.pid}", headers=_auth(flow.tokens[who]))
+        assert resp.status_code == 200, f"{who}: {resp.status_code} {resp.get_data(as_text=True)[:200]}"
+        rows = resp.get_json()["packages"]
+        assert not [row["dirName"] for row in rows if "readme" in row], rows
+        listed[who] = {row["dirName"]: row.get("readOnly") for row in rows}
+
+    hers = {TOOLS_DIR: True, f"{FLOOD_MODEL}@1": True}
+    assert listed == {"alice": hers, "bob": hers, "erin": hers, "carol": hers}
+    gone = client.get("/api/packages/dataflows/no-such-dataflow", headers=_auth(flow.tokens["bob"]))
+    assert gone.status_code == 404
+    assert client.get(f"/api/packages/dataflows/{flow.pid}").status_code == 401
+    for who in ("bob", "erin", "carol"):
+        assert not set(hers) & {folder.name for folder in list_user_packages(_key(getattr(flow.people, who)))}
+
+
+def test_an_editors_call_of_her_package_backend_runs_her_copy(client, flow, counter):
+    """bob's call of the backend of alice's package, which her dataflow uses,
+    from her dataflow's canvas runs her copy, as his runs of its nodes do.
+    His call that names no dataflow, and the calls of erin, whom she took off
+    her editors, and of carol, never invited, find no such package, as
+    before. Nothing of hers is added to bob's store."""
+    from utk_curio.backend.app.packages.repositories.store import list_user_packages
+
+    def call(who, **body):
+        return client.post(f"/api/packages/{counter}/backend/word-count",
+                           json={"payload": {"text": "high tide at noon"}, **body},
+                           headers=_auth(flow.tokens[who]))
+
+    for who in ("alice", "bob"):
+        resp = call(who, dataflowId=flow.pid)
+        assert resp.status_code == 200, f"{who}: {resp.status_code} {resp.get_data(as_text=True)[:300]}"
+        reply = resp.get_json()["reply"]
+        assert reply["ok"] is True and reply["result"] == {"words": 4}, reply
+
+    refused = {
+        "bob, naming no dataflow": call("bob").status_code,
+        "erin": call("erin", dataflowId=flow.pid).status_code,
+        "carol": call("carol", dataflowId=flow.pid).status_code,
+    }
+    assert refused == {"bob, naming no dataflow": 404, "erin": 404, "carol": 404}
+    assert counter not in {folder.name for folder in list_user_packages(_key(flow.people.bob))}
+
+
+def test_an_editors_agent_judges_imports_by_the_modules_his_runs_get(client, flow):
+    """The gate an agent's Python code passes judges a node's imports by the
+    modules a run hands that node. For bob's agent on alice's dataflow those
+    are what his runs get: her package's, which her dataflow uses, and his
+    own package's, and not Scout's, which her store holds and her dataflow
+    does not use. alice's agent judges them by her store's, as before."""
+    from flask import g
+
+    from utk_curio.backend.app.agents.application.turns import grounding
+    from utk_curio.backend.app.projects import storage as projects_storage
+
+    _tide_package(_key(flow.people.bob))
+    spec = projects_storage.read_spec(flow.key, flow.pid)
+    nodes = {node["id"]: node for node in spec["dataflow"]["nodes"]}
+    node_types = {"helpers": NODES["helpers"][0], "calc": NODES["calc"][0], "tide": f"{TIDE}/tide"}
+    seen = {}
+    for who in ("alice", "bob"):
+        with client.application.test_request_context():
+            g.user = getattr(flow.people, who)
+            base = grounding._solve_grounding_base(flow.key, flow.pid, spec, nodes, ["helpers"])
+            reachable = {
+                name: grounding._grounding_context(
+                    flow.key, flow.pid, {}, node_type=node_type, base=base, code_engine="python",
+                ).reachable_modules
+                for name, node_type in node_types.items()
+            }
+        handed = {name for name, entry in base["package_modules"].items() if entry["added"]}
+        seen[who] = (handed, reachable)
+
+    assert seen["bob"] == ({"flood_helpers", "tide_helpers"}, {
+        "helpers": frozenset({"flood_helpers"}), "calc": frozenset(), "tide": frozenset({"tide_helpers"}),
+    })
+    alices, alices_reachable = seen["alice"]
+    assert "flood_helpers" in alices and "tide_helpers" not in alices
+    assert alices_reachable["helpers"] == frozenset({"flood_helpers"})
+    assert alices_reachable["calc"] and alices_reachable["calc"] <= alices
+    assert alices_reachable["tide"] == frozenset()
+
+
+def test_an_editors_runs_of_her_dataflow_name_her_node_libraries_after_his_own(client, flow, sandbox):
+    """Under fork isolation each account's node libraries, a package's Python
+    dependencies among them, are a folder of its own. bob's play and his run
+    on the server of alice's dataflow name hers, for the sandbox to read after
+    his own (``library_keys``). alice's runs, erin's and carol's name no one
+    else's, as before."""
+    named = {who: _play(client, flow, sandbox, who, "helpers").get("library_keys")
+             for who in ("alice", "bob", "erin", "carol")}
+    assert named == {"alice": None, "bob": [flow.key], "erin": None, "carol": None}
+
+    sandbox.bodies.clear()
+    bodies = _server_run(client, flow, sandbox, "bob", "helpers", "flood")
+    assert {node_id: body.get("library_keys") for node_id, body in bodies.items()} == {
+        "helpers": [flow.key], "flood": [flow.key],
+    }
+
+
+def test_an_editors_agent_runs_name_his_node_libraries_then_hers(client, flow, monkeypatch):
+    """A Solve's or a validation's run for bob of the node of alice's
+    package, whose runner is handed her key as the dataflow's, names his
+    storage key to the sandbox, then hers (``library_keys``), as his play
+    does: under fork isolation it reads his node libraries, then hers. So
+    does his agent's Run node, which runs the node of her package as code, as
+    Solve's runs do. alice's agent's runs name her key alone, and erin, whom
+    she took off her editors, and carol, never invited, run no agent of hers."""
+    from utk_curio.backend.app.execution import runner
+    from utk_curio.backend.app.packages import service as packages_services
+    from utk_curio.backend.app.projects import storage as projects_storage
+
+    sent: list = []
+
+    def _exec(_endpoint, payload):
+        sent.append(payload)
+        return {"stdout": [], "stderr": "", "output": {"path": f"art-{len(sent)}", "dataType": "str"}}
+
+    spec = projects_storage.read_spec(flow.key, flow.pid)
+    templates = packages_services.roster_templates(flow.key, flow.pid)
+    for who in ("alice", "bob"):
+        runner.run_through_node(flow.key, flow.pid, spec, "helpers", exec_fn=_exec, templates=templates,
+                                exec_user_key=flow.key, acting_user=getattr(flow.people, who))
+    assert [(payload.get("user_key"), payload.get("library_keys")) for payload in sent] == [
+        (flow.key, None), (_key(flow.people.bob), [flow.key]),
+    ]
+
+    named = {who: _agent_run(client, flow, monkeypatch, who, "helpers") for who in ("alice", "bob")}
+    assert {who: (payload.get("user_key"), payload.get("library_keys")) for who, payload in named.items()} == {
+        "alice": (flow.key, None), "bob": (_key(flow.people.bob), [flow.key]),
+    }
+    for who in ("erin", "carol"):
+        resp = client.post(f"/api/agents/projects/{flow.pid}/attachments/{ATTACHMENT}/run-node",
+                           json={"nodeId": "helpers"}, headers=_auth(flow.tokens[who]))
+        assert resp.status_code == 403, f"{who}: {resp.status_code} {resp.get_data(as_text=True)[:200]}"

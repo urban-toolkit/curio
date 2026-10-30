@@ -9,6 +9,7 @@ execution for whoever asks next.
 Run:  pytest utk_curio/sandbox/tests/test_isolation_overlay_path.py -v
 """
 
+import json
 import os
 import sys
 import tempfile
@@ -75,6 +76,39 @@ class TestTheChildPutsItOnThePath(unittest.TestCase):
         finally:
             os.path.isdir = original
         self.assertEqual(sys.path, self._path)
+
+
+class TestAnEditorsRunReadsTheOwnersLibrariesToo(unittest.TestCase):
+    """A run of an editor the dataflow's owner invited: his folder, then hers,
+    which the child only reads. On the path in that order, so his own copy of
+    a library wins (``test_isolation_library_keys.py`` has the parent's half)."""
+
+    def setUp(self):
+        self._path = list(sys.path)
+        self.addCleanup(lambda: sys.path.__setitem__(slice(None), self._path))
+
+    def _on_the_wire(self, overlay_dir):
+        """The request's overlay as the child reads it, past the socket's JSON."""
+        request = protocol.build_exec_request(
+            code="return 1", node_type="n", data_type="str",
+            scratch_dir="/tmp/scratch", input_spec={"kind": "none"}, overlay_dir=overlay_dir,
+        )
+        return json.loads(json.dumps(request))["overlay_dir"]
+
+    def test_the_request_carries_both_folders_in_order(self):
+        folders = ["/srv/.curio/exec-overlays/users/8", "/srv/.curio/exec-overlays/users/7"]
+        self.assertEqual(self._on_the_wire(folders), folders)
+
+    def test_the_child_puts_both_on_the_path_his_first(self):
+        with tempfile.TemporaryDirectory() as his, tempfile.TemporaryDirectory() as hers:
+            child._add_overlay_to_path(self._on_the_wire([his, hers]))
+            self.assertEqual(sys.path[:2], [his, hers])
+
+    def test_a_folder_of_hers_that_does_not_exist_leaves_his_alone(self):
+        """An owner who installed nothing."""
+        with tempfile.TemporaryDirectory() as his:
+            child._add_overlay_to_path(self._on_the_wire([his, "/nonexistent/exec-overlays/users/7"]))
+            self.assertEqual(sys.path, [his, *self._path])
 
 
 class TestItHappensAfterTheFork(unittest.TestCase):

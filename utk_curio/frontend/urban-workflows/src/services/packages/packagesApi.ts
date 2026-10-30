@@ -46,6 +46,14 @@ export const packagesApi = {
     return apiFetch(`/api/packages${listingQuery(kind, !!opts.usage)}`);
   },
 
+  /** The packages the dataflow *projectId* uses, as its owner's store holds
+   *  them, each `readOnly`: what a canvas of another account's dataflow,
+   *  opened from its link, draws the nodes of a package it does not hold
+   *  from. Manifests only. */
+  listForDataflow(projectId: string): Promise<{ packages: PackagePayload[] }> {
+    return apiFetch(`/api/packages/dataflows/${encodeURIComponent(projectId)}`);
+  },
+
   /** Fixture-backed catalog: package rows plus family index and collision
    *  report; only *kind*'s rows when given. */
   catalog(kind?: PackageKind): Promise<{
