@@ -7,6 +7,7 @@ import { useGrammarInputState } from '../../hook/useGrammarInputState';
 import { NodeType, VisInteractionType } from '../../constants';
 import { useProvenanceContext } from '../../providers/ProvenanceProvider';
 import { useFlowContext } from '../../providers/FlowProvider';
+import { useAgentsDataflowId } from '../../providers/agents/useAgentsDataflowId';
 import { useToastContext } from '../../providers/ToastProvider';
 import { fetchData } from '../../services/api';
 import { formatDate, mapTypes } from '../../utils/formatters';
@@ -127,6 +128,10 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
 
   const { nodeExecProv } = useProvenanceContext();
   const { workflowNameRef, updateDataNode } = useFlowContext();
+  // The dataflow the cards read a collection's files through, as the canvas's
+  // Data Catalog lists them (`useAgentsDataflowId`): on an invited editor's
+  // canvas, the owner's, whose collections the editor's runs load.
+  const dataflowId = useAgentsDataflowId();
   const { showToast } = useToastContext();
 
   useEffect(() => {
@@ -277,6 +282,7 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
               imageColumns={shownImageColumns}
               interacted={interacted}
               onClickRow={clickRow}
+              dataflowId={dataflowId}
             />
           </div>
         </div>

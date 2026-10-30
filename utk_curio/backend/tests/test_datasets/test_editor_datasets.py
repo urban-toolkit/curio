@@ -13,7 +13,8 @@ not publish it, and an editor's run writes nothing into the editor's store.
 The collections the dataflow lists (``curio_load_collection``) load the same
 way: for bob, from alice's store, their files where her store keeps them,
 beside his own collections and the shared ones; for erin and carol, none of
-alice's.
+alice's. bob's canvas reads their files through her dataflow too, as Simple
+View and the details show them, and no other media of hers.
 
 Names main lacks are imported inside the tests, so the module imports there and
 each test fails on its own.
@@ -471,6 +472,95 @@ def test_an_editors_solve_runs_the_collection_the_owners_dataflow_lists(
     assert set(sent.get("collections") or {}) == {listed}, (
         f"Solve's run of bob's node resolved the collections {sent.get('collections')}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Their files, as an editor's canvas shows them (Simple View, the details)
+# ---------------------------------------------------------------------------
+
+def _media(client, token, collection, file_id, *, variant="thumb", dataflow=None):
+    """A collection's file as the browser asks for it, through *dataflow*."""
+    through = f"&dataflowId={dataflow}" if dataflow else ""
+    return client.get(
+        f"/api/datasets/{collection}/media/{file_id}?variant={variant}{through}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+
+def _first_recording():
+    """The first row of the noise recordings' index, and the file it names."""
+    import pandas as pd
+
+    row = pd.read_parquet(NOISE / "data" / "index.parquet").iloc[0]
+    return row, REPO / "docs" / "examples" / "data" / "storage" / row.relpath
+
+
+def test_an_editors_canvas_shows_the_files_of_a_collection_the_owners_dataflow_lists(
+    client, flow, shipped_discovery, tmp_path,
+):
+    """bob's canvas reads, through alice's dataflow, the files of a collection
+    it lists: a recording's thumbnail for its Simple View card, the recording
+    itself, the signed link its Play asks for, and the collection's status in
+    its details. Without the dataflow it reads none of them, as before."""
+    collection = _a_collection(flow.people.alice, tmp_path)
+    _install(client, flow.tokens["alice"], flow.pid, collection)
+    row, _recording = _first_recording()
+    bob = flow.tokens["bob"]
+
+    thumb = _media(client, bob, collection, row.file_id, dataflow=flow.pid)
+    assert thumb.status_code == 200 and thumb.mimetype == "image/jpeg", thumb.get_data(as_text=True)[:300]
+    original = _media(client, bob, collection, row.file_id, variant="original", dataflow=flow.pid)
+    assert original.status_code == 200 and original.mimetype == "audio/wav", original.get_data(as_text=True)[:300]
+    link = client.post(
+        f"/api/datasets/{collection}/media/{row.file_id}/link?dataflowId={flow.pid}", headers=auth_headers(bob),
+    )
+    assert link.status_code == 200, link.get_data(as_text=True)
+    played = client.get(link.get_json()["url"])
+    assert played.status_code == 200 and played.mimetype == "audio/wav", played.get_data(as_text=True)[:300]
+    status = client.get(f"/api/discovery/collections/{collection}?dataflowId={flow.pid}", headers=auth_headers(bob))
+    assert status.status_code == 200, status.get_data(as_text=True)
+    assert status.get_json()["fileCount"] == 3 and len(status.get_json()["samples"]) == 3
+
+    assert _media(client, bob, collection, row.file_id).status_code == 404
+
+
+def test_an_editors_canvas_reads_no_other_media_of_the_owners(client, flow, shipped_discovery, tmp_path):
+    """A service's collection keeps its files in the media folder of the store
+    that holds it. Through alice's dataflow, bob reads those of the collection
+    it lists, from her folder, and nothing else of her media: not a collection
+    of hers the dataflow does not list, not a clip her own run derived, which
+    his runs did not. A clip he derived from it, in his own folder, he reads.
+    carol, never invited, reads none of it."""
+    import shutil
+
+    from utk_curio.backend.app.discovery.application import cache_collection
+    from utk_curio.backend.app.discovery.infrastructure import media_dirs
+    from utk_curio.sandbox.util.collections import derived_relpath
+
+    alice_key, bob_key = str(flow.people.alice.id), str(flow.people.bob.id)
+    listed = _a_collection(flow.people.alice, tmp_path, source_id=SERVICE)
+    _install(client, flow.tokens["alice"], flow.pid, listed)
+    unlisted = _a_collection(flow.people.alice, tmp_path, source_id=SERVICE)
+    row, recording = _first_recording()
+    # Its recordings came down with each collection, into alice's media folder.
+    for collection in (listed, unlisted):
+        shutil.copyfile(recording, cache_collection.objects_dir(alice_key, collection) / f"{row.file_id}.wav")
+    clip = f"{row.file_id}@1000"
+    alices_clip = media_dirs.media_work_root(alice_key) / derived_relpath("clips", listed, row.file_id, 1000, "wav")
+    alices_clip.parent.mkdir(parents=True)
+    shutil.copyfile(recording, alices_clip)
+    bob = flow.tokens["bob"]
+
+    served = _media(client, bob, listed, row.file_id, variant="original", dataflow=flow.pid)
+    assert served.status_code == 200 and served.mimetype == "audio/wav", served.get_data(as_text=True)[:300]
+    assert _media(client, bob, unlisted, row.file_id, variant="original", dataflow=flow.pid).status_code == 404
+    assert _media(client, bob, listed, clip, variant="original", dataflow=flow.pid).status_code == 404
+    bobs_clip = media_dirs.media_work_root(bob_key) / derived_relpath("clips", listed, row.file_id, 1000, "wav")
+    bobs_clip.parent.mkdir(parents=True)
+    shutil.copyfile(recording, bobs_clip)
+    assert _media(client, bob, listed, clip, variant="original", dataflow=flow.pid).status_code == 200
+    carol = flow.tokens["carol"]
+    assert _media(client, carol, listed, row.file_id, variant="original", dataflow=flow.pid).status_code == 404
 
 
 # ---------------------------------------------------------------------------

@@ -786,42 +786,48 @@ class DiscoveryService:
     def collection(self, dataset_id: str) -> tuple[dict[str, Any], DiscoverySourceManifest]:
         """This account's collection dataset and the source its files are in.
 
-        With a dataflow (*dataflow_id*), the collection is looked up in the
-        Data Catalog's listing of that dataflow, as a run's datasets are
-        (``DatasetCatalogService.get_dataset``): for its owner and for an
-        editor the owner invited, a collection the dataflow lists counts too,
-        read from the owner's store. For anyone else the dataflow lists
-        nothing, and the lookup is as with no dataflow; so is it, logged, when
-        the dataflow's listing fails, as a run's datasets keep what the
-        dataset index resolved (``CatalogListing.resolve_execution_paths``).
+        One this account's Data Catalog does not hold may be one the dataflow
+        this service is for (*dataflow_id*) lists: it is looked up in the Data
+        Catalog's listing of that dataflow, as a run's datasets are
+        (``DatasetCatalogService.get_dataset``), where its owner and an editor
+        the owner invited find the collections it lists, read from the owner's
+        store (:meth:`collection_store`). Anyone else finds none of them.
         """
         from utk_curio.backend.app.datasets.service import DatasetCatalogError
         from utk_curio.backend.app.discovery.domain.errors import ResourceNotFound
-        from utk_curio.backend.app.projects.repositories import NotFoundError
 
         catalog = self._datasets()
         try:
-            try:
-                # A dataflow's catalog is an account's; with none, the shared one.
-                item = catalog.get_dataset(dataset_id, dataflow_id=self.dataflow_id if self.user else None)
-            except DatasetCatalogError:
-                raise
-            except Exception as exc:  # noqa: BLE001 - looked up as with no dataflow
-                # NotFoundError: a dataflow this account neither owns nor
-                # edits (``InstalledDatasetRepository._dataflow_store``).
-                if not isinstance(exc, NotFoundError):
-                    logger.warning(
-                        "Could not list the Data Catalog of dataflow %s to find collection %s; "
-                        "looking it up without the dataflow",
-                        self.dataflow_id, dataset_id, exc_info=True,
-                    )
-                item = catalog.get_dataset(dataset_id)
+            item = catalog.get_dataset(dataset_id)
         except DatasetCatalogError as exc:
-            raise ResourceNotFound(f"no dataset {dataset_id!r}") from exc
+            item = self._listed_by_the_dataflow(dataset_id)
+            if item is None:
+                raise ResourceNotFound(f"no dataset {dataset_id!r}") from exc
         block = item.get("collection") or {}
         if item.get("format") != "collection" or not block.get("sourceId"):
             raise ResourceNotFound(f"{dataset_id!r} is not a collection")
         return item, self._catalog.get_manifest(_renamed_source_dir(str(block["sourceId"])))
+
+    def _listed_by_the_dataflow(self, dataset_id: str) -> dict[str, Any] | None:
+        """*dataset_id* as the Data Catalog's listing of :attr:`dataflow_id`
+        holds it, or None: with no dataflow or no account, for an account
+        that neither owns nor edits it (``InstalledDatasetRepository._dataflow_store``),
+        and, logged, when that listing fails."""
+        from utk_curio.backend.app.datasets.service import DatasetCatalogError
+        from utk_curio.backend.app.projects.repositories import NotFoundError
+
+        if not self.dataflow_id or self.user is None:
+            return None
+        try:
+            return self._datasets().get_dataset(dataset_id, dataflow_id=self.dataflow_id)
+        except (DatasetCatalogError, NotFoundError):
+            return None
+        except Exception:  # noqa: BLE001 - the account's own collections still answer
+            logger.warning(
+                "Could not list the Data Catalog of dataflow %s to find collection %s",
+                self.dataflow_id, dataset_id, exc_info=True,
+            )
+            return None
 
     def collection_store(self, item: dict[str, Any]) -> str:
         """The key of the store that holds *item*, a collection :meth:`collection`
@@ -848,7 +854,7 @@ class DiscoveryService:
         if local:
             cached, cached_bytes = total, int(block.get("totalBytes") or 0)
         else:
-            cached, cached_bytes = cache_collection.cached_count(self.user_key, dataset_id)
+            cached, cached_bytes = cache_collection.cached_count(self.collection_store(item), dataset_id)
         rows = pd.read_parquet(item["path"], columns=["file_id", "name", "kind"]).head(samples)
         return {
             "datasetId": dataset_id,

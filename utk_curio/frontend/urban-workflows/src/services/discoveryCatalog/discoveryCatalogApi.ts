@@ -102,9 +102,12 @@ export const discoveryCatalogApi = {
   },
 
   /** Where a collection's files are, and a few of them by id. */
-  getCollection(datasetId: string): Promise<DiscoveryCollectionStatus> {
+  /** A collection's status; with *dataflowId*, read through that dataflow, so
+   *  a collection it lists from its owner's store answers to an editor of it. */
+  getCollection(datasetId: string, dataflowId?: string | null): Promise<DiscoveryCollectionStatus> {
+    const through = dataflowId ? `?dataflowId=${encodeURIComponent(dataflowId)}` : "";
     return apiFetch<DiscoveryCollectionStatus>(
-      `/api/discovery/collections/${encodeURIComponent(datasetId)}`
+      `/api/discovery/collections/${encodeURIComponent(datasetId)}${through}`
     );
   },
 
