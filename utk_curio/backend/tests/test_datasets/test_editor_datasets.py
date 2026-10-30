@@ -336,6 +336,12 @@ def _rows(body: dict, collection_id: str):
     return helpers["curio_load_collection"](collection_id)
 
 
+def _files(rows) -> list[str]:
+    """The rows' paths that name a file this machine holds. A file not here
+    has no path: None, or NaN where pandas stores the column as strings."""
+    return [path for path in rows["path"] if isinstance(path, str) and Path(path).is_file()]
+
+
 @pytest.mark.parametrize("source", ["folder", "service"])
 def test_an_editors_run_loads_a_collection_the_owners_dataflow_lists(
     client, flow, sandbox, shipped_discovery, tmp_path, source,
@@ -362,7 +368,7 @@ def test_an_editors_run_loads_a_collection_the_owners_dataflow_lists(
 
     assert set(body["collections"]) == {collection}, f"bob's run resolved the collections {body['collections']}"
     rows = _rows(body, collection)
-    readable = [path for path in rows["path"] if path and Path(path).is_file()]
+    readable = _files(rows)
     if source == "folder":
         assert len(readable) == len(rows) == 3, list(rows["path"])
     else:
@@ -390,7 +396,7 @@ def test_an_editors_own_collection_and_a_shared_one_load_beside_the_dataflows(
     assert set(body["dataset_paths"]) == loaded, body["dataset_paths"]
     for collection in loaded:
         rows = _rows(body, collection)
-        assert all(path and Path(path).is_file() for path in rows["path"]), (collection, list(rows["path"]))
+        assert len(_files(rows)) == len(rows) > 0, (collection, list(rows["path"]))
 
 
 def test_a_collection_of_the_owners_her_dataflow_does_not_list_stays_hers(
