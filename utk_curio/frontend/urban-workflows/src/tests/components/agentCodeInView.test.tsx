@@ -563,6 +563,73 @@ describe("what the agent changed, marked as it lands", () => {
   });
 });
 
+describe("what the agent changed, marked until it lets go of the node", () => {
+  test("a widget it set is marked no more once the agent lets go, before the moment ends", async () => {
+    const { socket, again } = await inTheRoom(<Node data={PYTHON} />);
+    agentWrites(socket, "rows", "widgets");
+    again(<Node data={{ ...PYTHON, widgets: [{ ...ROWS, value: "five" }, LIMIT] }} />);
+    expect(markedWidgets("rows")).toEqual(["rows"]);
+
+    // The agent's second after its write is over: what shows after its reply
+    // is the node as it is.
+    agentWrites(socket, null);
+    expect(markedWidgets("rows")).toEqual([]);
+  });
+
+  test("lines it wrote are marked no more once the agent lets go, before the moment ends", async () => {
+    const CODE = "n = 3\nrows = input_0[:n]\nreturn rows\n";
+    const AGENTS = "n = 3\nrows = input_0.head(n)\nreturn rows\n";
+    const MONACO = { KeyMod: { CtrlCmd: 2048, Shift: 1024 }, KeyCode: { KeyZ: 56, KeyY: 55 } };
+    const decorations = { set: jest.fn(), clear: jest.fn() };
+    const model = { getValue: () => CODE, onDidChangeContent: () => ({ dispose() {} }) };
+    const editor = {
+      getModel: () => model,
+      addAction: () => ({ dispose() {} }),
+      onDidFocusEditorText: () => ({ dispose() {} }),
+      onDidBlurEditorText: () => ({ dispose() {} }),
+      hasTextFocus: () => false,
+      trigger: jest.fn(),
+      createDecorationsCollection: jest.fn(() => decorations),
+    };
+    const Bound = () => {
+      useYMonacoBinding(editor, MONACO, "rows", { canWrite: true, baselineRef: { current: CODE } });
+      return null;
+    };
+    const provider = new DataflowDocProvider("project-1", { canWrite: true });
+    dataflowToDoc({
+      name: "",
+      nodes: [{ id: "rows", type: "curio.builtin/computation-analysis", x: 0, y: 0, content: CODE }],
+      edges: [],
+    }, provider.doc, "doc-1");
+    provider.synced = true;
+    /** The server writes *code* into the node, as it writes an agent's change. */
+    const serverWrites = (code: string) => {
+      const server = new Y.Doc();
+      Y.applyUpdate(server, Y.encodeStateAsUpdate(provider.doc));
+      const updates: Uint8Array[] = [];
+      server.on("update", (update: Uint8Array) => updates.push(update));
+      const content = (server.getMap("nodes").get("rows") as Y.Map<unknown>).get("content") as Y.Text;
+      server.transact(() => replaceText(content, code));
+      for (const update of updates) Y.applyUpdate(provider.doc, update, provider);
+    };
+
+    const { socket } = await inTheRoom(
+      <DataflowDocContext.Provider value={{ provider, synced: true }}>
+        <Bound />
+      </DataflowDocContext.Provider>,
+    );
+    await waitFor(() => expect(mockBindings).toHaveLength(1));
+    agentWrites(socket, "rows", "code");
+    act(() => serverWrites(AGENTS));
+    expect(decorations.set).toHaveBeenCalledTimes(1);
+    expect(decorations.clear).not.toHaveBeenCalled();
+
+    agentWrites(socket, null);
+    expect(decorations.clear).toHaveBeenCalled();
+    provider.destroy();
+  });
+});
+
 describe("the node's lock chip", () => {
   test("an agent's shows its glyph in its tint, turns no tab for a setting, and says on hover who is editing and who asked", async () => {
     const restore = setTooltipTimings({ show: 0 });
