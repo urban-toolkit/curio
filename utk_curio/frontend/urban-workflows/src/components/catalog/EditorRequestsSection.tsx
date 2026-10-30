@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { AgentReviewCard } from "../agents/content/AgentReviewCard";
@@ -61,23 +61,40 @@ export const EditorRequestsSection: React.FC<{ catalog: RequestCatalog }> = ({ c
   const [reviewing, setReviewing] = useState<Reviewing | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // One more layer over the drawer while the review is open, so its Escape
-  // leaves the drawer open.
-  useEffect(() => {
-    if (!reviewing) return;
-    const release = holdModalStack();
-    return () => {
-      window.setTimeout(release, 0);
-    };
-  }, [reviewing]);
+  // One more layer over the drawer while the review is open, so the drawer's
+  // Escape waits until the review closes (the review has no Escape of its
+  // own). The layer is given back the moment the review closes, before the
+  // requests are read again, so the drawer takes an Escape as soon as the
+  // request leaves her review.
+  const releaseRef = useRef<(() => void) | null>(null);
+  const openReview = useCallback((next: Reviewing) => {
+    releaseRef.current ??= holdModalStack();
+    setReviewing(next);
+  }, []);
+  const closeReview = useCallback(() => {
+    releaseRef.current?.();
+    releaseRef.current = null;
+    setBusy(false);
+    setReviewing(null);
+  }, []);
+  useEffect(
+    () => () => {
+      releaseRef.current?.();
+      releaseRef.current = null;
+    },
+    [],
+  );
 
-  /** Post the Apply and say what it added; a refusal rejects, which the card shows. */
+  /** Post the Apply and say what it added; a refusal rejects, which the card
+   *  shows. *answered* runs once the server answered, before the requests are
+   *  read again. */
   const applyNow = useCallback(
-    async (request: EditorRequest) => {
+    async (request: EditorRequest, answered: () => void = () => undefined) => {
       if (!dataflowId) return;
       try {
         await editorRequestsApi.apply(dataflowId, request);
       } catch (err) {
+        answered();
         const requests = await reloadEditorRequests();
         // A request that left her review (its asker no longer edits) has no
         // card left to say why.
@@ -86,6 +103,7 @@ export const EditorRequestsSection: React.FC<{ catalog: RequestCatalog }> = ({ c
         }
         throw err;
       }
+      answered();
       showToast(`Added ${requestedName(request)} to this dataflow.`, "success");
       // A package reaches every tab's registry with the dataflow's lockfile
       // (`takeDataflowFields`); the drawers list it again.
@@ -105,31 +123,32 @@ export const EditorRequestsSection: React.FC<{ catalog: RequestCatalog }> = ({ c
       }
       const review = await editorRequestsApi.review(dataflowId, request);
       await new Promise<void>((resolve, reject) => {
-        setReviewing({ request, review, settle: (error) => (error === undefined ? resolve() : reject(error)) });
+        openReview({ request, review, settle: (error) => (error === undefined ? resolve() : reject(error)) });
       });
     },
-    [dataflowId, applyNow],
+    [dataflowId, applyNow, openReview],
   );
 
   const confirm = useCallback(async () => {
     if (!reviewing || busy) return;
     setBusy(true);
     try {
-      await applyNow(reviewing.request);
+      // The review closes once the server answered, before the requests are
+      // read again.
+      await applyNow(reviewing.request, closeReview);
       reviewing.settle();
     } catch (err) {
       reviewing.settle(err);
     } finally {
-      setBusy(false);
-      setReviewing(null);
+      closeReview();
     }
-  }, [reviewing, busy, applyNow]);
+  }, [reviewing, busy, applyNow, closeReview]);
 
   const cancel = useCallback(() => {
     if (!reviewing || busy) return;
     reviewing.settle();
-    setReviewing(null);
-  }, [reviewing, busy]);
+    closeReview();
+  }, [reviewing, busy, closeReview]);
 
   const dismiss = useCallback(
     async (request: EditorRequest) => {
