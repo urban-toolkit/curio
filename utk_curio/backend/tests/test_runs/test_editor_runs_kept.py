@@ -232,6 +232,58 @@ def test_an_editors_kept_run_reads_his_own_kept_outputs_and_none_of_the_owners(c
     }
 
 
+def _record_as_saved(user, project_id, names: dict):
+    """*names* (``{node id: output name}``) recorded as the nodes' saved
+    outputs in alice's manifest, each with a computed dataset of its node,
+    as a save records them."""
+    from utk_curio.backend.app.datasets.install.installer import install_computed_file_for_node
+    from utk_curio.backend.app.projects import storage
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user_key = _user_dir_key(user)
+    for node in names:
+        install_computed_file_for_node(user_key, b"a\n1\n", f"{node}.csv", "csv", node_id=node, dataflow_id=project_id)
+    storage.record_outputs(user_key, project_id, [{"node_id": node, "filename": name} for node, name in names.items()])
+
+
+def test_an_editors_play_on_a_saved_output_her_run_made_is_kept_as_his(client, db, people, sandbox):
+    """bob's node below a node whose output alice's run made, kept and saved,
+    reads that saved output, the dataflow's own: his run is kept as his. A
+    saved output another kept run made, one alice's runs did not keep, keeps
+    his run in his own session, since his kept session would read that run's
+    artifact, whoever's it is."""
+    import pandas as pd
+
+    from utk_curio.sandbox.util.parsers import save_to_duckdb
+
+    project_id = _alices(client, people)
+    hers_session = new_session_id()
+    hers = save_to_duckdb(pd.DataFrame({"n": [1]}), node_id="a", session_id=hers_session)
+    theirs = save_to_duckdb(pd.DataFrame({"n": [2]}), node_id="t", session_id=new_session_id())
+    now = naive_utc_now()
+    db.session.add(KeptStepOutput(
+        project_id=project_id, node_id="a", step_key="a" * 64, session_id=hers_session,
+        output=json.dumps({"path": hers, "dataType": "dataframe"}), output_path=hers,
+        artifact_ids=json.dumps([hers]), made_by="owner", created_at=now, used_at=now,
+    ))
+    db.session.commit()
+    _record_as_saved(people.alice, project_id, {"a": hers, "t": theirs})
+
+    _play(client, people.tokens["bob"], project_id, "b", input_path=hers)
+    _play(client, people.tokens["bob"], project_id, "c", input_path=theirs)
+
+    on_hers, on_theirs = sandbox["runs"]["b"], sandbox["runs"]["c"]
+    assert {
+        "on her saved output, kept": is_kept_session(on_hers["session_id"]),
+        "read from its file": bool(on_hers["saved_paths"][hers]["path"]),
+        "on another kept run's": on_theirs["session_id"],
+    } == {
+        "on her saved output, kept": True,
+        "read from its file": True,
+        "on another kept run's": people.tokens["bob"],
+    }
+
+
 def test_an_editors_kept_outputs_live_their_days_bounded_by_them_alone(app, client, db, people, monkeypatch):
     """A tab's own output lives an hour and the viewers' share a budget; his,
     as alice's, live their 7 days, whatever their size."""

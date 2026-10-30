@@ -536,9 +536,20 @@ def _kept_run(user, run: NodeRun, names: list[str], saved_inputs: dict) -> _Kept
         entry = _own_kept_entry(maker, run.dataflow_id, user, name)
         if entry is not None:
             private = private or entry.private_to is not None
-        elif name not in saved_inputs or made_by_a_kept_run(name):
+        elif name not in saved_inputs or (
+            made_by_a_kept_run(name) and not _saved_from_the_owners_run(maker, run.dataflow_id, name)
+        ):
             return None
     return _KeptRun(session_id=new_session_id(), private=private, made_by=maker)
+
+
+def _saved_from_the_owners_run(maker: str, dataflow_id: str, name: str) -> bool:
+    """Whether *name*, a saved output of *dataflow_id*, is one the owner's
+    runs of it kept, for an editor's run: the dataflow's own output, which
+    the editor reads anyway, so his kept session may read its artifact."""
+    from utk_curio.backend.app.runs import kept
+
+    return maker == kept.MADE_BY_EDITOR and kept.owner_entry(dataflow_id, name) is not None
 
 
 def _writes_dataflow_id(user, run: NodeRun) -> str | None:
