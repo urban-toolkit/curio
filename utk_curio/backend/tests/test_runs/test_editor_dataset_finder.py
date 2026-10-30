@@ -211,6 +211,10 @@ def _solve_told(client, flow, monkeypatch, who: str) -> str:
     def _exec(_endpoint, payload):
         return {"stdout": [], "stderr": "", "output": {"path": f"art-{who}", "dataType": "str"}}
 
+    # As in the agents' suite (``test_agents/conftest.py``), the endpoint is
+    # never asked whether it calls tools natively.
+    monkeypatch.setattr("utk_curio.backend.app.agents.infrastructure.providers.probe_native_tools",
+                        lambda config, usage_out=None: (None, "not asked in the test suite"))
     monkeypatch.setattr("utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn", _model)
     monkeypatch.setattr("utk_curio.backend.app.execution.runner._http_exec", _exec)
     resp = client.post(f"/api/agents/projects/{flow.pid}/attachments/{ATTACHMENT}/solve-node",

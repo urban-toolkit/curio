@@ -569,14 +569,31 @@ def test_an_editors_runs_of_her_dataflow_name_her_node_libraries_after_his_own(c
 
 
 def test_an_editors_agent_runs_name_his_node_libraries_then_hers(client, flow, monkeypatch):
-    """bob's agent's Run node of alice's dataflow names his storage key to
-    the sandbox, then hers (``library_keys``), as his play does: under fork
-    isolation it reads his node libraries, then hers. So does a Solve's or a
-    validation's run for him, whose runner is handed her key as the
-    dataflow's. alice's agent's runs name her key alone, and erin, whom she
-    took off her editors, and carol, never invited, run no agent of hers."""
+    """A Solve's or a validation's run for bob of the node of alice's
+    package, whose runner is handed her key as the dataflow's, names his
+    storage key to the sandbox, then hers (``library_keys``), as his play
+    does: under fork isolation it reads his node libraries, then hers. So
+    does his agent's Run node, which runs the node of her package as code, as
+    Solve's runs do. alice's agent's runs name her key alone, and erin, whom
+    she took off her editors, and carol, never invited, run no agent of hers."""
     from utk_curio.backend.app.execution import runner
+    from utk_curio.backend.app.packages import service as packages_services
     from utk_curio.backend.app.projects import storage as projects_storage
+
+    sent: list = []
+
+    def _exec(_endpoint, payload):
+        sent.append(payload)
+        return {"stdout": [], "stderr": "", "output": {"path": f"art-{len(sent)}", "dataType": "str"}}
+
+    spec = projects_storage.read_spec(flow.key, flow.pid)
+    templates = packages_services.roster_templates(flow.key, flow.pid)
+    for who in ("alice", "bob"):
+        runner.run_through_node(flow.key, flow.pid, spec, "helpers", exec_fn=_exec, templates=templates,
+                                exec_user_key=flow.key, acting_user=getattr(flow.people, who))
+    assert [(payload.get("user_key"), payload.get("library_keys")) for payload in sent] == [
+        (flow.key, None), (_key(flow.people.bob), [flow.key]),
+    ]
 
     named = {who: _agent_run(client, flow, monkeypatch, who, "helpers") for who in ("alice", "bob")}
     assert {who: (payload.get("user_key"), payload.get("library_keys")) for who, payload in named.items()} == {
@@ -586,17 +603,3 @@ def test_an_editors_agent_runs_name_his_node_libraries_then_hers(client, flow, m
         resp = client.post(f"/api/agents/projects/{flow.pid}/attachments/{ATTACHMENT}/run-node",
                            json={"nodeId": "helpers"}, headers=_auth(flow.tokens[who]))
         assert resp.status_code == 403, f"{who}: {resp.status_code} {resp.get_data(as_text=True)[:200]}"
-
-    sent: list = []
-
-    def _exec(_endpoint, payload):
-        sent.append(payload)
-        return {"stdout": [], "stderr": "", "output": {"path": f"art-{len(sent)}", "dataType": "str"}}
-
-    spec = projects_storage.read_spec(flow.key, flow.pid)
-    for who in ("alice", "bob"):
-        runner.run_through_node(flow.key, flow.pid, spec, "helpers", exec_fn=_exec,
-                                exec_user_key=flow.key, acting_user=getattr(flow.people, who))
-    assert [(payload.get("user_key"), payload.get("library_keys")) for payload in sent] == [
-        (flow.key, None), (_key(flow.people.bob), [flow.key]),
-    ]
