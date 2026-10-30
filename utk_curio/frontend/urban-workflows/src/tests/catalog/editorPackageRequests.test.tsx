@@ -3,8 +3,9 @@
  * alice for her dataflow, as the canvas sends and shows it:
  *
  * - his Add to project in his Node Catalog drawer asks her, once he confirms,
- *   and installs nothing, and his Remove from project takes a package out of
- *   her dataflow, which stays in her account and his;
+ *   and installs nothing; his Import package puts the package in his own
+ *   account and asks her; his Remove from project takes a package out of her
+ *   dataflow, which stays in her account and his;
  * - his drop of the card of a package her dataflow does not use makes its node
  *   at once and asks her, naming the node;
  * - a model of his dropped on a node is the model package its card names;
@@ -19,7 +20,7 @@
  * lacks is reached through `require`, so main fails test by test.
  */
 import React from "react";
-import { act, render, renderHook, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { MemoryRouter } from "react-router-dom";
 
@@ -148,6 +149,9 @@ function answer(method: string, path: string): unknown {
   if (path === `/api/dataflows/${ALICES}/packages/requests` && method === "POST") {
     return { requested: true, request: BOBS_REQUEST };
   }
+  if (path.startsWith("/api/packages/upload")) {
+    return { package: BUS, integrity: {}, replacedExisting: false, importErrors: {} };
+  }
   if (path.endsWith("/review")) return { package: BUS, conflicts: [] };
   if (path.endsWith("/apply")) return { proposalId: BOBS_REQUEST.proposalId, status: "applied" };
   if (path.includes("/datasets/requests")) return { requests: [] };
@@ -222,6 +226,29 @@ describe("bob's own package asks alice", () => {
     await waitFor(() => expect(writes()).toEqual([`POST /api/dataflows/${ALICES}/packages/requests`]));
     expect(sent.find((request) => request.method === "POST")?.body).toEqual({ dirName: BUS_DIR, add: true });
     expect(mockShowToast).toHaveBeenCalledWith("Asked the dataflow's owner to add Bus counts to it.", "info");
+    view.unmount();
+  });
+
+  test("his Import package puts it in his own account and asks her to add it", async () => {
+    on("editor");
+    const view = openNodeDrawer();
+    const input = await waitFor(() => {
+      const found = document.querySelector('[data-curio-node-catalog-drawer="true"] input[type="file"]');
+      expect(found).not.toBeNull();
+      return found as HTMLInputElement;
+    });
+
+    await act(async () => {
+      fireEvent.change(input, { target: { files: [new File(["zip"], "bus.curio.zip", { type: "application/zip" })] } });
+    });
+
+    await waitFor(() =>
+      expect(writes()).toEqual(["POST /api/packages/upload", `POST /api/dataflows/${ALICES}/packages/requests`]),
+    );
+    expect(sent.find((request) => request.path.endsWith("/packages/requests"))?.body).toEqual({
+      dirName: BUS_DIR,
+      add: true,
+    });
     view.unmount();
   });
 
