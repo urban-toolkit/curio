@@ -40,7 +40,11 @@ export const AgentReviewCard: React.FC<{
   /** An install on an invited editor's chat: it waits for the dataflow
    * owner's review, which the card says in place of Apply and Dismiss. */
   waitsForOwner?: boolean;
-}> = ({ part, tintClassName, onApply, onDismiss, waitsForOwner = false }) => {
+  /** What Apply does, said in place of the install kind's own line: an
+   * invited editor's request for a dataset, which no agent made, says what
+   * the owner's Apply of it does (`DatasetRequestsSection`). */
+  effect?: string;
+}> = ({ part, tintClassName, onApply, onDismiss, waitsForOwner = false, effect }) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // A review of a change, saved before agents changed the dataflow directly:
@@ -72,7 +76,7 @@ export const AgentReviewCard: React.FC<{
       {part.tool === "package.draft.apply" && part.draft ? <PackageDraftDetails draft={part.draft} /> : null}
       {part.tool === "package.draft.apply" && part.backend ? <BackendTrustBlock backend={part.backend} /> : null}
       <div className={styles.preview}>{part.preview}</div>
-      <EffectLine part={part} />
+      <EffectLine part={part} text={effect} />
       <ReviewActions
         part={part}
         busy={busy}
