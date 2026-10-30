@@ -615,7 +615,11 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
         # the backend knows it: the sandbox has no notion of who is logged in, and
         # the in-process path ignores it entirely.
         user_key = exec_user_key(user)
-        collections, media_dir = resolve_exec_collections(run.code, user_key, user=user)
+        # The dataflow's collections, as its datasets above: for its owner and
+        # an editor she invited, those it lists, from her store.
+        collections, media_dir = resolve_exec_collections(
+            run.code, user_key, user=user, dataflow_id=run.dataflow_id,
+        )
         exec_secrets = resolve_secrets(run.code, user)
         package_modules = resolve_package_modules(
             run.node_type, user_key, run.dataflow_id, owners=owners_packages_for(user, run.dataflow_id),

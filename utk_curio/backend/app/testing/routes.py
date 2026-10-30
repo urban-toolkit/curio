@@ -321,7 +321,9 @@ def dataset_paths():
     formats: dict = {}
     paths = resolve_dataset_paths(code, body.get("dataflow_id"), g.user, formats)
     user_key = _user_dir_key(g.user) if g.user is not None else GUEST_KEY
-    collections, media_dir = resolve_exec_collections(code, user_key, user=g.user)
+    collections, media_dir = resolve_exec_collections(
+        code, user_key, user=g.user, dataflow_id=body.get("dataflow_id"),
+    )
     models = resolve_models_for(code, user_key)
     package_modules = resolve_package_modules(body.get("nodeType"), user_key, body.get("dataflow_id"))
     return jsonify({

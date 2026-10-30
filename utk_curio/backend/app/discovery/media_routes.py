@@ -6,6 +6,10 @@ token (the way Simple View already fetches every ``/api/`` image).
 ``<video>`` and ``<audio>`` cannot send a token, so
 ``POST .../link`` hands back a short-lived signed URL for one file, and
 ``GET /api/media/<token>`` serves it, with Range, to whoever holds it.
+
+``?dataflowId=`` reads the collection through that dataflow
+(``DiscoveryService.collection``): its owner and an editor she invited read
+the files of a collection it lists, from her store.
 """
 
 from __future__ import annotations
@@ -37,6 +41,11 @@ def _serve(service, dataset_id: str, file_id: str, variant: str):
     return _served(media.thumbnail(service, found, variant=variant), "image/jpeg")
 
 
+def _dataflow_id() -> str | None:
+    """The dataflow a read names, ``?dataflowId=``, if any."""
+    return request.args.get("dataflowId") or None
+
+
 @media_bp.route("/datasets/<dataset_id>/media/<file_id>", methods=["GET"])
 @require_auth
 @_map_discovery_errors
@@ -44,7 +53,7 @@ def collection_media(dataset_id: str, file_id: str):
     variant = request.args.get("variant") or "thumb"
     if variant not in _VARIANTS:
         return jsonify({"error": f"variant must be one of {', '.join(_VARIANTS)}"}), 400
-    return _serve(_service(), dataset_id, file_id, variant)
+    return _serve(_service(dataflow_id=_dataflow_id()), dataset_id, file_id, variant)
 
 
 @media_bp.route("/datasets/<dataset_id>/media/<file_id>/link", methods=["POST"])
@@ -52,10 +61,10 @@ def collection_media(dataset_id: str, file_id: str):
 @_map_discovery_errors
 def collection_media_link(dataset_id: str, file_id: str):
     """A URL a ``<video>`` or ``<audio>`` element can play, valid for ten minutes."""
-    service = _service()
+    service = _service(dataflow_id=_dataflow_id())
     media.original(media.locate(service, dataset_id, file_id))
     user = getattr(g, "user", None)
-    token = media.sign(getattr(user, "id", None), service.user_key, dataset_id, file_id)
+    token = media.sign(getattr(user, "id", None), service.user_key, dataset_id, file_id, service.dataflow_id)
     return jsonify({
         "url": url_for("collection_media.signed_media", token=token),
         "expiresIn": media.LINK_TTL_SECONDS,
@@ -70,7 +79,7 @@ def signed_media(token: str):
 
     claims = media.verify(token)
     user = _user_by_id(claims.get("u")) if claims.get("u") is not None else None
-    service = DiscoveryService(claims["k"], user=user)
+    service = DiscoveryService(claims["k"], user=user, dataflow_id=claims.get("df"))
     found = media.locate(service, claims["d"], claims["f"])
     path, mimetype = media.original(found)
     return _served(path, mimetype, cache_seconds=0)
