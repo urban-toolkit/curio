@@ -7,7 +7,10 @@ frontmatter holds the format's fields only: ``name``, the folder's name;
 ``description``, when to use the skill; and optionally ``license``,
 ``compatibility``, ``metadata`` (strings by string keys) and
 ``allowed-tools``. Any other file in the folder is the skill's too, such as
-its ``references/``.
+its ``references/``, but those of its ``evals/`` folder: the skill's
+evaluations, ``evals/evals.json``, as agentskills.io lays them out
+(https://agentskills.io/skill-creation/evaluating-skills), are for whoever
+writes the skill, so no run is offered them and no export carries them.
 
 Curio ships its skills in the root ``skills/`` folder, one folder each
 (``utk_curio/shipped.py`` finds it). A skill's body may hold Curio's markers,
@@ -74,6 +77,11 @@ LINES_UNDER = 500
 _NAME_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 #: Folders a skill's listing of its files leaves out, besides hidden ones.
 _NOT_FILES = ("__pycache__",)
+#: The folder at a skill's root that holds its evaluations, ``evals/evals.json``:
+#: its listing leaves it out, as the packager of agentskills.io's skill-creator
+#: does (https://github.com/anthropics/skills, ``ROOT_EXCLUDE_DIRS``). A folder
+#: of that name deeper in the skill is listed.
+EVALS_DIR = "evals"
 
 
 class SkillError(ValueError):
@@ -101,7 +109,7 @@ class Skill:
     #: The folder that holds the ``SKILL.md``.
     folder: Path
     #: The folder's other files, by their paths in it, such as
-    #: ``references/REFERENCE.md``.
+    #: ``references/REFERENCE.md``, those of its ``evals/`` left out.
     files: tuple[str, ...]
     #: The line of the ``SKILL.md`` its body starts on, counted from 1.
     body_line: int
@@ -348,10 +356,12 @@ def _allowed_tools(raw, problems: list[str]) -> str | None:
 
 def _files(folder: Path) -> tuple[str, ...]:
     """The files in *folder* but its ``SKILL.md``, by their paths there, hidden
-    files and folders left out."""
+    files and folders left out, and the ``evals/`` folder at its root."""
     found = []
     for here, dirs, names in os.walk(folder):
-        dirs[:] = sorted(name for name in dirs if not name.startswith(".") and name not in _NOT_FILES)
+        root = Path(here) == folder
+        dirs[:] = sorted(name for name in dirs if not name.startswith(".") and name not in _NOT_FILES
+                         and not (root and name == EVALS_DIR))
         for name in names:
             path = Path(here, name).relative_to(folder).as_posix()
             if not name.startswith(".") and path != SKILL_FILE:
@@ -361,7 +371,8 @@ def _files(folder: Path) -> tuple[str, ...]:
 
 def listed_files(folder) -> tuple[str, ...]:
     """The files of the skill in *folder* but its ``SKILL.md``, by their paths
-    there, hidden files and folders left out: what :attr:`Skill.files` holds."""
+    there, hidden files and folders left out, and its ``evals/``: what
+    :attr:`Skill.files` holds."""
     return _files(Path(folder))
 
 

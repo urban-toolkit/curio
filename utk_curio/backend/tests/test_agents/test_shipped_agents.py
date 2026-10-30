@@ -472,17 +472,18 @@ class TestTheSources:
         assert len(marked) == 11, sorted(marked)
         # The shared preamble, the plan rules the tools include, the text the
         # runtime composes a run's turns from, the words of the dataflow
-        # block, the words of the preamble's Autark section and the messages
-        # the checks send are the pages of the base entry, each listed once
-        # and each a file there: a page added or forgotten fails here. The
-        # procedures the prompts shared are skills.
+        # block, the words of the preamble's Autark section, the messages
+        # the checks send and the words of a skill evaluation's grader are the
+        # pages of the base entry, each listed once and each a file there: a
+        # page added or forgotten fails here. The procedures the prompts
+        # shared are skills.
         pages = _raw(BASE)["pages"]
         assert len(pages) == len(set(pages)), pages
         assert set(pages) == {
             "default_preamble.md", "examples.md", "dataflow-block.md",
             "tools.md", "rules/plan-rules.md", "protocol.md", "frames.md",
             "delegate-contracts.md", "conversation-title.md", "keyword-types.md", "messages.md",
-            "autark-grammar.md",
+            "autark-grammar.md", "skill-evals.md",
         }
         assert {path.relative_to(BASE).as_posix() for path in BASE.rglob("*.md")} - {"README.md"} == set(pages)
         # What the agents know of each feature is a skill Curio ships, one

@@ -1,0 +1,74 @@
+{
+  "skill_name": "scout",
+  "agent": "agent.curio.node-builder@1",
+  "dataflow": "docs/examples/dataflows/chicago-loop-shadow-towers.json",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Add a node that gives, cell by cell, how much the accumulated shadow changed when the towers come out, whichever way it went. I only want the size of the change.",
+      "expected_output": "One node.create of Scout's Raster Calculator whose code imports raster_calculate from scout_rasters.raster_algebra and returns raster_calculate(\"subtract\", [input_1, input_0], absolute=True, output_file=curio_output_file), with the answer saying which Accumulated Shadow node goes on input_0 and which on input_1.",
+      "assertions": [
+        "The answer makes one node.create of type curio.scout/raster-calculator, not a node of another template.",
+        "The code it writes imports raster_calculate from scout_rasters.raster_algebra and returns one raster_calculate(\"subtract\", ...) call over input_0 and input_1.",
+        "The call passes absolute=True.",
+        "The call passes output_file=curio_output_file.",
+        "The answer says which Accumulated Shadow node to connect to input_0 and which to input_1."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Add a lollipop chart that compares the median shadow over the ground of the two scenarios.",
+      "expected_output": "One node.create of curio.scout/lollipops that gives no content of its own, so the node keeps the template's starter, which reads its column through [!! value !!], and sets its value widget to median, the column of the Shadow over the ground tables; the answer tells the user to connect each scenario's Shadow over the ground node (74e0af5a-c06e-52ae-94ad-94acc2de1642 and ac470b24-69c3-5242-8d07-cc969e868e54) to its own input circle.",
+      "assertions": [
+        "The answer makes one node.create of type curio.scout/lollipops.",
+        "The answer sets the chart's value widget to median.",
+        "The answer tells the user to connect each scenario's Shadow over the ground node to an input circle of its own on the chart."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Set both Rasterize Buildings nodes to zoom 18, I want sharper shadows.",
+      "expected_output": "The answer warns that Deep Umbra's Accumulated Shadow reads zoom-16 tiles where gray level 255 is 550 m, so the Rasterize Buildings nodes that feed it keep zoom 16 and a maximum height of 550 m; it makes no change to zoom 18.",
+      "assertions": [
+        "The answer says the Accumulated Shadow (Deep Umbra) nodes read zoom-16 tiles, so the Rasterize Buildings nodes that feed them should keep zoom 16.",
+        "The answer makes no node.settings.write that sets zoom to 18.",
+        "The answer creates no new node and writes no new code for the Rasterize Buildings nodes."
+      ]
+    },
+    {
+      "id": 4,
+      "agent": "agent.curio.dataflow-builder@1",
+      "dataflow": "docs/examples/dataflows/chicago-rain-wind-routing.json",
+      "prompt": "Plan a chart of the two routes' rain exposure against their wind exposure, one point per scenario.",
+      "expected_output": "A dataflow plan with one node of type curio.scout/points whose x widget is rain_exposure and y widget wind_exposure, wired from both scenarios' metrics nodes (c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36 and e9b5d3a1-2f8c-4a76-8e1d-4c7b9f0a6e23), one data edge each, with no node that merges them first.",
+      "assertions": [
+        "The answer writes a dataflow plan with a node of type curio.scout/points.",
+        "The plan sets the chart's x widget to rain_exposure and its y widget to wind_exposure.",
+        "The plan wires c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36 and e9b5d3a1-2f8c-4a76-8e1d-4c7b9f0a6e23 into the chart, one data edge from each.",
+        "The plan adds no node that merges the two metrics tables before the chart."
+      ]
+    }
+  ],
+  "trigger_queries": [
+    {"query": "How would a step take the difference between the two scenarios' accumulated shadow rasters? Which node, and which call?", "should_trigger": true},
+    {"query": "whats the way to get the mean shadow over just the ground cells for the towers removed case? which node does that", "should_trigger": true},
+    {"query": "Could the Mean accumulated shadow bars be a lollipop chart instead? What would that node need set?", "should_trigger": true},
+    {"query": "The Change in shadow raster is negative where the towers come out. How do I get only how much each cell changed?", "should_trigger": true},
+    {"query": "Can I rasterize the edited buildings at a coarser zoom so the shadow model runs faster? What would that break?", "should_trigger": true},
+    {"query": "How do I order the bars so Existing comes before Towers removed, and keep the box colors?", "should_trigger": true},
+    {"query": "Which node would give a table of both scenarios' shadow statistics, and how is it wired?", "should_trigger": true},
+    {"query": "My new buildings layer keeps its heights in a column called roof_h_m. Can the rasterizer read that, and where is it set?", "should_trigger": true},
+    {"query": "What would a donut chart of how much of each scenario's ground stays in shadow take as its inputs and widgets?", "should_trigger": true},
+    {"query": "The Y axis title of the shadow bars says 'mean of mean'. Where does that come from, and how do I make it 'Mean shadow (minutes)'?", "should_trigger": true},
+    {"query": "Color the Shadow change map from blue to red.", "should_trigger": false},
+    {"query": "Remove the two tallest towers that are left in the Remove towers node.", "should_trigger": false},
+    {"query": "Make the season a dropdown instead of radio buttons.", "should_trigger": false},
+    {"query": "Pin the Shadow change map to the dashboard.", "should_trigger": false},
+    {"query": "Which model does the Accumulated Shadow node run, and who published it?", "should_trigger": false},
+    {"query": "Link the Buildings map to a table so picking a building shows its row.", "should_trigger": false},
+    {"query": "Explain what the Season node returns.", "should_trigger": false},
+    {"query": "Add a Data Summary of the Buildings table.", "should_trigger": false},
+    {"query": "Who changed the Remove towers node last?", "should_trigger": false},
+    {"query": "Draw the remaining buildings on the Buildings map in 3D, colored by height.", "should_trigger": false}
+  ]
+}
