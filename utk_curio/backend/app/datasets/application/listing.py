@@ -571,27 +571,18 @@ class CatalogListing:
         and *formats* gets the group's entry, which names its layers in the
         group card loader's order (``layer_group_execution_format``), so
         ``curio_load_data("<group id>")`` reads them all.
+
+        For an editor the owner invited, a dataset the dataflow lists from the
+        owner's store resolves there first, before the editor's own index: a
+        dataset of the editor's the owner added to her dataflow is her copy of
+        it, under its own id (``editor_requests.apply``), which his runs read
+        as hers do.
         """
         if not dataset_ids:
             return {}
         from utk_curio.backend.app.datasets.domain.catalog_item import execution_format
 
         resolved: dict[str, str] = {}
-        pending = self._resolve_execution_paths_from_index(dataset_ids, resolved, formats)
-        if not pending:
-            return resolved
-
-        try:
-            result = self._owner.list_catalog(dataflow_id=dataflow_id, include_hub=True)
-        except Exception:  # noqa: BLE001 - what the index resolved still runs
-            logger.warning(
-                "Could not list the Data Catalog of dataflow %s to resolve datasets %s; "
-                "the run gets the %d the dataset index resolved",
-                dataflow_id, pending, len(resolved), exc_info=True,
-            )
-            return resolved
-        items = [item for item in result["items"] if item.get("id")]
-        by_id = {item["id"]: item for item in items}
 
         def resolve(dataset_id: str, item: dict[str, Any]) -> None:
             try:
@@ -607,12 +598,35 @@ class CatalogListing:
                 if formats is not None:
                     formats[dataset_id] = execution_format(item)
 
+        owners = self._listed_from_the_owners_store(dataflow_id)
+        for dataset_id in dataset_ids:
+            if dataset_id in owners:
+                resolve(dataset_id, owners[dataset_id])
+        pending = self._resolve_execution_paths_from_index(
+            [dataset_id for dataset_id in dataset_ids if dataset_id not in resolved], resolved, formats,
+        )
+        if not pending:
+            return resolved
+
+        try:
+            result = self._owner.list_catalog(dataflow_id=dataflow_id, include_hub=True)
+        except Exception:  # noqa: BLE001 - what the index resolved still runs
+            logger.warning(
+                "Could not list the Data Catalog of dataflow %s to resolve datasets %s; "
+                "the run gets the %d the dataset index resolved",
+                dataflow_id, pending, len(resolved), exc_info=True,
+            )
+            return resolved
+        items = [item for item in result["items"] if item.get("id")]
+        by_id = {item["id"]: item for item in items}
+
         for dataset_id in pending:
             if is_layer_group_id(dataset_id):
                 members = members_of(dataset_id, items)
                 for member in members:
                     if member["id"] not in resolved:
-                        resolve(member["id"], member)
+                        # A layer the dataflow lists from the owner's store is hers.
+                        resolve(member["id"], owners.get(member["id"], member))
                 if members and formats is not None:
                     formats[dataset_id] = layer_group_execution_format(members)
                 continue
@@ -620,6 +634,28 @@ class CatalogListing:
             if item is not None:
                 resolve(dataset_id, item)
         return resolved
+
+    def _listed_from_the_owners_store(self, dataflow_id: str | None) -> dict[str, dict[str, Any]]:
+        """For an editor the owner invited, the datasets *dataflow_id* lists
+        from the owner's store, by id, each as the dataflow's listing gives
+        it: the folders of hers the catalog then reads
+        (``InstalledDatasetRepository.listed_folders``). None for the owner,
+        whose store is her own, and none for a dataflow the reader does not
+        edit."""
+        if not dataflow_id or self.user is None:
+            return {}
+        try:
+            _project, store_key = self.installed._dataflow_store(dataflow_id)
+            if store_key == self._paths._user_key():
+                return {}
+            refs = self.installed.list_items(dataflow_id)
+        except Exception:  # noqa: BLE001 - a dataflow the reader does not edit lists nothing here
+            return {}
+        return {
+            str(item["id"]): item
+            for item in refs
+            if item.get("id") and item.get("path") and self.installed.in_listed_folder(str(item["path"]))
+        }
 
     def _resolve_execution_paths_from_index(
         self,

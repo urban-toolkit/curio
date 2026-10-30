@@ -55,6 +55,7 @@ import { roleIn, writesDoc, type RoomRole } from "./collab/participants";
 import { DataflowDocProvider, KEPT_WAIT_MS } from "./collab/docProvider";
 import { CONNECTION_DROPPED_EVENT, DataflowDocContext, type DocBinding } from "./collab/docContext";
 import { HISTORY_CHANGED_EVENT } from "./history/serverHistory";
+import { DATASET_REQUESTS_CHANGED_EVENT } from "../services/datasetCatalog/datasetRequests";
 import { remoteCursorStyle } from "./collab/presence";
 import { useAgentsWriting } from "./collab/agentHolds";
 
@@ -185,7 +186,8 @@ export interface CollabContextValue {
      * Subscribe to incoming remote events. Returns an unsubscribe fn.
      * Event names mirror the backend's outgoing events: the room's
      * (``events.py``, ``roles.py``), ``connection_dropped``
-     * (``dataflow_docs.py``) and ``history_changed`` (``history.py``).
+     * (``dataflow_docs.py``), ``history_changed`` (``history.py``) and
+     * ``dataset_requests_changed`` (``datasets/application/editor_requests.py``).
      */
     onRemote: (event: string, handler: RemoteHandler) => () => void;
 }
@@ -223,6 +225,7 @@ const REMOTE_EVENTS = [
     "node_unlocked",
     CONNECTION_DROPPED_EVENT,
     HISTORY_CHANGED_EVENT,
+    DATASET_REQUESTS_CHANGED_EVENT,
 ] as const;
 
 export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
