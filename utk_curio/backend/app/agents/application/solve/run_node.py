@@ -20,6 +20,7 @@ from utk_curio.backend.app.agents.application import spec_reads as agents_spec_r
 from utk_curio.backend.app.agents.application.solve import budgets as agents_budgets
 from utk_curio.backend.app.agents.application.solve import validate as agents_validate
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
+from utk_curio.backend.app.agents.application.turns import roster as agents_roster
 from utk_curio.backend.app.collaboration import dataflow_docs
 
 
@@ -134,6 +135,10 @@ def _run_node_events(
             ),
             formats=dataset_formats,
         )
+        # The dataflow's template roster, which Solve's runs classify its
+        # nodes by: without it, a node of a package the dataflow's store
+        # holds and the catalog does not read as one with no code to run.
+        templates = agents_roster._roster_templates(user_key, project_id)
 
         def _run():
             try:
@@ -141,6 +146,7 @@ def _run_node_events(
                     user_key, project_id, spec, node_id,
                     candidate_content=None,
                     session_id=artifact_session,
+                    templates=templates,
                     exec_fn=exec_fn,
                     acting_user=acting_user,
                     dataset_paths=dataset_paths or None,

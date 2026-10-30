@@ -90,7 +90,11 @@ def dataflow_package_payloads(owners) -> list[dict]:
     :func:`installed_package_payloads` and in its order, each ``readOnly``.
     A canvas of the dataflow that is not its owner's, an invited editor's or
     a watcher's, draws the nodes of a package it does not hold from these.
-    Manifests only: nothing is copied or written."""
+    Manifests only: nothing is copied or written.
+
+    A lock owner, as :func:`installed_package_payloads` is: the enumeration
+    and the manifests are read under one hold of the owner's store's seed
+    lock, so a seed or an install there is never seen halfway."""
     # Read before the store's lock, which reading what the dataflow uses takes.
     used = owners.used
     out: list[dict] = []
