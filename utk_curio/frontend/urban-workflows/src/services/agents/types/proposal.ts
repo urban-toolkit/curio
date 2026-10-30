@@ -1,25 +1,25 @@
 /**
- * Review-before-apply: proposal parts and statuses, dataflow plans, apply results, and the builder session (the plan's per-node ledger).
+ * An agent's changes and the installs a person reviews: change and proposal parts and statuses, dataflow plans, apply and Undo results, and the builder session (the plan's per-node ledger).
  *
  * Split out of `api/agentsApi.ts` (memo dev/142, F1); every shape keeps its name.
  */
 
+import type { AgentCanvasMutation } from "../agentEvents";
 import type { AgentSourceRef, AgentValidationAttempt } from "./evidence";
 
-/** The activeProposal mirror row (dev/41; dev/67-5/8/9 extensions). */
+/** The activeProposal mirror row (dev/41): an install a person reviews; and
+ * `planProposal`, the plan the agent landed. */
 export interface AgentProposalSummary {
   proposalId: string;
   tool: string;
   nodeId: string;
   summary: string;
   status: AgentProposalStatus;
-  /** dev/67-5 (plan proposals): review-stage goal edits, ref-keyed. */
-  editedGoals?: Record<string, string>;
-  /** dev/67-5 (plan proposals): refs already applied per-node. */
+  /** A landed plan: the refs it placed. */
   appliedRefs?: string[];
-  /** dev/67-8 (plan proposals): edge index → planned|applied|refused. */
-  edgeStates?: Record<string, string>;
-  /** #662 (plan proposals): scenario index → applied|refused, once any is. */
+  /** A landed plan: ref → the node it placed. */
+  nodeIds?: Record<string, string>;
+  /** #662 (plans): scenario index → applied|refused, once any is. */
   scenarioStates?: Record<string, string>;
 }
 
@@ -91,7 +91,7 @@ export interface AgentAppliedScenario {
 export interface AgentBuilderSession {
   /** dev/115: `interrupted` — the server stopped while solving (DEC-021);
    * Retry starts a new execution linked to it, nothing is replayed. */
-  phase: "idle" | "plan_review" | "simulating" | "applied" | "solving" | "ready" | "interrupted";
+  phase: "idle" | "applied" | "solving" | "ready" | "interrupted";
   /** dev/115: when the session was reconciled to `interrupted`, and the
    * execution that expired with the process. */
   interruptedAt?: number;
@@ -104,16 +104,13 @@ export interface AgentBuilderSession {
   nodeStates?: Record<string, string>;
   /** dev/67-5: plan ref → the created node's real id. */
   nodeIds?: Record<string, string>;
-  /** dev/67-8: edge index → planned|applied|refused. */
-  edgeStates?: Record<string, string>;
   /** dev/67-9: the ref the driver is working on, while running. */
   currentRef?: string;
   /** dev/67-9: why the sequence paused — a plain reason with a next action. */
-  pauseReason?: { kind: string; ref?: string; proposalId?: string; message: string };
-  /** dev/67-9: ref → its validated content proposal. dev/72 homes the
-   * proposal on the node's own agent — the object shape carries where it
-   * lives; legacy string values mean builder-homed. */
-  nodeProposals?: Record<string, string | { proposalId: string; attachmentId?: string | null }>;
+  pauseReason?: { kind: string; ref?: string; message: string };
+  /** ref → the change its validated code landed as, and the attachment
+   * whose chat holds it (dev/72: the node's own agent). */
+  nodeChanges?: Record<string, { changeId: string; attachmentId?: string | null }>;
 }
 
 /** dev/114: the proposal's source block — bounded plain data. */
@@ -126,14 +123,15 @@ export interface AgentProposalSource {
 export type AgentProposalStatus = "pending" | "applied" | "dismissed" | "superseded" | "stale";
 
 /**
- * A review-before-apply proposal (memo dev/41): runtime-minted when a granted
- * mutate tool is requested. Only the authenticated apply endpoint executes
+ * An install a person reviews (memo dev/41): runtime-minted when a granted
+ * install tool is requested. Only the authenticated apply endpoint executes
  * it; the part is the transcript's display record of the outcome.
  */
 export interface AgentProposalPart {
   type: "proposal";
   proposalId: string;
-  /** "node.content.write" | "node.settings.write" | "node.create" | "project.install" | "package.draft.apply" | future kinds. */
+  /** "package.install" | "package.draft.apply" | "dataset.install" | "discovery.acquire" | "project.install" | future kinds;
+   * or a change tool (`landsAsAChange`) in a review saved before agents changed the dataflow directly. */
   tool: string;
   summary: string;
   /** The full proposed content (plain text — rendered inert). */
@@ -274,8 +272,57 @@ export interface AgentProposalPart {
   };
 }
 
+/** The kinds of an agent's change: a node's code, its settings, a new node,
+ * a plan. Undo works by kind. */
+export type AgentChangeKind = "content" | "settings" | "node" | "plan";
+
+export type AgentChangeStatus = "applied" | "undone";
+
+/**
+ * A change an agent made to the dataflow, landed at once as a person's edit
+ * lands (`proposals/changes.py`): its card in the chat says what it did and
+ * offers its Undo. The display fields are its mint's: a node's code as the
+ * preview, a settings change's lines, a plan's nodes, removals and scenarios.
+ */
+export interface AgentChangePart
+  extends Omit<AgentProposalPart, "type" | "proposalId" | "pins" | "status" | "tool"> {
+  type: "change";
+  changeId: string;
+  /** The tool that made it: "node.content.write" | "node.settings.write" | "node.create" | "dataflow.plan.write". */
+  tool: string;
+  kind: AgentChangeKind | string;
+  status: AgentChangeStatus | string;
+  /** What it did, a line each: the node it wrote, the settings it set, a plan's counts. */
+  lines: string[];
+  nodeId?: string;
+  /** A plan's id: its rows read the attachment's ledger by it. */
+  planId?: string;
+  /** A new node's kind, and the roster's answer to whether the sandbox can
+   * run it (dev/119, DEC-076): display only. */
+  nodeType?: string;
+  executable?: boolean;
+}
+
+/** A change that landed, as a run's `change` event and a blocking run's
+ * `changes` carry it: a canvas no doc binds takes `canvas`. */
+export interface AgentLandedChange {
+  changeId: string;
+  attachmentId: string | null;
+  tool: string;
+  canvas: AgentCanvasMutation | AgentCanvasMutation[];
+}
+
+/** The Undo endpoint's answer: the change's new status and the canvas
+ * mutations a canvas no doc binds takes. */
+export interface AgentUndoResult {
+  attachmentId: string;
+  changeId: string;
+  status: AgentChangeStatus;
+  canvas: AgentCanvasMutation[];
+}
+
 /** dev/52 DR-1: the model-emitted typed plan part (informational until the
- * runtime mints the reviewed proposal from it). */
+ * runtime lands the plan from it). */
 export interface AgentDataflowPlanPart {
   type: "dataflowPlan";
   goal: string;
@@ -312,145 +359,24 @@ export interface AgentCreatedNodePayload {
   };
 }
 
-/** Apply-endpoint response (dev/41 base + the dev/48/52 bridge payloads). */
+/** Apply-endpoint response: an install a person reviewed (dev/41 base + the
+ * dev/89 bridge payload). */
 export interface AgentApplyResult {
   attachmentId: string;
   proposalId: string;
   status: AgentProposalStatus;
   mutationApplied?: boolean;
-  /** node.create: the inserted node, for the live canvas. */
-  createdNode?: AgentCreatedNodePayload;
-  /** node.content.write: the applied content, for the live node, and the
-   * name of the agent that wrote it. */
-  appliedContent?: { nodeId: string; content: string; agent?: string };
-  /** node.settings.write: the change the saved node took, which the live
-   * node takes through its own setters, and the name of the agent that
-   * proposed it. */
-  appliedSettings?: { nodeId: string; settings: AgentNodeSettings; agent?: string };
   /** project.install: the installed agent coordinate. */
   installedCoord?: string;
-  /** dataflow.plan.write (dev/52; removals per dev/59): the applied plan
-   * graph delta, for the live canvas. */
-  appliedGraph?: {
-    nodes: AgentCreatedNodePayload[];
-    edges: Array<{
-      id: string;
-      source: string;
-      target: string;
-      /** dev/67-3: explicit handles from the apply (input circles in_N). */
-      sourceHandle?: string;
-      targetHandle?: string;
-      /** dev/112: `"Interaction"` for a feedback edge. */
-      type?: string;
-    }>;
-    removedNodeIds?: string[];
-    removedEdgeIds?: string[];
-    /** #662: the scenarios the plan saved. */
-    scenarios?: AgentAppliedScenario[];
-  };
-  /** dev/126: the plan-node agents this apply attached (Node Builder on every
-   * created node, Dataset Finder on every data-loading one) — and anything it
-   * could not, with the reason. */
-  attachedAgents?: AgentAttachedAgentRow[];
-  skippedAgents?: AgentAttachedAgentRow[];
-  /** dataflow.plan.write: the builder session after apply. */
-  builderSession?: AgentBuilderSession | null;
+  /** dataset.install: the installed dataset. */
+  installedDataset?: { id: string; name: string };
   /** package.install / package.draft.apply: the installed package. */
   installedPackage?: { dirName: string; name: string; replaced?: boolean };
   /** package.draft.apply (dev/89): the requested nodes inserted after the
-   * reviewed install — painted only after the registry refresh. */
+   * reviewed install; package.install: the notes it placed. Painted only
+   * after the registry refresh. */
   createdNodes?: AgentCreatedNodePayload[];
-  /** package.draft.apply (dev/89): the frontend must refresh the package/
-   * behavior/template registries BEFORE painting createdNodes. */
+  /** package.draft.apply (dev/89), package.install: the frontend must refresh
+   * the package/behavior/template registries BEFORE painting createdNodes. */
   requiresRegistryRefresh?: boolean;
-  /** package.install (dev/105 A3): the note proposals the apply queued below
-   * the install card, in order — the caller applies them one at a time so
-   * each note lands before the next card is applied. */
-  followUpProposals?: string[];
-}
-
-/** What left the dataflow when an apply completed a plan that removes: its
- * nodes and connections, for the live canvas. Present on the row or Connect
- * all that completes the plan. */
-export interface AgentPlanRemovals {
-  removedNodeIds?: string[];
-  removedEdgeIds?: string[];
-}
-
-/** dev/67-5 apply-node response: one created node + the per-node ledger. */
-export interface AgentPlanNodeApplyResult extends AgentPlanRemovals {
-  attachmentId: string;
-  proposalId: string;
-  /** "applied" when this row completed the plan. */
-  status: "pending" | "applied" | "already-applied";
-  ref: string;
-  /** already-applied only: the existing node's id. */
-  nodeId?: string;
-  /** The created node, for the canvas bridge (absent on already-applied). */
-  createdNode?: AgentCreatedNodePayload;
-  appliedRefs: string[];
-  /** dev/71: edges the progressive sweep drew in THIS apply (bridge payload). */
-  createdEdges?: Array<{
-    id: string;
-    source: string;
-    target: string;
-    sourceHandle?: string;
-    targetHandle?: string;
-    type?: string; // dev/112
-  }>;
-  /** dev/71: the sweep's per-edge outcomes (index-keyed; refusals named). */
-  edgeResults?: Record<
-    string,
-    { status: string; reason?: string; fromLabel?: string; toLabel?: string }
-  >;
-  edgeStates?: Record<string, string>;
-  /** #662: the scenarios this node completed, and which of the plan's are saved. */
-  createdScenarios?: AgentAppliedScenario[];
-  scenarioStates?: Record<string, string>;
-  /** dev/71: the auto-attached Node Builder's attachment id (null = skipped). */
-  attachedAgentId?: string | null;
-  /** dev/126: every agent this apply gave the created node(s) — and anything
-   * it could not, with the reason. Both apply paths report it. */
-  attachedAgents?: AgentAttachedAgentRow[];
-  skippedAgents?: AgentAttachedAgentRow[];
-  builderSession?: AgentBuilderSession | null;
-}
-
-/** dev/126: one plan-node agent attachment an apply made (or could not). */
-export interface AgentAttachedAgentRow {
-  nodeId: string;
-  agentId: string;
-  attachmentId?: string | null;
-  status: "attached" | "existing" | "skipped" | string;
-  reason?: string;
-}
-
-/** dev/67-8 apply-edges response: per-edge outcomes + the bridge payload. */
-export interface AgentPlanEdgesResult extends AgentPlanRemovals {
-  attachmentId: string;
-  proposalId: string;
-  status: AgentProposalStatus;
-  results: Record<
-    string,
-    {
-      status: "applied" | "refused" | "already-applied";
-      fromLabel: string;
-      toLabel: string;
-      edgeId?: string;
-      targetHandle?: string;
-      kind?: "interaction"; // dev/112
-      reason?: string;
-      note?: string;
-    }
-  >;
-  edgeStates: Record<string, string>;
-  createdEdges: Array<{
-    id: string;
-    source: string;
-    target: string;
-    sourceHandle?: string;
-    targetHandle?: string;
-    type?: string; // dev/112
-  }>;
-  builderSession?: AgentBuilderSession | null;
 }

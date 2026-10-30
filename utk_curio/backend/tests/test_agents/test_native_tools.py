@@ -334,30 +334,31 @@ class TestANativeCall:
 
 
 class TestMutations:
-    def test_a_native_create_call_mints_the_proposal(self, client, headers, project):
+    def test_a_native_create_call_lands_the_node(self, client, headers, project):
         att = _attach(client, headers, project, NB)
         testing_provider.push_replies(
             {"toolCalls": [_call("node.create", {"nodeType": CA, "content": "return 2", "title": "Two"})]},
-            "Proposed a node.",
+            "Added a node.",
         )
         body = _run(client, headers, project, att)
-        (proposal,) = [p for p in body["content"] if p["type"] == "proposal"]
-        assert proposal["tool"] == "node.create"
+        assert not [p for p in body["content"] if p["type"] == "proposal"]
+        (change,) = [p for p in body["content"] if p["type"] == "change"]
+        assert change["tool"] == "node.create"
         result = _run_calls()[1][-1]
-        assert result["is_error"] is False and result["content"].startswith("proposal ")
+        assert result["is_error"] is False and "is on the canvas" in result["content"], result["content"]
 
     def test_a_refused_create_call_is_an_error_the_model_can_fix(self, client, headers, project):
         att = _attach(client, headers, project, NB)
         testing_provider.push_replies(
             {"toolCalls": [_call("node.create", {"nodeType": CA})]},
             {"toolCalls": [_call("node.create", {"nodeType": CA, "content": "return 3"})]},
-            "Proposed.",
+            "Added.",
         )
         body = _run(client, headers, project, att)
         refused = _run_calls()[1][-1]
         assert refused["is_error"] is True
         assert refused["content"] == "refused: params.content must be a non-empty string"
-        assert [p["tool"] for p in body["content"] if p["type"] == "proposal"] == ["node.create"]
+        assert [p["tool"] for p in body["content"] if p["type"] == "change"] == ["node.create"]
 
     def test_the_plan_is_a_call_whose_errors_come_back_as_its_result(self, client, headers, project):
         att = _attach(client, headers, project, DFB)
@@ -367,12 +368,17 @@ class TestMutations:
         testing_provider.push_replies(
             {"toolCalls": [_call("dataflow.plan.write", {**plan, "goal": ""})]},
             {"toolCalls": [_call("dataflow.plan.write", plan)]},
-            "Here is the plan.",
+            "The plan is on the canvas.",
         )
         body = _run(client, headers, project, att)
         rejected = _run_calls()[1][-1]
         assert rejected["is_error"] is True and "goal" in rejected["content"]
-        assert [p["tool"] for p in body["content"] if p["type"] == "proposal"] == ["dataflow.plan.write"]
+        assert [p["tool"] for p in body["content"] if p["type"] == "change"] == ["dataflow.plan.write"]
+        assert not [p for p in body["content"] if p["type"] == "proposal"]
+        # The call's result says what landed and ends with the Topology verdict.
+        landed = _run_calls()[2][-1]
+        assert landed["is_error"] is False, landed
+        assert "the plan added 1 node and 1 connection. Topology: acyclic." in landed["content"], landed["content"]
         assert _offered()[0]["tools"][1] == "dataflow__plan__write"
 
 

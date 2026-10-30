@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { AgentRemedy } from "../../services/agents";
-import { agentsApi, type AgentAttachmentsState } from "../../services/agents";
+import { agentsApi, bridgeLandedChangeEvent, notifyAgentChangesLanded, type AgentAttachmentsState } from "../../services/agents";
 import type { AgentRunSkillPins, AgentSessionTurn, AgentToolCall, AgentUsage } from "../../services/agents/types";
 import type { AgentRunStatus } from "../../services/agents/agentRunStatus";
 
@@ -161,6 +161,8 @@ export function useAgentSession(
       appendTurns(attachmentId, [{ role: "user", text: message }]);
       let streamed = "";
       let succeeded = false;
+      // A proposal or a change the reply made: the listing's mirrors (an
+      // install's review, the attachment's changes and plan) moved with it.
       let sawProposal = false;
       // Run status (memo dev/80): `running` from here until the same
       // synchronous block that lands the final turn finalizes it.
@@ -205,7 +207,7 @@ export function useAgentSession(
             }
           : undefined;
         const content = result.content && result.content.length ? result.content : undefined;
-        sawProposal = sawProposal || Boolean(content?.some((p) => p.type === "proposal"));
+        sawProposal = sawProposal || Boolean(content?.some((p) => p.type === "proposal" || p.type === "change"));
         // Same synchronous block as the turn landing (dev/80): React 18
         // batches both updates into one commit. Status first as
         // defense-in-depth: the safe intermediate is "done beside partial
@@ -225,6 +227,12 @@ export function useAgentSession(
             if (!cur || cur.phase !== "running") return prev;
             return { ...prev, [attachmentId]: { ...cur, liveUsage: usage } };
           });
+          return;
+        }
+        // A change the agent made landed on the server: a canvas no doc binds
+        // takes it now, before the reply ends.
+        if (bridgeLandedChangeEvent(name, payload)) {
+          sawProposal = true;
           return;
         }
         if (name === "tool_result") toolCalls.push(toolCallOf(payload));
@@ -266,6 +274,10 @@ export function useAgentSession(
           // again.
           try {
             const result = await state.run(attachmentId, message, context);
+            // What landed, which the stream would have sent as change events.
+            for (const landed of (result as { changes?: Array<{ canvas: unknown }> }).changes ?? []) {
+              notifyAgentChangesLanded(landed.canvas);
+            }
             const { execution, content } = landTurn(result, []);
             appendTurns(attachmentId, [
               { role: "agent", text: result.reply, ...(execution ? { execution } : {}), ...(content ? { content } : {}) },
@@ -286,7 +298,8 @@ export function useAgentSession(
         // (the durable record is execution.toolCalls, dev/41).
         setToolActivity((prev) => ({ ...prev, [attachmentId]: [] }));
       }
-      // A minted proposal changes the attachment's activeProposal mirror.
+      // A minted proposal changes the attachment's activeProposal mirror; a
+      // change its changes, and a plan its builder session.
       if (succeeded && (untitled || sawProposal)) await state.reload();
     },
     [appendTurns, replaceLastAgentTurn, appendErrorTurn, state.run, state.reload, state.attachments],

@@ -136,6 +136,28 @@ def _proposals(body):
     return [p for p in body["content"] if p["type"] == "proposal"]
 
 
+def _changes(body):
+    """The cards of the changes that landed with a run's reply."""
+    return [p for p in body["content"] if p["type"] == "change"]
+
+
+def _the_change(body) -> dict:
+    """The reply's one change card; the parts it holds instead when it has none."""
+    cards = _changes(body)
+    assert len(cards) == 1, [p["type"] for p in body["content"]]
+    return cards[0]
+
+
+def _landed_plan(body) -> dict:
+    """The plan that landed with a blocking run's reply, shaped as an apply's
+    answer was: its graph (``appliedGraph``) is the canvas mutation the reply
+    carries for a canvas no doc binds."""
+    assert not _proposals(body), "a plan waited for review"
+    landed = [c for c in body.get("changes") or [] if c["tool"] == "dataflow.plan.write"]
+    assert len(landed) == 1, body.get("changes")
+    return {"appliedGraph": landed[0]["canvas"]}
+
+
 def _fake_probe(monkeypatch, verdicts: dict, counter: list | None = None):
     def _verify(url, **kw):
         if counter is not None:
@@ -171,7 +193,7 @@ class TestRegression298:
             "Proposed — review it above.",
         ])
         body = _run(client, token, project, att, "build a node that loads Brazilian IBGE demographics")
-        proposals = _proposals(body)
+        proposals = _changes(body)
         assert len(proposals) == 1
         source = proposals[0]["source"]
         assert source["kind"] == "catalog"
@@ -200,7 +222,7 @@ class TestRegression298:
             "I cannot ground that file — please tell me where the boundary file is.",
         ])
         body = _run(client, token, project, att)
-        assert _proposals(body) == []
+        assert _changes(body) == [] and _proposals(body) == []
         assert "bras_geosampa_boundary.shp" in calls[1][-1]["content"]
         assert "please tell me where" in body["reply"]
 
@@ -229,7 +251,7 @@ class TestCatalogGrounding:
             "Proposed.",
         ])
         body = _run(client, token, project, att, "load my file data/tracts.geojson into a node")
-        [proposal] = _proposals(body)
+        proposal = _the_change(body)
         assert proposal["source"]["kind"] == "user-path"
         assert proposal["source"]["refs"][0]["value"] == "data/tracts.geojson"
 
@@ -252,7 +274,7 @@ class TestCatalogGrounding:
             "Which dataset should the node load?",
         ])
         body = _run(client, token, project, att, f"Build a data-loading node for the {asked} dataset.")
-        assert _proposals(body) == []
+        assert _changes(body) == [] and _proposals(body) == []
         refusal = calls[1][-1]["content"]
         assert "refused" in refusal.split("\n", 1)[0]
         assert asked in refusal and other in refusal
@@ -276,7 +298,7 @@ class TestCatalogGrounding:
             "Proposed.",
         ])
         body = _run(client, token, project, att, f"Build a data-loading node for {asked}.")
-        [proposal] = _proposals(body)
+        proposal = _the_change(body)
         assert {ref["datasetId"] for ref in proposal["source"]["refs"]} == {asked, boundary}
 
     def _two_turns(self, client, token, project, monkeypatch, asked, loaded):
@@ -294,7 +316,7 @@ class TestCatalogGrounding:
             "Done.",
         ])
         first = _run(client, token, project, att, f"Load the {asked} dataset into a node.")
-        assert _proposals(first) == []
+        assert _changes(first) == [] and _proposals(first) == []
         return _run(client, token, project, att, "go ahead"), calls
 
     def test_go_ahead_keeps_the_dataset_named_in_the_turn_before(self, client, user_and_token, tmp_curio, project, monkeypatch):
@@ -305,7 +327,7 @@ class TestCatalogGrounding:
         asked = seed(user, filename="building_footprints.csv")
         other = seed(user, filename="cook_buildings_2022.csv")
         body, calls = self._two_turns(client, token, project, monkeypatch, asked, other)
-        assert _proposals(body) == []
+        assert _changes(body) == [] and _proposals(body) == []
         [refusal] = [t for t in _tool_results(calls[-1], "node.create") if "refused" in t.split("\n", 1)[0]]
         assert asked in refusal and other in refusal
 
@@ -316,7 +338,7 @@ class TestCatalogGrounding:
         asked = seed(user, filename="building_footprints.csv")
         seed(user, filename="cook_buildings_2022.csv")
         body, _calls = self._two_turns(client, token, project, monkeypatch, asked, asked)
-        [proposal] = _proposals(body)
+        proposal = _the_change(body)
         assert [ref["datasetId"] for ref in proposal["source"]["refs"]] == [asked]
 
 
@@ -420,13 +442,13 @@ class TestExternalDiscovery:
         assert ext == {NOAA: "verified", GHOST: "unreachable"}
         # Catalog rows are tool-grounded: the invented id is dropped.
         assert [r["datasetId"] for r in part["lanes"]["catalog"]] == [dataset_id]
-        assert _proposals(body) == []
+        assert _changes(body) == [] and _proposals(body) == []
         # The child was handed the catalog and the ONE reply schema (#269).
         child_frame = calls[1][-1]["content"]
         assert '"catalog"' in child_frame and dataset_id in child_frame
         assert "datasetCandidates" in child_frame and "discoveryReplyContract" in child_frame
         # The parent learned the outcome and the two-turn rule.
-        assert "shown to the user for review" in calls[2][-1]["content"]
+        assert "shown to the user to choose from" in calls[2][-1]["content"]
         assert "1 catalog row(s) were dropped" in calls[2][-1]["content"]
         entry = next(p for p in body["content"] if p["type"] == "delegation")
         assert entry["status"] == "ok" and "select and confirm" in entry["summary"]
@@ -437,8 +459,8 @@ class TestExternalDiscovery:
             client, user, token, project, monkeypatch,
             extra_replies=[_create_tail(f'import requests\nr = requests.get("{NOAA}", timeout=10)\nreturn r.json()')],
         )
-        assert _proposals(body) == []
-        assert "shown to the user for review: do not propose a node in this turn" in calls[3][-1]["content"]
+        assert _changes(body) == [] and _proposals(body) == []
+        assert "shown to the user to choose from: do not add a node in this turn" in calls[3][-1]["content"]
 
     def test_next_turn_create_with_the_verified_url_is_grounded_without_a_new_probe(self, client, user_and_token, tmp_curio, project, monkeypatch):
         user, token = user_and_token
@@ -451,7 +473,7 @@ class TestExternalDiscovery:
             "Proposed — review above.",
         ])
         body = _run(client, token, project, att, "Build the data-loading node from NOAA Climate Data API")
-        [proposal] = _proposals(body)
+        proposal = _the_change(body)
         assert proposal["source"]["kind"] == "external"
         assert proposal["source"]["refs"][0]["value"] == NOAA
         assert proposal["source"]["refs"][0]["verification"]["status"] == "verified"
@@ -467,7 +489,7 @@ class TestExternalDiscovery:
             "That endpoint does not answer — do you have another source?",
         ])
         body = _run(client, token, project, att)
-        assert _proposals(body) == []
+        assert _changes(body) == [] and _proposals(body) == []
         assert "answered 404" in calls[1][-1]["content"]
 
     def test_a_url_in_the_users_prompt_is_not_evidence(self, client, user_and_token, tmp_curio, project, monkeypatch):
@@ -481,7 +503,7 @@ class TestExternalDiscovery:
             "Not reachable.",
         ])
         body = _run(client, token, project, att, f"Ask Node Builder: author a fetch node for Ghost — endpoint {GHOST}, format JSON")
-        assert _proposals(body) == []
+        assert _changes(body) == [] and _proposals(body) == []
         assert "answered 404" in calls[1][-1]["content"]
 
     def test_a_guessed_local_filename_never_passes_even_with_external_context(self, client, user_and_token, tmp_curio, project, monkeypatch):
@@ -489,7 +511,7 @@ class TestExternalDiscovery:
         att, _, _, _ = self._discover_run(client, user, token, project, monkeypatch)
         calls = _script(monkeypatch, [_create_tail('df = pd.read_csv("noaa_climate.csv")\nreturn df'), "hm"])
         body = _run(client, token, project, att, "Build the data-loading node from NOAA Climate Data API")
-        assert _proposals(body) == []
+        assert _changes(body) == [] and _proposals(body) == []
         assert "'noaa_climate.csv' (line 1)" in calls[1][-1]["content"]
 
     def test_credential_gated_endpoint_is_grounded_with_the_requirement(self, client, user_and_token, tmp_curio, project, monkeypatch):
@@ -498,7 +520,7 @@ class TestExternalDiscovery:
         att = _attach(client, token, project, NB)
         _fake_probe(monkeypatch, {NOAA: {"status": "unreachable", "httpStatus": 401, "detail": "the endpoint answered 401"}})
         _script(monkeypatch, [_create_tail(f'import requests\nreturn requests.get("{NOAA}").json()'), "Proposed."])
-        [proposal] = _proposals(_run(client, token, project, att))
+        proposal = _the_change(_run(client, token, project, att))
         assert proposal["source"]["refs"][0]["requirement"] == "credential-gated"
         assert "credential-gated" in proposal["source"]["label"]
 
@@ -640,7 +662,7 @@ class TestUnavailableSource:
             "I could not verify any source for this data. Please give me a file path or a working URL.",
         ])
         body = _run(client, token, project, att)
-        assert _proposals(body) == []
+        assert _changes(body) == [] and _proposals(body) == []
         assert "Please give me a file path" in body["reply"]
         assert all("refused" in c[-1]["content"] for c in calls[1:4])
         spec = projects_storage.read_spec(_user_dir_key(user), project)
@@ -655,7 +677,7 @@ class TestSyntheticData:
         _install(client, token, project, NB)
         att = _attach(client, token, project, NB)
         _script(monkeypatch, [_create_tail(self.INLINE, goal="synthetic sample", synthetic=True), "Proposed."])
-        [proposal] = _proposals(_run(client, token, project, att, "generate synthetic sample data for 5 tracts"))
+        proposal = _the_change(_run(client, token, project, att, "generate synthetic sample data for 5 tracts"))
         assert proposal["source"]["kind"] == "synthetic"
         assert "no external source" in proposal["source"]["label"]
 
@@ -665,7 +687,7 @@ class TestSyntheticData:
         att = _attach(client, token, project, NB)
         calls = _script(monkeypatch, [_create_tail(self.INLINE, synthetic=True), "hm"])
         body = _run(client, token, project, att, "load the IBGE demographic data for the tracts")
-        assert _proposals(body) == []
+        assert _changes(body) == [] and _proposals(body) == []
         assert "no grounded source" in calls[1][-1]["content"]
 
     def test_computation_nodes_are_untouched(self, client, user_and_token, tmp_curio, project, monkeypatch):
@@ -673,7 +695,7 @@ class TestSyntheticData:
         _install(client, token, project, NB)
         att = _attach(client, token, project, NB)
         _script(monkeypatch, [_create_tail("df = input_0[0]\nreturn df.describe()", node_type=CA), "Proposed."])
-        [proposal] = _proposals(_run(client, token, project, att, "summarize the upstream frame"))
+        proposal = _the_change(_run(client, token, project, att, "summarize the upstream frame"))
         assert "source" not in proposal
 
 
@@ -705,12 +727,7 @@ class TestSolveSourceGrounding:
 
         calls = _script(monkeypatch, [_reply])
         body = _run(client, token, project, att, "plan the heat analysis")
-        [proposal] = _proposals(body)
-        applied = client.post(
-            f"/api/agents/projects/{project}/attachments/{att}/proposals/{proposal['proposalId']}/apply",
-            headers=_auth(token),
-        ).get_json()
-        return att, applied, calls
+        return att, _landed_plan(body), calls
 
     def _solve(self, client, token, project, att, node_ids=None):
         payload = {"nodeIds": node_ids} if node_ids is not None else {}
@@ -815,11 +832,7 @@ class TestSolveRequestedDatasets:
         _script(monkeypatch, [
             lambda calls: loader if "[delegated task" in calls[-1][-1]["content"] else plan_tail,
         ])
-        [proposal] = _proposals(_run(client, token, project, att, "plan the footprints"))
-        applied = client.post(
-            f"/api/agents/projects/{project}/attachments/{att}/proposals/{proposal['proposalId']}/apply",
-            headers=_auth(token),
-        ).get_json()
+        applied = _landed_plan(_run(client, token, project, att, "plan the footprints"))
         load = next(n["id"] for n in applied["appliedGraph"]["nodes"] if str(n.get("type", "")).startswith(DL))
         return att, load, asked, other
 
@@ -842,34 +855,33 @@ class TestSolveRequestedDatasets:
         assert asked in result["error"] and other in result["error"]
         assert self._content(user, project, load) == ""
 
-    def test_an_unverified_proposing_solve_refuses_it_too(self, client, user_and_token, tmp_curio, project, monkeypatch):
+    def test_an_unverified_streamed_solve_refuses_it_too(self, client, user_and_token, tmp_curio, project, monkeypatch):
         user, token = user_and_token
         att, load, asked, other = self._applied_plan(client, user, token, project, monkeypatch)
         r = client.post(
             f"/api/agents/projects/{project}/attachments/{att}/solve/stream",
-            json={"mode": "propose", "verify": False}, headers=_auth(token),
+            json={"verify": False}, headers=_auth(token),
         )
         events = routes_solve.TestStreamedSolve()._sse_events(r)
         results = [p for k, p in events if k == "node_result" and p.get("nodeId") == load]
         assert results and all(p["status"] == "failed" for p in results), results
         assert asked in results[-1]["error"] and other in results[-1]["error"]
-        assert not any(p.get("proposalId") for p in results)
         assert self._content(user, project, load) == ""
 
-    def test_an_unverified_proposing_solve_proposes_the_requested_dataset(self, client, user_and_token, tmp_curio, project, monkeypatch):
-        """#880: the review mint of a proposing Solve without verification ran
-        without the batch's catalog listing, so it refused every catalog
-        dataset, the requested one too, as not in the project's Data Catalog."""
+    def test_an_unverified_streamed_solve_writes_the_requested_dataset(self, client, user_and_token, tmp_curio, project, monkeypatch):
+        """#880: an unverified Solve's checks run with the batch's catalog
+        listing, so the requested catalog dataset is accepted and written, not
+        refused as not in the project's Data Catalog."""
         user, token = user_and_token
         att, load, asked, _other = self._applied_plan(client, user, token, project, monkeypatch, load_the_asked=True)
         r = client.post(
             f"/api/agents/projects/{project}/attachments/{att}/solve/stream",
-            json={"mode": "propose", "verify": False}, headers=_auth(token),
+            json={"verify": False}, headers=_auth(token),
         )
         events = routes_solve.TestStreamedSolve()._sse_events(r)
         result = next(p for k, p in events if k == "node_result" and p.get("nodeId") == load)
-        assert result["status"] == "proposed" and result.get("proposalId"), result
-        assert self._content(user, project, load) == ""  # proposed, not written
+        assert result["status"] == "solved", result
+        assert asked in self._content(user, project, load)
 
 
 class TestContentReviewMintInheritsTheGate:
@@ -883,9 +895,9 @@ class TestContentReviewMintInheritsTheGate:
             "The generated content could not be grounded; which file should it load?",
         ])
         body = _run(client, token, project, att, "fill this node")
-        assert _proposals(body) == []
+        assert _changes(body) == [] and _proposals(body) == []
         result = calls[2][-1]["content"]
-        assert "could not become a reviewed proposal" in result
+        assert "could not be written into the node" in result
         assert "bras_ibge_data.csv" in result
         entry = next(p for p in body["content"] if p["type"] == "delegation")
         assert entry["status"] == "ok"  # the child ran; the mint refused honestly
@@ -917,7 +929,7 @@ class TestContentForANewNode:
         assert task.startswith("[delegated task")
         assert '"sourceGrounding"' not in task
         assert '"nodeContext"' not in task
-        assert _proposals(body) == []  # the loader's own content is offered no change
+        assert _changes(body) == [] and _proposals(body) == []  # the loader's own content is offered no change
 
     def test_an_analysis_builder_writing_a_loader_is_handed_its_sources(
         self, client, user_and_token, tmp_curio, monkeypatch

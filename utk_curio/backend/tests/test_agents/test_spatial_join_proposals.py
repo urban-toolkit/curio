@@ -1,7 +1,8 @@
 """A Spatial Join's operation and output, set by an agent: a Dataflow Builder
-plan and a Node Builder node.create, through the real mint, the review card
-and both applies. A setting the join does not take, or one on a node that is
-no Spatial Join, comes back to the model as an error naming it.
+plan and a Node Builder node.create, through the real mint and the change
+that lands. A setting the join does not take, or one on a node that is no
+Spatial Join, comes back to the model as an error naming it, and nothing
+lands.
 
 The helpers are the proposal route tests' own, reached through their module so
 this one collects none of their tests.
@@ -60,13 +61,16 @@ def _reply(plan: dict) -> str:
     return "Here is the plan.\n```curio.v1\n" + json.dumps({"dataflowPlan": plan}) + "\n```"
 
 
-def _mint(client, user, token, project_id, monkeypatch, replies):
+def _land(client, user, token, project_id, monkeypatch, replies):
+    """The plan the turn landed (its change card, with ``canvas``), or None."""
     helper = routes.TestDataflowPlanMint()
     att_id, calls = helper._setup(client, user, token, project_id, monkeypatch, replies=replies, templates=TEMPLATES)
     r = helper._run(client, token, project_id, att_id)
     assert r.status_code == 200, r.get_json()
-    proposal = next((p for p in r.get_json()["content"] if p["type"] == "proposal"), None)
-    return att_id, proposal, calls
+    body = r.get_json()
+    assert not [p for p in body["content"] if p["type"] == "proposal"], "a plan waited for review"
+    landed = any(p.get("kind") == "plan" for p in routes._changes(body))
+    return att_id, (routes._landed_plan(body) if landed else None), calls
 
 
 def _spec_nodes(user, project_id) -> list[dict]:
@@ -78,16 +82,14 @@ class TestAPlannedJoin:
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
         user, token = user_and_token
-        att_id, proposal, _ = _mint(client, user, token, alice_project, monkeypatch, [_reply(_plan(WITHIN_COUNTS))])
-        assert proposal is not None and proposal["status"] == "pending"
-        rows = {n["ref"]: n for n in proposal["plan"]["nodes"]}
-        # The card shows what the join will do, and nothing for the loaders.
+        _att_id, card, _ = _land(client, user, token, alice_project, monkeypatch, [_reply(_plan(WITHIN_COUNTS))])
+        assert card is not None and card["status"] == "applied"
+        rows = {n["ref"]: n for n in card["plan"]["nodes"]}
+        # The card shows what the join does, and nothing for the loaders.
         assert rows["join"]["spatialJoin"] == WITHIN_COUNTS
         assert "spatialJoin" not in rows["labels"]
         # And the card's text preview, the one line that names it.
-        assert proposal["preview"].count("operation within, output counts") == 1
-        r = routes.TestDataflowPlanApply()._apply(client, token, alice_project, att_id, proposal["proposalId"])
-        assert r.status_code == 200, r.get_json()
+        assert card["preview"].count("operation within, output counts") == 1
         nodes = _spec_nodes(user, alice_project)
         join = next(n for n in nodes if str(n["type"]).startswith(JOIN))
         # Where the node keeps it, so it draws within and counts, not intersects and pairs.
@@ -96,36 +98,36 @@ class TestAPlannedJoin:
         loaders = [n for n in nodes if str(n["type"]).startswith(DL)]
         assert len(loaders) == 2 and all("spatialJoin" not in (n.get("metadata") or {}) for n in loaders)
         # The bridge carries it to the live canvas.
-        created = {n["id"]: n for n in r.get_json()["appliedGraph"]["nodes"]}
+        created = {n["id"]: n for n in card["canvas"]["nodes"]}
         assert created[join["id"]]["metadata"]["spatialJoin"] == WITHIN_COUNTS
 
-    def test_the_node_by_node_apply_writes_it_too(
+    def test_a_nearest_join_lands_with_its_operation_alone(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
         user, token = user_and_token
-        att_id, proposal, _ = _mint(
+        _att_id, card, _ = _land(
             client, user, token, alice_project, monkeypatch, [_reply(_plan({"predicate": "nearest"}))],
         )
-        body = routes.TestPerNodePlanApply()._apply_node(
-            client, token, alice_project, att_id, proposal["proposalId"], "join",
-        ).get_json()
-        assert body["createdNode"]["metadata"] == {"spatialJoin": {"predicate": "nearest"}}
+        join = next(n for n in _spec_nodes(user, alice_project) if str(n["type"]).startswith(JOIN))
+        assert join["metadata"] == {"spatialJoin": {"predicate": "nearest"}}
+        created = {n["id"]: n for n in card["canvas"]["nodes"]}
+        assert created[join["id"]]["metadata"] == {"spatialJoin": {"predicate": "nearest"}}
 
     def test_an_operation_the_join_has_not_is_refused_in_its_own_words(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
         user, token = user_and_token
-        _, proposal, calls = _mint(
+        _, card, calls = _land(
             client, user, token, alice_project, monkeypatch,
             [_reply(_plan({"predicate": "near"})), _reply(_plan({"predicate": "nearest"}))],
         )
-        assert len(calls) == 2, "the plan with an operation the join has not was minted"
+        assert len(calls) == 2, "the plan with an operation the join has not landed"
         assert (
             "nodes[2].spatialJoin: The operation must be one of intersects, within, contains, touches, "
             "overlaps, crosses, nearest; got 'near'."
         ) in calls[1][-1]["content"]
-        # The corrected plan minted.
-        assert {n["ref"]: n for n in proposal["plan"]["nodes"]}["join"]["spatialJoin"] == {"predicate": "nearest"}
+        # The corrected plan landed.
+        assert {n["ref"]: n for n in card["plan"]["nodes"]}["join"]["spatialJoin"] == {"predicate": "nearest"}
 
     def test_a_setting_on_a_node_that_is_no_join_is_refused(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
@@ -133,15 +135,17 @@ class TestAPlannedJoin:
         user, token = user_and_token
         wrong = _plan(WITHIN_COUNTS)
         wrong["nodes"][0]["spatialJoin"] = {"predicate": "within"}
-        _, proposal, calls = _mint(
+        _, card, calls = _land(
             client, user, token, alice_project, monkeypatch, [_reply(wrong), _reply(_plan(WITHIN_COUNTS))],
         )
-        assert len(calls) == 2, "a loader with a join's setting was minted"
+        assert len(calls) == 2, "a loader with a join's setting landed"
         assert (
             "plan node 'labels': a Data Loading node has no operation or output; "
             "only a Spatial Join node takes spatialJoin"
         ) in calls[1][-1]["content"]
-        assert proposal is not None
+        assert card is not None
+        assert all("spatialJoin" not in (n.get("metadata") or {})
+                   for n in _spec_nodes(user, alice_project) if str(n["type"]).startswith(DL))
 
 
 class _JoinNodeBuilder(routes.TestNodeCreate):
@@ -151,38 +155,36 @@ class _JoinNodeBuilder(routes.TestNodeCreate):
         super()._write_builtin_package(user_key, templates or TEMPLATES)
 
 
-class TestAProposedJoin:
+class TestAJoinAnAgentAdds:
     def _run(self, client, user, token, project_id, monkeypatch, *replies):
         helper = _JoinNodeBuilder()
         att_id, calls = helper._setup(client, user=user, token=token, project_id=project_id,
-                                      monkeypatch=monkeypatch, replies=[*replies, "Proposed: review it above."])
+                                      monkeypatch=monkeypatch, replies=[*replies, "Added it."])
         r = helper._run(client, token, project_id, att_id)
         assert r.status_code == 200, r.get_json()
-        proposal = next((p for p in r.get_json()["content"] if p["type"] == "proposal"), None)
+        body = r.get_json()
+        assert not [p for p in body["content"] if p["type"] == "proposal"]
+        card = next((p for p in routes._changes(body) if p["kind"] == "node"), None)
+        created = helper._created(body) if card is not None else None
         # Every recorded call is the one message list the loop appends to, so
         # each node.create result is read by its prefix, never by its index.
-        return helper, att_id, proposal, grounding_routes._tool_results(calls[-1], "node.create")
+        return helper, card, created, grounding_routes._tool_results(calls[-1], "node.create")
 
     def test_its_setting_reaches_the_card_and_the_node(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
-        """A Spatial Join holds no content, so it is proposed without one; a
-        node that holds code still needs its own."""
+        """A Spatial Join holds no content, so it lands without one; a node
+        that holds code still needs its own."""
         user, token = user_and_token
         helper = _JoinNodeBuilder()
         no_code = helper._create_tail_json(nodeType=CA, content="")
         reply = helper._create_tail_json(nodeType=JOIN, title="Nearest label", spatialJoin={"predicate": "nearest"})
-        helper, att_id, proposal, results = self._run(client, user, token, alice_project, monkeypatch, no_code, reply)
-        refused, proposed = results
+        helper, card, created, results = self._run(client, user, token, alice_project, monkeypatch, no_code, reply)
+        refused, landed = results
         assert "params.content must be a non-empty string" in refused, refused
-        assert proposed.startswith("[tool result] node.create: proposed"), proposed
-        assert proposal is not None, "a Spatial Join with no content was not proposed"
-        assert proposal["summary"] == "Create a new Spatial Join node · Nearest label · operation nearest"
-        resp = client.post(
-            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply",
-            headers=_auth(token),
-        )
-        created = resp.get_json()["createdNode"]
+        assert landed.startswith("[tool result] node.create: applied"), landed
+        assert card is not None, "a Spatial Join with no content did not land"
+        assert card["summary"] == "Created a new Spatial Join node · Nearest label · operation nearest"
         assert created["content"] == ""  # a Spatial Join holds no content
         assert created["metadata"] == {"spatialJoin": {"predicate": "nearest"}}
         stored = next(n for n in helper._spec_nodes(user, alice_project) if n["id"] == created["id"])
@@ -193,9 +195,10 @@ class TestAProposedJoin:
     ):
         user, token = user_and_token
         reply = _JoinNodeBuilder()._create_tail_json(nodeType=JOIN, spatialJoin={"output": "polygons"})
-        _, _, proposal, [refused] = self._run(client, user, token, alice_project, monkeypatch, reply)
-        assert proposal is None
+        helper, card, _, [refused] = self._run(client, user, token, alice_project, monkeypatch, reply)
+        assert card is None
         assert "params.spatialJoin: The output must be one of pairs, counts; got 'polygons'." in refused, refused
+        assert [n["id"] for n in helper._spec_nodes(user, alice_project)] == ["n1"]
 
     def test_a_setting_on_a_node_that_is_no_join_is_refused(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
@@ -204,9 +207,10 @@ class TestAProposedJoin:
         reply = _JoinNodeBuilder()._create_tail_json(
             nodeType=CA, content="return input_0", spatialJoin={"predicate": "within"},
         )
-        _, _, proposal, [refused] = self._run(client, user, token, alice_project, monkeypatch, reply)
-        assert proposal is None, "a code node with a join's setting was proposed"
+        helper, card, _, [refused] = self._run(client, user, token, alice_project, monkeypatch, reply)
+        assert card is None, "a code node with a join's setting landed"
         assert (
             "params.spatialJoin: a Computation Analysis node has no operation or output; "
             "only a Spatial Join node takes spatialJoin"
         ) in refused, refused
+        assert [n["id"] for n in helper._spec_nodes(user, alice_project)] == ["n1"]

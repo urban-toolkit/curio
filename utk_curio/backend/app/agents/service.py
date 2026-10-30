@@ -71,10 +71,8 @@ from utk_curio.backend.app.agents.application.skill_lifecycle import (
 from utk_curio.backend.app.agents.application.upload_import import (
     SKILL_UPLOAD,
 )
-from utk_curio.backend.app.agents.application.proposals.plans import (
-    apply_plan_edges,
-    apply_plan_node,
-    set_plan_goal,
+from utk_curio.backend.app.agents.application.proposals.changes import (
+    undo as undo_change,
 )
 from utk_curio.backend.app.agents.application.solve.budgets import (
     DEFAULT_SOLVE_ATTEMPTS,
@@ -185,9 +183,7 @@ __all__ = [
     "remove_own_skill",
     "unpublish_skill",
     "SKILL_UPLOAD",
-    "apply_plan_edges",
-    "apply_plan_node",
-    "set_plan_goal",
+    "undo_change",
     "DEFAULT_SOLVE_ATTEMPTS",
     "DEFAULT_SOLVE_BATCH_DEADLINE_S",
     "DEFAULT_SOLVE_NODE_BUDGET_S",

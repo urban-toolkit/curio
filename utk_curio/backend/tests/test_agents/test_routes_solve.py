@@ -54,12 +54,12 @@ class TestSolve:
             _drop_from_lockfile(user, project_id, self.WRITER)
             self._release_repair = _block_closure_repair(monkeypatch)
         r = helper._run(client, token, project_id, att_id)
-        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
-        body = client.post(
-            f"/api/agents/projects/{project_id}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply",
-            headers=_auth(token),
-        ).get_json()
-        return att_id, body["appliedGraph"], calls
+        body = r.get_json()
+        # The plan landed with the reply: no review waits for it. Its graph is
+        # the canvas mutation the reply carries for a canvas no doc binds.
+        assert not [p for p in body["content"] if p["type"] == "proposal"], "a plan waited for review"
+        [landed] = [c for c in body.get("changes") or [] if c["tool"] == "dataflow.plan.write"]
+        return att_id, landed["canvas"], calls
 
     def _solve(self, client, token, project_id, att_id, node_ids=None):
         payload = {"nodeIds": node_ids} if node_ids is not None else {}
@@ -402,11 +402,16 @@ class TestSolve:
         # only the authenticated endpoint fills nodes.
         user, token = user_and_token
         att_id, applied, _ = self._applied_plan(client, user, token, alice_project, monkeypatch)
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn",
+            lambda config, messages, **kwargs: "Done: I solved every node and wrote its code.",
+        )
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
             json={"message": "solve everything now"}, headers=_auth(token),
         )
         assert r.status_code == 200  # the reply claims success; nothing ran
+        assert not [p for p in r.get_json()["content"] if p["type"] == "change"]
         nodes = {n["id"]: n for n in self._spec_nodes(user, alice_project)}
         for created in applied["nodes"]:
             assert nodes[created["id"]]["content"] == ""
@@ -679,103 +684,18 @@ class TestGeneratedContentExtraction:
             replies=[helper._create_tail(content=wrapped_content), "done"],
         )
         r = helper._run(client, token, alice_project, att_id)
-        proposal = helper._proposal_from_run(r)
-        assert proposal["preview"] == "print('tidy')"
-        resp = client.post(
-            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply",
-            headers=_auth(token),
-        )
-        assert resp.get_json()["createdNode"]["content"] == "print('tidy')"
+        card = next(p for p in r.get_json()["content"] if p["type"] == "change")
+        assert card["preview"] == "print('tidy')"
+        [landed] = r.get_json()["changes"]
+        assert landed["canvas"]["node"]["content"] == "print('tidy')"
+        nodes = {n["id"]: n for n in TestSolve()._spec_nodes(user, alice_project)}
+        assert nodes[landed["canvas"]["node"]["id"]]["content"] == "print('tidy')"
 
 
-class TestProposeModeSolve:
-    """dev/67-6 — Simulation Mode: solve. Propose mode writes NOTHING: each
-    solved child mints a reviewed node.content.write proposal; applying it
-    writes the content and resolves the per-node ledger."""
+class TestTheBlockingSolveWrites:
+    """The Solve batch writes each solved node's content (its one mode)."""
 
-    def test_propose_full_loop(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        user, token = user_and_token
-        helper = TestDataflowPlanMint()
-        att_id, _ = helper._setup(
-            client, user, token, alice_project, monkeypatch,
-            replies=["Plan.\n" + helper._plan_tail(), "print('generated')"],
-        )
-        client.post(
-            f"/api/agents/projects/{alice_project}/install",
-            json={"coord": "agent.curio.node-builder@1"}, headers=_auth(token),
-        )
-        r = helper._run(client, token, alice_project, att_id)
-        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
-        ref = proposal["plan"]["nodes"][0]["ref"]
-        created = client.post(
-            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply-node",
-            json={"ref": ref}, headers=_auth(token),
-        ).get_json()["createdNode"]
-        # dev/118 (DEC-075): propose mode now RUNS the computation node too and
-        # mints an EXECUTED review; a fake sandbox that passes keeps this test
-        # about the propose loop.
-        exec_calls: list = []
-
-        def _exec(endpoint, payload):
-            exec_calls.append(payload)
-            return {"stdout": [], "stderr": "", "output": {"path": "art-1", "dataType": "dataframe"}}
-
-        monkeypatch.setattr("utk_curio.backend.app.execution.runner._http_exec", _exec)
-        # Propose-mode solve of exactly that node.
-        resp = client.post(
-            f"/api/agents/projects/{alice_project}/attachments/{att_id}/solve/stream",
-            json={"mode": "propose", "nodeIds": [created["id"]]}, headers=_auth(token),
-        )
-        events = TestStreamedSolve()._sse_events(resp)
-        result = next(p for k, p in events if k == "node_result")
-        assert result["status"] == "proposed"
-        assert result["verdict"] == "pass" and result["rounds"] == 1  # dev/118: an executed review
-        assert len(exec_calls) == 1 and "generated" in exec_calls[0]["code"]
-        content_proposal_id = result["proposalId"]
-        done = events[-1][1]
-        assert done["mode"] == "propose"
-        assert done["appliedContents"] == []  # nothing written
-        session = done["builderSession"]
-        assert session["phase"] == "simulating"  # restored, not applied/ready
-        assert session["nodeRuns"][created["id"]] == "pending"
-        assert session["nodeStates"][ref] == "solving"
-        # The spec node is still empty; the content proposal is active.
-        from utk_curio.backend.app.projects import storage as projects_storage
-        from utk_curio.backend.app.projects.services import _user_dir_key
-
-        spec = projects_storage.read_spec(_user_dir_key(user), alice_project)
-        node = next(n for n in spec["dataflow"]["nodes"] if n["id"] == created["id"])
-        assert node["content"] == ""
-        cards = client.get(
-            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
-        ).get_json()["attachments"]
-        # dev/126: the Node Builder is a required agent of the Dataflow Builder
-        # now, so the applied plan node HAS its own agent and dev/73's rule
-        # takes effect — the content review is minted at the NODE's agent, not
-        # folded back into the orchestrator's chat. The event says where.
-        mint_att_id = result["proposalAttachmentId"]
-        minted_at = next(c for c in cards if c["attachmentId"] == mint_att_id)
-        assert minted_at["coord"].startswith("agent.curio.node-builder@")
-        assert minted_at["target"] == {"kind": "node", "targetId": created["id"]}
-        active = minted_at["activeProposal"]
-        assert active["tool"] == "node.content.write"
-        assert active["proposalId"] == content_proposal_id
-        # Applying the content proposal writes + resolves the ledger.
-        body = client.post(
-            f"/api/agents/projects/{alice_project}/attachments/{mint_att_id}/proposals/{content_proposal_id}/apply",
-            headers=_auth(token),
-        ).get_json()
-        assert body["appliedContent"]["nodeId"] == created["id"]
-        assert body["appliedContent"]["content"] == "print('generated')"
-        cards = client.get(
-            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
-        ).get_json()["attachments"]
-        session = next(c for c in cards if c["attachmentId"] == att_id)["builderSession"]
-        assert session["nodeRuns"][created["id"]] == "solved"
-        assert session["nodeStates"][ref] == "approved"
-
-    def test_classic_write_mode_is_untouched(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        # The blocking endpoint (always write mode) still writes directly.
+    def test_the_blocking_solve_writes_directly(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         helper = TestSolve()
         att_id, applied, _ = helper._applied_plan(client, user, token, alice_project, monkeypatch)
@@ -784,61 +704,67 @@ class TestProposeModeSolve:
         assert "mode" not in body  # byte-compatible blocking payload
         assert body["builderSession"]["phase"] == "ready"
 
-    def test_invalid_mode_is_refused(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        user, token = user_and_token
-        helper = TestSolve()
-        att_id, _, _ = helper._applied_plan(client, user, token, alice_project, monkeypatch)
-        r = client.post(
-            f"/api/agents/projects/{alice_project}/attachments/{att_id}/solve/stream",
-            json={"mode": "bulk"}, headers=_auth(token),
+
+def _landed_plan(client, user, token, project_id, monkeypatch, replies=None, install_nb=False):
+    """A plan the Dataflow Builder landed: its attachment, the plan's change
+    card, and each plan ref with the node it placed."""
+    helper = TestDataflowPlanMint()
+    att_id, calls = helper._setup(
+        client, user, token, project_id, monkeypatch,
+        **({"replies": replies} if replies else {}),
+    )
+    if install_nb:
+        client.post(
+            f"/api/agents/projects/{project_id}/install",
+            json={"coord": "agent.curio.node-builder@1"}, headers=_auth(token),
         )
-        assert r.status_code == 400
+    r = helper._run(client, token, project_id, att_id)
+    assert r.status_code == 200, r.get_json()
+    body = r.get_json()
+    assert not [p for p in body["content"] if p["type"] == "proposal"], "a plan waited for review"
+    card = next(p for p in body["content"] if p["type"] == "change")
+    cards = client.get(f"/api/agents/projects/{project_id}/attachments", headers=_auth(token)).get_json()["attachments"]
+    planner = next(c for c in cards if c["attachmentId"] == att_id)
+    return att_id, card, dict(planner["builderSession"]["nodeIds"]), calls
 
 
-class TestProgressiveLifecycle:
-    """dev/71 — Apply = create + attach + connect-what's-possible; per-node
-    Run executes through the node and journals real results for the agents."""
+def _node_agent(client, token, project_id, node_id):
+    """The Node Builder attached to the node *node_id*, as the listing has it."""
+    cards = client.get(f"/api/agents/projects/{project_id}/attachments", headers=_auth(token)).get_json()["attachments"]
+    return next((c for c in cards if c["target"] == {"kind": "node", "targetId": node_id}
+                 and c["coord"].startswith("agent.curio.node-builder@")), None)
 
-    def _mint(self, client, user, token, project_id, monkeypatch, replies=None, install_nb=False):
-        helper = TestDataflowPlanMint()
-        att_id, _ = helper._setup(
-            client, user, token, project_id, monkeypatch,
-            **({"replies": replies} if replies else {}),
-        )
-        if install_nb:
-            client.post(
-                f"/api/agents/projects/{project_id}/install",
-                json={"coord": "agent.curio.node-builder@1"}, headers=_auth(token),
-            )
-        r = helper._run(client, token, project_id, att_id)
-        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
-        return att_id, proposal
 
-    def _apply_node(self, client, token, project_id, att_id, proposal_id, ref):
-        return client.post(
-            f"/api/agents/projects/{project_id}/attachments/{att_id}/proposals/{proposal_id}/apply-node",
-            json={"ref": ref}, headers=_auth(token),
-        ).get_json()
+def _saved_nodes(user, project_id) -> dict:
+    from utk_curio.backend.app.projects import storage as projects_storage
+    from utk_curio.backend.app.projects.services import _user_dir_key
 
-    def test_apply_order_is_free_and_the_graph_grows_connected(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+    spec = projects_storage.read_spec(_user_dir_key(user), project_id)
+    return {n["id"]: n for n in spec["dataflow"]["nodes"]}
+
+
+class TestALandedPlan:
+    """dev/71: a plan lands whole: its nodes, each with its agent, and every
+    connection it draws, in one write; per-node Run executes through the node
+    and journals real results for the agents."""
+
+    def test_its_connections_land_with_it(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
         user, token = user_and_token
-        att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
-        pid = proposal["proposalId"]
-        refs = [n["ref"] for n in proposal["plan"]["nodes"]]
-        # Apply B (the TARGET) first: the edge is ineligible, silently planned.
-        first = self._apply_node(client, token, alice_project, att_id, pid, refs[1])
-        assert first["createdEdges"] == []
-        assert first["edgeStates"] == {}  # not refused — just not yet possible
-        # Applying A makes the edge eligible → drawn in the SAME apply.
-        second = self._apply_node(client, token, alice_project, att_id, pid, refs[0])
-        (edge,) = second["createdEdges"]
-        assert edge["source"] == second["createdNode"]["id"]
-        assert edge["target"] == first["createdNode"]["id"]
-        assert second["edgeStates"] == {"0": "applied"}
-        assert second["status"] == "applied"  # structure complete
+        att_id, card, ids, _ = _landed_plan(client, user, token, alice_project, monkeypatch)
+        assert card["kind"] == "plan" and card["status"] == "applied"
+        refs = [n["ref"] for n in card["plan"]["nodes"]]
+        spec = projects_storage.read_spec(_user_dir_key(user), alice_project)
+        (edge,) = spec["dataflow"]["edges"]
+        assert (edge["source"], edge["target"]) == (ids[refs[0]], ids[refs[1]])
 
-    def test_edges_to_existing_nodes_connect_on_first_apply(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+    def test_edges_to_existing_nodes_land_with_it(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         import json as _json
+
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
         plan = {"goal": "extend", "nodes": [
@@ -846,65 +772,49 @@ class TestProgressiveLifecycle:
              "title": "Analyze", "intent": "crunch"},
         ], "edges": [{"from": "n1", "to": "a"}]}  # n1 = the seeded baseline node
         reply = f"Plan.\n```curio.v1\n{_json.dumps({'dataflowPlan': plan})}\n```"
-        att_id, proposal = self._mint(
-            client, user, token, alice_project, monkeypatch, replies=[reply],
-        )
-        body = self._apply_node(
-            client, token, alice_project, att_id, proposal["proposalId"], "a"
-        )
-        (edge,) = body["createdEdges"]
-        assert edge["source"] == "n1"  # the existing node, wired immediately
-        assert edge["target"] == body["createdNode"]["id"]
+        _att, _card, ids, _ = _landed_plan(client, user, token, alice_project, monkeypatch, replies=[reply])
+        spec = projects_storage.read_spec(_user_dir_key(user), alice_project)
+        (edge,) = spec["dataflow"]["edges"]
+        assert edge["source"] == "n1"  # the existing node, wired with the plan
+        assert edge["target"] == ids["a"]
 
-    def test_apply_attaches_the_node_builder_when_installed(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+    def test_it_attaches_the_node_builder_when_installed(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
-        att_id, proposal = self._mint(
-            client, user, token, alice_project, monkeypatch, install_nb=True,
-        )
-        ref = proposal["plan"]["nodes"][0]["ref"]
-        body = self._apply_node(client, token, alice_project, att_id, proposal["proposalId"], ref)
-        assert body["attachedAgentId"]
-        cards = client.get(
-            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
-        ).get_json()["attachments"]
-        attached = next(c for c in cards if c["attachmentId"] == body["attachedAgentId"])
-        assert attached["coord"].startswith("agent.curio.node-builder@")
-        assert attached["target"] == {"kind": "node", "targetId": body["createdNode"]["id"]}
-        # Idempotent: a re-apply reports the SAME attachment, no duplicate.
-        again = self._apply_node(client, token, alice_project, att_id, proposal["proposalId"], ref)
-        assert again["status"] == "already-applied"
+        _att, card, ids, _ = _landed_plan(client, user, token, alice_project, monkeypatch, install_nb=True)
+        for node_id in ids.values():
+            attached = _node_agent(client, token, alice_project, node_id)
+            assert attached is not None, node_id
+        # The card says it, as the result of an apply did.
+        assert any("Node Builder" in line for line in card["lines"]), card["lines"]
 
-    def test_apply_repairs_the_closure_and_attaches_the_node_builder(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+    def test_it_repairs_the_closure_and_attaches_the_node_builder(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         # dev/126 (DEC-080): the Node Builder is a required agent of the
-        # Dataflow Builder, so an apply in a project that lacks it completes
-        # the closure and the created node carries its agent — the dev/71
-        # behavior stops depending on what the user happened to install.
+        # Dataflow Builder, so a plan in a project that lacks it completes the
+        # closure and the created node carries its agent.
         user, token = user_and_token
-        att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
-        ref = proposal["plan"]["nodes"][0]["ref"]
-        body = self._apply_node(client, token, alice_project, att_id, proposal["proposalId"], ref)
-        assert body["attachedAgentId"]
-        cards = client.get(
-            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
-        ).get_json()["attachments"]
-        attached = next(c for c in cards if c["attachmentId"] == body["attachedAgentId"])
-        assert attached["coord"].startswith("agent.curio.node-builder@")
+        _att, _card, ids, _ = _landed_plan(client, user, token, alice_project, monkeypatch)
+        assert all(_node_agent(client, token, alice_project, node_id) for node_id in ids.values())
 
-    def test_apply_without_node_builder_installed_skips_quietly(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+    def test_without_the_node_builder_its_nodes_still_land(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         # The remaining path to an agent-less node: the closure cannot be
         # completed (a required agent visible nowhere). Creation never fails
-        # over its agent (dev/71), and the apply says so rather than pretending.
+        # over its agent (dev/71).
         user, token = user_and_token
-        att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
-        # The run's own repair already installed the Node Builder, so the
-        # agent-less state has to be re-created the way a legacy lockfile has
-        # it — and then held there by a repair that cannot complete.
+        helper = TestDataflowPlanMint()
+        att_id, _ = helper._setup(client, user, token, alice_project, monkeypatch)
         _drop_from_lockfile(user, alice_project, "agent.curio.node-builder@1")
         _block_closure_repair(monkeypatch)
-        ref = proposal["plan"]["nodes"][0]["ref"]
-        body = self._apply_node(client, token, alice_project, att_id, proposal["proposalId"], ref)
-        assert body["attachedAgentId"] is None
-        assert body["createdNode"]  # creation never fails over the agent
+        r = helper._run(client, token, alice_project, att_id)
+        assert r.status_code == 200, r.get_json()
+        changes = [p for p in r.get_json()["content"] if p["type"] == "change"]
+        assert changes, [p["type"] for p in r.get_json()["content"]]
+        card = changes[0]
+        cards = client.get(f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)).get_json()["attachments"]
+        ids = next(c for c in cards if c["attachmentId"] == att_id)["builderSession"]["nodeIds"]
+        assert len(ids) == 2
+        assert all(node_id in _saved_nodes(user, alice_project) for node_id in ids.values())
+        assert all(_node_agent(client, token, alice_project, node_id) is None for node_id in ids.values())
+        assert card["status"] == "applied"
 
     def test_run_node_executes_the_chain_and_journals_real_runs(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         from utk_curio.backend.app.execution import runtime_journal
@@ -918,11 +828,8 @@ class TestProgressiveLifecycle:
                 "output": {"path": "art-run", "dataType": "dataframe"},
             },
         )
-        att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
-        pid = proposal["proposalId"]
-        refs = [n["ref"] for n in proposal["plan"]["nodes"]]
-        self._apply_node(client, token, alice_project, att_id, pid, refs[0])
-        created_b = self._apply_node(client, token, alice_project, att_id, pid, refs[1])
+        att_id, card, ids, _ = _landed_plan(client, user, token, alice_project, monkeypatch)
+        refs = [n["ref"] for n in card["plan"]["nodes"]]
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run-node",
             json={"ref": refs[1]}, headers=_auth(token),
@@ -934,12 +841,10 @@ class TestProgressiveLifecycle:
         done = events[-1][1]
         assert done["ok"] is True
         assert len(done["order"]) == 2  # the upstream chain ran too
-        target = done["nodes"][created_b["createdNode"]["id"]]
+        target = done["nodes"][ids[refs[1]]]
         assert target["output"]["dataType"] == "dataframe"
         # A REAL run in the journal — agents read it via node.runtime.read.
-        record = runtime_journal.read_record(
-            _user_dir_key(user), alice_project, created_b["createdNode"]["id"]
-        )
+        record = runtime_journal.read_record(_user_dir_key(user), alice_project, ids[refs[1]])
         assert record["validation"] is False and record["status"] == "ok"
 
     def test_run_node_tags_every_artifact_with_the_callers_session(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
@@ -957,11 +862,8 @@ class TestProgressiveLifecycle:
             }
 
         monkeypatch.setattr("utk_curio.backend.app.execution.runner._http_exec", _exec)
-        att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
-        pid = proposal["proposalId"]
-        refs = [n["ref"] for n in proposal["plan"]["nodes"]]
-        self._apply_node(client, token, alice_project, att_id, pid, refs[0])
-        self._apply_node(client, token, alice_project, att_id, pid, refs[1])
+        att_id, card, _ids, _ = _landed_plan(client, user, token, alice_project, monkeypatch)
+        refs = [n["ref"] for n in card["plan"]["nodes"]]
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run-node",
             json={"ref": refs[1]}, headers=_auth(token),
@@ -979,10 +881,8 @@ class TestProgressiveLifecycle:
                 "output": {"path": "", "dataType": "str"},
             },
         )
-        att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
-        pid = proposal["proposalId"]
-        ref = proposal["plan"]["nodes"][0]["ref"]
-        self._apply_node(client, token, alice_project, att_id, pid, ref)
+        att_id, card, _ids, _ = _landed_plan(client, user, token, alice_project, monkeypatch)
+        ref = card["plan"]["nodes"][0]["ref"]
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run-node",
             json={"ref": ref}, headers=_auth(token),
@@ -1000,12 +900,12 @@ class TestProgressiveLifecycle:
         ).status_code == 422
 
 
-class TestSimulationDriver:
-    """dev/67-9 (DEC-054) — the Simulation Mode driver: one transition
-    function for step and auto; create → validate → auto-approve-on-PASS per
-    node in topological order → connections; pause on failure with nothing
-    downstream generated; resume from persisted state; the plan proposal
-    PARKS while content reviews cycle through the active slot."""
+class TestBuildAndValidate:
+    """dev/67-9 (DEC-054): Build & validate over the plan that landed: one
+    transition function for Step and auto; validate, then approve, per node
+    in plan order. Code that passes lands as the agent's change, with its
+    Undo, and approving only records it; a failure pauses with nothing
+    downstream written, and resume continues from the persisted state."""
 
     def _fake_exec(self, monkeypatch, fail_markers=()):
         def _exec(endpoint, payload):
@@ -1020,17 +920,10 @@ class TestSimulationDriver:
         )
 
     def _setup(self, client, user, token, project_id, monkeypatch, replies):
-        helper = TestDataflowPlanMint()
-        att_id, calls = helper._setup(
-            client, user, token, project_id, monkeypatch, replies=replies,
+        att_id, card, ids, calls = _landed_plan(
+            client, user, token, project_id, monkeypatch, replies=replies, install_nb=True,
         )
-        client.post(
-            f"/api/agents/projects/{project_id}/install",
-            json={"coord": "agent.curio.node-builder@1"}, headers=_auth(token),
-        )
-        r = helper._run(client, token, project_id, att_id)
-        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
-        return att_id, proposal, calls
+        return att_id, card, ids, calls
 
     def _simulate(self, client, token, project_id, att_id, mode):
         r = client.post(
@@ -1040,135 +933,164 @@ class TestSimulationDriver:
         assert r.status_code == 200, r.get_json()
         return TestStreamedSolve()._sse_events(r)
 
-    def _spec(self, user, project_id):
-        from utk_curio.backend.app.projects import storage as projects_storage
-        from utk_curio.backend.app.projects.services import _user_dir_key
-
-        return projects_storage.read_spec(_user_dir_key(user), project_id)
-
-    def test_auto_builds_and_validates_the_whole_plan(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+    def test_auto_fills_the_landed_plans_nodes_in_order(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         helper = TestDataflowPlanMint()
         self._fake_exec(monkeypatch)
-        att_id, proposal, _ = self._setup(
+        att_id, card, ids, _ = self._setup(
             client, user, token, alice_project, monkeypatch,
             replies=["Plan.\n" + helper._plan_tail(), "print('generated')"],
         )
+        refs = [n["ref"] for n in card["plan"]["nodes"]]
+        # The plan landed with no code: Build & validate writes it.
+        assert all(_saved_nodes(user, alice_project)[ids[ref]]["content"] == "" for ref in refs)
         events = self._simulate(client, token, alice_project, att_id, "auto")
         done = events[-1][1]
         assert done["status"] == "completed"
         session = done["builderSession"]
         assert set(session["nodeStates"].values()) == {"approved"}
-        assert session["edgeStates"] == {"0": "applied"}
-        assert session["phase"] == "ready"  # everything solved and connected
-        # The canvas mutations rode the stream.
+        assert session["phase"] == "ready"
+        # In plan order: validate then approve, node by node.
+        actions = [(p["action"], p["ref"]) for k, p in events if k == "action_result"]
+        assert actions == [("validate", refs[0]), ("approve", refs[0]), ("validate", refs[1]), ("approve", refs[1])]
+        # Each validated node's code landed as a change, whose event rides the
+        # stream for a canvas no doc binds; nothing is created or connected.
         names = [k for k, _ in events]
-        assert names.count("node_created") == 2
-        assert names.count("node_content_applied") == 2
-        assert "edges_created" in names
-        # The spec is fully materialized: contents written, edge wired.
-        spec = self._spec(user, alice_project)
-        created = [n for n in spec["dataflow"]["nodes"] if n.get("id") != "n1"]
-        assert all(n["content"] == "print('generated')" for n in created)
-        # Auto-approval is recorded, never silent (DEC-054).
-        cards = client.get(
-            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
-        ).get_json()["attachments"]
-        active = next(c for c in cards if c["attachmentId"] == att_id)["activeProposal"]
-        assert active["status"] == "applied"
+        assert names.count("change") == 2
+        assert not {"node_created", "edges_created", "plan_removals"} & set(names)
+        saved = _saved_nodes(user, alice_project)
+        assert all(saved[ids[ref]]["content"] == "print('generated')" for ref in refs)
+        # The approval is recorded on each node's change (DEC-054), whose card
+        # is in the node's own agent's chat (dev/72).
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
 
-    def _replan(self, client, user, token, project_id, monkeypatch):
-        """TestDestructiveReplan's canvas and its plan (API Fetch replaces
-        Load CSV and feeds Clean), with the Node Builder to write content."""
+        records = {
+            record["attachmentId"]: record
+            for record in projects_storage.read_spec(_user_dir_key(user), alice_project)["dataflow"]["agentAttachments"]
+        }
+        for ref in refs:
+            entry = session["nodeChanges"][ref]
+            assert entry["attachmentId"] != att_id
+            kept = next(c for c in records[entry["attachmentId"]]["changes"] if c["changeId"] == entry["changeId"])
+            assert kept["approvedBy"] == "simulation-auto"
+            home = client.get(
+                f"/api/agents/projects/{alice_project}/attachments/{entry['attachmentId']}/session",
+                headers=_auth(token),
+            ).get_json()["turns"]
+            assert any(p.get("changeId") == entry["changeId"] for t in home for p in t.get("content") or [])
+
+    def test_undo_of_a_validated_nodes_code_puts_back_the_code_before(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch,
+    ):
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        self._fake_exec(monkeypatch)
+        att_id, card, ids, _ = self._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Plan.\n" + helper._plan_tail(), "print('generated')"],
+        )
+        done = self._simulate(client, token, alice_project, att_id, "auto")[-1][1]
+        ref = card["plan"]["nodes"][0]["ref"]
+        entry = done["builderSession"]["nodeChanges"][ref]
+        undone = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{entry['attachmentId']}/changes/{entry['changeId']}/undo",
+            headers=_auth(token),
+        )
+        assert undone.status_code == 200, undone.get_json()
+        assert _saved_nodes(user, alice_project)[ids[ref]]["content"] == ""
+        assert undone.get_json()["canvas"][0]["content"] == ""
+
+    def test_a_plan_that_removes_removes_when_it_lands_and_build_fills_the_rest(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
         from utk_curio.backend.tests.test_agents.test_routes_proposals import TestDestructiveReplan
 
+        user, token = user_and_token
+        self._fake_exec(monkeypatch)
         base = TestDestructiveReplan()
         att_id, _ = base._setup(
-            client, user, token, project_id, monkeypatch,
+            client, user, token, alice_project, monkeypatch,
             replies=["Revising.\n" + base._revision_tail(
                 nodes=[base._new_node()], edges=[{"from": "a", "to": "cleaner"}],
             ), "print('generated')"],
         )
         client.post(
-            f"/api/agents/projects/{project_id}/install",
+            f"/api/agents/projects/{alice_project}/install",
             json={"coord": "agent.curio.node-builder@1"}, headers=_auth(token),
         )
-        proposal = base._proposal(base._run(client, token, project_id, att_id))
-        return att_id, proposal
-
-    def _turns(self, client, token, project_id, att_id):
-        return client.get(
-            f"/api/agents/projects/{project_id}/attachments/{att_id}/session", headers=_auth(token)
-        ).get_json()["turns"]
-
-    def test_auto_removes_what_the_plan_removes_and_the_stream_carries_it(
-        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
-    ):
-        """Simulation Mode applies a plan with Apply's row functions, so the
-        call that completes it removes what the plan removes, and the stream
-        hands the canvas the removed ids, which its next save would otherwise
-        write back."""
-        user, token = user_and_token
-        self._fake_exec(monkeypatch)
-        att_id, proposal = self._replan(client, user, token, alice_project, monkeypatch)
+        r = base._run(client, token, alice_project, att_id)
+        card = next(p for p in r.get_json()["content"] if p["type"] == "change")
+        assert card["plan"]["removals"][0]["id"] == "old-loader"
+        saved = _saved_nodes(user, alice_project)
+        assert "old-loader" not in saved
+        # The topology verdict rides the card, as it rode the apply's result.
+        assert any(line.startswith("Topology") for line in card["lines"]), card["lines"]
         events = self._simulate(client, token, alice_project, att_id, "auto")
         assert events[-1][1]["status"] == "completed", events[-1]
-        removals = [payload for kind, payload in events if kind == "plan_removals"]
-        assert removals == [{
-            "proposalId": proposal["proposalId"],
-            "removedNodeIds": ["old-loader"], "removedEdgeIds": ["edge-1"],
-        }]
-        spec = self._spec(user, alice_project)
-        assert "old-loader" not in {n["id"] for n in spec["dataflow"]["nodes"]}
-        assert [e["target"] for e in spec["dataflow"]["edges"]] == ["cleaner"]
-        texts = [t.get("text") or "" for t in self._turns(client, token, alice_project, att_id)]
-        assert "Applied: plan added 1 node and 1 connection, removed 1 node and 1 connection. Topology: acyclic." in texts
-        part = next(
-            p for t in self._turns(client, token, alice_project, att_id) for p in (t.get("content") or [])
-            if p.get("type") == "proposal" and p.get("proposalId") == proposal["proposalId"]
-        )
-        assert part["status"] == "applied"
+        assert not any(kind == "plan_removals" for kind, _ in events)
 
-    def test_a_victim_edited_since_the_review_pauses_the_run_and_removes_nothing(
+    def test_a_victim_someone_edits_while_the_plan_waits_is_kept_and_the_plan_refused(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
-        from utk_curio.backend.app.projects import storage as projects_storage
+        """DEC-049.1: a node a plan removes is held to the code the plan read.
+        Waiting for a person in the node, the plan finds it changed: nothing
+        lands, the victim keeps its code."""
+        import time as real_time
+        from types import SimpleNamespace
+
+        from utk_curio.backend.app.agents.application.proposals import changes
+        from utk_curio.backend.app.collaboration import dataflow_docs, room_state
         from utk_curio.backend.app.projects.services import _user_dir_key
+        from utk_curio.backend.tests.test_agents.test_routes_proposals import TestDestructiveReplan
 
         user, token = user_and_token
-        self._fake_exec(monkeypatch)
-        att_id, _ = self._replan(client, user, token, alice_project, monkeypatch)
         key = _user_dir_key(user)
-        spec = projects_storage.read_spec(key, alice_project)
-        next(n for n in spec["dataflow"]["nodes"] if n["id"] == "old-loader")["content"] = "precious_new_work()"
-        projects_storage.write_spec(key, alice_project, spec)
-        events = self._simulate(client, token, alice_project, att_id, "auto")
-        done = events[-1][1]
-        assert done["status"] == "paused", done
-        assert done["reason"]["kind"] == "apply-refused"
-        assert "about to remove changed" in done["reason"]["message"]
-        assert not any(kind in ("node_created", "plan_removals") for kind, _ in events)
-        spec = self._spec(user, alice_project)
-        assert sorted(n["id"] for n in spec["dataflow"]["nodes"]) == ["cleaner", "old-loader"]
-        assert [e["id"] for e in spec["dataflow"]["edges"]] == ["edge-1"]
+        base = TestDestructiveReplan()
+        att_id, _ = base._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Revising.\n" + base._revision_tail(
+                nodes=[base._new_node()], edges=[{"from": "a", "to": "cleaner"}],
+            ), "It changed."],
+        )
+        held = {"on": True}
+        monkeypatch.setattr(room_state, "snapshot", lambda room: {
+            "users": [], "outputs": {}, "activity": [],
+            "locks": {"old-loader": {"user_id": "someone-else", "name": "Ana"}} if held["on"] else {},
+        })
+
+        def _sleep(seconds):
+            # Ana edits the node she is in, then leaves it.
+            spec = dataflow_docs.live(key, alice_project)
+            next(n for n in spec["dataflow"]["nodes"] if n["id"] == "old-loader")["content"] = "precious_new_work()"
+            dataflow_docs.write(key, alice_project, spec, dataflow_docs.person(key, "edit"))
+            held["on"] = False
+
+        monkeypatch.setattr(changes, "time", SimpleNamespace(monotonic=real_time.monotonic, sleep=_sleep))
+        r = base._run(client, token, alice_project, att_id)
+        assert r.status_code == 200, r.get_json()
+        assert not [p for p in r.get_json()["content"] if p["type"] == "change"]
+        saved = _saved_nodes(user, alice_project)
+        assert sorted(saved) == ["cleaner", "old-loader"]
+        assert saved["old-loader"]["content"] == "precious_new_work()"
 
     def test_step_performs_exactly_one_action(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         helper = TestDataflowPlanMint()
         self._fake_exec(monkeypatch)
-        att_id, proposal, _ = self._setup(
+        att_id, card, _ids, _ = self._setup(
             client, user, token, alice_project, monkeypatch,
             replies=["Plan.\n" + helper._plan_tail(), "print('generated')"],
         )
+        refs = [n["ref"] for n in card["plan"]["nodes"]]
         events = self._simulate(client, token, alice_project, att_id, "step")
         done = events[-1][1]
         assert done["status"] == "stepped"
-        assert done["nextAction"] == {"action": "validate",
-                                      "ref": proposal["plan"]["nodes"][0]["ref"]}
-        session = done["builderSession"]
-        created_states = [s for s in session["nodeStates"].values() if s == "created"]
-        assert len(created_states) == 1  # exactly ONE node created
-        # Step to completion — N step calls ≡ one auto run. The completing
+        assert [(p["action"], p["ref"]) for k, p in events if k == "action_result"] == [("validate", refs[0])]
+        assert done["nextAction"] == {"action": "approve", "ref": refs[0]}
+        states = done["builderSession"]["nodeStates"]
+        assert (states[refs[0]], states[refs[1]]) == ("validated", "created")  # exactly ONE action
+        # Step to completion: N step calls ≡ one auto run. The completing
         # step reports nextAction None; a further call refuses honestly.
         for _ in range(20):
             events = self._simulate(client, token, alice_project, att_id, "step")
@@ -1178,62 +1100,60 @@ class TestSimulationDriver:
             ):
                 break
         assert set(done["builderSession"]["nodeStates"].values()) == {"approved"}
-        assert done["builderSession"]["edgeStates"] == {"0": "applied"}
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/simulate",
             json={"mode": "step"}, headers=_auth(token),
         )
-        assert r.status_code == 409  # complete: nothing to simulate
+        assert r.status_code == 409  # complete: nothing to build
 
     def test_validation_failure_pauses_and_resume_continues(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         helper = TestDataflowPlanMint()
         # Every generation fails validation: the run pauses at the FIRST node.
         self._fake_exec(monkeypatch, fail_markers=("always_bad",))
-        att_id, proposal, _ = self._setup(
+        att_id, card, ids, _ = self._setup(
             client, user, token, alice_project, monkeypatch,
             replies=["Plan.\n" + helper._plan_tail(), "always_bad()"],
         )
-        refs = [n["ref"] for n in proposal["plan"]["nodes"]]
+        refs = [n["ref"] for n in card["plan"]["nodes"]]
         events = self._simulate(client, token, alice_project, att_id, "auto")
         done = events[-1][1]
         assert done["status"] == "paused"
         assert done["reason"]["kind"] == "validation-failed"
         assert done["reason"]["ref"] == refs[0]
+        assert "nothing was written" in done["reason"]["message"]
         session = done["builderSession"]
         assert session["nodeStates"][refs[0]] == "failed"
-        # Nothing downstream of the failure was generated or created.
-        assert session["nodeStates"][refs[1]] == "planned"
-        # The user reviews and applies anyway — then RESUME continues past it.
-        content_proposal_id = done["reason"]["proposalId"]
-        client.post(
-            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{content_proposal_id}/apply",
-            headers=_auth(token),
+        # Nothing downstream of the failure was validated or written.
+        assert session["nodeStates"][refs[1]] == "created"
+        assert not [k for k, _ in events if k == "change"]
+        saved = _saved_nodes(user, alice_project)
+        assert saved[ids[refs[0]]]["content"] == saved[ids[refs[1]]]["content"] == ""
+        # RESUME, once the sandbox behaves, continues from the failed node.
+        self._fake_exec(monkeypatch)
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn",
+            lambda config, messages, **kw: "print('fixed')",
         )
-        self._fake_exec(monkeypatch)  # the sandbox behaves for the rest
         events = self._simulate(client, token, alice_project, att_id, "auto")
         done = events[-1][1]
         assert done["status"] == "completed"
         assert set(done["builderSession"]["nodeStates"].values()) == {"approved"}
+        assert [p["ref"] for k, p in events if k == "action_result" and p["action"] == "validate"] == refs
 
     def test_cancel_stops_at_the_next_boundary(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        from utk_curio.backend.app.agents.application.solve import session as packages_session
         from utk_curio.backend.app.agents.application.solve import simulation
-        from utk_curio.backend.app.agents.application.turns import delegates
-        from utk_curio.backend.app.agents.application.turns import titles
-        from utk_curio.backend.app.agents.infrastructure import providers
+        from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
         helper = TestDataflowPlanMint()
         self._fake_exec(monkeypatch)
-        att_id, proposal, _ = self._setup(
+        att_id, _card, _ids, _ = self._setup(
             client, user, token, alice_project, monkeypatch,
             replies=["Plan.\n" + helper._plan_tail(), "print('generated')"],
         )
         # Service-level: cancel after the first action_result.
-        from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
-
         config = ProviderConfig(api_key="k", api_type="openai_compatible",
                                 base_url="http://x", model="m")
         gen = simulation.simulate_stream(
@@ -1257,7 +1177,7 @@ class TestSimulationDriver:
         helper = TestDataflowPlanMint()
         att_id, _ = helper._setup(client, user, token, alice_project, monkeypatch)
         base = f"/api/agents/projects/{alice_project}/attachments/{att_id}/simulate"
-        # No plan minted yet.
+        # No plan landed yet.
         assert client.post(base, json={"mode": "auto"}, headers=_auth(token)).status_code == 409
         assert client.post(base, json={"mode": "bulk"}, headers=_auth(token)).status_code == 400
         assert client.post(
@@ -1267,9 +1187,10 @@ class TestSimulationDriver:
 
 
 class TestValidateNode:
-    """dev/67-7 — Simulation Mode: validate. Generate → execute-through →
-    verdict → self-correct → propose; the spec is never mutated by
-    validation; PASS or FAIL, the user decides."""
+    """dev/67-7: validate one node of a landed plan: generate → execute
+    through → verdict → self-correct. Code that passes lands as the agent's
+    change, with its validation block; code that fails is not written, and its
+    attempts stay in the node's agent chat."""
 
     def _fake_exec(self, monkeypatch, fail_markers=()):
         calls = []
@@ -1288,22 +1209,11 @@ class TestValidateNode:
         return calls
 
     def _setup_plan_node(self, client, user, token, project_id, monkeypatch, replies):
-        helper = TestDataflowPlanMint()
-        att_id, calls = helper._setup(
-            client, user, token, project_id, monkeypatch, replies=replies,
+        att_id, card, ids, calls = _landed_plan(
+            client, user, token, project_id, monkeypatch, replies=replies, install_nb=True,
         )
-        client.post(
-            f"/api/agents/projects/{project_id}/install",
-            json={"coord": "agent.curio.node-builder@1"}, headers=_auth(token),
-        )
-        r = helper._run(client, token, project_id, att_id)
-        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
-        ref = proposal["plan"]["nodes"][0]["ref"]
-        created = client.post(
-            f"/api/agents/projects/{project_id}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply-node",
-            json={"ref": ref}, headers=_auth(token),
-        ).get_json()["createdNode"]
-        return att_id, ref, created, calls
+        ref = card["plan"]["nodes"][0]["ref"]
+        return att_id, ref, ids[ref], calls
 
     def _validate(self, client, token, project_id, att_id, body):
         r = client.post(
@@ -1313,11 +1223,19 @@ class TestValidateNode:
         assert r.status_code == 200, r.get_json()
         return TestStreamedSolve()._sse_events(r)
 
-    def test_pass_verdict_mints_a_validated_proposal(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+    def _card(self, client, token, project_id, attachment_id, change_id):
+        turns = client.get(
+            f"/api/agents/projects/{project_id}/attachments/{attachment_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        return next(p for t in reversed(turns) for p in (t.get("content") or [])
+                    if p.get("type") == "change" and p.get("changeId") == change_id)
+
+    def test_a_pass_lands_the_code_as_the_agents_change(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         helper = TestDataflowPlanMint()
         self._fake_exec(monkeypatch)
-        att_id, ref, created, _ = self._setup_plan_node(
+        att_id, ref, node_id, _ = self._setup_plan_node(
             client, user, token, alice_project, monkeypatch,
             replies=["Plan.\n" + helper._plan_tail(), "print('validated code')"],
         )
@@ -1325,37 +1243,24 @@ class TestValidateNode:
         names = [k for k, _ in events]
         assert names[0] == "validation_started"
         assert "generation_round" in names and "node_executed" in names
+        assert "change" in names
         assert names[-1] == "done"
         done = events[-1][1]
         assert done["verdict"] == "pass" and done["rounds"] == 1
         assert done["evidence"]["outputDataType"] == "dataframe"
         assert done["builderSession"]["nodeStates"][ref] == "validated"
-        # The spec is untouched — the candidate lives in the proposal.
-        from utk_curio.backend.app.projects import storage as projects_storage
-        from utk_curio.backend.app.projects.services import _user_dir_key
-
-        spec = projects_storage.read_spec(_user_dir_key(user), alice_project)
-        node = next(n for n in spec["dataflow"]["nodes"] if n["id"] == created["id"])
-        assert node["content"] == ""
-        # The transcript part carries the validation block — in the session the
-        # mint reports (dev/126: the plan node now has its own Node Builder, so
-        # dev/73's rule homes the review there).
-        mint_att_id = done.get("proposalAttachmentId") or att_id
-        turns = client.get(
-            f"/api/agents/projects/{alice_project}/attachments/{mint_att_id}/session",
-            headers=_auth(token),
-        ).get_json()["turns"]
-        part = next(
-            p for t in reversed(turns) for p in (t.get("content") or [])
-            if p.get("type") == "proposal" and p.get("proposalId") == done["proposalId"]
-        )
+        # The code that passed is the node's now.
+        assert _saved_nodes(user, alice_project)[node_id]["content"] == "print('validated code')"
+        # Its card, at the node's agent (dev/72), carries the validation block.
+        part = self._card(client, token, alice_project, done["changeAttachmentId"], done["changeId"])
         assert part["validation"]["verdict"] == "pass"
+        assert part["kind"] == "content"
 
     def test_failure_self_corrects_with_the_traceback(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         helper = TestDataflowPlanMint()
         self._fake_exec(monkeypatch, fail_markers=("bad_attempt",))
-        att_id, ref, created, calls = self._setup_plan_node(
+        att_id, ref, node_id, calls = self._setup_plan_node(
             client, user, token, alice_project, monkeypatch,
             replies=["Plan.\n" + helper._plan_tail(), "bad_attempt()", "good_attempt()"],
         )
@@ -1368,12 +1273,13 @@ class TestValidateNode:
         correction = calls[-1][-1]["content"]
         assert '"previousAttempt"' in correction and "bad_attempt" in correction
         assert "ValueError bad column" in correction
+        assert _saved_nodes(user, alice_project)[node_id]["content"] == "good_attempt()"
 
-    def test_exhaustion_fails_loudly_but_still_proposes(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+    def test_exhaustion_fails_loudly_and_writes_nothing(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         helper = TestDataflowPlanMint()
         self._fake_exec(monkeypatch, fail_markers=("always_bad",))
-        att_id, ref, _, _ = self._setup_plan_node(
+        att_id, ref, node_id, _ = self._setup_plan_node(
             client, user, token, alice_project, monkeypatch,
             # Three DIFFERENT failing corrections: a comment-only repeat is not
             # run again (dev/116 live fix).
@@ -1383,14 +1289,23 @@ class TestValidateNode:
         done = events[-1][1]
         assert done["verdict"] == "fail" and done["rounds"] == 3
         assert done["builderSession"]["nodeStates"][ref] == "failed"
-        # Apply-anyway semantics: the failing candidate IS still reviewable.
-        assert done["proposalId"]
         assert "Traceback" in done["evidence"]["stderrTail"]
+        # Failed code is never written; no change is made of it.
+        assert "changeId" not in done
+        assert not [k for k, _ in events if k == "change"]
+        assert _saved_nodes(user, alice_project)[node_id]["content"] == ""
+        # Its attempts, each with the code it ran, are in the node's agent chat.
+        home = _node_agent(client, token, alice_project, node_id)
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{home['attachmentId']}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        assert any(p.get("type") == "solveAttempts" for t in turns for p in t.get("content") or [])
 
-    def test_a_browser_rendered_plan_node_is_proposed_as_not_executable(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+    def test_a_browser_rendered_plan_node_lands_as_not_executable(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         # dev/118 (DEC-075): a data-pool (or Vega) plan node used to validate
-        # as PASS with nothing executed. The generation is still proposed —
-        # labeled — and the plan ledger proceeds as for a pass.
+        # as PASS with nothing executed. The generation lands, labeled, and
+        # the plan ledger proceeds as for a pass.
         user, token = user_and_token
         helper = TestDataflowPlanMint()
         calls = self._fake_exec(monkeypatch)
@@ -1398,7 +1313,7 @@ class TestValidateNode:
             nodes=[{"ref": "p", "nodeType": "curio.builtin/data-pool", "title": "Pool", "intent": "hold the data"}],
             edges=[],
         )
-        att_id, ref, _, _ = self._setup_plan_node(
+        att_id, ref, _node_id, _ = self._setup_plan_node(
             client, user, token, alice_project, monkeypatch,
             replies=["Plan.\n" + pool_plan, "{}"],
         )
@@ -1409,13 +1324,7 @@ class TestValidateNode:
         assert "no code the sandbox could run" in done["evidence"]["detail"]
         assert calls == []  # nothing reached the sandbox
         assert done["builderSession"]["nodeStates"][ref] == "validated"  # the plan proceeds
-        assert done["proposalId"]
-        session = client.get(
-            f"/api/agents/projects/{alice_project}/attachments/{done['proposalAttachmentId']}/session",
-            headers=_auth(token),
-        ).get_json()
-        part = next(q for t in reversed(session["turns"]) for q in (t.get("content") or [])
-                    if q.get("type") == "proposal" and q.get("proposalId") == done["proposalId"])
+        part = self._card(client, token, alice_project, done["changeAttachmentId"], done["changeId"])
         assert part["validation"]["verdict"] == "not-executable"
         assert part["validation"]["attempts"][0]["kind"] == "not-executable"
 
@@ -1424,7 +1333,7 @@ class TestValidateNode:
         helper = TestDataflowPlanMint()
         att_id, _ = helper._setup(client, user, token, alice_project, monkeypatch)
         base = f"/api/agents/projects/{alice_project}/attachments/{att_id}/validate-node"
-        # No ref/nodeId; unknown node; ref without a created node.
+        # No ref/nodeId; unknown node; a ref with no landed plan.
         assert client.post(base, json={}, headers=_auth(token)).status_code == 422
         assert client.post(base, json={"nodeId": "ghost"}, headers=_auth(token)).status_code == 404
         assert client.post(base, json={"ref": "a"}, headers=_auth(token)).status_code == 409
@@ -1478,30 +1387,10 @@ class TestNodeContextEnrichment:
 
 class TestSolveTraceHome:
     """dev/72 — a node's Solve lifecycle lives in its attached Node Builder:
-    the trace, the content review, and the cross-attachment ledger advance."""
+    the trace, the change its code landed as, and the cross-attachment ledger
+    advance."""
 
-    def _setup(self, client, user, token, project_id, monkeypatch, replies):
-        helper = TestDataflowPlanMint()
-        att_id, _ = helper._setup(
-            client, user, token, project_id, monkeypatch, replies=replies,
-        )
-        for coord in ("agent.curio.node-builder@1",):
-            client.post(
-                f"/api/agents/projects/{project_id}/install",
-                json={"coord": coord}, headers=_auth(token),
-            )
-        r = helper._run(client, token, project_id, att_id)
-        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
-        ref = proposal["plan"]["nodes"][0]["ref"]
-        created = client.post(
-            f"/api/agents/projects/{project_id}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply-node",
-            json={"ref": ref}, headers=_auth(token),
-        ).get_json()
-        return att_id, ref, created
-
-    def test_validate_homes_the_trace_and_review_at_the_nodes_agent(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        user, token = user_and_token
-        helper = TestDataflowPlanMint()
+    def _passing_sandbox(self, monkeypatch):
         monkeypatch.setattr(
             "utk_curio.backend.app.execution.runner._http_exec",
             lambda endpoint, payload: {
@@ -1509,26 +1398,30 @@ class TestSolveTraceHome:
                 "output": {"path": "art", "dataType": "dataframe"},
             },
         )
-        att_id, ref, created = self._setup(
+
+    def test_validate_homes_the_trace_and_the_change_at_the_nodes_agent(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        self._passing_sandbox(monkeypatch)
+        att_id, card, ids, _ = _landed_plan(
             client, user, token, alice_project, monkeypatch,
-            replies=["Plan.\n" + helper._plan_tail(), "print('validated')"],
+            replies=["Plan.\n" + helper._plan_tail(), "print('validated')"], install_nb=True,
         )
-        home_id = created["attachedAgentId"]  # dev/71's auto-attached agent
-        assert home_id
+        ref = card["plan"]["nodes"][0]["ref"]
+        home = _node_agent(client, token, alice_project, ids[ref])  # dev/71's auto-attached agent
+        assert home
+        home_id = home["attachmentId"]
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/validate-node",
             json={"ref": ref}, headers=_auth(token),
         )
         done = TestStreamedSolve()._sse_events(r)[-1][1]
         assert done["verdict"] == "pass"
-        # The review lives with the NODE's agent (dev/72).
-        assert done["proposalAttachmentId"] == home_id
-        cards = client.get(
-            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
-        ).get_json()["attachments"]
-        home = next(c for c in cards if c["attachmentId"] == home_id)
-        assert home["activeProposal"]["tool"] == "node.content.write"
-        # Its transcript: the framed task, then the trace card + proposal.
+        # The change lives with the NODE's agent (dev/72), and it landed: no
+        # review waits there.
+        assert done["changeAttachmentId"] == home_id
+        assert (_node_agent(client, token, alice_project, ids[ref]).get("activeProposal") or {}).get("status") != "pending"
+        # Its transcript: the framed task, then the trace card + the change.
         turns = client.get(
             f"/api/agents/projects/{alice_project}/attachments/{home_id}/session",
             headers=_auth(token),
@@ -1536,7 +1429,7 @@ class TestSolveTraceHome:
         assert any("[Delegated by Dataflow Builder] Solve" in t["text"] for t in turns)
         result_turn = next(
             t for t in turns
-            if any(p.get("type") == "proposal" for p in (t.get("content") or []))
+            if any(p.get("type") == "change" for p in (t.get("content") or []))
         )
         trace = next(p for p in result_turn["content"] if p.get("type") == "card")
         assert trace["title"] == "Solve trace · PASS"
@@ -1551,38 +1444,23 @@ class TestSolveTraceHome:
             if p.get("type") == "delegation"
         )
         assert link["attachmentId"] == home_id and link["status"] == "ok"
-        # Applying the review AT THE NODE'S AGENT advances the BUILDER ledger.
-        client.post(
-            f"/api/agents/projects/{alice_project}/attachments/{home_id}/proposals/{done['proposalId']}/apply",
-            headers=_auth(token),
-        )
+        # The code landed AT THE NODE'S AGENT, and the BUILDER's ledger
+        # advanced: the node is validated, its run solved.
         cards = client.get(
             f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
         ).get_json()["attachments"]
         session = next(c for c in cards if c["attachmentId"] == att_id)["builderSession"]
-        assert session["nodeStates"][ref] == "approved"
+        assert session["nodeStates"][ref] == "validated"
+        assert session["nodeRuns"][ids[ref]] == "solved"
 
-    def test_driver_approves_through_the_home(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+    def test_build_and_validate_approves_through_the_home(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         helper = TestDataflowPlanMint()
-        monkeypatch.setattr(
-            "utk_curio.backend.app.execution.runner._http_exec",
-            lambda endpoint, payload: {
-                "stdout": [], "stderr": "",
-                "output": {"path": "art", "dataType": "dataframe"},
-            },
-        )
-        att_id, _ = helper._setup(
+        self._passing_sandbox(monkeypatch)
+        att_id, _card, _ids, _ = _landed_plan(
             client, user, token, alice_project, monkeypatch,
-            replies=["Plan.\n" + helper._plan_tail(), "print('generated')"],
+            replies=["Plan.\n" + helper._plan_tail(), "print('generated')"], install_nb=True,
         )
-        for coord in ("agent.curio.node-builder@1",):
-            client.post(
-                f"/api/agents/projects/{alice_project}/install",
-                json={"coord": coord}, headers=_auth(token),
-            )
-        r = helper._run(client, token, alice_project, att_id)
-        assert r.status_code == 200
         resp = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/simulate",
             json={"mode": "auto"}, headers=_auth(token),
@@ -1590,6 +1468,6 @@ class TestSolveTraceHome:
         done = TestStreamedSolve()._sse_events(resp)[-1][1]
         assert done["status"] == "completed"
         assert set(done["builderSession"]["nodeStates"].values()) == {"approved"}
-        # nodeProposals carries the dev/72 {proposalId, attachmentId} shape.
-        entry = next(iter(done["builderSession"]["nodeProposals"].values()))
-        assert entry["proposalId"] and entry["attachmentId"] != att_id
+        # nodeChanges carries the dev/72 {changeId, attachmentId} shape.
+        entry = next(iter(done["builderSession"]["nodeChanges"].values()))
+        assert entry["changeId"] and entry["attachmentId"] != att_id

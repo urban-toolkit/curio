@@ -57,18 +57,35 @@ def test_the_dataflow_builder_is_not_offered_a_decomposition_that_only_rewords_g
     assert '"workflow.plan.create"' not in _prompt(DATAFLOW_BUILDER)
 
 
-def test_the_dataflow_builder_is_told_every_applied_plan_ends_with_a_topology_verdict():
-    """Every way a plan is applied ends its result with the verdict: Apply plan
-    (``plans._log_plan_applied``), and the row or Connect all that completes a
-    plan applied a part at a time, which writes it through the same function.
-    ``test_routes_proposals.py::TestPlansAppliedRowByRow`` checks the last
-    row's result and Connect all's, word for word as Apply plan's, and
-    ``test_routes_solve.py::TestSimulationDriver::test_auto_removes_what_the_plan_removes_and_the_stream_carries_it``
-    Simulation Mode's."""
+def test_the_dataflow_builder_is_told_every_plan_that_lands_ends_with_a_topology_verdict():
+    """A plan lands whole, and what it did ends with the verdict
+    (``plans._plan_landed_lines``): the result of the native call, which
+    ``test_native_tools.py::TestMutations::test_the_plan_is_a_call_whose_errors_come_back_as_its_result``
+    checks, and the last line of the plan's card, which
+    ``test_routes_proposals.py::TestALandedPlansResult`` and
+    ``TestPlanTopologyApply`` check."""
     assert (
-        "After the user applies a plan, the applied result names what changed and ends with a Topology verdict"
+        "After a plan lands, its result names what changed and ends with a Topology verdict"
         in _prompt(DATAFLOW_BUILDER)
     )
+
+
+def test_each_change_tool_says_it_lands_at_once_and_the_user_can_undo_it():
+    """``proposals/changes.py`` lands a node's code, its settings, a new node
+    and a plan once their checks pass, as the agent's change with its Undo;
+    only an install waits for the person's review (``editors.ACCOUNT_INSTALL_TOOLS``).
+    ``test_agent_changes.py::TestEachFamilyLandsAtOnce`` and ``TestUndoByKind``
+    check it, so no change tool is told it proposes or awaits a review."""
+    from utk_curio.backend.app.agents.application import editors
+    from utk_curio.backend.app.agents.application import tools
+
+    for tool_id in ("node.content.write", "node.settings.write", "node.create", "dataflow.plan.write"):
+        assert tool_id not in editors.ACCOUNT_INSTALL_TOOLS
+        text = tools.tool_text(tool_id)
+        for told in (text.description, text.native_description or ""):
+            low = told.lower()
+            assert "propose" not in low and "review" not in low, (tool_id, told)
+        assert "can undo it" in text.description, (tool_id, text.description)
 
 
 def test_the_node_builder_names_the_new_nodes_type_when_it_delegates_its_content():

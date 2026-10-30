@@ -5,7 +5,7 @@
  */
 
 import type { AgentDatasetCandidateRow, AgentRemedy } from "./evidence";
-import type { AgentDataflowPlanPart, AgentProposalPart } from "./proposal";
+import type { AgentChangePart, AgentDataflowPlanPart, AgentProposalPart } from "./proposal";
 import type { AgentRunSkillPins } from "./skills";
 import type { AgentSolveAttemptsPart } from "./solve";
 
@@ -89,7 +89,7 @@ export interface AgentDatasetCandidatesPart {
 
 /** dev/72: a delegated task's compact entry on the PARENT's turn — the icon
  * notch links to the delegated agent's chat where the full trace lives.
- * Runtime-emitted only (like proposals); attachmentId null = no home. */
+ * Runtime-emitted only (like changes); attachmentId null = no home. */
 export interface AgentDelegationPart {
   type: "delegation";
   capability: string;
@@ -108,6 +108,7 @@ export type AgentContentPart =
   | AgentSuggestedPromptsPart
   | AgentCardPart
   | AgentProposalPart
+  | AgentChangePart
   | AgentDatasetCandidatesPart
   | AgentDataflowPlanPart
   | AgentDelegationPart

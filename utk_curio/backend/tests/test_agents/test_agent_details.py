@@ -27,23 +27,23 @@ from utk_curio.backend.tests._support.agent_routes import _auth
 
 
 #: Each card's tools, as its details window lists them: what it reads, then
-#: what it proposes.
+#: what it changes and what it proposes for review.
 _TOOLS = {
     "agent.curio.researcher": [
         "Read the dataflow", "Read a node", "Read a node's last run", "Search the web",
-        "Read a web page", "Propose a node", "Propose a package install",
+        "Read a web page", "Add a node", "Propose a package install",
         "Propose a package draft",
     ],
     "agent.curio.node-builder": [
         "Read the dataflow", "Read a node", "Read a node's last run", "Read a node's history",
         "Search the Data Catalog", "Search the Model Catalog", "Search the Node Catalog",
-        "Check a package's dependencies and permissions", "Propose a node",
-        "Propose a content change", "Propose a settings change", "Propose a package install",
+        "Check a package's dependencies and permissions", "Add a node",
+        "Write a node's content", "Change a node's settings", "Propose a package install",
         "Propose a package draft",
     ],
     "agent.curio.dataflow-builder": [
         "Read the dataflow", "Read a node's last run", "Read a node's history", "Read worked examples",
-        "Search the Scenario Catalog", "Propose a plan", "Propose a node", "Propose a settings change",
+        "Search the Scenario Catalog", "Write a plan", "Add a node", "Change a node's settings",
         "Propose a package draft",
     ],
     "agent.curio.dataset-finder": [
@@ -172,17 +172,22 @@ class TestTools:
             "dataflow.plan.write", "node.create", "node.settings.write", "package.draft.apply",
         ]
 
-    def test_every_tool_contract_has_one_label_and_a_proposal_says_so(self):
+    def test_every_tool_contract_has_one_label_and_an_install_says_it_is_a_proposal(self):
+        from utk_curio.backend.app.agents.application import editors
+
         labels = {tool_id: contract.label for tool_id, contract in agents_tools.REGISTRY.items()}
         assert [tool_id for tool_id, label in labels.items() if not label] == []
         assert len(set(labels.values())) == len(labels), labels
-        # Anything that changes the dataflow is a proposal you apply, and its
-        # label says so; nothing that only reads claims to propose.
+        # An install is a proposal the person applies, and its label says so;
+        # any other change lands at once, and nothing that only reads, or
+        # lands, claims to propose.
         wrong = {
             tool_id: label for tool_id, label in labels.items()
-            if label.startswith("Propose ") != (agents_tools.REGISTRY[tool_id].effect == "mutate")
+            if label.startswith("Propose ") != (tool_id in editors.ACCOUNT_INSTALL_TOOLS)
         }
         assert wrong == {}
+        assert {tool_id for tool_id in editors.ACCOUNT_INSTALL_TOOLS} <= set(labels)
+        assert all(agents_tools.REGISTRY[tool_id].effect == "mutate" for tool_id in editors.ACCOUNT_INSTALL_TOOLS)
 
 
 class TestModes:
@@ -258,7 +263,7 @@ class TestDefinitionsCurioDoesNotShip:
         # A tool Curio does not define is never granted, so it is not listed.
         assert agents_catalog.agent_tools(manifest) == [
             {"id": "dataflow.read", "label": "Read the dataflow"},
-            {"id": "node.create", "label": "Propose a node"},
+            {"id": "node.create", "label": "Add a node"},
         ]
         modes = agents_catalog.agent_modes(manifest)
         assert _rows(modes) == [

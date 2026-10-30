@@ -80,9 +80,6 @@ def solve_attachment_stream(project_id: str, attachment_id: str):
         isinstance(node_ids, list) and all(isinstance(n, str) for n in node_ids)
     ):
         return _error("'nodeIds' must be a list of node id strings when present")
-    mode = body.get("mode", "write")
-    if mode not in ("write", "propose"):
-        return _error("'mode' must be 'write' or 'propose' when present")
     verify = body.get("verify", True)
     if not isinstance(verify, bool):
         return _error("'verify' must be a boolean when present")
@@ -91,7 +88,7 @@ def solve_attachment_stream(project_id: str, attachment_id: str):
         config = _llm_for_attachment(flow, attachment_id)
         events = agents_services.solve_attachment_stream(
             flow.key, flow.project_id, attachment_id, config, node_ids,
-            mode=mode, verify=verify,
+            verify=verify,
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
@@ -117,11 +114,11 @@ def solve_attachment_stream(project_id: str, attachment_id: str):
 )
 @require_auth
 def simulate(project_id: str, attachment_id: str):
-    """The Simulation Mode driver (dev/67-9, DEC-054) as Server-Sent Events.
-    Body: ``{"mode": "step"|"auto"}`` (default step). Auto runs
-    create → validate → auto-approve-on-PASS per node in topological order,
-    then the connection stage — pausing on any failure with the reason and
-    the pending review. Resume = calling this endpoint again."""
+    """Build & validate (dev/67-9, DEC-054) over the plan that landed, as
+    Server-Sent Events. Body: ``{"mode": "step"|"auto"}`` (default step).
+    Auto runs validate (code that passes lands) then approve per node in
+    topological order, pausing at the first failure with the reason. Resume =
+    calling this endpoint again."""
 
     body = request.get_json(silent=True) or {}
     mode = body.get("mode", "step")
@@ -218,8 +215,8 @@ def solve_node(project_id: str, attachment_id: str):
     """dev/115 (DEC-073, Amendment A2): the per-node Solve — the user's
     explicit ask to run, fix, and re-run ONE node's code from the node's own
     agent. Body: ``{"nodeId": "<node id>"}``. Round 0 executes the current
-    content; corrections run the shared loop; a node that had content lands
-    as an already-executed content review, an empty one is written on PASS.
+    content; corrections run the shared loop; code that passed is written,
+    into a node that had content as the agent's change with its Undo.
     Detached: the response subscribes to the job (replay + tail); closing it
     does not stop the run — ``GET …/jobs/stream`` re-attaches."""
 
@@ -257,11 +254,11 @@ def solve_node(project_id: str, attachment_id: str):
 )
 @require_auth
 def validate_node(project_id: str, attachment_id: str):
-    """Generate → execute-through → validate → self-correct → propose, for ONE
-    node, as Server-Sent Events (dev/67-7 — Simulation Mode: validate).
-    Body: ``{"ref": "<plan ref>"}`` or ``{"nodeId": "<node id>"}``. The
-    outcome lands as a reviewed content proposal carrying the validation
-    verdict; the saved spec is never mutated by validation itself."""
+    """Generate, execute through, validate, self-correct and write, for ONE
+    node of a plan, as Server-Sent Events (dev/67-7: a row's Solve). Body:
+    ``{"ref": "<plan ref>"}`` or ``{"nodeId": "<node id>"}``. Code that
+    passed lands as the agent's change carrying the validation verdict; code
+    that failed is not written."""
 
     body = request.get_json(silent=True) or {}
     ref = body.get("ref")
