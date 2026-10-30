@@ -627,6 +627,50 @@ class TestDelegationTailAndBudget:
         execution = next(t["execution"] for t in reversed(turns) if t.get("execution"))
         assert len(execution["delegations"]) == 3
 
+    def test_a_delegation_block_a_brace_short_gets_a_correction_round_then_delegates(
+        self, client, user_and_token, tmp_curio, monkeypatch,
+    ):
+        """As a broken tool request's block does (#245): a correction round
+        names the broken JSON, the block never reaches the user, and the
+        corrected block delegates."""
+        from utk_curio.backend.app.agents.domain import agent_text
+
+        user, token = user_and_token
+        pid = _project(client, token)
+        broken = _delegate_tail()[: -len("}\n```")] + "\n```"
+        att_id, calls = _setup(client, token, pid, monkeypatch, replies=[
+            broken,                            # parent round 1: one closing brace short
+            _delegate_tail(),                  # parent round 2: the corrected block
+            "df.sum(axis=0)",                  # the child's reply
+            "Here is the node content plan.",  # parent round 3: final
+        ])
+        body = _run(client, token, pid, att_id).get_json()
+        assert "delegateRequest" not in body["reply"], body["reply"]
+        # `calls` aliases the live message list, so the whole conversation is scanned.
+        feedback = "\n".join(m["content"] for m in calls[-1] if isinstance(m.get("content"), str))
+        assert "[tool validation]" in feedback and "not valid JSON" in feedback, feedback
+        assert agent_text.message("tool-round.tool-fence") in feedback, feedback
+        part = next(p for p in body["content"] if p["type"] == "delegation")
+        assert (part["capability"], part["status"]) == ("node.content.generate", "ok"), part
+
+    def test_a_delegation_block_still_broken_at_the_cap_is_dropped_with_a_card(
+        self, client, user_and_token, tmp_curio, monkeypatch,
+    ):
+        """The shared MAX_TOOL_ROUNDS correction rounds, then the cap: the
+        block is dropped and a card says the delegation was not made, as a tool
+        request's card says its proposal was not created."""
+        user, token = user_and_token
+        pid = _project(client, token)
+        broken = _delegate_tail()[: -len("}\n```")] + "\n```"
+        att_id, calls = _setup(client, token, pid, monkeypatch, replies=[broken])
+        body = _run(client, token, pid, att_id).get_json()
+        assert "delegateRequest" not in body["reply"], body["reply"]
+        assert len(calls) == 4, len(calls)  # three correction rounds, then the cap
+        card = next(p for p in body["content"] if p["type"] == "card")
+        assert card["title"] == "Delegation not made", card
+        assert "not valid JSON" in card["lines"][0], card
+        assert not [p for p in body["content"] if p["type"] == "delegation"]
+
 
 class TestDelegateStreamEvents:
     def test_sse_ordering_requested_started_result(self, client, user_and_token, tmp_curio, monkeypatch):
