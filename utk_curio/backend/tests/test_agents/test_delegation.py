@@ -632,12 +632,20 @@ class TestDelegationTailAndBudget:
     ):
         """As a broken tool request's block does (#245): a correction round
         names the broken JSON, the block never reaches the user, and the
-        corrected block delegates."""
+        corrected block delegates. The block was in the right fence, at the
+        reply's end, so the correction holds its JSON error alone and no hint
+        on where to put the block."""
+        from utk_curio.backend.app.agents.application import tool_rounds
         from utk_curio.backend.app.agents.domain import agent_text
 
         user, token = user_and_token
         pid = _project(client, token)
         broken = _delegate_tail()[: -len("}\n```")] + "\n```"
+        try:
+            json.loads(broken.split("\n", 1)[1].rsplit("\n", 1)[0])
+            raise AssertionError("the block parses: it is not one brace short")
+        except ValueError as exc:
+            error = agent_text.message("request.block-not-json", exc=exc)
         att_id, calls = _setup(client, token, pid, monkeypatch, replies=[
             broken,                            # parent round 1: one closing brace short
             _delegate_tail(),                  # parent round 2: the corrected block
@@ -647,9 +655,9 @@ class TestDelegationTailAndBudget:
         body = _run(client, token, pid, att_id).get_json()
         assert "delegateRequest" not in body["reply"], body["reply"]
         # `calls` aliases the live message list, so the whole conversation is scanned.
-        feedback = "\n".join(m["content"] for m in calls[-1] if isinstance(m.get("content"), str))
-        assert "[tool validation]" in feedback and "not valid JSON" in feedback, feedback
-        assert agent_text.message("tool-round.tool-fence") in feedback, feedback
+        feedback = [m["content"] for m in calls[-1] if isinstance(m.get("content"), str)]
+        assert tool_rounds._tool_correction_message([error])["content"] in feedback, feedback
+        assert not any(agent_text.message("tool-round.tool-fence") in text for text in feedback), feedback
         part = next(p for p in body["content"] if p["type"] == "delegation")
         assert (part["capability"], part["status"]) == ("node.content.generate", "ok"), part
 
