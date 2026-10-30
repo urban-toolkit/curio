@@ -65,7 +65,9 @@ def scenario_row(scenario: dict, project: dict, preview: dict | None) -> dict[st
 
 def _node_entry(node: dict, results: list[dict]) -> dict[str, Any]:
     metadata = node.get("metadata") if isinstance(node.get("metadata"), dict) else {}
-    label = node.get("title") or metadata.get("packageTemplateLabel")
+    # The header renamed on the canvas first, then the title an agent or an
+    # example gave it, as the canvas names it.
+    label = metadata.get("packageTemplateLabel") or node.get("title")
     entry: dict[str, Any] = {"id": node["id"], "type": str(node.get("type") or "")}
     if isinstance(label, str) and label:
         entry["label"] = label

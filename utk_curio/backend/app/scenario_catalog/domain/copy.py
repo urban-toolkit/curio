@@ -25,12 +25,12 @@ from utk_curio.backend.app.scenario_catalog.domain.parts import (
 
 
 def node_label(node: dict) -> str:
-    """What a message calls *node*: its title, else its template's name, as a
-    saved output's title names it."""
+    """What a message calls *node*: the header renamed on the canvas, else its
+    title, else its template's name."""
     from utk_curio.backend.app.projects.services import _humanize_node_type
 
     metadata = node.get("metadata") if isinstance(node.get("metadata"), dict) else {}
-    label = node.get("title") or metadata.get("packageTemplateLabel")
+    label = metadata.get("packageTemplateLabel") or node.get("title")
     if isinstance(label, str) and label:
         return label
     return _humanize_node_type(_template(node)) or str(node.get("id"))
