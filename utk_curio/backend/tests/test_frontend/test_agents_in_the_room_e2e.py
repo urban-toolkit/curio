@@ -42,7 +42,9 @@ AGENT = "agent.curio.node-builder@1"
 FIRST, SECOND = "room-export-first", "room-export-second"
 EXPORT = "curio.builtin/data-export"
 STARTER = "return curio_export(input_0, [!! file_name !!])\n"
-WRITTEN = "# Written by the Node Builder.\n" + STARTER
+#: What the agent writes into each node, as it lands: an agent's code is kept
+#: trimmed (``content.extract_node_content``), so it ends with no newline.
+WRITTEN = "# Written by the Node Builder.\nreturn curio_export(input_0, [!! file_name !!])"
 
 DOCK = '[role="toolbar"][aria-label="Canvas agents"]'
 PEOPLE = f'{DOCK} [role="group"][aria-label="People here"]'

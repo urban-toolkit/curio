@@ -246,6 +246,29 @@ def _ancestor_slice(spec: WorkflowSpec, target_id: str) -> set[str]:
     return ancestors(target_id, spec.edges)
 
 
+def _acting_store(user_key: str, project_id: str, acting_user) -> tuple[str | None, object | None]:
+    """The storage key of *acting_user*, the account a run is for, and, when
+    that account is not the owner of the dataflow *project_id*, whose key
+    *user_key* is, the owner's packages the dataflow uses
+    (``packages.service.OwnersPackages``), as a Play of the account reads them
+    (``node_exec.owners_packages_for``).
+
+    The account is an editor the owner invited: the agents' routes, which
+    start every run that names an acting account, admit only the owner and
+    those editors (``access.agents_role``) and hand on the owner's key. So no
+    database is asked here, and a run on a thread of its own resolves the
+    same. ``(None, None)`` without an acting account."""
+    if acting_user is None:
+        return None, None
+    from utk_curio.backend.app.execution.node_exec import exec_user_key
+    from utk_curio.backend.app.packages.service import OwnersPackages
+
+    acting_key = exec_user_key(acting_user)
+    if not acting_key or not user_key or not project_id or acting_key == user_key:
+        return acting_key, None
+    return acting_key, OwnersPackages(user_key, project_id)
+
+
 def run_through_node(
     user_key: str,
     project_id: str,
@@ -281,7 +304,10 @@ def run_through_node(
     ``acting_user`` is the account's ``User`` row, captured in the request by
     a caller that runs this on a thread of its own: the models its nodes load
     are resolved from that account's store (else from *exec_user_key*'s, or
-    *user_key*'s).
+    *user_key*'s). When that account is an editor the owner of the dataflow,
+    whose key *user_key* is, invited, the packages and models the dataflow
+    uses come from her store, and any other from the editor's
+    (:func:`_acting_store`).
 
     dev/115: ``dataset_paths`` (``{datasetId: absolutePath}`` for the code's
     ``curio_data_path("<id>")`` calls) and ``exec_user_key`` ride the
@@ -367,6 +393,9 @@ def run_through_node(
         return report
     report["order"] = [n.id for n in ordered]
     outputs: dict[str, dict] = {}
+    # For an editor the owner invited: the packages and models the dataflow
+    # uses, read from the owner's store as the editor's Play reads them.
+    acting_key, owners = _acting_store(user_key, project_id, acting_user)
     for index, node in enumerate(ordered):
         if progress is not None:
             progress(node.id, index, len(ordered))
@@ -452,10 +481,10 @@ def run_through_node(
         if is_py and "curio_load_model" in seeded:
             # The model packages the node loads, as /processPythonCode
             # resolves them, from the acting account's store.
-            from utk_curio.backend.app.execution.node_exec import resolve_models, resolve_models_for
+            from utk_curio.backend.app.execution.node_exec import resolve_models_for
 
             if acting_user is not None:
-                models = resolve_models(seeded, acting_user)
+                models = resolve_models_for(seeded, acting_key, owners=owners)
             else:
                 models = resolve_models_for(seeded, exec_user_key or user_key)
             if models:
@@ -465,9 +494,16 @@ def run_through_node(
             # /processPythonCode resolves them (#468).
             from utk_curio.backend.app.execution.node_exec import resolve_package_modules
 
-            package_modules = resolve_package_modules(
-                node.raw_type, exec_user_key or user_key, project_id,
-            )
+            if owners is None:
+                package_modules = resolve_package_modules(
+                    node.raw_type, exec_user_key or user_key, project_id,
+                )
+            else:
+                # An editor's run: a package the dataflow uses from the
+                # owner's store, any other from the editor's own.
+                package_modules = resolve_package_modules(
+                    node.raw_type, acting_key, project_id, owners=owners,
+                )
             if package_modules:
                 payload["package_modules"] = package_modules
         endpoint = "/exec" if is_py else "/execJs"

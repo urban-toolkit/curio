@@ -282,12 +282,14 @@ def resolve_dataset_ids(ids: list, dataflow_id: str | None, user, formats: dict 
         return {}
 
 
-def resolve_models_for(code: str, user_key: str | None) -> dict:
+def resolve_models_for(code: str, user_key: str | None, *, owners=None) -> dict:
     """``{model id: folder}`` for the models *code* runs as
     ``curio_load_model("<id>")`` that the store of *user_key* holds: models
     behave like nodes, so a model package never added gives none
-    (``packages.service.resolve_model_dirs``). Fail-open like dataset paths:
-    the sandbox's ``curio_load_model`` names a model that is not there."""
+    (``packages.service.resolve_model_dirs``). With *owners*
+    (:func:`owners_packages_for`), a model the dataflow uses comes from its
+    owner's store. Fail-open like dataset paths: the sandbox's
+    ``curio_load_model`` names a model that is not there."""
     from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
 
     ids = model_ids_in_code(code)
@@ -296,28 +298,66 @@ def resolve_models_for(code: str, user_key: str | None) -> dict:
     try:
         from utk_curio.backend.app.packages.service import resolve_model_dirs
 
-        return resolve_model_dirs(user_key, ids)
+        if owners is None:
+            return resolve_model_dirs(user_key, ids)
+        return resolve_model_dirs(user_key, ids, owners=owners)
     except Exception as e:  # noqa: BLE001 - resolution must never fail the execution
         print(f"[processPythonCode] model resolution failed: {e}", flush=True)
         return {}
 
 
-def resolve_models(code: str, user) -> dict:
-    """:func:`resolve_models_for` the account *user* runs as."""
-    return resolve_models_for(code, exec_user_key(user))
+def resolve_models(code: str, user, dataflow_id: str | None = None) -> dict:
+    """:func:`resolve_models_for` the account *user* runs as, on the dataflow
+    *dataflow_id*: one whose owner invited *user* to edit it gives the models
+    it uses from her store (:func:`owners_packages_for`)."""
+    owners = owners_packages_for(user, dataflow_id) if "curio_load_model" in code else None
+    return resolve_models_for(code, exec_user_key(user), owners=owners)
 
 
 def resolve_package_modules(
-    node_type: str, user_key: str | None, dataflow_id: str | None = None,
+    node_type: str, user_key: str | None, dataflow_id: str | None = None, *, owners=None,
 ) -> dict | list | None:
     """The modules the node's package ships beside its templates, and those of
     the packages it depends on, which the sandbox makes importable for this
     run (#468): ``{"root", "names"}``, a list of them, or None for a node
-    whose package ships none and depends on none. Fail-open like dataset
-    paths."""
+    whose package ships none and depends on none. With *owners*
+    (:func:`owners_packages_for`), a node of a package the dataflow uses gets
+    those of its owner's copy. Fail-open like dataset paths."""
     from utk_curio.backend.app.packages.service import modules_for_node
 
-    return modules_for_node(user_key, node_type, dataflow_id)
+    if owners is None:
+        return modules_for_node(user_key, node_type, dataflow_id)
+    return modules_for_node(user_key, node_type, dataflow_id, owners=owners)
+
+
+def owners_packages_for(user, dataflow_id: str | None):
+    """What a run of *user* on the dataflow *dataflow_id* reads from its
+    owner's store when she invited *user* to edit it: the packages and models
+    the dataflow uses (``packages.service.OwnersPackages``). Who edits it is
+    ``access.agents_role``, and her store is ``_owner_user_dir_key``, as the
+    datasets such a run loads are read (``InstalledDatasetRepository``). None
+    for her own run, for anyone she did not invite, and for a run that names
+    no dataflow, whose packages and models are all the runner's own. Asks the
+    database, so it is called in a request or an app context. Fail-open."""
+    if user is None or not dataflow_id:
+        return None
+    try:
+        from utk_curio.backend.app.packages.service import OwnersPackages
+        from utk_curio.backend.app.projects import access
+        from utk_curio.backend.app.projects.models import Project
+        from utk_curio.backend.app.projects.services import _owner_user_dir_key, _user_dir_key
+        from utk_curio.backend.extensions import db
+
+        project = db.session.get(Project, dataflow_id)
+        if project is None or access.agents_role(user, project) not in access.EDIT_ROLES:
+            return None
+        store_key = _owner_user_dir_key(project)
+        if store_key == _user_dir_key(user):
+            return None
+        return OwnersPackages(store_key, project.id)
+    except Exception as e:  # noqa: BLE001 - the run's own packages still answer
+        print(f"[node_exec] the dataflow owner's packages could not be read: {e.__class__.__name__}", flush=True)
+        return None
 
 
 def resolve_secrets(code: str, user) -> dict:
@@ -566,7 +606,7 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
         # with its own error, where the sandbox would only say "not available".
         with left_out_files.failures() as unavailable:
             dataset_paths = resolve_dataset_paths(run.code, run.dataflow_id, user, dataset_formats)
-            exec_models = resolve_models(run.code, user)
+            exec_models = resolve_models(run.code, user, run.dataflow_id)
         if unavailable:
             return _unavailable_reply(user, run, input_ref, unavailable, started=t0), 200
         # Under isolation the sandbox gives each user a persistent work directory,
@@ -581,7 +621,9 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
             run.code, user_key, user=user, dataflow_id=run.dataflow_id,
         )
         exec_secrets = resolve_secrets(run.code, user)
-        package_modules = resolve_package_modules(run.node_type, user_key, run.dataflow_id)
+        package_modules = resolve_package_modules(
+            run.node_type, user_key, run.dataflow_id, owners=owners_packages_for(user, run.dataflow_id),
+        )
         body.update({
             "dataset_paths": dataset_paths,
             "dataset_formats": dataset_formats,
