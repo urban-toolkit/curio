@@ -4,9 +4,12 @@
  * people the canvas's dock shows. Any peer with a state the server named is
  * one, whatever joined as it.
  *
- * You are not among them, in this tab or another of your account's. A
- * participant whose doc started again leaves an older state behind for a
- * while, so each participant is its freshest state.
+ * You are not among them, in this tab or another of your account's. Every
+ * guest signs in to the one shared guest account, so a tab of it carries its
+ * number in the room instead (`presence.guestNumberOf`): a numbered state is
+ * someone of its own, never yours unless it is this tab's. A participant whose
+ * doc started again leaves an older state behind for a while, so each
+ * participant is its freshest state.
  *
  * Each state's `user` is the server's (`dataflow_docs._user`). `editing` is the
  * node whose code the participant edits, and `pointer` where they point on the
@@ -16,7 +19,7 @@
 import type { Awareness } from "y-protocols/awareness";
 
 import { pointerOf } from "./cursors";
-import { nameOf, personColor, type CanvasPointer, type PresenceState } from "./presence";
+import { guestNumberOf, nameOf, personColor, type CanvasPointer, type PresenceState } from "./presence";
 
 export interface Person {
     /** One per participant: its id, else its awareness client's. */
@@ -26,8 +29,8 @@ export interface Person {
     userId: number | null;
     name: string;
     initials: string;
-    /** Their color, from their account: their cursor's on the canvas and in
-     *  the code editors. */
+    /** Their color, from their account, or a guest tab's number: their
+     *  cursor's on the canvas and in the code editors. */
     color: string;
     /** Owner, editor or watcher; the room's list is newer than a state's. */
     role: string | null;
@@ -61,7 +64,7 @@ function freshest(awareness: Awareness, own: OwnParticipant): Map<string, Named>
         if (clientId === awareness.clientID || !user || typeof user !== "object") return;
         const participantId = typeof user.participant_id === "string" ? user.participant_id : null;
         if (participantId && participantId === own.participantId) return;
-        if (own.userId != null && user.user_id === own.userId) return;
+        if (own.userId != null && user.user_id === own.userId && guestNumberOf(user) === null) return;
         const key = participantId ?? `client:${clientId}`;
         const at = awareness.meta.get(clientId)?.lastUpdated ?? 0;
         const prior = out.get(key);

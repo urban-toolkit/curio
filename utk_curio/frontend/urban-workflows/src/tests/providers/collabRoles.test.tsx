@@ -178,6 +178,28 @@ test("the room's Activity is what the join brought, then each join, leave and ch
   ]);
 });
 
+// A tab of the shared guest account, which every guest signs in to: the room
+// numbers it, and names it by its number in its join and its leave.
+const GUEST_TAB = {
+  user_id: 3, username: "guest_shared", name: "Shared Guest", participant_id: "p-5", role: "watcher", guest_number: 2,
+};
+
+test("a tab of the shared guest account keeps its name and its number in the Activity of its join and its leave", async () => {
+  const socket = await joined();
+  joinAnswer(socket, { ok: true, participant_id: "p-2", role: "editor", snapshot: SNAPSHOT });
+
+  fire(socket, "user_joined", { ...GUEST_TAB, users: [...USERS, GUEST_TAB] });
+  fire(socket, "user_left", {
+    user_id: 3, username: "guest_shared", name: "Shared Guest", guest_number: 2,
+    participant_id: "p-5", released_locks: [], users: USERS,
+  });
+
+  expect(seen.activity.map(({ kind, payload }) => [kind, payload])).toEqual([
+    ["user_joined", { user_id: 3, username: "guest_shared", name: "Shared Guest", role: "watcher", guest_number: 2 }],
+    ["user_left", { user_id: 3, username: "guest_shared", name: "Shared Guest", guest_number: 2 }],
+  ]);
+});
+
 test("a change to the editors is one event for each account whose role changed, however many tabs it has", () => {
   const before = [...USERS, BEN, BENS_OTHER_TAB];
   const after = [...USERS, { ...BEN, role: "editor" }, { ...BENS_OTHER_TAB, role: "editor" }];
