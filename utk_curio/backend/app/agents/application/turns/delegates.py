@@ -306,7 +306,7 @@ def _run_delegate_traced(
                 user_key, project_id, home_session_id, home_attachment_id,
                 [sessions.make_turn(
                     "user",
-                    f"[Delegated by {parent_label}] "
+                    f"{sessions.DELEGATED_TURN_PREFIX}{parent_label}] "
                     f"{_delegation_task_text(capability, inputs)}",
                 )],
             )

@@ -214,7 +214,7 @@ def _announce_delegated_solve(user_key, project_id, home_attachment_id, home_ses
                 user_key, project_id, home_session_id, home_attachment_id,
                 [sessions.make_turn(
                     "user",
-                    f"[Delegated by {parent_name}] Solve {label!r}: generate, "
+                    f"{sessions.DELEGATED_TURN_PREFIX}{parent_name}] Solve {label!r}: generate, "
                     "execute through the dataflow, validate, self-correct.",
                 )],
             )

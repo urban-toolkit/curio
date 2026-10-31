@@ -36,6 +36,11 @@ CONTEXT_WINDOW_TURNS = 20
 
 TURN_ROLES = ("user", "agent")
 
+#: How the user turn the runtime writes for a delegated task begins, in the
+#: session of the agent the task was handed to: ``[Delegated by Node Builder]
+#: ...``. Its words are the delegating agent's, not a person's.
+DELEGATED_TURN_PREFIX = "[Delegated by "
+
 
 class SessionError(ValueError):
     """Raised for an invalid session id or malformed turn."""
@@ -62,6 +67,15 @@ def read_turns(user_key: str, project_id: str, session_id: str) -> list[dict]:
         return []
     turns = data.get("turns") if isinstance(data, dict) else None
     return [t for t in turns if isinstance(t, dict)] if isinstance(turns, list) else []
+
+
+def a_persons_message(turn: dict) -> bool:
+    """Whether *turn* is a message a person wrote: a user turn that is not
+    the task the runtime recorded for a delegate (:data:`DELEGATED_TURN_PREFIX`)."""
+    if not isinstance(turn, dict):
+        return False
+    text = turn.get("text")
+    return turn.get("role") == "user" and isinstance(text, str) and not text.startswith(DELEGATED_TURN_PREFIX)
 
 
 def make_turn(

@@ -560,7 +560,9 @@ def _session_grounding_evidence(
 ) -> tuple[list[str], dict]:
     """dev/114: what this conversation already established — the user's own
     texts (the current message first) and every candidate row the runtime
-    verified (persisted turns + this run's ``_verified_urls``)."""
+    verified (persisted turns + this run's ``_verified_urls``). The task the
+    runtime recorded for a delegate in its session is the delegating agent's
+    words, not the user's (``sessions.a_persons_message``)."""
     texts: list[str] = []
     verified: dict = {}
     message = loop_ctx.get("message")
@@ -573,7 +575,7 @@ def _session_grounding_evidence(
         except Exception:
             turns = []
         for turn in turns:
-            if turn.get("role") == "user" and isinstance(turn.get("text"), str):
+            if sessions.a_persons_message(turn):
                 texts.append(turn["text"])
             for part in turn.get("content") or []:
                 if not isinstance(part, dict) or part.get("type") != "datasetCandidates":
