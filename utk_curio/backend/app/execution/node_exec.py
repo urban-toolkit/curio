@@ -120,12 +120,15 @@ def input_names(input_ref: dict) -> list[str]:
 WRAPPER_KINDS = frozenset({"dict", "list", "outputs", ""})
 
 
-def _kept_as_a_wrapper(dataflow_id: str, name: str) -> bool:
-    """Whether the runs of *dataflow_id*'s owner kept *name* as an output the
-    sandbox called a kind a wrapper is stored as."""
+def _kept_as_a_wrapper(dataflow_id: str, name: str, user=None) -> bool:
+    """Whether the runs of *dataflow_id*'s owner, or *user*'s own runs as an
+    editor of it, kept *name* as an output the sandbox called a kind a
+    wrapper is stored as."""
     from utk_curio.backend.app.runs import kept
 
     entry = kept.owner_entry(dataflow_id, name)
+    if entry is None and user is not None:
+        entry = kept.editor_entry(dataflow_id, getattr(user, "id", None), name)
     if entry is None:
         return False
     try:
@@ -142,14 +145,15 @@ def wrapped_input_names(user, run: "NodeRun", input_ref: dict, saved_inputs: dic
     once the row is gone, as the run reads it. [] for any other input; None
     when the sandbox cannot say. Asked of the sandbox only for an input that
     can be one: one the request calls a wrapper's kind, a saved output, whose
-    kind a save names, or one the owner's runs kept as such a kind."""
+    kind a save names, or one the owner's runs, or the caller's own as an
+    editor, kept as such a kind."""
     path = (input_ref or {}).get('path')
     if user is None or not run.dataflow_id or not isinstance(path, str) or not path:
         return []
     declared = str((run.input or {}).get('dataType') or '') if isinstance(run.input, dict) else ''
     try:
         if (declared not in WRAPPER_KINDS and path not in saved_inputs
-                and not _kept_as_a_wrapper(run.dataflow_id, path)):
+                and not _kept_as_a_wrapper(run.dataflow_id, path, user)):
             return []
     except Exception:  # noqa: BLE001 - asked of the sandbox instead
         pass
@@ -223,28 +227,56 @@ def resolve_saved_inputs(names: list[str], dataflow_id: str | None) -> dict:
         return {}
 
 
+def _kept_maker(user, project) -> str | None:
+    """Whose kept outputs a run of *user* on *project* keeps and reads:
+    the owner's (``kept.MADE_BY_OWNER``), those of an editor she invited
+    (``kept.MADE_BY_EDITOR``, his account's alone), or None for anyone else,
+    whose run stays in their own session."""
+    from utk_curio.backend.app.projects import access
+    from utk_curio.backend.app.runs import kept
+
+    if user is None or project is None:
+        return None
+    role = access.agents_role(user, project)
+    if role == access.OWNER:
+        return kept.MADE_BY_OWNER
+    if role == access.EDITOR:
+        return kept.MADE_BY_EDITOR
+    return None
+
+
+def _own_kept_entry(maker: str, dataflow_id: str, user, name: str):
+    """The live output *name* that the runs of *maker*, the owner or the
+    editor *user*, kept on *dataflow_id*, or None."""
+    from utk_curio.backend.app.runs import kept
+
+    if maker == kept.MADE_BY_EDITOR:
+        return kept.editor_entry(dataflow_id, getattr(user, "id", None), name)
+    return kept.owner_entry(dataflow_id, name)
+
+
 def resolve_kept_inputs(user, names: list[str], dataflow_id: str | None, saved_inputs: dict) -> dict:
     """``{name: {"session"}}`` for each of *names*, the outputs a run that is
     not kept (:func:`_kept_run`) reads, that the runs of its dataflow's owner
-    kept, when the caller is that owner: the kept session that made it, which
-    the caller's own session cannot read. A tab's run below a step only the
-    browser makes is such a run, its input from that step being the tab's
-    own, and it may read what the owner's run on the server kept, an output a
+    kept, when the caller is that owner, or that the caller's own runs kept,
+    when the caller is an editor she invited: the kept session that made it,
+    which the caller's own session cannot read. A tab's run below a step only
+    the browser makes is such a run, its input from that step being the tab's
+    own, and it may read what the caller's run on the server kept, an output a
     wrapper among its inputs names too. A name *saved_inputs* resolves is
     left to its saved file. Fail-open, as saved inputs are."""
     if user is None or not dataflow_id:
         return {}
     try:
         from utk_curio.backend.app.projects.models import Project
-        from utk_curio.backend.app.runs import kept
         from utk_curio.backend.extensions import db
 
-        project = db.session.get(Project, dataflow_id)
-        if project is None or project.user_id != getattr(user, "id", None):
+        maker = _kept_maker(user, db.session.get(Project, dataflow_id))
+        if maker is None:
             return {}
         granted = {}
         for name in names[:MAX_SAVED_INPUTS]:
-            entry = None if name in saved_inputs else kept.owner_entry(dataflow_id, name)
+            entry = None if name in saved_inputs else _own_kept_entry(maker, dataflow_id, user, name)
             if entry is not None:
                 granted[name] = {"session": entry.session_id}
         return granted
@@ -451,31 +483,35 @@ def execute_js_node(user, session_token: str | None, run: NodeRun) -> tuple[dict
 
 @dataclass(frozen=True)
 class _KeptRun:
-    """The kept session an owner's run of a saved dataflow runs in, and
-    whether what it reads is the owner's alone (``kept.OWNER_ONLY``)."""
+    """The kept session a run of a saved dataflow runs in, whose run it is
+    (*made_by*: its owner's, or an invited editor's, whose outputs are his
+    alone), and whether what an owner's run reads is hers alone
+    (``kept.OWNER_ONLY``)."""
 
     session_id: str
     private: bool
+    made_by: str = "owner"
 
 
 def _kept_run(user, run: NodeRun, names: list[str], saved_inputs: dict) -> _KeptRun | None:
     """A kept session for this run (``common/kept_sessions.py``) when it is
-    the owner's run of a saved dataflow that reads only that dataflow's
-    outputs: those the owner's runs kept, and those it saved. *names* are
-    what it reads: its inputs, and what a wrapper among them names
-    (:func:`wrapped_input_names`), which a node's code may have written to
-    name any output. Its output is then kept too (``runs/kept.py``), and the
-    owner reads it through the dataflow's routes, under any sign-in, for as
-    long as it is kept.
+    the run of a saved dataflow by its owner, or by an editor she invited,
+    that reads only that dataflow's outputs: those the caller's runs kept
+    (the owner's, or the editor's own, never hers), and those it saved.
+    *names* are what it reads: its inputs, and what a wrapper among them
+    names (:func:`wrapped_input_names`), which a node's code may have written
+    to name any output. Its output is then kept too (``runs/kept.py``), and
+    the caller reads it through the dataflow's routes, under any sign-in, for
+    as long as it is kept: the owner's as hers, an editor's as his alone.
 
-    Anything else runs in the caller's own session, as before: a
-    collaborator's play, an unsaved canvas, and a run whose input is not the
-    dataflow's, such as one made before its first save, which reads the
-    dataflow's kept outputs among its inputs under the sessions that made
-    them (:func:`resolve_kept_inputs`). The sandbox lets a
-    kept session read any kept output, so only this dataflow's names may
+    Anything else runs in the caller's own session, as before: the play of
+    someone she did not invite, an unsaved canvas, and a run whose input is
+    not the dataflow's, such as one made before its first save, which reads
+    the caller's kept outputs among its inputs under the sessions that made
+    them (:func:`resolve_kept_inputs`). The sandbox lets a kept session read
+    any kept output, so only this dataflow's names that the caller may read
     reach one. A saved output is read from the store first, so a name its
-    manifest records that a kept run made, and the owner's runs did not
+    manifest records that a kept run made, and the caller's runs did not
     keep, is not one: the sandbox would read that run's artifact, whoever's
     it is.
     """
@@ -488,21 +524,32 @@ def _kept_run(user, run: NodeRun, names: list[str], saved_inputs: dict) -> _Kept
     from utk_curio.common.kept_sessions import new_session_id
 
     try:
-        project = db.session.get(Project, run.dataflow_id)
+        maker = _kept_maker(user, db.session.get(Project, run.dataflow_id))
     except Exception:  # noqa: BLE001 - a run never fails on this lookup
         return None
-    if project is None or project.user_id != getattr(user, "id", None):
+    if maker is None:
         return None
     if len(names) > MAX_SAVED_INPUTS:
         return None
-    private = False
+    private = maker == kept.MADE_BY_EDITOR
     for name in names:
-        entry = kept.owner_entry(run.dataflow_id, name)
+        entry = _own_kept_entry(maker, run.dataflow_id, user, name)
         if entry is not None:
             private = private or entry.private_to is not None
-        elif name not in saved_inputs or made_by_a_kept_run(name):
+        elif name not in saved_inputs or (
+            made_by_a_kept_run(name) and not _saved_from_the_owners_run(maker, run.dataflow_id, name)
+        ):
             return None
-    return _KeptRun(session_id=new_session_id(), private=private)
+    return _KeptRun(session_id=new_session_id(), private=private, made_by=maker)
+
+
+def _saved_from_the_owners_run(maker: str, dataflow_id: str, name: str) -> bool:
+    """Whether *name*, a saved output of *dataflow_id*, is one the owner's
+    runs of it kept, for an editor's run: the dataflow's own output, which
+    the editor reads anyway, so his kept session may read its artifact."""
+    from utk_curio.backend.app.runs import kept
+
+    return maker == kept.MADE_BY_EDITOR and kept.owner_entry(dataflow_id, name) is not None
 
 
 def _writes_dataflow_id(user, run: NodeRun) -> str | None:
@@ -533,18 +580,23 @@ def _forget_kept_run(kept_run: _KeptRun | None) -> None:
         kept.forget_sessions([kept_run.session_id])
 
 
-def _keep_owner_output(user, run: NodeRun, kept_run: _KeptRun, output, *,
-                       language: str, used_keys: bool, dataset_paths: dict | None) -> None:
-    """Keep the output of an owner's run (:func:`_kept_run`) under the key a
+def _keep_run_output(user, run: NodeRun, kept_run: _KeptRun, output, *,
+                     language: str, used_keys: bool, dataset_paths: dict | None) -> None:
+    """Keep the output of a kept run (:func:`_kept_run`) under the key a
     viewer's run of the same step computes (``runs/viewer.py``), or forget
-    its session when it made none. Private when the owner's keys made it, or
-    anything it read."""
+    its session when it made none. An owner's is private when her keys made
+    it, or anything it read; an invited editor's is his account's alone
+    (``kept.account_private``)."""
     from utk_curio.backend.app.projects.services import _user_dir_key
     from utk_curio.backend.app.runs import kept
 
     if not (isinstance(output, dict) and output.get("path")):
         _forget_kept_run(kept_run)
         return
+    if kept_run.made_by == kept.MADE_BY_EDITOR:
+        private_to = kept.account_private(user.id)
+    else:
+        private_to = kept.OWNER_ONLY if (kept_run.private or used_keys) else None
     try:
         key = kept.step_key(
             packages=kept.packages_fingerprint(_user_dir_key(user)),
@@ -554,8 +606,7 @@ def _keep_owner_output(user, run: NodeRun, kept_run: _KeptRun, output, *,
         )
         kept.keep(
             run.dataflow_id, run.node_id, key, kept_run.session_id, output,
-            private_to=kept.OWNER_ONLY if (kept_run.private or used_keys) else None,
-            made_by=kept.MADE_BY_OWNER,
+            private_to=private_to, made_by=kept_run.made_by,
         )
     except Exception as e:  # noqa: BLE001 - the run's reply goes out either way
         print(f"[node_exec] could not keep the output of node {run.node_id}: "
@@ -698,7 +749,7 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
     stderr = response_json['stderr']
     output = response_json['output']
     if kept_run is not None:
-        _keep_owner_output(
+        _keep_run_output(
             user, run, kept_run, output, language=language,
             used_keys=bool(exec_secrets), dataset_paths=dataset_paths,
         )

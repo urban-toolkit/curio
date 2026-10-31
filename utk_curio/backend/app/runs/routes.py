@@ -1,6 +1,8 @@
-"""Flask blueprint for dataflow runs on the server. Every route requires sign-in,
-and a user sees only the runs they started: a dataflow's owner and the editors
-the owner invited each run it, and list, follow and cancel their own runs."""
+"""Flask blueprint for dataflow runs on the server. Every route requires sign-in.
+A dataflow's owner and the editors the owner invited each run it. The owner
+lists, follows and cancels every run of her dataflow, each naming who started
+it; an editor, the runs he started. Only a run's starter reports its browser
+steps."""
 from __future__ import annotations
 
 import json
@@ -63,11 +65,13 @@ def start_run(project_id: str):
 @runs_bp.route("/api/projects/<project_id>/runs", methods=["GET"])
 @require_auth
 def list_project_runs(project_id: str):
+    """The dataflow's runs: every account's for its owner, an editor's own
+    for him; ``?mine=1`` keeps the caller's own."""
     try:
         limit, offset = _paging()
         runs = service.list_project_runs(
             g.user, project_id, whole_dataflow=_kind(request.args.get("kind")),
-            limit=limit, offset=offset,
+            limit=limit, offset=offset, mine=request.args.get("mine") in ("1", "true"),
         )
     except RunError as exc:
         return _error(exc)

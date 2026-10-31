@@ -266,7 +266,7 @@ describe("an invited editor's canvas", () => {
   it("follows the editor's last run of the dataflow, and offers automatic runs", async () => {
     await openAs('editor');
 
-    await waitFor(() => expect(mockListRuns).toHaveBeenCalledWith(OWNERS_FLOW, { limit: 1 }));
+    await waitFor(() => expect(mockListRuns).toHaveBeenCalledWith(OWNERS_FLOW, { limit: 1, mine: true }));
     expect(mockListRuns).toHaveBeenCalledTimes(1);
     expect(api.autoRunAvailable).toBe(true);
   });
