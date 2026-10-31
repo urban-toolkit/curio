@@ -11,10 +11,10 @@ may stream apart from the reply (``reasoning_content``, or ``reasoning``).
 
 The stub here is an OpenAI-compatible server on 127.0.0.1. It streams each
 turn's scripted pieces, then ends the stream with a finish reason, or with none,
-as a cut connection does. A delegate's call and the other providers' are
-scripted turns and fakes of their SDKs. What a test checks is read as a value
-(``_outcome``, ``_message``), so a checkout without the fix fails at an
-assertion.
+as a cut connection does. A delegate's call, the skill evaluations' grader and
+the other providers' calls are scripted turns and fakes of their SDKs. What a
+test checks is read as a value (``_outcome``, ``_message``), so a checkout
+without the fix fails at an assertion.
 """
 
 from __future__ import annotations
@@ -444,3 +444,64 @@ def test_a_delegate_the_cap_cut_fails_and_lands_none_of_its_code(
     saved = _last_turn(client, token, project_id, attachment_id)
     (child,) = saved["execution"]["delegations"]
     assert (child["status"], child.get("cutAtOutputLimit")) == ("error", True)
+
+
+def test_a_solve_round_the_cap_cut_stops_with_the_reason_and_runs_none_of_it(
+        client, user_and_token, tmp_curio, monkeypatch):
+    """Solve this node, on an empty node: its content mode's model stops at
+    the cap after code that would run. That code used to run and land in the
+    node as if whole. Now the round stops with the reason as its generation
+    error, and the code never runs or lands."""
+    from utk_curio.backend.app.agents.application.turns import titles
+    from utk_curio.backend.tests.test_agents import test_verified_rounds as verified_rounds
+
+    user, token = user_and_token
+    harness = verified_rounds.TestSolveNode()
+    ctx = harness._setup(client, user, token, monkeypatch, content="")
+    code = harness.LOADER.replace("{DATASET}", ctx["dataset_id"])
+
+    def _fake_run(config, messages, **kwargs):
+        if messages and messages[0].get("content") == titles.title_prompt():
+            return "Title"
+        ctx["calls"].append(messages)
+        return ChatTurn(text=code, stop_reason="length")
+
+    monkeypatch.setattr(providers, "run_chat_turn", _fake_run)
+    done = harness._solve_node(client, token, ctx)[-1][1]
+    assert harness._content(ctx) == "", f"the code the cap cut landed in the node: {done!r}"
+    assert ctx["payloads"] == [], "the code the cap cut was run"
+    assert (done.get("verdict"), done["attempts"][-1].get("kind")) == ("fail", "generation-error"), done
+    assert done["attempts"][-1]["detail"] == _message("delegate.cut-at-output-limit", coord=harness.NB, limit=LIMIT)
+
+
+# -- the skill evaluations' grader ---------------------------------------------
+
+def test_a_grade_the_cap_cut_is_not_read_and_says_it_was_cut(
+        client, user_and_token, tmp_curio, tmp_path, monkeypatch):
+    """The grader stops at its output cap inside its JSON, on every try. The
+    grade said the grader's reply was in the wrong shape; it says the reply
+    was cut off at the grader's limit."""
+    from utk_curio.backend.app.agents.evaluation import skill_evals
+    from utk_curio.tools import skill_eval_worker
+
+    asked: list = []
+
+    def _fake_run(config, messages, max_output_tokens=None, usage_out=None, **kwargs):
+        asked.append(max_output_tokens)
+        return ChatTurn(text='{"assertion_results": [{"text": "J and K", "passed": true, "evidence": "The rep',
+                        stop_reason="length")
+
+    monkeypatch.setattr(providers, "run_chat_turn", _fake_run)
+    user, _ = user_and_token
+    worker = skill_eval_worker.Worker.__new__(skill_eval_worker.Worker)
+    worker.results, worker.user_key = tmp_path, _user_dir_key(user)
+    worker.endpoint = types.SimpleNamespace(model="test-model")
+    context = skill_evals.Context(agent="agent.curio.node-builder@1", dataflow=None)
+    task = skill_evals.Task(kind=skill_evals.TASK, skill="node-control", key="eval-3/with_skill/run-1",
+                            condition=skill_evals.WITH_SKILL, run=1, message=MESSAGE, context=context, case=3,
+                            assertions=("The answer adds J and K to the rows of the loading node.",))
+    grading = _outcome(lambda: worker._grade(task, {"reply": "J and K go in the rows."}, {"changed": {}}))
+    limit = f"{skill_eval_worker.GRADER_MAX_TOKENS:,}"
+    assert isinstance(grading, dict) and grading.get("error") == (
+        f"its reply was cut off at the grader's output limit of {limit} tokens"), grading
+    assert asked == [skill_eval_worker.GRADER_MAX_TOKENS] * skill_eval_worker.GRADER_ATTEMPTS
