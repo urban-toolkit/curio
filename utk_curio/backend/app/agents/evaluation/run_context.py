@@ -23,7 +23,8 @@ Where an evaluation's context differs from a browser's, and why:
   canvas composes (its name, its task, no packages).
 - No node has run, since an evaluation has no sandbox, so a node's
   ``current_input`` and ``current_output`` are what the canvas says of a node
-  that never ran.
+  that never ran: nothing feeds it, or it waits for input from the nodes
+  wired into it, none of which ran either.
 
 Pure, as the rest of ``evaluation/`` is: it takes the dataflow as a value.
 """
@@ -33,10 +34,25 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable, Mapping
 
+from utk_curio.backend.app.execution.run_plan import is_interaction_edge
+
 #: What the canvas says of a node with no output (``nodeRuntimeSummary.ts``).
 NEVER_EXECUTED = "never-executed"
-#: What the canvas says of a node that received nothing.
+#: What the canvas says of a node that received nothing, which no edge feeds.
 NO_INPUT = "no upstream input"
+#: What the canvas says of a node with no input yet that data edges feed:
+#: it waits for input, wired from these nodes, and of each, that it has not
+#: run (``WIRED_INPUT`` in ``nodeRuntimeSummary.ts``).
+WAITING = "waiting for input"
+WIRED_FROM = ": wired from "
+FEEDER = "node "
+NOT_RUN = ", which has not run"
+BETWEEN = "; "
+MORE = "and {n} more"
+#: Every word above, which the canvas's summary must write too.
+WIRED_INPUT = (WAITING, WIRED_FROM, FEEDER, NOT_RUN, BETWEEN, MORE)
+#: The most nodes it names before it counts the rest (``LISTED_SLOTS``).
+LISTED = 6
 
 #: The label each fragment starts with, as the canvas writes it.
 CURRENT_TRILL = "Current Trill: "
@@ -99,9 +115,42 @@ def _node(spec: Mapping | None, node_id: str | None) -> Mapping | None:
                  if isinstance(node, Mapping) and node.get("id") == node_id), None)
 
 
-def _never_ran(node: Mapping) -> dict:
+def _feeders(spec: Mapping | None, node_id) -> list[str]:
+    """The nodes wired into *node_id* by data edges, once each in the edges'
+    order (``feedersOf``): an interaction edge carries a selection, not data."""
+    flow = _dataflow(spec)
+    nodes = {node.get("id") for node in flow.get("nodes") or []
+             if isinstance(node, Mapping) and isinstance(node.get("id"), str)}
+    feeders: list[str] = []
+    for edge in flow.get("edges") or []:
+        if not isinstance(edge, Mapping) or edge.get("target") != node_id or is_interaction_edge(edge):
+            continue
+        source = edge.get("source")
+        if isinstance(source, str) and source and source in nodes and source not in feeders:
+            feeders.append(source)
+    return feeders
+
+
+def _input(spec: Mapping | None, node: Mapping) -> str:
+    """What the canvas says a node that never ran received (``summarizeNodeInput``):
+    nothing, as no edge feeds it, or nothing yet, from the nodes wired into
+    it, which never ran either."""
+    feeders = _feeders(spec, node.get("id"))
+    if not feeders:
+        return f"{NO_INPUT}{_declared(node.get('in'))}"
+    named = []
+    for feeder_id in feeders[:LISTED]:
+        kind = (_node(spec, feeder_id) or {}).get("type")
+        typed = f" ({kind})" if isinstance(kind, str) and kind else ""
+        named.append(f"{FEEDER}{feeder_id}{typed}{NOT_RUN}")
+    if len(feeders) > LISTED:
+        named.append(MORE.replace("{n}", str(len(feeders) - LISTED)))
+    return f"{WAITING}{_declared(node.get('in'))}{WIRED_FROM}{BETWEEN.join(named)}"
+
+
+def _never_ran(spec: Mapping | None, node: Mapping) -> dict:
     """What the canvas says a node that never ran received and produced."""
-    return {"current_input": f"{NO_INPUT}{_declared(node.get('in'))}",
+    return {"current_input": _input(spec, node),
             "current_output": f"{NEVER_EXECUTED}{_declared(node.get('out'))}"}
 
 
@@ -136,7 +185,7 @@ def fragment(read: str, target: Mapping | None, spec: Mapping | None, name: str,
         if node is None:
             return None
         return _json({"id": node.get("id"), "type": node.get("type") or "", "content": node.get("content") or "",
-                      **_never_ran(node)})
+                      **_never_ran(spec, node)})
     if read in ("codeContext", "nodeContent"):
         return NODE_CONTENT + node["content"] if node and node.get("content") else None
     if read == "nodeType":
@@ -153,7 +202,7 @@ def fragment(read: str, target: Mapping | None, spec: Mapping | None, name: str,
                 return None
             return TARGET_NODE + _json({"id": node.get("id"), "type": node.get("type") or "",
                                         "goal": node.get("goal") or "", "content": node.get("content") or "",
-                                        **_never_ran(node)})
+                                        **_never_ran(spec, node)})
         return CURRENT_TRILL + _json(trill(spec, name, goal))
     # installedTemplates (retired: the server lists the templates), and the
     # reads with no chat-time source: connectionSide off a connection,

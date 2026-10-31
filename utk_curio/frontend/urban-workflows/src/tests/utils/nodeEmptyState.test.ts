@@ -273,6 +273,16 @@ describe("incomingSourceIds", () => {
     expect(incomingSourceIds(null, "pool")).toEqual([]);
     expect(incomingSourceIds([{ source: "a", target: "other" }], "pool")).toEqual([]);
   });
+
+  // An interaction edge joins two nodes' in/out handles to pass selections:
+  // the chart at its other end feeds nothing into this one.
+  test("leaves out a node joined to this one only by an interaction edge", () => {
+    const edges = [
+      { source: "bar", target: "pool", sourceHandle: "in/out", targetHandle: "in/out" },
+      { source: "loader", target: "pool", sourceHandle: "out", targetHandle: "in" },
+    ];
+    expect(incomingSourceIds(edges, "pool")).toEqual(["loader"]);
+  });
 });
 
 describe("isTabularPayload", () => {
@@ -346,6 +356,19 @@ describe("hasIncomingEdge", () => {
     expect(hasIncomingEdge([], "n2")).toBe(false);
     expect(hasIncomingEdge(undefined, "n2")).toBe(false);
     expect(hasIncomingEdge([{ target: "n2" }], "")).toBe(false);
+  });
+
+  test("false when only an interaction edge reaches the node: it asks for a connection", () => {
+    const link = [{ source: "bar", target: "n2", sourceHandle: "in/out", targetHandle: "in/out" }];
+    expect(hasIncomingEdge(link, "n2")).toBe(false);
+    expect(
+      resolveGrammarEmptyReason({
+        connected: hasIncomingEdge(link, "n2"),
+        hasInput: false,
+        hasSpec: true,
+        hasRun: false,
+      }),
+    ).toBe("disconnected");
   });
 });
 

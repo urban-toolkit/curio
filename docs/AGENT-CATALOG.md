@@ -184,7 +184,7 @@ Each agent's prompts, by the key its manifest gives them:
 
 **Node Builder on a node: "turn this into a bar chart".**
 
-1. Your message goes to the chat: the preamble and `node_build_instruction.md`, with the node, its last run and the Node Builder's tools. The model may read the node first, then asks for its content mode, with the node's id and what you asked for.
+1. Your message goes to the chat: the preamble and `node_build_instruction.md`, with the node, what feeds it, its last run and the Node Builder's tools. The model may read the node first, then asks for its content mode, with the node's id and what you asked for.
 2. The content mode runs: the preamble and `new_content_prompt.md`, or the Autark prompt for an Autark node, with no tools. Curio hands it the node, what feeds it and the dataflow's task, and it replies with the node's new content.
 3. Curio writes that content into the node, for everyone on the dataflow, and the chat runs again to tell you what changed. The chat shows the change with its **Undo**.
 

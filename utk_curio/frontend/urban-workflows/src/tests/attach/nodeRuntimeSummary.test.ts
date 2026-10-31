@@ -38,6 +38,60 @@ describe("summarizeNodeInput", () => {
     );
   });
 
+  // 10-30, step 44's live runs: a chart wired to a loader that had not run was
+  // told "no upstream input", took itself for a chart nothing feeds, and the
+  // agent built it a new loader instead of changing the one wired in.
+  it("says a node wired to one that has not run waits for input from it", () => {
+    expect(
+      summarizeNodeInput({ in: "DEFAULT" }, [
+        { id: "loader", type: "curio.builtin/data-loading", data: {} },
+      ]),
+    ).toBe(
+      "waiting for input (declared: DEFAULT): wired from node loader " +
+        "(curio.builtin/data-loading), which has not run",
+    );
+  });
+
+  it("says of each node wired in whether it ran, failed or is running, and nothing of its output", () => {
+    const text = summarizeNodeInput({}, [
+      { id: "a", type: "CODE", data: { output: { code: "success", dataType: "dataframe" } } },
+      { id: "b", type: "CODE", data: { output: { code: "error", content: "KeyError: 'tract_id'" } } },
+      { id: "c", type: "CODE", data: { output: { code: "exec" } } },
+      { id: "d", type: "CODE", data: {}, storeOutput: { dataType: "dataframe", path: "art-d" } },
+      { id: "e", type: "CODE" },
+    ]);
+    expect(text).toBe(
+      "waiting for input: wired from node a (CODE), which ran; node b (CODE), which failed; " +
+        "node c (CODE), which is running; node d (CODE), which ran; node e (CODE), which has not run",
+    );
+    expect(text).not.toContain("tract_id");
+    expect(text).not.toContain("art-d");
+  });
+
+  it("names the first six nodes wired in and counts the rest", () => {
+    const feeders = Array.from({ length: 8 }, (_, i) => ({ id: `n${i}`, type: "CODE" }));
+    expect(summarizeNodeInput({}, feeders)).toBe(
+      "waiting for input: wired from " +
+        [0, 1, 2, 3, 4, 5].map((i) => `node n${i} (CODE), which has not run`).join("; ") +
+        "; and 2 more",
+    );
+  });
+
+  it("keeps saying no upstream input when no edge feeds the node", () => {
+    expect(summarizeNodeInput({ in: "DATAFRAME" }, [])).toBe(
+      "no upstream input (declared: DATAFRAME)",
+    );
+  });
+
+  it("says what arrived, whatever is wired in", () => {
+    expect(
+      summarizeNodeInput(
+        { input: { dataType: "dataframe", path: "art-1" }, in: "DEFAULT" },
+        [{ id: "loader", type: "curio.builtin/data-loading" }],
+      ),
+    ).toBe("dataframe from artifact art-1 (declared: DEFAULT)");
+  });
+
   it("is empty without live data at all", () => {
     expect(summarizeNodeInput(undefined)).toBe("");
   });
