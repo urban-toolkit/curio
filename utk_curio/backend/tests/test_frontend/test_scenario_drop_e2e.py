@@ -51,6 +51,7 @@ from .utils import (
     api_json,
     assert_autark_map_drawn,
     assert_in_view,
+    dismiss_toasts,
     close_scenario_drawer,
     frame_nodes,
     node_locator,
@@ -214,30 +215,33 @@ def _open_scenario_catalog(page):
     return drawer
 
 
-def _pick_scenario(page, project_id: str, scenario_id: str):
-    """Check the scenario in its set's select mode, and return the set's drag
-    handle. A card is never dragged: its set's handle drags what is checked."""
-    key = f'[data-scenario-key="{project_id}/{scenario_id}"]'
-    card = page.locator(f'[data-curio-scenario-catalog-drawer="true"] {key}')
-    card.wait_for(state="visible", timeout=20000)
-    panel = page.locator('[data-curio-scenario-catalog-drawer="true"] section[data-scenario-set]').filter(
-        has=page.locator(key),
-    )
-    if panel.locator("[data-scenario-set-selecting]").count() == 0:
-        panel.get_by_role("button", name="Pick scenarios to drag").click()
-    card.get_by_role("checkbox").check()
-    return panel.locator("[data-scenario-drag-handle]")
+def _card(page, project_id: str, scenario_id: str):
+    """The scenario's card in the open drawer's Browse all."""
+    return page.locator(f'[data-curio-scenario-catalog-drawer="true"] [data-scenario-key="{project_id}/{scenario_id}"]')
+
+
+def _select_scenarios(page, project_id: str, scenario_ids: list[str]):
+    """Select the scenarios of one set as a person does: a click on the first
+    card's body, Ctrl-click (Cmd on a Mac) on each other. Returns the first
+    card, whose drag brings them all."""
+    cards = [_card(page, project_id, scenario_id) for scenario_id in scenario_ids]
+    for index, card in enumerate(cards):
+        card.wait_for(state="visible", timeout=20000)
+        card.locator("h3").click(modifiers=["ControlOrMeta"] if index else [])
+    expect(page.locator('[data-curio-scenario-catalog-drawer="true"] [aria-selected="true"]')).to_have_count(len(cards))
+    return cards[0]
 
 
 def _drag_scenario_onto_canvas(page, project_id: str, scenario_id: str, at=(700.0, 120.0)) -> None:
-    """Drag the scenario from the open drawer onto the canvas, as
-    ``drag_to_canvas`` drags a dataset: checked in its set, then dragstart on
-    the set's handle, dragover and drop on the canvas, then dragend."""
-    _drag_onto_canvas(page, _pick_scenario(page, project_id, scenario_id), at)
+    """Drag the scenario's card from the open drawer onto the canvas, as
+    ``drag_to_canvas`` drags a dataset: dragstart on the card, then dragover
+    and drop on the canvas, then dragend. A card no click selected drags its
+    scenario alone."""
+    _drag_onto_canvas(page, _card(page, project_id, scenario_id), at)
 
 
 def _drag_onto_canvas(page, source, at=(700.0, 120.0)) -> None:
-    """Drag *source*, a set's drag handle, onto the canvas."""
+    """Drag *source*, a scenario's card, onto the canvas."""
     card = source
     card.wait_for(state="visible", timeout=20000)
     pane = page.locator(CANVAS_DROP_TARGET)
@@ -257,32 +261,39 @@ _UNDER_THE_DRAWER_JS = """([x, y]) => {
     return !!hit && !!hit.closest('[data-curio-scenario-catalog-drawer="true"]');
 }"""
 
-_ON_THE_HANDLE_JS = """([x, y]) => {
+_ON_THE_CARD_JS = """({point: [x, y], key}) => {
     const hit = document.elementFromPoint(x, y);
-    return !!hit && !!hit.closest('[data-scenario-drag-handle]');
+    const card = hit && hit.closest('[data-scenario-key]');
+    return !!card && card.getAttribute('data-scenario-key') === key;
 }"""
 
 
 def _drag_card_with_the_mouse(page, project_id: str, scenario_id: str, at=(300.0, 200.0)) -> None:
-    """Drag the scenario with the mouse, as a person does: checked in its set,
-    then its set's handle dragged. The open drawer's scrim lies over the
-    canvas, so the drop lands on the canvas only if the drawer lets the drag
-    through while it lasts."""
-    handle = _pick_scenario(page, project_id, scenario_id)
+    """Drag the scenario's card with the mouse, as a person does. The open
+    drawer's scrim lies over the canvas, so the drop lands on the canvas only
+    if the drawer lets the drag through while it lasts."""
+    card = _card(page, project_id, scenario_id)
+    card.wait_for(state="visible", timeout=20000)
+    # A toast of an earlier drop can lie over the drawer's cards.
+    dismiss_toasts(page)
     # The drawer lists every scenario in the account, the seeded test and
-    # shipped dataflows' too, so the handle can sit below the window: scroll the
-    # drawer to it, as a person does, and press only where the handle itself is hit.
-    handle.scroll_into_view_if_needed()
-    handle_box = handle.bounding_box()
+    # shipped dataflows' too, so the card can sit below the window: scroll the
+    # drawer to it, as a person does, and press only where the card itself is hit.
+    card.scroll_into_view_if_needed()
+    card_box = card.bounding_box()
     pane_box = page.locator(CANVAS_DROP_TARGET).bounding_box()
-    assert handle_box and pane_box, "the handle or the canvas has no layout box"
+    assert card_box and pane_box, "the card or the canvas has no layout box"
     target = (pane_box["x"] + at[0], pane_box["y"] + at[1])
     assert page.evaluate(_UNDER_THE_DRAWER_JS, list(target)), f"{target} is not under the drawer's scrim"
 
-    start = assert_in_view(
-        page, handle_box["x"] + 20, handle_box["y"] + handle_box["height"] / 2, "the set handle's press point",
+    # Pressed on its title, the card's own body: its thumbnail opens its details.
+    title = card.locator("h3").bounding_box()
+    assert title, f"the {scenario_id} card's title has no layout box"
+    start = assert_in_view(page, title["x"] + min(40, title["width"] / 2), title["y"] + title["height"] / 2,
+                           f"the {scenario_id} card's press point")
+    assert page.evaluate(_ON_THE_CARD_JS, {"point": list(start), "key": f"{project_id}/{scenario_id}"}), (
+        f"{start} does not hit the {scenario_id} card"
     )
-    assert page.evaluate(_ON_THE_HANDLE_JS, list(start)), f"{start} does not hit the set's drag handle"
     page.mouse.move(*start)
     page.mouse.down()
     page.mouse.move(start[0] - 40, start[1] + 10, steps=6)
@@ -792,8 +803,8 @@ def test_two_scenarios_checked_and_dragged_together_arrive_as_a_new_set(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
     """A set of three scenarios reads one loader. ``compare`` reads two of
-    them, ``all`` reads all three. Pick scenarios to drag, checking the two, and
-    dragging the set's handle brings both as a new set, "Heights (copy)": the loader once, as
+    them, ``all`` reads all three. A click on one and a Ctrl-click (Cmd on a
+    Mac) on the other selects the two, and dragging either brings both as a new set, "Heights (copy)": the loader once, as
     data, shared by both; ``compare``, every input of which came; not
     ``all``, which would miss the third. Everything arrives collapsed. Python
     nodes only, so it runs without WebGPU."""
@@ -843,13 +854,9 @@ def test_two_scenarios_checked_and_dragged_together_arrive_as_a_new_set(
     spec["dataflow"]["scenarioSets"] = [{"id": "hs", "name": "Heights"}]
     source = _create_project(current_server, token, "Heights", spec)
 
-    drawer = _open_scenario_catalog(page)
-    panel = drawer.locator('section[data-scenario-set="hs"]')
-    panel.get_by_role("button", name="Pick scenarios to drag").click()
-    for name in ("Doubled", "Tripled"):
-        panel.get_by_role("checkbox", name=f"Select {name}").check()
-    handle = panel.locator("[data-scenario-drag-handle]")
-    expect(handle).to_have_text("Drag 2 scenarios")
+    _open_scenario_catalog(page)
+    _select_scenarios(page, source, ["s-double", "s-triple"])
+    handle = _card(page, source, "s-triple")
     with page.expect_response(
         lambda r: r.request.method == "POST" and r.url.endswith("/api/scenarios/sets/" + source + "/hs/copy"),
         timeout=240000,

@@ -85,12 +85,10 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
     items,
     groups,
     handleScenarioDragEnd,
-    handleCheckedDragStart,
-    isSelecting,
-    isChecked,
-    startSelecting,
-    stopSelecting,
-    setRowsChecked,
+    handleCardDragStart,
+    isSelected,
+    selectRow,
+    clearSelection,
     detailScenario,
     openScenarioDetails,
     closeScenarioDetails,
@@ -166,7 +164,7 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
             kind="scenario"
             title="Scenario Catalog"
             titleId="scenario-catalog-title"
-            subtitle="Saved selections of nodes from your projects. Pick scenarios of a set and drag them onto the canvas to copy them here."
+            subtitle="Saved selections of nodes from your projects."
             closeAriaLabel="Close Scenario Catalog drawer"
           />
 
@@ -182,7 +180,13 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
 
           <DrawerTabs tab={tab} installedCount={inProject.length} onChange={setTab} />
 
-          <main className={shell.scrollBody}>
+          {/* A click on no card drops the selection. */}
+          <main
+            className={shell.scrollBody}
+            onClick={(event) => {
+              if (!(event.target as HTMLElement).closest("[data-scenario-key]")) clearSelection();
+            }}
+          >
             {tab === "installed" ? (
               <InProjectScenarios scenarios={inProject} search={search} sort={sort} presented={presented} />
             ) : (
@@ -207,6 +211,12 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
                       : "No scenarios yet. On a canvas, choose View > Define scenario."}
                   </div>
                 ) : null}
+                {items.length > 0 ? (
+                  <p className={styles.browseHint}>
+                    Drag a scenario onto the canvas to copy it here. Ctrl-click (Cmd-click on a Mac) to pick
+                    several scenarios of one set and drop them together.
+                  </p>
+                ) : null}
                 {groups.map((group) => (
                   <ScenarioSetGroup
                     key={group.key}
@@ -214,22 +224,7 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
                     count={group.items.length}
                     isSet={Boolean(group.set.id)}
                     data={{ "data-scenario-group": group.project.id, "data-scenario-set": group.set.id }}
-                    // Every set drags through its handle; a card never drags. A
-                    // group of no set (a listing from before sets) drags one
-                    // scenario at a time, so it offers the handle only alone.
-                    select={
-                      group.set.id || group.items.length === 1
-                        ? {
-                            active: isSelecting(group.items[0]),
-                            checked: group.items.filter(isChecked).length,
-                            onStart: () => startSelecting(group.items[0]),
-                            onDone: stopSelecting,
-                            onAll: (on) => setRowsChecked(group.items, on),
-                            onDragStart: handleCheckedDragStart,
-                            onDragEnd: handleScenarioDragEnd,
-                          }
-                        : undefined
-                    }
+                    selectable
                     action={
                       <button
                         type="button"
@@ -247,13 +242,12 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
                         scenario={scenario}
                         highlight={rowHighlight(scenario)}
                         onOpenDetails={openScenarioDetails}
-                        // In select mode the card is checked; the set's handle
-                        // drags what is checked.
-                        check={
-                          isSelecting(scenario)
-                            ? { checked: isChecked(scenario), onChange: (on) => setRowsChecked([scenario], on) }
-                            : undefined
-                        }
+                        // A click selects it, Ctrl or Cmd adds one of its set,
+                        // and its drag brings every selected scenario.
+                        selected={isSelected(scenario)}
+                        onSelect={(toggle) => selectRow(scenario, { toggle })}
+                        onDragStart={(event) => handleCardDragStart(scenario, event)}
+                        onDragEnd={handleScenarioDragEnd}
                       />
                     ))}
                   </ScenarioSetGroup>

@@ -35,9 +35,11 @@ function dragBadge(event: DragEvent<HTMLElement>, text: string) {
  * remove or delete. What is left is the search, the sort, the details being
  * viewed, and the drag onto the canvas.
  *
- * A card is never dragged. A set is put in select mode ("Pick scenarios to
- * drag"), one set at a time: its cards show checkboxes, and the one handle in
- * its header drags the checked ones, one scenario or several.
+ * A card is selected by a click, alone; Ctrl-click (Cmd-click on a Mac) adds
+ * or takes out a card of the same scenario set, and a card of another set
+ * starts anew, since scenarios of different sets never mix. Dragging a
+ * selected card brings every selected scenario; dragging another selects it
+ * alone and brings it, as a file manager does.
  */
 export function useScenarioCatalogDrawer(presented: boolean) {
   const [search, setSearch] = useState("");
@@ -45,8 +47,8 @@ export function useScenarioCatalogDrawer(presented: boolean) {
   const [sort, setSort] = useState<ScenarioSortMode>("recent");
   const [pinned, setPinned] = useState(false);
 
-  // The set in select mode (`<project>/<set>`), and its checked scenarios' keys.
-  const [selecting, setSelecting] = useState<{ set: string; keys: string[] } | null>(null);
+  // The set of the selected cards (`<project>/<set>`), and their keys.
+  const [selection, setSelection] = useState<{ set: string; keys: string[] } | null>(null);
 
   const handleScenarioDragEnd = useCallback(() => {
     endScenarioDrag();
@@ -55,10 +57,11 @@ export function useScenarioCatalogDrawer(presented: boolean) {
   // "View details" opens the modal and nothing else.
   const [detailScenario, setDetailScenario] = useState<ScenarioRow | null>(null);
 
-  // A drawer that closes leaves select mode.
+  // A drawer that closes, or a listing searched or sorted anew, drops it.
   useEffect(() => {
-    if (!presented) setSelecting(null);
+    if (!presented) setSelection(null);
   }, [presented]);
+  useEffect(() => setSelection(null), [debouncedSearch, sort]);
 
   useEffect(() => {
     const handle = window.setTimeout(() => setDebouncedSearch(search), 280);
@@ -72,40 +75,30 @@ export function useScenarioCatalogDrawer(presented: boolean) {
   // Browse all lists each project's scenarios under its name.
   const groups = useMemo(() => groupScenariosBySet(items), [items]);
 
-  /** Whether *row*'s set is in select mode. */
-  const isSelecting = useCallback((row: ScenarioRow) => selecting?.set === setKeyOf(row), [selecting]);
-  const isChecked = useCallback((row: ScenarioRow) => Boolean(selecting?.keys.includes(row.key)), [selecting]);
-  /** Put the set of *row* in select mode, with nothing checked; another set leaves it. */
-  const startSelecting = useCallback((row: ScenarioRow) => setSelecting({ set: setKeyOf(row), keys: [] }), []);
-  const stopSelecting = useCallback(() => setSelecting(null), []);
-  /** Check or uncheck *rows*, of the set in select mode. */
-  const setRowsChecked = useCallback((rows: readonly ScenarioRow[], on: boolean) => {
-    setSelecting((now) => {
-      if (!now) return now;
-      const keys = new Set(now.keys);
-      for (const row of rows) {
-        if (setKeyOf(row) !== now.set) continue;
-        if (on) keys.add(row.key);
-        else keys.delete(row.key);
-      }
-      return { ...now, keys: [...keys] };
+  const isSelected = useCallback((row: ScenarioRow) => Boolean(selection?.keys.includes(row.key)), [selection]);
+  /** Select *row* alone, or with *toggle* add it to the selection or take it
+   *  out, when the selection is of its set; a row of another set, or of no
+   *  set (a listing from before sets, copied one at a time), starts anew. */
+  const selectRow = useCallback((row: ScenarioRow, { toggle = false }: { toggle?: boolean } = {}) => {
+    setSelection((now) => {
+      const set = setKeyOf(row);
+      if (!toggle || !now || now.set !== set || !row.set?.id) return { set, keys: [row.key] };
+      const keys = now.keys.includes(row.key) ? now.keys.filter((key) => key !== row.key) : [...now.keys, row.key];
+      return keys.length ? { set, keys } : null;
     });
   }, []);
+  const clearSelection = useCallback(() => setSelection(null), []);
 
-  /** A card's drag: its scenario alone. */
-
-  /** The select-mode handle's drag: the checked scenarios, in the listing's order. */
-  const handleCheckedDragStart = useCallback(
-    (event: DragEvent<HTMLElement>) => {
-      const rows = items.filter((row) => selecting?.keys.includes(row.key));
-      if (rows.length === 0) {
-        event.preventDefault();
-        return;
-      }
-      writeScenarioDragData(event.dataTransfer, beginScenarioDrag(rows));
-      dragBadge(event, rows.length === 1 ? rows[0].name : `${rows.length} scenarios`);
+  /** A card's drag: every selected scenario when it is selected, in the
+   *  listing's order; else its scenario alone, which it then selects. */
+  const handleCardDragStart = useCallback(
+    (row: ScenarioRow, event: DragEvent<HTMLElement>) => {
+      const selected = selection?.keys.includes(row.key) ? items.filter((r) => selection.keys.includes(r.key)) : [row];
+      if (!selection?.keys.includes(row.key)) setSelection({ set: setKeyOf(row), keys: [row.key] });
+      writeScenarioDragData(event.dataTransfer, beginScenarioDrag(selected));
+      dragBadge(event, selected.length === 1 ? selected[0].name : `${selected.length} scenarios`);
     },
-    [selecting, items],
+    [selection, items],
   );
 
   return {
@@ -119,12 +112,10 @@ export function useScenarioCatalogDrawer(presented: boolean) {
     items,
     groups,
     handleScenarioDragEnd,
-    handleCheckedDragStart,
-    isSelecting,
-    isChecked,
-    startSelecting,
-    stopSelecting,
-    setRowsChecked,
+    handleCardDragStart,
+    isSelected,
+    selectRow,
+    clearSelection,
     detailScenario,
     openScenarioDetails: setDetailScenario,
     closeScenarioDetails: useCallback(() => setDetailScenario(null), []),

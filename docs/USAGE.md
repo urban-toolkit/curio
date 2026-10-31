@@ -972,9 +972,9 @@ the widgets it lists in its **Widgets** tab, such as the column it plots and
 The **Scenario Catalog** lists the scenarios of all your projects, each with its
 shared context, its own nodes and outcomes and the results its project saved. Open it from
 the **Scenario Catalog** tab, or from the **Scenario** button in the canvas's top
-bar. In the **Scenario** drawer, click **Pick scenarios to drag** on a set, check a
-scenario, and drag the set's handle onto the canvas to bring a copy of it into the
-open dataflow: it arrives collapsed, with its results, and the
+bar. Drag a scenario's card from the **Scenario** drawer onto the canvas to bring a
+copy of it into the open dataflow (Ctrl-click or Cmd-click picks several of one set,
+which come together): it arrives collapsed, with its results, and the
 nodes feeding it arrive as Data Loading nodes that read copies of what its project
 saved. See [docs/SCENARIO-CATALOG.md](SCENARIO-CATALOG.md#4-using-a-scenario-in-a-dataflow).
 
