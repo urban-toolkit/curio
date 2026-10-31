@@ -11,6 +11,8 @@
  * node actually has.
  */
 
+import { isDataEdge } from "./inputSlots";
+
 export type NodeEmptyReason =
   /** Nothing is wired into this node's input. */
   | "disconnected"
@@ -151,15 +153,27 @@ export function upstreamErroredMessage(failedNodeName?: string | null): string {
 interface EdgeLike {
   target?: unknown;
   source?: unknown;
+  sourceHandle?: string | null;
+  targetHandle?: string | null;
+}
+
+/**
+ * Whether *edge* wires a node into *nodeId*'s input. An interaction edge,
+ * between two nodes' in/out handles, carries a selection and never data
+ * (`isDataEdge`), so a chart joined to another by one alone is fed by nothing.
+ */
+function wiresInto(edge: EdgeLike | null | undefined, nodeId: string): boolean {
+  return !!edge && edge.target === nodeId && isDataEdge(edge as Parameters<typeof isDataEdge>[0]);
 }
 
 /** Is anything wired into *nodeId*'s input? */
 export function hasIncomingEdge(edges: readonly EdgeLike[] | null | undefined, nodeId: string): boolean {
   if (!edges || !nodeId) return false;
-  return edges.some((e) => e?.target === nodeId);
+  return edges.some((e) => wiresInto(e, nodeId));
 }
 
-/** The ids of the nodes feeding *nodeId*, so their state can be asked about. */
+/** The ids of the nodes feeding *nodeId*, once each in the edges' order, so
+ *  their state can be asked about. */
 export function incomingSourceIds(
   edges: readonly EdgeLike[] | null | undefined,
   nodeId: string,
@@ -167,7 +181,7 @@ export function incomingSourceIds(
   if (!edges || !nodeId) return [];
   const ids = new Set<string>();
   for (const edge of edges) {
-    if (edge?.target !== nodeId) continue;
+    if (!wiresInto(edge, nodeId)) continue;
     if (typeof edge?.source === "string" && edge.source) ids.add(edge.source);
   }
   return Array.from(ids);

@@ -7,7 +7,11 @@ jest.mock("../../registry/nodeRegistry", () => ({
 }));
 
 import { TrillGenerator } from "../../TrillGenerator";
-import { composeAgentRunContext, type AgentAttachment } from "../../services/agents";
+import {
+  composeAgentRunContext,
+  type AgentAttachment,
+  type AgentCanvasState,
+} from "../../services/agents";
 
 /**
  * Grounded-context composer tests (memo dev/44): an attachment's context is
@@ -268,6 +272,67 @@ describe("composite producers (dev/67-2 — the composites stop running blind)",
     });
     const context = composeAgentRunContext(att, wiredCanvas);
     expect(context).toContain("never-executed");   // never fabricated
+  });
+
+  // What a node on the canvas received, as its two reads give it.
+  const inputOf = (on: AgentCanvasState, read: "targetContext" | "nodeContext"): unknown => {
+    const context = composeAgentRunContext(
+      attachment({ target: { kind: "node", targetId: "n2-unsaved" }, reads: [read] }),
+      on,
+    )!;
+    const payload = read === "targetContext" ? context.slice("Target node: ".length) : context;
+    return JSON.parse(payload).current_input;
+  };
+
+  it("a node wired to one that has not run waits for input from it, through both node reads", () => {
+    // 10-30, step 44's live runs: "no upstream input" read as a chart nothing
+    // feeds, and the agent built a new loader for a chart wired to one.
+    const waiting = "waiting for input: wired from node n1 (CODE), which has not run";
+    expect(inputOf(wiredCanvas, "targetContext")).toBe(waiting);
+    expect(inputOf(wiredCanvas, "nodeContext")).toBe(waiting);
+  });
+
+  it("a node wired twice from one node names it once", () => {
+    const twice = {
+      ...canvas,
+      edges: [
+        { id: "e1", source: "n1", target: "n2-unsaved", sourceHandle: "out", targetHandle: "in" },
+        { id: "e2", source: "n1", target: "n2-unsaved", sourceHandle: "out", targetHandle: "in_1" },
+      ],
+    };
+    expect(inputOf(twice, "targetContext")).toBe(
+      "waiting for input: wired from node n1 (CODE), which has not run",
+    );
+  });
+
+  it("a node wired to one that failed says it failed, not that it has not run", () => {
+    const failed = {
+      ...wiredCanvas,
+      nodes: [
+        { ...nodes[0], data: { ...nodes[0].data, output: { code: "error", content: "KeyError: 'a'" } } },
+        nodes[1],
+      ],
+    };
+    expect(inputOf(failed, "targetContext")).toBe(
+      "waiting for input: wired from node n1 (CODE), which failed",
+    );
+  });
+
+  it("a node joined to another only by an interaction edge still has no upstream input", () => {
+    const joined = {
+      ...canvas,
+      edges: [
+        {
+          id: "i1",
+          type: "BIDIRECTIONAL_EDGE",
+          source: "n1",
+          target: "n2-unsaved",
+          sourceHandle: "in/out",
+          targetHandle: "in/out",
+        },
+      ],
+    };
+    expect(inputOf(joined, "targetContext")).toBe("no upstream input");
   });
 
   it("Dataset Finder gets at least the mission on a canvas target", () => {

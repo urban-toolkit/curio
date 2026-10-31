@@ -47,6 +47,7 @@ SPEC = {"dataflow": {
 WIRED = {"dataflow": {**SPEC["dataflow"], "edges": [
     {"id": "e1", "source": "n1", "target": "n2-unsaved", "sourceHandle": "out", "targetHandle": "in"}]}}
 ON_N1 = {"kind": "node", "targetId": "n1"}
+ON_N2 = {"kind": "node", "targetId": "n2-unsaved"}
 CANVAS = {"kind": "canvas"}
 
 
@@ -154,6 +155,45 @@ def test_the_node_builder_on_a_connection_names_both_its_ends():
     assert context.startswith("Current Trill: ")
 
 
+def _input_of(spec, read: str, target=ON_N2):
+    """The ``current_input`` of the node *target* names, as the read *read* composes it."""
+    context = _compose([read], target, spec)
+    return json.loads(context[len("Target node: "):] if read == "targetContext" else context)["current_input"]
+
+
+def test_a_node_wired_to_one_that_has_not_run_waits_for_input_from_it_through_both_node_reads():
+    # 10-30, step 44's live runs: "no upstream input" read as a chart nothing
+    # feeds, and the agent built a new loader for a chart wired to one.
+    waiting = "waiting for input: wired from node n1 (CODE), which has not run"
+    assert _input_of(WIRED, "targetContext") == waiting
+    assert _input_of(WIRED, "nodeContext") == waiting
+
+
+def test_a_node_wired_twice_from_one_node_names_it_once():
+    twice = {"dataflow": {**SPEC["dataflow"], "edges": [
+        {"id": "e1", "source": "n1", "target": "n2-unsaved", "sourceHandle": "out", "targetHandle": "in"},
+        {"id": "e2", "source": "n1", "target": "n2-unsaved", "sourceHandle": "out", "targetHandle": "in_1"}]}}
+    assert _input_of(twice, "targetContext") == "waiting for input: wired from node n1 (CODE), which has not run"
+
+
+def test_a_node_wired_from_more_than_six_names_six_and_counts_the_rest():
+    many = {"dataflow": {
+        "nodes": [{"id": f"n{i}", "type": "CODE"} for i in range(8)] + [{"id": "sink", "type": "CODE"}],
+        "edges": [{"id": f"e{i}", "source": f"n{i}", "target": "sink"} for i in range(8)],
+    }}
+    assert _input_of(many, "nodeContext", {"kind": "node", "targetId": "sink"}) == (
+        "waiting for input: wired from "
+        + "; ".join(f"node n{i} (CODE), which has not run" for i in range(6)) + "; and 2 more")
+
+
+def test_a_node_joined_to_another_only_by_an_interaction_edge_still_has_no_upstream_input():
+    # As the canvas saves an interaction edge (TrillGenerator).
+    joined = {"dataflow": {**SPEC["dataflow"], "edges": [
+        {"type": "Interaction", "id": "i1", "source": "n1", "target": "n2-unsaved", "sourceHandle": "in/out",
+         "targetHandle": "in/out"}]}}
+    assert _input_of(joined, "targetContext") == "no upstream input"
+
+
 def test_the_dataset_finder_gets_at_least_the_mission_on_a_canvas():
     context = _compose(["mission", "nodeContext", "catalog"], CANVAS, WIRED)
     assert "Mission: analyze heat risk" in context
@@ -177,6 +217,12 @@ def test_every_label_the_twin_writes_is_one_the_canvas_writes():
     assert f'"{run_context.NEVER_EXECUTED}"' in summaries
     assert f"`{run_context.NO_INPUT}${{declared(data.in)}}`" in summaries
     assert "` (declared: ${value.trim()})`" in summaries
+    # A node wired to others, with no input yet, and the nodes wired into it.
+    wired = getattr(run_context, "WIRED_INPUT", None)
+    assert wired, "the twin has no words for a node wired to others that has no input yet"
+    unwritten = [word for word in wired if f'"{word}"' not in summaries]
+    assert not unwritten, f"nodeRuntimeSummary.ts writes none of {unwritten}"
+    assert f"const LISTED_SLOTS = {getattr(run_context, 'LISTED', None)};" in summaries
 
 
 # --- What a run sends -----------------------------------------------------------------
@@ -249,6 +295,9 @@ def test_a_run_on_a_node_tells_the_model_the_node_as_a_browser_does(
     assert contexts, "the model was sent no context beside the message"
     snapshot = json.loads(contexts[0].split("Target node: ", 1)[1].split("\n")[0])
     assert (snapshot["id"], snapshot["type"], snapshot["content"]) == ("scores-chart", "curio.builtin/vis-vega", "")
+    # Wired to the loader, which has not run: not a chart nothing feeds.
+    assert snapshot["current_input"] == ("waiting for input (declared: DEFAULT): wired from node scores "
+                                         "(curio.builtin/data-loading), which has not run")
     assert snapshot["current_output"] == "never-executed (declared: DEFAULT)"
     assert record["contextChars"] == len(contexts[0].split("\n", 1)[1])
 
