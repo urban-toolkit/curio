@@ -700,6 +700,50 @@ class TestSyntheticData:
         assert "source" not in proposal
 
 
+class TestValuesACallMakesUp:
+    """Step 45: a node that loads a Data Catalog dataset and makes a column up
+    with random numbers is refused, the call named, unless the user asked for
+    synthetic data; then it lands, its card naming the call beside the
+    dataset."""
+
+    def _create(self, client, token, project, monkeypatch, message, replies):
+        _install(client, token, project, NB)
+        att = _attach(client, token, project, NB)
+        calls = _script(monkeypatch, replies)
+        return _run(client, token, project, att, message), calls
+
+    def _loaders(self, user):
+        dataset_id = routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename="tracts.csv")
+        loads = f'df = curio_load_data("{dataset_id}")'
+        return loads + "\nreturn df", loads + '\ndf["population"] = np.random.randint(1000, 50000, len(df))\nreturn df'
+
+    def test_a_random_column_beside_a_catalog_dataset_is_refused_by_name(self, client, user_and_token, tmp_curio, project, monkeypatch):
+        user, token = user_and_token
+        loads, made_up = self._loaders(user)
+        body, calls = self._create(
+            client, token, project, monkeypatch, "Load the tracts with their population.",
+            [_create_tail(made_up), _create_tail(loads), "Proposed."],
+        )
+        refusals = [t for t in _tool_results(calls[-1], "node.create") if "refused" in t.split("\n", 1)[0]]
+        assert len(refusals) == 1, _tool_results(calls[-1], "node.create")
+        assert "np.random.randint (line 2)" in refusals[0], refusals[0]
+        assert "DataFrame.sample" in refusals[0] and "synthetic" in refusals[0], refusals[0]
+        change = _the_change(body)
+        assert change["source"]["kind"] == "catalog" and "np.random" not in change["preview"], change["source"]
+
+    def test_a_synthetic_column_the_user_asked_for_lands_labeled(self, client, user_and_token, tmp_curio, project, monkeypatch):
+        user, token = user_and_token
+        _loads, made_up = self._loaders(user)
+        body, _calls = self._create(
+            client, token, project, monkeypatch, "Load the tracts and add a synthetic population column to test with.",
+            [_create_tail(made_up), "Proposed."],
+        )
+        change = _the_change(body)
+        assert change["source"]["kind"] == "mixed", change["source"]
+        assert change["source"]["refs"][-1] == {"kind": "synthetic", "value": "np.random.randint"}, change["source"]
+        assert change["source"]["refs"][0]["kind"] == "catalog"
+
+
 #: The shipped example whose chart step 39's live runs asked for two more bars.
 VEGA = Path(__file__).resolve().parents[4] / "docs" / "examples" / "dataflows" / "vega.json"
 #: Its two kinds of node: the module's Data Loading, and its Vega-Lite chart.
@@ -797,6 +841,37 @@ class TestValuesTheUserTyped:
         assert "may be added inline to the values the node holds" in calls[1][-1]["content"]
         held = self._held(user, project)
         assert '"I"]' in held and "52]" in held, held
+
+    def test_a_random_column_beside_the_rows_the_user_typed_is_refused(
+        self, client, user_and_token, tmp_curio, bars, monkeypatch,
+    ):
+        """Step 45: the gate read only literals, so a column of random numbers
+        written beside the bar the user typed landed as user-provided values.
+        The call is refused by name, and the column the user asked for,
+        computed from the bars, lands instead."""
+        user, token = user_and_token
+        project, loader = bars
+        message = "Add a bar J with 60, and a column c with each bar's share of the total."
+        bar = loader.replace('"I"]', '"I", "J"]').replace("52]", "52, 60]")
+        random_c = bar.replace("df = pd.DataFrame(data=d)", "df = pd.DataFrame(data=d)\r\ndf['c'] = np.random.rand(len(df))")
+        share_c = bar.replace("df = pd.DataFrame(data=d)", "df = pd.DataFrame(data=d)\r\ndf['c'] = df['b'] / df['b'].sum()")
+
+        def _write(content):
+            write = {"toolRequest": {"tool": "node.content.write", "params": {"nodeId": self.LOADER, "content": content}}}
+            return "```curio.v1\n" + json.dumps(write) + "\n```"
+
+        _install(client, token, project, NB)
+        att = _attach(client, token, project, NB, target={"kind": "node", "targetId": self.LOADER})
+        calls = _script(monkeypatch, [_write(random_c), _write(share_c), "Done."])
+        body = _run(client, token, project, att, message)
+        refusals = [t for t in _tool_results(calls[-1], "node.content.write") if "refused" in t.split("\n", 1)[0]]
+        assert len(refusals) == 1, _tool_results(calls[-1], "node.content.write")
+        assert "np.random.rand (line 5)" in refusals[0], refusals[0]
+        assert "'J' (line" not in refusals[0] and "60 (line" not in refusals[0], refusals[0]
+        change = _the_change(body)
+        assert change["source"]["refs"] == [{"kind": "user-values", "value": "'J', 60, 'c'"}], change["source"]
+        held = self._held(user, project)
+        assert "np.random" not in held and "df['b'].sum()" in held and '"I", "J"]' in held, held
 
 
 class TestSolveSourceGrounding:

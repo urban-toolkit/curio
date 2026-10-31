@@ -226,6 +226,26 @@ describe("AgentChangeCard: dev/114 (DEC-072) the Source block", () => {
     expect(screen.getByText(/generated in the node, no external source/)).toBeInTheDocument();
   });
 
+  it("names the calls that made values up, as the user asked, beside another source", () => {
+    render(
+      <AgentChangeCard
+        part={withSource({
+          kind: "mixed",
+          label: "Data Catalog · Tracts (csv) · Synthetic · np.random.randint",
+          refs: [
+            { kind: "catalog", title: "Tracts", format: "csv", datasetId: "tracts" },
+            { kind: "synthetic", value: "np.random.randint" },
+          ],
+        })}
+      />,
+    );
+    const block = screen.getByRole("group", { name: "Data source" });
+    expect(block).toHaveTextContent("Source · Several sources");
+    expect(block).toHaveTextContent("Tracts (csv) · tracts");
+    expect(block).toHaveTextContent("np.random.randint (made up in the node, as the user asked)");
+    expect(block).not.toHaveTextContent("no external source");
+  });
+
   it("names the values the user typed that the code added to the node's own", () => {
     render(
       <AgentChangeCard
