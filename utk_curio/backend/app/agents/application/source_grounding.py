@@ -25,7 +25,12 @@ The rules (all runtime-enforced; prompt wording only teaches them):
 - a **data-loading node with no source** is grounded only when the USER asked
   for synthetic data (or the model declared ``synthetic: true`` for such a
   request) and is labeled synthetic — inline invented values are the same
-  fabrication class as an invented filename;
+  fabrication class as an invented filename — or when the values its code
+  adds to those the node holds now are values the user typed in this
+  conversation's own messages (:func:`added_values`), labeled user-provided
+  values; a value the user did not type and the node did not hold is refused
+  by name. A node's goal, the dataflow's task and a delegate's intent never
+  count here: a model often writes them;
 - a **catalog item** a function names (the functions page,
   ``skills/node-functions/SKILL.md``, says which argument names a Data Catalog
   dataset or collection, a Model Catalog model or a Node code key) is one the
@@ -58,7 +63,9 @@ import importlib.machinery
 import os
 import re
 import sys
+from collections import Counter
 from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 from functools import lru_cache
 from typing import Callable
 from urllib.parse import urlsplit, urlunsplit
@@ -217,6 +224,13 @@ class GroundingContext:
     #: "inputs", "selections"}``. None where the gate has no
     #: dataflow; a chip it cannot resolve leaves its argument unjudged.
     chips: dict | None = None
+    #: The user's own messages in this conversation, and nothing else: the
+    #: values a data-loading node's inline data may add (:func:`added_values`).
+    #: Empty where no conversation is read, as in a Solve.
+    user_messages: tuple[str, ...] = ()
+    #: The content the node holds now, which is the user's own; None for a
+    #: node the content would create.
+    current_content: str | None = None
 
 
 @dataclass(frozen=True)
@@ -1123,6 +1137,147 @@ def synthetic_requested(texts: list[str] | tuple[str, ...], params: dict | None 
     return any(marker in lowered for marker in SYNTHETIC_MARKERS)
 
 
+# A number as the user types it: a run of digits with its decimals, and a
+# minus sign written right before it. A digit run inside a word ("J2") or
+# after a decimal point is not one; "1,200" is read both ways, as 1 and 200
+# and as 1200 (``_GROUPED_NUMBER_RE``).
+_TYPED_NUMBER_RE = re.compile(r"(?<![\w.])(-?)(\d+(?:\.\d+)?)")
+_GROUPED_NUMBER_RE = re.compile(r"(?<![\w.,])(-?)(\d{1,3}(?:,\d{3})+(?:\.\d+)?)")
+
+
+def _number(value: object) -> Decimal | None:
+    """*value* as a number compared by its value (60 and 60.0 are one), or
+    None for anything else; ``True`` and ``False`` are no numbers."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        number = Decimal(repr(value)) if isinstance(value, float) else Decimal(value)
+    except (InvalidOperation, ValueError):
+        return None
+    return number if number.is_finite() else None
+
+
+def typed_numbers(messages: tuple[str, ...] | list[str]) -> set[Decimal]:
+    """Every number *messages*, the user's own, write, by its value."""
+    numbers: set[Decimal] = set()
+    for message in messages or ():
+        if not isinstance(message, str):
+            continue
+        for pattern in (_TYPED_NUMBER_RE, _GROUPED_NUMBER_RE):
+            for sign, digits in pattern.findall(message):
+                try:
+                    numbers.add(Decimal(sign + digits.replace(",", "")))
+                except InvalidOperation:
+                    continue
+    return numbers
+
+
+def _is_word_char(char: str) -> bool:
+    return char.isalnum() or char == "_"
+
+
+def typed_text(value: str, messages: tuple[str, ...] | list[str]) -> bool:
+    """Whether one of *messages*, the user's own, writes *value* whole, as
+    written: "J" in "J with 60", never in "Jay" or "jet"."""
+    if not value:
+        return False
+    for message in messages or ():
+        if not isinstance(message, str):
+            continue
+        start = message.find(value)
+        while start >= 0:
+            end = start + len(value)
+            before = start == 0 or not (_is_word_char(message[start - 1]) and _is_word_char(value[0]))
+            after = end == len(message) or not (_is_word_char(message[end]) and _is_word_char(value[-1]))
+            if before and after:
+                return True
+            start = message.find(value, start + 1)
+    return False
+
+
+def inline_values(code: object) -> list[tuple[object, int]] | None:
+    """The values Python node *code* writes in itself, in the code's order,
+    each with its line: every string and number literal, a number with the
+    sign written before it. ``True``, ``False``, ``None`` and empty strings
+    are no values, and nor is a chip. None when the code does not parse."""
+    if not isinstance(code, str) or not code.strip():
+        return []
+    parsed = _parse_python(_with_chips_resolved(code))
+    if parsed is None:
+        return None
+    tree, offset = parsed
+    signed: dict[int, object] = {}
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd))
+            and isinstance(node.operand, ast.Constant) and _number(node.operand.value) is not None
+        ):
+            value = node.operand.value
+            signed[id(node.operand)] = -value if isinstance(node.op, ast.USub) else value
+    found: list[tuple[int, int, object]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Constant):
+            continue
+        value = signed.get(id(node), node.value)
+        if value is None or value is Ellipsis or isinstance(value, bool):
+            continue
+        if isinstance(value, bytes):
+            value = value.decode("utf-8", "replace")
+        if isinstance(value, str) and (not value.strip() or UNRESOLVED_CHIP in value):
+            continue
+        found.append((max(1, node.lineno - offset), node.col_offset, value))
+    found.sort(key=lambda item: (item[0], item[1]))
+    return [(value, line) for line, _column, value in found]
+
+
+def _shown_value(value: object, line: int | None = None) -> str:
+    """A value as a refusal or a card names it: a string quoted, a number bare."""
+    shown = repr(value) if isinstance(value, str) else str(value)
+    return f"{shown} (line {line})" if line is not None else shown
+
+
+def added_values(code: object, engine: str | None, ctx: "GroundingContext") -> tuple[list, list]:
+    """``(typed, made up)``: the values data-loading node *code* adds to those
+    the node holds now (``ctx.current_content``, the user's own), each with
+    its line, split by whether the user's own messages in this conversation
+    (``ctx.user_messages``) write it. A number the node holds is its own as
+    many times as the node holds it, so one of its values moved to a new row
+    is added; any other value the node holds is its own wherever it is
+    written, such as a column's name. Both are empty for code that is not
+    Python or does not parse, and where no conversation is read."""
+    if (engine or "python") != "python" or not ctx.user_messages:
+        return [], []
+    values = inline_values(code)
+    if not values:
+        return [], []
+    held_numbers: Counter = Counter()
+    held_texts: set[str] = set()
+    for value, _line in inline_values(ctx.current_content) or []:
+        number = _number(value)
+        if number is not None:
+            held_numbers[number] += 1
+        else:
+            held_texts.add(value if isinstance(value, str) else repr(value))
+    numbers = typed_numbers(ctx.user_messages)
+    typed: list[tuple[object, int]] = []
+    made_up: list[tuple[object, int]] = []
+    for value, line in values:
+        number = _number(value)
+        if number is not None:
+            if held_numbers[number] > 0:
+                held_numbers[number] -= 1
+                continue
+            given = number in numbers
+        else:
+            text = value if isinstance(value, str) else repr(value)
+            if text in held_texts:
+                continue
+            held_texts.add(text)
+            given = isinstance(value, str) and typed_text(value, ctx.user_messages)
+        (typed if given else made_up).append((value, line))
+    return typed, made_up
+
+
 def loads_dataset(node_type: object, templates: dict | None = None) -> bool:
     """Whether a node of *node_type* loads a dataset: its template declares
     ``loadsDataset``, in the project's roster snapshot *templates* or in the
@@ -1442,7 +1597,8 @@ def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> 
     must be verified (session evidence or a probe now); every catalog item a
     call of the functions page names must be the account's, every such call
     in an engine that has it, and every module a package ships one the node
-    gets; a data-loading node with no refs needs the synthetic request.
+    gets; a data-loading node with no refs needs the synthetic request, or
+    adds values the user typed (:func:`added_values`) and no other.
     Deterministic, model-free. *engine* is the language the content is read
     in; ``ctx.code_engine`` the one its code runs in, when it is code."""
     functions = page_functions()
@@ -1472,9 +1628,23 @@ def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> 
     # A chip the gate could not resolve may name the dataset the node loads.
     unjudged_read = any(call.kind in DATA_CATALOG_KINDS and call.unresolved for call in calls)
     if not refs and not unjudged_read and ctx.is_data_loading:
+        typed, made_up = ([], []) if ctx.synthetic_requested else added_values(code, engine, ctx)
         if ctx.synthetic_requested:
             source_refs.append({"kind": "synthetic"})
+        elif typed and not made_up:
+            # The values the code adds are the user's own, typed in this
+            # conversation, beside those the node already held.
+            source_refs.append({
+                "kind": "user-values",
+                "value": ", ".join(_shown_value(value) for value, _line in typed)[:_VALUE_MAX_CHARS],
+            })
         else:
+            # The values named first: a delegate's refusal is cut short.
+            if made_up:
+                violations.append(agent_text.message(
+                    "grounding.values-not-typed",
+                    values=_listed([_shown_value(value, line) for value, line in made_up], "none"),
+                ))
             violations.append(
                 agent_text.message("grounding.no-source")
             )
@@ -1521,6 +1691,8 @@ def _ref_label(ref: dict) -> str:
         return f"External · {ref.get('value')} · {status}{gate}"
     if kind == "user-path":
         return f"User-provided path · {ref.get('value')}"
+    if kind == "user-values":
+        return f"User-provided values · {ref.get('value')}"
     if kind == "secret":
         return f"Connection key · {ref.get('name')} · {ref.get('host')}"
     if kind == "synthetic":
@@ -1548,6 +1720,8 @@ def refusal_text(verdict: GroundingVerdict, ctx: GroundingContext) -> str:
     for i, violation in enumerate(verdict.violations, 1):
         lines.append(f"({i}) {violation}")
     allowed = [agent_text.message("grounding.allowed-user-path")]
+    if ctx.is_data_loading and ctx.user_messages:
+        allowed.append(agent_text.message("grounding.allowed-user-values"))
     allowed.extend(ctx.hints)
     lines.append(agent_text.message("grounding.allowed", sources="; ".join(allowed)))
     lines.append(
