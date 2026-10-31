@@ -103,7 +103,7 @@ To use your own data instead, double-click the box, delete the Data Loading node
 
 A drop is refused, and nothing is added, when:
 
-- a node of its fixed context has no saved output and cannot run on the server: only the browser runs it (an Autark compute node, for one), you are a guest on a hosted Curio, or Curio runs with `--no-project`. Run the scenario in its project and save it, then drag it again;
+- a node of its fixed context has no saved output and cannot run on the server: only the browser runs it (an Autark compute node, for one), you are a guest on a hosted Curio, or Curio runs with `--no-project`. Run the scenario in its project, then drag it again;
 - its nodes need a package, a dataset or a model your account does not have, or a package your account cannot add; the message names it.
 
 ---

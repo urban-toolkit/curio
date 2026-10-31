@@ -428,8 +428,9 @@ Everything the agents read is hand-written Markdown in `agents/` and
 `skills/`: each agent's prompts in its folder, the pages they share in the
 base entry, [`agents/agent.curio.builtin@1/`](../agents/agent.curio.builtin@1/)
 (the preamble, the worked examples' index and the rules prompts include), and
-Curio's skills, [`skills/`](../skills/), one per feature of Curio: the
-preamble places the core three, and each agent's manifest names the others
+Curio's skills, [`skills/`](../skills/), one per feature of Curio and one per
+procedure several agents follow: the preamble places the core three, and each
+agent's manifest names the others
 its runs read. A new feature, such as a built-in template, a function node
 code calls or a kind of chip, gets its lines in a skill in the same change:
 `test_feature_skills.py` fails while one is in no skill, and

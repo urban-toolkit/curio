@@ -113,10 +113,10 @@ Curio is a framework for collaborative urban visual analytics that uses a datafl
 - 📚 **Agents that read skills.** What Curio's agents know of its features is in skills, in the [Agent Skills](https://agentskills.io/specification) format: a chat loads the skill a task needs, and a call with no tools is handed the ones it needs. See [Skills](docs/AGENT-CATALOG.md#skills).
 - 🗺️ **Autark integration.** A single `Autark` node whose UrbanSpec combines OSM/PBF data loading, GPU compute (WGSL), and map / plot rendering, with JS Computation I/O routed through Python DuckDB.
 - ⚡ **JavaScript Computation node.** Run Node.js code in a sandbox subprocess alongside Python nodes.
-- 🧬 **Provenance in the dataflow.** Provenance is tracked in the dataflow JSON itself, and a drawer lists every version, with each branch under the version it left from.
+- 🧬 **Provenance.** Curio keeps each dataflow's history as it changes, and a drawer lists every version, with each branch under the version it left from, and each node's runs and edits.
 - 📓 **Jupyter ↔ dataflow conversion.** Turn a notebook into a dataflow and a dataflow into a notebook.
 - 💾 **Every change kept.** The server keeps each change to a saved dataflow as it is made, and the top bar says whether it has them all (Saved, Saving..., Offline).
-- ▶️ **Play All & auto-play ancestors.** Execute nodes in topological order, or automatically run upstream nodes when a downstream play button is clicked.
+- ▶️ **Runs on the server.** **Run All** runs every node in order, and a node's play first runs the nodes above it whose output is out of date. On your own dataflows, and on those you are invited to edit, a run is made on the server and goes on when you close the tab.
 - 👥 **Session-level multi-user isolation.** Across backend, sandbox, and frontend.
 - 📊 **Shareable dashboards.** Pinned nodes get a page of their own at `/dashboard/<id>`, drawn from the dataflow's saved outputs. Share the link; nobody has to run anything.
 - 🦆 **DuckDB-native artifact I/O.** Type-safe data exchange between sandbox and backend.

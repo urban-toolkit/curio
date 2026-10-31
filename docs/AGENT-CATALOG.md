@@ -251,12 +251,12 @@ Agent state lives in files under `.curio/` and inside each project's spec; the a
 | **Catalog settings**, values you own | `.curio/users/<user-key>/catalog-settings.json` | **Settings** on `/catalog/agents` saves a setting you changed; **Restore default** removes it. See [Catalog settings](#catalog-settings). |
 | **Agent skills**, the skills you changed on an agent | `.curio/users/<user-key>/agent-skills.json`, by agent id, so one change covers every version of the agent and every project | **Add skill** and **Remove** in an agent's details change its entry; **Restore** removes it. See [Skills](#skills). |
 | **Per-dataflow lockfile**, the agents one dataflow has | `dataflow.agents` in the project's `spec.trill.json` | **Add to project** and **Remove from project** in the drawer. **Add to all projects** and **Remove from all projects** change every project. |
-| **Attachments**, private instances bound to a target | `dataflow.agentAttachments` in the project's `spec.trill.json` | Attaching (dragging an agent onto a node, a connection, or the canvas) creates one. **Detach** deletes it and its transcript, and **Remove from project** deletes every attachment of that agent. |
+| **Attachments**, an agent's instances bound to a target | `dataflow.agentAttachments` in the project's `spec.trill.json` | Attaching (dragging an agent onto a node, a connection, or the canvas) creates one. **Detach** deletes it and its transcript, and **Remove from project** deletes every attachment of that agent. |
 | **Usage record** | `.curio/users/<user-key>/agents/ledger/<date>.jsonl` | Every run appends to it. It is not editable and not shown in the interface. |
 
 > [!NOTE]
 > **Adding is not attaching.** Adding an agent to a dataflow makes it available
-> in that dataflow's palette. Attaching it creates a private instance bound to
+> in that dataflow's palette. Attaching it creates an instance of it bound to
 > one node, one connection, or the canvas, with its own chat transcript. One
 > added agent can carry many attachments. See
 > [part 3](#3-using-an-agent-in-a-dataflow).
@@ -271,7 +271,7 @@ There are three places you work with agents, and as with the Data Catalog they a
 - **The Agent Catalog drawer**, inside the canvas, is the working surface. Open it from the **Agent Catalog** button in the top bar, or from the left Tools panel's **Agent Catalog** dropdown and **Browse Agent Catalog +**. Its tabs are **Browse all** (the default) and **In project**, and everything scoped to the open dataflow happens here, including **Import agent** in its footer.
 - **The Agent palette**, the **Agent Catalog** dropdown in the left Tools panel, holds the agents already added to this dataflow, ready to drag onto a node, a connection, or the canvas. It sits below the **Node Catalog** and **Data Catalog** dropdowns.
 
-**View details**, on any agent card and beside each agent in the palette, opens the agent's details window. Its first four sections are named by the four words defined in [The agents](#the-agents): **In chat**; **Tools**, which also says what the agent reads before what it proposes; **Modes (who asks)**, each mode with the agents, or Solve, that ask for it, and the mode's capability ids beneath it; and **Skills**, the core skills first, then its own and those its chat, a mode of it or a call another agent asks it for always holds, with **Add skill**, **Remove** and **Restore** (see [Skills](#skills)). **Agent info** gives its identifier, version, category, publisher, what it attaches to and the model it runs on. **Prompts** shows each prompt file, labeled by when it runs: every call, a message you type, or the mode that reads it. **Requires** names the agents it cannot work without, and **Export** saves the agent as one file.
+**View details**, on any agent card and beside each agent in the palette, opens the agent's details window. Its first four sections are named by the four words defined in [The agents](#the-agents): **In chat**; **Tools**, which lists what the agent reads before what it changes and what it proposes to install; **Modes (who asks)**, each mode with the agents, or Solve, that ask for it, and the mode's capability ids beneath it; and **Skills**, the core skills first, then its own and those its chat, a mode of it or a call another agent asks it for always holds, with **Add skill**, **Remove** and **Restore** (see [Skills](#skills)). **Agent info** gives its identifier, version, category, publisher, what it attaches to and the model it runs on. **Prompts** shows each prompt file, labeled by when it runs: every call, a message you type, or the mode that reads it. **Requires** names the agents it cannot work without, and **Export** saves the agent as one file.
 
 **View details** on a skill's card, in its drawer or in its right-click menu opens the skill's details window: its description, what it serves (the kinds of node whose templates its `curio-behaviors` name, and the features of a dataflow its `curio-features` name), the agents that use it, whose it is, its version, author, license and compatibility, its text as an agent reads it, collapsed until you open it, and its other files. **Export** saves it as a `.zip` of its folder.
 
@@ -286,7 +286,7 @@ There are three places you work with agents, and as with the Data Catalog they a
 | **Import agent** | Drawer footer, or the `/catalog/agents` header | Definition store and your per-user list | Your own `manifest.json` and prompt files are registered as a definition. It is not added to your existing dataflows and not published. |
 | **Publish** | `/catalog/agents` drawer, for your own imports only | Shared catalog | Every user on this install can browse the agent. |
 | **Unpublish** | `/catalog/agents` drawer | Shared catalog | It leaves the shared catalog. Other users who added it keep their copy. |
-| **Attach** | Drag a palette row onto a node, a connection, or the canvas | Attachments | A private instance with its own chat panel. The agent must be added first. |
+| **Attach** | Drag a palette row onto a node, a connection, or the canvas | Attachments | An instance with its own chat panel. The agent must be added first. |
 | **Detach** | The attachment's own control | Attachments | The instance and its transcript are deleted. The agent stays added. |
 | **Add skill** | An agent's details | Your agent skills | The agent's runs hold the skill in every project, from its next run: its chat lists it, and its modes are handed it when their task needs it. |
 | **Remove** (a skill) | An agent's details | Your agent skills | The agent's runs go without the skill in every project, and a conversation that loaded it stops holding it. Not offered for the core skills, or a skill the agent's chat instruction, a mode or a call another agent asks for names as its own. |
@@ -333,7 +333,7 @@ Each setting lists the agents that read it. **Restore default** returns a settin
 
 **Adding** an agent makes it available in the dataflow's palette. Nothing runs yet.
 
-**Attaching** it creates a private instance bound to a target:
+**Attaching** it creates an instance bound to a target:
 
 | Target kind | Bound to | Reached by | Shown as |
 |---|---|---|---|
@@ -375,7 +375,7 @@ The reverse holds too. Removing an agent that another added agent requires is re
 
 ### Invited editors
 
-The editors the dataflow's owner invited (**Share > Invite editors**, see [COLLABORATION.md](COLLABORATION.md#who-edits-owner-editors-and-watchers)) work with its agents as the owner does: they add and attach agents, chat, apply what an agent proposes and run **Solve**. Anyone else who opens the dataflow's link watches: no agent's badge or chat shows on their canvas, only the chip in the dock of an agent at work, and the server refuses their requests to the agents. A guest on a hosted Curio works with the agents of the examples, each guest on a copy of its own, and watches every other dataflow.
+The editors the dataflow's owner invited (**Share > Invite editors**, see [COLLABORATION.md](COLLABORATION.md#who-edits-owner-editors-and-watchers)) work with its agents as the owner does: they add and attach agents, chat, undo what an agent changed and run **Solve**. Anyone else who opens the dataflow's link watches: no agent's badge or chat shows on their canvas, only the chip in the dock of an agent at work, and the server refuses their requests to the agents. A guest on a hosted Curio works with the agents of the examples, each guest on a copy of its own, and watches every other dataflow.
 
 - **The owner's model and key.** An editor's runs answer with the owner's LLM configurations: the one the owner's **API Settings** choose for each agent, else the owner's default ([LLM configurations](#4-llm-configurations)). The agents' skills and the catalog settings they read are the owner's too.
 - **The editor's own saved keys.** An agent in an editor's chat or Solve is told the names of the editor's Node code keys, never the owner's, and a key it names that only the owner saved gives it nothing. The Discovery Catalog sends the editor's own Data source keys, and an editor's searches of the Scenario Catalog and the Discovery Catalog read the editor's own account.
@@ -384,7 +384,7 @@ The editors the dataflow's owner invited (**Share > Invite editors**, see [COLLA
 - **The packages and models an editor's agents use.** The code an agent runs in an editor's chat or Solve runs a node of a package, and a model, the owner added to the dataflow with the owner's copy, and any other package or model with the editor's own. The skills of the packages the owner added to the dataflow reach its agents from the owner's copies, in an editor's chats, Solve and Simulation as in the owner's.
 - **Installs wait for the owner.** An install an agent proposes changes an account, the owner's, so in an editor's chat its card reads *Waits for the dataflow's owner to review it* in place of **Apply** and **Dismiss**: a package, a package an agent drafted, a dataset for the dataflow, or a download from the Discovery Catalog. The owner reviews it in the same chat. Confirming a candidates card row that Curio would download waits for the owner too. A dataset, a collection, a package or a model of the editor's own that the editor drops, adds or drags onto the dataflow waits on the same card, under **Waiting for review** in the drawer of its catalog: the Data, Node or Model Catalog's ([COLLABORATION.md](COLLABORATION.md#who-edits-owner-editors-and-watchers)).
 - **Agents an editor adds.** An editor adds the agents the owner's account holds: those Curio ships, and those the owner imported.
-- **Provenance.** A change an editor applies from an agent's review card is named after the agent and the editor who asked.
+- **Provenance.** A change an agent makes in an editor's chat is named after the agent and the editor who asked, such as *Node Builder, asked by Ana*.
 
 ### Solve
 
