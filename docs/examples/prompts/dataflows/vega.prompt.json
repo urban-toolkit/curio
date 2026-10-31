@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/vega.json",
-    "sha256": "c8b887dd53151313ace9768bd3c36ea1ed4371fc8c994166b1e5b42da86eceff",
+    "sha256": "4f6bb62fae16a1c25cea4ef03b1930ae2da8efb8ba2e834417fed47d462273ab",
     "walkthrough": null
   },
   "prompt": "Create a small nine-row table of letters and values in a loading step and draw it as a Vega-Lite bar chart.",
