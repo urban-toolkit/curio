@@ -1,7 +1,9 @@
 import { TrillGenerator } from "../../TrillGenerator";
 import type { Scenario } from "../../utils/scenarios/scenarioModel";
 import type { AgentAttachment } from "./types";
+import { isDataEdge } from "../../utils/inputSlots";
 import {
+  type Feeder,
   storeOutputFor,
   summarizeNodeInput,
   summarizeNodeOutput,
@@ -73,6 +75,43 @@ function findTrillNode(trill: ReturnType<typeof liveTrill>, nodeId: string | nul
   return trill.dataflow?.nodes?.find((n) => n.id === nodeId) ?? null;
 }
 
+type CanvasEdge = {
+  id?: string;
+  source?: string;
+  target?: string;
+  sourceHandle?: string | null;
+  targetHandle?: string | null;
+};
+
+/**
+ * The nodes wired into *nodeId* by data edges (an interaction edge carries a
+ * selection, not data), once each in the canvas's order: their ids and types
+ * as the Trill writes them, and their live state. With them, a node with no
+ * input yet says what it waits for, not that nothing feeds it.
+ */
+function feedersOf(
+  trill: ReturnType<typeof liveTrill>,
+  canvas: AgentCanvasState,
+  nodeId: string,
+): Feeder[] {
+  const feeders: Feeder[] = [];
+  const edges = (Array.isArray(canvas.edges) ? canvas.edges : []) as CanvasEdge[];
+  for (const edge of edges) {
+    const source = edge?.source;
+    if (edge?.target !== nodeId || !source || !isDataEdge(edge)) continue;
+    if (feeders.some((feeder) => feeder.id === source)) continue;
+    const node = findTrillNode(trill, source);
+    if (!node) continue;
+    feeders.push({
+      id: source,
+      type: node.type ?? "",
+      data: findLiveNode(canvas.nodes, source)?.data,
+      storeOutput: storeOutputFor(canvas.outputs, source),
+    });
+  }
+  return feeders;
+}
+
 /** Generic per-read fragments (canonical labels from the legacy call sites). */
 function readFragment(
   read: string,
@@ -106,7 +145,8 @@ function readFragment(
       );
     }
     case "nodeContext": {
-      const node = findTrillNode(liveTrill(canvas), nodeId);
+      const trill = liveTrill(canvas);
+      const node = findTrillNode(trill, nodeId);
       if (!node) return null;
       // dev/111, ported here by dev/129: these two were sent EMPTY, so every
       // agent asked about a node was told nothing about what it received or
@@ -117,7 +157,7 @@ function readFragment(
         id: node.id,
         type: node.type ?? "",
         content: node.content ?? "",
-        current_input: live ? summarizeNodeInput(live.data) : "",
+        current_input: live ? summarizeNodeInput(live.data, feedersOf(trill, canvas, nodeId ?? "")) : "",
         current_output: live
           ? summarizeNodeOutput(live.data, storeOutputFor(canvas.outputs, nodeId ?? ""))
           : "",
@@ -166,7 +206,8 @@ function readFragment(
     case "targetContext": {
       // Node target → that node's snapshot; canvas target → the whole graph.
       if (nodeId) {
-        const node = findTrillNode(liveTrill(canvas), nodeId);
+        const trill = liveTrill(canvas);
+        const node = findTrillNode(trill, nodeId);
         if (!node) return null;
         // dev/135: the snapshot used to be {id, type, goal, content} — no
         // runtime state at all — so the Node Builder attached to a node that
@@ -182,7 +223,7 @@ function readFragment(
             type: node.type ?? "",
             goal: node.goal ?? "",
             content: node.content ?? "",
-            current_input: live ? summarizeNodeInput(live.data) : "",
+            current_input: live ? summarizeNodeInput(live.data, feedersOf(trill, canvas, nodeId)) : "",
             current_output: live
               ? summarizeNodeOutput(live.data, storeOutputFor(canvas.outputs, nodeId))
               : "",
