@@ -562,13 +562,15 @@ def _session_grounding_evidence(
     texts (the current message first) and every candidate row the runtime
     verified (persisted turns + this run's ``_verified_urls``). The task the
     runtime recorded for a delegate in its session is the delegating agent's
-    words, not the user's (``sessions.a_persons_message``)."""
+    words, not the user's (``sessions.a_persons_message``). A delegated write
+    reads the chat that asked for it (``asked_in_session_id``), not the home
+    chat it lands in."""
     texts: list[str] = []
     verified: dict = {}
     message = loop_ctx.get("message")
     if isinstance(message, str) and message.strip():
         texts.append(message)
-    session_id = loop_ctx.get("session_id")
+    session_id = loop_ctx.get("asked_in_session_id") or loop_ctx.get("session_id")
     if isinstance(session_id, str):
         try:
             turns = sessions.read_turns(user_key, project_id, session_id)
