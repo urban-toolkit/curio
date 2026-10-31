@@ -50,8 +50,8 @@ AGENTS_WATCHER_REFUSAL = "Only the owner and the editors the owner invited work 
 def owners_review(owner: str) -> str:
     """What an editor the owner invited is told who applies or dismisses what
     waits for the review of *owner*, the dataflow's owner by name: an install
-    an agent asks for (``agents/application/editors.py``), and a dataset the
-    editor asks the owner to add (``datasets/application/editor_requests.py``).
+    an agent asks for (``agents/application/editors.py``), and an item of the
+    editor's own the editor asks the owner to add (``editor_requests.py``).
     Either changes the owner's account, so only the owner reviews it."""
     return (
         f"This install waits for {owner}, who owns this dataflow: an install changes "

@@ -86,6 +86,8 @@ There are two places you manage node packages:
 
 **I want other users on this install to be able to add a package I built.** Build it with **Save as package node** ([part 4](#4-creating-a-package-from-a-canvas-node)), then click **Publish** on it in the Tools panel's **Node Catalog** dropdown or in the `/catalog/nodes` details drawer.
 
+**I edit someone else's dataflow and want to add a package of mine.** On a dataflow whose owner invited you to edit it ([Collaboration](COLLABORATION.md#who-edits-owner-editors-and-watchers)), a package reaches the dataflow through the owner's review. **Add to project** in the drawer asks the owner to add it, once you confirm, a card you drop on the canvas makes its node at once and asks too, and **Import package** puts an archive's package in your own account and asks. The node's **PACKAGE** pill reads **WAITING** until the owner reviews it. The owner's drawer lists your request under **Waiting for review**, with your name, the package's version and publisher and the permissions it asks for. **Apply** opens the review the owner's own **Add to project** opens; confirming there copies the package into the owner's account, its files checked against the record its install wrote, installs its libraries there and adds it to the dataflow, and your runs then use the owner's copy. **Dismiss** leaves nothing behind. A package of the shared catalog asks the owner too, and the owner's **Apply** installs it from the catalog.
+
 ---
 
 ## 3. Using a node in a dataflow

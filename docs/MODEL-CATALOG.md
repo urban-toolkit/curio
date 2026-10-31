@@ -105,6 +105,8 @@ An agent writes only models your store holds into a node, and asks you to add an
 
 **I want to remove a model.** Open each dataflow that has it and use **Remove from project** in the Model Catalog drawer. When you remove it from the last one, Curio deletes it from your account, drops it from your defaults and uninstalls its Python libraries.
 
+**I edit someone else's dataflow and want to use a model of mine.** On a dataflow whose owner invited you to edit it ([Collaboration](COLLABORATION.md#who-edits-owner-editors-and-watchers)), a model reaches the dataflow through the owner's review, as a package does ([Node Catalog](NODE-CATALOG.md#workflows)). **Add to project** in the drawer, a card dropped on the canvas, which makes its node at once, and a model dropped on a node each ask the owner to add it, and the node reads **WAITING** until the owner reviews it. The owner's Model Catalog drawer lists your request under **Waiting for review**; **Apply** copies the model into the owner's Model Catalog with its weights, installs its libraries there and adds it to the dataflow, and your runs then load the owner's copy.
+
 ---
 
 ## 3. Using a model in a dataflow

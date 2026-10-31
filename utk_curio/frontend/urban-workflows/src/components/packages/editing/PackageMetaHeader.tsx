@@ -1,9 +1,12 @@
 import React, { useCallback, useMemo } from "react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faHourglassHalf } from "@fortawesome/free-solid-svg-icons";
 import type { NodeCategory, NodePackageMeta } from "../../../registry/types";
 import { BUILTIN_PACKAGE_ID } from "../../../registry/packageKeys";
 import { NODE_CATEGORY_SHORT_LABEL } from "../../../constants/nodeCategoryShortLabels";
 import { NODE_CATEGORY_KEY } from "../../../constants/nodeCategoryPalette";
 import { formatForkOfSubtitle } from "../../../services/packages";
+import { requestFor, requestWaitText, useHeldEditorRequests } from "../../../services/editorRequests";
 import { usePackagePalette } from "../../../providers/packages/PackagePaletteContext";
 import { useHeaderIconDragClick } from "../../../utils/headerIconDragClick";
 import styles from "./PackageMetaHeader.module.css";
@@ -17,6 +20,8 @@ export interface PackageMetaHeaderProps {
   pkg: NodePackageMeta;
   category: NodeCategory;
   suggestionActive: boolean;
+  /** The node the pills are on, which a request may name (a model dropped on it). */
+  nodeId?: string;
 }
 
 /**
@@ -34,10 +39,17 @@ export interface PackageMetaHeaderProps {
  * Packages palette lists only third-party packages (``ToolsMenu`` filters the
  * builtin into the separate Built-in palette). So on a built-in node the pill is
  * an affordance for an action that cannot happen.
+ *
+ * A PACKAGE pill whose package, or a model dropped on whose node, an invited
+ * editor asked the dataflow's owner to add, and she has not reviewed yet
+ * (`editorRequests.ts`), reads WAITING: on the editor's canvas it waits for
+ * her, and on hers she is asked.
  */
-export function PackageMetaHeader({ pkg, category, suggestionActive }: PackageMetaHeaderProps) {
+export function PackageMetaHeader({ pkg, category, suggestionActive, nodeId }: PackageMetaHeaderProps) {
   const { setActivePackageKey, setPaletteDockRevealCoord } = usePackagePalette();
   const coord = `${pkg.packageId}@${pkg.major}`;
+  const { requests, viewer } = useHeldEditorRequests();
+  const waiting = requestFor(requests, { dirName: coord, nodeId });
 
   const packageTooltip = useMemo(() => {
     const lines = [coord];
@@ -46,9 +58,10 @@ export function PackageMetaHeader({ pkg, category, suggestionActive }: PackageMe
       lines.push(fork.text);
       if (fork.title) lines.push(fork.title);
     }
+    if (waiting) lines.push(requestWaitText(waiting, viewer));
     lines.push("Click to open this package in the Packages palette");
     return lines.join("\n");
-  }, [coord, pkg.lineage]);
+  }, [coord, pkg.lineage, waiting, viewer]);
 
   const focusPackageInPalette = useCallback(() => {
     if (suggestionActive) return;
@@ -78,12 +91,14 @@ export function PackageMetaHeader({ pkg, category, suggestionActive }: PackageMe
       {revealable ? (
         <button
           type="button"
-          className={styles.packageBadge}
+          className={waiting ? `${styles.packageBadge} ${styles.packageBadgeWaiting}` : styles.packageBadge}
           data-tooltip={packageTooltip}
+          data-curio-waits-for-owner={waiting ? "true" : undefined}
           aria-label={`Open package ${coord} in Packages palette`}
           {...packageBadgeClick}
         >
-          PACKAGE
+          {waiting ? <FontAwesomeIcon icon={faHourglassHalf} aria-hidden /> : null}
+          {waiting ? "WAITING" : "PACKAGE"}
         </button>
       ) : null}
     </div>
