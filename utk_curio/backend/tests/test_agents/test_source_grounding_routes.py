@@ -1022,6 +1022,46 @@ class TestContentReviewMintInheritsTheGate:
         assert "could not be written into the node" in result, result
         assert "'data/tracts.geojson' (line 2)" in result, result
 
+    def test_a_delegate_is_handed_only_the_paths_the_user_typed(self, client, user_and_token, tmp_curio, project, monkeypatch):
+        """The paths a content delegate is handed are the ones its write's gate
+        accepts: the user's, never one only the delegating agent's intent names."""
+        _, token = user_and_token
+        _install(client, token, project, NB)
+        att = _attach(client, token, project, NB, target={"kind": "node", "targetId": "n1"})
+        calls = _script(monkeypatch, [
+            _delegate_tail("node.content.generate", {"nodeId": "n1", "intent": "load data/tracts.geojson"}),
+            "No source is grounded for this node.",
+            "Which file should it load?",
+        ])
+        _run(client, token, project, att, "fill this node from my file data/blocks.geojson")
+        frame = calls[1][-1]["content"]
+        handed, _end = json.JSONDecoder().raw_decode(frame[frame.index("\n{") + 1:])
+        assert handed["sourceGrounding"]["userPaths"] == ["data/blocks.geojson"], handed["sourceGrounding"]
+
+    def test_the_delegated_write_reads_the_chat_that_asked(self, client, user_and_token, tmp_curio, project, monkeypatch):
+        """A canvas chat's Node Builder hands a node's content to the node's own
+        agent, whose chat the change lands in. The gate reads the user's words
+        in the chat that asked, where the user named the file a turn before,
+        not the node's chat, which holds only the delegated task."""
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        _install(client, token, project, NB)
+        att = _attach(client, token, project, NB)
+        _script(monkeypatch, ["Noted: I will load it when you ask."])
+        _run(client, token, project, att, "my tracts are in data/tracts.geojson")
+        calls = _script(monkeypatch, [
+            _delegate_tail("node.content.generate", {"nodeId": "n1", "intent": "load the user's tracts file"}),
+            'import geopandas as gpd\ngdf = gpd.read_file("data/tracts.geojson")\nreturn gdf',
+            "Done.",
+        ])
+        _run(client, token, project, att, "fill the loader node with them")
+        assert "the generated content is in node 'n1'" in calls[2][-1]["content"], calls[2][-1]["content"]
+        spec = projects_storage.read_spec(_user_dir_key(user), project)
+        loader = next(n for n in spec["dataflow"]["nodes"] if n["id"] == "n1")
+        assert 'gpd.read_file("data/tracts.geojson")' in loader["content"], loader["content"]
+
 
 class TestContentForANewNode:
     """A Node Builder attached to a node that delegates the content of a new
