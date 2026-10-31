@@ -226,7 +226,7 @@ class GroundingContext:
     chips: dict | None = None
     #: The user's own messages in this conversation, and nothing else: the
     #: values a data-loading node's inline data may add (:func:`added_values`).
-    #: Empty where no conversation is read, as in a Solve.
+    #: Empty where no conversation is read, as in a Solve batch.
     user_messages: tuple[str, ...] = ()
     #: The content the node holds now, which is the user's own; None for a
     #: node the content would create.
