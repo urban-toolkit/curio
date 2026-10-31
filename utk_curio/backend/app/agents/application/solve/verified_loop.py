@@ -243,6 +243,9 @@ class VerifiedRounds:
                     (self.available or {}).get(packages_services.canonical_template_id(self.node_type))
                 ),
                 chips=agents_grounding._chip_context(self.spec, self.node_id),
+                # The code the node holds is the user's own, which round 0 may
+                # run: a call in it that makes values up is not one a round adds.
+                current=str(self.node.get("content") or ""),
             )
         except Exception:
             log.warning("Grounding context unavailable for node %s", self.node_id, exc_info=True)
