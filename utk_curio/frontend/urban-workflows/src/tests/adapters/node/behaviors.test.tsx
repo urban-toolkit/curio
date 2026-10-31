@@ -1344,6 +1344,14 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         expect((await body(MAP_ON_UPSTREAM)).reason).toBe('upstream-errored');
       });
 
+      // An interaction edge joins two nodes' in/out handles to pass selections,
+      // never data: the chart at its other end feeds nothing in, failed or not.
+      test('joined to a chart only by an interaction edge: asks for a connection', async () => {
+        mockFlowEdges = [{ source: 'bar', target: 'node-1', sourceHandle: 'in/out', targetHandle: 'in/out' }];
+        mockNodeExecStatus = { bar: 'errored' };
+        expect((await body(MAP_ON_UPSTREAM)).reason).toBe('disconnected');
+      });
+
       test('a compute step needs its input; a data step does not', async () => {
         expect((await body(JSON.stringify({ compute: [{ dataRef: 'x', wglsFunction: '' }] }))).reason)
           .toBe('disconnected');
