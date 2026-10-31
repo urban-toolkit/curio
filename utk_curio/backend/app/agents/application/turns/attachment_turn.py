@@ -30,8 +30,8 @@ def run_attachment(
     exchange persist to the session file so a reload restores the conversation;
     a provider failure persists the user turn plus a display-only error marker
     (excluded from future context) so history matches what the user saw. The
-    turn waits for the attachment's turns asked before it, and its model call
-    is one call, not a stream.
+    turn waits for the attachment's turns asked before it, and its reply
+    arrives whole, with the turn's end.
     """
     asked, events = turn_jobs.ask(
         user_key, project_id, attachment_id, message, config, run_context, streaming=False, follow=True,
