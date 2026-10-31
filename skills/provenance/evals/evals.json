@@ -17,11 +17,11 @@
     {
       "id": 2,
       "prompt": "Before my last edit the transformation node had this code, and it worked. Please put it back:\n\njoined = input_0\nbig = joined[joined['VEGETATED_SQFT'] > 1000]\ntop_5 = big.groupby('zip')['VEGETATED_SQFT'].sum().reset_index().sort_values(by='VEGETATED_SQFT', ascending=False).head(5)\nreturn top_5",
-      "expected_output": "A node.content.write change to the transformation node (f9e2b9af-23e6-4db3-9140-38bfecd6afc5) that writes the pasted code, which lands at once as the agent's change, with the answer saying the user can undo it, and no new node.",
+      "expected_output": "A node.content.write change to the transformation node (f9e2b9af-23e6-4db3-9140-38bfecd6afc5) that writes the pasted code, which lands at once as the agent's change: the reply says the code is back, and the change's card offers the user its Undo. No new node.",
       "assertions": [
         "The answer uses node.content.write on node f9e2b9af-23e6-4db3-9140-38bfecd6afc5.",
         "The content it writes keeps the pasted code's logic: roofs over 1000 vegetated square feet, summed by zip, the top 5 returned.",
-        "The answer says the code is back in the node as its change, which the user can undo.",
+        "The pasted code is back in the node as the agent's change, which the user can undo: the reply says the code is back, the transformation node's content now holds the pasted code, and the change card for node f9e2b9af-23e6-4db3-9140-38bfecd6afc5 offers its Undo (\"undo\": true).",
         "The answer creates no new node."
       ]
     },

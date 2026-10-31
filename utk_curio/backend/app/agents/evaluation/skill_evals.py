@@ -475,6 +475,22 @@ def benchmark(skill: SkillEvals, results: Iterable[Mapping]) -> dict:
     return {"skill_name": skill.name, "run_summary": summary, "runs": listed}
 
 
+#: What a grader reads of what a change card says.
+_CARD_KEYS = ("tool", "kind", "summary", "lines", "nodeId", "nodeType")
+
+
+def change_cards(content: Iterable[Mapping]) -> list[dict]:
+    """What a grader reads of a run's change cards, the ``change`` parts of
+    its reply's *content*: what each says, and ``undo``, whether it offers its
+    Undo, as the chat's card does while its change has an id and is not
+    undone (``AgentChangeCard``)."""
+    return [
+        {**{key: part[key] for key in _CARD_KEYS if key in part},
+         "undo": bool(part.get("changeId")) and part.get("status") != "undone"}
+        for part in content or () if isinstance(part, Mapping) and part.get("type") == "change"
+    ]
+
+
 def grading_summary(results: list[Mapping]) -> dict:
     """The ``summary`` of a ``grading.json``, from its assertion results."""
     passed = sum(1 for r in results if r.get("passed") is True)
