@@ -1193,6 +1193,7 @@ def update_project(
         # doc; once the dataflow has its points, it is theirs and is not read.
         _carry_history(ukey, project_id, data, effective_spec)
         spec_dirty = False
+        backfilled: set[str] = set()
         # The canvas save (TrillGenerator) does not serialize the backend-owned
         # agent sections, so carry dataflow.agents / agentAttachments forward
         # from the on-disk spec — otherwise a client save wipes installed agents
@@ -1223,10 +1224,15 @@ def update_project(
             # what a promotion or the drawer had just written. The on-disk
             # effective lockfile (backfill included) is what survives.
             from utk_curio.backend.app.packages.application.store_reads import _installed_majors_by_pkg
-            from utk_curio.backend.app.packages.service import preserve_project_packages
-            preserve_project_packages(
-                effective_spec, existing_spec, _installed_majors_by_pkg(ukey),
-            )
+            from utk_curio.backend.app.packages.service import backfilled_packages, preserve_project_packages
+            majors = _installed_majors_by_pkg(ukey)
+            preserve_project_packages(effective_spec, existing_spec, majors)
+            # A lockfile that names no package reads as the packages of the
+            # dataflow's nodes, an invited editor's node's among them, and the
+            # save names them in it as it read: no one's choice of them, so
+            # the save puts none of them on the owner's record of what the
+            # dataflow uses (``collaboration/owner_uses.py``).
+            backfilled = backfilled_packages(existing_spec, majors)
             # ``dataflow.datasets`` is backend-owned on update (dev/81 Fix 2):
             # the on-disk section overwrites whatever the client sent, so a
             # stale client mirror can neither resurrect an uninstalled ref nor
@@ -1332,7 +1338,8 @@ def update_project(
             # The whole-dataflow PUT, the one write that is not a writer's
             # change: its transaction makes the doc match the PUT, from the
             # dataflow read above, after the loss rule.
-            dataflow_docs.put(ukey, project_id, effective_spec, over=existing_spec, actor=actor)
+            dataflow_docs.put(ukey, project_id, effective_spec, over=existing_spec, actor=actor,
+                              backfilled=backfilled)
 
         # Record only outputs the reload path can restore from a durable source so a
         # swallowed install error can't leave a phantom manifest entry (#144).
