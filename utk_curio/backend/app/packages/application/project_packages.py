@@ -15,6 +15,7 @@ from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
 from utk_curio.backend.app.projects import storage as projects_storage
 from utk_curio.backend.app.packages.domain.package_id import PACKAGE_DIR_RE
 from utk_curio.backend.app.packages.domain.spec_packages import (
+    named_in_lockfile,
     project_packages,
     referencing_nodes,
     set_project_packages,
@@ -96,6 +97,27 @@ def _write_lockfile(user_key: str, project_id: str, dirs: Iterable[str]) -> dict
         return spec
 
 
+def _add_to_lockfile(user_key: str, project_id: str, added: set[str]) -> tuple[set[str], bool]:
+    """Add the packages *added* to the lockfile of the dataflow *project_id*:
+    the packages it names then, backfill included (:func:`get_project_lockfile`),
+    and whether this wrote it.
+
+    It is written unless the lockfile names each of them itself
+    (``spec_packages.named_in_lockfile``). A lockfile that names no package
+    reads as the packages of the dataflow's nodes, so a node an invited editor
+    put on the canvas counts its package in before the dataflow's owner adds
+    it. Her add is her change all the same: written as hers, the lockfile puts
+    the package in her record of what the dataflow uses
+    (``collaboration.owner_uses``), and an editor's runs read her copy
+    (:class:`OwnersPackages`)."""
+    current = get_project_lockfile(user_key, project_id)
+    if added <= named_in_lockfile(projects_storage.read_spec(user_key, project_id)):
+        return current, False
+    current |= added
+    _write_lockfile(user_key, project_id, current)
+    return current, True
+
+
 def install_to_project(
     user_key: str, project_id: str, dir_name: str,
 ) -> dict:
@@ -127,11 +149,7 @@ def install_to_project(
     # "nothing is broken" is a different statement from "nobody looked".
     extra["importErrors"] = outcome.import_errors
 
-    current = get_project_lockfile(user_key, project_id)
-    added = {dir_name, *outcome.packages}
-    if not added <= current:
-        current |= added
-        _write_lockfile(user_key, project_id, current)
+    current, _wrote = _add_to_lockfile(user_key, project_id, {dir_name, *outcome.packages})
     return {
         "packages": sorted(current),
         "addedToUserStore": outcome.copied,

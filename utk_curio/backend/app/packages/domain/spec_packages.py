@@ -122,6 +122,15 @@ def project_packages(
     return _backfill_from_nodes(spec, installed_majors_by_pkg)
 
 
+def named_in_lockfile(spec: dict | None) -> set[str]:
+    """The dirNames ``spec["dataflow"]["packages"]`` names itself, without the
+    backfill: none for a lockfile that names no package, whose packages
+    :func:`project_packages` reads from the dataflow's nodes instead."""
+    dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
+    named = dataflow.get("packages") if isinstance(dataflow, dict) else None
+    return {x for x in named if isinstance(x, str)} if isinstance(named, list) else set()
+
+
 def set_project_packages(spec: dict, dirs: Iterable[str]) -> dict:
     """Write the sorted dirName list back into ``spec["dataflow"]["packages"]``.
 

@@ -68,13 +68,8 @@ def install_to_defaults(user, dir_name: str) -> dict:
     results: list[dict] = []
     for project in projects_repo.list_for_user(user.id):
         try:
-            current = packages_project_packages.get_project_lockfile(user_key, project.id)
-            if added <= current:
-                results.append({"id": project.id, "ok": True, "alreadyPresent": True})
-                continue
-            current |= added
-            packages_project_packages._write_lockfile(user_key, project.id, current)
-            results.append({"id": project.id, "ok": True, "alreadyPresent": False})
+            _current, wrote = packages_project_packages._add_to_lockfile(user_key, project.id, added)
+            results.append({"id": project.id, "ok": True, "alreadyPresent": not wrote})
         except Exception as exc:  # noqa: BLE001 — per-project failure is OK
             log.warning(
                 "install_to_defaults: failed to patch project %s: %s",
