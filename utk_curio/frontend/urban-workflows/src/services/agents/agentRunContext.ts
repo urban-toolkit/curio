@@ -1,7 +1,7 @@
 import { TrillGenerator } from "../../TrillGenerator";
 import type { Scenario } from "../../utils/scenarios/scenarioModel";
 import type { AgentAttachment } from "./types";
-import { isDataEdge } from "../../utils/inputSlots";
+import { incomingSourceIds } from "../../utils/nodeEmptyState";
 import {
   type Feeder,
   storeOutputFor,
@@ -75,41 +75,29 @@ function findTrillNode(trill: ReturnType<typeof liveTrill>, nodeId: string | nul
   return trill.dataflow?.nodes?.find((n) => n.id === nodeId) ?? null;
 }
 
-type CanvasEdge = {
-  id?: string;
-  source?: string;
-  target?: string;
-  sourceHandle?: string | null;
-  targetHandle?: string | null;
-};
-
 /**
- * The nodes wired into *nodeId* by data edges (an interaction edge carries a
- * selection, not data), once each in the canvas's order: their ids and types
- * as the Trill writes them, and their live state. With them, a node with no
- * input yet says what it waits for, not that nothing feeds it.
+ * The nodes feeding *nodeId*, as its body asks when it has nothing to show
+ * (`incomingSourceIds`: data edges only, once each in the canvas's order),
+ * with the ids and types the Trill gives them and their live state. With
+ * them, a node with no input yet says what it waits for, not that nothing
+ * feeds it.
  */
 function feedersOf(
   trill: ReturnType<typeof liveTrill>,
   canvas: AgentCanvasState,
   nodeId: string,
 ): Feeder[] {
-  const feeders: Feeder[] = [];
-  const edges = (Array.isArray(canvas.edges) ? canvas.edges : []) as CanvasEdge[];
-  for (const edge of edges) {
-    const source = edge?.source;
-    if (edge?.target !== nodeId || !source || !isDataEdge(edge)) continue;
-    if (feeders.some((feeder) => feeder.id === source)) continue;
-    const node = findTrillNode(trill, source);
-    if (!node) continue;
-    feeders.push({
-      id: source,
+  const edges = (Array.isArray(canvas.edges) ? canvas.edges : []) as Parameters<typeof incomingSourceIds>[0];
+  return incomingSourceIds(edges, nodeId).flatMap((id) => {
+    const node = findTrillNode(trill, id);
+    if (!node) return [];
+    return [{
+      id,
       type: node.type ?? "",
-      data: findLiveNode(canvas.nodes, source)?.data,
-      storeOutput: storeOutputFor(canvas.outputs, source),
-    });
-  }
-  return feeders;
+      data: findLiveNode(canvas.nodes, id)?.data,
+      storeOutput: storeOutputFor(canvas.outputs, id),
+    }];
+  });
 }
 
 /** Generic per-read fragments (canonical labels from the legacy call sites). */
