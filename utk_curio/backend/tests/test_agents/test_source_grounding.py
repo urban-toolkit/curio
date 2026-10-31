@@ -1,7 +1,7 @@
 """dev/114 (DEC-072) — the one source-grounding gate: a local path is grounded
 only by the user or the Data Catalog, a URL only by the runtime's probe, inline
 data only when the user typed the values it adds or asked for synthetic data;
-everything else is refused with the correction named. Pure — no Flask, no
+everything else is refused with the correction named. Pure: no Flask, no
 network, no store."""
 
 from __future__ import annotations

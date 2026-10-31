@@ -22,15 +22,16 @@ The rules (all runtime-enforced; prompt wording only teaches them):
   credential) or an already-verified candidate row in this session carries
   it — a URL in the user's text is NOT evidence (the DEC-047 handoff prompt
   is model-suggested text the user forwards);
-- a **data-loading node with no source** is grounded only when the USER asked
+- a **data-loading node with no source** is grounded when the USER asked
   for synthetic data (or the model declared ``synthetic: true`` for such a
   request) and is labeled synthetic — inline invented values are the same
-  fabrication class as an invented filename — or when the values its code
-  adds to those the node holds now are values the user typed in this
-  conversation's own messages (:func:`added_values`), labeled user-provided
-  values; a value the user did not type and the node did not hold is refused
-  by name. A node's goal, the dataflow's task and a delegate's intent never
-  count here: a model often writes them;
+  fabrication class as an invented filename;
+- such a node is grounded too when the values its code adds to those the
+  node holds now are values the user typed in this conversation's own
+  messages (:func:`added_values`), labeled user-provided values; a value the
+  user did not type and the node did not hold is refused by name. A node's
+  goal, the dataflow's task and a delegate's intent never count here: a
+  model often writes them;
 - a **catalog item** a function names (the functions page,
   ``skills/node-functions/SKILL.md``, says which argument names a Data Catalog
   dataset or collection, a Model Catalog model or a Node code key) is one the
