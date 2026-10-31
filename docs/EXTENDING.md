@@ -769,7 +769,7 @@ Each skill Curio ships holds its evaluations in `evals/evals.json`, as agentskil
 - `trigger_queries`, for a skill a chat loads: about twenty, each a `query` and whether it `should_trigger` the skill, eight to ten of each ([optimizing descriptions](https://agentskills.io/skill-creation/optimizing-descriptions)). A skill the preamble holds, or one an instruction hands to every chat, has none.
 - Curio's fields, at the top level or on a test case: `agent`, whose chat runs it; `dataflow`, the dataflow its project starts as (a shipped example, or a file under the skill's `evals/`); `target`, the canvas (the default, and where trigger queries run) or `{"kind": "node", "node": "<id>"}`.
 
-`agent_eval.py skills` runs them against an OpenAI-compatible endpoint you name in three variables, from a Python environment with Curio's requirements (`pip install -r requirements.txt`). It needs no running Curio: each worker is a backend of its own, and no node runs.
+`agent_eval.py skills` runs them against an OpenAI-compatible endpoint you name in three variables, from a Python environment with Curio's requirements (`pip install -r requirements.txt`). It needs no running Curio: each worker is a backend of its own, and no node runs. Each run sends its message with the context a browser's chat sends beside it: the node its agent is attached to, or the whole dataflow, as the agent's reads say.
 
 ```bash
 CURIO_EVAL_BASE_URL='<base URL>' CURIO_EVAL_API_KEY='<key>' CURIO_EVAL_MODEL='<model>' \
