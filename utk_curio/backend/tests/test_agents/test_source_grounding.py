@@ -1,7 +1,8 @@
 """dev/114 (DEC-072) — the one source-grounding gate: a local path is grounded
 only by the user or the Data Catalog, a URL only by the runtime's probe, inline
-data only when synthetic was asked for; everything else is refused with the
-correction named. Pure — no Flask, no network, no store."""
+data only when the user typed the values it adds or asked for synthetic data;
+everything else is refused with the correction named. Pure: no Flask, no
+network, no store."""
 
 from __future__ import annotations
 
@@ -619,3 +620,99 @@ class TestConnectionKeys:
             assert self._VALUE not in repr(found)
         for code in self.SHARED_NEGATIVE:
             assert sg.credential_literals(code, "python") == [], code
+
+
+#: The Data Loading node of docs/examples/dataflows/vega.json, as it ships.
+VEGA_LOADER = (
+    'import pandas as pd\r\n\r\nd = {\'a\': ["A", "B", "C", "D", "E", "F", "G", "H", "I"], '
+    "'b': [28, 55, 43, 91, 81, 53, 19, 87, 52]}\r\ndf = pd.DataFrame(data=d)\r\n\r\nreturn df"
+)
+
+
+def _chat(*messages: str, current: str | None = None) -> sg.GroundingContext:
+    """A data-loading node's context in a chat whose user typed *messages*,
+    for a node that holds *current*, as ``_grounding_context`` gives it."""
+    ctx = _ctx(is_data_loading=True)
+    ctx.user_messages = messages
+    ctx.current_content = current
+    return ctx
+
+
+class TestValuesTheUserTyped:
+    """Step 39's live runs (10-30): asked "Add two more bars to this chart: J
+    with 60 and K with 33." on vega.json, every write of the two rows into its
+    Data Loading node was refused as made-up data, so the agent made a new
+    node instead. The values a write adds to those the node holds are
+    grounded when the user typed them in the conversation; any other value is
+    still refused, and named."""
+
+    MESSAGE = "Add two more bars to this chart: J with 60 and K with 33."
+    ROWS = VEGA_LOADER.replace('"I"]', '"I", "J", "K"]').replace("52]", "52, 60, 33]")
+
+    def test_the_rows_the_user_typed_are_grounded_beside_the_nodes_own(self):
+        verdict = sg.check_grounding(self.ROWS, "python", _chat(self.MESSAGE, current=VEGA_LOADER))
+        assert verdict.ok, verdict.violations
+        assert verdict.source["kind"] == "user-values"
+        assert verdict.source["refs"] == [{"kind": "user-values", "value": "'J', 'K', 60, 33"}]
+        assert verdict.source["label"] == "User-provided values · 'J', 'K', 60, 33"
+        # The same rows as a frame of their own, joined: a flag is no value,
+        # and a column name the node holds is the node's own.
+        joined = VEGA_LOADER.replace(
+            "\r\n\r\nreturn df",
+            "\r\nrows = pd.DataFrame({'a': ['J', 'K'], 'b': [60, 33]})"
+            "\r\ndf = pd.concat([df, rows], ignore_index=True)\r\n\r\nreturn df",
+        )
+        verdict = sg.check_grounding(joined, "python", _chat(self.MESSAGE, current=VEGA_LOADER))
+        assert verdict.ok and verdict.source["kind"] == "user-values", verdict.violations
+
+    def test_a_value_the_user_did_not_type_is_refused_by_name(self):
+        invented = self.ROWS.replace('"K"]', '"K", "L"]').replace("33]", "33, 99]")
+        ctx = _chat(self.MESSAGE, current=VEGA_LOADER)
+        verdict = sg.check_grounding(invented, "python", ctx)
+        assert not verdict.ok and verdict.source is None
+        assert len(verdict.violations) == 2, verdict.violations
+        assert "'L' (line 3)" in verdict.violations[0] and "99 (line 3)" in verdict.violations[0]
+        assert "'J'" not in verdict.violations[0] and "60" not in verdict.violations[0]
+        assert "no grounded source" in verdict.violations[1]
+        text = sg.refusal_text(verdict, ctx)
+        assert "values the user typed in this conversation" in text, text
+        # A number of the node's is its own only as many times as the node
+        # holds it: 28 is A's, so J's 28 is a value the user did not give.
+        moved = self.ROWS.replace("52, 60, 33]", "52, 28, 33]")
+        verdict = sg.check_grounding(moved, "python", ctx)
+        assert not verdict.ok and "28 (line 3)" in verdict.violations[0], verdict.violations
+        # Moved where the user said, it is theirs: "set B to 28".
+        set_b = VEGA_LOADER.replace("[28, 55,", "[28, 28,")
+        verdict = sg.check_grounding(set_b, "python", _chat("Set B to 28.", current=VEGA_LOADER))
+        assert verdict.ok and verdict.source["refs"][0]["value"] == "28", verdict.violations
+
+    def test_a_number_is_read_by_its_value_and_a_word_whole(self):
+        table = 'return pd.DataFrame({"name": ["Lincoln Park"], "trees": [1200.0], "low": [-5]})'
+        said = 'A table where "name" is Lincoln Park, "trees" is 1,200 and "low" is -5.'
+        verdict = sg.check_grounding(table, "python", _chat(said))
+        assert verdict.ok, verdict.violations
+        for code, message, named in (
+            ('return pd.DataFrame({"J": [60]})', "Add Jay with 60", "'J' (line 1)"),
+            ('return pd.DataFrame({"J": [2]})', "Add J with J2", "2 (line 1)"),
+            ('return pd.DataFrame({"J": [5]})', "Add J with -5", "5 (line 1)"),
+            ('return pd.DataFrame({"J": [0.5]})', "Add J with 3.5", "0.5 (line 1)"),
+        ):
+            verdict = sg.check_grounding(code, "python", _chat(message))
+            assert not verdict.ok and named in verdict.violations[0], (code, message, verdict.violations)
+
+    def test_a_write_that_adds_no_value_the_user_typed_is_refused_as_before(self):
+        """The node's own values ground nothing alone: its rows with random
+        numbers in place of b add no value, and a write where no conversation
+        is read (a Solve) adds none the user typed."""
+        random_b = VEGA_LOADER.replace(
+            "df = pd.DataFrame(data=d)", "df = pd.DataFrame(data=d)\r\ndf['b'] = np.random.rand(len(df))",
+        )
+        ctx = _chat(self.MESSAGE, current=VEGA_LOADER)
+        verdict = sg.check_grounding(random_b, "python", ctx)
+        assert not verdict.ok and len(verdict.violations) == 1, verdict.violations
+        assert "no grounded source" in verdict.violations[0]
+        assert "values the user typed in this conversation" in sg.refusal_text(verdict, ctx)
+        solve = _chat(current=VEGA_LOADER)
+        verdict = sg.check_grounding(self.ROWS, "python", solve)
+        assert not verdict.ok and len(verdict.violations) == 1, verdict.violations
+        assert "values the user typed" not in sg.refusal_text(verdict, solve)

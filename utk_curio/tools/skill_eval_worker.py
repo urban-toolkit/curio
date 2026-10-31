@@ -609,8 +609,7 @@ class Worker:
                              *(record.get("queuedProposals") or [])):
                 if isinstance(proposal, dict) and proposal.get("status") == "pending":
                     pending.append({key: _clip(value) for key, value in proposal.items() if key not in _BOOKKEEPING})
-        cards = [{key: part[key] for key in ("tool", "kind", "summary", "lines", "nodeId", "nodeType") if key in part}
-                 for part in body.get("content") or [] if isinstance(part, dict) and part.get("type") == "change"]
+        cards = skill_evals.change_cards(body.get("content") or [])
         return {"changed": _dataflow_changes(before, after), "cards": cards, "awaiting_review": pending}
 
     def _outputs(self, folder: Path, body: dict, changes: dict) -> None:

@@ -192,6 +192,28 @@ class TestProjectInstall:
             packages_services.install_to_project(user_key, alice_project, "nope.does.not.exist@1")
         assert exc.value.status == 404
 
+    def test_install_names_a_package_its_nodes_count_in_a_lockfile_that_named_none(
+        self, app, user_and_token, alice_project,
+    ):
+        """A lockfile that names no package reads as the packages of the
+        dataflow's nodes, so a node of the package counts it in before it is
+        added. The add names it in the lockfile all the same, as its own
+        change (an invited editor's node is not the owner's add:
+        ``test_runs/test_editor_additions.py``)."""
+        user, _ = user_and_token
+        user_key = _user_key_for(user)
+        spec = projects_storage.read_spec(user_key, alice_project)
+        spec["dataflow"]["nodes"] = [{"id": "n-uhvi", "type": UHVI_TEMPLATE_REF}]
+        projects_storage.write_spec(user_key, alice_project, spec)
+        assert packages_services.get_project_lockfile(user_key, alice_project) == {UHVI_DIR}
+
+        result = packages_services.install_to_project(user_key, alice_project, UHVI_DIR)
+
+        assert result["packages"] == [UHVI_DIR]
+        assert projects_storage.read_spec(user_key, alice_project)["dataflow"]["packages"] == [UHVI_DIR], (
+            "the add left the lockfile naming no package"
+        )
+
 
 class TestProjectUninstall:
     def test_uninstall_prunes_when_no_other_project_references(

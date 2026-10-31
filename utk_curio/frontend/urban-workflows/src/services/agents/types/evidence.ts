@@ -61,8 +61,9 @@ export interface AgentDatasetCandidateRow {
 
 /** dev/114: one grounded source reference on a proposal. */
 export interface AgentSourceRef {
-  kind: "catalog" | "external" | "user-path" | "synthetic" | "secret" | string;
-  /** The literal the code uses: a path, a curio_data_path("<id>") call, or a URL. */
+  kind: "catalog" | "external" | "user-path" | "user-values" | "synthetic" | "secret" | string;
+  /** The literal the code uses: a path, a curio_data_path("<id>") call, or a
+   * URL; for "user-values", the values the code added that the user typed. */
   value?: string;
   datasetId?: string;
   title?: string;

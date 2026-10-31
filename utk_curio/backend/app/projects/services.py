@@ -1193,6 +1193,7 @@ def update_project(
         # doc; once the dataflow has its points, it is theirs and is not read.
         _carry_history(ukey, project_id, data, effective_spec)
         spec_dirty = False
+        backfilled: set[str] = set()
         # The canvas save (TrillGenerator) does not serialize the backend-owned
         # agent sections, so carry dataflow.agents / agentAttachments forward
         # from the on-disk spec — otherwise a client save wipes installed agents
@@ -1223,10 +1224,15 @@ def update_project(
             # what a promotion or the drawer had just written. The on-disk
             # effective lockfile (backfill included) is what survives.
             from utk_curio.backend.app.packages.application.store_reads import _installed_majors_by_pkg
-            from utk_curio.backend.app.packages.service import preserve_project_packages
-            preserve_project_packages(
-                effective_spec, existing_spec, _installed_majors_by_pkg(ukey),
-            )
+            from utk_curio.backend.app.packages.service import backfilled_packages, preserve_project_packages
+            majors = _installed_majors_by_pkg(ukey)
+            preserve_project_packages(effective_spec, existing_spec, majors)
+            # A lockfile that names no package reads as the packages of the
+            # dataflow's nodes, an invited editor's node's among them, and the
+            # save names them in it as it read: no one's choice of them, so
+            # the save puts none of them on the owner's record of what the
+            # dataflow uses (``collaboration/owner_uses.py``).
+            backfilled = backfilled_packages(existing_spec, majors)
             # ``dataflow.datasets`` is backend-owned on update (dev/81 Fix 2):
             # the on-disk section overwrites whatever the client sent, so a
             # stale client mirror can neither resurrect an uninstalled ref nor
@@ -1332,7 +1338,8 @@ def update_project(
             # The whole-dataflow PUT, the one write that is not a writer's
             # change: its transaction makes the doc match the PUT, from the
             # dataflow read above, after the loss rule.
-            dataflow_docs.put(ukey, project_id, effective_spec, over=existing_spec, actor=actor)
+            dataflow_docs.put(ukey, project_id, effective_spec, over=existing_spec, actor=actor,
+                              backfilled=backfilled)
 
         # Record only outputs the reload path can restore from a durable source so a
         # swallowed install error can't leave a phantom manifest entry (#144).
@@ -1647,11 +1654,34 @@ def _opened_by_link(project_id: str):
     return project, ukey
 
 
-def load_shared_project(project_id: str) -> dict:
+def _editors_last_results(user, project, ukey: str, spec, readable: list) -> list:
+    """The outputs *project* opens with for *user* when the owner invited
+    them to edit it: each node their own runs kept a result for showing the
+    newest such result (``runs/reopen.py``), else *readable*, its saved
+    outputs, which everyone else opening its link gets."""
+    from utk_curio.backend.app.projects import access
+
+    if user is None or access.agents_role(user, project) != access.EDITOR:
+        return readable
+    from utk_curio.backend.app.runs.reopen import last_results as kept_results
+
+    try:
+        return kept_results(
+            project.owner, ukey, project.id, spec, readable, editor=user, editor_key=_user_dir_key(user),
+        )
+    except Exception:  # noqa: BLE001 - a dataflow always opens, with its saved outputs at least
+        logger.exception("could not find an editor's kept results of dataflow %s", project.id)
+        return readable
+
+
+def load_shared_project(project_id: str, *, user=None, last_results: bool = False) -> dict:
     """Load a project for any caller, regardless of ownership.
 
     Used by the unauthenticated ``GET /api/projects/<id>/shared`` route to
-    power link-based sharing (:func:`_opened_by_link`).
+    power link-based sharing (:func:`_opened_by_link`). With *last_results*,
+    an editor the owner invited (*user*, signed in) opens it as his canvas
+    left it: each node his runs ran showing his newest kept result
+    (:func:`_editors_last_results`); anyone else gets the saved outputs.
 
     ``missing_outputs`` are the saved outputs the manifest lists that have no
     file left to read (``_saved_outputs``): a dashboard that needs one says to
@@ -1677,11 +1707,12 @@ def load_shared_project(project_id: str) -> dict:
     )
     # Don't leak server filesystem layout to shared-link visitors.
     detail.folder_path = ""
+    shown = _editors_last_results(user, project, ukey, spec, readable) if last_results else readable
 
     return {
         "project": detail,
         "spec": spec,
-        "outputs": [_output_ref_dict(r) for r in readable],
+        "outputs": [_output_ref_dict(r) for r in shown],
         "missing_outputs": [_output_ref_dict(r) for r in missing],
     }
 

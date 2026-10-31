@@ -725,7 +725,10 @@ const FlowProvider = ({
                     leaveRuns();
                     return workflowOps.loadProject(id, options);
                 },
-                loadSharedProject: async (id: string) => { leaveRuns(); return workflowOps.loadSharedProject(id); },
+                loadSharedProject: async (id: string, options?: { lastResults?: boolean }) => {
+                    leaveRuns();
+                    return workflowOps.loadSharedProject(id, options);
+                },
                 cleanCanvas: () => { leaveRuns(); workflowOps.cleanCanvas(); },
                 discardProject: () => { leaveRuns(); workflowOps.discardProject(); },
                 applyNodeContent,

@@ -560,20 +560,24 @@ def _session_grounding_evidence(
 ) -> tuple[list[str], dict]:
     """dev/114: what this conversation already established — the user's own
     texts (the current message first) and every candidate row the runtime
-    verified (persisted turns + this run's ``_verified_urls``)."""
+    verified (persisted turns + this run's ``_verified_urls``). The task the
+    runtime recorded for a delegate in its session is the delegating agent's
+    words, not the user's (``sessions.a_persons_message``). A delegated write
+    reads the chat that asked for it (``asked_in_session_id``), not the home
+    chat it lands in."""
     texts: list[str] = []
     verified: dict = {}
     message = loop_ctx.get("message")
     if isinstance(message, str) and message.strip():
         texts.append(message)
-    session_id = loop_ctx.get("session_id")
+    session_id = loop_ctx.get("asked_in_session_id") or loop_ctx.get("session_id")
     if isinstance(session_id, str):
         try:
             turns = sessions.read_turns(user_key, project_id, session_id)
         except Exception:
             turns = []
         for turn in turns:
-            if turn.get("role") == "user" and isinstance(turn.get("text"), str):
+            if sessions.a_persons_message(turn):
                 texts.append(turn["text"])
             for part in turn.get("content") or []:
                 if not isinstance(part, dict) or part.get("type") != "datasetCandidates":
@@ -607,11 +611,17 @@ def _grounding_context(
     requested_ids=(),
     code_engine: str | None = None,
     chips: dict | None = None,
+    current: str | None = None,
 ) -> "source_grounding.GroundingContext":
     """dev/114 (DEC-072): everything the gate needs for ONE mint — catalog
     paths, the conversation's evidence, the run-budgeted prober, and the
     grant-aware corrective routes. ``base`` (a Solve batch's precomputed
     catalog paths / texts / verified map) replaces the per-mint reads.
+
+    The user's own messages, which hold the values a data-loading node's
+    inline data may add, are the conversation's alone: not *extra_texts*
+    (a delegate's intent) nor ``base`` (a Solve's task and goals), which a
+    model often writes. *current* is the content the node holds now.
 
     #411: the datasets the content must read are ``_requested_dataset_ids``
     plus ``requested_ids`` (the catalog rows the user confirmed for a Solve
@@ -636,10 +646,12 @@ def _grounding_context(
         texts = list(base.get("texts") or [])
         verified = dict(base.get("verified") or {})
         secrets = dict(base["secrets"]) if "secrets" in base else _connection_key_refs(keys)
+        messages: tuple[str, ...] = ()
     else:
         catalog_paths, catalog_ids = _catalog_grounding_refs(project_id)
         texts, verified = _session_grounding_evidence(user_key, project_id, loop_ctx)
         secrets = _connection_key_refs(keys)
+        messages = tuple(texts)
     models = dict(base_of["models"]) if "models" in base_of else _model_refs(user_key)
     reachable, package_modules = None, None
     if code_engine == "python" and node_type:
@@ -721,6 +733,8 @@ def _grounding_context(
         reachable_modules=reachable,
         package_modules=package_modules,
         chips=chips,
+        user_messages=messages,
+        current_content=current,
     )
 
 
@@ -770,13 +784,15 @@ def _gate_generated_content(
     chips: dict | None = None,
     node_id: str | None = None,
     widgets: list | None = None,
+    current: str | None = None,
 ) -> tuple["source_grounding.GroundingVerdict", str | None]:
     """The ONE call every agent-authored-content boundary makes (dev/114):
     ``(verdict, refusal_text | None)``. The refusal is model-correctable
     (DEC-067) and names only routes this run can take. *engine* is the one
     the node's code runs in (``source_grounding.code_engine``), None for
     content that is no code, which is read as a document; *chips*, what a
-    run resolves the node's chips with (:func:`_chip_context`). Content whose
+    run resolves the node's chips with (:func:`_chip_context`); *current*,
+    the content the node holds now, the user's own. Content whose
     sources are grounded and that is a chart's or a map's document is then
     checked as Solve checks one (:func:`_document_refusal`), for *node_id*'s
     saved node, or for the node a proposal creates with the *widgets* it
@@ -786,6 +802,7 @@ def _gate_generated_content(
         user_key, project_id, loop_ctx, node_type=node_type, params=params,
         extra_texts=extra_texts, base=base, is_data_loading=is_data_loading,
         request_texts=request_texts, requested_ids=requested_ids, code_engine=code_engine, chips=chips,
+        current=current,
     )
     verdict = source_grounding.check_grounding(code, code_engine or "python", ctx)
     if not verdict.ok:
@@ -930,6 +947,8 @@ def _source_grounding_inputs(ctx: "source_grounding.GroundingContext") -> dict:
                 " " + agent_text.message("grounding.source-rule-no-key"),
             synthetic=" " + agent_text.message("grounding.source-rule-synthetic")
                 if ctx.synthetic_requested else "",
+            typed_values=" " + agent_text.message("grounding.source-rule-typed-values")
+                if ctx.user_messages else "",
         ),
     }
 

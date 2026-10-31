@@ -347,7 +347,8 @@ describe('a load hands each restored output to each node below it once', () => {
     open('dataflow');
     await settle();
 
-    expect(mockGetShared).toHaveBeenCalledWith(PROJECT_ID);
+    // A canvas asks for the results an invited editor's runs left it with.
+    expect(mockGetShared).toHaveBeenCalledWith(PROJECT_ID, { lastResults: true });
     expectEachRestoredOutputOnce();
   });
 

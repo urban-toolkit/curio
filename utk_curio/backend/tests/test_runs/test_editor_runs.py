@@ -3,11 +3,12 @@
 alice owns a dataflow. bob is an editor she invited, erin was one until alice
 took her off the list, and carol was never invited. bob runs alice's dataflow
 on the server as alice does: the run reads her dataflow from her store, and it
-is bob's. Its record is in his runs, not hers; it counts toward his cap; he
-follows it and stops it; and its steps run as his Play does, in his session,
-with nothing kept or recorded as alice's and nothing written into his store.
-The datasets alice's dataflow lists load in his run. erin and carol run
-nothing, as before.
+is bob's. Its record is in his runs, and in alice's list of her dataflow's
+runs, which names who started each; it counts toward his cap; he follows it
+and stops it, and so may alice, but only his tab finishes it; and its steps
+run as his Play does, their outputs kept as his, with nothing kept or recorded
+as alice's and nothing written into his store. The datasets alice's dataflow
+lists load in his run. erin and carol run nothing, as before.
 
 The sandbox is a fake behind ``node_exec.sandbox_request``, as in
 ``test_run_routes.py``. Names main lacks are imported inside the tests, so
@@ -207,7 +208,8 @@ def test_an_editor_she_invited_runs_her_dataflow_and_no_one_else_does(
 def test_an_editor_starts_follows_and_cancels_a_run_on_the_owners_dataflow(client, people, sandbox):
     """bob's run of alice's dataflow is his: he reads it as it goes, stops it
     before its next node, and reads its events once it ended. Its record names
-    alice's dataflow and bob. Neither alice nor carol reads or stops it."""
+    alice's dataflow and bob. alice, whose dataflow it runs, reads it too, and
+    it names bob; carol neither reads nor stops it."""
     from utk_curio.backend.app.runs.models import DataflowRun
     from utk_curio.backend.extensions import db
 
@@ -220,10 +222,12 @@ def test_an_editor_starts_follows_and_cancels_a_run_on_the_owners_dataflow(clien
     db.session.rollback()
     going = _get(client, bob, run_id)
     assert going["status"] == "running" and going["projectId"] == project_id
-    for other in ("alice", "carol"):
-        token = people.tokens[other]
-        assert client.get(f"/api/runs/{run_id}", headers=auth_headers(token)).status_code == 404
-        assert client.post(f"/api/runs/{run_id}/cancel", headers=auth_headers(token)).status_code == 404
+    alices_read = client.get(f"/api/runs/{run_id}", headers=auth_headers(people.tokens["alice"]))
+    assert alices_read.status_code == 200, alices_read.get_data(as_text=True)
+    assert alices_read.get_json().get("startedBy") == {"username": "bob", "name": "Bob"}
+    carol = people.tokens["carol"]
+    assert client.get(f"/api/runs/{run_id}", headers=auth_headers(carol)).status_code == 404
+    assert client.post(f"/api/runs/{run_id}/cancel", headers=auth_headers(carol)).status_code == 404
     stopped = client.post(f"/api/runs/{run_id}/cancel", headers=auth_headers(bob))
     assert stopped.status_code == 202, stopped.get_data(as_text=True)
     sandbox.release()
@@ -239,17 +243,20 @@ def test_an_editor_starts_follows_and_cancels_a_run_on_the_owners_dataflow(clien
     assert (record.project_id, record.user_id) == (project_id, people.bob.id)
 
 
-def test_an_editors_run_runs_as_the_editor_and_records_nothing_in_the_owners_dataflow(
+def test_an_editors_run_runs_as_the_editor_keeps_his_outputs_as_his_and_records_nothing_in_the_owners_dataflow(
     client, people, sandbox, monkeypatch,
 ):
     """alice's run records the output her dataflow saves and keeps each output
     as hers. bob's run of the same dataflow runs each step as his Play does:
-    in his session, his store's key, with no dataset installed in his store.
-    It records nothing in her dataflow and keeps nothing as hers, and each
-    step says its node still holds the code it ran, read in alice's store."""
+    his store's key, his imports, with no dataset installed in his store, in
+    a kept session of its own, so each output is kept 7 days as his, for his
+    account alone. It records nothing in her dataflow and keeps nothing as
+    hers, and each step says its node still holds the code it ran, read in
+    alice's store."""
     from utk_curio.backend.app.datasets.application import auto_install
     from utk_curio.backend.app.projects import services as project_services
     from utk_curio.backend.app.runs.models import KeptStepOutput
+    from utk_curio.common.kept_sessions import is_kept_session
 
     installs, recorded = [], []
     monkeypatch.setattr(
@@ -276,32 +283,71 @@ def test_an_editors_run_runs_as_the_editor_and_records_nothing_in_the_owners_dat
 
     for node in ("kept", "plain"):
         body = sandbox.bodies[node]
-        assert body["session_id"] == people.tokens["bob"], f"{node} ran in {body['session_id']!r}"
+        assert is_kept_session(body["session_id"]), f"{node} ran in {body['session_id']!r}"
+        assert body["session_id"] not in {session for _node, session in kept_by_alice}
         assert body["imports_session"] == people.tokens["bob"]
         assert body["user_key"] == str(bob.id)
     assert recorded == [("kept", alice.id)], "bob's run recorded an output in alice's dataflow"
     assert installs[1:] == [("kept", None, bob.id)], "bob's run installed a dataset in his store"
-    assert {(e.node_id, e.session_id) for e in KeptStepOutput.query.filter_by(project_id=project_id)} == kept_by_alice
+    entries = KeptStepOutput.query.filter_by(project_id=project_id).all()
+    assert {(e.node_id, e.session_id) for e in entries if e.made_by == "owner"} == kept_by_alice
+    assert sorted((e.node_id, e.session_id, e.private_to) for e in entries if e.made_by == "editor") == sorted(
+        (node, sandbox.bodies[node]["session_id"], f"account:{bob.id}") for node in ("kept", "plain")
+    )
     run = _get(client, people.tokens["bob"], run_id)
     assert run["status"] == "succeeded"
     assert {s["nodeId"]: s["codeCurrent"] for s in run["steps"]} == {"kept": True, "plain": True}
 
 
-def test_each_account_lists_its_own_runs_of_the_dataflow(client, people, sandbox):
-    """bob's run of alice's dataflow is in his runs, and in his runs of her
-    dataflow; alice's lists of runs hold only her own."""
+def test_the_owner_lists_every_run_of_her_dataflow_and_an_editor_his_own(client, people, sandbox):
+    """alice's list of her dataflow's runs holds bob's run beside hers, each
+    naming who started it, and ``?mine=1`` her own alone, as her canvas asks
+    for the run it follows. bob's lists hold his run alone, and each
+    account's list of its runs everywhere holds the runs it started."""
     project_id = _alices(client, people, [_node("a")])
     alices = _started(client, people.tokens["alice"], project_id)
     _wait(alices)
     bobs = _started(client, people.tokens["bob"], project_id)
     _wait(bobs)
 
-    assert _listed(client, people.tokens["bob"], "/api/runs") == [bobs]
+    resp = client.get(f"/api/projects/{project_id}/runs", headers=auth_headers(people.tokens["alice"]))
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert [(run["id"], run.get("startedBy")) for run in resp.get_json()["runs"]] == [
+        (bobs, {"username": "bob", "name": "Bob"}),
+        (alices, {"username": people.alice.username, "name": people.alice.name}),
+    ]
+    assert _listed(client, people.tokens["alice"], f"/api/projects/{project_id}/runs?mine=1") == [alices]
     assert _listed(client, people.tokens["bob"], f"/api/projects/{project_id}/runs") == [bobs]
+    assert _listed(client, people.tokens["bob"], "/api/runs") == [bobs]
     assert _listed(client, people.tokens["alice"], "/api/runs") == [alices]
-    assert _listed(client, people.tokens["alice"], f"/api/projects/{project_id}/runs") == [alices]
     mine = client.get("/api/runs", headers=auth_headers(people.tokens["bob"])).get_json()["runs"][0]
     assert (mine["projectId"], mine["projectName"]) == (project_id, "Street trees")
+
+
+def test_the_owner_stops_an_editors_run_of_her_dataflow_but_only_his_tab_finishes_it(client, people, sandbox):
+    """alice stops bob's run of her dataflow before its next node, as he
+    may; a step only a tab runs is reported by his tab alone."""
+    from utk_curio.backend.extensions import db
+
+    project_id = _alices(client, people, [_node("a"), _node("b")], [_edge("a", "b")])
+    sandbox.hold = {"a"}
+    run_id = _started(client, people.tokens["bob"], project_id)
+    assert sandbox.started.wait(timeout=10)
+    db.session.rollback()
+
+    stopped = client.post(f"/api/runs/{run_id}/cancel", headers=auth_headers(people.tokens["alice"]))
+    sandbox.release()
+    _wait(run_id)
+    reported = client.post(
+        f"/api/runs/{run_id}/steps/b", data=json.dumps({"status": "ok"}),
+        headers=auth_headers(people.tokens["alice"]),
+    )
+
+    assert stopped.status_code == 202, stopped.get_data(as_text=True)
+    ended = _get(client, people.tokens["bob"], run_id)
+    assert ended["status"] == "cancelled"
+    assert "b" not in sandbox.bodies
+    assert reported.status_code == 404, reported.get_data(as_text=True)
 
 
 def test_an_editors_run_counts_toward_the_editors_cap(client, people, sandbox):

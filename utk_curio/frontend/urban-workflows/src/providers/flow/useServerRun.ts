@@ -481,13 +481,14 @@ export function useServerRun({
      * A canvas just opened *projectId*: follow its last run if it still goes,
      * and offer to finish it if it waits for a tab. What a finished run made
      * came with the load, which shows each node's newest kept result
-     * (`GET /api/projects/<id>?results=last`).
+     * (`GET /api/projects/<id>?results=last`). The run is this account's
+     * own: the owner lists her editors' runs too, whose outputs are theirs.
      */
     const attachLatestRun = async (projectId: string) => {
         if (followedRef.current || startingRef.current) return;
         let record: Run;
         try {
-            const [latest] = await runsApi.listForProject(projectId, { limit: 1 });
+            const [latest] = await runsApi.listForProject(projectId, { limit: 1, mine: true });
             if (!latest) return;
             record = await runsApi.get(latest.id);
         } catch {

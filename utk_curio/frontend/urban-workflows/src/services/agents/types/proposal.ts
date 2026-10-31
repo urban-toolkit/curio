@@ -115,7 +115,7 @@ export interface AgentBuilderSession {
 
 /** dev/114: the proposal's source block — bounded plain data. */
 export interface AgentProposalSource {
-  kind: "catalog" | "external" | "user-path" | "synthetic" | "mixed" | string;
+  kind: "catalog" | "external" | "user-path" | "user-values" | "synthetic" | "mixed" | string;
   label: string;
   refs: AgentSourceRef[];
 }

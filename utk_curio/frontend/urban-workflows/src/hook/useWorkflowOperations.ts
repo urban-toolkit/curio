@@ -1527,8 +1527,8 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         return result;
     }, []);
 
-    const loadSharedProject = useCallback(async (id: string) => {
-        const result = await projectsApi.getShared(id);
+    const loadSharedProject = useCallback(async (id: string, options?: { lastResults?: boolean }) => {
+        const result = await projectsApi.getShared(id, options);
         const { project, outputs } = result;
 
         // Deliberately leave projectId=null: this dataflow is not "open for

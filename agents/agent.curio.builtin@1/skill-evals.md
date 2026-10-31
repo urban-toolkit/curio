@@ -35,7 +35,7 @@ The agent's reply:
 
 {reply}
 
-What it changed in the dataflow ("changed": what it added, changed or removed, and what the dataflow holds there now; "cards": what its change cards say), and the installs it asked for ("awaiting_review"), as JSON:
+What it changed in the dataflow ("changed": what it added, changed or removed, and what the dataflow holds there now; "cards": what its change cards say, each with "undo": true when the card offers the user its Undo), and the installs it asked for ("awaiting_review"), as JSON:
 
 {changes}
 

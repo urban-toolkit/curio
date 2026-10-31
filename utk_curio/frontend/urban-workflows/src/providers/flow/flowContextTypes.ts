@@ -150,7 +150,9 @@ export interface FlowContextProps {
     recordOutputsSoon?: () => void;
     /** Open the owner's dataflow; with `lastResults`, with the results its canvas was left with. */
     loadProject: (id: string, options?: { lastResults?: boolean }) => Promise<any>;
-    loadSharedProject: (id: string) => Promise<any>;
+    /** Open another account's dataflow from its link; with `lastResults`, an
+     *  editor the owner invited gets the results his own canvas was left with. */
+    loadSharedProject: (id: string, options?: { lastResults?: boolean }) => Promise<any>;
     discardProject: () => void;
     markDirty: () => void;
     markNodeExecuted: (nodeId: string) => void;
