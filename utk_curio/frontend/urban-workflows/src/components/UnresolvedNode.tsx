@@ -6,6 +6,14 @@ import { useNodeCatalogDrawer } from "../providers/packages/NodeCatalogDrawerPro
 import { isPackageRegistered, subscribeToRegistry } from "../registry/nodeRegistry";
 import { splitCanonicalNodeType } from "../registry/packageKeys";
 import type { HandleDef } from "../registry/types";
+import {
+  isPackageRequest,
+  openRequestsReview,
+  requestCatalog,
+  requestWaitText,
+  useHeldEditorRequests,
+  type EditorRequest,
+} from "../services/editorRequests";
 import { notebookCellBox } from "../utils/notebookLayout";
 import { NodeHandles } from "./nodes/NodeHandles";
 
@@ -24,6 +32,11 @@ import { NodeHandles } from "./nodes/NodeHandles";
  * installed and only this type is gone from it, as a saved Compare Scenarios or
  * Merge Flow node is from Builtin (#1048): then there is nothing to install,
  * and the card says the package no longer has it.
+ *
+ * A node of a package an invited editor of the dataflow asked its owner to add
+ * (`editorRequests.ts`) waits for her review instead: on her canvas, where her
+ * account does not hold the package yet, the card says who asks and opens her
+ * review; on another editor's, it waits for her.
  *
  * Both cases render HANDLES, which is the other half of that report. React
  * Flow reads a node's ports out of the DOM; a placeholder with no
@@ -75,6 +88,25 @@ const SHELL: React.CSSProperties = {
   fontSize: 11,
   fontFamily: '"Roboto","Helvetica","Arial",sans-serif',
 };
+
+/** The pending request of a package the node of *nodeType* comes from, or one
+ * that names the node *nodeId*: the package by its major when the type names
+ * one, by its id alone when it does not. */
+function waitedOn(
+  requests: readonly EditorRequest[],
+  nodeId: string,
+  packageId: string | null,
+  major: number | undefined,
+): EditorRequest | undefined {
+  return requests.find((request) => {
+    if (!isPackageRequest(request)) return false;
+    if (request.nodeIds.includes(nodeId)) return true;
+    if (!packageId) return false;
+    return major != null
+      ? request.dirName === `${packageId}@${major}`
+      : request.dirName.split("@")[0] === packageId;
+  });
+}
 
 /** Each id as a handle on one side of the card, spread evenly down it. */
 function handleColumn(ids: string[], type: "source" | "target", position: Position): HandleDef[] {
@@ -128,6 +160,8 @@ export function UnresolvedNode({
       && isPackageRegistered(packageId, splitCanonicalNodeType(nodeType)?.major),
     () => false,
   );
+  const { requests, viewer } = useHeldEditorRequests();
+  const waiting = waitedOn(requests, nodeId, packageId, splitCanonicalNodeType(nodeType)?.major);
 
   const handles = (
     <NodeHandles
@@ -206,6 +240,54 @@ export function UnresolvedNode({
   }
 
   const name = packageDisplayName(packageId);
+  if (waiting && !packageRegistered) {
+    // An editor's package, which the dataflow's owner has not reviewed yet:
+    // amber, as a card one click helps, and that click opens her review.
+    const owner = viewer === "owner";
+    return (
+      <div
+        style={{
+          ...shell,
+          border: "1px dashed #d0a215",
+          background: "#fffbeb",
+          color: "#7a5c00",
+        }}
+        data-tooltip={unresolvedNodeMessage(nodeType)}
+        data-testid="waiting-node"
+        data-curio-waits-for-owner="true"
+      >
+        {handles}
+        <strong style={{ color: "#7a5c00", fontSize: 12 }}>
+          {owner ? "Waiting for your review" : "Waiting for the owner"}
+        </strong>
+        <div style={{ marginTop: 4 }}>{requestWaitText(waiting, viewer)}</div>
+        {owner ? (
+          <button
+            type="button"
+            className="nodrag"
+            onClick={(event) => {
+              event.stopPropagation();
+              openRequestsReview(requestCatalog(waiting));
+            }}
+            style={{
+              marginTop: 8,
+              border: "1px solid #d0a215",
+              borderRadius: 6,
+              background: "#fff",
+              color: "#7a5c00",
+              fontFamily: "inherit",
+              fontSize: 11,
+              fontWeight: 700,
+              padding: "4px 10px",
+              cursor: "pointer",
+            }}
+          >
+            Review…
+          </button>
+        ) : null}
+      </div>
+    );
+  }
   if (packageRegistered) {
     // Terminal as well (#1048). The account has this package, since the
     // registry holds nodes of it, but not this type: the package dropped it.

@@ -59,6 +59,14 @@
   font-family: inherit;
 }
 
+/* The pill of a package that waits for the dataflow owner's review, with its
+   hourglass before the word. */
+.packageBadgeWaiting {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .packageBadge:hover {
   background-color: rgba(53, 103, 199, 0.25);
   border-color: var(--curio-role-published-fg);

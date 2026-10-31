@@ -2845,10 +2845,11 @@ An output a request names is read or installed only if its caller may read it (`
 | `/api/datasets/<id>` | DELETE | Permanently delete an account-level dataset. **403** unless you published it. Returns `failedDirs: string[]`; `deleted` is `false` when a directory survived (still HTTP 200) |
 | `/api/dataflows/<dataflowId>/datasets/install` | POST | Attach a dataset to one dataflow (`datasetId`, optional `sourceItem`, `nodeTitle`) |
 | `/api/dataflows/<dataflowId>/datasets/<id>` | DELETE | Detach a dataset from one dataflow (keeps the account asset). An invited editor's detach is the editor's own change to the dataflow (`mutations._uninstall_as_an_editor`) and deletes nothing from any store |
-| `/api/dataflows/<dataflowId>/datasets/requests` | GET | The requests the dataflow's editors made of its owner that she has not reviewed (`datasets/application/editor_requests.py`), for the owner and the editors; 403 for anyone else |
-| `/api/dataflows/<dataflowId>/datasets/requests` | POST | An invited editor asks the owner to add a dataset of the editor's own (`datasetId`, optional `nodeId`, `add` for Add to project): 201 with the request, kept in `dataset-requests.json` beside the spec, or 200 with the reason no request was needed (`listed`, or `shared` for a drop of the shared catalog's). 403 for a watcher, 409 for the owner, 400 for a collection |
-| `/api/dataflows/<dataflowId>/datasets/requests/<requestId>/apply` | POST | The owner's Apply: the dataset's folders are copied from the editor's store into hers and the dataset is added to the dataflow as her change. An editor's is 403 with the install review's refusal |
-| `/api/dataflows/<dataflowId>/datasets/requests/<requestId>` | DELETE | The owner's Dismiss: the request goes and nothing else changes. An editor's is 403 |
+| `/api/dataflows/<dataflowId>/<kind>/requests` | GET | The requests of a kind (`datasets`, or `packages` for a package or a model) the dataflow's editors made of its owner that she has not reviewed (`projects/editor_requests.py`, routes in `projects/request_routes.py`), for the owner and the editors; 403 for anyone else |
+| `/api/dataflows/<dataflowId>/<kind>/requests` | POST | An invited editor asks the owner to add an item of the editor's own: a dataset, a layer group or a collection (`datasetId`, `datasets/application/editor_requests.py`), or a package or a model of the editor's store or of the shared catalog (`dirName`, `packages/application/editor_requests.py`); optional `nodeId`, and `add` for Add to project. 201 with the request, kept in `dataset-requests.json` beside the spec, or 200 with the reason no request was needed: `listed` for an item the dataflow has, `shared` for a drop of a dataset of the shared catalog. 403 for a watcher, 409 for the owner |
+| `/api/dataflows/<dataflowId>/packages/requests/<requestId>/review` | GET | What the owner's review of a package request shows before her Apply: the package as her Apply would install it and the conflicts of its libraries with those of her packages. The owner's alone |
+| `/api/dataflows/<dataflowId>/<kind>/requests/<requestId>/apply` | POST | The owner's Apply, as her change: a dataset's folders, and the cached files of a collection of a bucket or a service, are copied from the editor's store into hers; a package of his store is checked against its `integrity.json`, copied into hers through the archive install and its libraries installed under her account, and one of the shared catalog installed from it; then the item is added to the dataflow. An editor's is 403 with the install review's refusal. A refused Apply is 409 with the reason, and the request stays in her review, but for one whose editor no longer edits the dataflow |
+| `/api/dataflows/<dataflowId>/<kind>/requests/<requestId>` | DELETE | The owner's Dismiss: the request goes and nothing else changes. An editor's is 403 |
 
 ### Discovery Catalog Routes
 
@@ -2917,9 +2918,9 @@ editor the owner invited. Anyone else gets **403**, and a dataflow that does not
 the owner's storage key, so an editor's runs keep their transcripts in the owner's dataflow and answer with the owner's LLM
 configuration, while the saved keys a run lists and resolves are the asker's own (`agents/application/askers.py`). An
 editor's Apply or Dismiss of an install, a tool of `src/contracts/agentInstalls.json`, is **403**: it waits for the owner
-(`agents/application/editors.py`). The same review holds an editor's request for a dataset of the editor's own, a
-`dataset.install` the Data Catalog routes keep (`datasets/application/editor_requests.py`), whose Apply and Dismiss are
-the owner's alone, refused to an editor in the same words (`projects/access.py`, `owners_review`). See [AGENT-CATALOG.md](AGENT-CATALOG.md)
+(`agents/application/editors.py`). The same review holds an editor's request for a dataset, a collection, a package or
+a model of the editor's own, a `dataset.install` or a `package.install` (`projects/editor_requests.py`), whose Apply and
+Dismiss are the owner's alone, refused to an editor in the same words (`projects/access.py`, `owners_review`). See [AGENT-CATALOG.md](AGENT-CATALOG.md)
 for the user-facing model, the manifest contract, and the storage layers.
 
 Catalog and account scope:

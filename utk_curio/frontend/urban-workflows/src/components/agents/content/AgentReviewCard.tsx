@@ -41,8 +41,9 @@ export const AgentReviewCard: React.FC<{
    * owner's review, which the card says in place of Apply and Dismiss. */
   waitsForOwner?: boolean;
   /** What Apply does, said in place of the install kind's own line: an
-   * invited editor's request for a dataset, which no agent made, says what
-   * the owner's Apply of it does (`DatasetRequestsSection`). */
+   * invited editor's request for a dataset, a package or a model, which no
+   * agent made, says what the owner's Apply of it does
+   * (`EditorRequestsSection`). */
   effect?: string;
 }> = ({ part, tintClassName, onApply, onDismiss, waitsForOwner = false, effect }) => {
   const [busy, setBusy] = useState(false);

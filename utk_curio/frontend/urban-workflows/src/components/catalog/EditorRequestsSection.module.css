@@ -1,0 +1,21 @@
+/* The requests an editor made of the dataflow's owner, above a catalog
+   drawer's cards: each is an install's review card under the name of who
+   asked. */
+.requests {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.requestsTitle {
+  font-size: var(--curio-font-size-sm);
+  font-weight: 600;
+  color: var(--curio-text-secondary);
+}
+
+.requestBy {
+  font-size: var(--curio-font-size-xs);
+  color: var(--curio-text-meta);
+  margin-bottom: 4px;
+}
