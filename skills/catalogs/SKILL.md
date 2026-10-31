@@ -1,7 +1,7 @@
 ---
 name: catalogs
 description: >-
-  Use this skill whenever the user asks what they already have, or could add, before building:
+  Use this skill when the user asks what they already have, or could add, before building:
   a node package, a trained model, a dataset or a collection of files, a portal to download data
   from, another agent, a scenario from another project, or where a key for node code is kept, even
   if they never say catalog. It says what each of Curio's six catalogs holds, which tool searches

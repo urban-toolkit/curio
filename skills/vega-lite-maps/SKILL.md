@@ -1,7 +1,7 @@
 ---
 name: vega-lite-maps
 description: >-
-  Use this skill whenever the user wants a map, choropleth or shapes in a Vega-Lite chart, or asks
+  Use this skill when the user wants a map, choropleth or shapes in a Vega-Lite chart, or asks
   why such a map draws nothing, even if they never say geoshape or GeoDataFrame. It says to hand
   the chart the GeoDataFrame as it is, with no conversion to coordinates, which mark and encodings
   draw polygons, points or a second geometry column, and what Curio fills in. A map drawn by an
