@@ -200,12 +200,14 @@ class TestStreaming:
 
         seen = {}
 
-        def _chunk(text):
-            return t.SimpleNamespace(choices=[t.SimpleNamespace(delta=t.SimpleNamespace(content=text))])
+        def _chunk(text, finish=None):
+            return t.SimpleNamespace(choices=[t.SimpleNamespace(
+                delta=t.SimpleNamespace(content=text), finish_reason=finish)])
 
         def _create(model, messages, stream, **kwargs):
             seen["model"], seen["messages"], seen["stream"] = model, messages, stream
-            return iter([_chunk("he"), _chunk(None), _chunk("llo")])
+            # A stream ends with its finish reason, as a server ends one.
+            return iter([_chunk("he"), _chunk(None), _chunk("llo"), _chunk(None, "stop")])
 
         class FakeOpenAI:
             def __init__(self, **kwargs):
@@ -681,9 +683,10 @@ class TestNativeToolsOnOpenAI:
             stream_chat_turn,
         )
 
-        def _chunk(text=None, calls=None):
+        def _chunk(text=None, calls=None, finish=None):
             delta = types.SimpleNamespace(content=text, tool_calls=calls)
-            return types.SimpleNamespace(choices=[types.SimpleNamespace(delta=delta)], usage=None)
+            return types.SimpleNamespace(choices=[types.SimpleNamespace(delta=delta, finish_reason=finish)],
+                                         usage=None)
 
         def _piece(index, call_id=None, name=None, arguments=None):
             return types.SimpleNamespace(index=index, id=call_id,
@@ -694,6 +697,8 @@ class TestNativeToolsOnOpenAI:
             _chunk(calls=[_piece(0, "c1", "node__read", '{"node')]),
             _chunk(calls=[_piece(0, None, None, 'Id": "n1"}')]),
             _chunk(calls=[_piece(1, "c2", "delegate", '{"capability": "node.content.generate"}')]),
+            # A stream ends with its finish reason, as a server ends one.
+            _chunk(finish="tool_calls"),
         ]
         seen = _fake_openai(monkeypatch, chunks=chunks)
         events = list(stream_chat_turn(_cfg(), [{"role": "user", "content": "go"}], tools=_TOOLS))

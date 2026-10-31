@@ -26,6 +26,14 @@ A turn may be stopped (:class:`Stop`): it stops at its next step, between two
 pieces of the reply or before its next round, never in the middle of a tool's
 or a delegate's landing. What it said and landed until then stays, as a reply
 stopped by whoever stopped it.
+
+A round whose model stopped at the output cap (``ChatTurn.cut_at_output_cap``)
+ends the turn the same way: what the model wrote stays, all but a block it
+began and did not close, and nothing that round asked for runs, since a call's
+arguments and a request's block are cut too. The reply then ends with a line
+that says it was cut at the cap (``turn.cut-at-output-limit``), or that the
+model spent the cap thinking, when its server streamed thinking and no reply
+came (``turn.cut-while-thinking``), and its record says ``cutAtOutputLimit``.
 """
 
 from __future__ import annotations
@@ -37,6 +45,7 @@ from contextlib import ExitStack
 
 from utk_curio.backend.app.agents.application.tool_rounds import ParamRefusal
 from utk_curio.backend.app.agents.application.tool_rounds import _RunConversation
+from utk_curio.backend.app.agents.domain import agent_text
 from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.infrastructure import provider_config
 from utk_curio.backend.app.agents.infrastructure.providers import ChatTurn
@@ -57,6 +66,18 @@ from utk_curio.backend.app.agents.infrastructure import providers as agents_prov
 
 CONTINUE = "continue"
 BREAK = "break"
+
+
+def _before_an_open_block(text: str) -> str:
+    """*text* without a ```curio.v1 block it begins and never closes, which a
+    reply the output cap cut can end inside: such a block is half written, a
+    request or a card that cannot be read, so it is no text to show. A block
+    begins on a line of its own, as ``content.split_tail`` reads one."""
+    at = text.rfind("\n" + content.TAIL_FENCE)
+    at = at + 1 if at != -1 else (0 if text.startswith(content.TAIL_FENCE) else -1)
+    if at == -1 or "\n```" in text[at + len(content.TAIL_FENCE):]:
+        return text
+    return text[:at].rstrip()
 
 
 class Stop:
@@ -94,6 +115,8 @@ class AttachmentTurn:
         self.stop = stop
         # Whether the turn stopped when it was asked to (:class:`Stop`).
         self.stopped = False
+        # Whether a round's model stopped at the output cap, which ended the turn.
+        self.cut = False
         # What the turn settled with (:meth:`settle_ok`), for an ask that waits for it.
         self.result: dict | None = None
         (self.coord, self.session_id, messages, self.run_policy, self.wants_title,
@@ -163,7 +186,8 @@ class AttachmentTurn:
         events and a delegateRequest tail becomes delegate events, never text.
         A stop ends the loop before its next round, or in a round as the
         model writes: what the model showed stays, and nothing it asked for
-        in that round runs."""
+        in that round runs. A round the output cap cut ends it too
+        (:meth:`_cut`)."""
         while True:
             if self._stopping():
                 self.stopped = True
@@ -187,6 +211,9 @@ class AttachmentTurn:
                 shown = result["shown"] if result.get("stopped") else result["visible"]
                 if shown:
                     self.folded.append(shown)
+                break
+            if result["turn"].cut_at_output_cap:
+                self._cut(result)
                 break
             parts = result["parts"]
             req = parts[0] if parts and parts[0].get("type") in ("toolRequest", "delegateRequest") else None
@@ -221,6 +248,23 @@ class AttachmentTurn:
                 continue
             yield from self._tool_round(req, result, native_calls)
             yield from self._emit_landed()
+
+    def _cut(self, result: dict) -> None:
+        """End the turn on a round whose model stopped at the output cap: its
+        text stays, all but a block it began and did not close, and nothing
+        it asked for runs (a call's arguments and a request's block are cut
+        too), as with a stopped round. The reply ends with a line that says
+        so, which later turns read with the rest of the reply."""
+        turn = result["turn"]
+        kept = _before_an_open_block(result["visible"])
+        if kept:
+            self.folded.append(kept)
+        limit = f"{self.run_policy['max_output_tokens']:,}"
+        if turn.thinking and not kept:
+            self.folded.append(agent_text.message("turn.cut-while-thinking", limit=limit))
+        else:
+            self.folded.append(agent_text.message("turn.cut-at-output-limit", limit=limit))
+        self.cut = True
 
     def _emit_landed(self):
         """Each change that landed since the last round, as a ``change``
@@ -374,7 +418,10 @@ class AttachmentTurn:
         the params are a whole source file, and streaming them as chat prose
         IS the bug (see ``_handle_tool_reply``). A stop asked meanwhile ends
         the round at the model's next piece: it returns ``{stopped, shown}``,
-        *shown* the text its deltas showed, and nothing more is read."""
+        *shown* the text its deltas showed, and nothing more is read. The
+        turn carries the stop reason the stream ended with; a tail held in a
+        round the output cap cut is half written, so it is neither held for a
+        correction nor released (:meth:`_cut`)."""
         marker = content.TAIL_FENCE
         granted = self.loop_ctx.get("granted", [])
         hold_plan_tail = "dataflow.plan.write" in granted
@@ -384,11 +431,13 @@ class AttachmentTurn:
         calls: list = []
         buf = ""  # pass-mode text not yet emitted
         withheld: str | None = None  # not None → holding a candidate tail
+        finish: dict = {}  # how the stream ended, once it has
         deltas = agents_providers.stream_chat_turn(
             self.config,
             self.conversation.messages,
             max_output_tokens=self.run_policy["max_output_tokens"],
             usage_out=self.usage_sink,
+            finish=finish,
             **self.conversation.offer(self.rounds_used),
         )
         try:
@@ -434,9 +483,11 @@ class AttachmentTurn:
         reply = "".join(chunks)
         visible, parts = content.extract_content(reply)
         self._check_candidates(parts)
-        result = {"reply": reply, "visible": visible, "parts": parts,
-                  "turn": ChatTurn(text=reply, tool_calls=tuple(calls))}
-        if withheld is not None and not parts:
+        turn = ChatTurn(text=reply, tool_calls=tuple(calls), stop_reason=str(finish.get("reason") or ""),
+                        thinking=bool(finish.get("thinking")))
+        result = {"reply": reply, "visible": visible, "parts": parts, "turn": turn}
+        # A tail the output cap cut is half written: neither held nor shown.
+        if withheld is not None and not parts and not turn.cut_at_output_cap:
             if hold_plan_tail and (
                 '"dataflowPlan"' in withheld or '"dataflow.plan.write"' in withheld
             ):
@@ -674,7 +725,9 @@ class AttachmentTurn:
         when this is its first exchange; returns the run's result payload. A
         stopped turn settles as ``stopped``, its record naming who stopped it
         (``stoppedBy``), with what it said and landed until then, and asks
-        the model for no title."""
+        the model for no title. A turn the output cap cut (:meth:`_cut`)
+        says so in its record, its payload and its ``done``
+        (``cutAtOutputLimit``)."""
         reply_text = "\n\n".join(self.folded)
         run_parts = self.minted + self.final_parts  # proposals ride the turn (dev/41)
         status = "stopped" if self.stopped else "ok"
@@ -688,6 +741,8 @@ class AttachmentTurn:
         stopped = {"by": self.stop.by} if self.stopped and self.stop is not None else None
         if stopped is not None:
             execution["stoppedBy"] = stopped["by"]
+        if self.cut:
+            execution["cutAtOutputLimit"] = True
         agents_prepare._persist_exchange(
             self.user_key,
             self.project_id,
@@ -721,6 +776,7 @@ class AttachmentTurn:
             **({"skills": held} if held else {}),
             **({"skillsLoaded": execution["skillsLoaded"]} if execution.get("skillsLoaded") else {}),
             **({"stopped": stopped} if stopped is not None else {}),
+            **({"cutAtOutputLimit": True} if self.cut else {}),
             # What the stream sends as change events, for a tab no doc binds.
             **({"changes": list(self.landed)} if self.landed else {}),
         }
@@ -731,7 +787,8 @@ class AttachmentTurn:
     def stream(self):
         """The turn's events: the dev/37 execution handshake, the loop's
         events, then review_required / content / done, or error. A stopped
-        turn's done says who stopped it (``stopped``)."""
+        turn's done says who stopped it (``stopped``), and a turn the output
+        cap cut says so (``cutAtOutputLimit``)."""
         # The typed-envelope handshake (memo dev/37): the execution identity
         # arrives before the first delta so a client can correlate the stream
         # with the record that will land on the transcript.
@@ -771,7 +828,8 @@ class AttachmentTurn:
                 "durationMs": payload["durationMs"],
                 "content": payload["content"],
                 # The skills the reply's line names, as the blocking answer
-                # carries them, and who stopped it.
-                **{key: payload[key] for key in ("skills", "skillsLoaded", "stopped") if key in payload},
+                # carries them, who stopped it, and whether the cap cut it.
+                **{key: payload[key] for key in ("skills", "skillsLoaded", "stopped", "cutAtOutputLimit")
+                   if key in payload},
             },
         )
