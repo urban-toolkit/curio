@@ -184,6 +184,31 @@ class TestVerifiedRounds:
         verdicts = [p["verdict"] for k, p in events if k == "round_verdict"]
         assert verdicts == ["fail", "pass"]
 
+    def test_a_round_that_makes_values_up_is_refused_and_the_nodes_own_draws_run(self, app, tmp_curio):
+        """Step 45: a round's data-loading code that adds a column of random
+        numbers beside its source is refused before the sandbox runs it, the
+        call named. The code the node holds is the user's own: round 0 runs
+        it, its draws and all."""
+        goal = "load data/heat.csv"
+        loads = 'import pandas as pd\ndf = pd.read_csv("data/heat.csv")\n'
+        made_up = loads + 'df["noise"] = np.random.rand(len(df))\nreturn df'
+        exec_fn = _Exec()
+        _events, outcome, inputs = _rounds(
+            app, {"id": "n1", "type": DL, "goal": goal, "content": ""},
+            replies=[made_up, loads + "return df"], exec_fn=exec_fn,
+        )
+        assert outcome["attempts"][0]["kind"] == "ungrounded-source", outcome["attempts"]
+        assert "np.random.rand (line 3)" in outcome["attempts"][0]["detail"], outcome["attempts"][0]
+        assert "np.random.rand (line 3)" in inputs[1]["validationError"]
+        assert outcome["verdict"] == "pass" and len(exec_fn.calls) == 1
+        assert 'df["noise"]' not in exec_fn.calls[0]["code"]
+        own = {"id": "n1", "type": DL, "goal": goal, "content": made_up}
+        exec_fn = _Exec()
+        _events, outcome, inputs = _rounds(app, own, replies=[], exec_fn=exec_fn, start_from_current=True)
+        assert outcome["verdict"] == "pass" and outcome["rounds"] == 1, outcome["attempts"]
+        assert inputs == [] and outcome["attempts"][0]["source"] == "current content"
+        assert 'df["noise"]' in exec_fn.calls[0]["code"]
+
     def test_http_failure_feeds_fresh_url_evidence_to_the_correction(self, app, tmp_curio, monkeypatch):
         # The owner's Census case: the BASE endpoint answers 200 (so the DEC-072
         # gate lets the candidate run), the composed request answers 400. The

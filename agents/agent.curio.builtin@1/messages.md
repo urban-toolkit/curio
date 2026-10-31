@@ -1110,6 +1110,10 @@ no grounded source: this data-loading node opens no file and fetches no URL, and
 
 {values}: values the user did not type in this conversation, which the node did not hold either (a number the node holds is its own only as many times as the node holds it); write only the values the user gave, as typed, or ask the user for the rest
 
+## grounding.values-generated
+
+{calls}: values made up in the code (drawn at random, faked or made as a sample dataset), which no source gives and the user did not ask for; keep only what the node loads and what the code computes from it (to keep a random part of the loaded rows, use DataFrame.sample), or ask the user whether they want synthetic data
+
 ## grounding.refused
 
 source grounding refused: {count} ungrounded source{s}:
