@@ -16,7 +16,7 @@ This feature is based on the design proposed by [@kirtanpatel2003](https://githu
 
 Every tab that opens a saved dataflow (`/dataflow/<UUID>`) while signed in holds one shared copy of it, which the server keeps:
 
-- **Code typed together.** Every keystroke in a node's code or spec shows in every other tab as it is typed, with each person's cursor in their color and their name over it. There is no vote: each change is kept as it is made.
+- **Code typed together.** Every keystroke in a node's code or spec shows in every other tab as it is typed, with each person's cursor in their color and their name over it.
 - **Undo is your own.** **Ctrl+Z** (**Cmd+Z** on a Mac) in a node's editor undoes your typing in that node, never someone else's. **Ctrl+Shift+Z** or **Ctrl+Y** redoes it.
 - **Everything else, live.** Adding, removing or connecting nodes, a widget's value, a scenario, a node's title, size or settings reach every other tab at once. While someone drags a node, the others see it move; it lands where they drop it.
 - **Everyone's cursor on the canvas.** Where each person's pointer is on the canvas shows on everyone else's, in their color with their name, at the same point of the dataflow whatever each of you has panned or zoomed to. A cursor that rests for 5 seconds fades until it moves again, and one that leaves the canvas goes. Your own is not drawn.

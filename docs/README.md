@@ -28,7 +28,7 @@
 
 Each example below has a JSON dataflow you can import into Curio plus a step-by-step markdown walkthrough. Pipeline overviews in the walkthroughs are drawn with [Mermaid](https://mermaid.js.org/) `flowchart` blocks, which GitHub renders inline.
 
-The same examples are also seeded into the public deployments at [**flow.urbantk.org**](https://flow.urbantk.org) (stable) and [**dev.urbantk.org**](https://dev.urbantk.org) (latest `main`). Sign in to fork them into your own projects, or browse them read-only as a guest.
+The same examples are also seeded into the public deployments at [**flow.urbantk.org**](https://flow.urbantk.org) (stable) and [**dev.urbantk.org**](https://dev.urbantk.org) (latest `main`). Sign in to fork them into your own projects, or open them as a guest, who can change and run them but not save them.
 
 Every example reads its inputs from the [Data Catalog](DATA-CATALOG.md): the datasets ship in `<repo_root>/datasets/` and each dataflow declares the ones it needs, so the loader nodes address them by id with `curio_data_path("<id>")`, or `curio_load_collection("<id>")` for a collection. The storage examples (18 to 23) read datasets added from the **Example storage** source of the [Discovery Catalog](DISCOVERY-CATALOG.md). The four Autark examples (06, 07, 08, 11) read a committed `.osm.pbf` by relative path instead, because the browser fetches those bytes directly and `.pbf` is not a catalog format.
 

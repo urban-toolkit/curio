@@ -454,10 +454,10 @@ scenario box's color. An input whose node has not run says which node to run.
 - **Widgets** and **Selections**: the node's widgets and its selection tags
   ([Widgets](#widgets)).
 
-Drag a node's bottom-right corner to resize it. For viewers of a shared dataflow,
+Drag a node's bottom-right corner to resize it. For someone who watches a dataflow,
 nodes keep their size and have no delete. A minimized node is a small chip with
-its icon and title, cut short when long; hover the title to read it whole. A save
-keeps it a chip; click it to open the node again. Double-click a node where you
+its icon and title, cut short when long; hover the title to read it whole. The
+dataflow keeps it a chip; click it to open the node again. Double-click a node where you
 would drag it, such as its header, to zoom the view onto it.
 
 ## Notes
@@ -474,8 +474,8 @@ opens them again.
 - A note has no inputs or outputs, and a run skips it.
 - The **Researcher** answers questions from the web with notes (see
   [Agent Catalog](#agent-catalog)).
-- On the dashboard and on a shared dataflow, a note shows its text and cannot be
-  edited.
+- On the dashboard and on a dataflow you watch, a note shows its text and cannot
+  be edited.
 
 ## Running a dataflow
 
@@ -848,8 +848,8 @@ and each scenario's card offers:
 
 **View details** on a card renames, recolors and describes the scenario, and
 lists its fixed context, levers and outcomes. Pointing at a card marks the
-scenario's fixed context on the canvas. In a dataflow someone shares with you,
-the tab lists the scenarios without these controls.
+scenario's fixed context on the canvas. In a dataflow you watch, the tab lists
+the scenarios without these controls.
 
 On the canvas, an expanded scenario's nodes wear its color inside a frame, with its
 name and a **Collapse** button above. A collapsed scenario is one box in its color
@@ -1676,7 +1676,7 @@ Agents are AI assistants you attach to your dataflow. The catalog lists four:
   helps you define what to build, answers questions from the web as
   [notes](#notes), and checks facts.
 - **Node Builder**: builds a node or rewrites one's content, suggests nodes for
-  a connection, and installs or writes the node packages your nodes need.
+  a connection, and finds or writes the node packages your nodes need.
 - **Dataflow Builder**: plans a whole dataflow, then solves its nodes.
 - **Dataset Finder**: finds datasets in the Data Catalog and in portals.
 

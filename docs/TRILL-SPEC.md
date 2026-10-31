@@ -36,8 +36,8 @@ spec
 ### A node
 
 `id`, `type`, `x` and `y` are required. Everything else is optional, including
-`in`, `out`, `goal` and `metadata`: the agent apply path writes
-`{id, type, content, goal, x, y}` and nothing more.
+`in`, `out`, `goal` and `metadata`: a node an agent adds can hold only
+`{id, type, content, x, y}`.
 
 `content` holds the node's payload: Python or JavaScript source, or a grammar
 document. A Note (`curio.builtin/note`) holds its text there, in simple
@@ -107,9 +107,8 @@ copied from. Two nodes are the same lever in two scenarios when their ids and
 these lists meet.
 
 A node's history in `nodeProvenance` also holds an entry, `kind` `edit`, with
-the code it left, for each change an agent made to its code that the user
-applied, its `label` naming the agent, and a node an agent proposed with its
-code starts with one. A Map Editor node's history holds one for each change made in
+the code it left, for each change an agent made to its code, its `label`
+naming the agent, and a node an agent added with its code starts with one. A Map Editor node's history holds one for each change made in
 its body too, its `label` saying what it changed.
 
 ### An edge
