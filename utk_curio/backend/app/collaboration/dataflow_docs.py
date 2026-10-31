@@ -108,7 +108,10 @@ it, so every change reaches the doc's tabs and its log:
 the owner's store it names anew (a dataset, a package, a model) are within her
 editors' reach: those the owner's tab, a writer for her account or a spec
 written outside the doc names are, and those an editor's tab or a writer for an
-editor names are not (``owner_uses.py``, :func:`_by_its_owner`).
+editor names are not (``owner_uses.py``, :func:`_by_its_owner`). A lockfile
+that names no package reads as the packages of the dataflow's nodes; a writer
+that names those in it says which they are (:func:`write`'s *backfilled*), and
+they name nothing anew.
 
 **Locks**, in this order: the spec lock (``storage.spec_write_lock``), then a
 doc's lock, then this module's own; storage's history lock, a doc's queue
@@ -136,7 +139,7 @@ import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterator, NamedTuple, Optional
+from typing import Callable, Iterable, Iterator, NamedTuple, Optional
 
 from flask import request
 from flask_socketio import join_room
@@ -1279,7 +1282,8 @@ def live(user_key: str, project_id: str) -> Optional[Live]:
 def write(user_key: str, project_id: str, spec: Live, actor: Actor, *,
           on_refused: Optional[Callable[[tuple], None]] = None,
           on_dropped: Optional[Callable[[tuple], None]] = None,
-          point: Optional[dict] = None) -> Written:
+          point: Optional[dict] = None,
+          backfilled: Iterable[str] = ()) -> Written:
     """Write what a writer changed in *spec*, which :func:`live` handed it,
     since then (or since its last write): one short transaction on the
     dataflow's doc, *actor* its origin, under the spec lock (unless this
@@ -1307,6 +1311,11 @@ def write(user_key: str, project_id: str, spec: Live, actor: Actor, *,
     * *point*, given, is the history's point the change is (``history.py``):
       its kind, what it is and whose, in place of the point the history names
       a writer's change by.
+    * *backfilled*, given, are packages the write names in a lockfile that
+      named none, which read as them already, from the dataflow's nodes
+      (``spec_packages.project_packages``): writing them down is no one's
+      choice of them, so their lockfile entries put none of them on the record
+      of what the owner put in (``owner_uses.py``).
 
     *spec* then remembers what it holds as written, so its next write applies
     only what changed after this one."""
@@ -1319,7 +1328,7 @@ def write(user_key: str, project_id: str, spec: Live, actor: Actor, *,
         spec.written = Written(False)
         return spec.written
     written = _write(user_key, project_id, spec.base, spec, actor, on_refused=on_refused, on_dropped=on_dropped,
-                     point=point)
+                     point=point, backfilled=backfilled)
     spec.base = copy.deepcopy(_writable(spec))
     spec.written = written
     return written
@@ -1339,7 +1348,8 @@ def writing(user_key: str, project_id: str, actor: Actor, *,
         write(user_key, project_id, spec, actor, on_refused=on_refused)
 
 
-def put(user_key: str, project_id: str, spec: dict, *, over: Optional[Live], actor: Actor) -> Written:
+def put(user_key: str, project_id: str, spec: dict, *, over: Optional[Live], actor: Actor,
+        backfilled: Iterable[str] = ()) -> Written:
     """The whole-dataflow PUT (scripts, tests, the Projects page), the one
     write that is not a writer's change and so the deliberate exception: one
     transaction makes the doc match *spec*, from *over*, the dataflow as the
@@ -1347,12 +1357,13 @@ def put(user_key: str, project_id: str, spec: dict, *, over: Optional[Live], act
     since stays wherever *spec* leaves it alone; the history sections *spec*
     holds go on record. The loss rule is the caller's
     (``concurrency.assert_save_keeps_server_work``), checked against *over*.
-    A dataflow with no spec, *over* ``None``, is made by it (:func:`create`)."""
+    *backfilled* is :func:`write`'s. A dataflow with no spec, *over*
+    ``None``, is made by it (:func:`create`)."""
     if over is None:
         create(user_key, project_id, spec, actor)
         return Written(True)
     history = {key: spec[key] for key in storage.HISTORY_KEYS if key in spec}
-    return _write(str(user_key), project_id, over.base, spec, actor, history=history)
+    return _write(str(user_key), project_id, over.base, spec, actor, history=history, backfilled=backfilled)
 
 
 def create(user_key: str, project_id: str, spec: dict, actor: Actor) -> Live:
@@ -1433,7 +1444,8 @@ def _drop_pointer(user_key: str, project_id: str) -> None:
 def _write(user_key: str, project_id: str, base: dict, mine, actor: Actor, *,
            on_refused: Optional[Callable[[tuple], None]] = None,
            on_dropped: Optional[Callable[[tuple], None]] = None,
-           history: Optional[dict] = None, point: Optional[dict] = None) -> Written:
+           history: Optional[dict] = None, point: Optional[dict] = None,
+           backfilled: Iterable[str] = ()) -> Written:
     """What :func:`write` and :func:`put` write: the change from *base* to
     *mine*, under the spec lock. A connection it draws whose end the doc no
     longer holds is taken out in its own transaction (:func:`_dangling`)."""
@@ -1442,7 +1454,7 @@ def _write(user_key: str, project_id: str, base: dict, mine, actor: Actor, *,
     with _spec_lock(user_key, project_id):
         theirs = _writable(mine)
         if not doc_mapping.mappable(doc_mapping.owned(_dataflow_of(theirs))):
-            return _without_doc(user_key, project_id, base, theirs, history, actor)
+            return _without_doc(user_key, project_id, base, theirs, history, actor, backfilled)
         if doc_mapping.same(doc_mapping.owned(_dataflow_of(base)), doc_mapping.owned(_dataflow_of(theirs))):
             # Nothing the doc holds: the sections beside it, to the file alone.
             file = storage.read_spec_file(user_key, project_id)
@@ -1471,7 +1483,7 @@ def _write(user_key: str, project_id: str, base: dict, mine, actor: Actor, *,
                     # connections to it out, as the rule a tab's change meets.
                     dropped = tuple(_dangling(entry.doc, drawn))
                     _take_out(entry.doc, dropped)
-                owner_uses.noted(entry, by_owner=_by_its_owner(user_key, actor))
+                owner_uses.noted(entry, by_owner=_by_its_owner(user_key, actor), backfilled=backfilled)
                 _commit(entry, skip_sid=None, origin=actor, point=point)
                 if refused:
                     for node_id in refused:
@@ -1491,16 +1503,17 @@ def _write(user_key: str, project_id: str, base: dict, mine, actor: Actor, *,
         except _NoDataflow:
             return Written(False)
         except doc_mapping.DocMappingError:
-            return _without_doc(user_key, project_id, base, theirs, history, actor)
+            return _without_doc(user_key, project_id, base, theirs, history, actor, backfilled)
 
 
 def _without_doc(user_key: str, project_id: str, base: dict, mine: dict, history: Optional[dict],
-                 actor: Actor) -> Written:
+                 actor: Actor, backfilled: Iterable[str] = ()) -> Written:
     """A write the doc has no place for (``doc_mapping.DocMappingError``),
     made to the file alone as before the doc: each member the writer changed
     is the writer's, *actor* its maker for the record of what the owner put
-    in (``owner_uses.py``). The doc is forgotten, so it is built anew from the
-    file when it next opens, which says why no tab can sync it."""
+    in (``owner_uses.py``), *backfilled* as :func:`write` says. The doc is
+    forgotten, so it is built anew from the file when it next opens, which
+    says why no tab can sync it."""
     logger.warning("dataflow %s: a write the doc's layout has no place for is written to the file alone",
                    project_id)
     entry = _open_entry(project_id)
@@ -1515,7 +1528,8 @@ def _without_doc(user_key: str, project_id: str, base: dict, mine: dict, history
         out.update(history)
     storage.write_spec(user_key, project_id, out)
     owner_uses.changed(user_key, project_id, owner_uses.entries(_dataflow_of(file.spec)),
-                       owner_uses.entries(_dataflow_of(out)), by_owner=_by_its_owner(user_key, actor))
+                       owner_uses.entries(_dataflow_of(out)), by_owner=_by_its_owner(user_key, actor),
+                       backfilled=backfilled)
     return Written(True)
 
 

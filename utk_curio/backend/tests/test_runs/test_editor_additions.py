@@ -19,9 +19,12 @@ of his runs: a play, a run on the server and his agent's run read it from his
 own store, which does not hold it, and his chat holds none of the skills of a
 package of hers he added. Once alice puts it in herself (her tab, Add to
 project or to all projects, an agent run she asked for), his runs read it from
-her store, a package his node already counted in among them. His own
-items and the shared catalog's load as before, and alice's runs read all of
-hers.
+her store, a package his node already counted in or his change named in her
+lockfile among them. Her add of another package, her removal of one and a
+script's save of the whole dataflow write out a lockfile that read as the
+packages of the nodes, his node's among them, and put none of those within
+his reach. His own items and the shared catalog's load as before, and alice's
+runs read all of hers.
 
 A tab is a pycrdt doc syncing over a Flask-SocketIO test client
 (``test_collaboration/_ydoc_client.py``). Each change it makes is written into
@@ -50,6 +53,8 @@ BOBS_TOOLS = "ai.test.bobs-tools"
 BOBS_DIR = f"{BOBS_TOOLS}@1"
 GAUGES = "ai.test.gauge-tools"
 GAUGES_DIR = f"{GAUGES}@1"
+RAIN = "ai.test.rain-tools"
+RAIN_DIR = f"{RAIN}@1"
 FLOOD_MODEL = "ai.test.flood-model"
 PRIVATE_MODEL = "ai.test.private-model"
 BOBS_MODEL = "ai.test.bobs-model"
@@ -75,6 +80,7 @@ NODES = {
     "bobs": (f"{BOBS_TOOLS}/count@1", "from bobs_helpers import count\nreturn count()\n"),
     "bobs-model": (BUILTIN, f'model = curio_load_model("{BOBS_MODEL}")\nreturn 1\n'),
     "gauge": (f"{GAUGES}/reading@1", "from gauge_helpers import reading\nreturn reading()\n"),
+    "rain": (f"{RAIN}/rainfall@1", "from rain_helpers import rainfall\nreturn rainfall()\n"),
 }
 
 
@@ -705,6 +711,185 @@ def test_a_package_she_adds_to_all_projects_runs_from_her_store_where_his_node_c
     assert _play(client, flow, sandbox, "bob", "gauge").get("package_modules") == {
         "root": _sources(flow.key, GAUGES_DIR), "names": ["gauge_helpers"],
     }
+
+
+def _gauges(key: str) -> dict:
+    """What a play of the ``gauge`` node gets from the copy of the gauge
+    package the store *key* holds."""
+    return {"root": _sources(key, GAUGES_DIR), "names": ["gauge_helpers"]}
+
+
+def _gauges_in_both_stores(flow) -> None:
+    """The gauge package in alice's store and in bob's, each copy with a
+    module of its own, and alice's rain package, which no node of hers uses."""
+    _package(flow.key, GAUGES, "reading", "gauge_helpers", "def reading():\n    return 4\n")
+    _package(flow.bob_key, GAUGES, "reading", "gauge_helpers", "def reading():\n    return 5\n")
+    _package(flow.key, RAIN, "rainfall", "rain_helpers", "def rainfall():\n    return 7\n")
+
+
+def _counted_in_from_his_own_copy(app, client, flow, sandbox, *hers: dict) -> None:
+    """The gauge and rain packages (:func:`_gauges_in_both_stores`) and a
+    dataflow of alice's whose lockfile is empty, so it uses the package of
+    each node on its canvas: her nodes *hers*, which her tab adds, and a node
+    of the gauge package, which bob's tab adds. The dataflow reads as using
+    the gauge package, while bob's play of his node gets his own copy's
+    modules."""
+    from utk_curio.backend.app.projects import access
+
+    _gauges_in_both_stores(flow)
+    flow.pid = _dataflow(client, flow.key, flow.tokens["alice"], packages=[], datasets=[])
+    access.add_editor(flow.alice, flow.pid, "bob")
+    if hers:
+        _edit(_tab(app, flow, "alice"), _with_node(*hers))
+    _edit(_tab(app, flow, "bob"), _with_node(_node("gauge")))
+    assert not _on_disk(flow).get("packages"), "the dataflow's lockfile names a package"
+    listed = client.get(f"/api/packages/projects/{flow.pid}", headers=_auth(flow.tokens["alice"]))
+    assert listed.status_code == 200, listed.get_data(as_text=True)
+    assert GAUGES_DIR in listed.get_json()["packages"], "his node does not count the gauge package in"
+    assert _play(client, flow, sandbox, "bob", "gauge").get("package_modules") == _gauges(flow.bob_key)
+
+
+def _add_to_project(client, flow, dir_name: str) -> None:
+    """alice's Add to project of the package *dir_name*, in her canvas's
+    Node Catalog drawer."""
+    resp = client.post(f"/api/packages/projects/{flow.pid}/install", json={"dirName": dir_name},
+                       headers=_auth(flow.tokens["alice"]))
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+
+
+def _add_to_all_projects(client, flow, dir_name: str) -> None:
+    """alice's Add to all projects of the package *dir_name*, on the Node
+    Catalog page."""
+    resp = client.post("/api/packages/defaults", json={"dirName": dir_name}, headers=_auth(flow.tokens["alice"]))
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+
+
+def test_her_add_of_another_package_leaves_the_one_his_node_counted_in_off_her_record(app, client, flow, sandbox):
+    """bob's node counts the gauge package in on a dataflow of alice's whose
+    lockfile is empty, and his store holds a copy of it as hers does. Her Add
+    to project of her rain package names the gauge package in her lockfile
+    too, as the lockfile read, but only the rain package goes on her record of
+    what the dataflow uses: bob's play of his node still gets his own copy's
+    modules. Once she adds the gauge package herself, his play gets hers."""
+    from utk_curio.backend.app.collaboration import owner_uses
+
+    _counted_in_from_his_own_copy(app, client, flow, sandbox)
+
+    _add_to_project(client, flow, RAIN_DIR)
+
+    assert {TOOLS_DIR, GAUGES_DIR, RAIN_DIR} <= set(_on_disk(flow).get("packages") or []), (
+        "her Add left out of her lockfile a package it read as"
+    )
+    record = owner_uses.recorded(flow.key, flow.pid)
+    assert record.package(RAIN_DIR), "her Add is not on her record"
+    assert not record.package(GAUGES_DIR), "her Add of the rain package put the package his node counted in on her record"
+    assert _play(client, flow, sandbox, "bob", "gauge").get("package_modules") == _gauges(flow.bob_key)
+
+    _add_to_project(client, flow, GAUGES_DIR)
+
+    assert owner_uses.recorded(flow.key, flow.pid).package(GAUGES_DIR), "her Add of the gauge package is not on her record"
+    assert _play(client, flow, sandbox, "bob", "gauge").get("package_modules") == _gauges(flow.key)
+
+
+def test_her_add_to_all_projects_of_another_package_leaves_the_one_his_node_counted_in_off_her_record(
+    app, client, flow, sandbox,
+):
+    """The same with Add to all projects, on the Node Catalog page: the rain
+    package goes on her record of the dataflow whose lockfile was empty, the
+    gauge package his node counted in does not, and bob's play of his node
+    gets his own copy's modules until she adds the gauge package too."""
+    from utk_curio.backend.app.collaboration import owner_uses
+
+    _counted_in_from_his_own_copy(app, client, flow, sandbox)
+
+    _add_to_all_projects(client, flow, RAIN_DIR)
+
+    assert {TOOLS_DIR, GAUGES_DIR, RAIN_DIR} <= set(_on_disk(flow).get("packages") or []), (
+        "her Add to all projects left out of this dataflow's lockfile a package it read as"
+    )
+    record = owner_uses.recorded(flow.key, flow.pid)
+    assert record.package(RAIN_DIR), "her Add to all projects is not on her record"
+    assert not record.package(GAUGES_DIR), (
+        "her Add to all projects of the rain package put the package his node counted in on her record"
+    )
+    assert _play(client, flow, sandbox, "bob", "gauge").get("package_modules") == _gauges(flow.bob_key)
+
+    _add_to_all_projects(client, flow, GAUGES_DIR)
+
+    assert _play(client, flow, sandbox, "bob", "gauge").get("package_modules") == _gauges(flow.key)
+
+
+def test_a_package_he_named_in_her_lockfile_runs_from_her_store_once_she_adds_it(app, client, flow, sandbox):
+    """bob's tab adds a node of the gauge package to alice's dataflow and
+    names the package in its lockfile, beside her flood tools; his store
+    holds a copy of the package as hers does, and his play of his node gets
+    his own. Her Add to project of the package, which her lockfile names
+    already, is her change all the same: her record of what the dataflow uses
+    holds it, and bob's play of his node gets her copy's modules."""
+    from utk_curio.backend.app.collaboration import owner_uses
+
+    _gauges_in_both_stores(flow)
+
+    def edit(dataflow: dict) -> None:
+        dataflow["nodes"].append(_node("gauge"))
+        dataflow["packages"] = [*dataflow["packages"], GAUGES_DIR]
+
+    _edit(_tab(app, flow, "bob"), edit)
+    assert GAUGES_DIR in _on_disk(flow)["packages"]
+    assert _play(client, flow, sandbox, "bob", "gauge").get("package_modules") == _gauges(flow.bob_key)
+
+    _add_to_project(client, flow, GAUGES_DIR)
+
+    assert owner_uses.recorded(flow.key, flow.pid).package(GAUGES_DIR), (
+        "her Add of a package her lockfile named already is not on her record"
+    )
+    assert _play(client, flow, sandbox, "bob", "gauge").get("package_modules") == _gauges(flow.key)
+
+
+def test_her_removal_of_a_package_leaves_the_one_his_node_counted_in_off_her_record(app, client, flow, sandbox):
+    """On a dataflow of alice's whose lockfile is empty, her node of her rain
+    package and bob's node of the gauge package count both in. Her removal of
+    the rain package from her account takes it out of her lockfile, which then
+    names the other packages it read as, the gauge package among them: none
+    of them goes on her record of what the dataflow uses, and bob's play of
+    his node still gets his own copy's modules."""
+    from utk_curio.backend.app.collaboration import owner_uses
+
+    _counted_in_from_his_own_copy(app, client, flow, sandbox, _node("rain"))
+
+    resp = client.delete(f"/api/packages/{RAIN_DIR}", headers=_auth(flow.tokens["alice"]))
+
+    assert resp.status_code == 204, resp.get_data(as_text=True)
+    packages = _on_disk(flow).get("packages") or []
+    assert GAUGES_DIR in packages and RAIN_DIR not in packages, f"her removal left her lockfile naming {packages}"
+    assert not owner_uses.recorded(flow.key, flow.pid).package(GAUGES_DIR), (
+        "her removal of the rain package put the package his node counted in on her record"
+    )
+    assert _play(client, flow, sandbox, "bob", "gauge").get("package_modules") == _gauges(flow.bob_key)
+
+
+def test_her_save_of_the_whole_dataflow_leaves_the_package_his_node_counted_in_off_her_record(
+    app, client, flow, sandbox,
+):
+    """A save that sends the whole dataflow, as a script's does (a tab sends
+    none: the dataflow's doc keeps it), writes out alice's lockfile as it
+    read, the gauge package bob's node counted in among its packages: none of
+    them goes on her record of what the dataflow uses, and bob's play of his
+    node still gets his own copy's modules."""
+    from utk_curio.backend.app.collaboration import owner_uses
+    from utk_curio.backend.app.projects import storage as projects_storage
+
+    _counted_in_from_his_own_copy(app, client, flow, sandbox)
+
+    resp = client.put(f"/api/projects/{flow.pid}", json={"spec": projects_storage.read_spec(flow.key, flow.pid)},
+                      headers=_auth(flow.tokens["alice"]))
+
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert GAUGES_DIR in (_on_disk(flow).get("packages") or []), "her save left her lockfile naming no package"
+    assert not owner_uses.recorded(flow.key, flow.pid).package(GAUGES_DIR), (
+        "her save put the package his node counted in on her record"
+    )
+    assert _play(client, flow, sandbox, "bob", "gauge").get("package_modules") == _gauges(flow.bob_key)
 
 
 def test_a_model_of_hers_an_editor_binds_to_a_node_loads_in_his_runs_only_once_she_binds_it(

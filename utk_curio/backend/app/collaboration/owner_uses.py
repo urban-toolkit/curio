@@ -16,6 +16,12 @@ which tells each change to :func:`noted` with the transaction that made it).
   a lockfile entry, a node or a model bound to a node, written where it was
   not before. It takes off the record each item the dataflow names nowhere
   after it.
+* A lockfile that names no package reads as the packages of the dataflow's
+  nodes, an editor's node's among them. A write that names those in it writes
+  down what it read, no one's choice of them: the writer says which they are
+  (``dataflow_docs.write``'s *backfilled*), and their entries name nothing
+  anew. The owner's Add of a package the lockfile names already is hers all
+  the same (:func:`packages_put_in`).
 * Anyone else's change leaves the record as it is. An item an editor names
   stays out of it, so an editor's run reads it from the editor's own store or
   the shared catalog, as any item the owner's store does not hold, until the
@@ -63,6 +69,8 @@ _METADATA = next(name for name, place in _LAYOUT["node"].items() if place == doc
 _NODE_KEYS = frozenset({_LAYOUT["node"]["type"], _METADATA})
 #: The setting of a node's ``metadata`` that binds models to it.
 _MODEL_REFS = "modelRefs"
+#: The entry, in :func:`entries`, of each package a lockfile names.
+_LOCKFILE = "lockfile"
 
 #: Guards each record's read-modify-write. A leaf: no other lock is asked for
 #: while it is held, and the doc's own lock may be held when it is asked for.
@@ -112,7 +120,7 @@ def entries(dataflow) -> Counter:
     lockfile = dataflow.get(PACKAGES)
     for entry in lockfile if isinstance(lockfile, list) else ():
         if isinstance(entry, str) and entry:
-            out[(PACKAGES, entry, "lockfile")] += 1
+            out[(PACKAGES, entry, _LOCKFILE)] += 1
     nodes = dataflow.get("nodes")
     for index, node in enumerate(nodes if isinstance(nodes, list) else ()):
         if not isinstance(node, dict):
@@ -215,12 +223,15 @@ def recorded(user_key: str, project_id: str) -> Record:
     return record
 
 
-def changed(user_key: str, project_id: str, before: Counter, after: Counter, *, by_owner: bool) -> None:
+def changed(user_key: str, project_id: str, before: Counter, after: Counter, *, by_owner: bool,
+            backfilled: Iterable[str] = ()) -> None:
     """A change made the dataflow's lists name *after* (:func:`entries`) in
     place of *before*. The owner's change (*by_owner*) adds to the record each
     item it named anew and takes off it each item the dataflow names nowhere
-    now; anyone else's leaves it as it is. A dataflow with no record yet is
-    first recorded with *before*."""
+    now; anyone else's leaves it as it is. *backfilled*: the packages the
+    change named in a lockfile that named none, which read as them already,
+    from the dataflow's nodes; their lockfile entries name nothing anew. A
+    dataflow with no record yet is first recorded with *before*."""
     try:
         path = _path(user_key, project_id)
     except (OSError, ValueError):
@@ -229,7 +240,10 @@ def changed(user_key: str, project_id: str, before: Counter, after: Counter, *, 
         held = _read(path)
         record = held if held is not None else Record(_items(before))
         if by_owner:
-            record = Record((record.items | _items(after - before)) - (_items(before) - _items(after)))
+            anew = after - before
+            for package in backfilled:
+                anew.pop((PACKAGES, package, _LOCKFILE), None)
+            record = Record((record.items | _items(anew)) - (_items(before) - _items(after)))
         if record != held:
             _write(path, record)
 
@@ -245,6 +259,27 @@ def forget(user_key: str, project_id: str) -> None:
         except (OSError, ValueError):
             logger.warning("the record of what the owner put in dataflow %s could not be dropped", project_id,
                            exc_info=True)
+
+
+def packages_put_in(user_key: str, project_id: str, packages: Iterable[str]) -> None:
+    """The owner's own add of *packages* to the dataflow her store *user_key*
+    holds, whose lockfile names each of them already: an editor's change
+    named it there, or a write named it as the lockfile read. Her add changes
+    nothing a transaction would note, and each goes on her record all the
+    same. A dataflow with no record yet is first recorded with what it
+    names."""
+    recorded(user_key, project_id)
+    try:
+        path = _path(user_key, project_id)
+    except (OSError, ValueError):
+        return
+    with _lock:
+        held = _read(path)
+        if held is None:
+            return
+        record = Record(held.items | {(PACKAGES, package) for package in packages})
+        if record != held:
+            _write(path, record)
 
 
 # ---------------------------------------------------------------------------
@@ -299,16 +334,18 @@ def _named_in(entry) -> Optional[Counter]:
         return None
 
 
-def noted(entry, *, by_owner: bool) -> None:
+def noted(entry, *, by_owner: bool, backfilled: Iterable[str] = ()) -> None:
     """After a transaction on the open doc *entry*, under its lock: when it
     may have changed what the dataflow names (:func:`watch`), what it names
     now goes to the record as :func:`changed` says, the change the owner's
-    when *by_owner*. A change made while what the doc named could not be read
-    puts nothing on the record. Never raises: the doc's change stands."""
+    when *by_owner*, *backfilled* the packages it named in a lockfile that
+    read as them already. A change made while what the doc named could not
+    be read puts nothing on the record. Never raises: the doc's change
+    stands."""
     if not entry.uses_touched:
         return
     entry.uses_touched = False
     before, entry.uses = entry.uses, _named_in(entry)
     if before is None or entry.uses is None or before == entry.uses:
         return
-    changed(entry.user_key, entry.project_id, before, entry.uses, by_owner=by_owner)
+    changed(entry.user_key, entry.project_id, before, entry.uses, by_owner=by_owner, backfilled=backfilled)

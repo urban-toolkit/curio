@@ -131,6 +131,17 @@ def named_in_lockfile(spec: dict | None) -> set[str]:
     return {x for x in named if isinstance(x, str)} if isinstance(named, list) else set()
 
 
+def backfilled_packages(
+    spec: dict | None,
+    installed_majors_by_pkg: Mapping[str, Iterable[int]] | None = None,
+) -> set[str]:
+    """The packages the lockfile of *spec* reads as from the dataflow's nodes
+    because it names none (:func:`project_packages`), which a write of the
+    lockfile as it reads names in it (:func:`preserve_project_packages`):
+    none for a lockfile that names some."""
+    return project_packages(spec, installed_majors_by_pkg) - named_in_lockfile(spec)
+
+
 def set_project_packages(spec: dict, dirs: Iterable[str]) -> dict:
     """Write the sorted dirName list back into ``spec["dataflow"]["packages"]``.
 

@@ -83,7 +83,19 @@ def _lockfile_or_empty(user_key: str, project_id: str) -> set[str]:
         return set()
 
 
-def _write_lockfile(user_key: str, project_id: str, dirs: Iterable[str]) -> dict:
+def _write_lockfile(user_key: str, project_id: str, dirs: Iterable[str], *, added: Iterable[str] = ()) -> dict:
+    """Write *dirs* as the lockfile of the dataflow *project_id*, *added* the
+    packages among them the write adds as its own.
+
+    A lockfile that names no package reads as the packages of the dataflow's
+    nodes (``spec_packages.project_packages``), and the callers write that
+    reading out whole, so each package this write names that the lockfile did
+    not name itself, other than those *added*, is one it read as already:
+    written down, no one's choice of it. The write says so
+    (``dataflow_docs.write``'s *backfilled*), and none of them goes on the
+    owner's record of what the dataflow uses (``collaboration.owner_uses``),
+    where a package an invited editor's node counted in would reach his runs
+    (:class:`OwnersPackages`)."""
     # Hold the per-project spec lock across the read-modify-write so a concurrent
     # dataset mutation (replace_dataflow_datasets) or project save can't
     # clobber the package lockfile (or vice versa). The lockfile is written
@@ -92,8 +104,10 @@ def _write_lockfile(user_key: str, project_id: str, dirs: Iterable[str]) -> dict
         spec = dataflow_docs.live(user_key, project_id)
         if spec is None:
             raise PackageServiceError(f"project {project_id} has no spec", 404)
+        backfilled = set(dirs) - named_in_lockfile(spec) - set(added)
         set_project_packages(spec, dirs)
-        dataflow_docs.write(user_key, project_id, spec, dataflow_docs.person(user_key, "packages"))
+        dataflow_docs.write(user_key, project_id, spec, dataflow_docs.person(user_key, "packages"),
+                            backfilled=backfilled)
         return spec
 
 
@@ -109,12 +123,17 @@ def _add_to_lockfile(user_key: str, project_id: str, added: set[str]) -> tuple[s
     it. Her add is her change all the same: written as hers, the lockfile puts
     the package in her record of what the dataflow uses
     (``collaboration.owner_uses``), and an editor's runs read her copy
-    (:class:`OwnersPackages`)."""
+    (:class:`OwnersPackages`). Only what she adds: the other packages the
+    lockfile is written to name, as it read, go on no one's record
+    (:func:`_write_lockfile`). A lockfile that names them already, by an
+    editor's change or by such a write, is not written, and her add puts
+    them on her record all the same (``owner_uses.packages_put_in``)."""
     current = get_project_lockfile(user_key, project_id)
     if added <= named_in_lockfile(projects_storage.read_spec(user_key, project_id)):
+        owner_uses.packages_put_in(user_key, project_id, added)
         return current, False
     current |= added
-    _write_lockfile(user_key, project_id, current)
+    _write_lockfile(user_key, project_id, current, added=added)
     return current, True
 
 
