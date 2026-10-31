@@ -214,15 +214,6 @@ def apply(flow, request: dict[str, Any]) -> dict[str, Any]:
             manifest = load_package_manifest(package_dir(owner_key, dir_name))
             packages_provisioning.provision_python_deps(owner_key, dir_name, manifest)
         installed = packages_project_packages.install_to_project(owner_key, flow.project_id, dir_name)
-        if not _named_in_lockfile(owner_key, flow.project_id, dir_name):
-            # A lockfile that names no package is read from the dataflow's
-            # nodes (``spec_packages.project_packages``), so the node his drop
-            # made already counts the package in, and the install wrote
-            # nothing. Her Apply is her change all the same: the lockfile is
-            # written as her own Add writes it, so her record of what the
-            # dataflow uses holds the package (``owner_uses``) and every tab
-            # reads the lockfile again.
-            packages_project_packages._write_lockfile(owner_key, flow.project_id, installed["packages"])
     except Exception:
         if copied:
             packages_store_install._take_back(owner_key, dir_name)
@@ -233,17 +224,6 @@ def apply(flow, request: dict[str, Any]) -> dict[str, Any]:
         "importErrors": installed.get("importErrors") or {},
         **({"restartRecommended": installed["restartRecommended"]} if installed.get("restartRecommended") else {}),
     }}
-
-
-def _named_in_lockfile(owner_key: str, project_id: str, dir_name: str) -> bool:
-    """Whether the lockfile of the dataflow *project_id* names *dir_name*
-    itself, rather than the dataflow's nodes counting it in."""
-    from utk_curio.backend.app.projects import storage as projects_storage
-
-    spec = projects_storage.read_spec(owner_key, project_id) or {}
-    dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
-    declared = dataflow.get("packages") if isinstance(dataflow, dict) else None
-    return isinstance(declared, list) and dir_name in declared
 
 
 def _copy_into(from_key: str, to_key: str, dir_name: str) -> bool:
