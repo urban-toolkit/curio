@@ -1,11 +1,11 @@
 ---
 name: catalogs
 description: >-
-  Use this skill when a task needs something from one of Curio's six catalogs: a node package, a
-  trained model, a dataset or collection, a data portal or source to download from, another agent,
-  or a scenario of another project. It says what each catalog holds, which tools list it and
-  propose adding from it, how node code loads a dataset or a model by its id, how it reads a key
-  saved for node code, and what a run that writes code is given of its dataflow.
+  Use this skill when the user asks what they already have, or could add, before building:
+  a node package, a trained model, a dataset or a collection of files, a portal to download data
+  from, another agent, a scenario from another project, or where a key for node code is kept, even
+  if they never say catalog. It says what each of Curio's six catalogs holds, which tool searches
+  or adds from it, and how node code loads a dataset, a model or a key by its id.
 license: MIT
 compatibility: Written for Curio's agents, their tools and node code.
 metadata:
