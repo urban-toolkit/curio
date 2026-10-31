@@ -593,6 +593,9 @@ class SolveBatch:
                 )
             ),
             node_id=node_id,
+            # The code the node holds is the user's own: a call in it that
+            # makes values up is not one the new content adds.
+            current=str(node.get("content") or ""),
         )
         if refusal is None:
             return None

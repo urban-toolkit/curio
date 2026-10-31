@@ -1,10 +1,13 @@
 """dev/114 (DEC-072) — the one source-grounding gate: a local path is grounded
 only by the user or the Data Catalog, a URL only by the runtime's probe, inline
-data only when the user typed the values it adds or asked for synthetic data;
+data only when the user typed the values it adds or asked for synthetic data,
+and values a call makes up only when the user asked for synthetic data;
 everything else is refused with the correction named. Pure: no Flask, no
 network, no store."""
 
 from __future__ import annotations
+
+import pytest
 
 from utk_curio.backend.app.agents.application import source_grounding as sg
 
@@ -716,3 +719,164 @@ class TestValuesTheUserTyped:
         verdict = sg.check_grounding(self.ROWS, "python", solve)
         assert not verdict.ok and len(verdict.violations) == 1, verdict.violations
         assert "values the user typed" not in sg.refusal_text(verdict, solve)
+
+
+#: A Data Catalog dataset of the project, and a data-loading node that loads it.
+CENSUS = sg.CatalogRef("census-acs", "Census ACS", "parquet", CATALOG_PATH)
+LOADS_CENSUS = 'df = curio_load_data("census-acs")'
+
+#: Each grounded source a data-loading node may read: its loader, ending in
+#: ``return df``, and the context that grounds it.
+GROUNDED_SOURCES = {
+    "catalog-id": (LOADS_CENSUS + "\nreturn df", {"catalog_ids": {"census-acs": CENSUS}}),
+    "catalog-path": (f'df = pd.read_parquet("{CATALOG_PATH}")\nreturn df', {"catalog_paths": {CATALOG_PATH: CENSUS}}),
+    "user-path": ('df = pd.read_csv("data/tracts.csv")\nreturn df', {"user_paths": {"data/tracts.csv"}}),
+    "verified-url": (
+        'df = pd.read_json("https://data.example.gov/tracts.json")\nreturn df',
+        {"verified_urls": {"https://data.example.gov/tracts.json": {"status": "verified", "httpStatus": 200}}},
+    ),
+    "saved-key": (
+        'import requests\napi_key = curio_secret("census")\n'
+        'r = requests.get("https://api.census.gov/data/2020/acs", params={"key": api_key})\n'
+        "df = pd.DataFrame(r.json())\nreturn df",
+        {"secrets": {"census": sg.SecretRef("census", "api.census.gov", "query:key")},
+         "probe": lambda url: {"status": "unreachable", "httpStatus": 401}},
+    ),
+}
+
+
+def _census(**kw) -> sg.GroundingContext:
+    """A data-loading node's context in a project whose Data Catalog holds CENSUS."""
+    return _ctx(is_data_loading=True, catalog_ids={"census-acs": CENSUS}, **kw)
+
+
+def _beside(loads: str, line: str) -> str:
+    """*loads*, a loader that ends in ``return df``, with *line* before its return."""
+    return loads.replace("\nreturn df", f"\n{line}\nreturn df")
+
+
+class TestValuesACallMakesUp:
+    """Step 45 (10-30, the limit step 40 found): the gate read only literals,
+    so values code makes up with a call (a column of random numbers, faked
+    names, a sample dataset) passed beside the values the user typed and
+    beside any grounded source, though the user never asked for made-up
+    data. Each call that makes values up is refused by name unless the user
+    asked for synthetic data; what the code computes from what it loads is
+    not made up."""
+
+    MESSAGE = "Add a bar J with 60, and a column c with each bar's share of the total."
+    BAR = VEGA_LOADER.replace('"I"]', '"I", "J"]').replace("52]", "52, 60]")
+    RANDOM_C = BAR.replace("df = pd.DataFrame(data=d)", "df = pd.DataFrame(data=d)\r\ndf['c'] = np.random.rand(len(df))")
+    SHARE_C = BAR.replace("df = pd.DataFrame(data=d)", "df = pd.DataFrame(data=d)\r\ndf['c'] = df['b'] / df['b'].sum()")
+    NOISE = 'df["noise"] = np.random.normal(0, 1, len(df))'
+
+    def test_a_random_column_beside_the_values_the_user_typed_is_refused_by_name(self):
+        ctx = _chat(self.MESSAGE, current=VEGA_LOADER)
+        verdict = sg.check_grounding(self.RANDOM_C, "python", ctx)
+        assert not verdict.ok and verdict.source is None, verdict.source
+        assert len(verdict.violations) == 2, verdict.violations
+        assert "np.random.rand (line 5)" in verdict.violations[0], verdict.violations
+        assert "'J'" not in verdict.violations[0] and "60" not in verdict.violations[0]
+        assert "no grounded source" in verdict.violations[1]
+        # A source is missing, which the node's Dataset Finder can look for.
+        assert sg.failure_kind(verdict) == sg.SOURCE_KIND
+        text = sg.refusal_text(verdict, ctx)
+        assert "np.random.rand (line 5)" in text and "DataFrame.sample" in text, text
+        # The column the user asked for, computed from the bars, is theirs.
+        verdict = sg.check_grounding(self.SHARE_C, "python", ctx)
+        assert verdict.ok, verdict.violations
+        assert verdict.source["refs"] == [{"kind": "user-values", "value": "'J', 60, 'c'"}]
+
+    @pytest.mark.parametrize("source", sorted(GROUNDED_SOURCES))
+    def test_a_random_column_beside_any_grounded_source_is_refused_by_name(self, source):
+        loads, grounds = GROUNDED_SOURCES[source]
+        ctx = _ctx(is_data_loading=True, **grounds)
+        alone = sg.check_grounding(loads, "python", ctx)
+        assert alone.ok, alone.violations
+        made_up = _beside(loads, self.NOISE)
+        line = made_up.count("\n", 0, made_up.index("np.random")) + 1
+        verdict = sg.check_grounding(made_up, "python", ctx)
+        assert not verdict.ok and verdict.source is None, verdict.source
+        assert len(verdict.violations) == 1, verdict.violations
+        assert f"np.random.normal (line {line})" in verdict.violations[0], verdict.violations
+        assert sg.failure_kind(verdict) == sg.SOURCE_KIND
+        # A column derived from what the node loads stays grounded by its source.
+        derived = sg.check_grounding(_beside(loads, 'df["density"] = df["pop"] / df["area"]'), "python", ctx)
+        assert derived.ok and derived.source["kind"] == alone.source["kind"], derived.violations
+
+    def test_each_way_code_draws_fakes_or_makes_up_a_dataset_is_named(self):
+        ctx = _census()
+        for lines, named in (
+            ('import numpy as xp\ndf["x"] = xp.random.normal(size=len(df))', "xp.random.normal (line 3)"),
+            ('import numpy.random as npr\ndf["x"] = npr.poisson(3, len(df))', "npr.poisson (line 3)"),
+            ('from numpy.random import default_rng\nrng = default_rng(0)\ndf["x"] = rng.integers(0, 9, len(df))',
+             "rng.integers (line 4)"),
+            ('df["x"] = np.random.default_rng(0).uniform(size=len(df))', "np.random.default_rng(0).uniform (line 2)"),
+            ('df["kind"] = np.random.choice(["low", "high"], size=len(df))', "np.random.choice (line 2)"),
+            ('import random\ndf["x"] = [random.randint(1, 9) for _ in range(len(df))]', "random.randint (line 3)"),
+            ('from random import choice\ndf["kind"] = [choice("AB") for _ in range(len(df))]', "choice (line 3)"),
+            ('from faker import Faker\nfake = Faker()\ndf["owner"] = [fake.name() for _ in range(len(df))]',
+             "fake.name (line 4)"),
+            ('from sklearn.datasets import make_blobs\nX, labels = make_blobs(n_samples=len(df))\ndf["k"] = labels',
+             "make_blobs (line 3)"),
+        ):
+            verdict = sg.check_grounding(LOADS_CENSUS + "\n" + lines + "\nreturn df", "python", ctx)
+            assert not verdict.ok and len(verdict.violations) == 1, (lines, verdict.violations)
+            assert named in verdict.violations[0], (lines, verdict.violations)
+
+    def test_what_draws_nothing_or_samples_the_loaded_rows_is_not_made_up(self):
+        ctx = _census()
+        verdict = sg.check_grounding(_beside(LOADS_CENSUS + "\nreturn df", self.NOISE), "python", ctx)
+        assert not verdict.ok, "a column of random numbers beside the dataset is made up"
+        for lines in (
+            "np.random.seed(0)\nrandom.seed(0)",
+            "df = df.sample(frac=0.1, random_state=42)",
+            "rng = np.random.default_rng(0)\ndf = df.sample(n=10, random_state=rng)",
+            "random = df.sample(5)\ndf = random.head(3)",
+            'df["density"] = df["pop"] / df["area"]\ndf = df[df["density"] > 1000]',
+            'df = df.merge(df.groupby("county", as_index=False)["pop"].sum(), on="county", suffixes=("", "_all"))',
+            'df["rank"] = range(len(df))',
+        ):
+            verdict = sg.check_grounding(LOADS_CENSUS + "\n" + lines + "\nreturn df", "python", ctx)
+            assert verdict.ok and verdict.source["kind"] == "catalog", (lines, verdict.violations)
+        # Code of a node that loads no data is not judged: it may draw.
+        verdict = sg.check_grounding('df = input_0[0]\ndf["x"] = np.random.rand(len(df))\nreturn df', "python", _ctx())
+        assert verdict.ok and verdict.source is None, verdict.violations
+
+    def test_a_call_the_node_holds_is_its_own(self):
+        held = _beside(LOADS_CENSUS + "\nreturn df", self.NOISE)
+        ctx = _census(current_content=held)
+        kept = _beside(held, 'df["density"] = df["pop"] / df["area"]')
+        verdict = sg.check_grounding(kept, "python", ctx)
+        assert verdict.ok and verdict.source["kind"] == "catalog", verdict.violations
+        # The node's own draws, beside the rows the user typed.
+        random_b = VEGA_LOADER.replace(
+            "df = pd.DataFrame(data=d)", "df = pd.DataFrame(data=d)\r\ndf['b'] = np.random.rand(len(df))",
+        )
+        bar = random_b.replace('"I"]', '"I", "J"]').replace("52]", "52, 60]")
+        verdict = sg.check_grounding(bar, "python", _chat("Add a bar J with 60.", current=random_b))
+        assert verdict.ok and verdict.source["refs"] == [{"kind": "user-values", "value": "'J', 60"}], verdict.violations
+        # A call the node holds is its own as many times as the node holds it:
+        # a second draw is one the write adds, named at its own line.
+        more = _beside(held, self.NOISE.replace('"noise"', '"more"'))
+        verdict = sg.check_grounding(more, "python", ctx)
+        assert not verdict.ok and len(verdict.violations) == 1, verdict.violations
+        assert "np.random.normal (line 3)" in verdict.violations[0], verdict.violations
+        assert "(line 2)" not in verdict.violations[0]
+
+    def test_a_user_who_asked_for_synthetic_data_still_gets_it(self):
+        made_up = _beside(LOADS_CENSUS + "\nreturn df", self.NOISE)
+        verdict = sg.check_grounding(made_up, "python", _census(synthetic_requested=True))
+        assert verdict.ok, verdict.violations
+        # Beside the dataset, the card names the calls the user asked for.
+        assert verdict.source["kind"] == "mixed"
+        assert verdict.source["refs"][-1] == {"kind": "synthetic", "value": "np.random.normal"}
+        assert "Synthetic · np.random.normal" in verdict.source["label"], verdict.source["label"]
+        # Beside values the user typed, and with no source: synthetic, as before.
+        ctx = _chat(self.MESSAGE, current=VEGA_LOADER)
+        ctx.synthetic_requested = True
+        verdict = sg.check_grounding(self.RANDOM_C, "python", ctx)
+        assert verdict.ok and verdict.source["kind"] == "synthetic", verdict.violations
+        verdict = sg.check_grounding('df = pd.DataFrame({"x": np.random.rand(5)})\nreturn df', "python",
+                                     _ctx(is_data_loading=True, synthetic_requested=True))
+        assert verdict.ok and verdict.source["refs"] == [{"kind": "synthetic"}], verdict.violations

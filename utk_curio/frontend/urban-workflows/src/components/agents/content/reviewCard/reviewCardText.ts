@@ -43,7 +43,10 @@ export function sourceRefText(ref: AgentSourceRef): string {
       // The values the code added to the node's own, each typed in the chat.
       return `${ref.value ?? ""} (typed in the chat)`;
     case "synthetic":
-      return "generated in the node, no external source";
+      // Beside another source, the calls that made values up, as the user asked.
+      return ref.value
+        ? `${ref.value} (made up in the node, as the user asked)`
+        : "generated in the node, no external source";
     default:
       return ref.value ?? String(ref.kind);
   }
