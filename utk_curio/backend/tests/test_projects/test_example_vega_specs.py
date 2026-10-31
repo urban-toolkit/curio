@@ -14,6 +14,12 @@ And a spec names the dataset its inputs are stacked in by its chip,
 ``"data": {"name": "[!! inputs !!]"}``, as every other input is a chip: the
 bare name draws the same, so only reading the specs as written finds it.
 
+And a spec's description says what the spec holds. vega.json's and
+data-pool-vega.json's bar charts kept Vega-Lite's gallery description, "A
+simple bar chart with embedded data.", though their rows come from the loading
+node before them. Asked to add two bars to that chart, a Node Builder took the
+description's word and wrote the rows into the spec.
+
 The specs are read from the example dataflows, their walkthroughs, the default
 preamble and the skills Curio ships as agents read them, and the worked
 examples the builder agents are shown (the base entry's ``examples.md``),
@@ -168,6 +174,36 @@ class TestHollowPoints:
             "skill interaction-edges",
             "worked example 09-heterogeneous-data-linked-views",
         } <= brushed_points
+
+
+EMBEDDED = re.compile(r"\b(embedded|inline) data\b", re.I)
+
+
+def _holds_rows(spec) -> bool:
+    """Whether *spec* holds rows of its own: ``values`` in any ``data`` of
+    its views or lookups, or a ``datasets`` entry."""
+    if isinstance(spec, list):
+        return any(_holds_rows(item) for item in spec)
+    if not isinstance(spec, dict):
+        return False
+    data = spec.get("data")
+    if (isinstance(data, dict) and "values" in data) or spec.get("datasets"):
+        return True
+    return any(_holds_rows(value) for value in spec.values())
+
+
+class TestADescriptionSaysWhatTheSpecHolds:
+    def test_no_spec_says_its_data_is_embedded_when_it_holds_none(self):
+        offenders = [where for where, spec in SHIPPED
+                     if EMBEDDED.search(str(spec.get("description") or "")) and not _holds_rows(spec)]
+        assert offenders == [], (
+            "these specs say their data is embedded, but they hold no rows: the chart draws "
+            f"the table its input hands it. In: {offenders}"
+        )
+
+    def test_the_scan_reads_the_bar_charts_of_vega_and_data_pool_vega(self):
+        read = {where.split(" node ")[0] for where, _ in SHIPPED}
+        assert {"vega.json", "data-pool-vega.json"} <= read
 
 
 def _written_specs():

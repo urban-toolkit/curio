@@ -28,15 +28,15 @@
     },
     {
       "id": 3,
-      "dataflow": "evals/files/bars.json",
+      "dataflow": "docs/examples/dataflows/vega.json",
       "target": {"kind": "node", "node": "4d414f97-fad3-4ac7-9e1d-53725eb61f70"},
       "prompt": "Add two more bars to this chart: J with 60 and K with 33.",
-      "expected_output": "No data in the spec: the answer adds the rows in the Python code of the node before the chart, whose DataFrame gains J = 60 and K = 33, since the chart draws the table the node before it returns.",
+      "expected_output": "No data in the spec: the answer adds the rows in the loading node's Python code, whose DataFrame gains J = 60 and K = 33, since the chart draws the table the node before it returns.",
       "assertions": [
         "No Vega-Lite spec it writes has a \"data\" field or inline \"values\".",
-        "The answer adds the rows in the Python code of the node before the chart (node 8d428948-f5e4-485b-9812-51a4212678a7), whose DataFrame gains J with 60 and K with 33 in columns a and b and is still returned, or tells the user to add them there.",
+        "The answer adds the rows in the loading node's Python code (node 8d428948-f5e4-485b-9812-51a4212678a7), whose DataFrame gains J with 60 and K with 33 in columns a and b and is still returned, or tells the user to add them there.",
         "The answer says the chart draws the table the node before it returns, so the new rows go in that node.",
-        "The answer creates no new node: the new bars come from rows of the existing node before the chart."
+        "The answer creates no new node: the new bars come from rows of the existing loading node."
       ]
     }
   ]
