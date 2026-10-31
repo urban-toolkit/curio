@@ -38,7 +38,8 @@ import { draggedText, headerRow, openCategory, type StripCategory } from "../_su
 
 const EXAMPLES = path.join(REPO_ROOT, "docs", "examples");
 const PACKAGES = path.join(REPO_ROOT, "packages");
-const SCOUT = path.join(PACKAGES, "curio.scout@1");
+/** The Vega-Lite charts that compare scenarios (#1270: Scout's templates once). */
+const CHARTS_DIR = path.join(REPO_ROOT, "docs", "examples", "vega-lite-charts");
 
 const isObject = (value: unknown): value is Record<string, any> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
@@ -162,20 +163,18 @@ const TWO_BOXED: InputScope[] = [
 
 /** Scout's chart templates, each with its manifest's widgets, on two boxed inputs. */
 function templateCases(): HeaderCase[] {
-  const manifest = JSON.parse(fs.readFileSync(path.join(SCOUT, "manifest.json"), "utf-8"));
-  return (manifest.templates as any[])
-    .filter((template) => template.grammarId === VEGA_LITE)
-    .map((template) => ({
-      name: `packages/curio.scout@1/${template.source}`,
-      code: fs.readFileSync(path.join(SCOUT, template.source), "utf-8"),
-      props: {
-        nodeId: `curio.scout/${template.id}`,
-        widgets: normalizeWidgets(template.widgets),
-        inputs: TWO_BOXED,
-        selections: [],
-        grammar: VEGA_LITE,
-      },
-    }));
+  const listed = JSON.parse(fs.readFileSync(path.join(CHARTS_DIR, "charts.json"), "utf-8"));
+  return (listed.charts as any[]).map((chart) => ({
+    name: `docs/examples/vega-lite-charts/${chart.spec}`,
+    code: fs.readFileSync(path.join(CHARTS_DIR, chart.spec), "utf-8"),
+    props: {
+      nodeId: `chart-${chart.id}`,
+      widgets: normalizeWidgets(chart.widgets),
+      inputs: TWO_BOXED,
+      selections: [],
+      grammar: VEGA_LITE,
+    },
+  }));
 }
 
 const DATAFLOW_CASES = dataflowCases();
@@ -183,7 +182,7 @@ const TEMPLATE_CASES = templateCases();
 
 afterEach(cleanup);
 
-test("the cases are the shipped specs that write chips: several dataflows' nodes and Scout's 15 charts", () => {
+test("the cases are the shipped specs that write chips: several dataflows' nodes and the 15 Vega-Lite charts", () => {
   expect(TEMPLATE_CASES).toHaveLength(15);
   expect(TEMPLATE_CASES.every((entry) => entry.code.includes("[!! inputs !!]"))).toBe(true);
   expect(DATAFLOW_CASES.length).toBeGreaterThan(20);

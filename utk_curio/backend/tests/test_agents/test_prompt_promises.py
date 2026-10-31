@@ -335,15 +335,15 @@ def test_a_spec_is_kept_as_it_is_and_a_templates_widgets_set_in_a_plan_or_a_node
     places = [where for where, _text in texts]
     assert any(place.endswith("default_preamble.md") for place in places), places
     assert any(place.endswith("orchestration_instruction.md") for place in places), places
-    charts = [(where, text) for where, text in texts
-              if where.startswith("curio.scout/") and where.endswith(", its description")]
-    assert len(charts) >= 15, charts
+    descriptions = [(where, text) for where, text in texts
+                    if where.startswith("curio.rasterization/") and where.endswith(", its description")]
+    assert len(descriptions) == 2, descriptions
     unsaid = [(where, claim) for where, text in texts for claim in _claims(text) if _IN_BOTH not in claim]
     assert not unsaid, (
         "these tell an agent to keep a spec as it is or to set a template's widgets, which a plan and a "
         f"node.create do, and do not say where: {unsaid}"
     )
-    assert not [(where, claim) for where, text in charts for claim in _claims(text) if _IN_BOTH not in claim]
+    assert not [(where, claim) for where, text in descriptions for claim in _claims(text) if _IN_BOTH not in claim]
     (tools_page,) = [text for where, text in texts if where.endswith("agent.curio.builtin@1/tools.md")]
     for tool in ("dataflow.plan.write", "node.create"):
         said = _claims(_tool_section(tools_page, tool))

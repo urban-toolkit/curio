@@ -1,14 +1,13 @@
-"""``curio.scout@1``: Scout, SCOUT's one node package in Curio (the plan
-answering komar41's review of his #914, step 10).
+"""``curio.rasterization@1``: Rasterization, SCOUT's raster nodes in Curio.
 
 SCOUT Rasters (``scout.rasters@1``) and SCOUT Comparison
-(``scout.comparison@1``) became one package, Scout, on the owner's call
-(2026-10-20): the Raster Calculator and Rasterize Buildings, then the charts,
-in one manifest published by Curio under MIT. The two old ids are retired
-with no alias (a clean install), so no file Curio ships names either of them,
-as a package or in a node type. The seven charts of SCOUT Comparison became
-fifteen when Compare Scenarios' presets and Dots with a range joined them
-(the plan answering komar41's review, step 6.2).
+(``scout.comparison@1``) became one package, Scout (``curio.scout@1``), on the
+owner's call (2026-10-20), retired with no alias. Scout became Rasterization
+(#1270): its two raster nodes alone, its fifteen charts Vega-Lite specs
+(``docs/examples/vega-lite-charts``). A dataflow saved with Scout's nodes loads
+with them renamed (``projects/legacy_node_types.py``), so ``curio.scout``
+stays in those tables and the notes that name the rename, and in no dataflow
+or package Curio ships.
 
 The guides (``docs/*.md``) are not in the CI image this suite runs in;
 ``scoutPackageInGuides.test.ts`` reads them.
@@ -25,38 +24,22 @@ from collections import Counter
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[4]
-PACKAGE_ID = "curio.scout"
+PACKAGE_ID = "curio.rasterization"
 PACKAGE = REPO / "packages" / f"{PACKAGE_ID}@1"
 
 #: The two packages Scout replaced, retired with no alias.
 RETIRED = ("scout.rasters", "scout.comparison")
+#: Scout itself, which Rasterization replaced: named only where a saved
+#: dataflow's old types are renamed, and in the notes on the rename.
+SCOUT_TYPE = re.compile(r"(?<![\w.-])curio\.scout(?:@1|/)")
 #: Either retired id as a whole id: a package (``scout.rasters@1``,
 #: ``packages/scout.comparison@1/``) or the package of a node type
 #: (``scout.comparison/donuts``). The Python module ``scout_rasters`` keeps its
 #: name, and its underscore is not a dot.
 RETIRED_ID = re.compile(r"(?<![\w.-])scout\.(?:rasters|comparison)(?![\w-])")
 
-#: Scout's templates, in the palette's order: the two raster nodes, then the
-#: fifteen charts.
-TEMPLATES = [
-    "raster-calculator",
-    "rasterize-buildings",
-    "lines-with-band",
-    "curves-by-group",
-    "bars-with-error-bars",
-    "ensemble-strips",
-    "stacked-bars-with-totals",
-    "donuts",
-    "weighted-matrix",
-    "dots-with-a-range",
-    "bars",
-    "grouped-bars",
-    "lines",
-    "points",
-    "pie",
-    "lollipops",
-    "table",
-]
+#: Its templates, in the palette's order.
+TEMPLATES = ["raster-calculator", "rasterize-buildings"]
 
 #: What Curio ships beside its code (``utk_curio/shipped.py``), and the code
 #: with the agents' prompts, from the repository's root.
@@ -115,27 +98,51 @@ def _shipped_text():
                     yield path.relative_to(REPO).as_posix(), path.read_text(encoding="utf-8", errors="replace")
 
 
-def test_scout_is_one_package_from_curio_under_mit():
+def test_rasterization_is_one_package_from_curio_under_mit():
     from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
     manifest = load_package_manifest(PACKAGE)
     assert (manifest.package_id, manifest.major, manifest.name, manifest.publisher, manifest.license) == (
-        PACKAGE_ID, 1, "Scout", "Curio", "MIT",
+        PACKAGE_ID, 1, "Rasterization", "Curio", "MIT",
     )
     assert manifest.read_only is True and manifest.kind == "node"
-    assert _manifest()["version"] == "1.1.0"
+    assert _manifest()["version"] == "1.0.0"
 
 
-def test_it_holds_the_templates_of_the_two_packages_it_replaced_and_eight_more_charts():
-    """Both raster nodes, then the seven charts, then Dots with a range and
-    Compare Scenarios' seven presets, each in its place in the package's
-    palette group."""
+def test_it_holds_the_two_raster_nodes_only():
+    """A chart that compares scenarios is a Vega-Lite node, not a template of
+    this package (#1270)."""
     from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
     templates = _manifest()["templates"]
     assert [t["id"] for t in templates] == TEMPLATES
-    assert [t["paletteOrder"] for t in templates] == list(range(len(TEMPLATES)))
     assert [t.template_id for t in load_package_manifest(PACKAGE).templates] == TEMPLATES
+    assert not list(PACKAGE.rglob("*.vl.json"))
+    assert not (REPO / "packages" / "curio.scout@1").exists()
+
+
+def test_no_shipped_dataflow_or_package_names_scout():
+    """Not a dataflow's node or lockfile, a prompt fixture's graph, a manifest
+    or a package's code: only the rename's tables and notes name it."""
+    allowed = {
+        "utk_curio/backend/app/projects/legacy_node_types.py",
+        "utk_curio/frontend/urban-workflows/src/utils/flowNodeCanonicalType.ts",
+        "scripts/migrate_scout_package.py",
+        "packages/curio.rasterization@1/README.md",
+        "docs/examples/vega-lite-charts/README.md",
+        "docs/examples/vega-lite-charts/charts.json",
+    }
+    named = []
+    for relative, text in _shipped_text():
+        if relative in allowed:
+            continue
+        for match in SCOUT_TYPE.finditer(text):
+            line = text.count(chr(10), 0, match.start()) + 1
+            row = text.split(chr(10))[line - 1]
+            if '"draftedBy"' in row:
+                continue
+            named.append(f"{relative}:{line}: {match.group()}")
+    assert not named, "\n".join(named)
 
 
 def test_the_two_packages_it_replaced_are_gone():

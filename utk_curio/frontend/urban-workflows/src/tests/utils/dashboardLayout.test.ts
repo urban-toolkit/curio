@@ -384,7 +384,7 @@ describe("dashboardSourceNodeIds", () => {
     afterEach(() => clearVegaLiteTemplate());
 
     test("is walked through as the Vega-Lite node is, versioned or not", () => {
-      for (const type of [VEGA_LITE_TEMPLATE, "curio.scout/donuts"]) {
+      for (const type of [VEGA_LITE_TEMPLATE, "acme.charts/donuts"]) {
         const nodes = [
           node("py", NodeType.COMPUTATION_ANALYSIS),
           node("donuts", type),

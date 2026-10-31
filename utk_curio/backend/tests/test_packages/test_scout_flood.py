@@ -4,7 +4,7 @@ Raster Calculator, on SCOUT's whole grid (#662, step 18; #819).
 The shipped test dataflow ``quad-cities-flood-vulnerability.json`` does what SCOUT's
 ``simulate_flood_projection`` does with no SCOUT code: three Data Loading nodes
 read the region's window of SCOUT's rasters, which the Data Catalog holds whole
-(``curio_load_data(..., bounds=...)``), a Raster Calculator (``curio.scout@1``)
+(``curio_load_data(..., bounds=...)``), a Raster Calculator (``curio.rasterization@1``)
 per scenario takes
 the depth with nature-based solutions (NbS) where the class is a chosen one and
 the depth without elsewhere (``choose``), a second takes the depth's
@@ -67,11 +67,11 @@ REPO = Path(__file__).resolve().parents[4]
 DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "quad-cities-flood-vulnerability.json"
 SCOUT_FUNCTION = Path(__file__).resolve().parent / "fixtures" / "scout_flood" / "flood_simulation.py"
 #: The starter a Raster Calculator opens with, which its package ships.
-CALCULATOR_STARTER = REPO / "packages" / "curio.scout@1" / "sources" / "raster-calculator.py"
+CALCULATOR_STARTER = REPO / "packages" / "curio.rasterization@1" / "sources" / "raster-calculator.py"
 LOADING = "curio.builtin/data-loading"
-CALCULATOR = "curio.scout/raster-calculator"
+CALCULATOR = "curio.rasterization/raster-calculator"
 #: The Raster Calculator's package, which the dataflow's lockfile names.
-RASTERS_PACKAGE = "curio.scout@1"
+RASTERS_PACKAGE = "curio.rasterization@1"
 #: What a Raster Calculator's code returns: an operation cell by cell, which
 #: gives a raster, statistics, which give a table of one row, or, in Average
 #: depth by period, its own table of each period's mean depth.
@@ -87,10 +87,11 @@ COMPARE = "curio.builtin/compare-scenarios"
 MAP = "curio.builtin/autk-grammar"
 TRANSFORMATION = "curio.builtin/data-transformation"
 PYTHON = "curio.builtin/computation-analysis"
-BARS = "curio.scout/bars"
-POINTS = "curio.scout/points"
-GROUPED_BARS = "curio.scout/grouped-bars"
-CHARTS = (BARS, POINTS, GROUPED_BARS)
+#: Its three charts are Vega-Lite nodes (#1270), each with a spec of
+#: ``docs/examples/vega-lite-charts``: Bars, Points and Grouped bars.
+VEGA = "curio.builtin/vis-vega"
+BARS = POINTS = GROUPED_BARS = VEGA
+CHARTS = (VEGA,)
 #: The Raster Calculator taking the size of the change in depth.
 DEPTH_CHANGE_CODE = (
     "# The size of NbS's flood depth, on input_1, minus No NbS's, on input_0,\n"
@@ -703,7 +704,7 @@ def test_the_dataflow_is_made_of_curios_own_nodes_and_scouts_raster_calculator()
     statistics and one averaging the depth by period, an Autark map of the
     depth, a Data Transformation, the depth per tract, and an Autark map of
     it; a Raster Calculator taking the change in depth and a Python node the
-    change per tract; Scout's Bars, Points and Grouped bars; Autark maps of
+    change per tract; Vega-Lite Bars, Points and Grouped bars; Autark maps of
     the vulnerability, of the change in depth and of the change per tract;
     and the nine datasets. No Compare Scenarios node is left (the plan
     answering komar41's review, step 6.3). Nothing is pinned to the
@@ -711,13 +712,14 @@ def test_the_dataflow_is_made_of_curios_own_nodes_and_scouts_raster_calculator()
     25 MB."""
     spec = _dataflow()
     assert spec["packages"] == [RASTERS_PACKAGE]
-    assert {n["type"] for n in spec["nodes"] if not n["type"].startswith("curio.builtin/")} == {CALCULATOR, *CHARTS}
+    assert {n["type"] for n in spec["nodes"] if not n["type"].startswith("curio.builtin/")} == {CALCULATOR}
+    assert sum(n["type"] == VEGA for n in spec["nodes"]) == 3
     assert [ref["datasetId"] for ref in spec["datasets"]] == DATASET_IDS
     counts = {}
     for n in spec["nodes"]:
         counts[n["type"]] = counts.get(n["type"], 0) + 1
     assert counts == {
-        LOADING: 5, CALCULATOR: 7, TRANSFORMATION: 3, MAP: 7, PYTHON: 3, BARS: 1, POINTS: 1, GROUPED_BARS: 1,
+        LOADING: 5, CALCULATOR: 7, TRANSFORMATION: 3, MAP: 7, PYTHON: 3, VEGA: 3,
     }
     assert PARAMETER not in counts
     assert sorted(_setting_nodes(spec)) == ["Projection period", "Region"]
@@ -1107,22 +1109,22 @@ def test_the_changes_and_the_charts_hold_what_they_compare():
     assert "\nout[numbers] = (now - was).abs()\n" in tract_change["content"]
     for node in (depth_change, tract_change):
         assert set(node["metadata"]) == {"keywords"}, node["metadata"]
-    manifest = json.loads((CALCULATOR_STARTER.parent.parent / "manifest.json").read_text(encoding="utf-8"))
-    templates = {f"{manifest['id']}/{t['id']}": t for t in manifest["templates"]}
+    from utk_curio.backend.tests._support.vega_lite_charts import chart as vega_chart, spec as vega_spec
+
     widgets = {
-        ("statistics", "chart"): (BARS, {"y": "median", "combine": "mean", "y_title": "mean of median"}),
-        ("tract depth", "chart"): (POINTS, {
+        ("statistics", "chart"): ("bars", {"y": "median", "combine": "mean", "y_title": "mean of median"}),
+        ("tract depth", "chart"): ("points", {
             "x": "RPL_THEMES", "y": "mean_depth_m", "x_title": "RPL_THEMES", "y_title": "mean_depth_m",
         }),
-        ("by period", "chart"): (GROUPED_BARS, {
+        ("by period", "chart"): ("grouped-bars", {
             "x": "period", "y": "mean_depth_m", "combine": "mean", "x_title": "period", "y_title": "mean_depth_m",
         }),
     }
-    for key, (node_type, values) in widgets.items():
+    for key, (chart_id, values) in widgets.items():
         chart = found[key]
-        template = templates[node_type]
-        assert chart["type"] == node_type, key
-        assert chart["content"] == (CALCULATOR_STARTER.parent.parent / template["source"]).read_text(encoding="utf-8")
+        template = vega_chart(chart_id)
+        assert chart["type"] == VEGA, key
+        assert chart["content"] == vega_spec(chart_id)
         assert set(chart["metadata"]) == {"keywords", "widgets"}, chart["metadata"]
         assert [{k: v for k, v in w.items() if k != "value"} for w in chart["metadata"]["widgets"]] == template["widgets"]
         assert {w["name"]: w["value"] for w in chart["metadata"]["widgets"]} == values, key

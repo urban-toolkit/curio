@@ -5,8 +5,8 @@ the plan answering komar41's review, step 6.2).
 
 ``docs/examples/dataflows/scenario-comparison-charts.json`` loads nine example
 tables from the Data Catalog. In each row a Data Transformation node per
-scenario keeps that scenario's rows, and a chart of the Scout package
-(``curio.scout@1``) takes each of those nodes on an input of its own: a
+scenario keeps that scenario's rows, and a Vega-Lite node (a spec of
+``docs/examples/vega-lite-charts``) takes each of those nodes on an input of its own: a
 Vega-Lite chart whose spec names no scenario and no color, and writes them
 through its scenario chips (``[!! scenario colors !!]``). The account's store
 holds that package, which the dataflow declares.
@@ -80,7 +80,6 @@ if TYPE_CHECKING:
     from .utils import FrontendPage
 
 DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "scenario-comparison-charts.json"
-SCOUT = Path(REPO_ROOT) / "packages" / "curio.scout@1"
 TEST_NAME = "test_the_nine_charts_draw_their_scenarios_with_no_network"
 LOAD = "curio.builtin/data-loading"
 KEEP = "curio.builtin/data-transformation"
@@ -152,7 +151,7 @@ def _rows(flow: dict) -> list:
         keep = next(e["target"] for e in flow["edges"] if e["source"] == loader["id"])
         [chart] = [
             e["target"] for e in flow["edges"]
-            if e["source"] == keep and by_id[e["target"]]["type"].startswith("curio.scout/") and e["target"] != DOTS
+            if e["source"] == keep and by_id[e["target"]]["type"] == "curio.builtin/vis-vega" and e["target"] != DOTS
         ]
         found.append((dataset_id, by_id[chart]))
     return sorted(found, key=lambda row: row[1]["y"])
@@ -286,14 +285,15 @@ def _with_dots(spec: dict) -> dict:
     flow = spec["dataflow"]
     rows = _rows(flow)
     [(_dataset, plans)] = [row for row in rows if row[0] == PLANS]
-    manifest = json.loads((SCOUT / "manifest.json").read_text(encoding="utf-8"))
-    [dots] = [t for t in manifest["templates"] if t["id"] == "dots-with-a-range"]
+    from utk_curio.backend.tests._support.vega_lite_charts import chart as vega_chart, spec as vega_spec
+
+    dots = vega_chart("dots-with-a-range")
     values = {"category": "mode", "value": "daily_trips", "x_title": "Daily trips", "y_title": "Mode"}
     bottom = max(node["y"] + node.get("height", 420) for node in flow["nodes"])
     flow["nodes"].append({
-        "id": DOTS, "type": "curio.scout/dots-with-a-range", "x": plans["x"], "y": bottom + 160,
+        "id": DOTS, "type": "curio.builtin/vis-vega", "x": plans["x"], "y": bottom + 160,
         "title": "Dots with a range: daily trips by mode",
-        "content": (SCOUT / dots["source"]).read_text(encoding="utf-8"),
+        "content": vega_spec("dots-with-a-range"),
         "out": "DEFAULT", "in": "DEFAULT", "goal": "",
         "metadata": {"keywords": [], "widgets": [dict(w, value=values[w["name"]]) for w in dots["widgets"]]},
         "width": 680, "height": 440,
@@ -329,9 +329,8 @@ def test_the_nine_charts_draw_their_scenarios_with_no_network(
         project_spec=spec,
     )
     require_owner_view(page)
-    # The account's store holds every package the dataflow declares: the one
-    # its charts are nodes of.
-    assert flow["packages"], "the dataflow declares no package for its charts"
+    # Its charts are Vega-Lite nodes (#1270): the dataflow needs no package.
+    assert flow["packages"] == [], flow["packages"]
     store = [p.get("dirName") for p in api_json(f"{current_server}/api/packages", session["token"])["packages"]]
     missing = [package for package in flow["packages"] if package not in store]
     assert not missing, f"{missing} are not in the account's store {store}: start the stack --with-examples"

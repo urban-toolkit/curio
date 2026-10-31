@@ -55,7 +55,7 @@ const mockShowToast = jest.fn();
 jest.mock("../../providers/ToastProvider", () => ({
   useToastContext: () => ({ showToast: mockShowToast }),
 }));
-const mockLockfile = ["curio.scout@1", "model.curio.ddrnet23-slim@1"];
+const mockLockfile = ["curio.rasterization@1", "model.curio.ddrnet23-slim@1"];
 // The save every Add, Remove and Import makes first on a dataflow with no id.
 const mockRequestProjectSave = jest.fn();
 jest.mock("../../providers/FlowProvider", () => ({
@@ -215,7 +215,7 @@ beforeEach(() => {
   mockApi.getDefaults.mockResolvedValue({ packages: [] });
   mockApi.resolve.mockResolvedValue({ lockfile: [], conflicts: [] });
   mockApi.installToProject.mockResolvedValue({ packages: [...mockLockfile, "model.scout.deep-umbra@1"] });
-  mockApi.uninstallFromProject.mockResolvedValue({ packages: ["curio.scout@1"] });
+  mockApi.uninstallFromProject.mockResolvedValue({ packages: ["curio.rasterization@1"] });
   mockApi.uploadArchive.mockResolvedValue({ package: importedModelPackage() });
   mockApi.weightsLicense.mockResolvedValue("MIT License");
   mockApi.usage.mockResolvedValue([]);
@@ -265,7 +265,7 @@ describe("a hosted guest, on a dataflow it never saved", () => {
 
   test("is told in the Node Catalog's words when it imports a node package", async () => {
     renderNodeDrawerAs(HOSTED_GUEST);
-    await waitFor(() => expect(card(NODE_DRAWER, "curio.scout@1")).not.toBeNull());
+    await waitFor(() => expect(card(NODE_DRAWER, "curio.rasterization@1")).not.toBeNull());
 
     await importArchive(NODE_DRAWER);
     await settle();

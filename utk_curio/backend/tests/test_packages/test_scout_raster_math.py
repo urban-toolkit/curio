@@ -38,11 +38,11 @@ import numpy as np
 import pytest
 
 REPO = Path(__file__).resolve().parents[4]
-SCOUT = REPO / "packages" / "curio.scout@1"
+SCOUT = REPO / "packages" / "curio.rasterization@1"
 SOURCES = SCOUT / "sources"
 MODULE = "scout_rasters"
 STARTER = SOURCES / "raster-calculator.py"
-CALCULATOR = "curio.scout/raster-calculator"
+CALCULATOR = "curio.rasterization/raster-calculator"
 DEEP_UMBRA = REPO / "packages" / "model.scout.deep-umbra@1"
 SHADOW = "model.scout.deep-umbra/accumulated-shadow"
 FLOOD = REPO / "docs" / "examples" / "dataflows" / "quad-cities-flood-vulnerability.json"
@@ -195,7 +195,7 @@ def test_deep_umbra_declares_scout_and_its_node_is_handed_scouts_modules(tmp_cur
     from utk_curio.backend.app.packages.repositories.store import package_dir
 
     manifest = json.loads((DEEP_UMBRA / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["dependencies"]["packages"] == {"curio.scout@1": "*"}
+    assert manifest["dependencies"]["packages"] == {"curio.rasterization@1": "*"}
     for package in (SCOUT, DEEP_UMBRA):
         install_package_from_directory("guest", package)
     assert modules_for_node("guest", SHADOW) == [

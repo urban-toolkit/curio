@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from collections import deque
 
 from utk_curio import shipped
+from utk_curio.backend.app.projects.legacy_node_types import current_node_type
 from utk_curio.backend.app.execution.code_references import (
     CodeReferenceError,
     normalize_selections,
@@ -158,6 +159,8 @@ def normalize_type(node_type: str) -> str:
     """
     if isinstance(node_type, str) and "@" in node_type:
         node_type = node_type.split("@", 1)[0]
+    # A type Curio no longer ships runs as its replacement (#1270).
+    node_type = current_node_type(node_type)
     if node_type in NAMESPACED_TO_LEGACY:
         return NAMESPACED_TO_LEGACY[node_type]
     return package_code_types().get(node_type, node_type)

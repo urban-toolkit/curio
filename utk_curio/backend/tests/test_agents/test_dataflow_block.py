@@ -578,14 +578,14 @@ class TestPackagesResolveGivesFunctions:
         })
         status, text = tools.execute_read_tool(
             "packages.resolve", user_key=self.UKEY, project_id=self.PID, target=None,
-            params={"dirNames": ["model.scout.deep-umbra@1", "curio.scout@1"]},
+            params={"dirNames": ["model.scout.deep-umbra@1", "curio.rasterization@1"]},
         )
         assert status == "ok", text
         report = json.loads(text)  # whole: never cut mid-text
         rows = {row["dirName"]: row for row in report["packages"]}
-        umbra, scout = rows["model.scout.deep-umbra@1"], rows["curio.scout@1"]
+        umbra, scout = rows["model.scout.deep-umbra@1"], rows["curio.rasterization@1"]
         # The packages its manifest names, which adding it adds.
-        assert umbra.get("packageDeps") == {"curio.scout@1": "*"}, umbra
+        assert umbra.get("packageDeps") == {"curio.rasterization@1": "*"}, umbra
         assert scout.get("packageDeps") == {}, scout
         # Each module's public functions: the call and its docstring's first paragraph.
         modules = {row["module"]: row for row in umbra.get("functions") or []}

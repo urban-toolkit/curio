@@ -162,13 +162,13 @@ def test_the_whole_shipped_catalog_resolves_together():
 # Both scans leave out the package's own modules and the modules of the
 # packages its ``dependencies.packages`` names, which the account's store
 # resolves (``python_modules.dependency_module_names``): Deep Umbra imports
-# Scout's ``scout_rasters`` and names ``curio.scout@1``. The check below leaves
+# Scout's ``scout_rasters`` and names ``curio.rasterization@1``. The check below leaves
 # out the same modules through the same function, in a store holding every
 # shipped package.
 
 GUEST = "guest"
 DEEP_UMBRA_DIR = "model.scout.deep-umbra@1"
-SCOUT_DIR = "curio.scout@1"
+SCOUT_DIR = "curio.rasterization@1"
 SCOUT_MODULE = "scout_rasters"
 
 
@@ -236,7 +236,7 @@ def test_the_manifest_declares_every_library_the_sources_import(package_root: Pa
 def test_a_module_of_a_package_the_manifest_does_not_name_is_an_undeclared_library(tmp_path, shipped_store):
     """Another package's module is left out only when the manifest names that
     package in ``dependencies.packages``. Deep Umbra's node imports Scout's
-    ``scout_rasters`` and names ``curio.scout@1``. A copy of Deep Umbra that
+    ``scout_rasters`` and names ``curio.rasterization@1``. A copy of Deep Umbra that
     does not name Scout imports ``scout_rasters`` undeclared, though the store
     holds Scout. With Scout named, a library its sources import that
     ``dependencies.python`` leaves out is still undeclared."""

@@ -331,7 +331,7 @@ export function ScenarioLayers({
       <React.Fragment key={id}>
         <div className={styles.card} style={{ top, height: CARD_HEIGHT }} {...rowAttr}>
           <div className={styles.cardTop}>
-            {kind && kind !== title ? <span className={styles.cardKind}>{kind}</span> : <span />}
+            {kind ? <span className={styles.cardKind}>{kind}</span> : <span />}
             {side}
           </div>
           <div className={styles.cardTitle}>{title}</div>

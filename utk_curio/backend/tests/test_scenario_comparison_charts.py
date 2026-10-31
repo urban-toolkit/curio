@@ -4,8 +4,8 @@ ScenarioCharts in #914 on main's nodes).
 
 ``docs/examples/dataflows/scenario-comparison-charts.json`` loads each example
 table from the Data Catalog and keeps each scenario's rows in a Data
-Transformation node whose Case widget picks them. A chart of the Scout package
-(``curio.scout@1``) takes each scenario's node on an input of its own, in the
+Transformation node whose Case widget picks them. A Vega-Lite chart
+(a Vega-Lite node with a spec of ``docs/examples/vega-lite-charts``) takes each scenario's node on an input of its own, in the
 order of the scenarios' boxes (the plan answering komar41's review, step
 6.2): a Vega-Lite chart whose spec is its template's, unchanged, which reads
 its inputs as the dataset ``inputs``, every row named by its input's box, and
@@ -37,9 +37,9 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 DATAFLOW = REPO_ROOT / "docs" / "examples" / "dataflows" / "scenario-comparison-charts.json"
 SCRIPT = REPO_ROOT / "scripts" / "build_example_scenario_charts.py"
 BUILTIN_MANIFEST = REPO_ROOT / "packages" / "curio.builtin@1" / "manifest.json"
-#: The package whose templates draw the charts.
-COMPARISON_DIR = "curio.scout@1"
-COMPARISON = REPO_ROOT / "packages" / COMPARISON_DIR
+#: The Vega-Lite charts the nine charts start from (#1270: Scout's templates once).
+CHARTS_DIR = REPO_ROOT / "docs" / "examples" / "vega-lite-charts"
+VEGA = "curio.builtin/vis-vega"
 
 LOAD = "curio.builtin/data-loading"
 KEEP = "curio.builtin/data-transformation"
@@ -47,7 +47,7 @@ KEEP = "curio.builtin/data-transformation"
 STORMS = ["10-year storm", "50-year storm", "100-year storm"]
 
 #: Each example table's chart: its scenarios in the order of the chart's
-#: circles, which is their boxes' order, and the Scout template that draws it.
+#: circles, which is their boxes' order, and the chart of ``vega-lite-charts`` it is.
 CHARTS = {
     "data.curio.example-pedestrians-by-hour": (["Weekday", "Weekend"], "lines-with-band"),
     "data.curio.example-flood-damage-curves": (["As built", "Floodproofed"], "curves-by-group"),
@@ -60,8 +60,8 @@ CHARTS = {
     "data.curio.example-green-roofs": (["Extensive roof", "Semi-intensive roof", "Intensive roof"], "table"),
 }
 DATASETS = list(CHARTS)
-#: The nine chart nodes' types, one per template.
-CHART_TYPES = {f"curio.scout/{template}" for _names, template in CHARTS.values()}
+#: The nine charts, one per chart of ``vega-lite-charts``.
+CHART_IDS = {template for _names, template in CHARTS.values()}
 
 #: What a reference chip looks like (``[!! y !!]``).
 CHIP = re.compile(r"\[!!\s*(.*?)\s*!!\]")
@@ -191,11 +191,9 @@ def test_the_nine_tables_and_their_manifests_fit_their_budget():
 def test_each_table_has_a_row_that_loads_keeps_and_charts_it():
     flow = _flow()
     assert flow["name"] == "Nine ways to chart scenario comparisons"
-    # Each table's chart is one of Scout's charts, each a different one.
-    assert len(CHART_TYPES) == 9
-    assert Counter(node["type"] for node in flow["nodes"]) == {
-        LOAD: 9, KEEP: 24, **{chart_type: 1 for chart_type in CHART_TYPES},
-    }
+    # Each table's chart is a Vega-Lite node, each a different chart.
+    assert len(CHART_IDS) == 9
+    assert Counter(node["type"] for node in flow["nodes"]) == {LOAD: 9, KEEP: 24, VEGA: 9}
     # A loader into each of its scenarios' nodes, and each of those into its chart.
     assert len(flow["edges"]) == 48
     assert sorted(_dataset_read_by(node) for node in _of_type(flow, LOAD)) == sorted(DATASETS)
@@ -204,7 +202,8 @@ def test_each_table_has_a_row_that_loads_keeps_and_charts_it():
         names, template = CHARTS[dataset_id]
         assert len(row["keeps"]) == len(names)
         assert [circle for circle, _source in _inputs(flow, row["chart"]["id"])] == list(range(len(names)))
-        assert row["chart"]["type"] == f"curio.scout/{template}", dataset_id
+        assert row["chart"]["type"] == VEGA, dataset_id
+        assert row["chart"]["content"] == (CHARTS_DIR / f"{template}.vl.json").read_text(encoding="utf-8"), dataset_id
 
 
 def test_the_dataflow_declares_the_datasets_it_reads_as_the_backend_writes_them():
@@ -219,10 +218,8 @@ def test_the_dataflow_declares_the_datasets_it_reads_as_the_backend_writes_them(
         assert (ref["origin"], ref["producerNodeId"], ref["consumerNodeIds"]) == ("imported", None, [])
         assert ref["installedAt"]
         assert (REPO_ROOT / "datasets" / ref["dirName"] / "manifest.json").is_file()
-    # The package of its nine charts, which the stack installs with the
-    # examples because the dataflow declares it.
-    assert flow["packages"] == [COMPARISON_DIR]
-    assert (COMPARISON / "manifest.json").is_file()
+    # Its charts are Vega-Lite nodes, so it needs no package (#1270).
+    assert flow["packages"] == []
     assert not re.search(r"https?://(?!vega\.github\.io/schema/)", json.dumps(flow["nodes"])), (
         "a node reads from the network"
     )
@@ -284,23 +281,23 @@ def test_each_chart_takes_its_scenarios_in_the_order_of_their_boxes():
         assert set(chart["metadata"]) == {"keywords", "widgets"}, chart["title"]
 
 
-def test_every_chart_is_a_scout_chart_fed_by_its_scenarios_nodes_alone():
-    """Nine charts, each a node of Scout's that reads only its scenarios'
+def test_every_chart_is_a_vega_lite_chart_fed_by_its_scenarios_nodes_alone():
+    """Nine charts, each a Vega-Lite node that reads only its scenarios'
     Data Transformation nodes and feeds nothing."""
     flow = _flow()
     by_id = {node["id"]: node for node in flow["nodes"]}
-    charts = [node for node in flow["nodes"] if node["type"] in CHART_TYPES]
+    charts = [node for node in flow["nodes"] if node["type"] == VEGA]
     assert len(charts) == 9
     for chart in charts:
         assert {by_id[source]["type"] for _circle, source in _inputs(flow, chart["id"])} == {KEEP}
         assert _targets(flow, chart["id"]) == []
-    assert Counter(_row(flow, dataset_id)["chart"]["type"] for dataset_id in DATASETS) == Counter(CHART_TYPES)
+    assert {_row(flow, dataset_id)["chart"]["id"] for dataset_id in DATASETS} == {c["id"] for c in charts}
 
 
 def _template(template_id: str) -> dict:
-    manifest = json.loads((COMPARISON / "manifest.json").read_text(encoding="utf-8"))
-    (template,) = [t for t in manifest["templates"] if t["id"] == template_id]
-    return template
+    listed = json.loads((CHARTS_DIR / "charts.json").read_text(encoding="utf-8"))
+    (chart,) = [c for c in listed["charts"] if c["id"] == template_id]
+    return chart
 
 
 def _table_columns(dataset_id: str) -> list:
@@ -320,7 +317,7 @@ def test_each_chart_is_its_templates_spec_with_the_columns_in_its_widgets(datase
     row = _row(_flow(), dataset_id)
     template = _template(CHARTS[dataset_id][1])
     chart = row["chart"]
-    assert chart["content"] == (COMPARISON / template["source"]).read_text(encoding="utf-8")
+    assert chart["content"] == (CHARTS_DIR / template["spec"]).read_text(encoding="utf-8")
     widgets = chart["metadata"]["widgets"]
     assert [{key: w[key] for key in w if key != "value"} for w in widgets] == template["widgets"]
     values = {w["name"]: w.get("value", w["default"]) for w in widgets}

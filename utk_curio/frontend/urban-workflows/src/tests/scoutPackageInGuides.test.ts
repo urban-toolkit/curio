@@ -1,5 +1,5 @@
 /**
- * The guides name SCOUT's one node package, Scout (`curio.scout@1`), and never
+ * The guides name SCOUT's raster package, Rasterization (`curio.rasterization@1`), and never
  * the two it replaced: SCOUT Rasters (`scout.rasters@1`) and SCOUT Comparison
  * (`scout.comparison@1`), retired with no alias (the plan answering komar41's
  * review of his #914, step 10).
@@ -36,10 +36,10 @@ test("no guide names a retired SCOUT package or its node types", () => {
     expect(named).toEqual([]);
 });
 
-test("the Node Catalog guide lists Scout among the packages Curio ships", () => {
+test("the Node Catalog guide lists Rasterization among the packages Curio ships", () => {
     const guide = fs.readFileSync(path.join(DOCS, "NODE-CATALOG.md"), "utf-8");
-    const rows = guide.split("\n").filter((line) => line.startsWith("| `curio.scout@1` |"));
+    const rows = guide.split("\n").filter((line) => line.startsWith("| `curio.rasterization@1` |"));
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toContain("| Scout");
-    expect(rows[0]).toContain("packages/curio.scout@1/README.md");
+    expect(rows[0]).toContain("| Rasterization");
+    expect(rows[0]).toContain("packages/curio.rasterization@1/README.md");
 });

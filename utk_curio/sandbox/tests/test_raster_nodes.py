@@ -1,4 +1,4 @@
-"""The Raster Calculator node (``curio.scout@1``, Scout) runs the
+"""The Raster Calculator node (``curio.rasterization@1``, Scout) runs the
 code it starts with, the starter its package ships (the template's ``source``,
 ``sources/raster-calculator.py``, which the starters feed sends as it is), in
 process and in an isolated child: its cell operations give a raster on the
@@ -19,9 +19,9 @@ import numpy as np
 import pytest
 
 REPO = Path(__file__).resolve().parents[3]
-CALCULATOR = "curio.scout/raster-calculator"
+CALCULATOR = "curio.rasterization/raster-calculator"
 #: The package that ships the node.
-PACKAGE_MANIFEST = REPO / "packages" / "curio.scout@1" / "manifest.json"
+PACKAGE_MANIFEST = REPO / "packages" / "curio.rasterization@1" / "manifest.json"
 #: The modules a run of the package's node is handed: its ``scout_rasters``,
 #: which the node's code imports its operations from.
 PACKAGE_MODULES = {"root": str(PACKAGE_MANIFEST.parent / "sources"), "names": ["scout_rasters"]}

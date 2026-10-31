@@ -31,8 +31,8 @@ jest.mock('../../providers/StarterProvider', () => ({
       if (type === 'model.example.tiny/image-segmentation@1') {
         return [{ id: 's2', type, name: 'image-segmentation', description: '', accessLevel: 'ANY', code: DEFAULT_CELL, custom: false }];
       }
-      if (type === 'curio.scout/raster-calculator@1') return mockCalculatorStarters(type);
-      if (type === 'curio.scout/dots-with-a-range@1') return mockChartStarters(type);
+      if (type === 'curio.rasterization/raster-calculator@1') return mockCalculatorStarters(type);
+      if (type === 'acme.charts/dots-with-a-range@1') return mockChartStarters(type);
       if (type === 'curio.builtin/data-export@1') return mockExportStarters(type);
       return [];
     },
@@ -59,12 +59,14 @@ import { normalizeWidgets } from '../../utils/widgets/widgetModel';
 import type { NodeBehaviorData, UseNodeStateReturn } from '../../registry/types';
 
 const REPO_ROOT = path.resolve(__dirname, '../../../../../..');
-/** Scout, as the repository ships it. */
-const SCOUT = path.join(REPO_ROOT, 'packages', 'curio.scout@1');
+/** Rasterization, as the repository ships it. */
+const RASTERIZATION = path.join(REPO_ROOT, 'packages', 'curio.rasterization@1');
+/** The Vega-Lite charts that compare scenarios (#1270: Scout's chart templates once). */
+const CHARTS = path.join(REPO_ROOT, 'docs', 'examples', 'vega-lite-charts');
 
-/** The starter Scout ships for its Raster Calculator. */
+/** The starter Rasterization ships for its Raster Calculator. */
 function readCalculatorStarter(): string {
-  return fs.readFileSync(path.join(SCOUT, 'sources', 'raster-calculator.py'), 'utf-8');
+  return fs.readFileSync(path.join(RASTERIZATION, 'sources', 'raster-calculator.py'), 'utf-8');
 }
 
 /** What the starters feed (`application/starters.py`) lists for the Raster
@@ -93,9 +95,9 @@ function mockExportStarters(type: string) {
   }];
 }
 
-/** The spec Scout ships for its Dots with a range. */
+/** The spec of the Dots with a range chart. */
 function readChartStarter(): string {
-  return fs.readFileSync(path.join(SCOUT, 'sources', 'dots-with-a-range.vl.json'), 'utf-8');
+  return fs.readFileSync(path.join(CHARTS, 'dots-with-a-range.vl.json'), 'utf-8');
 }
 
 /** What the starters feed lists for Dots with a range: its package's
@@ -231,9 +233,9 @@ describe('a model package\'s template without a source', () => {
   });
 });
 
-/** Scout with its Raster Calculator's template, read from its manifest. */
+/** Rasterization with its Raster Calculator's template, read from its manifest. */
 function calculatorPack(): StarterPack {
-  const manifest = JSON.parse(fs.readFileSync(path.join(SCOUT, 'manifest.json'), 'utf-8'));
+  const manifest = JSON.parse(fs.readFileSync(path.join(RASTERIZATION, 'manifest.json'), 'utf-8'));
   const template = manifest.templates.find((t: { id: string }) => t.id === 'raster-calculator');
   return {
     packageId: manifest.id,
@@ -272,7 +274,7 @@ function calculatorPack(): StarterPack {
   };
 }
 
-describe('Scout\'s Raster Calculator, as the repository ships it', () => {
+describe('Rasterization\'s Raster Calculator, as the repository ships it', () => {
   beforeEach(() => clearPackageNodes());
   const { getStarters } = useStarterContext();
 
@@ -301,7 +303,7 @@ describe('Scout\'s Raster Calculator, as the repository ships it', () => {
   test('is a package node with its icon and the PACKAGE pill, and core holds no node or behavior of its own', async () => {
     const read = (dir: string) =>
       JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'packages', dir, 'manifest.json'), 'utf-8'));
-    const templates = read('curio.scout@1').templates;
+    const templates = read('curio.rasterization@1').templates;
     const template = templates.find((t: { id: string }) => t.id === 'raster-calculator');
     expect([template.behavior, template.source]).toEqual(['code', 'sources/raster-calculator.py']);
     expect(read(`${BUILTIN_PACKAGE_ID}@1`).templates.map((t: { id: string }) => t.id)).not.toContain('raster-calculator');
@@ -313,8 +315,8 @@ describe('Scout\'s Raster Calculator, as the repository ships it', () => {
     // Its icon is loaded on demand, as the app loads it before building descriptors.
     await loadIconRefs([template.iconRef]);
     const [descriptor] = registerPackageTemplates([calculatorPack()]);
-    expect(descriptor.package?.packageId).toBe('curio.scout');
-    expect(descriptor.package?.name).toBe('Scout');
+    expect(descriptor.package?.packageId).toBe('curio.rasterization');
+    expect(descriptor.package?.name).toBe('Rasterization');
     expect(descriptor.package?.source).toBe('sources/raster-calculator.py');
     expect(descriptor.icon).toBe(faCalculator);
     expect(descriptor.badge).toBe('PACKAGE');
@@ -324,41 +326,43 @@ describe('Scout\'s Raster Calculator, as the repository ships it', () => {
 
 type ShippedPack = Parameters<typeof registerPackageTemplates>[0][number];
 
-/** Scout with its Dots with a range's template, read from its manifest. */
+/** A package of charts whose Dots with a range is a template with that spec as
+ *  its starter (`charts.json` gives its label and widgets): the starter
+ *  mechanism any package may use, which Scout's charts did until #1270. */
 function chartPack(): ShippedPack {
-  const manifest = JSON.parse(fs.readFileSync(path.join(SCOUT, 'manifest.json'), 'utf-8'));
-  const template = manifest.templates.find((t: { id: string }) => t.id === 'dots-with-a-range');
+  const chart = JSON.parse(fs.readFileSync(path.join(CHARTS, 'charts.json'), 'utf-8'))
+    .charts.find((c: { id: string }) => c.id === 'dots-with-a-range');
   return {
-    packageId: manifest.id,
+    packageId: 'acme.charts',
     major: 1,
-    version: manifest.version,
-    name: manifest.name,
-    publisher: manifest.publisher,
-    description: manifest.description,
-    license: manifest.license,
+    version: '1.0.0',
+    name: 'Charts',
+    publisher: 'Acme',
+    description: '',
+    license: 'MIT',
     permissions: [],
     lineage: null,
     templates: [{
-      id: `${manifest.id}/dots-with-a-range@1`,
-      templateId: template.id,
-      label: template.label,
-      category: template.category,
-      engine: template.engine,
-      description: template.description,
+      id: 'acme.charts/dots-with-a-range@1',
+      templateId: chart.id,
+      label: chart.label,
+      category: 'vis_grammar',
+      engine: 'python',
+      description: chart.description,
       icon: null,
-      iconRef: template.iconRef,
-      behavior: template.behavior,
-      paletteOrder: template.paletteOrder,
-      editor: template.editor,
-      hasCode: template.hasCode,
-      hasWidgets: template.hasWidgets,
-      hasGrammar: template.hasGrammar,
-      grammarId: template.grammarId,
-      badge: template.badge,
-      inputPorts: template.inputPorts,
-      outputPorts: template.outputPorts,
-      source: template.source,
-      widgets: template.widgets,
+      iconRef: 'fa-solid:chart-line',
+      behavior: 'vega',
+      paletteOrder: 0,
+      editor: 'grammar',
+      hasCode: false,
+      hasWidgets: true,
+      hasGrammar: true,
+      grammarId: 'vega-lite',
+      badge: 'VEGA',
+      inputPorts: [{ cardinality: '[1,n]', types: ['DATAFRAME', 'GEODATAFRAME'] }],
+      outputPorts: [{ cardinality: '1', types: ['DATAFRAME', 'GEODATAFRAME'] }],
+      source: 'sources/dots-with-a-range.vl.json',
+      widgets: chart.widgets,
       bidirectional: false,
       containerStyle: null,
       hasProvenance: null,
@@ -383,7 +387,7 @@ function dropChart(data: Record<string, unknown>) {
   return { offered, node };
 }
 
-describe('Scout\'s charts, as the repository ships them (the plan answering komar41\'s review, step 6.2)', () => {
+describe('a package chart whose starter is its spec (Scout\'s charts until #1270)', () => {
   beforeEach(() => clearPackageNodes());
 
   test('a fresh drop opens with its template\'s spec, which reads its inputs by the dataset\'s chip, and its widgets', () => {

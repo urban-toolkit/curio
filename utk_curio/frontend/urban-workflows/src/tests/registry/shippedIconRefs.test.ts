@@ -163,7 +163,7 @@ describe('shipped package icons', () => {
 
   it('finds the shipped packages', () => {
     expect(refs.some(([dir]) => dir === 'curio.media@1')).toBe(true);
-    expect(tiles.some(([dir]) => dir === 'curio.scout@1')).toBe(true);
+    expect(tiles.some(([dir]) => dir === 'curio.rasterization@1')).toBe(true);
     expect(bundled.size).toBeGreaterThan(1);
   });
 
@@ -180,7 +180,7 @@ describe('shipped package icons', () => {
   });
 
   it("draws Scout's Raster Calculator with the calculator", () => {
-    const descriptor = getAllNodeTypes().find((d) => d.id === 'curio.scout/raster-calculator@1');
+    const descriptor = getAllNodeTypes().find((d) => d.id === 'curio.rasterization/raster-calculator@1');
     expect(descriptor?.icon).toBe(faCalculator);
   });
 });

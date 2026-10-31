@@ -82,7 +82,7 @@
       },
       {
         "id": "0a41219e-76c1-5e6c-bf83-a3b1c6a5b62f",
-        "type": "curio.scout/lines-with-band",
+        "type": "curio.builtin/vis-vega",
         "x": 3225,
         "y": 0,
         "title": "Lines with a band: pedestrians per hour on four streets",
@@ -229,7 +229,7 @@
       },
       {
         "id": "551a2c72-12f1-5d1f-9fa0-3d23d49c0e9d",
-        "type": "curio.scout/curves-by-group",
+        "type": "curio.builtin/vis-vega",
         "x": 3225,
         "y": 680,
         "title": "Curves by state: the chance of flood damage by water depth",
@@ -405,7 +405,7 @@
       },
       {
         "id": "63edc3b0-fe44-5cc7-88d0-614a9949d706",
-        "type": "curio.scout/bars-with-error-bars",
+        "type": "curio.builtin/vis-vega",
         "x": 3225,
         "y": 1280,
         "title": "Bars with error bars: flooded street length by depth",
@@ -574,7 +574,7 @@
       },
       {
         "id": "2fbccfb0-f2cd-5547-b32c-07aa0df4e1ea",
-        "type": "curio.scout/ensemble-strips",
+        "type": "curio.builtin/vis-vega",
         "x": 3225,
         "y": 1880,
         "title": "Ensemble strips: the peak depth of 50 simulated storms",
@@ -758,7 +758,7 @@
       },
       {
         "id": "1e10a2ff-779d-52ef-844c-32ceef88d028",
-        "type": "curio.scout/grouped-bars",
+        "type": "curio.builtin/vis-vega",
         "x": 3225,
         "y": 2480,
         "title": "Grouped bars: daily trips by mode",
@@ -894,7 +894,7 @@
       },
       {
         "id": "e4752aac-78c0-59c5-b95f-2f350fdc06dc",
-        "type": "curio.scout/stacked-bars-with-totals",
+        "type": "curio.builtin/vis-vega",
         "x": 3225,
         "y": 3060,
         "title": "Stacked bars with totals: a building's carbon by life-cycle stage",
@@ -1020,7 +1020,7 @@
       },
       {
         "id": "dda36433-f7da-516a-86b0-f4ed6c3a224c",
-        "type": "curio.scout/donuts",
+        "type": "curio.builtin/vis-vega",
         "x": 3225,
         "y": 3660,
         "title": "Donuts: park area in shade",
@@ -1168,7 +1168,7 @@
       },
       {
         "id": "65eaf95d-46aa-50e8-af79-741d17e9d35c",
-        "type": "curio.scout/weighted-matrix",
+        "type": "curio.builtin/vis-vega",
         "x": 3225,
         "y": 4260,
         "title": "Weighted matrix: what counts for or against three bike routes",
@@ -1309,7 +1309,7 @@
       },
       {
         "id": "c985c9fd-221b-55c1-8199-7284de02d2d8",
-        "type": "curio.scout/table",
+        "type": "curio.builtin/vis-vega",
         "x": 3225,
         "y": 4860,
         "title": "Table: three green roof systems",
@@ -2025,9 +2025,7 @@
         ]
       }
     ],
-    "packages": [
-      "curio.scout@1"
-    ],
+    "packages": [],
     "datasets": [
       {
         "datasetId": "data.curio.example-pedestrians-by-hour",

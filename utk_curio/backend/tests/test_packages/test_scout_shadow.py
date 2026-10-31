@@ -6,10 +6,10 @@ module ``deep_umbra``. The package's license is its code's, MIT; the model
 block holds the weights' license, SCOUT's permission.
 
 The node reads a height raster, the one raster of Rasterize Buildings
-(``curio.scout@1``), runs Deep Umbra on every zoom-16 tile of it
+(``curio.rasterization@1``), runs Deep Umbra on every zoom-16 tile of it
 that holds heights and returns the accumulated shadow as a raster on the same
 grid. SCOUT's metrics, the mean and median over the ground, are the
-statistics of a Raster Calculator (``curio.scout@1`` too) with the heights as
+statistics of a Raster Calculator (``curio.rasterization@1`` too) with the heights as
 its mask, as the shipped dataflow ``chicago-loop-shadow-towers.json`` wires it.
 
 The proof starts from SCOUT's own files, copied unchanged into
@@ -76,11 +76,11 @@ PACKAGE = REPO / "packages" / f"{MODEL_ID}@1"
 SOURCES = PACKAGE / "sources"
 MODULE = "deep_umbra"
 NODE_TYPE = "model.scout.deep-umbra/accumulated-shadow"
-CALCULATOR_TYPE = "curio.scout/raster-calculator"
-RASTERIZE_TYPE = "curio.scout/rasterize-buildings"
+CALCULATOR_TYPE = "curio.rasterization/raster-calculator"
+RASTERIZE_TYPE = "curio.rasterization/rasterize-buildings"
 #: Scout's Bars, which charts the two scenarios' mean shadow, and the
 #: Compare Scenarios type no node of the dataflow is any more.
-BARS_TYPE = "curio.scout/bars"
+BARS_TYPE = "curio.builtin/vis-vega"
 COMPARE_TYPE = "curio.builtin/compare-scenarios"
 #: The Raster Calculator's call that takes the change in shadow: Towers
 #: removed's shadow, on input_1, minus Existing's, on input_0.
@@ -131,7 +131,7 @@ BUILDINGS_MAP_DOCUMENT = {"map": {"layerRefs": [{
 #: season.
 SHADOW_RANGE = [0, 720]
 EXAMPLE = REPO / "docs" / "examples" / "24-scout-shadow-model-chicago-loop.json"
-RASTER_PACKAGE = REPO / "packages" / "curio.scout@1"
+RASTER_PACKAGE = REPO / "packages" / "curio.rasterization@1"
 RASTER_MODULE = "scout_rasters"
 #: The modules a run of Scout's Raster Calculator is handed, and those a run
 #: of Accumulated Shadow is: its own, then Scout's, which its package names in
@@ -1024,7 +1024,7 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
     from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code, model_ids_in_code
 
     spec = _dataflow()
-    assert spec["packages"] == ["curio.scout@1", f"{MODEL_ID}@1"]
+    assert spec["packages"] == ["curio.rasterization@1", f"{MODEL_ID}@1"]
     assert [ref["datasetId"] for ref in spec["datasets"]] == ["data.scout.loop-buildings"]
     nodes = {node["id"]: node for node in spec["nodes"]}
     by_type: dict[str, list] = {}
@@ -1108,9 +1108,10 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
     assert COMPARE_TYPE not in by_type, "a Compare Scenarios node is left"
     scenario_of = {node_id: scenario["id"] for scenario in spec["scenarios"] for node_id in scenario["nodes"]}
     (chart,) = by_type[BARS_TYPE]
-    (bars,) = [t for t in json.loads((RASTER_PACKAGE / "manifest.json").read_text(encoding="utf-8"))["templates"]
-               if t["id"] == "bars"]
-    assert chart["content"] == (RASTER_PACKAGE / bars["source"]).read_text(encoding="utf-8")
+    from utk_curio.backend.tests._support.vega_lite_charts import chart as vega_chart, spec as vega_spec
+
+    bars = vega_chart("bars")
+    assert chart["content"] == vega_spec("bars")
     assert set(chart["metadata"]) == {"keywords", "widgets"}, chart["metadata"]
     assert [{k: v for k, v in w.items() if k != "value"} for w in chart["metadata"]["widgets"]] == bars["widgets"]
     assert {w["name"]: w.get("value", w["default"]) for w in chart["metadata"]["widgets"]} == {
@@ -1231,7 +1232,7 @@ def test_example_24_holds_the_node_as_the_palette_drops_it_and_its_code_runs(wor
     from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
 
     spec = json.loads(EXAMPLE.read_text(encoding="utf-8"))["dataflow"]
-    assert spec["packages"] == ["curio.scout@1", f"{MODEL_ID}@1"]
+    assert spec["packages"] == ["curio.rasterization@1", f"{MODEL_ID}@1"]
     (node,) = [node for node in spec["nodes"] if node["type"] == NODE_TYPE]
     assert node["content"] == _source() == CELL
     assert node["metadata"]["widgets"] == _template()["widgets"]

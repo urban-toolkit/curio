@@ -81,7 +81,7 @@ VEGA_CHART = "node12"
 VEGA_POOL = "3a98c743-bee9-492a-b1ce-dbc17be97f14"
 #: Chicago Loop's chart, Scout's Bars, and the packages it needs.
 LOOP_CHART = "d0e547ba-e7d6-52e1-9c0e-f047443b715c"
-LOOP_PACKAGES = ("curio.scout@1", "model.scout.deep-umbra@1")
+LOOP_PACKAGES = ("curio.rasterization@1", "model.scout.deep-umbra@1")
 
 #: The stem of this module's frames.
 STEM = "chip-previews"
@@ -257,7 +257,7 @@ def test_the_unrun_chart_previews_its_stacked_inputs_and_scenario_colors(
     require_project_page()
     require_user_auth()
     nodes, session = _open(page, app_frontend, current_server, CHICAGO_LOOP, username="chip_previews_loop")
-    assert nodes[LOOP_CHART]["type"] == "curio.scout/bars", nodes[LOOP_CHART]["type"]
+    assert nodes[LOOP_CHART]["type"] == "curio.builtin/vis-vega", nodes[LOOP_CHART]["type"]
     store = [p.get("dirName") for p in api_json(f"{current_server}/api/packages", session["token"])["packages"]]
     missing = [package for package in LOOP_PACKAGES if package not in store]
     assert not missing, f"{missing} are not in the account's store {store}: start the stack --with-examples"

@@ -1,6 +1,6 @@
 """SCOUT's raster nodes in Curio, the Raster Calculator and SCOUT's building
 rasterizer (#662, step 17; the plan for #914, step 28.1), nodes of Scout
-(``curio.scout@1``) beside its seven charts (the plan answering komar41's
+(``curio.rasterization@1``) beside its seven charts (the plan answering komar41's
 review of his #914, step 10).
 
 The raster nodes: the Raster Calculator, which left the built-in nodes, and
@@ -38,7 +38,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[4]
-PACKAGE_ID = "curio.scout"
+PACKAGE_ID = "curio.rasterization"
 PACKAGE = REPO / "packages" / f"{PACKAGE_ID}@1"
 SOURCES = PACKAGE / "sources"
 MODULE = "scout_rasters"
@@ -178,34 +178,18 @@ def run_node(buildings, workspace, *, fails=False, **values):
 def test_the_package_holds_the_raster_calculator_and_rasterize_buildings():
     """Scout: one read-only package of the two raster nodes, each a
     computation node with its own icon and place in the package's palette
-    group, then the fifteen charts (``test_scout_comparison.py``), and the
+    group (its charts are Vega-Lite specs since #1270), and the
     module Rasterize Buildings' code imports."""
     from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
     manifest = load_package_manifest(PACKAGE)
     assert (manifest.package_id, manifest.major, manifest.name, manifest.publisher, manifest.license) == (
-        PACKAGE_ID, 1, "Scout", "Curio", "MIT",
+        PACKAGE_ID, 1, "Rasterization", "Curio", "MIT",
     )
     assert manifest.read_only is True and manifest.kind == "node"
-    chart = ("vis_grammar", "fa-solid:chart-line")
     assert [(t.template_id, t.label, t.category, t.icon_ref) for t in manifest.templates] == [
         ("raster-calculator", "Raster Calculator", "computation", "fa-solid:calculator"),
         ("rasterize-buildings", "Rasterize Buildings", "computation", "fa-solid:city"),
-        ("lines-with-band", "Lines with a band", *chart),
-        ("curves-by-group", "Curves by group", *chart),
-        ("bars-with-error-bars", "Bars with error bars", *chart),
-        ("ensemble-strips", "Ensemble strips", *chart),
-        ("stacked-bars-with-totals", "Stacked bars with totals", *chart),
-        ("donuts", "Donuts", *chart),
-        ("weighted-matrix", "Weighted matrix", *chart),
-        ("dots-with-a-range", "Dots with a range", *chart),
-        ("bars", "Bars", *chart),
-        ("grouped-bars", "Grouped bars", *chart),
-        ("lines", "Lines", *chart),
-        ("points", "Points", *chart),
-        ("pie", "Pie", *chart),
-        ("lollipops", "Lollipops", *chart),
-        ("table", "Table", *chart),
     ]
     orders = [t.palette_order for t in manifest.templates]
     assert all(isinstance(order, int) for order in orders) and orders == sorted(set(orders)), orders
@@ -286,7 +270,7 @@ def test_raster_conversion_is_retired_and_no_shipped_dataflow_names_the_old_type
 def test_every_shipped_dataflow_with_a_raster_node_declares_the_package():
     """A dataflow's lockfile is how opening it, a scenario dropped from it and
     ``--with-examples`` add the package: each shipped dataflow with one of the
-    two raster nodes names ``curio.scout@1``, and of the others only those
+    two raster nodes names ``curio.rasterization@1``, and of the others only those
     with the package's charts do."""
     with_a_raster_node, with_a_node, declaring = set(), set(), set()
     for pattern in SHIPPED_JSON[:2]:
@@ -306,11 +290,8 @@ def test_every_shipped_dataflow_with_a_raster_node_declares_the_package():
         "docs/examples/dataflows/lower-manhattan-park-shade.json",
         "docs/examples/dataflows/quad-cities-flood-vulnerability.json",
     }, with_a_raster_node
-    assert with_a_node == declaring == with_a_raster_node | {
-        "docs/examples/06-back-bay-road-sunlight.json",
-        "docs/examples/dataflows/chicago-rain-wind-routing.json",
-        "docs/examples/dataflows/scenario-comparison-charts.json",
-    }, (with_a_node, declaring)
+    # Its charts are Vega-Lite nodes now (#1270): only a raster node needs it.
+    assert with_a_node == declaring == with_a_raster_node, (with_a_node, declaring)
 
 
 # ---------------------------------------------------------------------------

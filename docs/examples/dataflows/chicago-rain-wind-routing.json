@@ -196,7 +196,7 @@
       },
       {
         "id": "1f8b6d2c-4e9a-4b53-9c7f-2a5e8d0b3f16",
-        "type": "curio.scout/bars",
+        "type": "curio.builtin/vis-vega",
         "x": 2150,
         "y": 520,
         "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"data\": {\n    \"name\": \"[!! inputs !!]\"\n  },\n  \"mark\": {\n    \"type\": \"bar\",\n    \"tooltip\": true\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": \"Scenario\",\n      \"axis\": {\n        \"labelAngle\": 0\n      },\n      \"sort\": [!! scenario order !!]\n    },\n    \"y\": {\n      \"field\": \"[!! y !!]\",\n      \"type\": \"quantitative\",\n      \"aggregate\": \"[!! combine !!]\",\n      \"title\": \"[!! y_title !!]\"\n    },\n    \"color\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": \"Scenario\",\n      \"scale\": [!! scenario colors !!]\n    }\n  }\n}\n",
@@ -243,7 +243,7 @@
       },
       {
         "id": "4d9a7f3e-8c2b-4e16-a5d0-7b3f1e9c6a82",
-        "type": "curio.scout/bars",
+        "type": "curio.builtin/vis-vega",
         "x": 2150,
         "y": 940,
         "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"data\": {\n    \"name\": \"[!! inputs !!]\"\n  },\n  \"mark\": {\n    \"type\": \"bar\",\n    \"tooltip\": true\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": \"Scenario\",\n      \"axis\": {\n        \"labelAngle\": 0\n      },\n      \"sort\": [!! scenario order !!]\n    },\n    \"y\": {\n      \"field\": \"[!! y !!]\",\n      \"type\": \"quantitative\",\n      \"aggregate\": \"[!! combine !!]\",\n      \"title\": \"[!! y_title !!]\"\n    },\n    \"color\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": \"Scenario\",\n      \"scale\": [!! scenario colors !!]\n    }\n  }\n}\n",
@@ -290,7 +290,7 @@
       },
       {
         "id": "a2e6c9f4-5b1d-4f38-8d7a-0c4e9b2f5d67",
-        "type": "curio.scout/bars",
+        "type": "curio.builtin/vis-vega",
         "x": 2150,
         "y": 1360,
         "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"data\": {\n    \"name\": \"[!! inputs !!]\"\n  },\n  \"mark\": {\n    \"type\": \"bar\",\n    \"tooltip\": true\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": \"Scenario\",\n      \"axis\": {\n        \"labelAngle\": 0\n      },\n      \"sort\": [!! scenario order !!]\n    },\n    \"y\": {\n      \"field\": \"[!! y !!]\",\n      \"type\": \"quantitative\",\n      \"aggregate\": \"[!! combine !!]\",\n      \"title\": \"[!! y_title !!]\"\n    },\n    \"color\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": \"Scenario\",\n      \"scale\": [!! scenario colors !!]\n    }\n  }\n}\n",
@@ -337,7 +337,7 @@
       },
       {
         "id": "b7f3a1d8-6e4c-4a29-9b2e-5d8a0f3c7e14",
-        "type": "curio.scout/bars",
+        "type": "curio.builtin/vis-vega",
         "x": 2150,
         "y": 1780,
         "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"data\": {\n    \"name\": \"[!! inputs !!]\"\n  },\n  \"mark\": {\n    \"type\": \"bar\",\n    \"tooltip\": true\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": \"Scenario\",\n      \"axis\": {\n        \"labelAngle\": 0\n      },\n      \"sort\": [!! scenario order !!]\n    },\n    \"y\": {\n      \"field\": \"[!! y !!]\",\n      \"type\": \"quantitative\",\n      \"aggregate\": \"[!! combine !!]\",\n      \"title\": \"[!! y_title !!]\"\n    },\n    \"color\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": \"Scenario\",\n      \"scale\": [!! scenario colors !!]\n    }\n  }\n}\n",
@@ -542,7 +542,6 @@
       }
     ],
     "packages": [
-      "curio.scout@1",
       "model.scout.weather-gnn@1"
     ],
     "datasets": [

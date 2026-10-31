@@ -5,7 +5,7 @@ scenarios over Boston's Back Bay: **Baseline**, with every building at its own h
 **Twice as tall**, with every building's height doubled, and **Two towers removed**, with two
 towers taken out: 200 Clarendon, the tallest, and Raffles. The height factor is a widget on the
 shadow step, and the towers are removed by a Map Editor node. Each scenario ends in a Roads node
-that takes its roads with their sunlight. Scout's Bars node charts each scenario's mean road
+that takes its roads with their sunlight. A Vega-Lite node charts each scenario's mean road
 sunlight on the June solstice from them, and a Python node takes the sunlight each road loses when
 the buildings get twice as tall, which an Autark map after it draws.
 
@@ -202,7 +202,8 @@ chip:
 return [!! input_0:table_osm_roads !!]
 ```
 
-**Mean sunlight** is a **Bars** node of the Scout package (`curio.scout@1`). A chart reads one
+**Mean sunlight** is a **Vega-Lite** node with the Bars spec of
+[docs/examples/vega-lite-charts](vega-lite-charts/README.md). A chart reads one
 table on each of its inputs, and its three take the three Roads nodes, in the order the dataflow
 lists the scenarios. It reads their roads stacked as one table, `[!! inputs !!]`, each road under the
 `scenario` and `scenario_name` of the box its input comes from, and draws a bar for each scenario's

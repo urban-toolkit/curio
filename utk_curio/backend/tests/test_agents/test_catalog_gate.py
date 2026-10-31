@@ -54,7 +54,7 @@ DL = "curio.builtin/data-loading"
 CA = "curio.builtin/computation-analysis"
 JS = "curio.builtin/js-computation"
 VEGA = "curio.builtin/vis-vega"
-RASTER_CALCULATOR = "curio.scout/raster-calculator"
+RASTER_CALCULATOR = "curio.rasterization/raster-calculator"
 DDRNET = "model.curio.ddrnet23-slim"
 HEAT = "data.x.heat"
 CENSUS = sg.SecretRef("census", "api.census.gov", "query:key")
@@ -412,7 +412,7 @@ class TestImports:
     gets none. An import of any other module, a library's, is not judged."""
 
     def test_a_module_the_nodes_template_does_not_get_is_refused(self, app, tmp_curio):
-        _add_package(USER, "curio.scout@1")
+        _add_package(USER, "curio.rasterization@1")
         refusal = _gate(RASTERS, node_type=CA)
         assert refusal and "import scout_rasters (line 1)" in refusal, refusal
         # The refusal names the nodes that import it.
@@ -426,7 +426,7 @@ class TestImports:
 
     def test_solve_refuses_the_import_before_the_sandbox(self, app, tmp_curio):
         routes_proposals.TestNodeCreate()._write_builtin_package(verified_rounds.KEY, templates=verified_rounds.TEMPLATES)
-        _add_package(verified_rounds.KEY, "curio.scout@1")
+        _add_package(verified_rounds.KEY, "curio.rasterization@1")
         node = {"id": "n1", "type": CA, "goal": "subtract the two rasters", "content": ""}
         exec_fn = verified_rounds._Exec()
         _events, outcome, inputs = verified_rounds._rounds(

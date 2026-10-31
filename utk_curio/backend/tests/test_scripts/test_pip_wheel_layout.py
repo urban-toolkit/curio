@@ -536,7 +536,7 @@ def test_a_pip_installs_agents_read_every_skill_a_shipped_package_ships(pip_inst
         for package in sorted(path for path in (REPO / "packages").iterdir() if path.is_dir())
         for folder in skill_folders(package)
     }
-    assert "curio.scout@1/scout" in clone, clone
+    assert "curio.rasterization@1/rasterization" in clone, clone
     found = _read(pip_install, "package_skills")
     package = (pip_install.site / "utk_curio").resolve()
     assert Path(found["root"]).resolve().is_relative_to(package), f"{found['root']} is outside {package}"

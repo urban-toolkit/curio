@@ -915,8 +915,8 @@ node with several inputs.
   `[!! inputs !!]` names ([Every input in one dataset](#every-input-in-one-dataset)) draws every input's
   rows, each named by the scenario box its input comes from, and its scenario chips
   draw them in the boxes' colors and order
-  ([Scenario colors and order](#scenario-colors-and-order)). The Scout package's
-  charts, below, are such nodes.
+  ([Scenario colors and order](#scenario-colors-and-order)). The fifteen chart specs
+  below are written for such nodes.
 - **The difference of two rasters.** A [Raster Calculator](#rasters) subtracts them
   cell by cell: `raster_calculate("subtract", [input_1, input_0],
   output_file=curio_output_file)` gives input_1 minus input_0, and with
@@ -955,22 +955,19 @@ diverging scheme centered on 0, and an absolute one on a sequential scheme:
 }
 ```
 
-The Scout package (`curio.scout@1`) has fifteen charts that compare scenarios:
-**Lines with a band**, **Curves by group**, **Bars with error bars**, **Ensemble
-strips**, **Stacked bars with totals**, **Donuts**, **Weighted matrix**, **Dots with a
-range**, **Bars**, **Grouped bars**, **Lines**, **Points**, **Pie**, **Lollipops** and
-**Table**. Each is a Vega-Lite node that takes one input per scenario: connect each
-scenario's outcome to one of its circles. Its spec reads its inputs as the dataset
-`[!! inputs !!]` ([Every input in one dataset](#every-input-in-one-dataset)), every row named by
-the scenario box its input comes from, and its scenario chips draw each scenario in its
-box's color, in the order the dataflow lists the boxes. Set the columns it plots in its **Widgets** tab,
-and the Vega-Lite aggregate Bars, Grouped bars, Lines, Pie and Lollipops combine a
-scenario's rows with (**Combine**: `mean`, `sum`, `median`, `min`, `max` or `count`). A
-new node's widgets hold their own names (`y`, `part`), so the chart says which column
-its inputs lack until you set them. A new chart opens with its template's spec,
-which you can edit. The [package's README](../packages/curio.scout@1/README.md) lists
-each chart's widgets. Add the package to a dataflow from the Node Catalog drawer; the
-charts are then under **Scout** in the Tools panel's **Node Catalog** dropdown.
+A chart that compares scenarios is a **Vega-Lite** node that takes one input per
+scenario: connect each scenario's outcome to one of its circles. Its spec reads its
+inputs as the dataset `[!! inputs !!]` ([Every input in one dataset](#every-input-in-one-dataset)),
+every row named by the scenario box its input comes from, and its scenario chips draw
+each scenario in its box's color, in the order the dataflow lists the boxes.
+[docs/examples/vega-lite-charts](examples/vega-lite-charts/README.md) has fifteen specs
+to start from: **Lines with a band**, **Curves by group**, **Bars with error bars**,
+**Ensemble strips**, **Stacked bars with totals**, **Donuts**, **Weighted matrix**,
+**Dots with a range**, **Bars**, **Grouped bars**, **Lines**, **Points**, **Pie**,
+**Lollipops** and **Table**. Paste one into a Vega-Lite node's grammar editor and add
+the widgets it lists in its **Widgets** tab, such as the column it plots and
+**Combine**, the Vega-Lite aggregate of a scenario's rows (`mean`, `sum`, `median`,
+`min`, `max` or `count`).
 
 The **Scenario Catalog** lists the scenarios of all your projects, each with its
 shared context, its own nodes and outcomes and the results its project saved. Open it from
@@ -1454,9 +1451,9 @@ dashboard the node shows the output saved with the dataflow and never joins.
 
 The **Raster Calculator** works on rasters: a `rasterio` dataset from a Python
 node or the Data Catalog, or a raster an Autark node hands on. It is a node of
-Scout (`curio.scout@1`), a package that ships with Curio: once the
+Rasterization (`curio.rasterization@1`), a package that ships with Curio: once the
 package is in the dataflow (**Add to project** in the Node Catalog drawer), the
-node is under **Scout** in the Tools panel's **Node Catalog** dropdown.
+node is under **Rasterization** in the Tools panel's **Node Catalog** dropdown.
 It is a Python node whose code is written for it when it
 is dropped: input_0 minus input_1, with its other operations listed above it,
 statistics among them. Return another call to change what it does. Connect the
@@ -1471,8 +1468,8 @@ return raster_calculate("subtract", [input_0, input_1], output_file=curio_output
 
 A Python node of no package has no raster operations, so a raster step is a
 Raster Calculator node. A node of another package uses them when its package
-names Scout in `dependencies.packages` (see the
-[package's README](../packages/curio.scout@1/README.md#raster-math-in-another-package)).
+names Rasterization in `dependencies.packages` (see the
+[package's README](../packages/curio.rasterization@1/README.md#raster-math-in-another-package)).
 
 **Cell by cell**, an operation over rasters on one grid gives a raster, which
 `output_file=curio_output_file` writes where the node writes its files:

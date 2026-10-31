@@ -1,5 +1,5 @@
 /**
- * Scout's seven preset charts (the plan answering komar41's review, step 6.2):
+ * Seven preset charts of `docs/examples/vega-lite-charts` (Scout's until #1270) (the plan answering komar41's review, step 6.2):
  * Bars, Grouped bars, Lines, Points, Pie, Lollipops and Table, each a
  * Vega-Lite template whose columns, Combine and axis titles are widgets.
  *
@@ -37,28 +37,30 @@ import { normalizeWidgets, type WidgetDef, type WidgetValue } from "../../utils/
 
 const REPO_ROOT = path.resolve(__dirname, "../../../../../..");
 /** Scout, as the repository ships it. */
-const SCOUT = path.join(REPO_ROOT, "packages", "curio.scout@1");
+/** The Vega-Lite charts that compare scenarios (#1270: Scout's templates once). */
+const CHARTS_DIR = path.join(REPO_ROOT, "docs", "examples", "vega-lite-charts");
 
 type Json = Record<string, any>;
 
 interface Template {
   id: string;
   label: string;
-  source: string;
+  /** Its spec file, in the charts folder. */
+  spec: string;
   widgets: WidgetDef[];
 }
 
 /** One of Scout's templates. Read when asked, so a checkout without it fails
  *  test by test. */
 function template(id: string): Template {
-  const manifest = JSON.parse(fs.readFileSync(path.join(SCOUT, "manifest.json"), "utf-8"));
-  const found = (manifest.templates as Template[]).find((t) => t.id === id);
+  const listed = JSON.parse(fs.readFileSync(path.join(CHARTS_DIR, "charts.json"), "utf-8"));
+  const found = (listed.charts as Template[]).find((t) => t.id === id);
   if (!found) throw new Error(`Scout has no template ${id}`);
   return found;
 }
 
 function source(id: string): string {
-  return fs.readFileSync(path.join(SCOUT, template(id).source), "utf-8");
+  return fs.readFileSync(path.join(CHARTS_DIR, template(id).spec), "utf-8");
 }
 
 /** The seven preset charts, each by its template id, with its label. */

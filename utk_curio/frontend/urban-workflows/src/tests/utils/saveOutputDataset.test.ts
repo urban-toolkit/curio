@@ -146,7 +146,7 @@ describe('a package chart that draws with Vega-Lite saves nothing of its own', (
 
   test('it is a sink, as the Vega-Lite node is, versioned or not', () => {
     expect(isNonProducingNodeType(VEGA_LITE_TEMPLATE)).toBe(true);
-    expect(isNonProducingNodeType('curio.scout/donuts')).toBe(true);
+    expect(isNonProducingNodeType('acme.charts/donuts')).toBe(true);
   });
 
   test('its footer has no save toggle', () => {

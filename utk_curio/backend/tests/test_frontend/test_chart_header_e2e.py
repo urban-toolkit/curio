@@ -1,7 +1,7 @@
 """Playwright E2E: a chart's header lists every chip it can use (#662).
 
 The shipped test dataflow ``chicago-loop-shadow-towers.json``, opened with no
-run. Its chart "Mean accumulated shadow", Scout's Bars (``curio.scout/bars``),
+run. Its chart "Mean accumulated shadow", Scout's Bars (``curio.builtin/vis-vega``),
 reads the two scenarios' shadow statistics stacked, ``[!! inputs !!]``, and
 draws them with ``[!! scenario colors !!]`` and ``[!! scenario order !!]``:
 
@@ -52,7 +52,7 @@ DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "chicago-loop-s
 TEST_NAME = "test_the_chart_header_lists_its_chips_and_each_scenario_tag_drags_its_chip"
 #: Scout's Bars, "Mean accumulated shadow".
 CHART = "d0e547ba-e7d6-52e1-9c0e-f047443b715c"
-PACKAGES = ("curio.scout@1", "model.scout.deep-umbra@1")
+PACKAGES = ("curio.rasterization@1", "model.scout.deep-umbra@1")
 SCENARIO_MIME = "application/x-curio-scenario"
 #: Each scenario tag under Scenarios, and what it writes dropped at the end of
 #: the spec's first line, outside any string.
@@ -191,7 +191,7 @@ def test_the_chart_header_lists_its_chips_and_each_scenario_tag_drags_its_chip(
     spec = json.loads(DATAFLOW.read_text(encoding="utf-8"))
     dataflow = spec["dataflow"]
     nodes = {node["id"]: node for node in dataflow["nodes"]}
-    assert nodes[CHART]["type"] == "curio.scout/bars", nodes[CHART]["type"]
+    assert nodes[CHART]["type"] == "curio.builtin/vis-vega", nodes[CHART]["type"]
     colors = {scenario["name"]: scenario["color"] for scenario in dataflow["scenarios"]}
     assert colors == {"Existing": "#2a9d8f", "Towers removed": "#e76f51"}, colors
 

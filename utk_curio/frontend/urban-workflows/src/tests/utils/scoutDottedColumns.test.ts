@@ -2,7 +2,7 @@
  * @jest-environment node
  */
 /**
- * Scout's charts over a column whose name holds a dot or a bracket, such as
+ * The Vega-Lite charts of `docs/examples/vega-lite-charts` over a column whose name holds a dot or a bracket, such as
  * `rain.mm` (issue 1042). Vega-Lite reads a `.` or a `[` in a field as a path
  * into the row, so `rain.mm` is `mm` inside `rain`: a chip where Vega-Lite
  * reads a field writes the name escaped, `rain\.mm`, and anywhere else, a
@@ -32,20 +32,22 @@ const vegaLite = require(path.join(NODE_MODULES, "vega-lite/build/vega-lite.min.
 
 const REPO_ROOT = path.resolve(__dirname, "../../../../../..");
 /** Scout, as the repository ships it. */
-const SCOUT = path.join(REPO_ROOT, "packages", "curio.scout@1");
+/** The Vega-Lite charts that compare scenarios (#1270: Scout's templates once). */
+const CHARTS_DIR = path.join(REPO_ROOT, "docs", "examples", "vega-lite-charts");
 
 type Json = Record<string, any>;
 
 interface Template {
   id: string;
-  source: string;
+  /** Its spec file, in the charts folder. */
+  spec: string;
   widgets: WidgetDef[];
 }
 
 /** One of Scout's templates, read when asked. */
 function template(id: string): Template {
-  const manifest = JSON.parse(fs.readFileSync(path.join(SCOUT, "manifest.json"), "utf-8"));
-  const found = (manifest.templates as Template[]).find((t) => t.id === id);
+  const listed = JSON.parse(fs.readFileSync(path.join(CHARTS_DIR, "charts.json"), "utf-8"));
+  const found = (listed.charts as Template[]).find((t) => t.id === id);
   if (!found) throw new Error(`Scout has no template ${id}`);
   return found;
 }
@@ -60,9 +62,9 @@ const BOXES: InputScope[] = [
 /** *id*'s spec, its widgets set to *values*, as a Vega-Lite node writes it:
  * its scenario chips over the two boxes. */
 function written(id: string, values: Record<string, WidgetValue>): Json {
-  const { widgets, source } = template(id);
+  const { widgets, spec: source } = template(id);
   const set = widgets.map((w) => (w.name in values ? { ...w, value: values[w.name] } : w));
-  const text = fs.readFileSync(path.join(SCOUT, source), "utf-8");
+  const text = fs.readFileSync(path.join(CHARTS_DIR, source), "utf-8");
   const { code, problems } = resolveReferences(
     text,
     { widgets: normalizeWidgets(set), inputs: BOXES },
@@ -218,10 +220,9 @@ describe("each of Scout's charts", () => {
       }),
     );
 
-  /** Every chart Scout ships: its templates that draw with Vega-Lite. */
-  const CHARTS: string[] = JSON.parse(fs.readFileSync(path.join(SCOUT, "manifest.json"), "utf-8"))
-    .templates.filter((t: Json) => t.grammarId === "vega-lite")
-    .map((t: Json) => t.id);
+  /** Every chart of the charts folder. */
+  const CHARTS: string[] = JSON.parse(fs.readFileSync(path.join(CHARTS_DIR, "charts.json"), "utf-8"))
+    .charts.map((t: Json) => t.id);
 
   test.each(CHARTS)("%s draws over columns whose names hold a dot or a bracket", async (id) => {
     expect(Object.keys(VALUES)).toContain(id);

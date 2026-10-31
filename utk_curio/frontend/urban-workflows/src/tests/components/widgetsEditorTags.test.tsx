@@ -134,14 +134,14 @@ describe("a run", () => {
   });
 });
 
-describe("a Scout chart dropped before an input is wired", () => {
-  /** Scout's Bars, as the repository ships it: its spec and its widgets. Read
-   *  when asked, so a checkout without it fails test by test. */
+describe("a Bars chart pasted before an input is wired", () => {
+  /** The Bars chart of `docs/examples/vega-lite-charts`: its spec and its
+   *  widgets. Read when asked, so a checkout without it fails test by test. */
   function bars(): { spec: string; widgets: unknown } {
-    const scout = path.join(path.resolve(__dirname, "../../../../../.."), "packages", "curio.scout@1");
-    const manifest = JSON.parse(fs.readFileSync(path.join(scout, "manifest.json"), "utf-8"));
-    const template = manifest.templates.find((t: { id: string }) => t.id === "bars");
-    return { spec: fs.readFileSync(path.join(scout, template.source), "utf-8"), widgets: template.widgets };
+    const charts = path.join(path.resolve(__dirname, "../../../../../.."), "docs", "examples", "vega-lite-charts");
+    const listed = JSON.parse(fs.readFileSync(path.join(charts, "charts.json"), "utf-8"));
+    const chart = listed.charts.find((t: { id: string }) => t.id === "bars");
+    return { spec: fs.readFileSync(path.join(charts, chart.spec), "utf-8"), widgets: chart.widgets };
   }
 
   test("lists the dataset's chip among the references that do not resolve, until an input is wired", () => {

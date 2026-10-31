@@ -6,7 +6,7 @@ SCOUT's flood example's, which take every cell of SCOUT's 2592 by 2064 cell grid
 each wired into the nodes that read it; three Data Loading nodes reading the
 region's window of SCOUT's rasters, which the Data Catalog holds whole; and two
 scenarios, "No NbS" and "NbS" (its copy), each holding a Raster Calculator
-(``curio.scout@1``) that
+(``curio.rasterization@1``) that
 chooses the depth by nature-based solution (NbS) class, with its choice of NbS,
 a second that takes the depth's statistics, and an Autark map of the depth.
 Another Raster Calculator takes the size of NbS minus No NbS, which an Autark
@@ -100,14 +100,14 @@ if TYPE_CHECKING:
 
 DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "quad-cities-flood-vulnerability.json"
 TEST_NAME = "test_two_flood_scenarios_are_mapped_and_charted"
-CALCULATOR_TYPE = "curio.scout/raster-calculator"
-RASTERS_PACKAGE = "curio.scout@1"
+CALCULATOR_TYPE = "curio.rasterization/raster-calculator"
+RASTERS_PACKAGE = "curio.rasterization@1"
 MAP_TYPE = "curio.builtin/autk-grammar"
 COMPARE_TYPE = "curio.builtin/compare-scenarios"
 TRANSFORMATION_TYPE = "curio.builtin/data-transformation"
 PYTHON_TYPE = "curio.builtin/computation-analysis"
 LOADER_TYPE = "curio.builtin/data-loading"
-BARS_TYPE, POINTS_TYPE, GROUPED_BARS_TYPE = "curio.scout/bars", "curio.scout/points", "curio.scout/grouped-bars"
+BARS_TYPE, POINTS_TYPE, GROUPED_BARS_TYPE = "curio.builtin/vis-vega", "curio.builtin/vis-vega", "curio.builtin/vis-vega"
 CHART_TYPES = (BARS_TYPE, POINTS_TYPE, GROUPED_BARS_TYPE)
 COLORS = {"no-nbs": "#e76f51", "nbs": "#2a9d8f"}
 #: The legend title of the Autark map after the Depth change.

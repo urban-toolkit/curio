@@ -122,7 +122,7 @@ def test_a_type_no_installed_package_provides_is_failed_by_the_run_not_left_to_t
     assert node_role({"id": "n", "type": node_type, "content": ""}, roster) == "missing"
 
 
-@pytest.mark.parametrize("node_type", ["curio.scout/donuts@1", "curio.scout/lines-with-band"])
+@pytest.mark.parametrize("node_type", ["curio.builtin/vis-vega", "curio.builtin/vis-vega"])
 def test_a_package_chart_that_draws_with_vega_lite_is_forwarded_as_the_vega_lite_node_is(node_type):
     """Scout's charts draw with the Vega-Lite node's behavior: a run
     hands their input on, as it does a Vega-Lite node's, and a tab draws them

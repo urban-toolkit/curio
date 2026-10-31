@@ -1,0 +1,14 @@
+{
+  "sha256": {
+    "README.md": "c5af2169d3083277581a1e0f6603887359956b01ce9ff50a2a78055fbe65221b",
+    "manifest.json": "46a94f94099c4aeba6ed824638f2474715ee80146d3782cbf11412fe08249242",
+    "skills/rasterization/SKILL.md": "d2b96bbea63dc8a1e5fc2b1f04a000b335a6a5faaba00d33b50f6f9039c69952",
+    "sources/raster-calculator.py": "463a522521da2453290c6a06525edf97f305eb4082dc304b85c8fbe9e28761dc",
+    "sources/rasterize-buildings.py": "b0739294eb6951269f77f4adc06abbd6f012c96c365932cfe7a857cac86fecf6",
+    "sources/scout_rasters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sources/scout_rasters/convert_to_raster.py": "62eda82b3d6d12258e9c2d6d173da84b5a8c445e2b31d1fe62eab6587e36d676",
+    "sources/scout_rasters/node_outputs.py": "6d5a741822043189ab80f3fd92d7c3d09a6b3e4b3d09d848d73331ff0b76e517",
+    "sources/scout_rasters/raster_algebra.py": "d1edb234e642c00445b01cdaf52fb8548c768dd38fcb90ff5993477da104dfcf",
+    "sources/scout_rasters/web_tiles.py": "38c3d051eb9d48a3653cab276450de20999b16d2c2d1faef9b3e267436f5a2c2"
+  }
+}

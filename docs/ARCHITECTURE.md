@@ -493,19 +493,18 @@ scenario's outcome on a circle of its own:
 
 - A chart is a Vega-Lite node whose spec reads `[!! inputs !!]`
   ([Scenarios in charts and maps](#scenarios-in-charts-and-maps)).
-- The Scout package (`packages/curio.scout@1`) holds fifteen Vega-Lite templates
-  that compare scenarios. Each names `behavior: vega` and `grammarId: vega-lite`,
-  takes `[1,n]` on its input port, a circle per scenario, and its `.vl.json` starter
-  is the node's whole content (`starterIsContent`). The starter reads
-  `"data": {"name": "[!! inputs !!]"}`, so the node gets its inputs stacked
+- A chart that compares scenarios is a built-in Vega-Lite node
+  (`curio.builtin/vis-vega`). Fifteen specs to start from are in
+  [`docs/examples/vega-lite-charts`](examples/vega-lite-charts/README.md). Each
+  reads `"data": {"name": "[!! inputs !!]"}`, so the node gets its inputs stacked
   ([Scenarios in charts and maps](#scenarios-in-charts-and-maps)), writes the scale
   and the order of `scenario_name` through its scenario chips (Table and Stacked bars
   with totals, whose text marks color by scenario, in `scenario text_colors`), and
-  reads the columns it plots from widgets through chips (`"field": "[!! y !!]"`).
-  Bars, Grouped bars, Lines, Pie and Lollipops write Combine as the measure's
-  Vega-Lite aggregate (`"aggregate": "[!! combine !!]"`), and the Table writes its
-  list of columns where a list stands (`"fold": [!! columns !!]`), so a starter is
-  JSON once its chips are written.
+  reads the columns it plots from the node's widgets through chips
+  (`"field": "[!! y !!]"`, `"aggregate": "[!! combine !!]"`, `"fold": [!! columns !!]`).
+  They were the Scout package's chart templates until #1270; a saved
+  `curio.scout/<chart>` node loads as a Vega-Lite node with the same spec and
+  widgets (`projects/legacy_node_types.py`, `utils/flowNodeCanonicalType.ts`).
 - A template that names `grammarId: vega-lite` is a Vega-Lite node for every rule
   keyed on the node's kind. On the canvas, `isVegaLiteNodeType`
   (`registry/vegaLiteNodes.ts`) decides drawing from a restored input
@@ -1090,7 +1089,7 @@ expressions such as `datum['rain.mm']`, and the names a transform writes
   its geometry column escaped. A path through a column, `zone.id` beside a
   column `zone`, names none.
 - **Tests.** `codeReferences.cases.json` holds the positions, read by Jest and
-  pytest; `scoutDottedColumns.test.ts` draws each Scout chart over columns whose
+  pytest; `scoutDottedColumns.test.ts` draws each chart of `docs/examples/vega-lite-charts` over columns whose
   names hold a dot or a bracket with the vega-lite the app bundles, and expects
   the marks it draws over the same columns without one.
 - **Vega-Lite's own limits.** An encoding over a column whose name holds a
@@ -1144,7 +1143,7 @@ Between nodes a raster travels as autk-db's `getRaster` collection in an envelop
 
 ### Raster algebra
 
-Operations over rasters are the Scout package's: [`scout_rasters/raster_algebra.py`](../packages/curio.scout@1/sources/scout_rasters/raster_algebra.py). The Raster Calculator's code imports `raster_calculate` and `raster_statistics` from it, and a node of another package imports them when its package names Scout in `dependencies.packages`, which hands the node Scout's modules too (the package modules paragraph of [Running a node](#step-by-step-running-a-node)). The namespace a Python node runs in holds no raster operations. They run in Python, where a node's rasters are: autk-db reads every band as float32 and loads at most 4096 by 4096 cells, which is what a map draws, not what a computation needs. Rasters are combined only on one grid (`grid_differences`: size, origin, resolution, rotation, CRS, to a relative 1e-9), and a refusal names both grids in words (`describe_grid`, numbers written as JavaScript writes them). A cell is nodata where its raster holds its nodata value or a number that is not finite.
+Operations over rasters are the Rasterization package's: [`scout_rasters/raster_algebra.py`](../packages/curio.rasterization@1/sources/scout_rasters/raster_algebra.py). The Raster Calculator's code imports `raster_calculate` and `raster_statistics` from it, and a node of another package imports them when its package names Rasterization in `dependencies.packages`, which hands the node Rasterization's modules too (the package modules paragraph of [Running a node](#step-by-step-running-a-node)). The namespace a Python node runs in holds no raster operations. They run in Python, where a node's rasters are: autk-db reads every band as float32 and loads at most 4096 by 4096 cells, which is what a map draws, not what a computation needs. Rasters are combined only on one grid (`grid_differences`: size, origin, resolution, rotation, CRS, to a relative 1e-9), and a refusal names both grids in words (`describe_grid`, numbers written as JavaScript writes them). A cell is nodata where its raster holds its nodata value or a number that is not finite.
 
 - On rasterio datasets (`raster_calculate`, `raster_statistics`) the module computes at the inputs' own number type, at least float32, takes the size of each cell's result with `absolute=True`, and writes a result as a GeoTIFF with NaN as nodata, named after its content, where the node's code says (`output_file=curio_output_file`). Statistics are numpy's `nanmean`, `nanmedian`, `nanmin` and `nanmax` on the band's own 2-D float64 array, nodata and masked-out cells as NaN.
 
@@ -1152,7 +1151,7 @@ Operations over rasters are the Scout package's: [`scout_rasters/raster_algebra.
 
 `curio_load_data("<id>", part="<file>")` reads one file of a bundle (`catalog_helpers.bundle_part`): the dataset's path comes from the same dataset-path map, and the part must be one `listed_bundle_parts` gives, the `bundle.json` entries that are regular files inside the dataset's folder. Staging stages the same list under isolation, so both modes and the headless runner read the same files; any other name is refused with the dataset's files. The agents' source scanner treats a `part=` value of a `curio_load_data` call, literal or f-string, as a file of the dataset, not a path on disk.
 
-`rasters.mosaic_rasters` lays rasters that lie on one grid side by side (`mosaic_grid`: the tiles' north-west corner, the first tile's cell size or a given one, each tile at the nearest cell): a GDAL VRT that points at their files, or a GeoTIFF of their cells. `curio.media@1`'s Mosaic Rasters calls it through `mosaic_collection` (a raster collection's rows). Scout's [`scout_rasters/web_tiles.py`](../packages/curio.scout@1/sources/scout_rasters/web_tiles.py) calls it too: its `mosaic_web_tiles` places web map tiles on their own grid (`tile_bounds`), a tile it lacks holding `fill` and the file naming `nodata`, for Rasterize Buildings, whose missing tiles are no data, and Deep Umbra (`model.scout.deep-umbra@1`, which names Scout in `dependencies.packages`) places its tiles with its `tile_bounds`. Package modules import `mosaic_rasters` from `utk_curio.sandbox.util.rasters`.
+`rasters.mosaic_rasters` lays rasters that lie on one grid side by side (`mosaic_grid`: the tiles' north-west corner, the first tile's cell size or a given one, each tile at the nearest cell): a GDAL VRT that points at their files, or a GeoTIFF of their cells. `curio.media@1`'s Mosaic Rasters calls it through `mosaic_collection` (a raster collection's rows). Rasterization's [`scout_rasters/web_tiles.py`](../packages/curio.rasterization@1/sources/scout_rasters/web_tiles.py) calls it too: its `mosaic_web_tiles` places web map tiles on their own grid (`tile_bounds`), a tile it lacks holding `fill` and the file naming `nodata`, for Rasterize Buildings, whose missing tiles are no data, and Deep Umbra (`model.scout.deep-umbra@1`, which names Scout in `dependencies.packages`) places its tiles with its `tile_bounds`. Package modules import `mosaic_rasters` from `utk_curio.sandbox.util.rasters`.
 
 A `dataRef` that names an unavailable table, whether an empty layer, a layer that was never loaded, or one dropped by an upstream node, is dropped before the grammar executes: the behavior removes the `map.layerRefs` entry or `plot` block and logs a console warning, which for a missing table lists the non-empty table names that *are* available; a `compute` block whose `dataRef` matches no layer is skipped. A map that keeps some of its layers renders them, and its success output notes the ones it lost, naming an empty table apart from one the dataflow does not produce. One left with nothing to draw is reported as an empty render (see [Render Outcomes](#render-outcomes)), and a reference to a table that exists but holds no rows is blamed on that table's source rather than on the reference.
 

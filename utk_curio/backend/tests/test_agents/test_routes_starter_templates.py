@@ -95,9 +95,9 @@ def _install_scout_rasters(user_key: str) -> str:
     """The package Curio ships, as the repository holds it."""
     from utk_curio.backend.app.packages.repositories.store import user_packages_dir
 
-    shutil.copytree(REPO / "packages" / "curio.scout@1",
-                    user_packages_dir(user_key) / "curio.scout@1", dirs_exist_ok=True)
-    return "curio.scout@1"
+    shutil.copytree(REPO / "packages" / "curio.rasterization@1",
+                    user_packages_dir(user_key) / "curio.rasterization@1", dirs_exist_ok=True)
+    return "curio.rasterization@1"
 
 
 def _enlist(user_key: str, project_id: str, dirs: list[str]) -> None:
@@ -219,9 +219,9 @@ class TestEveryOtherTemplateKeepsItsPath:
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
         user, token = user_and_token
-        heights = {"ref": "heights", "nodeType": "curio.scout/rasterize-buildings",
+        heights = {"ref": "heights", "nodeType": "curio.rasterization/rasterize-buildings",
                    "title": "Heights", "intent": "rasterize the buildings"}
-        calc = {"ref": "calc", "nodeType": "curio.scout/raster-calculator",
+        calc = {"ref": "calc", "nodeType": "curio.rasterization/raster-calculator",
                 "title": "Change", "intent": "subtract the two rasters"}
         att_id, proposal = _minted(
             client, user, token, alice_project, monkeypatch,
@@ -230,7 +230,7 @@ class TestEveryOtherTemplateKeepsItsPath:
         body = _apply(client, token, alice_project, att_id, proposal["proposalId"])
         created = _by_type(body["appliedGraph"]["nodes"])
         session = body["builderSession"]
-        assert set(created) == {"curio.scout/rasterize-buildings", "curio.scout/raster-calculator"}
+        assert set(created) == {"curio.rasterization/rasterize-buildings", "curio.rasterization/raster-calculator"}
         for node in created.values():
             assert node["content"] == ""
         assert session["nodeRuns"] == {n["id"]: "pending" for n in created.values()}
@@ -245,18 +245,60 @@ class TestEveryOtherTemplateKeepsItsPath:
             assert saved[node["id"]]["content"] == OPERATION
 
 
+#: A test package whose Bars chart is a template with its spec as its starter
+#: and whole content (``starterIsContent``), as Scout's charts were until #1270:
+#: the mechanism any package may still use.
+BARS_PACKAGE = "acme.charts@1"
+VEGA_LITE_CHARTS = REPO / "docs" / "examples" / "vega-lite-charts"
+
+
+def _bars_template() -> dict:
+    listed = json.loads((VEGA_LITE_CHARTS / "charts.json").read_text(encoding="utf-8"))["charts"]
+    (chart,) = [c for c in listed if c["id"] == "bars"]
+    return {
+        "id": "bars", "label": chart["label"], "description": chart["description"],
+        "category": "vis_grammar", "engine": "python", "behavior": "vega", "editor": "grammar",
+        "grammarId": "vega-lite", "hasCode": False, "hasGrammar": True, "hasWidgets": True,
+        "badge": "VEGA", "iconRef": "fa-solid:chart-line", "paletteOrder": 0,
+        "inputPorts": [{"cardinality": "[1,n]", "types": ["DATAFRAME", "GEODATAFRAME"]}],
+        "outputPorts": [{"cardinality": "1", "types": ["DATAFRAME", "GEODATAFRAME"]}],
+        "source": "sources/bars.vl.json", "starterIsContent": True, "widgets": chart["widgets"],
+    }
+
+
+def _install_bars_package(user_key: str) -> str:
+    """The test package in the account's store, its integrity recorded."""
+    import hashlib
+
+    from utk_curio.backend.app.packages.repositories.store import user_packages_dir
+
+    root = user_packages_dir(user_key) / BARS_PACKAGE
+    (root / "sources").mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(VEGA_LITE_CHARTS / "bars.vl.json", root / "sources" / "bars.vl.json")
+    shipped = json.loads((REPO / "packages" / "curio.rasterization@1" / "manifest.json").read_text(encoding="utf-8"))
+    manifest = {
+        "$schema": shipped["$schema"], "compatibility": shipped["compatibility"],
+        "createdAt": shipped["createdAt"], "dependencies": {"js": {}, "packages": {}, "python": {}},
+        "description": "Charts that compare scenarios.", "id": "acme.charts", "license": "MIT",
+        "name": "Charts", "permissions": [], "publisher": "Acme", "readOnly": True, "version": "1.0.0",
+        "templates": [_bars_template()],
+    }
+    (root / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    files = {p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+             for p in root.rglob("*") if p.is_file() and p.name != "integrity.json"}
+    (root / "integrity.json").write_text(json.dumps({"sha256": files}, indent=2), encoding="utf-8")
+    return BARS_PACKAGE
+
+
 def _scout_bars() -> tuple[str, list[dict]]:
-    """Scout's Bars chart, as the package Curio ships holds it: its starter, the
-    node's whole content, and its widgets."""
-    package = REPO / "packages" / "curio.scout@1"
-    manifest = json.loads((package / "manifest.json").read_text(encoding="utf-8"))
-    (template,) = [t for t in manifest["templates"] if t["id"] == "bars"]
-    assert template.get("starterIsContent") is True
-    return (package / template["source"]).read_text(encoding="utf-8"), template["widgets"]
+    """The test package's Bars chart: its starter, the node's whole content,
+    and its widgets."""
+    template = _bars_template()
+    return (VEGA_LITE_CHARTS / "bars.vl.json").read_text(encoding="utf-8"), template["widgets"]
 
 
 class TestACreatedTemplateStartsFromItsStarter:
-    """The Node Builder's ``node.create`` of Scout's Bars, a template whose
+    """The Node Builder's ``node.create`` of a package's Bars chart, a template whose
     starter is its whole content, as a plan creates one: with no content of
     its own, the node starts from the template's spec and widgets, the widgets
     the request gives set over the ones of their names."""
@@ -266,7 +308,7 @@ class TestACreatedTemplateStartsFromItsStarter:
         att_id, calls = helper._setup(client, user=user, token=token, project_id=project_id,
                                       monkeypatch=monkeypatch, replies=[*replies, "Proposed: review it above."])
         key = TestDataflowPlanMint()._ukey(user)
-        _enlist(key, project_id, [_install_scout_rasters(key)])
+        _enlist(key, project_id, [_install_scout_rasters(key), _install_bars_package(key)])
         r = helper._run(client, token, project_id, att_id)
         assert r.status_code == 200, r.get_json()
         proposal = next((p for p in r.get_json()["content"] if p["type"] == "proposal"), None)
@@ -279,8 +321,8 @@ class TestACreatedTemplateStartsFromItsStarter:
         user, token = user_and_token
         starter, widgets = _scout_bars()
         create = TestNodeCreate()._create_tail_json
-        calculator = create(nodeType="curio.scout/raster-calculator", content="")
-        bars = create(nodeType="curio.scout/bars", title="Mean shadow", content="",
+        calculator = create(nodeType="curio.rasterization/raster-calculator", content="")
+        bars = create(nodeType="acme.charts/bars", title="Mean shadow", content="",
                       widgets=[{"name": "y", "type": "text", "value": "shadow_minutes"}])
         helper, att_id, proposal, results = self._run(
             client, user, token, alice_project, monkeypatch, calculator, bars,
@@ -318,8 +360,8 @@ class TestACreatedTemplateStartsFromItsStarter:
         starter, _widgets = _scout_bars()
         retyped = starter.replace('"type": "bar"', '"type": "line"')
         assert retyped != starter
-        reply = TestNodeCreate()._create_tail_json(nodeType="curio.scout/bars", content=retyped)
+        reply = TestNodeCreate()._create_tail_json(nodeType="acme.charts/bars", content=retyped)
         _, _, proposal, [refused] = self._run(client, user, token, alice_project, monkeypatch, reply)
-        assert proposal is None, "a retyped Scout chart was proposed"
+        assert proposal is None, "a retyped Bars chart was proposed"
         assert "params.content: a Bars node starts from its template's own content" in refused, refused
         assert "y, combine, y_title" in refused, refused

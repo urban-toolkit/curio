@@ -207,7 +207,7 @@ describe("the height of a cell's output", () => {
 
     test("draws in a chart's 320px, as the Vega-Lite node does", () => {
       expect(notebookOutputBox(VEGA_LITE_TEMPLATE)).toEqual({ height: 320, overflow: "auto" });
-      expect(notebookOutputBox("curio.scout/donuts")).toEqual({ height: 320, overflow: "auto" });
+      expect(notebookOutputBox("acme.charts/donuts")).toEqual({ height: 320, overflow: "auto" });
     });
   });
 });

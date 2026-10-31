@@ -68,8 +68,8 @@ PYTHON_TYPE = "curio.builtin/computation-analysis"
 AUTARK_TYPE = "curio.builtin/autk-grammar"
 COMPARE_TYPE = "curio.builtin/compare-scenarios"
 #: Scout's package, whose Bars node charts each metric.
-SCOUT_PACKAGE = REPO / "packages" / "curio.scout@1"
-BARS_TYPE = "curio.scout/bars"
+SCOUT_PACKAGE = REPO / "packages" / "curio.rasterization@1"
+BARS_TYPE = "curio.builtin/vis-vega"
 DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "chicago-rain-wind-routing.json"
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "scout_routing"
 REFERENCE = FIXTURES / "routing_reference.json"
@@ -695,9 +695,9 @@ def test_the_shipped_dataflow_runs_scouts_example():
     from utk_curio.backend.app.execution.code_references import resolve_references
 
     spec = _dataflow()
-    # The lockfile names the model package and Scout's, whose Bars nodes chart
-    # the routes, so opening the dataflow adds both.
-    assert spec["packages"] == ["curio.scout@1", f"{GNN_ID}@1"]
+    # The lockfile names the model package; its Bars charts are Vega-Lite
+    # nodes (#1270), which need no package.
+    assert spec["packages"] == [f"{GNN_ID}@1"]
     assert sorted(ref["datasetId"] for ref in spec["datasets"]) == sorted(WEATHER_IDS.values())
     # The start time is the node's own widget: no Parameter node shares it.
     assert [n["id"] for n in spec["nodes"] if n["type"] == "curio.builtin/parameter"] == []
@@ -752,7 +752,7 @@ def test_the_start_time_reads_scouts_weather_step(tmp_path):
 
 def test_the_shipped_dataflows_bars_chart_the_four_metrics():
     """As in SCOUT's example, the two routes are compared on four bar charts,
-    one per metric: each a Bars node of Scout's (``curio.scout@1``), which
+    one per metric: each a Bars node of Scout's (``curio.rasterization@1``), which
     replaced a Compare Scenarios node and keeps its id, its place and its
     header. Its spec is its template's own, and its widgets set what the
     Compare node's bar drew: the metric, each scenario's rows combined by
@@ -763,9 +763,10 @@ def test_the_shipped_dataflows_bars_chart_the_four_metrics():
     box its input comes from. No Compare Scenarios node is left."""
     spec = _dataflow()
     assert [n["id"] for n in spec["nodes"] if n["type"].split("@")[0] == COMPARE_TYPE] == []
-    manifest = json.loads((SCOUT_PACKAGE / "manifest.json").read_text(encoding="utf-8"))
-    (template,) = [t for t in manifest["templates"] if t["id"] == "bars"]
-    starter = (SCOUT_PACKAGE / template["source"]).read_text(encoding="utf-8")
+    from utk_curio.backend.tests._support.vega_lite_charts import chart, spec as chart_spec
+
+    template = chart("bars")
+    starter = chart_spec("bars")
     labels = [{"scenario": s["id"], "name": s["name"], "color": s["color"]} for s in spec["scenarios"]]
     assert labels == [{"scenario": sid, "name": name, "color": color}
                       for sid, (name, color, _route) in EXAMPLE_SCENARIOS.items()]

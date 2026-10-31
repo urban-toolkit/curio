@@ -21,6 +21,7 @@ import { runKeyOf } from "../utils/references/runKeys";
 import { normalizeSelections, type SelectionTag } from "../utils/references/selectionTags";
 import { lineageFromSpec } from "../utils/scenarios/duplicateSelection";
 import { initialNodeTitle, savedNodeTitle } from "../utils/nodeTitle";
+import { currentNodeType, currentPackages } from "../utils/flowNodeCanonicalType";
 
 // Module-level singletons so every node shares the same interpreter
 // connection pool. Exported so collaboration's remote-graph handler can
@@ -302,7 +303,8 @@ export function useCode(): IUseCode {
                 nodeMeta.executedCode = runKeyOf(node.content, nodeMeta.widgets, nodeMeta.selections);
             }
 
-            nodes.push(generateCodeNode(node.type, nodeMeta));
+            // A type Curio no longer ships opens as its replacement (#1270).
+            nodes.push(generateCodeNode(currentNodeType(node.type), nodeMeta));
 
         }
 
@@ -365,13 +367,19 @@ export function useCode(): IUseCode {
             edges.push(add_edge);
         }
 
+        // The packages it lists, a replaced one renamed or dropped (#1270).
+        const packages = currentPackages(
+            trill.dataflow.packages || [],
+            (trill.dataflow.nodes || []).map((node: any) => currentNodeType(String(node.type ?? ""))),
+        );
+
         if (fromProvenance) {
             // Reverting to a historical version: preserve the current provenance graph.
             // latestTrill was already set to the target version by switchProvenanceTrill.
             const savedProv = TrillGenerator.getSerializableDataflowProvenance();
             // #662: a snapshot carries scenarios only when it had some, so an
             // absent key restores none.
-            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || [], undefined, trill.dataflow.scenarios ?? [], options?.fit, undefined, trill.dataflow.scenarioSets);
+            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, false, packages, trill.dataflow.description || "", trill.dataflow.datasets || [], undefined, trill.dataflow.scenarios ?? [], options?.fit, undefined, trill.dataflow.scenarioSets);
             TrillGenerator.loadDataflowProvenance(savedProv);
             // Reverting puts a DIFFERENT graph on the canvas than the one on
             // disk, so it is an edit. The edge replay inside loadParsedTrill no
@@ -381,7 +389,7 @@ export function useCode(): IUseCode {
             markDirty();
         } else if(suggestionType == undefined) {
             // #845: a dataflow without the key has auto-run off.
-            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || [], trill.dataflow.categories || {}, trill.dataflow.scenarios ?? [], options?.fit, trill.dataflow.autoRun === true, trill.dataflow.scenarioSets);
+            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false, packages, trill.dataflow.description || "", trill.dataflow.datasets || [], trill.dataflow.categories || {}, trill.dataflow.scenarios ?? [], options?.fit, trill.dataflow.autoRun === true, trill.dataflow.scenarioSets);
             // Each node's next run or edit branches from its entry that holds
             // the code it loaded with.
             if (trill.nodeProvenance) {

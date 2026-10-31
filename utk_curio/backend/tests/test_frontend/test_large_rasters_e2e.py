@@ -2,7 +2,7 @@
 
 An Autark map loads a raster at its own size up to 4096 by 4096 cells. SCOUT's
 whole flood grid is 2592 by 2064 cells, and Scout's Raster Calculator
-(``curio.scout@1``) subtracts two such rasters as the flood dataflow takes its
+(``curio.rasterization@1``) subtracts two such rasters as the flood dataflow takes its
 Depth change.
 
 1. Two scenarios each hold one Python node that writes a 2592 by 2064 raster
@@ -66,9 +66,9 @@ if TYPE_CHECKING:
 
 PYTHON_TYPE = "curio.builtin/computation-analysis"
 MAP_TYPE = "curio.builtin/autk-grammar"
-CALCULATOR_TYPE = "curio.scout/raster-calculator"
+CALCULATOR_TYPE = "curio.rasterization/raster-calculator"
 #: The package the Raster Calculator is a node of, which the dataflow declares.
-SCOUT_PACKAGE = "curio.scout@1"
+SCOUT_PACKAGE = "curio.rasterization@1"
 BASE = "cdf-base"
 TALL = "cdf-tall"
 CALCULATOR = "lgr-calculator"
