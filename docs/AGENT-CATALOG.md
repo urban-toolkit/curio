@@ -119,7 +119,7 @@ An agent's manifest names its skills ([`skills`](#6-the-manifest)). An agent of 
 | `dashboards` | keep a dataflow's pinned tiles working on its dashboard | dataflows with pinned tiles |
 | `provenance` | read a node's history and the agents' entries in it | nothing: a chat loads it when a task needs it |
 | `reuse-first` | choose a node type: a listed template, then a package to add, then a written package | by name: the Node Builder's and the Researcher's chats, the Node Builder building a node for another agent, Write a package and Recommend packages |
-| `data-sources` | ground a data source before writing its loader: a typed path, a catalog dataset, a verified URL, a saved key, made-up data only when asked | by name: the Node Builder's chat, the Node Builder building a node for another agent, and Write a node's content |
+| `data-sources` | ground a data source before writing its loader: a typed path, a catalog dataset, a verified URL, a saved key, values the user typed, made-up data only when asked | by name: the Node Builder's chat, the Node Builder building a node for another agent, and Write a node's content |
 | `package-contract` | write a package's backend to Curio's contract | by name: Write a package |
 | `fact-checking` | check a fact against what was probed or fetched, labeling each finding | by name: the Researcher's chat and Check a fact |
 | `research-notes` | turn findings into notes on the dataflow, and place them on a note template: the built-in Note, a package to enlist, or a notes package to write | by name: the Researcher's chat and Notes from search results |

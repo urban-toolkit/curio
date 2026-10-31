@@ -623,6 +623,8 @@ def _mint_node_content_write(
         return "refused", agent_text.message("tools.node-not-in-spec", node_id=repr(node_id)), None
     # dev/114 (DEC-072): the gate, keyed on the EXISTING node's type — the
     # dev/73 runtime review mint inherits it (a refusal is its honest text).
+    # The content the node holds now is the user's own: inline data may add
+    # to it the values the user typed.
     from utk_curio.backend.app.packages import service as packages_services
 
     entry, _err = packages_services.resolve_template(user_key, project_id, node.get("type"))
@@ -631,7 +633,7 @@ def _mint_node_content_write(
         code=proposed, engine=source_grounding.code_engine(entry),
         node_type=node.get("type"), params=params,
         base=loop_ctx.get("_grounding_base"), chips=agents_grounding._chip_context(spec, node_id),
-        node_id=node_id,
+        node_id=node_id, current=str(node.get("content") or ""),
     )
     if refusal:
         return agents_tool_rounds._refuse_params(refusal)

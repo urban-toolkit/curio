@@ -17,6 +17,7 @@ export const SOURCE_KIND_LABEL: Record<string, string> = {
   catalog: "Data Catalog",
   external: "External source",
   "user-path": "User-provided path",
+  "user-values": "User-provided values",
   synthetic: "Synthetic data",
   secret: "Connection key",
   mixed: "Several sources",
@@ -38,6 +39,9 @@ export function sourceRefText(ref: AgentSourceRef): string {
       return `Connection key · ${ref.name ?? ""}${ref.host ? ` · ${ref.host}` : ""}`;
     case "user-path":
       return `${ref.value ?? ""} (not checked by Curio)`;
+    case "user-values":
+      // The values the code added to the node's own, each typed in the chat.
+      return `${ref.value ?? ""} (typed in the chat)`;
     case "synthetic":
       return "generated in the node, no external source";
     default:
