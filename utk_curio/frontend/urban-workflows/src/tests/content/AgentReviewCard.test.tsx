@@ -224,7 +224,7 @@ describe("AgentReviewCard — dev/50 dataset.install kind", () => {
 
   it("says the effect it is given in place of the kind's line, as an editor's dataset request does", () => {
     // No agent made a request, so the line of an agent's install would be a
-    // leftover there (DatasetRequestsSection gives its own).
+    // leftover there (EditorRequestsSection gives its own).
     const effect = "Applying copies this dataset into your Data Catalog and adds it to this dataflow.";
     render(<AgentReviewCard part={{ ...part(), summary: "Add dataset · Cities" }} onApply={jest.fn()} effect={effect} />);
     expect(screen.getByText(effect)).toBeInTheDocument();

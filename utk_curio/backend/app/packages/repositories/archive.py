@@ -268,6 +268,32 @@ def refresh_package_integrity(package_root: Path) -> dict[str, str]:
     return integrity
 
 
+def integrity_mismatch(package_root: Path) -> str | None:
+    """Why the files of the package at *package_root* are not the ones the
+    record its install wrote names (``integrity.json``, rewritten by each of
+    Curio's own changes to the package), or None when they are: a file the
+    record names that is gone or changed, or one it does not name. A package
+    with no record that reads has nothing to be checked against, which is a
+    reason too."""
+    try:
+        raw = json.loads((package_root / "integrity.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        raw = None
+    listed = raw.get("sha256") if isinstance(raw, dict) else None
+    if not isinstance(listed, dict) or not listed:
+        return "it has no record of its files (integrity.json) to check them against"
+    actual = _build_integrity(package_root)
+    for rel in sorted(listed):
+        if rel not in actual:
+            return f"its file {rel} is gone since it was installed"
+        if actual[rel] != listed[rel]:
+            return f"its file {rel} changed since it was installed"
+    added = sorted(set(actual) - set(listed))
+    if added:
+        return f"its file {added[0]} was added since it was installed"
+    return None
+
+
 def _extract_into(zf: zipfile.ZipFile, target: Path) -> int:
     """Extract every member of *zf* under *target*.
 

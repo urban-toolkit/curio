@@ -797,16 +797,34 @@ class DiscoveryService:
         from utk_curio.backend.app.discovery.domain.errors import ResourceNotFound
 
         catalog = self._datasets()
-        try:
-            item = catalog.get_dataset(dataset_id)
-        except DatasetCatalogError as exc:
-            item = self._listed_by_the_dataflow(dataset_id)
-            if item is None:
-                raise ResourceNotFound(f"no dataset {dataset_id!r}") from exc
+        item = self._the_owners_copy(dataset_id)
+        if item is None:
+            try:
+                item = catalog.get_dataset(dataset_id)
+            except DatasetCatalogError as exc:
+                item = self._listed_by_the_dataflow(dataset_id)
+                if item is None:
+                    raise ResourceNotFound(f"no dataset {dataset_id!r}") from exc
         block = item.get("collection") or {}
         if item.get("format") != "collection" or not block.get("sourceId"):
             raise ResourceNotFound(f"{dataset_id!r} is not a collection")
         return item, self._catalog.get_manifest(_renamed_source_dir(str(block["sourceId"])))
+
+    def _the_owners_copy(self, dataset_id: str) -> dict[str, Any] | None:
+        """For an editor of :attr:`dataflow_id`, *dataset_id* as the dataflow
+        lists it from its owner's store, before any copy of his own: a
+        collection of his the owner added to her dataflow is her copy of it,
+        under its own id (``editor_requests.apply``), which his runs read as
+        hers do. None for the owner, for anyone else, and when the listing
+        fails."""
+        if not self.dataflow_id or self.user is None:
+            return None
+        try:
+            return self._datasets().listed_from_the_owners_store(self.dataflow_id).get(dataset_id)
+        except Exception:  # noqa: BLE001 - the account's own collections still answer
+            logger.warning("Could not read what dataflow %s lists from its owner's store", self.dataflow_id,
+                           exc_info=True)
+            return None
 
     def _listed_by_the_dataflow(self, dataset_id: str) -> dict[str, Any] | None:
         """*dataset_id* as the Data Catalog's listing of :attr:`dataflow_id`
