@@ -1104,7 +1104,11 @@ Change the code as each one says; no data source is missing.
 
 ## grounding.no-source
 
-no grounded source: this data-loading node opens no file and fetches no URL, and data invented inline is fabricated evidence unless the user asked for synthetic data
+no grounded source: this data-loading node opens no file and fetches no URL, and data invented inline is fabricated evidence unless the user typed those values in this conversation or asked for synthetic data
+
+## grounding.values-not-typed
+
+{values}: values the user did not type in this conversation, which the node did not hold either (a number the node holds is its own only as many times as the node holds it); write only the values the user gave, as typed, or ask the user for the rest
 
 ## grounding.refused
 
@@ -1113,6 +1117,10 @@ source grounding refused: {count} ungrounded source{s}:
 ## grounding.allowed-user-path
 
 a path the user typed in this conversation
+
+## grounding.allowed-user-values
+
+values the user typed in this conversation, as typed, added to the values the node holds
 
 ## grounding.allowed
 
@@ -1160,7 +1168,7 @@ a saved connection key by name: {use_lines}
 
 ## grounding.source-rule
 
-Load catalog datasets ONLY by their id, written as a string in {dataset_calls} (a collection's in {collection_calls}), as each row's `use` line does: the sandbox resolves it. Open ONLY the local paths listed (catalogDatasets[].path or userPaths), and fetch ONLY these URLs (verifiedUrls). Never invent a filename, never assume a file exists, never write a URL from memory: the runtime refuses ungrounded content. If none of these fits the intent, return a one-line explanation of what source is missing instead of code.{keyed_host}{synthetic}
+Load catalog datasets ONLY by their id, written as a string in {dataset_calls} (a collection's in {collection_calls}), as each row's `use` line does: the sandbox resolves it. Open ONLY the local paths listed (catalogDatasets[].path or userPaths), and fetch ONLY these URLs (verifiedUrls). Never invent a filename, never assume a file exists, never write a URL from memory: the runtime refuses ungrounded content. If none of these fits the intent, return a one-line explanation of what source is missing instead of code.{keyed_host}{synthetic}{typed_values}
 
 ## grounding.source-rule-keyed-host
 
@@ -1173,6 +1181,10 @@ A key-gated host has no saved connection key here: do not invent one; return the
 ## grounding.source-rule-synthetic
 
 The user asked for synthetic data: build it inline and say so.
+
+## grounding.source-rule-typed-values
+
+Values the user typed in the conversation, as the intent gives them, may be added inline to the values the node holds, as typed; add no other value: the runtime refuses a value the user did not type.
 
 ## dataset.candidates-finder-fallback
 

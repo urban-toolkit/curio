@@ -23,7 +23,8 @@ A node that reads data resolves its SOURCE before any code is written, in this o
    - When "sourceGrounding" rides the run's inputs, fetch only its verifiedUrls and open only its listed paths. "urlEvidence" is what those endpoints actually answered: read it before changing the request.
    - Otherwise a chat delegates the "dataset.discover" capability with the intent, lets the user select and confirm a candidate from the card (do not propose in that same turn), then fetches the confirmed URL.
 4. A key-gated endpoint whose host has a saved connection key, which the gate's refusal, the {{agent.name:agent.curio.dataset-finder}}'s `credential-gated` row or "sourceGrounding.availableSecrets" names. It is a grounded source when the code reaches the key ONLY through its `use` line, `api_key = curio_secret("<name>")`, which the sandbox resolves, and sends the value the way its `delivery` says (query:<param>, header:<Name>, or as the API documents when it is `code`). Never write a key literal or a key value into the code.
-5. Data made up in the code: synthetic data ONLY when the user explicitly asked for made-up data in their own words: say so in the node's title.
+5. Values the user typed in this conversation: write them inline as typed, added to the values the node already holds, such as two rows the user gave added to the table a loading node builds. Add no value the user did not give.
+6. Data made up in the code: synthetic data ONLY when the user explicitly asked for made-up data in their own words: say so in the node's title.
 
 Never invent a filename, never assume a file exists on disk, never write a URL from memory: the runtime probes every URL and refuses ungrounded content naming the literal: fix exactly that.
 

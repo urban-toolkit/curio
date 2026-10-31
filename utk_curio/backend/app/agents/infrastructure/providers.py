@@ -47,6 +47,18 @@ schema arrives already in the provider's flavor. An endpoint that answers such a
 request with a 400 or 422 raises :class:`ReplySchemaRefused`, and the caller asks
 again without one.
 
+**An OpenAI-compatible turn is always streamed.** A server answers a request
+that is not streamed only once the model has written the whole reply, and a
+proxy before the server may cut a request that has sent nothing back for a
+while (nginx cuts one silent for 60 s by default). A reply that took longer to
+write then never arrived, and the SDK asked again twice, so the model wrote it
+three times before the call failed with "Connection error.". So
+:func:`run_chat_turn` asks for the same stream :func:`stream_chat_turn` reads,
+whose pieces keep the connection busy while the model writes, and puts the turn
+together from it. A stream that ends with no finish reason was cut: the turn
+raises :class:`ReplyCutShort` rather than pass a part of the reply off as all
+of it.
+
 The dispatch below was extracted verbatim from ``app/api/routes.py::_call_llm``
 (behavior-preserving) and is the seam a future LangChain adapter would sit behind.
 
@@ -56,6 +68,7 @@ User-facing overview: ``docs/AGENT-CATALOG.md``.
 from __future__ import annotations
 
 import json
+import time
 import uuid
 from dataclasses import dataclass, field
 
@@ -70,6 +83,12 @@ class NativeToolsRefused(RuntimeError):
 class ReplySchemaRefused(RuntimeError):
     """The endpoint refused a request that carried a reply schema (a 400 or a
     422). The message is the endpoint's reason, with the key taken out."""
+
+
+class ReplyCutShort(RuntimeError):
+    """The endpoint's stream ended before the model finished its reply: no
+    finish reason came. What arrived is only a part of the reply, so a caller
+    that waits for the whole turn gets this instead."""
 
 
 @dataclass(frozen=True)
@@ -496,18 +515,6 @@ def _anthropic_calls(resp) -> tuple:
     return tuple(calls)
 
 
-def _openai_calls(message) -> tuple:
-    calls = []
-    for call in getattr(message, "tool_calls", None) or []:
-        function = getattr(call, "function", None)
-        calls.append(_call_from_json(
-            str(getattr(call, "id", "") or _call_id()),
-            str(getattr(function, "name", "") or ""),
-            str(getattr(function, "arguments", "") or ""),
-        ))
-    return tuple(calls)
-
-
 def _gemini_parts(response) -> list:
     candidates = getattr(response, "candidates", None) or []
     content = getattr(candidates[0], "content", None) if candidates else None
@@ -562,7 +569,9 @@ def run_chat_turn(
     provider defaults. ``tools`` and ``tool_choice`` offer native tools, and
     ``reply_schema`` holds the reply to a schema (see the module docstring); an
     endpoint that refuses either raises :class:`NativeToolsRefused` or
-    :class:`ReplySchemaRefused`.
+    :class:`ReplySchemaRefused`. An OpenAI-compatible endpoint is asked for a
+    stream, read whole; one that ends it before the model finished raises
+    :class:`ReplyCutShort`.
     """
     try:
         return _run_chat_turn(
@@ -633,30 +642,89 @@ def _run_chat_turn(
             tool_calls=_gemini_calls(response, tools) if tools else (),
         )
     else:  # openai_compatible (default)
-        from openai import OpenAI
-        kwargs = {"api_key": config.api_key or "no-key"}
-        if config.base_url:
-            kwargs["base_url"] = config.base_url
-        client = OpenAI(**kwargs)
-        create_kwargs = {"model": config.model, "messages": _openai_messages(messages)}
-        if max_output_tokens:
-            create_kwargs["max_tokens"] = max_output_tokens
-        if tools:
-            create_kwargs["tools"] = _openai_tools(tools)
-            create_kwargs["tool_choice"] = tool_choice
-        if reply_schema:
-            create_kwargs["response_format"] = {"type": "json_schema", "json_schema": {
-                "name": reply_schema["name"], "schema": reply_schema["schema"], "strict": True,
-            }}
-        completion = client.chat.completions.create(**create_kwargs)
-        _openai_usage(usage_out, getattr(completion, "usage", None))
-        choice = completion.choices[0]
-        # A reply that only calls tools has no content.
-        return ChatTurn(
-            text=getattr(choice.message, "content", None) or "",
-            tool_calls=_openai_calls(choice.message) if tools else (),
-            stop_reason=str(getattr(choice, "finish_reason", "") or ""),
+        return _openai_whole_turn(
+            config, messages, max_output_tokens, usage_out, tools, tool_choice, reply_schema
         )
+
+
+def _openai_whole_turn(config, messages, max_output_tokens, usage_out, tools, tool_choice,
+                       reply_schema) -> ChatTurn:
+    """One OpenAI-compatible turn, read whole from its stream (see the module
+    docstring): its text, its native calls, its finish reason. A stream that
+    ends with no finish reason raises :class:`ReplyCutShort`."""
+    started = time.monotonic()
+    finish: dict = {}
+    texts: list[str] = []
+    calls: list = []
+    for event in _openai_events(config, messages, max_output_tokens, usage_out, tools, tool_choice,
+                                reply_schema=reply_schema, finish=finish):
+        if isinstance(event, ToolCall):
+            calls.append(event)
+        else:
+            texts.append(event)
+    if not finish.get("reason"):
+        raise ReplyCutShort(
+            "the model's server ended the reply before the model finished it, after "
+            f"{time.monotonic() - started:.0f} s; a proxy before the server may limit how long a request lasts"
+        )
+    # A reply that only calls tools has no content.
+    return ChatTurn(text="".join(texts), tool_calls=tuple(calls), stop_reason=finish["reason"])
+
+
+def _openai_events(config, messages, max_output_tokens, usage_out, tools, tool_choice, *,
+                   reply_schema=None, finish: dict | None = None):
+    """An OpenAI-compatible turn as the endpoint streams it: each text delta
+    as it arrives, then each native call whole. *finish* gets the choice's
+    finish reason. A streamed turn and a whole one both ask through here."""
+    from openai import OpenAI
+    kwargs = {"api_key": config.api_key or "no-key"}
+    if config.base_url:
+        kwargs["base_url"] = config.base_url
+    client = OpenAI(**kwargs)
+    create_kwargs = {
+        "model": config.model,
+        "messages": _openai_messages(messages),
+        "stream": True,
+        "stream_options": {"include_usage": True},
+    }
+    if max_output_tokens:
+        create_kwargs["max_tokens"] = max_output_tokens
+    if tools:
+        create_kwargs["tools"] = _openai_tools(tools)
+        create_kwargs["tool_choice"] = tool_choice
+    if reply_schema:
+        create_kwargs["response_format"] = {"type": "json_schema", "json_schema": {
+            "name": reply_schema["name"], "schema": reply_schema["schema"], "strict": True,
+        }}
+    stream = client.chat.completions.create(**create_kwargs)
+    # A call arrives in pieces, by index: its id and name first, then its
+    # arguments as fragments of one JSON text.
+    pending: dict = {}
+    for chunk in stream:
+        _openai_usage(usage_out, getattr(chunk, "usage", None))
+        choices = getattr(chunk, "choices", None) or []
+        choice = choices[0] if choices else None
+        delta = getattr(choice, "delta", None)
+        reason = getattr(choice, "finish_reason", None)
+        if reason and finish is not None:
+            finish["reason"] = str(reason)
+        text = getattr(delta, "content", None) if delta is not None else None
+        if text:
+            yield text
+        for piece in (getattr(delta, "tool_calls", None) or []) if tools else ():
+            slot = pending.setdefault(getattr(piece, "index", None) or 0,
+                                      {"id": "", "name": "", "arguments": ""})
+            if getattr(piece, "id", None):
+                slot["id"] = piece.id
+            function = getattr(piece, "function", None)
+            if function is not None:
+                if getattr(function, "name", None) and not slot["name"]:
+                    slot["name"] = function.name
+                if getattr(function, "arguments", None):
+                    slot["arguments"] += function.arguments
+    for index in sorted(pending):
+        slot = pending[index]
+        yield _call_from_json(slot["id"] or _call_id(), slot["name"], slot["arguments"])
 
 
 def run_chat_completion(
@@ -764,47 +832,7 @@ def _stream_chat_turn(config, messages, max_output_tokens, usage_out, tools, too
         _gemini_usage(usage_out, getattr(last_chunk, "usage_metadata", None))
         yield from calls
     else:  # openai_compatible (default)
-        from openai import OpenAI
-        kwargs = {"api_key": config.api_key or "no-key"}
-        if config.base_url:
-            kwargs["base_url"] = config.base_url
-        client = OpenAI(**kwargs)
-        create_kwargs = {
-            "model": config.model,
-            "messages": _openai_messages(messages),
-            "stream": True,
-            "stream_options": {"include_usage": True},
-        }
-        if max_output_tokens:
-            create_kwargs["max_tokens"] = max_output_tokens
-        if tools:
-            create_kwargs["tools"] = _openai_tools(tools)
-            create_kwargs["tool_choice"] = tool_choice
-        stream = client.chat.completions.create(**create_kwargs)
-        # A call arrives in pieces, by index: its id and name first, then its
-        # arguments as fragments of one JSON text.
-        pending: dict = {}
-        for chunk in stream:
-            _openai_usage(usage_out, getattr(chunk, "usage", None))
-            choices = getattr(chunk, "choices", None) or []
-            delta = choices[0].delta if choices else None
-            text = getattr(delta, "content", None) if delta is not None else None
-            if text:
-                yield text
-            for piece in (getattr(delta, "tool_calls", None) or []) if tools else ():
-                slot = pending.setdefault(getattr(piece, "index", None) or 0,
-                                          {"id": "", "name": "", "arguments": ""})
-                if getattr(piece, "id", None):
-                    slot["id"] = piece.id
-                function = getattr(piece, "function", None)
-                if function is not None:
-                    if getattr(function, "name", None) and not slot["name"]:
-                        slot["name"] = function.name
-                    if getattr(function, "arguments", None):
-                        slot["arguments"] += function.arguments
-        for index in sorted(pending):
-            slot = pending[index]
-            yield _call_from_json(slot["id"] or _call_id(), slot["name"], slot["arguments"])
+        yield from _openai_events(config, messages, max_output_tokens, usage_out, tools, tool_choice)
 
 
 def stream_chat_completion(

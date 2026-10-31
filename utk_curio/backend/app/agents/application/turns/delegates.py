@@ -306,7 +306,7 @@ def _run_delegate_traced(
                 user_key, project_id, home_session_id, home_attachment_id,
                 [sessions.make_turn(
                     "user",
-                    f"[Delegated by {parent_label}] "
+                    f"{sessions.DELEGATED_TURN_PREFIX}{parent_label}] "
                     f"{_delegation_task_text(capability, inputs)}",
                 )],
             )
@@ -461,6 +461,10 @@ def _mint_content_review_from_delegate(
                  "granted", "manifest", "asker_id", "asker", "room_asker")
     }
     mint_ctx.update({"attachment_id": home_att, "session_id": home_sess})
+    if isinstance(parent_session_id, str):
+        # The change lands in the home's chat, but the user's words are in the
+        # chat that asked for it, which the gate reads.
+        mint_ctx["asked_in_session_id"] = parent_session_id
     if parent_loop_ctx is not None:
         # The change's canvas mutation rides the parent's stream.
         mint_ctx["_landed"] = parent_loop_ctx.setdefault("_landed", [])
@@ -1280,13 +1284,15 @@ def _enriched_delegate_inputs(
         return inputs
     # dev/114 — the SEVENTH application: a data-loading node's content child
     # is HANDED its grounded sources (catalog paths, the user's paths, the
-    # URLs already verified) instead of guessing a filename.
+    # URLs already verified) instead of guessing a filename. The paths are the
+    # ones the user typed, which the write's gate holds the content to: the
+    # intent is the delegating agent's words.
     if "sourceGrounding" not in enriched and source_grounding.loads_dataset(
         node_type, agents_roster._roster_templates(user_key, project_id)
     ):
         enriched["sourceGrounding"] = agents_grounding._source_grounding_inputs(
             agents_grounding._grounding_context(user_key, project_id, loop_ctx, node_type=node_type,
-                               extra_texts=(str(inputs.get("intent") or ""),), is_data_loading=True)
+                                                is_data_loading=True)
         )
     return enriched
 
