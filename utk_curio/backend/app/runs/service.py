@@ -11,8 +11,10 @@ The dataflow's owner runs it, and so does an editor the owner invited
 (``projects/access.agents_role``, as the dataflow's agents ask it). Either
 way the dataflow is read from its owner's store. An editor's run is the
 editor's: its record, the cap on the editor's runs at once, and its steps,
-which run as the editor's Play does, in the editor's session. Only the
-owner's run records its outputs in the dataflow.
+which run as the editor's Play does, their outputs kept as his
+(``execution/node_exec._kept_run``). Only the owner's run records its
+outputs in the dataflow. The owner sees every run of her dataflow, whoever
+started it, and stops any of them; an editor sees and stops his own.
 """
 from __future__ import annotations
 
@@ -114,11 +116,23 @@ def step_payload(step: DataflowRunStep, current: Optional[dict] = None) -> dict:
     return payload
 
 
+def _started_by(run: DataflowRun) -> Optional[dict]:
+    """Who started *run*: the account's username and name, as the room names
+    people."""
+    from utk_curio.backend.app.users.models import User
+
+    user = db.session.get(User, run.user_id)
+    if user is None:
+        return None
+    return {"username": user.username, "name": user.name}
+
+
 def run_payload(run: DataflowRun, *, steps: bool = False, current: Optional[dict] = None) -> dict:
     payload = {
         "id": run.id,
         "projectId": run.project_id,
         "projectName": run.project.name if run.project is not None else None,
+        "startedBy": _started_by(run),
         "trigger": run.trigger,
         "targetNodeId": run.target_node_id,
         "targetNodeIds": run.target_ids,
@@ -172,11 +186,28 @@ def interrupt_runs_of_other_processes() -> int:
 # Reading
 # ---------------------------------------------------------------------------
 
+def _owns_dataflow(user, project_id: str) -> bool:
+    """Whether *user* owns the dataflow *project_id*."""
+    from utk_curio.backend.app.projects.models import Project
+
+    project = db.session.get(Project, project_id)
+    return project is not None and project.user_id == getattr(user, "id", None)
+
+
 def get_run(user, run_id: str) -> DataflowRun:
-    """A run of *user*'s, or 404."""
+    """A run *user* may see, or 404: one they started, or any run of a
+    dataflow they own, whoever started it."""
     interrupt_runs_of_other_processes()
     run = runs_repo.get_run(run_id)
-    if run is None or run.user_id != user.id:
+    if run is None or (run.user_id != user.id and not _owns_dataflow(user, run.project_id)):
+        raise RunError("Run not found.", 404)
+    return run
+
+
+def _own_run(user, run_id: str) -> DataflowRun:
+    """A run *user* started, or 404: what only its starter's tab does to it."""
+    run = get_run(user, run_id)
+    if run.user_id != user.id:
         raise RunError("Run not found.", 404)
     return run
 
@@ -198,13 +229,19 @@ def _dataflow_for_runs(user, project_id: str):
     return project, role, _owner_user_dir_key(project)
 
 
-def list_project_runs(user, project_id: str, *, whole_dataflow=None, limit=50, offset=0) -> list:
-    """*user*'s own runs of the dataflow, its owner's or an invited editor's:
-    no one sees another account's runs."""
-    _dataflow_for_runs(user, project_id)
+def list_project_runs(user, project_id: str, *, whole_dataflow=None, limit=50, offset=0, mine=False) -> list:
+    """The dataflow's runs, newest first: for its owner every account's, the
+    runs of the editors she invited among them, and for an invited editor
+    his own. *mine* keeps the owner's own, as her canvas asks for the last
+    run it follows."""
+    from utk_curio.backend.app.projects import access
+
+    _project, role, _ukey = _dataflow_for_runs(user, project_id)
     interrupt_runs_of_other_processes()
+    everyone = role == access.OWNER and not mine
     return runs_repo.list_project_runs(
-        project_id, user_id=user.id, whole_dataflow=whole_dataflow, limit=limit, offset=offset,
+        project_id, user_id=None if everyone else user.id,
+        whole_dataflow=whole_dataflow, limit=limit, offset=offset,
     )
 
 
@@ -507,8 +544,9 @@ def _record_step(run_id, step, payload, runtime_journal) -> None:
 # ---------------------------------------------------------------------------
 
 def cancel_run(user, run_id: str) -> DataflowRun:
-    """Stop *run_id* before its next node starts. The node already running
-    finishes, and its output is dropped."""
+    """Stop *run_id* before its next node starts: a run *user* started, or
+    any run of a dataflow *user* owns. The node already running finishes, and
+    its output is dropped."""
     run = get_run(user, run_id)
     flag = jobs.existing_cancel_flag(run_id)
     if run.status not in ACTIVE_RUN_STATUSES or flag is None:
@@ -529,11 +567,12 @@ def rerun(user, token: Optional[str], run_id: str) -> DataflowRun:
 
 
 def report_browser_step(user, run_id: str, node_id: str, *, status: str, message: str = "") -> DataflowRun:
-    """A tab ran a node only the browser can, or one that waited for it, and
-    says how it went. Once nothing waits any more, the run has its outcome."""
+    """A tab of the run's starter ran a node only the browser can, or one
+    that waited for it, and says how it went. Once nothing waits any more, the
+    run has its outcome."""
     if status not in ("ok", "error"):
         raise RunError("status must be ok or error", 400)
-    run = get_run(user, run_id)
+    run = _own_run(user, run_id)
     if run.status in ACTIVE_RUN_STATUSES:
         # The server's part ends first; its outcome would overwrite a report.
         raise RunError("The run is still going; report once it has finished.", 409)
