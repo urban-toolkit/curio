@@ -59,6 +59,7 @@ import {
 } from "../services/datasetCatalog";
 import { hasFileDrag, useDataFileImport } from "./datasets/useDataFileImport";
 import { useAskTheOwner } from "./datasets/useAskTheOwner";
+import { useAskForPackage } from "./packages/useAskForPackage";
 import {
     hasModelDrag,
     packageCardNodeOptions,
@@ -532,12 +533,16 @@ export function MainCanvas() {
     // drawer's own Add first (the review, then the install of its libraries),
     // and the node is made once it is added; the Models palette lists only
     // the dataflow's models, so its rows make their nodes at once. A hosted
-    // guest's drop is refused, since guests never install.
-    const createPackageNode = useCallback((node: PackageCardNode, position: XYPosition) => {
+    // guest's drop is refused, since guests never install. On the owner's
+    // dataflow an invited editor's drop of a package the dataflow does not use
+    // makes its node at once and asks her to add the package
+    // (useAskForPackage): the node waits for her review.
+    const createPackageNode = useCallback((node: PackageCardNode, position: XYPosition): string | undefined => {
         const starter = node.model
             ? packageStarterCode(tryGetNodeDescriptor(node.nodeType as NodeType), getStarters)
             : undefined;
-        revealCreated(createCodeNode(node.nodeType as NodeType, { position, ...packageCardNodeOptions(node, starter) }));
+        const created = createCodeNode(node.nodeType as NodeType, { position, ...packageCardNodeOptions(node, starter) });
+        revealCreated(created);
         const article = /^[aeiou]/i.test(node.label) ? "an" : "a";
         showToast(
             node.model
@@ -546,12 +551,15 @@ export function MainCanvas() {
             "success",
         );
         markDirty();
+        return created?.id;
     }, [getStarters, revealCreated, createCodeNode, showToast, markDirty]);
+    const askForPackage = useAskForPackage();
     const { drop: dropPackageCard, menu: packageNodeMenu } = usePackageCardDrop({
         dataflowPackages,
         hostedGuest,
         createNode: createPackageNode,
         showToast,
+        askTheOwner: askForPackage,
     });
     // A scenario from the Scenario Catalog arrives as a copy: its box where it
     // was dropped, its context as fixed data (useScenarioDrop). The notebook

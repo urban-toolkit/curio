@@ -14,9 +14,9 @@ account rather than the dataflow:
 
 An editor who asks for either is refused with a 403 that names the owner. The
 same review holds what an editor asks the owner to add to the dataflow from
-the editor's own Data Catalog (``datasets/application/editor_requests.py``),
-and only the owner applies or dismisses it too, refused in the same words
-(``projects/access.py``, :func:`owners_review`).
+his own store, a dataset, a collection, a package or a model
+(``projects/editor_requests.py``), and only the owner applies or dismisses it
+too, refused in the same words (``projects/access.py``, :func:`owners_review`).
 """
 
 from __future__ import annotations

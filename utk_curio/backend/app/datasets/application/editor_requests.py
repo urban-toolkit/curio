@@ -1,180 +1,50 @@
-"""An invited editor's own dataset, asked of the dataflow's owner.
+"""An invited editor's own dataset, asked of the dataflow's owner: the ``datasets`` kind of request.
 
-An editor the owner of a dataflow invited (``projects/access.py``) changes the
-dataflow as she does, but a dataset of his own Data Catalog is in his store:
-her runs cannot read it, and only her own changes put a dataset in the lists
-her editors' runs read (``collaboration/owner_uses.py``). So the editor's drop
-of a file, his Add to project and his drag of a card of his own catalog onto
-her dataflow ask her instead: each is a request in the owner's install review,
-the review an install an agent asks for waits in, a ``dataset.install`` of
-``src/contracts/agentInstalls.json`` shown on the same card.
+The requests and their review are ``projects/editor_requests.py``'s; this
+module says what a request for a dataset asks and what the owner's Apply of
+it does. An editor's drop of a file, his Add to project and his drag of a card
+of his Data Catalog onto her dataflow each ask her (:func:`asked`), as a
+``dataset.install`` of ``src/contracts/agentInstalls.json``:
 
-* :func:`ask` keeps the request beside the dataflow's spec
-  (:data:`REQUESTS_FILE`), which the doc does not carry and no tab writes. It
-  writes nothing in the owner's store and nothing in the dataflow.
-* :func:`apply`, the owner's alone, copies the dataset's folder from the
-  editor's store into hers and adds it to the dataflow as her Add to project
-  does: her own change, so her editors' runs then read it from her store.
-* :func:`dismiss`, the owner's alone, drops the request and leaves nothing
-  behind.
-
-A dataset of the shared catalog needs no copy: the editor's Add to project of
-one asks the owner to add it, and his drop of one asks nothing, since every
-account reads the shared catalog. A collection is not asked for: its files
-stay where the editor's store keeps them, which a copy of its index does not
-bring. Each change is told to the dataflow's room (:data:`CHANGED_EVENT`), so
-every tab reads the requests again.
+* a dataset or a layer group of his Data Catalog: her Apply (:func:`apply`)
+  copies its folders from his store into hers, unless hers holds them already,
+  and adds it to the dataflow as her Add to project does: her own change, so
+  her editors' runs then read it from her store;
+* a collection of his Data Catalog: the same, its files coming with its index.
+  A collection of a folder on this machine is read where the folder is, and
+  one of a bucket or a service reads the copies of its files his media cache
+  holds (``discovery/application/cache_collection.py``), which her Apply copies
+  into hers, within her cache's bound;
+* a dataset of the shared Data Catalog needs no copy: his Add to project of one
+  asks her to add it, and his drop of one asks nothing, since every account's
+  runs read the shared catalog.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import shutil
-import threading
 import uuid
 from pathlib import Path
 from typing import Any
 
 from utk_curio.backend.app.datasets.domain.constants import is_layer_group_id
 from utk_curio.backend.app.datasets.domain.errors import DatasetCatalogError
+from utk_curio.backend.app.projects.editor_requests import Asked
 
 logger = logging.getLogger(__name__)
 
-#: The requests of a dataflow, beside its spec.
-REQUESTS_FILE = "dataset-requests.json"
 #: The install tool of the review a request is (``agentInstalls.json``).
 TOOL = "dataset.install"
-#: What the dataflow's room is told after a request is made, applied or dismissed.
-CHANGED_EVENT = "dataset_requests_changed"
-
-#: What anyone but the owner and her editors is told who asks.
-WATCHER_REFUSAL = "Only the owner and the editors the owner invited add datasets to this dataflow."
+#: The request's field naming the dataset, and its name.
+ITEM = "datasetId"
+NAME = "datasetName"
+#: What a refusal calls the items of this kind.
+ITEMS = "datasets"
 #: What the owner is told who asks herself.
 OWNERS_OWN = "You own this dataflow: add the dataset to it with Add to project."
-#: What an editor is told who asks for a collection.
-COLLECTION_REFUSAL = (
-    "A collection cannot be asked for: its files stay where your Data Catalog keeps them. "
-    "Ask the dataflow's owner to add it from the Discovery Catalog."
-)
 NOT_FOUND = "Dataset not found"
-
-_guard = threading.Lock()
-_locks: dict[str, threading.Lock] = {}
-
-
-def _lock(project_id: str) -> threading.Lock:
-    """The lock of one dataflow's requests: a read, a change and its write."""
-    with _guard:
-        return _locks.setdefault(project_id, threading.Lock())
-
-
-# ---------------------------------------------------------------------------
-# Who asks, and of whom
-# ---------------------------------------------------------------------------
-
-class _Dataflow:
-    """The dataflow a request names, its owner's store and the asker's role."""
-
-    def __init__(self, user, project_id: str):
-        from utk_curio.backend.app.projects import access
-        from utk_curio.backend.app.projects.models import Project
-        from utk_curio.backend.app.projects.repositories import NotFoundError
-        from utk_curio.backend.app.projects.services import _owner_user_dir_key
-        from utk_curio.backend.extensions import db
-
-        if user is None:
-            raise DatasetCatalogError("Authorization required", 401)
-        project = db.session.get(Project, project_id)
-        if project is None:
-            raise NotFoundError(f"Project {project_id} not found")
-        self.role = access.agents_role(user, project)
-        if self.role not in access.EDIT_ROLES:
-            raise DatasetCatalogError(WATCHER_REFUSAL, 403)
-        self.user = user
-        self.project = project
-        self.project_id = project.id
-        self.owner_key = _owner_user_dir_key(project)
-        owner = project.owner
-        self.owner_name = (owner.name or owner.username) if owner is not None else "the owner"
-
-    @property
-    def owner(self) -> bool:
-        from utk_curio.backend.app.projects import access
-
-        return self.role == access.OWNER
-
-
-def _owners_alone(flow: _Dataflow) -> None:
-    """Refuse an editor's Apply or Dismiss: a request waits for the owner's
-    review, as an install an agent asks for does."""
-    if flow.owner:
-        return
-    from utk_curio.backend.app.projects.access import owners_review
-
-    raise DatasetCatalogError(owners_review(flow.owner_name), 403)
-
-
-# ---------------------------------------------------------------------------
-# The requests file
-# ---------------------------------------------------------------------------
-
-def _path(owner_key: str, project_id: str) -> Path:
-    from utk_curio.backend.app.projects import storage
-
-    return storage.project_dir(str(owner_key), project_id) / REQUESTS_FILE
-
-
-def _read(owner_key: str, project_id: str) -> list[dict[str, Any]]:
-    path = _path(owner_key, project_id)
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return []
-    except (OSError, ValueError):
-        logger.warning("%s does not read; the dataflow holds no request", path, exc_info=True)
-        return []
-    held = data.get("requests") if isinstance(data, dict) else None
-    return [entry for entry in held if isinstance(entry, dict)] if isinstance(held, list) else []
-
-
-def _write(owner_key: str, project_id: str, requests: list[dict[str, Any]]) -> None:
-    """Write *requests* whole, so a reader never sees half of them; with none
-    left, the file goes."""
-    path = _path(owner_key, project_id)
-    if not path.parent.is_dir():
-        return
-    if not requests:
-        path.unlink(missing_ok=True)
-        return
-    tmp = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp")
-    try:
-        tmp.write_text(json.dumps({"requests": requests}, indent=2), encoding="utf-8")
-        os.replace(tmp, path)
-    finally:
-        tmp.unlink(missing_ok=True)
-
-
-def _shown(request: dict[str, Any]) -> dict[str, Any]:
-    """A request as the routes answer it: all but the store it copies from."""
-    return {key: value for key, value in request.items() if key != "store"}
-
-
-def _tell_the_room(project_id: str) -> None:
-    """Tell the dataflow's tabs its requests changed, so each reads them again."""
-    from utk_curio.backend import extensions
-    from utk_curio.backend.app.collaboration import room_state
-    from utk_curio.backend.config import COLLAB_NAMESPACE
-
-    sio = extensions.socketio
-    if sio is None:
-        return
-    try:
-        sio.emit(CHANGED_EVENT, {"dataflowId": project_id}, to=room_state.room_for(project_id),
-                 namespace=COLLAB_NAMESPACE)
-    except Exception:  # noqa: BLE001 - a request stands whether or not the room heard of it
-        logger.exception("the room of dataflow %s could not be told its requests changed", project_id)
 
 
 # ---------------------------------------------------------------------------
@@ -213,7 +83,7 @@ def _shared_item(dataset_id: str) -> dict[str, Any] | None:
     return None
 
 
-def _listed(flow: _Dataflow, dataset_ids: list[str]) -> bool:
+def _listed(flow, dataset_ids: list[str]) -> bool:
     """Whether the dataflow lists each of *dataset_ids* already, as the
     asker's listing of it reads its refs."""
     from utk_curio.backend.app.datasets.repositories.installed import InstalledDatasetRepository
@@ -223,82 +93,45 @@ def _listed(flow: _Dataflow, dataset_ids: list[str]) -> bool:
     return bool(dataset_ids) and all(dataset_id in listed for dataset_id in dataset_ids)
 
 
-def ask(user, project_id: str, dataset_id: object, *, node_id: object = None, add: bool = False) -> dict[str, Any]:
-    """An editor's request that the owner add *dataset_id* to her dataflow:
-    one of his own Data Catalog, which he dropped as a file, dragged as a card
-    (onto the node *node_id*, or onto the canvas, which made it) or added with
-    Add to project (*add*). A dataset of the shared catalog is asked for only
-    by Add to project, since every account's runs read it; the answer says
-    when nothing was asked. One request stands for a dataset an editor asked
-    for and the owner has not reviewed: asking again names the new node too.
+def asked(flow, dataset_id: str, *, add: bool) -> Asked:
+    """What an editor's ask for *dataset_id* is for: one of his own Data
+    Catalog, which he dropped as a file, dragged as a card or added with Add to
+    project (*add*), a collection among them; or one of the shared catalog,
+    asked for only by Add to project, since every account's runs read it. The
+    answer says why nothing needs asking: the dataflow lists it already, or a
+    drop of a shared one."""
+    from utk_curio.backend.app.projects.services import _history_person
 
-    Writes the request beside the dataflow's spec and nothing else: not the
-    owner's store, not the dataflow."""
-    flow = _Dataflow(user, project_id)
-    if flow.owner:
-        raise DatasetCatalogError(OWNERS_OWN, 409)
-    dataset_id = str(dataset_id or "").strip()
-    if not dataset_id:
-        raise DatasetCatalogError("datasetId is required", 400)
-
-    from utk_curio.backend.app.projects.services import _history_person, _user_dir_key
-
-    asker_key = _user_dir_key(user)
-    folders, collection = _own_folders(asker_key, dataset_id)
+    folders, collection = _own_folders(flow.asker_key, dataset_id)
     if _listed(flow, [row.dataset_id for row in folders] if folders else [dataset_id]):
-        return {"requested": False, "reason": "listed"}
-    if collection:
-        raise DatasetCatalogError(COLLECTION_REFUSAL, 400)
+        return Asked(reason="listed")
     if folders:
         first = folders[0]
         title = (first.title or dataset_id) if not is_layer_group_id(dataset_id) else _group_title(folders, dataset_id)
         fmt = first.format if len(folders) == 1 else "layers"
-        store: str | None = asker_key
-        where = f"from {_history_person(user)['name']}'s Data Catalog"
+        store: str | None = flow.asker_key
+        where = f"from {_history_person(flow.user)['name']}'s Data Catalog"
     else:
         shared = _shared_item(dataset_id)
         if shared is None:
             raise DatasetCatalogError(NOT_FOUND, 404)
         if not add:
             # Every account's runs read the shared catalog: nothing to ask.
-            return {"requested": False, "reason": "shared"}
+            return Asked(reason="shared")
         title = str(shared.get("title") or dataset_id)
         fmt = str(shared.get("format") or "")
         store = None
         where = "from the shared Data Catalog"
-    node = str(node_id).strip() if isinstance(node_id, str) and node_id.strip() else None
-
-    from utk_curio.backend.app.common.record_clock import utc_now
-
-    with _lock(flow.project_id):
-        requests = _read(flow.owner_key, flow.project_id)
-        mine = next((r for r in requests if r.get("status") == "pending" and r.get("datasetId") == dataset_id
-                     and (r.get("by") or {}).get("account") == str(user.id)), None)
-        if mine is not None:
-            if node and node not in mine.setdefault("nodeIds", []):
-                mine["nodeIds"].append(node)
-                _write(flow.owner_key, flow.project_id, requests)
-            request = mine
-        else:
-            request = {
-                "proposalId": uuid.uuid4().hex,
-                "tool": TOOL,
-                "status": "pending",
-                "summary": f"Add dataset · {title}",
-                "preview": " · ".join(part for part in (title, (fmt or "").upper(), where) if part),
-                "datasetId": dataset_id,
-                "datasetName": title,
-                "format": fmt,
-                "by": _history_person(user),
-                "store": store,
-                "dirNames": [row.dir_name for row in folders],
-                "nodeIds": [node] if node else [],
-                "requestedAt": utc_now().strftime("%Y-%m-%dT%H:%M:%SZ"),
-            }
-            requests.append(request)
-            _write(flow.owner_key, flow.project_id, requests)
-    _tell_the_room(flow.project_id)
-    return {"requested": True, "request": _shown(request)}
+    noun = "collection" if collection else "dataset"
+    return Asked(item=dataset_id, fields={
+        "summary": f"Add {noun} · {title}",
+        "preview": " · ".join(part for part in (title, (fmt or "").upper(), where) if part),
+        "datasetName": title,
+        "format": "collection" if collection else fmt,
+        "shared": store is None,
+        "store": store,
+        "dirNames": [row.dir_name for row in folders],
+    })
 
 
 def _group_title(folders: list[Any], group_id: str) -> str:
@@ -313,100 +146,49 @@ def _group_title(folders: list[Any], group_id: str) -> str:
     return first
 
 
-def pending(user, project_id: str) -> list[dict[str, Any]]:
-    """The requests of the dataflow the owner has not reviewed, oldest
-    first: for its owner and her editors."""
-    flow = _Dataflow(user, project_id)
-    with _lock(flow.project_id):
-        requests = _read(flow.owner_key, flow.project_id)
-    return [_shown(r) for r in requests if r.get("status") == "pending"]
+# ---------------------------------------------------------------------------
+# The owner's Apply
+# ---------------------------------------------------------------------------
 
-
-def _taken(flow: _Dataflow, request_id: str) -> dict[str, Any]:
-    """Take the pending request *request_id* off the dataflow's requests,
-    under its lock; 404 when there is none."""
-    requests = _read(flow.owner_key, flow.project_id)
-    request = next((r for r in requests if r.get("proposalId") == request_id), None)
-    if request is None or request.get("status") != "pending":
-        raise DatasetCatalogError(f"request {request_id!r} not found", 404)
-    _write(flow.owner_key, flow.project_id, [r for r in requests if r is not request])
-    return request
-
-
-def dismiss(user, project_id: str, request_id: str) -> dict[str, Any]:
-    """The owner's Dismiss of a request: it goes, and nothing else changes."""
-    flow = _Dataflow(user, project_id)
-    _owners_alone(flow)
-    with _lock(flow.project_id):
-        _taken(flow, request_id)
-    _tell_the_room(flow.project_id)
-    return {"proposalId": request_id, "status": "dismissed"}
-
-
-def apply(user, project_id: str, request_id: str) -> dict[str, Any]:
-    """The owner's Apply of a request: the dataset's folders are copied from
-    the asker's store into hers, unless hers holds them already, and the
-    dataset is added to the dataflow as her Add to project adds it, as her
-    change. A request whose asker no longer edits the dataflow, a dataset the
-    asker's store no longer holds, or one that cannot be added, is not
-    applied: the request goes, with a 409 that says why, and what this Apply
-    copied goes with it."""
+def apply(flow, request: dict[str, Any]) -> dict[str, Any]:
+    """The owner's Apply of a request for a dataset: its folders are copied
+    from the asker's store into hers, unless hers holds them already, a
+    collection's cached files with them, and the dataset is added to the
+    dataflow as her Add to project adds it, as her change. What this Apply
+    copied goes when the dataset cannot be added."""
     from utk_curio.backend.app.datasets.application.catalog_service import DatasetCatalogService
 
-    flow = _Dataflow(user, project_id)
-    _owners_alone(flow)
-    with _lock(flow.project_id):
-        request = _taken(flow, request_id)
-        asker = (request.get("by") or {}).get("name") or "the editor"
-        if not _still_editing(flow, request):
-            raise DatasetCatalogError(
-                f"{request.get('datasetName') or request.get('datasetId')} could not be added: "
-                f"{asker} no longer edits this dataflow.",
-                409,
-            )
-        copied: list[Path] = []
-        try:
-            for dir_name in request.get("dirNames") or []:
-                target = _copy(str(request.get("store") or ""), flow.owner_key, str(dir_name))
-                if target is not None:
-                    copied.append(target)
-            item = DatasetCatalogService(user).install_dataset(flow.project_id, str(request["datasetId"]))
-        except (DatasetCatalogError, OSError, ValueError) as exc:
-            for target in copied:
-                _forget_copy(flow.owner_key, target)
-            reason = str(exc.args[0]) if isinstance(exc, DatasetCatalogError) and exc.args else str(exc)
-            raise DatasetCatalogError(
-                f"{request.get('datasetName') or request.get('datasetId')} could not be added ({reason}): "
-                f"ask {asker} to ask again.",
-                409,
-            ) from exc
-    _tell_the_room(flow.project_id)
-    return {
-        "proposalId": request_id,
-        "status": "applied",
-        "installedDataset": {"id": item.get("id") or request["datasetId"],
-                             "name": request.get("datasetName") or item.get("title")},
-    }
-
-
-def _still_editing(flow: _Dataflow, request: dict[str, Any]) -> bool:
-    """Whether the account that asked still edits the dataflow, and the store
-    the request copies from is that account's: a request stands only while its
-    asker is an editor the owner invited."""
-    from utk_curio.backend.app.projects import access
-    from utk_curio.backend.app.projects.services import _user_dir_key
-    from utk_curio.backend.app.users.models import User
-    from utk_curio.backend.extensions import db
-
-    account = (request.get("by") or {}).get("account")
+    store = str(request.get("store") or "")
+    copied: list[Path] = []
+    cached: list[Path] = []
     try:
-        asker = db.session.get(User, int(account))
-    except (TypeError, ValueError):
-        return False
-    if asker is None or access.agents_role(asker, flow.project) != access.EDITOR:
-        return False
-    store = request.get("store")
-    return store is None or store == _user_dir_key(asker)
+        for dir_name in request.get("dirNames") or []:
+            target = _copy(store, flow.owner_key, str(dir_name))
+            if target is not None:
+                copied.append(target)
+        if store and request.get("format") == "collection":
+            cached = _copy_cached_files(store, flow.owner_key, str(request["datasetId"]))
+        item = DatasetCatalogService(flow.user).install_dataset(flow.project_id, str(request["datasetId"]))
+    except Exception:
+        for path in cached:
+            path.unlink(missing_ok=True)
+        for target in copied:
+            _forget_copy(flow.owner_key, target)
+        raise
+    return {"installedDataset": {"id": item.get("id") or request["datasetId"],
+                                 "name": request.get("datasetName") or item.get("title")}}
+
+
+def refusal(exc: Exception) -> str | None:
+    """Why an Apply that raised *exc* refused, in the words the owner is told;
+    None for a fault that is no refusal."""
+    from utk_curio.backend.app.discovery.domain.errors import DiscoveryError
+
+    if isinstance(exc, DatasetCatalogError):
+        return str(exc.args[0]) if exc.args else "the dataset could not be added"
+    if isinstance(exc, (DiscoveryError, OSError, ValueError)):
+        return str(exc)
+    return None
 
 
 def _copy(from_key: str, to_key: str, dir_name: str) -> Path | None:
@@ -437,6 +219,42 @@ def _copy(from_key: str, to_key: str, dir_name: str) -> Path | None:
             shutil.rmtree(staging, ignore_errors=True)
     index_repo.safe_upsert_from_dir(to_key, target)
     return target
+
+
+def _copy_cached_files(from_key: str, to_key: str, dataset_id: str) -> list[Path]:
+    """Copy the files of the collection *dataset_id* that the media cache of
+    the store *from_key* holds, a bucket's or a service's, into the cache of the
+    store *to_key*, each one it does not hold yet, within that cache's bound
+    (``cache_collection.check_room``), each handed to the node that reads it.
+    A collection of a folder holds none: its files are read where they are.
+    Returns the files copied."""
+    from utk_curio.backend.app.discovery.application import cache_collection
+    from utk_curio.backend.app.discovery.infrastructure import media_dirs
+
+    source = cache_collection.objects_dir(from_key, dataset_id, create=False)
+    if not source.is_dir():
+        return []
+    held = cache_collection.objects_dir(to_key, dataset_id, create=False)
+    todo = [path for path in sorted(source.iterdir())
+            if path.is_file() and not path.name.endswith(".part") and not (held / path.name).is_file()]
+    if not todo:
+        return []
+    cache_collection.check_room(to_key, sum(path.stat().st_size for path in todo))
+    target = cache_collection.objects_dir(to_key, dataset_id)
+    copied: list[Path] = []
+    try:
+        for path in todo:
+            final = target / path.name
+            part = final.with_name(final.name + ".part")
+            shutil.copyfile(path, part)
+            os.replace(part, final)
+            media_dirs.grant_to_child(final)
+            copied.append(final)
+    except BaseException:
+        for path in copied:
+            path.unlink(missing_ok=True)
+        raise
+    return copied
 
 
 def _forget_copy(owner_key: str, target: Path) -> None:

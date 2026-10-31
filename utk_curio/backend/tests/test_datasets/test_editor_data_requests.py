@@ -219,21 +219,56 @@ def test_an_editors_add_of_a_shared_dataset_asks_the_owner_and_his_drop_of_one_a
     assert _review(client, flow) == []
 
 
-def test_an_editors_own_collection_is_not_asked_for(client, flow, tmp_path, monkeypatch):
-    """A collection's files stay where bob's store keeps them, which a copy of
-    its index would not bring: his request for one is refused, and nothing
-    waits in alice's review."""
+def test_an_editors_own_collection_comes_to_her_store_with_its_files_once_she_applies_it(
+    client, flow, sandbox, tmp_path, monkeypatch,
+):
+    """bob's collection is of a service, whose images his store keeps in its
+    media cache. His Add to project of it asks alice, and her store and her
+    dataflow's list are as they were. Her Apply copies its index into her store
+    and the files his cache holds into hers, and lists it in her dataflow; his
+    run of a node that loads it then reads her copy, index and files."""
+    import pandas as pd
+
+    from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
+    from utk_curio.backend.app.discovery.application import cache_collection
     from utk_curio.backend.app.discovery.infrastructure import storage as discovery_storage
-    from utk_curio.backend.tests.test_datasets.test_editor_datasets import REPO, _a_collection
+    from utk_curio.backend.tests.test_datasets.test_editor_datasets import (
+        NOISE,
+        REPO,
+        SERVICE,
+        _a_collection,
+        _load_collections,
+    )
 
     monkeypatch.setenv(discovery_storage.ENV_ROOT, str(REPO / "discovery"))
-    collection = _a_collection(flow.bob, tmp_path)
+    collection = _a_collection(flow.bob, tmp_path, source_id=SERVICE)
+    first = pd.read_parquet(NOISE / "data" / "index.parquet").iloc[0]
+    image = f"{first.file_id}.{first.ext}"
+    (cache_collection.objects_dir(_key(flow.bob), collection) / image).write_bytes(b"RIFF")
+    before = _hers(flow)
 
-    resp = _ask(client, flow, "bob", collection, add=True)
+    request = _asked(client, flow, "bob", collection, add=True)
 
-    assert resp.status_code == 400, f"bob's request answered {resp.status_code}: {resp.get_data(as_text=True)[:300]}"
-    assert "collection" in resp.get_json()["error"]
-    assert _review(client, flow) == []
+    assert (request["format"], request["summary"].split(" · ")[0]) == ("collection", "Add collection"), request
+    assert _hers(flow) == before, "bob's ask wrote to alice's store or her dataflow"
+    resp = _apply(client, flow, "alice", request["proposalId"])
+    assert resp.status_code == 200, resp.get_data(as_text=True)[:300]
+    assert collection in _listed(flow)
+    hers = cache_collection.objects_dir(_key(flow.alice), collection, create=False)
+    assert (hers / image).read_bytes() == b"RIFF"
+    body = _load_collections(client, sandbox, flow.tokens["bob"], flow.pid, collection)
+    assert body["collections"][collection]["objects"] == str(hers), body["collections"]
+    folder = next(row for row in _index_rows(flow.alice) if row.dataset_id == collection).dir_name
+    assert Path(body["dataset_paths"][collection]).resolve().is_relative_to(
+        dataset_dir(_key(flow.alice), folder).resolve()
+    ), body["dataset_paths"]
+
+
+def _index_rows(user) -> list:
+    """The rows of *user*'s dataset index, one per folder of their store."""
+    from utk_curio.backend.app.datasets.repositories import index as index_repo
+
+    return list(index_repo.safe_sync_rows_by_dir(_key(user)).values())
 
 
 # ---------------------------------------------------------------------------
