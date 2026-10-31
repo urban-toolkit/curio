@@ -1004,6 +1004,24 @@ class TestContentReviewMintInheritsTheGate:
         # The child received the grounding inputs for a data-loading node.
         assert '"sourceGrounding"' in calls[1][-1]["content"]
 
+    def test_a_path_only_the_delegates_intent_names_is_not_the_users(self, client, user_and_token, tmp_curio, project, monkeypatch):
+        """The task the runtime records in the delegate's chat holds the
+        delegating agent's words: a path only its intent names was read there
+        as one the user typed, and the content reading it landed."""
+        _, token = user_and_token
+        _install(client, token, project, NB)
+        att = _attach(client, token, project, NB, target={"kind": "node", "targetId": "n1"})
+        calls = _script(monkeypatch, [
+            _delegate_tail("node.content.generate", {"nodeId": "n1", "intent": "load data/tracts.geojson"}),
+            'import geopandas as gpd\ngdf = gpd.read_file("data/tracts.geojson")\nreturn gdf',
+            "The file could not be loaded.",
+        ])
+        body = _run(client, token, project, att, "fill this node")
+        assert _changes(body) == [] and _proposals(body) == []
+        result = calls[2][-1]["content"]
+        assert "could not be written into the node" in result, result
+        assert "'data/tracts.geojson' (line 2)" in result, result
+
 
 class TestContentForANewNode:
     """A Node Builder attached to a node that delegates the content of a new
