@@ -1,0 +1,34 @@
+{
+  "dataflow": {
+    "categories": {
+      "city": [
+        "Chicago"
+      ],
+      "complexity": [
+        "Beginner"
+      ]
+    },
+    "nodes": [
+      {
+        "id": "8de3c334-a7ef-515e-9ec8-6b65c1680a5e",
+        "type": "curio.builtin/autk-grammar",
+        "x": 0,
+        "y": 430,
+        "content": "{\n  \"data\": [\n    {\n      \"type\": \"osm\",\n      \"pbfFileUrl\": \"docs/examples/data/chicago_downtown.osm.pbf\",\n      \"queryArea\": {\n        \"bbox\": [\n          -87.662,\n          41.859,\n          -87.613,\n          41.898\n        ]\n      },\n      \"outputTableName\": \"table_osm\",\n      \"autoLoadLayers\": {\n        \"layers\": [\n          \"parks\",\n          \"water\",\n          \"roads\",\n          \"buildings\"\n        ]\n      }\n    }\n  ]\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load OpenStreetMap's parks, water, roads and buildings of downtown Chicago.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "OpenStreetMap layers"
+        },
+        "title": "OpenStreetMap layers"
+      }
+    ],
+    "edges": [],
+    "name": "osm-layers",
+    "task": "",
+    "timestamp": 1792540800000,
+    "provenance_id": "osm-layers"
+  }
+}

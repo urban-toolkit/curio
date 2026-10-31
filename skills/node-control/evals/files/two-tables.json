@@ -1,0 +1,70 @@
+{
+  "dataflow": {
+    "categories": {
+      "complexity": [
+        "Beginner"
+      ]
+    },
+    "nodes": [
+      {
+        "id": "c16e25b5-9ed4-4b87-8049-dde62c9bfa5a",
+        "type": "curio.builtin/data-loading",
+        "x": 482.5,
+        "y": 65.75,
+        "content": "import pandas as pd\r\n\r\nd = {'a': [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\", \"G\", \"H\", \"I\"], 'b': [10, 20, 30, 40, 50, 60, 70, 80, 90]}\r\ndf = pd.DataFrame(data=d)\r\n\r\nreturn df",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "e392ed5c-0df1-4815-a76f-542930b855d4",
+        "type": "curio.builtin/data-loading",
+        "x": 470.92954493246634,
+        "y": 442.9922730405202,
+        "content": "import pandas as pd\r\n\r\nd = {'a': [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\", \"G\", \"H\", \"I\"], 'b': [2, 4, 6, 8, 10, 12, 14, 16, 18]}\r\ndf = pd.DataFrame(data=d)\r\n\r\nreturn df",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "9c3f8293-8cc9-4ed8-8840-ca60655e21d7",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1423.551666086507,
+        "y": 260.04505115875406,
+        "content": "return input_0, input_1",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-c16e25b5-9ed4-4b87-8049-dde62c9bfa5aout-9c3f8293-8cc9-4ed8-8840-ca60655e21d7in",
+        "source": "c16e25b5-9ed4-4b87-8049-dde62c9bfa5a",
+        "sourceHandle": "out",
+        "target": "9c3f8293-8cc9-4ed8-8840-ca60655e21d7",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-e392ed5c-0df1-4815-a76f-542930b855d4out-9c3f8293-8cc9-4ed8-8840-ca60655e21d7in_1",
+        "source": "e392ed5c-0df1-4815-a76f-542930b855d4",
+        "sourceHandle": "out",
+        "target": "9c3f8293-8cc9-4ed8-8840-ca60655e21d7",
+        "targetHandle": "in_1"
+      }
+    ],
+    "name": "two-tables",
+    "task": "",
+    "timestamp": 1747342705197,
+    "provenance_id": "two-tables"
+  }
+}

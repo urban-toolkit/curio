@@ -30,7 +30,7 @@
       "id": "nominal+quantitative",
       "columns": { "nominal": { "least": 1 }, "quantitative": { "least": 1 } },
       "produces": "bar",
-      "description": "the first nominal column on x, with an EXPLICIT \"aggregate\": \"mean\" on y"
+      "description": "the first nominal column on x and the first quantitative column on y, with an EXPLICIT \"aggregate\": \"mean\""
     },
     {
       "id": "two-quantitative",
