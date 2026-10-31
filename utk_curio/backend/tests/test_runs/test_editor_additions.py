@@ -18,7 +18,8 @@ made in his tab or by an agent run he asked for, does not put it within reach
 of his runs: a play, a run on the server and his agent's run read it from his
 own store, which does not hold it, and his chat holds none of the skills of a
 package of hers he added. Once alice puts it in herself (her tab, Add to
-project, an agent run she asked for), his runs read it from her store. His own
+project or to all projects, an agent run she asked for), his runs read it from
+her store, a package his node already counted in among them. His own
 items and the shared catalog's load as before, and alice's runs read all of
 hers.
 
@@ -47,6 +48,8 @@ TOOLS = "ai.test.flood-tools"
 TOOLS_DIR = f"{TOOLS}@1"
 BOBS_TOOLS = "ai.test.bobs-tools"
 BOBS_DIR = f"{BOBS_TOOLS}@1"
+GAUGES = "ai.test.gauge-tools"
+GAUGES_DIR = f"{GAUGES}@1"
 FLOOD_MODEL = "ai.test.flood-model"
 PRIVATE_MODEL = "ai.test.private-model"
 BOBS_MODEL = "ai.test.bobs-model"
@@ -71,6 +74,7 @@ NODES = {
     "calc-2": ("curio.scout/raster-calculator@1", "return 2\n"),
     "bobs": (f"{BOBS_TOOLS}/count@1", "from bobs_helpers import count\nreturn count()\n"),
     "bobs-model": (BUILTIN, f'model = curio_load_model("{BOBS_MODEL}")\nreturn 1\n'),
+    "gauge": (f"{GAUGES}/reading@1", "from gauge_helpers import reading\nreturn reading()\n"),
 }
 
 
@@ -639,6 +643,68 @@ def test_a_node_of_a_package_only_she_holds_runs_without_her_modules_when_an_edi
         "root": _sources(flow.key, TOOLS_DIR), "names": ["flood_helpers"],
     }
     assert _play(client, flow, sandbox, "alice", "calc")["package_modules"]["root"] == _sources(flow.key, SCOUT_DIR)
+
+
+def _counted_in_by_his_node(app, client, flow, sandbox) -> None:
+    """alice's gauge package, which her store alone holds, and a dataflow of
+    hers whose lockfile is empty, so it uses the package of each node on its
+    canvas. bob's tab adds a node of the package: the dataflow then reads as
+    using it already, while bob's play of his node gets none of its modules."""
+    from utk_curio.backend.app.projects import access
+
+    _package(flow.key, GAUGES, "reading", "gauge_helpers", "def reading():\n    return 4\n")
+    flow.pid = _dataflow(client, flow.key, flow.tokens["alice"], packages=[], datasets=[])
+    access.add_editor(flow.alice, flow.pid, "bob")
+    _edit(_tab(app, flow, "bob"), _with_node(_node("gauge")))
+    assert not _on_disk(flow).get("packages"), "the dataflow's lockfile names a package"
+    listed = client.get(f"/api/packages/projects/{flow.pid}", headers=_auth(flow.tokens["alice"]))
+    assert listed.status_code == 200, listed.get_data(as_text=True)
+    assert GAUGES_DIR in listed.get_json()["packages"], "his node does not count her package in"
+    assert _play(client, flow, sandbox, "bob", "gauge").get("package_modules") is None
+
+
+def test_a_package_she_adds_to_a_dataflow_his_node_counted_it_in_runs_from_her_store(app, client, flow, sandbox):
+    """bob's node counts alice's gauge package in on a dataflow whose lockfile
+    is empty. Her Add to project of the package is her change all the same:
+    her lockfile names it beside the package her ``helpers`` node uses, her
+    record of what the dataflow uses holds it, and bob's play of his node gets
+    her package's modules, while his play of ``helpers`` still gets hers."""
+    from utk_curio.backend.app.collaboration import owner_uses
+
+    _counted_in_by_his_node(app, client, flow, sandbox)
+
+    resp = client.post(f"/api/packages/projects/{flow.pid}/install", json={"dirName": GAUGES_DIR},
+                       headers=_auth(flow.tokens["alice"]))
+
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+    assert GAUGES_DIR in (_on_disk(flow).get("packages") or []), "her Add left her lockfile naming no package"
+    assert TOOLS_DIR in _on_disk(flow)["packages"], "her Add took the package of her helpers node out"
+    assert owner_uses.recorded(flow.key, flow.pid).package(GAUGES_DIR), "her Add is not on her record"
+    assert _play(client, flow, sandbox, "bob", "gauge").get("package_modules") == {
+        "root": _sources(flow.key, GAUGES_DIR), "names": ["gauge_helpers"],
+    }
+    assert _play(client, flow, sandbox, "bob", "helpers").get("package_modules") == {
+        "root": _sources(flow.key, TOOLS_DIR), "names": ["flood_helpers"],
+    }
+
+
+def test_a_package_she_adds_to_all_projects_runs_from_her_store_where_his_node_counted_it_in(
+    app, client, flow, sandbox,
+):
+    """The same with Add to all projects, on the Node Catalog page: the
+    dataflow whose lockfile was empty names her gauge package, and bob's play
+    of his node gets her package's modules."""
+    _counted_in_by_his_node(app, client, flow, sandbox)
+
+    resp = client.post("/api/packages/defaults", json={"dirName": GAUGES_DIR}, headers=_auth(flow.tokens["alice"]))
+
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+    assert GAUGES_DIR in (_on_disk(flow).get("packages") or []), (
+        "her Add to all projects left this dataflow's lockfile naming no package"
+    )
+    assert _play(client, flow, sandbox, "bob", "gauge").get("package_modules") == {
+        "root": _sources(flow.key, GAUGES_DIR), "names": ["gauge_helpers"],
+    }
 
 
 def test_a_model_of_hers_an_editor_binds_to_a_node_loads_in_his_runs_only_once_she_binds_it(
