@@ -99,7 +99,7 @@ describe("the dataflow a canvas reads its outputs on", () => {
     renderLoader();
 
     await waitFor(() => expect(mockLoadTrill).toHaveBeenCalled());
-    expect(mockLoadSharedProject).toHaveBeenCalledWith(ROUTE_ID);
+    expect(mockLoadSharedProject).toHaveBeenCalledWith(ROUTE_ID, { lastResults: true });
     expect(openDataflowId()).toBe(ROUTE_ID);
   });
 
@@ -148,5 +148,23 @@ describe("the dataflow a canvas reads its outputs on", () => {
     unmount();
 
     expect(openDataflowId()).toBeNull();
+  });
+});
+
+describe("what a shared dataflow opens with", () => {
+  // An editor the owner invited opens her dataflow's canvas with the results
+  // his own runs kept, as she opens hers; a dashboard opens with the saved
+  // outputs, for him as for anyone.
+  it.each([
+    ["a canvas", false, { lastResults: true }],
+    ["a dashboard", true, { lastResults: false }],
+  ])("asks, on %s, for what it opens with", async (_where, presentation, asked) => {
+    mockLoadProject.mockRejectedValue(notFound());
+    mockLoadSharedProject.mockResolvedValue({ spec: SPEC, outputs: OUTPUTS });
+
+    renderLoader(presentation);
+
+    await waitFor(() => expect(mockLoadTrill).toHaveBeenCalled());
+    expect(mockLoadSharedProject.mock.calls).toEqual([[ROUTE_ID, asked]]);
   });
 });
