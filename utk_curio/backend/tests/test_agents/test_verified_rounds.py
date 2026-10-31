@@ -2315,3 +2315,43 @@ class TestNoReviewOfAnAnswer:
         assert self._cards_holding(client, token, ctx["pid"], JOIN_ANSWER) == []
         assert helper._node_content(ctx, ctx["stats"]) == ""
         assert ctx["exec_payloads"] == []  # nothing ran
+
+
+class TestUnverifiedSolveValuesACallMakesUp:
+    """Step 45 (#1264) on batch Solve's unverified path (``verify: false``),
+    which writes content without running it: a round whose data-loading code
+    adds a column of random numbers beside the catalog dataset it reads is
+    refused before anything is written, the call named, as the verified loop
+    refuses it (``TestVerifiedRounds``). A node that holds such code, the
+    user's own, keeps it: Solve asks for nothing there."""
+
+    #: The batch's loader with a column of random numbers, on its line 4.
+    MADE_UP = TestVerifiedSolve.LOADER.replace("return df", 'df["noise"] = np.random.rand(len(df))\nreturn df')
+
+    def test_a_round_that_adds_a_random_column_is_refused_by_name_and_writes_nothing(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        helper = TestVerifiedSolve()
+        user, token = user_and_token
+        ctx = helper._setup(client, user, token, monkeypatch, dl_replies=[self.MADE_UP], with_stats=False)
+        load = helper._solve(client, token, ctx, verify=False)["results"][ctx["load"]]
+        assert load["status"] == "failed", load
+        assert "np.random.rand (line 4)" in load["error"], load["error"]
+        assert helper._node_content(ctx, ctx["load"]) == ""
+        assert ctx["exec_payloads"] == []  # nothing ran
+
+    def test_a_node_that_holds_random_code_keeps_it(self, client, user_and_token, tmp_curio, monkeypatch):
+        from utk_curio.backend.app.collaboration import dataflow_docs
+
+        helper = TestVerifiedSolve()
+        user, token = user_and_token
+        ctx = helper._setup(client, user, token, monkeypatch, dl_replies=[helper.LOADER], with_stats=False)
+        held = self.MADE_UP.replace("{DATASET}", ctx["dataset_id"])
+        # The user writes it on the canvas once the plan has landed.
+        spec = dataflow_docs.live(ctx["ukey"], ctx["pid"])
+        next(n for n in spec["dataflow"]["nodes"] if n["id"] == ctx["load"])["content"] = held
+        dataflow_docs.write(ctx["ukey"], ctx["pid"], spec, dataflow_docs.person(ctx["ukey"], "edit"))
+        load = helper._solve(client, token, ctx, verify=False)["results"][ctx["load"]]
+        assert load["status"] == "skipped", load
+        assert helper._node_content(ctx, ctx["load"]) == held
+        assert ctx["dl_calls"] == [] and ctx["exec_payloads"] == []
