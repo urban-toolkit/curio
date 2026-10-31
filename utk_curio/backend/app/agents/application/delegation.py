@@ -332,6 +332,12 @@ def run_delegate(
     own pins, own ledger reserve→settle under the child's effective policy,
     ``parentExecutionId`` link — which the caller stores under the parent
     record's ``delegations``. Never raises: a child failure is data.
+
+    A child whose model stopped at the output cap failed: its reply is only
+    the start of one, so its code, draft or notes are not whole, and none of
+    it is used. Its reason says so (``delegate.cut-at-output-limit``, or
+    ``delegate.cut-while-thinking`` when its server streamed thinking and no
+    reply came), and its record says ``cutAtOutputLimit``.
     """
     child_id = uuid.uuid4().hex
     started = time.monotonic()
@@ -379,6 +385,14 @@ def run_delegate(
             agent_text.message("delegate.failed", coord=coord, error=provider_config.redact_error(exc, config)),
             _record("error", usage_sink, pins),
         )
+    if turn.cut_at_output_cap:
+        ledger.settle(user_key, child.reservation, usage=usage_sink or None, status="error")
+        record = _record("error", usage_sink, pins)
+        record["cutAtOutputLimit"] = True
+        limit = f"{child.run_policy['max_output_tokens']:,}"
+        if turn.thinking and not turn.text.strip():
+            return ("error", agent_text.message("delegate.cut-while-thinking", coord=coord, limit=limit), record)
+        return ("error", agent_text.message("delegate.cut-at-output-limit", coord=coord, limit=limit), record)
     ledger.settle(user_key, child.reservation, usage=usage_sink or None, status="ok")
     text = child.reply.decode(turn.text) if child.reply is not None else turn.text
     if len(text) > DELEGATE_RESULT_MAX_CHARS:

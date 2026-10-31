@@ -57,7 +57,22 @@ three times before the call failed with "Connection error.". So
 whose pieces keep the connection busy while the model writes, and puts the turn
 together from it. A stream that ends with no finish reason was cut: the turn
 raises :class:`ReplyCutShort` rather than pass a part of the reply off as all
-of it.
+of it, whether it was asked for whole or streamed.
+
+**A turn the output cap cut.** A turn carries its provider's stop reason
+(``ChatTurn.stop_reason``), on both paths: :func:`stream_chat_turn` writes it,
+once the stream has ended, into the ``finish`` dict its caller hands it, as
+:func:`run_chat_turn` reads it into its turn. A model that stopped because the
+turn reached its output cap (``max_output_tokens``) says so by that reason: an
+OpenAI-compatible server's ``length``, Anthropic's ``max_tokens``, Gemini's
+``MAX_TOKENS``; its text and calls are then only the start of its reply
+(``ChatTurn.cut_at_output_cap``). This module only reports it; what the reply
+then says is the run's (``turns/turn_loop.py``, ``delegation.py``). A server
+that streams the model's thinking apart from its reply (an OpenAI-compatible
+delta's ``reasoning_content`` or ``reasoning``, as vLLM's reasoning parsers,
+Ollama and DeepSeek send it) never has it read as the reply: the turn notes
+only that it came (``ChatTurn.thinking``), so a turn that spent its cap
+thinking can say so.
 
 The dispatch below was extracted verbatim from ``app/api/routes.py::_call_llm``
 (behavior-preserving) and is the seam a future LangChain adapter would sit behind.
@@ -88,7 +103,14 @@ class ReplySchemaRefused(RuntimeError):
 class ReplyCutShort(RuntimeError):
     """The endpoint's stream ended before the model finished its reply: no
     finish reason came. What arrived is only a part of the reply, so a caller
-    that waits for the whole turn gets this instead."""
+    that waits for the whole turn gets this instead, and a streamed turn
+    raises it after its last piece."""
+
+
+#: The stop reasons that say the model stopped because the turn reached its
+#: output cap: an OpenAI-compatible server's ``length``, Anthropic's
+#: ``max_tokens`` and Gemini's ``MAX_TOKENS`` (its finish reason's name).
+_OUTPUT_CAP_STOP_REASONS = frozenset({"length", "max_tokens", "MAX_TOKENS"})
 
 
 @dataclass(frozen=True)
@@ -157,11 +179,22 @@ def _call_id() -> str:
 @dataclass(frozen=True)
 class ChatTurn:
     """One model turn: its text, the native tool calls it made (none while no
-    tools are offered), and the provider's stop reason."""
+    tools are offered), the provider's stop reason, and whether the endpoint
+    streamed the model's thinking apart from its reply (``thinking``; the
+    text never holds it)."""
 
     text: str
     tool_calls: tuple = ()
     stop_reason: str = ""
+    thinking: bool = False
+
+    @property
+    def cut_at_output_cap(self) -> bool:
+        """Whether the model stopped because the turn reached its output cap
+        (``max_output_tokens``): its text and calls are then only the start
+        of its reply. A turn with no stop reason, such as a scripted one, is
+        whole."""
+        return self.stop_reason in _OUTPUT_CAP_STOP_REASONS
 
     @classmethod
     def of(cls, value) -> "ChatTurn":
@@ -530,6 +563,17 @@ def _gemini_text(response) -> str:
     return getattr(response, "text", "") or ""
 
 
+def _gemini_stop_reason(response) -> str:
+    """The first candidate's finish reason by its name (``MAX_TOKENS``), or
+    "" when it names none. The reason is an enum whose text is its number, so
+    its name is read."""
+    candidates = getattr(response, "candidates", None) or []
+    reason = getattr(candidates[0], "finish_reason", None) if candidates else None
+    if reason is None:
+        return ""
+    return str(getattr(reason, "name", None) or reason)
+
+
 def _gemini_calls(response, tools: list | None) -> tuple:
     schemas = {t["name"]: t.get("parameters") for t in tools or ()}
     calls = []
@@ -571,7 +615,8 @@ def run_chat_turn(
     endpoint that refuses either raises :class:`NativeToolsRefused` or
     :class:`ReplySchemaRefused`. An OpenAI-compatible endpoint is asked for a
     stream, read whole; one that ends it before the model finished raises
-    :class:`ReplyCutShort`.
+    :class:`ReplyCutShort`. A turn the output cap cut is returned as it came,
+    its stop reason saying so (:attr:`ChatTurn.cut_at_output_cap`).
     """
     try:
         return _run_chat_turn(
@@ -640,6 +685,7 @@ def _run_chat_turn(
         return ChatTurn(
             text=_gemini_text(response),
             tool_calls=_gemini_calls(response, tools) if tools else (),
+            stop_reason=_gemini_stop_reason(response),
         )
     else:  # openai_compatible (default)
         return _openai_whole_turn(
@@ -650,8 +696,9 @@ def _run_chat_turn(
 def _openai_whole_turn(config, messages, max_output_tokens, usage_out, tools, tool_choice,
                        reply_schema) -> ChatTurn:
     """One OpenAI-compatible turn, read whole from its stream (see the module
-    docstring): its text, its native calls, its finish reason. A stream that
-    ends with no finish reason raises :class:`ReplyCutShort`."""
+    docstring): its text, its native calls, its finish reason and whether the
+    model's thinking came apart. A stream that ends with no finish reason
+    raises :class:`ReplyCutShort`."""
     started = time.monotonic()
     finish: dict = {}
     texts: list[str] = []
@@ -662,20 +709,29 @@ def _openai_whole_turn(config, messages, max_output_tokens, usage_out, tools, to
             calls.append(event)
         else:
             texts.append(event)
-    if not finish.get("reason"):
-        raise ReplyCutShort(
-            "the model's server ended the reply before the model finished it, after "
-            f"{time.monotonic() - started:.0f} s; a proxy before the server may limit how long a request lasts"
-        )
+    _finished(finish, started)
     # A reply that only calls tools has no content.
-    return ChatTurn(text="".join(texts), tool_calls=tuple(calls), stop_reason=finish["reason"])
+    return ChatTurn(text="".join(texts), tool_calls=tuple(calls), stop_reason=finish["reason"],
+                    thinking=bool(finish.get("thinking")))
+
+
+def _finished(finish: dict, started: float) -> None:
+    """Raise :class:`ReplyCutShort` for an OpenAI-compatible stream, begun at
+    *started*, that ended with no finish reason (*finish*, as
+    :func:`_openai_events` filled it)."""
+    if not finish.get("reason"):
+        raise ReplyCutShort(agent_text.message(
+            "turn.reply-cut-short", seconds=f"{time.monotonic() - started:.0f}"))
 
 
 def _openai_events(config, messages, max_output_tokens, usage_out, tools, tool_choice, *,
                    reply_schema=None, finish: dict | None = None):
     """An OpenAI-compatible turn as the endpoint streams it: each text delta
     as it arrives, then each native call whole. *finish* gets the choice's
-    finish reason. A streamed turn and a whole one both ask through here."""
+    finish reason (``reason``), and ``thinking`` once a delta carries the
+    model's thinking apart from its reply (``reasoning_content``, or
+    ``reasoning``), which is never yielded. A streamed turn and a whole one
+    both ask through here."""
     from openai import OpenAI
     kwargs = {"api_key": config.api_key or "no-key"}
     if config.base_url:
@@ -708,6 +764,10 @@ def _openai_events(config, messages, max_output_tokens, usage_out, tools, tool_c
         reason = getattr(choice, "finish_reason", None)
         if reason and finish is not None:
             finish["reason"] = str(reason)
+        if delta is not None and finish is not None and (
+            getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
+        ):
+            finish["thinking"] = True
         text = getattr(delta, "content", None) if delta is not None else None
         if text:
             yield text
@@ -746,16 +806,22 @@ def stream_chat_turn(
     *,
     tools: list | None = None,
     tool_choice: str = "auto",
+    finish: dict | None = None,
 ):
     """Streaming twin of :func:`run_chat_turn`: yields the turn's events as they
     arrive. A text delta is a bare string; a native tool call is a
-    :class:`ToolCall`, yielded once the call is complete.
+    :class:`ToolCall`, yielded once the call is complete. *finish*, when
+    given, gets what the whole turn's :class:`ChatTurn` carries besides them
+    once the stream has ended: the stop reason (``reason``), and ``thinking``
+    when the model's thinking came apart from its reply.
 
     Same provider dispatch and message handling. Callers that stop iterating
     close the underlying provider stream. A refusal of the offered tools raises
-    :class:`NativeToolsRefused`, which an endpoint gives before any event.
+    :class:`NativeToolsRefused`, which an endpoint gives before any event. An
+    OpenAI-compatible stream that ends with no finish reason raises
+    :class:`ReplyCutShort` after its last event.
     """
-    events = _stream_chat_turn(config, messages, max_output_tokens, usage_out, tools, tool_choice)
+    events = _stream_chat_turn(config, messages, max_output_tokens, usage_out, tools, tool_choice, finish)
     started = False
     try:
         for event in events:
@@ -769,7 +835,7 @@ def stream_chat_turn(
         events.close()
 
 
-def _stream_chat_turn(config, messages, max_output_tokens, usage_out, tools, tool_choice):
+def _stream_chat_turn(config, messages, max_output_tokens, usage_out, tools, tool_choice, finish=None):
     api_type = config.api_type
     if api_type == "testing":
         # The scripted reply, delivered as a single chunk. Splitting it would
@@ -783,6 +849,8 @@ def _stream_chat_turn(config, messages, max_output_tokens, usage_out, tools, too
         if turn.text or not turn.tool_calls:
             yield turn.text
         yield from turn.tool_calls
+        if finish is not None:
+            finish.update(reason=turn.stop_reason, thinking=turn.thinking)
         return
     if api_type == "anthropic":
         import anthropic
@@ -806,6 +874,8 @@ def _stream_chat_turn(config, messages, max_output_tokens, usage_out, tools, too
                 final = None  # usage is best-effort; the reply already streamed
             if final is not None:
                 _anthropic_usage(usage_out, getattr(final, "usage", None))
+                if finish is not None:
+                    finish["reason"] = str(getattr(final, "stop_reason", "") or "")
                 if tools:
                     yield from _anthropic_calls(final)
     elif api_type == "gemini":
@@ -822,17 +892,26 @@ def _stream_chat_turn(config, messages, max_output_tokens, usage_out, tools, too
             send_kwargs["tool_config"] = _gemini_tool_config(tool_choice)
         last_chunk = None
         calls: list = []
+        reason = ""
         for chunk in chat.send_message(last, stream=True, **send_kwargs):
             last_chunk = chunk
+            # The last chunk that names a finish reason has the turn's.
+            reason = _gemini_stop_reason(chunk) or reason
             text = _gemini_text(chunk)
             if text:
                 yield text
             if tools:
                 calls.extend(_gemini_calls(chunk, tools))
         _gemini_usage(usage_out, getattr(last_chunk, "usage_metadata", None))
+        if finish is not None:
+            finish["reason"] = reason
         yield from calls
     else:  # openai_compatible (default)
-        yield from _openai_events(config, messages, max_output_tokens, usage_out, tools, tool_choice)
+        finish = {} if finish is None else finish
+        started = time.monotonic()
+        yield from _openai_events(config, messages, max_output_tokens, usage_out, tools, tool_choice,
+                                  finish=finish)
+        _finished(finish, started)
 
 
 def stream_chat_completion(

@@ -1386,6 +1386,14 @@ delegate {coord} failed: {error}
 
 delegate {coord} could not start: {exc}
 
+## delegate.cut-at-output-limit
+
+delegate {coord} was cut off: it reached its output limit of {limit} tokens before it finished its reply, so none of it was used
+
+## delegate.cut-while-thinking
+
+delegate {coord} was cut off: it spent its whole output limit of {limit} tokens thinking, before it wrote its reply, so nothing was used
+
 ## turn.example-unknown-key
 
 no worked example has the key {key}; call examples.read with no key to list the keys
@@ -1397,6 +1405,18 @@ the worked example {key} is not available in this project; call examples.read wi
 ## turn.context-truncated
 
 …[truncated: context exceeded the run-context bound]
+
+## turn.cut-at-output-limit
+
+*Cut off: the model reached its output limit of {limit} tokens before it finished this reply.*
+
+## turn.cut-while-thinking
+
+*Cut off: the model spent its whole output limit of {limit} tokens thinking, before it wrote this reply.*
+
+## turn.reply-cut-short
+
+the model's server ended the reply before the model finished it, after {seconds} s; a proxy before the server may limit how long a request lasts
 
 ## request.call-arguments-not-json
 

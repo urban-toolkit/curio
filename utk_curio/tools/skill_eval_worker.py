@@ -45,7 +45,9 @@ runs, so no sandbox either.
 - **Not run:** the title call a conversation's first turn makes, which
   nothing here reads, and the kept outputs' sweep, which needs a sandbox.
 - **Graded:** a test case's answer goes to the grader, the same model through
-  the same code, with the words of the base entry's ``skill-evals.md``.
+  the same code, with the words of the base entry's ``skill-evals.md``. A
+  grader reply its output cap cut is not read, however much of it parses: the
+  grader is asked again, and a grade that never came whole says it was cut.
 
 Every file is scrubbed of the key, the base URL and its host before it is
 written (``report.scrub``), and so is every log line.
@@ -650,13 +652,16 @@ class Worker:
         waits = list(RETRY_WAITS_S)
         for attempt in range(1, GRADER_ATTEMPTS + 1):
             try:
-                reply = providers.run_chat_completion(config, messages, GRADER_MAX_TOKENS, usage)
+                turn = providers.ChatTurn.of(providers.run_chat_turn(config, messages, GRADER_MAX_TOKENS, usage))
             except Exception as exc:  # noqa: BLE001 - a grader that fails is an error of the run
                 problem = provider_config.redact_error(exc, config)
                 if attempt < GRADER_ATTEMPTS and waits:
                     time.sleep(waits.pop(0))
                 continue
-            parsed = _json_object(reply)
+            if turn.cut_at_output_cap:
+                problem = f"its reply was cut off at the grader's output limit of {GRADER_MAX_TOKENS:,} tokens"
+                continue
+            parsed = _json_object(turn.text)
             results = parsed.get("assertion_results") if parsed else None
             if isinstance(results, list) and len(results) == len(task.assertions):
                 graded = [{"text": text, "passed": item.get("passed") is True,
