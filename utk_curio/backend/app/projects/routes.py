@@ -249,8 +249,17 @@ def get_project(project_id: str):
 # ---------------------------------------------------------------------------
 @projects_bp.route("/<project_id>/shared", methods=["GET"])
 def get_shared_project(project_id: str):
+    """The dataflow for anyone who opens its link. With ``?results=last``, an
+    editor the owner invited, signed in, gets it as his canvas left it, each
+    node his runs ran showing his newest kept result; anyone else gets its
+    saved outputs."""
+    from utk_curio.backend.app.users.dependencies import get_current_user
+
+    last_results = request.args.get("results") == "last"
     try:
-        result = services.load_shared_project(project_id)
+        result = services.load_shared_project(
+            project_id, user=get_current_user() if last_results else None, last_results=last_results,
+        )
     except NotFoundError:
         return _error("Project not found", 404)
     except ProjectError as exc:
@@ -323,10 +332,10 @@ def _output_read(project_id: str):
     the store under that session first; a name the dataflow saved is then
     read from the file its owner's store holds, in place.
 
-    The session is the caller's, but for the owner's read of an output their
-    runs of this dataflow kept (``runs/kept.py``), which is read under the
-    session that made it, from any sign-in. No one else reads a kept output
-    here."""
+    The session is the caller's, but for the read of an output the caller's
+    runs of this dataflow kept (``runs/kept.py``): the owner's, or an invited
+    editor's own, which is read under the session that made it, from any
+    sign-in. No one reads another's kept output here."""
     from utk_curio.backend.app.projects.models import Project
     from utk_curio.backend.app.runs import kept
     from utk_curio.backend.extensions import db
@@ -339,10 +348,13 @@ def _output_read(project_id: str):
         return None, None, None, _error("Project not found", 404)
     saved = services.saved_output_of(project_id, file_name)
     saved_path = saved.path if saved is not None else None
-    if project.user_id == getattr(g.user, "id", None):
+    user_id = getattr(g.user, "id", None)
+    if project.user_id == user_id:
         entry = kept.owner_entry(project_id, file_name)
-        if entry is not None:
-            return file_name, entry.session_id, saved_path, None
+    else:
+        entry = kept.editor_entry(project_id, user_id, file_name)
+    if entry is not None:
+        return file_name, entry.session_id, saved_path, None
     return file_name, get_current_token(), saved_path, None
 
 

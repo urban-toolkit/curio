@@ -175,8 +175,14 @@ export const projectsApi = {
     return apiFetch<LoadResponse>(`/api/projects/${id}${options?.lastResults ? "?results=last" : ""}`);
   },
 
-  getShared(id: string): Promise<LoadResponse> {
-    return apiFetch<LoadResponse>(`/api/projects/${id}/shared`);
+  /**
+   * The dataflow as anyone who opens its link reads it. With `lastResults`,
+   * an editor the owner invited gets it as his canvas left it, each node his
+   * runs ran showing his newest kept result; anyone else gets its saved
+   * outputs.
+   */
+  getShared(id: string, options?: { lastResults?: boolean }): Promise<LoadResponse> {
+    return apiFetch<LoadResponse>(`/api/projects/${id}/shared${options?.lastResults ? "?results=last" : ""}`);
   },
 
   /** The dataflow's categories as it is now, which the canvas title shows:

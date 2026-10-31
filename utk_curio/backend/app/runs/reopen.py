@@ -1,11 +1,14 @@
-"""What a dataflow shows when its owner opens it: the results it was left with.
+"""What a dataflow shows when its owner opens it, or an editor she invited:
+the results it was left with.
 
 Each node a run executes (``run_plan.node_role`` ``run``) shows the newest
 output the owner's runs kept (``runs/kept.py``) under the key the saved
 dataflow gives its step: its code as a run sends it, its input as the nodes
 above it are restored, the owner's packages and the datasets its code reads.
-A node with no such output shows its saved output, as before; past the kept
-outputs' days, or after Curio changes version, every node does.
+An editor sees the newest his own runs kept, keyed as they keep them: with
+his packages and the datasets as his runs read them. A node with no such
+output shows its saved output, as before; past the kept outputs' days, or
+after Curio changes version, every node does.
 
 The nodes are walked in a run's order (``run_engine.plan_run``), so a node's
 input is what the nodes above it show: one a run forwards hands its input on,
@@ -47,10 +50,15 @@ def _datasets_by_node(codes: dict, project_id: str, owner) -> dict:
     }
 
 
-def last_results(owner, user_key: str, project_id: str, spec: dict, saved: list) -> list:
+def last_results(
+    owner, user_key: str, project_id: str, spec: dict, saved: list, *, editor=None, editor_key=None,
+) -> list:
     """The outputs *project_id* opens with for its owner, as ``OutputRef``s:
     *saved*, each node that the owner's runs kept a result for under its key
-    showing the newest such result instead."""
+    showing the newest such result instead. With *editor*, an editor the
+    owner invited whose store is *editor_key*, the results his runs kept
+    stand in, keyed as his runs keep them; the dataflow is planned from the
+    owner's store (*user_key*), as his runs plan it."""
     from utk_curio.backend.app.execution.node_names import template_labels
     from utk_curio.backend.app.execution.run_engine import (
         PlanError,
@@ -63,7 +71,12 @@ def last_results(owner, user_key: str, project_id: str, spec: dict, saved: list)
     from utk_curio.backend.app.projects.schemas import OutputRef
     from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
 
-    entries = kept.owner_outputs_by_key(project_id)
+    if editor is None:
+        entries = kept.owner_outputs_by_key(project_id)
+        keyer, keyer_key = owner, user_key
+    else:
+        entries = kept.editor_outputs_by_key(project_id, getattr(editor, "id", None))
+        keyer, keyer_key = editor, editor_key
     if not entries or not isinstance(spec, dict):
         return list(saved)
     try:
@@ -85,8 +98,8 @@ def last_results(owner, user_key: str, project_id: str, spec: dict, saved: list)
             codes[node_id] = kept.step_call(plan, step, sent[node_id], None).code
         except Exception:  # noqa: BLE001 - a node whose code does not resolve or compile is not keyed
             sent.pop(node_id, None)
-    datasets = _datasets_by_node(codes, project_id, owner)
-    packages = kept.packages_fingerprint(user_key)
+    datasets = _datasets_by_node(codes, project_id, keyer)
+    packages = kept.packages_fingerprint(keyer_key)
     saved_by_node = {ref.node_id: ref for ref in saved}
     outputs: dict = {}
     shown: dict = {}
