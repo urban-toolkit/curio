@@ -226,6 +226,18 @@ describe("AgentChangeCard: dev/114 (DEC-072) the Source block", () => {
     expect(screen.getByText(/generated in the node, no external source/)).toBeInTheDocument();
   });
 
+  it("names the values the user typed that the code added to the node's own", () => {
+    render(
+      <AgentChangeCard
+        part={withSource({ kind: "user-values", label: "User-provided values · 'J', 'K', 60, 33",
+                           refs: [{ kind: "user-values", value: "'J', 'K', 60, 33" }] })}
+      />,
+    );
+    const block = screen.getByRole("group", { name: "Data source" });
+    expect(block).toHaveTextContent("Source · User-provided values");
+    expect(block).toHaveTextContent("'J', 'K', 60, 33 (typed in the chat)");
+  });
+
   it("renders no Source block when the change carries none", () => {
     render(<AgentChangeCard part={change()} />);
     expect(screen.queryByRole("group", { name: "Data source" })).toBeNull();

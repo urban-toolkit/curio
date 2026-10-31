@@ -11,6 +11,7 @@ Solve refuses ungrounded content loudly; the dev/73 review mint inherits it.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -697,6 +698,105 @@ class TestSyntheticData:
         _script(monkeypatch, [_create_tail("df = input_0[0]\nreturn df.describe()", node_type=CA), "Proposed."])
         proposal = _the_change(_run(client, token, project, att, "summarize the upstream frame"))
         assert "source" not in proposal
+
+
+#: The shipped example whose chart step 39's live runs asked for two more bars.
+VEGA = Path(__file__).resolve().parents[4] / "docs" / "examples" / "dataflows" / "vega.json"
+#: Its two kinds of node: the module's Data Loading, and its Vega-Lite chart.
+VEGA_TEMPLATES = [*TEMPLATES, {
+    "id": "vis-vega", "label": "Vega-Lite", "category": "vis_grammar", "engine": "python",
+    "editor": "grammar", "grammarId": "vega-lite", "hasCode": False, "hasGrammar": True,
+    "behavior": "vega", "description": "Draw a Vega-Lite chart.",
+    "inputPorts": [{"types": ["DATAFRAME", "GEODATAFRAME"], "cardinality": "[1,n]"}],
+    "outputPorts": [{"types": ["DATAFRAME", "GEODATAFRAME"], "cardinality": "1"}],
+}]
+
+
+class TestValuesTheUserTyped:
+    """Step 39's live runs (10-30): on vega.json, asked "Add two more bars to
+    this chart: J with 60 and K with 33.", the Node Builder wrote the two rows
+    into the Data Loading node, and the gate refused them as made-up data in
+    all 6 runs, so the agent made a new node instead. The rows the user typed
+    land in the node, beside its own; a value the user did not type is still
+    refused, and named, whether the agent writes it or a delegate does."""
+
+    MESSAGE = "Add two more bars to this chart: J with 60 and K with 33."
+    LOADER = "8d428948-f5e4-485b-9812-51a4212678a7"
+
+    @pytest.fixture()
+    def bars(self, client, user_and_token):
+        """A dataflow holding vega.json as it ships, and its loader's content."""
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        routes_proposals.TestNodeCreate()._write_builtin_package(_user_dir_key(user), templates=VEGA_TEMPLATES)
+        spec = json.loads(VEGA.read_text(encoding="utf-8"))
+        resp = client.post("/api/projects", json={"name": "vega", "spec": spec, "outputs": []}, headers=_auth(token))
+        assert resp.status_code == 201, resp.get_data(as_text=True)
+        loader = next(n for n in spec["dataflow"]["nodes"] if n["id"] == self.LOADER)
+        return resp.get_json()["id"], loader["content"]
+
+    def _held(self, user, project) -> str:
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        spec = projects_storage.read_spec(_user_dir_key(user), project)
+        return next(n for n in spec["dataflow"]["nodes"] if n["id"] == self.LOADER)["content"]
+
+    def _write(self, client, token, project, monkeypatch, content):
+        """The loader's Node Builder, asked MESSAGE, writes *content* into it."""
+        _install(client, token, project, NB)
+        att = _attach(client, token, project, NB, target={"kind": "node", "targetId": self.LOADER})
+        write = {"toolRequest": {"tool": "node.content.write", "params": {"nodeId": self.LOADER, "content": content}}}
+        calls = _script(monkeypatch, ["```curio.v1\n" + json.dumps(write) + "\n```", "Done."])
+        return _run(client, token, project, att, self.MESSAGE), calls
+
+    def test_the_rows_the_user_typed_land_in_the_loading_node(self, client, user_and_token, tmp_curio, bars, monkeypatch):
+        user, token = user_and_token
+        project, loader = bars
+        rows = loader.replace('"I"]', '"I", "J", "K"]').replace("52]", "52, 60, 33]")
+        body, _calls = self._write(client, token, project, monkeypatch, rows)
+        change = _the_change(body)
+        assert change["source"]["kind"] == "user-values"
+        assert change["source"]["refs"] == [{"kind": "user-values", "value": "'J', 'K', 60, 33"}]
+        held = self._held(user, project)
+        assert '"I", "J", "K"]' in held and "52, 60, 33]" in held, held
+
+    def test_a_row_the_user_did_not_type_is_refused_and_named(self, client, user_and_token, tmp_curio, bars, monkeypatch):
+        user, token = user_and_token
+        project, loader = bars
+        rows = loader.replace('"I"]', '"I", "J", "K", "L"]').replace("52]", "52, 60, 33, 99]")
+        body, calls = self._write(client, token, project, monkeypatch, rows)
+        assert _changes(body) == [] and _proposals(body) == []
+        [refusal] = [t for t in _tool_results(calls[-1], "node.content.write") if "refused" in t.split("\n", 1)[0]]
+        assert "'L' (line 3)" in refusal and "99 (line 3)" in refusal, refusal
+        assert "'J' (line" not in refusal and "60 (line" not in refusal, refusal
+        held = self._held(user, project)
+        assert '"I"]' in held and "52]" in held, held  # the node kept its own rows, and only them
+
+    def test_a_delegates_intent_is_not_the_users_message(self, client, user_and_token, tmp_curio, bars, monkeypatch):
+        """The intent the agent hands its content delegate is the agent's own
+        words: a row only the intent names is a value the user did not type."""
+        user, token = user_and_token
+        project, loader = bars
+        _install(client, token, project, NB)
+        att = _attach(client, token, project, NB, target={"kind": "node", "targetId": self.LOADER})
+        intent = "add J with 60 and L with 99 to the rows"
+        calls = _script(monkeypatch, [
+            _delegate_tail("node.content.generate", {"nodeId": self.LOADER, "intent": intent}),
+            loader.replace('"I"]', '"I", "J", "L"]').replace("52]", "52, 60, 99]"),
+            "The rows could not be written.",
+        ])
+        body = _run(client, token, project, att, self.MESSAGE)
+        assert _changes(body) == [] and _proposals(body) == []
+        result = calls[2][-1]["content"]
+        assert "could not be written into the node" in result, result
+        assert "'L' (line 3)" in result and "99 (line 3)" in result, result
+        assert "'J' (line" not in result and "60 (line" not in result, result
+        # The delegate was told it may add the values the user typed.
+        assert "may be added inline to the values the node holds" in calls[1][-1]["content"]
+        held = self._held(user, project)
+        assert '"I"]' in held and "52]" in held, held
 
 
 class TestSolveSourceGrounding:
