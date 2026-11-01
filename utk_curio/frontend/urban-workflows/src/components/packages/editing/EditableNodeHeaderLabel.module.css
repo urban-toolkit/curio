@@ -28,6 +28,17 @@
     cursor: pointer;
 }
 
+/* A minimized node's chip: the title wrapped and centered, cut with an
+   ellipsis after the lines the chip holds (the line count is set inline). */
+.labelTextWrapped {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    white-space: normal;
+    overflow-wrap: break-word;
+    text-align: center;
+    line-height: 16px;
+}
+
 .labelTextEditable {
     cursor: pointer;
     border-radius: var(--curio-radius-sm);

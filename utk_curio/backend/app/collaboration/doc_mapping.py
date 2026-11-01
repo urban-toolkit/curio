@@ -21,7 +21,7 @@ order of its keys, which a Yjs map does not keep either.
   lists and the sections kept outside the doc (``outsideTheDoc``), each under
   its own name.
 * ``nodes`` (map by id, each a map) and ``nodeOrder`` (array of ids). A node's
-  ``place`` {x, y}, ``size`` {width, height} and ``pin`` {pinned, x, y, width,
+  ``place`` {x, y}, ``size`` {width, height}, ``chip`` {width, height} and ``pin`` {pinned, x, y, width,
   height} are one value each, holding the members the Trill gives; its
   ``content`` is a ``Text``; ``metadata`` is a map with each setting as its own
   key; ``widgets`` (map by name, each a map of ``definition``, the widget but

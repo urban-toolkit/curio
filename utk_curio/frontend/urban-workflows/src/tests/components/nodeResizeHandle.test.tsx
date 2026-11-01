@@ -123,3 +123,28 @@ describe("a node's corner handle", () => {
     },
   );
 });
+
+describe("a minimized node's chip handle", () => {
+  test("shrinks the chip no smaller than the least size it is given", () => {
+    const onResizeEnd = jest.fn();
+    function Chip() {
+      const box = useRef<HTMLDivElement>(null);
+      return (
+        <div>
+          <NodeResizeHandle nodeId="c1" box={box} minWidth={120} minHeight={40} onResize={() => {}} onResizeEnd={onResizeEnd} />
+          <div ref={box} id="c1chip" style={{ width: "250px", height: "40px" }} />
+        </div>
+      );
+    }
+    render(<Chip />);
+    const box = document.getElementById("c1chip") as HTMLElement;
+    Object.defineProperty(box, "offsetWidth", { configurable: true, get: () => parseFloat(box.style.width) || 0 });
+    Object.defineProperty(box, "offsetHeight", { configurable: true, get: () => parseFloat(box.style.height) || 0 });
+    const handle = document.getElementById("c1resizer") as HTMLElement;
+    handle.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, clientX: 600, clientY: 400 }));
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: 400, clientY: 380 }));
+    window.dispatchEvent(new MouseEvent("mouseup", { clientX: 400, clientY: 380 }));
+    expect(size(box)).toEqual(["120px", "40px"]);
+    expect(onResizeEnd).toHaveBeenCalledWith(120, 40);
+  });
+});

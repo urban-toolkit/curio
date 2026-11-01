@@ -455,8 +455,10 @@ scenario box's color. An input whose node has not run says which node to run.
 
 Drag a node's bottom-right corner to resize it. For viewers of a shared dataflow,
 nodes keep their size and have no delete. A minimized node is a small chip with
-its icon and title, cut short when long; hover the title to read it whole. A save
-keeps it a chip; click it to open the node again. Double-click a node where you
+its icon and title, wrapped to the chip and cut short when it still doesn't fit;
+hover the title to read it whole. Drag the chip's bottom-right corner to resize
+the chip alone, so a longer title shows; the node opens back at its own size. A
+save keeps it a chip at its size; click it to open the node again. Double-click a node where you
 would drag it, such as its header, to zoom the view onto it.
 
 ## Notes

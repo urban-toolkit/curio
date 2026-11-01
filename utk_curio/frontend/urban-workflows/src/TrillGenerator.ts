@@ -256,6 +256,13 @@ export class TrillGenerator {
             if(node.data.minimized === true)
                 trill_node.minimized = true;
 
+            // The chip's own size, once its handle has resized it (#1235).
+            if(typeof node.data.minimizedWidth === "number")
+                trill_node.minimizedWidth = node.data.minimizedWidth;
+
+            if(typeof node.data.minimizedHeight === "number")
+                trill_node.minimizedHeight = node.data.minimizedHeight;
+
             if(node.data.dashboardPinned)
                 trill_node.dashboardPinned = true;
 

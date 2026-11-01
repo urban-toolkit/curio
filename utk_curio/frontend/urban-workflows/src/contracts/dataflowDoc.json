@@ -36,6 +36,8 @@
     "width": "size.width",
     "height": "size.height",
     "minimized": "minimized",
+    "minimizedWidth": "chip.width",
+    "minimizedHeight": "chip.height",
     "dashboardPinned": "pin.pinned",
     "dashboardX": "pin.x",
     "dashboardY": "pin.y",
