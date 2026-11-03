@@ -507,6 +507,127 @@ def test_typing_that_reaches_the_doc_before_the_runs_note_follows_the_run(kept):
     assert entries["current"] == 3
 
 
+def _runs_of(room):
+    """Note a run of the node loader, which ran *code*, as alice's tab does
+    once the run has ended."""
+    runs = f"/api/projects/{room.project_id}/history/nodes/loader/runs"
+
+    def run(code: str) -> None:
+        answer = _http(room).post(runs, headers=_auth(room), data=json.dumps(
+            {"code": code, "inputs": [], "outputs": ["DATAFRAME"]}))
+        assert answer.status_code == 201, answer.get_json()
+
+    return run
+
+
+def test_a_run_comes_before_the_typing_that_became_an_entry_before_its_note(kept):
+    """Typing while a run goes is usually an entry before the run's note
+    comes: the person paused 10 s. The run still comes first: the typing
+    that took the node away from the code the run ran descends from the
+    run, not from the run before it, and the next run follows the typing.
+    Typing from that code before the run, put back since, keeps its place."""
+    from utk_curio.backend.app.collaboration import dataflow_docs, history
+
+    alice = _synced(kept, "alice")
+    run = _runs_of(kept)
+
+    def pause() -> None:
+        kept.clock.now += history.TYPING_PAUSE_S
+        dataflow_docs.flush_due(kept.clock.now)
+
+    run("x = 1\n")
+    alice.edit(_type("# a\n"))
+    pause()
+    put = _http(kept).post(
+        f"/api/projects/{kept.project_id}/history/nodes/loader/code", headers=_auth(kept),
+        data=json.dumps({"from": "# a\nx = 1\n", "code": "x = 1\n", "label": "Code put back"}),
+    )
+    assert put.status_code == 200, put.get_json()
+    alice.pump()
+    # The node runs that code again, and alice types and pauses while it
+    # runs: her typing is an entry when the run's note comes.
+    alice.edit(_type("# b\n"))
+    pause()
+    run("x = 1\n")
+    run("# b\nx = 1\n")
+    entries = history.entries(kept.owner_key, kept.project_id, "loader")
+    assert [(e["id"], e["parentId"], e.get("kind", "run"), e["code"]) for e in entries["entries"]] == [
+        (1, None, "run", "x = 1\n"), (2, 1, "edit", "# a\nx = 1\n"), (3, 4, "edit", "# b\nx = 1\n"),
+        (4, 1, "run", "x = 1\n"), (5, 3, "run", "# b\nx = 1\n"),
+    ], entries["entries"]
+    assert entries["entries"][2]["before"] == "x = 1\n", entries["entries"][2]
+    assert entries["current"] == 5
+
+
+def test_a_nodes_first_run_comes_before_the_typing_ended_by_leaving_the_editor(kept):
+    """The node has no entry yet when alice runs it, types in it and leaves
+    its editor, all before the run's note comes. The run is still the node's
+    first entry: her typing descends from it, and the next run follows the
+    typing, on one line."""
+    from utk_curio.backend.app.collaboration import history
+
+    alice = _synced(kept, "alice")
+    run = _runs_of(kept)
+
+    alice.set_presence({"editing": "loader"})
+    alice.edit(_type("# a\n"))
+    alice.set_presence({"editing": None})
+    run("x = 1\n")
+    run("# a\nx = 1\n")
+    entries = history.entries(kept.owner_key, kept.project_id, "loader")
+    assert [(e["id"], e["parentId"], e.get("kind", "run"), e["code"]) for e in entries["entries"]] == [
+        (1, 2, "edit", "# a\nx = 1\n"), (2, None, "run", "x = 1\n"), (3, 1, "run", "# a\nx = 1\n"),
+    ], entries["entries"]
+    assert entries["entries"][0]["before"] == "x = 1\n", entries["entries"][0]
+    assert entries["current"] == 3
+
+
+def test_typing_that_goes_on_past_a_runs_start_is_split_at_the_code_the_run_ran(kept):
+    """alice runs the node from its editor (Ctrl+Enter keeps her in it) and
+    types on before the run's note comes. Her typing is two entries: up to
+    the code the run ran, before the run, and the rest after it, which the
+    next run follows."""
+    from utk_curio.backend.app.collaboration import history
+
+    alice = _synced(kept, "alice")
+    run = _runs_of(kept)
+
+    run("x = 1\n")
+    alice.edit(_type("# a\n"))
+    # The node runs "# a\nx = 1\n" here, and alice types on.
+    alice.edit(_type("# b\n"))
+    run("# a\nx = 1\n")
+    run("# b\n# a\nx = 1\n")
+    entries = history.entries(kept.owner_key, kept.project_id, "loader")
+    assert [(e["id"], e["parentId"], e.get("kind", "run"), e["code"]) for e in entries["entries"]] == [
+        (1, None, "run", "x = 1\n"), (2, 1, "edit", "# a\nx = 1\n"), (3, 2, "run", "# a\nx = 1\n"),
+        (4, 3, "edit", "# b\n# a\nx = 1\n"), (5, 4, "run", "# b\n# a\nx = 1\n"),
+    ], entries["entries"]
+    assert [e.get("before") for e in entries["entries"]] == [None, "x = 1\n", None, "# a\nx = 1\n", None]
+    assert entries["current"] == 5
+
+
+def test_a_run_whose_note_comes_after_another_run_of_its_code_follows_that_run(kept):
+    """Two runs of the code the node loaded with, the second's note late,
+    with alice's typing after both under way: the second run follows the
+    first, and the typing follows the second. A run's point holds no change
+    though the typing's first one starts where it is, so the late run does
+    not take the first run for the change that left their code."""
+    from utk_curio.backend.app.collaboration import history
+
+    alice = _synced(kept, "alice")
+    run = _runs_of(kept)
+
+    run("x = 1\n")
+    alice.edit(_type("# a\n"))
+    run("x = 1\n")
+    run("# a\nx = 1\n")
+    entries = history.entries(kept.owner_key, kept.project_id, "loader")
+    assert [(e["id"], e["parentId"], e.get("kind", "run")) for e in entries["entries"]] == [
+        (1, None, "run"), (2, 1, "run"), (3, 2, "edit"), (4, 3, "run"),
+    ], entries["entries"]
+
+
 def test_a_read_before_any_tab_opened_the_dataflow_gives_it_its_first_points(kept):
     """The drawer can ask before any tab's sync opened the dataflow's doc: the
     read opens it, and lists the versions the open made."""

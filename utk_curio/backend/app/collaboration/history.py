@@ -23,7 +23,9 @@ node's code at its point, rebuilt, and an edit's code before it is the node's
 code where its point starts. A note holds code itself only where the log cannot
 give it: a run whose code the doc no longer held when its note came, an imported
 entry whose node was gone. A node's next entry descends from the entry in use:
-its newest that holds the node's code, else its newest.
+its newest that holds the node's code, else its newest. A run's note comes once
+the run has ended, when the node may have left the code it ran: the run takes
+its place where the node's code last left that code (:func:`note_run`).
 
 **First points.** A dataflow with no points gets them when its doc opens
 (:func:`first_points`), in a doc of their own, one transaction and one point a
@@ -102,6 +104,12 @@ KEPT_BY_A_PUT_BACK = frozenset({"name", "provenance_id", "timestamp", "categorie
 
 #: How many dataflows rebuilt at points are kept in memory.
 CACHE_SIZE = 512
+#: How many of the places where a node's code left a code are kept in memory,
+#: for a run's note that comes late (:func:`note_run`): each node's, where a
+#: typing began or a change of another kind came, and each typing's own, one
+#: a change.
+LEFT_KEPT = 64
+TYPING_LEFT_KEPT = 4096
 
 _NOTE_RUN = "run"
 _NOTE_EDIT = "edit"
@@ -374,9 +382,11 @@ def head_of(points_: Iterable[dict]) -> Optional[str]:
 
 class _Typing:
     """One person's typing in one node, since its last point: *parent* is the
-    digest of the code it began from."""
+    digest of the code it began from, and *left* the place in the segment
+    where each of its changes left the code it found, by that code's digest,
+    the newest for each code."""
 
-    __slots__ = ("node", "by", "sid", "doc", "day", "start", "end", "last", "parent")
+    __slots__ = ("node", "by", "sid", "doc", "day", "start", "end", "last", "parent", "left")
 
     def __init__(self, node: str, by: dict, sid: Optional[str], doc: str, day: str, start: int,
                  parent: Optional[str] = None):
@@ -384,12 +394,14 @@ class _Typing:
         self.doc, self.day, self.start, self.end = doc, day, start, start
         self.last = 0.0
         self.parent = parent
+        self.left: dict[str, int] = {}
 
 
 class _State:
     """An open doc's history in memory: the version on the canvas, the next
-    ids, each node's entries' codes, the typing under way and who last
-    changed each node's code. Guarded by the doc's lock."""
+    ids, each node's entries' codes, parents and points, the typing under
+    way, where each node's code left the codes it held, and who last changed
+    each node's code. Guarded by the doc's lock."""
 
     def __init__(self, points_: list[dict]):
         self.ids: set = set()
@@ -398,6 +410,14 @@ class _State:
         self.head: Optional[str] = None
         #: node -> [(note id, code's digest)], in the order they were made.
         self.notes: dict[str, list[tuple[int, str]]] = {}
+        #: note id -> the entry it descends from, as :func:`entries` gives it.
+        self.parents: dict[int, Optional[int]] = {}
+        #: note id -> where its point is: (doc, day, start, end).
+        self.places: dict[int, tuple] = {}
+        #: node -> {code's digest: (doc, day, offset)}, oldest first: where the
+        #: node's code last left each code, at a typing's start or a change of
+        #: another kind, while the doc is open.
+        self.left: dict[str, dict[str, tuple[str, str, int]]] = {}
         self.typing: dict[tuple[str, str], _Typing] = {}
         self.authors: dict[str, Optional[dict]] = {}
         #: When the oldest typing is due, read without the doc's lock.
@@ -418,6 +438,12 @@ class _State:
             if isinstance(note.get("id"), int):
                 self.note_id = max(self.note_id, note["id"])
                 self.notes.setdefault(str(note.get("node")), []).append((note["id"], note.get("sha") or ""))
+                self.parents[note["id"]] = note.get("parentId")
+                if "doc" in point:
+                    self.places[note["id"]] = (point["doc"], point.get("day"), point.get("start", 0),
+                                               point.get("end", 0))
+                if isinstance(note.get("childId"), int) and note["childId"] in self.parents:
+                    self.parents[note["childId"]] = note["id"]
 
     def next_id(self) -> str:
         while True:
@@ -454,6 +480,17 @@ def _state(entry) -> _State:
 def _kept(entry) -> Optional[_State]:
     """The open doc's history state, if it has one in memory."""
     return entry.history if isinstance(entry.history, _State) else None
+
+
+def _left(places: dict, code: Optional[str], place, kept: int) -> None:
+    """Keep *place* in *places* as where the code whose digest is *code* was
+    left last, dropping the oldest past *kept*."""
+    if code is None:
+        return
+    places.pop(code, None)
+    places[code] = place
+    while len(places) > kept:
+        del places[next(iter(places))]
 
 
 def _sha(code: Optional[str]) -> str:
@@ -586,6 +623,21 @@ def _record(entry, change: Change, point: Optional[dict]) -> None:
         _record_change(entry, change, point, touched, before)
     finally:
         _remember_codes(entry, touched)
+        if point is not None or not isinstance(change.origin, Tab):
+            _left_by(entry, change, touched, before)
+
+
+def _left_by(entry, change: Change, touched: Touched, before: dict[str, Optional[str]]) -> None:
+    """Where a change other than a person's typing left each node's code it
+    changed (:attr:`_State.left`); :func:`_typed` keeps a typing's."""
+    state = _kept(entry)
+    if state is None:
+        return
+    codes = getattr(entry, "codes", None) or {}
+    for node in touched.typed():
+        if before.get(node) is not None and codes.get(node) != before[node]:
+            _left(state.left.setdefault(node, {}), before[node], (entry.doc_id, entry.segment, change.start),
+                  LEFT_KEPT)
 
 
 def _remember_codes(entry, touched: Touched) -> None:
@@ -642,8 +694,9 @@ def _record_change(entry, change: Change, point: Optional[dict], touched: Touche
 
 
 def _typed(entry, tab: Tab, by: dict, node: str, change: Change, parent: Optional[str]) -> None:
-    """Note a person's typing in *node*, which began from the code whose
-    digest is *parent*: their point waits for a pause."""
+    """Note a person's typing in *node*, a change that left the code whose
+    digest is *parent*: their point waits for a pause. Where it left that
+    code is the typing's to keep, and the node's when the typing begins."""
     state = _state(entry)
     key = (node, _account(by))
     typing = state.typing.get(key)
@@ -653,6 +706,8 @@ def _typed(entry, tab: Tab, by: dict, node: str, change: Change, parent: Optiona
     if typing is None:
         typing = state.typing[key] = _Typing(node, by, tab.sid, entry.doc_id, entry.segment, change.start,
                                              parent=parent)
+        _left(state.left.setdefault(node, {}), parent, (entry.doc_id, entry.segment, change.start), LEFT_KEPT)
+    _left(typing.left, parent, change.start, TYPING_LEFT_KEPT)
     typing.end = change.end
     typing.sid = tab.sid
     typing.last = dataflow_docs._clock()
@@ -660,17 +715,19 @@ def _typed(entry, tab: Tab, by: dict, node: str, change: Change, parent: Optiona
 
 
 def _close(entry, key: tuple[str, str], *, kind: str = TYPING, label: Optional[str] = None,
-           end: Optional[int] = None) -> Optional[dict]:
+           end: Optional[int] = None, code: Optional[str] = None) -> Optional[dict]:
     """Make one person's typing in one node its point: a version named after
     them, with an edit entry on the node, which descends from the newest
     entry that holds the code the typing began from. Typing that left the
-    code as it began is no change, and no point."""
+    code as it began is no change, and no point. *end* ends the point before
+    the typing's last change, at a place where the node held *code*."""
     state = _state(entry)
     typing = state.typing.pop(key, None)
     state.retime()
     if typing is None:
         return None
-    code = _code_in(entry.doc, typing.node)
+    if code is None:
+        code = _code_in(entry.doc, typing.node)
     sha = _sha(code)
     if kind == TYPING and typing.parent is not None and sha == typing.parent:
         return None
@@ -1212,7 +1269,9 @@ def versions(user_key: str, project_id: str) -> dict:
 def entries(user_key: str, project_id: str, node_id: str, *, code: Optional[str] = None) -> dict:
     """The entries of the node *node_id*, in the order they were made, each
     with its code, an edit's with the code it replaced, and the entry in use:
-    the newest that holds *code*, the node's code now, else the newest."""
+    the newest that holds *code*, the node's code now, else the newest. The
+    entry a run's note names (``childId``, :func:`note_run`) descends from
+    the run."""
     _opened(user_key, project_id)
     folder = _folder(user_key, project_id)
     rows = [(point, note) for point in _read_points(folder) for note in point.get("notes") or []
@@ -1245,6 +1304,11 @@ def entries(user_key: str, project_id: str, node_id: str, *, code: Optional[str]
         if point.get("by"):
             record["by"] = point["by"]
         records.append(record)
+    by_id = {record["id"]: record for record in records if isinstance(record.get("id"), int)}
+    for (_point, note), record in zip(rows, records):
+        child = by_id.get(note["childId"]) if isinstance(note.get("childId"), int) else None
+        if child is not None and child is not record:
+            child["parentId"] = record["id"]
     return {"entries": records, "current": entry_in_use(records, code)}
 
 
@@ -1278,11 +1342,20 @@ def note_run(user_key: str, project_id: str, by: dict, node_id: str, *, inputs: 
     end with its entry on the node. The runner's typing in the node is a
     point of its own first: typing, then running, is two entries.
 
-    A run's note comes once the run has ended, so the runner may have typed
-    in the node since it began, and that typing can reach the doc first.
-    Typing that began from the code the run ran, while the node holds other
-    code now, came after the run: it stays under way, and once it is a point
-    its entry descends from the run's."""
+    A run's note comes once the run has ended, so the node may hold other
+    code by then: changed while the run went, by the runner or anyone, and
+    that change reached the doc first. The run then takes its place where
+    the node's code last left the code it ran (:func:`_where_left`):
+
+    - the runner's typing under way that went on past that place is split
+      there: what came before is its own entry, before the run, and the rest
+      stays under way from the code the run ran, so its entry descends from
+      the run's; typing that began there or later is all after the run;
+    - an entry filed already whose change left that code there descends from
+      the run, which its note names (``childId``), when both descend from
+      the same entry;
+    - the run descends from the newest entry that holds its code, else the
+      newest made before that place."""
     with _held(user_key, project_id) as entry:
         held = _code_in(entry.doc, node_id)
         if held is None:
@@ -1290,20 +1363,114 @@ def note_run(user_key: str, project_id: str, by: dict, node_id: str, *, inputs: 
         state = _state(entry)
         sha = _sha(code)
         key = (node_id, _account(by))
-        typing = state.typing.get(key)
-        if typing is None or typing.parent != sha or held == (code or ""):
-            _close(entry, key)
+        left = None if held == (code or "") else _where_left(entry, state, key, node_id, code or "")
+        _typing_before_a_run(entry, state, key, left, code or "", held)
+        child = _left_by_an_entry(state, node_id, left)
+        parent = _run_parent(state, node_id, sha, left, child)
         doc_id, day, end = dataflow_docs.log_end(entry)
         note = {
-            "id": state.next_note(), "node": node_id, "kind": _NOTE_RUN, "parentId": state.current(node_id, sha),
+            "id": state.next_note(), "node": node_id, "kind": _NOTE_RUN, "parentId": parent,
             "inputs": [str(kind) for kind in inputs or []], "outputs": [str(kind) for kind in outputs or []],
             "startTime": start_time or _now_text(), "endTime": end_time or _now_text(),
             "sha": sha, "chars": len(code or ""),
         }
         if (code or "") != held:
             note["code"] = code or ""
+        if child is not None and state.parents.get(child) == parent:
+            note["childId"] = child
         return _add(entry, {"kind": RUN, "what": "Run", "by": by, "doc": doc_id, "day": day,
                             "start": end, "end": end, "notes": [note]})
+
+
+def _where_left(entry, state: _State, key: tuple[str, str], node: str, code: str) -> Optional[tuple]:
+    """Where the node *node*'s code last left *code*, as (doc, day, offset)
+    in the open doc's log: the newest place the node keeps for it, or the
+    runner's typing under way (*key*) does, while the log holds *code* in the
+    node there. ``None`` when none is kept: a run of code the node never
+    held, or a doc opened again since."""
+    sha = _sha(code)
+    found = []
+    kept = (state.left.get(node) or {}).get(sha)
+    if kept is not None:
+        found.append(kept)
+    typing = state.typing.get(key)
+    if typing is not None and sha in typing.left:
+        found.append((typing.doc, typing.day, typing.left[sha]))
+    found = [place for place in found if place[0] == entry.doc_id]
+    if not found:
+        return None
+    place = max(found, key=lambda place: (place[1], place[2]))
+    flow = _dataflows_at(entry.folder(), [place]).get(place)
+    return place if _node_code(flow, node) == code else None
+
+
+def _typing_before_a_run(entry, state: _State, key: tuple[str, str], left: Optional[tuple], code: str,
+                         held: str) -> None:
+    """The runner's typing under way in the node, as the note of a run of
+    *code* finds it, the node holding *held*: a point of its own first when
+    it came before the run (it ended before *left*, where the node's code
+    last left *code*), under way still when it came after (it began at
+    *left* or later), and split at *left* when it went on past it. With no
+    such place known, it came after the run when it began from *code* and
+    the node holds other code now, else before."""
+    typing = state.typing.get(key)
+    if typing is None:
+        return
+    if left is None:
+        if typing.parent != _sha(code) or held == code:
+            _close(entry, key)
+        return
+    doc_id, day, at = left
+    if (typing.doc, typing.day) != (doc_id, day) or typing.start >= at:
+        # It began where the node left the code, or later: a typing is in
+        # the newest segment, so a place in another came before it.
+        return
+    if typing.end <= at:
+        _close(entry, key)
+        return
+    rest = _Typing(typing.node, typing.by, typing.sid, typing.doc, typing.day, at, parent=_sha(code))
+    rest.end, rest.last = typing.end, typing.last
+    rest.left = {digest: offset for digest, offset in typing.left.items() if offset >= at}
+    _close(entry, key, end=at, code=code)
+    state.typing[key] = rest
+    _left(state.left.setdefault(typing.node, {}), rest.parent, (typing.doc, typing.day, at), LEFT_KEPT)
+    state.retime()
+
+
+def _left_by_an_entry(state: _State, node: str, left: Optional[tuple]) -> Optional[int]:
+    """The node's entry whose change left its code at *left*: the one whose
+    point holds changes from there. A run's point, at the log's end when its
+    note came, holds none, though the next change starts where it is."""
+    if left is None:
+        return None
+    for note_id, _digest in reversed(state.notes.get(node) or []):
+        place = state.places.get(note_id)
+        if place is not None and place[:3] == left and place[2] < place[3]:
+            return note_id
+    return None
+
+
+def _run_parent(state: _State, node: str, sha: str, left: Optional[tuple], child: Optional[int]) -> Optional[int]:
+    """The entry a run of the code whose digest is *sha* descends from. Placed
+    at *left*, its newest entry that holds that code, but *child*, else its
+    newest whose point ends at *left* or before; placed at the log's end,
+    :meth:`_State.current`'s."""
+    if left is None:
+        return state.current(node, sha)
+    notes = [(note_id, digest) for note_id, digest in state.notes.get(node) or [] if note_id != child]
+    same = [note_id for note_id, digest in notes if digest == sha]
+    if same:
+        return max(same)
+    return max((note_id for note_id, _digest in notes if _ends_by(state.places.get(note_id), left)), default=None)
+
+
+def _ends_by(place: Optional[tuple], left: tuple) -> bool:
+    """Whether a point at *place* (doc, day, start, end) ends at *left* (doc,
+    day, offset) or before it. A point in another doc's log is older: the
+    open doc's log is the newest."""
+    if place is None or place[0] != left[0] or not isinstance(place[1], str):
+        return True
+    return (place[1], place[3]) <= (left[1], left[2])
 
 
 def note_edit(user_key: str, project_id: str, by: dict, node_id: str, label: str) -> dict:
