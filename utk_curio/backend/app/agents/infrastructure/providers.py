@@ -107,6 +107,15 @@ turn says so (``ChatTurn.thinking_room_refused``), and the refusal is never
 read as one of the tools or the reply schema. ``ChatTurn.output_limit`` is the
 cap the request that answered carried.
 
+**The native-tools trial.** :func:`probe_native_tools` asks an
+OpenAI-compatible endpoint whether its model calls tools natively, as a turn
+is asked: one request offering one tool, streamed through the same reading
+of thinking, calls and finish reasons, with the room a model that thinks
+gets. Only its sizes are its own: a cap of :data:`TRIAL_MAX_TOKENS`, a room
+of :data:`TRIAL_THINKING_TOKENS`, and reads that wait at most
+:data:`TRIAL_WAIT_S`, since it runs before the run's first call. A trial its
+limit still cut before a call answers nothing about the tools.
+
 The dispatch below was extracted verbatim from ``app/api/routes.py::_call_llm``
 (behavior-preserving) and is the seam a future LangChain adapter would sit behind.
 
@@ -937,17 +946,18 @@ def _one_turn(config, messages, max_output_tokens, usage_out, tools, tool_choice
 
 
 def _openai_whole_turn(config, messages, max_output_tokens, usage_out, tools, tool_choice,
-                       reply_schema) -> ChatTurn:
+                       reply_schema, *, first_chunk_s: float | None = None) -> ChatTurn:
     """One OpenAI-compatible turn, read whole from its stream (see the module
     docstring): its text, its native calls, its finish reason and whether the
     model's thinking came apart. A stream that ends with no finish reason
-    raises :class:`ReplyCutShort`."""
+    raises :class:`ReplyCutShort`. *first_chunk_s* is the longest any one
+    read waits (:data:`FIRST_CHUNK_S` when None)."""
     started = time.monotonic()
     finish: dict = {}
     texts: list[str] = []
     calls: list = []
     for event in _openai_events(config, messages, max_output_tokens, usage_out, tools, tool_choice,
-                                reply_schema=reply_schema, finish=finish):
+                                reply_schema=reply_schema, finish=finish, first_chunk_s=first_chunk_s):
         if isinstance(event, ToolCall):
             calls.append(event)
         else:
@@ -968,17 +978,20 @@ def _finished(finish: dict, started: float) -> None:
 
 
 def _openai_events(config, messages, max_output_tokens, usage_out, tools, tool_choice, *,
-                   reply_schema=None, finish: dict | None = None):
+                   reply_schema=None, finish: dict | None = None, first_chunk_s: float | None = None):
     """An OpenAI-compatible turn as the endpoint streams it: each text delta
     as it arrives, then each native call whole. *finish* gets the choice's
     finish reason (``reason``), and ``thinking`` once a delta carries the
     model's thinking apart from its reply (``reasoning_content``, or
     ``reasoning``), which is never yielded. A server that stops sending raises
     :class:`ServerStoppedSending` (see the module docstring). A streamed turn
-    and a whole one both ask through here."""
+    and a whole one both ask through here, and so does the native-tools
+    trial, whose reads wait less (*first_chunk_s*, :data:`FIRST_CHUNK_S` for
+    a turn)."""
     import openai
+    first_chunk_s = FIRST_CHUNK_S if first_chunk_s is None else first_chunk_s
     kwargs = {"api_key": config.api_key or "no-key", "max_retries": 0,
-              "timeout": openai.Timeout(FIRST_CHUNK_S, connect=_CONNECT_S)}
+              "timeout": openai.Timeout(first_chunk_s, connect=_CONNECT_S)}
     if config.base_url:
         kwargs["base_url"] = config.base_url
     client = openai.OpenAI(**kwargs)
@@ -997,7 +1010,7 @@ def _openai_events(config, messages, max_output_tokens, usage_out, tools, tool_c
         create_kwargs["response_format"] = {"type": "json_schema", "json_schema": {
             "name": reply_schema["name"], "schema": reply_schema["schema"], "strict": True,
         }}
-    stream = _ask_for_stream(client, create_kwargs)
+    stream = _ask_for_stream(client, create_kwargs, first_chunk_s)
     silence = _Silence(stream)
     # A call arrives in pieces, by index: its id and name first, then its
     # arguments as fragments of one JSON text.
@@ -1042,7 +1055,7 @@ def _openai_events(config, messages, max_output_tokens, usage_out, tools, tool_c
         # A reply that finished before the cut is whole: the cut only ended
         # what follows its finish reason (the usage, the end of the stream).
         if not (silence.cut and finished):
-            stopped = _stopped_reading(exc, cut=silence.cut, chunks=chunks)
+            stopped = _stopped_reading(exc, cut=silence.cut, chunks=chunks, first_chunk_s=first_chunk_s)
             if stopped is None:
                 raise
             raise stopped from exc
@@ -1057,7 +1070,7 @@ def _openai_events(config, messages, max_output_tokens, usage_out, tools, tool_c
         yield _call_from_json(slot["id"] or _call_id(), slot["name"], slot["arguments"])
 
 
-def _ask_for_stream(client, create_kwargs):
+def _ask_for_stream(client, create_kwargs, first_chunk_s: float):
     """The stream an OpenAI-compatible server answers *create_kwargs* with.
 
     The SDK sends the request once (``max_retries=0``). A request the server
@@ -1065,11 +1078,12 @@ def _ask_for_stream(client, create_kwargs):
     what its ``retry-after`` asks, up to :data:`_RETRY_AFTER_MAX_S`, as the
     SDK's own retries did: a refused or dropped connection, a 408, 409 or 429,
     or a 5xx other than a 504. A request held past the limit is not: a read
-    that waited out :data:`FIRST_CHUNK_S` raises :class:`ServerStoppedSending`,
-    and a 504 says a gateway gave up waiting on the server, which a new try
-    would wait on as long. A connection a proxy drops while it holds the
-    request (after 60 s of silence, say) is a dropped connection like any
-    other, and is sent again, as the SDK sent it."""
+    that waited out *first_chunk_s* (:data:`FIRST_CHUNK_S` for a turn) raises
+    :class:`ServerStoppedSending`, and a 504 says a gateway gave up waiting on
+    the server, which a new try would wait on as long. A connection a proxy
+    drops while it holds the request (after 60 s of silence, say) is a
+    dropped connection like any other, and is sent again, as the SDK sent
+    it."""
     import openai
 
     for wait in (*_RESEND_WAITS_S, None):
@@ -1082,7 +1096,7 @@ def _ask_for_stream(client, create_kwargs):
             wait = _asked_wait(exc.response, wait)
         except openai.APIConnectionError as exc:  # APITimeoutError is one
             if _read_timed_out(exc):
-                raise _stopped_sending(FIRST_CHUNK_S, began=False) from exc
+                raise _stopped_sending(first_chunk_s, began=False) from exc
             if wait is None:
                 raise
         time.sleep(wait)
@@ -1177,14 +1191,14 @@ def _read_timed_out(exc: BaseException | None) -> bool:
     return False
 
 
-def _stopped_reading(exc: BaseException, *, cut: bool, chunks: int):
+def _stopped_reading(exc: BaseException, *, cut: bool, chunks: int, first_chunk_s: float):
     """The :class:`ServerStoppedSending` a stream's failed read means, after
     *chunks* chunks, or None: the stream :class:`_Silence` *cut*, or a read
-    that waited out :data:`FIRST_CHUNK_S`."""
+    that waited out *first_chunk_s*."""
     if cut:
         return _stopped_sending(STREAM_SILENCE_S, began=True)
     if _read_timed_out(exc):
-        return _stopped_sending(FIRST_CHUNK_S, began=chunks > 0)
+        return _stopped_sending(first_chunk_s, began=chunks > 0)
     return None
 
 
@@ -1363,53 +1377,80 @@ def stream_chat_completion(
             yield event
 
 
-#: The one tool a native-tools trial offers. It does nothing: the trial only
-#: learns whether the model calls it.
+#: The one tool a native-tools trial offers, in the shape a run's tools are
+#: given. It does nothing: the trial only learns whether the model calls it.
 _TRIAL_TOOL = {
-    "type": "function",
-    "function": {
-        "name": "ping",
-        "description": "Answer this check by calling ping.",
-        "parameters": {"type": "object", "properties": {}},
-    },
+    "name": "ping",
+    "description": "Answer this check by calling ping.",
+    "parameters": {"type": "object", "properties": {}},
 }
+_TRIAL_MESSAGES = ({"role": "user", "content": "Call the ping tool."},)
+#: The trial's output cap, and the room a model that thinks gets on top of it
+#: (see the module docstring). On 11-03 gemma4 behind vLLM, which counts its
+#: thinking against the cap, spent the trial's 32 tokens thinking (finish
+#: ``length``, no call) when the trial had no room, so every account on it
+#: kept "fenced"; with the room it called the tool after 47 tokens, in 0.6 s.
+#: The trial runs before the run's first call, so its room stays small, as
+#: the title's does.
+TRIAL_MAX_TOKENS = 32
+TRIAL_THINKING_TOKENS = 1024
+#: How long any one read of the trial waits, where a turn waits
+#: :data:`FIRST_CHUNK_S`. The trial's whole reply with the room, 1,056 tokens,
+#: takes 22 s at the 48 tokens a second that vLLM server streamed gemma4 at,
+#: so a server that holds the whole reply back until it ends, as a tool
+#: parser may hold a call, answers inside this wait at half that pace; a
+#: proxy before the server cuts a request silent this long anyway (nginx:
+#: 60 s). It is half of :data:`STREAM_SILENCE_S`, so the trial never comes to
+#: that limit.
+TRIAL_WAIT_S = 60.0
+#: Why a trial answered as it did (``probe_native_tools``): the model called
+#: the tool; the endpoint refused it (a 400 or a 422); the model ended its
+#: reply without calling it; the trial's limit cut the reply before a call,
+#: the room included; or the endpoint could not be asked.
+TRIAL_CALLED = "called"
+TRIAL_REFUSED = "refused"
+TRIAL_IGNORED = "ignored"
+TRIAL_CUT = "cut"
+TRIAL_UNANSWERED = "unanswered"
 
 
-def probe_native_tools(config: ProviderConfig, usage_out: dict | None = None) -> tuple[bool | None, str]:
+def probe_native_tools(config: ProviderConfig, usage_out: dict | None = None) -> tuple[bool | None, str, str]:
     """Ask an OpenAI-compatible endpoint whether ``config.model`` calls tools
-    natively: one short request offering one tool.
+    natively: a short request offering one tool, asked as a turn is
+    (:func:`_openai_whole_turn`, streamed) with the room a model that thinks
+    gets (:func:`_asked_with_room`). A trial the cap cut before a word or a
+    call is asked again once with :data:`TRIAL_THINKING_TOKENS` of room, and
+    an endpoint seen thinking is asked with it at once. Each read waits at
+    most :data:`TRIAL_WAIT_S`.
 
-    Returns ``(True, reason)`` when the reply calls it, ``(False, reason)`` on
-    a 400 or 422 (the server takes no tools for this model) or a reply that
-    ignores the tool, and ``(None, reason)`` when the endpoint could not
-    answer at all. The request is charged; its usage lands in *usage_out*.
+    Returns ``(tools, reason, cause)``, the cause one of the ``TRIAL_*``
+    values: ``True`` when the reply calls the tool; ``False`` on a 400 or 422
+    (the server takes no tools for this model) or a reply that ends without
+    calling it; ``None`` when the trial's limit still cut the reply before a
+    call, which says nothing of the tools, or when the endpoint could not
+    answer at all. The requests are charged; their usage, summed, lands in
+    *usage_out*.
     """
-    from openai import OpenAI
-
-    # No retries: the trial runs before the run's own first call, and an
-    # endpoint that cannot answer now is asked again on the next run.
-    kwargs: dict = {"api_key": config.api_key or "no-key", "timeout": 30.0, "max_retries": 0}
-    if config.base_url:
-        kwargs["base_url"] = config.base_url
     try:
-        completion = OpenAI(**kwargs).chat.completions.create(
-            model=config.model,
-            messages=[{"role": "user", "content": "Call the ping tool."}],
-            tools=[_TRIAL_TOOL],
-            # As a run asks: some servers take tools but refuse a stated choice.
-            tool_choice="auto",
-            max_tokens=32,
+        turn = _asked_with_room(
+            config, TRIAL_MAX_TOKENS, TRIAL_THINKING_TOKENS, usage_out,
+            lambda limit, sink: _openai_whole_turn(
+                config, list(_TRIAL_MESSAGES), limit, sink, [_TRIAL_TOOL],
+                # As a run asks: some servers take tools but refuse a stated choice.
+                "auto", None, first_chunk_s=TRIAL_WAIT_S,
+            ),
         )
-    except Exception as exc:  # noqa: BLE001 - every SDK failure is an answer here
+    except Exception as exc:  # noqa: BLE001 - every failure is an answer here
         if _status_code_of(exc) in (400, 422):
-            return False, f"the endpoint refused a tool: {_redacted(exc, config)}"
-        return None, f"could not ask the endpoint: {_redacted(exc, config)}"
-    _openai_usage(usage_out, getattr(completion, "usage", None))
-    choices = getattr(completion, "choices", None) or []
-    message = getattr(choices[0], "message", None) if choices else None
-    if getattr(message, "tool_calls", None):
-        return True, "the model called the tool it was offered"
-    return False, "the model answered without calling the tool it was offered"
+            return False, f"the endpoint refused a tool: {_redacted(exc, config)}", TRIAL_REFUSED
+        return None, f"could not ask the endpoint: {_redacted(exc, config)}", TRIAL_UNANSWERED
+    if turn.tool_calls:
+        return True, "the model called the tool it was offered", TRIAL_CALLED
+    if turn.cut_at_output_cap:
+        how = ("while the model was still thinking" if turn.thinking and _wrote_nothing(turn.text, ())
+               else "before the model called the tool")
+        return None, f"the trial's output limit of {turn.output_limit:,} tokens ran out {how}", TRIAL_CUT
+    return False, "the model answered without calling the tool it was offered", TRIAL_IGNORED
 
 
 class ModelListingUnavailable(RuntimeError):

@@ -290,7 +290,7 @@ def test_a_server_that_refuses_the_room_is_asked_as_before(
 
     if protocol == "native":
         monkeypatch.setattr(providers, "probe_native_tools",
-                            lambda config, usage_out=None: (True, "the model called the tool it was offered"))
+                            lambda config, usage_out=None: (True, "the model called the tool it was offered", "called"))
     server = thinker((THOUGHT, REPLY), refuse_above=CAP)
     user, token = user_and_token
     attachment_id = _attach(client, token, alice_project)
