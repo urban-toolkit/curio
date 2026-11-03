@@ -8,16 +8,25 @@ support varies per model, so the answer comes from one of:
 - **the table**: Anthropic, Gemini and OpenAI's own endpoint take both, as
   their APIs define them;
 - **a trial**: any other OpenAI-compatible server is asked once per model, with
-  one charged request offering one tool (``providers.probe_native_tools``). A
-  reply that calls it means native tools; a 400, or a reply that ignores the
-  tool, means the fenced protocol. The answer is recorded per account
-  (``model_catalog.remember_chat_capabilities``) and the trial's tokens go to
-  the ledger with the configuration's id;
+  a charged request offering one tool (``providers.probe_native_tools``),
+  asked as a turn is, with the room a model that thinks gets. A reply that
+  calls it means native tools; a 400, or a reply that ends without calling
+  it, means the fenced protocol. The answer is recorded per account with its
+  cause (``model_catalog.remember_chat_capabilities``) and the trial's tokens
+  go to the ledger with the configuration's id;
 - **the script**: the scripted provider answers what a test scripted, fenced by
   default (``testing_provider.scripted_chat_capabilities``).
 
 An endpoint that cannot be asked right now (offline, a rejected key) gets the
-fenced protocol without a record, so it is asked again next time.
+fenced protocol without a record, so it is asked again next time, and so does
+a trial its limit cut before the model called the tool, the room included: a
+model still thinking says nothing of the tools.
+
+A record kept before answers kept their cause still answers, but for one: the
+fenced protocol because "the model answered without calling the tool it was
+offered", which the trial, asked then with 32 tokens and no room, also said of
+a reply the cap cut while the model was still thinking. That endpoint is asked
+again (:func:`_still_holds`).
 
 A run offered native tools that its endpoint refuses (a 400 or 422) carries on
 with the fenced protocol. Once that fenced call succeeds, the refusal is the
@@ -87,6 +96,22 @@ def _from_table(config: ProviderConfig) -> ChatCapabilities | None:
     return None
 
 
+#: The reason the trial gave, before answers kept their cause, for every reply
+#: that held no call: one the model ended without calling the tool, and one
+#: the trial's 32 tokens cut while the model was still thinking.
+_REASON_BEFORE_CAUSES = "the model answered without calling the tool it was offered"
+
+
+def _still_holds(remembered: dict) -> bool:
+    """Whether a remembered answer still answers. One kept with its cause
+    does (a cut trial is never kept). One kept before causes were does
+    unless it may have been a cut: the fenced protocol, for
+    :data:`_REASON_BEFORE_CAUSES`."""
+    if remembered.get("cause"):
+        return True
+    return bool(remembered.get("tools")) or str(remembered.get("reason") or "") != _REASON_BEFORE_CAUSES
+
+
 def chat_capabilities(config: ProviderConfig, user_key: str, *, refresh: bool = False) -> ChatCapabilities:
     """What *config* can do beyond text (see the module docstring for where the
     answer comes from). ``refresh`` asks an OpenAI-compatible server again
@@ -112,14 +137,14 @@ def chat_capabilities(config: ProviderConfig, user_key: str, *, refresh: bool = 
         remembered = model_catalog.remembered_chat_capabilities(
             user_key, config.api_type, config.base_url, config.model
         )
-        if remembered is not None:
+        if remembered is not None and _still_holds(remembered):
             return ChatCapabilities(
                 bool(remembered.get("tools")), bool(remembered.get("structuredOutput")),
                 SOURCE_REMEMBERED, str(remembered.get("reason") or ""),
                 remembered.get("seenAt") if isinstance(remembered.get("seenAt"), str) else None,
             )
     usage: dict = {}
-    tools, reason = providers.probe_native_tools(config, usage_out=usage)
+    tools, reason, cause = providers.probe_native_tools(config, usage_out=usage)
     ledger.record_housekeeping_usage(
         user_key, usage, note="capability-probe", llm_config_id=config.config_id
     )
@@ -130,7 +155,7 @@ def chat_capabilities(config: ProviderConfig, user_key: str, *, refresh: bool = 
     found = ChatCapabilities(tools, False, SOURCE_TRIAL, reason)
     model_catalog.remember_chat_capabilities(
         user_key, config.api_type, config.base_url, config.model,
-        {"tools": found.tools, "structuredOutput": found.structured_output, "reason": reason},
+        {"tools": found.tools, "structuredOutput": found.structured_output, "reason": reason, "cause": cause},
     )
     return found
 
@@ -142,6 +167,7 @@ def record_native_refusal(config: ProviderConfig, user_key: str, reason: str) ->
     malformed, which is logged instead."""
     import logging
 
+    from utk_curio.backend.app.agents.infrastructure import providers
     from utk_curio.backend.app.agents.repositories import model_catalog
 
     if config.api_type == "testing":
@@ -155,5 +181,5 @@ def record_native_refusal(config: ProviderConfig, user_key: str, reason: str) ->
     model_catalog.remember_chat_capabilities(
         user_key, config.api_type, config.base_url, config.model,
         {"tools": False, "structuredOutput": False,
-         "reason": f"the endpoint refused a run's native tools: {reason}"},
+         "reason": f"the endpoint refused a run's native tools: {reason}", "cause": providers.TRIAL_REFUSED},
     )

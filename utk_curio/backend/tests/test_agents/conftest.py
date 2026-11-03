@@ -81,7 +81,7 @@ def _endpoint_not_asked_about_tools(monkeypatch):
 
     monkeypatch.setattr(
         providers, "probe_native_tools",
-        lambda config, usage_out=None: (None, "not asked in the test suite"),
+        lambda config, usage_out=None: (None, "not asked in the test suite", "unanswered"),
     )
 
 
