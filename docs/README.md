@@ -9,6 +9,7 @@
 - [Node catalog](NODE-CATALOG.md): add, share, and publish node packages, and save a canvas node as one
 - [Data catalog](DATA-CATALOG.md): import, reuse, and publish datasets, including your nodes' outputs
 - [Agent catalog](AGENT-CATALOG.md): browse, add, and attach Curio's AI agents, and write your own
+- [Skill catalog](SKILL-CATALOG.md): the skills Curio's agents read, Curio's, yours and those of node packages, and importing, publishing and sharing your own
 - [Discovery Catalog](DISCOVERY-CATALOG.md): search open data portals, open folders, buckets and repositories, ask services such as OpenStreetMap and Mapillary for an area, and bring their datasets into your Data Catalog and their models into your Model Catalog
 - [Model catalog](MODEL-CATALOG.md): the trained models your nodes run, and how a node runs one
 - [Bringing your own model](BRINGING-MODELS.md): export a PyTorch or TensorFlow model to ONNX, make a model package with the node that runs it and the widgets its user sets, and add it to your Model Catalog
