@@ -67,6 +67,12 @@ interface FollowedRun {
      * land.
      */
     runKeys: Map<string, string> | null;
+    /**
+     * Each node's code when the run started, which its entry in the history
+     * names: typing while the run goes is the node's next change. Null for a
+     * run this tab did not start, which files no entry.
+     */
+    codes: Map<string, string> | null;
     controller: AbortController;
     done: boolean;
     refollows: number;
@@ -145,7 +151,9 @@ export function useServerRun({
         if (run.applied.has(nodeId)) return;
         run.applied.add(nodeId);
         if (change.kind === "result") {
-            showResult(nodeId, change, { live: run.startedHere, runKey: run.runKeys?.get(nodeId) });
+            showResult(nodeId, change, {
+                live: run.startedHere, runKey: run.runKeys?.get(nodeId), code: run.codes?.get(nodeId),
+            });
         }
         else if (change.kind === "skipped") showSkipped(nodeId, change.reason);
         else showOnNode(nodeId, { code: "error", content: STOPPED_MESSAGE });
@@ -222,8 +230,9 @@ export function useServerRun({
 
     const attach = (
         record: Run,
-        { startedHere, played = null, runKeys = null }: {
+        { startedHere, played = null, runKeys = null, codes = null }: {
             startedHere: boolean; played?: FollowedRun["played"]; runKeys?: FollowedRun["runKeys"];
+            codes?: FollowedRun["codes"];
         },
     ) => {
         const run: FollowedRun = {
@@ -237,6 +246,7 @@ export function useServerRun({
             played,
             targets: record.targetNodeIds?.length ? record.targetNodeIds : null,
             runKeys,
+            codes,
             controller: new AbortController(),
             done: false,
             refollows: 0,
@@ -400,6 +410,10 @@ export function useServerRun({
         // selection, widget value or code changed while the run goes leaves
         // the node stale.
         const runKeys = runKeysOf(reactFlow.getNodes());
+        // And each node's code now is the code its entry names.
+        const codes = new Map<string, string>(
+            reactFlow.getNodes().map((node): [string, string] => [node.id, node.data?.code ?? ""]),
+        );
         let record: Run | null = null;
         let refused: any = null;
         for (let attempt = 1; attempt <= MAX_START_ATTEMPTS && !record; attempt++) {
@@ -452,6 +466,7 @@ export function useServerRun({
             startedHere: true,
             played: targetNodeId ? { nodeId: targetNodeId, before: shownBefore } : null,
             runKeys,
+            codes,
         });
     };
 

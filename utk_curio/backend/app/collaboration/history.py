@@ -1276,15 +1276,24 @@ def note_run(user_key: str, project_id: str, by: dict, node_id: str, *, inputs: 
              start_time: str, end_time: str, code: str) -> dict:
     """A run of the node *node_id*, which ran *code*, as a point at the log's
     end with its entry on the node. The runner's typing in the node is a
-    point of its own first: typing, then running, is two entries."""
+    point of its own first: typing, then running, is two entries.
+
+    A run's note comes once the run has ended, so the runner may have typed
+    in the node since it began, and that typing can reach the doc first.
+    Typing that began from the code the run ran, while the node holds other
+    code now, came after the run: it stays under way, and once it is a point
+    its entry descends from the run's."""
     with _held(user_key, project_id) as entry:
         held = _code_in(entry.doc, node_id)
         if held is None:
             raise HistoryError(f"The dataflow has no node {node_id!r}.", 404)
         state = _state(entry)
-        _close(entry, (node_id, _account(by)))
-        doc_id, day, end = dataflow_docs.log_end(entry)
         sha = _sha(code)
+        key = (node_id, _account(by))
+        typing = state.typing.get(key)
+        if typing is None or typing.parent != sha or held == (code or ""):
+            _close(entry, key)
+        doc_id, day, end = dataflow_docs.log_end(entry)
         note = {
             "id": state.next_note(), "node": node_id, "kind": _NOTE_RUN, "parentId": state.current(node_id, sha),
             "inputs": [str(kind) for kind in inputs or []], "outputs": [str(kind) for kind in outputs or []],
