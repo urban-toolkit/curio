@@ -1,13 +1,16 @@
 """Playwright E2E: a skill added to an agent in its details reaches the agent's chat.
 
-The Agent Catalog page lists skills beside its agents, from its rail's Skills
-section. A skill added to the Dataset Finder in its details is saved for the
+The Skill Catalog, the tab after the Agent Catalog, lists every skill the
+account sees: Curio's and the packages' it reaches. A skill added to the
+Dataset Finder in its details, on the Agent Catalog page, is saved for the
 account, so the Dataset Finder's next chat run lists it in its catalog; ``/`` in
 that chat offers it, ``/<name>`` hands it to the run with the message, and the
-reply names the skills its run used, in a line under it. The run's system turn
-is read back from the scripted provider, since the page cannot show it.
+reply names the skills its run used, in a line under it. In the agent's
+details, the skill's name opens the skill's details over them, and Escape
+closes the skill's alone. The run's system turn is read back from the scripted
+provider, since the page cannot show it.
 
-Frames for the owner: the Skills rail's grid and drawer, ``map-edits``' details,
+Frames for the owner: the Skill Catalog's grid and drawer, ``map-edits``' details,
 the agent's Skills section after the add, the chat's ``/`` list, and the
 reply's line of skills.
 
@@ -23,6 +26,7 @@ from playwright.sync_api import expect
 
 from utk_curio import shipped
 from utk_curio.backend.app.agents.domain import builtin
+from utk_curio.backend.app.packages.repositories.skills import skill_folders
 
 from .test_agent_chat_e2e import (
     CHAT_PANEL_SELECTOR,
@@ -53,13 +57,23 @@ MODAL = '[data-curio-modal-shell="true"]'
 BROWSE_DRAWER = '[data-curio-browse-drawer="true"]'
 
 
-def _rail_row(page, section: str, value: str):
-    return page.locator(f'[data-curio-rail-section="{section}"][data-curio-rail-value="{value}"]')
+def _section_tab(page, name: str):
+    """The link of the section *name* in the tabs under the top bar."""
+    return page.get_by_role("navigation", name="Main sections").get_by_role("link", name=name, exact=True)
 
 
 def _shipped_skills() -> list[str]:
     """Every skill Curio ships, by name: each folder of ``skills/`` that holds a ``SKILL.md``."""
     return sorted(folder.name for folder in shipped.path("skills").iterdir() if (folder / "SKILL.md").is_file())
+
+
+def _package_skills() -> list[str]:
+    """The skills of the packages Curio ships, which every account reaches
+    from the package catalog, by name: each folder of a package's ``skills/``
+    that holds a ``SKILL.md``, those of a name Curio ships left out."""
+    found = {folder.name for package in shipped.path("packages").iterdir() if package.is_dir()
+             for folder in skill_folders(package)}
+    return sorted(found - set(_shipped_skills()))
 
 
 def _always_held(spec) -> set[str]:
@@ -69,20 +83,28 @@ def _always_held(spec) -> set[str]:
 
 
 def _the_catalog_page_lists_the_skills(page, frontend: str) -> None:
-    """The rail's Skills section lists every skill Curio ships in the grid,
-    by name, and the drawer opens on the first."""
+    """The Skill Catalog, reached through its tab, lists every skill Curio
+    ships and the packages' skills in the grid, by name, and the drawer opens
+    on the first. The Agent Catalog page lists no skill."""
     _goto_when_served(page, f"{frontend}/catalog/agents")
     expect(page.get_by_role("heading", name="Agent Catalog", level=1)).to_be_visible(timeout=30000)
-    all_skills = _rail_row(page, "skills", "all-skills")
+    expect(page.locator("article[data-agent-coord]").first).to_be_visible(timeout=30000)
+    expect(page.locator("article[data-skill-name]")).to_have_count(0)
+    _section_tab(page, "Skill Catalog").click()
+    expect(page).to_have_url(re.compile(r"/catalog/skills$"), timeout=15000)
+    expect(page.get_by_role("heading", name="Skill Catalog", level=1)).to_be_visible(timeout=30000)
+    all_skills = page.get_by_role("complementary", name="Filter skills").get_by_role(
+        "button", name=re.compile(r"^All skills"),
+    )
     expect(all_skills).to_be_visible(timeout=30000)
-    expect(all_skills).to_contain_text("All skills")
-    all_skills.click()
+    expect(all_skills).to_have_attribute("aria-pressed", "true")
     cards = page.locator("article[data-skill-name]")
-    expected = _shipped_skills()
+    expected = sorted([*_shipped_skills(), *_package_skills()])
+    assert _package_skills(), "no package Curio ships ships a skill, so the packages' cards go unchecked"
     expect(cards).to_have_count(len(expected), timeout=20000)
     expect(page.locator("article[data-agent-coord]")).to_have_count(0)
     names = cards.evaluate_all("els => els.map(e => e.getAttribute('data-skill-name'))")
-    assert names == expected, f"the grid does not list the skills Curio ships by name: {names}"
+    assert names == expected, f"the grid does not list the skills of Curio and its packages by name: {names}"
     drawer = page.locator(BROWSE_DRAWER)
     expect(drawer.get_by_role("heading", name=names[0], exact=True)).to_be_visible(timeout=15000)
     expect(drawer.get_by_text("Skill details", exact=True)).to_be_visible()
@@ -112,10 +134,11 @@ def _a_skills_details_open_in_a_modal(page) -> None:
 
 
 def _the_finder_is_given_the_skill(page, backend: str, token: str) -> None:
-    """Add skill in the Dataset Finder's details, saved for this account."""
-    page.get_by_role("complementary", name="Filter agents").get_by_role(
-        "button", name=re.compile(r"^All agents"),
-    ).click()
+    """Add skill in the Dataset Finder's details, on the Agent Catalog page,
+    saved for this account. The added skill's name opens its details over
+    the agent's, and Escape closes the skill's alone."""
+    _section_tab(page, "Agent Catalog").click()
+    expect(page.get_by_role("heading", name="Agent Catalog", level=1)).to_be_visible(timeout=30000)
     expect(page.locator("article[data-agent-coord]").first).to_be_visible(timeout=15000)
     expect(page.locator("article[data-skill-name]")).to_have_count(0)
     card = page.locator(f'article[data-agent-coord="{FINDER}"]')
@@ -151,6 +174,17 @@ def _the_finder_is_given_the_skill(page, backend: str, token: str) -> None:
     page.mouse.move(0, 0)
     save_workflow_test_screenshot(page, STEM, test_name="agent-skills-added", fit_reactflow=False,
                                   clip_selector=MODAL)
+
+    # The added skill's name opens its details over the agent's; Escape
+    # closes the skill's and leaves the agent's open.
+    added.get_by_role("button", name=ADDED, exact=True).click()
+    skill_dialog = page.get_by_role("dialog", name="Skill details")
+    expect(skill_dialog).to_be_visible(timeout=15000)
+    expect(skill_dialog.get_by_role("heading", name=ADDED, exact=True)).to_be_visible()
+    expect(page.locator(MODAL)).to_have_count(2)
+    page.keyboard.press("Escape")
+    expect(skill_dialog).to_have_count(0, timeout=10000)
+    expect(dialog).to_be_visible()
     page.keyboard.press("Escape")
     expect(dialog).to_have_count(0, timeout=10000)
 

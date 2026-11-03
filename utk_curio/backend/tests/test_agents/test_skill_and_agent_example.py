@@ -4,14 +4,15 @@
 its ``SKILL.md`` and one file, ``references/species.md``, and
 ``docs/examples/agents/agent.you.tree-counter@1/`` an agent whose manifest
 names it (AGENT-CATALOG, "Add skills and agents"). The skill goes through
-**Import skill**'s review and import as a picked folder sends it
-(``/api/agents/skills/imports/check`` and ``/api/agents/skills/imports``),
-given to no agent, and the agent through **Import agent**
-(``/api/agents/imports/upload``), its manifest and prompt files put together
-as the Agent Catalog's import modal puts them (``buildUploadPayload.ts``: each
-prompt file is ``prompts/<its name>``). Then the agent holds the skill by its
-manifest alone, a chat of it on the canvas lists the skill in its catalog, and
-a scripted chat that calls skill.read gets the skill's text, wrapped as
+the Skill Catalog's **Import skill**, its review and its import, as a picked
+folder sends it (``/api/agents/skills/imports/check`` and
+``/api/agents/skills/imports``), given to no agent, and the agent through the
+Agent Catalog's **Import agent** (``/api/agents/imports/upload``), its
+manifest and prompt files put together as that catalog's import modal puts
+them (``buildUploadPayload.ts``: each prompt file is ``prompts/<its name>``).
+Then the agent holds the skill by its manifest alone, a chat of it on the
+canvas lists the skill in its catalog, and a scripted chat that calls
+skill.read gets the skill's text, wrapped as
 ``<skill_content name="street-trees">``, then its species file. Runs go
 through the scripted provider (``testing_provider``).
 

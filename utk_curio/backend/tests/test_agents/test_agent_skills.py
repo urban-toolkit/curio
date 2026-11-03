@@ -1,4 +1,4 @@
-"""Skills in the Agent Catalog, and the skills an account adds to an agent or removes from it.
+"""Skills in the Skill Catalog, and the skills an account adds to an agent or removes from it.
 
 An account changes an agent's skills in the agent's details: **Add skill**,
 **Remove** and **Restore**, kept in ``.curio/users/<key>/agent-skills.json``
@@ -8,12 +8,13 @@ follow them. The core skills and the skills an agent's instruction or one of
 its modes names as its own cannot be removed, a hosted guest may change
 nothing, and a chat message that starts with ``/<name>`` hands that skill to
 its run. The skills listing names what each skill serves and the agents that
-use it. Runs go through the scripted provider (``testing_provider``).
+use it, then the skills of the packages the account reaches. Runs go through
+the scripted provider (``testing_provider``).
 
-What Curio ships is read from its files, ``skills/`` and the agents'
-manifests, so a skill added there moves no expectation here. New names are
-read inside each test, so this module imports on a checkout without them and
-each test fails on its own.
+What Curio ships is read from its files, ``skills/``, the packages' ``skills/``
+and the agents' manifests, so a skill added there moves no expectation here.
+New names are read inside each test, so this module imports on a checkout
+without them and each test fails on its own.
 """
 
 from __future__ import annotations
@@ -48,6 +49,15 @@ WHAT_IF = "What if the speed limit dropped to 20?"
 def _shipped_skills() -> list[str]:
     """Every skill Curio ships, by name: each folder of ``skills/`` that holds a ``SKILL.md``."""
     return sorted(folder.name for folder in shipped.path("skills").iterdir() if (folder / "SKILL.md").is_file())
+
+
+def _package_skills() -> list[str]:
+    """The skills of the packages in the package catalog an account reaches, by name: each folder of a
+    package's ``skills/`` that holds a ``SKILL.md``, those of a name Curio ships left out, each once."""
+    from utk_curio.backend.app.packages import service as packages_services
+
+    found = {path.parent.name for path in packages_services.catalog_root().glob("*/skills/*/SKILL.md")}
+    return sorted(found - set(_shipped_skills()))
 
 
 def _manifest(coord: str) -> dict:
@@ -244,7 +254,10 @@ def test_the_listing_names_every_skill_with_what_it_serves_and_who_uses_it(clien
     body = client.get("/api/agents/skills", headers=_auth(token)).get_json()
     assert body["editable"] is True and body["reason"] is None
     cards = {card["name"]: card for card in body["skills"]}
-    assert list(cards) == _shipped_skills()
+    # Curio's, in its folder's order, then the packages' the account reaches, each by name.
+    assert _package_skills(), "the package catalog ships no skill, so the packages' cards go unchecked"
+    assert list(cards) == [*_shipped_skills(), *_package_skills()]
+    assert all(cards[name]["source"] == "package" for name in _package_skills())
     assert sorted(name for name, card in cards.items() if card["core"]) == CORE
     widgets = cards["widgets"]
     assert widgets["description"].startswith("Use this skill")

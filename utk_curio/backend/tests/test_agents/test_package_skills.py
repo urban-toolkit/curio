@@ -11,6 +11,11 @@ names each skill left out. A package's skill is read strictly, as Curio's
 are, and held as written: no marker of its own is filled. Scout
 (``curio.scout@1``) ships the first, ``scout``.
 
+The Skill Catalog lists the skills of every package the account reaches, its
+store's and the package catalog's, read as the import's name rule reads them,
+a name once in the order runs hold them: from its package, read-only, and
+never one an agent is given.
+
 Runs go through the scripted provider (``testing_provider``), on an account
 whose store holds Scout as the repository ships it. New names are read inside
 each test, so this module imports on a checkout without them and each test
@@ -27,6 +32,7 @@ from pathlib import Path
 from utk_curio.backend.app.agents.infrastructure import testing_provider
 from utk_curio.backend.app.projects import storage as projects_storage
 from utk_curio.backend.app.projects.services import _user_dir_key
+from utk_curio.backend.tests._support.agent_routes import _auth
 from utk_curio.backend.tests.test_agents.test_skill_runs import (  # noqa: F401 - scripted is a fixture
     CA,
     CODE_SKILLS,
@@ -410,3 +416,98 @@ def test_every_skill_a_shipped_package_ships_serves_its_own_templates_by_names_t
     assert served[f"{SCOUT}/scout"] == {
         skill_runs.TEMPLATES_KEY: templates, skill_runs.BEHAVIORS_KEY: [], skill_runs.FEATURES_KEY: [],
     }
+
+
+# --- A package's skills in the Skill Catalog -----------------------------------------------
+
+
+def _cards(client, headers) -> dict[str, dict]:
+    """The Skill Catalog's cards, by name, each once."""
+    listed = client.get("/api/agents/skills", headers=headers).get_json()["skills"]
+    names = [card["name"] for card in listed]
+    assert len(names) == len(set(names)), f"a name is listed twice: {names}"
+    return {card["name"]: card for card in listed}
+
+
+def test_the_skill_catalog_lists_scouts_skill_from_its_package_and_nothing_changes_it(
+    client, user_and_token, tmp_curio,
+):
+    """An account that reaches Scout, from the package catalog, sees its
+    skill: from its package, by the package's id and name, read-only, used by
+    no agent by name, and serving Scout's templates. Its details serve its
+    text as written. No agent is offered it, and adding it to an agent or
+    exporting it is refused, naming the package; removing it is refused too,
+    and nothing is saved."""
+    from utk_curio.backend.app.agents.domain import skills
+    from utk_curio.backend.app.agents.infrastructure import agent_skills as agent_skill_store
+
+    user, token = user_and_token
+    key = _user_dir_key(user)
+    h = _auth(token)
+    cards = _cards(client, h)
+    scout = cards["scout"]
+    written = skills.parse(SCOUT_SKILL)
+    manifest = json.loads((SCOUT_DIR / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["name"] == "Scout"
+    assert scout["source"] == "package" and scout["package"] == {"id": SCOUT, "name": "Scout"}
+    assert (scout["description"], scout["license"], scout["author"]) == (
+        written.description, written.license, written.metadata["author"])
+    assert [scout[flag] for flag in ("core", "published", "publishedByYou", "publishable", "removable")] == [False] * 5
+    assert scout["agents"] == []
+    # It names no behavior; its templates are Scout's own, each by its label.
+    assert scout["nodeKinds"] == list(dict.fromkeys(template["label"] for template in manifest["templates"]))
+    # Only a package's card names a package.
+    assert all((card["source"] == "package") == (card["package"] is not None) for card in cards.values())
+    read = client.get("/api/agents/skills/scout", headers=h)
+    assert read.status_code == 200, read.get_data(as_text=True)
+    assert read.get_json() == {"name": "scout", "text": written.body.rstrip("\n"), "files": []}
+
+    rows = client.get(f"/api/agents/definitions/{DF}/skills", headers=h).get_json()
+    assert rows["editable"] is True and rows["addable"], rows
+    assert "scout" not in [skill["name"] for skill in rows["addable"]]
+    added = client.post(f"/api/agents/definitions/{DF}/skills", json={"skill": "scout"}, headers=h)
+    assert added.status_code == 400 and SCOUT in added.get_json()["error"], added.get_json()
+    exported = client.get("/api/agents/skills/scout/export", headers=h)
+    assert exported.status_code == 400 and SCOUT in exported.get_json()["error"], exported.get_data(as_text=True)
+    assert client.delete("/api/agents/skills/scout", headers=h).status_code == 404
+    assert agent_skill_store.default_store().read(key) == {}
+    rows = client.get(f"/api/agents/definitions/{DF}/skills", headers=h).get_json()
+    assert "scout" not in [row["name"] for row in rows["skills"]]
+    assert _cards(client, h)["scout"] == scout
+
+
+def test_a_package_skill_of_a_name_curio_or_the_account_takes_is_listed_once_as_theirs(
+    client, user_and_token, tmp_curio,
+):
+    """The listing holds a name once, in the order runs do: a package's
+    ``widgets`` is Curio's, a package's ``street-trees`` the account's own,
+    and a ``park-shade`` two packages of the account's store ship is the
+    first package's, whose text its details serve. No card is the second
+    package's. The account's own skill stays addable, and the package's
+    skill stays not."""
+    from utk_curio.backend.app.agents.repositories import user_skills
+
+    user, token = user_and_token
+    key = _user_dir_key(user)
+    h = _auth(token)
+    user_skills.write(key, "street-trees", {"SKILL.md": _skill("street-trees", "## Trees\n\nThe account's.\n")})
+    first = _store_package(key, "acme.first", {
+        "street-trees": _skill("street-trees", "## Trees\n\nThe first's.\n"),
+        "park-shade": _skill("park-shade", "## Shade\n\nThe first's.\n"),
+    })
+    second = _store_package(key, "acme.second", {
+        "widgets": _skill("widgets", "## Widgets\n\nThe second's.\n"),
+        "park-shade": _skill("park-shade", "## Shade\n\nThe second's.\n"),
+    })
+    cards = _cards(client, h)
+    assert (cards["widgets"]["source"], cards["widgets"]["package"]) == ("curio", None)
+    assert (cards["street-trees"]["source"], cards["street-trees"]["package"]) == ("yours", None)
+    assert cards["park-shade"]["source"] == "package" and cards["park-shade"]["package"]["id"] == first
+    assert [card["name"] for card in cards.values() if (card["package"] or {}).get("id") == second] == []
+    names = list(cards)
+    assert names.index("widgets") < names.index("street-trees") < names.index("park-shade")
+    assert "The first's." in client.get("/api/agents/skills/park-shade", headers=h).get_json()["text"]
+    assert "The account's." in client.get("/api/agents/skills/street-trees", headers=h).get_json()["text"]
+    addable = [skill["name"] for skill in client.get(f"/api/agents/definitions/{DF}/skills", headers=h)
+               .get_json()["addable"]]
+    assert "street-trees" in addable and "park-shade" not in addable
