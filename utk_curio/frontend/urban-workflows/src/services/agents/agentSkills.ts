@@ -120,17 +120,19 @@ export function packageSkillUsers(pkg: SkillPackage): string {
 }
 
 /** Who a skill's card names under its name: the author its metadata gives,
- *  else whose it is. A skill no account brought is Curio's, and a package's
- *  without an author is its package's. */
+ *  else whose it is. A skill no account brought is Curio's. A package's
+ *  skill names its package whatever author it gives, since the account
+ *  holds it through the package (Scout's says `author: curio`); its details
+ *  name the author. */
 export function skillByline(skill: {
   author?: string | null;
   source?: SkillSource;
   package?: SkillPackage | null;
 }): string {
+  if (skill.source === "package" && skill.package) return skill.package.name;
   if (skill.author) return skill.author;
   if (skill.source === "yours") return "you";
   if (skill.source === "shared") return "shared catalog";
-  if (skill.source === "package" && skill.package) return skill.package.name;
   return "curio";
 }
 
