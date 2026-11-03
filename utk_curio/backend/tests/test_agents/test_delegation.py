@@ -666,7 +666,7 @@ class TestDelegationTailAndBudget:
     ):
         """The shared MAX_TOOL_ROUNDS correction rounds, then the cap: the
         block is dropped and a card says the delegation was not made, as a tool
-        request's card says its proposal was not created."""
+        request's card says the request was not made."""
         user, token = user_and_token
         pid = _project(client, token)
         broken = _delegate_tail()[: -len("}\n```")] + "\n```"

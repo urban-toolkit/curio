@@ -789,7 +789,7 @@ def _node_create_declared_widgets(user_key: str, project_id: str, entry: dict) -
 def _mint_node_create(
     user_key: str, project_id: str, loop_ctx: dict, req: dict
 ) -> tuple[str, str, dict | None]:
-    """The dev/48 graph-shape mutation: propose ONE new node of an existing,
+    """The dev/48 graph-shape mutation: add ONE new node of an existing,
     project-available template. No digest pin — the node id is server-minted
     at apply (there is no target whose drift can corrupt); the template is
     re-validated at apply instead (`REQ-REVIEW-001` stays structural)."""
@@ -810,7 +810,7 @@ def _mint_node_create(
         ))
     if starter is not None:
         proposed = starter["content"]
-    # A node that holds no content, such as a Spatial Join, is proposed without it.
+    # A node that holds no content, such as a Spatial Join, is added without it.
     if not proposed and entry.get("contentKind") != CONTENT_KIND_NONE:
         return agents_tool_rounds._refuse_params(agent_text.message("mint.content-required"))
     if len(proposed) > content.PROPOSAL_CONTENT_MAX_CHARS:
@@ -828,7 +828,7 @@ def _mint_node_create(
     if widget_errors:
         return agents_tool_rounds._refuse_params("; ".join(widget_errors))
     # The template's widgets, each the request names set as it says, at mint,
-    # so the card shows what Apply writes: a starter's, which it places, or
+    # so the change card shows what lands: a starter's, which it places, or
     # the ones any other template declares, which a node of it starts with on
     # the canvas and the roster names (Data Loading's Data).
     template_widgets = starter["widgets"] if starter is not None else _node_create_declared_widgets(

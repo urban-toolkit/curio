@@ -1132,7 +1132,7 @@ Allowed sources: {sources}.
 
 ## grounding.never-invent
 
-Never invent a filename, never assume a file exists, never write a URL from memory. If no source can be grounded, ask the user for a path or URL instead of proposing.
+Never invent a filename, never assume a file exists, never write a URL from memory. If no source can be grounded, ask the user for a path or URL instead of writing the code.
 
 ## grounding.url-answered
 

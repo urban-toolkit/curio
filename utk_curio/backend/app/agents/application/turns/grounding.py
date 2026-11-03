@@ -795,7 +795,7 @@ def _gate_generated_content(
     the content the node holds now, the user's own. Content whose
     sources are grounded and that is a chart's or a map's document is then
     checked as Solve checks one (:func:`_document_refusal`), for *node_id*'s
-    saved node, or for the node a proposal creates with the *widgets* it
+    saved node, or for the node a node.create adds with the *widgets* it
     declares: its refusal comes with a verdict that is ``ok``."""
     code_engine = engine if isinstance(engine, str) and engine else None
     ctx = _grounding_context(
@@ -810,7 +810,7 @@ def _gate_generated_content(
     return verdict, _document_refusal(user_key, project_id, node_type, code, node_id=node_id, widgets=widgets)
 
 
-#: The id the node a proposal creates goes by while its document is checked.
+#: The id the node a node.create adds goes by while its document is checked.
 _PROPOSED_NODE_ID = "__proposed__"
 
 
@@ -848,7 +848,7 @@ def _proposed_document(user_key, project_id, node_type, code, node_id, widgets, 
     """*code* with its references resolved as far as the dataflow knows them,
     as the canvas resolves them before it draws: the node's widgets, its
     wired inputs and their boxes. The node is *node_id*'s
-    saved one, or the one a proposal creates, with the *widgets* it declares.
+    saved one, or the one a node.create adds, with the *widgets* it declares.
     A reference nothing resolves yet, such as the input chip of a circle no
     edge reaches, is left as written, and the validator reads it as Solve
     reads one of a node the saved dataflow does not hold."""
@@ -886,7 +886,7 @@ def _chip_context(spec: dict | None, node_id: object = None, widgets=None) -> di
     """What a run resolves a node's chips with, as ``WorkflowSpec.node_code``
     gives it: the node's widgets, its wired circles, each with the scenario
     label its rows carry, and the node's selection tags. *widgets* are those
-    of a node the dataflow does not hold yet, as node.create proposes it. None
+    of a node the dataflow does not hold yet, as node.create adds it. None
     without a dataflow."""
     from utk_curio.backend.app.execution import workflow_spec
 

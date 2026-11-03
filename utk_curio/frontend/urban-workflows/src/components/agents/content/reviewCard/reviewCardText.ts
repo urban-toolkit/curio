@@ -12,7 +12,7 @@ import { tryGetNodeDescriptor } from "../../../../registry/nodeRegistry";
 import nodeSettings from "../../../../contracts/nodeSettings.json";
 
 /** dev/114 (DEC-072): the Source block's kind headline — how the runtime
- * grounded what the proposed code opens or fetches. */
+ * grounded what the agent's code opens or fetches. */
 export const SOURCE_KIND_LABEL: Record<string, string> = {
   catalog: "Data Catalog",
   external: "External source",

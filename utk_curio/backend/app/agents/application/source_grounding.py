@@ -1,7 +1,7 @@
 """Source grounding for agent-authored node content (memo dev/114, DEC-072).
 
-The ONE gate every agent-authored node content passes before it can become a
-proposal or be written by Solve. Issue #298: the Node Builder proposed
+The ONE gate every agent-authored node content passes before it can land as
+the agent's change or be written by Solve. Issue #298: the Node Builder proposed
 ``pd.read_csv("bras_ibge_data.csv")`` — a file that never existed — because
 nothing between "load this data" and the review card resolved, verified, or
 checked the source. DEC-053 already made "the runtime verifies, never the
@@ -52,7 +52,7 @@ The rules (all runtime-enforced; prompt wording only teaches them):
 - an **import** of a module a package ships is grounded only in a node a run
   hands that module to (``packages.modules_for_node``): a built-in node gets
   none. An import of a library is the sandbox's to judge;
-- anything else is **refused with the correction named** — never proposed,
+- anything else is **refused with the correction named**: never landed,
   never written, never described as existing.
 
 Pure by construction: no Flask, no provider, no store. The catalog read, the

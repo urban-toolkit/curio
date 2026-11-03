@@ -553,14 +553,14 @@ class AttachmentTurn:
 
     def _run_delegate(self, req: dict, resolution, stay=None):
         """Run the resolved delegate and mint what its success PROVES exists
-        (dev/73 review, dev/90 draft, dev/114 candidates, dev/95 notes) —
+        (dev/73 content, dev/90 draft, dev/114 candidates, dev/95 notes),
         runtime-minted, never the model's second step. The delegate is at work
         in the dataflow's room while *stay*, the caller's ``ExitStack``, holds
         it. Returns (status, text, child, home_att, summary)."""
         loop_ctx = self.loop_ctx
         inputs = req.get("inputs") or {}
         # dev/73: node-scoped content generation homes its trace AND its
-        # minted review at the node's own agent. Content for a new node (a
+        # change at the node's own agent. Content for a new node (a
         # nodeType and no nodeId) has no node: it returns to this run, for
         # its node.create.
         gen_node_id = (
@@ -656,9 +656,9 @@ class AttachmentTurn:
                 delegate_summary = "dataset candidates shown for review — select and confirm"
             status = cand_outcome
         elif status == "ok" and req["capability"] == "research.notes.compose":
-            # dev/95 (Follow-up D): notes success ⇒ the reviewed A16 sequence
-            # EXISTS — runtime-minted from the child's schema reply, never the
-            # model's second step.
+            # dev/95 (Follow-up D): notes success ⇒ the notes EXIST, each the
+            # agent's change, runtime-minted from the child's schema reply,
+            # never the model's second step.
             note_parts, text, notes_outcome = agents_delegates._mint_notes_from_delegate(
                 self.user_key, self.project_id, loop_ctx, text,
             )

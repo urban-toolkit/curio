@@ -101,7 +101,7 @@ def template_problem(behavior: object, label: object, where: str) -> str | None:
 
 
 def describe(setting: dict | None) -> str:
-    """The setting as the pool's selects word it, as a review card reads it:
+    """The setting as the pool's selects word it, as a change card reads it:
     ``Conflict between visualizations: Merge (AND)``."""
     return "; ".join(
         f"{_WORDS['settings'][key]}: {_WORDS['modes'].get(setting[key], setting[key])}"

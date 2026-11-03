@@ -195,7 +195,7 @@ def changes_anything(widgets: list[dict], values: dict) -> bool:
 
 
 def describe_value(widget: dict, value: object) -> str:
-    """*value* as a review card reads it, beside the words the widget's row
+    """*value* as a change card reads it, beside the words the widget's row
     in its Widgets tab shows, its label or else its name: ``Combine: max``. A
     text reads as it is, any other value as JSON."""
     shown = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
