@@ -5,7 +5,7 @@ the tools it uses there, and its modes, with who asks for each.
 Every catalog card carries them, computed from the shipped manifests:
 
 - ``tools``: the agent's grants, each by its tool contract's plain-word label,
-  what it reads before what it proposes;
+  what it reads before what it changes and what it proposes to install;
 - ``modes``: its labeled capabilities, one entry per label, each with its
   capability ids, the prompt it runs, and who asks for it: the agent itself
   through a ``delegatesTo`` entry naming it, then every other built-in whose

@@ -182,7 +182,7 @@ def plan_for(
             raise Unrepresentable(
                 f"{kind}-edge",
                 f"the plan grammar carries {', '.join(EXPRESSIBLE_EDGE_KINDS)} edges, so "
-                f"{edge.get('from')} -> {edge.get('to')} cannot be proposed as a "
+                f"{edge.get('from')} -> {edge.get('to')} cannot be planned as a "
                 f"{kind} link",
             )
         entry = {"from": str(edge.get("from")), "to": str(edge.get("to"))}

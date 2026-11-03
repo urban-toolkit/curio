@@ -101,8 +101,8 @@ export function useAgentAttachments(projectId: string | null): AgentAttachmentsS
     async (attachmentId: string, message: string, context?: string | null) => {
       if (!projectId) throw new Error("no project");
       // The FULL payload (dev/53): the stream fallback must lose no content
-      // parts — a plan/node proposal minted over this path still needs its
-      // review card, and the execution record still belongs on the turn.
+      // parts: a plan or a node an agent landed over this path still needs its
+      // change card, and the execution record still belongs on the turn.
       return agentsApi.runAttachment(projectId, attachmentId, message, context);
     },
     [projectId],

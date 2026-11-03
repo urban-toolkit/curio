@@ -352,7 +352,7 @@ def _mint_dataflow_plan(
         return "refused", "\n- ".join([agent_text.message("plan.revision-targets-invalid")] + revision_errors), None
     remove_node_set = set(remove_nodes)
     # #662: widgets and scenarios against the saved dataflow; each scenario
-    # takes its color here, so the review card shows it.
+    # takes its color here, so the plan's card shows it.
     scenarios = plan_scenarios.existing_scenarios(spec)
     scenario_errors = plan_scenarios.mint_errors(plan, available, existing_nodes, scenarios)
     if scenario_errors:
@@ -927,8 +927,8 @@ def _plan_topology_refusal(plan: dict, existing_nodes: dict, existing_edges: lis
 
 
 def _plan_cascade_edge_ids(existing_edges: list, remove_node_set: set, remove_edges: list) -> list[str]:
-    """The cascade: edges incident to removed nodes die with them (dev/59) — computed here for the
-    review card, recomputed at apply as the truth."""
+    """The cascade: edges incident to removed nodes die with them (dev/59), computed here for the
+    plan's card, recomputed at apply as the truth."""
     return [
         str(e.get("id"))
         for e in existing_edges
@@ -994,8 +994,8 @@ def _plan_summary(plan: dict) -> str:
 
 def _plan_review_part(proposal_id: str, plan: dict, existing_nodes: dict, existing_edges: list,
                       pins: dict, summary: str, cascade_edge_ids: list) -> dict:
-    """The proposal part the review card renders: the preview, the display copy of the plan (edges by
-    NAME, dev/67-8), and the removals reviewed by name (DEC-049.2; edges too, dev/112)."""
+    """The part the plan's card renders: the preview, the display copy of the plan (edges by
+    NAME, dev/67-8), and the removals listed by name (DEC-049.2; edges too, dev/112)."""
     remove_nodes = plan.get("removeNodes", [])
     remove_edges = plan.get("removeEdges", [])
     n_edges = len(plan["edges"])
@@ -1023,7 +1023,7 @@ def _plan_review_part(proposal_id: str, plan: dict, existing_nodes: dict, existi
         preview="\n".join(preview_lines),
         pins=pins,
     )
-    # The display copy for the review card (bounded upstream by the grammar).
+    # The display copy for the plan's card (bounded upstream by the grammar).
     part["plan"] = {
         "goal": plan["goal"],
         **({"templateId": plan["templateId"]} if plan.get("templateId") else {}),
@@ -1038,7 +1038,7 @@ def _plan_review_part(proposal_id: str, plan: dict, existing_nodes: dict, existi
             for n in plan["nodes"]
         ],
         "edgeCount": n_edges,
-        # dev/67-8: the connection stage reviews edges BY NAME — labels from
+        # dev/67-8: the plan's card lists edges BY NAME, labels from
         # plan titles (refs) or spec goals (existing ids), index-stable.
         "edges": [
             {
@@ -1056,7 +1056,7 @@ def _plan_review_part(proposal_id: str, plan: dict, existing_nodes: dict, existi
         # #662: the scenarios the plan saves, each with its nodes by name.
         part["plan"]["scenarios"] = plan_scenarios.display_scenarios(plan, existing_nodes)
     if remove_nodes or remove_edges:
-        # DEC-049.2: removals reviewed by NAME — every victim listed with a
+        # DEC-049.2: removals listed by NAME, every victim with a
         # content flag; the cascade counted.
         part["plan"]["removals"] = [
             {
@@ -1071,8 +1071,8 @@ def _plan_review_part(proposal_id: str, plan: dict, existing_nodes: dict, existi
         ]
         part["plan"]["removedEdgeCount"] = len(remove_edges)
         part["plan"]["cascadeCount"] = len(cascade_edge_ids)
-        # dev/112: removed connections reviewed by NAME too (DEC-049.2 applied
-        # to edges) — endpoint labels from the saved spec, kind preserved.
+        # dev/112: removed connections listed by NAME too (DEC-049.2 applied
+        # to edges): endpoint labels from the saved spec, kind preserved.
         edges_by_id = {str(e.get("id")): e for e in existing_edges}
         part["plan"]["removedEdges"] = [
             {

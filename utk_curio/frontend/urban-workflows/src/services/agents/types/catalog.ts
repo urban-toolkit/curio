@@ -29,7 +29,7 @@ export interface AgentCard {
   /** Whether the agent is a catalog card. Every listing shows cards only; an
    * internal built-in runs as a delegate and is never listed or attached. */
   inCatalog?: boolean;
-  /** The tools it uses in a chat, what it reads before what it proposes. */
+  /** The tools it uses in a chat, what it reads before what it changes and what it proposes to install. */
   tools?: AgentTool[];
   /** What another agent, Solve or the agent itself can ask it to do. */
   modes?: AgentMode[];

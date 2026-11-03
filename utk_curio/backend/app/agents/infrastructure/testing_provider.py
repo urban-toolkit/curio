@@ -6,7 +6,7 @@ import, so a stray ``testing`` provider config on a real deployment cannot
 quietly turn into a working agent - it raises instead.
 
 Why this exists: every agent surface worth an end-to-end test (chat, solve, a
-minted proposal, the review card) is downstream of one LLM call. Pointing that
+change or an install and its card) is downstream of one LLM call. Pointing that
 call at a real provider would make the suite need a key, a network, and a model
 that answers the same way twice. Pointing it at a script keeps the WHOLE
 backend loop under test - tools, the ledger, the content parser

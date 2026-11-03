@@ -13,7 +13,7 @@ silent pass.
 
 *What does the code actually READ?* ``source_grounding.scan_sources`` -- the
 same scanner the ``DEC-072`` gate runs before any agent-authored content may
-become a proposal or be written by Solve. Its verdicts (``catalog-id``,
+land as the agent's change or be written by Solve. Its verdicts (``catalog-id``,
 ``path``, ``url``) are the fabrication baseline: a reconstructed node that
 opens something outside the fixture's declared sources has invented a
 resource.

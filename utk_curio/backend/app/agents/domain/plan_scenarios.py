@@ -16,7 +16,7 @@ A plan's ``scenarios`` list holds two kinds of entry:
   is duplicated on the canvas.
 
 Either kind may carry a ``color`` and a ``description``. A node belongs to one
-scenario at most. Parsing expands each duplicate into the plan, so the review
+scenario at most. Parsing expands each duplicate into the plan, so the plan's
 card names every node and connection it adds, and each copy carries
 ``copyOf``, the ref it was copied from, which the apply records at
 ``metadata.copiedFrom``.
