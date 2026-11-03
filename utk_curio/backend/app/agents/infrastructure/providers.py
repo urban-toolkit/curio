@@ -59,6 +59,19 @@ together from it. A stream that ends with no finish reason was cut: the turn
 raises :class:`ReplyCutShort` rather than pass a part of the reply off as all
 of it, whether it was asked for whole or streamed.
 
+**A server that stops sending.** A server may stop feeding a stream it has
+begun and leave the connection open, and the SDK alone waits 600 s for each
+read. So every read of an OpenAI-compatible request waits at most
+:data:`FIRST_CHUNK_S`, which bounds the wait for the answer's first chunk while
+the server reads a long prompt in; once a chunk has come, a stream that sends
+nothing for :data:`STREAM_SILENCE_S` is ended (:class:`_Silence`). Either
+raises :class:`ServerStoppedSending`, whose message says the model's server
+stopped sending, and for how long. The SDK sends the request once:
+:func:`_ask_for_stream` sends it again when the server turned it down (a
+refused or dropped connection, a 429, a 5xx other than a 504), never after a
+read waited out :data:`FIRST_CHUNK_S`, and nothing is sent again once the
+answer has begun.
+
 **A turn the output cap cut.** A turn carries its provider's stop reason
 (``ChatTurn.stop_reason``), on both paths: :func:`stream_chat_turn` writes it,
 once the stream has ended, into the ``finish`` dict its caller hands it, as
@@ -83,6 +96,8 @@ User-facing overview: ``docs/AGENT-CATALOG.md``.
 from __future__ import annotations
 
 import json
+import socket
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -107,10 +122,39 @@ class ReplyCutShort(RuntimeError):
     raises it after its last piece."""
 
 
+class ServerStoppedSending(RuntimeError):
+    """The model's server stopped sending: an OpenAI-compatible request that
+    got no chunk of its answer for :data:`FIRST_CHUNK_S`, or a stream that sent
+    nothing for :data:`STREAM_SILENCE_S` once a chunk had come. The message
+    says which, and for how long; :func:`says_server_stopped_sending` finds it
+    in the error a run answered."""
+
+
 #: The stop reasons that say the model stopped because the turn reached its
 #: output cap: an OpenAI-compatible server's ``length``, Anthropic's
 #: ``max_tokens`` and Gemini's ``MAX_TOKENS`` (its finish reason's name).
 _OUTPUT_CAP_STOP_REASONS = frozenset({"length", "max_tokens", "MAX_TOKENS"})
+
+#: How long one read of an OpenAI-compatible request may wait: for the first
+#: chunk of its answer, while the server reads a long prompt in, and, where no
+#: silence can be watched, between two chunks. A proxy before the server cuts
+#: sooner (nginx: 60 s of silence); a slow local server reading a long prompt
+#: in may need minutes.
+FIRST_CHUNK_S = 300.0
+#: How long a stream may send nothing once a chunk has come. A healthy stream
+#: sends a chunk every fraction of a second (a live vLLM stream at 47 tokens a
+#: second was never silent for more than 1.1 s); a server that holds a whole
+#: reply back until it ends, as a tool parser may hold a call, sends within the
+#: time the model takes to write it: 87 s for the 4,096-token output cap at
+#: that pace.
+STREAM_SILENCE_S = 120.0
+#: How long connecting may take: the SDK's own limit.
+_CONNECT_S = 5.0
+#: The waits before each new try of a request its server turned down at once
+#: (:func:`_ask_for_stream`): the SDK's own first two.
+_RESEND_WAITS_S = (0.5, 1.0)
+#: The longest wait a server's ``retry-after`` may ask for: the SDK's own.
+_RETRY_AFTER_MAX_S = 60.0
 
 
 @dataclass(frozen=True)
@@ -615,8 +659,9 @@ def run_chat_turn(
     endpoint that refuses either raises :class:`NativeToolsRefused` or
     :class:`ReplySchemaRefused`. An OpenAI-compatible endpoint is asked for a
     stream, read whole; one that ends it before the model finished raises
-    :class:`ReplyCutShort`. A turn the output cap cut is returned as it came,
-    its stop reason saying so (:attr:`ChatTurn.cut_at_output_cap`).
+    :class:`ReplyCutShort`, and one that stops sending raises
+    :class:`ServerStoppedSending`. A turn the output cap cut is returned as it
+    came, its stop reason saying so (:attr:`ChatTurn.cut_at_output_cap`).
     """
     try:
         return _run_chat_turn(
@@ -730,13 +775,15 @@ def _openai_events(config, messages, max_output_tokens, usage_out, tools, tool_c
     as it arrives, then each native call whole. *finish* gets the choice's
     finish reason (``reason``), and ``thinking`` once a delta carries the
     model's thinking apart from its reply (``reasoning_content``, or
-    ``reasoning``), which is never yielded. A streamed turn and a whole one
-    both ask through here."""
-    from openai import OpenAI
-    kwargs = {"api_key": config.api_key or "no-key"}
+    ``reasoning``), which is never yielded. A server that stops sending raises
+    :class:`ServerStoppedSending` (see the module docstring). A streamed turn
+    and a whole one both ask through here."""
+    import openai
+    kwargs = {"api_key": config.api_key or "no-key", "max_retries": 0,
+              "timeout": openai.Timeout(FIRST_CHUNK_S, connect=_CONNECT_S)}
     if config.base_url:
         kwargs["base_url"] = config.base_url
-    client = OpenAI(**kwargs)
+    client = openai.OpenAI(**kwargs)
     create_kwargs = {
         "model": config.model,
         "messages": _openai_messages(messages),
@@ -752,39 +799,215 @@ def _openai_events(config, messages, max_output_tokens, usage_out, tools, tool_c
         create_kwargs["response_format"] = {"type": "json_schema", "json_schema": {
             "name": reply_schema["name"], "schema": reply_schema["schema"], "strict": True,
         }}
-    stream = client.chat.completions.create(**create_kwargs)
+    stream = _ask_for_stream(client, create_kwargs)
+    silence = _Silence(stream)
     # A call arrives in pieces, by index: its id and name first, then its
     # arguments as fragments of one JSON text.
     pending: dict = {}
-    for chunk in stream:
-        _openai_usage(usage_out, getattr(chunk, "usage", None))
-        choices = getattr(chunk, "choices", None) or []
-        choice = choices[0] if choices else None
-        delta = getattr(choice, "delta", None)
-        reason = getattr(choice, "finish_reason", None)
-        if reason and finish is not None:
-            finish["reason"] = str(reason)
-        if delta is not None and finish is not None and (
-            getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
-        ):
-            finish["thinking"] = True
-        text = getattr(delta, "content", None) if delta is not None else None
-        if text:
-            yield text
-        for piece in (getattr(delta, "tool_calls", None) or []) if tools else ():
-            slot = pending.setdefault(getattr(piece, "index", None) or 0,
-                                      {"id": "", "name": "", "arguments": ""})
-            if getattr(piece, "id", None):
-                slot["id"] = piece.id
-            function = getattr(piece, "function", None)
-            if function is not None:
-                if getattr(function, "name", None) and not slot["name"]:
-                    slot["name"] = function.name
-                if getattr(function, "arguments", None):
-                    slot["arguments"] += function.arguments
+    chunks = 0
+    finished = False
+    try:
+        for chunk in stream:
+            chunks += 1
+            silence.heard()
+            _openai_usage(usage_out, getattr(chunk, "usage", None))
+            choices = getattr(chunk, "choices", None) or []
+            choice = choices[0] if choices else None
+            delta = getattr(choice, "delta", None)
+            reason = getattr(choice, "finish_reason", None)
+            if reason:
+                finished = True
+                if finish is not None:
+                    finish["reason"] = str(reason)
+            if delta is not None and finish is not None and (
+                getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
+            ):
+                finish["thinking"] = True
+            text = getattr(delta, "content", None) if delta is not None else None
+            if text:
+                # The time the caller takes with a piece is not the server's.
+                silence.hold()
+                yield text
+                silence.heard()
+            for piece in (getattr(delta, "tool_calls", None) or []) if tools else ():
+                slot = pending.setdefault(getattr(piece, "index", None) or 0,
+                                          {"id": "", "name": "", "arguments": ""})
+                if getattr(piece, "id", None):
+                    slot["id"] = piece.id
+                function = getattr(piece, "function", None)
+                if function is not None:
+                    if getattr(function, "name", None) and not slot["name"]:
+                        slot["name"] = function.name
+                    if getattr(function, "arguments", None):
+                        slot["arguments"] += function.arguments
+    except Exception as exc:
+        # A reply that finished before the cut is whole: the cut only ended
+        # what follows its finish reason (the usage, the end of the stream).
+        if not (silence.cut and finished):
+            stopped = _stopped_reading(exc, cut=silence.cut, chunks=chunks)
+            if stopped is None:
+                raise
+            raise stopped from exc
+    finally:
+        silence.end()
+    if silence.cut and not finished:
+        # A server that ends its answer by closing the connection ends it
+        # cleanly when its socket is shut: the stream simply stopped.
+        raise _stopped_sending(STREAM_SILENCE_S, began=True)
     for index in sorted(pending):
         slot = pending[index]
         yield _call_from_json(slot["id"] or _call_id(), slot["name"], slot["arguments"])
+
+
+def _ask_for_stream(client, create_kwargs):
+    """The stream an OpenAI-compatible server answers *create_kwargs* with.
+
+    The SDK sends the request once (``max_retries=0``). A request the server
+    turned down is sent again, after each wait of :data:`_RESEND_WAITS_S` or
+    what its ``retry-after`` asks, up to :data:`_RETRY_AFTER_MAX_S`, as the
+    SDK's own retries did: a refused or dropped connection, a 408, 409 or 429,
+    or a 5xx other than a 504. A request held past the limit is not: a read
+    that waited out :data:`FIRST_CHUNK_S` raises :class:`ServerStoppedSending`,
+    and a 504 says a gateway gave up waiting on the server, which a new try
+    would wait on as long. A connection a proxy drops while it holds the
+    request (after 60 s of silence, say) is a dropped connection like any
+    other, and is sent again, as the SDK sent it."""
+    import openai
+
+    for wait in (*_RESEND_WAITS_S, None):
+        try:
+            return client.chat.completions.create(**create_kwargs)
+        except openai.APIStatusError as exc:
+            status = exc.status_code
+            if wait is None or not (status in (408, 409, 429) or (status >= 500 and status != 504)):
+                raise
+            wait = _asked_wait(exc.response, wait)
+        except openai.APIConnectionError as exc:  # APITimeoutError is one
+            if _read_timed_out(exc):
+                raise _stopped_sending(FIRST_CHUNK_S, began=False) from exc
+            if wait is None:
+                raise
+        time.sleep(wait)
+
+
+def _asked_wait(response, default: float) -> float:
+    """The wait, in seconds, a server's ``retry-after`` header asks for, when
+    it asks for one up to :data:`_RETRY_AFTER_MAX_S`; else *default*."""
+    try:
+        asked = float(response.headers.get("retry-after"))
+    except (AttributeError, TypeError, ValueError):
+        return default
+    return asked if 0 < asked <= _RETRY_AFTER_MAX_S else default
+
+
+class _Silence:
+    """Ends an OpenAI-compatible stream its server stopped feeding without
+    closing it. Once a chunk has come, a thread waits for the next one: when
+    none comes for :data:`STREAM_SILENCE_S`, it shuts the stream's socket down,
+    which wakes the read waiting on it, and :attr:`cut` says so. Only the time
+    the stream waits on its server counts (:meth:`hold`). A stream whose socket
+    cannot be reached (a test's fake) is never cut; each of its reads still
+    waits at most :data:`FIRST_CHUNK_S`."""
+
+    def __init__(self, stream):
+        self._socket = _socket_of(stream)
+        self._lock = threading.Lock()
+        self._deadline: float | None = None
+        self._ended = threading.Event()
+        self._thread: threading.Thread | None = None
+        self.cut = False
+
+    def heard(self) -> None:
+        """A chunk came, or the caller handed the stream back: the server has
+        :data:`STREAM_SILENCE_S` to send the next."""
+        if self._socket is None:
+            return
+        with self._lock:
+            self._deadline = time.monotonic() + STREAM_SILENCE_S
+        if self._thread is None:
+            self._thread = threading.Thread(target=self._watch, name="model-stream-silence", daemon=True)
+            self._thread.start()
+
+    def hold(self) -> None:
+        """The caller has a piece: no silence counts until :meth:`heard`."""
+        with self._lock:
+            self._deadline = None
+
+    def end(self) -> None:
+        """The stream ended, by any way: the watch ends."""
+        self._ended.set()
+
+    def _watch(self) -> None:
+        while True:
+            with self._lock:
+                deadline = self._deadline
+                if deadline is not None and time.monotonic() >= deadline:
+                    self.cut = True
+                    break
+            if self._ended.wait(STREAM_SILENCE_S if deadline is None else deadline - time.monotonic()):
+                return
+        try:
+            # The socket's own shutdown, not an SSL socket's: that one would
+            # also unwrap it under the read in progress.
+            socket.socket.shutdown(self._socket, socket.SHUT_RDWR)
+        except OSError:
+            pass  # the connection is gone already
+
+
+def _socket_of(stream):
+    """The socket an SDK stream reads from, or None: its HTTP response's
+    ``network_stream`` (an HTTP/1.1 connection of httpx, or of httpx2 in the
+    newer SDKs), which a test's fake has none of."""
+    try:
+        sock = stream.response.extensions.get("network_stream").get_extra_info("socket")
+    except Exception:  # noqa: BLE001 - a stream without one is only not watched
+        return None
+    return sock if isinstance(sock, socket.socket) else None
+
+
+def _read_timed_out(exc: BaseException | None) -> bool:
+    """Whether *exc*, or an error it was raised from, is a read that waited
+    out its timeout: the HTTP library's ``ReadTimeout`` (httpx's, or httpx2's
+    in the newer SDKs), which the SDK raises bare from a stream or wraps in its
+    ``APITimeoutError``. A connection that could not be made is not one."""
+    seen: set[int] = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        if type(exc).__name__ == "ReadTimeout":
+            return True
+        exc = exc.__cause__
+    return False
+
+
+def _stopped_reading(exc: BaseException, *, cut: bool, chunks: int):
+    """The :class:`ServerStoppedSending` a stream's failed read means, after
+    *chunks* chunks, or None: the stream :class:`_Silence` *cut*, or a read
+    that waited out :data:`FIRST_CHUNK_S`."""
+    if cut:
+        return _stopped_sending(STREAM_SILENCE_S, began=True)
+    if _read_timed_out(exc):
+        return _stopped_sending(FIRST_CHUNK_S, began=chunks > 0)
+    return None
+
+
+def _stopped_sending(seconds: float, *, began: bool) -> ServerStoppedSending:
+    """The error of a server that sent nothing for *seconds*: after a piece of
+    the reply when the reply *began*, else after the request."""
+    shown = f"{seconds:g}"
+    if began:
+        return ServerStoppedSending(agent_text.message("turn.server-stopped-sending", seconds=shown))
+    return ServerStoppedSending(agent_text.message("turn.server-sent-nothing", seconds=shown))
+
+
+def says_server_stopped_sending(text: str | None) -> bool:
+    """Whether *text*, such as the error a run answered, holds the message of
+    a :class:`ServerStoppedSending`: either of its messages, up to the place
+    of its seconds."""
+    openings = (
+        agent_text.message("turn.server-stopped-sending", seconds="\0"),
+        agent_text.message("turn.server-sent-nothing", seconds="\0"),
+    )
+    return bool(text) and any(opening.split("\0")[0] in text for opening in openings)
 
 
 def run_chat_completion(
@@ -819,7 +1042,8 @@ def stream_chat_turn(
     close the underlying provider stream. A refusal of the offered tools raises
     :class:`NativeToolsRefused`, which an endpoint gives before any event. An
     OpenAI-compatible stream that ends with no finish reason raises
-    :class:`ReplyCutShort` after its last event.
+    :class:`ReplyCutShort` after its last event, and one whose server stops
+    sending raises :class:`ServerStoppedSending`.
     """
     events = _stream_chat_turn(config, messages, max_output_tokens, usage_out, tools, tool_choice, finish)
     started = False

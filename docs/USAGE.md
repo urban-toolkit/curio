@@ -304,6 +304,8 @@ The following providers are supported:
 | **Gemini** | Uses the Gemini API. Requires an API key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey). |
 | **Custom** | Any OpenAI-compatible endpoint. Covers self-hosted models (Ollama, LM Studio, vLLM), Groq, Azure OpenAI, and others. Provide the base URL of the endpoint; the API key is optional for keyless local servers. |
 
+With OpenAI and Custom, an agent's turn waits up to five minutes for a reply to begin, and ends when a reply that has begun sends nothing for two minutes; its error then says that the model's server stopped sending.
+
 A **Data source** key is one the Discovery Catalog sends to a source: the Socrata app token, the Hugging Face token, the Google Maps API key or the Mapillary access token. In **Add configuration**, the **Kind** list offers each one you have not saved, under **Data source**. A saved one is listed with **Replace** and **Remove**, and its **Details** say which sources use it. A key whoever runs this Curio set for everyone is listed with **set by this Curio** in its **Key** column, and **Override** saves your own. [DISCOVERY-CATALOG.md part 5](DISCOVERY-CATALOG.md#5-api-tokens) walks through setting one, step by step.
 
 ### Keys for node code
