@@ -7,6 +7,7 @@
  * through `services/agents` alone. The rules live in `tests/_support/layerRules.ts`
  * (dev/143 F1), shared with the packages layer.
  */
+import * as fs from "fs";
 import * as path from "path";
 
 import * as barrel from "../../services/agents";
@@ -42,5 +43,11 @@ describe("services/agents barrel", () => {
 
   it("is the only transport the agents surfaces use (no apiFetch, backendUrl, fetch or EventSource under components/pages/providers)", () => {
     expect(transportOffenders(AGENTS)).toEqual([]);
+  });
+
+  it("names only surfaces that exist, so a moved folder is never passed unread", () => {
+    // `transportOffenders` skips a folder that is not there, as a surface
+    // list must allow for; this guard is what keeps that from passing a move.
+    expect(AGENTS.surfaces.filter((dir) => !fs.existsSync(dir)).map((dir) => path.relative(SRC, dir))).toEqual([]);
   });
 });
