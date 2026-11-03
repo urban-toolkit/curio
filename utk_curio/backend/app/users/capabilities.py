@@ -159,7 +159,7 @@ def agent_skills_refusal(user) -> str | None:
 def catalog_entry_refusal(user, action: str) -> str | None:
     """Why *user* may not *action*, such as "import agents" or "publish
     skills", or ``None``: importing, removing, publishing or unpublishing an
-    entry of the Agent Catalog, an agent or a skill.
+    entry of the Agent or Skill Catalog, an agent or a skill.
 
     The same two parts as :func:`settings_refusal`: a local run always may,
     and a hosted guest may not, because every guest shares one account, so

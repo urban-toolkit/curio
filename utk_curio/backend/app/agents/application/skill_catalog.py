@@ -1,6 +1,7 @@
-"""Skills as the Agent Catalog shows them, and what an account changes of an agent's skills.
+"""Skills as the Skill Catalog shows them, and what an account changes of an agent's skills.
 
-The Agent Catalog lists skills beside agents (``routes/skills.py``). An
+The Skill Catalog lists skills on a page of its own (``routes/skills.py``),
+and an agent's details in the Agent Catalog list that agent's. An
 account sees three kinds (:func:`seen_skills`): the skills Curio ships, those
 it holds of its own (``repositories/user_skills.py``: the ones it imported,
 and its copies of skills it added from the shared catalog), and the skills
@@ -242,7 +243,7 @@ def _node_kinds(skill: skill_format.Skill, behaviors_by_template: dict[str, str]
 
 
 def skills_listing(user_key: str) -> list[dict]:
-    """Every skill the account sees, as the Agent Catalog shows it (the
+    """Every skill the account sees, as the Skill Catalog shows it (the
     module's docstring says what each card holds): Curio's in its folder's
     order, then the account's own, then the shared catalog's, each by name."""
     seen = seen_skills(user_key)

@@ -1,4 +1,4 @@
-"""Skills in the Agent Catalog: the skills an account sees, one skill's text, an agent's skills and the account's changes to them, a chat's skills, and an account's own skills, imported, exported, published and removed.
+"""Skills in the Skill Catalog: the skills an account sees, one skill's text, an agent's skills and the account's changes to them, a chat's skills, and an account's own skills, imported, exported, published and removed.
 
 Presentation layer of the agents package: the handlers of
 ``application/skill_catalog.py`` and ``application/skill_lifecycle.py``,

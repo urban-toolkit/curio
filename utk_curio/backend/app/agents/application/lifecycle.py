@@ -38,8 +38,8 @@ log = logging.getLogger(__name__)
 def refuse_hosted_guest(user, action: str) -> None:
     """Refuse *action*, such as "import agents" or "publish skills", to a
     hosted guest (``capabilities.catalog_entry_refusal``), with a 403. Every
-    import, removal, publication and unpublication of an Agent Catalog entry
-    asks this first, an agent's and a skill's alike."""
+    import, removal, publication and unpublication of an entry of the Agent
+    or Skill Catalog asks this first, an agent's and a skill's alike."""
     refusal = catalog_entry_refusal(user, action)
     if refusal:
         raise AgentServiceError(refusal, 403)

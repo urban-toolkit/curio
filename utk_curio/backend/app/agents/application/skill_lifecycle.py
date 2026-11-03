@@ -1,7 +1,7 @@
 """An account's own skills: import, export, publish, unpublish and remove them, through the agents' code.
 
-A skill is an entry of the Agent Catalog as an agent is, and each action
-runs the code an agent's runs:
+A skill is an entry of the Skill Catalog as an agent is of the Agent
+Catalog, and each action runs the code an agent's runs:
 
 - a hosted guest is refused every action but the export
   (``lifecycle.refuse_hosted_guest``);
