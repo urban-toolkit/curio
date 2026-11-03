@@ -216,7 +216,8 @@ def _delegate_confirmed_fetch(
     Nothing here authors anything itself: it starts the SAME detached per-node
     Solve the user's own button starts (dev/115, `DEC-073`), which reads the
     recorded source (dev/126), verifies before writing (dev/129) and lands
-    reviewed content for a node that already has some (`DEC-006`).
+    its code in a node that already has some as the agent's change, with its
+    Undo.
 
     Returns what happened — ``delegating`` with the job's execution id,
     ``session-running`` when dev/131's session will pick the node up on its

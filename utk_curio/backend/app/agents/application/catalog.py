@@ -80,8 +80,9 @@ def _shipped(m: AgentManifest) -> AgentManifest | None:
 
 def agent_tools(m: AgentManifest) -> list[dict]:
     """The tools *m* uses in a chat, ``{id, label}`` each: its grants, by their
-    contracts' labels, what it reads before what it proposes. A tool Curio
-    does not define is never granted, so it is not listed."""
+    contracts' labels, what it reads before what it changes and what it
+    proposes to install. A tool Curio does not define is never granted, so it
+    is not listed."""
     granted = [tools.REGISTRY[tool_id] for tool_id in tools.resolve_grants(m.tools)]
     granted.sort(key=lambda contract: contract.effect != "read")
     return [{"id": contract.id, "label": contract.label or contract.id} for contract in granted]

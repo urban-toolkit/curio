@@ -319,7 +319,8 @@ class ToolContract:
     #: The JSON Schema of its params, given the text of each (``_Say``).
     parameter_schema: Callable[[Say], dict] = field(default=_no_parameters, compare=False)
     #: What the tool does, in plain words for people, where the agent details
-    #: window lists an agent's tools. A mutate contract's starts "Propose".
+    #: window lists an agent's tools. An install's starts "Propose"; a
+    #: change's says what it does.
     label: str = ""
 
     def __post_init__(self):
@@ -701,8 +702,9 @@ def resolve_grants(requested: Iterable[ToolRequirement]) -> list[str]:
     """The tool ids this run is granted: requested ∩ registry ∩ policy.
 
     Both effects are grantable (dev/41): ``read`` executes inside the bounded
-    loop; ``mutate`` may only be *proposed* — execution authority is the apply
-    endpoint alone. Anything unregistered resolves to "not granted" silently
+    loop; ``mutate`` runs its mint's checks, then a change lands as the
+    agent's change, and an install's only execution authority is the apply
+    endpoint. Anything unregistered resolves to "not granted" silently
     (required-ness is :func:`missing_required`'s concern)."""
     granted: list[str] = []
     for req in requested:

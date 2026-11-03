@@ -1,4 +1,4 @@
-"""Delegation inside a turn: resolving the delegate, running it traced, and minting candidates, reviews, notes, and drafts from its reply.
+"""Delegation inside a turn: resolving the delegate, running it traced, and minting candidates, changes, notes, and drafts from its reply.
 
 Application layer of the agents package (memo dev/142, B2; re-derived on enh/agent-catalog): cut from
 ``services.py`` by responsibility; every function keeps its name and body. Sibling modules are reached

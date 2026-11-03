@@ -65,7 +65,7 @@ export interface AgentNodeSettings {
   widgets?: Record<string, unknown>;
 }
 
-/** #662: a scenario a plan saves, on the review card. */
+/** #662: a scenario a plan saves, on the plan's card. */
 export interface AgentPlanScenario {
   name: string;
   color: string;
@@ -227,7 +227,7 @@ export interface AgentProposalPart {
      * (or refused before executing): what ran, how it failed, what fixed it. */
     attempts?: AgentValidationAttempt[];
   };
-  /** dataflow.plan.write only (dev/52): the plan's display copy for the review card. */
+  /** dataflow.plan.write only (dev/52): the plan's display copy for the plan's card. */
   plan?: {
     goal: string;
     templateId?: string;
@@ -259,13 +259,13 @@ export interface AgentProposalPart {
       fromLabel: string;
       toLabel: string;
     }>;
-    /** dev/59 (DEC-049.2): removals reviewed by NAME — every victim listed
-     * with a content flag; present only on destructive revisions. `pinned`
+    /** dev/59 (DEC-049.2): removals listed by NAME, every victim with a
+     * content flag; present only on destructive revisions. `pinned`
      * only on a dashboard tile, which its removal takes off the dashboard. */
     removals?: Array<{ id: string; label: string; nodeType?: string; contentChars: number; pinned?: boolean }>;
     removedEdgeCount?: number;
     cascadeCount?: number;
-    /** dev/112: removed CONNECTIONS reviewed by name too (DEC-049.2 for edges). */
+    /** dev/112: removed CONNECTIONS listed by name too (DEC-049.2 for edges). */
     removedEdges?: Array<{ id: string; fromLabel: string; toLabel: string; kind?: "interaction" }>;
     /** #662: the scenarios the plan saves, each with its nodes by name. */
     scenarios?: AgentPlanScenario[];
