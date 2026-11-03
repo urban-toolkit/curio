@@ -51,8 +51,8 @@ const LOCAL_COMPOUND_CARDS = [
   },
   {
     label: "skill",
-    component: "pages/agents/SkillCatalogBrowseCard.tsx",
-    stylesheet: "pages/agents/SkillCatalogBrowseCard.module.css",
+    component: "pages/skills/SkillCatalogBrowseCard.tsx",
+    stylesheet: "pages/skills/SkillCatalogBrowseCard.module.css",
     localImport: "cardStyles",
     keys: ["skill"],
   },

@@ -10,7 +10,8 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
  * the list it ships with, each through the agent's skills routes. The core
  * skills and those its instruction or a mode names as its own show no Remove,
  * and an account that may change nothing (a hosted guest) sees the list
- * alone.
+ * alone. A skill's name opens its details, the Skill Catalog's, over the
+ * agent's, and Escape closes the skill's alone.
  */
 
 jest.mock("../../services/agents/agentsApi", () => ({
@@ -25,12 +26,16 @@ const mockAgentSkills = jest.fn();
 const mockAddSkill = jest.fn();
 const mockRemoveSkill = jest.fn();
 const mockRestoreSkills = jest.fn();
+const mockCard = jest.fn();
+const mockRead = jest.fn((name: string) => Promise.resolve({ name, text: `## ${name}`, files: [] }));
 jest.mock("../../services/agents/skillsApi", () => ({
   skillsApi: {
     agentSkills: (coord: string) => mockAgentSkills(coord),
     addSkill: (coord: string, name: string) => mockAddSkill(coord, name),
     removeSkill: (coord: string, name: string) => mockRemoveSkill(coord, name),
     restoreSkills: (coord: string) => mockRestoreSkills(coord),
+    card: (name: string) => mockCard(name),
+    read: (name: string) => mockRead(name),
   },
 }));
 
@@ -78,13 +83,25 @@ const WITH_WIDGETS = {
   changed: true,
 };
 
+/** widgets as the Skill Catalog's listing sends its card. */
+const WIDGETS_CARD = {
+  name: "widgets", description: "Use this skill when a node declares a widget.", license: "MIT",
+  compatibility: null, author: "curio", version: "1.0.0", files: [], behaviors: ["code"], features: [],
+  nodeKinds: ["Python Computation"], core: false, source: "curio",
+  agents: [{ id: "agent.curio.dataset-finder", name: "Dataset Finder", coord: COORD, card: true, added: true,
+             always: false }],
+};
+
 const skillsSection = () =>
   within(screen.getByRole("heading", { name: "Skills", level: 3 }).closest("section") as HTMLElement);
 
+/** The agent's details, open on *skills*; answers what closes them. */
 async function openDetails(skills: unknown) {
   mockAgentSkills.mockResolvedValue(skills);
-  render(<AgentDetailModal agent={AGENT} onClose={jest.fn()} />);
+  const onClose = jest.fn();
+  render(<AgentDetailModal agent={AGENT} onClose={onClose} />);
   await waitFor(() => expect(document.querySelectorAll("[data-curio-skill-row]").length).toBeGreaterThan(0));
+  return onClose;
 }
 
 beforeEach(() => {
@@ -92,6 +109,8 @@ beforeEach(() => {
   mockAddSkill.mockReset();
   mockRemoveSkill.mockReset();
   mockRestoreSkills.mockReset();
+  mockCard.mockReset();
+  mockRead.mockClear();
 });
 
 it("lists Skills after In chat, Tools and Modes, read for this agent", async () => {
@@ -193,6 +212,46 @@ it("shows the list alone to an account that may change nothing", async () => {
     reason: "Changing an agent's skills is not available for guest users.",
   });
   const section = skillsSection();
-  expect(section.queryByRole("button")).toBeNull();
+  // Its only buttons are the skills' names, which open their details: reading
+  // them changes nothing, and no button changes the list.
+  expect(section.getAllByRole("button").map((button) => button.textContent)).toEqual(
+    WITH_WIDGETS.skills.map((skill) => skill.name),
+  );
+  expect(document.querySelector('[data-curio-skill-row="widgets"]')).not.toBeNull();
+});
+
+it("opens a skill's details over the agent's from its name, and Escape closes the skill's alone", async () => {
+  const onClose = await openDetails(WITH_WIDGETS);
+  mockCard.mockResolvedValue(WIDGETS_CARD);
+  const name = skillsSection().getByRole("button", { name: "widgets" });
+  // The name keeps the skill's description as its hover text.
+  expect(name).toHaveAttribute("data-tooltip", "When to use widgets.");
+  fireEvent.click(name);
+  await waitFor(() => expect(mockCard).toHaveBeenCalledWith("widgets"));
+  const skill = await screen.findByRole("dialog", { name: "Skill details" });
+  expect(within(skill).getByRole("heading", { name: "widgets", level: 2 })).toBeInTheDocument();
+  expect(within(skill).getByText("Dataset Finder (added by you)")).toBeInTheDocument();
+  await waitFor(() => expect(mockRead).toHaveBeenCalledWith("widgets"));
+  // Stacked: the agent's details stay open beneath, the skill's on top.
+  const shells = document.querySelectorAll('[data-curio-modal-shell="true"]');
+  expect(shells).toHaveLength(2);
+  expect(shells[shells.length - 1]).toBe(skill);
+  expect(screen.getByRole("dialog", { name: "Agent details" })).toBeInTheDocument();
+
+  fireEvent.keyDown(window, { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Skill details" })).toBeNull());
+  expect(screen.getByRole("dialog", { name: "Agent details" })).toBeInTheDocument();
+  expect(onClose).not.toHaveBeenCalled();
+  // The next Escape is the agent's.
+  fireEvent.keyDown(window, { key: "Escape" });
+  expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+it("says so beside the list when a skill's details cannot be read, and opens no window", async () => {
+  await openDetails(WITH_WIDGETS);
+  mockCard.mockResolvedValue(null);
+  fireEvent.click(skillsSection().getByRole("button", { name: "widgets" }));
+  expect(await skillsSection().findByRole("alert")).toHaveTextContent("The details of widgets are not available.");
+  expect(screen.queryByRole("dialog", { name: "Skill details" })).toBeNull();
   expect(document.querySelector('[data-curio-skill-row="widgets"]')).not.toBeNull();
 });

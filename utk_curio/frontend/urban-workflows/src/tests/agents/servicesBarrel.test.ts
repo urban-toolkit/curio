@@ -17,11 +17,14 @@ const AGENTS = {
   root: path.join(SRC, "services", "agents"),
   barrel,
   src: SRC,
-  /** The agents surfaces: every file here renders or composes; none may fetch. */
+  /** The agents surfaces, the skills' among them: every file here renders or
+   *  composes; none may fetch. */
   surfaces: [
     path.join(SRC, "components", "agents"),
+    path.join(SRC, "components", "skills"),
     path.join(SRC, "components", "menus", "nodes", "agentsPalette"),
     path.join(SRC, "pages", "agents"),
+    path.join(SRC, "pages", "skills"),
     path.join(SRC, "providers", "agents"),
   ],
 };

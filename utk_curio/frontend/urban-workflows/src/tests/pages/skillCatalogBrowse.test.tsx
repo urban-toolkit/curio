@@ -3,15 +3,17 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import "@testing-library/jest-dom";
 
 /**
- * The Agent Catalog page lists skills beside its agents.
+ * The Skill Catalog page, /catalog/skills, lists the skills the agents read.
  *
- * Its rail has a Skills section: All skills and Core list the skills the
- * agents read in the page's grid, with the browse drawer, a right-click menu
- * and a details modal, as the agents have. A skill's card and details say
- * what it is for, what it serves (the node kinds of its behaviors and the
- * features it names), the agents that use it, its text (collapsed, as an
- * agent's prompts are) and its files. View details opens a modal, never a
- * page.
+ * Its rail counts All skills and, in its Skills section, the Core ones, and
+ * its grid lists them, with the browse drawer, a right-click menu and a
+ * details modal, as the Agent Catalog page lists its agents. A skill's card
+ * and details say what it is for, what it serves (the node kinds of its
+ * behaviors and the features it names), the agents that use it, its text
+ * (collapsed, as an agent's prompts are) and its files. View details opens a
+ * modal, never a page. A package's skill says it is from its package, and
+ * nothing here changes it. The Agent Catalog page, /catalog/agents, lists
+ * agents alone.
  */
 
 const mockAgent = {
@@ -117,8 +119,9 @@ jest.mock("../../services/agents/skillsApi", () => ({
   },
 }));
 
+const mockCapabilities = jest.fn(() => Promise.resolve({ catalogPublish: false }));
 jest.mock("../../services/packages/packagesApi", () => ({
-  packagesApi: { factoryCapabilities: () => Promise.resolve({ catalogPublish: false }) },
+  packagesApi: { factoryCapabilities: () => mockCapabilities() },
 }));
 
 jest.mock("../../providers/ToastProvider", () => ({
@@ -130,6 +133,7 @@ jest.mock("../../api/llmConfigsApi", () => ({
 }));
 
 import { AgentCatalogBrowse } from "../../pages/agents/AgentCatalogBrowse";
+import { SkillCatalogBrowse } from "../../pages/skills/SkillCatalogBrowse";
 
 /** The rail row a section key and value name. */
 const railRow = (section: string, value: string) =>
@@ -137,16 +141,14 @@ const railRow = (section: string, value: string) =>
     `[data-curio-rail-section="${section}"][data-curio-rail-value="${value}"]`,
   ) as HTMLElement;
 
-async function renderPage() {
-  render(<AgentCatalogBrowse />);
-  await screen.findAllByText("Dataset Finder");
-  await waitFor(() => expect(railRow("skills", "all-skills")).not.toBeNull());
-}
+/** The rail's first row, All skills, which counts every skill. */
+const allSkills = () =>
+  within(screen.getByRole("complementary", { name: "Filter skills" })).getByRole("button", { name: /^All skills/ });
 
-async function showSkills() {
-  await renderPage();
-  fireEvent.click(railRow("skills", "all-skills"));
-  await waitFor(() => expect(document.querySelectorAll("article[data-skill-name]")).toHaveLength(3));
+/** /catalog/skills, once its grid holds *count* skills. */
+async function renderPage(count = 3) {
+  render(<SkillCatalogBrowse />);
+  await waitFor(() => expect(document.querySelectorAll("article[data-skill-name]")).toHaveLength(count));
 }
 
 /** A read the test answers by hand, after the page has drawn what came
@@ -159,32 +161,45 @@ function held<T>() {
   return { promise, answer: (value: T) => answer(value) };
 }
 
+/** The value of the drawer's info row *label*. */
+const drawerRow = (drawer: HTMLElement, label: string) =>
+  Array.from(drawer.querySelectorAll(".infoRow"))
+    .find((row) => row.querySelector(".infoRowLabel")?.textContent === label)
+    ?.querySelector(".infoRowValue")?.textContent;
+
+/** The value of the details' Skill info row *label*. */
+const detailsRow = (dialog: HTMLElement, label: string) =>
+  Array.from(dialog.querySelectorAll("dt")).find((dt) => dt.textContent === label)?.nextElementSibling?.textContent;
+
 beforeEach(() => mockRead.mockClear());
 
-describe("the rail's Skills section", () => {
-  it("counts every skill and the core ones, after the agents' sections", async () => {
+describe("the rail", () => {
+  it("counts every skill, then the core ones in its Skills section", async () => {
     await renderPage();
-    const rail = screen.getByRole("complementary", { name: "Filter agents" });
+    const rail = screen.getByRole("complementary", { name: "Filter skills" });
     expect(within(rail).getByText("Skills")).toBeInTheDocument();
-    expect(railRow("skills", "all-skills")).toHaveTextContent("All skills3");
+    expect(allSkills()).toHaveTextContent("All skills3");
     expect(railRow("skills", "core")).toHaveTextContent("Core1");
-    // The agents stay the page's default view.
-    expect(document.querySelectorAll("article[data-agent-coord]")).toHaveLength(1);
-    expect(document.querySelectorAll("article[data-skill-name]")).toHaveLength(0);
+    // The page lists skills from its first view, and no agent.
+    expect(document.querySelectorAll("article[data-skill-name]")).toHaveLength(3);
+    expect(document.querySelectorAll("article[data-agent-coord]")).toHaveLength(0);
   });
 
-  it("lists the skills in the grid, and All agents brings the agents back", async () => {
-    await showSkills();
+  it("lists the skills in the grid, and All skills brings every one back after Core", async () => {
+    await renderPage();
     expect(document.querySelectorAll("article[data-agent-coord]")).toHaveLength(0);
-    expect(railRow("skills", "all-skills")).toHaveAttribute("aria-pressed", "true");
+    expect(allSkills()).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByPlaceholderText("Search skills…")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /^All agents/ }));
-    await waitFor(() => expect(document.querySelectorAll("article[data-agent-coord]")).toHaveLength(1));
-    expect(document.querySelectorAll("article[data-skill-name]")).toHaveLength(0);
+    fireEvent.click(railRow("skills", "core"));
+    await waitFor(() => expect(document.querySelectorAll("article[data-skill-name]")).toHaveLength(1));
+    expect(allSkills()).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(allSkills());
+    await waitFor(() => expect(document.querySelectorAll("article[data-skill-name]")).toHaveLength(3));
+    expect(allSkills()).toHaveAttribute("aria-pressed", "true");
   });
 
   it("Core lists only the skills every call holds", async () => {
-    await showSkills();
+    await renderPage();
     fireEvent.click(railRow("skills", "core"));
     await waitFor(() =>
       expect(
@@ -196,7 +211,7 @@ describe("the rail's Skills section", () => {
   });
 
   it("searches a skill by what it serves", async () => {
-    await showSkills();
+    await renderPage();
     fireEvent.change(screen.getByPlaceholderText("Search skills…"), { target: { value: "scenario boxes" } });
     await waitFor(() =>
       expect(
@@ -210,7 +225,7 @@ describe("the rail's Skills section", () => {
 
 describe("a skill's card and drawer", () => {
   it("says what the skill is for, what it serves and how many agents use it", async () => {
-    await showSkills();
+    await renderPage();
     const card = document.querySelector('article[data-skill-name="widgets"]') as HTMLElement;
     expect(card.querySelector("h2")?.textContent).toBe("widgets");
     expect(within(card).getByText(mockSkills[0].description)).toBeInTheDocument();
@@ -222,7 +237,7 @@ describe("a skill's card and drawer", () => {
   });
 
   it("opens the drawer on the first skill by name, with the agents that use it", async () => {
-    await showSkills();
+    await renderPage();
     const drawer = document.querySelector('[data-curio-browse-drawer="true"]') as HTMLElement;
     expect(within(drawer).getByText("Skill details")).toBeInTheDocument();
     // Sorted by name: nodes, scenarios, widgets.
@@ -234,7 +249,7 @@ describe("a skill's card and drawer", () => {
   });
 
   it("offers View details on right-click, as every catalog card does", async () => {
-    await showSkills();
+    await renderPage();
     fireEvent.contextMenu(document.querySelector('article[data-skill-name="scenarios"]') as HTMLElement);
     const menu = await screen.findByRole("menu", { name: "Skill actions" });
     expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["View details"]);
@@ -245,7 +260,7 @@ describe("a skill's card and drawer", () => {
 
 describe("a skill's details", () => {
   async function openDetails(name: string) {
-    await showSkills();
+    await renderPage();
     const card = document.querySelector(`article[data-skill-name="${name}"]`) as HTMLElement;
     fireEvent.click(within(card).getByRole("button", { name: "View details" }));
     return screen.findByRole("dialog", { name: "Skill details" });
@@ -323,23 +338,20 @@ describe("the account's own skills", () => {
     mockRemoveOwn.mockClear();
   });
 
-  it("are imported from the skills' own Import skill, in place of Import agent", async () => {
-    await showSkills();
+  it("are imported from the page's own Import skill, and the page imports no agent", async () => {
+    await renderPage();
     expect(screen.queryByRole("button", { name: "Import agent" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Import skill" }));
     expect(await screen.findByRole("heading", { name: "Import skill" })).toBeInTheDocument();
     expect(screen.getByLabelText("Skill folder")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByRole("heading", { name: "Import skill" })).toBeNull());
-    fireEvent.click(screen.getByRole("button", { name: /^All agents/ }));
-    expect(await screen.findByRole("button", { name: "Import agent" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Import skill" })).toBeInTheDocument();
   });
 
   it("say whose they are, and one held is removed from the account's skills from its drawer", async () => {
     mockList.mockResolvedValueOnce({ skills: [...mockSkills, own], editable: true, reason: null });
-    await renderPage();
-    fireEvent.click(railRow("skills", "all-skills"));
-    await waitFor(() => expect(document.querySelectorAll("article[data-skill-name]")).toHaveLength(4));
+    await renderPage(4);
     const card = document.querySelector('article[data-skill-name="street-trees"]') as HTMLElement;
     expect(within(card).getByText("you")).toBeInTheDocument();
     expect(within(card).getByText("yours")).toBeInTheDocument();
@@ -359,7 +371,7 @@ describe("the account's own skills", () => {
   });
 
   it("offer no removal for a skill Curio ships", async () => {
-    await showSkills();
+    await renderPage();
     const drawer = document.querySelector('[data-curio-browse-drawer="true"]') as HTMLElement;
     expect(within(drawer).queryByRole("button", { name: "Remove from your skills" })).toBeNull();
     expect(within(drawer).getByText("Curio")).toBeInTheDocument();
@@ -375,7 +387,7 @@ describe("the account's own skills", () => {
       problem: null, rename: false, replaces: false, agents: [],
     });
     mockImportSkill.mockResolvedValueOnce({ skill: own, agents: [], replaced: false });
-    await showSkills();
+    await renderPage();
     // The read after the import is the first to hold it, and it answers once
     // the page has drawn the closed review, as a server's answer comes.
     const read = held<{ skills: unknown[]; editable: boolean; reason: null }>();
@@ -396,7 +408,88 @@ describe("the account's own skills", () => {
   });
 });
 
-describe("an imported agent", () => {
+describe("a package's skill", () => {
+  /** Scout's skill as the listing sends it: its metadata names curio as its author. */
+  const scout = {
+    ...mockSkills[2],
+    name: "scout",
+    description: "Use this skill when a dataflow uses Scout's nodes.",
+    author: "curio",
+    files: [],
+    features: [],
+    nodeKinds: ["Raster Calculator", "Bars"],
+    source: "package",
+    published: false,
+    publishedByYou: false,
+    publishable: false,
+    removable: false,
+    agents: [],
+    package: { id: "curio.scout@1", name: "Scout" },
+  };
+  /** A skill the account imported, which may be published. */
+  const mine = {
+    ...mockSkills[2],
+    name: "street-trees",
+    description: "Use this skill when a dataflow counts street trees.",
+    author: null,
+    source: "yours",
+    publishable: true,
+    removable: true,
+    agents: [],
+  };
+
+  beforeEach(() => {
+    mockCapabilities.mockClear();
+    mockList.mockClear();
+  });
+
+  it("says From Scout on its card, in its drawer and in its details, whatever its author, and nothing changes it", async () => {
+    // Publishing is on, so a pill that does not show is the skill's, not the switch's.
+    mockCapabilities.mockResolvedValueOnce({ catalogPublish: true });
+    mockList.mockResolvedValueOnce({ skills: [...mockSkills, mine, scout], editable: true, reason: null });
+    await renderPage(5);
+    await waitFor(() => expect(mockCapabilities).toHaveBeenCalled());
+    const card = document.querySelector('article[data-skill-name="scout"]') as HTMLElement;
+    expect(within(card).getByText("From Scout")).toBeInTheDocument();
+    expect(within(card).getByText("package")).toBeInTheDocument();
+    expect(card.querySelector(".publisher")?.textContent).toBe("Scout · v1.0.0");
+    // No agent is counted for it, and its author does not stand for whose it is.
+    expect(within(card).queryByText(/\d+ agents?$/)).toBeNull();
+    expect(within(card).queryByText(/curio/)).toBeNull();
+    expect(
+      Array.from(card.querySelectorAll("[data-curio-tag-chip]")).map((chip) => chip.textContent),
+    ).toEqual(["Raster Calculator", "Bars"]);
+
+    const drawer = document.querySelector('[data-curio-browse-drawer="true"]') as HTMLElement;
+    fireEvent.click(document.querySelector('article[data-skill-name="street-trees"]') as HTMLElement);
+    await waitFor(() => expect(within(drawer).getByRole("heading", { name: "street-trees" })).toBeInTheDocument());
+    expect(await within(drawer).findByRole("button", { name: "Publish" })).toBeInTheDocument();
+    fireEvent.click(card);
+    await waitFor(() => expect(within(drawer).getByRole("heading", { name: "scout" })).toBeInTheDocument());
+    expect(drawerRow(drawer, "From")).toBe("Scout");
+    expect(within(drawer).getByText("Scout · v1.0.0")).toBeInTheDocument();
+    expect(within(drawer).getByText("Agents on a dataflow that uses Scout")).toBeInTheDocument();
+    expect(within(drawer).queryByText("No agent")).toBeNull();
+    expect(within(drawer).queryByText("✓ In your skills")).toBeNull();
+    expect(within(drawer).queryByRole("button", { name: "Remove from your skills" })).toBeNull();
+    expect(within(drawer).queryByRole("button", { name: "Publish" })).toBeNull();
+
+    fireEvent.click(within(card).getByRole("button", { name: "View details" }));
+    const dialog = await screen.findByRole("dialog", { name: "Skill details" });
+    expect(within(dialog).getByText("Scout · v1.0.0")).toBeInTheDocument();
+    expect(detailsRow(dialog, "From")).toBe("Scout");
+    // Its author is a fact of its details, beside whose it is.
+    expect(detailsRow(dialog, "Author")).toBe("curio");
+    const usedBy = within(within(dialog).getByRole("heading", { name: "Used by", level: 3 }).closest("section") as HTMLElement);
+    expect(usedBy.getByText("Agents on a dataflow that uses Scout")).toBeInTheDocument();
+    expect(usedBy.queryByText("No agent")).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: "Export" })).toBeNull();
+    // Its text is read as any skill's is.
+    await waitFor(() => expect(mockRead).toHaveBeenCalledWith("scout"));
+  });
+});
+
+describe("/catalog/agents, the Agent Catalog page", () => {
   const mine = {
     ...mockAgent,
     dirName: "agent.test.my-agent@1",
@@ -407,14 +500,35 @@ describe("an imported agent", () => {
     provenance: { publisher: "me", trust: "imported" },
   };
 
+  /** /catalog/agents, once its grid holds the agents. */
+  async function renderAgentsPage() {
+    render(<AgentCatalogBrowse />);
+    await screen.findAllByText("Dataset Finder");
+  }
+
   beforeEach(() => {
+    mockList.mockClear();
     mockListImports.mockClear();
     mockUploadImport.mockReset();
   });
 
-  it("opens in the drawer once the roster is read again and holds it, as an imported skill does", async () => {
+  it("shows no Skills rail section and no skill, and imports agents alone", async () => {
+    await renderAgentsPage();
+    expect(document.querySelectorAll("article[data-agent-coord]")).toHaveLength(1);
+    expect(document.querySelector('[data-curio-rail-section="skills"]')).toBeNull();
+    const rail = screen.getByRole("complementary", { name: "Filter agents" });
+    expect(within(rail).queryByText("Skills")).toBeNull();
+    expect(within(rail).queryByRole("button", { name: /^All skills/ })).toBeNull();
+    expect(document.querySelectorAll("article[data-skill-name]")).toHaveLength(0);
+    expect(screen.getByRole("button", { name: "Import agent" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Import skill" })).toBeNull();
+    // It reads no skill at all: the Skill Catalog's page does.
+    expect(mockList).not.toHaveBeenCalled();
+  });
+
+  it("opens an imported agent in the drawer once the roster is read again and holds it, as an imported skill does", async () => {
     mockUploadImport.mockResolvedValueOnce(mine);
-    await renderPage();
+    await renderAgentsPage();
     // The read after the upload is the first to hold it, and it answers once
     // the page has drawn the closed modal, as a server's answer comes.
     const read = held<{ agents: unknown[] }>();
