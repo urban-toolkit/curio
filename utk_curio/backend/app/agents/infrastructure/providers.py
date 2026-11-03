@@ -67,9 +67,10 @@ the server reads a long prompt in; once a chunk has come, a stream that sends
 nothing for :data:`STREAM_SILENCE_S` is ended (:class:`_Silence`). Either
 raises :class:`ServerStoppedSending`, whose message says the model's server
 stopped sending, and for how long. The SDK sends the request once:
-:func:`_ask_for_stream` sends it again only when the server turned it down at
-once (a refused connection, a 429, a 5xx), never when the server held it
-unanswered, and nothing is sent again once the answer has begun.
+:func:`_ask_for_stream` sends it again when the server turned it down (a
+refused or dropped connection, a 429, a 5xx other than a 504), never after a
+read waited out :data:`FIRST_CHUNK_S`, and nothing is sent again once the
+answer has begun.
 
 **A turn the output cap cut.** A turn carries its provider's stop reason
 (``ChatTurn.stop_reason``), on both paths: :func:`stream_chat_turn` writes it,
@@ -862,14 +863,15 @@ def _ask_for_stream(client, create_kwargs):
     """The stream an OpenAI-compatible server answers *create_kwargs* with.
 
     The SDK sends the request once (``max_retries=0``). A request the server
-    turned down at once is sent again, after each wait of
-    :data:`_RESEND_WAITS_S` or what its ``retry-after`` asks, up to
-    :data:`_RETRY_AFTER_MAX_S`, as the SDK's own retries did: a refused or
-    dropped connection, a 408, 409 or 429, or a 5xx other than a 504. A
-    request the server held unanswered is not: a read that waited out
-    :data:`FIRST_CHUNK_S` raises :class:`ServerStoppedSending`, and a 504 says
-    a gateway gave up waiting on the server, which a new try would wait on as
-    long."""
+    turned down is sent again, after each wait of :data:`_RESEND_WAITS_S` or
+    what its ``retry-after`` asks, up to :data:`_RETRY_AFTER_MAX_S`, as the
+    SDK's own retries did: a refused or dropped connection, a 408, 409 or 429,
+    or a 5xx other than a 504. A request held past the limit is not: a read
+    that waited out :data:`FIRST_CHUNK_S` raises :class:`ServerStoppedSending`,
+    and a 504 says a gateway gave up waiting on the server, which a new try
+    would wait on as long. A connection a proxy drops while it holds the
+    request (after 60 s of silence, say) is a dropped connection like any
+    other, and is sent again, as the SDK sent it."""
     import openai
 
     for wait in (*_RESEND_WAITS_S, None):
