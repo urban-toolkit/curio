@@ -478,6 +478,35 @@ def test_a_run_follows_the_typing_before_it_and_a_map_editor_edit_takes_its_plac
     assert made[0]["start"] < made[0]["end"], "the edit's point holds the typing it took the place of"
 
 
+def test_typing_that_reaches_the_doc_before_the_runs_note_follows_the_run(kept):
+    """A run's note comes once the run has ended, over a request of its own,
+    and the typing the runner began after the run can reach the doc first.
+    That typing began from the code the run ran, so it follows the run: the
+    node's line is the run, the typing, then the next run, and the typing is
+    not filed first with the run on a branch under it."""
+    from utk_curio.backend.app.collaboration import history
+
+    alice = _synced(kept, "alice")
+    runs = f"/api/projects/{kept.project_id}/history/nodes/loader/runs"
+
+    def run(code: str) -> None:
+        answer = _http(kept).post(runs, headers=_auth(kept), data=json.dumps(
+            {"code": code, "inputs": [], "outputs": ["DATAFRAME"]}))
+        assert answer.status_code == 201, answer.get_json()
+
+    # The node ran the code it loaded with; its note is on its way when the
+    # typing that follows the run lands.
+    alice.edit(_type("# a\n"))
+    run("x = 1\n")
+    run("# a\nx = 1\n")
+    entries = history.entries(kept.owner_key, kept.project_id, "loader")
+    assert [(e["id"], e["parentId"], e.get("kind", "run"), e["code"]) for e in entries["entries"]] == [
+        (1, None, "run", "x = 1\n"), (2, 1, "edit", "# a\nx = 1\n"), (3, 2, "run", "# a\nx = 1\n"),
+    ], entries["entries"]
+    assert entries["entries"][1]["before"] == "x = 1\n", entries["entries"][1]
+    assert entries["current"] == 3
+
+
 def test_a_read_before_any_tab_opened_the_dataflow_gives_it_its_first_points(kept):
     """The drawer can ask before any tab's sync opened the dataflow's doc: the
     read opens it, and lists the versions the open made."""
