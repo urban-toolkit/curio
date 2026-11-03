@@ -20,11 +20,20 @@ export interface SkillAgentUse {
 }
 
 /**
- * Whose a skill is: Curio's; one this account imported; or the shared
+ * Whose a skill is: Curio's; one this account imported; the shared
  * catalog's, which an account published, or this account's copy of one it
- * gave an agent.
+ * gave an agent; or a package's, which every agent on a dataflow that uses
+ * the package holds.
  */
-export type SkillSource = "curio" | "yours" | "shared";
+export type SkillSource = "curio" | "yours" | "shared" | "package";
+
+/** The package a package's skill comes with. */
+export interface SkillPackage {
+  /** `<packageId>@<major>`. */
+  id: string;
+  /** Its name, as its manifest gives it. */
+  name: string;
+}
 
 /** One skill the account sees, as its card and details show it. */
 export interface SkillCard {
@@ -55,7 +64,10 @@ export interface SkillCard {
   publishable?: boolean;
   /** This account holds it, so it may remove it from its skills. */
   removable?: boolean;
+  /** The agents that use it; none by name for a package's skill. */
   agents: SkillAgentUse[];
+  /** The package a package's skill comes with; null for any other. */
+  package?: SkillPackage | null;
 }
 
 /** One file of a skill's upload: its path in what was picked, and the file. */

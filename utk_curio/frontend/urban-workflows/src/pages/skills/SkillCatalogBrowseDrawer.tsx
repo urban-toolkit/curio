@@ -11,7 +11,13 @@ import {
   CatalogPublishPill,
   shouldShowPublishPill,
 } from "../../components/packages/CatalogPublishPill";
-import { SKILL_SOURCE_WORDS, skillByline, skillServes, type SkillCard } from "../../services/agents";
+import {
+  packageSkillUsers,
+  skillByline,
+  skillServes,
+  skillSource,
+  type SkillCard,
+} from "../../services/agents";
 import styles from "../catalog/CatalogBrowseLayout.module.css";
 
 export interface SkillCatalogBrowseDrawerProps {
@@ -35,7 +41,9 @@ export interface SkillCatalogBrowseDrawerProps {
  * one, in that agent's details. A skill the account holds, one it imported or
  * its copy of one from the shared catalog, has **Remove from your skills**,
  * as an agent the account added has **Remove from all projects**; one it
- * imported has the shared publish pill, as an agent it imported does.
+ * imported has the shared publish pill, as an agent it imported does. A
+ * package's skill has neither: it comes and goes with its package, and its
+ * Used by names every agent on a dataflow that uses the package.
  */
 export function SkillCatalogBrowseDrawer({
   skill,
@@ -86,7 +94,6 @@ function SkillDrawerContent({
   onClose: () => void;
 }) {
   const serves = skillServes(skill);
-  const source = skill.source ?? "curio";
   const showPublishPill = shouldShowPublishPill({
     isPublished: Boolean(skill.published),
     allowPublish: catalogPublishAllowed,
@@ -118,7 +125,7 @@ function SkillDrawerContent({
       infoLabel="Skill info"
       infoRows={[
         { label: "Serves", value: skill.core ? "Every call" : serves.length ? serves.join(", ") : "A chat that needs it" },
-        { label: "From", value: SKILL_SOURCE_WORDS[source] },
+        { label: "From", value: skillSource(skill) },
         skill.published ? { label: "Shared catalog", value: skill.publishedByYou ? "Published by you" : "Published" } : null,
         skill.license ? { label: "License", value: skill.license } : null,
         skill.compatibility ? { label: "Compatibility", value: skill.compatibility } : null,
@@ -128,14 +135,16 @@ function SkillDrawerContent({
         <CatalogDrawerSection label="Used by">
           <CatalogDrawerList
             items={
-              skill.agents.length > 0
-                ? skill.agents.map((agent) => (
-                    <li key={agent.coord}>
-                      {agent.name}
-                      {agent.added ? " (added by you)" : ""}
-                    </li>
-                  ))
-                : [<li key="none">No agent</li>]
+              skill.package
+                ? [<li key="package">{packageSkillUsers(skill.package)}</li>]
+                : skill.agents.length > 0
+                  ? skill.agents.map((agent) => (
+                      <li key={agent.coord}>
+                        {agent.name}
+                        {agent.added ? " (added by you)" : ""}
+                      </li>
+                    ))
+                  : [<li key="none">No agent</li>]
             }
           />
         </CatalogDrawerSection>

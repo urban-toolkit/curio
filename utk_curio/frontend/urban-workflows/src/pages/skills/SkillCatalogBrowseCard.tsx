@@ -19,8 +19,10 @@ export interface SkillCatalogBrowseCardProps {
  *
  * The agent card's structure, painted from the same stylesheet: strip header,
  * body (name, author and version, description, what it serves), meta row
- * (how many agents use it), actions. `data-skill-name` names it for tests, as
- * `data-agent-coord` names an agent's card.
+ * (how many agents use it, or for a package's skill the package it comes
+ * from, since every agent on a dataflow that uses the package holds it),
+ * actions. `data-skill-name` names it for tests, as `data-agent-coord` names
+ * an agent's card.
  */
 export function SkillCatalogBrowseCard({
   skill,
@@ -59,7 +61,7 @@ export function SkillCatalogBrowseCard({
           badge={
             skill.core ? (
               <span className={styles.cardFormatBadge}>core</span>
-            ) : skill.source === "yours" || skill.source === "shared" ? (
+            ) : skill.source === "yours" || skill.source === "shared" || skill.source === "package" ? (
               <span className={styles.cardFormatBadge}>{skill.source}</span>
             ) : undefined
           }
@@ -84,7 +86,7 @@ export function SkillCatalogBrowseCard({
 
       <div className={styles.cardMeta}>
         <span className={styles.metaLeft}>
-          {users} agent{users === 1 ? "" : "s"}
+          {skill.package ? `From ${skill.package.name}` : `${users} agent${users === 1 ? "" : "s"}`}
         </span>
         <span className={styles.metaRight}>{skill.license ?? ""}</span>
       </div>
