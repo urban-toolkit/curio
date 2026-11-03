@@ -38,6 +38,7 @@ from .utils import (
     api_json,
     dismiss_toasts,
     frame_nodes,
+    no_tooltip,
     node_locator,
     play_node,
     read_node_code,
@@ -49,6 +50,7 @@ from .utils import (
     set_node_code,
     stub_login_and_enter_workflow,
     wait_for_drawer_closed,
+    wait_for_run_guard_released,
 )
 from .walkthroughs.steps import (
     PROVENANCE_DRAWER,
@@ -210,6 +212,16 @@ def _enter_with_a_held_run_entry(page, app_frontend, current_server: str, hold_j
     dismiss_toasts(page)
     frame_nodes(page, [NODE])
     return login["token"], login["project"]["id"]
+
+
+def _open_run_from_off_the_drawer(page, panel, run_id: str) -> None:
+    """Open the run *run_id*, the pointer moved off the drawer first. A row's
+    tooltip shows above it, over the row before, and stays while the pointer
+    is on it: with the pointer left on the next row, a click on *run_id*'s
+    row would land on that tooltip."""
+    park_pointer_off_drawer(page)
+    no_tooltip(page, "the drawer, before a run opens", timeout=5000)
+    _open_run(panel, run_id)
 
 
 def _release_the_held_run_entry(page) -> None:
@@ -393,7 +405,7 @@ def test_a_run_comes_before_the_typing_that_became_an_entry_before_the_runs_entr
     expect(_run_item(panel, typed)).to_contain_text(f"{OWNER} edited")
     expect(_run_item(panel, second_run)).to_have_attribute("data-provenance-current", "true")
     expect(panel.get_by_role("button", name=re.compile(r"on another branch$"))).to_have_count(0)
-    _open_run(panel, first_run)
+    _open_run_from_off_the_drawer(page, panel, first_run)
     expect(_run_item(panel, first_run).locator("pre")).to_have_text(re.compile(r"^\s*return 1\s*$"))
     _close(page)
 
@@ -415,6 +427,9 @@ def test_typing_that_goes_on_past_a_runs_start_is_an_entry_each_side_of_the_run(
         _run(page, FIRST)
     assert noted.value.status == 201, f"the first run's entry was answered {noted.value.status}"
 
+    # The first run over, the typing, the second run's start and the typing
+    # after it follow each other well within the typing's 10 s pause.
+    wait_for_run_guard_released(page, timeout_ms=120000)
     set_node_code(page, NODE, SECOND)
     _until(page, lambda: _code_on_the_server(current_server, token, project_id), SECOND,
            "the typing before the second run never reached the server")
@@ -436,6 +451,10 @@ def test_typing_that_goes_on_past_a_runs_start_is_an_entry_each_side_of_the_run(
         set_node_code(page, NODE, THIRD)
     _until(page, lambda: _code_on_the_server(current_server, token, project_id), THIRD,
            "the typing after the second run's start never reached the server")
+    assert _kinds_on_the_server(current_server, token, project_id) == ["run"], (
+        "the typing was an entry before the second run's entry came: it paused, so it never went on past "
+        "the run's start"
+    )
     _release_the_held_run_entry(page)
     run_node_and_wait(page, NODE, node_type="computation-analysis", timeout_ms=120000)
 
@@ -448,6 +467,6 @@ def test_typing_that_goes_on_past_a_runs_start_is_an_entry_each_side_of_the_run(
         expect(_run_item(panel, item)).to_contain_text(title)
     expect(_run_item(panel, shown[-1])).to_have_attribute("data-provenance-current", "true")
     expect(panel.get_by_role("button", name=re.compile(r"on another branch$"))).to_have_count(0)
-    _open_run(panel, shown[2])
+    _open_run_from_off_the_drawer(page, panel, shown[2])
     expect(_run_item(panel, shown[2]).locator("pre")).to_have_text(re.compile(r"^\s*return 2\s*$"))
     _close(page)
