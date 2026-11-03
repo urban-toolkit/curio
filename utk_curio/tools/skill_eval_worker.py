@@ -48,7 +48,13 @@ runs, so no sandbox either.
 - **Graded:** a test case's answer goes to the grader, the same model through
   the same code, with the words of the base entry's ``skill-evals.md``. A
   grader reply its output cap cut is not read, however much of it parses: the
-  grader is asked again, and a grade that never came whole says it was cut.
+  grader is asked again, and a grade that never came whole says it was cut,
+  and whether the grader spent the whole cap thinking. A model that thinks
+  before it answers spends the cap on its thinking too, so the cap
+  (:data:`GRADER_MAX_TOKENS`) holds a long thinking and then the grade. The
+  grade records what the grader's last answered try spent: its output tokens
+  (``outputTokens``), and ``thinking`` when its server streamed the model's
+  thinking apart from its reply.
 
 Every file is scrubbed of the key, the base URL and its host before it is
 written (``report.scrub``), and so is every log line.
@@ -84,8 +90,16 @@ from utk_curio.backend.extensions import db  # noqa: E402
 GRADER_PAGE = "skill-evals.md"
 GRADER_SECTION = "grader"
 GRADER_TASK_SECTION = "grader-task"
-#: What the grader may write, and how many times it is asked for JSON.
-GRADER_MAX_TOKENS = 2048
+#: What the grader may write, its thinking included, and how many times it is
+#: asked for JSON. A model whose server counts its thinking against the cap
+#: (gemma4 on vLLM) spends most of the cap thinking: a whole grade of five
+#: results is under about 600 tokens, yet checks that follow ids from node to
+#: edge to scenario kept gemma4's grader going past 2,048 tokens in nine tries
+#: of twelve (scenarios' case 2, 11-03). The cap is twice a run's own
+#: (``turns.policy.DEPLOYMENT_MAX_OUTPUT_TOKENS``), which gemma4's own turns
+#: were seen to spend whole on thinking: the grader may think as long as a
+#: run's whole turn and still write its grade.
+GRADER_MAX_TOKENS = 8192
 GRADER_ATTEMPTS = 3
 #: How long a run, or the grader, waits before each new try after the model's
 #: server failed it (a 5xx or a lost connection): two more tries at most.
@@ -361,6 +375,19 @@ def _json_object(text: str):
         if isinstance(value, dict):
             return value
     return None
+
+
+def _grader_spent(usage: dict, turn: "providers.ChatTurn") -> dict:
+    """What one try of the grader spent, for its grade's record: its output
+    tokens, when the provider reported them (its thinking among them, on a
+    server that counts it), and ``thinking`` when the server streamed the
+    model's thinking apart from its reply."""
+    spent: dict = {}
+    if isinstance(usage.get("outputTokens"), int):
+        spent["outputTokens"] = usage["outputTokens"]
+    if turn.thinking:
+        spent["thinking"] = True
+    return spent
 
 
 class Worker:
@@ -651,22 +678,26 @@ class Worker:
         messages = [{"role": "system", "content": system}, {"role": "user", "content": message}]
         config = provider_config.resolve_llm(self.user_key)
         problem = "no reply"
-        usage: dict = {}
+        spent: dict = {}
         waits = list(RETRY_WAITS_S)
         for attempt in range(1, GRADER_ATTEMPTS + 1):
+            usage: dict = {}
             try:
                 turn = providers.ChatTurn.of(providers.run_chat_turn(config, messages, GRADER_MAX_TOKENS, usage))
             except providers.ServerStoppedSending as exc:
                 # Not asked again: a new try would only wait out the silence again.
                 problem = provider_config.redact_error(exc, config)
-                return {"error": problem, "grader": {"model": self.endpoint.model, "attempts": attempt}}
+                return {"error": problem, "grader": {"model": self.endpoint.model, "attempts": attempt, **spent}}
             except Exception as exc:  # noqa: BLE001 - a grader that fails is an error of the run
                 problem = provider_config.redact_error(exc, config)
                 if attempt < GRADER_ATTEMPTS and waits:
                     time.sleep(waits.pop(0))
                 continue
+            spent = _grader_spent(usage, turn)
             if turn.cut_at_output_cap:
                 problem = f"its reply was cut off at the grader's output limit of {GRADER_MAX_TOKENS:,} tokens"
+                if turn.thinking and not turn.text.strip():
+                    problem += ", all of them spent thinking, before it wrote its grade"
                 continue
             parsed = _json_object(turn.text)
             results = parsed.get("assertion_results") if parsed else None
@@ -676,9 +707,9 @@ class Worker:
                           for text, item in zip(task.assertions, results) if isinstance(item, dict)]
                 if len(graded) == len(task.assertions):
                     return {"assertion_results": graded, "summary": skill_evals.grading_summary(graded),
-                            "grader": {"model": self.endpoint.model, "attempts": attempt}}
+                            "grader": {"model": self.endpoint.model, "attempts": attempt, **spent}}
             problem = "its reply was no list of one result per assertion"
-        return {"error": problem, "grader": {"model": self.endpoint.model, "attempts": GRADER_ATTEMPTS}}
+        return {"error": problem, "grader": {"model": self.endpoint.model, "attempts": GRADER_ATTEMPTS, **spent}}
 
 
 def _protocol() -> "object":
