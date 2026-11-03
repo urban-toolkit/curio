@@ -365,3 +365,95 @@ def test_a_spec_is_kept_as_it_is_and_a_templates_widgets_set_in_a_plan_or_a_node
     for tool in ("dataflow.plan.write", "node.create"):
         said = _claims(_tool_section(tools_page, tool))
         assert said and all(_IN_BOTH in claim for claim in said), (tool, said)
+
+
+#: A verb of proposing, which an install takes and a change never does.
+_PROPOSES = re.compile(r"\bpropos(?:e|es|ing)\b", re.IGNORECASE)
+#: What a change lands in the dataflow, a word of its tool's id among them:
+#: a note, a node, a plan, its code or content, its settings, a connection.
+_LANDS = re.compile(r"^(?:notes?|nodes?|plans?|content|code|settings?|connections?|edges?)$", re.IGNORECASE)
+#: What is still proposed: an install, a download, a package or its draft, a
+#: word of each install tool's id among them, and the dataset candidates a
+#: person picks from.
+_STILL_PROPOSED = re.compile(r"\binstall|\bdownload|\bdraft|\bpackage|\bcandidate|\bacquire", re.IGNORECASE)
+#: A verb of proposing with nothing after it but the end of its clause.
+_NO_OBJECT = re.compile(r"^\s*(?:[.;:,)!?]|$)")
+
+
+def _proposes_a_change(text: str) -> list[str]:
+    """The sentences of *text* that tell an agent it proposes a change: a verb
+    of proposing whose next few words name what a change lands, or which has
+    no object at all ("instead of proposing."), in a sentence that names
+    nothing still proposed."""
+    found = []
+    for sentence in re.split(r"(?<=[.!?;])\s+|\n", text or ""):
+        if _STILL_PROPOSED.search(sentence):
+            continue
+        for verb in _PROPOSES.finditer(sentence):
+            after = sentence[verb.end():]
+            if _NO_OBJECT.match(after) or any(_LANDS.match(word) for word in re.findall(r"[A-Za-z]+", after)[:4]):
+                found.append(sentence.strip())
+                break
+    return found
+
+
+def _package_skills() -> list[tuple[str, str]]:
+    """Each skill of each package Curio ships, which the agents on a dataflow
+    that uses the package read, with where it is."""
+    from pathlib import Path
+
+    from utk_curio.backend.app.agents.domain import skills
+    from utk_curio.backend.app.packages.repositories import skills as package_skills
+
+    repo = Path(__file__).resolve().parents[4]
+    texts = []
+    for package in sorted(path.parent for path in (repo / "packages").glob("*/manifest.json")):
+        for folder in package_skills.skill_folders(package):
+            file = folder / skills.SKILL_FILE
+            texts.append((file.relative_to(repo).as_posix(), file.read_text(encoding="utf-8")))
+    return texts
+
+
+def test_no_agent_is_told_it_proposes_a_change():
+    """A change an agent makes lands at once, as its change with its Undo
+    (``changes.CHANGE_TOOLS``: a node's content, its settings, a new node, a
+    note among them, and a plan), and only an install waits for a person's
+    review (``editors.ACCOUNT_INSTALL_TOOLS``), as
+    ``test_agent_changes.py::TestEachFamilyLandsAtOnce`` checks. So no text an
+    agent reads tells it that it proposes a note, a node, a plan, code,
+    content, a setting or a connection, or to answer instead of proposing:
+    only an install, a download, a package draft and dataset candidates are
+    proposed. Every page and prompt is held to it, every skill, a package's
+    among them, and every template's description and starter."""
+    from utk_curio.backend.app.agents.application import editors
+    from utk_curio.backend.app.agents.application.proposals import changes
+
+    # The words follow the code's lists: each install tool's id names what is
+    # still proposed, and each change tool's id what lands.
+    for tool in editors.ACCOUNT_INSTALL_TOOLS:
+        assert _STILL_PROPOSED.search(tool), tool
+    for tool in changes.CHANGE_TOOLS:
+        assert not _STILL_PROPOSED.search(tool), tool
+        assert any(_LANDS.match(word) for word in tool.split(".")), tool
+    # The check finds what the Researcher was told before agents edited
+    # directly, and lets an install's proposal and other words be.
+    for stale in ("Search the web, answer in prose, and propose notes that carry the findings.",
+                  "Use no web tools and propose no notes.",
+                  "If no source can be grounded, ask the user for a path or URL instead of proposing."):
+        assert _proposes_a_change(stale) == [stale], stale
+    for innocent in (
+        "catalog.search lists them, and dataset.install proposes adding one to this project.",
+        "You already have these; propose package.install with the named package to use one.",
+        "Two scenarios, without and with a proposed building that a Map Editor node adds.",
+        "You never modify anything, never propose changes as actions, and never run code.",
+        "If a confirmed dataset is already installed, say so instead of proposing.",
+    ):
+        assert _proposes_a_change(innocent) == [], innocent
+
+    texts = _what_agents_read() + _package_skills()
+    places = [where for where, _text in texts]
+    for read in ("researcher_instruction.md", "data-sources/SKILL.md", "agent.curio.builtin@1/messages.md"):
+        assert any(place.endswith(read) for place in places), (read, places)
+    assert any(place.startswith("packages/") and "/skills/" in place for place in places), places
+    told = [(where, said) for where, text in texts for said in _proposes_a_change(text)]
+    assert not told, f"these tell an agent it proposes a change, which lands at once with its Undo: {told}"

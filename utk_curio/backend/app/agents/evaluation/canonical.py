@@ -98,10 +98,10 @@ class CNode:
     """One node, stripped to what is comparable.
 
     ``has_content`` is deliberately NOT part of identity (``compare=False``).
-    A plan proposes typed placeholders and Solve fills the ones the sandbox can
+    A plan places typed placeholders and Solve fills the ones the sandbox can
     run (``DEC-048``/``DEC-075``), so a freshly reconstructed Vega-Lite or
-    Autark node is legitimately empty until a separate reviewed content step
-    writes its spec. Making emptiness an identity difference would report every
+    Autark node is legitimately empty until a separate content step writes
+    its spec. Making emptiness an identity difference would report every
     such node as the wrong node. The comparator still reports the empty ones
     (``Comparison.content_missing``) so nothing is hidden.
     """

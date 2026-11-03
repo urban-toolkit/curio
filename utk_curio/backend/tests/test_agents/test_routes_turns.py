@@ -2984,7 +2984,7 @@ class TestToolRequestRecovery:
         assert len(calls) == 4  # the shared MAX_TOOL_ROUNDS budget, then the cap
         assert all(p["type"] != "proposal" for p in body["content"])
         card = next(p for p in body["content"] if p["type"] == "card")
-        assert card["title"] == "Proposal not created"
+        assert card["title"] == "Request not made"
         assert "not valid JSON" in card["lines"][0]
         assert "curio.v1" not in body["reply"]
         assert "toolRequest" not in body["reply"]

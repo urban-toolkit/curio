@@ -740,7 +740,7 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
     plan["edges"] = edges
     if not errors:
         # #662: named selections and duplicates; a duplicate's copies join the
-        # plan's nodes and edges here, so the review names each of them.
+        # plan's nodes and edges here, so the plan's card names each of them.
         errors.extend(plan_scenarios.parse_scenarios(
             raw.get("scenarios"), plan, removed, _field_error, _PLAN_REF_MAX_CHARS,
         ))

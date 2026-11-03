@@ -37,7 +37,7 @@ log = logging.getLogger(__name__)
 
 #: The grant with which a chat run rewrites a node's content, its code included.
 REWRITE_GRANT = "node.content.write"
-#: The grant with which a chat run proposes a new node and its content.
+#: The grant with which a chat run adds a new node and its content.
 CREATE_GRANT = "node.create"
 #: The capabilities a delegated run writes code for: one node's content, or a package's.
 CODE_CAPABILITIES = frozenset({"node.content.generate", *content.PACKAGE_AUTHORING_CAPABILITIES})

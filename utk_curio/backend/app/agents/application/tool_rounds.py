@@ -130,14 +130,16 @@ def _tool_correction_message(errors: list[str], *, native: bool = False) -> dict
     }
 
 
-def _tool_cap_card(errors: list[str], *, title: str = "Proposal not created") -> dict:
-    """The visible outcome of a request attempt that never became proposable.
+def _tool_cap_card(errors: list[str], *, title: str = "Request not made") -> dict:
+    """The visible outcome of a request attempt that never became a request
+    the runtime could run.
 
     Distinct from :func:`_round_cap_cutoff_card`, which reports a *valid*
-    request dangling at the round cap. This one reports a request the runtime
-    could never turn into a proposal, or a delegation it could never make
-    (*title* says which), and it is the ONLY thing the user sees of that
-    block: see ``_handle_tool_reply`` for why the raw JSON is dropped.
+    request dangling at the round cap. This one reports a tool request the
+    runtime could never parse, whatever its tool (a change, an install or a
+    read), or a delegation it could never make (*title* says which), and it is
+    the ONLY thing the user sees of that block: see ``_handle_tool_reply`` for
+    why the raw JSON is dropped.
     """
     return {
         "type": "card",
@@ -259,16 +261,16 @@ def _handle_tool_reply(
     # precisely why, which is more actionable than the JSON ever was.
     if visible_override is None:
         visible_override, _ = content.split_tail(reply)
-    card = _tool_cap_card(errors, title="Delegation not made" if delegation else "Proposal not created")
+    card = _tool_cap_card(errors, title="Delegation not made" if delegation else "Request not made")
     return "cap", list(parts) + [card], visible_override, None
 
 
 # How many tool executions one run may make (memo dev/41): total provider
 # calls per run ≤ MAX_TOOL_ROUNDS + 1. A runtime constant until someone needs
 # to tune it.
-# dev/73: 3 — the Node Builder's documented modify flow (read the node →
-# delegate generation → propose) is a three-round sequence; 2 forced models
-# that follow their instructions to answer in prose instead of proposing.
+# dev/73: 3, the Node Builder's documented modify flow (read the node →
+# delegate generation → write the node) is a three-round sequence; 2 forced
+# models that follow their instructions to answer in prose instead of writing.
 MAX_TOOL_ROUNDS = 3
 
 

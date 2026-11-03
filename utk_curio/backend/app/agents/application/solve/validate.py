@@ -93,7 +93,7 @@ def validate_node_stream(
             None,
         )
     # dev/72: the node's content agent is the Solve trace's home: the content
-    # review and the consolidated trace live with the agent responsible for
+    # change and the consolidated trace live with the agent responsible for
     # THIS node (best-effort created; fallback: parent-only).
     home, _created = agents_delegates._delegation_home(
         spec, resolution.coord, "node.content.generate", {},
@@ -135,7 +135,7 @@ def _validate_events(
 ):
     """The validate-node body over the ONE verified-content loop (dev/115):
     the loop streams its rounds live; this body owns the framing turns, the
-    reviewed mint with the validation block, the per-node ledger, and the
+    change that lands with its validation block, the per-node ledger, and the
     finally that clears the in-flight guard on every exit, disconnect
     included. Its agent is at work in the dataflow's room until the node's
     state is settled, before ``done`` (``in_the_room``)."""
@@ -388,7 +388,7 @@ def _settle_node_state(user_key, project_id, attachment_id, ref, verdict: str) -
         if verdict in ("pass", "not-executable"):
             # dev/118: a browser-rendered kind proceeds like a pass in the
             # plan's ledger (Simulation Mode auto-approves it); the
-            # proposal's validation block carries the honest label.
+            # change's validation block carries the honest label.
             fresh_session["nodeStates"][ref] = "validated"
         elif verdict == "fail":
             fresh_session["nodeStates"][ref] = "failed"

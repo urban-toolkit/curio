@@ -303,7 +303,7 @@ def _one_line_answer(candidate: str, *, data_loading: bool) -> tuple[str, str] |
 
 
 #: The stops on the content builder's one-line answer: the loop's last
-#: candidate is that line, which is no content to review or apply.
+#: candidate is that line, which is no content to write.
 _ANSWER_STOPS = ("answer", "decline")
 
 
