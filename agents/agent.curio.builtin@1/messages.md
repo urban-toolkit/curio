@@ -1418,6 +1418,14 @@ the worked example {key} is not available in this project; call examples.read wi
 
 the model's server ended the reply before the model finished it, after {seconds} s; a proxy before the server may limit how long a request lasts
 
+## turn.server-stopped-sending
+
+the model's server stopped sending: nothing came for {seconds} s after the last piece of its reply, so Curio stopped waiting for the rest
+
+## turn.server-sent-nothing
+
+the model's server stopped sending: nothing came for {seconds} s after it was asked, so Curio stopped waiting for its reply
+
 ## request.call-arguments-not-json
 
 the arguments are not valid JSON: {exc}

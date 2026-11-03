@@ -961,7 +961,7 @@ class TestTheRealSDKs:
 
         real = openai.OpenAI
         monkeypatch.setattr(openai, "OpenAI", lambda **kw: real(
-            **kw, max_retries=0, http_client=httpx.Client(transport=httpx.MockTransport(handler))))
+            **{**kw, "max_retries": 0, "http_client": httpx.Client(transport=httpx.MockTransport(handler))}))
         return seen
 
     def _anthropic(self, monkeypatch, respond):
