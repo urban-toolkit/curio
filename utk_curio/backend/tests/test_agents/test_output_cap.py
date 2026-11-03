@@ -7,7 +7,9 @@ reason: ``length`` on an OpenAI-compatible server, ``max_tokens`` on Anthropic,
 used exactly its 4,096 output tokens in 81 s and reached the user as an empty
 reply with status ok. Nothing read the finish reason, on the blocking path or
 the streamed one, and nothing read the model's thinking, which such a server
-may stream apart from the reply (``reasoning_content``, or ``reasoning``).
+may stream apart from the reply (``reasoning_content``, or ``reasoning``). A
+model seen thinking is now asked again with room for its thinking on top of
+the cap; test_thinking_room.py holds those tests.
 
 The stub here is an OpenAI-compatible server on 127.0.0.1. It streams each
 turn's scripted pieces, then ends the stream with a finish reason, or with none,
@@ -40,6 +42,13 @@ from utk_curio.backend.tests._support.agent_routes import _auth
 CAP = 4096
 #: The cap as a reply's line writes it.
 LIMIT = "4,096"
+#: The room a model seen thinking gets on top of the cap, the cap with it, and
+#: how a reply's line writes that (test_thinking_room.py).
+ROOM = 8192
+WITH_ROOM = CAP + ROOM
+LIMIT_WITH_ROOM = "12,288"
+#: The caps a turn's calls carry: the cap, and the cap with the room.
+TURN_CAPS = (CAP, WITH_ROOM)
 COORD = "agent.curio.researcher@1"
 MESSAGE = "Add two more bars to this chart: J with 60 and K with 33."
 #: What the model wrote before the cap cut it, mid-sentence.
@@ -59,12 +68,21 @@ class _Reply:
     """One scripted reply: its pieces, each ``(field of the delta, text)``,
     the finish reason its stream ends with, or None for a stream that ends
     with none, and the output tokens its usage reports (the turn's whole cap
-    when None)."""
+    when None). A reply :meth:`refused` is an error the server answers in
+    place of a stream."""
 
-    def __init__(self, pieces, finish, tokens=None):
+    def __init__(self, pieces, finish, tokens=None, *, status=200, error=""):
         self.pieces = list(pieces)
         self.finish = finish
         self.tokens = tokens
+        self.status = status
+        self.error = error
+
+    @classmethod
+    def refused(cls, error: str, status: int = 400) -> "_Reply":
+        """The server's refusal of the request, as vLLM answers one: *status*
+        with an error object whose message is *error*."""
+        return cls((), None, status=status, error=error)
 
 
 def _content(texts):
@@ -84,6 +102,15 @@ class _Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         asked = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
         reply = self.server.stub.answer(asked)
+        if reply.status != 200:
+            body = json.dumps({"object": "error", "message": reply.error, "type": "BadRequestError",
+                               "param": None, "code": reply.status}).encode()
+            self.send_response(reply.status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.end_headers()
@@ -112,9 +139,10 @@ class _Handler(BaseHTTPRequestHandler):
 
 class _ModelServer:
     """An OpenAI-compatible model server on 127.0.0.1 that streams scripted
-    replies. A call with the turn's cap takes the next one (a short whole
-    reply once none is left); any other call, such as the conversation's
-    title, gets a short whole reply."""
+    replies. A call with the turn's cap, or the cap with the room a model
+    seen thinking gets, takes the next one (a short whole reply once none is
+    left); any other call, such as the conversation's title, gets a short
+    whole reply."""
 
     def __init__(self, replies):
         self.replies = list(replies)
@@ -127,14 +155,14 @@ class _ModelServer:
 
     def answer(self, asked: dict) -> _Reply:
         self.requests.append(asked)
-        if asked.get("max_tokens") == CAP and self.replies:
+        if asked.get("max_tokens") in TURN_CAPS and self.replies:
             return self.replies.pop(0)
         return _Reply(_content(["Done."]), "stop")
 
     @property
     def turn_calls(self) -> list[dict]:
         """The calls a turn made with its cap: its rounds."""
-        return [asked for asked in self.requests if asked.get("max_tokens") == CAP]
+        return [asked for asked in self.requests if asked.get("max_tokens") in TURN_CAPS]
 
     @property
     def base_url(self) -> str:
@@ -172,24 +200,29 @@ class _ThinkingModel(_ModelServer):
     def tokens_of(cls, text: str) -> int:
         return -(-len(text) // cls.CHARS)
 
-    def answer(self, asked: dict) -> _Reply:
-        self.requests.append(asked)
-        cap = asked.get("max_tokens")
+    @classmethod
+    def reply_for(cls, thinking: int, reply: str, cap: int | None) -> _Reply:
+        """What a model that thinks *thinking* tokens, then writes *reply*,
+        streams to a request whose cap is *cap*."""
         pieces, sent = [], 0
-        while sent < self.thinking:
-            size = min(self.PIECE, self.thinking - sent)
+        while sent < thinking:
+            size = min(cls.PIECE, thinking - sent)
             if cap is not None and sent + size > cap:
                 if cap > sent:
                     pieces.append(("reasoning_content", "Following the edges. "))
                 return _Reply(pieces, "length", tokens=cap)
             pieces.append(("reasoning_content", "Following the edges. "))
             sent += size
-        whole = self.tokens_of(self.reply)
+        whole = cls.tokens_of(reply)
         if cap is not None and sent + whole > cap:
-            pieces.append(("content", self.reply[:(cap - sent) * self.CHARS]))
+            pieces.append(("content", reply[:(cap - sent) * cls.CHARS]))
             return _Reply(pieces, "length", tokens=cap)
-        pieces.append(("content", self.reply))
+        pieces.append(("content", reply))
         return _Reply(pieces, "stop", tokens=sent + whole)
+
+    def answer(self, asked: dict) -> _Reply:
+        self.requests.append(asked)
+        return self.reply_for(self.thinking, self.reply, asked.get("max_tokens"))
 
 
 @pytest.fixture()
@@ -314,15 +347,19 @@ def test_a_turn_that_spent_the_cap_thinking_says_so(
         client, user_and_token, tmp_curio, alice_project, model_server, path, field):
     """The server streams the model's thinking apart from its reply, under
     either name servers give it, until the cap: no reply text came. The reply
-    says the model spent the cap thinking, where it was empty."""
-    model_server(_Reply(_thinking(THINKING, field), "length"))
+    says the model spent the cap thinking, where it was empty. A model seen
+    thinking is asked again with room for it (test_thinking_room.py), and it
+    thinks to the end of that too, so the line names the cap with the room."""
+    server = model_server(_Reply(_thinking(THINKING, field), "length"),
+                          _Reply(_thinking(THINKING, field), "length"))
     _, token = user_and_token
     attachment_id = _attach(client, token, alice_project)
     ended = _ended(client, token, alice_project, attachment_id, path)
     assert ended.get("reply"), f"the turn that spent the cap thinking came back empty: {ended!r}"
-    assert ended["reply"] == _message("turn.cut-while-thinking", limit=LIMIT), ended
+    assert ended["reply"] == _message("turn.cut-while-thinking", limit=LIMIT_WITH_ROOM), ended
     assert "".join(THINKING) not in ended["reply"]
     assert _last_turn(client, token, alice_project, attachment_id)["execution"].get("cutAtOutputLimit") is True
+    assert [asked["max_tokens"] for asked in server.turn_calls] == [CAP, WITH_ROOM]
 
 
 @pytest.mark.parametrize("path", PATHS)
@@ -379,17 +416,18 @@ def test_a_reply_whose_stream_ends_with_no_finish_reason_is_an_error_on_both_pat
 def test_an_openai_compatible_turn_carries_its_finish_reason_and_its_thinking_on_both_paths(model_server, field):
     """Through the SDK itself: a streamed turn writes how it ended into the
     dict its caller hands it, and a whole one into its turn, the thinking
-    never read as reply text."""
+    never read as reply text. Both say the cap the request carried."""
     server = model_server(_Reply(_thinking(THINKING, field) + _content(SO_FAR), "length"),
                           _Reply(_thinking(THINKING, field) + _content(SO_FAR), "length"))
     messages = [{"role": "user", "content": MESSAGE}]
     finish: dict = {}
     events = _outcome(lambda: list(providers.stream_chat_turn(server.config(), messages, CAP, finish=finish)))
-    assert finish == {"reason": "length", "thinking": True}, f"the stream ended with {events!r}, finish {finish!r}"
+    assert finish == {"reason": "length", "thinking": True, "limit": CAP}, (
+        f"the stream ended with {events!r}, finish {finish!r}")
     assert events == SO_FAR
     turn = _outcome(lambda: providers.run_chat_turn(server.config(), messages, CAP))
-    assert (getattr(turn, "text", None), getattr(turn, "stop_reason", None), getattr(turn, "thinking", None)) == (
-        "".join(SO_FAR), "length", True), repr(turn)
+    assert (getattr(turn, "text", None), getattr(turn, "stop_reason", None), getattr(turn, "thinking", None),
+            getattr(turn, "output_limit", None)) == ("".join(SO_FAR), "length", True, CAP), repr(turn)
 
 
 def test_anthropic_names_the_cap_on_both_paths(monkeypatch):

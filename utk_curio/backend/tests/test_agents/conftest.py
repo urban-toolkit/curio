@@ -86,6 +86,24 @@ def _endpoint_not_asked_about_tools(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_endpoint_seen_thinking():
+    """Every test starts as a fresh process does: no endpoint seen thinking.
+
+    The provider port remembers, for the process, the endpoints whose model
+    it saw thinking and those whose server refused room for it (``providers``,
+    its "A model that thinks"), by base URL. A stub server's port can come
+    back in a later test, whose model may not think. A checkout without that
+    memory has nothing to forget.
+    """
+    from utk_curio.backend.app.agents.infrastructure import providers
+
+    for name in ("_thinking_endpoints", "_room_refused"):
+        seen = getattr(providers, name, None)
+        if seen is not None:
+            seen.clear()
+
+
+@pytest.fixture(autouse=True)
 def _pinned_repair_budget(monkeypatch):
     """dev/127: pin the repair loop to the historical THREE attempts.
 
