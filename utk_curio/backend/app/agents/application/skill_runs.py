@@ -525,7 +525,7 @@ def named_in(message: str | None, listed: Iterable[str]) -> list[str]:
     each, as agentskills.io's guide has a person activate a skill: each a
     name of *listed*, the run's catalog, once, in the message's order. The
     first word that names no listed skill ends them, so a path such as
-    ``/catalog/agents`` names none."""
+    ``/catalog/skills`` names none."""
     listed = set(listed)
     names: list[str] = []
     for word in (message or "").split():
