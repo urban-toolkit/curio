@@ -55,6 +55,11 @@ runs, so no sandbox either.
   grade records what the grader's last answered try spent: its output tokens
   (``outputTokens``), and ``thinking`` when its server streamed the model's
   thinking apart from its reply.
+- **Each model call** of a run, its delegates' among them, is recorded in
+  its ``run.json`` (``modelCalls``, :func:`_model_call`): its output tokens,
+  the cap it was asked with, the room for thinking included, whether its
+  model's thinking came apart, whether the cap cut it and whether its server
+  refused the room, so how long a model thinks can be read call by call.
 
 Every file is scrubbed of the key, the base URL and its host before it is
 written (``report.scrub``), and so is every log line.
@@ -163,6 +168,8 @@ class _Seams:
         self.calls = 0
         self.input_tokens = 0
         self.output_tokens = 0
+        #: Each model call's own record (:func:`_model_call`), in call order.
+        self.model_calls: list[dict] = []
 
     def texts(self, *, chat: bool | None = None) -> list[str]:
         """The system turns sent: the chat's, the others', or all of them."""
@@ -227,6 +234,7 @@ class _Seams:
                 seams.calls += 1
                 seams.input_tokens += int(usage.get("inputTokens") or 0)
                 seams.output_tokens += int(usage.get("outputTokens") or 0)
+                seams.model_calls.append(_model_call(usage, providers.ChatTurn.of(turn)))
                 for message in messages:
                     if message.get("role") == "system":
                         text = str(message.get("content") or "")
@@ -375,6 +383,28 @@ def _json_object(text: str):
         if isinstance(value, dict):
             return value
     return None
+
+
+def _model_call(usage: dict, turn: "providers.ChatTurn") -> dict:
+    """One model call of a run, for its ``run.json``: its output tokens when
+    the provider reported them (its thinking among them, on a server that
+    counts it, and both tries of a call asked again with room to think), the
+    cap its answer was asked with (``outputLimit``), ``thinking`` when its
+    model's thinking came apart from its reply, ``cut`` when the cap cut it,
+    and ``thinkingRoomRefused`` when its server refused the room for
+    thinking, so it was asked without."""
+    call: dict = {}
+    if isinstance(usage.get("outputTokens"), int):
+        call["outputTokens"] = usage["outputTokens"]
+    if turn.output_limit:
+        call["outputLimit"] = turn.output_limit
+    if turn.thinking:
+        call["thinking"] = True
+    if turn.cut_at_output_cap:
+        call["cut"] = True
+    if turn.thinking_room_refused:
+        call["thinkingRoomRefused"] = True
+    return call
 
 
 def _grader_spent(usage: dict, turn: "providers.ChatTurn") -> dict:
@@ -597,6 +627,7 @@ class Worker:
         if problem and "error" not in record:
             record["error"] = f"the condition was not met: {problem}"
         record["calls"] = self.seams.calls
+        record["modelCalls"] = list(self.seams.model_calls)
         record["seconds"] = round(time.monotonic() - started, 3)
         timing = {"total_tokens": self.seams.input_tokens + self.seams.output_tokens,
                   "duration_ms": int((time.monotonic() - attempt_started) * 1000),

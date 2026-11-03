@@ -22,6 +22,18 @@ from utk_curio.backend.app.agents.domain import agent_text, builtin
 #: one input left: this number. Passed to every provider as ``max_tokens``.
 DEPLOYMENT_MAX_OUTPUT_TOKENS = 4096
 
+#: The room a model that thinks before it answers gets for its thinking, on
+#: top of :data:`DEPLOYMENT_MAX_OUTPUT_TOKENS`, once its endpoint is seen
+#: thinking (``providers``, its "A model that thinks"). Its server may count
+#: the thinking against the cap, as vLLM counts gemma4's. On 11-03, gemma4's
+#: whole one-call turns wrote 510 to 3,518 tokens for replies of 227 to 550
+#: characters, nearly all of it thinking, and 9 of 48 scenarios runs spent the
+#: whole 4,096 thinking, before a word of their reply. The room is twice the
+#: cap those turns spent whole: a turn may think that long and still have
+#: the cap for its reply. Its cost is time: 8,192 tokens at that server's 48
+#: a second is under three minutes.
+DEPLOYMENT_THINKING_TOKENS = 8192
+
 
 def _run_policy(
     user_key: str,
@@ -36,20 +48,23 @@ def _run_policy(
     account/template/attachment run ceilings and a budget the ledger gated on
     (all removed: Curio does not meter agent runs), then a three-scope
     ``maxOutputTokens``, whose editor had no interface left to reach it. What
-    remains is the deployment-wide output cap and the two keys the ledger
-    records so a run can be attributed to a template and an attachment.
+    remains is the deployment-wide output cap, the room a model that thinks
+    gets on top of it, and the two keys the ledger records so a run can be
+    attributed to a template and an attachment.
     """
     attachment_id = (attachment_record or {}).get("attachmentId")
     max_output = DEPLOYMENT_MAX_OUTPUT_TOKENS
+    thinking = DEPLOYMENT_THINKING_TOKENS
     return {
         "admit": {
             "template_key": f"{project_id}/{coord}",
             "attachment_key": attachment_id if isinstance(attachment_id, str) else None,
         },
         "max_output_tokens": max_output,
+        "thinking_tokens": thinking,
         # Pinned on the execution record: what the run was actually dispatched
         # with, so a later change of the constant does not rewrite history.
-        "policy_pins": {"maxOutputTokens": max_output},
+        "policy_pins": {"maxOutputTokens": max_output, "thinkingTokens": thinking},
     }
 
 
