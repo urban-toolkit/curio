@@ -103,7 +103,7 @@ export const SkillCatalogBrowse: React.FC = () => {
           count={skillBrowse.filtered.length}
           intro={
             <>
-              Skills in the shared catalog. Each tells an agent how to do one kind of task. Add one to
+              Skills in the shared catalog. Each tells an agent how to do a specific task. Add one to
               an agent, or remove one, in that agent&apos;s details; the change reaches the agent in{" "}
               <strong>all your projects</strong>.
             </>
