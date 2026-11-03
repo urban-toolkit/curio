@@ -6,6 +6,7 @@ import { DiscoveryCatalogBrowse } from '../../pages/discovery/DiscoveryCatalogBr
 import { DiscoverySourceDetail } from '../../pages/discovery/DiscoverySourceDetail';
 import { invalidateDiscoveryCatalogCache, notifyDiscoveryCatalogRefresh } from '../../services/discoveryCatalog';
 import type { DiscoveryCatalogResponse, DiscoverySourceRow } from '../../services/discoveryCatalog';
+import { answerSearchesLate } from '../_support/discoverySearch';
 
 jest.mock('../../utils/authApi', () => ({
   apiFetch: jest.fn(),
@@ -403,6 +404,21 @@ describe('DiscoveryCatalogBrowse: federated search mode', () => {
       .map((c) => String(c[0]))
       .filter((p) => p.startsWith('/api/discovery/search'));
     expect(searches[searches.length - 1]).toContain('q=bike');
+  });
+
+  // A loaded CI runner can land the rows after Testing Library's default wait.
+  test('results from a search that answers late replace the cards too', async () => {
+    routeApi({
+      '/catalog': response([source()]),
+      '/api/discovery/search': searchResponse({
+        resources: [resourceRow()],
+        sources: [{ sourceId: 'source.a.portal', status: 'ok' }],
+      }),
+    });
+    answerSearchesLate(apiFetch);
+    renderPage('/catalog/discovery?q=bike');
+    expect(await screen.findByText('Bike Routes')).toBeInTheDocument();
+    expect(document.querySelector('[data-discovery-source]')).toBeNull();
   });
 });
 

@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { DiscoverySourceDetail } from '../../pages/discovery/DiscoverySourceDetail';
 import { invalidateDiscoveryCatalogCache } from '../../services/discoveryCatalog';
 import { resetDiscoveryAcquisitions } from '../../services/discoveryCatalog/discoveryCatalogHooks';
+import { answerSearchesLate } from '../_support/discoverySearch';
 
 /**
  * A finished download says so, like an import does.
@@ -159,3 +160,21 @@ test('a download that kept only some of its files says how many could not be fet
     expect.anything()
   );
 });
+
+// What a loaded CI runner did to the first case: the row landed after
+// Testing Library's default wait. Its own time limit, since it spends a
+// second more than the others on purpose.
+test('a row from a search that answers late downloads and toasts too', async () => {
+  answerSearchesLate(apiFetch);
+  await downloadBikeRoutes();
+
+  await waitFor(
+    () =>
+      expect(mockShowToast).toHaveBeenCalledWith(
+        'Downloaded Bike Routes to your Data Catalog.',
+        'success',
+        { action: expect.objectContaining({ label: 'View details' }) }
+      ),
+    { timeout: 4000 }
+  );
+}, 10000);

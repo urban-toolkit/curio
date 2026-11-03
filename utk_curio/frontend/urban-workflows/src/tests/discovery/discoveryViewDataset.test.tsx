@@ -7,6 +7,7 @@ import { DatasetDetailsProvider } from '../../components/datasets/catalog/Datase
 import { DiscoverySourceDetail } from '../../pages/discovery/DiscoverySourceDetail';
 import { invalidateDiscoveryCatalogCache } from '../../services/discoveryCatalog';
 import type { DiscoverySourceRow } from '../../services/discoveryCatalog';
+import { answerSearchesLate } from '../_support/discoverySearch';
 
 /**
  * "View dataset" on a source row opens the Data Catalog's details modal.
@@ -175,5 +176,18 @@ describe.each([
     expect(screen.queryByRole('dialog', { name: 'Dataset details' })).toBeNull();
     expect(screen.getByText('Bike Routes')).toBeInTheDocument();
     expect(location).toBe(entry);
+  });
+
+  // A loaded CI runner can land the row after Testing Library's default wait.
+  test('a row from a search that answers late opens its dataset too', async () => {
+    answerSearchesLate(apiFetch);
+    renderAt(entry);
+    const row = (await screen.findByText('Bike Routes')).closest('[data-discovery-resource]') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button', { name: 'View dataset' }));
+
+    expect(screen.getByRole('dialog', { name: 'Dataset details' })).toHaveAttribute(
+      'data-dataset-id',
+      'imported.xdeadbeef'
+    );
   });
 });
