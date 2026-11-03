@@ -709,10 +709,10 @@ def test_the_words_come_from_the_skills_metadata_not_the_code(tmp_curio, monkeyp
         monkeypatch.setattr(skill_runs, "shipped_skills", lambda: {**shipped, "scenarios": changed})
 
     def both() -> tuple[list[str], list[str]]:
-        return _asked(NB, WHAT_IF), _asked(NB, "Lower the speed limit on Main Street")
+        return _asked(NB, WHAT_IF), _asked(NB, "Add traffic calming on Main Street")
 
     found = {"as shipped": both()}
-    worded("speed limit, slower streets")
+    worded("traffic calming, slower streets")
     found["other words"] = both()
     worded(None)
     found["no words"] = both()
