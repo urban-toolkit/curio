@@ -417,7 +417,7 @@ A Solve of the Dataflow Builder runs on the Builder's configuration, and writes 
 
 The choice is per account, for every version of the agent and every project. A shared project carries none, so it runs on the configurations of whoever runs it. An agent's details show what it runs on, with **Change in API Settings**, which opens the **Agent configuration** tab on its row; a reply's status line says, on hover, which configuration and model answered it; and a mode another agent asked for names, in the chat, what it ran on.
 
-An agent's tools (reading the dataflow, searching the Data Catalog, the Model Catalog or the Scenario Catalog, reading a shipped example dataflow, adding a node or making a plan, asking another agent for one of its modes) work the same on every configuration: every change lands with its **Undo**, and every install waits for your review. For a Custom endpoint, Curio asks once per model whether it calls tools, the first time an agent with tools runs on it: one short request, billed like any other and kept in the usage record.
+An agent's tools (reading the dataflow, searching the Data Catalog, the Model Catalog or the Scenario Catalog, reading a shipped example dataflow, adding a node or making a plan, asking another agent for one of its modes) work the same on every configuration: every change lands with its **Undo**, and every install waits for your review. For a Custom endpoint, Curio asks once per model whether it calls tools, the first time an agent with tools runs on it: one short request, and a second with room to think when the model spent the first one thinking, billed like any other and kept in the usage record.
 
 ### Choosing the model
 

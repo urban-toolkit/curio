@@ -460,7 +460,7 @@ def _told(client, flow, monkeypatch, who: str) -> str:
         return "Here is what the node does."
 
     monkeypatch.setattr(providers, "probe_native_tools",
-                        lambda config, usage_out=None: (None, "not asked in the test suite"))
+                        lambda config, usage_out=None: (None, "not asked in the test suite", "unanswered"))
     monkeypatch.setattr(providers, "run_chat_turn", _model)
     resp = client.post(f"/api/agents/projects/{flow.pid}/attachments/{ATTACHMENT}/run",
                        json={"message": "What does this node do?"}, headers=_auth(flow.tokens[who]))
