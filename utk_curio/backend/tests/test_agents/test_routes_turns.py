@@ -352,9 +352,12 @@ class TestExecutionRecords:
             "catalog.search", "discovery.sources", "discovery.search", "discovery.acquire",
             "dataset.install", "dataflow.read", "skill.read",
         ]
-        # One pin left: the run caps and the budget it used to record are gone.
+        # The run caps and the budget it used to record are gone. Two pins
+        # are left: the output cap, and the room a model seen thinking gets
+        # on top of it (8,192 tokens; test_thinking_room.py).
         assert pins["policy"] == {
             "maxOutputTokens": policy.DEPLOYMENT_MAX_OUTPUT_TOKENS,
+            "thinkingTokens": 8192,
         }
 
     def test_run_usage_null_when_provider_reports_none(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):

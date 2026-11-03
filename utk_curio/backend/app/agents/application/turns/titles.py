@@ -26,6 +26,12 @@ def title_prompt() -> str:
 
 # A 3–4 word title needs very few tokens; keep the utility call cheap.
 TITLE_MAX_OUTPUT_TOKENS = 16
+#: The room a model that thinks gets for its thinking before it writes the
+#: title (``providers``, its "A model that thinks"): a model whose server
+#: counts its thinking against the cap spends a bare 16 tokens thinking and
+#: writes no title. The title is written before the turn's ``done``, so its
+#: room stays small: at most about 20 s at 48 tokens a second.
+TITLE_THINKING_TOKENS = 1024
 
 
 def sanitize_title(raw: object) -> str | None:
@@ -74,6 +80,7 @@ def _generate_conversation_title(
             ],
             max_output_tokens=TITLE_MAX_OUTPUT_TOKENS,
             usage_out=usage_sink,
+            thinking_tokens=TITLE_THINKING_TOKENS,
         )
         ledger.record_housekeeping_usage(
             user_key, usage_sink, note="title-call", llm_config_id=config.config_id

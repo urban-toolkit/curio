@@ -34,6 +34,11 @@ arguments and a request's block are cut too. The reply then ends with a line
 that says it was cut at the cap (``turn.cut-at-output-limit``), or that the
 model spent the cap thinking, when its server streamed thinking and no reply
 came (``turn.cut-while-thinking``), and its record says ``cutAtOutputLimit``.
+Each round offers the run policy's room for thinking (``thinking_tokens``),
+which a model seen thinking gets on top of the cap (``providers``), so the
+line names the cap the round's request carried (``ChatTurn.output_limit``).
+A round whose server refused that room was asked without it, and the record
+says ``thinkingRoomRefused``.
 """
 
 from __future__ import annotations
@@ -117,6 +122,8 @@ class AttachmentTurn:
         self.stopped = False
         # Whether a round's model stopped at the output cap, which ended the turn.
         self.cut = False
+        # Whether the server refused a round the room a model that thinks gets.
+        self.room_refused = False
         # What the turn settled with (:meth:`settle_ok`), for an ask that waits for it.
         self.result: dict | None = None
         (self.coord, self.session_id, messages, self.run_policy, self.wants_title,
@@ -205,6 +212,8 @@ class AttachmentTurn:
                 # client's live token counter ticks during long tool loops.
                 # Additive; old clients skip unknown events.
                 yield from self._emit("usage", {"usage": dict(self.usage_total)})
+            if result.get("turn") is not None and result["turn"].thinking_room_refused:
+                self.room_refused = True
             if result.get("stopped") or self._stopping():
                 # What the round showed stays; what it asked for does not run.
                 self.stopped = True
@@ -259,7 +268,8 @@ class AttachmentTurn:
         kept = _before_an_open_block(result["visible"])
         if kept:
             self.folded.append(kept)
-        limit = f"{self.run_policy['max_output_tokens']:,}"
+        # The cap the request carried: with the room a model that thinks gets.
+        limit = f"{turn.output_limit or self.run_policy['max_output_tokens']:,}"
         if turn.thinking and not kept:
             self.folded.append(agent_text.message("turn.cut-while-thinking", limit=limit))
         else:
@@ -377,6 +387,7 @@ class AttachmentTurn:
             self.conversation.messages,
             max_output_tokens=self.run_policy["max_output_tokens"],
             usage_out=self.usage_sink,
+            thinking_tokens=self.run_policy["thinking_tokens"],
             **self.conversation.offer(self.rounds_used),
         ))
         self._answered()
@@ -438,6 +449,7 @@ class AttachmentTurn:
             max_output_tokens=self.run_policy["max_output_tokens"],
             usage_out=self.usage_sink,
             finish=finish,
+            thinking_tokens=self.run_policy["thinking_tokens"],
             **self.conversation.offer(self.rounds_used),
         )
         try:
@@ -484,7 +496,8 @@ class AttachmentTurn:
         visible, parts = content.extract_content(reply)
         self._check_candidates(parts)
         turn = ChatTurn(text=reply, tool_calls=tuple(calls), stop_reason=str(finish.get("reason") or ""),
-                        thinking=bool(finish.get("thinking")))
+                        thinking=bool(finish.get("thinking")), output_limit=int(finish.get("limit") or 0),
+                        thinking_room_refused=bool(finish.get("thinking_room_refused")))
         result = {"reply": reply, "visible": visible, "parts": parts, "turn": turn}
         # A tail the output cap cut is half written: neither held nor shown.
         if withheld is not None and not parts and not turn.cut_at_output_cap:
@@ -743,6 +756,8 @@ class AttachmentTurn:
             execution["stoppedBy"] = stopped["by"]
         if self.cut:
             execution["cutAtOutputLimit"] = True
+        if self.room_refused:
+            execution["thinkingRoomRefused"] = True
         agents_prepare._persist_exchange(
             self.user_key,
             self.project_id,

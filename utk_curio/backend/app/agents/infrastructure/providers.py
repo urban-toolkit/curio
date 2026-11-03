@@ -87,6 +87,26 @@ Ollama and DeepSeek send it) never has it read as the reply: the turn notes
 only that it came (``ChatTurn.thinking``), so a turn that spent its cap
 thinking can say so.
 
+**A model that thinks.** A model's thinking may count against the turn's
+output cap: vLLM counts gemma4's, Gemini 2.5 and later count their thoughts,
+and Anthropic counts Claude's, which is on by default from Claude 5. Such a
+model can spend the whole cap thinking before it writes a word of its reply.
+So a caller may offer ``thinking_tokens``, the room a model that thinks gets
+on top of the cap (a run's turns and delegates, and the title, do). An
+endpoint whose model was seen thinking is asked for ``max_output_tokens +
+thinking_tokens`` from then on in this process (:func:`_room_for`). It is seen
+thinking by its stream's thinking, by an Anthropic thinking block, or by a
+reply the cap cut before it wrote anything, whose tokens went to output that
+does not show. A reply the cap cut before it wrote anything, asked without the
+room, is asked again once with it: nothing of it reached the caller, which
+sees only the second, and the tokens of both are counted. A model that never
+thinks is asked as before. A request given the room that its server refuses
+(a 400 or a 422, such as a context window the room does not fit in) is asked
+again without it, and that endpoint gets no room again in this process; the
+turn says so (``ChatTurn.thinking_room_refused``), and the refusal is never
+read as one of the tools or the reply schema. ``ChatTurn.output_limit`` is the
+cap the request that answered carried.
+
 The dispatch below was extracted verbatim from ``app/api/routes.py::_call_llm``
 (behavior-preserving) and is the seam a future LangChain adapter would sit behind.
 
@@ -100,7 +120,7 @@ import socket
 import threading
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from utk_curio.backend.app.agents.domain import agent_text
 
@@ -155,6 +175,13 @@ _CONNECT_S = 5.0
 _RESEND_WAITS_S = (0.5, 1.0)
 #: The longest wait a server's ``retry-after`` may ask for: the SDK's own.
 _RETRY_AFTER_MAX_S = 60.0
+
+#: The endpoints whose model was seen thinking in this process, and those
+#: whose server refused a request given room for it, each as
+#: ``(api_type, base_url, model)`` (see the module docstring).
+_thinking_endpoints: set[tuple[str, str, str]] = set()
+_room_refused: set[tuple[str, str, str]] = set()
+_thinking_lock = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -224,13 +251,20 @@ def _call_id() -> str:
 class ChatTurn:
     """One model turn: its text, the native tool calls it made (none while no
     tools are offered), the provider's stop reason, and whether the endpoint
-    streamed the model's thinking apart from its reply (``thinking``; the
-    text never holds it)."""
+    sent the model's thinking apart from its reply (``thinking``; the text
+    never holds it). ``output_limit`` is the output cap the request that
+    answered carried, the room for thinking included (0 when no cap was
+    asked, or for a turn no provider made), and ``thinking_room_refused``
+    says the server refused that room, so the turn was asked without it (see
+    the module docstring). Those two say how the turn was asked, not what it
+    holds, so two turns that hold the same are equal whatever they say."""
 
     text: str
     tool_calls: tuple = ()
     stop_reason: str = ""
     thinking: bool = False
+    output_limit: int = field(default=0, compare=False)
+    thinking_room_refused: bool = field(default=False, compare=False)
 
     @property
     def cut_at_output_cap(self) -> bool:
@@ -578,6 +612,16 @@ def _anthropic_text(resp) -> str:
     )
 
 
+def _anthropic_thinking(resp) -> bool:
+    """Whether an Anthropic reply holds thinking: a ``thinking`` block (its
+    text left out unless asked for, as on Claude 5 and later) or a
+    ``redacted_thinking`` one."""
+    return any(
+        getattr(block, "type", "") in ("thinking", "redacted_thinking")
+        for block in getattr(resp, "content", None) or []
+    )
+
+
 def _anthropic_calls(resp) -> tuple:
     calls = []
     for block in getattr(resp, "content", None) or []:
@@ -600,11 +644,17 @@ def _gemini_parts(response) -> list:
 
 def _gemini_text(response) -> str:
     """The text parts of a Gemini reply. ``response.text`` raises when a part
-    is a function call, so the parts are read one by one when they are there."""
+    is a function call, so the parts are read one by one when they are there.
+    It raises too on a reply with no part at all, such as one the cap cut
+    while the model still thought (Gemini 2.5 and later think, and their
+    thoughts count against the cap), which holds no text."""
     parts = _gemini_parts(response)
     if parts:
         return "".join(getattr(part, "text", "") or "" for part in parts)
-    return getattr(response, "text", "") or ""
+    try:
+        return getattr(response, "text", "") or ""
+    except ValueError:
+        return ""
 
 
 def _gemini_stop_reason(response) -> str:
@@ -638,6 +688,142 @@ def _gemini_tool_config(tool_choice: str) -> dict:
     return {"function_calling_config": {"mode": "NONE" if tool_choice == "none" else "AUTO"}}
 
 
+# -- a model that thinks (see the module docstring) ---------------------------
+
+def _endpoint(config: ProviderConfig) -> tuple[str, str, str]:
+    return (config.api_type, config.base_url or "", config.model)
+
+
+def _note_thinking(config: ProviderConfig) -> None:
+    """*config*'s model was seen thinking: its later turns get their room."""
+    with _thinking_lock:
+        _thinking_endpoints.add(_endpoint(config))
+
+
+def _note_room_refused(config: ProviderConfig) -> None:
+    """*config*'s server refused a request given room for thinking, and took
+    it without: its later turns are asked without the room."""
+    with _thinking_lock:
+        _room_refused.add(_endpoint(config))
+
+
+def _may_give_room(config: ProviderConfig, max_output_tokens, thinking_tokens) -> bool:
+    """Whether a turn on *config* may be given room for thinking: its caller
+    offers some, the turn asks for a cap, and the endpoint never refused it."""
+    if not (max_output_tokens and thinking_tokens):
+        return False
+    with _thinking_lock:
+        return _endpoint(config) not in _room_refused
+
+
+def _room_for(config: ProviderConfig, max_output_tokens, thinking_tokens) -> int:
+    """The room a turn on *config* is first asked with: *thinking_tokens*
+    once its model was seen thinking, else none."""
+    if not _may_give_room(config, max_output_tokens, thinking_tokens):
+        return 0
+    with _thinking_lock:
+        seen = _endpoint(config) in _thinking_endpoints
+    return int(thinking_tokens) if seen else 0
+
+
+def _wrote_nothing(text: str, calls) -> bool:
+    """Whether a reply holds neither text nor a call."""
+    return not (text or "").strip() and not calls
+
+
+def _summed_usage(usage_out: dict | None, sinks: list[dict]) -> None:
+    """The usage of every request a turn sent, summed into *usage_out*: one
+    request's usage as it was, two requests' added up."""
+    if usage_out is None:
+        return
+    total: dict = {}
+    for sink in sinks:
+        for key, value in sink.items():
+            if isinstance(value, int):
+                total[key] = total.get(key, 0) + value
+    usage_out.update(total)
+
+
+def _asked_with_room(config: ProviderConfig, max_output_tokens, thinking_tokens, usage_out, ask) -> ChatTurn:
+    """A whole turn, asked through ``ask(limit, usage_sink)``, with the room
+    a model that thinks gets (see the module docstring)."""
+    room = _room_for(config, max_output_tokens, thinking_tokens)
+    refused = False
+    sinks: list[dict] = []
+    while True:
+        limit = max_output_tokens + room if max_output_tokens else max_output_tokens
+        sink: dict = {}
+        sinks.append(sink)
+        try:
+            turn = ask(limit, sink)
+        except Exception as exc:
+            _summed_usage(usage_out, sinks)
+            if room and _status_code_of(exc) in (400, 422):
+                room, refused = 0, True
+                continue
+            raise
+        _summed_usage(usage_out, sinks)
+        if refused:
+            _note_room_refused(config)
+        if turn.thinking:
+            _note_thinking(config)
+        if turn.cut_at_output_cap and _wrote_nothing(turn.text, turn.tool_calls):
+            _note_thinking(config)
+            if not room and not refused and _may_give_room(config, max_output_tokens, thinking_tokens):
+                room = int(thinking_tokens)
+                continue
+        return replace(turn, output_limit=limit or 0, thinking_room_refused=refused)
+
+
+def _streamed_with_room(config: ProviderConfig, max_output_tokens, thinking_tokens, usage_out, finish, ask):
+    """A streamed turn, asked through ``ask(limit, usage_sink, ended)``, with
+    the room a model that thinks gets (see the module docstring). A request
+    is asked again only before it showed a word or a call, so its caller
+    reads the second as the turn. *finish*, when given, gets how the turn
+    ended once it has: the stop reason, ``thinking``, ``limit`` and
+    ``thinking_room_refused``."""
+    room = _room_for(config, max_output_tokens, thinking_tokens)
+    refused = False
+    sinks: list[dict] = []
+    while True:
+        limit = max_output_tokens + room if max_output_tokens else max_output_tokens
+        sink: dict = {}
+        ended: dict = {}
+        sinks.append(sink)
+        wrote = False
+        events = ask(limit, sink, ended)
+        try:
+            for event in events:
+                if isinstance(event, ToolCall) or (isinstance(event, str) and event.strip()):
+                    wrote = True
+                yield event
+        except Exception as exc:
+            _summed_usage(usage_out, sinks)
+            if room and not wrote and _status_code_of(exc) in (400, 422):
+                room, refused = 0, True
+                continue
+            raise
+        finally:
+            events.close()
+        _summed_usage(usage_out, sinks)
+        if refused:
+            _note_room_refused(config)
+        if ended.get("thinking"):
+            _note_thinking(config)
+        if ended.get("reason") in _OUTPUT_CAP_STOP_REASONS and not wrote:
+            _note_thinking(config)
+            if not room and not refused and _may_give_room(config, max_output_tokens, thinking_tokens):
+                room = int(thinking_tokens)
+                continue
+        if finish is not None:
+            finish.update(ended)
+            if limit:
+                finish["limit"] = limit
+            if refused:
+                finish["thinking_room_refused"] = True
+        return
+
+
 def run_chat_turn(
     config: ProviderConfig,
     messages: list,
@@ -647,6 +833,7 @@ def run_chat_turn(
     tools: list | None = None,
     tool_choice: str = "auto",
     reply_schema: dict | None = None,
+    thinking_tokens: int | None = None,
 ) -> ChatTurn:
     """One model turn from the configured provider.
 
@@ -654,18 +841,20 @@ def run_chat_turn(
     system message may carry ``slots`` (see the module docstring).
     ``max_output_tokens`` is the effective resource policy (memo dev/24); when
     unset the anthropic backend keeps its former 4096 and the others use
-    provider defaults. ``tools`` and ``tool_choice`` offer native tools, and
-    ``reply_schema`` holds the reply to a schema (see the module docstring); an
-    endpoint that refuses either raises :class:`NativeToolsRefused` or
-    :class:`ReplySchemaRefused`. An OpenAI-compatible endpoint is asked for a
-    stream, read whole; one that ends it before the model finished raises
-    :class:`ReplyCutShort`, and one that stops sending raises
-    :class:`ServerStoppedSending`. A turn the output cap cut is returned as it
-    came, its stop reason saying so (:attr:`ChatTurn.cut_at_output_cap`).
+    provider defaults. ``thinking_tokens`` is the room a model that thinks
+    gets on top of it (see the module docstring); none when unset. ``tools``
+    and ``tool_choice`` offer native tools, and ``reply_schema`` holds the
+    reply to a schema (see the module docstring); an endpoint that refuses
+    either raises :class:`NativeToolsRefused` or :class:`ReplySchemaRefused`.
+    An OpenAI-compatible endpoint is asked for a stream, read whole; one that
+    ends it before the model finished raises :class:`ReplyCutShort`, and one
+    that stops sending raises :class:`ServerStoppedSending`. A turn the
+    output cap cut is returned as it came, its stop reason saying so
+    (:attr:`ChatTurn.cut_at_output_cap`).
     """
     try:
         return _run_chat_turn(
-            config, messages, max_output_tokens, usage_out, tools, tool_choice, reply_schema
+            config, messages, max_output_tokens, usage_out, tools, tool_choice, reply_schema, thinking_tokens
         )
     except Exception as exc:
         if _status_code_of(exc) in (400, 422):
@@ -677,10 +866,9 @@ def run_chat_turn(
 
 
 def _run_chat_turn(
-    config, messages, max_output_tokens, usage_out, tools, tool_choice, reply_schema=None
+    config, messages, max_output_tokens, usage_out, tools, tool_choice, reply_schema=None, thinking_tokens=None
 ) -> ChatTurn:
-    api_type = config.api_type
-    if api_type == "testing":
+    if config.api_type == "testing":
         # Scripted, deterministic, no network. Guarded on CURIO_TESTING inside
         # run_scripted_turn, so this branch cannot be reached on a real
         # deployment even if a config names it. See agents/testing_provider.py.
@@ -690,6 +878,15 @@ def _run_chat_turn(
             messages, usage_out=usage_out, config=config, tools=tools, tool_choice=tool_choice,
             reply_schema=reply_schema,
         )
+    return _asked_with_room(
+        config, max_output_tokens, thinking_tokens, usage_out,
+        lambda limit, sink: _one_turn(config, messages, limit, sink, tools, tool_choice, reply_schema),
+    )
+
+
+def _one_turn(config, messages, max_output_tokens, usage_out, tools, tool_choice, reply_schema) -> ChatTurn:
+    """One request of a whole turn, *max_output_tokens* its cap."""
+    api_type = config.api_type
     if api_type == "anthropic":
         import anthropic
         client = anthropic.Anthropic(api_key=config.api_key)
@@ -712,6 +909,7 @@ def _run_chat_turn(
             text=_anthropic_text(resp),
             tool_calls=_anthropic_calls(resp) if tools else (),
             stop_reason=str(getattr(resp, "stop_reason", "") or ""),
+            thinking=_anthropic_thinking(resp),
         )
     elif api_type == "gemini":
         import google.generativeai as genai
@@ -1030,13 +1228,17 @@ def stream_chat_turn(
     tools: list | None = None,
     tool_choice: str = "auto",
     finish: dict | None = None,
+    thinking_tokens: int | None = None,
 ):
     """Streaming twin of :func:`run_chat_turn`: yields the turn's events as they
     arrive. A text delta is a bare string; a native tool call is a
     :class:`ToolCall`, yielded once the call is complete. *finish*, when
     given, gets what the whole turn's :class:`ChatTurn` carries besides them
-    once the stream has ended: the stop reason (``reason``), and ``thinking``
-    when the model's thinking came apart from its reply.
+    once the stream has ended: the stop reason (``reason``), ``thinking``
+    when the model's thinking came apart from its reply, the cap the request
+    that answered carried (``limit``), and ``thinking_room_refused``.
+    ``thinking_tokens`` is the room a model that thinks gets (see the module
+    docstring).
 
     Same provider dispatch and message handling. Callers that stop iterating
     close the underlying provider stream. A refusal of the offered tools raises
@@ -1045,7 +1247,8 @@ def stream_chat_turn(
     :class:`ReplyCutShort` after its last event, and one whose server stops
     sending raises :class:`ServerStoppedSending`.
     """
-    events = _stream_chat_turn(config, messages, max_output_tokens, usage_out, tools, tool_choice, finish)
+    events = _stream_chat_turn(config, messages, max_output_tokens, usage_out, tools, tool_choice, finish,
+                               thinking_tokens)
     started = False
     try:
         for event in events:
@@ -1059,9 +1262,9 @@ def stream_chat_turn(
         events.close()
 
 
-def _stream_chat_turn(config, messages, max_output_tokens, usage_out, tools, tool_choice, finish=None):
-    api_type = config.api_type
-    if api_type == "testing":
+def _stream_chat_turn(config, messages, max_output_tokens, usage_out, tools, tool_choice, finish=None,
+                      thinking_tokens=None):
+    if config.api_type == "testing":
         # The scripted reply, delivered as a single chunk. Splitting it would
         # only test the splitter: what the SSE runtime needs from a provider
         # is a deterministic sequence of deltas, and one is a sequence.
@@ -1076,6 +1279,16 @@ def _stream_chat_turn(config, messages, max_output_tokens, usage_out, tools, too
         if finish is not None:
             finish.update(reason=turn.stop_reason, thinking=turn.thinking)
         return
+    yield from _streamed_with_room(
+        config, max_output_tokens, thinking_tokens, usage_out, finish,
+        lambda limit, sink, ended: _one_stream(config, messages, limit, sink, tools, tool_choice, ended),
+    )
+
+
+def _one_stream(config, messages, max_output_tokens, usage_out, tools, tool_choice, finish):
+    """One request of a streamed turn, *max_output_tokens* its cap: its
+    events, and how it ended, in *finish*."""
+    api_type = config.api_type
     if api_type == "anthropic":
         import anthropic
         client = anthropic.Anthropic(api_key=config.api_key)
@@ -1098,8 +1311,9 @@ def _stream_chat_turn(config, messages, max_output_tokens, usage_out, tools, too
                 final = None  # usage is best-effort; the reply already streamed
             if final is not None:
                 _anthropic_usage(usage_out, getattr(final, "usage", None))
-                if finish is not None:
-                    finish["reason"] = str(getattr(final, "stop_reason", "") or "")
+                finish["reason"] = str(getattr(final, "stop_reason", "") or "")
+                if _anthropic_thinking(final):
+                    finish["thinking"] = True
                 if tools:
                     yield from _anthropic_calls(final)
     elif api_type == "gemini":
@@ -1127,11 +1341,9 @@ def _stream_chat_turn(config, messages, max_output_tokens, usage_out, tools, too
             if tools:
                 calls.extend(_gemini_calls(chunk, tools))
         _gemini_usage(usage_out, getattr(last_chunk, "usage_metadata", None))
-        if finish is not None:
-            finish["reason"] = reason
+        finish["reason"] = reason
         yield from calls
     else:  # openai_compatible (default)
-        finish = {} if finish is None else finish
         started = time.monotonic()
         yield from _openai_events(config, messages, max_output_tokens, usage_out, tools, tool_choice,
                                   finish=finish)

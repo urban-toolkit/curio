@@ -389,7 +389,10 @@ def run_delegate(
         ledger.settle(user_key, child.reservation, usage=usage_sink or None, status="error")
         record = _record("error", usage_sink, pins)
         record["cutAtOutputLimit"] = True
-        limit = f"{child.run_policy['max_output_tokens']:,}"
+        if turn.thinking_room_refused:
+            record["thinkingRoomRefused"] = True
+        # The cap the request carried: with the room a model that thinks gets.
+        limit = f"{turn.output_limit or child.run_policy['max_output_tokens']:,}"
         if turn.thinking and not turn.text.strip():
             return ("error", agent_text.message("delegate.cut-while-thinking", coord=coord, limit=limit), record)
         return ("error", agent_text.message("delegate.cut-at-output-limit", coord=coord, limit=limit), record)
@@ -399,7 +402,10 @@ def run_delegate(
         text = text[:DELEGATE_RESULT_MAX_CHARS] + ("\n" + agent_text.message("delegate.result-truncated"))
     # The child's reply is returned verbatim as data — NEVER parsed for
     # toolRequest/delegateRequest (depth-1 by construction).
-    return ("ok", text, _record("ok", usage_sink, pins))
+    record = _record("ok", usage_sink, pins)
+    if turn.thinking_room_refused:
+        record["thinkingRoomRefused"] = True
+    return ("ok", text, record)
 
 
 class _NoInstruction(Exception):
@@ -511,7 +517,7 @@ def _ask_child(child: _ChildRun, turns: list[dict], usage_sink: dict) -> ChatTur
         return ChatTurn.of(providers.run_chat_turn(
             child.config, [system_message, *turns],
             max_output_tokens=child.run_policy["max_output_tokens"],
-            usage_out=usage_sink, **extra,
+            usage_out=usage_sink, thinking_tokens=child.run_policy["thinking_tokens"], **extra,
         ))
 
     try:
