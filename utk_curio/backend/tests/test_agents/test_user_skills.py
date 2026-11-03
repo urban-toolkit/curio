@@ -31,6 +31,7 @@ from utk_curio.backend.app.agents.infrastructure import testing_provider
 from utk_curio.backend.app.projects.services import _user_dir_key
 from utk_curio.backend.tests._support.agent_routes import _auth
 from utk_curio.backend.tests.test_agents.test_agent_skills import (  # noqa: F401 - scripted is a fixture
+    NB,
     _attach,
     _listed,
     _names,
@@ -38,6 +39,7 @@ from utk_curio.backend.tests.test_agents.test_agent_skills import (  # noqa: F40
     _rows_url,
     _run,
     _run_calls,
+    _wrapped,
     scripted,
 )
 
@@ -379,6 +381,33 @@ def test_every_skill_curio_ships_exports_to_a_folder_skills_ref_validates(client
             ours.name, ours.description, ours.license, ours.compatibility, dict(ours.metadata),
         ), name
         assert dict(skills.parse(shipped).metadata) == dict(ours.metadata), name
+
+
+def test_an_imported_skill_keeps_its_words_and_a_message_that_holds_one_is_handed_it(
+    client, user_and_token, tmp_curio, scripted, tmp_path,
+):
+    """A skill brought from elsewhere may name, in its ``curio-asks``, the
+    words of a person's message that hand it to a chat: the import keeps
+    them in its metadata, the export carries them, and a message to the chat
+    of an agent the review gave it to that holds one is handed the skill."""
+    import skills_ref
+
+    user, token = user_and_token
+    worded = _skill_md(extra="metadata:\n  curio-asks: street trees, tree canopy\n")
+    resp = _post(client, token, IMPORT, _form({"SKILL.md": worded}, agents=[NB]))
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+    assert skills.parse(_kept(user)).metadata.get("curio-asks") == "street trees, tree canopy"
+    exported = _exported(client, token, NAME, tmp_path)
+    assert skills_ref.validate(exported) == []
+    assert skills_ref.read_properties(exported).metadata.get("curio-asks") == "street trees, tree canopy"
+
+    pid = _project(client, scripted)
+    att = _attach(client, scripted, pid, NB)
+    testing_provider.push_reply("Counted.")
+    payload = _run(client, scripted, pid, att, "Count the street trees on each block")
+    (system, *_), = _run_calls()
+    assert _wrapped(system)[-1:] == [NAME]
+    assert payload.get("skills", {}).get("asked") == [NAME]
 
 
 def test_an_imported_skill_exports_as_it_is_kept_and_the_same_every_time(client, user_and_token, tmp_curio,
