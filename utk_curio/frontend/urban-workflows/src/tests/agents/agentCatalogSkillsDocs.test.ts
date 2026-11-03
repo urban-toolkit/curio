@@ -1,13 +1,13 @@
 /**
- * Does the Agent Catalog guide list Curio's skills, and each agent's, as they are?
+ * Does the Agent Catalog guide list each agent's skills as they are?
  *
- * docs/AGENT-CATALOG.md lists every skill Curio ships in its table of skills,
- * and the skills each agent's manifest names in its table of each agent's
- * skills. Both are held here to `skills/` and to the manifests in `agents/`,
- * so a skill added, renamed, moved out of the preamble or given to another
- * agent fails until the guide says so. Both tables of agents have a Skills
- * column, each of the guide's four words is defined once, and the guide never
- * says job. The backend's tests run in an image without the guides, so this
+ * docs/AGENT-CATALOG.md lists the skills each agent's manifest names in its
+ * table of each agent's skills, held here to the manifests in `agents/`, so a
+ * skill given to another agent, or taken from one, fails until the guide says
+ * so. Both tables of agents have a Skills column, each of the guide's four
+ * words is defined once, and the guide never says job. The skills themselves
+ * are listed in docs/SKILL-CATALOG.md, which skillCatalogDocs.test.ts holds to
+ * `skills/`. The backend's tests run in an image without the guides, so this
  * check is Jest's, on the checkout.
  */
 import * as fs from "fs";
@@ -16,7 +16,6 @@ import * as path from "path";
 import { REPO_ROOT, read } from "../_support/workflowPaths";
 
 const GUIDE = "docs/AGENT-CATALOG.md";
-const SKILLS_TABLE = "| Skill | It tells an agent how to | It serves |";
 const AGENTS_TABLE = "| Agent | Skills | Its modes are handed |";
 
 interface AgentManifest {
@@ -43,14 +42,6 @@ function codeNames(cell: string): string[] {
     return Array.from(cell.matchAll(/`([^`]+)`/g), (match) => match[1]);
 }
 
-/** Each folder of `skills/` that holds a `SKILL.md`, sorted. */
-function shippedSkills(): string[] {
-    const root = path.join(REPO_ROOT, "skills");
-    return fs.readdirSync(root)
-        .filter((name) => fs.existsSync(path.join(root, name, "SKILL.md")))
-        .sort();
-}
-
 /** The manifest of each agent Curio ships, the base entry left out. */
 function agentManifests(): AgentManifest[] {
     const root = path.join(REPO_ROOT, "agents");
@@ -61,23 +52,6 @@ function agentManifests(): AgentManifest[] {
 }
 
 const doc = read(GUIDE);
-
-test("the guide's table of skills lists every skill Curio ships, once", () => {
-    const listed = tableRows(doc, SKILLS_TABLE).map((row) => codeNames(row[0])[0]);
-    expect(shippedSkills()).toHaveLength(21);
-    expect(new Set(listed).size).toBe(listed.length);
-    expect([...listed].sort()).toEqual(shippedSkills());
-});
-
-test("the skills the guide puts in the preamble are the ones the preamble places", () => {
-    const inThePreamble = tableRows(doc, SKILLS_TABLE)
-        .filter((row) => row[2].includes("in the preamble"))
-        .map((row) => codeNames(row[0])[0]);
-    const preamble = read("agents/agent.curio.builtin@1/default_preamble.md");
-    const placed = Array.from(preamble.matchAll(/\{\{skill:([^{}]+)\}\}/g), (match) => match[1]);
-    expect(placed).toHaveLength(3);
-    expect([...inThePreamble].sort()).toEqual([...placed].sort());
-});
 
 test("the guide's table of each agent's skills is each manifest's skills, in its order", () => {
     const named = new Map(agentManifests().map((manifest) => [manifest.name, manifest.skills ?? []]));

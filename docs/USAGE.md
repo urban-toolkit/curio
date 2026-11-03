@@ -26,6 +26,7 @@
 - [Discovery Catalog](#discovery-catalog)
 - [Model Catalog](#model-catalog)
 - [Agent Catalog](#agent-catalog)
+- [Skill Catalog](#skill-catalog)
 - [Real-time collaboration](#real-time-collaboration)
 - [Quick start](#quick-start)
 
@@ -90,7 +91,7 @@ Curio needs Node.js 26 and refuses to start on an earlier version, naming the on
 | `--media-cache-max-gb GB` | `20` | How much each account may hold in cached bucket files and downloaded street-level images |
 | `--packages-root PATH` | `<repo_root>/packages/` | Where the shared Node Catalog is read from and published to. Start it from a copy of `packages/`: the built-in nodes are installed from it |
 | `--save-node-outputs` / `--no-save-node-outputs` | off | Whether a new node's **Save output dataset** toggle starts on. Users can still flip it on each node |
-| `--allow-publish` / `--no-allow-publish` | on | Whether the node, data and agent catalogs allow Publish/Unpublish |
+| `--allow-publish` / `--no-allow-publish` | on | Whether the node, model, data, agent and skill catalogs allow Publish/Unpublish |
 | `--testing` | off | Run against the dedicated test database under `.curio/test/` and mount the test-only `/api/testing/*` routes. Also the one exemption to `--deploy` requiring isolated execution. Never for a real instance: those routes reset the database and sign in as any user without a password |
 | `--with-examples` | off | Seed the use cases, examples and tests from `docs/examples/` |
 | `--reseed` | off | Force re-seeding catalog packages into the guest package store |
@@ -1741,7 +1742,7 @@ it said and changed so far. A reply that reaches the output limit (4,096
 tokens) stops there and ends with a line that says it was cut off.
 
 Type `/` at the start of a message to list the agent's
-[skills](AGENT-CATALOG.md#skills). Pick one with the arrow keys and Enter, or a
+[skills](SKILL-CATALOG.md#3-using-a-skill). Pick one with the arrow keys and Enter, or a
 click, or keep typing its name, then write the rest of your message: the skill
 goes to the agent with it, as in `/map-edits remove the two tallest towers`.
 Escape closes the list. A line under each reply names the skills its run used;
@@ -1783,6 +1784,17 @@ Operators who would rather not send queries to a third party can point
 
 For the full guide, covering the roster, the storage layers, attaching, the
 provider, publishing, and writing your own, see [docs/AGENT-CATALOG.md](AGENT-CATALOG.md).
+
+## Skill Catalog
+
+Skills tell Curio's agents how to do a specific task, such as writing a Map Editor node's edits, in the open [Agent Skills](https://agentskills.io/specification) format. Curio ships its own, a node package can ship more, such as Scout's `scout`, and you can import a skill written for any Agent Skills tool.
+
+- **`/catalog/skills`**, the **Skill Catalog** tab, lists every skill you see: Curio's, your own, the published ones and those of the packages you can add. A card's drawer names the agents that use the skill, and **View details** shows what an agent reads. **Import skill**, in the header, takes a skill's folder, its files or a `.zip` of it, and shows a review before anything is kept. **Publish** offers a skill you imported to everyone on the install.
+- **An agent's details**, in the Agent Catalog, list its skills, and **Add skill**, **Remove** and **Restore** change them for your account. On the canvas, open them from the Agent Catalog drawer.
+
+In a chat, `/` lists the agent's skills, and a line under each reply names the skills its run used ([Working with an agent](#working-with-an-agent)).
+
+For the full guide, covering how a call holds its skills, your own skills and their names, importing, publishing and the skill format, see [docs/SKILL-CATALOG.md](SKILL-CATALOG.md).
 
 ## Real-time collaboration
 
