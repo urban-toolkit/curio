@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 
-import { skillsApi, type AgentSkillRow, type AgentSkills } from "../../../services/agents";
+import { skillsApi, type AgentSkillRow, type AgentSkills, type SkillCard } from "../../../services/agents";
+import { SkillDetailModal } from "../../skills/catalog/SkillDetailModal";
 import styles from "./AgentDetailModal.module.css";
 
 export interface AgentSkillsSectionProps {
@@ -37,18 +38,25 @@ function rowNote(row: AgentSkillRow): string | null {
  * skills and those its instruction or a mode names as its own show no
  * Remove, and an account that may change none (a hosted guest) sees the list
  * alone.
+ *
+ * A skill's name opens that skill's details, the Skill Catalog's, over the
+ * agent's: its card is read by its name when it is clicked. The two windows
+ * stack (`ModalShell`), so Escape closes the skill's and leaves the agent's.
  */
 export const AgentSkillsSection: React.FC<AgentSkillsSectionProps> = ({ coord, agentName, builtIn }) => {
   const [skills, setSkills] = useState<AgentSkills | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState(false);
+  // The skill whose details are open over the agent's.
+  const [detail, setDetail] = useState<SkillCard | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setSkills(null);
     setError(null);
     setAdding(false);
+    setDetail(null);
     skillsApi
       .agentSkills(coord)
       .then((rows) => {
@@ -76,6 +84,17 @@ export const AgentSkillsSection: React.FC<AgentSkillsSectionProps> = ({ coord, a
     }
   };
 
+  const openDetails = async (name: string) => {
+    setError(null);
+    try {
+      const card = await skillsApi.card(name);
+      if (card) setDetail(card);
+      else setError(`The details of ${name} are not available.`);
+    } catch (err) {
+      setError(err instanceof Error && err.message ? err.message : `The details of ${name} are not available.`);
+    }
+  };
+
   return (
     <section className={styles.section} data-curio-agent-skills="true">
       <h3 className={styles.sectionLabel}>Skills</h3>
@@ -94,9 +113,15 @@ export const AgentSkillsSection: React.FC<AgentSkillsSectionProps> = ({ coord, a
                 const note = rowNote(row);
                 return (
                   <li key={row.name} className={styles.skillRow} data-curio-skill-row={row.name}>
-                    <span className={styles.skillName} data-tooltip={row.description}>
+                    <button
+                      type="button"
+                      className={`${styles.skillName} ${styles.skillNameButton}`}
+                      data-tooltip={row.description}
+                      aria-haspopup="dialog"
+                      onClick={() => void openDetails(row.name)}
+                    >
                       {row.name}
-                    </span>
+                    </button>
                     {note ? <span className={styles.skillNote}>{note}</span> : null}
                     {row.removable ? (
                       <button
@@ -163,6 +188,7 @@ export const AgentSkillsSection: React.FC<AgentSkillsSectionProps> = ({ coord, a
           ) : null}
         </>
       )}
+      {detail ? <SkillDetailModal skill={detail} onClose={() => setDetail(null)} /> : null}
     </section>
   );
 };

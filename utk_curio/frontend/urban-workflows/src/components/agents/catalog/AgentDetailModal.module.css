@@ -211,6 +211,17 @@
   color: var(--curio-text-primary);
 }
 
+/* A row's name, which opens the skill's details over the agent's: a link in
+   look, a button in behaviour, as "Change in API Settings" is. */
+.skillNameButton {
+  padding: 0;
+  border: none;
+  background: none;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
 /* Why a row has no Remove, or that this account added it. */
 .skillNote {
   font-size: 12px;

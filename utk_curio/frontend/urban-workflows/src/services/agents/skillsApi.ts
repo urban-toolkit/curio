@@ -17,6 +17,7 @@ import { triggerBlobDownload } from "../packages/packagesBlobTransport";
 import type {
   AgentSkills,
   RunSkill,
+  SkillCard,
   SkillImportResult,
   SkillImportReview,
   SkillListResponse,
@@ -73,6 +74,12 @@ export const skillsApi = {
   /** Every skill the account sees, with what it serves, whose it is and the agents that use it. */
   list(): Promise<SkillListResponse> {
     return apiFetch("/api/agents/skills");
+  },
+
+  /** One skill the account sees, by its name, as its card in the listing: null when it sees none by that name. */
+  async card(name: string): Promise<SkillCard | null> {
+    const { skills } = await skillsApi.list();
+    return skills.find((skill) => skill.name === name) ?? null;
   },
 
   /** One skill's text as an agent reads it, and its other files. */
