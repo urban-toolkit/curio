@@ -5,8 +5,13 @@
  * what a search shows (its rows, a portal's note, an empty result) lands about
  * 0.4 s after the page renders. Testing Library's own wait gives up after 1 s,
  * which leaves a loaded CI runner about 0.6 s for everything else, and that is
- * not always enough.
+ * not always enough. So a test waits SEARCH_WAIT for it.
  */
+
+/** How long a test waits for what a search shows, or for the request a changed
+ *  filter sends after the debounce: as long as the download tests wait for a
+ *  job to end. The third argument of a findBy query, the second of waitFor. */
+export const SEARCH_WAIT = { timeout: 4000 };
 
 /** How late a search answers in the cases that play such a runner: with the
  *  debounce, its rows land 1.4 s after the page renders. */

@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { DiscoverySourceDetail } from '../../pages/discovery/DiscoverySourceDetail';
 import { invalidateDiscoveryCatalogCache } from '../../services/discoveryCatalog';
 import { resetDiscoveryAcquisitions } from '../../services/discoveryCatalog/discoveryCatalogHooks';
-import { answerSearchesLate } from '../_support/discoverySearch';
+import { SEARCH_WAIT, answerSearchesLate } from '../_support/discoverySearch';
 
 /**
  * A finished download says so, like an import does.
@@ -108,7 +108,7 @@ async function downloadBikeRoutes() {
       </Routes>
     </MemoryRouter>
   );
-  const title = await screen.findByText('Bike Routes');
+  const title = await screen.findByText('Bike Routes', {}, SEARCH_WAIT);
   const card = title.closest('[data-discovery-resource]') as HTMLElement;
   fireEvent.click(within(card).getByRole('button', { name: 'Download' }));
 }

@@ -6,7 +6,7 @@ import { DiscoveryCatalogBrowse } from '../../pages/discovery/DiscoveryCatalogBr
 import { DiscoverySourceDetail } from '../../pages/discovery/DiscoverySourceDetail';
 import { invalidateDiscoveryCatalogCache, notifyDiscoveryCatalogRefresh } from '../../services/discoveryCatalog';
 import type { DiscoveryCatalogResponse, DiscoverySourceRow } from '../../services/discoveryCatalog';
-import { answerSearchesLate } from '../_support/discoverySearch';
+import { SEARCH_WAIT, answerSearchesLate } from '../_support/discoverySearch';
 
 jest.mock('../../utils/authApi', () => ({
   apiFetch: jest.fn(),
@@ -274,7 +274,7 @@ describe('DiscoveryCatalogBrowse: federated search mode', () => {
       }),
     });
     renderPage('/catalog/discovery?q=bike');
-    expect(await screen.findByText('Bike Routes')).toBeInTheDocument();
+    expect(await screen.findByText('Bike Routes', {}, SEARCH_WAIT)).toBeInTheDocument();
     expect(screen.getByText('Cycle Parking')).toBeInTheDocument();
     // The source CARDS are gone while results are showing.
     expect(document.querySelector('[data-discovery-source]')).toBeNull();
@@ -289,7 +289,7 @@ describe('DiscoveryCatalogBrowse: federated search mode', () => {
       }),
     });
     renderPage('/catalog/discovery?q=bike');
-    await screen.findByText('Bike Routes');
+    await screen.findByText('Bike Routes', {}, SEARCH_WAIT);
     const row = document.querySelector('[data-discovery-resource]') as HTMLElement;
     expect(row).not.toBeNull();
     expect(within(row).getByText('Alpha Portal')).toBeInTheDocument();
@@ -312,7 +312,7 @@ describe('DiscoveryCatalogBrowse: federated search mode', () => {
       }),
     });
     renderPage('/catalog/discovery?q=bike');
-    expect(await screen.findByText(/Beta Portal did not answer/)).toBeInTheDocument();
+    expect(await screen.findByText(/Beta Portal did not answer/, {}, SEARCH_WAIT)).toBeInTheDocument();
     expect(screen.getByText('Bike Routes')).toBeInTheDocument();
   });
 
@@ -328,7 +328,7 @@ describe('DiscoveryCatalogBrowse: federated search mode', () => {
       }),
     });
     renderPage('/catalog/discovery?q=bike');
-    await screen.findByText('Bike Routes');
+    await screen.findByText('Bike Routes', {}, SEARCH_WAIT);
     expect(screen.queryByText(/did not answer/)).toBeNull();
   });
 
@@ -348,7 +348,11 @@ describe('DiscoveryCatalogBrowse: federated search mode', () => {
     });
     renderPage('/catalog/discovery?q=bike');
     expect(
-      await screen.findByText('Example storage is still being scanned; its rows appear here when it is done.'),
+      await screen.findByText(
+        'Example storage is still being scanned; its rows appear here when it is done.',
+        {},
+        SEARCH_WAIT
+      ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/did not answer/)).toBeNull();
   });
@@ -362,7 +366,7 @@ describe('DiscoveryCatalogBrowse: federated search mode', () => {
     });
     renderPage('/catalog/discovery?q=nothing');
     expect(
-      await screen.findByText(/No portal returned anything/)
+      await screen.findByText(/No portal returned anything/, {}, SEARCH_WAIT)
     ).toBeInTheDocument();
   });
 
@@ -374,7 +378,7 @@ describe('DiscoveryCatalogBrowse: federated search mode', () => {
       '/api/discovery/search': searchResponse({ sources: [] }),
     });
     renderPage('/catalog/discovery?q=bike');
-    await screen.findByText(/No portal returned anything/);
+    await screen.findByText(/No portal returned anything/, {}, SEARCH_WAIT);
     const rosterCalls = apiFetch.mock.calls
       .map((c) => c[0])
       .filter((p) => p.includes('/discovery/catalog'));
@@ -392,14 +396,14 @@ describe('DiscoveryCatalogBrowse: federated search mode', () => {
       }),
     });
     renderPage('/catalog/discovery?q=bike');
-    await screen.findByText('Bike Routes');
+    await screen.findByText('Bike Routes', {}, SEARCH_WAIT);
     fireEvent.click(screen.getByRole('button', { name: /^Public/ }));
     await waitFor(() => {
       const searches = apiFetch.mock.calls
         .map((c) => String(c[0]))
         .filter((p) => p.startsWith('/api/discovery/search'));
       expect(searches[searches.length - 1]).toContain('auth=public');
-    });
+    }, SEARCH_WAIT);
     const searches = apiFetch.mock.calls
       .map((c) => String(c[0]))
       .filter((p) => p.startsWith('/api/discovery/search'));
@@ -417,7 +421,7 @@ describe('DiscoveryCatalogBrowse: federated search mode', () => {
     });
     answerSearchesLate(apiFetch);
     renderPage('/catalog/discovery?q=bike');
-    expect(await screen.findByText('Bike Routes')).toBeInTheDocument();
+    expect(await screen.findByText('Bike Routes', {}, SEARCH_WAIT)).toBeInTheDocument();
     expect(document.querySelector('[data-discovery-source]')).toBeNull();
   });
 });
