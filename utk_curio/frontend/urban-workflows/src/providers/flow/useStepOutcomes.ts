@@ -60,12 +60,14 @@ export function useStepOutcomes({
      * run this tab started: it also records the provenance, with the step's
      * own times, and its outputs pass on as a run's do. Otherwise the output
      * is restored as a load restores one. *runKey* is the node's key when the
-     * run started, which a success carries (useServerRun).
+     * run started, which a success carries, and *code* the node's code then,
+     * which the provenance records (useServerRun); without it, the code the
+     * node holds now.
      */
     const showResult = (
         nodeId: string,
         change: Extract<NodeChange, { kind: "result" }>,
-        { live, runKey }: { live: boolean; runKey?: string },
+        { live, runKey, code }: { live: boolean; runKey?: string; code?: string },
     ) => {
         const node = reactFlow.getNode(nodeId);
         if (!node) return;
@@ -83,7 +85,7 @@ export function useStepOutcomes({
                 nodeId,
                 input: change.reply?.input ?? "",
                 reply: change.reply,
-                code: node.data?.code ?? "",
+                code: code ?? node.data?.code ?? "",
             });
         }
         showOnNode(nodeId, shown);
