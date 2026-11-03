@@ -89,6 +89,19 @@ describe("the line under a reply", () => {
     expect(getByTooltip(document.body, "Loaded for this reply")).toHaveTextContent("provenance");
   });
 
+  it("names a skill the message's words handed after the one it named, and says so on hover", () => {
+    // `asked`: what the message's words handed, as the record keeps it.
+    const skills = { catalog: ["widgets", "map-edits", "scenarios"], handed: ["widgets"], named: ["map-edits"],
+      asked: ["scenarios"] };
+    renderTurn({
+      role: "agent",
+      text: "Done.",
+      execution: { executionId: "e1", usage: null, status: "ok", pins: { skills } },
+    });
+    expect(line()).toHaveTextContent("Skills: widgets, map-edits, scenarios");
+    expect(getByTooltip(document.body, "Handed for words in the message")).toHaveTextContent("scenarios");
+  });
+
   it("is absent when the run used none, listed only a catalog, or failed", () => {
     const { unmount } = renderTurn({
       role: "agent",

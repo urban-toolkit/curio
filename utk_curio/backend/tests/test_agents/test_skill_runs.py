@@ -628,6 +628,101 @@ def test_a_delegated_run_carries_its_skills_after_its_preamble_and_pins_them(cli
     testing_provider.reset()
 
 
+# --- Words a skill names, in a person's message ------------------------------------------
+
+#: The owner's what-if (11-03), which hands ``scenarios``.
+WHAT_IF = "What if the speed limit dropped to 20?"
+
+
+def _asked(coord: str, message: str | None, *, spec=None, prior=()) -> list[str]:
+    """The skills a chat of *coord* on the canvas is handed for the words of
+    *message*, as its record names them (``pins.skills.asked``)."""
+    run = _skill_runs().for_chat(KEY, PID, _manifest(coord), spec or {"dataflow": {"nodes": [], "edges": []}},
+                                 {"kind": "canvas"}, _preamble(coord), list(prior), message=message)
+    return run.pins().get("asked", [])
+
+
+def test_a_word_a_skill_names_counts_whole_in_any_case_and_never_inside_a_longer_word(tmp_curio):
+    """``scenarios`` names scenario, scenarios, what if and what-if: each
+    hands it as a whole word, in any case, a phrase's words apart by any
+    spaces; a longer word that holds one, or a phrase run together, hands
+    nothing, and so does a message with none of them."""
+    messages = {
+        "Compare the two scenarios": ["scenarios"],
+        "Make it a scenario of its own": ["scenarios"],
+        "WHAT-IF the towers were gone?": ["scenarios"],
+        "what\n  if the river rose a meter": ["scenarios"],
+        WHAT_IF: ["scenarios"],
+        "Tell me about scenariography": [],
+        "whatif the towers were gone": [],
+        "Chart the mean speed of each street": [],
+    }
+    assert {message: _asked(NB, message) for message in messages} == messages
+
+
+def test_the_words_hand_only_a_skill_the_chat_lists(tmp_curio):
+    """A message's words hand a skill of the chat's catalog, as ``/<name>``
+    does: the Node Builder lists ``scenarios``, the Dataset Finder does not,
+    so the same message hands it to the first only."""
+    assert "scenarios" in _names(_skill_runs().for_chat(KEY, PID, _manifest(NB), None, {"kind": "canvas"},
+                                                        _preamble(NB), []).catalog)
+    assert "scenarios" not in _manifest(DF).skills
+    assert {coord: _asked(coord, WHAT_IF) for coord in (NB, DF)} == {NB: ["scenarios"], DF: []}
+
+
+def test_a_delegated_tasks_words_hand_nothing_and_a_persons_do(tmp_curio):
+    """Only a person's message asks for a skill. The task the runtime records
+    in a delegate's chat (``[Delegated by ...]``) holds the delegating agent's
+    words, and a delegated run reads no word of its inputs, its intent
+    included; the same words a person typed hand ``scenarios``."""
+    from utk_curio.backend.app.agents.repositories import sessions
+
+    skill_runs = _skill_runs()
+    task = f"{sessions.DELEGATED_TURN_PREFIX}Node Builder] node.content.generate · intent: {WHAT_IF}"
+    spec = {"dataflow": {"nodes": [{"id": "n1", "type": CA, "content": "return 1"}], "edges": []}}
+    delegated = skill_runs.for_delegated(KEY, PID, _manifest(NB), "node.content.generate",
+                                         {"nodeId": "n1", "intent": WHAT_IF}, spec, _preamble(NB))
+    held = {
+        "a person's message": _asked(NB, WHAT_IF, spec=spec),
+        "a delegate's task": _asked(NB, task, spec=spec),
+        "a delegated run": [name for name in [*_names(delegated.handed), *delegated.pins().get("asked", [])]
+                            if name == "scenarios"],
+    }
+    assert held == {"a person's message": ["scenarios"], "a delegate's task": [], "a delegated run": []}
+
+
+def test_the_words_come_from_the_skills_metadata_not_the_code(tmp_curio, monkeypatch):
+    """What hands ``scenarios`` is its ``curio-asks``: with other words
+    there, those hand it and "what if" does not; with none, nothing does."""
+    import dataclasses
+    from types import MappingProxyType
+
+    skill_runs = _skill_runs()
+    shipped = skill_runs.shipped_skills()
+    scenarios = shipped["scenarios"]
+
+    def worded(words: str | None) -> None:
+        metadata = {key: value for key, value in scenarios.metadata.items() if key != "curio-asks"}
+        if words is not None:
+            metadata["curio-asks"] = words
+        changed = dataclasses.replace(scenarios, metadata=MappingProxyType(metadata))
+        monkeypatch.setattr(skill_runs, "shipped_skills", lambda: {**shipped, "scenarios": changed})
+
+    def both() -> tuple[list[str], list[str]]:
+        return _asked(NB, WHAT_IF), _asked(NB, "Lower the speed limit on Main Street")
+
+    found = {"as shipped": both()}
+    worded("speed limit, slower streets")
+    found["other words"] = both()
+    worded(None)
+    found["no words"] = both()
+    assert found == {
+        "as shipped": (["scenarios"], []),
+        "other words": ([], ["scenarios"]),
+        "no words": ([], []),
+    }
+
+
 # --- A Solve round after a refusal -------------------------------------------------------
 
 

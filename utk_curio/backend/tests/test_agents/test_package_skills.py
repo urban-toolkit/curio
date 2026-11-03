@@ -328,6 +328,32 @@ def test_a_package_skill_serves_its_own_packages_templates_and_no_others(tmp_cur
     assert skill_runs.templates_served(skill, None) == set()
 
 
+def test_a_package_skills_words_hand_it_to_a_chat_on_a_dataflow_that_uses_the_package(tmp_curio):
+    """A package's skill names the words of a person's message in its
+    ``curio-asks``, as Curio's skills do: a message that holds one, whole and
+    in any case, hands it to a chat on a dataflow that uses the package. On a
+    dataflow that does not, the skill is not the chat's, so nothing hands
+    it."""
+    skill_runs = _skill_runs()
+    trees = _store_package(KEY, "acme.trees", {
+        "street-trees": _skill("street-trees", "## Trees\n", "  curio-asks: street trees, tree canopy\n"),
+    })
+    uses = {"dataflow": {"packages": [trees], "nodes": [], "edges": []}}
+    other = {"dataflow": {"packages": [], "nodes": [], "edges": []}}
+
+    def asked(spec, message) -> list[str]:
+        return skill_runs.for_chat(KEY, PID, _manifest(NB), spec, {"kind": "canvas"}, _preamble(NB), [],
+                                   message=message).pins().get("asked", [])
+
+    assert {
+        "its words": asked(uses, "Count the Street Trees on each block"),
+        "its phrase over a line break": asked(uses, "How much tree\ncanopy does each park have?"),
+        "other words": asked(uses, "Count the trees on each street"),
+        "no package": asked(other, "Count the street trees on each block"),
+    } == {"its words": ["street-trees"], "its phrase over a line break": ["street-trees"], "other words": [],
+          "no package": []}
+
+
 def test_a_package_skill_that_cannot_be_read_is_left_out_and_logged(tmp_curio, caplog):
     """A skill in an account's copy that breaks the format, as only a hand
     edit can leave one, is left out of runs and logged, naming its package and
