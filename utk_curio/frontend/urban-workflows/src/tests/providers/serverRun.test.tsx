@@ -306,6 +306,28 @@ describe("a run started on the canvas", () => {
     expect(willRun.has("count")).toBe(true);
   });
 
+  it("files a run's entry with the code the run started with, not code typed while it ran", async () => {
+    // Typing in the node while its run goes is the node's next change. Filed
+    // with the code the node held when the result landed, the entry named
+    // code the run never ran, and the history could not tell the typing came
+    // after the run.
+    const live = stream();
+    // "b" keeps the run going to the end of the test.
+    api.start.mockResolvedValue(run("r1", [step("a"), step("b", { level: 1 })]));
+    const { hook, deps, node } = harness([{ id: "a", data: { code: "return 1" } }, { id: "b" }]);
+    await act(async () => { await hook.result.current.startRun(); });
+
+    node("a")!.data.code = "return 2";
+    live.emit({
+      kind: "step_finished", nodeId: "a", status: "ok", startedAt: 1700000000, finishedAt: 1700000002,
+      reply: { stdout: [], stderr: "", input: null, output: { path: "art-a", dataType: "value" } },
+    });
+
+    expect(deps.nodeExecProv).toHaveBeenCalledTimes(1);
+    expect(deps.nodeExecProv.mock.calls[0][3]).toBe("a");
+    expect(deps.nodeExecProv.mock.calls[0][6]).toBe("return 1");
+  });
+
   it("ends as its last step lands, starting the browser's part in that tick, and reports each node", async () => {
     const live = stream();
     api.start.mockResolvedValue(run("r1", [step("osm", { role: "browser" }), step("count", { level: 1 })]));
