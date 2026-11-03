@@ -2,15 +2,15 @@
 
 The Agent Catalog is where Curio's **hookable agents** live: the assistants you attach to a node, a connection, or the whole canvas.
 
-Curio has six catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the [Model Catalog](MODEL-CATALOG.md) the models they run, the Agent Catalog the assistants you attach to them, the [Discovery Catalog](DISCOVERY-CATALOG.md) the portals, storage, services and models you take datasets and models from, and the [Scenario Catalog](SCENARIO-CATALOG.md) the scenarios saved in your projects.
+Curio has seven catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the [Model Catalog](MODEL-CATALOG.md) the models they run, the Agent Catalog the assistants you attach to them, the [Skill Catalog](SKILL-CATALOG.md) the skills those assistants read, the [Discovery Catalog](DISCOVERY-CATALOG.md) the portals, storage, services and models you take datasets and models from, and the [Scenario Catalog](SCENARIO-CATALOG.md) the scenarios saved in your projects.
 
 This guide is in six parts, plus operator notes:
 
-- [1. What is the Agent Catalog?](#1-what-is-the-agent-catalog): agents, the ones that ship, the skills they read and how each picks what to run, and the storage layers.
+- [1. What is the Agent Catalog?](#1-what-is-the-agent-catalog): agents, the ones that ship, the skills each one holds and how each picks what to run, and the storage layers.
 - [2. Surfaces and workflows](#2-surfaces-and-workflows): the three places you manage agents, the action matrix, walkthroughs, and catalog settings.
 - [3. Using an agent in a dataflow](#3-using-an-agent-in-a-dataflow): adding, attaching, the difference between the two, and the editors the owner invites.
 - [4. LLM configurations](#4-llm-configurations): which model answers, and where it is set.
-- [5. Importing, publishing, and sharing](#5-importing-publishing-and-sharing): your own definitions, adding a skill and an agent of your own, and offering them to everyone.
+- [5. Importing, publishing, and sharing](#5-importing-publishing-and-sharing): your own definitions and offering them to everyone, and an agent of your own that holds a skill of your own.
 - [6. The manifest](#6-the-manifest): writing your own agent.
 - [Operator notes](#operator-notes): the Deployment default and launcher flags.
 
@@ -52,7 +52,7 @@ An agent uses only what you have: the code it writes reads your Data Catalog's d
 - **In chat:** what you can ask an agent where you dropped it.
 - **Tools:** the actions an agent takes during a chat, such as reading the dataflow, searching the web, adding a node or asking to install a package. A change to your dataflow lands at once, as your own edit does, and you can undo it from the chat; an install waits for your review.
 - **Modes:** what another agent, Solve or the agent itself can ask it to do. A mode runs as a separate call with no tools, on evidence Curio gathers for it, and has its own prompt when it needs one. You never chat with a mode. Each mode's capability id and prompt are listed under [Modes](#modes).
-- **Skills:** what tells an agent how to do a specific task, such as writing a Map Editor node's edits. See [Skills](#skills).
+- **Skills:** what tells an agent how to do a specific task, such as writing a Map Editor node's edits. See [Skills](#skills), and the [Skill Catalog](SKILL-CATALOG.md) for every skill.
 
 | Agent | In chat | Tools | Modes (who asks) | Skills |
 |---|---|---|---|---|
@@ -73,59 +73,13 @@ Each of the seven is a folder in Curio's [`agents/`](../agents/), `agents/<agent
 
 ### Skills
 
-Each skill is a folder of Curio's [`skills/`](../skills/) that holds a `SKILL.md` in the [Agent Skills format](https://agentskills.io/specification): instructions, procedural knowledge, reference facts and starter templates. A skill does nothing on its own. An **agent** decides and acts, with its own tools, its model and its memory, the conversation of each chat, and reads a skill when a task needs it. One skill serves many agents, and an agent uses many skills.
+A skill is a folder in the [Agent Skills format](https://agentskills.io/specification), which an agent reads when a task needs it. The [Skill Catalog](SKILL-CATALOG.md) lists every skill you see, Curio's, your own, the published ones and those of node packages, and is where you import, export, publish and remove your own. How a call comes to hold a skill, in chat, in a mode or from your message, is in [Using a skill](SKILL-CATALOG.md#3-using-a-skill).
 
-How a call holds its skills:
+An agent's manifest names its skills ([`skills`](#6-the-manifest)). An agent of yours that names none lists every skill Curio ships but those its preamble holds. Every agent on a dataflow that uses a node package also lists the package's skills, after its own ([Skills from packages](SKILL-CATALOG.md#skills-from-packages)).
 
-- **The core skills,** `nodes`, `node-control` and `compatibility`, are in the preamble every agent Curio ships reads, so every call holds them.
-- **In chat,** an agent lists its other skills, each by its name and description, and loads one with its tool **skill.read** when a task matches it. A chat holds the procedures its instruction follows from its first message, such as the Node Builder's `reuse-first` and `data-sources`, and a chat attached to a node also holds the skills of that kind of node. A skill a chat loaded stays for the rest of its conversation, and is never loaded twice. Loading a skill uses none of a reply's three tool rounds, for up to four skills a reply.
-- **A mode** has no tools, so Curio hands it the skills its task needs, with no extra call: the skills of the node it writes or checks, those of node code when it writes a package or builds a node for another agent, those of the kinds of node and the features of the dataflow when it reads the whole dataflow, and the mode's own procedures, such as `package-contract` for Write a package. A call another agent asks for that has no prompt of its own, such as the Node Builder building a node for the Dataset Finder, follows the agent's chat instruction, so it holds that instruction's procedures too. In Solve, the attempt after a check refused the one before is also handed the skill that answers that check: `map-edits` for the Map Editor's check, `vega-lite-starter` or `autark` for the check of a chart's or a map's document, `node-functions` for a function Curio does not give node code, `catalogs` for a source no catalog holds, and `dashboards` for a pinned tile that loads its own data.
-- **Named in your message,** `/<name>` at the start of a message hands that skill to the chat's run with the message, and the rest of the conversation keeps it, as it keeps a skill the chat loaded. Type `/` at the start of a message to list the chat's skills, then pick one or keep typing its name: `/map-edits remove the two tallest towers`. A skill the chat holds already is not handed again.
-- **Asked for in your message,** a word a skill names for itself (its `curio-asks`, [EXTENDING §9](EXTENDING.md#9-writing-a-skill)) hands that skill to the chat's run the same way, and the rest of the conversation keeps it: `scenarios` comes with a message that says scenario, scenarios, what if or what-if, such as "What if the speed limit dropped to 20?". A word counts whole and in any case, never inside a longer one, and only in a message a person typed, never in the task one agent hands another.
+**Your changes.** In an agent's details, the **Skills** section lists the core skills first, then the agent's own, then those its chat, a mode of it or a call another agent asks it for always holds. **Add skill** gives the agent one of the skills it does not hold, and **Remove** takes one away. **Restore** brings back the list the agent ships with, Curio's for an agent Curio ships. Each change is yours alone: in every project, from the agent's next run, its chat lists what you added and never what you removed, and its modes are handed them the same way. **Add skill** offers no skill of a node package, which comes and goes with its package. A skill the agent's runs hold whatever its list says has no **Remove**, and its row says why: *Every call* for a core skill, *Always in chat*, *Always for* one of its modes, or *Always when another agent asks*. The Researcher's `reuse-first` is always in its chat, and the Dataset Finder's `catalogs` always in its Find datasets mode. A skill's name opens that skill's details over the agent's. A guest on a hosted Curio sees an agent's skills and changes none.
 
-An agent's manifest names its skills ([`skills`](#6-the-manifest)). An agent of yours that names none lists every skill Curio ships but those its preamble holds. A node package can ship skills too, such as Scout's `scout`: every agent on a dataflow that uses the package lists them after its own, and a call that writes one of the package's nodes holds the ones that serve it ([Node Catalog](NODE-CATALOG.md#6-the-manifest)).
-
-**Your changes.** In an agent's details, **Add skill** gives it one of the skills it does not hold, and **Remove** takes one away, for your account: in every project, its chat lists what you added and never what you removed, and its modes are handed them the same way, from its next run. **Restore** brings back the list the agent ships with, Curio's for an agent Curio ships. The core skills, and a skill its chat instruction, one of its modes or a call another agent asks it for names as its own, have no **Remove**, since each of those holds the skill whatever the agent's list is: the Researcher's `reuse-first` is its chat's, and the Dataset Finder's `catalogs` is its Find datasets mode's. A guest on a hosted Curio sees an agent's skills and changes none.
-
-**Your own skills.** **Import skill**, in the `/catalog/agents` header when the rail shows skills, takes a skill written for any Agent Skills tool: its folder, its `SKILL.md` and its other files, or a `.zip` of its folder. Before anything is kept, a review shows the skill as Curio read it: its name and description, what does not follow the [format](https://agentskills.io/specification), its files, and the agents that will use it, each one ticked. Curio reads it leniently, as other Agent Skills tools do. A skill is refused only when its frontmatter is no YAML mapping, it has no description, its description runs past 1,024 characters or its compatibility past 500. Curio keeps it in the format: its frontmatter holds the format's fields alone, and a field the format does not define moves into its `metadata` when it holds one value. The review lists what is left out. Untick an agent to leave it without the skill, then **Import**: the skill joins your skills, and the agents left ticked hold it as a skill given with **Add skill** is.
-
-**A skill's name** is its folder's, so no two skills you see share one. An import is refused when its name is a skill Curio ships, a skill a package you can add ships, or a skill of yours. The review names the skill that has it, and the name you give instead becomes the skill's folder and its `name` together. A newer `version` in its `metadata` replaces your skill of that name, and the agents that used it keep it.
-
-**Export**, in a skill's details, saves the skill as a `.zip` of its folder, `<name>/SKILL.md` and its other files, which any Agent Skills tool reads. A skill Curio ships has its text filled in as an agent reads it. A skill's evaluations, its `evals/` folder, stay out of the zip, as they stay out of what an agent is offered.
-
-**Publish**, in the drawer of a skill you imported, offers it to every account on this Curio, as an agent is published, and only you can unpublish it or publish over it. Another account gives a published skill to one of its agents with **Add skill**, which keeps a copy of it in that account: the copy keeps working after you unpublish, it is never that account's to publish, and a newer `version` you publish reaches it the next time that account adds the skill to an agent.
-
-**Remove from your skills**, in the drawer of a skill you hold, deletes it and takes it off every agent, so a later skill of that name joins none until you add it. A skill that one of your agents' chat instruction or modes names as its own is not removed. A guest on a hosted Curio imports, publishes and removes no skill.
-
-**The skills a reply used.** A line under each chat reply names the skills its run held or loaded: those it was handed for the node the chat is on or the procedures its instruction follows, those your message named, those its words asked for, those earlier turns of the conversation took in, then those it loaded. Hovering a name says which. The core skills, which every call holds, are not named.
-
-**Curio's skills.** A run is handed the skills that serve the node it writes or checks, or, when it reads the whole dataflow, those that serve its nodes and features, and a chat the skills whose words your message holds. The five procedures several agents follow are handed by name, to the calls that follow them:
-
-| Skill | It tells an agent how to | It serves |
-|---|---|---|
-| `nodes` | pick node types, knowing what each takes and gives | every call, in the preamble |
-| `node-control` | change a node's content, settings and runs as Curio allows | every call, in the preamble |
-| `compatibility` | connect outputs only to inputs that accept them | every call, in the preamble |
-| `node-functions` | call Curio's `curio_*` functions from node code | nodes whose content is code: Data Loading, Data Transformation, Python, JavaScript, Data Summary, Data Export and Map Editor |
-| `catalogs` | find and load datasets, models and keys from the catalogs | nodes whose content is code |
-| `widgets` | declare, place and set widgets, dataset widgets and values several nodes share | nodes whose content is code, Vega-Lite and Autark nodes |
-| `selection-chips` | read a view's selections through selection tags | nodes whose content is code, Vega-Lite and Autark nodes |
-| `vega-lite-starter` | start a Vega-Lite chart from its node's starter spec | Vega-Lite nodes |
-| `vega-lite-maps` | draw a map with Vega-Lite | Vega-Lite nodes |
-| `autark` | write an Autark document, from the grammar Curio ships | Autark nodes |
-| `autark-starter` | start an Autark map from its node's starter document | Autark nodes |
-| `map-edits` | write a Map Editor node's call and edits, keeping filters in their own node | Map Editor nodes |
-| `interaction-edges` | link views with interaction edges and Data Pools | Data Pools, and dataflows with interaction edges |
-| `scenarios` | work with scenario boxes, their chips and colors | dataflows with scenario boxes, and a chat message that says scenario, scenarios, what if or what-if |
-| `dashboards` | keep a dataflow's pinned tiles working on its dashboard | dataflows with pinned tiles |
-| `provenance` | read a node's history and the agents' entries in it | nothing: a chat loads it when a task needs it |
-| `reuse-first` | choose a node type: a listed template, then a package to add, then a written package | by name: the Node Builder's and the Researcher's chats, the Node Builder building a node for another agent, Write a package and Recommend packages |
-| `data-sources` | ground a data source before writing its loader: a typed path, a catalog dataset, a verified URL, a saved key, values the user typed, made-up data only when asked | by name: the Node Builder's chat, the Node Builder building a node for another agent, and Write a node's content |
-| `package-contract` | write a package's backend to Curio's contract | by name: Write a package |
-| `fact-checking` | check a fact against what was probed or fetched, labeling each finding | by name: the Researcher's chat and Check a fact |
-| `research-notes` | turn findings into notes on the dataflow, and place them on a note template: the built-in Note, a package to enlist, or a notes package to write | by name: the Researcher's chat and Notes from search results |
-
-**Each agent's skills,** as its manifest names them:
+**Each agent's skills,** as its manifest names them, each skill as the [Skill Catalog](SKILL-CATALOG.md#what-ships-with-curio) describes it:
 
 | Agent | Skills | Its modes are handed |
 |---|---|---|
@@ -139,7 +93,7 @@ An agent's manifest names its skills ([`skills`](#6-the-manifest)). An agent of 
 
 ### How an agent picks what to run
 
-- Every model call is the shared preamble, the [skills](#skills) the call holds and one instruction, never two instructions combined.
+- Every model call is the shared preamble, the [skills](SKILL-CATALOG.md#3-using-a-skill) the call holds and one instruction, never two instructions combined.
 - A message you type goes to the agent's chat instruction, and the model follows its rules: in the same call that answers you, it decides what you asked for and which tools to use.
 - A mode runs only when another agent, Solve or the agent itself asks for it, as a separate call with no tools.
 - Curio picks the file from what the call is for; the model does not.
@@ -243,10 +197,7 @@ Agent state lives in files under `.curio/` and inside each project's spec; the a
 | Layer | On disk | Written by |
 |---|---|---|
 | **Shipped agents**, the seven Curio ships | `agents/<agentId>@<major>/` beside `utk_curio/` (`utk_curio/_shipped/agents/` in a pip install), each a `manifest.json` and `prompts/` | Nothing: Curio reads them. Adding one to a project copies it into your definition store. |
-| **Shipped skills**, the [skills](#skills) agents read | `skills/<name>/SKILL.md` beside `utk_curio/` (`utk_curio/_shipped/skills/` in a pip install) | Nothing: Curio reads them. |
 | **Shared catalog**, published agents | `.curio/agents-catalog/<agentId>@<major>/` | **Publish** adds one; **Unpublish** removes it. |
-| **Shared catalog**, published skills | `.curio/skills-catalog/<name>/` | **Publish** on a skill you imported adds one; **Unpublish** removes it. |
-| **Your skills**, the ones you imported and your copies of published ones | `.curio/users/<user-key>/skills/<name>/` (`SKILL.md` and its other files) | **Import skill** adds one; **Add skill** with a published skill copies it here; **Remove from your skills** deletes one. |
 | **Definition store**, the agents themselves | `.curio/users/<user-key>/agents/<agentId>@<major>/` (`manifest.json` and `prompts/`) | **Import agent** adds one; adding a built-in or published agent copies it here. |
 | **Per-user list**, the agents in all your projects | `.curio/users/<user-key>/imported-agents.json` | **Add to all projects** and **Import agent** add an entry; **Remove from all projects** drops it. |
 | **Catalog settings**, values you own | `.curio/users/<user-key>/catalog-settings.json` | **Settings** on `/catalog/agents` saves a setting you changed; **Restore default** removes it. See [Catalog settings](#catalog-settings). |
@@ -254,6 +205,8 @@ Agent state lives in files under `.curio/` and inside each project's spec; the a
 | **Per-dataflow lockfile**, the agents one dataflow has | `dataflow.agents` in the project's `spec.trill.json` | **Add to project** and **Remove from project** in the drawer. **Add to all projects** and **Remove from all projects** change every project. |
 | **Attachments**, an agent's instances bound to a target | `dataflow.agentAttachments` in the project's `spec.trill.json` | Attaching (dragging an agent onto a node, a connection, or the canvas) creates one. **Detach** deletes it and its transcript, and **Remove from project** deletes every attachment of that agent. |
 | **Usage record** | `.curio/users/<user-key>/agents/ledger/<date>.jsonl` | Every run appends to it. It is not editable and not shown in the interface. |
+
+The skills themselves, Curio's, the packages', yours and the published ones, are in the Skill Catalog's [storage layers](SKILL-CATALOG.md#storage-layers).
 
 > [!NOTE]
 > **Adding is not attaching.** Adding an agent to a dataflow makes it available
@@ -268,13 +221,11 @@ Agent state lives in files under `.curio/` and inside each project's spec; the a
 
 There are three places you work with agents, and as with the Data Catalog they are **not** interchangeable:
 
-- **The `/catalog/agents` page** is the account-level library. Reach it from `/projects` and the **Agent Catalog** tab. It lists the built-in agents, every published one, and the ones you imported yourself. Filter by status (**All agents**, **In all projects**) and by category, search, and read an agent's full details. **Add to all projects**, **Publish**, **Unpublish**, **Settings** and **Import agent** live here. You cannot add an agent to just one dataflow from this page: the drawer does that. The rail's **Skills** section lists the [skills](#skills) the agents read in the same grid: **All skills**, or **Core** for the three every call holds. Curio's skills come first, then yours, then the published ones you have not added. A skill's card says what it is for, what it serves and how many agents use it, and its drawer names those agents. There the header offers **Import skill**, and the drawer of a skill you hold offers **Remove from your skills** and, for one you imported, **Publish**.
+- **The `/catalog/agents` page** is the account-level library. Reach it from `/projects` and the **Agent Catalog** tab. It lists the built-in agents, every published one, and the ones you imported yourself. Filter by status (**All agents**, **In all projects**) and by category, search, and read an agent's full details. **Add to all projects**, **Publish**, **Unpublish**, **Settings** and **Import agent** live here. You cannot add an agent to just one dataflow from this page: the drawer does that. The skills the agents read are on the [Skill Catalog](SKILL-CATALOG.md) page, the **Skill Catalog** tab beside it.
 - **The Agent Catalog drawer**, inside the canvas, is the working surface. Open it from the **Agent Catalog** button in the top bar, or from the left Tools panel's **Agent Catalog** dropdown and **Browse Agent Catalog +**. Its tabs are **Browse all** (the default) and **In project**, and everything scoped to the open dataflow happens here, including **Import agent** in its footer.
 - **The Agent palette**, the **Agent Catalog** dropdown in the left Tools panel, holds the agents already added to this dataflow, ready to drag onto a node, a connection, or the canvas. It sits below the **Node Catalog** and **Data Catalog** dropdowns.
 
-**View details**, on any agent card and beside each agent in the palette, opens the agent's details window. Its first four sections are named by the four words defined in [The agents](#the-agents): **In chat**; **Tools**, which lists what the agent reads before what it changes and what it proposes to install; **Modes (who asks)**, each mode with the agents, or Solve, that ask for it, and the mode's capability ids beneath it; and **Skills**, the core skills first, then its own and those its chat, a mode of it or a call another agent asks it for always holds, with **Add skill**, **Remove** and **Restore** (see [Skills](#skills)). **Agent info** gives its identifier, version, category, publisher, what it attaches to and the model it runs on. **Prompts** shows each prompt file, labeled by when it runs: every call, a message you type, or the mode that reads it. **Requires** names the agents it cannot work without, and **Export** saves the agent as one file.
-
-**View details** on a skill's card, in its drawer or in its right-click menu opens the skill's details window: its description, what it serves (the kinds of node whose templates its `curio-behaviors` name, and the features of a dataflow its `curio-features` name), the agents that use it, whose it is, its version, author, license and compatibility, its text as an agent reads it, collapsed until you open it, and its other files. **Export** saves it as a `.zip` of its folder.
+**View details**, on any agent card and beside each agent in the palette, opens the agent's details window. Its first four sections are named by the four words defined in [The agents](#the-agents): **In chat**; **Tools**, which lists what the agent reads before what it changes and what it proposes to install; **Modes (who asks)**, each mode with the agents, or Solve, that ask for it, and the mode's capability ids beneath it; and **Skills**, the core skills first, then its own and those its chat, a mode of it or a call another agent asks it for always holds, with **Add skill**, **Remove** and **Restore** (see [Skills](#skills)); a skill's name opens the skill's details over the agent's. **Agent info** gives its identifier, version, category, publisher, what it attaches to and the model it runs on. **Prompts** shows each prompt file, labeled by when it runs: every call, a message you type, or the mode that reads it. **Requires** names the agents it cannot work without, and **Export** saves the agent as one file.
 
 ### Action matrix
 
@@ -292,13 +243,8 @@ There are three places you work with agents, and as with the Data Catalog they a
 | **Add skill** | An agent's details | Your agent skills | The agent's runs hold the skill in every project, from its next run: its chat lists it, and its modes are handed it when their task needs it. |
 | **Remove** (a skill) | An agent's details | Your agent skills | The agent's runs go without the skill in every project, and a conversation that loaded it stops holding it. Not offered for the core skills, or a skill the agent's chat instruction, a mode or a call another agent asks for names as its own. |
 | **Restore** (skills) | An agent's details | Your agent skills | The agent holds the skills it ships with again. |
-| **Import skill** | The `/catalog/agents` header, when the rail shows skills | Your skills, and your agent skills for the agents ticked | After its review, the skill joins your skills and the agents left ticked hold it. |
-| **Export** (a skill) | A skill's details | Nothing | A `.zip` of the skill's folder downloads. |
-| **Publish** (a skill) | The drawer of a skill you imported | The shared catalog of skills | Every account on this install sees the skill and can give it to an agent with **Add skill**. |
-| **Unpublish** (a skill) | The drawer of a skill you published | The shared catalog of skills | It leaves the shared catalog. Accounts that added it keep their copy. |
-| **Remove from your skills** | The drawer of a skill you hold | Your skills and your agent skills | The skill is deleted, and no agent of yours holds it. |
 
-Nothing in this table deletes an agent definition from disk; **Remove from your skills** deletes a skill.
+Nothing in this table deletes an agent definition from disk. A skill's own actions, **Import skill**, **Export**, **Publish**, **Unpublish** and **Remove from your skills**, are in the Skill Catalog's [action matrix](SKILL-CATALOG.md#action-matrix).
 
 ### Workflows
 
@@ -310,13 +256,11 @@ Nothing in this table deletes an agent definition from disk; **Remove from your 
 
 **I want to write my own agent.** Author a `manifest.json` and its prompt files ([part 6](#6-the-manifest)), then use **Import agent** in the drawer's footer. It is listed on `/catalog/agents` beside the built-in and published agents, where **Publish** offers it to everyone on the install. Adding it to a dataflow and publishing it are separate actions.
 
-**I want to read what a skill says.** On `/catalog/agents`, click **All skills** in the rail, then **View details** on the skill. Its details open on what it is for, what it serves and the agents that use it, and its **Text** section holds what an agent reads, collapsed until you open it.
-
 **I want an agent to use a skill it does not have.** On `/catalog/agents`, click **View details** on the agent, then **Add skill** in its **Skills** section and pick the skill. The agent's next chat lists it, in every project. **Remove** takes a skill away, and **Restore** brings back the agent's own list.
 
 **I want an agent to use a skill for one message.** In its chat, type `/` at the start of the message and pick the skill, then write the rest: `/map-edits remove the two tallest towers`. The line under the reply names the skills its run used.
 
-**I want my agents to use a skill written for another tool.** On `/catalog/agents`, click **All skills** in the rail, then **Import skill**, and pick the skill's folder, its files or a `.zip` of it. Read the review, untick each agent that should go without it, and click **Import**. **Publish** in its drawer offers it to everyone on the install, and **Export** in its details saves it to use elsewhere.
+To read what a skill says, or to import one written for another tool, see the Skill Catalog's [workflows](SKILL-CATALOG.md#workflows).
 
 ### Catalog settings
 
@@ -364,7 +308,7 @@ An install changes your account, so it waits for you: a package, a package draft
 
 A change an agent made to a node's code is an entry of the node's [Provenance](USAGE.md#provenance) drawer, named after the agent, with the code it left, and a node an agent adds with its code starts its history with one. You open the entry and put its code back as you would a run's; an agent never does that for you. The Node Builder and the Dataflow Builder read a node's history as it is, so you can ask either what changed in a node since a run.
 
-A reply of Node Builder or Dataflow Builder that carries no change and no review card says **No changes were made to the canvas** under it. A web address the egress policy refused shows its reason under the reply. So does any other tool call that failed, unless a later call of the same tool in that reply succeeded. A last, quieter line names the [skills](#skills) the reply's run used.
+A reply of Node Builder or Dataflow Builder that carries no change and no review card says **No changes were made to the canvas** under it. A web address the egress policy refused shows its reason under the reply. So does any other tool call that failed, unless a later call of the same tool in that reply succeeded. A last, quieter line names the [skills](SKILL-CATALOG.md#3-using-a-skill) the reply's run used.
 
 ### Required agents
 
@@ -500,14 +444,14 @@ Whoever runs the install can set a Deployment default with `curio.py start` flag
 
 **Publish**, on `/catalog/agents`, copies one of your own imported definitions into the shared catalog, where every user on the install can browse it. Built-in agents cannot be published. **Unpublish** removes it from the shared catalog, and only the publisher can do it; only the publisher can publish over it, too. Other users who added the agent keep their copy and keep running it, and a newer version of the same major reaches them the next time they add the agent to a dataflow.
 
-Skills are imported, exported, published and removed the same way, from the Skills view of `/catalog/agents` ([Skills](#skills)). A guest on a hosted Curio imports, publishes, unpublishes and removes no agent and no skill.
+Skills are imported, exported, published and removed the same way, on the Skill Catalog ([Importing, publishing, and sharing](SKILL-CATALOG.md#5-importing-publishing-and-sharing)). A guest on a hosted Curio imports, publishes, unpublishes and removes no agent.
 
 ### Add skills and agents
 
 Write a skill and an agent, import both, and connect them: the agent holds the skill, and its chat loads the skill when a task needs it. The worked example is in Curio's repository: the skill [`street-trees`](examples/skills/street-trees/SKILL.md), by a parks team, with its file [`references/species.md`](examples/skills/street-trees/references/species.md), and your agent **Tree Counter**, [`agent.you.tree-counter@1`](examples/agents/agent.you.tree-counter@1/manifest.json), whose manifest names the skill.
 
-1. **Write the skill.** A folder named as the skill holds its `SKILL.md`, in the [Agent Skills format](https://agentskills.io/specification): frontmatter with its `name` and a `description` that says when to use it, then the body, the instructions an agent follows. A file the body links, such as `references/species.md`, sits one level below the folder, and a chat reads it when the body says to. [EXTENDING](EXTENDING.md#9-writing-a-skill) gives the format's rules.
-2. **Import the skill.** **Import skill** takes its folder or a `.zip` of it ([Skills](#skills)). In the review, untick each agent that should not hold it, then **Import**.
+1. **Write the skill.** A folder named as the skill holds its `SKILL.md`, in the [Agent Skills format](https://agentskills.io/specification): frontmatter with its `name` and a `description` that says when to use it, then the body, the instructions an agent follows. A file the body links, such as `references/species.md`, sits one level below the folder, and a chat reads it when the body says to. [The skill format](SKILL-CATALOG.md#6-the-skill-format) lists its fields, and [EXTENDING](EXTENDING.md#9-writing-a-skill) gives the format's rules.
+2. **Import the skill.** On the **Skill Catalog** tab, **Import skill** takes its folder or a `.zip` of it ([Importing a skill](SKILL-CATALOG.md#importing-a-skill)). In the review, untick each agent that should not hold it, then **Import**.
 3. **Write the agent.** A folder named `<agentId>@<major>` holds its `manifest.json` and, in `prompts/`, its prompt files ([The manifest](#6-the-manifest)). Its id is `agent.`, you as its publisher and its name. The manifest names its instruction, the tools it uses and, in `skills`, your skill.
 4. **Import the agent.** **Import agent** takes its `manifest.json` and its prompt files.
 5. **Chat with it.** Add the agent to a dataflow and attach it to the canvas. Its chat lists the skill and loads it with **skill.read** when your message asks for its task, and the line under the reply names it.
@@ -564,7 +508,7 @@ A minimal, complete manifest:
 | `runtime` | | `execution` (`foreground` or `background`) and `reviewPolicy` (`report-only` or `review-before-apply`). |
 | `providerRequirements` | | Provider *capability* requirements such as `structured-output`, as a preference: an agent runs on the configuration chosen for it whatever these say. Credentials and configurations are never in a manifest. |
 | `tools` | | Typed, allowlisted tool **requirements**, not a permission grant. A chat that lists skills holds **skill.read** whatever this names. |
-| `skills` | | The [skills](#skills) the agent's calls may hold, by name: skills Curio ships and [your own](#add-skills-and-agents). Its chat lists those its preamble does not hold and loads one when a task needs it; its modes are handed the ones their task needs. Without this field, every skill Curio ships; an empty list, none, and then its chat lists no skills and holds no skill.read. |
+| `skills` | | The [skills](SKILL-CATALOG.md#what-ships-with-curio) the agent's calls may hold, by name: skills Curio ships and [your own](#add-skills-and-agents). Its chat lists those its preamble does not hold and loads one when a task needs it; its modes are handed the ones their task needs. Without this field, every skill Curio ships; an empty list, none, and then its chat lists no skills and holds no skill.read. |
 | `settingsDefaults` | | Non-secret seed suggestions. |
 | `catalog` | | `{ listed, order }`, set by the agents Curio ships only: `listed` is `true` for a catalog agent and `false` for a helper, and `order` is the agent's place in the order the lists of who asks follow. No other key is accepted, and an import that sets it is refused. |
 | `workedExamples` | | `true` gives a run of the agent's instruction worked examples, the shipped dataflows closest to its task. A mode says so for itself, with `workedExamples` on its capability. Read for the agents Curio ships. |
@@ -666,7 +610,7 @@ Curio ships with **no default LLM endpoint**. Until an operator sets a Deploymen
 | `CURIO_SOLVE_BATCH_DEADLINE` | `--solve-batch-deadline` | Seconds a Solve batch may run in all. Default 2700. |
 | `CURIO_VALIDATION_EXEC_TIMEOUT` | `--validation-exec-timeout` | Seconds one node may run when an agent validates code. Default 300. |
 | `CURIO_VALIDATION_NODE_LIMIT` | `--validation-node-limit` | How many nodes one validation run may execute. Upstream nodes whose earlier output is reused do not count. Default 25. |
-| `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH` | `--allow-publish` (default), `--no-allow-publish` | Allows or forbids **Publish** and **Unpublish** of agents, as it does for node packages and datasets. When forbidden, both are refused and their buttons are hidden on `/catalog/agents`. |
+| `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH` | `--allow-publish` (default), `--no-allow-publish` | Allows or forbids **Publish** and **Unpublish** of agents, as it does for node packages, datasets and skills. When forbidden, both are refused and their buttons are hidden on `/catalog/agents`. |
 
 Run `python curio.py start --help` for the current list. A flag writes its variable only when passed, so a value already in the environment is not cleared by a start that omits it. `--allow-publish` is the exception: `curio.py start` sets it on every start.
 
@@ -678,6 +622,7 @@ Run `python curio.py start --help` for the current list. A flag writes its varia
 
 ## See also
 
+- [`docs/SKILL-CATALOG.md`](SKILL-CATALOG.md): the skills agents read, how a call holds them, and importing, publishing and removing your own.
 - [`docs/NODE-CATALOG.md`](NODE-CATALOG.md): the node package catalog, whose storage and publish model this one mirrors.
 - [`docs/DATA-CATALOG.md`](DATA-CATALOG.md): the dataset catalog, the closest peer to this one.
 - [`docs/DISCOVERY-CATALOG.md`](DISCOVERY-CATALOG.md): the data portals the Dataset Finder can search.
