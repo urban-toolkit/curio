@@ -73,7 +73,7 @@ Each of the seven is a folder in Curio's [`agents/`](../agents/), `agents/<agent
 
 ### Skills
 
-A skill is a folder in the [Agent Skills format](https://agentskills.io/specification), which an agent reads when a task needs it. The [Skill Catalog](SKILL-CATALOG.md) lists every skill you see, Curio's, your own, the published ones and those of node packages, and is where you import, export, publish and remove your own. How a call comes to hold a skill, in chat, in a mode or from your message, is in [Using a skill](SKILL-CATALOG.md#3-using-a-skill).
+A skill is a folder in the [Agent Skills format](https://agentskills.io/specification), which an agent reads when a task needs it. The [Skill Catalog](SKILL-CATALOG.md) lists every skill you see, Curio's, your own, the published ones and those of node packages, and is where you import, publish and remove your own, and export a skill to use elsewhere. How a call comes to hold a skill, in chat, in a mode or from your message, is in [Using a skill](SKILL-CATALOG.md#3-using-a-skill).
 
 An agent's manifest names its skills ([`skills`](#6-the-manifest)). An agent of yours that names none lists every skill Curio ships but those its preamble holds. Every agent on a dataflow that uses a node package also lists the package's skills, after its own ([Skills from packages](SKILL-CATALOG.md#skills-from-packages)).
 
@@ -444,7 +444,7 @@ Whoever runs the install can set a Deployment default with `curio.py start` flag
 
 **Publish**, on `/catalog/agents`, copies one of your own imported definitions into the shared catalog, where every user on the install can browse it. Built-in agents cannot be published. **Unpublish** removes it from the shared catalog, and only the publisher can do it; only the publisher can publish over it, too. Other users who added the agent keep their copy and keep running it, and a newer version of the same major reaches them the next time they add the agent to a dataflow.
 
-Skills are imported, exported, published and removed the same way, on the Skill Catalog ([Importing, publishing, and sharing](SKILL-CATALOG.md#5-importing-publishing-and-sharing)). A guest on a hosted Curio imports, publishes, unpublishes and removes no agent.
+Skills are imported, published, removed and exported the same way, on the Skill Catalog ([Importing, publishing, and sharing](SKILL-CATALOG.md#5-importing-publishing-and-sharing)). A guest on a hosted Curio imports, publishes, unpublishes and removes no agent.
 
 ### Add skills and agents
 
