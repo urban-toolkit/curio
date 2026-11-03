@@ -50,7 +50,7 @@ export const CATALOG_KIND_META: Record<CatalogItemKind, CatalogKindMeta> = {
     label: "Agent",
     shortLabel: "Agent",
   },
-  // An Agent Catalog SKILL: what tells an agent how to do a specific task. The
+  // A Skill Catalog SKILL: what tells an agent how to do a specific task. The
   // open book is the instructions it holds, beside the agent that reads them.
   skill: {
     icon: faBookOpen,

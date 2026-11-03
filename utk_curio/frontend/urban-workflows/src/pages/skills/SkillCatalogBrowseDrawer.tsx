@@ -27,7 +27,7 @@ export interface SkillCatalogBrowseDrawerProps {
 }
 
 /**
- * The right-hand drawer on `/catalog/agents` when the rail shows skills.
+ * The right-hand drawer of the Skill Catalog page.
  *
  * Composed from `CatalogBrowseDrawerBody`, as every browse drawer is
  * (`catalogDrawerParity.test.ts`). It names the agents that use the skill and

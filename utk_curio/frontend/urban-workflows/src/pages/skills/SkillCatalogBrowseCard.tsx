@@ -15,8 +15,7 @@ export interface SkillCatalogBrowseCardProps {
 }
 
 /**
- * One skill in the Agent Catalog's grid, when the rail's Skills section is
- * chosen.
+ * One skill in the Skill Catalog's grid.
  *
  * The agent card's structure, painted from the same stylesheet: strip header,
  * body (name, author and version, description, what it serves), meta row

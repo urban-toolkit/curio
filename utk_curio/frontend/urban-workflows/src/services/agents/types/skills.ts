@@ -1,5 +1,5 @@
 /**
- * Skills as the Agent Catalog shows them, an agent's skills for this account,
+ * Skills as the Skill Catalog shows them, an agent's skills for this account,
  * a chat's skills, and what a run's record holds of the skills it used.
  *
  * The backend's shapes, from `application/skill_catalog.py` and the run

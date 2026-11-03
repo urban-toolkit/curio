@@ -1,5 +1,5 @@
 /**
- * REST client for skills in the Agent Catalog (`routes/skills.py`): the skills
+ * REST client for skills in the Skill Catalog (`routes/skills.py`): the skills
  * the account sees, one skill's text, an agent's skills with this account's
  * changes to them, the skills a chat's next run lists, and the account's own
  * skills, imported through a review, exported, published and removed.
