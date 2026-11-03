@@ -44,6 +44,7 @@ PAGES = (
     ("/catalog/nodes", "Node Catalog", "article"),
     ("/catalog/data", "Data Catalog", "article"),
     ("/catalog/agents", "Agent Catalog", "article"),
+    ("/catalog/skills", "Skill Catalog", "article"),
     ("/catalog/discovery", "Discovery Catalog", "article"),
     ("/catalog/models", "Model Catalog", "article"),
     ("/catalog/scenarios", "Scenario Catalog", "article"),

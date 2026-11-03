@@ -146,7 +146,7 @@ describe("the browse cards are informational, and the drawer acts", () => {
     // A model package's card is the package card.
     ["model", "pages/catalog/PackageBrowseCard.tsx"],
     ["scenario", "pages/scenarios/ScenarioCatalogBrowseCard.tsx"],
-    ["skill", "pages/agents/SkillCatalogBrowseCard.tsx"],
+    ["skill", "pages/skills/SkillCatalogBrowseCard.tsx"],
   ])("the %s card offers View details and a status, the same shape", (_kind, rel) => {
     const src = read(rel);
     expect(src).toContain("View details");
@@ -330,6 +330,7 @@ describe("the catalog pages import, not just the drawers", () => {
     ["data", "pages/dataCatalog/DataCatalogBrowse.tsx", "Import dataset"],
     ["node", "pages/catalog/NodeCatalogBrowse.tsx", "Import package"],
     ["agent", "pages/agents/AgentCatalogBrowse.tsx", "Import agent"],
+    ["skill", "pages/skills/SkillCatalogBrowse.tsx", "Import skill"],
   ];
 
   test.each(PAGES)("the %s page has an import control", (_k, rel, label) => {
@@ -787,6 +788,7 @@ describe("every catalog page's rail opens with the same section", () => {
     ...PAGES,
     ["discovery", "pages/discovery/DiscoveryCatalogBrowse.tsx"],
     ["scenario", "pages/scenarios/ScenarioCatalogBrowse.tsx"],
+    ["skill", "pages/skills/SkillCatalogBrowse.tsx"],
     ["projects", "pages/projects/ProjectsList.tsx"],
   ];
 
@@ -1301,11 +1303,13 @@ describe("user-facing catalog copy uses sentences, not dashes", () => {
     "pages/scenarios/ScenarioCatalogBrowse.tsx",
     "pages/scenarios/ScenarioCatalogBrowseCard.tsx",
     "pages/scenarios/ScenarioCatalogBrowseDrawer.tsx",
-    // Skills, on the Agent Catalog page and in an agent's details.
+    // Skills, on the Skill Catalog page and in an agent's details.
     "pages/agents/AgentCatalogBrowse.tsx",
-    "pages/agents/SkillCatalogBrowseCard.tsx",
-    "pages/agents/SkillCatalogBrowseDrawer.tsx",
-    "components/agents/catalog/SkillDetailModal.tsx",
+    "pages/skills/SkillCatalogBrowse.tsx",
+    "pages/skills/SkillCatalogBrowseCard.tsx",
+    "pages/skills/SkillCatalogBrowseDrawer.tsx",
+    "components/skills/catalog/SkillDetailModal.tsx",
+    "components/skills/catalog/SkillImportModal.tsx",
     "components/agents/catalog/AgentSkillsSection.tsx",
   ];
 
@@ -1321,14 +1325,15 @@ describe("user-facing catalog copy uses sentences, not dashes", () => {
   });
 });
 
-// ── The four page intros say the same kind of thing ──────────────────────────
+// ── The five page intros say the same kind of thing ──────────────────────────
 
-describe("the four browse pages introduce themselves the same way", () => {
+describe("the five browse pages introduce themselves the same way", () => {
   const INTROS: [string, string, string][] = [
     ["projects", "pages/projects/ProjectsList.tsx", "Your projects."],
     ["node", "pages/catalog/NodeCatalogBrowse.tsx", "Node packages in the shared catalog."],
     ["data", "pages/dataCatalog/DataCatalogBrowse.tsx", "Datasets in the shared catalog."],
     ["agent", "pages/agents/AgentCatalogBrowse.tsx", "Agents in the shared catalog."],
+    ["skill", "pages/skills/SkillCatalogBrowse.tsx", "Skills in the shared catalog."],
   ];
 
   test.each(INTROS)("the %s page opens by naming what is on it", (_k, rel, opening) => {

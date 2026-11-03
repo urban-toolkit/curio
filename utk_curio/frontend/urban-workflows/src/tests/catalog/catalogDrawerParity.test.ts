@@ -29,7 +29,7 @@ const DRAWERS = [
   "pages/dataCatalog/DataCatalogBrowseDrawer.tsx",
   "pages/agents/AgentCatalogBrowseDrawer.tsx",
   // A skill the account imported is published as its agents are.
-  "pages/agents/SkillCatalogBrowseDrawer.tsx",
+  "pages/skills/SkillCatalogBrowseDrawer.tsx",
 ];
 
 /**

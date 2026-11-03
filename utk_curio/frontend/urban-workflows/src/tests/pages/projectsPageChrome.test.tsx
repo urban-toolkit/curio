@@ -119,6 +119,7 @@ describe('projects page chrome', () => {
       'Node Catalog',
       'Data Catalog',
       'Agent Catalog',
+      'Skill Catalog',
       'Discovery Catalog',
       'Model Catalog',
       'Scenario Catalog',

@@ -29,7 +29,7 @@ function activeLabels(container: HTMLElement): string[] {
 }
 
 describe('AppSectionTabs', () => {
-  test('renders the seven sections as sibling links', () => {
+  test('renders the eight sections as sibling links', () => {
     const { getByRole } = renderAt('/projects');
 
     const nav = getByRole('navigation', { name: 'Main sections' });
@@ -43,6 +43,8 @@ describe('AppSectionTabs', () => {
       ['Node Catalog', '/catalog/nodes'],
       ['Data Catalog', '/catalog/data'],
       ['Agent Catalog', '/catalog/agents'],
+      // The skills the agents read have their own catalog, right after theirs.
+      ['Skill Catalog', '/catalog/skills'],
       ['Discovery Catalog', '/catalog/discovery'],
       ['Model Catalog', '/catalog/models'],
       ['Scenario Catalog', '/catalog/scenarios'],
@@ -53,6 +55,8 @@ describe('AppSectionTabs', () => {
     ['/projects', 'Projects'],
     ['/catalog/nodes', 'Node Catalog'],
     ['/catalog/data', 'Data Catalog'],
+    ['/catalog/agents', 'Agent Catalog'],
+    ['/catalog/skills', 'Skill Catalog'],
     ['/catalog/discovery', 'Discovery Catalog'],
     ['/catalog/models', 'Model Catalog'],
     ['/catalog/scenarios', 'Scenario Catalog'],

@@ -204,9 +204,13 @@ def test_the_catalogs_skill_says_what_each_catalog_holds_and_which_tools_reach_i
     from utk_curio.backend.app.agents.application.tools import REGISTRY
 
     page = _rendered()["skills/catalogs/SKILL.md"]
-    for catalog in ("Node Catalog", "Model Catalog", "Data Catalog", "Discovery Catalog", "Agent Catalog",
-                    "Scenario Catalog"):
+    catalogs = ("Node Catalog", "Model Catalog", "Data Catalog", "Discovery Catalog", "Agent Catalog",
+                "Skill Catalog", "Scenario Catalog")
+    for catalog in catalogs:
         assert f"- {catalog}: " in page, catalog
+    # The count it states is the count it lists, one line each.
+    assert "Curio has seven catalogs" in page
+    assert len([line for line in page.splitlines() if re.match(r"- [A-Z]\w* Catalog: ", line)]) == len(catalogs)
     for tool in ("packages.catalog", "packages.resolve", "package.install", "models.search", "catalog.search",
                  "dataset.install", "discovery.sources", "discovery.search", "discovery.acquire", "dataflow.read",
                  "scenarios.search"):
