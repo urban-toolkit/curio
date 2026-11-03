@@ -38,8 +38,8 @@ import { CatalogRail } from "../catalog/CatalogRail";
 import { AgentImportModal } from "../../components/agents/catalog/AgentImportModal";
 import { AgentDetailModal } from "../../components/agents/catalog/AgentDetailModal";
 import { AgentCatalogSettingsModal } from "../../components/agents/catalog/AgentCatalogSettingsModal";
-import { SkillDetailModal } from "../../components/agents/catalog/SkillDetailModal";
-import { SkillImportModal } from "../../components/agents/catalog/SkillImportModal";
+import { SkillDetailModal } from "../../components/skills/catalog/SkillDetailModal";
+import { SkillImportModal } from "../../components/skills/catalog/SkillImportModal";
 import { CardContextMenu } from "../../components/catalog/CardContextMenu";
 import {
   agentCardActions,
@@ -47,9 +47,9 @@ import {
   type CatalogCardActionId,
 } from "../../components/catalog/catalogCardActions";
 import type { SkillCard } from "../../services/agents";
-import { SkillCatalogBrowseCard } from "./SkillCatalogBrowseCard";
-import { SkillCatalogBrowseDrawer } from "./SkillCatalogBrowseDrawer";
-import { useSkillCatalogBrowse, type SkillBrowseFilter } from "./useSkillCatalogBrowse";
+import { SkillCatalogBrowseCard } from "../skills/SkillCatalogBrowseCard";
+import { SkillCatalogBrowseDrawer } from "../skills/SkillCatalogBrowseDrawer";
+import { useSkillCatalogBrowse, type SkillBrowseFilter } from "../skills/useSkillCatalogBrowse";
 
 /** What the grid lists: the agents, or, from the rail's Skills section, the
  *  skills they read. */

@@ -10,7 +10,7 @@ import {
   type SkillCard,
   type SkillText,
 } from "../../../services/agents";
-import styles from "./AgentDetailModal.module.css";
+import styles from "../../agents/catalog/AgentDetailModal.module.css";
 
 export interface SkillDetailModalProps {
   skill: SkillCard;
