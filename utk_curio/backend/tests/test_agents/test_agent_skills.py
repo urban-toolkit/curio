@@ -37,6 +37,9 @@ RS = "agent.curio.researcher@1"
 PLANNER = "agent.curio.dataflow-planner@1"
 CORE = ["compatibility", "node-control", "nodes"]
 VEGA = "curio.builtin/vis-vega"
+CA = "curio.builtin/computation-analysis"
+#: The owner's what-if (11-03): its words are ones ``scenarios`` names in its ``curio-asks``.
+WHAT_IF = "What if the speed limit dropped to 20?"
 
 
 # --- What Curio ships, read from its files -----------------------------------------
@@ -609,6 +612,113 @@ def test_a_named_skill_the_chat_holds_already_is_not_handed_twice(client, user_a
     held = _wrapped(system)
     assert held.count("widgets") == 1 and held[-1] == "map-edits"
     assert payload["skills"]["named"] == ["map-edits"] and "widgets" in payload["skills"]["handed"]
+
+
+# --- Words a skill names, in a person's message (curio-asks) ------------------------------
+
+
+def test_a_message_that_asks_what_if_hands_scenarios_and_the_conversation_keeps_it(
+    client, user_and_token, tmp_curio, scripted,
+):
+    """A message whose words a skill names in its ``curio-asks`` hands the
+    skill to its run, as ``/<name>`` does: in its system turn, after what the
+    chat holds, with the message sent as written. The record and the answer
+    say the message asked for it, and the rest of the conversation keeps it."""
+    pid = _project(client, scripted)
+    att = _attach(client, scripted, pid, NB)
+    assert "scenarios" in _own(NB) and "scenarios" not in _chat_own(NB)
+    testing_provider.push_reply("Done.")
+    payload = _run(client, scripted, pid, att, WHAT_IF)
+    (system, *rest), = _run_calls()
+    assert _wrapped(system) == [*_chat_own(NB), "scenarios"]
+    assert rest[-1]["content"] == WHAT_IF
+    held = _turns(client, scripted, pid, att)[-1]["execution"]["pins"].get("skills", {})
+    assert held.get("asked") == ["scenarios"] and "named" not in held, held
+    assert payload["skills"] == {**_handed_in_chat(NB), "asked": ["scenarios"]}
+
+    # The next turn holds it, and loading it again sends nothing twice.
+    testing_provider.reset()
+    testing_provider.push_reply(_tail({"toolRequest": {"tool": "skill.read", "params": {"name": "scenarios"}}}))
+    testing_provider.push_reply("Still here.")
+    second = _run(client, scripted, pid, att, "and at 15?")
+    first_call, second_call = _run_calls()
+    assert _wrapped(first_call[0]) == [*_chat_own(NB), "scenarios"]
+    assert "already in this conversation" in second_call[-1]["content"]
+    assert second["skills"] == {**_handed_in_chat(NB), "kept": ["scenarios"]}
+
+
+def test_a_message_without_the_words_hands_nothing_whatever_the_context_beside_it_says(
+    client, user_and_token, tmp_curio, scripted,
+):
+    """Only the message's own words count: the canvas context a browser sends
+    beside it, which names the dataflow's scenarios, hands nothing. The same
+    chat's next message, which says scenarios, is handed the skill."""
+    pid = _project(client, scripted)
+    att = _attach(client, scripted, pid, NB)
+    context = "Dataflow: two scenarios, Real heights and Twice as tall, each with its shadow chart."
+    held = {}
+    for message in ("Chart the mean speed of each street", "Compare the two scenarios' mean speeds"):
+        testing_provider.reset()
+        testing_provider.push_reply("Done.")
+        resp = client.post(f"/api/agents/projects/{pid}/attachments/{att}/run",
+                           json={"message": message, "context": context}, headers=scripted)
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        (system, *rest), = _run_calls()
+        assert any(context in str(turn.get("content")) for turn in rest), "the context did not reach the model"
+        held[message] = (_wrapped(system), resp.get_json().get("skills", {}).get("asked", []))
+    assert held == {
+        "Chart the mean speed of each street": (_chat_own(NB), []),
+        "Compare the two scenarios' mean speeds": ([*_chat_own(NB), "scenarios"], ["scenarios"]),
+    }
+
+
+def test_a_delegated_intent_that_asks_what_if_hands_the_skill_to_no_run(
+    client, user_and_token, tmp_curio, scripted, monkeypatch,
+):
+    """The Node Builder on the canvas hands a node's content to the node's
+    chat with an intent that asks what if: those are its words, not a
+    person's. The delegated run is not handed ``scenarios``, and a person's
+    next message in the node's chat, which asks nothing of the kind, is not
+    handed it either, though that chat's history holds the task. A person's
+    message there that asks what if is handed it."""
+    from utk_curio.backend.app.agents.application.turns import titles
+
+    pid = _project(client, scripted, nodes=[{"id": "n1", "type": CA, "content": "return 1", "x": 0, "y": 0}])
+    canvas = _attach(client, scripted, pid, NB)
+    on_node = _attach(client, scripted, pid, NB, {"kind": "node", "targetId": "n1"})
+    ask = "Fill the node n1"
+    delegate = _tail({"delegateRequest": {"capability": "node.content.generate",
+                                          "inputs": {"nodeId": "n1", "intent": WHAT_IF}}}, "Handing it over.")
+    calls: list = []
+
+    def answer(config, messages, *args, **kwargs):
+        if messages and messages[0].get("content") == titles.title_prompt():
+            return "Title"
+        calls.append(messages)
+        last = str(messages[-1].get("content") or "")
+        if last == ask:
+            return delegate
+        return "return 20" if "[delegated task" in last else "Done."
+
+    monkeypatch.setattr("utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn", answer)
+    _run(client, scripted, pid, canvas, ask)
+    [child] = [call for call in calls if "[delegated task" in str(call[-1].get("content"))]
+    assert WHAT_IF in child[-1]["content"], "the delegate was not handed the intent"
+    assert "scenarios" not in _wrapped(child[0])
+    task = [turn["text"] for turn in _turns(client, scripted, pid, on_node) if turn["role"] == "user"]
+    assert len(task) == 1 and task[0].startswith("[Delegated by ") and WHAT_IF in task[0], task
+
+    held = {}
+    for message in ("Make it return 30", "What if it returned 15?"):
+        calls.clear()
+        _run(client, scripted, pid, on_node, message)
+        [(system, *_)] = calls
+        pins = _turns(client, scripted, pid, on_node)[-1]["execution"]["pins"].get("skills", {})
+        held[message] = ("scenarios" in _wrapped(system), pins.get("asked", []), pins.get("kept", []))
+    assert held == {
+        "Make it return 30": (False, [], []),
+        "What if it returned 15?": (True, ["scenarios"], []),
+    }
 
 
 # --- A chat's skills, which / offers ---------------------------------------------------

@@ -297,14 +297,18 @@ def test_every_skill_curio_ships_carries_curios_frontmatter():
     """Each skill Curio ships is read strictly with no warning, says when to
     use it in a description that starts as agentskills.io's examples do, and
     carries the license, the compatibility and the metadata Curio gives its
-    skills: their author and their version, and what each serves
+    skills: their author and their version, what each serves
     (``curio-behaviors``, ``curio-features``, ``curio-refusals``, which
-    ``test_skill_listing.py`` and ``test_skill_runs.py`` hold to the code), as
-    strings."""
+    ``test_skill_listing.py`` and ``test_skill_runs.py`` hold to the code),
+    and the words of a person's message that hand it (``curio-asks``: words
+    or phrases in lowercase, a comma between each, each once), as strings.
+    ``scenarios`` alone names words: scenario, scenarios, what if and
+    what-if."""
     skills = _skills()
     shipped = skills.shipped_skills()
     assert [skill.name for skill in shipped] == sorted(path.parent.name for path in SKILLS.glob("*/SKILL.md"))
     assert len(shipped) == 21
+    asks = {}
     for skill in shipped:
         assert skill.description.startswith("Use this skill when "), skill.name
         assert len(skill.description) <= skills.DESCRIPTION_MAX, skill.name
@@ -315,8 +319,14 @@ def test_every_skill_curio_ships_carries_curios_frontmatter():
             "author": "curio", "version": "1.0.0",
         }, skill.name
         assert set(skill.metadata) - {"author", "version"} <= {
-            "curio-behaviors", "curio-features", "curio-refusals",
+            "curio-behaviors", "curio-features", "curio-refusals", "curio-asks",
         }, skill.name
         assert all(value == " ".join(value.split()) and value for value in skill.metadata.values()), skill.name
         assert skill.files == () and skill.warnings == (), skill.name
         assert skill.body.startswith("## ") and skill.body.endswith("\n"), skill.name
+        if "curio-asks" in skill.metadata:
+            words = [" ".join(part.split()) for part in skill.metadata["curio-asks"].split(",")]
+            assert all(words) and words == [word.lower() for word in words], (skill.name, words)
+            assert len(words) == len(set(words)), (skill.name, words)
+            asks[skill.name] = words
+    assert asks == {"scenarios": ["scenario", "scenarios", "what if", "what-if"]}

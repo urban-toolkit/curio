@@ -25,18 +25,18 @@ import { skillUploadForm } from "../../services/agents/skillsApi";
 import { REPO_ROOT } from "../_support/workflowPaths";
 
 describe("the skills a reply's run used", () => {
-  it("lists those it was handed, named, kept and loaded, each once, in that order", () => {
+  it("lists those it was handed, named, asked for, kept and loaded, each once, in that order", () => {
+    // The record as the server writes it: `asked` holds what the message's
+    // words handed (a skill's `curio-asks`).
+    const skills = {
+      catalog: ["a", "b", "c", "d", "e"], kept: ["c"], asked: ["e", "a"], named: ["b"], handed: ["a"],
+    };
     expect(
-      skillsUsedBy({
-        executionId: "e1",
-        usage: null,
-        status: "ok",
-        pins: { skills: { catalog: ["a", "b", "c", "d"], kept: ["c"], named: ["b"], handed: ["a"] } },
-        skillsLoaded: ["d", "a"],
-      }),
+      skillsUsedBy({ executionId: "e1", usage: null, status: "ok", pins: { skills }, skillsLoaded: ["d", "a"] }),
     ).toEqual([
       { name: "a", use: "handed" },
       { name: "b", use: "named" },
+      { name: "e", use: "asked" },
       { name: "c", use: "kept" },
       { name: "d", use: "loaded" },
     ]);

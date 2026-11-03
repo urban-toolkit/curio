@@ -166,4 +166,6 @@ export interface AgentRunSkillPins {
   kept?: string[];
   /** Named with `/<name>` in its message. */
   named?: string[];
+  /** Asked for in its message, in words the skill names (`curio-asks`). */
+  asked?: string[];
 }
