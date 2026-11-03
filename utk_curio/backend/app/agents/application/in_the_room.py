@@ -105,10 +105,10 @@ def at_work(user_key: str, project_id: Optional[str], attachment_id: Optional[st
 def held_skills(run_skills) -> list[str]:
     """The skills a run holds in its system turn (``skill_runs.RunSkills``):
     those it is handed, those it kept from earlier turns, those its message
-    named."""
+    named and those its message asked for."""
     if run_skills is None:
         return []
-    return [skill.name for skill in (*run_skills.handed, *run_skills.kept, *run_skills.named)]
+    return [skill.name for skill in (*run_skills.handed, *run_skills.kept, *run_skills.named, *run_skills.asked)]
 
 
 def uses_skills(project_id: Optional[str], attachment_id: Optional[str], names) -> None:

@@ -479,7 +479,7 @@ class Worker:
             return None, "the run built no chat"
         in_text = bool(text) and any(text in system for system in self.seams.texts(chat=True))
         placed = name in chat["placed"] or in_text
-        handed = any(name in chat.get(key, []) for key in ("handed", "kept", "named"))
+        handed = any(name in chat.get(key, []) for key in ("handed", "kept", "named", "asked"))
         how = "handed" if handed else "placed" if placed else "listed" if name in chat.get("catalog", []) else None
         if task.kind == skill_evals.TRIGGER:
             if how != "listed":
@@ -492,7 +492,7 @@ class Worker:
         if task.condition == skill_evals.WITH_SKILL:
             return how, None if how or self._delegates_held(name, text) else f"the run did not hold {name}"
         for run in self.seams.runs:
-            if any(name in run.get(key, []) for key in ("catalog", "handed", "kept", "named", "placed")):
+            if any(name in run.get(key, []) for key in ("catalog", "handed", "kept", "named", "asked", "placed")):
                 return how, f"a {run['kind']} run still held {name}"
         if text and any(text in system for system in self.seams.texts()):
             return how, f"a system turn still held the text of {name}"

@@ -301,6 +301,10 @@ A flood-depth node takes ...
   loads one when a task matches its description.
 - `curio-templates` names your templates, by their `id`: a run that writes a
   node of one of them is handed the skill.
+- `curio-asks` may name words of a person's chat message, a comma between
+  each, such as `curio-asks: flood depth, flooding`: a chat message that
+  holds one as a whole word, on a dataflow that uses your package, hands the
+  chat the skill.
 - Name a skill after your package: a skill whose name one of Curio's skills
   already has is left out.
 - An import of a package whose skill breaks the format is refused, and the
