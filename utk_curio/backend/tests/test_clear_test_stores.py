@@ -28,6 +28,8 @@ def curio_tree(tmp_path, monkeypatch):
     (test_root / "users" / "1").mkdir(parents=True)
     (test_root / "users" / "1" / "imported-agents.json").write_text('["agent.chat"]')
     (test_root / "agents-catalog" / "agent.mine@1").mkdir(parents=True)
+    (test_root / "skills-catalog" / "street-trees").mkdir(parents=True)
+    (test_root / "skills-catalog" / "street-trees" / "SKILL.md").write_text("---\nname: street-trees\n---\n")
     (test_root / "data").mkdir()
     (test_root / "data" / "keep.duckdb").write_text("artifacts")
 
@@ -40,9 +42,11 @@ def curio_tree(tmp_path, monkeypatch):
 def test_removes_the_stores_a_freed_id_would_inherit(curio_tree):
     cleared = clear_test_stores()
 
-    assert sorted(cleared) == ["agents-catalog", "users"]
+    assert sorted(cleared) == ["agents-catalog", "skills-catalog", "users"]
     assert not (curio_tree / ".curio" / "test" / "users").exists()
     assert not (curio_tree / ".curio" / "test" / "agents-catalog").exists()
+    # A skill one test published is in no later test's Skill Catalog.
+    assert not (curio_tree / ".curio" / "test" / "skills-catalog").exists()
 
 
 def test_leaves_the_rest_of_the_test_tree_alone(curio_tree):

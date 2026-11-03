@@ -108,9 +108,10 @@ def clear_test_stores() -> list[str]:
         return []
 
     cleared = []
-    # The published-agents catalog hangs off the same root (agents/publications.py)
-    # and leaks the same way.
-    for target in (users_base(), (root / "agents-catalog").resolve()):
+    # The published agents and the published skills hang off the same root
+    # (agents/repositories/publications.py) and leak the same way: a skill one
+    # test publishes would be in the next test's accounts' Skill Catalog.
+    for target in (users_base(), (root / "agents-catalog").resolve(), (root / "skills-catalog").resolve()):
         if not is_within(target, root):  # pragma: no cover - both are children
             continue
         if not target.exists():
