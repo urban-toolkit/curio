@@ -41,7 +41,8 @@ runs, so no sandbox either.
   makes the run an error.
 - **Retried:** a run whose model call the server failed (a 5xx, a lost
   connection) runs again on a fresh dataflow, after :data:`RETRY_WAITS_S`;
-  the grader waits the same. Its record counts the attempts.
+  the grader waits the same. Its record counts the attempts. A run or a grade
+  whose model's server stopped sending is not tried again.
 - **Not run:** the title call a conversation's first turn makes, which
   nothing here reads, and the kept outputs' sweep, which needs a sandbox.
 - **Graded:** a test case's answer goes to the grader, the same model through
@@ -340,8 +341,10 @@ def _transient(status: int | None, error: str | None) -> bool:
     may not meet: a lost connection, a timeout or the model's server failing
     (a 5xx, 408 or 429 from it). The route answers 502 for every turn whose
     model call failed, so a 4xx the provider names, such as a request too
-    long, is not one."""
-    if status not in _PROVIDER_FAILED:
+    long, is not one, and nor is a model's server that stopped sending
+    (``providers.ServerStoppedSending``): a new try would only wait out its
+    silence again."""
+    if status not in _PROVIDER_FAILED or providers.says_server_stopped_sending(error):
         return False
     found = _PROVIDER_STATUS_RE.search(error or "")
     return not (found and 400 <= int(found.group(1)) < 500 and int(found.group(1)) not in _TRY_AGAIN)
@@ -653,6 +656,10 @@ class Worker:
         for attempt in range(1, GRADER_ATTEMPTS + 1):
             try:
                 turn = providers.ChatTurn.of(providers.run_chat_turn(config, messages, GRADER_MAX_TOKENS, usage))
+            except providers.ServerStoppedSending as exc:
+                # Not asked again: a new try would only wait out the silence again.
+                problem = provider_config.redact_error(exc, config)
+                return {"error": problem, "grader": {"model": self.endpoint.model, "attempts": attempt}}
             except Exception as exc:  # noqa: BLE001 - a grader that fails is an error of the run
                 problem = provider_config.redact_error(exc, config)
                 if attempt < GRADER_ATTEMPTS and waits:
