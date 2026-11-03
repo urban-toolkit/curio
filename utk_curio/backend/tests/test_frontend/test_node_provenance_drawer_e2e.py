@@ -14,7 +14,9 @@ A run's entry goes to the server once the run has ended, on a request of its
 own, while what the person types next goes on the dataflow's socket and can
 get there first. The run still comes first: with its entry held in the page
 until the typing after it is on the server, the drawer lists the run, the
-typing and the next run on one line.
+typing and the next run on one line. So it does when that typing is an entry
+already, after a 10 s pause, before the run's entry comes; and typing that
+went on past a run's start is two entries, one each side of the run.
 
 A run's times come from the server's clock, not the browser's, so no fixed date
 reaches them. The frame shows them on one line, which the screenshot masks.
@@ -36,7 +38,9 @@ from .utils import (
     api_json,
     dismiss_toasts,
     frame_nodes,
+    no_tooltip,
     node_locator,
+    play_node,
     read_node_code,
     require_owner_view,
     require_project_page,
@@ -46,6 +50,7 @@ from .utils import (
     set_node_code,
     stub_login_and_enter_workflow,
     wait_for_drawer_closed,
+    wait_for_run_guard_released,
 )
 from .walkthroughs.steps import (
     PROVENANCE_DRAWER,
@@ -84,6 +89,27 @@ _HOLD_THE_FIRST_RUN_ENTRY_JS = r"""(() => {
         if (hold.held || method.toUpperCase() !== "POST" || !/\/history\/nodes\/[^/]+\/runs$/.test(path)) {
             return send(input, init);
         }
+        hold.held = true;
+        return new Promise((resolve, reject) => {
+            hold.release = () => { send(input, init).then(resolve, reject); };
+        });
+    };
+})()"""
+
+#: As :data:`_HOLD_THE_FIRST_RUN_ENTRY_JS`, for the second run entry the page
+#: sends: the first goes as it comes.
+_HOLD_THE_SECOND_RUN_ENTRY_JS = r"""(() => {
+    const send = window.fetch.bind(window);
+    const hold = window.__curio_heldRunEntry = { sent: 0, held: false, release: null };
+    window.fetch = (input, init) => {
+        const href = typeof input === "string" ? input : (input instanceof URL ? input.href : input.url);
+        const method = String((init && init.method) || (input instanceof Request ? input.method : "GET"));
+        const path = new URL(href, window.location.href).pathname;
+        if (method.toUpperCase() !== "POST" || !/\/history\/nodes\/[^/]+\/runs$/.test(path)) {
+            return send(input, init);
+        }
+        hold.sent += 1;
+        if (hold.sent !== 2) return send(input, init);
         hold.held = true;
         return new Promise((resolve, reject) => {
             hold.release = () => { send(input, init).then(resolve, reject); };
@@ -149,6 +175,61 @@ def _code_on_the_server(backend_url: str, token: str, project_id: str):
     """The node's code as the server's doc of the dataflow holds it now."""
     spec = api_json(f"{backend_url}/api/projects/{project_id}", token)["spec"]
     return next((node.get("content") for node in spec["dataflow"]["nodes"] if node["id"] == NODE), None)
+
+
+def _kinds_on_the_server(backend_url: str, token: str, project_id: str) -> list[str]:
+    """The node's entries as the server's history lists them: run or edit each."""
+    listed = api_json(f"{backend_url}/api/projects/{project_id}/history/nodes/{NODE}", token)
+    return [entry.get("kind", "run") for entry in listed["entries"]]
+
+
+def _until(page, read, want, what: str, seconds: float = 20) -> None:
+    """Read *read()* every 100 ms until it is *want*, for up to *seconds*."""
+    deadline = time.time() + seconds
+    while read() != want:
+        assert time.time() < deadline, what
+        page.wait_for_timeout(100)
+
+
+def _enter_with_a_held_run_entry(page, app_frontend, current_server: str, hold_js: str) -> tuple[str, str]:
+    """The owner on the node's dataflow, with *hold_js* in the page: its
+    sign-in token and the dataflow's id."""
+    require_project_page()
+    require_user_auth()
+    page.emulate_media(reduced_motion="reduce")
+    page.add_init_script(hold_js)
+    login = stub_login_and_enter_workflow(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name=OWNER,
+        username=f"node_runs_{uuid.uuid4().hex[:8]}",
+        project_name="Node runs",
+        project_spec=_spec(),
+    )
+    require_owner_view(page)
+    page.wait_for_selector(".react-flow__node", timeout=45000)
+    dismiss_toasts(page)
+    frame_nodes(page, [NODE])
+    return login["token"], login["project"]["id"]
+
+
+def _open_run_from_off_the_drawer(page, panel, run_id: str) -> None:
+    """Open the run *run_id*, the pointer moved off the drawer first. A row's
+    tooltip shows above it, over the row before, and stays while the pointer
+    is on it: with the pointer left on the next row, a click on *run_id*'s
+    row would land on that tooltip."""
+    park_pointer_off_drawer(page)
+    no_tooltip(page, "the drawer, before a run opens", timeout=5000)
+    _open_run(panel, run_id)
+
+
+def _release_the_held_run_entry(page) -> None:
+    with page.expect_response(
+        lambda answer: answer.request.method == "POST" and answer.url.endswith(f"/history/nodes/{NODE}/runs"),
+    ) as noted:
+        page.evaluate("() => { window.__curio_heldRunEntry.release(); }")
+    assert noted.value.status == 201, f"the held run's entry was answered {noted.value.status}"
 
 
 def test_a_nodes_runs_open_in_the_provenance_drawer(
@@ -296,4 +377,96 @@ def test_a_run_comes_before_the_typing_that_reaches_the_server_ahead_of_its_entr
     expect(panel.get_by_role("button", name=re.compile(r"on another branch$"))).to_have_count(0)
     _open_run(panel, first_run)
     expect(_run_item(panel, first_run).locator("pre")).to_have_text(re.compile(r"^\s*return 1\s*$"))
+    _close(page)
+
+
+def test_a_run_comes_before_the_typing_that_became_an_entry_before_the_runs_entry_came(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    """The first run's entry is held in the page while the typing after the
+    run pauses 10 s and becomes an entry, as typing while a long run goes
+    does. The run still comes first: the drawer lists it, then the typing,
+    then the second run, in use, on one line, with nothing on another
+    branch."""
+    token, project_id = _enter_with_a_held_run_entry(page, app_frontend, current_server,
+                                                     _HOLD_THE_FIRST_RUN_ENTRY_JS)
+    _run(page, FIRST)
+    page.wait_for_function("() => window.__curio_heldRunEntry.held", timeout=20000)
+    set_node_code(page, NODE, SECOND)
+    _until(page, lambda: _kinds_on_the_server(current_server, token, project_id), ["edit"],
+           "the typing after the first run never became an entry", seconds=60)
+    _release_the_held_run_entry(page)
+    run_node_and_wait(page, NODE, node_type="computation-analysis", timeout_ms=120000)
+
+    panel = _open_runs(page)
+    expect(panel.locator("[data-provenance-item]")).to_have_count(3, timeout=20000)
+    first_run, typed, second_run = _shown(panel)
+    expect(_run_item(panel, first_run)).to_contain_text("In: none | Out: VALUE")
+    expect(_run_item(panel, typed)).to_contain_text(f"{OWNER} edited")
+    expect(_run_item(panel, second_run)).to_have_attribute("data-provenance-current", "true")
+    expect(panel.get_by_role("button", name=re.compile(r"on another branch$"))).to_have_count(0)
+    _open_run_from_off_the_drawer(page, panel, first_run)
+    expect(_run_item(panel, first_run).locator("pre")).to_have_text(re.compile(r"^\s*return 1\s*$"))
+    _close(page)
+
+
+def test_typing_that_goes_on_past_a_runs_start_is_an_entry_each_side_of_the_run(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    """The owner types, runs the node and types on, with no pause and without
+    leaving the editor, as Ctrl+Enter in it lets her; the second run's entry
+    is held in the page until the typing after its start is on the server.
+    The drawer lists the first run, the typing up to the code the second run
+    ran, that run, the typing after it and the third run, in use, on one
+    line, with nothing on another branch."""
+    token, project_id = _enter_with_a_held_run_entry(page, app_frontend, current_server,
+                                                     _HOLD_THE_SECOND_RUN_ENTRY_JS)
+    with page.expect_response(
+        lambda answer: answer.request.method == "POST" and answer.url.endswith(f"/history/nodes/{NODE}/runs"),
+    ) as noted:
+        _run(page, FIRST)
+    assert noted.value.status == 201, f"the first run's entry was answered {noted.value.status}"
+
+    # The first run over, the typing, the second run's start and the typing
+    # after it follow each other well within the typing's 10 s pause.
+    wait_for_run_guard_released(page, timeout_ms=120000)
+    set_node_code(page, NODE, SECOND)
+    _until(page, lambda: _code_on_the_server(current_server, token, project_id), SECOND,
+           "the typing before the second run never reached the server")
+    # A run takes the node's code once the server holds the tab's changes,
+    # just before it asks the server to start.
+    with page.expect_response(
+        lambda answer: answer.request.method == "POST" and answer.url.endswith(f"/api/projects/{project_id}/runs"),
+    ) as started:
+        play_node(page, NODE)
+    assert started.value.ok, f"the second run was answered {started.value.status}"
+    # The typing goes on until the run's entry is held, as someone still
+    # typing does: a 10 s pause would end it there.
+    set_node_code(page, NODE, THIRD)
+    deadline = time.time() + 120
+    while not page.evaluate("() => window.__curio_heldRunEntry.held"):
+        assert time.time() < deadline, "the second run's entry never left the page"
+        page.wait_for_timeout(2000)
+        set_node_code(page, NODE, THIRD + "\n")
+        set_node_code(page, NODE, THIRD)
+    _until(page, lambda: _code_on_the_server(current_server, token, project_id), THIRD,
+           "the typing after the second run's start never reached the server")
+    assert _kinds_on_the_server(current_server, token, project_id) == ["run"], (
+        "the typing was an entry before the second run's entry came: it paused, so it never went on past "
+        "the run's start"
+    )
+    _release_the_held_run_entry(page)
+    run_node_and_wait(page, NODE, node_type="computation-analysis", timeout_ms=120000)
+
+    panel = _open_runs(page)
+    expect(panel.locator("[data-provenance-item]")).to_have_count(5, timeout=20000)
+    shown = _shown(panel)
+    titles = ["In: none | Out: VALUE", f"{OWNER} edited", "In: none | Out: VALUE", f"{OWNER} edited",
+              "In: none | Out: VALUE"]
+    for item, title in zip(shown, titles):
+        expect(_run_item(panel, item)).to_contain_text(title)
+    expect(_run_item(panel, shown[-1])).to_have_attribute("data-provenance-current", "true")
+    expect(panel.get_by_role("button", name=re.compile(r"on another branch$"))).to_have_count(0)
+    _open_run_from_off_the_drawer(page, panel, shown[2])
+    expect(_run_item(panel, shown[2]).locator("pre")).to_have_text(re.compile(r"^\s*return 2\s*$"))
     _close(page)
