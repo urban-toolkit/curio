@@ -161,7 +161,7 @@ imply (an Autark node, `import geopandas`, a raster dataset). A save that leaves
 - `collapsed` and `box` say whether the canvas draws it as one box, and where.
 - `source` names the project and scenario it was dragged in from.
 
-`scenarioSets` lists the scenario sets, each `{id, name, description?, shared?}`:
+`scenarioSets` lists the scenario sets, each `{id, name, description?, shared?, source?}`:
 the scenarios that answer one question, compared on the same shared context and
 shared outcomes. Scenarios of different sets never mix.
 
@@ -171,6 +171,9 @@ shared outcomes. Scenarios of different sets never mix.
   outcomes: `shared.context` and `shared.outcomes` each hold `collapsed: true`
   when that group is drawn as one box, and `box`, `{x, y}`, where that box sits.
   It is written only when a group is collapsed or its box was moved.
+- `source`, `{project, set}`, names the project and the set a set dragged in
+  from the Scenario Catalog copies. A later scenario of that set dragged into
+  the dataflow joins this set.
 
 A node belongs to at most one scenario: a save that puts a node in two, or gives
 two scenarios one id, is refused. A save drops ids that are not nodes of the

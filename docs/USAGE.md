@@ -854,7 +854,7 @@ between them, and every edge entering them feeds the copy too. The copy becomes
 a scenario of the same set, with the next color and the same shared context, and
 Define scenario opens on it at **Name & set**: rename it, recolor it, or put it
 in another set. Nothing reads the copy yet, so it has no shared outcomes: wire
-its nodes into a comparison, then add the comparison with **Edit**.
+its nodes into a comparison, then add the comparison with **Edit scenario**.
 **View → Duplicate selection** copies the selected nodes without making a
 scenario.
 
@@ -868,9 +868,9 @@ name and how many scenarios it holds; the pencil beside the name renames the set
 and no two sets of a dataflow share a name. On top of the tab is **Define
 scenario**, and each scenario's card offers:
 
-- **Run**: run its nodes, and of the nodes feeding it only those that have not
+- **Run scenario**: run its nodes, and of the nodes feeding it only those that have not
   run or have changed since;
-- **Edit**: Define scenario, on what the scenario keeps: its nodes are listed,
+- **Edit scenario**: Define scenario, on what the scenario keeps: its nodes are listed,
   and its context, outcomes, name, color and set are filled in. Change any step;
   **Save** changes it in place;
 - **Duplicate scenario**: a copy of it, as above;
