@@ -326,10 +326,9 @@
         "data": {
           "type": "object",
           "deprecated": true,
-          "description": "DEPRECATED React Flow-shaped sub-object. No current writer emits it into a trill file, but execution/node_names.py still reads 'data.packageTemplateLabel' (a renamed header from before `title` was a node's one name) and 'data.nodeType' when naming a node, so a spec carrying it must stay valid.",
+          "description": "DEPRECATED React Flow-shaped sub-object. No current writer emits it into a trill file, but execution/node_names.py still reads 'data.nodeType' when naming a node, so a spec carrying it must stay valid.",
           "additionalProperties": true,
           "properties": {
-            "packageTemplateLabel": { "type": "string" },
             "nodeType": { "type": "string" }
           }
         }
@@ -412,12 +411,6 @@
           "properties": {
             "imageColumn": { "type": "string", "minLength": 1 }
           }
-        },
-        "packageTemplateLabel": {
-          "type": "string",
-          "minLength": 1,
-          "deprecated": true,
-          "description": "DEPRECATED. The node's renamed header (#412), before `title` was a node's one name. Read on load, where it wins over `title`; never written."
         },
         "packageTemplateConfig": {
           "type": "object",

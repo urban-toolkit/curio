@@ -59,6 +59,8 @@ const NODE_SAMPLES: Record<string, [unknown, unknown]> = {
     width: [640, 700],
     height: [480, 500],
     minimized: [true, false],
+    minimizedWidth: [300, 320],
+    minimizedHeight: [80, 96],
     dashboardPinned: [true, false],
     dashboardX: [5, 6],
     dashboardY: [7, 8],
@@ -101,7 +103,6 @@ const METADATA_SAMPLES: Record<string, [unknown, unknown]> = {
     appearance: [{ backgroundColor: "#ffefb0" }, { backgroundColor: "#c8e6c9" }],
     spatialJoin: [{ predicate: "within", output: "counts" }, { predicate: "contains" }],
     simpleVis: [{ imageColumn: "image" }, { imageColumn: "photo" }],
-    packageTemplateLabel: ["Renamed kind", "Another kind"],
     packageTemplateConfig: [{ description: "configured" }, { description: "configured again" }],
     dataPool: [{ insideChart: "MERGE_AND" }, { betweenCharts: "MERGE_OR" }],
     widgets: [
@@ -217,14 +218,15 @@ describe("the fields the cases cover are those generateTrill writes", () => {
         const full: any = {
             id: "full", position: { x: 1, y: 2 },
             data: {
-                nodeId: "full", nodeType: TYPE, nodeWidth: 1, nodeHeight: 1, minimized: true, dashboardPinned: true,
+                nodeId: "full", nodeType: TYPE, nodeWidth: 1, nodeHeight: 1, minimized: true,
+                minimizedWidth: 1, minimizedHeight: 1, dashboardPinned: true,
                 dashboardX: 1, dashboardY: 1, dashboardWidth: 1, dashboardHeight: 1, saveOutputDataset: true,
                 code: "c", out: "o", in: "i", goal: "g", title: "t",
                 keywords: [1], datasetRefs: ["d"], datasetSource: { datasetId: "d" },
                 datasetWidgets: { w: { id: "d", title: "d", format: "csv", refs: ["d"] } },
                 modelRefs: [{ id: "m", name: "m" }], appearance: { backgroundColor: "#fff" },
                 spatialJoin: { predicate: "within" }, simpleVis: { imageColumn: "i" },
-                packageTemplateLabel: "l", packageTemplateConfig: { description: "d" },
+                packageTemplateConfig: { description: "d" },
                 dataPool: { insideChart: "MERGE_AND" }, widgets: [{ name: "w", type: "number", default: 1 }],
                 copiedFrom: ["c"], selections: [{ name: "s", node: "n", column: "c", ids: [1] }],
             },
@@ -328,7 +330,11 @@ describe("the dataflow's own fields, connections and scenarios", () => {
         expect(api.workflowDescription).toBe("Where the trees are");
         expect(api.workflowCategories).toEqual({ city: ["Chicago"] });
         expect(api.autoRun).toBe(true);
-        expect(api.scenarios).toEqual([{ id: "s1", name: "Cool roofs", color: "#4477aa", nodes: ["n"] }]);
+        // Each scenario in a set, with its context and outcomes, as a load takes them.
+        expect(api.scenarios).toEqual([{
+            id: "s1", name: "Cool roofs", color: "#4477aa", nodes: ["n"], set: "set-s1", context: [], outcomes: ["m"],
+        }]);
+        expect(api.scenarioSets).toEqual([{ id: "set-s1", name: "Renamed by Ana" }]);
     });
 
     test("this canvas's name, auto-run and scenarios reach the doc, and the server's sections never go from here", async () => {
@@ -343,7 +349,10 @@ describe("the dataflow's own fields, connections and scenarios", () => {
         const df = docToDataflow(provider.doc);
         expect(df.name).toBe("Renamed here");
         expect(df.autoRun).toBe(true);
-        expect(df.scenarios).toEqual([{ id: "s2", name: "Shade", color: "#228833", nodes: ["m"] }]);
+        expect(df.scenarios).toEqual([{
+            id: "s2", name: "Shade", color: "#228833", nodes: ["m"], set: "set-s2", context: ["n"], outcomes: [],
+        }]);
+        expect(df.scenarioSets).toEqual([{ id: "set-s2", name: "Renamed here" }]);
         expect(df.packages).toEqual(["curio.builtin@1"]);
         expect(df.timestamp).toBe(1);
     });

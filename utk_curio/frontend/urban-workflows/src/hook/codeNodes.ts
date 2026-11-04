@@ -15,6 +15,7 @@ import { dataPoolFromSpec } from "../utils/dataPoolSpec";
 import { normalizeWidgets, type WidgetDef } from "../utils/widgets/widgetModel";
 import { normalizeSelections, type SelectionTag } from "../utils/references/selectionTags";
 import { lineageFromSpec } from "../utils/scenarios/duplicateSelection";
+import { initialNodeTitle, savedNodeTitle } from "../utils/nodeTitle";
 
 export type CreateCodeNodeOptions = {
     nodeId?: string;
@@ -35,6 +36,9 @@ export type CreateCodeNodeOptions = {
     nodeHeight?: number;
     // Folded to its chip on the canvas (spec `minimized`).
     minimized?: boolean;
+    // The chip's size, once its handle resized it (spec `minimizedWidth`).
+    minimizedWidth?: number;
+    minimizedHeight?: number;
     dashboardPinned?: boolean;
     dashboardX?: number;
     dashboardY?: number;
@@ -52,7 +56,8 @@ export type CreateCodeNodeOptions = {
     // dev/89: per-node appearance (canonical spec shape metadata.appearance;
     // normalized values only — validation is utils/nodeAppearance's job).
     appearance?: { backgroundColor?: string };
-    // dev/89: optional display title (post-it header et al.).
+    // The node's one name, its header (utils/nodeTitle.ts); its template's
+    // label when not given.
     title?: string;
     // #576: the Spatial Join's operation and output (canonical shape
     // metadata.spatialJoin). #276: Simple View's image column
@@ -61,9 +66,6 @@ export type CreateCodeNodeOptions = {
     // list: the setting survived a save and never a load.
     spatialJoin?: { predicate?: string; output?: "pairs" | "counts" };
     simpleVis?: { imageColumn?: string };
-    // #412: a renamed node header (metadata.packageTemplateLabel), which the
-    // header reads through resolveNodeDisplayLabel.
-    packageTemplateLabel?: string;
     // #412: the rest of what the node settings modal saved
     // (metadata.packageTemplateConfig), which the editor tabs read.
     packageTemplateConfig?: Partial<CanvasTemplateConfig>;
@@ -180,10 +182,6 @@ export function nodeMetaFromTrill(node: any, fallbackPosition: () => { x: number
     if (node.metadata != undefined && node.metadata.simpleVis != undefined)
         nodeMeta.simpleVis = node.metadata.simpleVis;
 
-    // #412: and so does a renamed node header.
-    if (node.metadata != undefined && typeof node.metadata.packageTemplateLabel === "string")
-        nodeMeta.packageTemplateLabel = node.metadata.packageTemplateLabel;
-
     // #412: and the rest of the node settings config, with fresh port ids.
     if (node.metadata != undefined && node.metadata.packageTemplateConfig != undefined)
         nodeMeta.packageTemplateConfig = canvasTemplateConfigFromSpec(node.metadata.packageTemplateConfig);
@@ -204,8 +202,10 @@ export function nodeMetaFromTrill(node: any, fallbackPosition: () => { x: number
     if (node.metadata != undefined && Array.isArray(node.metadata.selections))
         nodeMeta.selections = normalizeSelections(node.metadata.selections);
 
-    if (typeof node.title === "string" && node.title)
-        nodeMeta.title = node.title;
+    // The node's one name, its title.
+    const savedTitle = savedNodeTitle(node);
+    if (savedTitle)
+        nodeMeta.title = savedTitle;
 
     if (typeof parsedWidth === "number")
         nodeMeta.nodeWidth = parsedWidth;
@@ -215,6 +215,12 @@ export function nodeMetaFromTrill(node: any, fallbackPosition: () => { x: number
 
     if (node.minimized === true)
         nodeMeta.minimized = true;
+
+    if (typeof node.minimizedWidth === "number")
+        nodeMeta.minimizedWidth = node.minimizedWidth;
+
+    if (typeof node.minimizedHeight === "number")
+        nodeMeta.minimizedHeight = node.minimizedHeight;
 
     if (node.dashboardPinned)
         nodeMeta.dashboardPinned = true;
@@ -256,6 +262,8 @@ export function buildCodeNode(nodeType: string, options: CreateCodeNodeOptions, 
         nodeWidth = undefined,
         nodeHeight = undefined,
         minimized = undefined,
+        minimizedWidth = undefined,
+        minimizedHeight = undefined,
         dashboardPinned = undefined,
         dashboardX = undefined,
         dashboardY = undefined,
@@ -271,7 +279,6 @@ export function buildCodeNode(nodeType: string, options: CreateCodeNodeOptions, 
         title = undefined,
         spatialJoin = undefined,
         simpleVis = undefined,
-        packageTemplateLabel = undefined,
         packageTemplateConfig = undefined,
         dataPool = undefined,
         widgets = undefined,
@@ -310,6 +317,8 @@ export function buildCodeNode(nodeType: string, options: CreateCodeNodeOptions, 
             nodeWidth,
             nodeHeight,
             minimized,
+            minimizedWidth,
+            minimizedHeight,
             dashboardPinned,
             dashboardX,
             dashboardY,
@@ -320,10 +329,9 @@ export function buildCodeNode(nodeType: string, options: CreateCodeNodeOptions, 
             datasetSource,
             datasetWidgets,
             appearance,
-            title,
+            title: initialNodeTitle(nodeType, title),
             spatialJoin,
             simpleVis,
-            packageTemplateLabel,
             packageTemplateConfig,
             dataPool,
             widgets,

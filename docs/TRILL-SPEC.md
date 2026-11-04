@@ -50,9 +50,7 @@ because agents are instructed to supply either.
 `title` is the node's one name, the one its header shows. A node starts with its
 template's label and keeps it until the user renames the header or an agent
 names it; a save writes it for every node that has one, and a Note has none
-until its author gives it one. `metadata.packageTemplateLabel` is deprecated: a
-dataflow saved before `title` was the one name holds a renamed header there,
-which is read on load in place of `title` and never written again.
+until its author gives it one.
 
 `metadata.packageTemplateConfig` is what the node settings modal saved for the
 node: its title, description, editor mode, engine, which editor tabs it shows,

@@ -41,7 +41,9 @@ SPEC = {
         "task": "",
         "timestamp": 1,
         "provenance_id": "Shared",
-        "scenarios": [{"id": "s1", "name": "Base", "color": "#4477aa", "nodes": ["loader"]}],
+        "scenarios": [{"id": "s1", "name": "Base", "color": "#4477aa", "nodes": ["loader"],
+                       "set": "set-s1", "context": [], "outcomes": ["chart"]}],
+        "scenarioSets": [{"id": "set-s1", "name": "Shared"}],
         "agents": [{"agentId": "agent.curio.node-builder@1"}],
     },
     "nodeProvenance": {"loader": [{"id": "v1"}]},
@@ -209,7 +211,8 @@ def test_an_edit_a_widget_and_a_scenario_reach_the_other_tab(room):
     assert loader["metadata"]["widgets"] == [
         {"name": "rows", "type": "number", "default": 5, "options": {"min": 1, "step": 1}, "value": 9}
     ]
-    assert seen["scenarios"] == [{"id": "s1", "name": "Cool roofs", "color": "#4477aa", "nodes": ["loader"]}]
+    assert seen["scenarios"] == [{"id": "s1", "name": "Cool roofs", "color": "#4477aa", "nodes": ["loader"],
+                                   "set": "set-s1", "context": [], "outcomes": ["chart"]}]
     assert seen == alice.dataflow()
     assert room.live()["dataflow"] == {**seen, "agents": SPEC["dataflow"]["agents"]}, (
         "the server's doc holds what the tabs hold"

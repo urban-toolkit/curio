@@ -390,7 +390,15 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             setWorkflowCategories(fields.categories && typeof fields.categories === "object" ? fields.categories : {});
         }
         if ("autoRun" in fields) setAutoRunQuietly(fields.autoRun === true);
-        if ("scenarios" in fields) setScenariosQuietly(normalizeScenarios(fields.scenarios ?? [], nodeIds));
+        if ("scenarios" in fields || "scenarioSets" in fields) {
+            // Each scenario in its set, as a load takes them.
+            const kept = "scenarios" in fields ? normalizeScenarios(fields.scenarios ?? [], nodeIds) : scenariosRef.current;
+            const sets = "scenarioSets" in fields ? fields.scenarioSets : scenarioSetsRef.current;
+            const filled = kept.length > 0
+                ? normalizeScenarioSets(kept, sets, nodeIds, reactFlow.getEdges(), workflowNameRef.current)
+                : { scenarios: kept, sets: [] };
+            setScenariosQuietly(filled.scenarios, filled.sets);
+        }
         if ("packages" in fields && Array.isArray(fields.packages)) {
             setPackages(fields.packages);
             // A package someone else added (the owner's Add, her Apply of an
@@ -403,7 +411,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             void refreshPackageRegistry();
         }
         if ("datasets" in fields) setDataflowDatasets(Array.isArray(fields.datasets) ? fields.datasets : []);
-    }, [setWorkflowName, setWorkflowDescription, setWorkflowCategories, setAutoRunQuietly, setScenariosQuietly, setPackages]);
+    }, [setWorkflowName, setWorkflowDescription, setWorkflowCategories, setAutoRunQuietly, setScenariosQuietly, setPackages, reactFlow]);
 
     // ---------------------------------------------------------------------------
     // Effects
@@ -1122,7 +1130,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             // when a package install/uninstall updates the store before React
             // re-renders. The datasets section seeds the new project's refs (dev/81).
             const currentPackages = getCurrentProjectPackagesList();
-            const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, workflowGoalRef.current, currentPackages, workflowDescriptionRef.current, dataflowDatasetsRef.current, workflowCategoriesRef.current, scenariosRef.current, autoRunRef.current);
+            const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, workflowGoalRef.current, currentPackages, workflowDescriptionRef.current, dataflowDatasetsRef.current, workflowCategoriesRef.current, scenariosRef.current, autoRunRef.current, scenarioSetsRef.current);
             spec.nodeProvenance = getAllNodeProvenance();
             spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
             // The canvas as its doc would hold it, taken with the spec.

@@ -794,6 +794,110 @@
           }
         ]
       }
+    },
+    {
+      "name": "a scenario whose set the dataflow does not list gets a new set whose id comes from its first scenario, numbered when a set has it",
+      "dataflowName": "Towers",
+      "nodes": [
+        "load",
+        "t",
+        "c",
+        "chart"
+      ],
+      "edges": [
+        {
+          "source": "load",
+          "target": "t"
+        },
+        {
+          "source": "load",
+          "target": "c"
+        },
+        {
+          "source": "t",
+          "target": "chart"
+        },
+        {
+          "source": "c",
+          "target": "chart"
+        }
+      ],
+      "sets": [
+        {
+          "id": "set-tall",
+          "name": "Capped alone"
+        }
+      ],
+      "scenarios": [
+        {
+          "id": "c",
+          "name": "Capped",
+          "color": "#228833",
+          "nodes": [
+            "c"
+          ],
+          "set": "set-tall",
+          "context": [
+            "load"
+          ],
+          "outcomes": [
+            "chart"
+          ]
+        },
+        {
+          "id": "tall",
+          "name": "Tall",
+          "color": "#4477aa",
+          "nodes": [
+            "t"
+          ],
+          "set": "gone"
+        }
+      ],
+      "expected": {
+        "scenarioSets": [
+          {
+            "id": "set-tall",
+            "name": "Capped alone"
+          },
+          {
+            "id": "set-tall-2",
+            "name": "Tall"
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "c",
+            "name": "Capped",
+            "color": "#228833",
+            "nodes": [
+              "c"
+            ],
+            "set": "set-tall",
+            "context": [
+              "load"
+            ],
+            "outcomes": [
+              "chart"
+            ]
+          },
+          {
+            "id": "tall",
+            "name": "Tall",
+            "color": "#4477aa",
+            "nodes": [
+              "t"
+            ],
+            "set": "set-tall-2",
+            "context": [
+              "load"
+            ],
+            "outcomes": [
+              "chart"
+            ]
+          }
+        ]
+      }
     }
   ]
 }

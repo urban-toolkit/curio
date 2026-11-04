@@ -170,7 +170,7 @@ function everyFieldNode(): any {
         data: {
             nodeId: "full",
             nodeType: "curio.builtin/python-computation@1",
-            nodeWidth: 640, nodeHeight: 480, minimized: true,
+            nodeWidth: 640, nodeHeight: 480, minimized: true, minimizedWidth: 300, minimizedHeight: 80,
             dashboardPinned: true, dashboardX: 1, dashboardY: 2, dashboardWidth: 300, dashboardHeight: 200,
             saveOutputDataset: true,
             code: "x = 1\n",
@@ -183,7 +183,6 @@ function everyFieldNode(): any {
             appearance: { backgroundColor: "#ffefb0" },
             spatialJoin: { predicate: "within", output: "counts" },
             simpleVis: { imageColumn: "image" },
-            packageTemplateLabel: "Renamed kind",
             packageTemplateConfig: { description: "configured" },
             dataPool: { insideChart: "MERGE_AND", betweenCharts: "MERGE_OR" },
             widgets: [{ name: "rows", type: "number", default: 5, value: 9, label: "Rows", options: { min: 1, step: 1 } }],
@@ -204,9 +203,11 @@ function everyFieldTrill(): any {
     return TrillGenerator.generateTrill(
         [everyFieldNode(), other], edges, "Every field", "a task", ["curio.builtin@1"], "a description",
         [{ datasetId: "data.utk.parks@1", title: "Parks" }], { city: ["Chicago"] },
-        [{ id: "s1", name: "Base", color: "#4477aa", nodes: ["full"], description: "d", collapsed: true,
-           box: { x: 1, y: 2 }, source: { project: "p", scenario: "s" } } as any],
+        [{ id: "s1", name: "Base", color: "#4477aa", nodes: ["full"], description: "d", set: "set-1",
+           context: [], outcomes: ["other"], collapsed: true, box: { x: 1, y: 2 },
+           source: { project: "p", scenario: "s" } } as any],
         true,
+        [{ id: "set-1", name: "Base set", description: "the set", shared: { context: { collapsed: true } } }],
     );
 }
 
@@ -219,6 +220,7 @@ describe("every field generateTrill writes has its place in the doc", () => {
         ["metadata", Object.keys(node.metadata), LAYOUT.metadata],
         ["edge", Array.from(new Set(trill.dataflow.edges.flatMap((e: any) => Object.keys(e)))), LAYOUT.edge],
         ["scenario", Object.keys(trill.dataflow.scenarios[0]), LAYOUT.scenario],
+        ["scenarioSet", Object.keys(trill.dataflow.scenarioSets[0]), LAYOUT.scenarioSet],
         ["widget", Object.keys(node.metadata.widgets[0]), LAYOUT.widget],
     ];
 

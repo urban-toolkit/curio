@@ -146,6 +146,15 @@ function freeId(base: string, taken: Set<string>): string {
 }
 
 /**
+ * The id of a new set whose first scenario is *scenarioId*: `set-<its id>`,
+ * numbered when a set of *taken* has it. A set's id comes from its first
+ * scenario, never at random, as `_free_id` in `scenario_sets.py` makes it.
+ */
+export function newSetId(scenarioId: string, taken: Iterable<string>): string {
+  return freeId(`set-${scenarioId}`, new Set(taken));
+}
+
+/**
  * `{scenarios, sets}` as a spec keeps them, from scenarios already through
  * `normalizeScenarios`. A scenario without a `context` or `outcomes` list
  * gets the inferred one; the lists it has keep only nodes of the dataflow
@@ -187,7 +196,8 @@ export function normalizeScenarioSets(
   const names = new Map(filled.map((s) => [s.id, s.name]));
   const only = groups.length === 1 && sets.length === 0;
   for (const group of groups) {
-    const id = freeId(`set-${group[0]}`, taken);
+    const id = newSetId(group[0], taken);
+    taken.add(id);
     const name =
       only && typeof dataflowName === "string" && dataflowName.trim()
         ? dataflowName.trim()

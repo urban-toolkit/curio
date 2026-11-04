@@ -16,7 +16,8 @@ order of its keys, which a Yjs map does not keep either.
 **Layout 1:**
 
 * ``meta`` (map): the doc's own ``id``, the ``layout`` it was built with, and
-  ``scenariosListed`` when the Trill lists its scenarios, even none.
+  ``scenariosListed`` and ``scenarioSetsListed`` when the Trill lists its
+  scenarios, or its scenario sets, even none.
 * ``dataflow`` (map): each field of the Trill's ``dataflow`` but its three
   lists and the sections kept outside the doc (``outsideTheDoc``), each under
   its own name.
@@ -29,7 +30,8 @@ order of its keys, which a Yjs map does not keep either.
   ``metadata.widgets``; every other field is its own key.
 * ``edges`` (map by id, each edge whole as one value) and ``edgeOrder``.
 * ``scenarios`` (map by id, each a map with each field as its own key) and
-  ``scenarioOrder``.
+  ``scenarioOrder``; ``scenarioSets`` and ``scenarioSetOrder`` the same for the
+  scenario sets, so two tabs that change different sets both land.
 
 A list whose entries cannot each be keyed (an entry that is not an object, or a
 missing or repeated id or name) is kept whole, as one value under its Trill
@@ -75,6 +77,7 @@ WIDGETS = "@widgets"
 NODES = "@nodes"
 EDGES = "@edges"
 SCENARIOS = "@scenarios"
+SCENARIO_SETS = "@scenarioSets"
 WHOLE = "@whole"
 
 #: A node's keys for its widgets.
@@ -89,6 +92,7 @@ _NODE: dict = LAYOUT["node"]
 _METADATA: dict = LAYOUT["metadata"]
 _WIDGET: dict = LAYOUT["widget"]
 _SCENARIO: dict = LAYOUT["scenario"]
+_SCENARIO_SET: dict = LAYOUT["scenarioSet"]
 
 
 def _field_of(table: dict, target: str) -> str:
@@ -98,10 +102,11 @@ def _field_of(table: dict, target: str) -> str:
 
 
 #: The Trill fields that name an entry: a node's and an edge's id, a scenario's
-#: id, a widget's name.
+#: and a scenario set's id, a widget's name.
 _NODE_ID = _field_of(_NODE, KEY)
 _EDGE_ID = _field_of(LAYOUT["edge"], KEY)
 _SCENARIO_ID = _field_of(_SCENARIO, KEY)
+_SCENARIO_SET_ID = _field_of(_SCENARIO_SET, KEY)
 _WIDGET_NAME = _field_of(_WIDGET, KEY)
 #: The node fields that hold its code and its settings.
 _CONTENT = _field_of(_NODE, TEXT)
@@ -128,8 +133,19 @@ NODE_DOC_KEYS = frozenset(
 #: The Trill ``dataflow`` lists the doc holds entry by entry, and the field
 #: that names each entry.
 KEYED_LISTS = {
-    name: {NODES: _NODE_ID, EDGES: _EDGE_ID, SCENARIOS: _SCENARIO_ID}[place]
-    for name, place in _DATAFLOW.items() if place in (NODES, EDGES, SCENARIOS)
+    name: {NODES: _NODE_ID, EDGES: _EDGE_ID, SCENARIOS: _SCENARIO_ID, SCENARIO_SETS: _SCENARIO_SET_ID}[place]
+    for name, place in _DATAFLOW.items() if place in (NODES, EDGES, SCENARIOS, SCENARIO_SETS)
+}
+
+#: The lists whose entries are each a map with each field as its own key, in
+#: a map of their own beside an array that orders them, and the flag of
+#: ``meta`` set when the Trill lists them, even none: the scenarios and the
+#: scenario sets.
+_ENTRY_LISTS = {
+    SCENARIOS: {"map": "scenarios", "order": "scenarioOrder", "listed": "scenariosListed",
+                "table": _SCENARIO, "key": _SCENARIO_ID},
+    SCENARIO_SETS: {"map": "scenarioSets", "order": "scenarioSetOrder", "listed": "scenarioSetsListed",
+                    "table": _SCENARIO_SET, "key": _SCENARIO_SET_ID},
 }
 
 
@@ -276,18 +292,17 @@ def dataflow_to_doc(dataflow: dict, doc: Doc, *, doc_id: str) -> None:
                 for edge_id, edge in keyed:
                     edges[edge_id] = encode(edge)
                 doc.get("edgeOrder", type=Array).extend([edge_id for edge_id, _ in keyed])
-            elif place == SCENARIOS:
-                keyed = _keyed(value, _SCENARIO_ID)
+            elif place in _ENTRY_LISTS:
+                rules = _ENTRY_LISTS[place]
+                keyed = _keyed(value, rules["key"])
                 if keyed is None:
                     fields[name] = encode(value)
                     continue
-                meta["scenariosListed"] = encode(True)
-                scenarios = doc.get("scenarios", type=Map)
-                for scenario_id, scenario in keyed:
-                    scenarios[scenario_id] = Map({
-                        field: encode(item) for field, item in scenario.items() if field != _SCENARIO_ID
-                    })
-                doc.get("scenarioOrder", type=Array).extend([scenario_id for scenario_id, _ in keyed])
+                meta[rules["listed"]] = encode(True)
+                entries = doc.get(rules["map"], type=Map)
+                for entry_id, entry in keyed:
+                    entries[entry_id] = _entry_map(entry, rules["key"])
+                doc.get(rules["order"], type=Array).extend([entry_id for entry_id, _ in keyed])
             else:
                 fields[name] = encode(value)
 
@@ -409,13 +424,14 @@ def doc_to_dataflow(doc: Doc) -> dict:
                 _edge_out(edge_id, edges[edge_id])
                 for edge_id in _ordered(doc.get("edgeOrder", type=Array), edges)
             ]
-        elif place == SCENARIOS:
-            scenarios = doc.get("scenarios", type=Map)
+        elif place in _ENTRY_LISTS:
+            rules = _ENTRY_LISTS[place]
+            entries = doc.get(rules["map"], type=Map)
             listed = [
-                _scenario_out(scenario_id, scenarios[scenario_id])
-                for scenario_id in _ordered(doc.get("scenarioOrder", type=Array), scenarios)
+                _entry_out(rules, entry_id, entries[entry_id])
+                for entry_id in _ordered(doc.get(rules["order"], type=Array), entries)
             ]
-            if listed or ("scenariosListed" in _keys(meta) and decode(meta["scenariosListed"]) is True):
+            if listed or (rules["listed"] in _keys(meta) and decode(meta[rules["listed"]]) is True):
                 out[name] = listed
     for name in sorted(present - set(_DATAFLOW)):
         out[name] = decode(fields[name])
@@ -509,18 +525,21 @@ def _edge_out(edge_id: str, edge: Any) -> Any:
     return _with_key(_EDGE_ID, edge_id, edge)
 
 
-def _scenario_out(scenario_id: str, scenario: Any) -> Any:
-    if not isinstance(scenario, Map):
-        return _with_key(_SCENARIO_ID, scenario_id, scenario)
-    keys = _keys(scenario)
+def _entry_out(rules: dict, entry_id: str, entry: Any) -> Any:
+    """The Trill of one entry of a list :data:`_ENTRY_LISTS` names: a scenario
+    or a scenario set."""
+    table = rules["table"]
+    if not isinstance(entry, Map):
+        return _with_key(rules["key"], entry_id, entry)
+    keys = _keys(entry)
     out: dict[str, Any] = {}
-    for name, place in _SCENARIO.items():
+    for name, place in table.items():
         if place == KEY:
-            out[name] = scenario_id
+            out[name] = entry_id
         elif place in keys:
-            out[name] = decode(scenario[place])
-    for name in sorted(keys - set(_SCENARIO.values())):
-        out[name] = decode(scenario[name])
+            out[name] = decode(entry[place])
+    for name in sorted(keys - set(table.values())):
+        out[name] = decode(entry[name])
     return out
 
 
@@ -621,19 +640,23 @@ def apply_dataflow(doc: Doc, base: dict, target: dict) -> list[str]:
                     old, new, key=_EDGE_ID, build=encode,
                     change=lambda entries, edge_id, was, now: _set(entries, edge_id, now),
                 )
-            elif place == SCENARIOS:
+            elif place in _ENTRY_LISTS:
+                rules = _ENTRY_LISTS[place]
                 _apply_entries(
-                    fields, name, doc.get("scenarios", type=Map), doc.get("scenarioOrder", type=Array),
-                    old, new, key=_SCENARIO_ID, build=_scenario_map, change=_change_scenario,
+                    fields, name, doc.get(rules["map"], type=Map), doc.get(rules["order"], type=Array),
+                    old, new, key=rules["key"],
+                    build=lambda entry, rules=rules: _entry_map(entry, rules["key"]),
+                    change=lambda entries, entry_id, was, now, rules=rules: _change_entry(
+                        entries, entry_id, was, now, rules),
                 )
-                _set(meta, "scenariosListed", True if isinstance(new, list) else MISSING)
+                _set(meta, rules["listed"], True if isinstance(new, list) else MISSING)
             else:
                 _set(fields, name, new)
     return refused
 
 
-def _scenario_map(scenario: dict) -> Map:
-    return Map({field: encode(item) for field, item in scenario.items() if field != _SCENARIO_ID})
+def _entry_map(entry: dict, key: str) -> Map:
+    return Map({field: encode(item) for field, item in entry.items() if field != key})
 
 
 def _apply_entries(parent: Map, name: str, entries: Map, order: Array, base: Any, target: Any, *,
@@ -685,14 +708,14 @@ def _apply_entries(parent: Map, name: str, entries: Map, order: Array, base: Any
         order.extend(wanted)
 
 
-def _change_scenario(entries: Map, scenario_id: str, was: dict, now: dict) -> None:
-    scenario = entries[scenario_id]
-    if not isinstance(scenario, Map):
-        entries[scenario_id] = _scenario_map(now)
+def _change_entry(entries: Map, entry_id: str, was: dict, now: dict, rules: dict) -> None:
+    entry = entries[entry_id]
+    if not isinstance(entry, Map):
+        entries[entry_id] = _entry_map(now, rules["key"])
         return
     for name in dict.fromkeys([*was, *now]):
-        if name != _SCENARIO_ID:
-            _merge(scenario, _SCENARIO.get(name, name), _field(was, name), _field(now, name))
+        if name != rules["key"]:
+            _merge(entry, rules["table"].get(name, name), _field(was, name), _field(now, name))
 
 
 def _change_widget(entries: Map, name: str, was: dict, now: dict) -> None:

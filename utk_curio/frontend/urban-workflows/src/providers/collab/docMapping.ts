@@ -5,8 +5,9 @@
  * build the same doc from the same Trill, and the same Trill from the same doc.
  *
  * **Keys and values.** A map's keys, and the items of the order arrays
- * (`nodeOrder`, `edgeOrder`, `scenarioOrder`, a node's `widgetOrder`), are
- * plain strings: node and edge ids, scenario ids, widget names. Every other
+ * (`nodeOrder`, `edgeOrder`, `scenarioOrder`, `scenarioSetOrder`, a node's
+ * `widgetOrder`), are plain strings: node and edge ids, scenario and scenario
+ * set ids, widget names. Every other
  * value that is not a shared type is the JSON text of its value, plain strings
  * included. A node's `place`, `size` and `pin` are one value each; its
  * `content` is a `Y.Text`; its `metadata` is a map with each setting as its own
@@ -46,6 +47,7 @@ interface Layout {
     widget: Record<string, string>;
     edge: Record<string, string>;
     scenario: Record<string, string>;
+    scenarioSet: Record<string, string>;
 }
 
 /** The doc's layout, shared with the server. */
@@ -66,6 +68,7 @@ const WIDGETS = "@widgets";
 const NODES = "@nodes";
 const EDGES = "@edges";
 const SCENARIOS = "@scenarios";
+const SCENARIO_SETS = "@scenarioSets";
 
 /** A node's keys for its widgets, and a widget's keys. */
 export const WIDGETS_KEY = "widgets";
@@ -83,16 +86,38 @@ const NODE_TABLE = LAYOUT.node;
 const METADATA_TABLE = LAYOUT.metadata;
 const WIDGET_TABLE = LAYOUT.widget;
 const SCENARIO_TABLE = LAYOUT.scenario;
+const SCENARIO_SET_TABLE = LAYOUT.scenarioSet;
 
 /** The Trill fields that name an entry. */
 export const NODE_ID = fieldOf(NODE_TABLE, KEY);
 export const EDGE_ID = fieldOf(LAYOUT.edge, KEY);
 const SCENARIO_ID = fieldOf(SCENARIO_TABLE, KEY);
+const SCENARIO_SET_ID = fieldOf(SCENARIO_SET_TABLE, KEY);
 const WIDGET_NAME = fieldOf(WIDGET_TABLE, KEY);
 /** The node fields that hold its code and its settings. */
 export const CONTENT = fieldOf(NODE_TABLE, TEXT);
 const NODE_METADATA = fieldOf(NODE_TABLE, METADATA);
 const WIDGET_VALUE = fieldOf(WIDGET_TABLE, VALUE_KEY);
+
+/** A list whose entries are each a map with each field as its own key, in a
+ *  map of its own beside an array that orders it, and the flag of `meta` set
+ *  when the Trill lists it, even empty. */
+interface EntryList {
+    map: string;
+    order: string;
+    listed: string;
+    table: Record<string, string>;
+    key: string;
+}
+
+/** The scenarios and the scenario sets, by their place in the layout. */
+const ENTRY_LISTS: Record<string, EntryList> = {
+    [SCENARIOS]: { map: "scenarios", order: "scenarioOrder", listed: "scenariosListed", table: SCENARIO_TABLE, key: SCENARIO_ID },
+    [SCENARIO_SETS]: {
+        map: "scenarioSets", order: "scenarioSetOrder", listed: "scenarioSetsListed",
+        table: SCENARIO_SET_TABLE, key: SCENARIO_SET_ID,
+    },
+};
 
 /** A node's grouped values: group -> {member: Trill field}. */
 const GROUPS: Record<string, Record<string, string>> = {};
@@ -232,16 +257,17 @@ export function dataflowToDoc(dataflow: Fields, doc: Y.Doc, docId: string): void
                 const edges = doc.getMap("edges");
                 for (const [id, edge] of entries) edges.set(id, encode(edge));
                 doc.getArray<string>("edgeOrder").push(entries.map(([id]) => id));
-            } else if (place === SCENARIOS) {
-                const entries = keyed(value, SCENARIO_ID);
+            } else if (ENTRY_LISTS[place]) {
+                const list = ENTRY_LISTS[place];
+                const entries = keyed(value, list.key);
                 if (entries === null) {
                     fields.set(name, encode(value));
                     continue;
                 }
-                meta.set("scenariosListed", encode(true));
-                const scenarios = doc.getMap("scenarios");
-                for (const [id, scenario] of entries) scenarios.set(id, scenarioMap(scenario));
-                doc.getArray<string>("scenarioOrder").push(entries.map(([id]) => id));
+                meta.set(list.listed, encode(true));
+                const held = doc.getMap(list.map);
+                for (const [id, entry] of entries) held.set(id, entryMap(entry, list.key));
+                doc.getArray<string>(list.order).push(entries.map(([id]) => id));
             } else {
                 fields.set(name, encode(value));
             }
@@ -323,10 +349,11 @@ function widgetMap(widget: Fields): Y.Map<unknown> {
     return new Y.Map<unknown>(entries);
 }
 
-function scenarioMap(scenario: Fields): Y.Map<unknown> {
+/** A scenario's or a scenario set's map, each field but its *key* its own key. */
+function entryMap(entry: Fields, key: string): Y.Map<unknown> {
     return new Y.Map<unknown>(
-        Object.entries(scenario)
-            .filter(([name, value]) => name !== SCENARIO_ID && value !== undefined)
+        Object.entries(entry)
+            .filter(([name, value]) => name !== key && value !== undefined)
             .map(([name, value]) => [name, encode(value)] as [string, unknown]),
     );
 }
@@ -386,9 +413,11 @@ export function docToDataflow(doc: Y.Doc): Fields {
         } else if (place === EDGES) {
             const edges = doc.getMap("edges");
             out[name] = edgeIds(doc).map((id) => edgeOut(id, edges.get(id)));
-        } else if (place === SCENARIOS) {
-            const listed = scenarioIds(doc).map((id) => scenarioOut(id, doc.getMap("scenarios").get(id)));
-            if (listed.length > 0 || (meta.has("scenariosListed") && decode(meta.get("scenariosListed")) === true)) {
+        } else if (ENTRY_LISTS[place]) {
+            const list = ENTRY_LISTS[place];
+            const held = doc.getMap(list.map);
+            const listed = ordered(doc.getArray(list.order), held).map((id) => entryOut(list, id, held.get(id)));
+            if (listed.length > 0 || (meta.has(list.listed) && decode(meta.get(list.listed)) === true)) {
                 out[name] = listed;
             }
         }
@@ -496,16 +525,22 @@ export function edgeOut(id: string, edge: unknown): Json {
 
 /** The Trill of one scenario of the doc. */
 export function scenarioOut(id: string, scenario: unknown): Json {
-    if (!(scenario instanceof Y.Map)) return withKey(SCENARIO_ID, id, scenario);
-    const keys = keysOf(scenario);
+    return entryOut(ENTRY_LISTS[SCENARIOS], id, scenario);
+}
+
+/** The Trill of one entry of a list `ENTRY_LISTS` names: a scenario or a
+ *  scenario set. */
+function entryOut(list: EntryList, id: string, entry: unknown): Json {
+    if (!(entry instanceof Y.Map)) return withKey(list.key, id, entry);
+    const keys = keysOf(entry);
     const out: Fields = {};
-    for (const [name, place] of Object.entries(SCENARIO_TABLE)) {
+    for (const [name, place] of Object.entries(list.table)) {
         if (place === KEY) out[name] = id;
-        else if (keys.has(place)) out[name] = decode(scenario.get(place));
+        else if (keys.has(place)) out[name] = decode(entry.get(place));
     }
-    const named = new Set(Object.values(SCENARIO_TABLE));
+    const named = new Set(Object.values(list.table));
     for (const name of Array.from(keys).filter((k) => !named.has(k)).sort()) {
-        out[name] = decode(scenario.get(name));
+        out[name] = decode(entry.get(name));
     }
     return out;
 }
@@ -577,13 +612,14 @@ export function applyDataflow(doc: Y.Doc, base: Fields, target: Fields): string[
                     build: (edge) => encode(edge),
                     change: (entries, id, _was, entry) => setValue(entries, id, entry),
                 });
-            } else if (place === SCENARIOS) {
-                applyEntries(fields, name, doc.getMap("scenarios"), doc.getArray<string>("scenarioOrder"), old, now, {
-                    key: SCENARIO_ID,
-                    build: (scenario) => scenarioMap(scenario),
-                    change: changeScenario,
+            } else if (ENTRY_LISTS[place]) {
+                const list = ENTRY_LISTS[place];
+                applyEntries(fields, name, doc.getMap(list.map), doc.getArray<string>(list.order), old, now, {
+                    key: list.key,
+                    build: (entry) => entryMap(entry, list.key),
+                    change: (entries, id, was, entry) => changeEntry(entries, id, was, entry, list),
                 });
-                setValue(meta, "scenariosListed", Array.isArray(now) ? true : MISSING);
+                setValue(meta, list.listed, Array.isArray(now) ? true : MISSING);
             } else {
                 setValue(fields, name, now);
             }
@@ -659,14 +695,14 @@ function applyEntries(
     }
 }
 
-function changeScenario(entries: Y.Map<unknown>, id: string, was: Fields, now: Fields): void {
-    const scenario = entries.get(id);
-    if (!(scenario instanceof Y.Map)) {
-        entries.set(id, scenarioMap(now));
+function changeEntry(entries: Y.Map<unknown>, id: string, was: Fields, now: Fields, list: EntryList): void {
+    const entry = entries.get(id);
+    if (!(entry instanceof Y.Map)) {
+        entries.set(id, entryMap(now, list.key));
         return;
     }
     for (const name of new Set([...Object.keys(was), ...Object.keys(now)])) {
-        if (name !== SCENARIO_ID) merge(scenario, SCENARIO_TABLE[name] ?? name, field(was, name), field(now, name));
+        if (name !== list.key) merge(entry, list.table[name] ?? name, field(was, name), field(now, name));
     }
 }
 

@@ -10,9 +10,11 @@
     "edges": "map",
     "edgeOrder": "array",
     "scenarios": "map",
-    "scenarioOrder": "array"
+    "scenarioOrder": "array",
+    "scenarioSets": "map",
+    "scenarioSetOrder": "array"
   },
-  "meta": ["id", "layout", "scenariosListed"],
+  "meta": ["id", "layout", "scenariosListed", "scenarioSetsListed"],
   "outsideTheDoc": ["agents", "agentAttachments", "agentDefaults"],
   "dataflow": {
     "nodes": "@nodes",
@@ -27,7 +29,7 @@
     "autoRun": "autoRun",
     "datasets": "datasets",
     "scenarios": "@scenarios",
-    "scenarioSets": "scenarioSets"
+    "scenarioSets": "@scenarioSets"
   },
   "node": {
     "id": "@key",
@@ -96,5 +98,11 @@
     "collapsed": "collapsed",
     "box": "box",
     "source": "source"
+  },
+  "scenarioSet": {
+    "id": "@key",
+    "name": "name",
+    "description": "description",
+    "shared": "shared"
   }
 }

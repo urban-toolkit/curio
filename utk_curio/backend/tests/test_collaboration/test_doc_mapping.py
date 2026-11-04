@@ -282,12 +282,12 @@ def test_each_place_in_the_layout_reads():
     from utk_curio.backend.app.collaboration import doc_mapping
 
     layout = doc_mapping.LAYOUT
-    structures = {"@key", "@text", "@metadata", "@widgets", "@nodes", "@edges", "@scenarios", "@whole"}
-    for level in ("dataflow", "node", "metadata", "widget", "edge", "scenario"):
+    structures = {"@key", "@text", "@metadata", "@widgets", "@nodes", "@edges", "@scenarios", "@scenarioSets", "@whole"}
+    for level in ("dataflow", "node", "metadata", "widget", "edge", "scenario", "scenarioSet"):
         for field, place in layout[level].items():
             assert place in structures or re.fullmatch(r"\w+(\.\w+)?", place), (level, field, place)
     assert set(layout["roots"]) == {"meta", "dataflow", "nodes", "nodeOrder", "edges", "edgeOrder",
-                                    "scenarios", "scenarioOrder"}
+                                    "scenarios", "scenarioOrder", "scenarioSets", "scenarioSetOrder"}
 
 
 # ---------------------------------------------------------------------------

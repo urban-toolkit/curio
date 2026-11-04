@@ -4,7 +4,7 @@ import { v4 as uuid } from "uuid";
 
 import { useFlowContext } from "../../../providers/FlowProvider";
 import { useToastContext } from "../../../providers/ToastProvider";
-import type { Scenario, ScenarioSet } from "../../../utils/scenarios/scenarioModel";
+import type { Scenario } from "../../../utils/scenarios/scenarioModel";
 import {
   nextScenarioColor,
   nextScenarioName,
@@ -12,7 +12,7 @@ import {
   setNameProblem,
   uniqueSetName,
 } from "../../../utils/scenarios/scenarioEdits";
-import { inferContextOutcomes } from "../../../utils/scenarios/scenarioSets";
+import { inferContextOutcomes, newSetId } from "../../../utils/scenarios/scenarioSets";
 import { nodeLabel } from "../scenarioLabels";
 import { useScenarioUi, type ScenarioDefine } from "../scenarioUi";
 import styles from "./ScenarioDefinePanel.module.css";
@@ -23,14 +23,6 @@ type SetChoice = { kind: "new"; name: string } | { kind: "existing"; setId: stri
 type Shared = "context" | "outcomes";
 /** A list the panel edits: the scenario's own nodes, or a shared one. */
 type Part = "nodes" | Shared;
-
-/** A set id no set of *sets* has. */
-function freshSetId(sets: readonly ScenarioSet[]): string {
-  const taken = new Set(sets.map((s) => s.id));
-  let id = `set-${uuid()}`;
-  while (taken.has(id)) id = `set-${uuid()}`;
-  return id;
-}
 
 /** The ids of the nodes selected on the canvas, as React Flow holds them. */
 const selectedOf = (s: ReactFlowState) =>
@@ -183,13 +175,15 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
     }
     let sets = scenarioSets;
     let target: string;
+    // The scenario's id: a new set's comes from it.
+    const scenarioId = editing ? editing.id : uuid();
     if (choice.kind === "new") {
       const setName = choice.name.trim();
       if (setProblem) {
         showToast(setProblem, "warning");
         return;
       }
-      target = freshSetId(scenarioSets);
+      target = newSetId(scenarioId, scenarioSets.map((s) => s.id));
       sets = [...scenarioSets, { id: target, name: setName }];
     } else {
       if (setProblem) {
@@ -214,7 +208,7 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
       return;
     }
     const scenario: Scenario = {
-      id: uuid(),
+      id: scenarioId,
       name: scenarioName,
       color,
       nodes: [...members],

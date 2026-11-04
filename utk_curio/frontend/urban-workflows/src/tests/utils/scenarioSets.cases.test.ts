@@ -26,6 +26,15 @@ describe("the shared scenario sets cases", () => {
     expect({ scenarioSets: got.sets, scenarios: got.scenarios }).toEqual(c.expected);
   });
 
+  // Every writer runs it on every write: what it kept, run again, is kept as it is.
+  test.each((cases.cases as Case[]).map((c) => [c.name, c]))("%s, kept again, is as it was", (_name, c) => {
+    const once = c.expected as { scenarioSets: unknown; scenarios: unknown[] };
+    const again = normalizeScenarioSets(
+      normalizeScenarios(once.scenarios, c.nodes), once.scenarioSets, c.nodes, c.edges, c.dataflowName,
+    );
+    expect({ scenarioSets: again.sets, scenarios: again.scenarios }).toEqual(c.expected);
+  });
+
   test("membership lists each node's scenarios in the set's order", () => {
     const kept = (cases.cases[0] as unknown as Case).expected.scenarios as ReturnType<typeof normalizeScenarios>;
     const member = setMembership(kept, kept[0].set!);

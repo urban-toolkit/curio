@@ -212,11 +212,13 @@ def normalize_scenarios(raw: object, node_ids: Iterable[str]) -> list[dict]:
     return out
 
 
-def normalize_spec_scenarios(spec: object) -> None:
+def normalize_spec_scenarios(spec: object, *, keep_empty: bool = False) -> None:
     """Clean ``dataflow.scenarios`` and ``dataflow.scenarioSets`` in place,
     against the spec's own nodes and edges: every scenario gets a set, a
     context and outcomes (``scenario_sets.normalize_scenario_sets``). An
-    empty list is dropped, so a dataflow without scenarios has neither key."""
+    empty list is dropped, so a dataflow without scenarios has neither key;
+    with *keep_empty*, as a dataflow's doc holds it, a listed one stays
+    listed, and the sets it lists, if any, are none."""
     dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
     if not isinstance(dataflow, dict):
         return
@@ -224,6 +226,11 @@ def normalize_spec_scenarios(spec: object) -> None:
         dataflow.pop("scenarioSets", None)
         return
     kept = normalize_scenarios(dataflow["scenarios"], _node_ids(spec))
+    if not kept and keep_empty:
+        dataflow["scenarios"] = []
+        if "scenarioSets" in dataflow:
+            dataflow["scenarioSets"] = []
+        return
     if not kept:
         del dataflow["scenarios"]
         dataflow.pop("scenarioSets", None)

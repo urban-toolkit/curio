@@ -33,6 +33,45 @@ def test_the_backend_keeps_the_sets_the_canvas_keeps():
     assert not mismatches, "\n".join(mismatches)
 
 
+def test_what_the_backend_kept_it_keeps_again_as_it_is():
+    """Every writer of a dataflow runs it on every write (``dataflow_docs._write``):
+    the sets and scenarios it kept, run again, are kept as they are."""
+    cases = json.loads(CASES.read_text(encoding="utf-8"))["cases"]
+    mismatches = []
+    for c in cases:
+        once = c["expected"]
+        kept = scenarios.normalize_scenarios(once["scenarios"], c["nodes"])
+        got, sets = scenario_sets.normalize_scenario_sets(
+            kept, once["scenarioSets"], c["nodes"], c["edges"], c.get("dataflowName"),
+        )
+        if {"scenarioSets": sets, "scenarios": got} != once:
+            mismatches.append(f"{c['name']}: kept {sets!r} {got!r} again, from {once!r}")
+    assert not mismatches, "\n".join(mismatches)
+
+
+def test_every_shipped_dataflow_holds_its_scenarios_as_a_doc_keeps_them():
+    """A dataflow's doc is built with its scenarios in sets (``dataflow_docs._load``):
+    each shipped dataflow already holds them so, and opening one writes nothing."""
+    import copy
+
+    examples = REPO_ROOT / "docs" / "examples"
+    moved, read = [], 0
+    for path in sorted(examples.rglob("*.json")):
+        if any(part in path.parts for part in ("prompts", "expected_outputs", "vega-lite-charts")):
+            continue
+        spec = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(spec, dict) or not isinstance(spec.get("dataflow"), dict) or "scenarios" not in spec["dataflow"]:
+            continue
+        read += 1
+        kept = copy.deepcopy(spec)
+        scenarios.normalize_spec_scenarios(kept, keep_empty=True)
+        for key in ("scenarios", "scenarioSets"):
+            if kept["dataflow"].get(key) != spec["dataflow"].get(key):
+                moved.append(f"{path.relative_to(REPO_ROOT)}: {key}")
+    assert read >= 5, read
+    assert not moved, "\n".join(moved)
+
+
 def test_membership_lists_each_node_s_scenarios_in_the_set_s_order():
     case = json.loads(CASES.read_text(encoding="utf-8"))["cases"][0]
     kept = case["expected"]["scenarios"]

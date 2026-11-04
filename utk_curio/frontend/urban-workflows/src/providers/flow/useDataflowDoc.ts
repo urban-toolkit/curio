@@ -53,7 +53,8 @@ import * as Y from "yjs";
 import { TrillGenerator } from "../../TrillGenerator";
 import { buildCodeNode, canvasEdgeFromTrill, nodeMetaFromTrill, type CodeNodeRuntime } from "../../hook/codeNodes";
 import { pythonInterpreter, jsInterpreter } from "../../hook/useCode";
-import { normalizeScenarios, type Scenario } from "../../utils/scenarios/scenarioModel";
+import { normalizeScenarios, type Scenario, type ScenarioSet } from "../../utils/scenarios/scenarioModel";
+import { normalizeScenarioSets } from "../../utils/scenarios/scenarioSets";
 import type { HandCategories } from "../../utils/dataflowCategories";
 import { CANVAS_ORIGIN, type DocBinding } from "../collab/docContext";
 import type { DataflowDocProvider } from "../collab/docProvider";
@@ -98,6 +99,8 @@ export const NODE_FIELD_DATA: Record<string, readonly string[]> = {
     width: ["nodeWidth"],
     height: ["nodeHeight"],
     minimized: ["minimized"],
+    minimizedWidth: ["minimizedWidth"],
+    minimizedHeight: ["minimizedHeight"],
     dashboardPinned: ["dashboardPinned"],
     dashboardX: ["dashboardX"],
     dashboardY: ["dashboardY"],
@@ -122,7 +125,6 @@ export const METADATA_FIELD_DATA: Record<string, readonly string[]> = {
     appearance: ["appearance"],
     spatialJoin: ["spatialJoin"],
     simpleVis: ["simpleVis"],
-    packageTemplateLabel: ["packageTemplateLabel"],
     packageTemplateConfig: ["packageTemplateConfig"],
     dataPool: ["dataPool"],
     widgets: ["widgets"],
@@ -286,9 +288,11 @@ export interface DataflowDocDeps {
     workflowDescriptionRef: React.MutableRefObject<string>;
     workflowCategoriesRef: React.MutableRefObject<HandCategories>;
     scenariosRef: React.MutableRefObject<Scenario[]>;
+    scenarioSetsRef: React.MutableRefObject<ScenarioSet[]>;
     autoRunRef: React.MutableRefObject<boolean>;
     /** Each changes on what the writer reads, so a commit that changes one writes it. */
     scenarios: unknown;
+    scenarioSets: unknown;
     workflowName: string;
     workflowGoal: string;
     workflowDescription: string;
@@ -391,7 +395,15 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
         if (current.workflowDescriptionRef.current) dataflow.description = current.workflowDescriptionRef.current;
         dataflow.categories = current.workflowCategoriesRef.current;
         dataflow.autoRun = current.autoRunRef.current;
-        dataflow.scenarios = normalizeScenarios(current.scenariosRef.current, trillNodes.map((n) => n.id));
+        // Each scenario in its set, with its context and outcomes, as the
+        // server keeps them (`projects/scenario_sets.py`).
+        const nodeIds = trillNodes.map((n) => n.id as string);
+        const filled = normalizeScenarioSets(
+            normalizeScenarios(current.scenariosRef.current, nodeIds), current.scenarioSetsRef.current,
+            nodeIds, dataflow.edges, dataflow.name,
+        );
+        dataflow.scenarios = filled.scenarios;
+        dataflow.scenarioSets = filled.sets;
         return dataflow;
     }, []);
 
@@ -638,6 +650,8 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
         const fieldsMap = doc.getMap("dataflow");
         const scenariosMap = doc.getMap("scenarios");
         const scenarioOrder = doc.getArray("scenarioOrder");
+        const scenarioSetsMap = doc.getMap("scenarioSets");
+        const scenarioSetOrder = doc.getArray("scenarioSetOrder");
         const touched = { nodes: new Set<string>(), edges: new Set<string>(), fields: new Set<string>() };
         let whole = false;
 
@@ -658,6 +672,9 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
         };
         const onScenarios = () => {
             touched.fields.add("scenarios");
+        };
+        const onScenarioSets = () => {
+            touched.fields.add("scenarioSets");
         };
 
         const onTransaction = (transaction: Y.Transaction) => {
@@ -690,10 +707,10 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
                     else next.edges.set(id, edgeOut(id, edge) as Fields);
                 }
                 for (const name of changed.fields) {
-                    if (name === "scenarios") {
-                        const list = docToDataflow(doc).scenarios;
-                        if (list === undefined) delete next.fields.scenarios;
-                        else next.fields.scenarios = list;
+                    if (name === "scenarios" || name === "scenarioSets") {
+                        const list = docToDataflow(doc)[name];
+                        if (list === undefined) delete next.fields[name];
+                        else next.fields[name] = list;
                     } else if (fieldsMap.has(name)) {
                         next.fields[name] = decode(fieldsMap.get(name));
                     } else {
@@ -739,6 +756,8 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
         fieldsMap.observe(onFields);
         scenariosMap.observeDeep(onScenarios);
         scenarioOrder.observe(onScenarios);
+        scenarioSetsMap.observeDeep(onScenarioSets);
+        scenarioSetOrder.observe(onScenarioSets);
         doc.on("afterTransaction", onTransaction);
         awareness.on("change", onPresence);
         return () => {
@@ -747,6 +766,8 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
             fieldsMap.unobserve(onFields);
             scenariosMap.unobserveDeep(onScenarios);
             scenarioOrder.unobserve(onScenarios);
+            scenarioSetsMap.unobserveDeep(onScenarioSets);
+            scenarioSetOrder.unobserve(onScenarioSets);
             doc.off("afterTransaction", onTransaction);
             awareness.off("change", onPresence);
         };
@@ -832,7 +853,7 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
             bind(provider, epoch, loaded.dataflow);
         }
         write();
-    }, [nodes, edges, deps.scenarios, deps.workflowName, deps.workflowGoal, deps.workflowDescription,
+    }, [nodes, edges, deps.scenarios, deps.scenarioSets, deps.workflowName, deps.workflowGoal, deps.workflowDescription,
         deps.workflowCategories, deps.autoRun, deps.canWrite, deps.bindable, binding, provider, bind, unbind, write,
         canvasTrill, loadedDataflowRef]);
 
