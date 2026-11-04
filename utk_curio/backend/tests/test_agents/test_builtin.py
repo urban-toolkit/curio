@@ -1200,7 +1200,10 @@ class TestResearcher:
         # and that a node's code is written into it (step 13).
         # 2026-11-03: a scenario on the canvas is duplicated with Duplicate
         # scenario on its In project card (PR #1252).
-        "971fa37d5414a53840197d16a3b88b7379bd43217e21bfec9042a22017efc182"
+        # 2026-11-04: a selection is a scenario's scenario-specific nodes, the
+        # loaders the scenarios read their shared context, and the comparison
+        # step their shared outcome (PR #1252, step 7).
+        "1a67956dc8584f53ac90fbad2af386f46c81b805cbdafd0122f56d2b231126c8"
     )
 
     def test_manifest_surface(self):
