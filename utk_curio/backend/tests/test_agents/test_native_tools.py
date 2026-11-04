@@ -791,3 +791,204 @@ class TestARefusedCallsRecord:
         assert len(arguments) <= 4000 and arguments.endswith("…")
         (result,) = [data for kind, data in events if kind == "tool_result"]
         assert set(result) == {"tool", "status", "reason"}
+
+
+def _written_as_offered(value, schema):
+    """What a model that writes the schema it was offered writes for a value
+    meant as *value*: each value the schema gives as JSON text
+    (``contentMediaType`` application/json) as that text, every other value as
+    it is. A text is the text the model wrote, as it is."""
+    if not isinstance(schema, dict):
+        return value
+    if schema.get("contentMediaType") == tools.JSON_TEXT:
+        return value if isinstance(value, str) else json.dumps(value)
+    if isinstance(value, dict):
+        properties = schema.get("properties") or {}
+        others = schema.get("additionalProperties")
+        return {key: _written_as_offered(item, properties.get(key, others)) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_written_as_offered(item, schema.get("items")) for item in value]
+    return value
+
+
+def _as_gemma4_writes(name: str, arguments: dict, schema: dict) -> dict:
+    """A native call of the tool offered as *name* with the params schema
+    *schema*, meant as *arguments*: written as that schema asks, then handed
+    over as a vLLM server hands over the call Gemma 4 makes
+    (``_support/gemma4_vllm``)."""
+    return _call(name, gemma4_vllm.delivered(_written_as_offered(arguments, schema), schema))
+
+
+def _delegate_schema(capability: str) -> dict:
+    """The params schema of the delegation tool, as a run that may delegate
+    *capability* is offered it."""
+    (spec,) = tools.native_tools([], [capability])
+    return spec["parameters"]
+
+
+def _delegated_inputs() -> list[dict]:
+    """The inputs each delegated run of the test was handed, in call order: the
+    JSON object after its task's frame (``delegation._frame_inputs``)."""
+    handed = []
+    for messages in testing_provider.captured():
+        last = messages[-1] if messages else {}
+        text = str(last.get("content") or "") if isinstance(last, dict) else ""
+        if text.startswith("[delegated task from "):
+            handed.append(json.JSONDecoder().raw_decode(text[text.index("{"):])[0])
+    return handed
+
+
+def _proposals(body: dict) -> list[dict]:
+    """The run's proposal parts, each without the id it was minted with."""
+    return [{key: value for key, value in part.items() if key != "proposalId"}
+            for part in body["content"] if part["type"] == "proposal"]
+
+
+def _open_objects(schema, where: str) -> list[str]:
+    """The paths of the objects in *schema* that list no properties and whose
+    values no schema types: no ``additionalProperties`` that ends in JSON text."""
+    if not isinstance(schema, dict):
+        return []
+    found = []
+    if schema.get("type") == "object" and not schema.get("properties"):
+        leaf = schema
+        while isinstance(leaf, dict) and leaf.get("type") == "object" and not leaf.get("properties"):
+            leaf = leaf.get("additionalProperties")
+        if not (isinstance(leaf, dict) and leaf.get("contentMediaType") == tools.JSON_TEXT):
+            found.append(where)
+    for key, value in (schema.get("properties") or {}).items():
+        found += _open_objects(value, f"{where}.{key}")
+    if isinstance(schema.get("items"), dict):
+        found += _open_objects(schema["items"], f"{where}[]")
+    return found
+
+
+class TestOpenObjectsInANativeCall:
+    """vLLM's parser for Gemma 4 keeps a bare number or true/false as its text
+    and types a value only where the offered schema names its type
+    (``_support/gemma4_vllm``). After #1282 two objects of the native tools
+    still named none: a package draft's ``manifest`` and a delegation's
+    ``inputs``, so every number and true/false in them reached Curio as text.
+    A native draft's ``compatibility.major`` of 1 came as "1", which the build
+    refuses, and a delegate was handed "2" and "true" where the fenced block's
+    delegate is handed 2 and true.
+
+    Both are now JSON text, read back as a fenced block is read
+    (``tools.native_arguments``). Each call below is written as the schema it
+    was offered asks, handed over as vLLM hands over Gemma 4's, and lands as
+    its fenced block does. An object left open holds texts alone, which the
+    parser keeps as written."""
+
+    @pytest.fixture(autouse=True)
+    def _fresh_build_jobs(self):
+        from utk_curio.backend.app.packages.builder import jobs as build_jobs
+
+        build_jobs.reset_registry()
+        yield
+        build_jobs.reset_registry()
+
+    def test_a_package_draft_lands_as_its_block_does(self, client, headers, project):
+        # The proposal tests' draft: its manifest's compatibility.major is 1,
+        # and its template's hasCode, hasWidgets and hasGrammar are true/false.
+        params = routes_proposals.TestPackageBuilderTools()._draft_params()
+        # Fenced, in a dataflow of its own.
+        testing_provider.script_chat_capabilities(tools=False)
+        fenced_project = _new_dataflow(client, headers)
+        testing_provider.push_replies(_block("package.draft.apply", params), "Proposed it.")
+        fenced = _proposals(_run(client, headers, fenced_project, _attach(client, headers, fenced_project, NB)))
+        assert [p["tool"] for p in fenced] == ["package.draft.apply"]
+        # Native, written as the offered schema asks and handed over as vLLM hands over Gemma 4's call.
+        testing_provider.script_chat_capabilities(tools=True)
+        testing_provider.push_replies(
+            {"toolCalls": [_as_gemma4_writes("package.draft.apply", params, _offered_schema("package.draft.apply"))]},
+            "Proposed it.",
+        )
+        native = _proposals(_run(client, headers, project, _attach(client, headers, project, NB)))
+        assert native == fenced, _native_results()
+
+    def test_a_delegations_inputs_reach_the_delegate_as_its_blocks_do(self, client, headers, project):
+        # Numbers, true/false, a list and an object of them, beside a text that
+        # reads as a number, which stays a text.
+        inputs = {"intent": "suggest a next step", "steps": 2, "chartsOnly": True, "zip": "60601",
+                  "bounds": [-87.94, 41.64], "style": {"rank": 1.5, "pinned": False}}
+        request = {"capability": "workflow.suggest", "inputs": inputs}
+        testing_provider.route_by_intent({"suggest a next step": "Add a chart."})
+        testing_provider.script_chat_capabilities(tools=False)
+        fenced_project = _new_dataflow(client, headers)
+        testing_provider.push_replies(
+            "```curio.v1\n" + json.dumps({"delegateRequest": request}) + "\n```", "Try a chart next.",
+        )
+        _run(client, headers, fenced_project, _attach(client, headers, fenced_project, DF))
+        testing_provider.script_chat_capabilities(tools=True)
+        testing_provider.push_replies(
+            {"toolCalls": [_as_gemma4_writes("delegate", request, _delegate_schema("workflow.suggest"))]},
+            "Try a chart next.",
+        )
+        _run(client, headers, project, _attach(client, headers, project, DF))
+        fenced, native = _delegated_inputs()
+        assert native == fenced, _native_results()
+        assert {key: native.get(key) for key in inputs} == inputs
+
+    def test_a_text_that_is_no_json_is_still_a_text_and_refused_as_one(self, client, headers, project):
+        """A text given as it is where JSON is asked, with no JSON in it, is
+        still that text: the reader refuses it as it refuses a fenced block's
+        inputs or manifest that is a text, and the model can fix the call."""
+        schema = _delegate_schema("workflow.suggest")
+        testing_provider.route_by_intent({"suggest a next step": "Add a chart."})
+        testing_provider.push_replies(
+            {"toolCalls": [_as_gemma4_writes(
+                "delegate", {"capability": "workflow.suggest", "inputs": "suggest a next step"}, schema)]},
+            {"toolCalls": [_as_gemma4_writes(
+                "delegate", {"capability": "workflow.suggest", "inputs": {"intent": "suggest a next step"}}, schema)]},
+            "Try a chart next.",
+        )
+        body = _run(client, headers, project, _attach(client, headers, project, DF))
+        refused = _run_calls()[1][-1]["content"]
+        assert refused.startswith("invalid call, not run.") and (
+            agent_text.message("request.delegate-inputs-not-object") in refused), refused
+        assert [(p["capability"], p["status"]) for p in body["content"] if p["type"] == "delegation"] == [
+            ("workflow.suggest", "ok")]
+
+        draft_project = _new_dataflow(client, headers)
+        params = {**routes_proposals.TestPackageBuilderTools()._draft_params(), "manifest": "a notes package"}
+        testing_provider.push_replies(
+            {"toolCalls": [_as_gemma4_writes("package.draft.apply", params, _offered_schema("package.draft.apply"))]},
+            "I could not.",
+        )
+        _run(client, headers, draft_project, _attach(client, headers, draft_project, NB))
+        assert _native_results()[0] == "refused: " + agent_text.message(
+            "mint.draft-request-invalid", exc="manifest is required and must be an object")
+
+    def test_every_object_a_native_call_leaves_open_holds_texts_alone(self):
+        """vLLM's parser for Gemma 4 types no value of an object whose schema
+        lists no properties. So each object a native tool leaves open holds
+        texts alone, which the parser keeps as written, and its reader refuses
+        any other value: a draft's files and dependencies, a duplicate's
+        copies. An object whose values can be anything is JSON text."""
+        specs = tools.native_tools(list(tools.REGISTRY), ["workflow.suggest"])
+        found = sorted(path for spec in specs for key, value in spec["parameters"]["properties"].items()
+                       for path in _open_objects(value, f"{spec['name']}.{key}"))
+        assert found == [
+            "dataflow__plan__write.scenarios[].copies",
+            "package__draft__apply.dependencies",
+            "package__draft__apply.files",
+        ]
+        manifest = _offered_schema("package.draft.apply")["properties"]["manifest"]
+        inputs = _delegate_schema("workflow.suggest")["properties"]["inputs"]
+        assert (manifest["type"], manifest.get("contentMediaType")) == ("string", "application/json")
+        assert (inputs["type"], inputs.get("contentMediaType")) == ("string", "application/json")
+        # Their readers take texts alone.
+        from utk_curio.backend.app.packages.builder import models as build_models
+
+        request = routes_proposals.TestPackageBuilderTools()._draft_params()
+        request.pop("justification")
+        for changed, refusal in (
+            ({"files": {"starters/note-kind/Default.py": {"text": 1}}}, "text must be a string"),
+            ({"dependencies": {"python": {"pandas": 2}}}, "constraint must be a non-empty bounded string"),
+        ):
+            with pytest.raises(build_models.BuildRequestError, match=refusal):
+                build_models.parse_build_request({**request, **changed})
+        plan = scenario_routes._plan()
+        plan["scenarios"][1]["copies"] = {"shadows": 7}
+        assert content.parse_dataflow_plan_verbose(plan)[1] == [
+            agent_text.message("plan.field-not-string", where="scenarios[1].copies.shadows")]
