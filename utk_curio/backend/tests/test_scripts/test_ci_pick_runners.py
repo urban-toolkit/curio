@@ -4,7 +4,7 @@
 again as build-image's last step for the jobs that wait on the image. It
 writes the ``runs-on`` of the CPU jobs (GitHub-hosted first, then arcade, then
 the utk-desktop runners) and the GPU job (the arcade GPU pool first, then utk,
-then utk-desktop-01, never utk-desktop-02). A wrong answer sends jobs to a pool
+then utk-desktop-02, never utk-desktop-01). A wrong answer sends jobs to a pool
 that is full or down, and a crash would stop the whole run, so these feed it
 job lists shaped like the GitHub jobs API's.
 """
@@ -46,24 +46,26 @@ def _hosted(status="in_progress", age_s=0):
 
 
 def _arcade(status="in_progress", age_s=0):
-    return _job(status, ["self-hosted", "cpu"], "arcade-cpu-03" if status == "in_progress" else None, age_s)
+    return _job(status, ["self-hosted", "arcade", "cpu"], "arcade-cpu-03" if status == "in_progress" else None, age_s)
 
 
 def _arcade_gpu(status="in_progress", age_s=0):
-    return _job(status, ["self-hosted", "gpu", "h100"], "arcade-gpu-02" if status == "in_progress" else None, age_s)
+    return _job(status, ["self-hosted", "gpu", "nvidia-h100"], "arcade-gpu-02" if status == "in_progress" else None,
+                age_s)
 
 
 def _utk(status="in_progress", age_s=0):
-    return _job(status, ["self-hosted", "gpu", "curio"], "utk-gpu" if status == "in_progress" else None, age_s)
+    return _job(status, ["self-hosted", "gpu", "nvidia-rtx-pro-6000"], "utk-gpu" if status == "in_progress" else None,
+                age_s)
 
 
-def _desktop(status="in_progress", age_s=0, runner="utk-desktop-02"):
-    return _job(status, ["self-hosted", "desktop"], runner if status == "in_progress" else None, age_s)
+def _desktop(status="in_progress", age_s=0, runner="utk-desktop-01"):
+    return _job(status, ["self-hosted", "utk-desktop"], runner if status == "in_progress" else None, age_s)
 
 
 def _desktop_gpu(status="in_progress", age_s=0):
-    return _job(status, ["self-hosted", "gpu", "desktop", "rtx3070"],
-                "utk-desktop-01" if status == "in_progress" else None, age_s)
+    return _job(status, ["self-hosted", "gpu", "nvidia-rtx-4070"],
+                "utk-desktop-02" if status == "in_progress" else None, age_s)
 
 
 def _full_hosted_and_arcade():
@@ -102,9 +104,9 @@ def test_forced_pools_take_every_job():
 
 def test_jobs_are_counted_against_the_pool_they_hold():
     jobs = [_arcade(), _arcade("queued"), _arcade_gpu(),
-            _job("in_progress", ["self-hosted", "linux", "gpu", "curio"], "utk-gpu"),
+            _job("in_progress", ["self-hosted", "utk", "gpu"], "utk-gpu"),
             _hosted(), _hosted("queued", age_s=5),
-            _job("completed", ["self-hosted", "cpu"], "arcade-cpu-01")]
+            _job("completed", ["self-hosted", "arcade", "cpu"], "arcade-cpu-01")]
     counts = picker.busy(jobs, NOW)
     assert (counts["arcade"], counts["arcade-gpu"], counts["utk"], counts["hosted"]) == (2, 1, 1, 2)
     assert (counts["arcade_stuck"], counts["arcade_gpu_stuck"], counts["hosted_full"]) == (False, False, False)
@@ -113,6 +115,14 @@ def test_jobs_are_counted_against_the_pool_they_hold():
 def test_a_job_on_any_arcade_gpu_runner_counts_against_the_gpu_pool():
     jobs = [_job("in_progress", [], "arcade-gpu-01"), _job("in_progress", [], "arcade-gpu-03")]
     assert picker.busy(jobs, NOW)["arcade-gpu"] == 2
+
+
+def test_a_queued_job_counts_against_the_pool_its_labels_ask_for():
+    # A queued job has no runner yet: only what its runs-on asks for places it.
+    for place, runs_on in picker.RUNS_ON.items():
+        labels = runs_on if isinstance(runs_on, list) else [runs_on]
+        counts = picker.busy([_job("queued", labels)], NOW)
+        assert {p: counts[p] for p in picker.RUNS_ON if counts[p]} == {place: 1}, place
 
 
 def test_hosted_room_left_by_other_runs_and_this_run_s_hosted_jobs_goes_first():
@@ -197,11 +207,16 @@ def test_the_gpu_job_goes_to_a_desktop_only_when_arcade_and_utk_are_busy():
     assert picker.assign_gpu(GPU, 0, free_utk=0, free_desktop_gpu=0) == {"test-gpu": "utk"}
 
 
-def test_only_utk_desktop_01_takes_the_gpu_job():
-    # Both desktops carry gpu and desktop; only utk-desktop-01 carries rtx3070.
-    assert picker.GPU_DESKTOPS == ("utk-desktop-01",)
+def test_test_gpu_asks_for_an_h100_an_rtx_pro_6000_or_an_rtx_4070_never_an_rtx_3070():
+    # Both desktops carry utk-desktop and gpu; the GPU job asks for
+    # utk-desktop-02's GPU model (utk-desktop-01's is nvidia-rtx-3070).
+    assert picker.GPU_DESKTOPS == ("utk-desktop-02",)
     assert (picker.DESKTOP_GPU_RUNNERS, picker.DESKTOP_RUNNERS) == (1, 2)
-    assert picker.RUNS_ON["desktop-gpu"] == ["self-hosted", "gpu", "desktop", "rtx3070"]
+    # test-gpu's concurrency group (docker-compose.yml) is named by the third
+    # label, so runs on different GPU pools never wait for or evict each other.
+    assert [picker.RUNS_ON[place] for place in picker.GPU_POOLS.values()] == [
+        ["self-hosted", "gpu", "nvidia-h100"], ["self-hosted", "gpu", "nvidia-rtx-pro-6000"],
+        ["self-hosted", "gpu", "nvidia-rtx-4070"]]
 
 
 def test_forced_desktop_pools_take_every_job():
@@ -218,22 +233,22 @@ def test_desktop_jobs_are_counted_against_the_desktops_not_arcade():
     assert counts["desktop_stuck"] is False
 
 
-def test_each_desktop_takes_one_job_and_only_utk_desktop_01_the_gpu_job():
+def test_each_desktop_takes_one_job_and_only_utk_desktop_02_the_gpu_job():
     def room(jobs):
         return picker.desktop_room(picker.busy(jobs, NOW))
 
     assert room([]) == (2, 1)
-    # A CPU job on utk-desktop-02 leaves utk-desktop-01 for either kind.
+    # A CPU job on utk-desktop-01 leaves utk-desktop-02 for either kind.
     assert room([_desktop()]) == (1, 1)
-    # A CPU job on utk-desktop-01 leaves the GPU job no desktop.
-    assert room([_desktop(runner="utk-desktop-01")]) == (1, 0)
-    # A queued one has no desktop yet; it is taken to fill utk-desktop-02 first,
-    # and a second one to hold utk-desktop-01.
+    # A CPU job on utk-desktop-02 leaves the GPU job no desktop.
+    assert room([_desktop(runner="utk-desktop-02")]) == (1, 0)
+    # A queued one has no desktop yet; it is taken to fill utk-desktop-01 first,
+    # and a second one to hold utk-desktop-02.
     assert room([_desktop("queued")]) == (1, 1)
     assert room([_desktop("queued"), _desktop("queued")]) == (0, 0)
     # Two CPU jobs hold both desktops.
-    assert room([_desktop(), _desktop(runner="utk-desktop-01")]) == (0, 0)
-    # The GPU job holds utk-desktop-01; utk-desktop-02 takes a CPU job only.
+    assert room([_desktop(), _desktop(runner="utk-desktop-02")]) == (0, 0)
+    # The GPU job holds utk-desktop-02; utk-desktop-01 takes a CPU job only.
     assert room([_desktop_gpu()]) == (1, 0)
     assert room([_desktop_gpu(), _desktop()]) == (0, 0)
 
@@ -245,12 +260,12 @@ def test_the_desktops_are_stuck_only_while_one_should_be_free():
     assert picker.desktop_room(picker.busy([_desktop(), queued], NOW)) == (0, 0)
     # Both run a job: the queued one is just waiting its turn.
     assert picker.busy([_desktop(), _desktop_gpu(), queued], NOW)["desktop_stuck"] is False
-    # The GPU job takes only utk-desktop-01: queued that long while it runs
+    # The GPU job takes only utk-desktop-02: queued that long while it runs
     # nothing, it is not taking jobs; with it busy the job waits its turn,
-    # whatever utk-desktop-02 runs.
+    # whatever utk-desktop-01 runs.
     queued_gpu = _desktop_gpu("queued", age_s=picker.STUCK_AFTER_S + 60)
-    assert picker.busy([_desktop(runner="utk-desktop-02"), queued_gpu], NOW)["desktop_stuck"] is True
-    assert picker.busy([_desktop(runner="utk-desktop-01"), queued_gpu], NOW)["desktop_stuck"] is False
+    assert picker.busy([_desktop(runner="utk-desktop-01"), queued_gpu], NOW)["desktop_stuck"] is True
+    assert picker.busy([_desktop(runner="utk-desktop-02"), queued_gpu], NOW)["desktop_stuck"] is False
     both_busy = [_desktop(runner="utk-desktop-01"), _desktop(runner="utk-desktop-02"), queued_gpu]
     assert picker.busy(both_busy, NOW)["desktop_stuck"] is False
     assert picker.busy([queued_gpu], NOW)["desktop_stuck"] is True
@@ -260,7 +275,7 @@ def test_with_hosted_and_arcade_full_the_desktops_take_the_next_jobs():
     jobs = _full_hosted_and_arcade() + [_arcade_gpu() for _ in range(picker.GPU_RUNNERS)] + [_utk()]
     chosen, how = picker.pick(CPU, GPU, "auto", "auto", lambda: jobs)
     # arcade's GPU runners and utk-gpu are busy, so test-gpu takes
-    # utk-desktop-01, and utk-desktop-02 takes the first CPU job; the rest
+    # utk-desktop-02, and utk-desktop-01 takes the first CPU job; the rest
     # wait on arcade.
     assert chosen["test-gpu"] == "desktop-gpu"
     assert [chosen[k] for k in CPU] == ["desktop", "arcade", "arcade", "arcade", "arcade"]
@@ -269,13 +284,13 @@ def test_with_hosted_and_arcade_full_the_desktops_take_the_next_jobs():
     assert any(line.startswith("GPU jobs") and "then the desktops, 1 of 1 free" in line for line in how)
 
 
-def test_with_utk_desktop_01_busy_the_gpu_job_waits_on_utk_and_never_takes_utk_desktop_02():
+def test_with_utk_desktop_02_busy_the_gpu_job_waits_on_utk_and_never_takes_utk_desktop_01():
     jobs = ([_arcade_gpu() for _ in range(picker.GPU_RUNNERS)] + [_utk()]
-            + [_desktop(runner="utk-desktop-01")])
+            + [_desktop(runner="utk-desktop-02")])
     chosen, how = picker.pick(CPU, GPU, "auto", "auto", lambda: jobs)
     assert chosen["test-gpu"] == "utk"
     assert any(line.startswith("GPU jobs") and "then the desktops, 0 of 1 free" in line for line in how)
-    # utk-desktop-02 runs nothing, and is free for a CPU job only.
+    # utk-desktop-01 runs nothing, and is free for a CPU job only.
     assert any(line.startswith("CPU jobs") and "then the desktops, 1 of 2 free" in line for line in how)
 
 
@@ -299,8 +314,8 @@ def test_main_writes_the_desktops_runs_on_values(tmp_path, monkeypatch):
     monkeypatch.setenv("CURIO_CI_GPU_POOL", "Desktop")
     assert picker.main(["ci_pick_runners.py", "--gpu", "test-gpu", *CPU]) == 0
     runners = json.loads(out.read_text().strip().removeprefix("runners="))
-    assert runners == {"test-gpu": ["self-hosted", "gpu", "desktop", "rtx3070"],
-                       **{k: ["self-hosted", "desktop"] for k in CPU}}
+    assert runners == {"test-gpu": ["self-hosted", "gpu", "nvidia-rtx-4070"],
+                       **{k: ["self-hosted", "utk-desktop"] for k in CPU}}
 
 
 def test_main_writes_runs_on_values_for_every_key(tmp_path, monkeypatch):
@@ -310,7 +325,8 @@ def test_main_writes_runs_on_values_for_every_key(tmp_path, monkeypatch):
     monkeypatch.setenv("CURIO_CI_GPU_POOL", "utk")
     assert picker.main(["ci_pick_runners.py", "--gpu", "test-gpu", *CPU]) == 0
     runners = json.loads(out.read_text().strip().removeprefix("runners="))
-    assert runners == {"test-gpu": ["self-hosted", "gpu", "curio"], **{k: ["self-hosted", "cpu"] for k in CPU}}
+    assert runners == {"test-gpu": ["self-hosted", "gpu", "nvidia-rtx-pro-6000"],
+                       **{k: ["self-hosted", "arcade", "cpu"] for k in CPU}}
 
 
 def test_an_unknown_pool_value_falls_back_to_picking(tmp_path, monkeypatch, capsys):
@@ -323,7 +339,7 @@ def test_an_unknown_pool_value_falls_back_to_picking(tmp_path, monkeypatch, caps
     assert picker.main(["ci_pick_runners.py", "--hosted-reserved", "3", "--gpu", "test-gpu", "jest"]) == 0
     assert "not one of auto" in capsys.readouterr().err
     runners = json.loads((tmp_path / "out").read_text().strip().removeprefix("runners="))
-    assert runners == {"test-gpu": ["self-hosted", "gpu", "h100"], "jest": "ubuntu-latest"}
+    assert runners == {"test-gpu": ["self-hosted", "gpu", "nvidia-h100"], "jest": "ubuntu-latest"}
 
 
 # build-image's pick, made when the jobs that wait on the image are about to start.

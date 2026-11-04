@@ -545,7 +545,7 @@ RUN_JOBS = {"jobs": [
     {"name": "test-gpu", "status": "completed", "conclusion": "success",
      "html_url": "https://github.com/o/r/actions/runs/1/job/2",
      "runner_name": "utk-gpu", "runner_group_name": "gpu",
-     "labels": ["self-hosted", "linux", "gpu", "curio"],
+     "labels": ["self-hosted", "gpu", "nvidia-rtx-pro-6000"],
      "created_at": "2026-09-30T11:59:58Z",
      "started_at": "2026-09-30T12:00:00Z", "completed_at": "2026-09-30T12:08:00Z",
      "steps": [{"name": "Run e2e tests", "status": "completed", "conclusion": "success",
@@ -553,7 +553,7 @@ RUN_JOBS = {"jobs": [
     {"name": "e2e-desktop (3)", "status": "completed", "conclusion": "failure",
      "html_url": "https://github.com/o/r/actions/runs/1/job/3",
      "runner_name": "arcade-cpu-07", "runner_group_name": "cpu",
-     "labels": ["self-hosted", "cpu"],
+     "labels": ["self-hosted", "arcade", "cpu"],
      "created_at": "2026-09-30T12:01:00Z",
      "started_at": "2026-09-30T12:02:00Z", "completed_at": "2026-09-30T12:11:00Z",
      "steps": [{"name": "Run this part of the e2e tests", "status": "completed",
@@ -583,7 +583,7 @@ def test_a_run_wide_page_lists_every_job_and_what_failed_in_each(tmp_path):
 def test_the_page_and_the_where_table_say_where_each_job_ran(tmp_path):
     # As the jobs API reports a skipped job: no runner, and done before it started.
     skipped = {"name": "test-gpu-stress", "status": "completed", "conclusion": "skipped",
-               "runner_name": "", "labels": ["self-hosted", "linux", "gpu", "curio"], "steps": [],
+               "runner_name": "", "labels": ["self-hosted", "utk", "gpu"], "steps": [],
                "created_at": "2026-09-30T12:08:01Z", "started_at": "2026-09-30T12:08:01Z",
                "completed_at": "2026-09-30T12:08:00Z"}
     jobs = {"jobs": [*RUN_JOBS["jobs"], skipped]}
@@ -608,7 +608,7 @@ def test_the_page_and_the_where_table_say_where_each_job_ran(tmp_path):
 def _part_job(name, minutes, seconds=0):
     """A finished job of the run that took minutes:seconds."""
     return {"name": name, "status": "completed", "conclusion": "success",
-            "runner_name": "arcade-cpu-01", "runner_group_name": "cpu", "labels": ["self-hosted", "cpu"],
+            "runner_name": "arcade-cpu-01", "runner_group_name": "cpu", "labels": ["self-hosted", "arcade", "cpu"],
             "created_at": "2026-10-18T12:00:00Z", "started_at": "2026-10-18T12:00:00Z",
             "completed_at": f"2026-10-18T12:{minutes:02d}:{seconds:02d}Z", "steps": []}
 
