@@ -183,7 +183,8 @@ def test_the_join_previews_its_tuple_input_in_its_header_and_its_code(
     _open_tab(page, JOIN, "code")
     open_strip_category(page, JOIN, "inputs")
     lines = _wait_for_counts(page, JOIN)
-    assert lines[1][1] == "from Python Computation: 2 values, a tuple", lines
+    # The input line names its node by its title, its one name (#1248).
+    assert lines[1][1] == "from Summarize: 2 values, a tuple", lines
 
     # The tuple's parts, as code reads them, with their columns and rows.
     expected = ["A tuple of 2 values", "input_1[0]", "input_1[1]", "pm25_mean", "pm25_peak", "sensor_A", "8.0417"]

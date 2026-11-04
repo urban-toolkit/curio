@@ -172,7 +172,8 @@ def test_the_join_says_its_tuple_input_holds_2_values(
     open_strip_category(page, JOIN, "inputs")
     lines = _wait_for_counts(page, JOIN)
     assert [key for key, _ in lines] == ["input_0", "input_1", "input_2"], lines
-    assert lines[1][1] == "from Python Computation: 2 values, a tuple", lines
+    # The input line names its node by its title, its one name (#1248).
+    assert lines[1][1] == "from Summarize: 2 values, a tuple", lines
 
     # The join with input_0's columns open.
     _open_list(page, JOIN, 0)

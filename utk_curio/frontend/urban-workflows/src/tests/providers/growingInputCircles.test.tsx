@@ -29,6 +29,17 @@ if (!(global as any).DOMMatrixReadOnly) {
 // The dataflow the canvas loaded, which a canvas bound to its doc binds on
 // (`useDataflowDoc`): none unless a test binds the canvas.
 const mockLoaded: { current: any } = { current: null };
+// The refs the doc hook reads off the workflow's operations, typed as its
+// inputs are, so one the harness lacks fails the typecheck, not the hook.
+const mockDocRefs: Pick<
+  DataflowDocDeps, 'workflowGoalRef' | 'workflowCategoriesRef' | 'scenariosRef' | 'scenarioSetsRef' | 'autoRunRef'
+> = {
+  workflowGoalRef: { current: '' },
+  workflowCategoriesRef: { current: {} },
+  scenariosRef: { current: [] },
+  scenarioSetsRef: { current: [] },
+  autoRunRef: { current: false },
+};
 jest.mock('../../hook/useWorkflowOperations', () => ({
   useWorkflowOperations: () => ({
     markNodeExecuted: jest.fn(),
@@ -48,10 +59,7 @@ jest.mock('../../hook/useWorkflowOperations', () => ({
     workflowGoal: '',
     acceptSuggestion: jest.fn(),
     loadedDataflowRef: mockLoaded,
-    workflowGoalRef: { current: '' },
-    workflowCategoriesRef: { current: {} },
-    scenariosRef: { current: [] },
-    autoRunRef: { current: false },
+    ...mockDocRefs,
     takeDataflowFields: jest.fn(),
     quietly: (apply: () => unknown) => apply(),
   }),
@@ -88,6 +96,7 @@ jest.mock('../../ConnectionValidator', () => ({
 
 import FlowProvider, { useFlowContext } from '../../providers/FlowProvider';
 import type { DataflowDocProvider } from '../../providers/collab/docProvider';
+import type { DataflowDocDeps } from '../../providers/flow/useDataflowDoc';
 import { CURIO_UNIVERSAL_NODE_TYPE, NodeType, SupportedType } from '../../constants';
 import { registerNode } from '../../registry/nodeRegistry';
 import type { NodeDescriptor } from '../../registry/types';
