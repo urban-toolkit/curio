@@ -1007,8 +1007,8 @@ export const NodeContainer = ({
                             border: "1px solid var(--curio-border)",
                             borderRadius: "8px",
                             // A folded node shows its icon and its title,
-                            // wrapped, centered in the chip; an icon-only node,
-                            // its icon.
+                            // wrapped, the two centered in the chip; an
+                            // icon-only node, its icon.
                             padding: noContent ? "5px" : `${CHIP_PADDING_Y}px 12px`,
                             justifyContent: "center",
                             gap: "10px",

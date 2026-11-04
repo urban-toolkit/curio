@@ -21,8 +21,9 @@ export function EditableNodeHeaderLabel({
   keywordHighlighted: boolean;
   onLabelCommit: (label: string) => void;
   onConfigure: () => void;
-  /** Wrap the title, centered, to at most this many lines, the last cut with
-   *  an ellipsis (a minimized node's chip); one line when not given. */
+  /** Wrap the title to at most this many lines, the last cut with an
+   *  ellipsis (a minimized node's chip, which centers it beside the icon); one
+   *  line when not given. */
   lines?: number;
 }) {
   const [editing, setEditing] = useState(false);
