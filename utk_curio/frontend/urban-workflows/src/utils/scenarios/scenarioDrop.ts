@@ -40,6 +40,8 @@ export interface PlannedLoader {
   id: string;
   /** The source project's node whose saved output it reads. */
   source: string;
+  /** Its name: the context node's it stands for, so a collapsed box's cards tell the loaders apart. */
+  title: string;
   /** What it is, for its goal: the context node it stands for, and where from. */
   goal: string;
   position: { x: number; y: number };
@@ -181,6 +183,7 @@ export function planScenarioDrop(
     const loader: PlannedLoader = {
       id: newId(),
       source: entry.source.nodeId,
+      title: entry.label,
       goal: `Shared context of "${plan.set.name}": a copy of what ${entry.label} passed on in ${plan.project.name}.`,
       position: { x: at.x - CONTEXT_COLUMN, y: at.y + CONTEXT_ROW * loaders.length },
       copiedFrom: [...entry.source.copiedFrom, entry.source.nodeId],
@@ -312,6 +315,7 @@ export function loaderNodes(
       type: DATA_LOADING_TYPE,
       x: loader.position.x,
       y: loader.position.y,
+      title: loader.title,
       content: options.code,
       in: "DEFAULT",
       out: "DEFAULT",
