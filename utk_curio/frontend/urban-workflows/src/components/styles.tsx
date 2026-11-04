@@ -80,6 +80,7 @@ import { ICodeData } from "types";
 import { NodeRunControls } from "./nodes/NodeRunControls";
 import { NodeResizeHandle } from "./nodes/NodeResizeHandle";
 import { NodeDeleteTool } from "./nodes/NodeDeleteTool";
+import { useHeaderPillsFit } from "./nodes/useHeaderPillsFit";
 import { useSharedView } from "../hook/useSharedView";
 import { NodeHeaderSlotContext } from "./editing/nodeHeaderSlot";
 import { resolveSaveOutputDataset, showsSaveOutputToggle } from "../utils/saveOutputDataset";
@@ -420,6 +421,12 @@ export const NodeContainer = ({
     const nodeHeaderBandPx = 36;
     // Where the header holds the editor's tab switchers (nodeHeaderSlot).
     const [tabSlot, setTabSlot] = useState<HTMLElement | null>(null);
+    // A narrow node shows its title before its pills (useHeaderPillsFit).
+    const [header, setHeader] = useState<HTMLElement | null>(null);
+    const pillsHidden = useHeaderPillsFit(
+        header,
+        [headerKindLabel, hasPackageMetaHeader, !!consumerSource, !!producerDataset].join("|"),
+    );
     // Play, the Save output toggle and the status, each in its place in the
     // header.
     const runControls = {
@@ -865,7 +872,7 @@ export const NodeContainer = ({
 
                 {!noContent && !dashboardOn ? (
                     <>
-                        <div className="curio-node-header" style={{
+                        <div className="curio-node-header" ref={setHeader} style={{
                         display: "flex",
                         alignItems: "center",
                         height: `${nodeHeaderBandPx}px`,
@@ -897,7 +904,7 @@ export const NodeContainer = ({
                             onConfigure={() => setConfigOpen(true)}
                         />
 
-                        {hasPackageMetaHeader && packageDescriptor?.package ? (
+                        {!pillsHidden && hasPackageMetaHeader && packageDescriptor?.package ? (
                             <PackageMetaHeader
                                 pkg={packageDescriptor.package}
                                 category={packageDescriptor.category}
@@ -908,7 +915,7 @@ export const NodeContainer = ({
 
                         {/* Dataset linkage pills — independent of the PACKAGE pill
                             and of each other; any combination may render. */}
-                        {consumerSource ? (
+                        {!pillsHidden && consumerSource ? (
                             <DatasetMetaHeader
                                 source={consumerSource}
                                 variant="consumer"
@@ -917,7 +924,7 @@ export const NodeContainer = ({
                             />
                         ) : null}
 
-                        {producerDataset ? (
+                        {!pillsHidden && producerDataset ? (
                             <DatasetMetaHeader
                                 source={{
                                     datasetId: producerDataset.id,

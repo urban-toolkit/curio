@@ -86,6 +86,7 @@ export function EditableNodeHeaderLabel({
             keywordHighlighted ? styles.labelTextHighlighted : ""
           }`}
           data-curio-pkg-palette-node-action="true"
+          data-curio-node-title="true"
           data-tooltip="Click to edit node title"
           aria-label={`Edit node title: ${displayLabel}`}
           {...labelEditClick}
@@ -98,6 +99,7 @@ export function EditableNodeHeaderLabel({
             keywordHighlighted ? styles.labelTextHighlighted : ""
           }`}
           style={lines !== undefined ? { WebkitLineClamp: lines } : undefined}
+          data-curio-node-title="true"
           data-tooltip={displayLabel}
         >
           {displayLabel}
