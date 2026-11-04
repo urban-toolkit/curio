@@ -5,7 +5,10 @@ dragged right and down: the chip grows. Opened with a click, the node is the
 size it was before; folded again, its chip is the size its corner gave it.
 
 The dataflow is loaded from a file on a new canvas, so it is the browser user's
-own (#751) with accounts and on a stack without them.
+own (#751) with accounts and on a stack without them. The node is framed first,
+as a person sees it before they reach for a corner: the canvas's own fit of a
+load lands a frame or more later, and a corner read before it is not where
+the press then lands.
 
 Run::
 
@@ -20,8 +23,10 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from .utils import (
     activate_header_icon,
+    frame_nodes,
     node_locator,
     require_owner_view,
+    settled_viewport,
     stub_db_login,
     upload_workflow,
 )
@@ -48,6 +53,20 @@ _SIZE_JS = """(id) => {
         width: Math.round(box.width / zoom),
         height: Math.round(box.height / zoom),
     };
+}"""
+
+#: The middle of the chip's corner handle, and whether a press there lands on
+#: the handle or, if not, what it lands on.
+_CORNER_JS = """(id) => {
+    const handle = document.getElementById(`${id}resizer`);
+    if (!handle) return {on: false, top: "nothing: the chip has no corner"};
+    const box = handle.getBoundingClientRect();
+    const x = box.left + box.width / 2;
+    const y = box.top + box.height / 2;
+    const hit = document.elementFromPoint(x, y);
+    const name = (el) => !el ? "nothing" : [el.tagName.toLowerCase(), el.id ? `#${el.id}` : "",
+        typeof el.className === "string" && el.className.trim() ? `.${el.className.trim().split(/\\s+/).join(".")}` : ""].join("");
+    return {on: hit === handle, x, y, top: name(hit)};
 }"""
 
 
@@ -78,6 +97,21 @@ def _size_once(page, condition: str) -> dict:
     return page.evaluate(_SIZE_JS, NODE_ID)
 
 
+def _corner(page) -> dict:
+    """The middle of the chip's corner once a press there lands on the corner,
+    or twenty seconds pass: read with the hit, so the view cannot move between."""
+    try:
+        page.wait_for_function(
+            f"(id) => ({_CORNER_JS})(id).on",
+            arg=NODE_ID,
+            polling=100,
+            timeout=20000,
+        )
+    except PlaywrightTimeoutError:
+        pass
+    return page.evaluate(_CORNER_JS, NODE_ID)
+
+
 def test_a_chip_keeps_the_size_its_corner_gives_it_and_the_open_node_keeps_its_own(
     app_frontend: "FrontendPage",
     current_server: str,
@@ -98,6 +132,7 @@ def test_a_chip_keeps_the_size_its_corner_gives_it_and_the_open_node_keeps_its_o
     spec_file.write_text(json.dumps(_spec()), encoding="utf-8")
     upload_workflow(page, app_frontend, str(spec_file), 1)
     node_locator(page, NODE_ID).wait_for(state="visible", timeout=45000)
+    frame_nodes(page, [NODE_ID])
     opened = _size_once(page, "s.open")
     minimize = page.locator(f'[id="{NODE_ID}resizable"] .curio-node-tools [data-tooltip="Minimize"]')
 
@@ -105,10 +140,12 @@ def test_a_chip_keeps_the_size_its_corner_gives_it_and_the_open_node_keeps_its_o
     folded = _size_once(page, f"!s.open && s.width === {CHIP[0]} && s.height === {CHIP[1]}")
     assert folded == {"open": False, "width": CHIP[0], "height": CHIP[1]}, folded
 
-    # The chip's corner, dragged right and down.
-    corner = page.locator(f'[id="{NODE_ID}resizer"]').bounding_box()
-    assert corner, "the chip has no corner to resize it by"
-    x, y = corner["x"] + corner["width"] / 2, corner["y"] + corner["height"] / 2
+    # The chip's corner, dragged right and down, with the view at rest and the
+    # corner, not the canvas or the chip, under the pointer.
+    settled_viewport(page)
+    corner = _corner(page)
+    assert corner["on"], f"a press on the chip's corner lands on {corner['top']}"
+    x, y = corner["x"], corner["y"]
     page.mouse.move(x, y)
     page.mouse.down()
     page.mouse.move(x + 120, y + 40, steps=12)
