@@ -1,10 +1,10 @@
-"""SCOUT's flood example in Curio, made of Curio's own nodes and Scout's
+"""SCOUT's flood example in Curio, made of Curio's own nodes and Rasterization's
 Raster Calculator, on SCOUT's whole grid (#662, step 18; #819).
 
 The shipped test dataflow ``quad-cities-flood-vulnerability.json`` does what SCOUT's
 ``simulate_flood_projection`` does with no SCOUT code: three Data Loading nodes
 read the region's window of SCOUT's rasters, which the Data Catalog holds whole
-(``curio_load_data(..., bounds=...)``), a Raster Calculator (``curio.scout@1``)
+(``curio_load_data(..., bounds=...)``), a Raster Calculator (``curio.rasterization@1``)
 per scenario takes
 the depth with nature-based solutions (NbS) where the class is a chosen one and
 the depth without elsewhere (``choose``), a second takes the depth's
@@ -38,7 +38,7 @@ in the scenario draws, and a third Raster Calculator over the riverside land
 in each of SCOUT's three periods, the water left out and dry land counted as
 0 m. A Raster Calculator takes the size of the change in depth and a Python
 node, joining the tracts on their FIPS code, the size of the change in each
-tract's mean depth, each drawn by an Autark map; Scout's Bars charts the
+tract's mean depth, each drawn by an Autark map; the Vega-Lite package's Bars charts the
 median depth, its Points vulnerability against depth and its Grouped bars the
 mean depth by period. The nodes, run in the sandbox, give what this file
 computes from the datasets on its own. Until the plan answering komar41's
@@ -67,11 +67,14 @@ REPO = Path(__file__).resolve().parents[4]
 DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "quad-cities-flood-vulnerability.json"
 SCOUT_FUNCTION = Path(__file__).resolve().parent / "fixtures" / "scout_flood" / "flood_simulation.py"
 #: The starter a Raster Calculator opens with, which its package ships.
-CALCULATOR_STARTER = REPO / "packages" / "curio.scout@1" / "sources" / "raster-calculator.py"
+CALCULATOR_STARTER = REPO / "packages" / "curio.rasterization@1" / "sources" / "raster-calculator.py"
+#: The package of its charts.
+CHART_PACKAGE = REPO / "packages" / "curio.vega-lite@1"
 LOADING = "curio.builtin/data-loading"
-CALCULATOR = "curio.scout/raster-calculator"
-#: The Raster Calculator's package, which the dataflow's lockfile names.
-RASTERS_PACKAGE = "curio.scout@1"
+CALCULATOR = "curio.rasterization/raster-calculator"
+#: The Raster Calculator's package and the charts', which the dataflow's
+#: lockfile names.
+PACKAGES = ["curio.rasterization@1", "curio.vega-lite@1"]
 #: What a Raster Calculator's code returns: an operation cell by cell, which
 #: gives a raster, statistics, which give a table of one row, or, in Average
 #: depth by period, its own table of each period's mean depth.
@@ -79,7 +82,7 @@ CALCULATE = "raster_calculate"
 STATISTICS = "raster_statistics"
 BY_PERIOD = "pd.DataFrame"
 #: The modules a run of a package's node is handed: a Raster Calculator's
-#: code imports its operations from Scout's ``scout_rasters``.
+#: code imports its operations from Rasterization's ``scout_rasters``.
 PACKAGE_MODULES = {CALCULATOR: {"root": str(CALCULATOR_STARTER.parent), "names": ["scout_rasters"]}}
 #: The node a value several nodes read was once held by, read as ``[!! @name !!]``.
 PARAMETER = "curio.builtin/parameter"
@@ -87,11 +90,10 @@ COMPARE = "curio.builtin/compare-scenarios"
 MAP = "curio.builtin/autk-grammar"
 TRANSFORMATION = "curio.builtin/data-transformation"
 PYTHON = "curio.builtin/computation-analysis"
-#: Its three charts are Vega-Lite nodes (#1270), each with a spec of
-#: ``docs/examples/vega-lite-charts``: Bars, Points and Grouped bars.
-VEGA = "curio.builtin/vis-vega"
-BARS = POINTS = GROUPED_BARS = VEGA
-CHARTS = (VEGA,)
+BARS = "curio.vega-lite/bars"
+POINTS = "curio.vega-lite/points"
+GROUPED_BARS = "curio.vega-lite/grouped-bars"
+CHARTS = (BARS, POINTS, GROUPED_BARS)
 #: The Raster Calculator taking the size of the change in depth.
 DEPTH_CHANGE_CODE = (
     "# The size of NbS's flood depth, on input_1, minus No NbS's, on input_0,\n"
@@ -704,22 +706,21 @@ def test_the_dataflow_is_made_of_curios_own_nodes_and_scouts_raster_calculator()
     statistics and one averaging the depth by period, an Autark map of the
     depth, a Data Transformation, the depth per tract, and an Autark map of
     it; a Raster Calculator taking the change in depth and a Python node the
-    change per tract; Vega-Lite Bars, Points and Grouped bars; Autark maps of
+    change per tract; the Vega-Lite package's Bars, Points and Grouped bars; Autark maps of
     the vulnerability, of the change in depth and of the change per tract;
     and the nine datasets. No Compare Scenarios node is left (the plan
     answering komar41's review, step 6.3). Nothing is pinned to the
     dashboard: a difference of SCOUT's whole grid is over a dashboard page's
     25 MB."""
     spec = _dataflow()
-    assert spec["packages"] == [RASTERS_PACKAGE]
-    assert {n["type"] for n in spec["nodes"] if not n["type"].startswith("curio.builtin/")} == {CALCULATOR}
-    assert sum(n["type"] == VEGA for n in spec["nodes"]) == 3
+    assert spec["packages"] == PACKAGES
+    assert {n["type"] for n in spec["nodes"] if not n["type"].startswith("curio.builtin/")} == {CALCULATOR, *CHARTS}
     assert [ref["datasetId"] for ref in spec["datasets"]] == DATASET_IDS
     counts = {}
     for n in spec["nodes"]:
         counts[n["type"]] = counts.get(n["type"], 0) + 1
     assert counts == {
-        LOADING: 5, CALCULATOR: 7, TRANSFORMATION: 3, MAP: 7, PYTHON: 3, VEGA: 3,
+        LOADING: 5, CALCULATOR: 7, TRANSFORMATION: 3, MAP: 7, PYTHON: 3, BARS: 1, POINTS: 1, GROUPED_BARS: 1,
     }
     assert PARAMETER not in counts
     assert sorted(_setting_nodes(spec)) == ["Projection period", "Region"]
@@ -1079,8 +1080,8 @@ def test_the_changes_and_the_charts_hold_what_they_compare():
     circle 1, as the Compare Scenarios node it replaced did, and keeps its
     label: the Depth change, a Raster Calculator of the size of NbS's depth
     minus No NbS's; the Depth change per tract, a Python node of the size of
-    the change in the tracts' numbers, joined on their FIPS code; Scout's
-    Bars of the median depth, its Points of each tract's SVI percentile
+    the change in the tracts' numbers, joined on their FIPS code; the
+    Vega-Lite package's Bars of the median depth, its Points of each tract's SVI percentile
     against its mean depth and its Grouped bars of the mean depth of each
     period, each its template's spec, its widgets set as the Compare node's
     chart drew it: its columns, the rows combined by the mean, Compare's
@@ -1109,22 +1110,22 @@ def test_the_changes_and_the_charts_hold_what_they_compare():
     assert "\nout[numbers] = (now - was).abs()\n" in tract_change["content"]
     for node in (depth_change, tract_change):
         assert set(node["metadata"]) == {"keywords"}, node["metadata"]
-    from utk_curio.backend.tests._support.vega_lite_charts import chart as vega_chart, spec as vega_spec
-
+    manifest = json.loads((CHART_PACKAGE / "manifest.json").read_text(encoding="utf-8"))
+    templates = {f"{manifest['id']}/{t['id']}": t for t in manifest["templates"]}
     widgets = {
-        ("statistics", "chart"): ("bars", {"y": "median", "combine": "mean", "y_title": "mean of median"}),
-        ("tract depth", "chart"): ("points", {
+        ("statistics", "chart"): (BARS, {"y": "median", "combine": "mean", "y_title": "mean of median"}),
+        ("tract depth", "chart"): (POINTS, {
             "x": "RPL_THEMES", "y": "mean_depth_m", "x_title": "RPL_THEMES", "y_title": "mean_depth_m",
         }),
-        ("by period", "chart"): ("grouped-bars", {
+        ("by period", "chart"): (GROUPED_BARS, {
             "x": "period", "y": "mean_depth_m", "combine": "mean", "x_title": "period", "y_title": "mean_depth_m",
         }),
     }
-    for key, (chart_id, values) in widgets.items():
+    for key, (node_type, values) in widgets.items():
         chart = found[key]
-        template = vega_chart(chart_id)
-        assert chart["type"] == VEGA, key
-        assert chart["content"] == vega_spec(chart_id)
+        template = templates[node_type]
+        assert chart["type"] == node_type, key
+        assert chart["content"] == (CHART_PACKAGE / template["source"]).read_text(encoding="utf-8")
         assert set(chart["metadata"]) == {"keywords", "widgets"}, chart["metadata"]
         assert [{k: v for k, v in w.items() if k != "value"} for w in chart["metadata"]["widgets"]] == template["widgets"]
         assert {w["name"]: w["value"] for w in chart["metadata"]["widgets"]} == values, key
@@ -1816,7 +1817,7 @@ def _depth_raster(path, depths):
 
 def test_the_depth_change_is_the_size_of_nbs_minus_no_nbs_as_compare_took_it(workspace, tmp_path):
     """The Depth change is a Raster Calculator, run as the sandbox runs one,
-    with Scout's modules: the size of NbS's depth, on input_1, minus No
+    with Rasterization's modules: the size of NbS's depth, on input_1, minus No
     NbS's, on input_0, cell by cell, on the depths' grid: 0 where the
     solutions change nothing, no value where either depth has none. These are
     the cells Compare Scenarios' Difference in Absolute took from the same

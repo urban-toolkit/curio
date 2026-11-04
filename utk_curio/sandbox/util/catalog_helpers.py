@@ -33,7 +33,7 @@ The names these replaced (``curio_dataset_path``, ``curio_collection``,
 ``curio_model``) are not aliases: calling one raises an error that names its
 replacement, so a saved dataflow says what to change. So do the raster math
 helpers every Python node used to have (``curio_raster_calculate``,
-``curio_raster_statistics``): raster math is the Scout package's, in the
+``curio_raster_statistics``): raster math is the Rasterization package's, in the
 Raster Calculator's code (``scout_rasters.raster_algebra``).
 """
 
@@ -533,5 +533,5 @@ def install_catalog_helpers(
     namespace["curio_model"] = _renamed("curio_model", 'curio_load_model("<id>")')
     for old, new in (("curio_raster_calculate", "raster_calculate"), ("curio_raster_statistics", "raster_statistics")):
         namespace[old] = _renamed(
-            old, f"a Raster Calculator node (Scout), whose code has from scout_rasters.raster_algebra import {new}",
+            old, f"a Raster Calculator node (Rasterization), whose code has from scout_rasters.raster_algebra import {new}",
         )

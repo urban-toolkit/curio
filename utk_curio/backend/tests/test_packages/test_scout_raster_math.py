@@ -1,8 +1,8 @@
-"""Raster math is Scout's (the plan answering komar41's review of his #914,
+"""Raster math is Rasterization's (the plan answering komar41's review of his #914,
 step 3, his issues 2 and 8).
 
 The Raster Calculator's operations, ``choose``, statistics, writing, content
-names and grid checks are the Scout package's module
+names and grid checks are the Rasterization package's module
 ``scout_rasters.raster_algebra``: ``raster_calculate(operation, rasters,
 codes=None, ...)``, which writes where ``output_file`` says, and
 ``raster_statistics(...)``, with the arguments the old helpers took.
@@ -11,7 +11,7 @@ changed. SCOUT's tile helpers, ``tile_bounds`` and ``mosaic_web_tiles``, are
 the package's too (``scout_rasters.web_tiles``).
 
 A node reaches them by importing them: the Raster Calculator's own code, or a
-node of a package that names Scout in ``dependencies.packages``, as Deep
+node of a package that names Rasterization in ``dependencies.packages``, as Deep
 Umbra does for ``tile_bounds``. A plain Python node no longer has them:
 ``curio_raster_calculate`` and ``curio_raster_statistics`` refuse, naming the
 Raster Calculator. So the flood dataflow's two Average depth by period nodes,
@@ -38,11 +38,11 @@ import numpy as np
 import pytest
 
 REPO = Path(__file__).resolve().parents[4]
-SCOUT = REPO / "packages" / "curio.scout@1"
-SOURCES = SCOUT / "sources"
+RASTERIZATION = REPO / "packages" / "curio.rasterization@1"
+SOURCES = RASTERIZATION / "sources"
 MODULE = "scout_rasters"
 STARTER = SOURCES / "raster-calculator.py"
-CALCULATOR = "curio.scout/raster-calculator"
+CALCULATOR = "curio.rasterization/raster-calculator"
 DEEP_UMBRA = REPO / "packages" / "model.scout.deep-umbra@1"
 SHADOW = "model.scout.deep-umbra/accumulated-shadow"
 FLOOD = REPO / "docs" / "examples" / "dataflows" / "quad-cities-flood-vulnerability.json"
@@ -185,22 +185,22 @@ def test_a_plain_python_node_calling_the_old_helpers_is_refused(workspace, call)
     assert "from scout_rasters.raster_algebra import" in result["stderr"], result["stderr"]
 
 
-def test_deep_umbra_declares_scout_and_its_node_is_handed_scouts_modules(tmp_curio):
-    """Deep Umbra's node imports ``tile_bounds`` from Scout, which its
+def test_deep_umbra_declares_rasterization_and_its_node_is_handed_its_modules(tmp_curio):
+    """Deep Umbra's node imports ``tile_bounds`` from Rasterization, which its
     manifest names in ``dependencies.packages``: a run of Accumulated Shadow
-    is handed Deep Umbra's module and Scout's, its own first, as any node of
+    is handed Deep Umbra's module and Rasterization's, its own first, as any node of
     a package that names another is (``python_modules.modules_for_node``)."""
     from utk_curio.backend.app.packages.application.python_modules import modules_for_node
     from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
     from utk_curio.backend.app.packages.repositories.store import package_dir
 
     manifest = json.loads((DEEP_UMBRA / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["dependencies"]["packages"] == {"curio.scout@1": "*"}
-    for package in (SCOUT, DEEP_UMBRA):
+    assert manifest["dependencies"]["packages"] == {"curio.rasterization@1": "*"}
+    for package in (RASTERIZATION, DEEP_UMBRA):
         install_package_from_directory("guest", package)
     assert modules_for_node("guest", SHADOW) == [
         {"root": str(package_dir("guest", DEEP_UMBRA.name) / "sources"), "names": ["deep_umbra"]},
-        {"root": str(package_dir("guest", SCOUT.name) / "sources"), "names": [MODULE]},
+        {"root": str(package_dir("guest", RASTERIZATION.name) / "sources"), "names": [MODULE]},
     ]
     outputs = (DEEP_UMBRA / "sources" / "deep_umbra" / "node_outputs.py").read_text(encoding="utf-8")
     assert "from scout_rasters.web_tiles import tile_bounds" in outputs
@@ -225,7 +225,7 @@ def test_the_flood_dataflows_averages_by_period_are_raster_calculators():
             in node["content"]
         ), node["content"]
     assert [n["id"] for n in spec["nodes"] if "curio_raster_" in (n.get("content") or "")] == []
-    manifest = json.loads((SCOUT / "manifest.json").read_text(encoding="utf-8"))
+    manifest = json.loads((RASTERIZATION / "manifest.json").read_text(encoding="utf-8"))
     (calculator,) = [t for t in manifest["templates"] if t["id"] == "raster-calculator"]
     assert [sorted(port["types"]) for port in calculator["inputPorts"]] == [["GEODATAFRAME", "JSON", "RASTER"]]
     assert "zones or a mask" in STARTER.read_text(encoding="utf-8")

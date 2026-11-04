@@ -4,15 +4,15 @@ The shipped test dataflow ``chicago-loop-shadow-towers.json``: SCOUT's Chicago L
 (the Data Catalog dataset ``data.scout.loop-buildings``) and a Season Python
 node, wired into each shadow node's second circle, are the fixed context. In
 "Existing", Rasterize Buildings
-(``curio.scout@1``) draws them into one zoom-16 height raster,
+(``curio.rasterization@1``) draws them into one zoom-16 height raster,
 Accumulated Shadow, the node of the model package ``model.scout.deep-umbra@1``,
 runs SCOUT's Deep Umbra model on it, in the season both scenarios share, an
-Autark map draws the shadow, and a Raster Calculator (``curio.scout@1`` too)
+Autark map draws the shadow, and a Raster Calculator (``curio.rasterization@1`` too)
 takes the shadow's statistics over the ground, the heights as its mask.
 "Towers removed" first reads the buildings through a Map Editor node, its
 lever, whose code removes the 15 buildings SCOUT's second scenario removes,
 matched on building_id, and which feeds a map of the remaining buildings it
-is linked to. Outside the scenarios, Scout's Bars charts
+is linked to. Outside the scenarios, the Vega-Lite package's Bars charts
 each scenario's mean accumulated shadow, and a third Raster Calculator takes
 its change, Towers removed's shadow minus Existing's, which an Autark map after
 it draws on a scale centered on no change.
@@ -115,11 +115,11 @@ if TYPE_CHECKING:
 DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "chicago-loop-shadow-towers.json"
 TEST_NAME = "test_two_building_sets_are_shadowed_charted_and_mapped"
 SHADOW_TYPE = "model.scout.deep-umbra/accumulated-shadow"
-CALCULATOR_TYPE = "curio.scout/raster-calculator"
-BARS_TYPE = "curio.builtin/vis-vega"
+CALCULATOR_TYPE = "curio.rasterization/raster-calculator"
+BARS_TYPE = "curio.vega-lite/bars"
 COMPARE_TYPE = "curio.builtin/compare-scenarios"
 MAP_TYPE = "curio.builtin/autk-grammar"
-PACKAGES = ("curio.scout@1", "model.scout.deep-umbra@1")
+PACKAGES = ("curio.rasterization@1", "curio.vega-lite@1", "model.scout.deep-umbra@1")
 #: SCOUT's A_shadows_metric.csv and B_shadows_metric.csv.
 SCOUT_MEANS = {"existing": 128.63593, "towers-removed": 106.73111}
 #: The columns of each row the Bars chart reads, past the ones the stacking
@@ -157,8 +157,8 @@ def _shadow_maps(dataflow: dict) -> dict:
 
 
 def _parts(dataflow: dict) -> dict:
-    """The dataflow's chart and change, by what they are: ``chart``, Scout's
-    Bars, and ``change``, the Raster Calculator that is no statistics."""
+    """The dataflow's chart and change, by what they are: ``chart``, the
+    Vega-Lite package's Bars, and ``change``, the Raster Calculator that is no statistics."""
     nodes = dataflow["nodes"]
     assert not [n["id"] for n in nodes if n["type"] == COMPARE_TYPE], "the dataflow still holds a Compare node"
     (chart,) = [n["id"] for n in nodes if n["type"] == BARS_TYPE]

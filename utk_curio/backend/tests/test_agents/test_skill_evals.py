@@ -147,7 +147,7 @@ def test_every_skill_curio_ships_holds_its_evaluations_in_the_format():
     on, each dataflow a file and each node one its dataflow holds."""
     skill_evals = _skill_evals()
     folders = skill_evals.skill_folders()
-    assert len(folders) >= 22, folders
+    assert len(folders) >= 23, folders
     for folder in folders:
         assert skill_evals.evals_file(folder).is_file(), f"{folder.name} holds no evals/evals.json"
         evals = skill_evals.read(folder)

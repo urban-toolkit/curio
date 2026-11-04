@@ -14,9 +14,10 @@ from utk_curio.backend.app.execution import workflow_spec as ws
 from utk_curio.backend.app.packages.application import templates as pkg_services
 
 BUILTIN = "curio.builtin"
-#: Scout's (``curio.scout@1``) two raster nodes and its fifteen charts.
+#: Rasterization's (``curio.rasterization@1``) two raster nodes, and the
+#: Vega-Lite package's (``curio.vega-lite@1``) fifteen charts.
 RASTER_NODES = ("raster-calculator", "rasterize-buildings")
-SCOUT_CHARTS = (
+VEGA_LITE_CHARTS = (
     "lines-with-band", "curves-by-group", "bars-with-error-bars", "ensemble-strips",
     "stacked-bars-with-totals", "donuts", "weighted-matrix", "dots-with-a-range",
     "bars", "grouped-bars", "lines", "points", "pie", "lollipops", "table",
@@ -62,7 +63,7 @@ class TestTemplateContentKind:
         # Every shipped template is routed above, and no other ships: the
         # Merge Flow left the manifest (#662), its fan-in now lands on the
         # input circles of the node it fed, and the Raster Calculator is a
-        # node of Scout, curio.scout@1 (below).
+        # node of Rasterization, curio.rasterization@1 (below).
         assert set(kinds) == {
             "data-loading", "data-export", "data-transformation", "data-pool",
             "computation-analysis", "data-summary", "js-computation",
@@ -70,7 +71,7 @@ class TestTemplateContentKind:
             "edit-features", "note",
         }
 
-    def test_scouts_raster_nodes_are_written_as_code(self):
+    def test_the_raster_nodes_are_written_as_code(self):
         """The Raster Calculator starts with a call to Curio's raster algebra,
         edited as code, as Rasterize Buildings starts with its template's
         source: both are code an agent writes."""
@@ -78,27 +79,27 @@ class TestTemplateContentKind:
 
         from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
-        root = Path(__file__).resolve().parents[4] / "packages" / "curio.scout@1"
+        root = Path(__file__).resolve().parents[4] / "packages" / "curio.rasterization@1"
         manifest = load_package_manifest(root)
         kinds = {t.template_id: pkg_services.template_content_kind(t) for t in manifest.templates}
-        assert {key: kinds[key] for key in RASTER_NODES} == {"raster-calculator": "code", "rasterize-buildings": "code"}
-        # It has no other node: its charts are Vega-Lite specs since #1270.
+        assert kinds == {"raster-calculator": "code", "rasterize-buildings": "code"}
         assert sorted(kinds) == sorted(RASTER_NODES)
 
-    def test_the_charts_that_compare_scenarios_are_vega_lite_documents(self):
-        """The fifteen charts are Vega-Lite specs for the Vega-Lite node,
-        whose spec is a document: validated as one, never run in the sandbox."""
+    def test_the_comparison_charts_are_vega_lite_documents(self):
+        """The Vega-Lite package's fifteen charts are Vega-Lite specs, as the
+        Vega-Lite node's is: validated as documents, never run in the sandbox."""
         from pathlib import Path
 
         from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
-        builtin = load_package_manifest(Path(__file__).resolve().parents[4] / "packages" / "curio.builtin@1")
-        (vega,) = [t for t in builtin.templates if t.template_id == "vis-vega"]
-        assert pkg_services.template_content_kind(vega) == "grammar"
-        charts = Path(__file__).resolve().parents[4] / "docs" / "examples" / "vega-lite-charts"
-        assert sorted(p.name.removesuffix(".vl.json") for p in charts.glob("*.vl.json")) == sorted(SCOUT_CHARTS)
-        assert vega.grammar_id == "vega-lite"
-        assert pkg_services.template_is_executable(vega) is False
+        root = Path(__file__).resolve().parents[4] / "packages" / "curio.vega-lite@1"
+        manifest = load_package_manifest(root)
+        templates = {t.template_id: t for t in manifest.templates}
+        assert sorted(templates) == sorted(VEGA_LITE_CHARTS)
+        for template_id, template in templates.items():
+            assert pkg_services.template_content_kind(template) == "grammar", template_id
+            assert template.grammar_id == "vega-lite", template_id
+            assert pkg_services.template_is_executable(template) is False, template_id
 
     def test_no_content_makes_a_presentation_without_input_author_nothing(self):
         """``containerStyle.noContent`` (the route the Merge Flow took) decides

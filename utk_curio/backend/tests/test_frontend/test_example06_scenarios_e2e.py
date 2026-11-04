@@ -8,7 +8,7 @@ towers, 200 Clarendon and Raffles, by their ``building_id`` before copies of
 Baseline's nodes, and feeds a map of the buildings it is linked to. The
 factor is a ``height_factor`` widget on each shadow step, read as an Autark
 uniform. Each scenario ends in a Roads node that takes the roads layer out of
-the five its shadow step hands on. Outside them, Scout's Bars (``curio.scout@1``)
+the five its shadow step hands on. Outside them, the Vega-Lite package's Bars (``curio.vega-lite@1``)
 charts the three Roads nodes' mean road sunlight, and a Python node, Sunlight
 change, takes each road's sunlight change in Twice as tall from Baseline's map
 and Twice as tall's, the roads matched by their shapes, which an Autark map
@@ -120,7 +120,7 @@ EXAMPLE = Path(REPO_ROOT) / "docs" / "examples" / "06-back-bay-road-sunlight.jso
 EXAMPLE_NAME = "Back Bay road sunlight when buildings change"
 AUTARK = "curio.builtin/autk-grammar"
 COMPARE = "curio.builtin/compare-scenarios"
-BARS = "curio.builtin/vis-vega"
+BARS = "curio.vega-lite/bars"
 PYTHON = "curio.builtin/computation-analysis"
 VEGA = "curio.builtin/vis-vega"
 #: The chart the second test wires to the two dropped Roads nodes: mean
@@ -145,7 +145,7 @@ E_EDIT, E_COMPUTE, E_MAP, E_ROADS = (
 #: The map of the buildings Two towers removed's Map Editor node hands on,
 #: which it is linked to: an outcome of the scenario.
 E_BUILDINGS = "whatif-towers-buildings"
-#: Scout's Bars chart of mean sunlight and the Python node that takes the
+#: The Vega-Lite package's Bars chart of mean sunlight and the Python node that takes the
 #: sunlight change, which keep the ids of the Compare nodes they replaced.
 CHART, DIFFERENCE = "whatif-compare-chart", "whatif-compare-difference"
 #: The Autark map after the Sunlight change node, which draws each road's change.

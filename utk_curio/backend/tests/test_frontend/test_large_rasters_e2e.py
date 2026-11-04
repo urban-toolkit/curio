@@ -1,8 +1,8 @@
 """Playwright E2E: rasters as large as SCOUT's flood grid, on an Autark map and in a Raster Calculator's difference.
 
 An Autark map loads a raster at its own size up to 4096 by 4096 cells. SCOUT's
-whole flood grid is 2592 by 2064 cells, and Scout's Raster Calculator
-(``curio.scout@1``) subtracts two such rasters as the flood dataflow takes its
+whole flood grid is 2592 by 2064 cells, and Rasterization's Raster Calculator
+(``curio.rasterization@1``) subtracts two such rasters as the flood dataflow takes its
 Depth change.
 
 1. Two scenarios each hold one Python node that writes a 2592 by 2064 raster
@@ -66,9 +66,9 @@ if TYPE_CHECKING:
 
 PYTHON_TYPE = "curio.builtin/computation-analysis"
 MAP_TYPE = "curio.builtin/autk-grammar"
-CALCULATOR_TYPE = "curio.scout/raster-calculator"
+CALCULATOR_TYPE = "curio.rasterization/raster-calculator"
 #: The package the Raster Calculator is a node of, which the dataflow declares.
-SCOUT_PACKAGE = "curio.scout@1"
+RASTERIZATION_PACKAGE = "curio.rasterization@1"
 BASE = "cdf-base"
 TALL = "cdf-tall"
 CALCULATOR = "lgr-calculator"
@@ -158,7 +158,7 @@ def _factor(value: int) -> dict:
 def _spec(code: str, name: str) -> dict:
     """Both outcomes, the Raster Calculator after them, an Autark map of the
     comparison and an Autark map of the difference, after the calculator. The
-    dataflow names Scout's package, the calculator's. Nothing is pinned to the
+    dataflow names Rasterization's package, the calculator's. Nothing is pinned to the
     dashboard: a difference this large is over a dashboard page's 25 MB."""
     def node(node_id, node_type, x, y, content, title=None, metadata=None):
         saved = {
@@ -197,7 +197,7 @@ def _spec(code: str, name: str) -> dict:
                 {"id": "s-base", "name": "Baseline", "color": "#2a9d8f", "nodes": [BASE]},
                 {"id": "s-tall", "name": "Twice as tall", "color": "#e76f51", "nodes": [TALL]},
             ],
-            "packages": [SCOUT_PACKAGE],
+            "packages": [RASTERIZATION_PACKAGE],
         }
     }
 
@@ -217,10 +217,10 @@ def _enter(page, app_frontend, current_server, spec: dict, username: str) -> dic
         project_spec=spec,
     )
     require_owner_view(page)
-    # The Raster Calculator is Scout's node: the account has the package
+    # The Raster Calculator is Rasterization's node: the account has the package
     # because the stack starts --with-examples, and the dataflow declares it.
     store = [p.get("dirName") for p in api_json(f"{current_server}/api/packages", session["token"])["packages"]]
-    assert SCOUT_PACKAGE in store, f"{SCOUT_PACKAGE} is not in the account's store {store}: start the stack --with-examples"
+    assert RASTERIZATION_PACKAGE in store, f"{RASTERIZATION_PACKAGE} is not in the account's store {store}: start the stack --with-examples"
     for node in spec["dataflow"]["nodes"]:
         node_locator(page, node["id"]).wait_for(state="visible", timeout=45000)
     return session

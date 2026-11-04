@@ -135,6 +135,18 @@
       "savedSources": {"pool": ["load"], "chart": ["calc"]}
     },
     {
+      "name": "a package chart that draws with Vega-Lite stands for the nodes feeding it, as a Vega-Lite chart does",
+      "nodes": [
+        {"id": "calc", "type": "curio.builtin/computation-analysis@1", "content": "return input_0"},
+        {"id": "donuts", "type": "curio.vega-lite/donuts@1", "content": "{}"}
+      ],
+      "edges": [{"source": "calc", "target": "donuts"}],
+      "scenarios": [{"id": "s1", "nodes": ["calc"], "context": [], "outcomes": ["donuts"]}],
+      "expected": {"s1": {"nodes": ["calc"], "last": ["calc"], "context": [], "outcomes": ["donuts"], "boundary": []}},
+      "saves": ["calc"],
+      "savedSources": {"calc": ["calc"], "donuts": ["calc"]}
+    },
+    {
       "name": "a value node wired into a scenario's node is its boundary, and its saved output stands for it",
       "nodes": [
         {"id": "season", "type": "curio.builtin/computation-analysis@1", "content": "return [!! season !!]", "metadata": {"widgets": [{"name": "season", "type": "text", "default": "winter"}]}},

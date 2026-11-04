@@ -1,7 +1,6 @@
 """SCOUT's raster nodes in Curio, the Raster Calculator and SCOUT's building
-rasterizer (#662, step 17; the plan for #914, step 28.1), nodes of Scout
-(``curio.scout@1``) beside its seven charts (the plan answering komar41's
-review of his #914, step 10).
+rasterizer (#662, step 17; the plan for #914, step 28.1), the nodes of
+Rasterization (``curio.rasterization@1``).
 
 The raster nodes: the Raster Calculator, which left the built-in nodes, and
 Rasterize Buildings, which came from ``scout.raster-conversion@1``, now gone.
@@ -38,7 +37,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[4]
-PACKAGE_ID = "curio.scout"
+PACKAGE_ID = "curio.rasterization"
 PACKAGE = REPO / "packages" / f"{PACKAGE_ID}@1"
 SOURCES = PACKAGE / "sources"
 MODULE = "scout_rasters"
@@ -176,15 +175,15 @@ def run_node(buildings, workspace, *, fails=False, **values):
 # ---------------------------------------------------------------------------
 
 def test_the_package_holds_the_raster_calculator_and_rasterize_buildings():
-    """Scout: one read-only package of the two raster nodes, each a
+    """Rasterization: one read-only package of the two raster nodes, each a
     computation node with its own icon and place in the package's palette
-    group (its charts are Vega-Lite specs since #1270), and the
+    group, and the
     module Rasterize Buildings' code imports."""
     from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
     manifest = load_package_manifest(PACKAGE)
     assert (manifest.package_id, manifest.major, manifest.name, manifest.publisher, manifest.license) == (
-        PACKAGE_ID, 1, "Scout", "Curio", "MIT",
+        PACKAGE_ID, 1, "Rasterization", "Curio", "MIT",
     )
     assert manifest.read_only is True and manifest.kind == "node"
     assert [(t.template_id, t.label, t.category, t.icon_ref) for t in manifest.templates] == [
@@ -270,8 +269,7 @@ def test_raster_conversion_is_retired_and_no_shipped_dataflow_names_the_old_type
 def test_every_shipped_dataflow_with_a_raster_node_declares_the_package():
     """A dataflow's lockfile is how opening it, a scenario dropped from it and
     ``--with-examples`` add the package: each shipped dataflow with one of the
-    two raster nodes names ``curio.scout@1``, and of the others only those
-    with the package's charts do."""
+    two raster nodes names ``curio.rasterization@1``, and no other does."""
     with_a_raster_node, with_a_node, declaring = set(), set(), set()
     for pattern in SHIPPED_JSON[:2]:
         for path in sorted(REPO.glob(pattern)):
@@ -290,7 +288,7 @@ def test_every_shipped_dataflow_with_a_raster_node_declares_the_package():
         "docs/examples/dataflows/lower-manhattan-park-shade.json",
         "docs/examples/dataflows/quad-cities-flood-vulnerability.json",
     }, with_a_raster_node
-    # Its charts are Vega-Lite nodes now (#1270): only a raster node needs it.
+    # The Vega-Lite package holds the charts: only a raster node needs this one.
     assert with_a_node == declaring == with_a_raster_node, (with_a_node, declaring)
 
 

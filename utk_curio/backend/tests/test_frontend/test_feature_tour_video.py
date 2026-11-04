@@ -2033,8 +2033,9 @@ WHATIF_DATA = "whatif-data"
 WHATIF_POOL = "whatif-pool"
 WHATIF_EDIT = "whatif-towers-edit"
 WHATIF_MAPS = ["whatif-baseline-map", "whatif-modified-map", "whatif-towers-map"]
-#: The nodes that compare its scenarios, each with its type: Scout's Bars of the
-#: mean sunlight, and the Python node that takes each road's sunlight change.
+#: The nodes that compare its scenarios, each with its type: the Vega-Lite
+#: package's Bars of the mean sunlight, and the Python node that takes each
+#: road's sunlight change.
 WHATIF_COMPARES = [("whatif-compare-chart", "bars"), ("whatif-compare-difference", "computation-analysis")]
 WHATIF_BASELINE = "s-baseline"
 WHATIF_BASELINE_NODES = ["whatif-baseline-compute", "whatif-baseline-map"]

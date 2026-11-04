@@ -18,7 +18,7 @@ from utk_curio.backend.app.agents.domain import document_validation as dv
 VEGA = "curio.builtin/vis-vega"
 AUTK = "curio.builtin/autk-grammar"
 REPO_ROOT = Path(__file__).resolve().parents[4]
-#: The label of the box a Scout chart's one input comes from, as a run hands
+#: The label of the box a Vega-Lite package chart's one input comes from, as a run hands
 #: it, which the chart's scenario chips write.
 TODAY = {"scenario": "s-today", "name": "Today", "color": "#2a9d8f", "rank": 0}
 
@@ -329,8 +329,6 @@ def _shipped_autk_documents() -> list:
                 _walk(child, where, resolve)
 
     for path in sorted((REPO_ROOT / "docs" / "examples").rglob("*.json")):
-        if "vega-lite-charts" in path.parts:
-            continue  # chart specs written with chips, not documents of a dataflow
         doc = json.loads(path.read_text(encoding="utf-8"))
         _walk(doc, path.relative_to(REPO_ROOT), _resolver(doc))
     return found
@@ -575,7 +573,7 @@ class TestTheScenarioChipsAreCheckedResolved:
         '"color": {"field": "scenario_name", "type": "nominal", "scale": [!! scenario text_colors !!]}}}]}'
     )
 
-    #: A chart as Scout's are written: its dataset by its chip, its scenarios
+    #: A chart as the Vega-Lite package's are written: its dataset by its chip, its scenarios
     #: by the chips that list them all, and no chip that names a circle.
     CHIP_CHART = (
         '{"$schema": "https://vega.github.io/schema/vega-lite/v6.json", "data": {"name": "[!! inputs !!]"}, '
@@ -589,7 +587,7 @@ class TestTheScenarioChipsAreCheckedResolved:
     )
 
     def test_a_chart_with_the_chips_is_valid(self):
-        verdict = dv.validate("curio.builtin/vis-vega", self.CHART, grammar_id="vega-lite", columns=self.COLUMNS)
+        verdict = dv.validate("curio.vega-lite/bars", self.CHART, grammar_id="vega-lite", columns=self.COLUMNS)
         assert verdict == {"status": dv.STATUS_VALID}
 
     def test_a_chart_reading_the_dataset_by_its_chip_is_valid(self):
@@ -597,18 +595,18 @@ class TestTheScenarioChipsAreCheckedResolved:
         node's inputs: the chip stands in as that name, inside quotes or
         standing on its own."""
         for chart in (self.CHIP_CHART, self.CHIP_CHART.replace('"[!! inputs !!]"', "[!! inputs !!]")):
-            verdict = dv.validate("curio.builtin/vis-vega", chart, grammar_id="vega-lite", columns=self.COLUMNS)
+            verdict = dv.validate("curio.vega-lite/bars", chart, grammar_id="vega-lite", columns=self.COLUMNS)
             assert verdict == {"status": dv.STATUS_VALID}, (chart, verdict)
 
     def test_a_field_its_inputs_lack_is_still_refused_beside_the_dataset_chip(self):
         chart = self.CHIP_CHART.replace("[!! inputs.daily_trips !!]", "[!! inputs.trips !!]")
-        verdict = dv.validate("curio.builtin/vis-vega", chart, grammar_id="vega-lite", columns=self.COLUMNS)
+        verdict = dv.validate("curio.vega-lite/bars", chart, grammar_id="vega-lite", columns=self.COLUMNS)
         assert verdict["status"] == dv.STATUS_INVALID
         assert "reads 'trips'" in verdict["detail"]
 
     def test_a_field_of_inputs_its_inputs_lack_is_still_refused(self):
         chart = self.CHART.replace("[!! inputs.daily_trips !!]", "[!! inputs.trips !!]")
-        verdict = dv.validate("curio.builtin/vis-vega", chart, grammar_id="vega-lite", columns=self.COLUMNS)
+        verdict = dv.validate("curio.vega-lite/bars", chart, grammar_id="vega-lite", columns=self.COLUMNS)
         assert verdict["status"] == dv.STATUS_INVALID
         assert "reads 'trips'" in verdict["detail"]
 
@@ -619,14 +617,14 @@ class TestTheScenarioChipsAreCheckedResolved:
     def test_a_scale_chip_inside_quotes_is_refused_in_its_own_words(self):
         """Not the schema's reading of the chip left as text."""
         chart = self.CHART.replace('"scale": [!! scenario colors !!]', '"scale": "[!! scenario colors !!]"')
-        verdict = dv.validate("curio.builtin/vis-vega", chart, grammar_id="vega-lite", columns=self.COLUMNS)
+        verdict = dv.validate("curio.vega-lite/bars", chart, grammar_id="vega-lite", columns=self.COLUMNS)
         assert verdict["status"] == dv.STATUS_INVALID
         assert "[!! scenario colors !!] is a scale, not text. Use it outside quotes." in verdict["detail"]
 
     def test_a_chip_no_scenario_chip_is_called_is_refused_in_its_own_words(self):
         """Not as a document that is no JSON."""
         chart = self.CHART.replace("[!! scenario order !!]", "[!! scenario ordre !!]")
-        verdict = dv.validate("curio.builtin/vis-vega", chart, grammar_id="vega-lite", columns=self.COLUMNS)
+        verdict = dv.validate("curio.vega-lite/bars", chart, grammar_id="vega-lite", columns=self.COLUMNS)
         assert verdict["status"] == dv.STATUS_INVALID
         assert "[!! scenario ordre !!] names no scenario chip." in verdict["detail"]
         assert "not valid JSON" not in verdict["detail"]
@@ -833,7 +831,7 @@ class TestTheColumnsOfTheInputsDataset:
     stacked (``stack_inputs`` in ``utk_curio/sandbox/util/scenario_stack.py``):
     beside the inputs' own columns, each row carries ``__input__``,
     ``scenario`` and ``scenario_name``. A chart an agent writes over them, as
-    Scout's charts are written, reads those columns in its views of ``inputs``
+    the Vega-Lite package's charts are written, reads those columns in its views of ``inputs``
     and is not refused for it; a view of one input's own dataset has only that
     input's columns. A value input's rows hold its value under ``value``, but
     the stack refuses a value beside a table, and the check knows only tables'
@@ -856,7 +854,7 @@ class TestTheColumnsOfTheInputsDataset:
             **top,
         }
 
-    def _verdict(self, spec: dict, node_type: str = "curio.builtin/vis-vega") -> dict:
+    def _verdict(self, spec: dict, node_type: str = "curio.vega-lite/bars") -> dict:
         return dv.validate(node_type, json.dumps(spec), grammar_id="vega-lite", columns=self.COLUMNS)
 
     def test_a_spec_that_reads_inputs_may_use_the_columns_the_stack_adds(self):
@@ -880,7 +878,7 @@ class TestTheColumnsOfTheInputsDataset:
     def test_a_tables_own_value_column_is_read(self):
         spec = self._spec(data={"name": "inputs"})
         spec["encoding"]["y"] = {"field": "value", "type": "quantitative"}
-        verdict = dv.validate("curio.builtin/vis-vega", json.dumps(spec), grammar_id="vega-lite",
+        verdict = dv.validate("curio.vega-lite/bars", json.dumps(spec), grammar_id="vega-lite",
                               columns=[*self.COLUMNS, "value"])
         assert verdict == {"status": dv.STATUS_VALID}
 
@@ -931,20 +929,20 @@ class TestTheColumnsOfTheInputsDataset:
         at its widget's default name is not refused for it."""
         from utk_curio.backend.app.execution.code_references import resolve_references
 
-        from utk_curio.backend.tests._support.vega_lite_charts import chart, spec as chart_spec
-
-        template = chart(template_id)
+        package = REPO_ROOT / "packages" / "curio.vega-lite@1"
+        manifest = json.loads((package / "manifest.json").read_text(encoding="utf-8"))
+        (template,) = [t for t in manifest["templates"] if t["id"] == template_id]
         values = {**self.COUNTED[template_id], "combine": "count"}
         widgets = [dict(w, value=values[w["name"]]) if w["name"] in values else w for w in template["widgets"]]
         spec, problems = resolve_references(
-            chart_spec(template["id"]),
+            (package / template["source"]).read_text(encoding="utf-8"),
             widgets=widgets, language="json", inputs=[{"slot": 0, "scenario": TODAY}],
         )
         assert not problems, problems
         measure = "value" if template_id in ("pie", "lollipops") else "y"
         # The measure left at its default name, a column the plans lack.
         assert f'"field": "{measure}"' in spec and '"aggregate": "count"' in spec
-        verdict = dv.validate(f"curio.scout/{template_id}", spec, grammar_id="vega-lite", columns=self.COLUMNS)
+        verdict = dv.validate(f"curio.vega-lite/{template_id}", spec, grammar_id="vega-lite", columns=self.COLUMNS)
         assert verdict == {"status": dv.STATUS_VALID}
 
     def test_the_columns_are_the_ones_the_stack_writes(self):
@@ -1056,15 +1054,15 @@ class TestTheInputsDatasetHoldsNoGeometry:
         assert outcome["candidate"] == document
 
     def _table(self, columns: list) -> str:
-        """Scout's Table, listing *columns*, without the newline its source file
+        """The Vega-Lite package's Table, listing *columns*, without the newline its source file
         ends with, which the loop does not keep in what it writes."""
         from utk_curio.backend.app.execution.code_references import resolve_references
 
-        from utk_curio.backend.tests._support.vega_lite_charts import chart, spec as chart_spec
-
-        template = chart("table")
+        package = REPO_ROOT / "packages" / "curio.vega-lite@1"
+        manifest = json.loads((package / "manifest.json").read_text(encoding="utf-8"))
+        (template,) = [t for t in manifest["templates"] if t["id"] == "table"]
         spec, problems = resolve_references(
-            chart_spec(template["id"]),
+            (package / template["source"]).read_text(encoding="utf-8"),
             widgets=[dict(w, value=columns) for w in template["widgets"]], language="json",
             inputs=[{"slot": 0, "scenario": TODAY}],
         )
@@ -1120,7 +1118,7 @@ class TestAColumnWhoseNameHoldsADot:
     condition's test), ``rain.mm`` draws the column too. So a field names a
     column when its text, or its text unescaped, is the column's name: both
     spellings pass, and a path through a column, ``zone.id`` beside a column
-    ``zone``, names none. Solve checks a Scout chart's spec with its chips
+    ``zone``, names none. Solve checks a Vega-Lite package chart's spec with its chips
     written as the canvas writes them."""
 
     SCHEMA = "https://vega.github.io/schema/vega-lite/v6.json"
@@ -1218,18 +1216,18 @@ class TestAColumnWhoseNameHoldsADot:
     def test_solve_checks_a_bars_chart_with_its_widget_naming_a_dotted_column_escaped(
         self, app, tmp_curio, monkeypatch,
     ):
-        """Scout's Bars, its Y widget set to ``rain.mm``: Solve resolves its
+        """The Vega-Lite package's Bars, its Y widget set to ``rain.mm``: Solve resolves its
         chips as the canvas does for a Vega-Lite chart, the template's grammar,
         so the document it checks reads ``rain\\.mm``, and it is valid."""
         from utk_curio.backend.app.packages import service as packages_service
         from utk_curio.backend.tests.test_agents.test_verified_rounds import _Exec, _rounds
 
-        from utk_curio.backend.tests._support.vega_lite_charts import chart, spec as chart_spec
-
-        template = chart("bars")
-        document = chart_spec(template["id"]).strip()
+        package = REPO_ROOT / "packages" / "curio.vega-lite@1"
+        manifest = json.loads((package / "manifest.json").read_text(encoding="utf-8"))
+        (template,) = [t for t in manifest["templates"] if t["id"] == "bars"]
+        document = (package / template["source"]).read_text(encoding="utf-8").strip()
         monkeypatch.setattr(packages_service, "available_templates", lambda *args, **kwargs: [{
-            "id": "curio.builtin/vis-vega", "executable": False, "engine": "python",
+            "id": "curio.vega-lite/bars", "executable": False, "engine": "python",
             "contentKind": "grammar", "grammar": "vega-lite",
         }])
         checked: list = []
@@ -1241,7 +1239,7 @@ class TestAColumnWhoseNameHoldsADot:
 
         monkeypatch.setattr(dv, "validate", recording)
         widgets = [dict(w, value="rain.mm") if w["name"] == "y" else w for w in template["widgets"]]
-        node = {"id": "n1", "type": "curio.builtin/vis-vega", "goal": "Rain by scenario", "content": "",
+        node = {"id": "n1", "type": "curio.vega-lite/bars", "goal": "Rain by scenario", "content": "",
                 "metadata": {"widgets": widgets}}
         # Each scenario's table on a circle of its own, as the chart reads them
         # stacked: the two tables Solve hands on as the node's upstream.
@@ -1255,13 +1253,13 @@ class TestAColumnWhoseNameHoldsADot:
         assert checked, "Solve checked no document"
         assert '"field": "rain\\\\.mm"' in checked[-1]
         assert "document-invalid" not in [a.get("kind") for a in outcome["attempts"]]
-        assert (outcome["evidence"] or {}).get("documentValidated") == "vis-vega"
+        assert (outcome["evidence"] or {}).get("documentValidated") == "bars"
         assert outcome["candidate"] == document
 
     def test_solve_refuses_a_bars_chart_with_no_input_in_its_dataset_chips_words(
         self, app, tmp_curio, monkeypatch,
     ):
-        """Scout's Bars with no edge in the saved dataflow: its dataset chip,
+        """The Vega-Lite package's Bars with no edge in the saved dataflow: its dataset chip,
         ``[!! inputs !!]``, has nothing to stack, so each round is refused in
         the chip's own words before the document is checked. Each reply is the
         template with a description of its own, so no round repeats another
@@ -1269,12 +1267,12 @@ class TestAColumnWhoseNameHoldsADot:
         from utk_curio.backend.app.packages import service as packages_service
         from utk_curio.backend.tests.test_agents.test_verified_rounds import _Exec, _rounds
 
-        from utk_curio.backend.tests._support.vega_lite_charts import chart, spec as chart_spec
-
-        template = chart("bars")
-        document = chart_spec(template["id"]).strip()
+        package = REPO_ROOT / "packages" / "curio.vega-lite@1"
+        manifest = json.loads((package / "manifest.json").read_text(encoding="utf-8"))
+        (template,) = [t for t in manifest["templates"] if t["id"] == "bars"]
+        document = (package / template["source"]).read_text(encoding="utf-8").strip()
         monkeypatch.setattr(packages_service, "available_templates", lambda *args, **kwargs: [{
-            "id": "curio.builtin/vis-vega", "executable": False, "engine": "python",
+            "id": "curio.vega-lite/bars", "executable": False, "engine": "python",
             "contentKind": "grammar", "grammar": "vega-lite",
         }])
         checked: list = []
@@ -1285,7 +1283,7 @@ class TestAColumnWhoseNameHoldsADot:
             return validate(node_type, content, **kwargs)
 
         monkeypatch.setattr(dv, "validate", recording)
-        node = {"id": "n1", "type": "curio.builtin/vis-vega", "goal": "Rain by scenario", "content": "",
+        node = {"id": "n1", "type": "curio.vega-lite/bars", "goal": "Rain by scenario", "content": "",
                 "metadata": {"widgets": template["widgets"]}}
         spec = {"dataflow": {"nodes": [node], "edges": [], "name": "wf", "task": "t"}}
         replies = [

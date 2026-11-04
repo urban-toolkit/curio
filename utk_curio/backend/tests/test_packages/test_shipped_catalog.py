@@ -162,14 +162,14 @@ def test_the_whole_shipped_catalog_resolves_together():
 # Both scans leave out the package's own modules and the modules of the
 # packages its ``dependencies.packages`` names, which the account's store
 # resolves (``python_modules.dependency_module_names``): Deep Umbra imports
-# Scout's ``scout_rasters`` and names ``curio.scout@1``. The check below leaves
+# Rasterization's ``scout_rasters`` and names ``curio.rasterization@1``. The check below leaves
 # out the same modules through the same function, in a store holding every
 # shipped package.
 
 GUEST = "guest"
 DEEP_UMBRA_DIR = "model.scout.deep-umbra@1"
-SCOUT_DIR = "curio.scout@1"
-SCOUT_MODULE = "scout_rasters"
+RASTERIZATION_DIR = "curio.rasterization@1"
+RASTER_MODULE = "scout_rasters"
 
 
 @pytest.fixture(scope="module")
@@ -235,26 +235,27 @@ def test_the_manifest_declares_every_library_the_sources_import(package_root: Pa
 
 def test_a_module_of_a_package_the_manifest_does_not_name_is_an_undeclared_library(tmp_path, shipped_store):
     """Another package's module is left out only when the manifest names that
-    package in ``dependencies.packages``. Deep Umbra's node imports Scout's
-    ``scout_rasters`` and names ``curio.scout@1``. A copy of Deep Umbra that
-    does not name Scout imports ``scout_rasters`` undeclared, though the store
-    holds Scout. With Scout named, a library its sources import that
+    package in ``dependencies.packages``. Deep Umbra's node imports
+    Rasterization's ``scout_rasters`` and names ``curio.rasterization@1``. A
+    copy of Deep Umbra that does not name Rasterization imports
+    ``scout_rasters`` undeclared, though the store holds Rasterization. With
+    Rasterization named, a library its sources import that
     ``dependencies.python`` leaves out is still undeclared."""
-    assert SCOUT_MODULE in dependency_module_names(shipped_store, {SCOUT_DIR: "*"})
+    assert RASTER_MODULE in dependency_module_names(shipped_store, {RASTERIZATION_DIR: "*"})
     copy = tmp_path / DEEP_UMBRA_DIR
     shutil.copytree(CATALOG / DEEP_UMBRA_DIR, copy, ignore=shutil.ignore_patterns("models"))
     manifest_path = copy / "manifest.json"
     raw = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert raw["dependencies"]["packages"] == {SCOUT_DIR: "*"}, raw["dependencies"]
+    assert raw["dependencies"]["packages"] == {RASTERIZATION_DIR: "*"}, raw["dependencies"]
     undeclared = _undeclared_libraries(copy, shipped_store)
     assert undeclared == {}, undeclared
 
     raw["dependencies"]["packages"] = {}
     manifest_path.write_text(json.dumps(raw), encoding="utf-8")
     undeclared = _undeclared_libraries(copy, shipped_store)
-    assert undeclared == {SCOUT_MODULE: ["sources/deep_umbra/node_outputs.py"]}, undeclared
+    assert undeclared == {RASTER_MODULE: ["sources/deep_umbra/node_outputs.py"]}, undeclared
 
-    raw["dependencies"]["packages"] = {SCOUT_DIR: "*"}
+    raw["dependencies"]["packages"] = {RASTERIZATION_DIR: "*"}
     del raw["dependencies"]["python"]["pyproj"]
     manifest_path.write_text(json.dumps(raw), encoding="utf-8")
     undeclared = _undeclared_libraries(copy, shipped_store)

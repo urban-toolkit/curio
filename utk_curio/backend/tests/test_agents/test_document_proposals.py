@@ -48,9 +48,9 @@ TEMPLATES = [
      "outputPorts": [{"types": ["GEODATAFRAME"], "cardinality": "[0,1]"}]},
 ]
 
-#: A Scout-style chart: its dataset and its scenario chips, a field and a
+#: A chart as the Vega-Lite package's are written: its dataset and its scenario chips, a field and a
 #: title through its widgets (inside quotes), and a widget written bare.
-SCOUT_STYLE = (
+PACKAGE_CHART_STYLE = (
     '{"$schema": "https://vega.github.io/schema/vega-lite/v6.json", "data": {"name": "[!! inputs !!]"}, '
     '"mark": {"type": "bar", "opacity": [!! opacity !!]}, '
     '"title": "[!! title !!]", '
@@ -143,7 +143,7 @@ class TestACreatedNode:
         att = grounding_routes._attach(client, token, charts, NB)
         calls = grounding_routes._script(monkeypatch, [
             _create(VEGA, OWNERS_VEGA),
-            _create(VEGA, SCOUT_STYLE, widgets=SCOUT_WIDGETS),
+            _create(VEGA, PACKAGE_CHART_STYLE, widgets=SCOUT_WIDGETS),
             "Added it.",
         ])
         body = grounding_routes._run(client, token, charts, att, "chart the mean trips per scenario")
@@ -153,9 +153,9 @@ class TestACreatedNode:
         assert landed.startswith("[tool result] node.create: applied"), landed
         # The chart that resolves through its own widgets and the scenario chips lands as written.
         [card] = _changes(body)
-        assert card["preview"] == SCOUT_STYLE
+        assert card["preview"] == PACKAGE_CHART_STYLE
         [created] = [c["canvas"]["node"] for c in body["changes"] if c["tool"] == "node.create"]
-        assert _node(user, charts, created["id"])["content"] == SCOUT_STYLE
+        assert _node(user, charts, created["id"])["content"] == PACKAGE_CHART_STYLE
 
     def test_a_map_that_draws_nothing_is_refused_and_one_reading_an_input_not_yet_wired_lands(
         self, client, user_and_token, tmp_curio, charts, monkeypatch

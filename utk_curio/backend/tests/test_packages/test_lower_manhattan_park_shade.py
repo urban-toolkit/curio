@@ -20,12 +20,12 @@ context:
 Three scenarios: Existing; Towers removed, whose Map Editor node removes the
 marked parts; and Height cap, whose Map Editor node cuts them down to the
 Tall building height. Each rasterizes its buildings
-(``curio.scout@1``), runs Deep Umbra on them
+(``curio.rasterization@1``), runs Deep Umbra on them
 (``model.scout.deep-umbra@1``), measures the shade in each park, and draws its
 buildings in 3D and its shadow on Autark maps; each what-if's Map Editor node
-is linked to its buildings map, which it edits on. Scout's Dots with a range
-charts each park's mean minutes of shadow in the three scenarios, and for
-each what-if a Raster Calculator (``curio.scout@1``) takes the change in
+is linked to its buildings map, which it edits on. The Vega-Lite package's
+Dots with a range charts each park's mean minutes of shadow in the three scenarios, and for
+each what-if a Raster Calculator (``curio.rasterization@1``) takes the change in
 shadow cell by cell and a Python node each park's change in shade, each drawn
 by an Autark map after it. Until the plan answering komar41's review (step
 6.3), Compare Scenarios nodes did all three.
@@ -59,7 +59,8 @@ REPO = Path(__file__).resolve().parents[4]
 DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "lower-manhattan-park-shade.json"
 NAME = "Lower Manhattan park shade with towers removed or capped"
 EXTRACT = "docs/examples/data/lower_mnt.osm.pbf"
-RASTER_PACKAGE = REPO / "packages" / "curio.scout@1"
+RASTER_PACKAGE = REPO / "packages" / "curio.rasterization@1"
+CHART_PACKAGE = REPO / "packages" / "curio.vega-lite@1"
 RASTER_MODULE = "scout_rasters"
 MODEL_PACKAGE = REPO / "packages" / "model.scout.deep-umbra@1"
 MODEL_ID = "model.scout.deep-umbra"
@@ -69,10 +70,10 @@ PYTHON = "curio.builtin/computation-analysis"
 PARAMETER = "curio.builtin/parameter"
 INTERACTION = "curio.builtin/edit-features"
 COMPARE = "curio.builtin/compare-scenarios"
-RASTERIZE = "curio.scout/rasterize-buildings"
+RASTERIZE = "curio.rasterization/rasterize-buildings"
 SHADOW = "model.scout.deep-umbra/accumulated-shadow"
-CALCULATOR = "curio.scout/raster-calculator"
-DOTS = "curio.builtin/vis-vega"
+CALCULATOR = "curio.rasterization/raster-calculator"
+DOTS = "curio.vega-lite/dots-with-a-range"
 #: The chart and the changes, which keep the ids of the Compare Scenarios nodes
 #: they replaced.
 CHART = "park-shade-chart"
@@ -279,10 +280,10 @@ def test_it_is_three_scenarios_over_one_context_from_the_extract():
     nodes, its shade per park and its two maps; the chart, the changes and
     the maps after the changes are in no scenario, and no Compare Scenarios
     node is left. No dataset: the data comes from the extract. The lockfile
-    names both packages."""
+    names the three packages."""
     spec = _dataflow()
     assert spec["name"] == NAME
-    assert spec["packages"] == ["curio.scout@1", "model.scout.deep-umbra@1"]
+    assert spec["packages"] == ["curio.rasterization@1", "curio.vega-lite@1", "model.scout.deep-umbra@1"]
     assert not spec.get("datasets"), spec.get("datasets")
     assert spec["categories"] == {"city": ["New York"], "topic": ["Heat and climate", "Greenery"],
                                   "complexity": ["Beginner"]}
@@ -453,8 +454,8 @@ def test_the_levers_are_interaction_nodes_whose_code_is_their_log():
 
 
 def test_the_chart_and_the_changes_hold_what_they_compare():
-    """One chart of each park's mean minutes in the three scenarios: Scout's
-    Dots with a range, its spec its template's own, a park per row and a dot
+    """One chart of each park's mean minutes in the three scenarios: the
+    Vega-Lite package's Dots with a range, its spec its template's own, a park per row and a dot
     per scenario, reading the three Shade per park nodes in the order of
     their boxes. For each what-if, a Raster Calculator of the what-if's
     shadow minus Existing's, and a Python node of the what-if's shade per park
@@ -465,9 +466,7 @@ def test_the_chart_and_the_changes_hold_what_they_compare():
     nodes = _nodes(spec)
     into = _into(spec)
     chart = nodes[CHART]
-    from utk_curio.backend.tests._support.vega_lite_charts import chart as vega_chart, spec as vega_spec
-
-    template, source = vega_chart("dots-with-a-range"), vega_spec("dots-with-a-range")
+    template, source = _template(CHART_PACKAGE, DOTS)
     assert (chart["type"], chart["content"]) == (DOTS, source)
     assert set(chart["metadata"]) == {"keywords", "widgets"}, chart["metadata"]
     assert [{k: v for k, v in w.items() if k != "value"} for w in chart["metadata"]["widgets"]] == template["widgets"]
@@ -564,7 +563,7 @@ _FETCH_FROM_DISK = """{
 """
 
 #: Each package node's modules, as a run stages them: Accumulated Shadow's
-#: own, then Scout's, which its package names in ``dependencies.packages``.
+#: own, then Rasterization's, which its package names in ``dependencies.packages``.
 _PACKAGE_MODULES = {
     RASTERIZE: {"root": str(RASTER_PACKAGE / "sources"), "names": [RASTER_MODULE]},
     CALCULATOR: {"root": str(RASTER_PACKAGE / "sources"), "names": [RASTER_MODULE]},

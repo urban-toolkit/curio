@@ -40,7 +40,7 @@ EXAMPLE_INVARIANTS = [
     ("06-back-bay-road-sunlight.json", 16, 19,
      {"curio.builtin/autk-grammar": 9, "curio.builtin/data-pool": 1,
       "curio.builtin/computation-analysis": 4, "curio.builtin/edit-features": 1,
-      "curio.builtin/vis-vega": 1}, True),
+      "curio.vega-lite/bars": 1}, True),
     ("07-autark-gpu-shader.json", 4, 4,
      {"curio.builtin/autk-grammar": 4}, True),
     ("08-autark-spatial-join-regression.json", 6, 6,
@@ -93,11 +93,11 @@ EXAMPLE_INVARIANTS = [
      {"curio.builtin/data-loading": 2, "curio.builtin/computation-analysis": 1,
       "curio.builtin/vis-vega": 1}, False),
     # Rasterize Buildings returns one raster, so no node picks it out (#819).
-    # It and the Raster Calculator are Scout's (curio.scout@1).
+    # It and the Raster Calculator are Rasterization's (curio.rasterization@1).
     ("24-scout-shadow-model-chicago-loop.json", 7, 7,
-     {"curio.builtin/data-loading": 1, "curio.scout/rasterize-buildings": 1,
+     {"curio.builtin/data-loading": 1, "curio.rasterization/rasterize-buildings": 1,
       "model.scout.deep-umbra/accumulated-shadow": 1,
-      "curio.scout/raster-calculator": 1, "curio.builtin/autk-grammar": 3}, False),
+      "curio.rasterization/raster-calculator": 1, "curio.builtin/autk-grammar": 3}, False),
     # #576: one Spatial Join per operation, plus two over a point on an edge.
     ("25-spatial-join-operations.json", 25, 28,
      {"curio.builtin/data-loading": 6, "curio.builtin/data-transformation": 1,
@@ -314,7 +314,7 @@ def test_example_flows_meet_on_input_circles(basename, expected_fan_in):
 WHATIF_CHART = "whatif-compare-chart"
 WHATIF_CHANGE = "whatif-compare-difference"
 WHATIF_ROADS = ["whatif-baseline-roads", "whatif-modified-roads", "whatif-towers-roads"]
-VEGA_LITE_CHARTS = os.path.join(REPO_ROOT, "docs", "examples", "vega-lite-charts")
+VEGA_LITE_PACKAGE = os.path.join(REPO_ROOT, "packages", "curio.vega-lite@1")
 
 
 def test_example_06_is_three_scenarios_over_one_context():
@@ -399,10 +399,10 @@ def test_example_06_is_three_scenarios_over_one_context():
     assert (
         factor("whatif-baseline-compute"), factor("whatif-modified-compute"), factor("whatif-towers-compute"),
     ) == (1, 2, 1)
-    # No Compare Scenarios node is left, and the dataflow needs no package:
-    # its chart is a built-in Vega-Lite node.
+    # No Compare Scenarios node is left; the Vega-Lite package, whose Bars the
+    # chart is, is the one the dataflow declares.
     assert not [n["id"] for n in flow["nodes"] if n["type"].split("@")[0] == "curio.builtin/compare-scenarios"]
-    assert flow["packages"] == []
+    assert flow["packages"] == ["curio.vega-lite@1"]
     # Each scenario's Roads node, its last, reads its own shadow step and takes
     # the roads layer, each road with its sunlight, out of the five it hands on
     # by a layer chip: the chart reads one table per circle, not a node's
@@ -421,17 +421,17 @@ def test_example_06_is_three_scenarios_over_one_context():
     assert [nodes[roads]["metadata"].get("copiedFrom") for roads in WHATIF_ROADS] == [
         None, [WHATIF_ROADS[0]], [WHATIF_ROADS[0]],
     ]
-    # The chart: the Vega-Lite charts' Bars, its spec that chart's own, its
+    # The chart: the Vega-Lite package's Bars, its spec its template's own, its
     # widgets set as the Compare node's bar drew it: each scenario's mean
     # sunlight, the Y axis titled as Compare titled it. Its circles take the
     # three Roads nodes in the order of the boxes, and it stores no label of
     # its own: each bar takes its name and color from its input's box.
-    with open(os.path.join(VEGA_LITE_CHARTS, "charts.json"), "r", encoding="utf-8") as f:
-        (template,) = [t for t in json.load(f)["charts"] if t["id"] == "bars"]
-    with open(os.path.join(VEGA_LITE_CHARTS, template["spec"]), "r", encoding="utf-8") as f:
+    with open(os.path.join(VEGA_LITE_PACKAGE, "manifest.json"), "r", encoding="utf-8") as f:
+        (template,) = [t for t in json.load(f)["templates"] if t["id"] == "bars"]
+    with open(os.path.join(VEGA_LITE_PACKAGE, template["source"]), "r", encoding="utf-8") as f:
         starter = f.read()
     chart = nodes[WHATIF_CHART]
-    assert (chart["type"], chart["title"]) == ("curio.builtin/vis-vega", "Mean sunlight")
+    assert (chart["type"], chart["title"]) == ("curio.vega-lite/bars", "Mean sunlight")
     assert chart["content"] == starter
     assert set(chart["metadata"]) == {"keywords", "widgets"}, chart["metadata"]
     widgets = chart["metadata"]["widgets"]

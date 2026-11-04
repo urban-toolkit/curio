@@ -25,7 +25,7 @@ preamble and the skills Curio ships as agents read them, and the worked
 examples the builder agents are shown (the base entry's ``examples.md``),
 which include example 09's scatter. A
 dataflow's chart is a Vega-Lite node, or a node of a shipped template that
-draws with the Vega-Lite grammar, as Scout's charts do.
+draws with the Vega-Lite grammar, as the Vega-Lite package's charts do.
 """
 from __future__ import annotations
 
@@ -61,8 +61,8 @@ def _flow(path: Path) -> dict:
 
 def _vega_lite_types() -> set:
     """The node types that draw a Vega-Lite spec: every shipped template whose
-    grammar is ``vega-lite``, the Vega-Lite node's and Scout's
-    charts, read off the manifests."""
+    grammar is ``vega-lite``, the Vega-Lite node's and the Vega-Lite
+    package's charts, read off the manifests."""
     types = {VEGA}
     for path in sorted((REPO_ROOT / "packages").glob("*/manifest.json")):
         manifest = json.loads(path.read_text(encoding="utf-8"))
@@ -209,16 +209,13 @@ class TestADescriptionSaysWhatTheSpecHolds:
 def _written_specs():
     """(where, text) for every Vega-Lite spec Curio ships, as it is written,
     its chips unresolved: each template of a shipped package that draws with
-    the Vega-Lite grammar, each chart of ``docs/examples/vega-lite-charts``,
-    and each chart of an example dataflow."""
+    the Vega-Lite grammar, and each chart of an example dataflow."""
     for path in sorted((REPO_ROOT / "packages").glob("*/manifest.json")):
         manifest = json.loads(path.read_text(encoding="utf-8"))
         for template in manifest.get("templates") or []:
             if template.get("grammarId") == "vega-lite" and template.get("source"):
                 source = path.parent / template["source"]
                 yield f"{path.parent.name}/{template['source']}", source.read_text(encoding="utf-8")
-    for path in sorted((REPO_ROOT / "docs" / "examples" / "vega-lite-charts").glob("*.vl.json")):
-        yield f"vega-lite-charts/{path.name}", path.read_text(encoding="utf-8")
     for path in example_paths():
         for node in _flow(path).get("nodes", []):
             if node["type"].split("@", 1)[0] in VEGA_LITE_TYPES and isinstance(node.get("content"), str):
@@ -253,7 +250,7 @@ def _dataset_names(spec) -> list:
 class TestTheStackedDatasetIsNamedByItsChip:
     def test_no_shipped_spec_names_the_dataset_inputs_bare(self):
         """Read as written, each chip standing on its own held by a string of
-        its text (``with_chip_placeholders``): the fifteen Vega-Lite charts and their
+        its text (``with_chip_placeholders``): the Vega-Lite package's fifteen charts and their
         copies in the shipped dataflows name the dataset by its chip, and no
         spec names it bare. Every spec reads so, or the scan would pass over
         it."""
@@ -271,7 +268,7 @@ class TestTheStackedDatasetIsNamedByItsChip:
             chipped.extend(where for name in names if name == "[!! inputs !!]")
         assert unread == [], f"these specs do not read as JSON, so their datasets went unchecked: {unread}"
         assert bare == [], f"these specs name the dataset inputs bare, not as [!! inputs !!]: {bare}"
-        assert len([where for where in chipped if where.startswith("vega-lite-charts/")]) == 15, chipped
+        assert len([where for where in chipped if where.startswith("curio.vega-lite@1/")]) == 15, chipped
         assert len(chipped) >= 34, chipped
 
 

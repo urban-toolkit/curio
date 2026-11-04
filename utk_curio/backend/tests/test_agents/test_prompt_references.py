@@ -196,7 +196,7 @@ def _dataflow(entry: examples.IndexEntry) -> dict:
 def _as_a_run_reads_it(entry: examples.IndexEntry) -> dict:
     """A dataflow with each chart's spec read as a run reads it, its references
     resolved: a chart of a package's that places its widgets as values, as
-    Scout's Bars places its Combine (``"aggregate": "[!! combine !!]"``), is a
+    the Vega-Lite package's Bars places its Combine (``"aggregate": "[!! combine !!]"``), is a
     Vega-Lite document once its widgets are written. Every other node is as
     the dataflow holds it."""
     from utk_curio.backend.app.execution.workflow_spec import parse_workflow_dict
@@ -386,7 +386,7 @@ def test_every_dataset_and_model_a_used_dataflow_loads_ships(entry):
 
 @pytest.mark.parametrize("entry", USED, ids=lambda entry: entry.path.stem)
 def test_every_vega_lite_spec_in_a_used_dataflow_validates(entry):
-    # As a run reads each one: example 06 charts with Scout's Bars, whose
+    # As a run reads each one: example 06 charts with the Vega-Lite package's Bars, whose
     # widgets reach its spec as values once they are written.
     for spec in _vega_specs(_as_a_run_reads_it(entry)):
         result = validate_vega_lite(json.dumps(spec))

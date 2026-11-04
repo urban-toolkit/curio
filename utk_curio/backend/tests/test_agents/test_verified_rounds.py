@@ -689,7 +689,7 @@ class TestScenarioChipsInTheCheck:
             "edges": [{"id": "e-py", "source": "py", "target": "chart", "sourceHandle": "out", "targetHandle": "in"}],
             "name": "wf", "task": "compare",
         }}
-        # As Scout's charts write it: the dataset its inputs are stacked in, by its chip.
+        # As the Vega-Lite package's charts write it: the dataset its inputs are stacked in, by its chip.
         reply = (
             '{"data": {"name": "[!! inputs !!]"}, "mark": "bar", "encoding": '
             '{"x": {"field": "scenario_name", "type": "nominal", "sort": [!! scenario order !!]}}}'

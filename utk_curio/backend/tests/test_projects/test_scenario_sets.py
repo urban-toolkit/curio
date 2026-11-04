@@ -57,7 +57,7 @@ def test_every_shipped_dataflow_holds_its_scenarios_as_a_doc_keeps_them():
     examples = REPO_ROOT / "docs" / "examples"
     moved, read = [], 0
     for path in sorted(examples.rglob("*.json")):
-        if any(part in path.parts for part in ("prompts", "expected_outputs", "vega-lite-charts")):
+        if any(part in path.parts for part in ("prompts", "expected_outputs")):
             continue
         spec = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(spec, dict) or not isinstance(spec.get("dataflow"), dict) or "scenarios" not in spec["dataflow"]:

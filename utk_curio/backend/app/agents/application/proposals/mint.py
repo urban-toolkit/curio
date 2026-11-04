@@ -802,9 +802,9 @@ def _mint_node_create(
     if entry is None:
         return agents_tool_rounds._refuse_params(err)
     proposed = content.extract_node_content(params.get("content"))
-    # A template whose starter is its whole content, such as each Scout
-    # chart, gives the node that starter, as a plan does: the request gives
-    # no content, and sets the template's widgets by name.
+    # A template whose starter is its whole content, such as each chart of
+    # the Vega-Lite package, gives the node that starter, as a plan does:
+    # the request gives no content, and sets the template's widgets by name.
     starter = _node_create_starter(user_key, project_id, entry)
     if starter is not None and proposed:
         return agents_tool_rounds._refuse_params(agent_text.message(

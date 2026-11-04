@@ -52,7 +52,7 @@ def test_a_data_export_is_a_sink_by_the_behavior_its_template_declares():
 @pytest.mark.parametrize("node_type", [
     "curio.builtin/data-transformation",
     "curio.builtin/data-transformation@1",
-    "curio.scout/raster-calculator@1",
+    "curio.rasterization/raster-calculator@1",
     None,
     "",
 ])
@@ -62,11 +62,11 @@ def test_non_sink_types_pass(node_type):
 
 
 @pytest.mark.parametrize("node_type", [
-    "curio.builtin/vis-vega",
-    "curio.builtin/vis-vega",
-    "curio.builtin/vis-vega",
-    "curio.builtin/vis-vega",
-    "curio.builtin/vis-vega",
+    "curio.vega-lite/donuts",
+    "curio.vega-lite/lines-with-band@1",
+    "curio.vega-lite/weighted-matrix@1",
+    "curio.vega-lite/dots-with-a-range@1",
+    "curio.vega-lite/table",
 ])
 def test_a_package_chart_that_draws_with_vega_lite_is_a_sink(node_type):
     """Scout's charts draw with the Vega-Lite node's behavior

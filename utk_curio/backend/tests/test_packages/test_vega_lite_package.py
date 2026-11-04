@@ -1,14 +1,13 @@
-"""The fifteen Vega-Lite charts that compare scenarios
-(``docs/examples/vega-lite-charts``), each a spec for a Vega-Lite node with
-the widgets ``charts.json`` lists. They were the Scout package's chart
-templates until #1270.
+"""``curio.vega-lite@1``: Vega-Lite, the package of fifteen Vega-Lite charts
+that compare scenarios.
 
 Seven are re-made from komar41's ScenarioCharts (#914; the plan for #914, step
 28.2), one is the first view of his "Minutes of shadow per park" chart (Dots
 with a range), and seven were the chart presets of the Compare Scenarios node,
 since removed (the plan answering komar41's review, steps 6.2 and 6.4).
 
-Each is a ``.vl.json`` spec that is a Vega-Lite node's whole content. A chart takes one input
+Each is a template that draws with the Vega-Lite node's own behavior, with a
+``.vl.json`` starter that is a node's whole content. A chart takes one input
 per scenario, as many circles as it has inputs, and its spec reads them all as
 the dataset ``inputs``: every input's rows stacked, each row named by its
 input's scenario box (``__input__``, ``scenario``, ``scenario_name``). The
@@ -25,12 +24,13 @@ its scale as ``[!! scenario colors !!]`` (a text mark's as
 from (``utils/references/codeReferences.ts``), so a scenario renamed or
 recolored is drawn as its box is.
 
-Every file is read inside its test, so a checkout without the folder fails
+Every file is read inside its test, so a checkout without the package fails
 test by test rather than at collection.
 """
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -38,13 +38,12 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[4]
-CHARTS = REPO / "docs" / "examples" / "vega-lite-charts"
+PACKAGE_ID = "curio.vega-lite"
+PACKAGE = REPO / "packages" / f"{PACKAGE_ID}@1"
 BUILTIN = REPO / "packages" / "curio.builtin@1" / "manifest.json"
-#: The package that held them as templates of its own, before #1270.
-SCOUT = REPO / "packages" / "curio.scout@1"
 
-#: The fifteen charts, in order: the seven from ScenarioCharts, Dots with a
-#: range, and Compare's seven presets.
+#: The fifteen charts, in the palette's order: the seven from ScenarioCharts,
+#: Dots with a range, and Compare's seven presets.
 TEMPLATES = [
     "lines-with-band",
     "curves-by-group",
@@ -105,6 +104,11 @@ EMPTY_COLUMNS = {"facet"}
 #: The Table's list of columns, which starts with the scenarios' names.
 LISTS = {"columns": ["scenario_name"]}
 
+#: Part 2's manifest flag (feat/package-starter-templates): the template's
+#: starter is a node's whole content, kept when an agent plans the node and
+#: left alone by Solve.
+STARTER_FLAG = "starterIsContent"
+
 CHIP = re.compile(r"\[!!\s*(.*?)\s*!!\]")
 SCENARIO_COLUMN = "scenario_name"
 #: The columns every row of ``inputs`` carries: its input's circle, and its
@@ -123,17 +127,17 @@ DATASET_CHIP = "inputs"
 BOX = {"scenario": "s-base", "name": "Baseline", "color": "#2a9d8f", "rank": 0}
 
 
-def _charts() -> list:
-    return json.loads((CHARTS / "charts.json").read_text(encoding="utf-8"))["charts"]
+def _manifest() -> dict:
+    return json.loads((PACKAGE / "manifest.json").read_text(encoding="utf-8"))
 
 
 def _template(template_id: str) -> dict:
-    (chart,) = [c for c in _charts() if c["id"] == template_id]
-    return chart
+    (template,) = [t for t in _manifest()["templates"] if t["id"] == template_id]
+    return template
 
 
 def _source(template_id: str) -> str:
-    return (CHARTS / _template(template_id)["spec"]).read_text(encoding="utf-8")
+    return (PACKAGE / _template(template_id)["source"]).read_text(encoding="utf-8")
 
 
 def _is_column(widget: dict) -> bool:
@@ -232,36 +236,70 @@ def _channels(spec) -> list:
 # --- the package -------------------------------------------------------------
 
 
-def test_the_folder_holds_the_fifteen_charts_in_order():
-    charts = _charts()
-    assert [c["id"] for c in charts] == TEMPLATES
-    assert [c["label"] for c in charts] == LABELS
-    assert sorted(p.name for p in CHARTS.glob("*.vl.json")) == sorted(f"{t}.vl.json" for t in TEMPLATES)
+def test_the_package_is_vega_lite_from_curio_under_mit_with_no_library_and_no_tag():
+    """The charts need no Python library, and no chart's starter imports
+    anything. The package carries no dataflow category: its charts are not
+    SCOUT's, whose tag Rasterization's raster nodes carry."""
+    from utk_curio.backend.app.packages.service import load_package_manifest
+
+    manifest = _manifest()
+    assert (manifest["id"], manifest["name"]) == (PACKAGE_ID, "Vega-Lite")
+    assert (manifest["publisher"], manifest["license"], manifest["version"]) == ("Curio", "MIT", "1.0.0")
+    assert manifest["dependencies"] == {"js": {}, "packages": {}, "python": {}}
+    assert "dataflowCategories" not in manifest
+    assert not [t["id"] for t in manifest["templates"] if "dataflowCategories" in t]
+    assert manifest["readOnly"] is True and manifest["permissions"] == []
+    assert manifest.get("kind", "node") == "node"
+    assert (PACKAGE / "README.md").is_file()
+    loaded = load_package_manifest(PACKAGE)
+    assert [t.template_id for t in loaded.templates] == TEMPLATES
+    assert sorted(p.name for p in (PACKAGE / "sources").iterdir()) == sorted(f"{t}.vl.json" for t in TEMPLATES)
+    for template_id in TEMPLATES:
+        assert _template(template_id)["source"].endswith(".vl.json"), template_id
+
+
+def test_it_holds_the_fifteen_charts_in_the_palettes_order():
+    """Each in its place in the palette, after Rasterization's two raster
+    nodes, its first two places, as a dataflow that uses both packages lists
+    them."""
+    templates = _manifest()["templates"]
+    assert [t["id"] for t in templates] == TEMPLATES
+    raster_places = [t["paletteOrder"] for t in json.loads(
+        (REPO / "packages" / "curio.rasterization@1" / "manifest.json").read_text(encoding="utf-8"))["templates"]]
+    assert raster_places == [0, 1]
+    assert [t["paletteOrder"] for t in templates] == list(range(len(raster_places), len(raster_places) + len(TEMPLATES)))
+    assert [t["label"] for t in templates] == LABELS
 
 
 @pytest.mark.parametrize("template_id", TEMPLATES)
-def test_each_chart_is_a_spec_for_the_vega_lite_node(template_id):
-    """Its spec is a Vega-Lite node's whole content, and the Vega-Lite node
-    takes one input per scenario on circles that grow and has a Widgets tab."""
-    chart = _template(template_id)
-    assert chart["spec"] == f"{template_id}.vl.json" and (CHARTS / chart["spec"]).is_file()
+def test_each_chart_is_a_vega_lite_node_with_a_starter_of_its_own(template_id):
+    """It draws with the Vega-Lite node's behavior and grammar, takes one input
+    per scenario on circles that grow as the Vega-Lite node's do, hands its
+    input on as the Vega-Lite node does, and opens with its starter, which is
+    its whole content."""
+    template = _template(template_id)
     builtin = {t["id"]: t for t in json.loads(BUILTIN.read_text(encoding="utf-8"))["templates"]}["vis-vega"]
-    assert (builtin["behavior"], builtin["grammarId"], builtin["hasWidgets"]) == ("vega", "vega-lite", True)
-    assert builtin["inputPorts"] == [{"cardinality": "[1,n]", "types": ["DATAFRAME", "GEODATAFRAME"]}]
-
-
-def test_no_package_holds_a_chart_template():
-    """A chart is a Vega-Lite node, never a node type of a package (#1270)."""
-    manifest = json.loads((SCOUT / "manifest.json").read_text(encoding="utf-8"))
-    assert [t["id"] for t in manifest["templates"]] == ["raster-calculator", "rasterize-buildings"]
-    assert not list(SCOUT.rglob("*.vl.json"))
+    expected = {
+        "behavior": "vega", "editor": "grammar", "grammarId": "vega-lite", "engine": "python",
+        "hasCode": False, "hasGrammar": True, "hasWidgets": True,
+        "badge": "VEGA", "category": "vis_grammar", "iconRef": "fa-solid:chart-line",
+    }
+    assert {key: template.get(key) for key in expected} == expected
+    assert {key: builtin.get(key) for key in expected} == expected, "the Vega-Lite node itself changed"
+    assert template["inputPorts"] == [{"cardinality": "[1,n]", "types": ["DATAFRAME", "GEODATAFRAME"]}]
+    assert template["inputPorts"] == builtin["inputPorts"]
+    assert template["outputPorts"] == [{"cardinality": "1", "types": builtin["outputPorts"][0]["types"]}]
+    assert template["source"] == f"sources/{template_id}.vl.json"
+    assert (PACKAGE / template["source"]).is_file()
+    assert template.get(STARTER_FLAG) is True
 
 
 @pytest.mark.parametrize("template_id", TEMPLATES)
-def test_each_description_starts_with_its_form_and_its_columns(template_id):
-    """That it takes one input per scenario, what the chart draws and the
-    columns it reads come first, within the first 140 characters."""
-    _TEMPLATES_BLOCK_DESC_CHARS = 140
+def test_each_description_starts_with_its_form_and_its_columns_within_the_rosters_cut(template_id):
+    """The list of templates an agent reads cuts each description at 140
+    characters (``turns/roster.py``): that it takes one input per scenario,
+    what the chart draws and the columns it reads come first."""
+    from utk_curio.backend.app.agents.application.turns.roster import _TEMPLATES_BLOCK_DESC_CHARS
 
     template = _template(template_id)
     shown = template["description"][:_TEMPLATES_BLOCK_DESC_CHARS]
@@ -455,13 +493,57 @@ def test_dots_with_a_range_draw_a_rule_per_category_and_a_dot_per_scenario():
 
 
 def test_the_readme_names_each_chart_and_its_widgets():
-    """Each chart: its spec file, its label and each widget it has."""
-    readme = (CHARTS / "README.md").read_text(encoding="utf-8")
-    for chart in _charts():
-        assert f"`{chart['spec']}`" in readme, chart["id"]
-        assert chart["label"] in readme, chart["label"]
-        for widget in chart["widgets"]:
-            assert f"`{widget['name']}`" in readme, (chart["id"], widget["name"])
+    """Each of the package's charts: its id, its label and each widget it
+    has."""
+    readme = (PACKAGE / "README.md").read_text(encoding="utf-8")
+    assert readme.startswith(f"# `{PACKAGE_ID}@1`: Vega-Lite\n")
+    templates = _manifest()["templates"]
+    assert [t["id"] for t in templates] == TEMPLATES
+    for template in templates:
+        assert f"`{PACKAGE_ID}/{template['id']}`" in readme, template["id"]
+        assert template["label"] in readme, template["label"]
+        for widget in template.get("widgets") or []:
+            assert f"`{widget['name']}`" in readme, (template["id"], widget["name"])
+    for template_id in TEMPLATES:
+        assert _template(template_id)["widgets"], template_id
     # A chart takes each scenario's outcome on a circle of its own: none
     # connects after a Compare Scenarios node.
     assert "Compare Scenarios" not in readme
+
+
+def test_the_integrity_file_holds_every_file_and_its_hash():
+    recorded = json.loads((PACKAGE / "integrity.json").read_text(encoding="utf-8"))["sha256"]
+    on_disk = {
+        path.relative_to(PACKAGE).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in PACKAGE.rglob("*")
+        if path.is_file() and path.name != "integrity.json"
+    }
+    assert recorded == on_disk
+
+
+def test_a_shipped_dataflow_lists_the_package_only_when_it_holds_one_of_its_charts():
+    """Example 06, the charts dataflow and every SCOUT dataflow that charts its
+    scenarios list the Vega-Lite package, for their charts; example 24, which
+    draws no chart of it, does not."""
+    listed, holding = set(), set()
+    for path in sorted((REPO / "docs" / "examples").rglob("*.json")):
+        if any(part in path.parts for part in ("prompts", "expected_outputs")):
+            continue
+        dataflow = json.loads(path.read_text(encoding="utf-8")).get("dataflow")
+        if not isinstance(dataflow, dict):
+            continue
+        relative = path.relative_to(REPO).as_posix()
+        if f"{PACKAGE_ID}@1" in (dataflow.get("packages") or []):
+            listed.add(relative)
+        if any(str(node.get("type", "")).startswith(f"{PACKAGE_ID}/") for node in dataflow.get("nodes") or []):
+            holding.add(relative)
+    assert listed == holding
+    assert {
+        "docs/examples/06-back-bay-road-sunlight.json",
+        "docs/examples/dataflows/chicago-loop-shadow-towers.json",
+        "docs/examples/dataflows/chicago-rain-wind-routing.json",
+        "docs/examples/dataflows/lower-manhattan-park-shade.json",
+        "docs/examples/dataflows/quad-cities-flood-vulnerability.json",
+        "docs/examples/dataflows/scenario-comparison-charts.json",
+    } == holding
+    assert "docs/examples/24-scout-shadow-model-chicago-loop.json" not in listed

@@ -470,22 +470,20 @@ class TestTheShippedCorpus:
         chicago-rain-wind-routing, lower-manhattan-park-shade,
         quad-cities-flood-vulnerability and scenario-comparison-charts test
         dataflows, whose templates themselves live in a package
-        (``curio.media@1``, ``curio.scout@1``, and
-        the model packages ``model.curio.ddrnet23-slim@1``,
+        (``curio.media@1``, ``curio.rasterization@1``, ``curio.vega-lite@1``,
+        and the model packages ``model.curio.ddrnet23-slim@1``,
         ``model.scout.deep-umbra@1`` and ``model.scout.weather-gnn@1``).
-        quad-cities-flood-vulnerability's only package nodes are its Raster
-        Calculators, which left the built-in nodes for SCOUT's package (the
-        owner's call, 2026-10-18), and scenario-comparison-charts' are its
-        nine charts, all Scout's (the plan for #914, step 28.2, and the plan
-        answering komar41's review, step 6.2), ``curio.scout@1`` (that plan,
-        step 10). chicago-rain-wind-routing charts its routes with Scout's
-        Bars, example 06 its scenarios' mean sunlight, and
+        quad-cities-flood-vulnerability's raster nodes are its Raster
+        Calculators, Rasterization's, and scenario-comparison-charts' package
+        nodes are its nine charts, all the Vega-Lite package's.
+        chicago-rain-wind-routing charts its routes with the Vega-Lite
+        package's Bars, example 06 its scenarios' mean sunlight, and
         chicago-loop-shadow-towers its scenarios' mean shadow;
-        lower-manhattan-park-shade charts its parks with Scout's Dots with a
-        range and takes its changes in shadow with Raster Calculators, and
-        quad-cities-flood-vulnerability charts with Scout's Bars, Points and
-        Grouped bars and takes its change in depth with a Raster Calculator
-        (that plan, step 6.3)."""
+        lower-manhattan-park-shade charts its parks with the Vega-Lite
+        package's Dots with a range and takes its changes in shadow with
+        Raster Calculators, and quad-cities-flood-vulnerability charts with
+        the Vega-Lite package's Bars, Points and Grouped bars and takes its
+        change in depth with a Raster Calculator."""
         needs_package_templates = {}
         for path in example_paths():
             spec = json.loads(path.read_text(encoding="utf-8"))
@@ -495,9 +493,8 @@ class TestTheShippedCorpus:
             )
             if foreign:
                 needs_package_templates[path.stem] = foreign
-        # Their charts are Vega-Lite nodes since #1270: example 06 and the
-        # charts dataflow need no package.
         assert list(needs_package_templates) == [
+            "06-back-bay-road-sunlight",
             "10-street-vision-cv-analysis",
             "18-storage-orthorectified-imagery",
             "21-storage-photos-and-videos",
@@ -507,21 +504,58 @@ class TestTheShippedCorpus:
             "chicago-rain-wind-routing",
             "lower-manhattan-park-shade",
             "quad-cities-flood-vulnerability",
+            "scenario-comparison-charts",
+        ]
+        # Its nine charts are the Vega-Lite package's, the grouped bars and the
+        # table among them.
+        assert needs_package_templates["scenario-comparison-charts"] == [
+            "curio.vega-lite/bars-with-error-bars",
+            "curio.vega-lite/curves-by-group",
+            "curio.vega-lite/donuts",
+            "curio.vega-lite/ensemble-strips",
+            "curio.vega-lite/grouped-bars",
+            "curio.vega-lite/lines-with-band",
+            "curio.vega-lite/stacked-bars-with-totals",
+            "curio.vega-lite/table",
+            "curio.vega-lite/weighted-matrix",
         ]
         # SCOUT's two models are packages with nodes of their own.
         for stem in ("24-scout-shadow-model-chicago-loop", "chicago-loop-shadow-towers", "lower-manhattan-park-shade"):
             assert "model.scout.deep-umbra/accumulated-shadow" in needs_package_templates[stem], stem
-        assert needs_package_templates["chicago-rain-wind-routing"] == ["model.scout.weather-gnn/weather-routing"]
-        # SCOUT's raster nodes are curio.scout@1's: the shadow dataflows
+        assert needs_package_templates["chicago-rain-wind-routing"] == [
+            "curio.vega-lite/bars",
+            "model.scout.weather-gnn/weather-routing",
+        ]
+        assert needs_package_templates["06-back-bay-road-sunlight"] == ["curio.vega-lite/bars"]
+        # SCOUT's raster nodes are Rasterization's: the shadow dataflows
         # rasterize their buildings with it, and the two that take the
         # shadow's statistics and the flood dataflow use its Raster Calculator.
-        for stem in ("24-scout-shadow-model-chicago-loop", "chicago-loop-shadow-towers", "lower-manhattan-park-shade"):
-            assert needs_package_templates[stem] == [
-                "curio.scout/raster-calculator",
-                "curio.scout/rasterize-buildings",
-                "model.scout.deep-umbra/accumulated-shadow",
-            ], stem
-        assert needs_package_templates["quad-cities-flood-vulnerability"] == ["curio.scout/raster-calculator"]
+        assert needs_package_templates["24-scout-shadow-model-chicago-loop"] == [
+            "curio.rasterization/raster-calculator",
+            "curio.rasterization/rasterize-buildings",
+            "model.scout.deep-umbra/accumulated-shadow",
+        ]
+        # chicago-loop-shadow-towers also charts its scenarios with the
+        # Vega-Lite package's Bars, and takes its change in shadow with a
+        # Raster Calculator.
+        assert needs_package_templates["chicago-loop-shadow-towers"] == [
+            "curio.rasterization/raster-calculator",
+            "curio.rasterization/rasterize-buildings",
+            "curio.vega-lite/bars",
+            "model.scout.deep-umbra/accumulated-shadow",
+        ]
+        assert needs_package_templates["lower-manhattan-park-shade"] == [
+            "curio.rasterization/raster-calculator",
+            "curio.rasterization/rasterize-buildings",
+            "curio.vega-lite/dots-with-a-range",
+            "model.scout.deep-umbra/accumulated-shadow",
+        ]
+        assert needs_package_templates["quad-cities-flood-vulnerability"] == [
+            "curio.rasterization/raster-calculator",
+            "curio.vega-lite/bars",
+            "curio.vega-lite/grouped-bars",
+            "curio.vega-lite/points",
+        ]
         assert declared_dependencies(
             json.loads(
                 (REPO_ROOT / "docs/examples/09-heterogeneous-data-linked-views.json").read_text()

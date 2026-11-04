@@ -1,4 +1,4 @@
-"""Raster algebra and its raster helpers: the Scout package's raster algebra
+"""Raster algebra and its raster helpers: the Rasterization package's raster algebra
 (``scout_rasters/raster_algebra.py``) and web map tiles
 (``scout_rasters/web_tiles.py``), and Curio's raster helpers
 (``util/rasters.py``).
@@ -11,7 +11,7 @@
   the bounds, on the raster's own grid.
 - Map tiles are laid side by side on their own grid.
 
-Every test imports the modules itself, Scout's through a run's staged copy of
+Every test imports the modules itself, Rasterization's through a run's staged copy of
 the package's modules (the ``scout_rasters`` fixture), so a checkout without
 them fails test by test rather than at collection, and no bytecode lands in
 ``packages/``.
@@ -29,22 +29,22 @@ import pytest
 GRID = {
     "crs": "EPSG:32616", "width": 3, "height": 2, "originX": 447000, "originY": 4637000, "resX": 30, "resY": -30,
 }
-#: Scout's sources folder, whose ``scout_rasters`` package holds the raster algebra.
-SCOUT_SOURCES = Path(__file__).resolve().parents[3] / "packages" / "curio.scout@1" / "sources"
-#: Scout's modules while a test that uses the ``scout_rasters`` fixture runs.
+#: Rasterization's sources folder, whose ``scout_rasters`` package holds the raster algebra.
+RASTERIZATION_SOURCES = Path(__file__).resolve().parents[3] / "packages" / "curio.rasterization@1" / "sources"
+#: Rasterization's modules while a test that uses the ``scout_rasters`` fixture runs.
 _SCOUT: dict = {}
 
 
 @pytest.fixture
 def scout_rasters(tmp_path):
-    """Scout's ``scout_rasters`` modules, importable as a run of its node
+    """Rasterization's ``scout_rasters`` modules, importable as a run of its node
     imports them (staged into a folder of the run's own) while the test runs."""
     from utk_curio.sandbox.util.package_modules import importable
     from utk_curio.sandbox.util.staging import stage_package_modules
 
     run = tmp_path / "scout-run"
     run.mkdir()
-    staged = stage_package_modules({"root": str(SCOUT_SOURCES), "names": ["scout_rasters"]}, str(run))
+    staged = stage_package_modules({"root": str(RASTERIZATION_SOURCES), "names": ["scout_rasters"]}, str(run))
     assert staged == {"root": "package_modules", "names": ["scout_rasters"]}, staged
     with importable(str(run / staged["root"]), staged["names"]):
         _SCOUT.update(
@@ -58,12 +58,12 @@ def scout_rasters(tmp_path):
 
 
 def algebra():
-    """Scout's raster algebra, for a test that uses the ``scout_rasters`` fixture."""
+    """Rasterization's raster algebra, for a test that uses the ``scout_rasters`` fixture."""
     return _SCOUT["raster_algebra"]
 
 
 def web_tiles():
-    """Scout's web map tiles, for a test that uses the ``scout_rasters`` fixture."""
+    """Rasterization's web map tiles, for a test that uses the ``scout_rasters`` fixture."""
     return _SCOUT["web_tiles"]
 
 
@@ -75,7 +75,7 @@ def rasters():
 
 @pytest.fixture
 def grids(scout_rasters):
-    """Scout's raster algebra, whose grid checks the tests below read."""
+    """Rasterization's raster algebra, whose grid checks the tests below read."""
     return scout_rasters["raster_algebra"]
 
 
@@ -460,7 +460,7 @@ class TestCurioLoadData:
 
     def test_the_raster_nodes_steps_are_scouts_and_write_where_the_node_writes_its_files(self, tmp_path, scout_rasters):
         """The namespace holds no raster operation: each old helper refuses,
-        naming the Raster Calculator. Scout's write their raster where the
+        naming the Raster Calculator. Rasterization's write their raster where the
         node's ``curio_output_file`` writes."""
         src = _grid_raster(tmp_path / "grid.tif")
         namespace = self._namespace(tmp_path, src.name, "geotiff")
