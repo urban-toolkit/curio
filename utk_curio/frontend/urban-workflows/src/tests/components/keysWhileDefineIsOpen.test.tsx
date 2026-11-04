@@ -5,13 +5,14 @@
  * (drawersOverDefine.test.tsx).
  *
  * - Ctrl/Cmd+Enter runs the selected node while Define is open.
- * - An Escape typed into the agents' chat closes the chat, and Define stays
- *   open with its pick.
- * - An Escape on the canvas closes Define.
+ * - An Escape typed into the agents' chat closes the chat, and one typed into
+ *   the fork picker closes its list; Define stays open with its pick.
+ * - An Escape on the canvas closes Define, and so does one on an open
+ *   palette's button, which leaves Escape alone.
  *
- * The real Define panel, HeaderDrawer, ModalShell, chat panel and the canvas's
- * Ctrl/Cmd+Enter; the flow, the canvas's nodes, the catalog's routes and the
- * scenario commands are mocked.
+ * The real Define panel, HeaderDrawer, ModalShell, chat panel, fork picker and
+ * the canvas's Ctrl/Cmd+Enter; the flow, the canvas's nodes, the catalog's
+ * routes and the scenario commands are mocked.
  */
 import React from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
@@ -46,6 +47,7 @@ jest.mock("reactflow", () => ({
 }));
 
 import { AgentChatPanel } from "../../components/agents/attach/AgentChatPanel";
+import { ForkFamilyPicker } from "../../components/packages/ForkFamilyPicker";
 import { ScenarioDefinePanel } from "../../components/scenarios/define/ScenarioDefinePanel";
 import { ScenarioUiContext, type ScenarioUi } from "../../components/scenarios/scenarioUi";
 import { useRunSelectedNodeShortcut } from "../../hook/useRunSelectedNodeShortcut";
@@ -82,16 +84,16 @@ function RunShortcut() {
   return null;
 }
 
-/** The canvas, Define scenario open with the node it picked, and the agents'
- *  chat open beside them or not. */
-function tree(chat: boolean) {
+/** The canvas, Define scenario open with the node it picked, and beside them
+ *  the agents' chat, the fork picker, an open palette's button, or nothing. */
+function tree(beside: "chat" | "picker" | "palette" | null) {
   return (
     <MemoryRouter initialEntries={["/dataflow/p-current"]}>
       <ScenarioUiContext.Provider value={UI}>
         <div className="react-flow__pane" data-testid="canvas" tabIndex={-1} />
         <RunShortcut />
         <ScenarioDefinePanel define={{ mode: "new", nodes: ["real"] }} presented onExitComplete={jest.fn()} />
-        {chat && (
+        {beside === "chat" && (
           <AgentChatPanel
             attachment={ATTACHMENT}
             turns={[]}
@@ -100,6 +102,25 @@ function tree(chat: boolean) {
             onExitComplete={jest.fn()}
             presented
           />
+        )}
+        {beside === "picker" && (
+          <ForkFamilyPicker
+            variant="dock"
+            rootKey="acme.charts"
+            options={[
+              { key: "acme.charts", label: "Charts" },
+              { key: "acme.charts-fork", label: "Charts, forked" },
+            ]}
+            value="acme.charts"
+            onChange={jest.fn()}
+          />
+        )}
+        {beside === "palette" && (
+          // A tool rail palette's button, its palette open, as the rail draws
+          // it: the palette leaves Escape alone.
+          <button type="button" aria-expanded="true" aria-haspopup="true">
+            Built-in
+          </button>
         )}
       </ScenarioUiContext.Provider>
     </MemoryRouter>
@@ -138,14 +159,14 @@ test.each([
   ["Ctrl", { ctrlKey: true }],
   ["Cmd", { metaKey: true }],
 ])("%s+Enter runs the selected node while Define scenario is open", (_key, chord) => {
-  render(tree(false));
+  render(tree(null));
   expect(definePanel()).toBeInTheDocument();
   fireEvent.keyDown(document.body, { key: "Enter", ...chord });
   expect(mockFlow.playNodesUpTo).toHaveBeenCalledWith("real");
 });
 
 test("an Escape typed into the agents' chat closes the chat, and Define stays open with its pick", () => {
-  render(tree(true));
+  render(tree("chat"));
   fireEvent.keyDown(screen.getByPlaceholderText(/message this agent/i), { key: "Escape" });
   expect(closeChat).toHaveBeenCalledTimes(1);
   expect(setDefine).not.toHaveBeenCalled();
@@ -153,8 +174,25 @@ test("an Escape typed into the agents' chat closes the chat, and Define stays op
   expect(picked()).toHaveTextContent("Real heights");
 });
 
+test("an Escape typed into the open fork picker closes its list, and Define stays open with its pick", () => {
+  render(tree("picker"));
+  const picker = screen.getByRole("button", { name: "Charts" });
+  fireEvent.click(picker);
+  expect(screen.getByRole("listbox")).toBeInTheDocument();
+  fireEvent.keyDown(picker, { key: "Escape" });
+  expect(screen.queryByRole("listbox")).toBeNull();
+  expect(setDefine).not.toHaveBeenCalled();
+  expect(picked()).toHaveTextContent("Real heights");
+});
+
 test("an Escape on the canvas closes Define scenario", () => {
-  render(tree(false));
+  render(tree(null));
   fireEvent.keyDown(screen.getByTestId("canvas"), { key: "Escape" });
+  expect(setDefine).toHaveBeenCalledWith(null);
+});
+
+test("an Escape on an open palette's button, which leaves Escape alone, closes Define scenario", () => {
+  render(tree("palette"));
+  fireEvent.keyDown(screen.getByRole("button", { name: "Built-in" }), { key: "Escape" });
   expect(setDefine).toHaveBeenCalledWith(null);
 });

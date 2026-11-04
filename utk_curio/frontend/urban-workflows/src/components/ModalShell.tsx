@@ -78,9 +78,14 @@ export function isTopDrawer(self: HTMLElement | null): boolean {
 }
 
 /** What answers an Escape typed into it itself: a dialog (the agents' chat), a
- *  list or a menu open over the page, and the control whose popup is open (the
- *  fork picker's). */
-const ANSWERS_ITS_OWN_ESCAPE = '[role="dialog"], [role="listbox"], [role="menu"], [aria-haspopup][aria-expanded="true"]';
+ *  menu, and an open picker, its button and its list (the fork picker's). The
+ *  tool rail's palette buttons, which leave Escape alone, are none of them. */
+const ANSWERS_ITS_OWN_ESCAPE = [
+  '[role="dialog"]',
+  '[role="menu"]',
+  '[aria-haspopup="listbox"][aria-expanded="true"]',
+  '[aria-haspopup="listbox"][aria-expanded="true"] ~ [role="listbox"]',
+].join(", ");
 
 /**
  * Whether an Escape at `target` was typed into another panel than the drawer
