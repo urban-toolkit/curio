@@ -345,10 +345,14 @@ class Task:
         return cls(**values)
 
 
-def plan(evals: Iterable[SkillEvals], *, runs: int = RUNS, kinds: Iterable[str] = (TRIGGER, TASK)) -> list[Task]:
+def plan(evals: Iterable[SkillEvals], *, runs: int = RUNS, kinds: Iterable[str] = (TRIGGER, TASK),
+         conditions: Iterable[str] = CONDITIONS, cases: int | None = None) -> list[Task]:
     """Every run of *evals*, *runs* times each: each trigger query (with the
-    skill, as it ships), then each test case with the skill and without it."""
+    skill, as it ships), then each test case in each of *conditions*, with
+    the skill and without it; only the first *cases* test cases when it is
+    given."""
     kinds = set(kinds)
+    conditions = [condition for condition in CONDITIONS if condition in set(conditions)]
     tasks: list[Task] = []
     for skill in evals:
         if TRIGGER in kinds:
@@ -360,14 +364,82 @@ def plan(evals: Iterable[SkillEvals], *, runs: int = RUNS, kinds: Iterable[str] 
                         query=query.index, should_trigger=query.should_trigger,
                     ))
         if TASK in kinds:
-            for case in skill.cases:
-                for condition in CONDITIONS:
+            for case in skill.cases[:cases]:
+                for condition in conditions:
                     for run in range(1, runs + 1):
                         tasks.append(Task(
                             kind=TASK, skill=skill.name, key=f"eval-{case.id}/{condition}/run-{run}",
                             condition=condition, run=run, message=case.prompt, context=case.context,
                             case=case.id, expected_output=case.expected_output, assertions=case.assertions,
                         ))
+    return tasks
+
+
+@dataclass(frozen=True)
+class Measure:
+    """What one evaluation measures of one skill: which kinds of run, how
+    many runs of each, in which conditions, and how many of its test cases
+    (from the first; None for all). The default is the whole of it, which a
+    skill's floor is held to (:attr:`whole`)."""
+
+    kinds: tuple[str, ...] = (TRIGGER, TASK)
+    runs: int = RUNS
+    conditions: tuple[str, ...] = CONDITIONS
+    cases: int | None = None
+
+    @property
+    def whole(self) -> bool:
+        """Whether its test cases run as a floor reads them: every case,
+        :data:`RUNS` times, with the skill and without it."""
+        return (TASK in self.kinds and self.runs >= RUNS and set(self.conditions) == set(CONDITIONS)
+                and self.cases is None)
+
+    def as_dict(self) -> dict:
+        return {"kinds": list(self.kinds), "runs": self.runs, "conditions": list(self.conditions),
+                "cases": self.cases}
+
+    @classmethod
+    def from_dict(cls, data, where: str = "a measure") -> "Measure":
+        """The measure *data* names, each field it leaves out the whole one's.
+        Raises :class:`EvalsError` naming what is wrong with it."""
+        if not isinstance(data, Mapping):
+            raise EvalsError(f"{where} is no object")
+        kinds = tuple(data.get("kinds") or (TRIGGER, TASK))
+        conditions = tuple(data.get("conditions") or CONDITIONS)
+        runs, cases = data.get("runs", RUNS), data.get("cases")
+        problems = []
+        if not kinds or not set(kinds) <= {TRIGGER, TASK}:
+            problems.append(f"kinds must name {TRIGGER} or {TASK}, not {list(kinds)}")
+        if not conditions or not set(conditions) <= set(CONDITIONS):
+            problems.append(f"conditions must name {' or '.join(CONDITIONS)}, not {list(conditions)}")
+        for key, value in (("runs", runs), ("cases", cases)):
+            if value is not None and (not isinstance(value, int) or isinstance(value, bool) or value < 1):
+                problems.append(f"{key} must be a whole number above 0")
+        if runs is None:
+            problems.append("runs must be a whole number above 0")
+        if problems:
+            raise EvalsError(f"{where}: " + "; ".join(problems))
+        return cls(kinds=kinds, runs=runs, conditions=conditions, cases=cases)
+
+
+def measures(data) -> dict[str, Measure]:
+    """The measure of each skill a scope names, ``{skill: measure}``, from
+    its ``measures`` (``scripts/ci_skill_eval_scope.py`` writes it). Raises
+    :class:`EvalsError` naming what is wrong with it."""
+    found = data.get("measures") if isinstance(data, Mapping) else None
+    if not isinstance(found, Mapping):
+        raise EvalsError("a scope's measures must be an object of skills")
+    return {str(name): Measure.from_dict(value, f"the measure of {name}") for name, value in found.items()}
+
+
+def plan_measured(evals: Iterable[SkillEvals], chosen: Mapping[str, Measure]) -> list[Task]:
+    """Every run of each skill of *evals* that *chosen* measures, as its measure says."""
+    tasks: list[Task] = []
+    for skill in evals:
+        measure = chosen.get(skill.name)
+        if measure is not None:
+            tasks.extend(plan([skill], runs=measure.runs, kinds=measure.kinds, conditions=measure.conditions,
+                              cases=measure.cases))
     return tasks
 
 

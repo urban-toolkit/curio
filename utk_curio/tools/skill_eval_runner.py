@@ -24,7 +24,10 @@ on a command line. Nothing written holds the key, the base URL or its host:
 the workers scrub every file and log line, and the runner reads every file
 again at the end and fails if one does. ``--pilot`` runs one skill and says
 how long the whole run would take. ``--resume`` goes on with a run's folder,
-running only what has no record yet. CI never runs this.
+running only what has no record yet. ``--scope`` runs each skill a scope
+names as its measure says (``skill_evals.Measure``): the skill-evals CI job
+runs this so, on each model of ``CURIO_EVAL_MODELS``
+(``scripts/ci_skill_evals.py``).
 """
 
 from __future__ import annotations
@@ -63,7 +66,8 @@ def add_parser(sub) -> None:
         "skills", help="evaluate the skills against a live model (agentskills.io's way)",
         description="Run each skill's evals/evals.json: its trigger queries, and its test cases with the skill "
                     "and without it, against the endpoint of CURIO_EVAL_BASE_URL, CURIO_EVAL_API_KEY and "
-                    "CURIO_EVAL_MODEL. Writes reports, never a gate; CI never runs it.",
+                    "CURIO_EVAL_MODEL. Writes reports, which the skill-evals CI job reads "
+                    "(scripts/ci_skill_evals.py).",
     )
     parser.add_argument("--skills", default="", help="comma-separated skill names (default: every skill with evals)")
     parser.add_argument("--pilot", nargs="?", const="", default=None, metavar="SKILL",
@@ -81,6 +85,9 @@ def add_parser(sub) -> None:
     parser.add_argument("--hand", action="store_true",
                         help="hand a test case's skill over as /<name> in its runs with the skill, "
                              "instead of leaving the loading to the agent")
+    parser.add_argument("--scope", type=Path, default=None,
+                        help="a scope's JSON (scripts/ci_skill_eval_scope.py): run each skill it measures as its "
+                             "measure says, instead of --skills, --runs and --only")
     parser.set_defaults(func=run)
 
 
@@ -93,6 +100,10 @@ def _digest(path: Path) -> str:
 
 
 def _commit() -> str | None:
+    """The commit this checkout is at: ``CURIO_EVAL_COMMIT`` when set (an
+    image holds no ``.git``), else git's answer."""
+    if os.environ.get("CURIO_EVAL_COMMIT", "").strip():
+        return os.environ["CURIO_EVAL_COMMIT"].strip()
     try:
         done = subprocess.run(["git", "-C", str(shipped.root()), "rev-parse", "HEAD"],
                               capture_output=True, text=True, timeout=10, check=False)
@@ -248,15 +259,18 @@ def _percent(value) -> str:
 
 def _report(folder: Path, chosen: list, meta: dict) -> dict:
     """Write each skill's ``triggers.json`` and ``benchmark.json``, and the
-    run's ``summary.json`` and ``summary.md``."""
+    run's ``summary.json`` and ``summary.md``. A skill a scope measured only
+    some kinds of run of is reported for those alone."""
     records = _records(folder)
+    kinds_of = {name: set(measure.get("kinds") or ()) for name, measure in (meta.get("measures") or {}).items()}
     rows = []
     for skill in chosen:
         mine = [r for r in records if r.get("skill") == skill.name]
-        triggers = skill_evals.trigger_results(skill, mine)
+        kinds = kinds_of.get(skill.name, set(meta.get("kinds") or (skill_evals.TRIGGER, skill_evals.TASK)))
+        triggers = skill_evals.trigger_results(skill, mine) if skill_evals.TRIGGER in kinds else []
         if triggers:
             _write(folder / skill.name / "triggers.json", triggers)
-        bench = skill_evals.benchmark(skill, mine) if skill.cases else None
+        bench = skill_evals.benchmark(skill, mine) if skill.cases and skill_evals.TASK in kinds else None
         if bench:
             _write(folder / skill.name / "benchmark.json", bench)
         rows.append({"skill": skill.name, "triggers": skill_evals.trigger_summary(triggers),
@@ -305,9 +319,22 @@ def run(args) -> int:
     except skill_evals.EvalsError as exc:
         print(f"refused: {exc}", file=sys.stderr)
         return 2
-    chosen = _selected(args, evals)
     kinds = (args.only,) if args.only else (skill_evals.TRIGGER, skill_evals.TASK)
-    planned = skill_evals.plan(chosen, runs=max(1, args.runs), kinds=kinds)
+    measured: dict = {}
+    if args.scope:
+        try:
+            measured = skill_evals.measures(json.loads(args.scope.read_text(encoding="utf-8")))
+        except (OSError, ValueError, skill_evals.EvalsError) as exc:
+            print(f"refused: the scope {args.scope} cannot be read: {exc}", file=sys.stderr)
+            return 2
+        chosen = [skill for skill in evals if skill.name in measured]
+        unmeasurable = sorted(set(measured) - {skill.name for skill in chosen})
+        if unmeasurable:
+            _say(f"no evals/evals.json, so not measured: {', '.join(unmeasurable)}")
+        planned = skill_evals.plan_measured(chosen, measured)
+    else:
+        chosen = _selected(args, evals)
+        planned = skill_evals.plan(chosen, runs=max(1, args.runs), kinds=kinds)
     if args.resume:
         folder = args.resume.resolve()
         if not (folder / RECORD).is_file():
@@ -327,6 +354,8 @@ def run(args) -> int:
             "skills": {s.name: _digest(s.folder / skill_format.SKILL_FILE) for s in chosen},
             "isReleaseGate": False,
         }
+        if measured:
+            meta["measures"] = {s.name: measured[s.name].as_dict() for s in chosen}
         _write(folder / RECORD, meta)
     left = [task for task in planned if not (folder / task.path / RECORD).is_file()]
     _say(f"{len(chosen)} skill(s), {len(planned)} runs, {len(left)} to go, {args.jobs} jobs: {folder}")

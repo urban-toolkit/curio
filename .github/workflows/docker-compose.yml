@@ -21,6 +21,8 @@ on:
       # test-gpu asserts the production deploy configuration.
       - 'docker-compose.deploy.yml'
       - '.github/workflows/docker-compose.yml'
+      # The skill-evals job's own workflow, which this one calls.
+      - '.github/workflows/skill-evals.yml'
       - '.github/actions/**'
       # scripts/test.sh is this workflow's entry point; the authoring helpers
       # (new_package.py, regen_integrity.py) are covered by the test suite too.
@@ -73,6 +75,8 @@ on:
       # test-gpu asserts the production deploy configuration.
       - 'docker-compose.deploy.yml'
       - '.github/workflows/docker-compose.yml'
+      # The skill-evals job's own workflow, which this one calls.
+      - '.github/workflows/skill-evals.yml'
       - '.github/actions/**'
       # scripts/test.sh is this workflow's entry point; the authoring helpers
       # (new_package.py, regen_integrity.py) are covered by the test suite too.
@@ -173,6 +177,13 @@ on:
         type: choice
         options: ['1', '2', '3', '5', '10']
         default: '1'
+      # What the skill-evals node measures on the models of CURIO_EVAL_MODELS
+      # (scripts/ci_skill_eval_scope.py). A re-mint and a repeat run measure
+      # nothing whatever it says.
+      skill_evals:
+        description: 'Skill evaluations: auto (what the branch changes against main), none, smoke, core, full, or skill names, comma-separated'
+        type: string
+        default: auto
 
 # Least privilege: the job needs only to read the checked-out code. It must
 # NOT have access to deploy/Tailscale secrets (see deploy.yml).
@@ -189,9 +200,11 @@ env:
 #
 #   * CPU jobs: GitHub-hosted ubuntu-latest while the organization's hosted
 #     runners have room, the self-hosted arcade runners ([self-hosted, arcade,
-#     cpu], 40 of them) for the rest, and the utk-desktop runners
+#     cpu], 39 of them) for the rest, and the utk-desktop runners
 #     (utk-desktop-01 and -02, [self-hosted, utk-desktop]) when arcade is full
 #     too.
+#   * skill-evals: arcade-cpu-40 alone ([self-hosted, arcade, skill-evals]),
+#     out of the CPU pool, so the skills' live evaluations queue there.
 #   * test-gpu: an arcade GPU runner (arcade-gpu-01..04, [self-hosted, arcade,
 #     gpu]) while one is free, then utk-gpu ([self-hosted, utk, gpu]), and
 #     utk-desktop-01 ([self-hosted, utk-desktop-01, gpu]) when utk-gpu is
@@ -294,6 +307,7 @@ jobs:
     outputs:
       image: ${{ steps.name.outputs.image }}
       runners: ${{ steps.pick.outputs.runners }}
+      skill_evals: ${{ steps.skill_scope.outputs.skill_evals }}
     steps:
       # The first step of every job that can run on a self-hosted runner; the
       # jobs below repeat it as `*reclaim`. A job cancelled before its teardown
@@ -399,6 +413,22 @@ jobs:
             ${{ steps.name.outputs.tree }}
           cache-from: type=gha,scope=curio-image
           cache-to: ${{ github.ref == 'refs/heads/main' && 'type=gha,scope=curio-image,mode=max' || '' }}
+
+      # What the skill-evals job measures, from what this commit changes
+      # against its first parent, main on a pull request's merge ref
+      # (scripts/ci_skill_eval_scope.py; a dispatch reads its branch's changes
+      # from the compare API). Here because this job has both commits checked
+      # out, and before the pick, which stays last. It never fails the build:
+      # a scope it cannot read fails the skill-evals job instead.
+      - name: 🧪 Say what the skill evaluations measure
+        id: skill_scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SKILL_EVALS: ${{ inputs.skill_evals || 'auto' }}
+          REMINT: ${{ inputs.remint }}
+          REPEAT: ${{ inputs.repeat || '1' }}
+          HEAD_REF: ${{ github.head_ref || github.ref_name }}
+        run: python3 scripts/ci_skill_eval_scope.py --github
 
       # The runners of the jobs that wait on the image, picked as they are
       # about to start, whether the image was built or reused: a pick made
@@ -1934,6 +1964,25 @@ jobs:
         if: always()
         with:
           project: curio-ci-stress
+
+  # The skill-evals node (.github/workflows/skill-evals.yml): what this run
+  # changes of the agents, measured live on the models of the repository
+  # variable CURIO_EVAL_MODELS, with its own report,
+  # curio-skill-evals-report.html. build-image's scope step says what that is,
+  # and a run that changes nothing an agent reads skips it. The CI report does
+  # not wait for it: it runs on its own runner, as long as its models take.
+  skill-evals:
+    needs: build-image
+    if: ${{ !cancelled() && needs.build-image.result == 'success' && needs.build-image.outputs.skill_evals != '' }}
+    uses: ./.github/workflows/skill-evals.yml
+    with:
+      image: ${{ needs.build-image.outputs.image }}
+      scope: ${{ needs.build-image.outputs.skill_evals }}
+    secrets: inherit
+    permissions:
+      contents: read
+      packages: read
+      actions: read
 
   # One page for the whole run (scripts/ci_report.py): every job's result, each
   # suite's results with the failures, and every screenshot comparison, from

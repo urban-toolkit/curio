@@ -1,0 +1,6 @@
+{
+  "about": "List prices in US dollars per million tokens of the models CURIO_EVAL_MODELS names that are billed by the token. The skill-evals report prices each run's tokens with them, the grader's among them (scripts/skill_evals_report.py). A model not listed here is not priced. claude-haiku-5-5: Anthropic's list prices for prompts up to 100K tokens, as of 2026-10-06; past 100K tokens they are 0.50 and 2.50.",
+  "prices": {
+    "claude-haiku-5-5": {"input": 0.10, "output": 0.50}
+  }
+}

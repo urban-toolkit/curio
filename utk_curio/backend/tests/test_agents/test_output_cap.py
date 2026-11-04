@@ -49,6 +49,8 @@ WITH_ROOM = CAP + ROOM
 LIMIT_WITH_ROOM = "12,288"
 #: The caps a turn's calls carry: the cap, and the cap with the room.
 TURN_CAPS = (CAP, WITH_ROOM)
+#: The input tokens the stub's usage reports for every call.
+PROMPT_TOKENS = 17619
 COORD = "agent.curio.researcher@1"
 MESSAGE = "Add two more bars to this chart: J with 60 and K with 33."
 #: What the model wrote before the cap cut it, mid-sentence.
@@ -122,8 +124,8 @@ class _Handler(BaseHTTPRequestHandler):
         self._event(self._chunk({}, reply.finish))
         tokens = CAP if reply.tokens is None else reply.tokens
         self._event({"id": "chatcmpl-stub", "object": "chat.completion.chunk", "created": 0, "model": "test-model",
-                     "choices": [], "usage": {"prompt_tokens": 17619, "completion_tokens": tokens,
-                                              "total_tokens": 17619 + tokens}})
+                     "choices": [], "usage": {"prompt_tokens": PROMPT_TOKENS, "completion_tokens": tokens,
+                                              "total_tokens": PROMPT_TOKENS + tokens}})
         self._event("[DONE]")
 
     def _event(self, payload):
@@ -685,7 +687,7 @@ def test_a_grader_that_thinks_as_long_as_a_turn_may_still_writes_its_whole_grade
     assert [(item["text"], item["passed"], item["evidence"]) for item in results] == [
         (text, passed, evidence) for text, (passed, evidence) in zip(task.assertions, GRADED)]
     assert len(server.requests) == 1, f"the grader was asked {len(server.requests)} times"
-    assert grading["grader"] == {"model": "test-model", "attempts": 1,
+    assert grading["grader"] == {"model": "test-model", "attempts": 1, "inputTokens": PROMPT_TOKENS,
                                  "outputTokens": CAP + _ThinkingModel.tokens_of(grade), "thinking": True}
 
 
@@ -706,4 +708,4 @@ def test_a_grade_cut_while_the_grader_still_thinks_says_so(thinking_model, monke
         "all of them spent thinking, before it wrote its grade"), grading
     assert len(server.requests) == skill_eval_worker.GRADER_ATTEMPTS
     assert grading["grader"] == {"model": "test-model", "attempts": skill_eval_worker.GRADER_ATTEMPTS,
-                                 "outputTokens": cap, "thinking": True}
+                                 "inputTokens": PROMPT_TOKENS, "outputTokens": cap, "thinking": True}

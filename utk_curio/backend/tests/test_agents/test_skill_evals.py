@@ -8,7 +8,8 @@ and eight to ten that should not
 (https://agentskills.io/skill-creation/optimizing-descriptions). The queries
 run where a chat lists the skill and is not handed it, so loading it is the
 chat's own choice. ``agent_eval.py skills`` runs them against a live model,
-which CI never does: these tests read the files, and count runs made up here.
+which only CI's skill-evals job does: these tests read the files, and count
+runs made up here.
 
 A skill's listing leaves the ``evals/`` at its root out, as the packager of
 agentskills.io's skill-creator does: no run is offered its evaluations, no
@@ -306,6 +307,52 @@ def test_each_query_and_test_case_runs_three_times_in_each_of_its_conditions(tmp
     ]
     assert {task.condition for task in tasks if task.kind == "trigger"} == {"with_skill"}
     assert all(skill_evals.Task.from_dict(task.as_dict()) == task for task in tasks)
+
+
+def test_a_scope_measures_each_skill_as_its_measure_says(tmp_path):
+    """A scope (``scripts/ci_skill_eval_scope.py``) names each skill's
+    measure: a whole one runs everything three times both ways and is what a
+    floor reads; a smoke one runs the first test case once, with the skill;
+    a skill the scope does not name does not run; and a measure that breaks
+    the format is refused naming each problem."""
+    skill_evals = _skill_evals()
+    trees, birds = tmp_path / "street-trees", tmp_path / "street-birds"
+    _write_skill(trees, _evals())
+    second = _evals("street-birds")
+    second["evals"].append({"id": 2, "prompt": "Count the robins.", "expected_output": "A count.",
+                            "assertions": ["The answer counts robins."]})
+    _write_skill(birds, second)
+    (tmp_path / "street-lights").mkdir()
+    evals = [skill_evals.read(trees), skill_evals.read(birds)]
+
+    scope = {"measures": {"street-trees": {}, "street-birds": {"kinds": ["task"], "runs": 1,
+                                                              "conditions": ["with_skill"], "cases": 1}}}
+    chosen = skill_evals.measures(scope)
+    assert chosen["street-trees"].whole and not chosen["street-birds"].whole
+    tasks = skill_evals.plan_measured(evals, chosen)
+    assert [task.path for task in tasks if task.skill == "street-trees"] == [
+        task.path for task in skill_evals.plan([evals[0]])]
+    assert [task.path for task in tasks if task.skill == "street-birds"] == ["street-birds/eval-1/with_skill/run-1"]
+    assert skill_evals.plan_measured(evals, {"street-lights": skill_evals.Measure()}) == []
+    assert skill_evals.Measure.from_dict(chosen["street-birds"].as_dict()) == chosen["street-birds"]
+    # The test cases alone, both ways, are whole too: a floor reads only those.
+    assert skill_evals.Measure(kinds=("task",)).whole
+
+    try:
+        skill_evals.measures({"measures": {"street-trees": {"kinds": ["guess"], "runs": 0,
+                                                            "conditions": ["half"]}}})
+    except skill_evals.EvalsError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("a measure that breaks the format was read")
+    for problem in ("kinds must name", "conditions must name", "runs must be a whole number"):
+        assert problem in message, message
+    try:
+        skill_evals.measures({"skills": {}})
+    except skill_evals.EvalsError as exc:
+        assert "measures" in str(exc)
+    else:
+        raise AssertionError("a scope without measures was read")
 
 
 # --- The endpoint ---------------------------------------------------------------------
