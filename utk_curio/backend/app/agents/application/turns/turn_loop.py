@@ -161,6 +161,9 @@ class AttachmentTurn:
         self.final_parts: list = []
         self.conversation = _RunConversation(messages, self.loop_ctx)
         self.rounds_used = 0
+        # The last round corrected a plan, so the next call is the plan's next
+        # try, which a run on native tools is offered at the cap too.
+        self.plan_corrected = False
         self.refusals_used = 0  # dev/105 D2: free parameter corrections taken
         self.skill_reads = 0  # skill.read calls, free up to skill_runs.FREE_READS a turn
         self.started = time.monotonic()
@@ -207,6 +210,8 @@ class AttachmentTurn:
                 # again, on the fenced protocol.
                 self.conversation.fall_back(refusal, self.pins)
                 continue
+            # Only a correction of a plan in this round opens the next call.
+            self.plan_corrected = False
             if self.usage_sink:
                 # dev/80: interim Actual sums, once per provider round — the
                 # client's live token counter ticks during long tool loops.
@@ -246,6 +251,13 @@ class AttachmentTurn:
             if result["visible"]:
                 self.folded.append(result["visible"])
             if self.rounds_used >= agents_tool_rounds.MAX_TOOL_ROUNDS:
+                if agents_tool_rounds._is_plan_request(self.loop_ctx, req):
+                    # The plan's last try, judged as a plan block is at the
+                    # cap (dev/54): it lands, or its card says why it could
+                    # not. No round follows it.
+                    yield from self._tool_round(req, result, native_calls, last_try=True)
+                    yield from self._emit_landed()
+                    break
                 # dev/73: a mutate request cut off at the cap is a visible
                 # outcome — never a silent drop under confident prose.
                 if req["type"] == "toolRequest" and req.get("tool") in agents_tool_rounds.MUTATE_PROPOSAL_TOOLS:
@@ -293,16 +305,22 @@ class AttachmentTurn:
         req, call_errors = agents_tool_rounds._native_request(native_calls[0])
         if req is not None:
             return req
+        # A plan's call is corrected as a broken plan block is (dev/54).
+        plan = agents_tool_rounds._is_plan_call(self.loop_ctx, native_calls[0])
         if self.rounds_used < agents_tool_rounds.MAX_TOOL_ROUNDS:
             self.rounds_used += 1
             yield from self._emit("tool_revision", {"attempt": self.rounds_used, "errors": len(call_errors)})
+            self.plan_corrected = plan
             self.conversation.add_unreadable_call_round(
-                result["turn"], call_errors, final=self.rounds_used >= agents_tool_rounds.MAX_TOOL_ROUNDS
+                result["turn"], call_errors,
+                final=self.rounds_used >= agents_tool_rounds.MAX_TOOL_ROUNDS and not plan,
             )
             return CONTINUE
         if result["visible"]:
             self.folded.append(result["visible"])
-        if agents_tool_rounds._is_mutate_call(native_calls[0]):
+        if plan:
+            self.final_parts = [agents_tool_rounds._plan_cap_card(call_errors)]
+        elif agents_tool_rounds._is_mutate_call(native_calls[0]):
             self.final_parts = [agents_tool_rounds._tool_cap_card(call_errors)]
         return BREAK
 
@@ -319,6 +337,7 @@ class AttachmentTurn:
             # Corrective prose is not folded: the invalid attempt never
             # reaches the user; the final round's text is the truth.
             self.rounds_used += 1
+            self.plan_corrected = True
             yield from self._emit("plan_revision", {"attempt": self.rounds_used, "errors": len(payload)})
             self.conversation.add_text_round(
                 result["reply"], agents_tool_rounds._plan_correction_message(payload),
@@ -388,7 +407,7 @@ class AttachmentTurn:
             max_output_tokens=self.run_policy["max_output_tokens"],
             usage_out=self.usage_sink,
             thinking_tokens=self.run_policy["thinking_tokens"],
-            **self.conversation.offer(self.rounds_used),
+            **self.conversation.offer(self.rounds_used, self.plan_corrected),
         ))
         self._answered()
         reply = turn.text
@@ -450,7 +469,7 @@ class AttachmentTurn:
             usage_out=self.usage_sink,
             finish=finish,
             thinking_tokens=self.run_policy["thinking_tokens"],
-            **self.conversation.offer(self.rounds_used),
+            **self.conversation.offer(self.rounds_used, self.plan_corrected),
         )
         try:
             for delta in deltas:
@@ -682,7 +701,9 @@ class AttachmentTurn:
             status = notes_outcome
         return status, text, child, home_att, delegate_summary
 
-    def _tool_round(self, req: dict, result: dict, native_calls: list):
+    def _tool_round(self, req: dict, result: dict, native_calls: list, *, last_try: bool = False):
+        """Run *req* and answer it. A plan's *last_try*, at the cap, is not
+        answered: it landed, or the plan's card ends the turn."""
         yield from self._emit("tool_requested", {"tool": req["tool"]})
         yield from self._emit("tool_started", {"tool": req["tool"]})
         status, text = agents_tool_rounds._execute_tool_request(
@@ -693,13 +714,22 @@ class AttachmentTurn:
         record = self.tool_calls[-1]
         extra = {key: record[key] for key in ("reason", "egress") if key in record}
         yield from self._emit("tool_result", {"tool": req["tool"], "status": status, **extra})
+        # A plan refused is a correction, as an invalid plan block is (dev/54).
+        plan_refused = (agents_tool_rounds._is_plan_request(self.loop_ctx, req)
+                        and status not in agents_tool_rounds._NATIVE_OK_STATUSES)
+        if last_try:
+            if plan_refused:
+                self.final_parts = [agents_tool_rounds._plan_cap_card([text])]
+            return
         if req["tool"] == agents_skill_runs.TOOL and self.skill_reads < agents_skill_runs.FREE_READS:
             self.skill_reads += 1  # loading a skill is no round, up to FREE_READS a turn
         elif isinstance(text, ParamRefusal) and self.refusals_used < agents_tool_rounds.MAX_REFUSED_ROUNDS:
             self.refusals_used += 1  # dev/105 D2: a free correction, not a round
         else:
             self.rounds_used += 1
-        final = self.rounds_used >= agents_tool_rounds.MAX_TOOL_ROUNDS
+        # Its result asks for the plan again, and the next call may make it.
+        self.plan_corrected = plan_refused
+        final = self.rounds_used >= agents_tool_rounds.MAX_TOOL_ROUNDS and not plan_refused
         result_msg = agents_tool_rounds._tool_result_message(req["tool"], status, text, final=final)
         self._re_prompt(result, native_calls, req, status, text, final=final, result_msg=result_msg)
 
