@@ -1079,6 +1079,26 @@ class TestContentReviewMintInheritsTheGate:
         # The child received the grounding inputs for a data-loading node.
         assert '"sourceGrounding"' in calls[1][-1]["content"]
 
+    def test_the_agent_that_asked_reads_the_whole_refusal(self, client, user_and_token, tmp_curio, project, monkeypatch):
+        """A delegated write's refusal reaches the agent that asked whole, as a
+        node.content.write's reaches its own agent: this one runs past 200
+        characters, and its last sentence says what to do instead."""
+        from utk_curio.backend.app.agents.domain import agent_text
+
+        _, token = user_and_token
+        _install(client, token, project, NB)
+        att = _attach(client, token, project, NB, target={"kind": "node", "targetId": "n1"})
+        calls = _script(monkeypatch, [
+            _delegate_tail("node.content.generate", {"nodeId": "n1", "intent": "load the demographics"}),
+            ISSUE_298,
+            "Which file should it load?",
+        ])
+        _run(client, token, project, att, "fill this node")
+        result = calls[2][-1]["content"]
+        last = agent_text.message("grounding.never-invent")
+        assert last in result, result
+        assert result.index(last) + len(last) - result.index("source grounding refused") > 200, result
+
     def test_a_path_only_the_delegates_intent_names_is_not_the_users(self, client, user_and_token, tmp_curio, project, monkeypatch):
         """The task the runtime records in the delegate's chat holds the
         delegating agent's words: a path only its intent names was read there

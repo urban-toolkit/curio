@@ -32,6 +32,9 @@ const LISTED_SLOTS = 6;
  * upstream input", a chart wired to a loader that had not run read as a chart
  * nothing feeds, and an agent built it a new loader. "Waiting" holds for a
  * node with several inputs too, whose input stays empty until each one is in.
+ * A node wired in that declares widgets is named with them, as the canvas
+ * shows them on it: told only which node fed a factor, an agent declared a
+ * second widget on the reader instead of setting the one already there.
  */
 const WIRED_INPUT = {
     waiting: "waiting for input",
@@ -43,6 +46,7 @@ const WIRED_INPUT = {
     failed: ", which failed",
     running: ", which is running",
     ran: ", which ran",
+    widgets: "widgets ",
 } as const;
 
 type NodeData = {
@@ -61,6 +65,8 @@ export interface Feeder {
     data?: NodeData;
     /** The artifact the outputs store holds for it, if any. */
     storeOutput?: unknown;
+    /** The names of the widgets it declares, which set what it hands on. */
+    widgets?: readonly string[];
 }
 
 type RunState = "error" | "running" | "ran" | "never";
@@ -82,11 +88,17 @@ const FEEDER_RAN: Record<RunState, string> = {
     ran: WIRED_INPUT.ran,
 };
 
+/** A node wired in, by its id, with its type and the widgets it declares. */
+function feederName(feeder: Feeder): string {
+    const widgets = feeder.widgets?.length ? `${WIRED_INPUT.widgets}${feeder.widgets.join(", ")}` : "";
+    const kinds = [feeder.type ?? "", widgets].filter(Boolean);
+    return `${WIRED_INPUT.node}${feeder.id}${kinds.length ? ` (${kinds.join(WIRED_INPUT.between)})` : ""}`;
+}
+
 /** The nodes wired into a node, each with whether it ran, the first few by name. */
 function namedFeeders(feeders: readonly Feeder[]): string {
     const named = feeders.slice(0, LISTED_SLOTS).map((feeder) =>
-        `${WIRED_INPUT.node}${feeder.id}${feeder.type ? ` (${feeder.type})` : ""}` +
-        FEEDER_RAN[runState(feeder.data, feeder.storeOutput)],
+        feederName(feeder) + FEEDER_RAN[runState(feeder.data, feeder.storeOutput)],
     );
     if (feeders.length > LISTED_SLOTS) {
         named.push(WIRED_INPUT.more.replace("{n}", String(feeders.length - LISTED_SLOTS)));
@@ -132,7 +144,8 @@ function summarizeValue(value: unknown): string {
 /**
  * `current_input`: what this node received when it last ran. With none, the
  * nodes wired into it by data edges (*feeders*) say whether it waits for input
- * from them or nothing feeds it.
+ * from them or nothing feeds it. Beside what it received, the feeders that
+ * declare widgets are named, since those widgets set what arrived.
  */
 export function summarizeNodeInput(data: NodeData | undefined, feeders: readonly Feeder[] = []): string {
     if (!data) return "";
@@ -143,7 +156,9 @@ export function summarizeNodeInput(data: NodeData | undefined, feeders: readonly
         }
         return `no upstream input${declared(data.in)}`;
     }
-    return `${summarizeValue(value)}${declared(data.in)}`;
+    const setters = feeders.filter((feeder) => feeder.widgets?.length);
+    const from = setters.length > 0 ? `${WIRED_INPUT.from}${namedFeeders(setters)}` : "";
+    return `${summarizeValue(value)}${declared(data.in)}${from}`;
 }
 
 /** `current_output`: what this node produced, or why it did not. */

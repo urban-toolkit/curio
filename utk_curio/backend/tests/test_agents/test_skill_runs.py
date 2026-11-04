@@ -597,6 +597,61 @@ def test_a_run_with_no_tools_is_handed_the_skills_its_task_needs(tmp_curio, coor
     assert run.catalog == () and skill_runs.grants([], run) == []
 
 
+#: A dataflow whose nodes take part in each feature: Shadow is in a scenario
+#: box over Load, its shared context; Compare, in no box, reads Shadow and
+#: feeds the Comparison chart; Picker is linked to a pool by an interaction
+#: edge; Tile is pinned to the dashboard.
+FEATURED = {"dataflow": {
+    "nodes": [
+        {"id": "load", "type": CA, "content": "return 1"},
+        {"id": "shadow", "type": CA, "content": "return input_0"},
+        {"id": "compare", "type": CA, "content": "return input_0"},
+        {"id": "comparison", "type": VEGA, "content": "{}"},
+        {"id": "picker", "type": VEGA, "content": "{}"},
+        {"id": "pool", "type": POOL, "content": ""},
+        {"id": "tile", "type": AUTK, "content": "{}", "dashboardPinned": True},
+    ],
+    "edges": [
+        {"id": "e1", "source": "load", "target": "shadow"},
+        {"id": "e2", "source": "shadow", "target": "compare"},
+        {"id": "e3", "source": "compare", "target": "comparison"},
+        {"id": "e4", "source": "picker", "target": "pool", "type": "Interaction",
+         "sourceHandle": "in/out", "targetHandle": "in/out"},
+    ],
+    "scenarios": [{"id": "s1", "name": "Hotter", "nodes": ["shadow"]}],
+}}
+
+
+@pytest.mark.parametrize("node_id, handed", [
+    ("shadow", [*CODE_SKILLS, "scenarios", "data-sources"]),
+    ("comparison", [*VEGA_SKILLS, "scenarios", "data-sources"]),
+    ("load", [*CODE_SKILLS, "data-sources"]),
+    ("picker", [*VEGA_SKILLS, "interaction-edges", "data-sources"]),
+    ("tile", [*AUTK_SKILLS, "dashboards", "data-sources"]),
+])
+def test_a_run_writing_a_node_is_handed_the_features_that_node_takes_part_in(tmp_curio, node_id, handed):
+    """Write a node's content, a mode that reads the dataflow, is handed,
+    beside the skills of the node it writes, those of the features that node
+    takes part in: ``scenarios`` for a node in a scenario box or reading from
+    one at any distance, as a comparison chart reads the boxes through a
+    Compare node in none; ``interaction-edges`` for a node with an
+    interaction edge; ``dashboards`` for a pinned one. The boxes' shared
+    context, upstream of them, takes part in none. The node is named by its
+    id or by the node context the runtime composes, alike. A mode that reads
+    no dataflow, building a node for another agent, is handed no feature's
+    skill."""
+    skill_runs = _skill_runs()
+    manifest = _manifest(NB)
+    node_type = next(node["type"] for node in FEATURED["dataflow"]["nodes"] if node["id"] == node_id)
+    for inputs in ({"nodeId": node_id, "intent": "color it by its boxes"},
+                   {"nodeContext": {"nodeId": node_id, "nodeType": node_type}}):
+        run = skill_runs.for_delegated(KEY, PID, manifest, "node.content.generate", inputs, FEATURED,
+                                       _preamble(NB))
+        assert _names(run.handed) == handed, inputs
+    built = skill_runs.for_delegated(KEY, PID, manifest, "node.build", {"nodeId": node_id}, FEATURED, _preamble(NB))
+    assert not {"scenarios", "interaction-edges", "dashboards"} & set(_names(built.handed)), _names(built.handed)
+
+
 def test_a_delegated_run_carries_its_skills_after_its_preamble_and_pins_them(client, user_and_token, tmp_curio):
     """The system turn a delegated run sends: the preamble, then the skills
     it is handed, each wrapped, then its instruction; a run handed none has no
@@ -625,6 +680,46 @@ def test_a_delegated_run_carries_its_skills_after_its_preamble_and_pins_them(cli
             assert "skills" not in _kinds(system) and "skills" not in record["pins"]
         assert _wrapped(_slot(system, "skills")) == handed
         assert "skill.read" not in system["content"], "a run with no tools was told of skill.read"
+    testing_provider.reset()
+
+
+#: The scenarios example: two boxes over one Buildings node, and Compare, in
+#: neither, which reads both boxes' Shadow lengths and feeds the Comparison
+#: chart.
+SCENARIOS_EXAMPLE = Path(__file__).resolve().parents[4] / "docs" / "examples" / "dataflows" / "scenarios.json"
+COMPARISON_CHART = "a7d1e5f9-4b2c-4d6a-9ea5-9f4b3c2dbec6"
+
+
+def test_the_run_writing_the_scenarios_examples_comparison_chart_holds_the_scenario_chips(
+    client, user_and_token, tmp_curio,
+):
+    """The run the Dataflow Builder delegates to color the scenarios
+    example's Comparison chart by its boxes carries the scenarios skill whole,
+    with the chips that color and order the bars from the boxes, and its
+    record names it: a delegated run holds no skill.read, so it could never
+    load them."""
+    from utk_curio.backend.app.agents.application import delegation
+    from utk_curio.backend.app.agents.domain import agent_text
+
+    user, token = user_and_token
+    key = _user_dir_key(user)
+    spec = json.loads(SCENARIOS_EXAMPLE.read_text(encoding="utf-8"))
+    resp = client.post("/api/projects", json={"name": "scenarios", "spec": spec, "outputs": []},
+                       headers=_auth(token))
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+    pid = resp.get_json()["id"]
+    assert projects_storage.read_spec(key, pid)["dataflow"].get("scenarios"), "the project lost the example's boxes"
+    handed = [*VEGA_SKILLS, "scenarios", "data-sources"]
+    testing_provider.reset()
+    status, _text, record = delegation.run_delegate(
+        key, pid, NB, "node.content.generate", {"nodeId": COMPARISON_CHART, "intent": "Color the bars by the boxes."},
+        ENDPOINT, parent_execution_id="p", parent_coord=DFB, attachment_id=None,
+    )
+    assert status == "ok", _text
+    (system, *_), = testing_provider.captured()
+    assert _wrapped(_slot(system, "skills")) == handed
+    assert record["pins"]["skills"] == {"handed": handed}
+    assert agent_text.skill_text("scenarios").rstrip("\n") in _slot(system, "skills")
     testing_provider.reset()
 
 

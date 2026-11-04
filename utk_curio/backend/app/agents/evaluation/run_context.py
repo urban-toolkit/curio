@@ -49,8 +49,10 @@ FEEDER = "node "
 NOT_RUN = ", which has not run"
 BETWEEN = "; "
 MORE = "and {n} more"
+#: A node wired in names the widgets it declares, beside its type.
+WIDGETS = "widgets "
 #: Every word above, which the canvas's summary must write too.
-WIRED_INPUT = (WAITING, WIRED_FROM, FEEDER, NOT_RUN, BETWEEN, MORE)
+WIRED_INPUT = (WAITING, WIRED_FROM, FEEDER, NOT_RUN, BETWEEN, MORE, WIDGETS)
 #: The most nodes it names before it counts the rest (``LISTED_SLOTS``).
 LISTED = 6
 
@@ -131,6 +133,16 @@ def _feeders(spec: Mapping | None, node_id) -> list[str]:
     return feeders
 
 
+def _kinds(node: Mapping) -> str:
+    """What a node wired in is named with beside its id (``feederName``): its
+    type, and the widgets it declares, which set what it hands on."""
+    widgets = (node.get("metadata") or {}).get("widgets") if isinstance(node.get("metadata"), Mapping) else None
+    names = [w["name"] for w in widgets or [] if isinstance(w, Mapping) and isinstance(w.get("name"), str) and w["name"]]
+    kind = node.get("type")
+    kinds = ([kind] if isinstance(kind, str) and kind else []) + ([WIDGETS + ", ".join(names)] if names else [])
+    return f" ({BETWEEN.join(kinds)})" if kinds else ""
+
+
 def _input(spec: Mapping | None, node: Mapping) -> str:
     """What the canvas says a node that never ran received (``summarizeNodeInput``):
     nothing, as no edge feeds it, or nothing yet, from the nodes wired into
@@ -140,9 +152,7 @@ def _input(spec: Mapping | None, node: Mapping) -> str:
         return f"{NO_INPUT}{_declared(node.get('in'))}"
     named = []
     for feeder_id in feeders[:LISTED]:
-        kind = (_node(spec, feeder_id) or {}).get("type")
-        typed = f" ({kind})" if isinstance(kind, str) and kind else ""
-        named.append(f"{FEEDER}{feeder_id}{typed}{NOT_RUN}")
+        named.append(f"{FEEDER}{feeder_id}{_kinds(_node(spec, feeder_id) or {})}{NOT_RUN}")
     if len(feeders) > LISTED:
         named.append(MORE.replace("{n}", str(len(feeders) - LISTED)))
     return f"{WAITING}{_declared(node.get('in'))}{WIRED_FROM}{BETWEEN.join(named)}"

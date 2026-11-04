@@ -169,6 +169,18 @@ def test_a_node_wired_to_one_that_has_not_run_waits_for_input_from_it_through_bo
     assert _input_of(WIRED, "nodeContext") == waiting
 
 
+def test_a_node_wired_from_one_that_declares_widgets_names_them_through_both_node_reads():
+    # 11-04, the widgets skill's case 3 on Claude Haiku 5.5 and gemma4: told
+    # only which node fed the factor, both models declared a second widget on
+    # the reader instead of setting the one on the node wired in.
+    widget = {"name": "number_multiplier", "type": "number", "label": "Number Multiplier", "default": 10}
+    multiplier = {**SPEC["dataflow"]["nodes"][0], "metadata": {"widgets": [widget]}}
+    fed = {"dataflow": {**WIRED["dataflow"], "nodes": [multiplier, SPEC["dataflow"]["nodes"][1]]}}
+    waiting = "waiting for input: wired from node n1 (CODE; widgets number_multiplier), which has not run"
+    assert _input_of(fed, "targetContext") == waiting
+    assert _input_of(fed, "nodeContext") == waiting
+
+
 def test_a_node_wired_twice_from_one_node_names_it_once():
     twice = {"dataflow": {**SPEC["dataflow"], "edges": [
         {"id": "e1", "source": "n1", "target": "n2-unsaved", "sourceHandle": "out", "targetHandle": "in"},

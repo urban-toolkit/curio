@@ -210,7 +210,7 @@ The keys of `metadata` Curio reads:
 |---|---|
 | `author`, `version` | Who wrote the skill, and its version, quoted so YAML reads it as text. A newer `version` replaces your skill of that name ([4. Your own skills](#4-your-own-skills)). |
 | `curio-behaviors` | The node behaviors (a template's `behavior`, such as `code`, `vega`, `autk-grammar` or `edit-features`) whose nodes a run writing or checking one is handed the skill for, a space between each. |
-| `curio-features` | The features of a dataflow (`scenario-boxes`, `interaction-edges`, `pinned-tiles`) that a run reading a dataflow with them is handed the skill for, a space between each. |
+| `curio-features` | The features of a dataflow (`scenario-boxes`, `interaction-edges`, `pinned-tiles`) that a run reading a dataflow with them, or writing a node that takes part in one, is handed the skill for, a space between each. |
 | `curio-refusals` | The kinds a Solve check records when it refuses an attempt, whose next attempt is handed the skill, a space between each. |
 | `curio-templates` | In a package's skill: templates of its own package, by their `id`, whose nodes a run writing or checking one is handed the skill for, a space between each. |
 | `curio-asks` | Words or phrases of a person's chat message that hand the skill to that turn, a comma between each ([3. Using a skill](#3-using-a-skill)). |

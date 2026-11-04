@@ -38,7 +38,20 @@ export interface AgentCanvasState {
   scenarios?: Scenario[];
 }
 
-type TrillNode = { id?: string; content?: string; type?: string; goal?: string };
+type TrillNode = {
+  id?: string;
+  content?: string;
+  type?: string;
+  goal?: string;
+  metadata?: { widgets?: Array<{ name?: unknown }> };
+};
+
+/** The names of the widgets a Trill node declares. */
+function widgetNames(node: TrillNode): string[] {
+  const widgets = node.metadata?.widgets;
+  if (!Array.isArray(widgets)) return [];
+  return widgets.flatMap((widget) => (typeof widget?.name === "string" && widget.name ? [widget.name] : []));
+}
 
 function liveTrill(canvas: AgentCanvasState): { dataflow?: { nodes?: TrillNode[] } } {
   return TrillGenerator.generateTrill(
@@ -78,9 +91,9 @@ function findTrillNode(trill: ReturnType<typeof liveTrill>, nodeId: string | nul
 /**
  * The nodes feeding *nodeId*, as its body asks when it has nothing to show
  * (`incomingSourceIds`: data edges only, once each in the canvas's order),
- * with the ids and types the Trill gives them and their live state. With
- * them, a node with no input yet says what it waits for, not that nothing
- * feeds it.
+ * with the ids, types and widgets the Trill gives them and their live state.
+ * With them, a node with no input yet says what it waits for, not that nothing
+ * feeds it, and a node says which widgets set what it reads.
  */
 function feedersOf(
   trill: ReturnType<typeof liveTrill>,
@@ -96,6 +109,7 @@ function feedersOf(
       type: node.type ?? "",
       data: findLiveNode(canvas.nodes, id)?.data,
       storeOutput: storeOutputFor(canvas.outputs, id),
+      widgets: widgetNames(node),
     }];
   });
 }
