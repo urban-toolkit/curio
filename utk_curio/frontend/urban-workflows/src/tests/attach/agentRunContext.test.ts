@@ -292,6 +292,23 @@ describe("composite producers (dev/67-2 — the composites stop running blind)",
     expect(inputOf(wiredCanvas, "nodeContext")).toBe(waiting);
   });
 
+  it("a node wired from one that declares widgets names them, through both node reads", () => {
+    // 11-04, the widgets skill's case 3 on Claude Haiku 5.5 and gemma4: told
+    // only which node fed the factor, both models declared a second widget on
+    // the reader instead of setting the one on the node wired in.
+    const multiplier = {
+      ...nodes[0],
+      data: {
+        ...nodes[0].data,
+        widgets: [{ name: "number_multiplier", type: "number", label: "Number Multiplier", default: 10 }],
+      },
+    };
+    const fed = { ...wiredCanvas, nodes: [multiplier, nodes[1]] };
+    const waiting = "waiting for input: wired from node n1 (CODE; widgets number_multiplier), which has not run";
+    expect(inputOf(fed, "targetContext")).toBe(waiting);
+    expect(inputOf(fed, "nodeContext")).toBe(waiting);
+  });
+
   it("a node wired twice from one node names it once", () => {
     const twice = {
       ...canvas,
