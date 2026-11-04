@@ -52,14 +52,14 @@
     }
   ],
   "trigger_queries": [
-    {"query": "Add a third alternative where every building is three times as tall, and compare all three.", "should_trigger": true},
-    {"query": "Which nodes do Real heights and Twice as tall share, and which does each one change?", "should_trigger": true},
+    {"query": "Add a third alternative where every building is three times as tall, and compare all three in one new chart whose bars keep their box's color, even after I recolor a box.", "should_trigger": true},
+    {"query": "How do I write each bar's value on the comparison chart in its box's color, but in a shade that is still readable on white?", "should_trigger": true},
     {"query": "Color the comparison chart's bars to match the scenario boxes.", "should_trigger": true},
     {"query": "what if the buildings were half as tall? i want that as another case next to the other two", "should_trigger": true},
     {"query": "One of my scenarios came from another project. Which project was it, and is it still there?", "should_trigger": true},
     {"query": "Make one chart that stacks both shadow tables, one color per scenario.", "should_trigger": true},
-    {"query": "Is it OK to put the Buildings node inside the Twice as tall box as well?", "should_trigger": true},
-    {"query": "Show, for each building, how much longer its shadow gets when the heights are doubled.", "should_trigger": true},
+    {"query": "If I also wire the Buildings node into a chart beside the Real heights and Twice as tall results, what color do its bars get, and where do they go?", "should_trigger": true},
+    {"query": "Can the Compare node's Python look up each box's color, so its table gets a color column that stays right when I recolor a box?", "should_trigger": true},
     {"query": "Order the comparison bars the way the scenarios are listed, not alphabetically.", "should_trigger": true},
     {"query": "Please plan an alternative of the shadow analysis with a height factor of 1.5, kept as its own scenario and compared with the existing two.", "should_trigger": true},
     {"query": "Set the Height factor of the doubled Shadow lengths node to 3 instead of 2.", "should_trigger": false},
