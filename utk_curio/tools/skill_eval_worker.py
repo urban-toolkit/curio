@@ -61,8 +61,10 @@ runs, so no sandbox either.
   and as it ends (``turns.delegates._delegation_part_for``, its card), with
   its outcome as the card says it. The grader and ``outputs/calls.json`` are
   shown each one in its place among the calls.
-- **Graded:** a test case's answer goes to the grader, the same model through
-  the same code, with the words of the base entry's ``skill-evals.md``. A
+- **Graded:** a test case's answer goes to the grader through the same code,
+  with the words of the base entry's ``skill-evals.md``: the model measured,
+  or the one ``CURIO_EVAL_GRADER_MODEL`` names on the same endpoint, the
+  benchmark's one grader for every model. A
   grader reply its output cap cut is not read, however much of it parses: the
   grader is asked again, and a grade that never came whole says it was cut,
   and whether the grader spent the whole cap thinking. A model that thinks
@@ -84,6 +86,7 @@ written (``report.scrub``), and so is every log line.
 from __future__ import annotations
 
 import copy
+import dataclasses
 import json
 import logging
 import os
@@ -126,6 +129,8 @@ GRADER_TASK_SECTION = "grader-task"
 #: run's whole turn and still write its grade.
 GRADER_MAX_TOKENS = 8192
 GRADER_ATTEMPTS = 3
+#: The variable that names one grader for every model measured, on the same endpoint.
+ENV_GRADER = "CURIO_EVAL_GRADER_MODEL"
 #: How long a run, or the grader, waits before each new try after the model's
 #: server failed it (a 5xx or a lost connection): two more tries at most.
 RETRY_WAITS_S = (15, 45)
@@ -531,6 +536,9 @@ class Worker:
         self.secrets = endpoint.secrets()
         self.results = results
         self.stop_early = stop_early
+        #: The model that grades each answer: CURIO_EVAL_GRADER_MODEL, the
+        #: benchmark's fixed grader, on the same endpoint, or the model measured.
+        self.grader = os.environ.get(ENV_GRADER, "").strip() or endpoint.model
         self.folders = {folder.name: folder for folder in skill_evals.skill_folders()}
         # Writes in this thread, at once, as the unit tests' app makes them.
         dataflow_docs.BACKGROUND = False
@@ -826,6 +834,9 @@ class Worker:
         message = agent_text.fill(agent_text.section(GRADER_PAGE, GRADER_TASK_SECTION), values, where)
         messages = [{"role": "system", "content": system}, {"role": "user", "content": message}]
         config = provider_config.resolve_llm(self.user_key)
+        if self.grader != config.model:
+            # One grader for every model a benchmark measures: the same endpoint, its model.
+            config = dataclasses.replace(config, model=self.grader)
         problem = "no reply"
         spent: dict = {}
         waits = list(RETRY_WAITS_S)
@@ -836,7 +847,7 @@ class Worker:
             except providers.ServerStoppedSending as exc:
                 # Not asked again: a new try would only wait out the silence again.
                 problem = provider_config.redact_error(exc, config)
-                return {"error": problem, "grader": {"model": self.endpoint.model, "attempts": attempt, **spent}}
+                return {"error": problem, "grader": {"model": self.grader, "attempts": attempt, **spent}}
             except Exception as exc:  # noqa: BLE001 - a grader that fails is an error of the run
                 problem = provider_config.redact_error(exc, config)
                 if attempt < GRADER_ATTEMPTS and waits:
@@ -856,9 +867,9 @@ class Worker:
                           for text, item in zip(task.assertions, results) if isinstance(item, dict)]
                 if len(graded) == len(task.assertions):
                     return {"assertion_results": graded, "summary": skill_evals.grading_summary(graded),
-                            "grader": {"model": self.endpoint.model, "attempts": attempt, **spent}}
+                            "grader": {"model": self.grader, "attempts": attempt, **spent}}
             problem = "its reply was no list of one result per assertion"
-        return {"error": problem, "grader": {"model": self.endpoint.model, "attempts": GRADER_ATTEMPTS, **spent}}
+        return {"error": problem, "grader": {"model": self.grader, "attempts": GRADER_ATTEMPTS, **spent}}
 
 
 def _protocol() -> "object":
