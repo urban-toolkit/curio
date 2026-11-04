@@ -73,10 +73,10 @@ def _taken_off_after(monkeypatch) -> None:
     *monkeypatch* first, which puts it back after the test."""
     from utk_curio.backend.app.agents.application import skill_runs, tool_rounds
     from utk_curio.backend.app.agents.application.proposals import plans
-    from utk_curio.backend.app.agents.application.turns import prompts, titles
+    from utk_curio.backend.app.agents.application.turns import delegates, prompts, titles
     from utk_curio.backend.app.agents.infrastructure import providers
 
-    for module in (skill_runs, tool_rounds, plans, prompts, titles, providers):
+    for module in (skill_runs, tool_rounds, plans, delegates, prompts, titles, providers):
         for name, value in list(vars(module).items()):
             if inspect.isfunction(value):
                 monkeypatch.setattr(module, name, value)
