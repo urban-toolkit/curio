@@ -277,6 +277,9 @@ def test_a_drawer_opened_over_define_scenario_closes_alone(
     expect(picked).to_be_visible()
     node_locator(page, "real").locator('.nav-link[data-rr-ui-event-key="provenance"]').first.click()
     expect(page.get_by_role("dialog", name="Node provenance")).to_be_visible(timeout=20000)
+    # Define is still open under it, with its pick.
+    expect(panel).to_be_visible()
+    expect(picked).to_be_visible()
 
     # One Escape closes the provenance drawer alone, and Define is as it was.
     page.keyboard.press("Escape")

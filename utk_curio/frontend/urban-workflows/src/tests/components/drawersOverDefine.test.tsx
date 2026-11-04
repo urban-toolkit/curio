@@ -5,11 +5,21 @@
  * drawer answers Escape only while it is the top layer (`isTopDrawer`), the
  * last open drawer in document order. Then Escape closes Define.
  *
+ * Each drawer listens on `window`, so one Escape reaches every listener in
+ * turn. In a browser React commits the top drawer's close between one
+ * listener and the next, so a listener that runs after it finds that drawer
+ * closed. Define's runs after it once Define renders again while the drawer
+ * is over it (a canvas selection, a change to the flow): HeaderDrawer adds
+ * its listener again. So the drawer here closes as its provider closes it,
+ * the close committed at once (`flushSync`), and both orders of the two
+ * listeners are tried.
+ *
  * The real Define panel, HeaderDrawer and Scenario Catalog drawer; the flow,
  * the canvas selection, the catalog's routes and the scenario commands are
  * mocked.
  */
-import React from "react";
+import React, { useCallback, useState } from "react";
+import { flushSync } from "react-dom";
 import { fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { MemoryRouter } from "react-router-dom";
@@ -54,29 +64,44 @@ const UI: ScenarioUi = {
 
 const closeOver = jest.fn();
 
-/** Define scenario, and over it the drawer *over* opens, or none. */
-function tree(over: "provenance" | "catalog" | null) {
+type Over = "provenance" | "catalog";
+
+/** The drawer over Define. It closes as its provider closes it: mounted
+ *  still, no longer presented, and committed before the next listener of the
+ *  Escape runs, as in a browser. Its close is the same on every render, as a
+ *  provider's is, so its listener keeps its place. */
+function OverDrawer({ kind }: { kind: Over }) {
+  const [presented, setPresented] = useState(true);
+  const close = useCallback(() => {
+    closeOver();
+    flushSync(() => setPresented(false));
+  }, []);
+  return kind === "provenance" ? (
+    <HeaderDrawer
+      presented={presented}
+      onRequestClose={close}
+      onExitComplete={jest.fn()}
+      title="Node provenance"
+      titleId="provenance-drawer-title"
+      name="provenance"
+      pinnable
+      wide={false}
+    >
+      Runs of the node
+    </HeaderDrawer>
+  ) : (
+    <ScenarioCatalogDrawer presented={presented} onRequestClose={close} onExitComplete={jest.fn()} />
+  );
+}
+
+/** Define scenario, unless *define* is false, and over it the drawer *over*
+ *  opens, or none. Define comes first in the page. */
+function tree(over: Over | null, define = true) {
   return (
     <MemoryRouter initialEntries={["/dataflow/p-current"]}>
       <ScenarioUiContext.Provider value={UI}>
-        <ScenarioDefinePanel define={{ mode: "new" }} presented onExitComplete={jest.fn()} />
-        {over === "provenance" && (
-          <HeaderDrawer
-            presented
-            onRequestClose={closeOver}
-            onExitComplete={jest.fn()}
-            title="Node provenance"
-            titleId="provenance-drawer-title"
-            name="provenance"
-            pinnable
-            wide={false}
-          >
-            Runs of the node
-          </HeaderDrawer>
-        )}
-        {over === "catalog" && (
-          <ScenarioCatalogDrawer presented onRequestClose={closeOver} onExitComplete={jest.fn()} />
-        )}
+        {define && <ScenarioDefinePanel define={{ mode: "new" }} presented onExitComplete={jest.fn()} />}
+        {over && <OverDrawer kind={over} />}
       </ScenarioUiContext.Provider>
     </MemoryRouter>
   );
@@ -99,18 +124,29 @@ beforeEach(() => {
 });
 
 const escape = () => fireEvent.keyDown(window, { key: "Escape" });
+const openDrawers = () => Array.from(document.querySelectorAll("[data-curio-open-drawer]"));
 
 describe.each([
   ["a header drawer", "provenance" as const],
   ["a catalog drawer", "catalog" as const],
 ])("Escape with %s over Define scenario", (_kind, over) => {
-  test("closes the drawer on top alone, and then Define", () => {
-    const { rerender } = render(tree(over));
+  test.each([
+    // The drawer opened over Define, which has not rendered since.
+    ["Define's listener runs first", false],
+    // Define rendered again while the drawer is over it, so its listener now
+    // runs after the drawer's: here Define opens after the drawer.
+    ["the drawer's listener runs first", true],
+  ])("closes the drawer on top alone, and then Define, when %s", (_order, drawerFirst) => {
+    const { rerender } = render(tree(over, !drawerFirst));
+    if (drawerFirst) rerender(tree(over));
     // Both are open, Define first in the page.
-    expect(screen.getByRole("dialog", { name: "Define scenario" })).toBeInTheDocument();
+    const define = screen.getByRole("dialog", { name: "Define scenario" });
+    expect(openDrawers()).toHaveLength(2);
+    expect(openDrawers()[0]).toBe(define);
     escape();
     expect(closeOver).toHaveBeenCalledTimes(1);
     expect(setDefine).not.toHaveBeenCalled();
+    expect(openDrawers()).toEqual([define]);
 
     // Its drawer gone, Define is the top layer, and Escape closes it.
     rerender(tree(null));
