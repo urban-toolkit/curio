@@ -81,6 +81,7 @@ function plan(toRun: { nodeId: string; label: string }[]): any {
     set: { id: "park", name: "Park shade" },
     project: { id: "src", name: "Chicago Loop shadow with towers removed or edited" },
     nodes: ["shadow"],
+    last: [],
     context: [{ nodeId: "buildings", label: "Buildings", source: { nodeId: "buildings", copiedFrom: [] } }],
     shared: [],
     outcomes: [],
@@ -153,7 +154,7 @@ it("runs the context on the server in the scenario's project, plans again, then 
   const [, replanned] = catalog.getCopyPlan.mock.invocationCallOrder;
   const [copied] = catalog.copyInto.mock.invocationCallOrder;
   expect(started < followed && followed < replanned && replanned < copied).toBe(true);
-  expect(dropped).toEqual({ nodes: ["loader-1"], scenarios: ["dropped"], set: "set-new" });
+  expect(dropped).toEqual({ nodes: ["loader-1"], scenario: "dropped", set: "set-dropped" });
   expect(errors()).toEqual([]);
 });
 
@@ -211,7 +212,7 @@ it("follows a run already going in the scenario's project, then copies", async (
   expect(runs.start).toHaveBeenCalledTimes(1);
   expect(runs.follow.mock.calls.map(([runId]) => runId)).toEqual(["r9"]);
   expect(catalog.copyInto).toHaveBeenCalledTimes(1);
-  expect(dropped).toEqual({ nodes: ["loader-1"], scenarios: ["dropped"], set: "set-new" });
+  expect(dropped).toEqual({ nodes: ["loader-1"], scenario: "dropped", set: "set-dropped" });
 });
 
 it("a run that ends with the context still unsaved adds nothing", async () => {
@@ -235,5 +236,5 @@ it("a plan with nothing to run copies at once, as before", async () => {
   expect(runs.start).not.toHaveBeenCalled();
   expect(catalog.getCopyPlan).toHaveBeenCalledTimes(1);
   expect(catalog.copyInto).toHaveBeenCalledTimes(1);
-  expect(dropped).toEqual({ nodes: ["loader-1"], scenarios: ["dropped"], set: "set-new" });
+  expect(dropped).toEqual({ nodes: ["loader-1"], scenario: "dropped", set: "set-dropped" });
 });

@@ -207,7 +207,8 @@ function everyFieldTrill(): any {
            context: [], outcomes: ["other"], collapsed: true, box: { x: 1, y: 2 },
            source: { project: "p", scenario: "s" } } as any],
         true,
-        [{ id: "set-1", name: "Base set", description: "the set", shared: { context: { collapsed: true } } }],
+        [{ id: "set-1", name: "Base set", description: "the set", shared: { context: { collapsed: true } },
+           source: { project: "p", set: "s" } }],
     );
 }
 

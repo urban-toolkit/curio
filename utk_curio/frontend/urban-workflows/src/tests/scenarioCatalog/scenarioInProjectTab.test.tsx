@@ -167,8 +167,8 @@ describe("the Scenario Catalog drawer's In project tab", () => {
     await openInProject();
     expect(tab("In project")).toHaveAttribute("aria-pressed", "true");
     expect(within(card("s-doubled")).getByText("Doubled")).toBeInTheDocument();
-    // No node count: the card is its name and description.
-    expect(within(card("s-doubled")).queryByText(/\d+ nodes?$/)).toBeNull();
+    // The drawers' one meta line: its project and how many nodes it has.
+    expect(within(card("s-doubled")).getByText("Heights · 1 node")).toBeInTheDocument();
     expect(within(card("s-doubled")).getByText("Every height twice.")).toBeInTheDocument();
     expect(within(card("s-charted")).getByText("Charted")).toBeInTheDocument();
     // Browse all's listing is not In project's: its card is not here.
@@ -322,8 +322,11 @@ describe("the Scenario Catalog drawer's In project tab", () => {
     expect(modal.getByLabelText("Scenario description")).toHaveValue("Every height twice.");
     const region = (name: string) => within(modal.getByRole("region", { name }));
     expect(region("Shared context").getByText("Load parcels")).toBeInTheDocument();
+    // Scale heights is its own node, its last one: the chart that reads it is
+    // in another scenario's box, so it has no shared outcome.
     expect(region("Scenario-specific nodes").getByText("Scale heights")).toBeInTheDocument();
-    expect(region("Shared outcomes").getByText("Scale heights")).toBeInTheDocument();
+    expect(region("Shared outcomes").queryByText("Scale heights")).toBeNull();
+    expect(region("Shared outcomes").getByText("None.")).toBeInTheDocument();
     // Read off the canvas: no saved-output lines, and no request.
     expect(modal.queryByText("No saved output")).toBeNull();
     expect(api.getScenario).not.toHaveBeenCalled();
