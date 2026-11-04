@@ -20,7 +20,7 @@ afterAll(() => clearVegaLiteTemplate());
 
 type SpecNode = { id: string; type: string; content?: string; metadata?: { widgets?: unknown } };
 type SpecEdge = { source: string; target: string; sourceHandle?: string; targetHandle?: string; type?: string };
-type Parts = { nodes: string[]; context: string[]; outcomes: string[]; boundary: string[] };
+type Parts = { nodes: string[]; last: string[]; context: string[]; outcomes: string[]; boundary: string[] };
 type Case = {
   name: string;
   nodes: SpecNode[];

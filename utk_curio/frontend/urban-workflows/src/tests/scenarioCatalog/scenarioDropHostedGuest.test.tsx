@@ -108,6 +108,7 @@ const READY = {
   set: { id: "park", name: "Park shade" },
   project: { id: "src", name: "Chicago Loop shadow with towers removed or edited" },
   nodes: [],
+  last: [],
   context: [],
   shared: [],
   outcomes: [],

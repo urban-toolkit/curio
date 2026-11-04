@@ -11,8 +11,8 @@ own:
 
 * the saved output of each node whose output crosses into what is copied,
   which a Data Loading node there reads;
-* the saved outputs that stand for the shared outcomes landing, so they show
-  without a run.
+* the saved outputs that stand for its own last nodes and the shared outcomes
+  landing, so they show without a run.
 
 Run::
 
@@ -149,6 +149,8 @@ def test_the_plan_names_its_nodes_the_context_and_the_shared_outcomes_saved_outp
     assert plan["scenario"] == {"id": "s1", "name": "Baseline", "color": "#2a9d8f", "description": ""}
     assert plan["project"] == {"id": source, "name": "Shadows"}
     assert plan["nodes"] == ["a"]
+    # Its last node, which the chart reads, shows its own saved output.
+    assert plan["last"] == [{"nodeId": "a", "sources": ["a"]}]
     [load] = plan["context"]
     assert load["nodeId"] == "load" and "parameter" not in load
     assert load["source"] == {"nodeId": "load", "copiedFrom": [], "datasetId": computed_dataset_id("load", source)}

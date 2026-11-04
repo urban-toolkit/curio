@@ -54,7 +54,8 @@ export interface ScenarioDrop {
   loaders: PlannedLoader[];
   /** Nodes of the set's copy the drop's edges come from rather than copies. */
   reused: SpecNode[];
-  /** Which saved output of the source each new node gets. */
+  /** Which saved output of the source each new node gets: the context's, its
+   *  last nodes' and those of the shared outcomes landing. */
   outputs: ScenarioCopyOutput[];
   /** The dataflow's scenarios after the drop: the one added last, and those
    *  of the copy listing a shared outcome that landed with it. */
@@ -208,9 +209,10 @@ export function planScenarioDrop(
     }
   }
 
+  // The saved outputs its last nodes and the shared outcomes landing show.
   const outputs: ScenarioCopyOutput[] = loaders.map((loader) => ({ source: loader.source, node: loader.id }));
-  for (const outcome of plan.shared) {
-    for (const source of outcome.sources) {
+  for (const shown of [...plan.last, ...plan.shared]) {
+    for (const source of shown.sources) {
       const node = copy.ids.get(source);
       if (node && !outputs.some((o) => o.node === node)) outputs.push({ source, node });
     }

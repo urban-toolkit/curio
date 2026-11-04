@@ -218,12 +218,14 @@ def test_the_details_list_its_parts_by_role_with_the_saved_outputs_of_what_it_sa
     # The chart saves nothing itself: what it draws is node a's saved output.
     [outcome] = body["outcomes"][0]["results"]
     assert (outcome["datasetId"], outcome["nodeId"]) == (computed_dataset_id("a", project_id), "a")
-    # The node whose output crosses into it has its output line; the node
-    # deeper upstream and its own node have none, saved or not.
+    # The node whose output crosses into it has its output line, and so has
+    # its own last node, which the chart reads; the node deeper upstream has
+    # none, saved or not.
     [context] = body["context"][1]["results"]
     assert (context["datasetId"], context["nodeId"]) == (computed_dataset_id("load", project_id), "load")
     assert "results" not in body["context"][0]
-    assert "results" not in body["levers"][0]
+    [own] = body["levers"][0]["results"]
+    assert (own["datasetId"], own["nodeId"]) == (computed_dataset_id("a", project_id), "a")
     assert "path" not in json.dumps(body["context"] + body["levers"] + body["outcomes"])
 
 

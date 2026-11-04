@@ -4,6 +4,8 @@ The twin of ``scenarioParts`` in ``src/utils/scenarios/scenarioParts.ts``,
 which reads the live canvas. For one scenario of a dataflow:
 
 * ``nodes``, its Scenario-specific nodes, in the scenario's order;
+* ``last``, its own last nodes: those of its nodes whose output nothing in it
+  reads, or that something outside it reads, the results it shows;
 * ``context``, its Shared context: the nodes upstream of it, outside every
   scenario's box, that it keeps (``projects/scenario_sets.py``);
 * ``outcomes``, its Shared outcomes: the nodes downstream of it, outside every
@@ -14,11 +16,11 @@ which reads the live canvas. For one scenario of a dataflow:
 
 The canvas and the Scenario Catalog's details show the whole shared context
 and shared outcomes. What saves its output because of a scenario is what
-stands for its boundary and its shared outcomes, and nothing else
-(:func:`scenario_source_node_ids`): a pass-through (a chart, a Data Pool, a
-drawing Autark node) saves nothing itself, and :func:`saved_sources` resolves
-it to the nodes feeding it, the walk pinned dashboard tiles use
-(``producersFeeding`` in ``utils/dashboardLayout.ts``).
+stands for its boundary, its own last nodes and its shared outcomes, and
+nothing else (:func:`scenario_source_node_ids`): a pass-through (a chart, a
+Data Pool, a drawing Autark node) saves nothing itself, and
+:func:`saved_sources` resolves it to the nodes feeding it, the walk pinned
+dashboard tiles use (``producersFeeding`` in ``utils/dashboardLayout.ts``).
 
 Both sides read one table of cases, ``scenarioParts.cases.json`` beside the
 TypeScript module.
@@ -76,9 +78,9 @@ def spec_nodes_and_edges(spec: object) -> tuple[list[dict], list[dict]]:
 
 
 def scenario_parts(scenario: dict, nodes: list[dict], edges: list[dict], scenarios: list[dict]) -> dict:
-    """``{"nodes", "context", "outcomes", "boundary"}`` for *scenario*, one of
-    the dataflow's *scenarios*, as ids of *nodes*: its own nodes in its order,
-    the rest in the dataflow's.
+    """``{"nodes", "last", "context", "outcomes", "boundary"}`` for
+    *scenario*, one of the dataflow's *scenarios*, as ids of *nodes*: its own
+    nodes and its last nodes in its order, the rest in the dataflow's.
 
     A node that is not among *nodes* is left out, and so is a node of a box
     from its context and outcomes. A context or outcomes list the scenario does
@@ -113,14 +115,19 @@ def scenario_parts(scenario: dict, nodes: list[dict], edges: list[dict], scenari
         i for s in scenarios for i in s.get("outcomes") or [] if isinstance(i, str)
     }
     boundary: set[str] = set()
+    read_inside: set[str] = set()
+    read_outside: set[str] = set()
     for edge in links:
         source, target = edge["source"], edge["target"]
+        if source in members:
+            (read_inside if target in members else read_outside).add(source)
         if target in members and source not in members:
             boundary.add(source)
         elif target in outcomes and source not in boxed and source not in every_outcome:
             boundary.add(source)
     return {
         "nodes": own,
+        "last": [i for i in own if i not in read_inside or i in read_outside],
         "context": kept["context"],
         "outcomes": kept["outcomes"],
         "boundary": [i for i in order if i in boundary],
@@ -179,8 +186,9 @@ def saved_sources(
 
 def scenario_source_node_ids(spec: object, packages: Optional["TemplateGrammars"] = None) -> set[str]:
     """The nodes whose outputs a saved spec's scenarios need saved: the saved
-    sources of each scenario's boundary and shared outcomes, so a drop into
-    another project brings them and the Scenario Catalog shows them. The twin
+    sources of each scenario's boundary, its own last nodes and its shared
+    outcomes, so a drop into another project brings them and the Scenario
+    Catalog shows them. The twin
     of ``scenarioSourceNodeIds``; a run on the server adds them to the pinned
     tiles' sources, as ``savedSourceNodeIds`` does. The scenarios are read as
     a save keeps them (``kept_scenarios``). *packages* reads the manifests
@@ -193,6 +201,6 @@ def scenario_source_node_ids(spec: object, packages: Optional["TemplateGrammars"
     sources: set[str] = set()
     for scenario in scenarios:
         parts = scenario_parts(scenario, nodes, edges, scenarios)
-        for node_id in [*parts["boundary"], *parts["outcomes"]]:
+        for node_id in [*parts["boundary"], *parts["last"], *parts["outcomes"]]:
             sources.update(saved_sources(node_id, nodes, edges, packages))
     return sources

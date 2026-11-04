@@ -476,11 +476,9 @@ class TestWhatARunSaves:
     def test_a_scenarios_context_and_outcomes_are_saved_as_the_canvas_saves_them(
         self, client, user_and_token, sandbox, monkeypatch,
     ):
-        # #662: a drop into another project brings the context whose output
-        # crosses into a scenario and shows its shared outcomes, so a run saves
-        # them whatever their own toggle says, by the canvas's rule
-        # (`savedSourceNodeIds`); the scenario's own node saves nothing because
-        # of it.
+        # #662: another project reads a scenario's fixed context and its
+        # outcomes, so a run saves them whatever their own toggle says, by the
+        # canvas's rule (`savedSourceNodeIds`).
         from utk_curio.backend.app.datasets.application import auto_install
         from utk_curio.backend.app.projects import services as project_services
 
@@ -497,17 +495,15 @@ class TestWhatARunSaves:
         project_id, _ = _create(client, token, [
             _node("context", saveOutputDataset=False),
             _node("lever", saveOutputDataset=False),
-            _node("after", saveOutputDataset=False),
             _node("outside", saveOutputDataset=False),
-        ], [_edge("context", "lever"), _edge("lever", "after")], scenarios=[
+        ], [_edge("context", "lever")], scenarios=[
             {"id": "s1", "name": "Scenario", "color": "#336699", "nodes": ["lever"]},
         ])
         run_id = _start(client, token, project_id).get_json()["id"]
         _wait(run_id)
 
-        assert sandbox.bodies["context"]["save_dataset"] is True  # its output crosses into the scenario
-        assert sandbox.bodies["after"]["save_dataset"] is True  # its shared outcome
-        assert sandbox.bodies["lever"]["save_dataset"] is False  # its own node
+        assert sandbox.bodies["context"]["save_dataset"] is True  # its fixed context
+        assert sandbox.bodies["lever"]["save_dataset"] is True  # its outcome
         assert sandbox.bodies["outside"]["save_dataset"] is False
         assert sorted(recorded) == ["context", "lever"]
 

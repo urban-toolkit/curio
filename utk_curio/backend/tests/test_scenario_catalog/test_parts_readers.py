@@ -4,8 +4,8 @@
   its shared context and its shared outcomes, is what the Scenario Catalog's
   details list, for every shipped dataflow with scenarios.
 * What saves its output because of example 06's scenarios is what stands for
-  each one's boundary (the Data Pool its output crosses in from) and its
-  shared outcomes, and nothing else.
+  each one's boundary (the Data Pool its output crosses in from), its own last
+  nodes and its shared outcomes, and nothing else.
 
 Run::
 
@@ -85,19 +85,22 @@ def test_dataflow_read_lists_each_scenario_as_its_details_do(client, user_and_to
         assert "levers" not in row
 
 
-def test_example_06_saves_what_stands_for_its_boundary_and_shared_outcomes_and_nothing_else():
+def test_example_06_saves_what_stands_for_its_boundary_last_nodes_and_shared_outcomes_and_nothing_else():
     from utk_curio.backend.app.scenario_catalog.domain.parts import scenario_source_node_ids
 
     spec = _shipped("docs/examples/06-back-bay-road-sunlight.json")
     by_id = {n["id"]: n for n in spec["dataflow"]["nodes"]}
     saved = scenario_source_node_ids(spec)
     # Back Bay layers stands for the Data Pool each scenario's output crosses
-    # in from; the three Roads stand for Mean sunlight, a chart, which saves
-    # nothing itself; Sunlight change saves its own, and stands for Roads by
-    # sunlight change, a chart.
+    # in from. Each scenario's last nodes: its Roads, which Mean sunlight, a
+    # chart, reads, and its map of roads by sunlight, which draws what its
+    # Shadow study makes; Two towers removed's map of its buildings draws what
+    # its Map Editor node hands on. Sunlight change saves its own, and stands
+    # for Roads by sunlight change, a chart.
     assert sorted(by_id[i].get("title") for i in saved) == [
-        "Back Bay layers", "Roads", "Roads", "Roads", "Sunlight change",
+        "Back Bay layers", "Roads", "Roads", "Roads", "Shadow study", "Shadow study", "Shadow study",
+        "Sunlight change", "Two towers removed",
     ]
     # No other node of a scenario saves because of it.
-    others = {"Shadow study", "Two towers removed", "Buildings by height", "Roads by sunlight"}
+    others = {"Buildings by height", "Roads by sunlight"}
     assert not [by_id[i].get("title") for i in saved if by_id[i].get("title") in others]

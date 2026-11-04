@@ -144,13 +144,18 @@ def test_a_scenario_the_copy_holds_is_refused_and_an_unknown_one_is_not_found(cl
     assert _shared(_plan(client, token, source, target, "s1", ["s4", "gone"]).get_json()) == ["map"]
 
 
-def test_a_drop_copies_an_outcomes_own_saved_output_and_no_scenarios_node(client, user_and_token):
+def test_a_drop_copies_its_last_nodes_and_an_outcomes_own_saved_outputs_and_no_other_scenarios_node(
+    client, user_and_token,
+):
     _, token = user_and_token
     source, target = _projects(client, token)
     _save_outputs(client, token, source, {"load": "id\n1\n", "a": "v\n1\n", "b": "v\n2\n", "merge": "v\n3\n"})
     plan = _plan(client, token, source, target, "s2", ["s1"]).get_json()
     merge = next(e for e in plan["shared"] if e["nodeId"] == "merge")
     assert merge["sources"] == ["merge"]
+    # b, which merge and the chart of all three read, is its last node: it
+    # shows its own saved output.
+    assert plan["last"] == [{"nodeId": "b", "sources": ["b"]}]
 
     def copy(outputs):
         return client.post(
@@ -159,10 +164,14 @@ def test_a_drop_copies_an_outcomes_own_saved_output_and_no_scenarios_node(client
             headers=_headers(token),
         )
 
-    # A scenario's own node stands for no shared outcome landing: a drop does
-    # not bring its saved output.
-    assert copy([{"source": "b", "node": "b-copy"}]).status_code == 400
-    resp = copy([{"source": "load", "node": "load-copy"}, {"source": "merge", "node": "merge-copy"}])
+    # A node of another scenario of the set is none this drop copies: its
+    # saved output does not come.
+    assert copy([{"source": "a", "node": "a-copy"}]).status_code == 400
+    resp = copy([
+        {"source": "load", "node": "load-copy"},
+        {"source": "b", "node": "b-copy"},
+        {"source": "merge", "node": "merge-copy"},
+    ])
     assert resp.status_code == 200, resp.get_data(as_text=True)
     restored = {o["node_id"] for o in resp.get_json()["outputs"]}
-    assert {"load-copy", "merge-copy"} <= restored
+    assert {"load-copy", "b-copy", "merge-copy"} <= restored

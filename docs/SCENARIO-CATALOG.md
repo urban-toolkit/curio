@@ -55,7 +55,7 @@ No scenario ships with Curio. The catalog lists the scenarios in your own projec
 | Layer | On disk | Written by |
 |---|---|---|
 | **A project's scenarios and sets** | The project's saved dataflow: each scenario with its scenario-specific nodes, its set, its shared context and its shared outcomes, and each set with its name | **Define scenario**, **Duplicate scenario**, a scenario dragged in from the catalog, and the canvas drawer's **In project** tab, saved with the dataflow. |
-| **Their saved results** | Your Data Catalog, as the project's saved outputs | Running the project: the nodes of a scenario's shared context that feed it, and its shared outcomes, save their outputs. A scenario dragged into a dataflow brings copies of them, saved as that dataflow's own. |
+| **Their saved results** | Your Data Catalog, as the project's saved outputs | Running the project: the nodes of a scenario's shared context that feed it, its own last nodes (those whose output nothing else in it reads, or a node outside it reads) and its shared outcomes save their outputs. A scenario dragged into a dataflow brings copies of them, saved as that dataflow's own. |
 
 ---
 
@@ -100,7 +100,7 @@ A scenario's details show its name, color, project, set and description, and its
 | List | Holds | Each node shows |
 |---|---|---|
 | **Shared context** | The nodes upstream of the scenario that it uses, as it keeps them | Its name, and for a node that feeds the scenario, the output its project saved |
-| **Scenario-specific nodes** | The nodes in the scenario | Its name, and the output its project saved |
+| **Scenario-specific nodes** | The nodes in the scenario | Its name, and for one of its last nodes, the output its project saved |
 | **Shared outcomes** | The nodes downstream of the scenario that it feeds, as it keeps them | Its name, and the output its project saved |
 
 A chart or a Data Pool saves nothing itself, so its saved result is the output of the node feeding it.

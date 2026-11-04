@@ -899,8 +899,9 @@ circles on it; double-click it to expand it. In a dataflow you watch, scenarios
 and groups stay collapsed or expanded as they are.
 
 Defining a scenario saves to your Data Catalog the outputs of the shared context
-nodes that feed it and of its shared outcomes, whatever their **Save output**
-setting, as pinning a dashboard tile does. A chart or a Data Pool saves nothing
+nodes that feed it, of its own last nodes (those whose output nothing else in it
+reads, or a node outside it reads) and of its shared outcomes, whatever their
+**Save output** setting, as pinning a dashboard tile does. A chart or a Data Pool saves nothing
 itself: the node feeding it does. Scenarios and their sets, colors, descriptions,
 context and outcomes, collapsed state and box positions, and whether each set's
 shared context and shared outcomes are collapsed and where, are saved with the

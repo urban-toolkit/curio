@@ -38,6 +38,7 @@ function plan(overrides: Partial<ScenarioCopyPlan> = {}): ScenarioCopyPlan {
     set: { id: "heights", name: "Building heights" },
     project: { id: "p-src", name: "Shadows" },
     nodes: ["scale", "map"],
+    last: [],
     context: [POOL],
     shared: [],
     outcomes: [],
@@ -169,9 +170,16 @@ describe("planScenarioDrop", () => {
     expect(d.edges.some((e) => e.source === "pool" || e.target === "pool")).toBe(false);
   });
 
-  test("the server is told which saved output each copy gets: the context's, and what stands for a shared outcome landing", () => {
+  test("the server is told which saved output each copy gets: the context's, what stands for its last nodes, and for a shared outcome landing", () => {
     const alone = drop(plan());
     expect(alone.outputs).toEqual([{ source: "load", node: alone.loaders[0].id }]);
+    // Its last node, the map, draws what the scale node makes: the scale
+    // node's saved output comes to its copy.
+    const shown = drop(plan({ last: [{ nodeId: "map", sources: ["scale"] }] }));
+    expect(shown.outputs).toEqual([
+      { source: "load", node: shown.loaders[0].id },
+      { source: "scale", node: copyOf(shown, "scale").id },
+    ]);
     const first = drop(firstOfTheSet());
     const second = drop(secondOfTheSet(), canvasAfter(first), first.scenarios, first.sets, counter("next"));
     // The context came with the first drop; the compare step's own saved

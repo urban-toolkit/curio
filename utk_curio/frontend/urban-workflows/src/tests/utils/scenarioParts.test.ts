@@ -2,12 +2,13 @@
  * A scenario's parts by role, read from the live graph (#662), and the outputs
  * the scenarios save.
  *
- * Its own nodes are its Scenario-specific nodes; its shared context and shared
- * outcomes are the lists it keeps, or the ones Curio infers when it keeps
- * none; its boundary is what crosses into it, or into one of its shared
- * outcomes from outside every box and every shared outcome. What saves its
- * output because of the scenarios is what stands for each one's boundary and
- * shared outcomes, and nothing else.
+ * Its own nodes are its Scenario-specific nodes, and its last nodes those of
+ * them whose output nothing in it reads, or that something outside it reads;
+ * its shared context and shared outcomes are the lists it keeps, or the ones
+ * Curio infers when it keeps none; its boundary is what crosses into it, or
+ * into one of its shared outcomes from outside every box and every shared
+ * outcome. What saves its output because of the scenarios is what stands for
+ * each one's boundary, last nodes and shared outcomes, and nothing else.
  */
 import { NodeType } from "../../constants";
 import {
@@ -61,6 +62,8 @@ describe("scenarioParts", () => {
     const s = scenario(["a", "b"]);
     expect(scenarioParts(s, nodes, edges, [s])).toEqual({
       nodes: ["a", "b"],
+      // b, which the chart reads; a only feeds b.
+      last: ["b"],
       context: ["load", "pool"],
       outcomes: ["chart"],
       boundary: ["pool"],
@@ -69,7 +72,9 @@ describe("scenarioParts", () => {
 
   test("the lists a scenario keeps are its shared context and outcomes, whatever the edges say", () => {
     const s = scenario(["a", "b"], { context: ["pool"], outcomes: [] });
-    expect(scenarioParts(s, nodes, edges, [s])).toEqual({ nodes: ["a", "b"], context: ["pool"], outcomes: [], boundary: ["pool"] });
+    expect(scenarioParts(s, nodes, edges, [s])).toEqual({
+      nodes: ["a", "b"], last: ["b"], context: ["pool"], outcomes: [], boundary: ["pool"],
+    });
   });
 
   test("a value node wired into its node is its boundary, and one wired into nothing is not", () => {
@@ -100,10 +105,10 @@ describe("scenarioParts", () => {
     const first = scenario(["a"], { id: "s1" });
     const second = scenario(["b"], { id: "s2", name: "Real heights" });
     expect(scenarioParts(first, nodes, edges, [first, second])).toEqual({
-      nodes: ["a"], context: ["load", "pool"], outcomes: [], boundary: ["pool"],
+      nodes: ["a"], last: ["a"], context: ["load", "pool"], outcomes: [], boundary: ["pool"],
     });
     expect(scenarioParts(second, nodes, edges, [first, second])).toEqual({
-      nodes: ["b"], context: [], outcomes: ["chart"], boundary: ["a"],
+      nodes: ["b"], last: ["b"], context: [], outcomes: ["chart"], boundary: ["a"],
     });
   });
 
@@ -115,7 +120,9 @@ describe("scenarioParts", () => {
 
   test("a member deleted since the last save is not read", () => {
     const s = scenario(["a", "gone", "b"], { context: ["gone", "pool"], outcomes: ["gone"] });
-    expect(scenarioParts(s, nodes, edges, [s])).toEqual({ nodes: ["a", "b"], context: ["pool"], outcomes: [], boundary: ["pool"] });
+    expect(scenarioParts(s, nodes, edges, [s])).toEqual({
+      nodes: ["a", "b"], last: ["b"], context: ["pool"], outcomes: [], boundary: ["pool"],
+    });
   });
 });
 
@@ -137,16 +144,16 @@ describe("liveScenarios", () => {
 });
 
 describe("the outputs the scenarios save", () => {
-  test("what crosses into it and its shared outcomes, each where it is made; a node deeper upstream saves nothing", () => {
+  test("what crosses into it, its last node and its shared outcomes, each where it is made; a node deeper upstream saves nothing", () => {
     const nodes = [node("raw"), node("load"), node("a"), node("b")];
     const edges = [edge("raw", "load"), edge("load", "a"), edge("a", "b")];
-    expect([...scenarioSourceNodeIds(nodes, edges, [scenario(["a"])])].sort()).toEqual(["b", "load"]);
+    expect([...scenarioSourceNodeIds(nodes, edges, [scenario(["a"])])].sort()).toEqual(["a", "b", "load"]);
   });
 
-  test("its own nodes save nothing because of it", () => {
+  test("of its own nodes, the last saves and the one before it saves nothing because of it", () => {
     const nodes = [node("load"), node("a"), node("b")];
     const edges = [edge("load", "a"), edge("a", "b")];
-    expect([...scenarioSourceNodeIds(nodes, edges, [scenario(["a", "b"])])]).toEqual(["load"]);
+    expect([...scenarioSourceNodeIds(nodes, edges, [scenario(["a", "b"])])].sort()).toEqual(["b", "load"]);
   });
 
   test("a chart outcome saves nothing itself: the node feeding it does", () => {
@@ -157,7 +164,7 @@ describe("the outputs the scenarios save", () => {
 
   test("a value node in the boundary saves its output, which a drop brings as data", () => {
     const nodes = [node("a"), valueNode("p", "season")];
-    expect([...scenarioSourceNodeIds(nodes, [edge("p", "a")], [scenario(["a"])])]).toEqual(["p"]);
+    expect([...scenarioSourceNodeIds(nodes, [edge("p", "a")], [scenario(["a"])])].sort()).toEqual(["a", "p"]);
   });
 
   test("the save rule adds the scenarios' to a pinned tile's, and without scenarios is the tile's alone", () => {
@@ -165,6 +172,6 @@ describe("the outputs the scenarios save", () => {
     nodes[2].data.dashboardPinned = true;
     const edges = [edge("load", "a"), edge("a", "pinned"), edge("x", "y"), edge("y", "z")];
     expect([...savedSourceNodeIds(nodes, edges, [])]).toEqual([...dashboardSourceNodeIds(nodes, edges)]);
-    expect([...savedSourceNodeIds(nodes, edges, [scenario(["y"])])].sort()).toEqual(["a", "x", "z"]);
+    expect([...savedSourceNodeIds(nodes, edges, [scenario(["y"])])].sort()).toEqual(["a", "x", "y", "z"]);
   });
 });

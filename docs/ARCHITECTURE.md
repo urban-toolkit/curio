@@ -357,19 +357,21 @@ A node drawn hidden is never measured, so code that needs a node's size or hit-t
 nodes leaves it out (`isDrawnHidden`): the load fit (`fitViewWithMenuOffset`) and the
 agent drop target do. `src/utils/scenarios/scenarioParts.ts` reads a scenario's parts
 by role from the live graph, the twin of `scenario_catalog/domain/parts.py` on one
-table of cases (`scenarioParts.cases.json`): its Scenario-specific nodes; its Shared
-context and Shared outcomes, the lists it keeps, or the ones Curio infers when it keeps
-none; and its boundary, the nodes whose output crosses into it, or into one of its
-shared outcomes from outside every box and every shared outcome. The canvas marks, the
-In project tab, the Scenario Catalog's details, the dashboard by scenario and
-`dataflow.read` show the whole shared context and shared outcomes; the details give an
-output line to the boundary and the shared outcomes alone. `savedSourceNodeIds` there
-is the one rule, read by a run and by a save, for which outputs are saved whatever a
-node's own toggle says: what a pinned tile reads, and what stands for each scenario's
-boundary and shared outcomes (`savedSourcesOf`: a chart or a Data Pool stands for the
-nodes feeding it). A scenario's own nodes save nothing because of it. A drop copies
-those saved outputs: the boundary's to the Data Loading nodes that stand for it, and
-the shared outcomes' to their copies.
+table of cases (`scenarioParts.cases.json`): its Scenario-specific nodes; its own last
+nodes (`last`), those of them whose output nothing in it reads, or that something
+outside it reads; its Shared context and Shared outcomes, the lists it keeps, or the
+ones Curio infers when it keeps none; and its boundary, the nodes whose output crosses
+into it, or into one of its shared outcomes from outside every box and every shared
+outcome. The canvas marks, the In project tab, the Scenario Catalog's details, the
+dashboard by scenario and `dataflow.read` show the whole shared context and shared
+outcomes; the details give an output line to the boundary, the last nodes and the
+shared outcomes alone. `savedSourceNodeIds` there is the one rule, read by a run and by
+a save, for which outputs are saved whatever a node's own toggle says: what a pinned
+tile reads, and what stands for each scenario's boundary, last nodes and shared
+outcomes (`savedSourcesOf`: a chart or a Data Pool stands for the nodes feeding it).
+Its other nodes save nothing because of it. A drop copies those saved outputs: the
+boundary's to the Data Loading nodes that stand for it, and the last nodes' and the
+shared outcomes' to their copies.
 
 ### Scenarios in charts and maps
 
@@ -2955,8 +2957,8 @@ file that cannot be served as asked (no preview, or not a format Curio serves),
 | Route | Method | Purpose |
 |---|---|---|
 | `/api/scenarios/catalog` | GET | Every scenario in the account's projects, each with its project and the project's graph preview (`q` filters by name, description and project name) |
-| `/api/scenarios/<projectId>/<scenarioId>` | GET | One scenario by role: its whole shared context (`context`), its Scenario-specific nodes (`levers`) and its shared outcomes (`outcomes`); the nodes of its boundary and its shared outcomes with the outputs its project saved, the others with no `results`. **404** for another account's project, a deleted one, or a scenario the project does not have |
-| `/api/scenarios/<projectId>/<scenarioId>/copy?target=<projectId>&present=<ids>` | GET | What dragging the scenario into the target project copies, where the target's copy of its set holds the scenarios `present` names already: its own nodes, the set's shared outcomes that land with it (`shared`), the context that crosses into those (`context`), `toRun` (the context nodes with no saved output that a run on the server makes first, in the scenario's project, as `{nodeId, label}`), and `problems` naming why it cannot be. Changes nothing. **400** without `target`; **404** when either project is not the caller's; **409** when `present` holds the scenario itself |
+| `/api/scenarios/<projectId>/<scenarioId>` | GET | One scenario by role: its whole shared context (`context`), its Scenario-specific nodes (`levers`) and its shared outcomes (`outcomes`); the nodes of its boundary, its last nodes and its shared outcomes with the outputs its project saved, the others with no `results`. **404** for another account's project, a deleted one, or a scenario the project does not have |
+| `/api/scenarios/<projectId>/<scenarioId>/copy?target=<projectId>&present=<ids>` | GET | What dragging the scenario into the target project copies, where the target's copy of its set holds the scenarios `present` names already: its own nodes, its last nodes with the nodes whose saved outputs stand for them (`last`), the set's shared outcomes that land with it (`shared`), the context that crosses into those (`context`), `toRun` (the context nodes with no saved output that a run on the server makes first, in the scenario's project, as `{nodeId, label}`), and `problems` naming why it cannot be. Changes nothing. **400** without `target`; **404** when either project is not the caller's; **409** when `present` holds the scenario itself |
 | `/api/scenarios/<projectId>/<scenarioId>/copy` | POST | Body `{targetProjectId, present, outputs: [{source, node}]}`: adds the packages the plan names to the target, copies each named saved output to `computed.<targetId>.<node>`, and returns the target's packages, those added, each context loader's dataset, and the restored output refs. **409** while the plan has a problem or a node to run; **400** for a source the scenario does not bring or a node id that is not fresh |
 
 ### Agent Routes

@@ -1,5 +1,5 @@
 {
-  "about": "What a scenario is made of (#662), by role: its Scenario-specific nodes (\"nodes\"), its Shared context and Shared outcomes as it keeps them (or as Curio infers them when it keeps none), and its boundary, what crosses into it or into one of its shared outcomes from outside every box and every shared outcome; what saves its output because of the scenarios (\"saves\"), what stands for each one's boundary and shared outcomes; and the nodes whose saved outputs stand for a node's. Nodes and edges are written as a saved spec holds them. Read by src/tests/utils/scenarioParts.cases.test.ts, which hands them to the canvas as nodes, and by utk_curio/backend/tests/test_scenario_catalog/test_parts.py: the canvas and the Scenario Catalog read a scenario the same way.",
+  "about": "What a scenario is made of (#662), by role: its Scenario-specific nodes (\"nodes\"), its own last nodes (\"last\", those of its nodes whose output nothing in it reads, or that something outside it reads), its Shared context and Shared outcomes as it keeps them (or as Curio infers them when it keeps none), and its boundary, what crosses into it or into one of its shared outcomes from outside every box and every shared outcome; what saves its output because of the scenarios (\"saves\"), what stands for each one's boundary, own last nodes and shared outcomes; and the nodes whose saved outputs stand for a node's. Nodes and edges are written as a saved spec holds them. Read by src/tests/utils/scenarioParts.cases.test.ts, which hands them to the canvas as nodes, and by utk_curio/backend/tests/test_scenario_catalog/test_parts.py: the canvas and the Scenario Catalog read a scenario the same way.",
   "cases": [
     {
       "name": "a scenario reads a loader outside it, and the node it feeds is its shared outcome",
@@ -13,8 +13,8 @@
         {"source": "a", "target": "b"}
       ],
       "scenarios": [{"id": "s1", "nodes": ["a"], "context": ["load"], "outcomes": ["b"]}],
-      "expected": {"s1": {"nodes": ["a"], "context": ["load"], "outcomes": ["b"], "boundary": ["load"]}},
-      "saves": ["b", "load"],
+      "expected": {"s1": {"nodes": ["a"], "last": ["a"], "context": ["load"], "outcomes": ["b"], "boundary": ["load"]}},
+      "saves": ["a", "b", "load"],
       "savedSources": {"load": ["load"], "b": ["b"]}
     },
     {
@@ -31,8 +31,8 @@
         {"source": "a", "target": "out"}
       ],
       "scenarios": [{"id": "s1", "nodes": ["a"], "context": ["raw", "clean"], "outcomes": ["out"]}],
-      "expected": {"s1": {"nodes": ["a"], "context": ["raw", "clean"], "outcomes": ["out"], "boundary": ["clean"]}},
-      "saves": ["clean", "out"]
+      "expected": {"s1": {"nodes": ["a"], "last": ["a"], "context": ["raw", "clean"], "outcomes": ["out"], "boundary": ["clean"]}},
+      "saves": ["a", "clean", "out"]
     },
     {
       "name": "a scenario that keeps no lists gets the ones Curio infers, stopping at every box",
@@ -53,10 +53,10 @@
       ],
       "scenarios": [{"id": "s1", "nodes": ["a"]}, {"id": "s2", "nodes": ["b"]}],
       "expected": {
-        "s1": {"nodes": ["a"], "context": ["raw", "clean"], "outcomes": ["out"], "boundary": ["clean"]},
-        "s2": {"nodes": ["b"], "context": ["out"], "outcomes": ["after"], "boundary": ["out"]}
+        "s1": {"nodes": ["a"], "last": ["a"], "context": ["raw", "clean"], "outcomes": ["out"], "boundary": ["clean"]},
+        "s2": {"nodes": ["b"], "last": ["b"], "context": ["out"], "outcomes": ["after"], "boundary": ["out"]}
       },
-      "saves": ["after", "clean", "out"]
+      "saves": ["a", "after", "b", "clean", "out"]
     },
     {
       "name": "two scenarios of one set read one context and feed one comparison, each saved once",
@@ -77,10 +77,10 @@
         {"id": "s2", "nodes": ["b"], "context": ["load"], "outcomes": ["compare"]}
       ],
       "expected": {
-        "s1": {"nodes": ["a"], "context": ["load"], "outcomes": ["compare"], "boundary": ["load"]},
-        "s2": {"nodes": ["b"], "context": ["load"], "outcomes": ["compare"], "boundary": ["load"]}
+        "s1": {"nodes": ["a"], "last": ["a"], "context": ["load"], "outcomes": ["compare"], "boundary": ["load"]},
+        "s2": {"nodes": ["b"], "last": ["b"], "context": ["load"], "outcomes": ["compare"], "boundary": ["load"]}
       },
-      "saves": ["compare", "load"]
+      "saves": ["a", "b", "compare", "load"]
     },
     {
       "name": "a context node a shared outcome reads itself is the boundary too",
@@ -97,8 +97,8 @@
         {"source": "layers", "target": "map", "targetHandle": "in_1"}
       ],
       "scenarios": [{"id": "s1", "nodes": ["a"], "context": ["layers", "prep"], "outcomes": ["map"]}],
-      "expected": {"s1": {"nodes": ["a"], "context": ["layers", "prep"], "outcomes": ["map"], "boundary": ["layers", "prep"]}},
-      "saves": ["layers", "map", "prep"]
+      "expected": {"s1": {"nodes": ["a"], "last": ["a"], "context": ["layers", "prep"], "outcomes": ["map"], "boundary": ["layers", "prep"]}},
+      "saves": ["a", "layers", "map", "prep"]
     },
     {
       "name": "a shared outcome reading another is no boundary of it",
@@ -112,8 +112,8 @@
         {"source": "change", "target": "chart"}
       ],
       "scenarios": [{"id": "s1", "nodes": ["a"], "context": [], "outcomes": ["change", "chart"]}],
-      "expected": {"s1": {"nodes": ["a"], "context": [], "outcomes": ["change", "chart"], "boundary": []}},
-      "saves": ["change"],
+      "expected": {"s1": {"nodes": ["a"], "last": ["a"], "context": [], "outcomes": ["change", "chart"], "boundary": []}},
+      "saves": ["a", "change"],
       "savedSources": {"chart": ["change"]}
     },
     {
@@ -130,7 +130,7 @@
         {"source": "pool", "target": "calc"}
       ],
       "scenarios": [{"id": "s1", "nodes": ["calc"], "context": ["load", "pool"], "outcomes": ["chart"]}],
-      "expected": {"s1": {"nodes": ["calc"], "context": ["load", "pool"], "outcomes": ["chart"], "boundary": ["pool"]}},
+      "expected": {"s1": {"nodes": ["calc"], "last": ["calc"], "context": ["load", "pool"], "outcomes": ["chart"], "boundary": ["pool"]}},
       "saves": ["calc", "load"],
       "savedSources": {"pool": ["load"], "chart": ["calc"]}
     },
@@ -143,8 +143,8 @@
       ],
       "edges": [{"source": "season", "target": "a"}],
       "scenarios": [{"id": "s1", "nodes": ["a"], "context": ["season"], "outcomes": []}],
-      "expected": {"s1": {"nodes": ["a"], "context": ["season"], "outcomes": [], "boundary": ["season"]}},
-      "saves": ["season"],
+      "expected": {"s1": {"nodes": ["a"], "last": ["a"], "context": ["season"], "outcomes": [], "boundary": ["season"]}},
+      "saves": ["a", "season"],
       "savedSources": {"season": ["season"]}
     },
     {
@@ -159,7 +159,7 @@
         {"source": "other", "target": "chart", "sourceHandle": "in/out", "targetHandle": "in/out", "type": "Interaction"}
       ],
       "scenarios": [{"id": "s1", "nodes": ["chart"], "context": ["pool"], "outcomes": []}],
-      "expected": {"s1": {"nodes": ["chart"], "context": ["pool"], "outcomes": [], "boundary": ["pool"]}},
+      "expected": {"s1": {"nodes": ["chart"], "last": ["chart"], "context": ["pool"], "outcomes": [], "boundary": ["pool"]}},
       "saves": []
     },
     {
@@ -170,7 +170,7 @@
       ],
       "edges": [{"source": "layers", "target": "map"}],
       "scenarios": [{"id": "s1", "nodes": ["layers"], "context": [], "outcomes": ["map"]}],
-      "expected": {"s1": {"nodes": ["layers"], "context": [], "outcomes": ["map"], "boundary": []}},
+      "expected": {"s1": {"nodes": ["layers"], "last": ["layers"], "context": [], "outcomes": ["map"], "boundary": []}},
       "saves": ["layers"],
       "savedSources": {"layers": ["layers"], "map": ["layers"]}
     },
@@ -190,10 +190,10 @@
         {"id": "s2", "nodes": ["b"], "context": [], "outcomes": []}
       ],
       "expected": {
-        "s1": {"nodes": ["a"], "context": [], "outcomes": ["c"], "boundary": []},
-        "s2": {"nodes": ["b"], "context": [], "outcomes": [], "boundary": ["a"]}
+        "s1": {"nodes": ["a"], "last": ["a"], "context": [], "outcomes": ["c"], "boundary": []},
+        "s2": {"nodes": ["b"], "last": ["b"], "context": [], "outcomes": [], "boundary": ["a"]}
       },
-      "saves": ["a", "c"]
+      "saves": ["a", "b", "c"]
     }
   ]
 }

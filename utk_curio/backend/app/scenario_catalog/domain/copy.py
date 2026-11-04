@@ -11,8 +11,8 @@ there; a later drop of another scenario of that set joins it.
   each context node once. A context node stands for the output it passes on,
   so it is the one node whose saved output (``saved_sources``) arrives as
   data. A context node that passes on several outputs, or none, cannot.
-* The saved outputs that stand for the shared outcomes landing, so they show
-  without a run.
+* The saved outputs that stand for its own last nodes and for the shared
+  outcomes landing, so they show without a run.
 * What the copied nodes need: their packages, datasets and models.
 """
 from __future__ import annotations
@@ -49,9 +49,11 @@ def copy_plan(
     reads what each node's template declares, ``TemplateGrammars.for_account()``
     when None.
 
-    ``nodes`` are its own; ``shared`` the set's shared outcomes that land with
-    it, each with the scenarios dragged or present that list it and the copied
-    nodes whose saved outputs stand for it; ``context`` each node whose output
+    ``nodes`` are its own; ``last`` its own last nodes, each with the copied
+    nodes whose saved outputs stand for it; ``shared`` the set's shared
+    outcomes that land with it, each with the scenarios dragged or present
+    that list it and the copied nodes whose saved outputs stand for it;
+    ``context`` each node whose output
     crosses into what is copied, with the one node whose saved output stands
     for it (``source``), or ``sources`` when that is not one node; ``outcomes``
     the ids of its own shared outcomes."""
@@ -124,6 +126,10 @@ def copy_plan(
 
     return {
         "nodes": own,
+        "last": [
+            {"nodeId": node_id, "sources": [x for x in saved_sources(node_id, nodes, edges, packages) if x in copied]}
+            for node_id in parts[scenario["id"]]["last"]
+        ],
         "context": context,
         "shared": [
             {

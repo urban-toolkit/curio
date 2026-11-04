@@ -169,18 +169,20 @@ class ScenarioCatalogService:
         """One scenario by role (``scenario_parts``): its whole Shared context,
         its Scenario-specific nodes ("levers") and its Shared outcomes. The
         nodes whose outputs it saves, each context node whose output crosses
-        into it and each shared outcome, come with the outputs its project
-        saved for them; the others are listed without an output line."""
+        into it, each of its own last nodes and each shared outcome, come with
+        the outputs its project saved for them; the others are listed without
+        an output line."""
         row, spec, is_example, scenario = self._scenario(project_id, scenario_id)
         nodes, edges = spec_nodes_and_edges(spec)
         kept, _sets = kept_scenarios(spec)
         parts = scenario_parts(next(s for s in kept if s["id"] == scenario_id), nodes, edges, kept)
         boundary = set(parts["boundary"])
+        last = set(parts["last"])
         entry, _by_id = self._entries(project_id, spec)
         return {
             **scenario_row(scenario, self._project_of(row, is_example), projects.graph_preview(self.user, spec)),
             "context": [entry(i, saves=i in boundary) for i in parts["context"]],
-            "levers": [entry(i, saves=False) for i in parts["nodes"]],
+            "levers": [entry(i, saves=i in last) for i in parts["nodes"]],
             "outcomes": [entry(i) for i in parts["outcomes"]],
         }
 
@@ -223,7 +225,7 @@ class ScenarioCatalogService:
             entry["source"]["nodeId"]
             for entry in plan["context"]
             if entry.get("source") is not None
-        ] + [source for outcome in plan["shared"] for source in outcome["sources"]])
+        ] + [source for shown in plan["last"] + plan["shared"] for source in shown["sources"]])
         name = scenario["name"]
         problems: list[str] = []
         to_run: list[dict[str, str]] = []
@@ -260,9 +262,10 @@ class ScenarioCatalogService:
             if all(item["nodeId"] != source["nodeId"] for item in to_run):
                 to_run.append({"nodeId": source["nodeId"], "label": node_label(nodes_by_id[source["nodeId"]])})
 
-        # A shared outcome without a saved output shows once the scenario runs.
-        for outcome in plan["shared"]:
-            outcome["sources"] = [s for s in outcome["sources"] if (saved.get(s) or {}).get("computed")]
+        # A last node or a shared outcome without a saved output shows once the
+        # scenario runs.
+        for shown in plan["last"] + plan["shared"]:
+            shown["sources"] = [s for s in shown["sources"] if (saved.get(s) or {}).get("computed")]
 
         ukey = projects.user_key(self.user)
         needed = requirements(plan["dataflow"]["nodes"])
@@ -337,9 +340,9 @@ class ScenarioCatalogService:
             for entry in plan["context"]
             if entry.get("source") and entry["source"].get("datasetId")
         }
-        outcomes = {source for outcome in plan["shared"] for source in outcome["sources"]}
+        shown = {source for entry in plan["last"] + plan["shared"] for source in entry["sources"]}
         taken = {node["id"] for node in spec_nodes_and_edges(target_spec)[0]}
-        copies = self._copies(outputs, set(context) | outcomes, taken)
+        copies = self._copies(outputs, set(context) | shown, taken)
 
         ukey = projects.user_key(self.user)
         added: list[str] = []

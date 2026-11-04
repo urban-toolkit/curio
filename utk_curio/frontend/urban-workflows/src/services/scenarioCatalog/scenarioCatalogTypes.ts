@@ -115,6 +115,8 @@ export interface ScenarioCopyPlan {
   project: { id: string; name: string };
   /** Its Scenario-specific nodes. */
   nodes: string[];
+  /** Its own last nodes, each with the copied nodes whose saved outputs stand for it. */
+  last: { nodeId: string; sources: string[] }[];
   /** What crosses into the nodes it copies from outside, each arriving as data. */
   context: ScenarioCopyContext[];
   /** The set's shared outcomes that land with it: every input of theirs is in
