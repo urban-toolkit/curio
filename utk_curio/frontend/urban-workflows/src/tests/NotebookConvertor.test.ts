@@ -256,7 +256,7 @@ describe("trillToNotebook", () => {
   });
 
   it("embeds a package chart that draws with Vega-Lite as the Vega-Lite node's spec is, its widgets read", () => {
-    // A Scout chart draws with the Vega-Lite node's behavior; its
+    // A chart of the Vega-Lite package draws with the Vega-Lite node's behavior; its
     // spec reads the columns its widgets name.
     const { VEGA_LITE_TEMPLATE, registerVegaLiteTemplate, clearVegaLiteTemplate } = require("./_support/vegaLiteTemplate");
     registerVegaLiteTemplate();
@@ -378,7 +378,7 @@ describe("trillToNotebook with a chart that reads its inputs stacked", () => {
     codeCells(nb).find((c) => c.source.includes("_spec = {"))!.source;
 
   it("its scale chip writes the boxes' colors and order, then an input from no box, as the canvas does", () => {
-    // Its dataset named by its chip, as Scout's charts are written.
+    // Its dataset named by its chip, as the Vega-Lite package's charts are written.
     const chart = '{"data": {"name": "[!! inputs !!]"}, "mark": "bar", "encoding": {"color": {"field": "scenario_name", "type": "nominal", '
       + '"scale": [!! scenario colors !!]}}}';
     const source = chartCell(trillToNotebook(stackedChart(chart)));

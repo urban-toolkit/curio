@@ -130,7 +130,7 @@ describe("applyContainerSizing fits only the sizes left to the node (#1097)", ()
   });
 
   test("a width and a height in steps get no autosize", () => {
-    // Scout's "dots with a range" template: 300 wide, a step per row.
+    // The Vega-Lite package's "dots with a range" template: 300 wide, a step per row.
     const spec: Record<string, unknown> = { layer: [{ mark: "point" }], width: 300, height: { step: 13 } };
     applyContainerSizing(spec);
     expect(spec.autosize).toBeUndefined();

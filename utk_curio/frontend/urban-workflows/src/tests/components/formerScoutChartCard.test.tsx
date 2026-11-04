@@ -1,9 +1,11 @@
 /**
- * #1270: Scout's charts are built-in Vega-Lite nodes. Example 06's "Mean
- * sunlight", one of them, is tagged Vega-Lite on its card in a collapsed box:
- * the canvas reads its kind off the template its shipped type names
- * (`CanvasScenarioLayers`), registered as packages/curio.builtin@1/manifest.json
- * declares the built-in templates, never stubbed.
+ * #1270: the charts that compare scenarios are the Vega-Lite package's nodes
+ * (`curio.vega-lite@1`), no SCOUT node's. Example 06's "Mean sunlight", its
+ * Bars, is tagged with its template's label on its card in a collapsed box,
+ * as any package node is: the canvas reads its kind off the template its
+ * shipped type names (`CanvasScenarioLayers`), registered as
+ * packages/curio.vega-lite@1/manifest.json declares the package's templates,
+ * never stubbed.
  */
 import fs from "fs";
 import path from "path";
@@ -27,19 +29,25 @@ import type { NodeDescriptor } from "../../registry/types";
 
 const ROOT = path.resolve(__dirname, "../../../../../..");
 const read = (rel: string) => JSON.parse(fs.readFileSync(path.join(ROOT, rel), "utf8"));
-const TEMPLATES: any[] = read("packages/curio.builtin@1/manifest.json").templates;
+const MANIFEST = read("packages/curio.vega-lite@1/manifest.json");
 const EXAMPLE = read("docs/examples/06-back-bay-road-sunlight.json").dataflow;
 
 beforeAll(() => {
-  for (const template of TEMPLATES) {
+  for (const template of MANIFEST.templates) {
     registerNode({
-      id: `curio.builtin/${template.id}@1`,
+      id: `${MANIFEST.id}/${template.id}@1`,
+      source: "package",
+      package: {
+        packageId: MANIFEST.id, major: 1, version: MANIFEST.version, name: MANIFEST.name, publisher: MANIFEST.publisher,
+      },
       category: template.category,
       label: template.label,
       icon: faCircle,
       inputPorts: template.inputPorts ?? [],
       outputPorts: template.outputPorts ?? [],
       editor: template.editor,
+      grammarId: template.grammarId,
+      badge: template.badge,
       inPalette: true,
       description: "",
       hasCode: !!template.hasCode,
@@ -50,9 +58,12 @@ beforeAll(() => {
   }
 });
 
-test("example 06's Mean sunlight, a chart of Scout's before, is tagged Vega-Lite on its card in a collapsed box", () => {
+test("example 06's Mean sunlight, the Vega-Lite package's Bars, is tagged with its template's label on its card in a collapsed box", () => {
   const chart = EXAMPLE.nodes.find((n: any) => n.title === "Mean sunlight");
   expect(chart).toBeDefined();
+  expect(chart.type).toBe("curio.vega-lite/bars");
+  const template = MANIFEST.templates.find((t: any) => t.id === "bars");
+  expect(template.label).toBe("Bars");
   // The node as the canvas holds it: its shipped type and its title.
   const node = {
     id: chart.id,
@@ -79,6 +90,6 @@ test("example 06's Mean sunlight, a chart of Scout's before, is tagged Vega-Lite
   );
   const box = screen.getByTestId("scenario-box-s-chart");
   expect(box.textContent).toContain("Mean sunlight");
-  expect(within(box).getByText("Vega-Lite")).toBeInTheDocument();
-  expect(box.textContent).not.toMatch(/Scout|Bars/);
+  expect(within(box).getByText(template.label)).toBeInTheDocument();
+  expect(box.textContent).not.toMatch(/Scout|SCOUT/);
 });

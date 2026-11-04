@@ -1,5 +1,5 @@
 {
-  "description": "Scout's charts of the seven chart presets: each case a template, the values of its widgets, and the spec it draws over two boxes' rows, its data block left out (it names the dataset inputs) and its channels on scenario_name filled in from labels. scoutPresetCharts.test.ts checks that each template draws exactly its case's spec.",
+  "description": "The Vega-Lite package's charts of the seven chart presets: each case a template, the values of its widgets, and the spec it draws over two boxes' rows, its data block left out (it names the dataset inputs) and its channels on scenario_name filled in from labels. vegaLitePresetCharts.test.ts checks that each template draws exactly its case's spec.",
   "labels": [
     {
       "scenario": "s-base",

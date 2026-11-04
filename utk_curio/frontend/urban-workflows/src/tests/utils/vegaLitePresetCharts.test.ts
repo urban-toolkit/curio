@@ -1,10 +1,10 @@
 /**
- * Seven preset charts of `docs/examples/vega-lite-charts` (Scout's until #1270) (the plan answering komar41's review, step 6.2):
+ * The Vega-Lite package's seven preset charts (the plan answering komar41's review, step 6.2):
  * Bars, Grouped bars, Lines, Points, Pie, Lollipops and Table, each a
  * Vega-Lite template whose columns, Combine and axis titles are widgets.
  *
  * Each template, with its widgets set as a case of
- * `scoutPresetCharts.cases.json` says, resolves to the case's spec, up to its
+ * `vegaLitePresetCharts.cases.json` says, resolves to the case's spec, up to its
  * `data` block, which names the dataset `inputs` by its chip, `[!! inputs !!]`,
  * its scenario chips written
  * over the cases' two boxes: each channel on `scenario_name` takes their colors
@@ -25,7 +25,7 @@
  */
 import * as fs from "fs";
 import * as path from "path";
-import cases from "./scoutPresetCharts.cases.json";
+import cases from "./vegaLitePresetCharts.cases.json";
 import type { ScenarioLabel } from "../../utils/scenarios/scenarioColors";
 import {
   resolveReferences,
@@ -36,31 +36,29 @@ import {
 import { normalizeWidgets, type WidgetDef, type WidgetValue } from "../../utils/widgets/widgetModel";
 
 const REPO_ROOT = path.resolve(__dirname, "../../../../../..");
-/** Scout, as the repository ships it. */
-/** The Vega-Lite charts that compare scenarios (#1270: Scout's templates once). */
-const CHARTS_DIR = path.join(REPO_ROOT, "docs", "examples", "vega-lite-charts");
+/** The Vega-Lite package, as the repository ships it. */
+const VEGA_LITE_PACKAGE = path.join(REPO_ROOT, "packages", "curio.vega-lite@1");
 
 type Json = Record<string, any>;
 
 interface Template {
   id: string;
   label: string;
-  /** Its spec file, in the charts folder. */
-  spec: string;
+  source: string;
   widgets: WidgetDef[];
 }
 
-/** One of Scout's templates. Read when asked, so a checkout without it fails
+/** One of the Vega-Lite package's templates. Read when asked, so a checkout without it fails
  *  test by test. */
 function template(id: string): Template {
-  const listed = JSON.parse(fs.readFileSync(path.join(CHARTS_DIR, "charts.json"), "utf-8"));
-  const found = (listed.charts as Template[]).find((t) => t.id === id);
-  if (!found) throw new Error(`Scout has no template ${id}`);
+  const manifest = JSON.parse(fs.readFileSync(path.join(VEGA_LITE_PACKAGE, "manifest.json"), "utf-8"));
+  const found = (manifest.templates as Template[]).find((t) => t.id === id);
+  if (!found) throw new Error(`the Vega-Lite package has no template ${id}`);
   return found;
 }
 
 function source(id: string): string {
-  return fs.readFileSync(path.join(CHARTS_DIR, template(id).spec), "utf-8");
+  return fs.readFileSync(path.join(VEGA_LITE_PACKAGE, template(id).source), "utf-8");
 }
 
 /** The seven preset charts, each by its template id, with its label. */

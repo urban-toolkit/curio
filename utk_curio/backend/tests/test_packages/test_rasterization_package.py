@@ -10,7 +10,7 @@ retired with no alias (a clean install), so no file Curio ships names one, as
 a package or in a node type, and no file in the repository names Scout's.
 
 The guides (``docs/*.md``) are not in the CI image this suite runs in;
-``scoutPackageInGuides.test.ts`` reads them.
+``packagesInGuides.test.ts`` reads them.
 
 Every file is read inside its test, so a checkout without the package fails
 test by test rather than at collection.
@@ -218,7 +218,7 @@ def test_no_file_names_scouts_package_or_its_node_types():
     script, code or test names the package Rasterization and the Vega-Lite
     package replaced, so nothing maps its node types to theirs on load either.
     The guides and the workflows are checked by
-    ``scoutPackageInGuides.test.ts``, on a checkout that holds them."""
+    ``packagesInGuides.test.ts``, on a checkout that holds them."""
     texts = [
         *_text_under(SHIPPED, SKIPPED_DIRS - set(TESTS)),
         *((name, (REPO / name).read_text(encoding="utf-8")) for name in ROOT_FILES if (REPO / name).is_file()),

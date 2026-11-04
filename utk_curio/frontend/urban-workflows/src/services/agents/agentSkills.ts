@@ -107,7 +107,7 @@ export const SKILL_SOURCE_WORDS: Record<SkillSource, string> = {
 };
 
 /** Whose a skill is, as its drawer's and its details' From row says it: a
- *  package's skill by its package's name, so the row reads "From Scout". */
+ *  package's skill by its package's name, so the row reads "From Rasterization". */
 export function skillSource(skill: { source?: SkillSource; package?: SkillPackage | null }): string {
   if (skill.source === "package" && skill.package) return skill.package.name;
   return SKILL_SOURCE_WORDS[skill.source ?? "curio"];
@@ -122,7 +122,7 @@ export function packageSkillUsers(pkg: SkillPackage): string {
 /** Who a skill's card names under its name: the author its metadata gives,
  *  else whose it is. A skill no account brought is Curio's. A package's
  *  skill names its package whatever author it gives, since the account
- *  holds it through the package (Scout's says `author: curio`); its details
+ *  holds it through the package (Rasterization's says `author: curio`); its details
  *  name the author. */
 export function skillByline(skill: {
   author?: string | null;

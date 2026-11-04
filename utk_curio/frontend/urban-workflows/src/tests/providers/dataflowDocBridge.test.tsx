@@ -343,7 +343,7 @@ describe("the dataflow's own fields, connections and scenarios", () => {
             api.setWorkflowName("Renamed here");
             api.setAutoRun(true);
             api.setScenarios([{ id: "s2", name: "Shade", color: "#228833", nodes: ["m"] }]);
-            api.setPackages(["curio.builtin@1", "curio.scout@1"]);
+            api.setPackages(["curio.builtin@1", "curio.rasterization@1"]);
         });
         await flush();
         const df = docToDataflow(provider.doc);

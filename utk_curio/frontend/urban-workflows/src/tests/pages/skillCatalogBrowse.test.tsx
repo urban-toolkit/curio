@@ -409,22 +409,22 @@ describe("the account's own skills", () => {
 });
 
 describe("a package's skill", () => {
-  /** Scout's skill as the listing sends it: its metadata names curio as its author. */
-  const scout = {
+  /** Rasterization's skill as the listing sends it: its metadata names curio as its author. */
+  const rasterization = {
     ...mockSkills[2],
-    name: "scout",
-    description: "Use this skill when a dataflow uses Scout's nodes.",
+    name: "rasterization",
+    description: "Use this skill when a dataflow uses Rasterization's nodes.",
     author: "curio",
     files: [],
     features: [],
-    nodeKinds: ["Raster Calculator", "Bars"],
+    nodeKinds: ["Raster Calculator", "Rasterize Buildings"],
     source: "package",
     published: false,
     publishedByYou: false,
     publishable: false,
     removable: false,
     agents: [],
-    package: { id: "curio.scout@1", name: "Scout" },
+    package: { id: "curio.rasterization@1", name: "Rasterization" },
   };
   /** A skill the account imported, which may be published. */
   const mine = {
@@ -443,32 +443,32 @@ describe("a package's skill", () => {
     mockList.mockClear();
   });
 
-  it("says From Scout on its card, in its drawer and in its details, whatever its author, and nothing changes it", async () => {
+  it("says From Rasterization on its card, in its drawer and in its details, whatever its author, and nothing changes it", async () => {
     // Publishing is on, so a pill that does not show is the skill's, not the switch's.
     mockCapabilities.mockResolvedValueOnce({ catalogPublish: true });
-    mockList.mockResolvedValueOnce({ skills: [...mockSkills, mine, scout], editable: true, reason: null });
+    mockList.mockResolvedValueOnce({ skills: [...mockSkills, mine, rasterization], editable: true, reason: null });
     await renderPage(5);
     await waitFor(() => expect(mockCapabilities).toHaveBeenCalled());
-    const card = document.querySelector('article[data-skill-name="scout"]') as HTMLElement;
-    expect(within(card).getByText("From Scout")).toBeInTheDocument();
+    const card = document.querySelector('article[data-skill-name="rasterization"]') as HTMLElement;
+    expect(within(card).getByText("From Rasterization")).toBeInTheDocument();
     expect(within(card).getByText("package")).toBeInTheDocument();
-    expect(card.querySelector(".publisher")?.textContent).toBe("Scout · v1.0.0");
+    expect(card.querySelector(".publisher")?.textContent).toBe("Rasterization · v1.0.0");
     // No agent is counted for it, and its author does not stand for whose it is.
     expect(within(card).queryByText(/\d+ agents?$/)).toBeNull();
     expect(within(card).queryByText(/curio/)).toBeNull();
     expect(
       Array.from(card.querySelectorAll("[data-curio-tag-chip]")).map((chip) => chip.textContent),
-    ).toEqual(["Raster Calculator", "Bars"]);
+    ).toEqual(["Raster Calculator", "Rasterize Buildings"]);
 
     const drawer = document.querySelector('[data-curio-browse-drawer="true"]') as HTMLElement;
     fireEvent.click(document.querySelector('article[data-skill-name="street-trees"]') as HTMLElement);
     await waitFor(() => expect(within(drawer).getByRole("heading", { name: "street-trees" })).toBeInTheDocument());
     expect(await within(drawer).findByRole("button", { name: "Publish" })).toBeInTheDocument();
     fireEvent.click(card);
-    await waitFor(() => expect(within(drawer).getByRole("heading", { name: "scout" })).toBeInTheDocument());
-    expect(drawerRow(drawer, "From")).toBe("Scout");
-    expect(within(drawer).getByText("Scout · v1.0.0")).toBeInTheDocument();
-    expect(within(drawer).getByText("Agents on a dataflow that uses Scout")).toBeInTheDocument();
+    await waitFor(() => expect(within(drawer).getByRole("heading", { name: "rasterization" })).toBeInTheDocument());
+    expect(drawerRow(drawer, "From")).toBe("Rasterization");
+    expect(within(drawer).getByText("Rasterization · v1.0.0")).toBeInTheDocument();
+    expect(within(drawer).getByText("Agents on a dataflow that uses Rasterization")).toBeInTheDocument();
     expect(within(drawer).queryByText("No agent")).toBeNull();
     expect(within(drawer).queryByText("✓ In your skills")).toBeNull();
     expect(within(drawer).queryByRole("button", { name: "Remove from your skills" })).toBeNull();
@@ -476,16 +476,16 @@ describe("a package's skill", () => {
 
     fireEvent.click(within(card).getByRole("button", { name: "View details" }));
     const dialog = await screen.findByRole("dialog", { name: "Skill details" });
-    expect(within(dialog).getByText("Scout · v1.0.0")).toBeInTheDocument();
-    expect(detailsRow(dialog, "From")).toBe("Scout");
+    expect(within(dialog).getByText("Rasterization · v1.0.0")).toBeInTheDocument();
+    expect(detailsRow(dialog, "From")).toBe("Rasterization");
     // Its author is a fact of its details, beside whose it is.
     expect(detailsRow(dialog, "Author")).toBe("curio");
     const usedBy = within(within(dialog).getByRole("heading", { name: "Used by", level: 3 }).closest("section") as HTMLElement);
-    expect(usedBy.getByText("Agents on a dataflow that uses Scout")).toBeInTheDocument();
+    expect(usedBy.getByText("Agents on a dataflow that uses Rasterization")).toBeInTheDocument();
     expect(usedBy.queryByText("No agent")).toBeNull();
     expect(within(dialog).queryByRole("button", { name: "Export" })).toBeNull();
     // Its text is read as any skill's is.
-    await waitFor(() => expect(mockRead).toHaveBeenCalledWith("scout"));
+    await waitFor(() => expect(mockRead).toHaveBeenCalledWith("rasterization"));
   });
 });
 

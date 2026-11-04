@@ -41,9 +41,9 @@ describe("DataflowThumbnail colours each node by its category", () => {
   test("a package's node takes the colour of the category its template declares, as a built-in one does", () => {
     expect(
       bars([
-        node("n0", "curio.scout/raster-calculator@1", "computation"),
+        node("n0", "curio.rasterization/raster-calculator@1", "computation"),
         node("n1", "acme.hydro/gauge@1", "data"),
-        node("n2", "acme.charts/donuts@1", "vis_grammar"),
+        node("n2", "curio.vega-lite/donuts@1", "vis_grammar"),
         node("n3", "acme.hydro/table", "vis_simple"),
         node("n4", "acme.tools/route@1", "flow"),
         node("n5", "curio.builtin/vis-vega@1", "vis_grammar"),

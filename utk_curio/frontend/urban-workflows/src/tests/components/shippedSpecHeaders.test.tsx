@@ -3,7 +3,7 @@
  *
  * Covered: each Vega-Lite and Autark node of every dataflow in docs/examples,
  * its header built as the canvas builds it (the node's edges, the boxes its
- * inputs come from, its widgets and selection tags), and Scout's 15 chart
+ * inputs come from, its widgets and selection tags), and the Vega-Lite package's 15 chart
  * templates, each with its manifest's widgets, on two inputs from two boxes. A node's or a template's kind is read from the
  * package manifests: a template that draws with the Vega-Lite grammar
  * (`grammarId`), or with the Autark grammar's behavior.
@@ -38,8 +38,8 @@ import { draggedText, headerRow, openCategory, type StripCategory } from "../_su
 
 const EXAMPLES = path.join(REPO_ROOT, "docs", "examples");
 const PACKAGES = path.join(REPO_ROOT, "packages");
-/** The Vega-Lite charts that compare scenarios (#1270: Scout's templates once). */
-const CHARTS_DIR = path.join(REPO_ROOT, "docs", "examples", "vega-lite-charts");
+/** The package of the charts that compare scenarios. */
+const VEGA_LITE_PACKAGE = path.join(PACKAGES, "curio.vega-lite@1");
 
 const isObject = (value: unknown): value is Record<string, any> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
@@ -161,20 +161,22 @@ const TWO_BOXED: InputScope[] = [
   { slot: 1, label: "Shadow", scenario: { scenario: "towers-removed", name: "Towers removed", color: "#e76f51", rank: 1 } },
 ];
 
-/** Scout's chart templates, each with its manifest's widgets, on two boxed inputs. */
+/** The Vega-Lite package's chart templates, each with its manifest's widgets, on two boxed inputs. */
 function templateCases(): HeaderCase[] {
-  const listed = JSON.parse(fs.readFileSync(path.join(CHARTS_DIR, "charts.json"), "utf-8"));
-  return (listed.charts as any[]).map((chart) => ({
-    name: `docs/examples/vega-lite-charts/${chart.spec}`,
-    code: fs.readFileSync(path.join(CHARTS_DIR, chart.spec), "utf-8"),
-    props: {
-      nodeId: `chart-${chart.id}`,
-      widgets: normalizeWidgets(chart.widgets),
-      inputs: TWO_BOXED,
-      selections: [],
-      grammar: VEGA_LITE,
-    },
-  }));
+  const manifest = JSON.parse(fs.readFileSync(path.join(VEGA_LITE_PACKAGE, "manifest.json"), "utf-8"));
+  return (manifest.templates as any[])
+    .filter((template) => template.grammarId === VEGA_LITE)
+    .map((template) => ({
+      name: `packages/curio.vega-lite@1/${template.source}`,
+      code: fs.readFileSync(path.join(VEGA_LITE_PACKAGE, template.source), "utf-8"),
+      props: {
+        nodeId: `curio.vega-lite/${template.id}`,
+        widgets: normalizeWidgets(template.widgets),
+        inputs: TWO_BOXED,
+        selections: [],
+        grammar: VEGA_LITE,
+      },
+    }));
 }
 
 const DATAFLOW_CASES = dataflowCases();
@@ -182,7 +184,7 @@ const TEMPLATE_CASES = templateCases();
 
 afterEach(cleanup);
 
-test("the cases are the shipped specs that write chips: several dataflows' nodes and the 15 Vega-Lite charts", () => {
+test("the cases are the shipped specs that write chips: several dataflows' nodes and the Vega-Lite package's 15 charts", () => {
   expect(TEMPLATE_CASES).toHaveLength(15);
   expect(TEMPLATE_CASES.every((entry) => entry.code.includes("[!! inputs !!]"))).toBe(true);
   expect(DATAFLOW_CASES.length).toBeGreaterThan(20);
