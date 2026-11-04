@@ -72,9 +72,9 @@ function samePath(a: string, b: string): boolean {
  * `ModelDetailModal`: the same modal, the same header.
  *
  * A scenario of another project is read off its project, so this only reads:
- * its fixed context, its levers and its outcomes, each node with its saved
- * outputs, and the project graph with the scenario marked on it. Changing it
- * means opening its project.
+ * its shared context, its Scenario-specific nodes and its shared outcomes, the
+ * nodes whose outputs it saves with those outputs, and the project graph with
+ * the scenario marked on it. Changing it means opening its project.
  *
  * A scenario of the open dataflow (the drawer's In project tab) is read off the
  * canvas, and its name, color and description are edited here.

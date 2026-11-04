@@ -173,7 +173,7 @@ export function MainCanvas() {
     const hostedGuest = useHostedGuest();
 
     // The scenario pointed at in the Scenario Catalog drawer's In project tab
-    // (#662), whose fixed context the canvas marks. Never saved.
+    // (#662), whose shared context and shared outcomes the canvas marks. Never saved.
     const { highlighted: highlightedScenario, preview: scenarioPreview } = useScenarioUi();
 
     // What React Flow draws: the flow's own nodes and edges, with collapsed

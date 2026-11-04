@@ -490,12 +490,12 @@ export default function UpMenu() {
                     >
                         Provenance
                     </HeaderMenuItem>
-                    {/* Scenarios (#662): save a selection as one, or duplicate
-                        it as another; either opens the Scenario Catalog
-                        drawer's In project tab, which lists them. Here rather
-                        than a menu of their own: the bar has no room for one
-                        beside every catalog's label. An edit, so not for a
-                        shared viewer. */}
+                    {/* Scenarios (#662): Define scenario opens the panel that
+                        makes one of the nodes picked, and Duplicate selection
+                        copies the nodes picked beside them. Here rather than a
+                        menu of their own: the bar has no room for one beside
+                        every catalog's label. An edit, so not for a shared
+                        viewer. */}
                     {!isSharedView && (
                         <>
                             <HeaderMenuDivider />

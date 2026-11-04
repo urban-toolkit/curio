@@ -1,7 +1,7 @@
 /**
  * A dataflow's scenarios (#662), at `dataflow.scenarios`: named selections of
- * its nodes. What enters a scenario from outside is its fixed context, its
- * nodes are its levers, and the outputs of its last nodes are its outcomes.
+ * its nodes, their Scenario-specific nodes. Each is in a scenario set and keeps
+ * its Shared context and Shared outcomes (`scenarioParts.ts` reads them by role).
  *
  * A node belongs to at most one scenario's `nodes`. Its set, context and
  * outcomes are kept as given here; `normalizeScenarioSets` (`scenarioSets.ts`)
