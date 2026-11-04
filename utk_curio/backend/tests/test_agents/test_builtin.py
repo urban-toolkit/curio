@@ -1198,7 +1198,9 @@ class TestResearcher:
         # 2026-10-29: a plan, a node, a node's code or settings land at once,
         # as the agent's change the user can undo; the rules say what landed
         # and that a node's code is written into it (step 13).
-        "ef82c2265c1a1884be2d0dfacf6ca0e88d7586506c9a755716bd9a0d2e3afb9b"
+        # 2026-11-03: a scenario on the canvas is duplicated with Duplicate
+        # scenario on its In project card (PR #1252).
+        "971fa37d5414a53840197d16a3b88b7379bd43217e21bfec9042a22017efc182"
     )
 
     def test_manifest_surface(self):
