@@ -513,7 +513,10 @@ def _native_request(call: ToolCall) -> tuple[dict | None, list[str]]:
     if call.error:
         return None, [call.error]
     if call.name == tools.DELEGATE_TOOL:
-        return content.parse_delegate_request_verbose(call.arguments)
+        # Its inputs given as JSON text, read back first, as below.
+        return content.parse_delegate_request_verbose(
+            tools.native_arguments(tools.DELEGATE_TOOL, call.arguments)
+        )
     tool_id = tools.tool_id_of(call.name)
     if tool_id is None:
         return None, [agent_text.message("tool-round.no-such-tool", name=repr(call.name))]

@@ -213,7 +213,7 @@ Propose ONE built node package as a reviewed draft, from the typed build request
 
 - baseDigest: The installed target's 64-hex digest. Extend only.
 - target: <packageId>@<major>, which must agree with the manifest.
-- manifest: The package manifest.
+- manifest: The package manifest, as JSON.
 - files: Each file path mapped to {"text": ...} or {"base64": ...}.
 - behaviorEntries: The behavior sources, such as sources/<entry>.tsx.
 - dependencies: {"python"|"js"|"packages": {name: constraint}}.
@@ -244,7 +244,7 @@ Delegate one specialized capability to the agent that handles it, and receive it
 ### Parameters
 
 - capability: The capability to delegate.
-- inputs: What the delegate needs for the task.
+- inputs: What the delegate needs for the task, as a JSON object.
 
 ## parameters
 
