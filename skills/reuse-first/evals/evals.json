@@ -30,7 +30,7 @@
     {
       "id": 3,
       "agent": "agent.curio.node-builder@1",
-      "dataflow": "docs/examples/dataflows/chicago-rain-wind-routing.json",
+      "dataflow": "docs/examples/dataflows/chicago-loop-shadow-towers.json",
       "prompt": "Add the Scout package to this project, I want to use its raster nodes.",
       "expected_output": "Scout (curio.scout@1) is already in this project, so the answer says so and proposes no install and no package draft; its raster nodes are already templates the dataflow can use.",
       "assertions": [

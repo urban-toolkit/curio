@@ -60,7 +60,6 @@ jest.mock("../../components/projects/DataflowCategoryInput", () => ({
 }));
 jest.mock("../../components/scenarios/useScenarioActions", () => ({
   useScenarioActions: () => ({
-    saveDataflowAsScenario: jest.fn(),
     saveSelectionAsScenario: jest.fn(),
     duplicate: jest.fn(),
   }),
