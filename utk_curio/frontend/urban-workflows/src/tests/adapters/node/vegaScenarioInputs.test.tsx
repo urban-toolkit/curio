@@ -126,7 +126,7 @@ const BARS = JSON.stringify({
 });
 
 /** Mean sunlight per scenario, in the boxes' colors and order, through chips,
- * its dataset named by its chip, as Scout's charts are written. */
+ * its dataset named by its chip, as the Vega-Lite package's charts are written. */
 const CHIP_BARS = '{"data": {"name": "[!! inputs !!]"}, "mark": "bar", "encoding": {'
   + '"x": {"field": "scenario_name", "type": "nominal", "sort": [!! scenario order !!]}, '
   + '"y": {"field": "sunlight", "type": "quantitative", "aggregate": "mean"}, '

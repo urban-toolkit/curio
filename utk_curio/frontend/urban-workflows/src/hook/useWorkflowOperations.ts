@@ -28,7 +28,8 @@ import { fitViewWithMenuOffset } from "../utils/fitViewWithMenuOffset";
 import { TrillGenerator } from "../TrillGenerator";
 import { projectsApi, OutputRef, DatasetInstallWarning, type ProjectDetail, type TileLayout } from "../api/projectsApi";
 import type { DataflowCategories, HandCategories } from "../utils/dataflowCategories";
-import { normalizeScenarios, type Scenario } from "../utils/scenarios/scenarioModel";
+import { normalizeScenarios, type Scenario, type ScenarioSet } from "../utils/scenarios/scenarioModel";
+import { normalizeScenarioSets } from "../utils/scenarios/scenarioSets";
 import { buildSaveableLiveOutputs } from "../utils/saveOutputDataset";
 import { prepareDashboardNodes } from "../utils/dashboardLayout";
 import { savedSourceNodeIds } from "../utils/scenarios/scenarioParts";
@@ -187,6 +188,9 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // a version snapshot carries them.
     const [scenarios, setScenariosState] = useState<Scenario[]>([]);
     const scenariosRef = useRef<Scenario[]>([]);
+    // Their sets (``dataflow.scenarioSets``), kept beside them the same way.
+    const [scenarioSets, setScenarioSetsState] = useState<ScenarioSet[]>([]);
+    const scenarioSetsRef = useRef<ScenarioSet[]>([]);
     // #845: "Run stale nodes automatically" (``dataflow.autoRun``), saved with
     // the dataflow, off by default, read through a ref as the categories are.
     const [autoRun, setAutoRunState] = useState(false);
@@ -338,15 +342,21 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     }, [setWorkflowCategories, markDirty]);
 
     // Scenarios the same way: a load sets them without dirtying, an edit dirties.
-    const setScenariosQuietly = useCallback((next: Scenario[]) => {
+    // *sets*, when given, replace the scenario sets; left out, they are kept.
+    const setScenariosQuietly = useCallback((next: Scenario[], sets?: ScenarioSet[]) => {
         scenariosRef.current = next;
         TrillGenerator.scenarios = next;
         setScenariosState(next);
+        if (sets !== undefined) {
+            scenarioSetsRef.current = sets;
+            TrillGenerator.scenarioSets = sets;
+            setScenarioSetsState(sets);
+        }
     }, []);
     // A scenario's context and outcomes are saved to the Data Catalog, as a
     // pinned tile's sources are (#662).
-    const setScenarios = useCallback((next: Scenario[]) => {
-        setScenariosQuietly(next);
+    const setScenarios = useCallback((next: Scenario[], sets?: ScenarioSet[]) => {
+        setScenariosQuietly(next, sets);
         markDirty();
         deps.recordSourcesRef?.current?.();
     }, [setScenariosQuietly, markDirty]);
@@ -380,7 +390,15 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             setWorkflowCategories(fields.categories && typeof fields.categories === "object" ? fields.categories : {});
         }
         if ("autoRun" in fields) setAutoRunQuietly(fields.autoRun === true);
-        if ("scenarios" in fields) setScenariosQuietly(normalizeScenarios(fields.scenarios ?? [], nodeIds));
+        if ("scenarios" in fields || "scenarioSets" in fields) {
+            // Each scenario in its set, as a load takes them.
+            const kept = "scenarios" in fields ? normalizeScenarios(fields.scenarios ?? [], nodeIds) : scenariosRef.current;
+            const sets = "scenarioSets" in fields ? fields.scenarioSets : scenarioSetsRef.current;
+            const filled = kept.length > 0
+                ? normalizeScenarioSets(kept, sets, nodeIds, reactFlow.getEdges(), workflowNameRef.current)
+                : { scenarios: kept, sets: [] };
+            setScenariosQuietly(filled.scenarios, filled.sets);
+        }
         if ("packages" in fields && Array.isArray(fields.packages)) {
             setPackages(fields.packages);
             // A package someone else added (the owner's Add, her Apply of an
@@ -393,7 +411,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             void refreshPackageRegistry();
         }
         if ("datasets" in fields) setDataflowDatasets(Array.isArray(fields.datasets) ? fields.datasets : []);
-    }, [setWorkflowName, setWorkflowDescription, setWorkflowCategories, setAutoRunQuietly, setScenariosQuietly, setPackages]);
+    }, [setWorkflowName, setWorkflowDescription, setWorkflowCategories, setAutoRunQuietly, setScenariosQuietly, setPackages, reactFlow]);
 
     // ---------------------------------------------------------------------------
     // Effects
@@ -488,7 +506,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setNodes((prevNodes: Node[]) => updateNodeData(prevNodes, nodeId, () => ({ ...newData })));
     }, [setNodes]);
 
-    const loadParsedTrill = async (workflowName: string, task: string, loaded_nodes: any, loaded_edges: any, provenance?: boolean, merge?: boolean, incomingPackages?: string[], incomingDescription?: string, incomingDatasets?: any[], incomingCategories?: HandCategories, incomingScenarios?: unknown, fit?: boolean, incomingAutoRun?: boolean) => {
+    const loadParsedTrill = async (workflowName: string, task: string, loaded_nodes: any, loaded_edges: any, provenance?: boolean, merge?: boolean, incomingPackages?: string[], incomingDescription?: string, incomingDatasets?: any[], incomingCategories?: HandCategories, incomingScenarios?: unknown, fit?: boolean, incomingAutoRun?: boolean, incomingScenarioSets?: unknown) => {
         if (!merge) {
             // The canvas holds another load now, bound to no doc until its
             // own binds: the versions below are recorded here till then.
@@ -496,11 +514,18 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             TrillGenerator.reset();
             // Before the replay below, whose version snapshots carry them.
             // Absent = keep, as for the categories.
-            setScenariosQuietly(
-                incomingScenarios !== undefined
-                    ? normalizeScenarios(incomingScenarios, (loaded_nodes || []).map((n: any) => n.id))
-                    : scenariosRef.current,
-            );
+            if (incomingScenarios !== undefined) {
+                // Each scenario in a set, with its context and outcomes: a
+                // dataflow from before sets gets them as a save would.
+                const nodeIds: string[] = (loaded_nodes || []).map((n: any) => n.id);
+                const kept = normalizeScenarios(incomingScenarios, nodeIds);
+                const filled = kept.length > 0
+                    ? normalizeScenarioSets(kept, incomingScenarioSets, nodeIds, loaded_edges || [], workflowName)
+                    : { scenarios: kept, sets: [] };
+                setScenariosQuietly(filled.scenarios, filled.sets);
+            } else {
+                setScenariosQuietly(scenariosRef.current);
+            }
             setWorkflowName(workflowName);
             setWorkflowDescription(incomingDescription || "");
             // Absent = keep: a provenance revert loads a version snapshot, which
@@ -1105,7 +1130,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             // when a package install/uninstall updates the store before React
             // re-renders. The datasets section seeds the new project's refs (dev/81).
             const currentPackages = getCurrentProjectPackagesList();
-            const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, workflowGoalRef.current, currentPackages, workflowDescriptionRef.current, dataflowDatasetsRef.current, workflowCategoriesRef.current, scenariosRef.current, autoRunRef.current);
+            const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, workflowGoalRef.current, currentPackages, workflowDescriptionRef.current, dataflowDatasetsRef.current, workflowCategoriesRef.current, scenariosRef.current, autoRunRef.current, scenarioSetsRef.current);
             spec.nodeProvenance = getAllNodeProvenance();
             spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
             // The canvas as its doc would hold it, taken with the spec.
@@ -1464,7 +1489,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         // A copy of a dataflow the canvas is bound to gets its history from
         // the server, when you may read it; a canvas bound to none carries
         // its own.
-        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, workflowGoalRef.current, currentPackages, workflowDescriptionRef.current, dataflowDatasetsRef.current, workflowCategoriesRef.current, scenariosRef.current, autoRunRef.current);
+        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, workflowGoalRef.current, currentPackages, workflowDescriptionRef.current, dataflowDatasetsRef.current, workflowCategoriesRef.current, scenariosRef.current, autoRunRef.current, scenarioSetsRef.current);
         spec.nodeProvenance = getAllNodeProvenance();
         spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
         // The canvas as the copy's doc would hold it, taken with the spec.
@@ -1569,7 +1594,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setWorkflowDescription("");
         setServerCategories({});
         setWorkflowCategories({});
-        setScenariosQuietly([]);
+        setScenariosQuietly([], []);
         setAutoRunQuietly(false);
         setProjectDirty(false);
         setProjectSavedAt(null);
@@ -1629,6 +1654,8 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         scenarios,
         // For the run's save rule, which must read the list as it is now.
         scenariosRef,
+        scenarioSets,
+        scenarioSetsRef,
         autoRun,
         autoRunRef,
         setAutoRun,

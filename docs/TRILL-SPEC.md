@@ -27,6 +27,7 @@ spec
 │   ├── description
 │   ├── categories              tags, city, topic, complexity set by hand
 │   ├── scenarios[]             named selections of the nodes
+│   ├── scenarioSets[]          the sets the scenarios are in
 │   ├── agents[]                agent lockfile             (backend-owned, stripped on share)
 │   └── agentAttachments[]      live agent bindings        (backend-owned, stripped on share)
 ├── nodeProvenance              per-node history of runs and edits (written by a canvas of an unsaved dataflow)
@@ -41,14 +42,22 @@ spec
 
 `content` holds the node's payload: Python or JavaScript source, or a grammar
 document. A Note (`curio.builtin/note`) holds its text there, in simple
-markdown; the other presentation-only templates have no `content`. A Note shows
-`title` above its text, on the color in `metadata.appearance`;
+markdown; the other presentation-only templates have no `content`. A Note's
+`title` is its heading, shown in its header; its text is on the color in
+`metadata.appearance`;
 `appearance.backgroundColor` accepts a palette name *or* a `#rrggbb` value,
 because agents are instructed to supply either.
 
-`metadata.packageTemplateLabel` is the node's header when the user has renamed
-it. It is written only when non-blank; without it the header shows the
-template's label.
+`title` is the node's one name, the one its header shows and every other view
+names it by. A node starts with its template's label and keeps it until the user
+renames the header or an agent names it; a save writes it for every node that
+has one, and a Note has none until its author gives it one.
+
+`width` and `height` are the size of a node resized on the canvas, each written
+on its own. `minimized` is `true` while the node is folded to its chip, and
+`minimizedWidth` and `minimizedHeight` are the chip's size once its corner
+handle resizes it, 250 by 40 when absent; the node opens back at `width` and
+`height`.
 
 `metadata.packageTemplateConfig` is what the node settings modal saved for the
 node: its title, description, editor mode, engine, which editor tabs it shows,
@@ -101,10 +110,11 @@ holds at most 10,000 ids; for a larger selection it holds `count` in place of
 `ids`, and a run that reads it fails with a message saying so, as it does for a
 name the node has no tag for.
 
-`metadata.copiedFrom` is written only on a copy made by Duplicate selection: the
-ids of the nodes it descends from, oldest first, ending with the node it was
-copied from. Two nodes are the same lever in two scenarios when their ids and
-these lists meet.
+`metadata.copiedFrom` is written only on a copy: one made by Duplicate selection
+or Duplicate scenario, a plan's duplicate, or a scenario dragged in from the
+Scenario Catalog. It lists the ids of the nodes the copy descends from, oldest
+first, ending with the node it was copied from. Two scenarios' nodes pair when
+their ids and these lists meet.
 
 A node's history in `nodeProvenance` also holds an entry, `kind` `edit`, with
 the code it left, for each change an agent made to its code, its `label`
@@ -137,25 +147,53 @@ imply (an Autark node, `import geopandas`, a raster dataset). A save that leaves
 ### Scenarios
 
 `scenarios` lists named selections of the dataflow's nodes. Each one is
-`{id, name, color, description?, nodes, collapsed?, box?, source?}`:
+`{id, name, color, description?, nodes, set, context, outcomes, collapsed?, box?, source?}`:
 
 - `id` is unique among the scenarios, `color` a hex color such as `#2a9d8f`, and
-  `nodes` the ids of its nodes.
+  `nodes` the ids of its scenario-specific nodes, the nodes in its box: what it
+  changes.
+- `set` is the `id` of its scenario set in `scenarioSets`.
+- `context` is its shared context: the ids of the nodes upstream of it, outside
+  every box, that it uses. `outcomes` is its shared outcomes: the ids of the nodes
+  downstream of it, outside every box, that it feeds. Both list their nodes in
+  the dataflow's order, and a node in them can belong to some of a set's
+  scenarios only.
 - `collapsed` and `box` say whether the canvas draws it as one box, and where.
 - `source` names the project and scenario it was dragged in from.
 
-What enters a scenario from nodes outside it is its fixed context, its nodes are
-what it changes, and the outputs of its last nodes are what it produces.
+`scenarioSets` lists the scenario sets, each `{id, name, description?, shared?, source?}`:
+the scenarios that answer one question, compared on the same shared context and
+shared outcomes. Scenarios of different sets never mix.
+
+- `id` is unique among the sets, and `name` is what the canvas and the Scenario
+  Catalog call the set; no two sets of a dataflow share a name.
+- `shared` says how the canvas draws the set's shared context and shared
+  outcomes: `shared.context` and `shared.outcomes` each hold `collapsed: true`
+  when that group is drawn as one box, and `box`, `{x, y}`, where that box sits.
+  It is written only when a group is collapsed or its box was moved.
+- `source`, `{project, set}`, names the project and the set a set dragged in
+  from the Scenario Catalog copies. A later scenario of that set dragged into
+  the dataflow joins this set.
 
 A node belongs to at most one scenario: a save that puts a node in two, or gives
 two scenarios one id, is refused. A save drops ids that are not nodes of the
-dataflow, so deleting a node removes it from its scenario. A scenario whose last
-node was deleted keeps its name and color until it is deleted itself.
+dataflow, so deleting a node removes it from its scenario, its context and its
+outcomes. A scenario whose last node was deleted keeps its name and color until
+it is deleted itself.
 
-The canvas writes `scenarios` on every save, and an empty list clears them. A
-save that leaves the key out keeps the ones already saved, and a dataflow
-without scenarios has no key. Version snapshots and an agent's view of the
-dataflow carry them only when there are some.
+Every write of a dataflow puts each scenario in a set. A scenario written
+without `context` or `outcomes` gets the nodes found by following the edges up
+and down from its nodes, never into a box and never along an interaction edge.
+Scenarios written without a `set`, or with one `scenarioSets` does not list, go
+in new sets, those that share a context or outcome node in the same one. A new
+set's `id` is `set-` and its first scenario's id, with `-2`, `-3` and so on when
+that is taken, and its `name` is the dataflow's when it is the only set, else
+its scenarios' names joined by " vs ". A set no scenario names is dropped.
+
+The canvas writes `scenarios` and `scenarioSets` on every save, and an empty
+list clears them. A save that leaves the keys out keeps the ones already saved,
+and a dataflow without scenarios has neither key. Version snapshots and an
+agent's view of the dataflow carry them only when there are some.
 
 ### Ownership
 

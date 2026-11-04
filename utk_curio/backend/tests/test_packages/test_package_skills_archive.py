@@ -7,7 +7,8 @@ it, publishing puts it in the shared catalog, adding the catalog's copy brings
 it, and each copy's ``integrity.json`` covers its files. An import and a
 publish read each skill strictly, as the skills Curio ships are read, and
 refuse a package whose ``skills/`` breaks the format, naming what is wrong.
-Scout ships the first, ``scout``.
+Rasterization ships ``rasterization``, and the Vega-Lite package
+``vega-lite-charts``.
 
 New names are read inside each test, so this module imports on a checkout
 without them and each test fails on its own.
@@ -24,7 +25,6 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-SCOUT_DIR = REPO_ROOT / "packages" / "curio.scout@1"
 #: The archive helper's package (``conftest._manifest_dict``).
 DIR = "ai.test.demo@1"
 SKILL = (
@@ -148,25 +148,33 @@ def test_a_package_whose_skills_break_the_format_is_refused_and_leaves_nothing(
     assert not (tmp_path / "catalog" / DIR).exists()
 
 
-def test_scout_ships_its_skill_its_integrity_map_covers_it_and_an_add_brings_it(tmp_curio):
-    """Scout's ``skills/`` holds one skill, ``scout``, which Curio's strict
-    reader takes; the package's ``integrity.json`` records its file; and an
-    account's add of Scout from the catalog puts it in the account's copy,
-    whose map records it too."""
+@pytest.mark.parametrize(("dir_name", "skill"), [
+    ("curio.rasterization@1", "rasterization"),
+    ("curio.vega-lite@1", "vega-lite-charts"),
+])
+def test_a_shipped_package_ships_its_skill_its_integrity_map_covers_it_and_an_add_brings_it(
+    tmp_curio, dir_name, skill,
+):
+    """Rasterization's ``skills/`` holds one skill, ``rasterization``, and the
+    Vega-Lite package's one, ``vega-lite-charts``, which Curio's strict reader
+    takes; the package's ``integrity.json`` records its file; and an account's
+    add of the package from the catalog puts it in the account's copy, whose
+    map records it too."""
     from utk_curio.backend.app.agents.domain import skills
     from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
     from utk_curio.backend.app.packages.repositories.skills import skill_folders
     from utk_curio.backend.app.packages.repositories.store import package_dir
 
-    (folder,) = skill_folders(SCOUT_DIR)
-    assert (folder.name, skills.parse(folder).name) == ("scout", "scout")
+    package = REPO_ROOT / "packages" / dir_name
+    (folder,) = skill_folders(package)
+    assert (folder.name, skills.parse(folder).name) == (skill, skill)
     shipped = (folder / "SKILL.md").read_bytes()
     digest = hashlib.sha256(shipped).hexdigest()
-    recorded = json.loads((SCOUT_DIR / "integrity.json").read_text(encoding="utf-8"))["sha256"]
-    assert recorded["skills/scout/SKILL.md"] == digest
+    recorded = json.loads((package / "integrity.json").read_text(encoding="utf-8"))["sha256"]
+    assert recorded[f"skills/{skill}/SKILL.md"] == digest
 
-    install_package_from_directory("guest", SCOUT_DIR)
-    added = package_dir("guest", "curio.scout@1")
-    assert (added / "skills" / "scout" / "SKILL.md").read_bytes() == shipped
+    install_package_from_directory("guest", package)
+    added = package_dir("guest", dir_name)
+    assert (added / "skills" / skill / "SKILL.md").read_bytes() == shipped
     copied = json.loads((added / "integrity.json").read_text(encoding="utf-8"))["sha256"]
-    assert copied["skills/scout/SKILL.md"] == digest
+    assert copied[f"skills/{skill}/SKILL.md"] == digest

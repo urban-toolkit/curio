@@ -4,15 +4,15 @@ alice owns a dataflow that uses two things of her store: her package
 ``ai.test.flood-tools@1``, which its lockfile names and whose node imports the
 module ``flood_helpers`` the package ships, and her model
 ``ai.test.flood-model@1``, dropped onto its ``flood`` node. Her store also
-holds Scout (``curio.scout@1``) and a second model, ``ai.test.private-model@1``,
-which the dataflow does not use, though a node of Scout's and a node whose code
+holds Rasterization (``curio.rasterization@1``) and a second model, ``ai.test.private-model@1``,
+which the dataflow does not use, though a node of Rasterization's and a node whose code
 names that model are on it, as a tab could write them. bob is an editor she
 invited, erin was one until alice took her off and now watches, and carol was
 never invited.
 
 A run of bob's on alice's dataflow, a play, a run on the server or one an
 agent makes, runs the package node with the modules of alice's copy and the
-model with her weights, as her own run does. Scout and the second model stay
+model with her weights, as her own run does. Rasterization and the second model stay
 hers: bob's runs get neither. erin's and carol's runs get nothing of her store.
 The agents bob drives hold the skills of the dataflow's packages. Nothing is
 added to bob's store, and he cannot publish, export or remove her package.
@@ -43,17 +43,17 @@ TOOLS = "ai.test.flood-tools"
 TOOLS_DIR = f"{TOOLS}@1"
 FLOOD_MODEL = "ai.test.flood-model"
 PRIVATE_MODEL = "ai.test.private-model"
-SCOUT_DIR = "curio.scout@1"
+RASTERIZATION_DIR = "curio.rasterization@1"
 SKILL = "flood-depths"
 ATTACHMENT = "att-editor-packages"
 TOKENS = {"bob": "bob-token-for-tests", "erin": "erin-token-for-tests", "carol": "carol-token-for-tests"}
 #: alice's dataflow: a node of her package, a node her model was dropped
-#: onto, a node of Scout's and a node whose code names her second model. The
+#: onto, a node of Rasterization's and a node whose code names her second model. The
 #: first line of each node's code names it in what the sandbox is sent.
 NODES = {
     "helpers": ("ai.test.flood-tools/depth", "from flood_helpers import depth\nreturn depth(2)\n"),
     "flood": ("curio.builtin/computation-analysis", f'model = curio_load_model("{FLOOD_MODEL}")\nreturn 1\n'),
-    "calc": ("curio.scout/raster-calculator", "return 1\n"),
+    "calc": ("curio.rasterization/raster-calculator", "return 1\n"),
     "private": ("curio.builtin/computation-analysis", f'model = curio_load_model("{PRIVATE_MODEL}")\nreturn 1\n'),
 }
 
@@ -146,7 +146,7 @@ def flow(client, db, user_and_token):
     _tools_package(key)
     _model_package(key, FLOOD_MODEL)
     _model_package(key, PRIVATE_MODEL)
-    shutil.copytree(REPO / "packages" / SCOUT_DIR, user_packages_dir(key) / SCOUT_DIR)
+    shutil.copytree(REPO / "packages" / RASTERIZATION_DIR, user_packages_dir(key) / RASTERIZATION_DIR)
 
     resp = client.post("/api/projects", json={
         "name": "Flood check", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}}, "outputs": [],
@@ -300,7 +300,7 @@ def test_an_editors_run_on_the_server_runs_her_package_and_her_model_and_nothing
 ):
     """bob's run on the server of alice's dataflow runs each node as his play
     does: the node of her package with her copy's module, the node her model
-    was dropped onto with her weights, and Scout's node and the node naming
+    was dropped onto with her weights, and Rasterization's node and the node naming
     her second model with nothing of hers."""
     bodies = _server_run(client, flow, sandbox, "bob", "helpers", "flood", "calc", "private")
 
@@ -317,7 +317,7 @@ def test_an_editors_agent_holds_her_dataflows_package_skills_and_runs_its_model_
     client, flow, monkeypatch,
 ):
     """bob's chat on alice's dataflow lists the skill her package ships, as
-    hers does, and not Scout's, which the dataflow does not use; and his
+    hers does, and not Rasterization's, which the dataflow does not use; and his
     agent's run of the node her model was dropped onto loads her weights."""
     listed = {}
     for who in ("alice", "bob"):
@@ -325,7 +325,7 @@ def test_an_editors_agent_holds_her_dataflows_package_skills_and_runs_its_model_
                           headers=_auth(flow.tokens[who]))
         assert resp.status_code == 200, resp.get_data(as_text=True)
         listed[who] = [skill["name"] for skill in resp.get_json()["skills"]]
-    assert SKILL in listed["alice"] and "scout" not in listed["alice"], listed
+    assert SKILL in listed["alice"] and "rasterization" not in listed["alice"], listed
     assert listed["bob"] == listed["alice"]
 
     payload = _agent_run(client, flow, monkeypatch, "bob", "flood")
@@ -333,7 +333,7 @@ def test_an_editors_agent_holds_her_dataflows_package_skills_and_runs_its_model_
 
 
 def test_a_package_and_a_model_of_hers_the_dataflow_does_not_use_stay_hers(client, flow, sandbox, monkeypatch):
-    """Scout and alice's second model are in her store and not in what her
+    """Rasterization and alice's second model are in her store and not in what her
     dataflow uses: bob's agent's runs and bob's plays of their nodes get
     neither, from her store or his. alice's plays get both."""
     assert _agent_run(client, flow, monkeypatch, "bob", "calc").get("package_modules") is None
@@ -341,7 +341,7 @@ def test_a_package_and_a_model_of_hers_the_dataflow_does_not_use_stay_hers(clien
     assert _play(client, flow, sandbox, "bob", "calc").get("package_modules") is None
     assert _play(client, flow, sandbox, "bob", "private").get("models") is None
 
-    assert _play(client, flow, sandbox, "alice", "calc")["package_modules"]["root"] == _sources(flow.key, SCOUT_DIR)
+    assert _play(client, flow, sandbox, "alice", "calc")["package_modules"]["root"] == _sources(flow.key, RASTERIZATION_DIR)
     assert _play(client, flow, sandbox, "alice", "private")["models"] == {
         PRIVATE_MODEL: _folder(flow.key, f"{PRIVATE_MODEL}@1"),
     }
@@ -386,7 +386,7 @@ def test_an_editor_runs_her_package_and_cannot_publish_export_or_remove_it(
     assert (package_dir(flow.key, TOOLS_DIR) / "sources" / "flood_helpers.py").is_file()
     assert TOOLS_DIR in projects_storage.read_spec(flow.key, flow.pid)["dataflow"]["packages"]
     assert list(catalog.iterdir()) == []
-    hers = {TOOLS_DIR, f"{FLOOD_MODEL}@1", f"{PRIVATE_MODEL}@1", SCOUT_DIR}
+    hers = {TOOLS_DIR, f"{FLOOD_MODEL}@1", f"{PRIVATE_MODEL}@1", RASTERIZATION_DIR}
     assert not hers & {folder.name for folder in list_user_packages(_key(flow.people.bob))}
 
 
@@ -460,7 +460,7 @@ def test_every_canvas_of_her_dataflow_lists_the_packages_it_uses_from_her_store(
     """The canvas of alice's dataflow lists the packages it uses as her store
     holds them, each read-only, so it draws their nodes: hers, bob's, whom she
     invited, and those of erin and carol, who open it by its link and watch.
-    Her package and her model are listed, and Scout and her second model,
+    Her package and her model are listed, and Rasterization and her second model,
     which it does not use, are not. Only their manifests are read: her
     package's README is not listed. Nothing is added to anyone's store. A
     dataflow that is gone lists nothing, and no one signed out reads it."""
@@ -516,7 +516,7 @@ def test_an_editors_agent_judges_imports_by_the_modules_his_runs_get(client, flo
     """The gate an agent's Python code passes judges a node's imports by the
     modules a run hands that node. For bob's agent on alice's dataflow those
     are what his runs get: her package's, which her dataflow uses, and his
-    own package's, and not Scout's, which her store holds and her dataflow
+    own package's, and not Rasterization's, which her store holds and her dataflow
     does not use. alice's agent judges them by her store's, as before."""
     from flask import g
 

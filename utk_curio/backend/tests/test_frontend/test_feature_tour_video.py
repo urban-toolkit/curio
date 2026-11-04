@@ -2033,8 +2033,9 @@ WHATIF_DATA = "whatif-data"
 WHATIF_POOL = "whatif-pool"
 WHATIF_EDIT = "whatif-towers-edit"
 WHATIF_MAPS = ["whatif-baseline-map", "whatif-modified-map", "whatif-towers-map"]
-#: The nodes that compare its scenarios, each with its type: Scout's Bars of the
-#: mean sunlight, and the Python node that takes each road's sunlight change.
+#: The nodes that compare its scenarios, each with its type: the Vega-Lite
+#: package's Bars of the mean sunlight, and the Python node that takes each
+#: road's sunlight change.
 WHATIF_COMPARES = [("whatif-compare-chart", "bars"), ("whatif-compare-difference", "computation-analysis")]
 WHATIF_BASELINE = "s-baseline"
 WHATIF_BASELINE_NODES = ["whatif-baseline-compute", "whatif-baseline-map"]
@@ -2242,16 +2243,16 @@ def scene_scenarios(ctx: Ctx) -> None:
 
     # Baseline, collapsed into one box that lists its context and outcomes. Its
     # box is drawn where its first node stood, clear of the other scenarios.
-    tour.click(scenario_card_button(page, WHATIF_BASELINE, "Collapse"))
-    collapsed = _box(page, WHATIF_BASELINE)
-    collapsed.wait_for(state="attached", timeout=10000)
     page.keyboard.press("Escape")
     wait_for_drawer_closed(page, DRAWER_SCENARIOS)
+    tour.click(page.get_by_test_id(f"scenario-collapse-{WHATIF_BASELINE}"))
+    collapsed = _box(page, WHATIF_BASELINE)
+    collapsed.wait_for(state="attached", timeout=10000)
     _frame_with_boxes(page, [WHATIF_POOL], (230, 140, 1870, 1160))
     collapsed.wait_for(state="visible", timeout=10000)
     page.wait_for_function(
         """(id) => {
-            const rows = document.querySelectorAll(`[data-scenario-box="${id}"] [data-scenario-outcome]`);
+            const rows = document.querySelectorAll(`[data-scenario-box="${id}"] [data-scenario-row]`);
             return rows.length > 0 && [...rows].every((row) => row.textContent.includes("Done"));
         }""",
         arg=WHATIF_BASELINE,
@@ -2295,7 +2296,7 @@ def scene_scenario_catalog(ctx: Ctx) -> None:
     tour.click(card.get_by_role("button", name="View details", exact=True))
     details = page.locator(f'[role="dialog"] [data-scenario-key="{project}/{WHATIF_BASELINE}"]')
     details.wait_for(state="visible", timeout=15000)
-    expect(details).to_contain_text("Outcomes", timeout=15000)
+    expect(details).to_contain_text("Shared outcomes", timeout=15000)
     tour.beat(2500)
     _still_with_boxes(ctx, "scenario-details", {"dialog": '[role="dialog"]:has([data-scenario-key])'})
     page.keyboard.press("Escape")
@@ -2323,7 +2324,7 @@ def scene_scenario_drop(ctx: Ctx) -> None:
     pane = page.locator(CANVAS_DROP_TARGET).bounding_box()
     _drag_on_camera(
         ctx,
-        (card_box["x"] + 40, card_box["y"] + 20),
+        (card_box["x"] + card_box["width"] / 2, card_box["y"] + 20),
         (pane["x"] + 320, pane["y"] + 240),
         dragging=f'{DRAWER_SCENARIOS}[data-dragging="true"]',
     )
@@ -2335,7 +2336,7 @@ def scene_scenario_drop(ctx: Ctx) -> None:
     box.wait_for(state="visible", timeout=15000)
     page.wait_for_function(
         """() => {
-            const rows = document.querySelectorAll('[data-scenario-box] [data-scenario-outcome]');
+            const rows = document.querySelectorAll('[data-scenario-box] [data-scenario-row]');
             return rows.length > 0 && [...rows].every((row) => row.textContent.includes("Done"));
         }""",
         timeout=15000,

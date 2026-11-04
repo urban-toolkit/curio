@@ -42,8 +42,8 @@ export interface LineageCanvasNode {
     nodeId?: string;
     nodeType?: string;
     templateName?: string;
-    /** The node's renamed header, which names it. */
-    packageTemplateLabel?: string | null;
+    /** The node's title, its one name. */
+    title?: string | null;
     datasetRefs?: string[];
     appliedDatasets?: Record<
       string,
@@ -241,7 +241,7 @@ export function selectDatasetDownstreamUsage(
     return {
       nodeId: targetId,
       nodeName: node
-        ? lineageNodeName(nodeType, node.data?.packageTemplateLabel, resolveNodeLabel)
+        ? lineageNodeName(nodeType, node.data?.title, resolveNodeLabel)
         : undefined,
       nodeType,
       dataflowId,
@@ -267,7 +267,7 @@ export function selectDatasetDownstreamUsage(
       nodeExecStatus[nodeId] === "stale" ? "stale" : "active";
     consumingNodes.push({
       nodeId,
-      nodeName: lineageNodeName(nodeType, node.data?.packageTemplateLabel, resolveNodeLabel),
+      nodeName: lineageNodeName(nodeType, node.data?.title, resolveNodeLabel),
       nodeType,
       dataflowId,
       dataflowName,
@@ -466,7 +466,7 @@ export function upstreamInputsFromDataset(
     inputNodes.push({
       nodeId,
       nodeName: nodeType
-        ? lineageNodeName(nodeType, onCanvas?.data?.packageTemplateLabel, resolveNodeLabel)
+        ? lineageNodeName(nodeType, onCanvas?.data?.title, resolveNodeLabel)
         : onCanvas?.data?.templateName,
       nodeType,
     });
@@ -494,7 +494,7 @@ export function selectDatasetUpstreamLineage(
     // instead of a meaningless sliced id.
     const nodeType = producer?.data?.nodeType ?? dataset.producerNodeType ?? undefined;
     const nodeName = producer
-      ? lineageNodeName(nodeType, producer.data?.packageTemplateLabel, resolveNodeLabel)
+      ? lineageNodeName(nodeType, producer.data?.title, resolveNodeLabel)
       : nodeType
         ? lineageNodeName(nodeType, undefined, resolveNodeLabel)
         : undefined;

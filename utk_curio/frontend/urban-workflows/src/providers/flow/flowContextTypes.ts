@@ -6,7 +6,7 @@ import type { InstallSyncOutcome, PendingInstall } from "../../services/datasetC
 import type { DataflowCategories, HandCategories } from "../../utils/dataflowCategories";
 import type { NotebookPane } from "../../utils/notebookLayout";
 import type { NodeSettings } from "../../utils/nodeSettingsWriters";
-import type { Scenario } from "../../utils/scenarios/scenarioModel";
+import type { Scenario, ScenarioSet } from "../../utils/scenarios/scenarioModel";
 import type { IInteraction, IOutput, IPropagation, NodeExecOutcome } from "./flowTypes";
 import type { DataflowDocProvider } from "../collab/docProvider";
 import type { CanvasView } from "./useNotebookView";
@@ -63,7 +63,7 @@ export interface FlowContextProps {
     // Reviewed plan removals (dev/62): victims + their edge cascade leave in
     // one operation, without the manual "remove the edges first" guard.
     applyReviewedRemovals: (nodeIds: string[], edgeIds: string[]) => void;
-    loadParsedTrill: (workflowName: string, task: string, node: any, edges: any, provenance?: boolean, merge?: boolean, packages?: string[], description?: string, datasets?: any[], categories?: HandCategories, scenarios?: unknown, fit?: boolean, autoRun?: boolean) => void;
+    loadParsedTrill: (workflowName: string, task: string, node: any, edges: any, provenance?: boolean, merge?: boolean, packages?: string[], description?: string, datasets?: any[], categories?: HandCategories, scenarios?: unknown, fit?: boolean, autoRun?: boolean, scenarioSets?: unknown) => void;
     packages: string[];
     setPackages: (pkgs: string[]) => void;
     addPackage: (pkg: string) => void;
@@ -121,6 +121,8 @@ export interface FlowContextProps {
     /** The dataflow's scenarios (#662), saved with it. A member's id names a
      * node the canvas may no longer hold until the list is written again. */
     scenarios: Scenario[];
+    /** The scenarios' sets (`dataflow.scenarioSets`); every scenario names one in its `set`. */
+    scenarioSets: ScenarioSet[];
     /** "Run stale nodes automatically" (#845), saved with the dataflow; off by default. */
     autoRun: boolean;
 
@@ -129,8 +131,9 @@ export interface FlowContextProps {
     renameDataflow: (name: string) => boolean;
     /** Replace the hand-set categories. */
     updateDataflowCategories: (next: HandCategories) => void;
-    /** Replace the scenarios; the outputs they read are saved a moment later. */
-    setScenarios: (next: Scenario[]) => void;
+    /** Replace the scenarios, and the sets when *sets* is given; the outputs
+     * they read are saved a moment later. */
+    setScenarios: (next: Scenario[], sets?: ScenarioSet[]) => void;
     /** Turn auto-run on or off. */
     setAutoRun: (on: boolean) => void;
     /** File > Save: makes a dataflow not saved yet, and gives a saved one a

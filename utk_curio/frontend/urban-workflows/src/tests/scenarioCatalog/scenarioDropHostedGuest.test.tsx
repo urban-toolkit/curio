@@ -36,13 +36,15 @@ jest.mock("../../TrillGenerator", () => ({
 }));
 jest.mock("../../utils/scenarios/scenarioParts", () => ({ liveScenarios: (saved: unknown) => saved }));
 jest.mock("../../utils/scenarios/scenarioDrop", () => ({
-  planScenarioDrop: () => ({
-    outputs: [],
-    loaders: [],
-    scenario: { id: "dropped", name: "Existing", color: "#2a9d8f", nodes: [] },
-  }),
+  planScenarioDrop: () => {
+    const scenario = { id: "dropped", name: "Existing", color: "#2a9d8f", nodes: [] };
+    const set = { id: "set-dropped", name: "Park shade", source: { project: "src", set: "park" } };
+    return { outputs: [], loaders: [], scenarios: [scenario], sets: [set], scenario, set, made: true };
+  },
   dropGraph: () => ({ nodes: [], edges: [] }),
   loaderNodes: () => [],
+  alreadyInCopy: () => null,
+  presentInCopy: () => [],
 }));
 jest.mock("../../services/scenarioCatalog", () => ({
   scenarioCatalogApi: { getCopyPlan: jest.fn(), copyInto: jest.fn() },
@@ -97,15 +99,18 @@ const HOSTED_GUEST = userContext(GUEST, true);
 const LOCAL_GUEST = userContext(GUEST, false);
 const SIGNED_IN_USER = userContext(SIGNED_IN, true);
 
-const PAYLOAD = { projectId: "src", scenarioId: "existing" } as any;
+const PAYLOAD = { projectId: "src", scenarioId: "existing", name: "Existing", setId: "park", setName: "Park shade" };
 const SAVE_FIRST = "Save this dataflow first, then drag the scenario again.";
 
 /** What the server says the drop copies: nothing left to run, nothing refused. */
 const READY = {
   scenario: { id: "existing", name: "Existing", color: "#2a9d8f", description: "" },
+  set: { id: "park", name: "Park shade" },
   project: { id: "src", name: "Chicago Loop shadow with towers removed or edited" },
-  levers: [],
+  nodes: [],
+  last: [],
   context: [],
+  shared: [],
   outcomes: [],
   dataflow: { nodes: [], edges: [] },
   packages: [],
@@ -153,7 +158,7 @@ describe("a hosted guest", () => {
 
     await dropAs(HOSTED_GUEST);
 
-    expect(catalog.getCopyPlan).toHaveBeenCalledWith("src", "existing", "target");
+    expect(catalog.getCopyPlan).toHaveBeenCalledWith(PAYLOAD, "target", []);
     expect(toastsShown().filter((message) => message.startsWith("Sign in"))).toEqual([]);
   });
 });
@@ -178,6 +183,6 @@ describe.each([
 
     await dropAs(value);
 
-    expect(catalog.getCopyPlan).toHaveBeenCalledWith("src", "existing", "target");
+    expect(catalog.getCopyPlan).toHaveBeenCalledWith(PAYLOAD, "target", []);
   });
 });

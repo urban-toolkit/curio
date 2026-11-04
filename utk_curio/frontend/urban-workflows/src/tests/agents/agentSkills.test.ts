@@ -100,7 +100,7 @@ describe("what a skill serves", () => {
 });
 
 describe("whose a skill is", () => {
-  const SCOUT = { id: "curio.scout@1", name: "Scout" };
+  const RASTERIZATION = { id: "curio.rasterization@1", name: "Rasterization" };
 
   it("names the author its metadata gives, else whose it is, never Curio for an account's", () => {
     expect(skillByline({ author: "parks-team", source: "yours" })).toBe("parks-team");
@@ -111,9 +111,9 @@ describe("whose a skill is", () => {
   });
 
   it("names a package's skill by its package, whatever author it gives", () => {
-    // Scout's skill says `author: curio`; the account holds it through Scout.
-    expect(skillByline({ author: "curio", source: "package", package: SCOUT })).toBe("Scout");
-    expect(skillByline({ author: null, source: "package", package: SCOUT })).toBe("Scout");
+    // Rasterization's skill says `author: curio`; the account holds it through Rasterization.
+    expect(skillByline({ author: "curio", source: "package", package: RASTERIZATION })).toBe("Rasterization");
+    expect(skillByline({ author: null, source: "package", package: RASTERIZATION })).toBe("Rasterization");
   });
 
   it("says where it is from, a package's by its package, and who uses a package's", () => {
@@ -121,8 +121,8 @@ describe("whose a skill is", () => {
     expect(skillSource({})).toBe("Curio");
     expect(skillSource({ source: "yours" })).toBe("You imported it");
     expect(skillSource({ source: "shared" })).toBe("The shared catalog");
-    expect(skillSource({ source: "package", package: SCOUT })).toBe("Scout");
-    expect(packageSkillUsers(SCOUT)).toBe("Agents on a dataflow that uses Scout");
+    expect(skillSource({ source: "package", package: RASTERIZATION })).toBe("Rasterization");
+    expect(packageSkillUsers(RASTERIZATION)).toBe("Agents on a dataflow that uses Rasterization");
   });
 });
 

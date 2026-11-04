@@ -1,18 +1,18 @@
 /**
  * The dashboard by scenario (#662): which column each pinned tile goes in.
  *
- * - First the tiles the scenarios share: their fixed context, and any other
- *   pinned tile that no scenario's outcome reaches.
+ * - First the tiles the scenarios share: their shared context, and any other
+ *   pinned tile outside every scenario that is no shared outcome.
  * - Then one column per scenario, in the scenarios' order, holding its pinned
  *   nodes.
- * - Last the tiles outside every scenario that read their outcomes, such as a
+ * - Last the scenarios' shared outcomes (`scenarioParts`), such as a
  *   comparison.
  *
  * In each column, upstream tiles come first (Run All's levels), then by their
  * place on the canvas. Each scenario's column is also a frame, which the page
  * draws with a header in the scenario's color.
  */
-import { computeTopologicalLevels, directedEdgesOf } from "../../providers/flow/runLevels";
+import { computeTopologicalLevels } from "../../providers/flow/runLevels";
 import type { ScenarioFrame } from "./scenarioCanvasView";
 import type { Scenario } from "./scenarioModel";
 import { liveScenarios, scenarioParts } from "./scenarioParts";
@@ -62,23 +62,8 @@ export function scenarioDashboard(
   const pinned = nodes.filter((node) => pins[node.id]);
   if (!pinned.some((node) => memberOf.has(node.id))) return null;
 
-  // What the scenarios' outcomes reach, through the nodes outside them.
-  const successors = new Map<string, string[]>();
-  for (const edge of directedEdgesOf([...edges])) {
-    const list = successors.get(edge.source);
-    if (list) list.push(edge.target);
-    else successors.set(edge.source, [edge.target]);
-  }
-  const downstream = new Set<string>();
-  const queue = live.flatMap((scenario) => scenarioParts(scenario, nodes, edges).outcomes);
-  while (queue.length > 0) {
-    const id = queue.shift() as string;
-    for (const next of successors.get(id) ?? []) {
-      if (memberOf.has(next) || downstream.has(next)) continue;
-      downstream.add(next);
-      queue.push(next);
-    }
-  }
+  // The scenarios' shared outcomes, which go last.
+  const outcomes = new Set(live.flatMap((scenario) => scenarioParts(scenario, nodes, edges, live).outcomes));
 
   const ids = new Set(nodes.map((node) => node.id));
   const between = edges.filter((edge) => ids.has(edge.source) && ids.has(edge.target));
@@ -96,8 +81,8 @@ export function scenarioDashboard(
       })
       .map((node) => node.id);
 
-  const shared = pinned.filter((node) => !memberOf.has(node.id) && !downstream.has(node.id));
-  const after = pinned.filter((node) => !memberOf.has(node.id) && downstream.has(node.id));
+  const shared = pinned.filter((node) => !memberOf.has(node.id) && !outcomes.has(node.id));
+  const after = pinned.filter((node) => !memberOf.has(node.id) && outcomes.has(node.id));
   const frames: ScenarioFrame[] = [];
   for (const scenario of live) {
     const members = ordered(pinned.filter((node) => memberOf.get(node.id) === scenario));

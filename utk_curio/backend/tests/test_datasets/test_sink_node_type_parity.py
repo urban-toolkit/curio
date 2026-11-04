@@ -52,7 +52,7 @@ def test_a_data_export_is_a_sink_by_the_behavior_its_template_declares():
 @pytest.mark.parametrize("node_type", [
     "curio.builtin/data-transformation",
     "curio.builtin/data-transformation@1",
-    "curio.scout/raster-calculator@1",
+    "curio.rasterization/raster-calculator@1",
     None,
     "",
 ])
@@ -62,14 +62,14 @@ def test_non_sink_types_pass(node_type):
 
 
 @pytest.mark.parametrize("node_type", [
-    "curio.scout/donuts",
-    "curio.scout/lines-with-band@1",
-    "curio.scout/weighted-matrix@1",
-    "curio.scout/dots-with-a-range@1",
-    "curio.scout/table",
+    "curio.vega-lite/donuts",
+    "curio.vega-lite/lines-with-band@1",
+    "curio.vega-lite/weighted-matrix@1",
+    "curio.vega-lite/dots-with-a-range@1",
+    "curio.vega-lite/table",
 ])
 def test_a_package_chart_that_draws_with_vega_lite_is_a_sink(node_type):
-    """Scout's charts draw with the Vega-Lite node's behavior
+    """The Vega-Lite package's charts draw with the Vega-Lite node's behavior
     (``grammarId: vega-lite`` in the shipped manifest), which hands the
     node's input on as its output: a computed dataset under one of them would
     copy the table it was handed, as one under a Vega-Lite node would. The

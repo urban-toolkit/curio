@@ -40,10 +40,12 @@ import {
     MIN_NODE_HEIGHT,
     MIN_NODE_WIDTH,
     MINIMIZED_NODE_HEIGHT,
+    MINIMIZED_NODE_MIN_HEIGHT,
+    MINIMIZED_NODE_MIN_WIDTH,
     MINIMIZED_NODE_WIDTH,
     SupportedType,
 } from "../constants";
-import { clampNodeBox } from "../utils/nodeBoxSize";
+import { clampNodeBox, minimizedChipBox } from "../utils/nodeBoxSize";
 import { getNodeDescriptor, modelTypeOfPackage, tryGetNodeDescriptor } from "../registry";
 import { NodeCategory, NodeTemplateId } from "../registry/types";
 import {
@@ -231,6 +233,12 @@ export const NodeContainer = ({
         // A read-only canvas has nothing to save.
         if (!sizeLocked) markDirty();
     };
+    // The chip's own size, which its corner handle sets (#1235): apart from the
+    // size the node opens back to, so resizing one never touches the other.
+    const [chipBox, setChipBox] = useState(() => minimizedChipBox(data));
+    useEffect(() => {
+        setChipBox(minimizedChipBox({ minimizedWidth: data.minimizedWidth, minimizedHeight: data.minimizedHeight }));
+    }, [data.minimizedWidth, data.minimizedHeight]);
     // Hover state for the minimized chip's delete control (noContent nodes have
     // no header band to put it in).
     const [chipHovered, setChipHovered] = useState(false);
@@ -303,17 +311,12 @@ export const NodeContainer = ({
                 setCurrentNodeWidth(MINIMIZED_NODE_WIDTH);
                 setCurrentNodeHeight(MINIMIZED_NODE_HEIGHT);
             } else {
-                if (nodeWidth == undefined) {
-                    setCurrentNodeWidth(DEFAULT_NODE_WIDTH);
-                } else {
-                    setCurrentNodeWidth(nodeWidth);
-                }
-
-                if (nodeHeight == undefined) {
-                    setCurrentNodeHeight(DEFAULT_NODE_HEIGHT);
-                } else {
-                    setCurrentNodeHeight(nodeHeight);
-                }
+                // Opened at the size it was folded from, as the mount clamp
+                // sizes it: a size under the least, as a chip resized before
+                // #1235 saved (0x0), opens at the default.
+                const opened = clampNodeBox(nodeWidth, nodeHeight);
+                setCurrentNodeWidth(opened.width);
+                setCurrentNodeHeight(opened.height);
             }
 
             if(!minimized)
@@ -339,6 +342,16 @@ export const NodeContainer = ({
     const resizeBox = (width: number, height: number) => {
         setCurrentNodeWidth(width);
         setCurrentNodeHeight(height);
+    };
+
+    // A chip's handle sizes the chip, and its release keeps that size in the
+    // node's data, where a save reads it.
+    const resizeChip = (width: number, height: number) => setChipBox({ width, height });
+    const keepChipSize = (width: number, height: number) => {
+        const liveData = getNodes().find((n) => n.id === nodeId)?.data ?? data;
+        if (liveData.minimizedWidth === width && liveData.minimizedHeight === height) return;
+        updateDataNode(nodeId, { ...liveData, minimizedWidth: width, minimizedHeight: height });
+        markDirty();
     };
 
     // The size the drag ends at goes into the node's data.
@@ -435,6 +448,7 @@ export const NodeContainer = ({
     // stopPropagation() before React's event delegation layer runs. Using
     // capture-phase listeners lets us intercept the event *before* Monaco.
     const resizableRef = useRef<HTMLDivElement>(null);
+    const chipRef = useRef<HTMLDivElement>(null);
 
     // Whether a file or a dataset this node takes is dragged over it, which
     // its dataset widget shows.
@@ -778,12 +792,14 @@ export const NodeContainer = ({
             ) : null}
 
             {(!dashboardOn || !dashboardLocked) && !noContent && !notebookCell && (
+                // A folded node's handle sizes its chip; the card is hidden.
                 <NodeResizeHandle
                     nodeId={nodeId}
-                    box={resizableRef}
+                    box={shownMinimized ? chipRef : resizableRef}
                     disabled={data.suggestionType != "none" && data.suggestionType != undefined}
-                    onResize={resizeBox}
-                    onResizeEnd={keepBoxSize}
+                    {...(shownMinimized ? { minWidth: MINIMIZED_NODE_MIN_WIDTH, minHeight: MINIMIZED_NODE_MIN_HEIGHT } : {})}
+                    onResize={shownMinimized ? resizeChip : resizeBox}
+                    onResizeEnd={shownMinimized ? keepChipSize : keepBoxSize}
                 />
             )}
             <div
@@ -866,15 +882,17 @@ export const NodeContainer = ({
                             <NodeRunControls {...runControls} part="play" />
                         ) : null}
 
-                        {/* Node title — editable on package nodes (same visibility as PACKAGE pills) */}
+                        {/* The node's title, its one name: any node's can be renamed
+                            on a canvas that is not read-only; the settings cog stays
+                            a package node's. */}
                         <EditableNodeHeaderLabel
                             displayLabel={headerKindLabel}
-                            editable={showPackageNodeActions}
+                            editable={!sizeLocked && !suggestionActive}
                             showConfig={showPackageNodeActions}
                             executed={nodeExecStatus[nodeId] === "executed"}
                             keywordHighlighted={!!data.keywordHighlighted}
                             onLabelCommit={(label) => {
-                                updateDataNode(nodeId, { ...data, packageTemplateLabel: label });
+                                updateDataNode(nodeId, { ...data, title: label });
                             }}
                             onConfigure={() => setConfigOpen(true)}
                         />
@@ -970,6 +988,7 @@ export const NodeContainer = ({
 
             {shownMinimized ? (
                 <div
+                    ref={chipRef}
                     className="curio-node-chip"
                     onMouseEnter={() => setChipHovered(true)}
                     onMouseLeave={() => setChipHovered(false)}
@@ -977,17 +996,21 @@ export const NodeContainer = ({
                         ...{
                             // An icon-only node in the notebook view is a chip
                             // stretched to the column, as tall as its dots need.
-                            width: (cellBox?.width ?? currentNodeWidth) + "px",
-                            height: (cellBox ? Math.max(cellBox.minHeight, MINIMIZED_NODE_HEIGHT) : currentNodeHeight) + "px",
+                            // A folded node's chip is the size its handle
+                            // left it.
+                            width: (cellBox?.width ?? (noContent ? currentNodeWidth : chipBox.width)) + "px",
+                            height: (cellBox ? Math.max(cellBox.minHeight, MINIMIZED_NODE_HEIGHT) : noContent ? currentNodeHeight : chipBox.height) + "px",
+                            boxSizing: "border-box",
                             // The node's card, folded: the same hairline,
                             // radius and soft shadow.
                             backgroundColor: "#ffffff",
                             border: "1px solid var(--curio-border)",
                             borderRadius: "8px",
-                            // A folded node shows its icon and its title from
-                            // the left; an icon-only node, its icon centered.
-                            padding: noContent ? "5px" : "0 12px 0 14px",
-                            justifyContent: noContent ? "center" : "flex-start",
+                            // A folded node shows its icon and its title,
+                            // wrapped, the two centered in the chip; an
+                            // icon-only node, its icon.
+                            padding: noContent ? "5px" : `${CHIP_PADDING_Y}px 12px`,
+                            justifyContent: "center",
                             gap: "10px",
                             display: "flex",
                             alignItems: "center",
@@ -1001,18 +1024,9 @@ export const NodeContainer = ({
                     }}
                     onClick={() => {
                         if (!noContent) {
-                            if (nodeWidth == undefined) {
-                                setCurrentNodeWidth(DEFAULT_NODE_WIDTH);
-                            } else {
-                                setCurrentNodeWidth(nodeWidth);
-                            }
-
-                            if (nodeHeight == undefined) {
-                                setCurrentNodeHeight(DEFAULT_NODE_HEIGHT);
-                            } else {
-                                setCurrentNodeHeight(nodeHeight);
-                            }
-
+                            const opened = clampNodeBox(nodeWidth, nodeHeight);
+                            setCurrentNodeWidth(opened.width);
+                            setCurrentNodeHeight(opened.height);
                             setMinimized(false);
                         }
                     }}
@@ -1026,12 +1040,14 @@ export const NodeContainer = ({
                             ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {color: "#888787"})
                         }}
                     />
-                    {/* The node's title, as its header shows it: one line,
-                        cut with an ellipsis, the whole title on hover. A
-                        click on it opens the node, as on the rest of the chip. */}
+                    {/* The node's title, wrapped to as many lines as the
+                        chip holds and cut with an ellipsis after the last, the
+                        whole title on hover. A click on it opens the node, as
+                        on the rest of the chip. */}
                     {!noContent ? (
                         <EditableNodeHeaderLabel
                             displayLabel={headerKindLabel}
+                            lines={Math.max(1, Math.floor((chipBox.height - 2 * CHIP_PADDING_Y) / CHIP_TITLE_LINE_HEIGHT))}
                             editable={false}
                             showConfig={false}
                             executed={nodeExecStatus[nodeId] === "executed"}
@@ -1093,13 +1109,13 @@ export const NodeContainer = ({
                 nodeId={nodeId}
                 nodeType={data.nodeType}
                 storedConfig={readCanvasTemplateConfig({ data })}
-                storedLabel={data.packageTemplateLabel}
+                storedLabel={data.title}
                 templateCode={code ?? data.defaultCode ?? ""}
                 onClose={() => setConfigOpen(false)}
                 onSave={(config: CanvasTemplateConfig) => {
                     updateDataNode(nodeId, {
                         ...data,
-                        packageTemplateLabel: config.label.trim(),
+                        title: config.label.trim() || undefined,
                         packageTemplateConfig: config,
                     });
                     setConfigOpen(false);
@@ -1125,6 +1141,11 @@ const headerIconStyle: CSS.Properties = {
 
 /** A canvas node's soft shadow: the one a raised Curio card carries. */
 const NODE_CARD_SHADOW = "var(--curio-shadow-browse-card-raised)";
+// A chip's padding above and below its title, and the height of each line of
+// the title (EditableNodeHeaderLabel's `.labelTextWrapped`): how many lines a
+// chip holds.
+const CHIP_PADDING_Y = 6;
+const CHIP_TITLE_LINE_HEIGHT = 16;
 
 /** The node container's border and surface, resolved in one place.
  *

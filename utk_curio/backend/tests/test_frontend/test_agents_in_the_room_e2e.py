@@ -54,9 +54,9 @@ ACTIVITY_LIST = '[role="region"][aria-label="Activity"]'
 
 def _export(node_id: str, y: int) -> dict:
     return {
-        "id": node_id, "type": EXPORT, "x": 0, "y": y, "content": STARTER,
+        "id": node_id, "type": EXPORT, "x": 0, "y": y, "content": STARTER, "title": "Data Export",
         "metadata": {
-            "keywords": [], "packageTemplateLabel": "Data Export",
+            "keywords": [],
             "widgets": [{"name": "file_name", "type": "text", "label": "File name", "default": ""}],
         },
     }

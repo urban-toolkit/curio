@@ -294,7 +294,7 @@ def _computed_output_title(
 
       1. the producing node's client-resolved display label (``ref.node_name``);
       2. else the name the node's canvas header shows, by the canvas's own rule
-         (``execution/node_names.py``): its renamed header, else its template's
+         (``execution/node_names.py``): its title, else its template's
          label from *labels* (``node_names.template_labels``), else its type in
          words without the version (#775);
       3. ``None`` for a node the spec does not hold: the installer then derives

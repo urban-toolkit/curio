@@ -282,7 +282,8 @@ def test_an_upload_the_import_cannot_keep_is_refused_and_nothing_is_kept(
 
 @pytest.mark.parametrize(("name", "status", "said"), [
     ("widgets", 409, "Curio ships a skill named widgets"),
-    ("scout", 409, "the package curio.scout@1 ships a skill named scout"),
+    ("rasterization", 409, "the package curio.rasterization@1 ships a skill named rasterization"),
+    ("vega-lite-charts", 409, "the package curio.vega-lite@1 ships a skill named vega-lite-charts"),
     ("Street Trees", 400, "is no skill's name"),
 ])
 def test_a_taken_name_is_refused_naming_whose_it_is_and_another_name_keeps_the_skill(

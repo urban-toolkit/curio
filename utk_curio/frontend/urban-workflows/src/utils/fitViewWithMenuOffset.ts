@@ -153,6 +153,31 @@ export function fitViewWithMenuOffsetNow(
     return setViewportNow(store, plan) ? plan : null;
 }
 
+/**
+ * What the canvas draws beside React Flow's nodes, in canvas units, read when
+ * a fit runs: a scenario set's outline and title, a scenario's frame, a
+ * collapsed box (`scenarioLayersExtent`). MainCanvas sets it. A fit of the
+ * whole canvas frames it with the nodes, so a set dropped in collapsed is in
+ * sight; a fit of named nodes, a close-up's, leaves it out.
+ */
+let drawnBeside: (() => Rect[]) | null = null;
+
+export function setDrawnBeside(read: (() => Rect[]) | null): void {
+    drawnBeside = read;
+}
+
+/** The smallest rectangle around *rects*. */
+function around(rects: readonly Rect[]): Rect {
+    const x = Math.min(...rects.map((r) => r.x));
+    const y = Math.min(...rects.map((r) => r.y));
+    return {
+        x,
+        y,
+        width: Math.max(...rects.map((r) => r.x + r.width)) - x,
+        height: Math.max(...rects.map((r) => r.y + r.height)) - y,
+    };
+}
+
 /** The nodes a fit frames: those its options name, or every node. */
 function requestedNodes(rf: ReactFlowInstance, options?: MenuOffsetFitOptions): Node[] {
     const requestedIds = (options?.nodes ?? [])
@@ -177,7 +202,11 @@ function planFit(rf: ReactFlowInstance, options?: MenuOffsetFitOptions): FitPlan
     // every one is hidden, fit where they stand, which is where a collapsed
     // scenario's box sits.
     const shown = requested.filter((n) => !isDrawnHidden(n));
-    const targetNodes = shown.length
+    // A fit of the whole canvas also frames what is drawn beside the nodes,
+    // such as the box a collapsed group's hidden nodes are drawn in.
+    const named = (options?.nodes ?? []).length > 0;
+    const beside = named ? [] : drawnBeside?.() ?? [];
+    const targetNodes = shown.length || beside.length
         ? shown
         : requested.map((n) => ({ ...n, width: n.width || 1, height: n.height || 1 }));
 
@@ -189,7 +218,8 @@ function planFit(rf: ReactFlowInstance, options?: MenuOffsetFitOptions): FitPlan
     // halting on a degenerate fit.
     if (!targetNodes.every(isMeasured)) return "unmeasured";
 
-    return planBoundsFit(getNodesBounds(targetNodes), options);
+    const rects = targetNodes.length ? [getNodesBounds(targetNodes), ...beside] : beside;
+    return planBoundsFit(rects.length === 1 ? rects[0] : around(rects), options);
 }
 
 /**

@@ -8,7 +8,7 @@ is the `ref` of each entry of `nodes`, and `widgets[]` an entry of `widgets`). T
 
 ## dataflow.read
 
-Read the project's saved dataflow, structure-first: every node (id, type, goal, content length, widgets, selection tags, what a Spatial Join, a Data Pool or a Simple View is set to when it is not its default, and "pinned": true for a tile of the dataflow's dashboard) and ALL edges, plus each node's last runtime status and the dataflow's scenarios with their levers, fixed context and outcomes. A scenario the user dragged in from another project names its source: that project's and that scenario's names, or the status "project-gone" or "scenario-gone" when that project, or that scenario in it, no longer exists. Node content is elided: use node.read for one node's content, or params {"include": ["content"]} for the full spec (large).
+Read the project's saved dataflow, structure-first: every node (id, type, goal, content length, widgets, selection tags, what a Spatial Join, a Data Pool or a Simple View is set to when it is not its default, and "pinned": true for a tile of the dataflow's dashboard) and ALL edges, plus each node's last runtime status and the dataflow's scenarios, each with its scenario set, its scenario-specific nodes, its shared context and its shared outcomes. A scenario the user dragged in from another project names its source: that project's and that scenario's names, or the status "project-gone" or "scenario-gone" when that project, or that scenario in it, no longer exists. Node content is elided: use node.read for one node's content, or params {"include": ["content"]} for the full spec (large).
 
 ### Parameters
 
@@ -153,7 +153,7 @@ Change the dataflow graph: the arguments are the plan, which lands step by step;
 - goal: What the plan achieves, in one line.
 - nodes.ref: A short id, unique in this plan, that edges name.
 - nodes.nodeType: A <packageId>/<templateId> id from the Available node templates list.
-- nodes.title: A short title.
+- nodes.title: The node's name, a short one, shown in its header.
 - nodes.intent: One line: what this step does and produces.
 - nodes.expects: The input or output this step expects, in one line.
 - edges.from: A ref from this plan, or an existing node's id.
@@ -192,13 +192,13 @@ Propose installing ONE node package from the Nodes Catalog into this project. Pa
 
 ## node.create
 
-Add ONE new node to the canvas. Params: {"nodeType": "<packageId>/<templateId>", "content": "...", "title": "<short header shown on the node>", "goal": "<one-line purpose>", "appearance": {"backgroundColor": "<palette name or #RRGGBB>"}, "widgets": [...], "spatialJoin": {...}, "dataPool": {...}, "simpleVis": {...}}: title, goal, appearance, widgets, spatialJoin, dataPool and simpleVis are optional; a note template renders title and backgroundColor, so give both for notes. A template whose starter is a node's whole content, such as a Scout chart, gives the node that starter in a plan or a node.create: leave its content empty, set the template's widgets by name in "widgets", and its spec stays as it is. nodeType must be an id from the "Available node templates" list, never invented. The node lands at once, for everyone in the dataflow, and the user can undo it from the chat.
+Add ONE new node to the canvas. Params: {"nodeType": "<packageId>/<templateId>", "content": "...", "title": "<the node's name, shown in its header>", "goal": "<one-line purpose>", "appearance": {"backgroundColor": "<palette name or #RRGGBB>"}, "widgets": [...], "spatialJoin": {...}, "dataPool": {...}, "simpleVis": {...}}: title, goal, appearance, widgets, spatialJoin, dataPool and simpleVis are optional; a note template renders title and backgroundColor, so give both for notes. A template whose starter is a node's whole content, such as a chart of the Vega-Lite package, gives the node that starter in a plan or a node.create: leave its content empty, set the template's widgets by name in "widgets", and its spec stays as it is. nodeType must be an id from the "Available node templates" list, never invented. The node lands at once, for everyone in the dataflow, and the user can undo it from the chat.
 
 ### Parameters
 
 - nodeType: A <packageId>/<templateId> id from the Available node templates list.
 - content: The node's content: empty for a node that holds none, such as a {{template.label:curio.builtin/spatial-join}}.
-- title: A short header shown on the node.
+- title: The node's name, shown in its header; without one, it is its template's label. A note's title is its heading.
 - goal: The node's purpose, in one line.
 
 ## package.draft.apply

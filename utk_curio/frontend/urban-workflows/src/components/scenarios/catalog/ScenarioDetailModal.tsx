@@ -31,6 +31,8 @@ export interface InProjectScenario {
   /** Changes its name, color or description. Absent for a shared viewer,
    *  who reads the scenario and changes nothing. */
   onEdit?: (patch: ScenarioFieldsPatch) => void;
+  /** Why a name cannot be used, as it is typed: another scenario of its set has it. */
+  nameProblem?: (name: string) => string | null;
 }
 
 export interface ScenarioDetailModalProps {
@@ -70,9 +72,9 @@ function samePath(a: string, b: string): boolean {
  * `ModelDetailModal`: the same modal, the same header.
  *
  * A scenario of another project is read off its project, so this only reads:
- * its fixed context, its levers and its outcomes, each node with its saved
- * outputs, and the project graph with the scenario marked on it. Changing it
- * means opening its project.
+ * its shared context, its Scenario-specific nodes and its shared outcomes, the
+ * nodes whose outputs it saves with those outputs, and the project graph with
+ * the scenario marked on it. Changing it means opening its project.
  *
  * A scenario of the open dataflow (the drawer's In project tab) is read off the
  * canvas, and its name, color and description are edited here.
@@ -139,7 +141,7 @@ export const ScenarioDetailModal: React.FC<ScenarioDetailModalProps> = ({
 
           <div className={styles.body} data-scenario-key={scenario.key}>
             {inProject?.onEdit ? (
-              <ScenarioFields scenario={scenario} onEdit={inProject.onEdit} />
+              <ScenarioFields scenario={scenario} onEdit={inProject.onEdit} nameProblem={inProject.nameProblem} />
             ) : scenario.description ? (
               <p className={styles.purpose}>{scenario.description}</p>
             ) : null}
@@ -170,24 +172,24 @@ export const ScenarioDetailModal: React.FC<ScenarioDetailModalProps> = ({
 
             {details ? (
               <>
-                <section className={styles.section} aria-label="Fixed context">
-                  <h3 className={styles.sectionLabel}>Fixed context</h3>
+                <section className={styles.section} aria-label="Shared context">
+                  <h3 className={styles.sectionLabel}>Shared context</h3>
                   <ScenarioNodeList
                     entries={details.context}
                     results={!inProject}
                     empty={inProject && details.levers.length > 0 ? "None: everything it reads is in it." : "None."}
                   />
                 </section>
-                <section className={styles.section} aria-label="Levers">
-                  <h3 className={styles.sectionLabel}>Levers</h3>
+                <section className={styles.section} aria-label="Scenario-specific nodes">
+                  <h3 className={styles.sectionLabel}>Scenario-specific nodes</h3>
                   <ScenarioNodeList
                     entries={details.levers}
                     results={!inProject}
                     empty={inProject ? "No nodes: add some, or delete it." : "None."}
                   />
                 </section>
-                <section className={styles.section} aria-label="Outcomes">
-                  <h3 className={styles.sectionLabel}>Outcomes</h3>
+                <section className={styles.section} aria-label="Shared outcomes">
+                  <h3 className={styles.sectionLabel}>Shared outcomes</h3>
                   <ScenarioNodeList entries={details.outcomes} results={!inProject} />
                 </section>
               </>
@@ -218,9 +220,11 @@ export const ScenarioDetailModal: React.FC<ScenarioDetailModalProps> = ({
 function ScenarioFields({
   scenario,
   onEdit,
+  nameProblem,
 }: {
   scenario: Pick<ScenarioRow, "name" | "color" | "description">;
   onEdit: (patch: ScenarioFieldsPatch) => void;
+  nameProblem?: (name: string) => string | null;
 }) {
   const [name, setName] = useState(scenario.name);
   const [description, setDescription] = useState(scenario.description);
@@ -232,9 +236,12 @@ function ScenarioFields({
   }, [scenario.name]);
   useEffect(() => setDescription(scenario.description), [scenario.description]);
 
+  const problem = name.trim() === scenario.name ? null : (nameProblem?.(name) ?? null);
+  // A name another scenario of the set has is never kept: leaving the field
+  // puts the scenario's own name back.
   const commitName = () => {
     const next = name.trim();
-    if (!next) {
+    if (!next || problem) {
       setName(scenario.name);
       return;
     }
@@ -253,15 +260,23 @@ function ScenarioFields({
         type="text"
         className={factStyles.fieldInput}
         aria-label="Scenario name"
+        aria-invalid={problem ? true : undefined}
+        aria-describedby={problem ? "scenario-name-problem" : undefined}
         value={name}
         onChange={(e) => setName(e.target.value)}
         onBlur={commitName}
         onKeyDown={(e) => {
           if (e.key !== "Enter") return;
+          if (problem) return;
           commitName();
           e.currentTarget.blur();
         }}
       />
+      {problem && (
+        <span className={factStyles.fieldProblem} id="scenario-name-problem" role="alert">
+          {problem}
+        </span>
+      )}
       <span className={factStyles.fieldLabel}>Color</span>
       <input
         type="color"

@@ -41,14 +41,14 @@ jest.mock("../../providers/FlowProvider", () => ({
 
 const mockActions = {
   saveSelectionAsScenario: jest.fn(),
-  saveDataflowAsScenario: jest.fn(),
   duplicate: jest.fn(),
+  duplicateScenario: jest.fn(),
   runScenario: jest.fn(),
   update: jest.fn(),
   setCollapsed: jest.fn(),
   moveBox: jest.fn(),
-  addSelected: jest.fn(),
-  removeSelected: jest.fn(),
+  editScenario: jest.fn(),
+  renameSet: jest.fn(),
   remove: jest.fn(),
 };
 jest.mock("../../components/scenarios/useScenarioActions", () => ({
@@ -167,6 +167,7 @@ describe("the Scenario Catalog drawer's In project tab", () => {
     await openInProject();
     expect(tab("In project")).toHaveAttribute("aria-pressed", "true");
     expect(within(card("s-doubled")).getByText("Doubled")).toBeInTheDocument();
+    // The drawers' one meta line: its project and how many nodes it has.
     expect(within(card("s-doubled")).getByText("Heights · 1 node")).toBeInTheDocument();
     expect(within(card("s-doubled")).getByText("Every height twice.")).toBeInTheDocument();
     expect(within(card("s-charted")).getByText("Charted")).toBeInTheDocument();
@@ -180,59 +181,76 @@ describe("the Scenario Catalog drawer's In project tab", () => {
     await openInProject();
     fireEvent.click(button("s-doubled", "Run scenario"));
     expect(mockActions.runScenario).toHaveBeenCalledWith("s-doubled");
-    fireEvent.click(button("s-doubled", "Collapse"));
-    expect(mockActions.setCollapsed).toHaveBeenCalledWith("s-doubled", true);
-    fireEvent.click(button("s-doubled", "Add selected"));
-    expect(mockActions.addSelected).toHaveBeenCalledWith("s-doubled");
-    fireEvent.click(button("s-doubled", "Remove selected"));
-    expect(mockActions.removeSelected).toHaveBeenCalledWith("s-doubled");
+    fireEvent.click(button("s-doubled", "Edit scenario"));
+    expect(mockActions.editScenario).toHaveBeenCalledWith("s-doubled");
+    // Delete asks first, as the Data drawer does: Cancel keeps the scenario.
     fireEvent.click(button("s-doubled", "Delete"));
+    expect(mockActions.remove).not.toHaveBeenCalled();
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Delete Doubled?" })).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog", { name: "Delete Doubled?" })).toBeNull();
+    expect(mockActions.remove).not.toHaveBeenCalled();
+    fireEvent.click(button("s-doubled", "Delete"));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Delete Doubled?" })).getByRole("button", { name: "Delete" }));
     expect(mockActions.remove).toHaveBeenCalledWith("s-doubled");
     // Each acted on its own scenario only.
-    expect(mockActions.setCollapsed).toHaveBeenCalledTimes(1);
+    expect(mockActions.runScenario).toHaveBeenCalledTimes(1);
+    expect(mockActions.remove).toHaveBeenCalledTimes(1);
   });
 
-  test("a collapsed scenario's card offers Expand", async () => {
+  test("its buttons are the catalogs' own, Delete a word like every other", async () => {
     await openInProject();
-    expect(within(card("s-charted")).queryByRole("button", { name: "Collapse" })).toBeNull();
-    fireEvent.click(button("s-charted", "Expand"));
-    expect(mockActions.setCollapsed).toHaveBeenCalledWith("s-charted", false);
+    for (const name of ["Run scenario", "Edit scenario", "Duplicate scenario", "Delete"]) {
+      expect(button("s-doubled", name)).toHaveTextContent(name);
+    }
+    expect(button("s-doubled", "Run scenario").className).toMatch(/btnInstall/);
+    expect(button("s-doubled", "Delete").className).toMatch(/btnSecondary/);
   });
 
-  test("a scenario with no node left can neither run nor collapse", async () => {
+  test("a card has no Collapse or Expand: a scenario collapses on the canvas", async () => {
+    await openInProject();
+    for (const id of ["s-doubled", "s-charted"]) {
+      expect(within(card(id)).queryByRole("button", { name: "Collapse" })).toBeNull();
+      expect(within(card(id)).queryByRole("button", { name: "Expand" })).toBeNull();
+    }
+  });
+
+  test("a scenario with no node left cannot run", async () => {
     mockFlow.scenarios = [DOUBLED, CHARTED, GONE];
     await openInProject();
     expect(tab("In project")).toHaveTextContent(/^In project3$/);
-    expect(within(card("s-gone")).getByText("Heights · 0 nodes")).toBeInTheDocument();
     expect(button("s-gone", "Run scenario")).toBeDisabled();
-    expect(button("s-gone", "Collapse")).toBeDisabled();
-    expect(button("s-gone", "Add selected")).toBeEnabled();
+    expect(button("s-gone", "Edit scenario")).toBeEnabled();
     expect(button("s-gone", "Delete")).toBeEnabled();
   });
 
-  test("on top of the tab, Save selection as scenario and Duplicate as scenario", async () => {
+  test("on top of the tab, Define scenario alone", async () => {
     await openInProject();
-    fireEvent.click(within(root()).getByRole("button", { name: "Save selection as scenario" }));
+    fireEvent.click(within(root()).getByRole("button", { name: "Define scenario" }));
     expect(mockActions.saveSelectionAsScenario).toHaveBeenCalledTimes(1);
-    fireEvent.click(within(root()).getByRole("button", { name: "Duplicate as scenario" }));
-    expect(mockActions.duplicate).toHaveBeenCalledWith(true);
+    expect(within(root()).queryByRole("button", { name: /Duplicate as scenario/ })).toBeNull();
   });
 
-  test("Duplicate as scenario is off in the notebook view, where nodes are not added", async () => {
+  test("Duplicate scenario on a card duplicates that scenario", async () => {
+    await openInProject();
+    fireEvent.click(button("s-doubled", "Duplicate scenario"));
+    expect(mockActions.duplicateScenario).toHaveBeenCalledWith("s-doubled");
+  });
+
+  test("Duplicate scenario is off in the notebook view, where nodes are not added", async () => {
     mockFlow.notebookOn = true;
     await openInProject();
-    expect(within(root()).getByRole("button", { name: "Duplicate as scenario" })).toBeDisabled();
-    expect(within(root()).getByRole("button", { name: "Save selection as scenario" })).toBeEnabled();
+    expect(button("s-doubled", "Duplicate scenario")).toBeDisabled();
+    expect(within(root()).getByRole("button", { name: "Define scenario" })).toBeEnabled();
   });
 
   test("a shared viewer reads the scenarios and finds no editing control", async () => {
     mockView.shared = true;
     await openInProject();
     expect(within(card("s-doubled")).getByText("Doubled")).toBeInTheDocument();
-    for (const name of ["Run scenario", "Collapse", "Expand", "Add selected", "Remove selected", "Delete"]) {
+    for (const name of ["Run scenario", "Edit scenario", "Duplicate scenario", "Delete"]) {
       expect(within(root()).queryByRole("button", { name })).toBeNull();
     }
-    expect(within(root()).queryByRole("button", { name: "Save selection as scenario" })).toBeNull();
+    expect(within(root()).queryByRole("button", { name: "Define scenario" })).toBeNull();
     expect(within(root()).queryByRole("button", { name: "Duplicate as scenario" })).toBeNull();
   });
 
@@ -263,6 +281,7 @@ describe("the Scenario Catalog drawer's In project tab", () => {
     setPresented(true);
     fireEvent.mouseEnter(card("s-doubled"));
     fireEvent.click(button("s-doubled", "Delete"));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Delete Doubled?" })).getByRole("button", { name: "Delete" }));
     expect(highlighted()).toBe("");
   });
 
@@ -288,7 +307,7 @@ describe("the Scenario Catalog drawer's In project tab", () => {
     fireEvent.click(tab("In project"));
     expect(
       await within(root()).findByText(
-        "This dataflow has no scenarios yet. Select nodes (Shift and drag) and save them as a scenario, or duplicate them as one to compare two versions.",
+        "This dataflow has no scenarios yet. Click Define scenario, then select the nodes the scenario changes. Duplicate a scenario to compare two versions.",
       ),
     ).toBeInTheDocument();
   });
@@ -302,9 +321,12 @@ describe("the Scenario Catalog drawer's In project tab", () => {
     expect(modal.getByLabelText("Color of Doubled")).toHaveValue("#e86a3c");
     expect(modal.getByLabelText("Scenario description")).toHaveValue("Every height twice.");
     const region = (name: string) => within(modal.getByRole("region", { name }));
-    expect(region("Fixed context").getByText("Load parcels")).toBeInTheDocument();
-    expect(region("Levers").getByText("Scale heights")).toBeInTheDocument();
-    expect(region("Outcomes").getByText("Scale heights")).toBeInTheDocument();
+    expect(region("Shared context").getByText("Load parcels")).toBeInTheDocument();
+    // Scale heights is its own node, its last one: the chart that reads it is
+    // in another scenario's box, so it has no shared outcome.
+    expect(region("Scenario-specific nodes").getByText("Scale heights")).toBeInTheDocument();
+    expect(region("Shared outcomes").queryByText("Scale heights")).toBeNull();
+    expect(region("Shared outcomes").getByText("None.")).toBeInTheDocument();
     // Read off the canvas: no saved-output lines, and no request.
     expect(modal.queryByText("No saved output")).toBeNull();
     expect(api.getScenario).not.toHaveBeenCalled();
@@ -338,13 +360,56 @@ describe("the Scenario Catalog drawer's In project tab", () => {
     expect(name).toHaveValue("Doubled");
   });
 
+  test("a set is renamed in place; a name another set has is refused as it is typed", async () => {
+    mockFlow.scenarios = [
+      { ...DOUBLED, set: "heights" },
+      { ...CHARTED, set: "roads" },
+    ];
+    mockFlow.scenarioSets = [{ id: "heights", name: "Heights" }, { id: "roads", name: "Roads" }];
+    await openInProject();
+    fireEvent.click(within(root()).getByRole("button", { name: "Rename Heights" }));
+    const input = within(root()).getByLabelText("Scenario set name");
+    fireEvent.change(input, { target: { value: " roads " } });
+    expect(within(root()).getByRole("alert")).toHaveTextContent('already has a scenario set "Roads"');
+    fireEvent.blur(input);
+    expect(mockActions.renameSet).not.toHaveBeenCalled();
+
+    fireEvent.click(within(root()).getByRole("button", { name: "Rename Heights" }));
+    const again = within(root()).getByLabelText("Scenario set name");
+    fireEvent.change(again, { target: { value: "Building heights" } });
+    fireEvent.keyDown(again, { key: "Enter" });
+    expect(mockActions.renameSet).toHaveBeenCalledWith("heights", "Building heights");
+  });
+
+  test("a name another scenario of its set has is refused as it is typed", async () => {
+    mockFlow.scenarios = [
+      { ...DOUBLED, set: "heights" },
+      { ...CHARTED, set: "heights" },
+    ];
+    mockFlow.scenarioSets = [{ id: "heights", name: "Heights" }];
+    await openInProject();
+    fireEvent.click(within(card("s-doubled")).getByRole("button", { name: "View Doubled (Heights) details" }));
+    const modal = within(await screen.findByRole("dialog", { name: "Scenario details" }));
+    const name = modal.getByLabelText("Scenario name");
+
+    // Whatever its case and spaces.
+    fireEvent.change(name, { target: { value: " charted " } });
+    expect(modal.getByRole("alert")).toHaveTextContent('"Charted" is already a scenario in "Heights".');
+    expect(name).toHaveAttribute("aria-invalid", "true");
+    fireEvent.keyDown(name, { key: "Enter" });
+    fireEvent.blur(name);
+    expect(mockActions.update).not.toHaveBeenCalled();
+    expect(name).toHaveValue("Doubled");
+    expect(modal.queryByRole("alert")).toBeNull();
+  });
+
   test("a scenario with no node left says so in its details", async () => {
     mockFlow.scenarios = [GONE];
     renderDrawer();
     fireEvent.click(tab("In project"));
     fireEvent.click(await within(root()).findByRole("button", { name: "View Gone (Heights) details" }));
     const modal = within(await screen.findByRole("dialog", { name: "Scenario details" }));
-    expect(within(modal.getByRole("region", { name: "Levers" })).getByText("No nodes: add some, or delete it.")).toBeInTheDocument();
+    expect(within(modal.getByRole("region", { name: "Scenario-specific nodes" })).getByText("No nodes: add some, or delete it.")).toBeInTheDocument();
   });
 
   test("a shared viewer's details only read", async () => {
@@ -357,7 +422,7 @@ describe("the Scenario Catalog drawer's In project tab", () => {
     expect(modal.queryByLabelText("Scenario name")).toBeNull();
     expect(modal.queryByLabelText("Color of Doubled")).toBeNull();
     expect(modal.queryByLabelText("Scenario description")).toBeNull();
-    expect(within(modal.getByRole("region", { name: "Fixed context" })).getByText("Load parcels")).toBeInTheDocument();
+    expect(within(modal.getByRole("region", { name: "Shared context" })).getByText("Load parcels")).toBeInTheDocument();
   });
 
   test("opened on In project, the drawer shows that tab; opened from the bar, Browse all", async () => {

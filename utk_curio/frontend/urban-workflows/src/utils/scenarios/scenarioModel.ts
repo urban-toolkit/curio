@@ -1,7 +1,11 @@
 /**
  * A dataflow's scenarios (#662), at `dataflow.scenarios`: named selections of
- * its nodes. What enters a scenario from outside is its fixed context, its
- * nodes are its levers, and the outputs of its last nodes are its outcomes.
+ * its nodes, their Scenario-specific nodes. Each is in a scenario set and keeps
+ * its Shared context and Shared outcomes (`scenarioParts.ts` reads them by role).
+ *
+ * A node belongs to at most one scenario's `nodes`. Its set, context and
+ * outcomes are kept as given here; `normalizeScenarioSets` (`scenarioSets.ts`)
+ * fills and checks them against the edges.
  *
  * A node belongs to at most one scenario. The backend refuses a save that
  * puts one node in two; `normalizeScenarios` keeps it with the first, so a
@@ -18,11 +22,37 @@ export interface Scenario {
   description?: string;
   /** Its nodes' ids. Empty once its last node is deleted. */
   nodes: string[];
+  /** The id of its scenario set, in `dataflow.scenarioSets` (`scenarioSets.ts`). */
+  set?: string;
+  /** The nodes upstream of it, outside every box, that it uses: its shared context. */
+  context?: string[];
+  /** The nodes downstream of it, outside every box, that it feeds: its outcomes. */
+  outcomes?: string[];
   collapsed?: boolean;
   /** Where its collapsed box sits on the canvas. */
   box?: { x: number; y: number };
   /** The project and scenario it was dragged in from. */
   source?: { project: string; scenario: string };
+}
+
+/** A scenario set: the scenarios that answer one question (`scenarioSets.ts`). */
+export interface ScenarioSet {
+  id: string;
+  name: string;
+  description?: string;
+  /** How its shared context and shared outcomes are drawn on the canvas. */
+  shared?: Partial<Record<SharedKind, SharedLook>>;
+  /** The project and set it copies, for a set a drop from the Scenario Catalog made. */
+  source?: { project: string; set: string };
+}
+
+export type SharedKind = "context" | "outcomes";
+export const SHARED_KINDS: readonly SharedKind[] = ["context", "outcomes"];
+
+/** A shared group drawn as one box, and where that box sits. */
+export interface SharedLook {
+  collapsed?: true;
+  box?: { x: number; y: number };
 }
 
 /** Kept in sync with `COLOR_RE` in `scenarios.py`. */
@@ -43,10 +73,11 @@ function wellFormed(entry: unknown): entry is Record<string, unknown> & { id: st
   );
 }
 
-function members(entry: Record<string, unknown>): string[] {
+function members(entry: Record<string, unknown>, key = "nodes"): string[] {
   const out: string[] = [];
-  if (!Array.isArray(entry.nodes)) return out;
-  for (const id of entry.nodes) {
+  const list = entry[key];
+  if (!Array.isArray(list)) return out;
+  for (const id of list) {
     if (nonEmpty(id) && !out.includes(id)) out.push(id);
   }
   return out;
@@ -70,6 +101,9 @@ export function normalizeScenarios(raw: unknown, nodeIds: Iterable<string>): Sce
     kept.forEach((id) => claimed.add(id));
     const scenario: Scenario = { id: entry.id, name: entry.name, color: entry.color, nodes: kept };
     if (nonEmpty(entry.description)) scenario.description = entry.description;
+    if (nonEmpty(entry.set)) scenario.set = entry.set;
+    if (Array.isArray(entry.context)) scenario.context = members(entry, "context").filter((id) => nodes.has(id));
+    if (Array.isArray(entry.outcomes)) scenario.outcomes = members(entry, "outcomes").filter((id) => nodes.has(id));
     if (typeof entry.collapsed === "boolean") scenario.collapsed = entry.collapsed;
     const box = entry.box as Record<string, unknown> | undefined;
     if (box && typeof box === "object" && isNumber(box.x) && isNumber(box.y)) {

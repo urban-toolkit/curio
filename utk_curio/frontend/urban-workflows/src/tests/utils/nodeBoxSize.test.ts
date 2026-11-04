@@ -18,7 +18,7 @@ import { ContainerConfig, NodeBehaviorHook, NodeDescriptor } from "../../registr
 import * as fs from "fs";
 import * as path from "path";
 
-import { clampNodeBox, resolveNodeBoxSize } from "../../utils/nodeBoxSize";
+import { clampNodeBox, minimizedChipBox, resolveNodeBoxSize } from "../../utils/nodeBoxSize";
 
 const noopBehavior: NodeBehaviorHook = () => ({});
 
@@ -121,6 +121,25 @@ describe("resolveNodeBoxSize", () => {
         ).toEqual({ width: 250, height: 40 });
     });
 
+    // #1235: a chip's handle resizes the chip alone, so a longer title shows.
+    test("a resized chip measures at its own size, not the size it opens back to", () => {
+        registerNode(descriptor("curio.builtin/vis-vega@1", {}));
+
+        expect(
+            resolveNodeBoxSize(
+                node("curio.builtin/vis-vega@1", {
+                    nodeWidth: 640, nodeHeight: 480, minimized: true, minimizedWidth: 180, minimizedHeight: 72,
+                }),
+            ),
+        ).toEqual({ width: 180, height: 72 });
+        // Open, it is the size it opens back to.
+        expect(
+            resolveNodeBoxSize(
+                node("curio.builtin/vis-vega@1", { nodeWidth: 640, nodeHeight: 480, minimizedWidth: 180, minimizedHeight: 72 }),
+            ),
+        ).toEqual({ width: 640, height: 480 });
+    });
+
     test("the node's own size overrides the template's", () => {
         registerNode(descriptor("curio.builtin/spatial-join@1", {
             nodeWidth: 280,
@@ -205,5 +224,37 @@ describe("clampNodeBox", () => {
         expect([widthAt, heightAt, minimizedAt].every((at) => at >= 0)).toBe(true);
         expect(source.slice(widthAt, heightAt)).toContain("clampNodeBox(nodeWidth, nodeHeight).width");
         expect(source.slice(heightAt, minimizedAt)).toContain("clampNodeBox(nodeWidth, nodeHeight).height");
+    });
+});
+
+describe("minimizedChipBox", () => {
+    test("a chip never resized is 250x40", () => {
+        expect(minimizedChipBox(undefined)).toEqual({ width: 250, height: 40 });
+        expect(minimizedChipBox({ minimizedWidth: NaN, minimizedHeight: "90" })).toEqual({ width: 250, height: 40 });
+    });
+
+    test("a resized chip keeps its size, no smaller than the least chip", () => {
+        expect(minimizedChipBox({ minimizedWidth: 300, minimizedHeight: 64 })).toEqual({ width: 300, height: 64 });
+        expect(minimizedChipBox({ minimizedWidth: 50, minimizedHeight: 10 })).toEqual({ width: 120, height: 40 });
+    });
+});
+
+// #1235: dragging a folded node's corner sized the hidden card, read as 0x0,
+// and the release saved 0x0 as the size it opens back to. The handle now sizes
+// the chip and keeps the chip's size in its own fields.
+describe("a folded node's corner handle", () => {
+    const source = fs.readFileSync(path.resolve(__dirname, "../../components/styles.tsx"), "utf8");
+    const keepChip = source.slice(source.indexOf("const keepChipSize = "), source.indexOf("const keepBoxSize = "));
+
+    test("sizes the chip, and keeps its size apart from the size the node opens back to", () => {
+        expect(source).toContain("box={shownMinimized ? chipRef : resizableRef}");
+        expect(source).toContain("onResizeEnd={shownMinimized ? keepChipSize : keepBoxSize}");
+        expect(keepChip).toContain("minimizedWidth: width, minimizedHeight: height");
+        expect(keepChip).not.toContain("nodeWidth");
+    });
+
+    test("opening a node clamps the size it opens back to, so an old 0x0 opens at the default", () => {
+        const opens = source.match(/const opened = clampNodeBox\(nodeWidth, nodeHeight\);/g) ?? [];
+        expect(opens).toHaveLength(2);
     });
 });

@@ -231,6 +231,8 @@ def apply_scenarios(spec: dict, proposal: dict, ref_to_id: dict, *, final: bool)
         saved_ids[key] = entry["id"]
         created.append(entry)
     if created:
+        # Each goes in a set, with its context and outcomes, as the plan's
+        # write lands (``dataflow_docs._write``).
         dataflow["scenarios"] = current
     return created
 

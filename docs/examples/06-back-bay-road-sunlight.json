@@ -35,7 +35,7 @@
         "content": "",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Fan the loaded layers out to both scenarios, so the PBF is parsed once: with the loader, the fixed context the two scenarios share.",
+        "goal": "Fan the loaded layers out to both scenarios, so the PBF is parsed once: with the loader, the shared context the scenarios read.",
         "metadata": {
           "keywords": []
         }
@@ -262,7 +262,7 @@
       },
       {
         "id": "whatif-compare-chart",
-        "type": "curio.scout/bars",
+        "type": "curio.vega-lite/bars",
         "x": 3845,
         "y": 1694,
         "title": "Mean sunlight",
@@ -462,6 +462,16 @@
           "whatif-baseline-compute",
           "whatif-baseline-map",
           "whatif-baseline-roads"
+        ],
+        "set": "set-s-baseline",
+        "context": [
+          "whatif-data",
+          "whatif-pool"
+        ],
+        "outcomes": [
+          "whatif-compare-chart",
+          "whatif-compare-difference",
+          "whatif-difference-map"
         ]
       },
       {
@@ -473,6 +483,16 @@
           "whatif-modified-compute",
           "whatif-modified-map",
           "whatif-modified-roads"
+        ],
+        "set": "set-s-baseline",
+        "context": [
+          "whatif-data",
+          "whatif-pool"
+        ],
+        "outcomes": [
+          "whatif-compare-chart",
+          "whatif-compare-difference",
+          "whatif-difference-map"
         ]
       },
       {
@@ -486,6 +506,14 @@
           "whatif-towers-compute",
           "whatif-towers-map",
           "whatif-towers-roads"
+        ],
+        "set": "set-s-baseline",
+        "context": [
+          "whatif-data",
+          "whatif-pool"
+        ],
+        "outcomes": [
+          "whatif-compare-chart"
         ]
       }
     ],
@@ -494,8 +522,14 @@
     "timestamp": 1748990000000,
     "provenance_id": "DefaultWorkflow",
     "packages": [
-      "curio.scout@1"
+      "curio.vega-lite@1"
     ],
-    "description": "A what-if shadow study for Boston's Back Bay as three scenarios over one fixed context, built on Example 7's per-road sunlight shader. A data node loads the PBF once and a data pool hands the layers to every scenario. In each, the shader adds up every road's minutes of June-solstice sunlight with the buildings' heights scaled by a height_factor widget: 1 in Baseline, 2 in Twice as tall, and 1 in Two towers removed, where an Edit Features node first removes two towers, 200 Clarendon and Raffles, by their building_id. A map shows each scenario's roads by sunlight, and a Roads node takes the roads with their sunlight. Scout's Bars charts each scenario's mean road sunlight from them, and a Python node takes the sunlight each road loses in Twice as tall from the two maps' roads, matched by shape, which an Autark map after it draws."
+    "description": "A what-if shadow study for Boston's Back Bay as three scenarios over one shared context, built on Example 7's per-road sunlight shader. A data node loads the PBF once and a data pool hands the layers to every scenario. In each, the shader adds up every road's minutes of June-solstice sunlight with the buildings' heights scaled by a height_factor widget: 1 in Baseline, 2 in Twice as tall, and 1 in Two towers removed, where an Edit Features node first removes two towers, 200 Clarendon and Raffles, by their building_id. A map shows each scenario's roads by sunlight, and a Roads node takes the roads with their sunlight. A Vega-Lite Bars chart draws each scenario's mean road sunlight from them, and a Python node takes the sunlight each road loses in Twice as tall from the two maps' roads, matched by shape, which an Autark map after it draws.",
+    "scenarioSets": [
+      {
+        "id": "set-s-baseline",
+        "name": "Back Bay road sunlight"
+      }
+    ]
   }
 }

@@ -165,4 +165,23 @@ describe("DataflowThumbnail with a highlight", () => {
     expect(byEnds.get("load>filter")).not.toHaveAttribute("opacity");
     expect(byEnds.get("filter>chart")).toHaveAttribute("opacity", "0.3");
   });
+
+  test("gives the shared outcomes the same dashed outline, and keeps the edge into them", () => {
+    const svg = svgOf(
+      render(
+        <DataflowThumbnail
+          preview={HEAT_PREVIEW}
+          highlight={{ color: COLOR, members: ["year", "filter"], context: ["load"], outcomes: ["chart"] }}
+        />,
+      ).container,
+    );
+    const g = nodeGroups(svg).get("chart")!;
+    expect(g).toHaveAttribute("data-thumbnail-role", "outcome");
+    expect(g).not.toHaveAttribute("opacity");
+    const box = g.querySelector("rect")!;
+    expect(box).toHaveAttribute("stroke", "#2f3034");
+    expect(box).toHaveAttribute("stroke-dasharray");
+    const lines = Array.from(svg.querySelectorAll("line"));
+    expect(lines[HEAT_PREVIEW.edges.findIndex((e) => e.target === "chart")]).not.toHaveAttribute("opacity");
+  });
 });

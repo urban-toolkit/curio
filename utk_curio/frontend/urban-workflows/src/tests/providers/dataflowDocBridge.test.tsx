@@ -59,6 +59,8 @@ const NODE_SAMPLES: Record<string, [unknown, unknown]> = {
     width: [640, 700],
     height: [480, 500],
     minimized: [true, false],
+    minimizedWidth: [300, 320],
+    minimizedHeight: [80, 96],
     dashboardPinned: [true, false],
     dashboardX: [5, 6],
     dashboardY: [7, 8],
@@ -101,7 +103,6 @@ const METADATA_SAMPLES: Record<string, [unknown, unknown]> = {
     appearance: [{ backgroundColor: "#ffefb0" }, { backgroundColor: "#c8e6c9" }],
     spatialJoin: [{ predicate: "within", output: "counts" }, { predicate: "contains" }],
     simpleVis: [{ imageColumn: "image" }, { imageColumn: "photo" }],
-    packageTemplateLabel: ["Renamed kind", "Another kind"],
     packageTemplateConfig: [{ description: "configured" }, { description: "configured again" }],
     dataPool: [{ insideChart: "MERGE_AND" }, { betweenCharts: "MERGE_OR" }],
     widgets: [
@@ -217,14 +218,15 @@ describe("the fields the cases cover are those generateTrill writes", () => {
         const full: any = {
             id: "full", position: { x: 1, y: 2 },
             data: {
-                nodeId: "full", nodeType: TYPE, nodeWidth: 1, nodeHeight: 1, minimized: true, dashboardPinned: true,
+                nodeId: "full", nodeType: TYPE, nodeWidth: 1, nodeHeight: 1, minimized: true,
+                minimizedWidth: 1, minimizedHeight: 1, dashboardPinned: true,
                 dashboardX: 1, dashboardY: 1, dashboardWidth: 1, dashboardHeight: 1, saveOutputDataset: true,
                 code: "c", out: "o", in: "i", goal: "g", title: "t",
                 keywords: [1], datasetRefs: ["d"], datasetSource: { datasetId: "d" },
                 datasetWidgets: { w: { id: "d", title: "d", format: "csv", refs: ["d"] } },
                 modelRefs: [{ id: "m", name: "m" }], appearance: { backgroundColor: "#fff" },
                 spatialJoin: { predicate: "within" }, simpleVis: { imageColumn: "i" },
-                packageTemplateLabel: "l", packageTemplateConfig: { description: "d" },
+                packageTemplateConfig: { description: "d" },
                 dataPool: { insideChart: "MERGE_AND" }, widgets: [{ name: "w", type: "number", default: 1 }],
                 copiedFrom: ["c"], selections: [{ name: "s", node: "n", column: "c", ids: [1] }],
             },
@@ -328,7 +330,11 @@ describe("the dataflow's own fields, connections and scenarios", () => {
         expect(api.workflowDescription).toBe("Where the trees are");
         expect(api.workflowCategories).toEqual({ city: ["Chicago"] });
         expect(api.autoRun).toBe(true);
-        expect(api.scenarios).toEqual([{ id: "s1", name: "Cool roofs", color: "#4477aa", nodes: ["n"] }]);
+        // Each scenario in a set, with its context and outcomes, as a load takes them.
+        expect(api.scenarios).toEqual([{
+            id: "s1", name: "Cool roofs", color: "#4477aa", nodes: ["n"], set: "set-s1", context: [], outcomes: ["m"],
+        }]);
+        expect(api.scenarioSets).toEqual([{ id: "set-s1", name: "Renamed by Ana" }]);
     });
 
     test("this canvas's name, auto-run and scenarios reach the doc, and the server's sections never go from here", async () => {
@@ -337,13 +343,16 @@ describe("the dataflow's own fields, connections and scenarios", () => {
             api.setWorkflowName("Renamed here");
             api.setAutoRun(true);
             api.setScenarios([{ id: "s2", name: "Shade", color: "#228833", nodes: ["m"] }]);
-            api.setPackages(["curio.builtin@1", "curio.scout@1"]);
+            api.setPackages(["curio.builtin@1", "curio.rasterization@1"]);
         });
         await flush();
         const df = docToDataflow(provider.doc);
         expect(df.name).toBe("Renamed here");
         expect(df.autoRun).toBe(true);
-        expect(df.scenarios).toEqual([{ id: "s2", name: "Shade", color: "#228833", nodes: ["m"] }]);
+        expect(df.scenarios).toEqual([{
+            id: "s2", name: "Shade", color: "#228833", nodes: ["m"], set: "set-s2", context: ["n"], outcomes: [],
+        }]);
+        expect(df.scenarioSets).toEqual([{ id: "set-s2", name: "Renamed here" }]);
         expect(df.packages).toEqual(["curio.builtin@1"]);
         expect(df.timestamp).toBe(1);
     });
@@ -384,6 +393,83 @@ describe("the dataflow's own fields, connections and scenarios", () => {
         const df = docToDataflow(provider.doc);
         expect(df.nodes.map((n: any) => n.id)).toEqual(["n"]);
         expect(df.edges).toEqual([]);
+    });
+});
+
+describe("scenario sets, a chip's size and a node's one name go both ways", () => {
+    /** The dataflow with node n a chip resized to 300 by 80, named, and two
+     *  scenarios in two sets. */
+    function withSets() {
+        const loaded = spec();
+        Object.assign(loaded.dataflow.nodes[0], {
+            minimized: true, minimizedWidth: 300, minimizedHeight: 80, title: "Shadow study",
+        });
+        Object.assign(loaded.dataflow, {
+            scenarios: [
+                { id: "a", name: "Heights", color: "#4477aa", nodes: ["n"], set: "set-a", context: [], outcomes: [] },
+                { id: "b", name: "Roofs", color: "#228833", nodes: ["m"], set: "set-b", context: [], outcomes: [] },
+            ],
+            scenarioSets: [{ id: "set-a", name: "Tall towers" }, { id: "set-b", name: "Green roofs" }],
+        });
+        return loaded;
+    }
+
+    test("another tab's chip size reaches this canvas", async () => {
+        await open(serverDoc(spec().dataflow));
+        await fromAnotherTab((df) => {
+            Object.assign(df.nodes[0], { minimized: true, minimizedWidth: 300, minimizedHeight: 80 });
+        });
+        expect([canvasNode().data.minimizedWidth, canvasNode().data.minimizedHeight]).toEqual([300, 80]);
+        expect(trillNodeOf(canvasNode())).toMatchObject({ minimizedWidth: 300, minimizedHeight: 80 });
+    });
+
+    test("a canvas opened from the doc, as a reload opens it, keeps the chip's size, the name and the sets", async () => {
+        const held = serverDoc(withSets().dataflow);
+        // What a reload gets: the doc's state, sent whole, read back as Trill.
+        const reloaded = new Y.Doc();
+        Y.applyUpdate(reloaded, Y.encodeStateAsUpdate(held.doc));
+        await open(held, { dataflow: docToDataflow(reloaded) } as any);
+        expect([canvasNode().data.minimizedWidth, canvasNode().data.minimizedHeight]).toEqual([300, 80]);
+        expect(canvasNode().data.title).toBe("Shadow study");
+        expect(api.scenarioSets).toEqual([{ id: "set-a", name: "Tall towers" }, { id: "set-b", name: "Green roofs" }]);
+    });
+
+    test("another tab's renamed set reaches this canvas", async () => {
+        await open(serverDoc(withSets().dataflow), withSets());
+        await fromAnotherTab((df) => {
+            df.scenarioSets = [{ id: "set-a", name: "Tall towers, by Ana" }, { id: "set-b", name: "Green roofs" }];
+        });
+        expect(api.scenarioSets).toEqual([{ id: "set-a", name: "Tall towers, by Ana" }, { id: "set-b", name: "Green roofs" }]);
+    });
+
+    test("this canvas's sets reach the doc, each scenario in its set", async () => {
+        await open(serverDoc(spec().dataflow));
+        act(() => {
+            api.setScenarios(
+                [{ id: "s2", name: "Shade", color: "#228833", nodes: ["m"], set: "set-s2", context: ["n"], outcomes: [] }],
+                [{ id: "set-s2", name: "Shade study" }],
+            );
+        });
+        await flush();
+        const df = docToDataflow(provider.doc);
+        expect(df.scenarioSets).toEqual([{ id: "set-s2", name: "Shade study" }]);
+        expect(df.scenarios).toEqual([
+            { id: "s2", name: "Shade", color: "#228833", nodes: ["m"], set: "set-s2", context: ["n"], outcomes: [] },
+        ]);
+    });
+
+    test("a header an older save holds beside the title is no name on this canvas", async () => {
+        const dataflow = spec().dataflow;
+        Object.assign(dataflow.nodes[0], { title: "Shadow study", metadata: { packageTemplateLabel: "Old header" } });
+        await open(serverDoc(dataflow), { dataflow } as any);
+        expect(canvasNode().data.title).toBe("Shadow study");
+        expect(canvasNode().data.packageTemplateLabel).toBeUndefined();
+        await fromAnotherTab((df) => {
+            df.nodes[0].title = "Shade at noon";
+            df.nodes[0].metadata = { packageTemplateLabel: "An older header" };
+        });
+        expect(canvasNode().data.title).toBe("Shade at noon");
+        expect(canvasNode().data.packageTemplateLabel).toBeUndefined();
     });
 });
 

@@ -108,9 +108,9 @@ def test_humanize_node_type():
 def test_computed_output_title_precedence():
     dataflow = {
         "nodes": [
-            {"id": "n1", "type": "curio.builtin/autk-grammar", "data": {"packageTemplateLabel": "My Step"}},
-            # Where the frontend saves a renamed header (#412).
-            {"id": "n4", "type": "curio.builtin/autk-grammar", "metadata": {"packageTemplateLabel": "Renamed"}},
+            {"id": "n1", "type": "curio.builtin/autk-grammar", "title": "My Step", "data": {}},
+            # A renamed node's one name, its title (#1248).
+            {"id": "n4", "type": "curio.builtin/autk-grammar", "title": "Renamed"},
             {"id": "n2", "type": "curio.builtin/autk-grammar", "data": {}},
             {"id": "n3", "type": "curio.builtin/autk-grammar", "data": {}},
         ]

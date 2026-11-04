@@ -87,10 +87,21 @@ describe("canvas catalog drawer parity", () => {
     },
   );
 
-  test.each(CANVAS_DRAWERS)("%s marks its panel as a modal dialog", (drawer) => {
-    const source = read(drawer);
+  test.each(CANVAS_DRAWERS.filter((drawer) => !drawer.endsWith("HeaderDrawer.tsx")))(
+    "%s marks its panel as a modal dialog",
+    (drawer) => {
+      const source = read(drawer);
+      expect(source).toContain('role="dialog"');
+      expect(source).toContain('aria-modal="true"');
+    },
+  );
+
+  test("a header drawer's panel is a modal dialog, but Define scenario's beside the canvas", () => {
+    // Beside the canvas the page around the panel stays usable, so the panel
+    // is a dialog that is not modal.
+    const source = read("components/layout/HeaderDrawer.tsx");
     expect(source).toContain('role="dialog"');
-    expect(source).toContain('aria-modal="true"');
+    expect(source).toContain('aria-modal={beside ? undefined : "true"}');
   });
 
   // #197: every confirmation is an in-app ConfirmDialog now. A native

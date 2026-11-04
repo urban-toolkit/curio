@@ -1020,10 +1020,9 @@ def test_nodes_are_added_on_the_canvas_only(
     page.wait_for_timeout(1500)
     assert len(_positions(page)) == count, f"a drop on the notebook page added a node: {_positions(page)}"
 
-    # Duplicate selection and Duplicate as scenario, which add copies, are off.
+    # Duplicate selection, which adds copies, is off.
     page.get_by_role("button", name="View menu").click()
     expect(page.get_by_role("button", name="Duplicate selection")).to_be_disabled()
-    expect(page.get_by_role("button", name="Duplicate as scenario")).to_be_disabled()
     page.get_by_role("button", name="View menu").click()
 
     # On the canvas the rail adds one.

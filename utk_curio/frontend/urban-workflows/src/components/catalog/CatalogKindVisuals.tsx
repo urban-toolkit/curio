@@ -73,7 +73,7 @@ export const CATALOG_KIND_META: Record<CatalogItemKind, CatalogKindMeta> = {
     shortLabel: "Model",
   },
   // A Scenario Catalog SCENARIO: a named selection of a project's nodes. The
-  // glyph is the one View > "Save selection as scenario" shows.
+  // glyph is the one View > Define scenario shows.
   scenario: {
     icon: faObjectGroup,
     label: "Scenario",

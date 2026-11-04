@@ -577,25 +577,25 @@ class TestPackagesResolveGivesFunctions:
         })
         status, text = tools.execute_read_tool(
             "packages.resolve", user_key=self.UKEY, project_id=self.PID, target=None,
-            params={"dirNames": ["model.scout.deep-umbra@1", "curio.scout@1"]},
+            params={"dirNames": ["model.scout.deep-umbra@1", "curio.rasterization@1"]},
         )
         assert status == "ok", text
         report = json.loads(text)  # whole: never cut mid-text
         rows = {row["dirName"]: row for row in report["packages"]}
-        umbra, scout = rows["model.scout.deep-umbra@1"], rows["curio.scout@1"]
+        umbra, rasters = rows["model.scout.deep-umbra@1"], rows["curio.rasterization@1"]
         # The packages its manifest names, which adding it adds.
-        assert umbra.get("packageDeps") == {"curio.scout@1": "*"}, umbra
-        assert scout.get("packageDeps") == {}, scout
+        assert umbra.get("packageDeps") == {"curio.rasterization@1": "*"}, umbra
+        assert rasters.get("packageDeps") == {}, rasters
         # Each module's public functions: the call and its docstring's first paragraph.
         modules = {row["module"]: row for row in umbra.get("functions") or []}
         assert "deep_umbra.node_outputs" in modules, sorted(modules)
         shadow = next(f for f in modules["deep_umbra.node_outputs"]["functions"] if f["name"] == "accumulated_shadow")
         assert shadow["call"] == "accumulated_shadow(value, season, model, output_file)"
         assert shadow["doc"].startswith("The accumulated shadow of the heights")
-        algebra = {f["name"] for row in scout["functions"] if row["module"] == "scout_rasters.raster_algebra"
+        algebra = {f["name"] for row in rasters["functions"] if row["module"] == "scout_rasters.raster_algebra"
                    for f in row["functions"]}
         assert {"raster_calculate", "raster_statistics"} <= algebra
-        assert not any(f["name"].startswith("_") for row in scout["functions"] for f in row["functions"])
+        assert not any(f["name"].startswith("_") for row in rasters["functions"] for f in row["functions"])
         contract = tools.REGISTRY["packages.resolve"].description
         assert "functions" in contract and "dependencies.packages" in contract
 

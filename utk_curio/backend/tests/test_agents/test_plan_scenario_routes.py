@@ -198,12 +198,15 @@ class TestThePlanLands:
         assert shadows["metadata"]["widgets"] == [FACTOR]
         assert copy["metadata"] == {"widgets": [{**FACTOR, "value": 2}], "copiedFrom": [shadows["id"]]}
         assert copy["goal"] == shadows["goal"]
-        assert spec["dataflow"]["scenarios"] == [
+        keep = ("id", "name", "color", "description", "nodes")
+        assert [{k: s[k] for k in keep if k in s} for s in spec["dataflow"]["scenarios"]] == [
             {"id": canvas["scenarios"][0]["id"], "name": "Real heights", "color": "#3567c7",
              "description": "the heights as mapped", "nodes": [shadows["id"]]},
             {"id": canvas["scenarios"][1]["id"], "name": "Twice as tall", "color": "#e86a3c",
              "nodes": [copy["id"]]},
         ]
+        # Both in one set: they read the same buildings and feed one comparison.
+        assert len({s["set"] for s in spec["dataflow"]["scenarios"]}) == 1
         assert canvas["scenarios"] == spec["dataflow"]["scenarios"]
         assert scenario_problems(spec) == []
         # The copy reads the same context, and the comparison reads both on circles of its own.
@@ -224,7 +227,11 @@ class TestThePlanLands:
         )
         read = {s["name"]: s for s in json.loads(text)["scenarios"]}
         assert read["Twice as tall"]["context"] == [buildings["id"]]
-        assert read["Twice as tall"]["levers"] == read["Twice as tall"]["outcomes"] == [copy["id"]]
+        assert read["Twice as tall"]["nodes"] == [copy["id"]]
+        assert "levers" not in read["Twice as tall"]
+        # What it feeds: the comparison, which reads both scenarios.
+        assert read["Twice as tall"]["outcomes"] == read["Real heights"]["outcomes"] == [compare["id"]]
+        assert read["Twice as tall"]["set"] == read["Real heights"]["set"]
         # The planner's ledger says which scenarios are saved, across reloads.
         cards = client.get(f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)).get_json()
         planner = next(c for c in cards["attachments"] if c["attachmentId"] == _att_id)
@@ -303,6 +310,36 @@ class TestThePlanLands:
         assert held["by"] is None, "the plan never waited for Ana"
         assert card is None
         assert [s["id"] for s in _spec(user, alice_project)["dataflow"]["scenarios"]] == ["s0"]
+
+
+class TestTheSetsAPlanLeaves:
+    def test_a_plan_that_removes_a_node_of_a_scenarios_context_leaves_its_sets_normalized(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """A scenario on the canvas reads n1, its shared context: a plan that
+        removes n1 lands, and the scenario's context no longer names it, the
+        scenario still in the set the dataflow lists."""
+        user, token = user_and_token
+
+        def with_a_scenario():
+            spec = _spec(user, alice_project)
+            spec["dataflow"]["nodes"].append({"id": "n2", "type": CA, "content": "print(2)", "x": 10, "y": 400})
+            spec["dataflow"]["edges"] = [
+                {"id": "n1-n2", "source": "n1", "target": "n2", "sourceHandle": "out", "targetHandle": "in"},
+            ]
+            spec["dataflow"]["scenarios"] = [{"id": "s1", "name": "Mine", "color": "#3567c7", "nodes": ["n2"],
+                                              "set": "set-s1", "context": ["n1"], "outcomes": []}]
+            spec["dataflow"]["scenarioSets"] = [{"id": "set-s1", "name": "Mine alone"}]
+            _write_spec(user, alice_project, spec)
+
+        plan = {"goal": "drop the loader", "removeNodes": ["n1"]}
+        _, card, _ = _land(client, user, token, alice_project, monkeypatch, plan, before_run=with_a_scenario)
+        assert card is not None, "the plan never landed"
+        spec = _spec(user, alice_project)
+        assert [n["id"] for n in spec["dataflow"]["nodes"]] == ["n2"]
+        (scenario,) = spec["dataflow"]["scenarios"]
+        assert (scenario["set"], scenario["context"], scenario["outcomes"]) == ("set-s1", [], [])
+        assert spec["dataflow"]["scenarioSets"] == [{"id": "set-s1", "name": "Mine alone"}]
 
 
 class TestNodeCreateWidgets:

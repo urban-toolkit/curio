@@ -103,8 +103,9 @@ function spec() {
       task: '',
       nodes: [
         {
-          id: DISCUSSED, type: NODE_TYPE, x: 0, y: 0, content: 'return 1\n',
-          metadata: { packageTemplateLabel: LABEL, comments: [SAVED_COMMENT] },
+          id: DISCUSSED, type: NODE_TYPE, x: 0, y: 0, content: 'return 1\n', title: LABEL,
+          // A header an older save held beside the title, which names nothing.
+          metadata: { packageTemplateLabel: 'Parcels, an older header', comments: [SAVED_COMMENT] },
         },
         { id: PLAIN, type: NODE_TYPE, x: 645, y: 0, content: 'return input_0\n' },
       ],
@@ -229,7 +230,8 @@ describe('a saved dataflow whose node carries comments', () => {
     await reopen();
 
     const node = loadedNode(DISCUSSED);
-    expect(node.data.packageTemplateLabel).toBe(LABEL);
+    // Its title is its one name, never the older header beside it.
+    expect(node.data.title).toBe(LABEL);
     expect(mockShowToast.mock.calls.filter(([, kind]) => kind === 'error')).toEqual([]);
     // Checked last, so a canvas that still loads them fails here and nowhere earlier.
     expect(node.data).not.toHaveProperty('comments');
@@ -247,7 +249,8 @@ describe('a saved dataflow whose node carries comments', () => {
     expect(mockUpdateProject).not.toHaveBeenCalled();
     const [sent] = mockCreateProject.mock.calls[0];
     const sentNode = sent.spec.dataflow.nodes.find((n: any) => n.id === DISCUSSED);
-    expect(sentNode.metadata.packageTemplateLabel).toBe(LABEL);
+    expect(sentNode.title).toBe(LABEL);
+    expect(sentNode.metadata ?? {}).not.toHaveProperty('packageTemplateLabel');
     // Checked last, so a canvas that still sends them fails here and nowhere earlier.
     expect(sentNode.metadata).not.toHaveProperty('comments');
   });

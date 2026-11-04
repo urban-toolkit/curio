@@ -7,6 +7,7 @@ import type {
   ScenarioCopyResult,
   ScenarioDetails,
 } from "./scenarioCatalogTypes";
+import type { ScenarioDragPayload } from "./scenarioDrag";
 
 function query(params: ScenarioCatalogQuery): string {
   const search = new URLSearchParams();
@@ -33,23 +34,25 @@ export const scenarioCatalogApi = {
     return apiFetch<ScenarioDetails>(scenarioPath(projectId, scenarioId));
   },
 
-  /** What dropping the scenario into *targetProjectId* copies. Changes nothing. */
-  getCopyPlan(projectId: string, scenarioId: string, targetProjectId: string): Promise<ScenarioCopyPlan> {
-    return apiFetch<ScenarioCopyPlan>(
-      `${scenarioPath(projectId, scenarioId)}/copy?target=${encodeURIComponent(targetProjectId)}`
-    );
+  /** What dropping *drag*'s scenario into *targetProjectId* copies, where the
+   *  copy of its set holds *present* already (its project's scenario ids).
+   *  Changes nothing. */
+  getCopyPlan(drag: ScenarioDragPayload, targetProjectId: string, present: readonly string[]): Promise<ScenarioCopyPlan> {
+    const search = new URLSearchParams({ target: targetProjectId });
+    if (present.length > 0) search.set("present", present.join(","));
+    return apiFetch<ScenarioCopyPlan>(`${scenarioPath(drag.projectId, drag.scenarioId)}/copy?${search.toString()}`);
   },
 
   /** Copy the saved outputs and packages a drop needs into *targetProjectId*. */
   copyInto(
-    projectId: string,
-    scenarioId: string,
+    drag: ScenarioDragPayload,
     targetProjectId: string,
+    present: readonly string[],
     outputs: ScenarioCopyOutput[],
   ): Promise<ScenarioCopyResult> {
-    return apiFetch<ScenarioCopyResult>(`${scenarioPath(projectId, scenarioId)}/copy`, {
+    return apiFetch<ScenarioCopyResult>(`${scenarioPath(drag.projectId, drag.scenarioId)}/copy`, {
       method: "POST",
-      body: JSON.stringify({ targetProjectId, outputs }),
+      body: JSON.stringify({ targetProjectId, present, outputs }),
     });
   },
 };

@@ -400,7 +400,9 @@ with its catalog: [Node Catalog](#node-catalog), [Data Catalog](#data-catalog),
 ## Inside a node
 
 A node's header shows **Play** at its left, the node's name and kind, and its run
-status. Its other buttons show while the pointer is over the node or the node is
+status. The name starts as the node's kind, such as "Python Computation"; click it
+to rename the node. The new name is what the node is called everywhere: in
+scenario boxes, input chips, its computed dataset and the saved dataflow. Its other buttons show while the pointer is over the node or the node is
 selected: the editor's tabs (code, widgets, spec, output), **Provenance** (the
 node's runs, see [Provenance](#provenance)), the **Save output dataset** toggle,
 settings, about, pin, **Minimize** and delete.
@@ -458,15 +460,17 @@ scenario box's color. An input whose node has not run says which node to run.
   ([Widgets](#widgets)).
 
 Drag a node's bottom-right corner to resize it. For someone who watches a dataflow,
-nodes keep their size and have no delete. A minimized node is a small chip with
-its icon and title, cut short when long; hover the title to read it whole. The
-dataflow keeps it a chip; click it to open the node again. Double-click a node where you
+nodes keep their names and sizes and have no delete. A minimized node is a small chip with
+its icon and title, wrapped to the chip and cut short when it still doesn't fit;
+hover the title to read it whole. Drag the chip's bottom-right corner to resize
+the chip alone: a larger chip shows more of the title, and the node opens back at its own size. The
+dataflow keeps it a chip at its size; click it to open the node again. Double-click a node where you
 would drag it, such as its header, to zoom the view onto it.
 
 ## Notes
 
 A **Note** node holds a title and a short text on a color, to explain a part of
-the dataflow. Drag **Note** from the **Built-in** palette onto the canvas, write
+the dataflow. Its title shows in its header. Drag **Note** from the **Built-in** palette onto the canvas, write
 its title and text, pick its color and click **Save**. **Edit** on the note
 opens them again.
 
@@ -806,65 +810,101 @@ these node kinds, with a tuple on one of them.
 
 ## Scenarios
 
-A scenario is a named selection of a dataflow's nodes, or the whole dataflow, used
-to compare alternatives: the same analysis with buildings twice as tall, say. Its
-boundary splits the dataflow into three parts:
+A scenario is a named selection of a dataflow's nodes, used to compare
+alternatives: the same analysis with buildings twice as tall, say. It splits the
+dataflow into three parts:
 
-- **Fixed context:** the nodes outside the scenario that it reads, through an edge
-  into it. The scenario takes their outputs as given. A node two alternatives
-  share sits outside both, as their common context.
-- **Levers:** the nodes in the scenario, which is what an alternative changes: its
-  data loaders, widget values, code and specs, and the features it removes or
-  changes by hand (see [The Map Editor node](#the-map-editor-node)).
-- **Outcomes:** the outputs of the scenario's last nodes, which is what gets
-  compared.
+- **Scenario-specific nodes:** the nodes unique to it, in its box, which is what
+  an alternative changes: its data loaders, widget values, code and specs, and the
+  features it removes or changes by hand (see [The Map Editor node](#the-map-editor-node)).
+- **Shared context:** every node upstream of it, outside every box, that it uses.
+  The scenario takes their outputs as given.
+- **Shared outcomes:** every node downstream of it, outside every box, that it
+  feeds: the maps, charts and tables the alternatives are compared on.
 
-A node belongs to one scenario at most. A scenario of the whole dataflow has no
-fixed context.
+Every scenario is in a **scenario set**: the scenarios that answer one question,
+compared on the same shared context and shared outcomes. Scenarios of different
+sets never mix. A node of a set's shared context or shared outcomes can belong to
+some of its scenarios only.
 
-To make one:
+A node belongs to one scenario at most.
 
-1. Select its nodes: hold Shift and drag a box around them.
-2. Choose **View → Save selection as scenario**, or **File → Save dataflow as
-   scenario** for the whole dataflow.
-3. To build an alternative, choose **View → Duplicate as scenario**. The
-   selected nodes are copied below themselves with the edges between them, every
-   edge entering the selection feeds the copy too, and the selection and the copy
-   become two scenarios. **Duplicate selection** copies the nodes without making
-   scenarios.
+To define one:
 
-Then change the copy's levers: a widget value, a line of code. Each copy remembers
+1. Choose **View → Define scenario**. Define scenario opens in a drawer at the
+   side of the canvas, and the nodes on the canvas stay selectable while it is
+   open. Its first step asks for the scenario-specific nodes: select them on the
+   canvas (click one, or hold Shift and drag a box around several) and click
+   **+ Add selected node**; **×** takes one out. Nodes selected before are listed
+   already.
+2. **Next** lists the shared context and shared outcomes Curio found by following
+   the edges, marked on the canvas. In a dataflow that has scenarios, each list
+   marks its nodes **Already in the set** or **New to the set**, for the set the
+   last step picks. Confirm them, remove a node with **×**, or select one on the
+   canvas and click **+ Add selected node**.
+3. **Next** asks for its name, its color and its scenario set: name a new set, or
+   pick one of this dataflow's. **Save scenario** saves it; nothing changes before.
+
+A drawer opened meanwhile, such as Provenance or a catalog, opens over Define
+scenario, and closing it brings Define scenario back with what you picked.
+
+To build an alternative, click **Duplicate scenario** on the scenario's card in
+the **In project** tab. Its nodes are copied below themselves with the edges
+between them, and every edge entering them feeds the copy too. The copy becomes
+a scenario of the same set, with the next color and the same shared context, and
+Define scenario opens on it at **Name & set**: rename it, recolor it, or put it
+in another set. Nothing reads the copy yet, so it has no shared outcomes: wire
+its nodes into a comparison, then add the comparison with **Edit scenario**.
+**View → Duplicate selection** copies the selected nodes without making a
+scenario.
+
+Then change the copy's nodes: a widget value, a line of code. Each copy remembers
 the node it was copied from.
 
 The dataflow's scenarios are in the Scenario Catalog drawer's **In project** tab:
 click **Scenario** in the top bar, then **In project**, which shows how many the
-dataflow has. Saving a selection or duplicating it as a scenario opens that tab.
-On top of it are **Save selection as scenario** and **Duplicate as scenario**,
-and each scenario's card offers:
+dataflow has. The tab lists them in a panel per scenario set, headed by the set's
+name and how many scenarios it holds; the pencil beside the name renames the set,
+and no two sets of a dataflow share a name. On top of the tab is **Define
+scenario**, and each scenario's card offers:
 
-- **Run scenario**: run its levers, and of its fixed context only the nodes that
-  have not run or have changed since;
-- **Collapse** or **Expand**;
-- **Add selected** or **Remove selected**: the nodes selected on the canvas
-  before the drawer opened;
-- **Delete**. Its nodes stay on the canvas.
+- **Run scenario**: run its nodes, and of the nodes feeding it only those that have not
+  run or have changed since;
+- **Edit scenario**: Define scenario, on what the scenario keeps: its nodes are listed,
+  and its context, outcomes, name, color and set are filled in. Change any step;
+  **Save** changes it in place;
+- **Duplicate scenario**: a copy of it, as above;
+- **Delete**, which asks first. Its nodes stay on the canvas.
 
 **View details** on a card renames, recolors and describes the scenario, and
-lists its fixed context, levers and outcomes. Pointing at a card marks the
-scenario's fixed context on the canvas. In a dataflow you watch, the tab lists
-the scenarios without these controls.
+lists its shared context, its scenario-specific nodes and its shared outcomes.
+Pointing at a card marks the scenario's context and outcomes on the canvas. In a
+dataflow you watch, the tab lists the scenarios without these controls.
 
-On the canvas, an expanded scenario's nodes wear its color inside a frame, with its
-name and a **Collapse** button above. A collapsed scenario is one box in its color
-that lists its fixed context and its outcomes with their latest output. The edges
-into and out of the scenario are drawn to the box, and dragging the box moves it.
-Double-click the box to expand it. A collapsed scenario's nodes still run with
-**Run All**, and the context they share runs once.
+On the canvas, each scenario set is outlined, under its name: **Scenario set:**
+and the set's name. An expanded scenario's nodes wear its color inside a frame,
+with its name and a **Collapse** button above. A collapsed scenario is one box
+tinted in its color, with a card for each of its nodes: the node's kind, its title
+and its latest output. The edges into and out of the scenario are drawn to the
+cards they enter and leave, and dragging the box moves it. Double-click the box to
+expand it. A collapsed scenario's nodes still run with **Run All**, and the
+context they share runs once.
 
-Defining a scenario saves the outputs of its fixed context and outcomes to your Data
-Catalog, whatever their **Save output** setting, as pinning a dashboard tile does. A
-chart or a Data Pool saves nothing itself: the node feeding it does. Scenarios,
-their colors, descriptions, collapsed state and box positions are saved with the
+A set's shared context and shared outcomes are framed in gray, under a **Shared
+context** or **Shared outcomes** pill with a **Collapse** button. Under each of
+their nodes is a row of circles, one per scenario of the set, filled where that
+scenario uses the node; point at the circles to read which scenarios do.
+Collapsed, a group is one gray box with a card for each node and the set's
+circles on it; double-click it to expand it. In a dataflow you watch, scenarios
+and groups stay collapsed or expanded as they are.
+
+Defining a scenario saves to your Data Catalog the outputs of the shared context
+nodes that feed it, of its own last nodes (those whose output nothing else in it
+reads, or a node outside it reads) and of its shared outcomes, whatever their
+**Save output** setting, as pinning a dashboard tile does. A chart or a Data Pool saves nothing
+itself: the node feeding it does. Scenarios and their sets, colors, descriptions,
+context and outcomes, collapsed state and box positions, and whether each set's
+shared context and shared outcomes are collapsed and where, are saved with the
 dataflow. Deleting a node removes it from its scenario.
 
 ### The Map Editor node
@@ -907,19 +947,21 @@ A rule or an expression reads a feature's columns by name (`height`, or
 `false`, `null`, `+ - * / %`, `== != < <= > >=`, `and`, `or`, `not`,
 parentheses, `abs`, `round`, `min` and `max`.
 
-In a scenario, a Map Editor node is a lever.
+In a scenario, a Map Editor node is one of its scenario-specific nodes: its edits
+are what that scenario changes.
 
 ### Comparing scenarios
 
-To compare scenarios, connect each scenario's outcome to an input circle of its own
-on a node outside the scenario boxes. Each edge takes the next circle, as on any
-node with several inputs.
+To compare scenarios, connect the node in each scenario's box that the comparison
+reads to an input circle of its own on a node outside the boxes, which becomes a
+shared outcome of their set. Each edge takes the next circle, as on any node with
+several inputs.
 
 - **A chart.** A Vega-Lite node whose spec reads its inputs as the dataset its chip
   `[!! inputs !!]` names ([Every input in one dataset](#every-input-in-one-dataset)) draws every input's
   rows, each named by the scenario box its input comes from, and its scenario chips
   draw them in the boxes' colors and order
-  ([Scenario colors and order](#scenario-colors-and-order)). The Scout package's
+  ([Scenario colors and order](#scenario-colors-and-order)). The Vega-Lite package's
   charts, below, are such nodes.
 - **The difference of two rasters.** A [Raster Calculator](#rasters) subtracts them
   cell by cell: `raster_calculate("subtract", [input_1, input_0],
@@ -959,12 +1001,12 @@ diverging scheme centered on 0, and an absolute one on a sequential scheme:
 }
 ```
 
-The Scout package (`curio.scout@1`) has fifteen charts that compare scenarios:
+The Vega-Lite package (`curio.vega-lite@1`) has fifteen charts that compare scenarios:
 **Lines with a band**, **Curves by group**, **Bars with error bars**, **Ensemble
 strips**, **Stacked bars with totals**, **Donuts**, **Weighted matrix**, **Dots with a
 range**, **Bars**, **Grouped bars**, **Lines**, **Points**, **Pie**, **Lollipops** and
-**Table**. Each is a Vega-Lite node that takes one input per scenario: connect each
-scenario's outcome to one of its circles. Its spec reads its inputs as the dataset
+**Table**. Each is a Vega-Lite node that takes one input per scenario: connect a node of
+each scenario's box to one of its circles. Its spec reads its inputs as the dataset
 `[!! inputs !!]` ([Every input in one dataset](#every-input-in-one-dataset)), every row named by
 the scenario box its input comes from, and its scenario chips draw each scenario in its
 box's color, in the order the dataflow lists the boxes. Set the columns it plots in its **Widgets** tab,
@@ -972,17 +1014,19 @@ and the Vega-Lite aggregate Bars, Grouped bars, Lines, Pie and Lollipops combine
 scenario's rows with (**Combine**: `mean`, `sum`, `median`, `min`, `max` or `count`). A
 new node's widgets hold their own names (`y`, `part`), so the chart says which column
 its inputs lack until you set them. A new chart opens with its template's spec,
-which you can edit. The [package's README](../packages/curio.scout@1/README.md) lists
+which you can edit. The [package's README](../packages/curio.vega-lite@1/README.md) lists
 each chart's widgets. Add the package to a dataflow from the Node Catalog drawer; the
-charts are then under **Scout** in the Tools panel's **Node Catalog** dropdown.
+charts are then under **Vega-Lite** in the Tools panel's **Node Catalog** dropdown.
 
 The **Scenario Catalog** lists the scenarios of all your projects, each with its
-fixed context, levers and outcomes and the results its project saved. Open it from
-**Scenario Catalog** in the top bar of the Projects page and the catalog pages,
-or from the **Scenario** button in the canvas's top bar. Drag a scenario from the **Scenario** drawer onto the canvas to bring a copy
-of it into the open dataflow: it arrives collapsed, with its results, and its
-fixed context arrives as Data Loading nodes that read copies of what its project
-saved. See [docs/SCENARIO-CATALOG.md](SCENARIO-CATALOG.md#4-using-a-scenario-in-a-dataflow).
+shared context, its scenario-specific nodes and its shared outcomes, and the results
+its project saved. Open it from **Scenario Catalog** in the top bar of the Projects
+page and the catalog pages, or from the **Scenario** button in the canvas's top bar.
+Drag a scenario's card from the **Scenario** drawer's **Browse all** tab onto the
+canvas to bring a copy of it into the open dataflow: it arrives collapsed, with its
+results, and the nodes feeding it arrive as Data Loading nodes that read copies of
+what its project saved. Another scenario of the same set dragged in after it joins
+its set and reads the same context. See [docs/SCENARIO-CATALOG.md](SCENARIO-CATALOG.md#4-using-a-scenario-in-a-dataflow).
 
 ## Node Catalog
 
@@ -1457,9 +1501,9 @@ dashboard the node shows the output saved with the dataflow and never joins.
 
 The **Raster Calculator** works on rasters: a `rasterio` dataset from a Python
 node or the Data Catalog, or a raster an Autark node hands on. It is a node of
-Scout (`curio.scout@1`), a package that ships with Curio: once the
+Rasterization (`curio.rasterization@1`), a package that ships with Curio: once the
 package is in the dataflow (**Add to project** in the Node Catalog drawer), the
-node is under **Scout** in the Tools panel's **Node Catalog** dropdown.
+node is under **Rasterization** in the Tools panel's **Node Catalog** dropdown.
 It is a Python node whose code is written for it when it
 is dropped: input_0 minus input_1, with its other operations listed above it,
 statistics among them. Return another call to change what it does. Connect the
@@ -1474,8 +1518,8 @@ return raster_calculate("subtract", [input_0, input_1], output_file=curio_output
 
 A Python node of no package has no raster operations, so a raster step is a
 Raster Calculator node. A node of another package uses them when its package
-names Scout in `dependencies.packages` (see the
-[package's README](../packages/curio.scout@1/README.md#raster-math-in-another-package)).
+names Rasterization in `dependencies.packages` (see the
+[package's README](../packages/curio.rasterization@1/README.md#raster-math-in-another-package)).
 
 **Cell by cell**, an operation over rasters on one grid gives a raster, which
 `output_file=curio_output_file` writes where the node writes its files:
@@ -1584,8 +1628,8 @@ the page opens.
   their title band and resize, and **Save layout** records where they sit, without
   touching the canvas positions.
 - **Scenarios** each get a column, framed under a header in the scenario's color. The
-  tiles they share (their fixed context, and any other tile no outcome reaches) come
-  first, and tiles that read their outcomes, such as a comparison, come last. Tiles
+  tiles they share (their shared context, and any other tile no scenario feeds) come
+  first, and the tiles of their shared outcomes, such as a comparison, come last. Tiles
   without a saved place are laid out this way when the page opens; while editing the
   layout, **Arrange by scenario** puts every tile back in its column.
 - **Sharing**: the page is served with its data inside it, whether `--backend-url` is an
@@ -1787,7 +1831,7 @@ provider, publishing, and writing your own, see [docs/AGENT-CATALOG.md](AGENT-CA
 
 ## Skill Catalog
 
-Skills tell Curio's agents how to do a specific task, such as writing a Map Editor node's edits, in the open [Agent Skills](https://agentskills.io/specification) format. Curio ships its own, a node package can ship more, such as Scout's `scout`, and you can import a skill written for any Agent Skills tool.
+Skills tell Curio's agents how to do a specific task, such as writing a Map Editor node's edits, in the open [Agent Skills](https://agentskills.io/specification) format. Curio ships its own, a node package can ship more, such as Rasterization's `rasterization`, and you can import a skill written for any Agent Skills tool.
 
 - **`/catalog/skills`**, the **Skill Catalog** page, lists every skill you see: Curio's, your own, the published ones and those of the packages you can add. A card's drawer names the agents that use the skill, and **View details** shows what an agent reads. **Import skill**, in the header, takes a skill's folder, its files or a `.zip` of it, and shows a review before anything is kept. **Publish** offers a skill you imported to everyone on the install.
 - **An agent's details**, in the Agent Catalog, list its skills, and **Add skill**, **Remove** and **Restore** change them for your account. On the canvas, open them from the Agent Catalog drawer.

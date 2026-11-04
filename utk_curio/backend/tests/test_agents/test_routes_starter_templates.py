@@ -5,7 +5,7 @@ A Node Builder ``node.create`` of such a template starts it the same way, at
 mint, so its card shows what landed.
 
 Every other template keeps its path, in which a planned node is created empty
-and Solve writes its content: Scout's Raster Calculator, whose operation
+and Solve writes its content: Rasterization's Raster Calculator, whose operation
 the agent writes for each use, and Rasterize Buildings, whose starter is a
 starting point."""
 
@@ -92,13 +92,20 @@ def _install_charts(user_key: str) -> str:
     return CHARTS
 
 
-def _install_scout_rasters(user_key: str) -> str:
-    """The package Curio ships, as the repository holds it."""
+def _install_shipped(user_key: str, dir_name: str) -> str:
+    """The package Curio ships as *dir_name*, as the repository holds it."""
     from utk_curio.backend.app.packages.repositories.store import user_packages_dir
 
-    shutil.copytree(REPO / "packages" / "curio.scout@1",
-                    user_packages_dir(user_key) / "curio.scout@1", dirs_exist_ok=True)
-    return "curio.scout@1"
+    shutil.copytree(REPO / "packages" / dir_name, user_packages_dir(user_key) / dir_name, dirs_exist_ok=True)
+    return dir_name
+
+
+def _install_rasterization(user_key: str) -> str:
+    return _install_shipped(user_key, "curio.rasterization@1")
+
+
+def _install_vega_lite(user_key: str) -> str:
+    return _install_shipped(user_key, "curio.vega-lite@1")
 
 
 def _enlist(user_key: str, project_id: str, dirs: list[str]) -> None:
@@ -193,17 +200,17 @@ class TestEveryOtherTemplateKeepsItsPath:
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
         user, token = user_and_token
-        heights = {"ref": "heights", "nodeType": "curio.scout/rasterize-buildings",
+        heights = {"ref": "heights", "nodeType": "curio.rasterization/rasterize-buildings",
                    "title": "Heights", "intent": "rasterize the buildings"}
-        calc = {"ref": "calc", "nodeType": "curio.scout/raster-calculator",
+        calc = {"ref": "calc", "nodeType": "curio.rasterization/raster-calculator",
                 "title": "Change", "intent": "subtract the two rasters"}
         att_id, card = _landed(
             client, user, token, alice_project, monkeypatch,
-            [heights, calc], [], [_install_scout_rasters], written=OPERATION,
+            [heights, calc], [], [_install_rasterization], written=OPERATION,
         )
         created = _by_type(card["canvas"]["nodes"])
         session = _session(client, token, alice_project, att_id)
-        assert set(created) == {"curio.scout/rasterize-buildings", "curio.scout/raster-calculator"}
+        assert set(created) == {"curio.rasterization/rasterize-buildings", "curio.rasterization/raster-calculator"}
         for node in created.values():
             assert node["content"] == ""
         assert session["nodeRuns"] == {n["id"]: "pending" for n in created.values()}
@@ -218,10 +225,10 @@ class TestEveryOtherTemplateKeepsItsPath:
             assert saved[node["id"]]["content"] == OPERATION
 
 
-def _scout_bars() -> tuple[str, list[dict]]:
-    """Scout's Bars chart, as the package Curio ships holds it: its starter, the
-    node's whole content, and its widgets."""
-    package = REPO / "packages" / "curio.scout@1"
+def _vega_lite_bars() -> tuple[str, list[dict]]:
+    """The Vega-Lite package's Bars chart, as the package Curio ships holds it:
+    its starter, the node's whole content, and its widgets."""
+    package = REPO / "packages" / "curio.vega-lite@1"
     manifest = json.loads((package / "manifest.json").read_text(encoding="utf-8"))
     (template,) = [t for t in manifest["templates"] if t["id"] == "bars"]
     assert template.get("starterIsContent") is True
@@ -229,7 +236,7 @@ def _scout_bars() -> tuple[str, list[dict]]:
 
 
 class TestACreatedTemplateStartsFromItsStarter:
-    """The Node Builder's ``node.create`` of Scout's Bars, a template whose
+    """The Node Builder's ``node.create`` of the Vega-Lite package's Bars, a template whose
     starter is its whole content, as a plan creates one: with no content of
     its own, the node starts from the template's spec and widgets, the widgets
     the request gives set over the ones of their names."""
@@ -239,7 +246,7 @@ class TestACreatedTemplateStartsFromItsStarter:
         att_id, calls = helper._setup(client, user=user, token=token, project_id=project_id,
                                       monkeypatch=monkeypatch, replies=[*replies, "Added it."])
         key = TestDataflowPlanMint()._ukey(user)
-        _enlist(key, project_id, [_install_scout_rasters(key)])
+        _enlist(key, project_id, [_install_rasterization(key), _install_vega_lite(key)])
         r = helper._run(client, token, project_id, att_id)
         assert r.status_code == 200, r.get_json()
         body = r.get_json()
@@ -253,10 +260,10 @@ class TestACreatedTemplateStartsFromItsStarter:
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
         user, token = user_and_token
-        starter, widgets = _scout_bars()
+        starter, widgets = _vega_lite_bars()
         create = TestNodeCreate()._create_tail_json
-        calculator = create(nodeType="curio.scout/raster-calculator", content="")
-        bars = create(nodeType="curio.scout/bars", title="Mean shadow", content="",
+        calculator = create(nodeType="curio.rasterization/raster-calculator", content="")
+        bars = create(nodeType="curio.vega-lite/bars", title="Mean shadow", content="",
                       widgets=[{"name": "y", "type": "text", "value": "shadow_minutes"}])
         helper, card, created, results = self._run(
             client, user, token, alice_project, monkeypatch, calculator, bars,
@@ -285,12 +292,12 @@ class TestACreatedTemplateStartsFromItsStarter:
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
         user, token = user_and_token
-        starter, _widgets = _scout_bars()
+        starter, _widgets = _vega_lite_bars()
         retyped = starter.replace('"type": "bar"', '"type": "line"')
         assert retyped != starter
-        reply = TestNodeCreate()._create_tail_json(nodeType="curio.scout/bars", content=retyped)
+        reply = TestNodeCreate()._create_tail_json(nodeType="curio.vega-lite/bars", content=retyped)
         helper, card, _, [refused] = self._run(client, user, token, alice_project, monkeypatch, reply)
-        assert card is None, "a retyped Scout chart landed"
+        assert card is None, "a retyped Bars chart landed"
         assert "params.content: a Bars node starts from its template's own content" in refused, refused
         assert "y, combine, y_title" in refused, refused
         assert [n["id"] for n in helper._spec_nodes(user, alice_project)] == ["n1"]

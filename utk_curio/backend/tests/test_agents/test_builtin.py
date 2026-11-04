@@ -1198,7 +1198,12 @@ class TestResearcher:
         # 2026-10-29: a plan, a node, a node's code or settings land at once,
         # as the agent's change the user can undo; the rules say what landed
         # and that a node's code is written into it (step 13).
-        "ef82c2265c1a1884be2d0dfacf6ca0e88d7586506c9a755716bd9a0d2e3afb9b"
+        # 2026-11-03: a scenario on the canvas is duplicated with Duplicate
+        # scenario on its In project card (PR #1252).
+        # 2026-11-04: a selection is a scenario's scenario-specific nodes, the
+        # loaders the scenarios read their shared context, and the comparison
+        # step their shared outcome (PR #1252, step 7).
+        "1a67956dc8584f53ac90fbad2af386f46c81b805cbdafd0122f56d2b231126c8"
     )
 
     def test_manifest_surface(self):
@@ -1396,7 +1401,7 @@ class TestResearcher:
         # takes, and the node.create text the chat holds names those params
         # (the second live test's notes were white and headed "Note" because
         # the contract named only nodeType/content/goal).
-        assert '"title": "<short header shown on the node>"' in tools_text
+        assert '"title": "<the node\'s name, shown in its header>"' in tools_text
         assert '"appearance": {"backgroundColor"' in tools_text
         assert "a note template renders title and backgroundColor, so give both for notes" in tools_text
         # Its notes go on the built-in Note, which every dataflow can hold.

@@ -14,7 +14,7 @@
  * them (utils/references/codeReferences), over the boxes its inputs come from,
  * compiled by the vega-lite the app bundles, with a logger of the test's own
  * hearing what it says. It runs in Node's environment, as
- * scoutDottedColumns.test.ts does: vega-lite's build reads `structuredClone`,
+ * vegaLiteDottedColumns.test.ts does: vega-lite's build reads `structuredClone`,
  * which jsdom's window does not have.
  */
 import * as fs from "fs";

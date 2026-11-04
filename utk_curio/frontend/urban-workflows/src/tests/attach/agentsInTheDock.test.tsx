@@ -68,7 +68,7 @@ const DATAFLOW_BUILDER = agentUser("Dataflow Builder", "agent-db", "att-db", "ag
 function canvasNode(id: string, label: string, x: number, y: number, width: number, height: number) {
   return [id, {
     id,
-    data: { nodeType: "curio.builtin/computation-analysis", packageTemplateLabel: label },
+    data: { nodeType: "curio.builtin/computation-analysis", title: label },
     position: { x, y },
     positionAbsolute: { x, y },
     width,

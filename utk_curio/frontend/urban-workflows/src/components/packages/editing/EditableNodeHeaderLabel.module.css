@@ -28,6 +28,19 @@
     cursor: pointer;
 }
 
+/* A minimized node's chip: the title wrapped, cut with an ellipsis after the
+   lines the chip holds (the line count is set inline). Its lines start at the
+   left, and the chip centers the title beside its icon: Chromium places a
+   clamped line's ellipsis after it centers the line, so a centered line that
+   fills the chip would run its "…" past the edge, where it is cut. */
+.labelTextWrapped {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    white-space: normal;
+    overflow-wrap: break-word;
+    line-height: 16px;
+}
+
 .labelTextEditable {
     cursor: pointer;
     border-radius: var(--curio-radius-sm);

@@ -378,13 +378,13 @@ describe("dashboardSourceNodeIds", () => {
   });
 
   describe("a package chart that draws with Vega-Lite", () => {
-    // Scout's charts draw with the Vega-Lite node's behavior, which
+    // The Vega-Lite package's charts draw with the Vega-Lite node's behavior, which
     // hands the chart's input on: a tile after one reads what is above it.
     beforeEach(() => registerVegaLiteTemplate());
     afterEach(() => clearVegaLiteTemplate());
 
     test("is walked through as the Vega-Lite node is, versioned or not", () => {
-      for (const type of [VEGA_LITE_TEMPLATE, "curio.scout/donuts"]) {
+      for (const type of [VEGA_LITE_TEMPLATE, "curio.vega-lite/donuts"]) {
         const nodes = [
           node("py", NodeType.COMPUTATION_ANALYSIS),
           node("donuts", type),

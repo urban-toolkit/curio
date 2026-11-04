@@ -142,7 +142,7 @@ describe("who is here, in the canvas's dock", () => {
 
   test("a chip's tooltip names the person, their role and the node they are editing", () => {
     mockStore.nodeInternals = new Map([
-      ["n1", { data: { nodeType: "curio.builtin/computation-analysis", packageTemplateLabel: "Loader" } }],
+      ["n1", { data: { nodeType: "curio.builtin/computation-analysis", title: "Loader" } }],
     ]);
     joins({ user: BEN, editing: "n1" });
     joins({ user: CAL });
@@ -164,8 +164,8 @@ describe("who is here, in the canvas's dock", () => {
 
   test("a participant is their freshest state: one whose doc started again shows once", () => {
     mockStore.nodeInternals = new Map([
-      ["n-old", { data: { nodeType: "curio.builtin/computation-analysis", packageTemplateLabel: "Before" } }],
-      ["n-new", { data: { nodeType: "curio.builtin/computation-analysis", packageTemplateLabel: "After" } }],
+      ["n-old", { data: { nodeType: "curio.builtin/computation-analysis", title: "Before" } }],
+      ["n-new", { data: { nodeType: "curio.builtin/computation-analysis", title: "After" } }],
     ]);
     const old = joins({ user: BEN, editing: "n-old" });
     mine.meta.get(old.clientID)!.lastUpdated = Date.now() - 1000;

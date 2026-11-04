@@ -338,11 +338,11 @@ describe("selectDatasetUpstreamLineage", () => {
         upstreamInputs: [{ nodeId: "feeder-1" }],
       }),
       nodes: [
-        canvasNode({ nodeId: "producer-1", packageTemplateLabel: "Dict output" }),
+        canvasNode({ nodeId: "producer-1", title: "Dict output" }),
         canvasNode({
           nodeId: "feeder-1",
           nodeType: "curio.builtin/data-loading@1",
-          packageTemplateLabel: "Census tracts",
+          title: "Census tracts",
         }),
       ],
       resolveNodeLabel: () => "Python Computation",

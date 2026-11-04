@@ -189,7 +189,7 @@ def build() -> dict:
     nodes = []
     for key, typ, title, goal, content, x, y, extra in NODES:
         nodes.append({"id": nid(key), "type": typ, "x": x, "y": y, "content": content, "out": "DEFAULT",
-                      "in": "DEFAULT", "goal": goal, "metadata": {"keywords": [], "packageTemplateLabel": title},
+                      "in": "DEFAULT", "goal": goal, "metadata": {"keywords": []},
                       "title": title, **extra})
     edges = []
     for source, target, index in EDGES:

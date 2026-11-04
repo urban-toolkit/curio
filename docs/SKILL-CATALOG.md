@@ -51,7 +51,7 @@ The skills Curio ships are the folders of its [`skills/`](../skills/), one skill
 | `autark-starter` | start an Autark map from its node's starter document | Autark nodes |
 | `map-edits` | write a Map Editor node's call and edits, keeping filters in their own node | Map Editor nodes |
 | `interaction-edges` | link views with interaction edges and Data Pools | Data Pools, and dataflows with interaction edges |
-| `scenarios` | work with scenario boxes, their chips and colors | dataflows with scenario boxes, and a chat message that says scenario, scenarios, what if or what-if |
+| `scenarios` | work with scenario sets, each scenario's scenario-specific nodes, shared context and shared outcomes, and the chips and colors that compare them | dataflows with scenario boxes, and a chat message that says scenario, scenarios, what if or what-if |
 | `dashboards` | keep a dataflow's pinned tiles working on its dashboard | dataflows with pinned tiles |
 | `provenance` | read a node's history and the agents' entries in it | nothing: a chat loads it when a task needs it |
 | `reuse-first` | choose a node type: a listed template, then a package to add, then a written package | by name: the Node Builder's and the Researcher's chats, the Node Builder building a node for another agent, Write a package and Recommend packages |
@@ -64,7 +64,7 @@ Which of them each agent holds, and which its modes are handed, is in the [Agent
 
 ### Skills from packages
 
-A node package can ship skills of its own, in its `skills/` folder, such as Scout's `scout` ([Node Catalog](NODE-CATALOG.md#6-the-manifest)). The Skill Catalog lists the skills of the packages you can add, each with its package: its card and its details say **From Scout**, and **Used by** reads *Agents on a dataflow that uses Scout*.
+A node package can ship skills of its own, in its `skills/` folder, such as Rasterization's `rasterization` and the Vega-Lite package's `vega-lite-charts` ([Node Catalog](NODE-CATALOG.md#6-the-manifest)). The Skill Catalog lists the skills of the packages you can add, each with its package: its card and its details say **From Rasterization**, and **Used by** reads *Agents on a dataflow that uses Rasterization*.
 
 - Every agent on a dataflow that uses the package lists the package's skills after its own, and a call that writes one of the package's nodes holds the ones that serve it.
 - A package's skill comes and goes with its package. It has no **Remove**, **Publish** or **Export**, and an agent's **Add skill** does not offer it.

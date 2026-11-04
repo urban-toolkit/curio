@@ -4,6 +4,8 @@ import {
     MIN_NODE_HEIGHT,
     MIN_NODE_WIDTH,
     MINIMIZED_NODE_HEIGHT,
+    MINIMIZED_NODE_MIN_HEIGHT,
+    MINIMIZED_NODE_MIN_WIDTH,
     MINIMIZED_NODE_WIDTH,
 } from "../constants";
 import { getFlowNodeCanonicalType } from "./flowNodeCanonicalType";
@@ -18,7 +20,14 @@ export interface NodeBox {
 
 export interface MeasurableNode {
     type?: string | null;
-    data?: { nodeType?: string | null; nodeWidth?: unknown; nodeHeight?: unknown; minimized?: unknown } | null;
+    data?: {
+        nodeType?: string | null;
+        nodeWidth?: unknown;
+        nodeHeight?: unknown;
+        minimized?: unknown;
+        minimizedWidth?: unknown;
+        minimizedHeight?: unknown;
+    } | null;
 }
 
 /** `typeof v === "number"` with NaN/Infinity excluded, mirroring the renderer. */
@@ -41,7 +50,8 @@ function finiteNumber(value: unknown): number | undefined {
  * 2. The mount clamp snaps a sub-minimum size to the DEFAULT, not to the
  *    minimum. A node asking for `nodeWidth: 120` renders at 525, not 200.
  * 3. A node saved minimized (`data.minimized`) mounts as its chip, whatever
- *    size it opens back to, so chips laid out close together stay put.
+ *    size it opens back to, so chips laid out close together stay put. The
+ *    chip is the size its handle left it (`minimizedChipBox`).
  *
  * When no descriptor is registered the answer is 525x350, deliberately. An
  * anonymous shared view registers no packages at all, and a spec can name an
@@ -62,7 +72,7 @@ export function resolveNodeBoxSize(node: MeasurableNode): NodeBox {
     }
 
     if (data?.minimized === true) {
-        return { width: MINIMIZED_NODE_WIDTH, height: MINIMIZED_NODE_HEIGHT };
+        return minimizedChipBox(data);
     }
 
     return clampNodeBox(
@@ -87,5 +97,20 @@ export function clampNodeBox(width: unknown, height: unknown): NodeBox {
     return {
         width: w === undefined || w < MIN_NODE_WIDTH ? DEFAULT_NODE_WIDTH : w,
         height: h === undefined || h < MIN_NODE_HEIGHT ? DEFAULT_NODE_HEIGHT : h,
+    };
+}
+
+/**
+ * A minimized node's chip: the size its corner handle left it
+ * (`minimizedWidth`, `minimizedHeight`), no smaller than the least chip, or
+ * 250x40 when it was never resized. The size it opens back to
+ * (`nodeWidth`, `nodeHeight`) is not this one (#1235).
+ */
+export function minimizedChipBox(data: MeasurableNode["data"]): NodeBox {
+    const w = finiteNumber(data?.minimizedWidth);
+    const h = finiteNumber(data?.minimizedHeight);
+    return {
+        width: w === undefined ? MINIMIZED_NODE_WIDTH : Math.max(MINIMIZED_NODE_MIN_WIDTH, w),
+        height: h === undefined ? MINIMIZED_NODE_HEIGHT : Math.max(MINIMIZED_NODE_MIN_HEIGHT, h),
     };
 }

@@ -88,7 +88,7 @@ def test_skills_ref_validates_every_skill_a_shipped_package_ships():
         for root in sorted((REPO_ROOT / "packages").iterdir()) if root.is_dir()
         for folder in skill_folders(root)
     }
-    assert list(folders) == ["curio.scout@1/scout"], list(folders)
+    assert list(folders) == ["curio.rasterization@1/rasterization", "curio.vega-lite@1/vega-lite-charts"], list(folders)
     problems = {name: skills_ref.validate(folder) for name, folder in folders.items()}
     assert problems == {name: [] for name in folders}
     for name, folder in folders.items():

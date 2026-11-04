@@ -15,6 +15,7 @@ import React from 'react';
 import { render, act } from '@testing-library/react';
 import { ReactFlow, ReactFlowProvider, useReactFlow } from 'reactflow';
 import { BrowserRouter, useLocation, useNavigate } from 'react-router-dom';
+import type { DataflowDocDeps } from '../../providers/flow/useDataflowDoc';
 
 // jsdom polyfills ReactFlow needs.
 class ResizeObserverStub {
@@ -31,6 +32,17 @@ if (!(global as any).DOMMatrixReadOnly) {
 // The dataflow the canvas loaded, which a canvas bound to its doc binds on:
 // none unless a test binds the canvas.
 const mockLoaded: { current: any } = { current: null };
+// The refs the doc hook reads off the workflow's operations, typed as its
+// inputs are, so one the harness lacks fails the typecheck, not the hook.
+const mockDocRefs: Pick<
+  DataflowDocDeps, 'workflowGoalRef' | 'workflowCategoriesRef' | 'scenariosRef' | 'scenarioSetsRef' | 'autoRunRef'
+> = {
+  workflowGoalRef: { current: '' },
+  workflowCategoriesRef: { current: {} },
+  scenariosRef: { current: [] },
+  scenarioSetsRef: { current: [] },
+  autoRunRef: { current: false },
+};
 jest.mock('../../hook/useWorkflowOperations', () => ({
   useWorkflowOperations: () => ({
     markNodeExecuted: jest.fn(),
@@ -50,10 +62,7 @@ jest.mock('../../hook/useWorkflowOperations', () => ({
     workflowGoal: '',
     acceptSuggestion: jest.fn(),
     loadedDataflowRef: mockLoaded,
-    workflowGoalRef: { current: '' },
-    workflowCategoriesRef: { current: {} },
-    scenariosRef: { current: [] },
-    autoRunRef: { current: false },
+    ...mockDocRefs,
     takeDataflowFields: jest.fn(),
     quietly: (apply: () => unknown) => apply(),
   }),
@@ -373,7 +382,7 @@ describe('the notebook view shows the nodes as cells', () => {
       api.onNodesChange(
         rf.getNodes().map((n: any) => {
           const { workflowPosition, ...rest } = n.data;
-          return { type: 'reset', item: { ...n, data: { ...rest, packageTemplateLabel: 'Renamed' } } };
+          return { type: 'reset', item: { ...n, data: { ...rest, title: 'Renamed' } } };
         }) as any,
       );
     });

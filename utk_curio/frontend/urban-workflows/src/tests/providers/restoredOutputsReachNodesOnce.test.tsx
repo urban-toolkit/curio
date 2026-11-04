@@ -382,7 +382,7 @@ describe('what the load still does', () => {
       api.onNodesChange([{ id: SUMMARY, type: 'select', selected: true }]);
     });
     await act(async () => {
-      scenarioActions.duplicate(false);
+      scenarioActions.duplicate();
     });
     await wait(50);
 
@@ -445,7 +445,7 @@ async function duplicate(id: string) {
     api.onNodesChange([{ id, type: 'select', selected: true }]);
   });
   await act(async () => {
-    scenarioActions.duplicate(false);
+    scenarioActions.duplicate();
   });
   await wait(50);
   const copies = api.nodes.filter((n) => !present.has(n.id));

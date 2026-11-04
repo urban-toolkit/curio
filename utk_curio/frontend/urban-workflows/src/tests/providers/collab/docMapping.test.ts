@@ -170,7 +170,7 @@ function everyFieldNode(): any {
         data: {
             nodeId: "full",
             nodeType: "curio.builtin/python-computation@1",
-            nodeWidth: 640, nodeHeight: 480, minimized: true,
+            nodeWidth: 640, nodeHeight: 480, minimized: true, minimizedWidth: 300, minimizedHeight: 80,
             dashboardPinned: true, dashboardX: 1, dashboardY: 2, dashboardWidth: 300, dashboardHeight: 200,
             saveOutputDataset: true,
             code: "x = 1\n",
@@ -183,7 +183,6 @@ function everyFieldNode(): any {
             appearance: { backgroundColor: "#ffefb0" },
             spatialJoin: { predicate: "within", output: "counts" },
             simpleVis: { imageColumn: "image" },
-            packageTemplateLabel: "Renamed kind",
             packageTemplateConfig: { description: "configured" },
             dataPool: { insideChart: "MERGE_AND", betweenCharts: "MERGE_OR" },
             widgets: [{ name: "rows", type: "number", default: 5, value: 9, label: "Rows", options: { min: 1, step: 1 } }],
@@ -204,9 +203,12 @@ function everyFieldTrill(): any {
     return TrillGenerator.generateTrill(
         [everyFieldNode(), other], edges, "Every field", "a task", ["curio.builtin@1"], "a description",
         [{ datasetId: "data.utk.parks@1", title: "Parks" }], { city: ["Chicago"] },
-        [{ id: "s1", name: "Base", color: "#4477aa", nodes: ["full"], description: "d", collapsed: true,
-           box: { x: 1, y: 2 }, source: { project: "p", scenario: "s" } } as any],
+        [{ id: "s1", name: "Base", color: "#4477aa", nodes: ["full"], description: "d", set: "set-1",
+           context: [], outcomes: ["other"], collapsed: true, box: { x: 1, y: 2 },
+           source: { project: "p", scenario: "s" } } as any],
         true,
+        [{ id: "set-1", name: "Base set", description: "the set", shared: { context: { collapsed: true } },
+           source: { project: "p", set: "s" } }],
     );
 }
 
@@ -219,6 +221,7 @@ describe("every field generateTrill writes has its place in the doc", () => {
         ["metadata", Object.keys(node.metadata), LAYOUT.metadata],
         ["edge", Array.from(new Set(trill.dataflow.edges.flatMap((e: any) => Object.keys(e)))), LAYOUT.edge],
         ["scenario", Object.keys(trill.dataflow.scenarios[0]), LAYOUT.scenario],
+        ["scenarioSet", Object.keys(trill.dataflow.scenarioSets[0]), LAYOUT.scenarioSet],
         ["widget", Object.keys(node.metadata.widgets[0]), LAYOUT.widget],
     ];
 
@@ -231,6 +234,49 @@ describe("every field generateTrill writes has its place in the doc", () => {
     test("the full dataflow comes back from its doc as written", () => {
         const [, back] = roundTrip(trill.dataflow);
         expect(sorted(back)).toBe(sorted(owned(trill.dataflow)));
+    });
+});
+
+describe("scenario sets, kept by set id", () => {
+    const base = {
+        nodes: [{ id: "n", type: "t", minimized: true, minimizedWidth: 250, minimizedHeight: 40 }, { id: "m", type: "t" }],
+        edges: [],
+        scenarios: [
+            { id: "a", name: "Heights", color: "#4477aa", nodes: ["n"], set: "set-a", context: [], outcomes: [] },
+            { id: "b", name: "Roofs", color: "#228833", nodes: ["m"], set: "set-b", context: [], outcomes: [] },
+        ],
+        scenarioSets: [{ id: "set-a", name: "Tall towers" }, { id: "set-b", name: "Green roofs" }],
+    };
+
+    test("each set is an entry of the doc's scenarioSets, by its id, and comes back as written", () => {
+        const [doc, back] = roundTrip(base);
+        expect(Array.from(doc.getMap("scenarioSets").keys()).sort()).toEqual(["set-a", "set-b"]);
+        expect(back.scenarioSets).toEqual(base.scenarioSets);
+    });
+
+    test("two tabs that rename different sets while one resizes a chip converge on all three changes", () => {
+        const [server] = roundTrip(base);
+        const ana = new Y.Doc();
+        const ben = new Y.Doc();
+        Y.applyUpdate(ana, Y.encodeStateAsUpdate(server));
+        Y.applyUpdate(ben, Y.encodeStateAsUpdate(server));
+        const anas = JSON.parse(JSON.stringify(base));
+        anas.scenarioSets[0].name = "Tall towers, by Ana";
+        Object.assign(anas.nodes[0], { minimizedWidth: 320, minimizedHeight: 90 });
+        applyDataflow(ana, base, anas);
+        const bens = JSON.parse(JSON.stringify(base));
+        bens.scenarioSets[1].name = "Green roofs, by Ben";
+        applyDataflow(ben, base, bens);
+
+        Y.applyUpdate(ana, Y.encodeStateAsUpdate(ben, Y.encodeStateVector(ana)));
+        Y.applyUpdate(ben, Y.encodeStateAsUpdate(ana, Y.encodeStateVector(ben)));
+        const seen = docToDataflow(ana);
+        expect(JSON.stringify(docToDataflow(ben))).toBe(JSON.stringify(seen));
+        expect(seen.scenarioSets).toEqual([
+            { id: "set-a", name: "Tall towers, by Ana" },
+            { id: "set-b", name: "Green roofs, by Ben" },
+        ]);
+        expect([seen.nodes[0].minimizedWidth, seen.nodes[0].minimizedHeight]).toEqual([320, 90]);
     });
 });
 

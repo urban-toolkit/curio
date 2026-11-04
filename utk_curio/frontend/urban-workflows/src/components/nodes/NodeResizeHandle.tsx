@@ -4,8 +4,9 @@ import { useSharedView } from "../../hook/useSharedView";
 
 /**
  * The handle at a node's bottom-right corner. A drag from it resizes the node's
- * box as the pointer moves, no smaller than the least node size, and the
- * release hands the box's final size to `onResizeEnd`.
+ * box as the pointer moves, no smaller than the least node size (or the least
+ * size given, as a minimized node's chip is), and the release hands the box's
+ * final size to `onResizeEnd`.
  *
  * A read-only canvas (`useSharedView`) keeps every node at its size: there the
  * handle is not drawn and nothing listens for a drag. Only an owner resizes.
@@ -14,6 +15,8 @@ export function NodeResizeHandle({
     nodeId,
     box,
     disabled = false,
+    minWidth = MIN_NODE_WIDTH,
+    minHeight = MIN_NODE_HEIGHT,
     onResize,
     onResizeEnd,
 }: {
@@ -22,14 +25,17 @@ export function NodeResizeHandle({
     box: RefObject<HTMLElement | null>;
     /** Drawn, but takes no press (a suggested node). */
     disabled?: boolean;
+    /** The least size the drag leaves the box; a node's card by default. */
+    minWidth?: number;
+    minHeight?: number;
     onResize: (width: number, height: number) => void;
     onResizeEnd: (width: number, height: number) => void;
 }) {
     const readOnly = useSharedView();
     const handleRef = useRef<HTMLDivElement>(null);
     // The latest callbacks, so a drag reports to the node's current state.
-    const callbacks = useRef({ onResize, onResizeEnd });
-    callbacks.current = { onResize, onResizeEnd };
+    const callbacks = useRef({ onResize, onResizeEnd, minWidth, minHeight });
+    callbacks.current = { onResize, onResizeEnd, minWidth, minHeight };
 
     useEffect(() => {
         const handle = handleRef.current;
@@ -43,8 +49,8 @@ export function NodeResizeHandle({
         function resize(e: MouseEvent) {
             const el = box.current;
             if (!el) return;
-            const width = Math.max(MIN_NODE_WIDTH, startWidth + (e.clientX - startX));
-            const height = Math.max(MIN_NODE_HEIGHT, startHeight + (e.clientY - startY));
+            const width = Math.max(callbacks.current.minWidth, startWidth + (e.clientX - startX));
+            const height = Math.max(callbacks.current.minHeight, startHeight + (e.clientY - startY));
             el.style.width = width + "px";
             el.style.height = height + "px";
             callbacks.current.onResize(width, height);

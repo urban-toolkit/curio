@@ -70,7 +70,7 @@ def _spec() -> dict:
             "name": "Who is here",
             "nodes": [{
                 "id": NODE, "type": "curio.builtin/computation-analysis", "x": 0, "y": 0,
-                "content": "trees = 12\n", "metadata": {"packageTemplateLabel": LABEL},
+                "content": "trees = 12\n", "title": LABEL,
             }],
             "edges": [],
         },

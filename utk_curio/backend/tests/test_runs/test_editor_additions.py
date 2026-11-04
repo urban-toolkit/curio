@@ -5,7 +5,7 @@ alice owns a dataflow that uses, of her store, her street trees (its
 ``datasets`` list them), her package ``ai.test.flood-tools@1`` (its lockfile
 names it, and its ``helpers`` node imports the module the package ships) and her
 model ``ai.test.flood-model@1`` (bound to its ``flood`` node). Her store also
-holds what the dataflow does not use: her salaries, Scout (``curio.scout@1``)
+holds what the dataflow does not use: her salaries, Rasterization (``curio.rasterization@1``)
 and a second model, ``ai.test.private-model@1``, which the code of its
 ``private`` and ``private-2`` nodes names though no node is bound to it. bob is
 an editor she invited; his store holds his bus stops, his package
@@ -58,7 +58,7 @@ RAIN_DIR = f"{RAIN}@1"
 FLOOD_MODEL = "ai.test.flood-model"
 PRIVATE_MODEL = "ai.test.private-model"
 BOBS_MODEL = "ai.test.bobs-model"
-SCOUT_DIR = "curio.scout@1"
+RASTERIZATION_DIR = "curio.rasterization@1"
 BUILTIN = "curio.builtin/computation-analysis"
 COORD = "agent.curio.node-builder@1"
 ATTACHMENT = "att-editor-additions"
@@ -75,8 +75,8 @@ NODES = {
     "flood": (BUILTIN, f'model = curio_load_model("{FLOOD_MODEL}")\nreturn 1\n'),
     "private": (BUILTIN, f'model = curio_load_model("{PRIVATE_MODEL}")\nreturn 1\n'),
     "private-2": (BUILTIN, f'model = curio_load_model("{PRIVATE_MODEL}")\nreturn 2\n'),
-    "calc": ("curio.scout/raster-calculator@1", "return 1\n"),
-    "calc-2": ("curio.scout/raster-calculator@1", "return 2\n"),
+    "calc": ("curio.rasterization/raster-calculator@1", "return 1\n"),
+    "calc-2": ("curio.rasterization/raster-calculator@1", "return 2\n"),
     "bobs": (f"{BOBS_TOOLS}/count@1", "from bobs_helpers import count\nreturn count()\n"),
     "bobs-model": (BUILTIN, f'model = curio_load_model("{BOBS_MODEL}")\nreturn 1\n'),
     "gauge": (f"{GAUGES}/reading@1", "from gauge_helpers import reading\nreturn reading()\n"),
@@ -228,7 +228,7 @@ def flow(client, db, user_and_token):
     _package(bob_key, BOBS_TOOLS, "count", "bobs_helpers", "def count():\n    return 3\n")
     for store, model in ((key, FLOOD_MODEL), (key, PRIVATE_MODEL), (bob_key, BOBS_MODEL)):
         _model_package(store, model)
-    shutil.copytree(REPO / "packages" / SCOUT_DIR, user_packages_dir(key) / SCOUT_DIR)
+    shutil.copytree(REPO / "packages" / RASTERIZATION_DIR, user_packages_dir(key) / RASTERIZATION_DIR)
     trees = _import(client, alice_token, "trees.csv", TREES)
     salaries = _import(client, alice_token, "salaries.csv", SALARIES)
     bus_stops = _import(client, BOB_TOKEN, "bus_stops.csv", BUS_STOPS)
@@ -469,13 +469,13 @@ def _told(client, flow, monkeypatch, who: str) -> str:
     return "\n".join(calls)
 
 
-def _scout_skill(flow):
-    """A skill alice's copy of Scout ships, as a run reads it."""
+def _rasterization_skill(flow):
+    """A skill alice's copy of Rasterization ships, as a run reads it."""
     from utk_curio.backend.app.agents.domain import skills as skill_format
     from utk_curio.backend.app.packages.repositories.store import package_dir
 
-    folders = sorted(path for path in (package_dir(flow.key, SCOUT_DIR) / "skills").iterdir() if path.is_dir())
-    assert folders, "Scout ships no skill"
+    folders = sorted(path for path in (package_dir(flow.key, RASTERIZATION_DIR) / "skills").iterdir() if path.is_dir())
+    assert folders, "Rasterization ships no skill"
     return skill_format.parse(folders[0])
 
 
@@ -602,19 +602,19 @@ def test_a_collection_of_hers_an_editor_lists_loads_in_his_runs_only_once_she_ad
 def test_a_package_of_hers_an_editor_adds_runs_from_her_store_only_once_she_adds_it(
     app, client, flow, sandbox, monkeypatch,
 ):
-    """bob's tab adds a node of alice's Scout and Scout to the lockfile, and a
+    """bob's tab adds a node of alice's Rasterization and Rasterization to the lockfile, and a
     node of his own package. His play, his run on the server and his agent's
-    run of the Scout node get none of her Scout's modules, and his own node
+    run of the Rasterization node get none of her Rasterization's modules, and his own node
     gets his package's; her play of it gets hers. Once alice adds a node of
-    Scout herself, bob's play of his Scout node gets her Scout's modules."""
+    Rasterization herself, bob's play of his Rasterization node gets her Rasterization's modules."""
     bob = _tab(app, flow, "bob")
 
     def edit(dataflow: dict) -> None:
         dataflow["nodes"].extend([_node("calc"), _node("bobs")])
-        dataflow["packages"] = [*dataflow["packages"], SCOUT_DIR]
+        dataflow["packages"] = [*dataflow["packages"], RASTERIZATION_DIR]
 
     _edit(bob, edit)
-    assert SCOUT_DIR in _on_disk(flow)["packages"]
+    assert RASTERIZATION_DIR in _on_disk(flow)["packages"]
 
     assert _play(client, flow, sandbox, "bob", "calc").get("package_modules") is None
     assert _server_run(client, flow, sandbox, "bob", "calc")["calc"].get("package_modules") is None
@@ -622,7 +622,7 @@ def test_a_package_of_hers_an_editor_adds_runs_from_her_store_only_once_she_adds
     assert _play(client, flow, sandbox, "bob", "bobs").get("package_modules") == {
         "root": _sources(flow.bob_key, BOBS_DIR), "names": ["bobs_helpers"],
     }
-    hers = _sources(flow.key, SCOUT_DIR)
+    hers = _sources(flow.key, RASTERIZATION_DIR)
     assert _play(client, flow, sandbox, "alice", "calc")["package_modules"]["root"] == hers
 
     _edit(_tab(app, flow, "alice"), _with_node(_node("calc-2")))
@@ -633,10 +633,10 @@ def test_a_node_of_a_package_only_she_holds_runs_without_her_modules_when_an_edi
     app, client, flow, sandbox,
 ):
     """On a dataflow of alice's whose lockfile is empty, so it uses the
-    package of each node on its canvas, bob's tab adds a node of her Scout. His
-    play of it gets none of her Scout's modules, while his play of her
+    package of each node on its canvas, bob's tab adds a node of her Rasterization. His
+    play of it gets none of her Rasterization's modules, while his play of her
     ``helpers`` node gets her package's; her play of his node gets her
-    Scout's."""
+    Rasterization's."""
     from utk_curio.backend.app.projects import access
 
     flow.pid = _dataflow(client, flow.key, flow.tokens["alice"], packages=[], datasets=[])
@@ -648,7 +648,7 @@ def test_a_node_of_a_package_only_she_holds_runs_without_her_modules_when_an_edi
     assert _play(client, flow, sandbox, "bob", "helpers").get("package_modules") == {
         "root": _sources(flow.key, TOOLS_DIR), "names": ["flood_helpers"],
     }
-    assert _play(client, flow, sandbox, "alice", "calc")["package_modules"]["root"] == _sources(flow.key, SCOUT_DIR)
+    assert _play(client, flow, sandbox, "alice", "calc")["package_modules"]["root"] == _sources(flow.key, RASTERIZATION_DIR)
 
 
 def _counted_in_by_his_node(app, client, flow, sandbox) -> None:
@@ -922,14 +922,14 @@ def test_a_model_of_hers_an_editor_binds_to_a_node_loads_in_his_runs_only_once_s
 def test_what_an_agent_run_adds_is_within_an_editors_reach_only_when_the_owner_asked_for_it(
     app, client, flow, sandbox,
 ):
-    """An agent run bob asked for adds a node of alice's Scout, Scout to the
+    """An agent run bob asked for adds a node of alice's Rasterization, Rasterization to the
     lockfile, and her salaries to the datasets: his runs get neither from her
-    store. An agent run alice asked for adds another node of Scout and lists
+    store. An agent run alice asked for adds another node of Rasterization and lists
     the salaries again: bob's runs then get both from her store."""
 
     def bobs(dataflow: dict) -> None:
         dataflow["nodes"].append(_node("calc"))
-        dataflow["packages"] = [*dataflow["packages"], SCOUT_DIR]
+        dataflow["packages"] = [*dataflow["packages"], RASTERIZATION_DIR]
         dataflow["datasets"] = [*dataflow["datasets"], _ref(flow.salaries)]
 
     _agents_change(app, flow, "bob", bobs)
@@ -942,7 +942,7 @@ def test_what_an_agent_run_adds_is_within_an_editors_reach_only_when_the_owner_a
         dataflow["datasets"].append(_ref(flow.salaries, installed_at="2000-01-02T00:00:00Z"))
 
     _agents_change(app, flow, "alice", alices)
-    assert _play(client, flow, sandbox, "bob", "calc")["package_modules"]["root"] == _sources(flow.key, SCOUT_DIR)
+    assert _play(client, flow, sandbox, "bob", "calc")["package_modules"]["root"] == _sources(flow.key, RASTERIZATION_DIR)
     assert set(_loaded(client, flow, sandbox, "bob", flow.salaries)) == {flow.salaries["id"]}
 
 
@@ -978,25 +978,25 @@ def test_an_item_she_takes_out_stays_out_of_an_editors_reach_when_he_puts_it_bac
 def test_a_package_an_editor_adds_to_her_lockfile_brings_no_skill_into_his_chat_until_she_adds_it(
     app, client, flow, monkeypatch,
 ):
-    """bob's tab adds alice's Scout to her dataflow's lockfile. His chat
-    neither lists the skill her Scout ships nor tells its model the skill's
-    words, while alice's chat does both. Once alice adds a node of Scout
+    """bob's tab adds alice's Rasterization to her dataflow's lockfile. His chat
+    neither lists the skill her Rasterization ships nor tells its model the skill's
+    words, while alice's chat does both. Once alice adds a node of Rasterization
     herself, bob's chat lists the skill and tells its model too."""
     from xml.sax.saxutils import escape
 
-    scout = _scout_skill(flow)
-    words = escape(scout.description)
+    rasterization = _rasterization_skill(flow)
+    words = escape(rasterization.description)
     _owners_model(client, flow)
     _edit(_tab(app, flow, "bob"), lambda dataflow: dataflow.__setitem__(
-        "packages", [*dataflow["packages"], SCOUT_DIR],
+        "packages", [*dataflow["packages"], RASTERIZATION_DIR],
     ))
-    assert SCOUT_DIR in _on_disk(flow)["packages"]
+    assert RASTERIZATION_DIR in _on_disk(flow)["packages"]
 
-    assert scout.name not in _chat_skills(client, flow, "bob")
+    assert rasterization.name not in _chat_skills(client, flow, "bob")
     assert words not in _told(client, flow, monkeypatch, "bob")
-    assert scout.name in _chat_skills(client, flow, "alice")
+    assert rasterization.name in _chat_skills(client, flow, "alice")
     assert words in _told(client, flow, monkeypatch, "alice")
 
     _edit(_tab(app, flow, "alice"), _with_node(_node("calc-2")))
-    assert scout.name in _chat_skills(client, flow, "bob")
+    assert rasterization.name in _chat_skills(client, flow, "bob")
     assert words in _told(client, flow, monkeypatch, "bob")

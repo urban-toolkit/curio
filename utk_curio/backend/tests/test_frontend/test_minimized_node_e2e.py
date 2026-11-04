@@ -8,10 +8,11 @@ node is then still a chip, the node beside it, never minimized, is still open,
 and the saved spec says the same.
 
 komar41's #1118: a chip showed only its kind's icon, so two Python nodes folded
-side by side looked the same. The chip shows the node's title after its icon,
-as the header shows it: a long title is cut with an ellipsis and its hover
-gives it whole, a short one shows whole. A node saved minimized opens as its
-chip, titled the same way.
+side by side looked the same. The chip shows the node's title after its icon:
+a long title wraps onto the lines the chip holds (#1235), never cut on one
+line, with "…" only where it runs past them, and its hover gives it whole; a
+short one shows whole on one line. A node saved minimized opens as its chip,
+titled the same way.
 
 The dataflow is loaded from a file on a new canvas, so it is the browser user's
 own (#751) with accounts and on a stack without them, where the one local user
@@ -47,7 +48,7 @@ SHORT_ID = "minimized-short"
 OPEN_ID = "minimized-open"
 NODE_IDS = [FOLDED_ID, SHORT_ID, OPEN_ID]
 
-#: Longer than a chip holds, so it is cut with an ellipsis.
+#: Longer than one line of a chip, so it wraps.
 LONG_TITLE = "Make ground grid and selected days for the whole year"
 #: Short enough to show whole.
 SHORT_TITLE = "Load streets"
@@ -61,14 +62,13 @@ CLOSEUP_STEM = "minimized-node-chip"
 
 
 def _node(node_id: str, x: int, y: int, title: str | None = None, minimized: bool = False) -> dict:
-    metadata: dict = {"keywords": []}
-    if title:
-        metadata["packageTemplateLabel"] = title
     node = {
         "id": node_id, "type": "curio.builtin/computation-analysis", "x": x, "y": y,
         "content": "return 1\n", "in": "DEFAULT", "out": "DEFAULT", "goal": "",
-        "metadata": metadata,
+        "metadata": {"keywords": []},
     }
+    if title:
+        node["title"] = title
     if minimized:
         node["minimized"] = True
     return node
@@ -110,7 +110,9 @@ _DRAWN_JS = """([ids, chip]) => {
 }"""
 
 #: What a chip shows as its title: the element whose tooltip is the title, its
-#: text, and whether the text overflows its box, which its ellipsis then cuts.
+#: text, whether it wraps onto more than one line, whether it runs past its box
+#: sideways (a cut line) or at all, and whether text past its box is cut
+#: without the "…" that says so.
 _CHIP_TITLE_JS = """([id, title]) => {
     const chip = document.querySelector(`.react-flow__node[data-id="${id}"] .curio-node-chip`);
     if (!chip) return "no chip";
@@ -118,10 +120,19 @@ _CHIP_TITLE_JS = """([id, title]) => {
         (el) => el.getAttribute("data-tooltip") === title);
     if (!shown) return `no title on the chip, its text is ${JSON.stringify(chip.textContent)}`;
     const style = getComputedStyle(shown);
+    const range = document.createRange();
+    range.selectNodeContents(shown);
+    const lines = new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size;
+    const sideways = shown.scrollWidth > shown.clientWidth + 1;
+    const over = sideways || shown.scrollHeight > shown.clientHeight + 1;
+    const marked = style.textOverflow === "ellipsis"
+        || (!!style.webkitLineClamp && style.webkitLineClamp !== "none");
     return {
         text: shown.textContent,
-        cut: shown.scrollWidth > shown.clientWidth && style.textOverflow === "ellipsis",
-        whole: shown.scrollWidth <= shown.clientWidth,
+        wraps: lines > 1,
+        sideways,
+        over,
+        cutWithoutEllipsis: over && !marked,
     };
 }"""
 
@@ -142,10 +153,16 @@ def _drawn_once_settled(page, expected: dict) -> dict:
 
 
 def _chip_titles(page) -> dict:
-    """What each chip shows as its title, and whether it is cut or whole."""
+    """What each chip shows as its title: the long one wrapped, never cut
+    sideways, with "…" only where it runs past the chip's lines (whether it
+    does is the font's to say); the short one whole on one line."""
+    def shown(node_id: str, title: str, keys: tuple[str, ...]):
+        drawn = page.evaluate(_CHIP_TITLE_JS, [node_id, title])
+        return {key: drawn[key] for key in keys} if isinstance(drawn, dict) else drawn
+
     return {
-        FOLDED_ID: page.evaluate(_CHIP_TITLE_JS, [FOLDED_ID, LONG_TITLE]),
-        SHORT_ID: page.evaluate(_CHIP_TITLE_JS, [SHORT_ID, SHORT_TITLE]),
+        FOLDED_ID: shown(FOLDED_ID, LONG_TITLE, ("text", "wraps", "sideways", "cutWithoutEllipsis")),
+        SHORT_ID: shown(SHORT_ID, SHORT_TITLE, ("text", "wraps", "sideways", "over", "cutWithoutEllipsis")),
     }
 
 
@@ -193,8 +210,8 @@ def test_a_minimized_node_is_still_minimized_after_a_save_and_a_reload(
     reloaded = _drawn_once_settled(page, folded)
     titled_reloaded = _chip_titles(page)
 
-    long_title = {"text": LONG_TITLE, "cut": True, "whole": False}
-    short_title = {"text": SHORT_TITLE, "cut": False, "whole": True}
+    long_title = {"text": LONG_TITLE, "wraps": True, "sideways": False, "cutWithoutEllipsis": False}
+    short_title = {"text": SHORT_TITLE, "wraps": False, "sideways": False, "over": False, "cutWithoutEllipsis": False}
     seen = {
         "after Minimize": minimized,
         "chip titles after Minimize": titled,
@@ -217,6 +234,6 @@ def test_a_minimized_node_is_still_minimized_after_a_save_and_a_reload(
     )
 
     # Last, since a missing baseline stops the test at its capture: the two
-    # chips as the canvas draws them, the long title cut, the short one whole.
+    # chips as the canvas draws them, the long title wrapped, the short one whole.
     save_node_closeup(page, CLOSEUP_STEM, FOLDED_ID, test_name="long_title", sweep_toasts=True)
     save_node_closeup(page, CLOSEUP_STEM, SHORT_ID, test_name="short_title", sweep_toasts=True)

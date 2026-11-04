@@ -33,7 +33,6 @@ from .utils import (
     set_node_code,
     stub_db_login,
 )
-from .utils.scenario_drawer import close_scenario_drawer, open_in_project_tab, scenario_card_button
 
 if TYPE_CHECKING:
     from .utils import FrontendPage
@@ -242,10 +241,10 @@ def test_a_widget_a_scenario_and_a_drag_show_in_the_other_tab(room):
             f"the owner's widget value never reached the editor: {editor.evaluate(_WIDGET_JS, [CODE_NODE, 'rows'])}"
         ) from exc
 
-    # A scenario, collapsed into its box.
-    open_in_project_tab(owner)
-    scenario_card_button(owner, SCENARIO, "Collapse").click()
-    close_scenario_drawer(owner)
+    # A scenario, collapsed into its box with its frame's Collapse.
+    frame_nodes(owner, [SPEC_NODE])
+    owner.get_by_test_id(f"scenario-collapse-{SCENARIO}").click()
+    owner.get_by_test_id(f"scenario-box-{SCENARIO}").wait_for(state="visible", timeout=15000)
     frame_nodes(editor, [SPEC_NODE])
     try:
         editor.get_by_test_id(f"scenario-box-{SCENARIO}").wait_for(state="visible", timeout=15000)

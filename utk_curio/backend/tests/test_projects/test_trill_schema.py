@@ -303,6 +303,8 @@ REJECTED = {
     "dashboardWidth without height": lambda d: _node(d).update(dashboardWidth=5),
     # A node folded to its chip is written as minimized: true.
     "minimized as a string": lambda d: _node(d).update(minimized="true"),
+    # A resized chip's size is a number (#1235).
+    "minimizedWidth as a string": lambda d: _node(d).update(minimizedWidth="180"),
     "agent coord pinned to a whole version": lambda d: d["dataflow"].update(agents=["agent.test.foo@1.0.0"]),
     "agent id without a publisher": lambda d: d["dataflow"].update(agents=["agent.foo@1"]),
     "package coord in the agent slot": lambda d: d["dataflow"].update(agents=["curio.builtin@1"]),
@@ -490,17 +492,23 @@ ACCEPTED = {
 
 class TestScenariosBeyondTheSchema:
     """What the schema cannot say about ``dataflow.scenarios`` (#662): a node in
-    at most one scenario, and every member a node of the dataflow. One checker
-    says it, for the save path, ``scripts/validate_trill.py`` and this corpus."""
+    at most one scenario, every member a node of the dataflow, and every
+    scenario in a set with its context and outcomes. One checker says it, for
+    the save path, ``scripts/validate_trill.py`` and this corpus."""
+
+    @staticmethod
+    def _in_a_set(doc, scenarios):
+        doc["dataflow"]["scenarioSets"] = [{"id": "set", "name": "Heights"}]
+        doc["dataflow"]["scenarios"] = [{**s, "set": "set", "context": [], "outcomes": []} for s in scenarios]
 
     def test_an_overlap_has_the_shape_but_is_refused(self):
         from utk_curio.backend.app.projects.scenarios import scenario_problems
 
         doc = _good()
-        doc["dataflow"]["scenarios"] = [
+        self._in_a_set(doc, [
             {"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": ["n1"]},
             {"id": "s2", "name": "Twice as tall", "color": "#e76f51", "nodes": ["n1"]},
-        ]
+        ])
         assert not _errors(doc), "the overlap is a valid shape; the checker is what refuses it"
         assert scenario_problems(doc) == [
             "Node n1 is in two scenarios, Baseline and Twice as tall. A node belongs to at most one scenario."
@@ -510,7 +518,7 @@ class TestScenariosBeyondTheSchema:
         from utk_curio.backend.app.projects.scenarios import scenario_problems
 
         doc = _good()
-        doc["dataflow"]["scenarios"] = [{"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": ["n9"]}]
+        self._in_a_set(doc, [{"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": ["n9"]}])
         assert scenario_problems(doc) == ["Scenario Baseline names node n9, which the dataflow does not have."]
 
     def test_every_committed_spec_has_sound_scenarios(self):
@@ -620,7 +628,7 @@ WRITER_SHAPES = {
         scenarios=[{"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": [AGENT_NODE["id"]]}],
     ),
     "canvas save clearing its scenarios": _flow(nodes=[AGENT_NODE], scenarios=[]),
-    # Written by TrillGenerator after Duplicate as scenario (#662): the copy
+    # Written by TrillGenerator after Duplicate scenario (#662): the copy
     # names its original, and both are scenarios.
     "canvas save with a duplicated scenario": _flow(
         nodes=[
@@ -832,6 +840,9 @@ WRITER_SHAPES = {
     # Written by TrillGenerator for a node folded to its chip: the size it
     # opens back to, and minimized.
     "a minimized node": _flow(nodes=[{**AGENT_NODE, "width": 640, "height": 400, "minimized": True}]),
+    "a minimized node with its chip resized": _flow(nodes=[{
+        **AGENT_NODE, "width": 640, "height": 400, "minimized": True, "minimizedWidth": 180, "minimizedHeight": 72,
+    }]),
     # Every alias useCode.loadTrill still tolerates, plus the legacy top-level
     # name that execution/workflow_spec.py still reads.
     "legacy reader aliases": {

@@ -165,6 +165,7 @@ from utk_curio.backend.app.collaboration.events import (
     _project,
     _valid_project_id,
 )
+from utk_curio.backend.app.projects import scenarios as project_scenarios
 from utk_curio.backend.app.projects import storage
 from utk_curio.backend.config import COLLAB_NAMESPACE
 
@@ -612,6 +613,18 @@ def _owned(spec: dict) -> dict:
     return doc_mapping.owned(dataflow)
 
 
+def _in_sets(spec: dict) -> dict:
+    """*spec* with each of its scenarios in a set, with its context and
+    outcomes, as the canvas writes them (``scenarios.normalize_spec_scenarios``):
+    the doc holds no scenario outside a set, whoever wrote it. *spec* is left
+    as it is."""
+    if not isinstance(spec.get("dataflow"), dict):
+        return spec
+    out = {**spec, "dataflow": {**spec["dataflow"]}}
+    project_scenarios.normalize_spec_scenarios(out, keep_empty=True)
+    return out
+
+
 def _normalized(dataflow: dict) -> dict:
     """*dataflow* as a doc built from it reads it back."""
     doc = doc_mapping.new_doc()
@@ -625,7 +638,8 @@ def _catch_up(entry: _OpenDoc, file: "storage.SpecFile") -> None:
     and relayed to every tab like a person's."""
     if file.revision == entry.revision or not isinstance(file.spec, dict):
         return
-    theirs = _owned(file.spec)
+    # The doc takes the file's scenarios in sets; its base is the file.
+    theirs = _owned(_in_sets(file.spec))
     _roll(entry)
     try:
         with entry.doc.transaction(origin=SPEC_ORIGIN):
@@ -638,7 +652,7 @@ def _catch_up(entry: _OpenDoc, file: "storage.SpecFile") -> None:
     for node_id in refused:
         logger.warning("dataflow %s: node %s's code changed outside its doc and in it; the doc's stays",
                        entry.project_id, node_id)
-    entry.revision, entry.base = file.revision, theirs
+    entry.revision, entry.base = file.revision, _owned(file.spec)
     _commit(entry, skip_sid=None, origin=SPEC_ORIGIN)
 
 
@@ -702,8 +716,10 @@ def _load(entry: _OpenDoc) -> None:
             except (OSError, ValueError, RuntimeError):
                 entry.base = doc_mapping.doc_to_dataflow(doc)  # the file's changes take every field
     else:
+        # Built with its scenarios in sets; a file saved before sets is then
+        # behind the doc, and written so.
         entry.revision, entry.base = file.revision, _owned(file.spec)
-        _built_anew(entry, entry.base)
+        _built_anew(entry, _owned(_in_sets(file.spec)))
     entry.loaded = True
     # Before anything this open changes: the dataflow's first points are the
     # history it carries, or the dataflow as its doc holds it.
@@ -1452,7 +1468,10 @@ def _write(user_key: str, project_id: str, base: dict, mine, actor: Actor, *,
     if not _has_spec(user_key, project_id):
         return Written(False)
     with _spec_lock(user_key, project_id):
+        # Every writer's scenarios land in sets, as the canvas writes them, and
+        # the writer's own spec holds them so after its write.
         theirs = _writable(mine)
+        project_scenarios.normalize_spec_scenarios(theirs, keep_empty=True)
         if not doc_mapping.mappable(doc_mapping.owned(_dataflow_of(theirs))):
             return _without_doc(user_key, project_id, base, theirs, history, actor, backfilled)
         if doc_mapping.same(doc_mapping.owned(_dataflow_of(base)), doc_mapping.owned(_dataflow_of(theirs))):

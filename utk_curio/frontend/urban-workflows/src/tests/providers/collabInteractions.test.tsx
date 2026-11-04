@@ -11,6 +11,7 @@
 import React from 'react';
 import { render, act } from '@testing-library/react';
 import { ReactFlow, ReactFlowProvider } from 'reactflow';
+import type { DataflowDocDeps } from '../../providers/flow/useDataflowDoc';
 
 // jsdom polyfills ReactFlow needs.
 class ResizeObserverStub {
@@ -26,6 +27,17 @@ if (!(global as any).DOMMatrixReadOnly) {
 // Mocks: replace the heavy and IO collaborators, keep reactflow REAL.
 // The dataflow the canvas loaded, which the canvas binds to its doc on.
 const mockLoaded: { current: any } = { current: null };
+// The refs the doc hook reads off the workflow's operations, typed as its
+// inputs are, so one the harness lacks fails the typecheck, not the hook.
+const mockDocRefs: Pick<
+  DataflowDocDeps, 'workflowGoalRef' | 'workflowCategoriesRef' | 'scenariosRef' | 'scenarioSetsRef' | 'autoRunRef'
+> = {
+  workflowGoalRef: { current: '' },
+  workflowCategoriesRef: { current: {} },
+  scenariosRef: { current: [] },
+  scenarioSetsRef: { current: [] },
+  autoRunRef: { current: false },
+};
 jest.mock('../../hook/useWorkflowOperations', () => ({
   useWorkflowOperations: () => ({
     markNodeExecuted: jest.fn(),
@@ -45,10 +57,7 @@ jest.mock('../../hook/useWorkflowOperations', () => ({
     workflowGoal: '',
     acceptSuggestion: jest.fn(),
     loadedDataflowRef: mockLoaded,
-    workflowGoalRef: { current: '' },
-    workflowCategoriesRef: { current: {} },
-    scenariosRef: { current: [] },
-    autoRunRef: { current: false },
+    ...mockDocRefs,
     takeDataflowFields: jest.fn(),
     quietly: (apply: () => unknown) => apply(),
   }),

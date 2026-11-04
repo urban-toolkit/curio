@@ -252,7 +252,7 @@ def _written_by_generate_trill() -> dict[str, list[str]]:
 
 
 #: Fewer than these would mean the reading of the sources broke, not the layout.
-_AT_LEAST = {"dataflow": 12, "node": 19, "metadata": 14, "edge": 7, "scenario": 8, "widget": 6}
+_AT_LEAST = {"dataflow": 12, "node": 19, "metadata": 13, "edge": 7, "scenario": 8, "widget": 6}
 
 
 def test_every_field_generate_trill_writes_has_its_place_in_the_doc():
@@ -282,12 +282,12 @@ def test_each_place_in_the_layout_reads():
     from utk_curio.backend.app.collaboration import doc_mapping
 
     layout = doc_mapping.LAYOUT
-    structures = {"@key", "@text", "@metadata", "@widgets", "@nodes", "@edges", "@scenarios", "@whole"}
-    for level in ("dataflow", "node", "metadata", "widget", "edge", "scenario"):
+    structures = {"@key", "@text", "@metadata", "@widgets", "@nodes", "@edges", "@scenarios", "@scenarioSets", "@whole"}
+    for level in ("dataflow", "node", "metadata", "widget", "edge", "scenario", "scenarioSet"):
         for field, place in layout[level].items():
             assert place in structures or re.fullmatch(r"\w+(\.\w+)?", place), (level, field, place)
     assert set(layout["roots"]) == {"meta", "dataflow", "nodes", "nodeOrder", "edges", "edgeOrder",
-                                    "scenarios", "scenarioOrder"}
+                                    "scenarios", "scenarioOrder", "scenarioSets", "scenarioSetOrder"}
 
 
 # ---------------------------------------------------------------------------

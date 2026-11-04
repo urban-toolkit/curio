@@ -19,8 +19,10 @@ import { dataPoolToSpec } from "./utils/dataPoolSpec";
 import { normalizeWidgets } from "./utils/widgets/widgetModel";
 import { datasetWidgetBindings } from "./utils/widgets/datasetWidgets";
 import { normalizeSelections } from "./utils/references/selectionTags";
-import { normalizeScenarios, type Scenario } from "./utils/scenarios/scenarioModel";
+import { normalizeScenarios, type Scenario, type ScenarioSet } from "./utils/scenarios/scenarioModel";
+import { normalizeScenarioSets } from "./utils/scenarios/scenarioSets";
 import { registeredCategory } from "./utils/graphPreviewCategories";
+import { initialNodeTitle } from "./utils/nodeTitle";
 import { serverHistory } from "./providers/history/serverHistory";
 
 export class TrillGenerator {
@@ -39,9 +41,13 @@ export class TrillGenerator {
      * flow's `setScenarios` keeps this current; `reset` clears it. */
     static scenarios: Scenario[] = [];
 
+    /** The canvas's scenario sets (`dataflow.scenarioSets`), kept beside `scenarios`. */
+    static scenarioSets: ScenarioSet[] = [];
+
     static reset() {
         this.forgetVersions();
         this.scenarios = [];
+        this.scenarioSets = [];
     }
 
     /** Drop the versions recorded here: the canvas bound to its dataflow's
@@ -121,6 +127,8 @@ export class TrillGenerator {
         let new_trill = this.generateTrill(
             nodes, edges, name, task, undefined, undefined, undefined, undefined,
             this.scenarios.length > 0 ? this.scenarios : undefined,
+            undefined,
+            this.scenarioSets,
         );
         
         console.log("new_trill", new_trill);
@@ -195,12 +203,15 @@ export class TrillGenerator {
      *
      * *scenarios* (`dataflow.scenarios`, #662) follow the same rule: a save
      * passes the canvas's list and `[]` clears them. Their members are kept
-     * only when they are among *nodes*.
+     * only when they are among *nodes*. *scenarioSets* go with them: each
+     * scenario is written in a set with its context and outcomes, filled in
+     * the way the backend fills them (`normalizeScenarioSets`), and the sets
+     * are written only when there are scenarios.
      *
      * *autoRun* (`dataflow.autoRun`, #845) too: a save passes the toggle, on
      * or off.
      */
-    static generateTrill(nodes: any, edges: any, name: string, task: string = "", packages: string[] = [], description: string = "", datasets: any[] = [], categories?: HandCategories, scenarios?: Scenario[], autoRun?: boolean){
+    static generateTrill(nodes: any, edges: any, name: string, task: string = "", packages: string[] = [], description: string = "", datasets: any[] = [], categories?: HandCategories, scenarios?: Scenario[], autoRun?: boolean, scenarioSets?: ScenarioSet[]){
 
         let trill: any = {
             dataflow: {
@@ -251,6 +262,13 @@ export class TrillGenerator {
             // stay the size it opens back to.
             if(node.data.minimized === true)
                 trill_node.minimized = true;
+
+            // The chip's own size, once its handle has resized it (#1235).
+            if(typeof node.data.minimizedWidth === "number")
+                trill_node.minimizedWidth = node.data.minimizedWidth;
+
+            if(typeof node.data.minimizedHeight === "number")
+                trill_node.minimizedHeight = node.data.minimizedHeight;
 
             if(node.data.dashboardPinned)
                 trill_node.dashboardPinned = true;
@@ -358,16 +376,6 @@ export class TrillGenerator {
                 trill_node.metadata.simpleVis = { imageColumn: node.data.simpleVis.imageColumn };
             }
 
-            // #412: a renamed node header (the header's rename and the config
-            // modal both write data.packageTemplateLabel) persists at
-            // metadata.packageTemplateLabel.
-            if(typeof node.data.packageTemplateLabel === "string" && node.data.packageTemplateLabel.trim()){
-                if(trill_node.metadata == undefined)
-                    trill_node.metadata = {};
-
-                trill_node.metadata.packageTemplateLabel = node.data.packageTemplateLabel.trim();
-            }
-
             // #412: the rest of what the node settings modal saved
             // (data.packageTemplateConfig) persists at
             // metadata.packageTemplateConfig, without the code copy and the
@@ -422,8 +430,11 @@ export class TrillGenerator {
                 trill_node.metadata.selections = selections;
             }
 
-            if(typeof node.data.title === "string" && node.data.title)
-                trill_node.title = node.data.title;
+            // The node's one name (utils/nodeTitle.ts): its title, else its
+            // template's label, so a saved node always says what it is called.
+            const title = initialNodeTitle(node.data.nodeType, node.data.title);
+            if(title)
+                trill_node.title = title;
 
             if(node.data.appliedDatasets != undefined){
                 for(const dataset of Object.values(node.data.appliedDatasets)){
@@ -470,10 +481,15 @@ export class TrillGenerator {
         }
 
         if (scenarios) {
-            trill.dataflow.scenarios = normalizeScenarios(
-                scenarios,
-                trill.dataflow.nodes.map((n: any) => n.id),
-            );
+            const nodeIds: string[] = trill.dataflow.nodes.map((n: any) => n.id);
+            const kept = normalizeScenarios(scenarios, nodeIds);
+            if (kept.length > 0) {
+                const sets = normalizeScenarioSets(kept, scenarioSets ?? [], nodeIds, trill.dataflow.edges, name);
+                trill.dataflow.scenarios = sets.scenarios;
+                trill.dataflow.scenarioSets = sets.sets;
+            } else {
+                trill.dataflow.scenarios = kept;
+            }
         }
 
         return trill

@@ -45,9 +45,53 @@
       "maxItems": 20,
       "items": { "type": "string", "minLength": 1, "maxLength": 40 }
     },
+    "scenarioSet": {
+      "type": "object",
+      "description": "One scenario set: the scenarios that answer one question.",
+      "required": ["id", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "description": "Unique among the dataflow's scenario sets." },
+        "name": { "type": "string", "minLength": 1, "description": "What the canvas and the Scenario Catalog call it." },
+        "description": { "type": "string", "description": "The question its scenarios answer. Emitted only when non-empty." },
+        "shared": {
+          "type": "object",
+          "description": "How the canvas draws the set's shared context and shared outcomes. Emitted only when one is collapsed or its box was moved.",
+          "additionalProperties": false,
+          "properties": {
+            "context": { "$ref": "#/$defs/sharedLook" },
+            "outcomes": { "$ref": "#/$defs/sharedLook" }
+          }
+        },
+        "source": {
+          "type": "object",
+          "required": ["project", "set"],
+          "additionalProperties": false,
+          "properties": {
+            "project": { "type": "string", "minLength": 1 },
+            "set": { "type": "string", "minLength": 1 }
+          },
+          "description": "The project and scenario set it copies, made by the first drop of one of that set's scenarios through the Scenario Catalog; a later drop of another joins it."
+        }
+      }
+    },
+    "sharedLook": {
+      "type": "object",
+      "description": "One shared group of a scenario set: drawn as one box when collapsed, where `box` puts it.",
+      "additionalProperties": false,
+      "properties": {
+        "collapsed": { "const": true },
+        "box": {
+          "type": "object",
+          "required": ["x", "y"],
+          "additionalProperties": false,
+          "properties": { "x": { "type": "number" }, "y": { "type": "number" } }
+        }
+      }
+    },
     "scenario": {
       "type": "object",
-      "description": "One scenario (#662): a named selection of the dataflow's nodes. What enters it from outside is its fixed context, its nodes are its levers, and the outputs of its last nodes are its outcomes.",
+      "description": "One scenario: a named selection of the dataflow's own nodes for it. It belongs to one scenario set, and keeps the shared context it uses (nodes upstream of it) and the outcomes it feeds (nodes downstream of it), both outside every scenario's box.",
       "required": ["id", "name", "color", "nodes"],
       "additionalProperties": false,
       "properties": {
@@ -60,6 +104,19 @@
           "uniqueItems": true,
           "items": { "type": "string", "minLength": 1 },
           "description": "The ids of its nodes. Empty once its last node is deleted, until the scenario is deleted too."
+        },
+        "set": { "type": "string", "minLength": 1, "description": "The id of its scenario set, in `scenarioSets`." },
+        "context": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Its shared context: the nodes upstream of it, outside every box, that it uses. Curio infers them by walking the edges up from its nodes; the person finalizes them."
+        },
+        "outcomes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Its outcomes: the nodes downstream of it, outside every box, that it feeds. Curio infers them by walking the edges down from its nodes; the person finalizes them."
         },
         "collapsed": { "type": "boolean", "description": "Drawn as one box on the canvas. Emitted only when set." },
         "box": {
@@ -140,8 +197,13 @@
         },
         "scenarios": {
           "type": "array",
-          "description": "The dataflow's scenarios (#662): named selections of its nodes, each a lever set compared against the others over the context outside it. A node belongs to at most one scenario, which the backend checks on save (projects/scenarios.py) because this schema cannot say it. A save drops member ids that are not nodes of the dataflow, so deleting a node removes it from its scenario. Written by TrillGenerator.generateTrill when the canvas saves, an empty list clearing them; the backend drops an empty list and keeps the on-disk value when a writer omits the key. Version snapshots and agent views carry it only when there are scenarios.",
+          "description": "The dataflow's scenarios: named selections of its nodes, each scenario's Scenario-specific nodes, compared with the other scenarios of its set on their Shared context and Shared outcomes. A node belongs to at most one scenario, which the backend checks on save (projects/scenarios.py) because this schema cannot say it. A save drops member ids that are not nodes of the dataflow, so deleting a node removes it from its scenario. Written by TrillGenerator.generateTrill when the canvas saves, an empty list clearing them; the backend drops an empty list and keeps the on-disk value when a writer omits the key. Version snapshots and agent views carry it only when there are scenarios.",
           "items": { "$ref": "#/$defs/scenario" }
+        },
+        "scenarioSets": {
+          "type": "array",
+          "description": "The dataflow's scenario sets: each groups the scenarios that answer one question, compared on the same shared context and outcomes; scenarios of different sets never mix. Every scenario names one in its `set`. The backend fills them in on save for scenarios written without one (projects/scenario_sets.py), and drops a set no scenario names. Present exactly when `scenarios` is.",
+          "items": { "$ref": "#/$defs/scenarioSet" }
         },
         "autoRun": {
           "type": "boolean",
@@ -208,7 +270,7 @@
         },
         "title": {
           "type": "string",
-          "description": "Optional display title, set by agents when they create a node. A curio.builtin/note node shows it above its text, and its author sets it there. Emitted only when non-empty."
+          "description": "The node's name, the one its header shows: its template's label when the node is made, then what the user renames the header to or an agent names it. A curio.builtin/note node's title is its heading, shown in its header, and has none until its author gives one. Emitted only when non-empty."
         },
         "width": {
           "type": "number",
@@ -221,6 +283,14 @@
         "minimized": {
           "type": "boolean",
           "description": "True when the node is folded to its chip on the canvas (the header's Minimize, or View > Minimize Nodes); 'width' and 'height' stay the size it opens back to. Only ever written as true - false is elided. A dashboard tile and a notebook cell show the node whole."
+        },
+        "minimizedWidth": {
+          "type": "number",
+          "description": "The width of the node's chip, when the user has resized it with its corner handle; 250 when absent. Apart from 'width', the size the node opens back to."
+        },
+        "minimizedHeight": {
+          "type": "number",
+          "description": "The height of the node's chip, when resized; 40 when absent. See 'minimizedWidth'."
         },
         "dashboardPinned": {
           "type": "boolean",
@@ -266,10 +336,9 @@
         "data": {
           "type": "object",
           "deprecated": true,
-          "description": "DEPRECATED React Flow-shaped sub-object. No current writer emits it into a trill file, but projects/services.py still reads 'data.packageTemplateLabel' and 'data.nodeType' when titling computed datasets, so a spec carrying it must stay valid.",
+          "description": "DEPRECATED React Flow-shaped sub-object. No current writer emits it into a trill file, but execution/node_names.py still reads 'data.nodeType' when naming a node, so a spec carrying it must stay valid.",
           "additionalProperties": true,
           "properties": {
-            "packageTemplateLabel": { "type": "string" },
             "nodeType": { "type": "string" }
           }
         }
@@ -277,7 +346,7 @@
     },
     "widget": {
       "type": "object",
-      "description": "One widget of a node (#662): a named value the user sets in the node's Widgets tab, and the code reads through a `[!! name !!]` reference.",
+      "description": "One widget of a node: a named value the user sets in the node's Widgets tab, and the code reads through a `[!! name !!]` reference.",
       "required": ["name", "type"],
       "additionalProperties": false,
       "properties": {
@@ -302,7 +371,7 @@
     },
     "selectionTag": {
       "type": "object",
-      "description": "One selection tag of a node (#662): the current selection of a view (a Vega-Lite or Autark node), which the node's code reads through a `[!! selection name !!]` reference as the ids of the selected rows. It holds `ids`, or `count` in their place when the selection holds more ids than a tag takes.",
+      "description": "One selection tag of a node: the current selection of a view (a Vega-Lite or Autark node), which the node's code reads through a `[!! selection name !!]` reference as the ids of the selected rows. It holds `ids`, or `count` in their place when the selection holds more ids than a tag takes.",
       "required": ["name", "node", "column"],
       "additionalProperties": false,
       "properties": {
@@ -353,11 +422,6 @@
             "imageColumn": { "type": "string", "minLength": 1 }
           }
         },
-        "packageTemplateLabel": {
-          "type": "string",
-          "minLength": 1,
-          "description": "The node's renamed header (#412). Absent means the header shows its template's label."
-        },
         "packageTemplateConfig": {
           "type": "object",
           "description": "What the node settings modal saved for this node (#412): its title, description, editor mode, engine, which editor tabs it shows, and its ports. Absent until the modal saves. It does not repeat the node's code, which is 'content', and its ports carry no ids.",
@@ -403,18 +467,18 @@
         "widgets": {
           "type": "array",
           "items": { "$ref": "#/$defs/widget" },
-          "description": "The node's widgets (#662), declared in its Widgets tab. Its code places each one as a `[!! name !!]` reference, which a run replaces with the widget's value (`value` when set, else `default`). Emitted only when the node has widgets."
+          "description": "The node's widgets, declared in its Widgets tab. Its code places each one as a `[!! name !!]` reference, which a run replaces with the widget's value (`value` when set, else `default`). Emitted only when the node has widgets."
         },
         "copiedFrom": {
           "type": "array",
           "items": { "type": "string", "minLength": 1 },
           "minItems": 1,
-          "description": "Where a copy made by Duplicate selection (#662) comes from: the ids of the nodes it descends from, oldest first, ending with the node it was copied from. Two nodes are the same lever in two scenarios when their ids and these lists meet. Emitted only on a copy."
+          "description": "Where a copy made by Duplicate selection comes from: the ids of the nodes it descends from, oldest first, ending with the node it was copied from. Two nodes are the same Scenario-specific node of two scenarios when their ids and these lists meet. Emitted only on a copy."
         },
         "selections": {
           "type": "array",
           "items": { "$ref": "#/$defs/selectionTag" },
-          "description": "The node's selection tags (#662), added in its Widgets tab. Its code places each one as a `[!! selection name !!]` reference, which a run replaces with the tag's `ids`. A new selection in the view writes new ids. Emitted only when the node has selection tags."
+          "description": "The node's selection tags, added in its Widgets tab. Its code places each one as a `[!! selection name !!]` reference, which a run replaces with the tag's `ids`. A new selection in the view writes new ids. Emitted only when the node has selection tags."
         },
         "dataPool": {
           "type": "object",

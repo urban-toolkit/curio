@@ -1,0 +1,52 @@
+{
+  "skill_name": "vega-lite-charts",
+  "agent": "agent.curio.node-builder@1",
+  "dataflow": "docs/examples/dataflows/chicago-loop-shadow-towers.json",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Add a lollipop chart that compares the median shadow over the ground of the two scenarios.",
+      "expected_output": "One node.create of curio.vega-lite/lollipops that gives no content of its own, so the node keeps the template's starter, which reads its column through [!! value !!], and sets its value widget to median, the column of the Shadow over the ground tables; the answer tells the user to connect each scenario's Shadow over the ground node (74e0af5a-c06e-52ae-94ad-94acc2de1642 and ac470b24-69c3-5242-8d07-cc969e868e54) to its own input circle.",
+      "assertions": [
+        "The answer makes one node.create of type curio.vega-lite/lollipops.",
+        "The answer sets the chart's value widget to median.",
+        "The answer tells the user to connect each scenario's Shadow over the ground node to an input circle of its own on the chart."
+      ]
+    },
+    {
+      "id": 2,
+      "agent": "agent.curio.dataflow-builder@1",
+      "dataflow": "docs/examples/dataflows/chicago-rain-wind-routing.json",
+      "prompt": "Plan a chart of the two routes' rain exposure against their wind exposure, one point per scenario.",
+      "expected_output": "A dataflow plan with one node of type curio.vega-lite/points whose x widget is rain_exposure and y widget wind_exposure, wired from both scenarios' metrics nodes (c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36 and e9b5d3a1-2f8c-4a76-8e1d-4c7b9f0a6e23), one data edge each, with no node that merges them first.",
+      "assertions": [
+        "The answer writes a dataflow plan with a node of type curio.vega-lite/points.",
+        "The plan sets the chart's x widget to rain_exposure and its y widget to wind_exposure.",
+        "The plan wires c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36 and e9b5d3a1-2f8c-4a76-8e1d-4c7b9f0a6e23 into the chart, one data edge from each.",
+        "The plan adds no node that merges the two metrics tables before the chart."
+      ]
+    }
+  ],
+  "trigger_queries": [
+    {"query": "Could the Mean accumulated shadow bars be a lollipop chart instead? What would that node need set?", "should_trigger": true},
+    {"query": "How do I order the bars so Existing comes before Towers removed, and keep the box colors?", "should_trigger": true},
+    {"query": "What would a donut chart of how much of each scenario's ground stays in shadow take as its inputs and widgets?", "should_trigger": true},
+    {"query": "The Y axis title of the shadow bars says 'mean of mean'. Where does that come from, and how do I make it 'Mean shadow (minutes)'?", "should_trigger": true},
+    {"query": "Can the Mean accumulated shadow bars show each scenario's median instead of its mean?", "should_trigger": true},
+    {"query": "Which chart would draw a dot per scenario on a grey range from the lowest to the highest shadow?", "should_trigger": true},
+    {"query": "The bars say the inputs have no column named y. Where do I tell the chart which column to plot?", "should_trigger": true},
+    {"query": "could a pie split the shadow minutes between the two scenarios, with the numbers written on the slices?", "should_trigger": true},
+    {"query": "If I add a third scenario, how does its Shadow over the ground get a bar of its own on the Mean accumulated shadow chart?", "should_trigger": true},
+    {"query": "How do I write the Y axis labels of the shadow bars with one decimal?", "should_trigger": true},
+    {"query": "How would a step take the difference between the two scenarios' accumulated shadow rasters? Which node, and which call?", "should_trigger": false},
+    {"query": "Can I rasterize the edited buildings at a coarser zoom so the shadow model runs faster? What would that break?", "should_trigger": false},
+    {"query": "Color the Shadow change map from blue to red.", "should_trigger": false},
+    {"query": "Remove the two tallest towers that are left in the Remove towers node.", "should_trigger": false},
+    {"query": "Make the season a dropdown instead of radio buttons.", "should_trigger": false},
+    {"query": "Which model does the Accumulated Shadow node run, and who published it?", "should_trigger": false},
+    {"query": "Explain what the Season node returns.", "should_trigger": false},
+    {"query": "Add a Data Summary of the Buildings table.", "should_trigger": false},
+    {"query": "Who changed the Remove towers node last?", "should_trigger": false},
+    {"query": "Draw the remaining buildings on the Buildings map in 3D, colored by height.", "should_trigger": false}
+  ]
+}

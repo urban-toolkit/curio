@@ -8,7 +8,7 @@ towers, 200 Clarendon and Raffles, by their ``building_id`` before copies of
 Baseline's nodes, and feeds a map of the buildings it is linked to. The
 factor is a ``height_factor`` widget on each shadow step, read as an Autark
 uniform. Each scenario ends in a Roads node that takes the roads layer out of
-the five its shadow step hands on. Outside them, Scout's Bars (``curio.scout@1``)
+the five its shadow step hands on. Outside them, the Vega-Lite package's Bars (``curio.vega-lite@1``)
 charts the three Roads nodes' mean road sunlight, and a Python node, Sunlight
 change, takes each road's sunlight change in Twice as tall from Baseline's map
 and Twice as tall's, the roads matched by their shapes, which an Autark map
@@ -69,7 +69,7 @@ from .test_map_edits_e2e import _edits_of
 from .test_multi_input_e2e import _wait_for_circles
 from .test_scenario_drop_e2e import (
     _copies,
-    _drag_scenario_onto_canvas,
+    _drop_and_wait,
     _open_scenario_catalog,
     _saved_spec,
     _status,
@@ -78,16 +78,16 @@ from .test_scenario_drop_e2e import (
 from .test_scenarios_canvas_e2e import _box, _frame_box
 from .test_widget_tags_e2e import _open_tab, _panel
 from .utils import (
-    REPO_ROOT,
-    _COLOR_PIXELS_JS,
-    _OUTPUT_ARTIFACT_JS,
     _assert_legend_reads,
     _assert_legend_title,
+    _COLOR_PIXELS_JS,
+    _OUTPUT_ARTIFACT_JS,
     api_json,
     assert_autark_map_drawn,
     assert_vega_canvas_rendered,
     close_scenario_details,
     close_scenario_drawer,
+    collapse_scenario,
     connect_nodes,
     dismiss_toasts,
     drag_builtin_to_canvas,
@@ -99,13 +99,13 @@ from .utils import (
     open_scenario_details,
     play_node,
     read_node_error_text,
+    REPO_ROOT,
     require_owner_view,
     require_project_page,
     require_user_auth,
     require_webgpu,
     run_all_and_wait,
     save_dataflow,
-    scenario_card_button,
     scenario_part,
     set_node_code,
     stub_login_and_enter_workflow,
@@ -120,7 +120,7 @@ EXAMPLE = Path(REPO_ROOT) / "docs" / "examples" / "06-back-bay-road-sunlight.jso
 EXAMPLE_NAME = "Back Bay road sunlight when buildings change"
 AUTARK = "curio.builtin/autk-grammar"
 COMPARE = "curio.builtin/compare-scenarios"
-BARS = "curio.scout/bars"
+BARS = "curio.vega-lite/bars"
 PYTHON = "curio.builtin/computation-analysis"
 VEGA = "curio.builtin/vis-vega"
 #: The chart the second test wires to the two dropped Roads nodes: mean
@@ -145,7 +145,7 @@ E_EDIT, E_COMPUTE, E_MAP, E_ROADS = (
 #: The map of the buildings Two towers removed's Map Editor node hands on,
 #: which it is linked to: an outcome of the scenario.
 E_BUILDINGS = "whatif-towers-buildings"
-#: Scout's Bars chart of mean sunlight and the Python node that takes the
+#: The Vega-Lite package's Bars chart of mean sunlight and the Python node that takes the
 #: sunlight change, which keep the ids of the Compare nodes they replaced.
 CHART, DIFFERENCE = "whatif-compare-chart", "whatif-compare-difference"
 #: The Autark map after the Sunlight change node, which draws each road's change.
@@ -552,7 +552,7 @@ def _assert_cards(page) -> None:
         details = open_scenario_details(page, scenario_id)
         assert details.get_by_label("Scenario name").input_value() == name
         assert details.get_by_label(f"Color of {name}").input_value().lower() == COLORS[scenario_id]
-        context = scenario_part(details, "Fixed context")
+        context = scenario_part(details, "Shared context")
         assert "Data Pool" in context, f"{name} lists {context!r} as its fixed context"
         close_scenario_details(page)
     close_scenario_drawer(page)
@@ -591,13 +591,10 @@ def test_example_06_compares_its_three_scenarios_in_the_canvas(
     _assert_tag_and_chip(page, E_COMPUTE, "1")
 
     # 2. All collapsed, Run All: the loader loads once, and every scenario runs.
-    open_in_project_tab(page)
     for scenario_id in NAMES:
-        scenario_card_button(page, scenario_id, "Collapse").click()
-        _box(page, scenario_id).wait_for(state="attached", timeout=10000)
+        collapse_scenario(page, scenario_id)
         for node_id in MEMBERS[scenario_id]:
             assert not node_locator(page, node_id).is_visible(), f"{node_id} shows inside a collapsed scenario"
-    close_scenario_drawer(page)
     python, loads, stop = _record_runs(page, DATA)
     left_out, stop_left_out = _record_batched_left_out(page)
     run_all_and_wait(page, timeout_ms=RUN_MS)
@@ -635,7 +632,7 @@ def test_example_06_compares_its_three_scenarios_in_the_canvas(
         for outcome in OUTCOMES[scenario_id]:
             page.wait_for_function(
                 """([box, node]) => {
-                    const row = document.querySelector(`[data-scenario-box="${box}"] [data-scenario-outcome="${node}"]`);
+                    const row = document.querySelector(`[data-scenario-box="${box}"] [data-scenario-row="${node}"]`);
                     return !!row && row.textContent.includes("Done");
                 }""",
                 arg=[scenario_id, outcome],
@@ -764,9 +761,10 @@ def test_example_06_compares_its_three_scenarios_in_the_canvas(
 def test_both_scenarios_dragged_into_an_empty_project_read_one_context(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
-    """The seeded example runs and is saved; then, in an empty project, both of
-    its scenarios are dragged in from the Scenario Catalog: they show their
-    saved results with no run, read one context, and expand in place. A
+    """The seeded example runs and is saved; then, in an empty project, two of
+    its scenarios are dragged in, one card after the other: the first makes
+    its set's copy, and the second joins it. They show their saved results
+    with no run, read one context, and expand in place. A
     Vega-Lite chart reading ``inputs``, wired to the two dropped Roads nodes,
     names each input's rows by the dropped box its node is in."""
     require_project_page()
@@ -804,20 +802,20 @@ def test_both_scenarios_dragged_into_an_empty_project_read_one_context(
         _settled_done(page, node_id, node_type)
     save_dataflow(page)
 
-    # Both scenarios dragged into the empty project: nothing runs. Zoomed out
-    # first, so the two land far enough apart to be expanded side by side.
+    # One card drags one scenario: Baseline makes the set's copy, and Twice as
+    # tall joins it. Nothing runs. Zoomed out first, so both land in view.
     page.goto(f"{app_frontend.base_url}/dataflow/{target}")
     page.wait_for_load_state("domcontentloaded")
     page.wait_for_function("() => !!window.__curio_reactFlow", timeout=45000)
     page.locator(".react-flow__pane").wait_for(state="visible", timeout=45000)
-    drawer = page.locator('[data-curio-scenario-catalog-drawer="true"]')
     python, _loads, stop = _record_runs(page, DATA)
-    for scenario_id, name, at in ((BASELINE, "Baseline", (200.0, 80.0)), (TWICE, "Twice as tall", (200.0, 420.0))):
-        _zoom_out(page)
-        if not drawer.is_visible():
-            _open_scenario_catalog(page)
-        _drag_scenario_onto_canvas(page, source, scenario_id, at=at)
-        _toast(page, f'Added "{name}" from {EXAMPLE_NAME}.')
+    _zoom_out(page)
+    _open_scenario_catalog(page)
+    _drop_and_wait(page, source, BASELINE, at=(200.0, 80.0))
+    _toast(page, f'Added "Baseline" from {EXAMPLE_NAME} as the scenario set ')
+    dismiss_toasts(page)
+    _drop_and_wait(page, source, TWICE, at=(200.0, 300.0))
+    _toast(page, f'Added "Twice as tall" from {EXAMPLE_NAME} to the scenario set ')
     page.keyboard.press("Escape")
     wait_for_drawer_closed(page, '[data-curio-scenario-catalog-drawer="true"]')
     # The pool passes on the loader's layers, so the Data Loading node that

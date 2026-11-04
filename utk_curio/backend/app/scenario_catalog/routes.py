@@ -45,11 +45,13 @@ def get_scenario(project_id: str, scenario_id: str):
 @require_auth
 @_errors
 def copy_plan(project_id: str, scenario_id: str):
-    """What dragging the scenario into ``?target=<projectId>`` copies."""
+    """What dragging the scenario into ``?target=<projectId>`` copies, where
+    the copy of its set holds ``?present=a,b`` already."""
     target = request.args.get("target") or ""
     if not target:
         raise ScenarioCatalogError("target is required")
-    return jsonify(_service().copy_plan(project_id, scenario_id, target)), 200
+    present = [i for i in (request.args.get("present") or "").split(",") if i]
+    return jsonify(_service().copy_plan(project_id, scenario_id, target, present)), 200
 
 
 @scenarios_bp.route("/<project_id>/<scenario_id>/copy", methods=["POST"])
@@ -57,9 +59,12 @@ def copy_plan(project_id: str, scenario_id: str):
 @_errors
 def copy_into(project_id: str, scenario_id: str):
     """Copy the scenario's saved outputs and packages into the target
-    project, for a drop whose copies have the node ids the body names."""
+    project, for a drop whose copies have the node ids the body names and
+    whose set's copy holds the body's ``present`` already."""
     body = request.get_json(silent=True) or {}
     target = body.get("targetProjectId") if isinstance(body, dict) else None
     if not isinstance(target, str) or not target:
         raise ScenarioCatalogError("targetProjectId is required")
-    return jsonify(_service().copy_into(project_id, scenario_id, target, body.get("outputs"))), 200
+    return jsonify(
+        _service().copy_into(project_id, scenario_id, target, body.get("outputs"), body.get("present") or [])
+    ), 200

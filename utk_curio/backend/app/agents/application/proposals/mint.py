@@ -583,11 +583,14 @@ def _mint_plan_from_params(
 
 def _node_display_name(node: dict, entry: dict | None) -> str:
     """The words a card uses for an existing node: "Python Computation node",
-    or "Python Computation node · Load boundaries" when the node has a title."""
+    or "Python Computation node · Load boundaries" when the node's title is
+    not its template's label."""
+    from utk_curio.backend.app.execution.node_names import saved_node_title
+
     label = (entry or {}).get("label")
     name = f"{label} node" if isinstance(label, str) and label.strip() else "node"
-    title = node.get("title")
-    return name + (f" · {title}" if isinstance(title, str) and title.strip() else "")
+    title = saved_node_title(node)
+    return name + (f" · {title}" if title and title != (label or "").strip() else "")
 
 
 def _target_node_id(loop_ctx: dict, params: dict) -> str | None:
@@ -822,9 +825,9 @@ def _mint_node_create(
     if entry is None:
         return agents_tool_rounds._refuse_params(err)
     proposed = content.extract_node_content(params.get("content"))
-    # A template whose starter is its whole content, such as each Scout
-    # chart, gives the node that starter, as a plan does: the request gives
-    # no content, and sets the template's widgets by name.
+    # A template whose starter is its whole content, such as each chart of
+    # the Vega-Lite package, gives the node that starter, as a plan does:
+    # the request gives no content, and sets the template's widgets by name.
     starter = _node_create_starter(user_key, project_id, entry)
     if starter is not None and proposed:
         return agents_tool_rounds._refuse_params(agent_text.message(

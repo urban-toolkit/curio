@@ -104,7 +104,11 @@ jest.mock("../../components/notebook/NotebookRunAll", () => ({ NotebookRunAll: (
 jest.mock("../../components/agents/attach/AgentDockOverlay", () => ({ AgentDockOverlay: () => null }));
 jest.mock("../../components/agents/attach/AgentDock", () => ({ AgentDock: () => null }));
 jest.mock("../../components/scenarios/useScenarioDrop", () => ({ useScenarioDrop: () => jest.fn() }));
-jest.mock("../../components/scenarios/ScenarioLayers", () => ({ BOX_WIDTH: 0, boxLayout: () => ({ height: 0 }) }));
+jest.mock("../../components/scenarios/ScenarioLayers", () => ({
+  BOX_WIDTH: 0,
+  boxLayout: () => ({ height: 0 }),
+  scenarioLayersExtent: () => [],
+}));
 jest.mock("../../components/scenarios/CanvasScenarioLayers", () => ({ CanvasScenarioLayers: () => null }));
 // A Data Catalog card's drag, carried here under a type of the test's own.
 jest.mock("../../services/datasetCatalog", () => ({
@@ -161,6 +165,7 @@ jest.mock("../../utils/fitViewWithMenuOffset", () => ({
   CANVAS_TITLE_ATTR: "data-curio-canvas-title",
   fitViewWithMenuOffset: jest.fn(),
   fitViewWithMenuOffsetNow: jest.fn(),
+  setDrawnBeside: jest.fn(),
   topOverlayBottom: () => null,
 }));
 

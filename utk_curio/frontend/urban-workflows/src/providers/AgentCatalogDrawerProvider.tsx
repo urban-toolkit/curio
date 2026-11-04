@@ -9,7 +9,6 @@ import { createPortal } from "react-dom";
 import { useFlowContext } from "./FlowProvider";
 import { useAgentsDataflowId } from "./agents";
 import { AgentCatalogDrawer } from "../components/agents/catalog/AgentCatalogDrawer";
-import { modalStackDepth } from "../components/ModalShell";
 import { useSlideDrawerPresentation } from "../hook/useSlideDrawerPresentation";
 
 /**
@@ -48,19 +47,8 @@ export function AgentCatalogDrawerProvider({ children }: { children: React.React
   // the one its link opened, which the flow state does not name.
   const projectId = useAgentsDataflowId();
 
-  useEffect(() => {
-    if (!presented) return;
-    const onKey = (e: KeyboardEvent) => {
-      // A modal rendered inside this drawer (API Settings, agent import) owns
-      // Escape while it is open. This listener was registered first, so the
-      // modal cannot stop it from firing - it has to stand down itself.
-      if (modalStackDepth() > 0) return;
-      if (e.key === "Escape" && !pinned) closeAgentCatalogDrawer();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [presented, pinned, closeAgentCatalogDrawer]);
-
+  // Escape closes the drawer from its panel (AgentCatalogDrawer), as the
+  // other catalog drawers close theirs.
   useEffect(() => {
     if (!mounted) return;
     const prevOverflow = document.body.style.overflow;

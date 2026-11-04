@@ -1224,6 +1224,8 @@ class TestDataflowPlanApply:
         # The goal is the plan row's title and intent; no code yet.
         assert load["content"] == ""
         assert load["goal"].startswith("Load ") and load["goal"].endswith(" load the data")
+        # The plan's name for each node is its title, the name its header shows.
+        assert (load["title"], analyze["title"]) == ("Load", "Analyze")
         # Builder session: applied phase, both nodes pending for Build & validate or Solve.
         session = self._planner(client, token, alice_project, att_id)["builderSession"]
         assert session["phase"] == "applied"

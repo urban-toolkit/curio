@@ -20,6 +20,7 @@ import {
     CANVAS_TITLE_ATTR,
     fitViewWithMenuOffset,
     fitViewWithMenuOffsetNow,
+    setDrawnBeside,
     setViewportNow,
     topOverlayBottom,
 } from "../utils/fitViewWithMenuOffset";
@@ -105,7 +106,7 @@ import { useCollab } from "../providers/CollaborationProvider";
 import { useDocBinding } from "../providers/collab/docContext";
 import { frameNodesInView, revealRectInView } from "../utils/focusDatasetNodes";
 import { scenarioCanvasView } from "../utils/scenarios/scenarioCanvasView";
-import { BOX_WIDTH, boxLayout } from "./scenarios/ScenarioLayers";
+import { BOX_WIDTH, boxLayout, groupBoxLayout, scenarioLayersExtent } from "./scenarios/ScenarioLayers";
 import { CanvasScenarioLayers } from "./scenarios/CanvasScenarioLayers";
 import { useScenarioUi } from "./scenarios/scenarioUi";
 import { useProjectLoadState } from "./projectLoadState";
@@ -159,6 +160,7 @@ export function MainCanvas() {
         registerNotebookScroller,
         revealNodes,
         scenarios,
+        scenarioSets,
         packages: dataflowPackages,
         viewerMode,
         dataflowDoc,
@@ -172,8 +174,8 @@ export function MainCanvas() {
     const hostedGuest = useHostedGuest();
 
     // The scenario pointed at in the Scenario Catalog drawer's In project tab
-    // (#662), whose fixed context the canvas marks. Never saved.
-    const { highlighted: highlightedScenario } = useScenarioUi();
+    // (#662), whose shared context and shared outcomes the canvas marks. Never saved.
+    const { highlighted: highlightedScenario, preview: scenarioPreview } = useScenarioUi();
 
     // What React Flow draws: the flow's own nodes and edges, with collapsed
     // scenarios hidden and their members marked, plus the boxes, frames and
@@ -182,8 +184,12 @@ export function MainCanvas() {
     // as a cell: a hidden member would leave an empty slot, and the boxes and
     // frames are placed by canvas positions the cells do not have.
     const scenarioView = useMemo(
-        () => scenarioCanvasView(nodes, edges, notebookOn ? [] : scenarios ?? [], { fixedFor: highlightedScenario }),
-        [nodes, edges, scenarios, highlightedScenario, notebookOn],
+        () => scenarioCanvasView(nodes, edges, notebookOn ? [] : scenarios ?? [], {
+            fixedFor: highlightedScenario,
+            preview: notebookOn ? null : scenarioPreview,
+            sets: scenarioSets,
+        }),
+        [nodes, edges, scenarios, scenarioSets, highlightedScenario, scenarioPreview, notebookOn],
     );
 
     // How far the viewport may pan, tracking the nodes rather than a fixed box
@@ -192,21 +198,28 @@ export function MainCanvas() {
     // array every render would call `d3Zoom.translateExtent()` on every frame
     // of a drag. `computeTranslateExtent` rounds to a coarse grid, and keying
     // the tuple on those four numbers keeps the identity stable until a node
-    // actually crosses a boundary. A collapsed scenario's box counts as a node.
+    // actually crosses a boundary. A collapsed box, a scenario's or a shared
+    // group's, counts as a node.
     const [extentMinX, extentMinY, extentMaxX, extentMaxY] = useMemo(() => {
-        const boxes = scenarioView.boxes.map((box) => ({
-            id: box.scenario.id,
-            position: { x: box.x, y: box.y },
-            positionAbsolute: { x: box.x, y: box.y },
+        const asNode = (id: string, x: number, y: number, height: number) => ({
+            id,
+            position: { x, y },
+            positionAbsolute: { x, y },
             width: BOX_WIDTH,
-            height: boxLayout(box).height,
+            height,
             data: {},
-        }));
+        });
+        const boxes = [
+            ...scenarioView.boxes.map((box) => asNode(box.scenario.id, box.x, box.y, boxLayout(box).height)),
+            ...(scenarioView.groups ?? [])
+                .filter((group) => group.collapsed)
+                .map((group) => asNode(group.key, group.x, group.y, groupBoxLayout(group).height)),
+        ];
         const [[minX, minY], [maxX, maxY]] = computeTranslateExtent(
             boxes.length > 0 ? [...nodes, ...boxes] : nodes,
         );
         return [minX, minY, maxX, maxY];
-    }, [nodes, scenarioView.boxes]);
+    }, [nodes, scenarioView.boxes, scenarioView.groups]);
     const translateExtent = useMemo(
         () =>
             [
@@ -343,6 +356,18 @@ export function MainCanvas() {
             }
         };
     }, [reactFlow, flowStore]);
+
+    // What the scenario layers draw beside React Flow (a set's outline, a
+    // collapsed box) is in no fit of nodes, so a fit of the whole canvas, the
+    // load's, Fit view's or a capture's, reads it here: from the view as it is
+    // when the fit runs, around the nodes as React Flow measured them.
+    const scenarioViewRef = useRef(scenarioView);
+    scenarioViewRef.current = scenarioView;
+    useEffect(() => {
+        const read = () => scenarioLayersExtent(scenarioViewRef.current, flowStore.getState().nodeInternals);
+        setDrawnBeside(read);
+        return () => setDrawnBeside(null);
+    }, [flowStore]);
 
     // Test hook, as the one above: this tab's presence in the dataflow's room
     // (its doc's awareness), so Playwright can read what reached it and say
@@ -561,20 +586,34 @@ export function MainCanvas() {
         showToast,
         askTheOwner: askForPackage,
     });
-    // A scenario from the Scenario Catalog arrives as a copy: its box where it
-    // was dropped, its context as fixed data (useScenarioDrop). The notebook
-    // view shows its cells. On the canvas the box is drawn beside React Flow,
-    // not in its store, so no fit of nodes frames it: once it is drawn, the
-    // view moves as far as it takes to bring the box into sight (#769).
+    // Scenarios from the Scenario Catalog arrive as copies, a new set of
+    // collapsed boxes where they were dropped, their context as fixed data
+    // (useScenarioDrop). The notebook view shows their cells. On the canvas
+    // the boxes are drawn beside React Flow, not in its store, so no fit of
+    // nodes frames them: once they are drawn, the view moves as far as it
+    // takes to bring the set's boxes into sight (#769).
     const dropScenario = useScenarioDrop();
-    const [boxToReveal, setBoxToReveal] = useState<string | null>(null);
+    const [boxToReveal, setBoxToReveal] = useState<{ scenarios: string[]; set: string } | null>(null);
     useEffect(() => {
         if (!boxToReveal) return;
-        const box = scenarioView.boxes.find((b) => b.scenario.id === boxToReveal);
-        if (!box) return;
+        const boxes = scenarioView.boxes.filter((b) => boxToReveal.scenarios.includes(b.scenario.id));
+        if (boxes.length < boxToReveal.scenarios.length) return;
+        const rects = [
+            ...boxes.map((b) => ({ x: b.x, y: b.y, width: BOX_WIDTH, height: boxLayout(b).height })),
+            ...(scenarioView.groups ?? [])
+                .filter((g) => g.set === boxToReveal.set && g.collapsed)
+                .map((g) => ({ x: g.x, y: g.y, width: BOX_WIDTH, height: groupBoxLayout(g).height })),
+        ];
         setBoxToReveal(null);
-        revealRectInView(reactFlow, { x: box.x, y: box.y, width: BOX_WIDTH, height: boxLayout(box).height });
-    }, [boxToReveal, scenarioView.boxes, reactFlow]);
+        const x = Math.min(...rects.map((r) => r.x));
+        const y = Math.min(...rects.map((r) => r.y));
+        revealRectInView(reactFlow, {
+            x,
+            y,
+            width: Math.max(...rects.map((r) => r.x + r.width)) - x,
+            height: Math.max(...rects.map((r) => r.y + r.height)) - y,
+        });
+    }, [boxToReveal, scenarioView.boxes, scenarioView.groups, reactFlow]);
 
     // What a drop on the canvas carries, read while its event lasts, and where
     // it was dropped, each kind told apart in the order it always was: a
@@ -662,7 +701,7 @@ export function MainCanvas() {
             case "scenario":
                 void dropScenario(drop.scenario, drop.position).then((dropped) => {
                     if (!dropped || revealNodes(dropped.nodes)) return;
-                    setBoxToReveal(dropped.scenario);
+                    setBoxToReveal({ scenarios: [dropped.scenario], set: dropped.set });
                 });
                 return;
             case "agent": {

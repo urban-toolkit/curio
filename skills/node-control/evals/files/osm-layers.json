@@ -19,8 +19,7 @@
         "in": "DEFAULT",
         "goal": "Load OpenStreetMap's parks, water, roads and buildings of downtown Chicago.",
         "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "OpenStreetMap layers"
+          "keywords": []
         },
         "title": "OpenStreetMap layers"
       }

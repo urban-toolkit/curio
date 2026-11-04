@@ -89,6 +89,26 @@ no account is signed in to this run, so there is no Scenario Catalog to search
 
 node goals shortened to fit the tool output bound
 
+## tools.lineage-left-out
+
+the nodes each copy was copied from (copiedFrom) left out to fit the tool output bound; node.read gives a node's
+
+## tools.goals-left-out
+
+node goals left out to fit the tool output bound; node.read gives a node's goal
+
+## tools.datasets-shortened
+
+the dataflow's datasets cut to their ids to fit the tool output bound
+
+## tools.values-left-out
+
+node widgets, selection tags and settings left out to fit the tool output bound; node.read gives a node's
+
+## tools.nodes-left-out
+
+the nodes past the tool output bound left out, as many as nodesElided says; the edges name each, and node.read gives one
+
 ## mint.no-saved-spec
 
 no saved project spec is available

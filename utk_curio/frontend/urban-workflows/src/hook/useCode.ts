@@ -136,7 +136,7 @@ export function useCode(): IUseCode {
             const savedProv = TrillGenerator.getSerializableDataflowProvenance();
             // #662: a snapshot carries scenarios only when it had some, so an
             // absent key restores none.
-            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || [], undefined, trill.dataflow.scenarios ?? [], options?.fit);
+            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || [], undefined, trill.dataflow.scenarios ?? [], options?.fit, undefined, trill.dataflow.scenarioSets);
             TrillGenerator.loadDataflowProvenance(savedProv);
             // Reverting puts a DIFFERENT graph on the canvas than the one on
             // disk, so it is an edit. The edge replay inside loadParsedTrill no
@@ -146,7 +146,7 @@ export function useCode(): IUseCode {
             markDirty();
         } else if(suggestionType == undefined) {
             // #845: a dataflow without the key has auto-run off.
-            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || [], trill.dataflow.categories || {}, trill.dataflow.scenarios ?? [], options?.fit, trill.dataflow.autoRun === true);
+            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || [], trill.dataflow.categories || {}, trill.dataflow.scenarios ?? [], options?.fit, trill.dataflow.autoRun === true, trill.dataflow.scenarioSets);
             // What the canvas holds now, for its binding to the dataflow's doc.
             noteLoadedDataflow?.(trill.dataflow);
             // Each node's next run or edit branches from its entry that holds

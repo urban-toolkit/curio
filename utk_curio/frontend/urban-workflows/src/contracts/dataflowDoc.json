@@ -10,9 +10,11 @@
     "edges": "map",
     "edgeOrder": "array",
     "scenarios": "map",
-    "scenarioOrder": "array"
+    "scenarioOrder": "array",
+    "scenarioSets": "map",
+    "scenarioSetOrder": "array"
   },
-  "meta": ["id", "layout", "scenariosListed"],
+  "meta": ["id", "layout", "scenariosListed", "scenarioSetsListed"],
   "outsideTheDoc": ["agents", "agentAttachments", "agentDefaults"],
   "dataflow": {
     "nodes": "@nodes",
@@ -26,7 +28,8 @@
     "categories": "categories",
     "autoRun": "autoRun",
     "datasets": "datasets",
-    "scenarios": "@scenarios"
+    "scenarios": "@scenarios",
+    "scenarioSets": "@scenarioSets"
   },
   "node": {
     "id": "@key",
@@ -36,6 +39,8 @@
     "width": "size.width",
     "height": "size.height",
     "minimized": "minimized",
+    "minimizedWidth": "chip.width",
+    "minimizedHeight": "chip.height",
     "dashboardPinned": "pin.pinned",
     "dashboardX": "pin.x",
     "dashboardY": "pin.y",
@@ -58,7 +63,6 @@
     "appearance": "appearance",
     "spatialJoin": "spatialJoin",
     "simpleVis": "simpleVis",
-    "packageTemplateLabel": "packageTemplateLabel",
     "packageTemplateConfig": "packageTemplateConfig",
     "dataPool": "dataPool",
     "widgets": "@widgets",
@@ -88,8 +92,18 @@
     "color": "color",
     "nodes": "nodes",
     "description": "description",
+    "set": "set",
+    "context": "context",
+    "outcomes": "outcomes",
     "collapsed": "collapsed",
     "box": "box",
+    "source": "source"
+  },
+  "scenarioSet": {
+    "id": "@key",
+    "name": "name",
+    "description": "description",
+    "shared": "shared",
     "source": "source"
   }
 }

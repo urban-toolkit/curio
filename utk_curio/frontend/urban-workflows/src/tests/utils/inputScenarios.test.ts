@@ -10,7 +10,7 @@ import { NO_SCENARIO_COLOR, scaleLabels } from "../../utils/scenarios/scenarioCo
 import type { Scenario } from "../../utils/scenarios/scenarioModel";
 
 jest.mock("../../utils/palettePackageFactoryDraft", () => ({
-  resolveNodeDisplayLabel: (data: any) => data.nodeType,
+  resolveNodeDisplayLabel: (data: any) => data.title || data.nodeType,
 }));
 
 const CHART = "chart";

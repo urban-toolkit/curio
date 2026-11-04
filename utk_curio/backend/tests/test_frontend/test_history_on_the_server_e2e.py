@@ -68,7 +68,7 @@ def _spec() -> dict:
         return {
             "id": node_id, "type": node_type, "x": x, "y": 0, "content": content, "title": title,
             "in": "DEFAULT", "out": "DEFAULT", "goal": "",
-            "metadata": {"keywords": [], "packageTemplateLabel": title},
+            "metadata": {"keywords": []},
         }
 
     return {

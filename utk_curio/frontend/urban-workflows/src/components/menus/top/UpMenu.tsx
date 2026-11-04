@@ -15,7 +15,6 @@ import {
     faBolt,
     faClockRotateLeft,
     faClone,
-    faCodeBranch,
     faCubes,
     faObjectGroup,
     faFileArrowDown,
@@ -430,14 +429,6 @@ export default function UpMenu() {
                     <HeaderMenuItem icon={faFileExport} onClick={exportAsJupyterNotebook}>
                         Export as notebook
                     </HeaderMenuItem>
-                    {!isSharedView && (
-                        <HeaderMenuItem
-                            icon={faCodeBranch}
-                            onClick={scenarioItem(scenarioActions.saveDataflowAsScenario)}
-                        >
-                            Save dataflow as scenario
-                        </HeaderMenuItem>
-                    )}
                     <HeaderMenuDivider />
                     {/* The Python environment the nodes run in. Not a
                         catalog, so not among the catalog buttons. */}
@@ -499,12 +490,12 @@ export default function UpMenu() {
                     >
                         Provenance
                     </HeaderMenuItem>
-                    {/* Scenarios (#662): save a selection as one, or duplicate
-                        it as another; either opens the Scenario Catalog
-                        drawer's In project tab, which lists them. Here rather
-                        than a menu of their own: the bar has no room for one
-                        beside every catalog's label. An edit, so not for a
-                        shared viewer. */}
+                    {/* Scenarios (#662): Define scenario opens the panel that
+                        makes one of the nodes picked, and Duplicate selection
+                        copies the nodes picked beside them. Here rather than a
+                        menu of their own: the bar has no room for one beside
+                        every catalog's label. An edit, so not for a shared
+                        viewer. */}
                     {!isSharedView && (
                         <>
                             <HeaderMenuDivider />
@@ -512,23 +503,16 @@ export default function UpMenu() {
                                 icon={faObjectGroup}
                                 onClick={scenarioItem(scenarioActions.saveSelectionAsScenario)}
                             >
-                                Save selection as scenario
+                                Define scenario
                             </HeaderMenuItem>
                             {/* Duplicating adds nodes, which happens on the
                                 canvas only. */}
                             <HeaderMenuItem
                                 icon={faClone}
-                                onClick={scenarioItem(() => scenarioActions.duplicate(false))}
+                                onClick={scenarioItem(scenarioActions.duplicate)}
                                 disabled={canvasView === "notebook"}
                             >
                                 Duplicate selection
-                            </HeaderMenuItem>
-                            <HeaderMenuItem
-                                icon={faCodeBranch}
-                                onClick={scenarioItem(() => scenarioActions.duplicate(true))}
-                                disabled={canvasView === "notebook"}
-                            >
-                                Duplicate as scenario
                             </HeaderMenuItem>
                         </>
                     )}
