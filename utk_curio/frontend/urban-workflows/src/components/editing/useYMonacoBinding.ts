@@ -13,6 +13,13 @@
  * - **A node with no code in the doc** gets what its editor shows (the
  *   starter of a node just dropped), or, while it shows nothing, its first
  *   change, from a tab that edits the dataflow.
+ * - **A starter is not an edit.** While the doc holds no code for the node
+ *   and the editor shows none of its own (its empty spec, or a starter its
+ *   node chose in this tab from its input, `hook/useStarterSpec`), nothing is
+ *   written and nothing is bound: y-monaco would carry the starter into the
+ *   doc as typing. The editor binds at its first edit, which writes what it
+ *   holds then, or when code reaches the node's text from elsewhere (another
+ *   tab, an agent, Solve), which takes the starter's place.
  * - **Focus** is the tab's `editing` presence: removing a node someone else
  *   is editing asks first.
  * - **An agent's change** to the node's code or spec, landing while the agent
@@ -77,6 +84,9 @@ function takeUndo(editor: any, monaco: any): { manager: Y.UndoManager | null } {
     return slot;
 }
 
+/** Code is empty only when it holds nothing at all. */
+const holdsNothing = (text: string): boolean => text === "";
+
 export function useYMonacoBinding(
     editor: any,
     monaco: any,
@@ -86,12 +96,23 @@ export function useYMonacoBinding(
         canWrite: boolean;
         /** What was last written into the editor from outside its typing. */
         baselineRef: MutableRefObject<string>;
+        /** Whether *text* holds no code at all, as this editor reads it: only
+         *  "" for code (the default); for a spec, its empty `{}` too. */
+        isEmpty?: (text: string) => boolean;
+        /** A starter the node chose in this tab from its input, which the
+         *  editor is handed as its content and which is not the node's code
+         *  until someone edits it; null when the editor is handed none. */
+        starter?: string | null;
     },
 ): void {
     const binding = useDocBinding();
     const provider = binding?.synced ? binding.provider : null;
-    const { canWrite, baselineRef } = options;
+    const { canWrite, baselineRef, isEmpty = holdsNothing, starter = null } = options;
 
+    // Run again when the editor is handed a starter: the bind it had, to the
+    // node's empty text, goes before the starter lands (this effect's cleanup
+    // runs before the effect that writes it into the editor), and the editor
+    // waits for an edit or for code instead.
     useEffect(() => {
         if (!editor || !monaco || !nodeId || !provider) return;
         const { doc, awareness } = provider;
@@ -99,8 +120,17 @@ export function useYMonacoBinding(
         let disposed = false;
         let current: { binding: { destroy(): void }; undo: Y.UndoManager; text: Y.Text; release: () => void } | null = null;
         let watchedNode: Y.Map<unknown> | null = null;
-        let firstChange: { dispose(): void } | null = null;
+        // While the doc holds no code for the node: the editor's changes, for
+        // its first edit, and the node's empty text, for code written into it
+        // elsewhere; and whether such code came, which the bind marks.
+        let edits: { dispose(): void } | null = null;
+        let watchedText: Y.Text | null = null;
+        let codeCame = false;
         const undo = takeUndo(editor, monaco);
+
+        /** Whether an editor showing *shown* shows none of the node's code:
+         *  nothing, or the starter it was handed. */
+        const showsNoCode = (shown: string) => isEmpty(shown) || (starter !== null && shown === starter);
 
         const textOf = (): Y.Text | null => {
             const node = nodes.get(nodeId);
@@ -118,7 +148,10 @@ export function useYMonacoBinding(
         };
 
         const onNodeChange = (event: Y.YMapEvent<unknown>) => {
-            if (event.keysChanged.has(CONTENT)) void bind();
+            if (!event.keysChanged.has(CONTENT)) return;
+            const text = textOf();
+            if (waiting() && !event.transaction.local && text && !isEmpty(text.toString())) codeCame = true;
+            void bind();
         };
 
         const watchNode = () => {
@@ -130,17 +163,48 @@ export function useYMonacoBinding(
             watchedNode?.observe(onNodeChange);
         };
 
-        // A node with no code in the doc gets the editor's, at its first change.
-        const awaitFirstChange = () => {
+        const waiting = () => edits !== null || watchedText !== null;
+
+        const stopWaiting = () => {
+            edits?.dispose();
+            edits = null;
+            watchedText?.unobserve(onCodeCame);
+            watchedText = null;
+        };
+
+        // Code written into the node's empty text elsewhere binds the editor,
+        // which then shows it in place of what it showed.
+        function onCodeCame(event: Y.YTextEvent) {
+            if (!watchedText || isEmpty(watchedText.toString())) return;
+            if (!event.transaction.local) codeCame = true;
+            void bind();
+        }
+
+        // While the doc holds no code for the node (*text* is its empty text,
+        // or null when it has none): the editor's first edit becomes the
+        // node's code, from a tab that edits the dataflow, and code written
+        // into *text* elsewhere binds the editor.
+        const awaitCode = (text: Y.Text | null) => {
             const model = editor.getModel?.();
-            if (firstChange || !canWrite || !model?.onDidChangeContent) return;
-            firstChange = model.onDidChangeContent(() => {
-                const node = nodes.get(nodeId);
-                firstChange?.dispose();
-                firstChange = null;
-                if (disposed || !(node instanceof Y.Map) || node.get(CONTENT) instanceof Y.Text) return;
-                doc.transact(() => node.set(CONTENT, new Y.Text(model.getValue())), CANVAS_ORIGIN);
-            });
+            if (!edits && canWrite && model?.onDidChangeContent) {
+                edits = model.onDidChangeContent(() => {
+                    const shown = model.getValue();
+                    const node = nodes.get(nodeId);
+                    if (disposed || showsNoCode(shown) || !(node instanceof Y.Map)) return;
+                    const held = node.get(CONTENT);
+                    stopWaiting();
+                    doc.transact(() => {
+                        if (held instanceof Y.Text) replaceText(held, shown);
+                        else node.set(CONTENT, new Y.Text(shown));
+                    }, CANVAS_ORIGIN);
+                    void bind();
+                });
+            }
+            if (text !== watchedText) {
+                watchedText?.unobserve(onCodeCame);
+                watchedText = text;
+                watchedText?.observe(onCodeCame);
+            }
         };
 
         const bind = async () => {
@@ -148,23 +212,28 @@ export function useYMonacoBinding(
             let text = textOf();
             if (current && current.text === text) return;
             unbind();
+            const inEditor = editor.getModel?.()?.getValue?.();
+            if (typeof inEditor === "string" && inEditor !== "" && isEmpty(text?.toString() ?? "") && showsNoCode(inEditor)) {
+                // A starter is not an edit: bound, y-monaco would write what
+                // the editor shows into the node's code.
+                awaitCode(text);
+                return;
+            }
             if (!text && canWrite) {
                 // A node with no code in the doc takes what its editor shows,
                 // the starter a palette or a template gave it: the code a save
                 // of this canvas writes.
                 const node = nodes.get(nodeId);
-                const shown = editor.getModel?.()?.getValue?.();
-                if (node instanceof Y.Map && typeof shown === "string" && shown !== "") {
-                    doc.transact(() => node.set(CONTENT, new Y.Text(shown)), CANVAS_ORIGIN);
+                if (node instanceof Y.Map && typeof inEditor === "string" && inEditor !== "") {
+                    doc.transact(() => node.set(CONTENT, new Y.Text(inEditor)), CANVAS_ORIGIN);
                     text = textOf();
                 }
             }
             if (!text) {
-                awaitFirstChange();
+                awaitCode(null);
                 return;
             }
-            firstChange?.dispose();
-            firstChange = null;
+            stopWaiting();
             const { MonacoBinding } = await import("y-monaco");
             const model = editor.getModel?.();
             const ytext = textOf();
@@ -174,6 +243,14 @@ export function useYMonacoBinding(
                 doc.transact(() => replaceText(ytext, typed), CANVAS_ORIGIN);
             }
             const made = new MonacoBinding(ytext, model, new Set([editor]), awareness);
+            // Code an agent wrote while the editor waited for code replaced
+            // what it showed: its lines are marked as a change of the agent's.
+            const landed = codeCame;
+            codeCame = false;
+            const writer = landed ? agentHoldOf(nodeId) : null;
+            if (writer?.writes === "code" || writer?.writes === "spec") {
+                markChangedLines(editor, changedLinesBetween(typed, ytext.toString()), agentCategoryKey(writer.category));
+            }
             const manager = new Y.UndoManager(ytext, { trackedOrigins: new Set<unknown>([made, CANVAS_ORIGIN]) });
             // Observed after y-monaco, so a change is in the editor when its
             // lines are marked. What this tab wrote is never an agent's.
@@ -220,12 +297,12 @@ export function useYMonacoBinding(
             disposed = true;
             nodes.unobserve(onNodes);
             watchedNode?.unobserve(onNodeChange);
-            firstChange?.dispose();
+            stopWaiting();
             focus?.dispose?.();
             blur?.dispose?.();
             const state = awareness.getLocalState() as { editing?: string | null } | null;
             if (state?.editing === nodeId) setEditing(awareness, null);
             unbind();
         };
-    }, [editor, monaco, nodeId, provider, canWrite, baselineRef]);
+    }, [editor, monaco, nodeId, provider, canWrite, baselineRef, isEmpty, starter]);
 }
