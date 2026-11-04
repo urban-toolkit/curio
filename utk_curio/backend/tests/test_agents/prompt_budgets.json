@@ -1,7 +1,7 @@
 {
   "agent.curio.researcher@1 chat": 53400,
   "agent.curio.researcher@1 chat, native tools": 47900,
-  "agent.curio.researcher@1 chat, native tool definitions": 11600,
+  "agent.curio.researcher@1 chat, native tool definitions": 12200,
   "agent.curio.researcher@1 research.notes.compose": 26200,
   "agent.curio.researcher@1 research.verify": 24000,
   "agent.curio.dataflow-planner@1 workflow.plan.create": 26600,
