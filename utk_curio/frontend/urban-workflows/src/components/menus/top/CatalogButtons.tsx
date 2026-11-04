@@ -3,6 +3,7 @@ import clsx from "clsx";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 
 import { CATALOG_KIND_META, type CatalogItemKind } from "../../catalog/CatalogKindVisuals";
+import { CATALOG_SECTIONS } from "../../layout/catalogSections";
 import headerStyles from "../../layout/GlobalPageHeader.module.css";
 import { useNodeCatalogDrawer } from "../../../providers/packages/NodeCatalogDrawerProvider";
 import { useAgentCatalogDrawerControls } from "../../../providers/AgentCatalogDrawerProvider";
@@ -13,20 +14,9 @@ import { useScenarioCatalogDrawer } from "../../../providers/scenarioCatalog";
 import { prefetchDatasetCatalog } from "../../../services/datasetCatalog";
 import styles from "./UpMenu.module.css";
 
-/** The catalogs, in the order the section tabs list them on every other page,
- *  with the glyph each catalog's own page shows. */
-export const CANVAS_CATALOGS: ReadonlyArray<{
-  name: string;
-  shortName: string;
-  kind: CatalogItemKind;
-}> = [
-  { name: "Node Catalog", shortName: "Node", kind: "package" },
-  { name: "Data Catalog", shortName: "Data", kind: "dataset" },
-  { name: "Agent Catalog", shortName: "Agent", kind: "agent" },
-  { name: "Discovery Catalog", shortName: "Discovery", kind: "source" },
-  { name: "Model Catalog", shortName: "Model", kind: "model" },
-  { name: "Scenario Catalog", shortName: "Scenario", kind: "scenario" },
-];
+/** The catalogs with a drawer, in the order the section pages' bar lists
+ *  them, with the glyph each catalog's own page shows. */
+export const CANVAS_CATALOGS = CATALOG_SECTIONS.filter((section) => section.onCanvas);
 
 /**
  * The six catalogs, one click each from the canvas bar. They used to sit
@@ -81,7 +71,7 @@ export function CatalogButtons({
               : undefined
           }
         >
-          <FontAwesomeIcon icon={CATALOG_KIND_META[kind].icon} className={styles.catalogIcon} />
+          <FontAwesomeIcon icon={CATALOG_KIND_META[kind].icon} className={headerStyles.barIcon} />
           <span className={styles.catalogLabel}>{shortName}</span>
         </button>
       ))}

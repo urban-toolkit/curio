@@ -58,7 +58,7 @@ export function ScenarioCatalogBrowseDrawer({
           headerTitle="Scenario details"
           onClose={onClose}
           hero={
-            <div className={styles.drawerKindHero} data-curio-scenario-thumbnail="true">
+            <div className={`${styles.drawerKindHero} ${styles.drawerPreviewHero}`} data-curio-scenario-thumbnail="true">
               <DataflowThumbnail
                 preview={scenario.preview}
                 highlight={current ? scenarioHighlight(current) : null}

@@ -124,6 +124,12 @@
   cursor: default;
 }
 
+/* A section's glyph before its name: the catalogs on the canvas, the sections
+   on every other page. */
+.barIcon {
+  font-size: 13px;
+}
+
 /* The down arrow after a menu's name, drawn with borders instead of written as
    "⏷": a written arrow needs a font that has it, and a system without one drew
    a box in its place. */

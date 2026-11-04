@@ -8,8 +8,9 @@ import styles from "./CatalogMasterPage.module.css";
 export const CatalogMasterPage: React.FC = () => {
   return (
     <div className={styles.pageShell}>
-      <GlobalPageHeader />
-      <AppSectionTabs />
+      <GlobalPageHeader>
+        <AppSectionTabs />
+      </GlobalPageHeader>
       <div className={styles.outlet}>
         <Outlet />
       </div>

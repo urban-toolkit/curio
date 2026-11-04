@@ -1,54 +1,29 @@
-/* Top-level section tabs — Projects / Node Catalog / Data Catalog. Sits directly
-   under GlobalPageHeader on every section page. */
+/* The section links in the top bar of every section page. Their look is the
+   bar's own (GlobalPageHeader.module.css), the one the canvas's catalog
+   buttons wear. */
 
-.tabBar {
-  flex-shrink: 0;
+.sections {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 20px;
-  min-height: 48px;
-  background: #fafafa;
-  border-bottom: 1px solid #e5e5e5;
+  gap: 2px;
+  flex-shrink: 0;
+  /* A step under the bar's 10px, as the canvas takes 7px, so every name fits
+     beside a long account name down to a 1150px window. */
+  --curio-bar-button-padding-x: 8px;
 }
 
-.tabLink {
-  padding: 8px 16px;
-  border: 1px solid #d0d0d5;
-  border-radius: 4px;
-  background: #fff;
-  font-size: 13px;
-  font-weight: 500;
-  color: #6b6b76;
-  text-decoration: none;
-  cursor: pointer;
-  font-family: inherit;
-  opacity: 1;
-  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+/* The page you are on: lit as an open menu is, and underlined, since it stays
+   lit while the pointer is elsewhere. */
+.sectionCurrent {
+  box-shadow: inset 0 -2px 0 var(--curio-text-on-dark);
 }
 
-/* Do not apply inactive-tab hover colors to the active tab (avoids “washed out” / fake opacity). */
-.tabLink:hover:not(.tabLinkActive) {
-  border-color: #b0b0b8;
-  color: #1e1f23;
-  background: #f7f7f7;
-}
-
-.tabLinkActive {
-  background: #1e1f23;
-  border-color: #1e1f23;
-  color: #fbfcf6;
-  font-weight: 600;
-}
-
-.tabLinkActive:hover {
-  color: var(--curio-text-on-dark);
-  background: var(--curio-top-bar-bg-hover);
-  border-color: var(--curio-top-bar-bg-hover);
-  opacity: 1;
-}
-
-.tabLink:focus-visible {
-  outline: 2px solid var(--curio-focus-ring);
-  outline-offset: 2px;
+/* The names go when the bar runs short, and the glyphs stay with their
+   tooltips. Queried against the header's slot, as the canvas does, with a
+   threshold of their own: every name showing needs about 640px. The canvas's
+   rule (UpMenu.module.css) hides its own labels only. */
+@container (max-width: 660px) {
+  .sectionLabel {
+    display: none;
+  }
 }

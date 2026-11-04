@@ -61,7 +61,7 @@ No scenario ships with Curio. The catalog lists the scenarios in your own projec
 
 ## 2. Surfaces and workflows
 
-- **The `/catalog/scenarios` page** lists every scenario in your projects. Reach it from the **Scenario Catalog** tab. Search with **Search scenarios**, sort by **Recently edited**, **Name** or **Project**, and filter by **By project** or **By origin** (**Your dataflows** or **Examples**) in the left rail. Click a card to describe it in the right-hand drawer.
+- **The `/catalog/scenarios` page** lists every scenario in your projects. Reach it from **Scenario Catalog** in the top bar. Search with **Search scenarios**, sort by **Recently edited**, **Name** or **Project**, and filter by **By project** or **By origin** (**Your dataflows** or **Examples**) in the left rail. Click a card to describe it in the right-hand drawer.
 - **The Scenario Catalog drawer**, on the canvas. Open it from the **Scenario** button in the top bar. It has two tabs:
   - **Browse all** lists every scenario in your projects, in a panel for each scenario set, headed by its name, how many of the scenarios listed are in it, and **Open source project**, with its scenarios' cards beneath. The sort orders the groups by their first card, and the cards within each group. Drag a card onto the canvas to bring its scenario into the open dataflow.
   - **In project** lists the open dataflow's own scenarios in a panel for each scenario set, headed by its name, how many scenarios it holds and a pencil that renames the set, and the tab shows how many there are. On top is **Define scenario**. Each card offers **Run scenario**, **Edit scenario**, which opens Define scenario on it, **Duplicate scenario** and **Delete**, which asks first, and its details rename, recolor and describe it (see [Scenarios](USAGE.md#scenarios)).
@@ -83,7 +83,7 @@ Agents find your scenarios too: asked for a scenario of another project, the [Da
 
 ### Workflows
 
-**I want to find a study I made.** Open the **Scenario Catalog** tab and search for the scenario's name, its description or its project's name.
+**I want to find a study I made.** Open the **Scenario Catalog** page and search for the scenario's name, its description or its project's name.
 
 **I want to change a scenario.** Click **Open source project** and change its nodes on the canvas. The catalog shows the change.
 

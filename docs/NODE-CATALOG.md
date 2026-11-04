@@ -62,7 +62,7 @@ The palette reads the open project's lockfile, so two projects open in different
 There are two places you manage node packages:
 
 - **The drawer**, inside the canvas, works on the open project only. Open it from the **Node Catalog** button in the top bar, or from the **Node Catalog** dropdown in the left Tools panel and **Browse Node Catalog +**. Its two tabs are **Browse all** and **In project**.
-- **The `/catalog/nodes` page**, reached from `/projects` and the **Node Catalog** tab, works on your whole account: a package added here goes into every project you have and every new one. It has status and category filters and a details drawer. The **Data Catalog**, **Agent Catalog**, **Skill Catalog**, **Discovery Catalog**, **Model Catalog** and **Scenario Catalog** tabs beside it are the other catalogs.
+- **The `/catalog/nodes` page**, reached from **Node Catalog** in the top bar of `/projects` and every catalog page, works on your whole account: a package added here goes into every project you have and every new one. It has status and category filters and a details drawer. The **Data Catalog**, **Agent Catalog**, **Skill Catalog**, **Discovery Catalog**, **Model Catalog** and **Scenario Catalog** beside it in the top bar are the other catalogs.
 
 ### Action matrix
 

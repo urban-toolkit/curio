@@ -1,8 +1,8 @@
 /**
  * The six catalogs on the canvas bar. They used to sit under a "Data" menu,
  * in an order of their own, and the Discovery Catalog could be reached no
- * other way. Now each is one click, in the order the section tabs use on every
- * other page, and each opens its drawer over the dataflow.
+ * other way. Now each is one click, in the order the section links use in
+ * every other page's bar, and each opens its drawer over the dataflow.
  */
 import React from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
@@ -39,11 +39,23 @@ jest.mock('../../services/datasetCatalog', () => ({
   prefetchDatasetCatalog: (...args: unknown[]) => mockPrefetch(...args),
 }));
 
-import { CatalogButtons } from '../../components/menus/top/CatalogButtons';
+import { CANVAS_CATALOGS, CatalogButtons } from '../../components/menus/top/CatalogButtons';
+import { CATALOG_SECTIONS } from '../../components/layout/catalogSections';
 
 beforeEach(() => jest.clearAllMocks());
 
-test('lists the catalogs in the section tabs\' order, by their full names', () => {
+test('are the section pages\' catalogs, in the same order, less the Skill Catalog', () => {
+  // One list for both bars. The canvas keeps its six drawer buttons; on the
+  // canvas a skill is reached through an agent's details.
+  expect(CANVAS_CATALOGS.map((c) => c.name)).toEqual(
+    CATALOG_SECTIONS.filter((c) => c.name !== 'Skill Catalog').map((c) => c.name)
+  );
+  expect(CANVAS_CATALOGS.map((c) => c.shortName)).toEqual(
+    ['Node', 'Data', 'Agent', 'Discovery', 'Model', 'Scenario']
+  );
+});
+
+test('lists the catalogs in the section links\' order, by their full names', () => {
   render(<CatalogButtons projectId="p1" />);
   const group = screen.getByRole('group', { name: 'Catalogs' });
   expect(within(group).getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual([

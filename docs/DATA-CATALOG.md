@@ -89,7 +89,7 @@ Dataset state lives in four places. Knowing which one an action writes is the ke
 
 There are three places you work with datasets, and they are **not** interchangeable:
 
-- **The `/catalog/data` page** is the library view, for your whole account. Reach it from `/projects` and the **Data Catalog** tab. You can browse, filter by status, format and origin, preview, import, publish, open a dataset's details, and add a dataset to all your projects. You **cannot add a dataset to just one dataflow from here**: that is the drawer's job.
+- **The `/catalog/data` page** is the library view, for your whole account. Reach it from **Data Catalog** in the top bar of `/projects` and every catalog page. You can browse, filter by status, format and origin, preview, import, publish, open a dataset's details, and add a dataset to all your projects. You **cannot add a dataset to just one dataflow from here**: that is the drawer's job.
 - **The Data Catalog drawer**, inside the canvas, is the working surface. Open it from the **Data Catalog** button in the top bar, or from the left Tools panel's **Data Catalog** dropdown and **Browse Data Catalog +**. Everything scoped to the open dataflow happens here: adding, removing, importing, and deleting. Its tabs are **Browse all** (the default), **In project**, and **Computed**.
 - **The Data palette**, the **Data Catalog** dropdown in the left Tools panel, holds the datasets already added to this dataflow, ready to drag onto the canvas, and under **Saved outputs** the outputs this dataflow's nodes saved. It lists them in the drawer's **Sort: Recent activity** order. It sits below the built-in nodes and the **Node Catalog** dropdown.
 

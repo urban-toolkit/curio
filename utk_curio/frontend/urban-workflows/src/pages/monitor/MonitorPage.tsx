@@ -27,8 +27,9 @@ export const MonitorPage: React.FC = () => {
     <div className={styles.pageShell}>
       {user ? (
         <>
-          <GlobalPageHeader />
-          <AppSectionTabs />
+          <GlobalPageHeader>
+            <AppSectionTabs />
+          </GlobalPageHeader>
         </>
       ) : (
         <header className={styles.publicBar}>

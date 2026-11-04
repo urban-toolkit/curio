@@ -2,8 +2,8 @@
  * The /projects chrome, now built in the shape of the catalog browse pages:
  * a category rail for filtering, a card area, and a detail drawer.
  *
- * The old dark-bar "Catalog" button is gone (the section tabs replaced it),
- * and Playwright waits on the Projects tab link rather than a heading
+ * The old dark-bar "Catalog" button is gone (the section links replaced it),
+ * and Playwright waits on the Projects link rather than a heading
  * (wait_for_projects_page in backend/tests/test_frontend/utils/auth.py), so that
  * link's accessible name matters.
  */
@@ -110,11 +110,13 @@ describe('projects page chrome', () => {
     expect(queryByRole('button', { name: /catalog/i })).toBeNull();
   });
 
-  test('the section tabs sit above the page', async () => {
+  test('the section links sit in the top bar, above the page', async () => {
     const { getByRole } = await renderPage();
 
     const nav = getByRole('navigation', { name: 'Main sections' });
-    expect(Array.from(nav.querySelectorAll('a')).map((a) => (a.textContent || '').trim())).toEqual([
+    // In the dark bar itself, not in a band of tabs under it.
+    expect(nav.closest('header[data-curio-menu-bar="true"]')).not.toBeNull();
+    expect(Array.from(nav.querySelectorAll('a')).map((a) => a.getAttribute('aria-label'))).toEqual([
       'Projects',
       'Node Catalog',
       'Data Catalog',

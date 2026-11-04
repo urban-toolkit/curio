@@ -24,7 +24,7 @@
   --curio-card-bg: #ffffff;
   --curio-top-bar-bg: #1E1F23;
   /* Hover for anything painted --curio-top-bar-bg (dark primary buttons, the
-     active section tab). Was written three ways: #2a2b30 / #2a2b31 / #2c2d32. */
+     current section in the bar). Was written three ways: #2a2b30 / #2a2b31 / #2c2d32. */
   --curio-top-bar-bg-hover: #2a2b30;
   --curio-top-bar-border: rgba(255, 255, 255, 0.08);
   /* The outline of a bordered control on the top bar: API Settings, Monitor,

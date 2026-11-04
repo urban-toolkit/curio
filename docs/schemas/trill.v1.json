@@ -15,7 +15,7 @@
     "dataflow": { "$ref": "#/$defs/dataflow" },
     "nodeProvenance": {
       "type": "object",
-      "description": "Per-node history of runs and edits, keyed by node id. Written on every save from ProvenanceProvider.getAllNodeProvenance() and restored by useCode.loadTrill, which files an older dataflow's keys under the node id they end with (utils/nodeProvenanceKeys.ts). No server code writes it; the agents' node.history.read reads it from the saved dataflow, keyed the same way (projects/node_provenance.py).",
+      "description": "Per-node history of runs and edits, keyed by node id: the entries a canvas bound to no dataflow doc keeps in the browser, written on every save from ProvenanceProvider.getAllNodeProvenance() and restored by useCode.loadTrill, which files an older dataflow's keys under the node id they end with (utils/nodeProvenanceKeys.ts). No server code writes it. The server imports it once into the dataflow's own history, as points in its doc's log, when the dataflow has none yet (collaboration/history.py). The agents' node.history.read reads those points once the dataflow has them, and this section otherwise, keyed the same way (projects/node_provenance.py).",
       "additionalProperties": {
         "type": "array",
         "items": { "$ref": "#/$defs/nodeExecRecord" }
