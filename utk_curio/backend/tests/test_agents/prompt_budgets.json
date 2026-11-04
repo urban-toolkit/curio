@@ -34,7 +34,7 @@
   "agent.curio.dataset-finder@1 dataset.select": 26000,
   "agent.curio.dataflow-builder@1 chat": 63800,
   "agent.curio.dataflow-builder@1 chat, native tools": 55300,
-  "agent.curio.dataflow-builder@1 chat, native tool definitions": 19600,
+  "agent.curio.dataflow-builder@1 chat, native tool definitions": 20600,
   "agent.curio.dataflow-builder@1 dataflow.orchestrate": 43800,
   "agent.curio.generated-content-evaluator@1 content.quality.evaluate": 24300
 }
