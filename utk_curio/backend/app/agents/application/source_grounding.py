@@ -96,6 +96,19 @@ SYNTHETIC_MARKERS: tuple[str, ...] = (
     "generate data", "generate some data", "toy data", "placeholder data",
     "invent some data", "example data",
 )
+# The same ask in the words people use, each whole and in any case: "fake
+# trees", "invent a few stations", "fictional parcels", "dummy values", "made
+# up numbers". "Make up" asks only as a request ("Make up 50 roofs", "can you
+# make some readings up"), so "the tracts that make up downtown" asks nothing.
+_DATA_WORDS = r"(?:data|dataset|datasets|values|numbers|readings|rows|records|entries|points|tables?)"
+SYNTHETIC_ASKS: tuple[re.Pattern, ...] = (
+    re.compile(r"\b(?:fake|faked|fakes|fictional|fictitious|imaginary|invent|invented|inventing|fabricate)\b",
+               re.IGNORECASE),
+    re.compile(rf"\b(?:dummy|mock|toy|placeholder|pretend|simulated|made[\s-]up)\s+(?:\w+\s+)?{_DATA_WORDS}\b",
+               re.IGNORECASE),
+    re.compile(r"(?:^|[.!?;:]\s*|\b(?:please|just|can you|could you|would you|will you|go ahead and|let's)\s+)"
+               r"mak(?:e|ing)\s+(?:\w+\s+){0,3}?up\b", re.IGNORECASE),
+)
 
 #: Bounds — a source list is display metadata, never a document.
 MAX_REFS = 32
@@ -1140,8 +1153,10 @@ def synthetic_requested(texts: list[str] | tuple[str, ...], params: dict | None 
     """True when the USER asked for made-up data in their own words. A
     model's ``synthetic`` declaration counts for nothing: *params* is
     accepted so every caller passes the same shape, and is not read."""
-    lowered = " ".join(t.lower() for t in (texts or ()) if isinstance(t, str))
-    return any(marker in lowered for marker in SYNTHETIC_MARKERS)
+    said = [t for t in (texts or ()) if isinstance(t, str)]
+    lowered = " ".join(t.lower() for t in said)
+    return (any(marker in lowered for marker in SYNTHETIC_MARKERS)
+            or any(ask.search(text) for text in said for ask in SYNTHETIC_ASKS))
 
 
 # A number as the user types it: a run of digits with its decimals, and a
