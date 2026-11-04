@@ -505,11 +505,13 @@ def _model_call(usage: dict, turn: "providers.ChatTurn") -> dict:
 
 
 def _grader_spent(usage: dict, turn: "providers.ChatTurn") -> dict:
-    """What one try of the grader spent, for its grade's record: its output
-    tokens, when the provider reported them (its thinking among them, on a
-    server that counts it), and ``thinking`` when the server streamed the
-    model's thinking apart from its reply."""
+    """What one try of the grader spent, for its grade's record: its input
+    and output tokens, when the provider reported them (its thinking among
+    the output, on a server that counts it), and ``thinking`` when the server
+    streamed the model's thinking apart from its reply."""
     spent: dict = {}
+    if isinstance(usage.get("inputTokens"), int):
+        spent["inputTokens"] = usage["inputTokens"]
     if isinstance(usage.get("outputTokens"), int):
         spent["outputTokens"] = usage["outputTokens"]
     if turn.thinking:

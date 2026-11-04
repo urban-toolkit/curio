@@ -21,6 +21,7 @@ const READ_FROM_THE_CHECKOUT: Array<[string, string]> = [
     [".nvmrc", "setup-node in jest and preview-runner, and scripts/check_node_pins.py"],
     [".node-version", "scripts/check_node_pins.py"],
     ["docker-compose.deploy.yml", "test-gpu's check of the production deploy configuration"],
+    [".github/workflows/skill-evals.yml", "the skill-evals job, which the workflow calls"],
 ];
 
 describe(`the paths filters of ${WORKFLOW}`, () => {

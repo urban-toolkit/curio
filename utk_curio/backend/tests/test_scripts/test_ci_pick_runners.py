@@ -116,6 +116,20 @@ def test_a_job_on_any_arcade_gpu_runner_counts_against_the_gpu_pool():
     assert picker.busy(jobs, NOW)["arcade-gpu"] == 2
 
 
+def test_a_skill_evals_job_holds_no_pool_s_room_on_its_arcade_runner():
+    # It runs for hours on arcade-cpu-40, which carries skill-evals instead of
+    # cpu, and is placed by its label before its runner's name.
+    labels = ["self-hosted", "arcade", picker.EVAL_LABEL]
+    evals = [_job("in_progress", labels, "arcade-cpu-40"), _job("queued", labels, age_s=3600)]
+    counts = picker.busy(evals, NOW)
+    assert {pool: counts[pool] for pool in picker.RUNS_ON if counts[pool]} == {}
+    # With hosted full and arcade's room exactly the CPU jobs', all of them still go to arcade.
+    jobs = ([_hosted("queued", age_s=picker.HOSTED_FULL_AFTER_S + 30)]
+            + [_arcade() for _ in range(picker.CPU_RUNNERS - len(CPU))] + evals)
+    chosen, _ = picker.pick(CPU, GPU, "auto", "auto", lambda: jobs)
+    assert [chosen[key] for key in CPU] == ["arcade"] * len(CPU)
+
+
 def test_a_queued_job_counts_against_the_pool_its_labels_ask_for():
     # A queued job has no runner yet: only what its runs-on asks for places it.
     for place, runs_on in picker.RUNS_ON.items():
