@@ -156,7 +156,7 @@ def test_the_plan_names_its_nodes_the_context_and_the_shared_outcomes_saved_outp
     assert load["source"] == {"nodeId": "load", "copiedFrom": [], "datasetId": computed_dataset_id("load", source)}
     # Its shared outcome lands with it, every input being in: the chart saves
     # nothing itself, and what it shows is a's saved output.
-    assert plan["shared"] == [{"nodeId": "chart", "label": "Vis Vega", "scenarios": ["s1"], "sources": ["a"]}]
+    assert plan["shared"] == [{"nodeId": "chart", "label": "Vega-Lite", "scenarios": ["s1"], "sources": ["a"]}]
     assert plan["outcomes"] == ["chart"]
     assert [n["id"] for n in plan["dataflow"]["nodes"]] == ["a", "chart"]
     assert [(e["source"], e["target"]) for e in plan["dataflow"]["edges"]] == [("load", "a"), ("a", "chart")]
