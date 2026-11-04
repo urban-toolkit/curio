@@ -99,6 +99,11 @@ def test_on_a_read_only_canvas_scenarios_and_shared_groups_neither_collapse_nor_
     require_project_page()
     _enter_read_only(page, app_frontend, current_server)
 
+    # The expanded scenario's frame and the expanded shared context's frame
+    # are drawn, headers and all: what follows is about their controls.
+    page.locator(f'[data-scenario-header="{OPEN}"]').wait_for(state="visible", timeout=15000)
+    page.locator(f'[data-shared-header="group:{SET}:context"]').wait_for(state="visible", timeout=15000)
+
     # The expanded ones offer no Collapse.
     assert page.get_by_test_id(f"scenario-collapse-{OPEN}").count() == 0, (
         "the expanded scenario's frame offers Collapse on a read-only canvas"
