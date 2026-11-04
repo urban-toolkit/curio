@@ -22,32 +22,30 @@ from typing import Any
 from utk_curio.backend.app.scenario_catalog.domain.duplicate import lineage_of
 from utk_curio.backend.app.scenario_catalog.domain.parts import (
     _is_interaction,
-    _template,
     saved_sources,
     scenario_parts,
 )
 
 
-def node_label(node: dict) -> str:
-    """What a message calls *node*: its title, else its template's name."""
-    from utk_curio.backend.app.execution.node_names import saved_node_title
-    from utk_curio.backend.app.projects.services import _humanize_node_type
+def node_label(node: dict, labels: dict | None = None) -> str:
+    """What a message calls *node*, as its header does: its title, else its
+    template's label (*labels*, by unversioned template id), else its type in
+    words, else its id."""
+    from utk_curio.backend.app.execution.node_names import saved_node_label
 
-    label = saved_node_title(node)
-    if label:
-        return label
-    return _humanize_node_type(_template(node)) or str(node.get("id"))
+    return saved_node_label(node, labels) or str(node.get("id"))
 
 
 def copy_plan(
     scenario: dict, present: list[dict], scenarios: list[dict], nodes: list[dict], edges: list[dict], packages=None,
+    labels: dict | None = None,
 ) -> dict[str, Any]:
     """What a drop of *scenario* copies, as node ids of its project, into a
     dataflow whose copy of its set holds *present* already (scenarios of that
     set). *scenarios* are every scenario of the project, as a save keeps them
     (``kept_scenarios``). *packages* (a ``TemplateGrammars``, the account's)
     reads what each node's template declares, ``TemplateGrammars.for_account()``
-    when None.
+    when None. *labels* names the nodes (``node_label``).
 
     ``nodes`` are its own; ``last`` its own last nodes, each with the copied
     nodes whose saved outputs stand for it; ``shared`` the set's shared
@@ -115,7 +113,7 @@ def copy_plan(
     crossing |= {i for node_id in now for i in incoming.get(node_id, []) if is_context(i)}
     context: list[dict[str, Any]] = []
     for node_id in in_order(crossing):
-        entry: dict[str, Any] = {"nodeId": node_id, "label": node_label(by_id[node_id])}
+        entry: dict[str, Any] = {"nodeId": node_id, "label": node_label(by_id[node_id], labels)}
         sources = saved_sources(node_id, nodes, edges, packages)
         if len(sources) == 1:
             source = by_id[sources[0]]
@@ -134,7 +132,7 @@ def copy_plan(
         "shared": [
             {
                 "nodeId": node_id,
-                "label": node_label(by_id[node_id]),
+                "label": node_label(by_id[node_id], labels),
                 "scenarios": [s["id"] for s in group if node_id in parts[s["id"]]["outcomes"]],
                 "sources": [x for x in saved_sources(node_id, nodes, edges, packages) if x in copied],
             }

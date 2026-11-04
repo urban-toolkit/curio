@@ -100,6 +100,14 @@ def user_key(user) -> str:
     return _user_dir_key(user)
 
 
+def template_labels(user, project_id: str) -> dict:
+    """Each template's label by unversioned id, for the templates
+    *project_id* may use: what its nodes' headers call a node with no title."""
+    from utk_curio.backend.app.execution.node_names import template_labels as labels_of
+
+    return labels_of(user_key(user), project_id)
+
+
 def saved_output(user, project_id: str, spec: dict, node_id: str) -> dict | None:
     """The dataset that holds *node_id*'s saved output in *project_id*, looked
     for in the order a reload restores from (``storage._durable_source_for``):

@@ -218,7 +218,9 @@ class ScenarioCatalogService:
         target_row, target_spec, _ = self._project(target_id)
         nodes, edges = spec_nodes_and_edges(spec)
         nodes_by_id = {n["id"]: n for n in nodes}
-        plan = copy_plan(scenario, held, kept, nodes, edges, self._packages())
+        # The nodes are named as their headers name them in their project.
+        labels = projects.template_labels(self.user, project_id)
+        plan = copy_plan(scenario, held, kept, nodes, edges, self._packages(), labels)
         # What the scenario's project saved, read at once under its spec lock,
         # before anything else, so a save of it is waited for (#941).
         saved = projects.saved_outputs_of(self.user, project_id, spec, [
@@ -255,12 +257,12 @@ class ScenarioCatalogService:
             blocker = server_runs.browser_node(self.user, project_id, nodes, edges, source["nodeId"])
             if blocker is not None:
                 problems.append(
-                    f"{unsaved}, and {node_label(blocker)} runs only in the browser: "
+                    f"{unsaved}, and {node_label(blocker, labels)} runs only in the browser: "
                     "run the scenario there and save the project, then drag it again."
                 )
                 continue
             if all(item["nodeId"] != source["nodeId"] for item in to_run):
-                to_run.append({"nodeId": source["nodeId"], "label": node_label(nodes_by_id[source["nodeId"]])})
+                to_run.append({"nodeId": source["nodeId"], "label": node_label(nodes_by_id[source["nodeId"]], labels)})
 
         # A last node or a shared outcome without a saved output shows once the
         # scenario runs.
