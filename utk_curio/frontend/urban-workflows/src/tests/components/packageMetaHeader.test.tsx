@@ -29,13 +29,14 @@ function pkg(packageId: string): NodePackageMeta {
   } as unknown as NodePackageMeta;
 }
 
-function renderHeader(packageId: string) {
+function renderHeader(packageId: string, compact = false) {
   return render(
     <PackagePaletteProvider>
       <PackageMetaHeader
         pkg={pkg(packageId)}
         category={"computation" as NodeCategory}
         suggestionActive={false}
+        compact={compact}
       />
     </PackagePaletteProvider>,
   );
@@ -70,6 +71,23 @@ describe("the category pill", () => {
       expect(container.querySelector("span[data-tooltip]")).not.toBeNull();
     },
   );
+});
+
+describe("a compact header (useHeaderPillsFit)", () => {
+  test("leaves the category pill out and shows PACKAGE as its icon, the same button", () => {
+    const { container } = renderHeader("acme.widgets", true);
+    expect(container.querySelector("span[data-tooltip]")).toBeNull();
+    const button = pill();
+    expect(button).not.toBeNull();
+    expect(button).not.toHaveTextContent("PACKAGE");
+    expect(button!.querySelector("svg")).not.toBeNull();
+    expect(button!.getAttribute("data-tooltip")).toContain("acme.widgets@1");
+  });
+
+  test("shows nothing on a built-in node, which has no PACKAGE pill", () => {
+    const { container } = renderHeader(BUILTIN_PACKAGE_ID, true);
+    expect(container.firstChild).toBeNull();
+  });
 });
 
 // ── The fix that would have looked simpler ──────────────────────────────────

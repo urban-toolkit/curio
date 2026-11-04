@@ -230,6 +230,28 @@ describe("the node that loads the dataset bob asked for", () => {
     view.unmount();
   });
 
+  test("a compact header keeps the pill's WAITING whole", async () => {
+    on("editor");
+    const view = render(
+      <ReactFlowProvider>
+        <DatasetCatalogDrawerProvider>
+          <DatasetMetaHeader
+            source={{ datasetId: BOBS_REQUEST.datasetId, title: "Bus stops", format: "csv", origin: "imported" }}
+            compact
+          />
+        </DatasetCatalogDrawerProvider>
+      </ReactFlowProvider>,
+    );
+
+    const pill = await waitFor(() => {
+      const waiting = view.container.querySelector('[data-curio-waits-for-owner="true"]');
+      expect(waiting).not.toBeNull();
+      return waiting as HTMLElement;
+    });
+    expect(pill).toHaveTextContent("WAITING");
+    view.unmount();
+  });
+
   test("a node that loads a dataset no one asked for keeps its DATASET pill", async () => {
     on("editor");
     const view = render(

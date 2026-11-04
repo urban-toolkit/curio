@@ -421,9 +421,9 @@ export const NodeContainer = ({
     const nodeHeaderBandPx = 36;
     // Where the header holds the editor's tab switchers (nodeHeaderSlot).
     const [tabSlot, setTabSlot] = useState<HTMLElement | null>(null);
-    // A narrow node shows its title before its pills (useHeaderPillsFit).
+    // A narrow node shows its title before its whole pills (useHeaderPillsFit).
     const [header, setHeader] = useState<HTMLElement | null>(null);
-    const pillsHidden = useHeaderPillsFit(
+    const pillsCompact = useHeaderPillsFit(
         header,
         [headerKindLabel, hasPackageMetaHeader, !!consumerSource, !!producerDataset].join("|"),
     );
@@ -904,27 +904,29 @@ export const NodeContainer = ({
                             onConfigure={() => setConfigOpen(true)}
                         />
 
-                        {!pillsHidden && hasPackageMetaHeader && packageDescriptor?.package ? (
+                        {hasPackageMetaHeader && packageDescriptor?.package ? (
                             <PackageMetaHeader
                                 pkg={packageDescriptor.package}
                                 category={packageDescriptor.category}
                                 suggestionActive={suggestionActive}
                                 nodeId={nodeId}
+                                compact={pillsCompact}
                             />
                         ) : null}
 
                         {/* Dataset linkage pills — independent of the PACKAGE pill
                             and of each other; any combination may render. */}
-                        {!pillsHidden && consumerSource ? (
+                        {consumerSource ? (
                             <DatasetMetaHeader
                                 source={consumerSource}
                                 variant="consumer"
                                 selected={isNodeSelected}
                                 suggestionActive={suggestionActive}
+                                compact={pillsCompact}
                             />
                         ) : null}
 
-                        {!pillsHidden && producerDataset ? (
+                        {producerDataset ? (
                             <DatasetMetaHeader
                                 source={{
                                     datasetId: producerDataset.id,
@@ -935,6 +937,7 @@ export const NodeContainer = ({
                                 variant="producer"
                                 selected={isNodeSelected}
                                 suggestionActive={suggestionActive}
+                                compact={pillsCompact}
                             />
                         ) : null}
 

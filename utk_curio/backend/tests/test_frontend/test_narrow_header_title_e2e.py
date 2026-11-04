@@ -7,7 +7,8 @@ gave way, and the pills, the status and the tools took all the room.
 
 Here two Vega-Lite package charts have the same long title, one narrow and one
 as wide as a new node. The narrow one shows the start of its title, its pills
-giving way; the wide one shows its title and its pills, as before.
+compact and its PACKAGE button still there to click; the wide one shows its
+title and its whole pills, as before.
 
 Run::
 
@@ -53,9 +54,10 @@ def _spec() -> dict:
     }
 
 
-#: Each node's header as drawn: how wide its title shows, in canvas units, and
-#: whether its PACKAGE pill shows. The title is the button that renames the
-#: node, or, where it cannot be renamed, the text whose tooltip is the title.
+#: Each node's header as drawn: how wide its title shows, in canvas units,
+#: whether its PACKAGE pill shows the word, and whether the button that opens
+#: its package shows at all. The title is the button that renames the node, or,
+#: where it cannot be renamed, the text whose tooltip is the title.
 _HEADERS_JS = """([ids, name]) => {
     const zoom = window.__curio_reactFlow.getViewport().zoom;
     return Object.fromEntries(ids.map((id) => {
@@ -63,9 +65,11 @@ _HEADERS_JS = """([ids, name]) => {
         const title = header && (header.querySelector('button[aria-label^="Edit node title"]')
             || [...header.querySelectorAll('[data-tooltip]')].find((el) => el.getAttribute('data-tooltip') === name));
         if (!title) return [id, 'no title'];
+        const button = header.querySelector('button[aria-label^="Open package "]');
         return [id, {
             title: Math.round(title.getBoundingClientRect().width / zoom),
             packagePill: header.innerText.includes('PACKAGE'),
+            packageButton: !!button && button.getBoundingClientRect().width > 0,
         }];
     }));
 }"""
@@ -98,7 +102,9 @@ def test_a_narrow_node_shows_its_title_and_a_wide_one_its_pills_too(
     headers = page.evaluate(_HEADERS_JS, [[NARROW, WIDE], TITLE])
 
     narrow, wide = headers[NARROW], headers[WIDE]
-    # The narrow node shows the start of its title, a few characters and "…".
+    # The narrow node shows the start of its title, a few characters and "…",
+    # and its button that opens the package is still there.
     assert isinstance(narrow, dict) and narrow["title"] >= 40, headers
-    # The wide one keeps its pills beside a title that shows more than that.
+    assert narrow["packageButton"], headers
+    # The wide one keeps its whole pills beside a title that shows more than that.
     assert isinstance(wide, dict) and wide["packagePill"] and wide["title"] >= 64, headers
