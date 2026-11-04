@@ -69,10 +69,9 @@ from .test_map_edits_e2e import _edits_of
 from .test_multi_input_e2e import _wait_for_circles
 from .test_scenario_drop_e2e import (
     _copies,
-    _drag_onto_canvas,
+    _drop_and_wait,
     _open_scenario_catalog,
     _saved_spec,
-    _select_scenarios,
     _status,
     _toast,
 )
@@ -762,10 +761,10 @@ def test_example_06_compares_its_three_scenarios_in_the_canvas(
 def test_both_scenarios_dragged_into_an_empty_project_read_one_context(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
-    """The seeded example runs and is saved; then, in an empty project, both of
-    its scenarios are selected (a click, then a Ctrl or Cmd click) and dragged in together by
-    their set's handle, as a new set: they show their saved results with no run, read one
-    context, and expand in place. A
+    """The seeded example runs and is saved; then, in an empty project, two of
+    its scenarios are dragged in, one card after the other: the first makes
+    its set's copy, and the second joins it. They show their saved results
+    with no run, read one context, and expand in place. A
     Vega-Lite chart reading ``inputs``, wired to the two dropped Roads nodes,
     names each input's rows by the dropped box its node is in."""
     require_project_page()
@@ -803,20 +802,20 @@ def test_both_scenarios_dragged_into_an_empty_project_read_one_context(
         _settled_done(page, node_id, node_type)
     save_dataflow(page)
 
-    # Both scenarios checked and dragged in together: nothing runs. Zoomed out
-    # first, so the set lands in view.
+    # One card drags one scenario: Baseline makes the set's copy, and Twice as
+    # tall joins it. Nothing runs. Zoomed out first, so both land in view.
     page.goto(f"{app_frontend.base_url}/dataflow/{target}")
     page.wait_for_load_state("domcontentloaded")
     page.wait_for_function("() => !!window.__curio_reactFlow", timeout=45000)
     page.locator(".react-flow__pane").wait_for(state="visible", timeout=45000)
-    drawer = page.locator('[data-curio-scenario-catalog-drawer="true"]')
     python, _loads, stop = _record_runs(page, DATA)
     _zoom_out(page)
     _open_scenario_catalog(page)
-    card = page.locator(f'[data-scenario-key="{source}/{BASELINE}"]')
-    first = _select_scenarios(page, source, [BASELINE, TWICE])
-    _drag_onto_canvas(page, first, at=(200.0, 80.0))
-    _toast(page, "Added 2 scenarios of ")
+    _drop_and_wait(page, source, BASELINE, at=(200.0, 80.0))
+    _toast(page, f'Added "Baseline" from {EXAMPLE_NAME} as the scenario set ')
+    dismiss_toasts(page)
+    _drop_and_wait(page, source, TWICE, at=(200.0, 300.0))
+    _toast(page, f'Added "Twice as tall" from {EXAMPLE_NAME} to the scenario set ')
     page.keyboard.press("Escape")
     wait_for_drawer_closed(page, '[data-curio-scenario-catalog-drawer="true"]')
     # The pool passes on the loader's layers, so the Data Loading node that

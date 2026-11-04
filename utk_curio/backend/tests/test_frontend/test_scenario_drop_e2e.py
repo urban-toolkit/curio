@@ -797,13 +797,13 @@ def test_a_scenario_from_a_project_never_run_runs_its_context_there_and_drops(
     )
 
 
-def _drop_and_wait(page, source: str, scenario_id: str) -> None:
-    """Drag one scenario's card onto the canvas and wait for its copy."""
+def _drop_and_wait(page, source: str, scenario_id: str, at=(700.0, 120.0)) -> None:
+    """Drag one scenario's card onto the canvas at *at* and wait for its copy."""
     with page.expect_response(
         lambda r: r.request.method == "POST" and r.url.endswith(f"/api/scenarios/{source}/{scenario_id}/copy"),
         timeout=240000,
     ) as copied:
-        _drag_scenario_onto_canvas(page, source, scenario_id)
+        _drag_scenario_onto_canvas(page, source, scenario_id, at)
     assert copied.value.ok, copied.value.text()
 
 
