@@ -92,8 +92,8 @@ jest.mock("../../providers/FlowProvider", () => {
 });
 
 jest.mock("../../components/apiSettings/useHostedGuest", () => ({
+  ...jest.requireActual("../../components/apiSettings/useHostedGuest"),
   useHostedGuest: () => false,
-  hostedGuestSignInNote: (action: string) => action,
 }));
 
 // The scenario commands open the Scenario Catalog drawer, whose provider this
