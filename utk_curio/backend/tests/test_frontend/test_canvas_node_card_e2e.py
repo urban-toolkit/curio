@@ -832,6 +832,26 @@ def test_on_a_read_only_canvas_minimize_is_the_last_tool(
         assert tools["deletes"] == 0, f"{node_id} has a Delete node button on a read-only canvas: {tools}"
 
 
+def test_on_a_read_only_canvas_no_node_title_can_be_renamed(
+    app_frontend: "FrontendPage", current_server, page,
+):
+    """A watcher reads a node's title; nothing offers to change it: no
+    "Edit node title" control, and a click on the title opens no field."""
+    require_project_page()
+    _enter_read_only(page, app_frontend, current_server, prefix="card_ro_title")
+
+    for node_id in NODES:
+        _wait_for_header(page, node_id)
+        node = node_locator(page, node_id)
+        edit = node.get_by_role("button", name=re.compile(r"^Edit node title"))
+        assert edit.count() == 0, f"{node_id}'s title offers a rename on a read-only canvas"
+        node.get_by_text(TITLES[node_id], exact=True).first.click()
+        assert node.get_by_role("textbox", name="Node title").count() == 0, (
+            f"a click on {node_id}'s title opened a field to rename it on a read-only canvas"
+        )
+        expect(node.get_by_text(TITLES[node_id], exact=True).first).to_be_visible()
+
+
 def test_on_a_read_only_canvas_a_corner_drag_leaves_the_node_size(
     app_frontend: "FrontendPage", current_server, page,
 ):
