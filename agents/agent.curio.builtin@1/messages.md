@@ -274,6 +274,11 @@ params.content must be a non-empty string
 
 params.content exceeds the content size bound
 
+## mint.content-references
+
+{problems}
+Nothing was written. A value another node gives arrives on the input circle its edge reaches (input_0, input_1, ...): read it there, since a widget's chip names only a widget of this node and node.content.write declares none. Otherwise use a widget or selection tag this node has, or ask the user to add one in the node's Widgets tab. A scenario chip goes in the spec of the chart or map that draws it.
+
 ## change.content-written
 
 node {node_id} now holds your code, for everyone in the dataflow; the user can undo it from this chat. Summarize the change in one or two sentences, and do NOT restate the code

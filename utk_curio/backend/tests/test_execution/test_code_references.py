@@ -449,6 +449,18 @@ class TestResolveCodeReferences:
         )
         assert spec.node_code(chart, "json") == '{"encoding": {"y": {"field": "rain.mm", "title": "rain.mm"}}}'
 
+    def test_an_empty_data_waits_for_its_data_and_no_other_problem_does(self):
+        """A run refuses code that reads an empty dataset widget, but that
+        problem only waits for the node's data (``waits_for_data``, the twin
+        of ``waitsForData``, by which the editor draws the chip as any other);
+        a widget the node does not declare is the code's."""
+        from utk_curio.backend.app.execution.code_references import resolve_references, waits_for_data
+
+        data = {"name": "data", "type": "dataset", "label": "Data", "default": ""}
+        _code, problems = resolve_references("a = curio_load_data([!! data !!])\nb = [!! factor !!]", [data], "python")
+        assert [p["reference"] for p in problems if waits_for_data(p, [data])] == ["[!! data !!]"], problems
+        assert [p["reference"] for p in problems if not waits_for_data(p, [data])] == ["[!! factor !!]"], problems
+
 
 class TestTheSpecCarriesWidgets:
     def test_metadata_widgets_reach_the_node(self):

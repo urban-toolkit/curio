@@ -27,7 +27,7 @@ from utk_curio.backend.app.agents.application.proposals import store as agents_s
 from utk_curio.backend.app.agents.application.turns import delegates as agents_delegates
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
-from utk_curio.backend.app.execution.code_references import normalize_widgets
+from utk_curio.backend.app.execution.code_references import normalize_widgets, resolve_references, waits_for_data
 from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.execution.workflow_spec import CONTENT_KIND_NONE
 from utk_curio.backend.app.projects import storage as projects_storage
@@ -600,6 +600,34 @@ def _target_node_id(loop_ctx: dict, params: dict) -> str | None:
     return target.get("targetId") if isinstance(target, dict) and target.get("kind") == "node" else None
 
 
+def _reference_refusal(code: str, current: str, engine: str | None, chips: dict | None) -> str | None:
+    """Why the node's run would refuse *code*, an agent's code for an existing
+    node: each reference the run cannot resolve over the node's chips
+    (*chips*, ``turns/grounding._chip_context``), in the run's own words
+    (``code_references.resolve_references``, as ``WorkflowSpec.node_code``
+    calls it), or None. A chart's or a map's spec (no *engine*) is the
+    document check's, and a dataflow that cannot be read (no *chips*) judges
+    nothing. As the editor marks a node's chips, an empty Data waiting for its
+    data is not the code at fault (``waits_for_data``); and a reference the
+    node's code holds now (*current*) is the user's own, however often the
+    agent's code reads it."""
+    if engine is None or chips is None:
+        return None
+    # The language a run resolves the code in (``run_engine.sent_code``).
+    language = "javascript" if engine == "javascript" else "python"
+    widgets = chips.get("widgets") or []
+
+    def problems(text: str) -> list[str]:
+        _resolved, found = resolve_references(
+            text, widgets, language, chips.get("inputs") or (), selections=chips.get("selections") or (),
+        )
+        return [problem["message"] for problem in found if not waits_for_data(problem, widgets)]
+
+    held = set(problems(current))
+    added = [message for message in dict.fromkeys(problems(code)) if message not in held]
+    return agent_text.message("mint.content-references", problems="\n".join(added)) if added else None
+
+
 def _mint_node_content_write(
     user_key: str, project_id: str, loop_ctx: dict, req: dict
 ) -> tuple[str, str, dict | None]:
@@ -628,12 +656,21 @@ def _mint_node_content_write(
     from utk_curio.backend.app.packages import service as packages_services
 
     entry, _err = packages_services.resolve_template(user_key, project_id, node.get("type"))
+    engine = source_grounding.code_engine(entry)
+    chips = agents_grounding._chip_context(spec, node_id)
+    current = str(node.get("content") or "")
+    # Before the gate, which may probe a source: a reference the node's run
+    # would refuse. This tool declares no widget, so writing the code again
+    # could never mend the node.
+    unresolved = _reference_refusal(proposed, current, engine, chips)
+    if unresolved:
+        return agents_tool_rounds._refuse_params(unresolved)
     verdict, refusal = agents_grounding._gate_generated_content(
         user_key, project_id, loop_ctx,
-        code=proposed, engine=source_grounding.code_engine(entry),
+        code=proposed, engine=engine,
         node_type=node.get("type"), params=params,
-        base=loop_ctx.get("_grounding_base"), chips=agents_grounding._chip_context(spec, node_id),
-        node_id=node_id, current=str(node.get("content") or ""),
+        base=loop_ctx.get("_grounding_base"), chips=chips,
+        node_id=node_id, current=current,
     )
     if refusal:
         return agents_tool_rounds._refuse_params(refusal)
