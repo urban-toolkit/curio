@@ -47,10 +47,6 @@
   flex-shrink: 0;
 }
 
-.catalogIcon {
-  font-size: 13px;
-}
-
 /* The labels go first when the bar runs short, and the icons stay with their
    tooltips. Queried against the header's slot rather than the window: the
    account's name is as long as the user's, so the room left over is not a

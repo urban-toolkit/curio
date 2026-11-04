@@ -88,7 +88,7 @@ Skills live in Curio's own `skills/` folder, in the node packages that ship them
 
 There are two places you work with skills:
 
-- **The `/catalog/skills` page** lists every skill you see. Reach it from `/projects` and the **Skill Catalog** tab, after **Agent Catalog**. Filter in the left rail by **All skills** (the skills Curio ships, your own, the published ones you can add, and those of the packages you can add) or **Core**, the three every call holds, and search with **Search skills…**, which matches a skill's name, its description and what it serves. **Import skill** is in the header.
+- **The `/catalog/skills` page** lists every skill you see. Reach it from **Skill Catalog** in the top bar of `/projects` and every catalog page, after **Agent Catalog**. Filter in the left rail by **All skills** (the skills Curio ships, your own, the published ones you can add, and those of the packages you can add) or **Core**, the three every call holds, and search with **Search skills…**, which matches a skill's name, its description and what it serves. **Import skill** is in the header.
 - **An agent's details**, on the `/catalog/agents` page and in the Agent Catalog drawer on the canvas, list the agent's skills in their **Skills** section, with **Add skill**, **Remove** and **Restore** ([Agent Catalog](AGENT-CATALOG.md#skills)). A skill's name there opens the skill's details over the agent's. The canvas bar has no Skill Catalog button: on the canvas, you reach a skill through the **Agent Catalog** drawer, an agent's **View details**, then its **Skills**.
 
 A skill's card gives its name, whose it is (its author, or Curio, you, the shared catalog or its package), its version, its description, what it serves and how many agents use it. Click a card to describe it in the right-hand drawer:
@@ -118,11 +118,11 @@ Right-clicking a card offers **View details** too.
 
 ### Workflows
 
-**I want to read what a skill says.** Open the **Skill Catalog** tab and click **View details** on the skill. Its details open on what it is for, what it serves and the agents that use it, and its **Text** section holds what an agent reads, collapsed until you open it.
+**I want to read what a skill says.** Open the **Skill Catalog** page and click **View details** on the skill. Its details open on what it is for, what it serves and the agents that use it, and its **Text** section holds what an agent reads, collapsed until you open it.
 
 **I want to know which agents use a skill.** Click its card: **Used by**, in the drawer, names them. To give the skill to another agent, open that agent's details in the Agent Catalog and click **Add skill** in its **Skills** section.
 
-**I want my agents to use a skill written for another tool.** On the **Skill Catalog** tab, click **Import skill** and pick the skill's folder, its files or a `.zip` of it. Read the review, untick each agent that should go without it, and click **Import**. **Publish** in its drawer offers it to everyone on the install, and **Export** in its details saves it to use elsewhere.
+**I want my agents to use a skill written for another tool.** On the **Skill Catalog** page, click **Import skill** and pick the skill's folder, its files or a `.zip` of it. Read the review, untick each agent that should go without it, and click **Import**. **Publish** in its drawer offers it to everyone on the install, and **Export** in its details saves it to use elsewhere.
 
 **I want an agent to use a skill someone published.** Open the agent's details in the Agent Catalog, click **Add skill** and pick the skill. Your account keeps a copy of it, and the agent holds it from its next run.
 

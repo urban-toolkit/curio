@@ -20,6 +20,13 @@ So, on a fresh dataflow at the default 1280x720 viewport:
   where it was;
 * the dataflow's title and the left rail start below the bar.
 
+And the section pages wear the same bar with their sections in it, drawn as
+the canvas draws its catalogs: Projects and the seven catalogs, each a glyph
+and a short name with its full name as its accessible name and tooltip, the
+page you are on marked current. Beside the widest account name, every name
+shows at 1280 and at 1150px; at 1000px only the glyphs do, and nothing
+overflows at any of the three.
+
 Run::
 
     CURIO_TESTING=1 pytest utk_curio/backend/tests/test_frontend/test_canvas_header_e2e.py -v
@@ -34,6 +41,7 @@ from urllib.parse import urlparse
 from playwright.sync_api import expect
 
 from .utils import (
+    hover_until_tooltip_says,
     require_owner_view,
     require_project_page,
     require_user_auth,
@@ -45,7 +53,7 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-#: (accessible name, drawer root attribute), in the section tabs' order.
+#: (accessible name, drawer root attribute), in the section pages' bar's order.
 CATALOGS = (
     ("Node Catalog", "data-curio-node-catalog-drawer"),
     ("Data Catalog", "data-curio-dataset-catalog-drawer"),
@@ -55,7 +63,20 @@ CATALOGS = (
     ("Scenario Catalog", "data-curio-scenario-catalog-drawer"),
 )
 
+#: (accessible name, page), in the section pages' bar's order.
+SECTIONS = (
+    ("Projects", "/projects"),
+    ("Node Catalog", "/catalog/nodes"),
+    ("Data Catalog", "/catalog/data"),
+    ("Agent Catalog", "/catalog/agents"),
+    ("Skill Catalog", "/catalog/skills"),
+    ("Discovery Catalog", "/catalog/discovery"),
+    ("Model Catalog", "/catalog/models"),
+    ("Scenario Catalog", "/catalog/scenarios"),
+)
+
 BAR = "header[data-curio-menu-bar]"
+SECTION_NAV = 'nav[aria-label="Main sections"]'
 
 #: Longer than the account block shows (it ellipsizes at 110px), so the bar
 #: is measured with the widest right-hand cluster it can have.
@@ -65,6 +86,14 @@ _MEASURE_SLOT = """(bar) => {
   // The slot holding the page's controls: the bar's child that holds File.
   const file = bar.querySelector('[aria-label="File menu"]');
   let slot = file;
+  while (slot && slot.parentElement !== bar) slot = slot.parentElement;
+  return slot ? { clientWidth: slot.clientWidth, scrollWidth: slot.scrollWidth } : null;
+}"""
+
+_MEASURE_SECTION_SLOT = """(bar) => {
+  // The slot holding the section links: the bar's child that holds them.
+  const nav = bar.querySelector('nav[aria-label="Main sections"]');
+  let slot = nav;
   while (slot && slot.parentElement !== bar) slot = slot.parentElement;
   return slot ? { clientWidth: slot.clientWidth, scrollWidth: slot.scrollWidth } : null;
 }"""
@@ -210,6 +239,82 @@ def test_the_canvas_wears_the_shared_bar_with_the_catalogs_in_it(
         failures.append(f"the dataflow title starts at y={title_top}, under the bar (y={m['bottom']})")
     if rail_top < m["bottom"]:
         failures.append(f"the left rail starts at y={rail_top}, under the bar (y={m['bottom']})")
+    assert not failures, "\n".join(failures)
+
+
+def _bar_fits(page, width: int) -> list[str]:
+    """What is wrong with the section pages' bar at this window width."""
+    bar = page.locator(BAR)
+    m = bar.evaluate(_MEASURE_BAR)
+    slot = bar.evaluate(_MEASURE_SECTION_SLOT)
+    print(f"section bar at {width}px: {m}; slot {slot}")
+    failures: list[str] = []
+    if slot is None:
+        failures.append(f"{width}px: the bar has no slot holding the section links")
+    elif slot["scrollWidth"] > slot["clientWidth"]:
+        failures.append(
+            f"{width}px: the section links need {slot['scrollWidth']}px in a "
+            f"{slot['clientWidth']}px slot"
+        )
+    if m["outside"]:
+        failures.append(f"{width}px: controls drawn outside the bar: {m['outside']}")
+    if m["overlapping"]:
+        failures.append(f"{width}px: controls overlapping in the bar: {m['overlapping']}")
+    return failures
+
+
+def test_the_section_pages_bar_holds_every_section(
+    app_frontend: "FrontendPage", frontend_server: str, page
+):
+    require_user_auth()
+    require_project_page()
+
+    signup_e2e_user(
+        page, frontend_server, name=LONG_NAME,
+        username=f"sections_{uuid.uuid4().hex[:10]}",
+    )
+    wait_for_projects_page(page, timeout=30000)
+
+    failures: list[str] = []
+    for width in (1280, 1150):
+        page.set_viewport_size({"width": width, "height": 720})
+        page.goto(f"{app_frontend.base_url}/catalog/skills")
+        nav = page.locator(BAR).locator(SECTION_NAV)
+        expect(nav).to_be_visible(timeout=30000)
+        # In the bar, and nowhere else: the band of tabs under it is gone.
+        expect(page.locator(SECTION_NAV)).to_have_count(1)
+        for name, path in SECTIONS:
+            link = nav.get_by_role("link", name=name, exact=True)
+            expect(link).to_be_visible()
+            expect(link).to_have_attribute("href", re.compile(re.escape(path) + "$"))
+            expect(link).to_have_attribute("data-tooltip", name)
+            label = link.locator("span")
+            expect(label).to_be_visible()
+            assert name.startswith(label.inner_text().strip()), (
+                f"{width}px, {name}: the visible label {label.inner_text()!r} is not its short name"
+            )
+        expect(nav.get_by_role("link", name="Skill Catalog", exact=True)).to_have_attribute(
+            "aria-current", "page"
+        )
+        expect(nav.locator('[aria-current="page"]')).to_have_count(1)
+        failures += _bar_fits(page, width)
+
+    # A narrow window: the names give way and the glyphs stay, each with its
+    # full name in the tooltip.
+    page.set_viewport_size({"width": 1000, "height": 720})
+    page.goto(f"{app_frontend.base_url}/catalog/skills")
+    nav = page.locator(BAR).locator(SECTION_NAV)
+    expect(nav).to_be_visible(timeout=30000)
+    for name, _ in SECTIONS:
+        link = nav.get_by_role("link", name=name, exact=True)
+        expect(link).to_be_visible()
+        expect(link.locator("span")).to_be_hidden()
+        expect(link.locator("svg")).to_be_visible()
+    failures += _bar_fits(page, 1000)
+    hover_until_tooltip_says(
+        page, f'{BAR} {SECTION_NAV} a[aria-label="Discovery Catalog"]',
+        "the Discovery Catalog glyph in a narrow bar", ["Discovery Catalog"],
+    )
     assert not failures, "\n".join(failures)
 
 

@@ -21,10 +21,12 @@ jest.mock("../../components/VersionBadge", () => ({
 // GlobalPageHeader reaches UserProvider, which boots the whole node registry.
 // Stubbed here so this stays a test of the page rather than of the app graph.
 // The stub keeps the signout-button testid, because whether that control is
-// rendered to an anonymous visitor is exactly what the last test checks.
+// rendered to an anonymous visitor is exactly what the last test checks. It
+// renders its children: the page puts its section links in the bar.
 jest.mock("../../components/layout/GlobalPageHeader", () => ({
-  GlobalPageHeader: () => (
+  GlobalPageHeader: ({ children }: any) => (
     <div data-testid="global-header">
+      {children}
       <button data-testid="signout-button" type="button">
         Sign out
       </button>
@@ -249,6 +251,8 @@ describe("MonitorPage", () => {
 
       expect(screen.getByTestId("global-header")).toBeInTheDocument();
       expect(screen.getByTestId("section-tabs")).toBeInTheDocument();
+      // In the bar, not in a band of its own under it.
+      expect(screen.getByTestId("global-header")).toContainElement(screen.getByTestId("section-tabs"));
     });
   });
 });

@@ -978,8 +978,8 @@ charts are then under **Scout** in the Tools panel's **Node Catalog** dropdown.
 
 The **Scenario Catalog** lists the scenarios of all your projects, each with its
 fixed context, levers and outcomes and the results its project saved. Open it from
-the **Scenario Catalog** tab, or from the **Scenario** button in the canvas's top
-bar. Drag a scenario from the **Scenario** drawer onto the canvas to bring a copy
+**Scenario Catalog** in the top bar of the Projects page and the catalog pages,
+or from the **Scenario** button in the canvas's top bar. Drag a scenario from the **Scenario** drawer onto the canvas to bring a copy
 of it into the open dataflow: it arrives collapsed, with its results, and its
 fixed context arrives as Data Loading nodes that read copies of what its project
 saved. See [docs/SCENARIO-CATALOG.md](SCENARIO-CATALOG.md#4-using-a-scenario-in-a-dataflow).
@@ -1641,7 +1641,7 @@ Three surfaces manage datasets:
 - The **Data Catalog** dropdown in the Tools panel, listing the datasets added to the open dataflow and, under **Saved outputs**, the outputs its nodes saved. Drag one onto the canvas to create a Data Loading node that loads it, or onto a node to load it there.
 
 A file from your computer, dropped on the canvas or on a Data Loading node, or picked with a Data Loading node's **Choose file**, is imported into your account and added to the open dataflow, then loaded as a dataset dragged there is.
-- The **`/catalog/data`** page, the library view for your whole account, reached from `/projects` and the **Data Catalog** tab. **Add to all projects** there adds a dataset to every dataflow you have.
+- The **`/catalog/data`** page, the library view for your whole account, reached from **Data Catalog** in the top bar of `/projects` and every catalog page. **Add to all projects** there adds a dataset to every dataflow you have.
 
 A node can also save its output as a **computed dataset** in your account (the database toggle among the buttons in its header), so its result can be reused as an input elsewhere.
 
@@ -1692,7 +1692,7 @@ with the LLM configuration chosen for it on the **Agent configuration** tab of
 
 There are two scopes:
 
-- **`/catalog/agents`**, the **Agent Catalog** tab, is your **account**.
+- **`/catalog/agents`**, the **Agent Catalog** page, is your **account**.
   **Add to all projects** there adds an agent to every dataflow you have, and
   to every new one.
 - **The Agent Catalog drawer**, opened on the canvas from the **Agent
@@ -1789,7 +1789,7 @@ provider, publishing, and writing your own, see [docs/AGENT-CATALOG.md](AGENT-CA
 
 Skills tell Curio's agents how to do a specific task, such as writing a Map Editor node's edits, in the open [Agent Skills](https://agentskills.io/specification) format. Curio ships its own, a node package can ship more, such as Scout's `scout`, and you can import a skill written for any Agent Skills tool.
 
-- **`/catalog/skills`**, the **Skill Catalog** tab, lists every skill you see: Curio's, your own, the published ones and those of the packages you can add. A card's drawer names the agents that use the skill, and **View details** shows what an agent reads. **Import skill**, in the header, takes a skill's folder, its files or a `.zip` of it, and shows a review before anything is kept. **Publish** offers a skill you imported to everyone on the install.
+- **`/catalog/skills`**, the **Skill Catalog** page, lists every skill you see: Curio's, your own, the published ones and those of the packages you can add. A card's drawer names the agents that use the skill, and **View details** shows what an agent reads. **Import skill**, in the header, takes a skill's folder, its files or a `.zip` of it, and shows a review before anything is kept. **Publish** offers a skill you imported to everyone on the install.
 - **An agent's details**, in the Agent Catalog, list its skills, and **Add skill**, **Remove** and **Restore** change them for your account. On the canvas, open them from the Agent Catalog drawer.
 
 In a chat, `/` lists the agent's skills, and a line under each reply names the skills its run used ([Working with an agent](#working-with-an-agent)).

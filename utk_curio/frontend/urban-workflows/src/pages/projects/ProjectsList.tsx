@@ -330,8 +330,9 @@ const ProjectsList: React.FC = () => {
         onChange={handleNotebookImport}
         onClick={(e) => { (e.target as HTMLInputElement).value = ""; }}
       />
-      <GlobalPageHeader />
-      <AppSectionTabs />
+      <GlobalPageHeader>
+        <AppSectionTabs />
+      </GlobalPageHeader>
 
       <div className={joined(browseStyles.page, drawerSlotOpen && browseStyles.pageWithDrawer)}>
         {/* The catalogs' rail, with the sections the owner chose. Its source,
@@ -511,7 +512,7 @@ const ProjectsList: React.FC = () => {
               headerTitle="Dataflow details"
               onClose={() => setSelectedId(null)}
               hero={
-                <div className={browseStyles.drawerKindHero}>
+                <div className={`${browseStyles.drawerKindHero} ${browseStyles.drawerPreviewHero}`}>
                   <DataflowThumbnail preview={selected.graph_preview} />
                 </div>
               }
