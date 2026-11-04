@@ -44,7 +44,10 @@ clients says (https://agentskills.io/client-implementation/adding-skills-support
     skills of node code (:data:`CODE_BEHAVIOR`).
   - A delegated run of a mode that reads the dataflow (``dataflowContext``)
     gets the skills of its nodes' behaviors and templates and of its
-    features.
+    features. One whose inputs name a node gets, beside that node's, the
+    skills of the features the node takes part in (:func:`node_features`):
+    a delegate cannot load a skill, so a chart it writes downstream of a
+    scenario box holds the scenario chips.
   - A Solve round after a check refused the round before gets the skills that
     answer that check (:func:`answering`).
   - Every run of a capability gets the capability's own ``skills``, whatever
@@ -95,6 +98,7 @@ from utk_curio.backend.app.agents.infrastructure import agent_skills as agent_sk
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.repositories import user_skills
 from utk_curio.backend.app.collaboration import owner_uses
+from utk_curio.backend.app.execution import run_plan
 from utk_curio.backend.app.packages import service as packages_services
 
 log = logging.getLogger(__name__)
@@ -450,6 +454,30 @@ def dataflow_features(spec) -> set[str]:
     return found
 
 
+def node_features(spec, node_id: object) -> set[str]:
+    """The features of :data:`FEATURES` the node *node_id* of the dataflow
+    *spec* takes part in: a scenario box it is in or reads from, at any
+    distance through data edges (``run_plan.ancestors``), an interaction edge
+    of its own, its pin on the dashboard. Empty for a node *spec* does not
+    hold."""
+    dataflow = _dataflow(spec)
+    node = next((n for n in _dicts(dataflow.get("nodes")) if n.get("id") == node_id), None)
+    if node is None:
+        return set()
+    edges = _dicts(dataflow.get("edges"))
+    boxed = {member for scenario in _dicts(dataflow.get("scenarios"))
+             if isinstance(scenario.get("nodes"), list) for member in scenario["nodes"] if isinstance(member, str)}
+    found: set[str] = set()
+    if boxed & run_plan.ancestors(node_id, edges):
+        found.add(SCENARIO_BOXES)
+    if any(plan_topology.is_interaction_edge(edge) and node_id in (edge.get("source"), edge.get("target"))
+           for edge in edges):
+        found.add(INTERACTION_EDGES)
+    if dashboards.is_pinned(node):
+        found.add(PINNED_TILES)
+    return found
+
+
 def _reads(manifest, capability: str) -> tuple[str, ...]:
     """What a run of *capability* reads: the capability's own ``reads``, else
     the agent's (``inputs.reads``)."""
@@ -589,6 +617,8 @@ def for_delegated(user_key: str, project_id: str, manifest, capability: str, inp
     if node_type:
         behaviors |= node_behaviors
         templates.append(node_type)
+        if DATAFLOW_CONTEXT in _reads(manifest, capability):
+            features |= node_features(spec, agents_dataflow_block.named_node_id(inputs))
     elif capability in agents_dataflow_block.CODE_CAPABILITIES:
         behaviors.add(CODE_BEHAVIOR)
     elif DATAFLOW_CONTEXT in _reads(manifest, capability):
