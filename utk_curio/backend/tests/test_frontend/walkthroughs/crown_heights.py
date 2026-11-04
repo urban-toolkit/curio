@@ -305,7 +305,7 @@ def _solve_replies(spec: dict, refs: dict[str, str]) -> dict[str, str]:
 
 
 def _write_reply(text: str, node_id: str, content: str) -> str:
-    """The Node Builder's reply: the node's new content, for review."""
+    """The Node Builder's reply: the node's new content, which lands with it."""
     request = {"toolRequest": {"tool": "node.content.write", "params": {"nodeId": node_id, "content": content}}}
     return f"{text}\n\n```curio.v1\n{json.dumps(request)}\n```"
 
@@ -415,46 +415,38 @@ def _close_chat(ctx: Ctx, panel) -> None:
     leave_agent_badge(ctx.page)
 
 
-def _apply_plan(ctx: Ctx, panel, nodes: int) -> None:
-    """The plan's card names what it builds; Apply plan builds it."""
+def _plan_lands(ctx: Ctx, panel, nodes: int, *, before: int) -> None:
+    """The plan lands with the agent's reply: the agent drags its *nodes*
+    onto the canvas, which held *before* nodes, one after another, and the
+    plan's card says what it built, with its Undo."""
     page = ctx.page
-    card = panel.get_by_role("group", name=re.compile(r"^Review proposal: Apply plan")).first
-    expect(card).to_be_visible(timeout=45000)
+    card = panel.get_by_role("group", name=re.compile(r"^Change: Plan")).first
+    expect(card).to_be_visible(timeout=90000)
     expect(card).to_contain_text(f"{nodes} nodes", timeout=15000)
+    expect(card.get_by_role("button", name="Undo")).to_be_visible(timeout=10000)
     ctx.focus(card, hold=2200)
-    before = len(_node_ids(page))
-    apply = panel.get_by_role("button", name=re.compile(r"^(Apply plan|Apply all without validation)$")).first
-    with page.expect_response(
-        lambda r: "/proposals/" in r.url and r.url.endswith("/apply") and r.request.method == "POST",
-        timeout=60000,
-    ) as applied:
-        ctx.click(apply)
-    assert applied.value.ok, f"Apply plan failed: {applied.value.status} {applied.value.text()[:300]}"
     page.wait_for_function(
-        "(n) => window.__curio_reactFlow.getNodes().length === n", arg=before + nodes, timeout=45000,
+        "(n) => window.__curio_reactFlow.getNodes().length === n", arg=before + nodes, timeout=90000,
     )
 
 
-def _apply(ctx: Ctx, panel) -> None:
-    """The card shows the agent's change; Apply makes it."""
-    page = ctx.page
-    apply = panel.get_by_role("button", name=re.compile(r"^Apply")).first
-    expect(apply).to_be_visible(timeout=45000)
-    ctx.focus(apply, hold=1800)
-    with page.expect_response(
-        lambda r: "/proposals/" in r.url and r.url.endswith("/apply") and r.request.method == "POST",
-        timeout=60000,
-    ) as applied:
-        ctx.click(apply)
-    assert applied.value.ok, f"the apply failed: {applied.value.status} {applied.value.text()[:300]}"
+def _change_lands(ctx: Ctx, panel) -> None:
+    """The agent's change lands with its reply: its card says what it
+    changed, with its Undo."""
+    card = panel.get_by_role("group", name=re.compile(r"^Change: ")).first
+    expect(card).to_be_visible(timeout=60000)
+    expect(card.get_by_role("button", name="Undo")).to_be_visible(timeout=10000)
+    ctx.focus(card, hold=1800)
 
 
 def _by_title(saved: dict, title: str) -> dict:
-    """The saved node a plan made under *title*: Apply plan writes a node's
-    goal as its title, a dash and its intent. The whole separator is matched,
-    since one title can start another ("Cast sun rays on Block 1259")."""
-    found = [node for node in saved["nodes"] if str(node.get("goal") or "").startswith(f"{title} — ")]
-    assert len(found) == 1, f"{len(found)} saved nodes have a goal starting {title!r}"
+    """The saved node a plan made under *title*, which it holds as its title,
+    as the example's node does; a plan writes its goal as the title and then
+    the plan row's intent."""
+    found = [node for node in saved["nodes"] if node.get("title") == title]
+    assert len(found) == 1, f"{len(found)} saved nodes are titled {title!r}"
+    goal = str(found[0].get("goal") or "")
+    assert goal.startswith(f"{title} "), f"the node titled {title!r} has the goal {goal!r}"
     return found[0]
 
 
@@ -818,8 +810,8 @@ def _play(ctx: Ctx, node_id: str) -> None:
     premise="From a short prompt, the Dataflow Builder plans the first version of "
             "the Crown Heights shade study: the buildings, the block and the streets, "
             "the sun's steps, the open ground, and one scenario's buildings for the "
-            "GPU with its three GPU steps. Apply plan puts the nodes on the canvas, "
-            "and Solve writes their code.",
+            "GPU with its three GPU steps. The plan lands with its reply, the agent "
+            "dragging each node onto the canvas, and Solve writes their code.",
     tests=["test_frontend/test_example_reconstruction_e2e.py",
            "test_frontend/test_agent_scenarios_e2e.py"],
     example=EXAMPLE,
@@ -866,9 +858,10 @@ def crown_heights_first_version(ctx: Ctx) -> None:
     ctx.mark("clip", "start")
     _drop_agent(ctx, builder, _pane_centre(page))
     panel = _open_chat(ctx, builder)
+    before = len(_node_ids(page))
     _send(ctx, panel, FIRST_PROMPT)
-    _apply_plan(ctx, panel, len(plan["nodes"]))
-    ctx.capture("plan-applied", fit_reactflow=False)
+    _plan_lands(ctx, panel, len(plan["nodes"]), before=before)
+    ctx.capture("plan-landed", fit_reactflow=False)
     ctx.beat(1200)
 
     titles = [spec_node["title"] for spec_node in (_nodes(spec)[node_id] for node_id in refs.values())]
@@ -892,14 +885,12 @@ def crown_heights_first_version(ctx: Ctx) -> None:
     ]
     assert not wrong, f"Solve wrote other code than the example's for {wrong}"
     saved = _saved(ctx, token, project_id)
+    # Each planned node, found by the title it holds (_by_title), is named as
+    # the example names it, which its header shows on the canvas too.
     by_ref = {ref: _by_title(saved, nodes[node_id]["title"])["id"] for ref, node_id in refs.items()}
     by_ref["check-table"] = _by_title(saved, TABLE_TITLE)["id"]
-    # Named as the example names them: a title, which the header shows.
-    by_name = {title: _by_title(saved, title) for title in [*titles, TABLE_TITLE]}
-    untitled = [title for title, node in by_name.items() if node.get("title") != title]
-    assert not untitled, f"the plan's nodes {untitled} did not land with their titles"
     _shows_headers(page, [*titles, TABLE_TITLE])
-    days =(_by_title(saved, nodes[nid("steps")]["title"]).get("metadata") or {}).get("widgets") or []
+    days = (_by_title(saved, nodes[nid("steps")]["title"]).get("metadata") or {}).get("widgets") or []
     assert [w.get("name") for w in days] == ["day"], f"the day's sun steps hold the widgets {days}"
     made = sorted((e["source"], e["target"], e.get("targetHandle") or "in") for e in saved["edges"])
     planned = sorted(
@@ -1099,8 +1090,8 @@ def crown_heights_scenarios(ctx: Ctx) -> None:
     title="Crown Heights: an agent adds the proposed tower",
     premise="The Node Builder, dropped on the Map Editor node, adds the tower proposed "
             "at 1550 Bedford Avenue in two parts: its base to 135 ft, 30 ft back from "
-            "Eastern Parkway, and its upper floors to 185 ft. Once applied and run, the "
-            "map with the proposed building shows it.",
+            "Eastern Parkway, and its upper floors to 185 ft. Its change lands with its "
+            "reply; run, the map with the proposed building shows it.",
     tests=["test_frontend/test_map_edits_agent_e2e.py",
            "test_frontend/test_crown_heights_dashboard_e2e.py"],
     example=EXAMPLE,
@@ -1127,7 +1118,7 @@ def crown_heights_map_editor(ctx: Ctx) -> None:
             "(56.4 m), set back above the base.",
             editor, edits,
         ),
-        "I have proposed the two parts for your review.",
+        "The two parts are in the Map Editor.",
         TOWER_TITLE,
     )
     _reload(page)
@@ -1145,7 +1136,7 @@ def crown_heights_map_editor(ctx: Ctx) -> None:
     _drop_agent(ctx, node_builder, _centre(page, editor))
     panel = _open_chat(ctx, node_builder)
     _send(ctx, panel, TOWER_PROMPT, shown=PROMPT_SHOWN)
-    _apply(ctx, panel)
+    _change_lands(ctx, panel)
     _wait_for_code(page, editor, edits)
     _said_only_what_was_scripted(panel)
     _close_chat(ctx, panel)
@@ -1168,14 +1159,13 @@ def crown_heights_map_editor(ctx: Ctx) -> None:
     assert moved > 0, "the map with the proposed building drew again the same once the tower was added"
     ctx.capture_node("map-with-the-tower", with_map)
     save_dataflow(page)
-    history = (_saved_spec_root(ctx, token, project_id).get("nodeProvenance") or {}).get(editor) or []
+    # The node's history, which the server keeps, holds the agent's change,
+    # named after it, as an edit.
+    history = api_json(f"{ctx.backend}/api/projects/{project_id}/history/nodes/{editor}", token)["entries"]
     named = [entry for entry in history if entry.get("label") == node_builder.name]
     assert named, f"the Map Editor's history has no entry named {node_builder.name!r}: {history}"
     assert _same_code(str(named[-1].get("code") or ""), edits), named[-1]
-
-
-def _saved_spec_root(ctx: Ctx, token: str, project_id: str) -> dict:
-    return api_json(f"{ctx.backend}/api/projects/{project_id}", token)["spec"]
+    assert named[-1].get("kind") == "edit", named[-1]
 
 
 @walkthrough(
@@ -1183,7 +1173,7 @@ def _saved_spec_root(ctx: Ctx, token: str, project_id: str) -> dict:
     title="Crown Heights: an agent creates a plot and a map",
     premise="Asked for the block's share in shadow through the day and the shade the "
             "tower adds, the Dataflow Builder plans a Vega-Lite plot and an Autark map "
-            "wired to the scenarios' results. Apply plan puts them on the canvas, Solve "
+            "wired to the scenarios' results. The plan lands with its reply, Solve "
             "writes their specs, and both draw.",
     tests=["test_frontend/test_crown_heights_dashboard_e2e.py"],
     example=EXAMPLE,
@@ -1225,8 +1215,9 @@ def crown_heights_plot_and_map(ctx: Ctx) -> None:
 
     ctx.mark("clip", "start")
     panel = _open_chat(ctx, builder)
+    before = len(_node_ids(page))
     _send(ctx, panel, PLOT_AND_MAP_PROMPT, shown=PROMPT_SHOWN)
-    _apply_plan(ctx, panel, len(plan["nodes"]))
+    _plan_lands(ctx, panel, len(plan["nodes"]), before=before)
     nodes = _nodes(spec)
     titles = [nodes[node_id]["title"] for node_id in refs.values()]
     written = _solve(ctx, builder, panel, token, project_id, titles)
