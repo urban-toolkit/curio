@@ -592,9 +592,9 @@ describe("a drag whose drop comes right behind it", () => {
     // The server holds a drag for its ms, then sends its drop. A tab that was
     // busy all that while (a node mounting, an editor loading) reads both
     // messages back to back: the socket hands it each in a microtask of its
-    // own (socket.io-client's `nextTick`), with no task between them. That is
-    // what Ben's tab did in the two agents e2e (test_agent_queue_e2e.py),
-    // whose Fetch drag was never drawn.
+    // own (socket.io-client's `nextTick`), with no task between them. That
+    // fits what Ben's tab showed in the two agents e2e (test_agent_queue_e2e.py):
+    // it held the Fetch drag's state, yet never drew its drag.
     test("is drawn before this tab reads the drop, as both reach a busy tab at once", async () => {
         const matchMedia = window.matchMedia;
         window.matchMedia = ((query: string) => ({
