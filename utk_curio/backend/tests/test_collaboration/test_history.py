@@ -964,6 +964,47 @@ def test_node_history_read_reads_the_points(kept):
     assert status == "ok" and json.loads(text)["code"] == "ran = 2\n", text
 
 
+def test_node_history_read_names_who_made_each_entry_as_the_drawer_does(kept):
+    """An agent asked who changed a node reads the names the drawer gives.
+    bob's typing is an edit named after him, made by him. The Node Builder's
+    change is an edit named after the agent, made by the agent asked by
+    alice, as the drawer names the change's version."""
+    from utk_curio.backend.app.agents.application import tools
+    from utk_curio.backend.app.collaboration import dataflow_docs, history
+
+    _synced(kept, "alice")
+    bob = _synced(kept, "bob")
+    bob.edit(_type("# bob\n"))
+    kept.clock.now += history.TYPING_PAUSE_S
+    dataflow_docs.flush_due(kept.clock.now)
+    spec = dataflow_docs.live(kept.owner_key, kept.project_id)
+    next(n for n in spec["dataflow"]["nodes"] if n["id"] == "loader")["content"] = "x = 42\n"
+    dataflow_docs.write(kept.owner_key, kept.project_id, spec,
+                        dataflow_docs.by_agent(BUILDER, kept.owner_key, "apply"))
+
+    status, text = tools.execute_read_tool(
+        "node.history.read", user_key=kept.owner_key, project_id=kept.project_id,
+        target={"kind": "node", "targetId": "loader"}, params={},
+    )
+    assert status == "ok", text
+    rows = json.loads(text)["entries"]
+    assert [(row.get("kind"), row.get("label"), row.get("by")) for row in rows] == [
+        ("edit", "Node Builder", "Node Builder, asked by Alice"),
+        ("edit", "Bob edited", "Bob"),
+    ], rows
+
+    # The drawer's own names: each entry's label and who made it, and the
+    # agent's change named as its version is.
+    drawer = {entry["id"]: entry for entry in _http(kept).get(
+        f"/api/projects/{kept.project_id}/history/nodes/loader", headers=_auth(kept)).get_json()["entries"]}
+    versions = {version["id"]: version for version in _http(kept).get(
+        f"/api/projects/{kept.project_id}/history", headers=_auth(kept)).get_json()["versions"]}
+    agents, bobs = (drawer[row["id"]] for row in rows)
+    assert [row["label"] for row in rows] == [agents.get("label"), bobs.get("label")], drawer
+    assert rows[0]["by"] == versions[agents["point"]]["what"], versions
+    assert rows[1]["by"] == bobs["by"]["name"], bobs
+
+
 # ---------------------------------------------------------------------------
 # What a load and a save carry, and copies
 # ---------------------------------------------------------------------------
