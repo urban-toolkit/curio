@@ -119,8 +119,12 @@ _PLAN_REF_MAX_CHARS = 32
 _PLAN_TITLE_MAX_CHARS = 120
 _PLAN_INTENT_MAX_CHARS = 300
 _PLAN_NODE_TYPE_MAX_CHARS = 120
-# dev/59 revision fields: existing node/edge ids (uuids in practice).
+# dev/59 revision fields: existing node ids (uuids in practice).
 _PLAN_REMOVAL_ID_MAX_CHARS = 64
+# An existing edge's id: React Flow names a connection
+# reactflow__edge-<source><sourceHandle>-<target><targetHandle>, two node ids
+# and two handles, 94 characters for the one in docs/examples/dataflows/vega.json.
+_PLAN_EDGE_ID_MAX_CHARS = 200
 # dev/67-3: an edge may name the target's input handle (input circles in,
 # in_1, ...; or a named handle a package declares). The mint validates semantics; this is shape.
 _PLAN_TO_HANDLE_MAX_CHARS = 24
@@ -498,10 +502,12 @@ def _field_error(where: str, value: object, max_chars: int) -> str | None:
 
 
 def _parse_removal_list(
-    raw: object, key: str, max_entries: int, errors: list[str]
+    raw: object, key: str, max_entries: int, errors: list[str],
+    max_chars: int = _PLAN_REMOVAL_ID_MAX_CHARS,
 ) -> list[str]:
-    """A bounded, deduplicated list of existing-element ids (dev/59) —
-    existence against the saved spec is the MINT's check, not the grammar's."""
+    """A bounded, deduplicated list of existing-element ids (dev/59), each at
+    most *max_chars* long. Existence against the saved spec is the MINT's
+    check, not the grammar's."""
     if raw is None:
         return []
     if not isinstance(raw, list):
@@ -513,7 +519,7 @@ def _parse_removal_list(
     out: list[str] = []
     seen: set[str] = set()
     for i, value in enumerate(raw):
-        err = _field_error(f"{key}[{i}]", value, _PLAN_REMOVAL_ID_MAX_CHARS)
+        err = _field_error(f"{key}[{i}]", value, max_chars)
         if err:
             errors.append(err)
             continue
@@ -552,7 +558,9 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
             plan["templateId"] = str(raw.get("templateId")).strip()
     # dev/59: revision fields parse first — a remove-only plan is valid.
     remove_nodes = _parse_removal_list(raw.get("removeNodes"), "removeNodes", _PLAN_MAX_NODES, errors)
-    remove_edges = _parse_removal_list(raw.get("removeEdges"), "removeEdges", _PLAN_MAX_EDGES, errors)
+    remove_edges = _parse_removal_list(
+        raw.get("removeEdges"), "removeEdges", _PLAN_MAX_EDGES, errors, _PLAN_EDGE_ID_MAX_CHARS,
+    )
     nodes_raw = raw.get("nodes")
     if nodes_raw is None and (remove_nodes or remove_edges):
         nodes_raw = []  # a remove-only revision carries no new nodes

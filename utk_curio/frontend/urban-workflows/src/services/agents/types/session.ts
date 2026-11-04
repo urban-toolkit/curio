@@ -27,6 +27,10 @@ export interface AgentToolCall {
   reason?: string;
   /** The egress policy refused it: its line stays under the reply (#447). */
   egress?: boolean;
+  /** A call that failed: its whole result, and the params it gave as JSON,
+   *  each bounded, for a look at the run later; the chat shows neither. */
+  detail?: string;
+  arguments?: string;
 }
 
 /**

@@ -48,6 +48,7 @@ from utk_curio.backend.app.agents.domain import (
     data_pool_settings,
     node_settings,
     plan_topology,
+    widget_grammar,
 )
 from utk_curio.backend.app.agents.domain.tool_names import (
     DELEGATE_TOOL,
@@ -86,6 +87,36 @@ def _texts(description: str) -> dict:
 def _map(description: str) -> dict:
     """An object whose keys the tool does not fix, such as a manifest."""
     return {"type": "object", "description": description}
+
+
+#: What a schema says of a string that holds a JSON document: the value a
+#: native call gives as JSON text, which :func:`native_arguments` reads back.
+JSON_TEXT = "application/json"
+
+
+def _json_value(description: str | None = None) -> dict:
+    """A value whose type the schema cannot fix, such as a widget's, whose
+    type is its widget's: a native call gives it as JSON text.
+
+    A server whose tool parser reads a call by its schema, as vLLM's parser
+    for Gemma 4 does, keeps a value's JSON type only where the schema names
+    one, so a number or a list it cannot type arrives as its text. JSON text
+    survives every parser, and is read back into the value it encodes before
+    the call takes the fenced request's path."""
+    schema: dict = {"type": "string", "contentMediaType": JSON_TEXT}
+    if description is not None:
+        schema["description"] = description
+    return schema
+
+
+def _values_map(description: str, depth: int = 1) -> dict:
+    """An object whose keys the tool does not fix, holding *depth* levels of
+    objects whose leaves are values (:func:`_json_value`), such as widget
+    values by widget name."""
+    leaf = _json_value()
+    for _ in range(depth - 1):
+        leaf = {"type": "object", "additionalProperties": leaf}
+    return {"type": "object", "description": description, "additionalProperties": leaf}
 
 
 #: models.search bounds: the most rows a call returns, and the most labels per
@@ -212,8 +243,22 @@ def _appearance(say: Say) -> dict:
     return _object({"backgroundColor": _text(say("appearance.backgroundColor"))})
 
 
+def _widget_options() -> dict:
+    """A widget's options as ``$defs.widget`` types them, so a server that
+    reads a call by its schema keeps their numbers."""
+    return _object({
+        "choices": {"type": "array", "items": {"type": "string"}},
+        "display": {"type": "string", "enum": list(widget_grammar.CHOICE_DISPLAYS)},
+        "min": {"type": "number"},
+        "max": {"type": "number"},
+        "step": {"type": "number"},
+        "units": {"type": "string"},
+    })
+
+
 def _widgets(say: Say) -> dict:
-    """#662: the widgets a node declares (``$defs.widget``); the server checks the rest."""
+    """#662: the widgets a node declares (``$defs.widget``): every key a run is
+    told of, each typed, its default as JSON text; the server checks the rest."""
     return {
         "type": "array",
         "items": {
@@ -222,6 +267,8 @@ def _widgets(say: Say) -> dict:
                     "name": _text(say("widgets.name")),
                     "type": {"type": "string", "enum": list(WIDGET_KINDS)},
                     "label": _text(say("widgets.label")),
+                    "default": _json_value(say("widgets.default")),
+                    "options": _widget_options(),
                 },
                 "name", "type",
             ),
@@ -292,7 +339,8 @@ def _scenario(say: Say) -> dict:
             "nodes": _texts(say("scenarios.nodes")),
             "duplicateOf": _text(say("scenarios.duplicateOf")),
             "copies": _map(say("scenarios.copies")),
-            "values": _map(say("scenarios.values")),
+            # A copy's ref to its widget values by name.
+            "values": _values_map(say("scenarios.values"), depth=2),
             "description": _text(say("scenarios.description")),
             "color": _text(say("scenarios.color")),
         },
@@ -428,7 +476,7 @@ REGISTRY: dict[str, ToolContract] = {
             "dataPool": _data_pool(say),
             "simpleVis": _simple_vis(say),
             "spatialJoin": _spatial_join(say),
-            "widgets": _map(say("widgets")),
+            "widgets": _values_map(say("widgets")),
         }),
     ),
     # dev/50, consumer: the Dataset Finder. Grounds the "From your Data
@@ -780,6 +828,38 @@ def native_tools(
     if capabilities:
         specs.append(delegate_tool(capabilities))
     return specs
+
+
+def native_arguments(tool_id: str, arguments: dict) -> dict:
+    """The params a native call of *tool_id* gives, as its fenced block would
+    hold them: each value its schema gives as JSON text (:func:`_json_value`)
+    read back into the value it encodes, with ``json.loads`` as a fenced block
+    is read. A text that is no JSON stays a text, which the tool's own reader
+    then judges, as it judges every other value. Copies: the call keeps its
+    arguments as the model sent them."""
+    contract = REGISTRY.get(tool_id)
+    if contract is None or not isinstance(arguments, dict):
+        return arguments
+    return _read_json_text(arguments, contract.parameters)
+
+
+def _read_json_text(value, schema):
+    if not isinstance(schema, dict):
+        return value
+    if schema.get("contentMediaType") == JSON_TEXT:
+        if not isinstance(value, str):
+            return value
+        try:
+            return json.loads(value)
+        except (ValueError, RecursionError):
+            return value
+    if isinstance(value, dict):
+        properties = schema.get("properties") or {}
+        others = schema.get("additionalProperties")
+        return {key: _read_json_text(item, properties.get(key, others)) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_read_json_text(item, schema.get("items")) for item in value]
+    return value
 
 
 def _truncate(text: str) -> str:

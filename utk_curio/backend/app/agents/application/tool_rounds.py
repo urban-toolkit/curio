@@ -410,6 +410,7 @@ def _execute_tool_request(
     if granted:
         # An ungranted request stays the model's alone (dev/41).
         record.update(_failure_fields(status, text))
+        record.update(_failure_record(status, text, req.get("params")))
     tool_calls.append(record)
     return status, text
 
@@ -458,6 +459,39 @@ def _failure_reason(status: str, text: object) -> str | None:
     return reason
 
 
+#: How much of a failed call's whole result, and of the params it gave, its
+#: record keeps.
+_FAILURE_DETAIL_MAX_CHARS = 2000
+_FAILURE_ARGUMENTS_MAX_CHARS = 4000
+
+
+def _bounded_text(text: str, limit: int) -> str:
+    """*text* with URL query strings cut and its length bounded."""
+    text = _URL_QUERY.sub("?…", text)
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _failure_record(status: str, text: object, params: object) -> dict:
+    """What the record of a granted call that did not succeed keeps beside
+    its reason, so a look at the run later finds why it failed: the whole
+    result, every problem a refusal lists (``detail``), and the params the call
+    gave, as JSON (``arguments``), each bounded and with URL query strings cut,
+    as the reason is. The chat's event carries neither. Empty for a call that
+    succeeded."""
+    if status in _NATIVE_OK_STATUSES:
+        return {}
+    fields: dict = {}
+    detail = str(text or "").strip()
+    if detail:
+        fields["detail"] = _bounded_text(detail, _FAILURE_DETAIL_MAX_CHARS)
+    try:
+        arguments = _json.dumps(params if params is not None else {}, ensure_ascii=False)
+    except (TypeError, ValueError):
+        arguments = str(params)
+    fields["arguments"] = _bounded_text(arguments, _FAILURE_ARGUMENTS_MAX_CHARS)
+    return fields
+
+
 def _failure_fields(status: str, text: object) -> dict:
     """The fields a granted call that did not succeed adds to its record and
     its ``tool_result`` event (#447): ``reason``, and ``egress`` when the
@@ -483,7 +517,11 @@ def _native_request(call: ToolCall) -> tuple[dict | None, list[str]]:
     tool_id = tools.tool_id_of(call.name)
     if tool_id is None:
         return None, [agent_text.message("tool-round.no-such-tool", name=repr(call.name))]
-    return content.parse_tool_request_verbose({"tool": tool_id, "params": call.arguments})
+    # The values its schema gives as JSON text, read back first, so the
+    # parser sees the params a fenced block would hold.
+    return content.parse_tool_request_verbose(
+        {"tool": tool_id, "params": tools.native_arguments(tool_id, call.arguments)}
+    )
 
 
 def _native_result_text(status: str, text: str, *, final: bool) -> str:
