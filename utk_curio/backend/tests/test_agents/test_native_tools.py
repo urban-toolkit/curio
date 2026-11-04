@@ -5,9 +5,9 @@ instead of the fenced ``toolRequest`` / ``delegateRequest`` syntax, and the
 model's first call takes the path a fenced request takes: the same parser and
 budgets, grant check, mint, delegate and round accounting. Its result goes back
 as a tool message answering the call, flagged when it is an error. Every other
-call of the reply is answered as not run, the last round offers no call, and
-an endpoint that refuses the tools puts the run on the fenced protocol, from
-where it was. Runs go through the scripted provider, scripted to call tools
+call of the reply is answered as not run, the last round offers no call unless
+it is a plan's last try, as a fenced plan block has one, and an endpoint that
+refuses the tools puts the run on the fenced protocol, from where it was. Runs go through the scripted provider, scripted to call tools
 natively (``testing_provider.script_chat_capabilities``).
 """
 
@@ -398,6 +398,176 @@ class TestMutations:
         assert landed["is_error"] is False, landed
         assert "the plan added 1 node and 1 connection. Topology: acyclic." in landed["content"], landed["content"]
         assert _offered()[0]["tools"][1] == "dataflow__plan__write"
+
+
+#: A plan whose scenario holds its one node, and the same plan breaking one of
+#: the plan's own scenario rules, as 7 of gemma4's native plans did in #1282's
+#: live check: a member that is neither a ref of the plan nor a node of the
+#: dataflow. The plan's grammar takes it and the mint refuses it, on both
+#: protocols with the same words.
+RECOUNT = {"goal": "count twice", "nodes": [
+    {"ref": "a", "nodeType": CA, "title": "Count", "intent": "count the rows again"}],
+    "edges": [{"from": "n1", "to": "a"}], "scenarios": [{"name": "Recount", "nodes": ["a"]}]}
+RECOUNT_BROKEN = {**RECOUNT, "scenarios": [{"name": "Recount", "nodes": ["a", "ghost"]}]}
+GHOST = "'ghost' is neither a ref of this plan nor an existing node id"
+
+
+def _too_big(plan: dict) -> dict:
+    """*plan* past the plan's params budget: a call the runtime cannot read."""
+    return {**plan, "goal": "g" * (content.PLAN_TAIL_MAX_BYTES + 1)}
+
+
+class TestAPlansTries:
+    """A plan gets as many tries on native tools as a fenced dataflowPlan
+    block does: every refusal is a correction round while the MAX_TOOL_ROUNDS
+    budget lasts, and the try after the last correction is judged as well. It
+    lands, or the plan's card says why it could not, and no round follows it.
+    Before, a native run's call after its third refusal offered no call, so a
+    native plan had three tries where a block has four: in #1282's live check,
+    gemma4's 7 refused native plans broke the plan's scenario rules and were
+    not fixed within their rounds."""
+
+    LAST = tool_rounds.MAX_TOOL_ROUNDS + 1  # a block's tries, each one call
+
+    def _fenced(self, client, headers, plans) -> tuple[dict, list]:
+        """*plans* as fenced blocks, one a reply, in a dataflow of their own:
+        the turn's answer and its run's calls."""
+        testing_provider.script_chat_capabilities(tools=False)
+        pid = _new_dataflow(client, headers)
+        att = _attach(client, headers, pid, DFB)
+        before = len(_run_calls())
+        testing_provider.push_replies(*[scenario_routes._reply(plan) for plan in plans], attachment=att)
+        body = _run(client, headers, pid, att)
+        testing_provider.script_chat_capabilities(tools=True)
+        return body, _run_calls()[before:]
+
+    def _native(self, client, headers, project, plans, stream=False, then=()):
+        """*plans* as native calls of the plan tool, one a reply, then the
+        replies *then*: the run's answer, then what each of its calls offered
+        and the calls."""
+        att = _attach(client, headers, project, DFB)
+        self.att = att
+        before = len(_run_calls())
+        testing_provider.push_replies(
+            *[{"toolCalls": [_call("dataflow.plan.write", plan)]} for plan in plans], *then, attachment=att)
+        if stream:
+            answer = _stream(client, headers, project, att)
+        else:
+            answer = client.post(f"/api/agents/projects/{project}/attachments/{att}/run",
+                                 json={"message": "go"}, headers=headers)
+        return answer, _offered()[before:], _run_calls()[before:]
+
+    @staticmethod
+    def _results(calls: list) -> list[str]:
+        """What each tool result of the run told the model, as its last call holds them."""
+        return [m["content"] for m in calls[-1] if m.get("role") == "tool"]
+
+    def test_a_plan_refused_three_times_lands_on_its_fourth_try_as_a_fenced_block_does(
+        self, client, headers, project,
+    ):
+        plans = [RECOUNT_BROKEN] * tool_rounds.MAX_TOOL_ROUNDS + [RECOUNT]
+        fenced, fenced_calls = self._fenced(client, headers, plans)
+        assert len(fenced_calls) == self.LAST
+        resp, offered, calls = self._native(client, headers, project, plans)
+        # The call after the third refusal still offers the plan's call.
+        assert [o["toolChoice"] for o in offered] == ["auto"] * self.LAST, resp.get_data(as_text=True)
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        native = routes_proposals._landed_plan(resp.get_json())
+        assert native["plan"] == routes_proposals._landed_plan(fenced)["plan"]
+        assert len(calls) == self.LAST, "a round followed the plan's last try"
+        refusals = self._results(calls)
+        assert len(refusals) == tool_rounds.MAX_TOOL_ROUNDS and all(GHOST in r for r in refusals), refusals
+        # The third refusal asks for the plan again, not for an answer.
+        assert agent_text.message("tool-round.final-round") not in refusals[-1], refusals[-1]
+        assert testing_provider.pending() == 0
+
+    def test_a_plan_still_refused_on_its_last_try_ends_with_the_cap_card_as_a_fenced_block_does(
+        self, client, headers, project,
+    ):
+        """Five invalid tries, one more than the budget takes: the fifth is
+        never asked for, and the turn ends with the plan's cap card."""
+        plans = [RECOUNT_BROKEN] * (self.LAST + 1)
+        fenced, fenced_calls = self._fenced(client, headers, plans)
+        assert len(fenced_calls) == self.LAST
+        resp, offered, calls = self._native(client, headers, project, plans)
+        assert [o["toolChoice"] for o in offered] == ["auto"] * self.LAST, resp.get_data(as_text=True)
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        body = resp.get_json()
+        assert len(calls) == self.LAST, "a round followed the plan's last try"
+        assert testing_provider.pending() == 2, "each run left its fifth try unasked"
+        assert routes_proposals._changes(body) == routes_proposals._changes(fenced) == []
+        (card,) = [p for p in body["content"] if p["type"] == "card"]
+        assert card == next(p for p in fenced["content"] if p["type"] == "card")
+        assert card["title"] == "Plan could not be made" and GHOST in card["lines"][0], card
+
+    def test_another_call_on_the_plans_last_try_ends_with_the_cap_card(self, client, headers, project):
+        """The last try is the plan's: a read the model calls in it instead,
+        as the refusal's "dataflow.read shows them" invites, is dropped at the
+        cap as on the fenced protocol, and the turn ends with the plan's card,
+        not with nothing."""
+        resp, offered, calls = self._native(
+            client, headers, project, [RECOUNT_BROKEN] * tool_rounds.MAX_TOOL_ROUNDS,
+            then=[{"text": "Let me read the node ids first.", "toolCalls": [_call("dataflow.read")]}],
+        )
+        assert [o["toolChoice"] for o in offered] == ["auto"] * self.LAST, resp.get_data(as_text=True)
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        body = resp.get_json()
+        assert len(calls) == self.LAST, "a round followed the plan's last try"
+        assert routes_proposals._changes(body) == []
+        (card,) = [p for p in body["content"] if p["type"] == "card"]
+        assert card["title"] == "Plan could not be made" and GHOST in card["lines"][0], card
+        assert body["reply"] == "Let me read the node ids first."
+        execution = _last_turn(client, headers, project, self.att)["execution"]
+        assert [c["tool"] for c in execution["toolCalls"]] == ["dataflow.plan.write"] * tool_rounds.MAX_TOOL_ROUNDS
+
+    def test_a_fenced_plan_request_gets_a_blocks_tries_too(self, client, headers, project):
+        """The toolRequest form of a fenced plan (dev/55) takes the native
+        call's path, so it gets the same tries: three refusals, then a valid
+        request at the cap, which lands instead of being cut off."""
+        testing_provider.script_chat_capabilities(tools=False)
+        att = _attach(client, headers, project, DFB)
+        before = len(_run_calls())
+        testing_provider.push_replies(
+            *[_block("dataflow.plan.write", RECOUNT_BROKEN)] * tool_rounds.MAX_TOOL_ROUNDS,
+            _block("dataflow.plan.write", RECOUNT), attachment=att)
+        body = _run(client, headers, project, att)
+        assert [p["tool"] for p in routes_proposals._changes(body)] == ["dataflow.plan.write"], body["content"]
+        calls = _run_calls()[before:]
+        assert len(calls) == self.LAST, "a round followed the plan's last try"
+        results = [m["content"] for m in calls[-1]
+                   if m.get("role") == "user" and str(m.get("content")).startswith("[tool result]")]
+        assert len(results) == tool_rounds.MAX_TOOL_ROUNDS and all(GHOST in r for r in results), results
+        assert agent_text.message("tool-round.final-round") not in results[-1], results[-1]
+
+    def test_a_streamed_plan_gets_the_same_tries(self, client, headers, project):
+        plans = [RECOUNT_BROKEN] * tool_rounds.MAX_TOOL_ROUNDS + [RECOUNT]
+        events, offered, calls = self._native(client, headers, project, plans, stream=True)
+        assert [o["toolChoice"] for o in offered] == ["auto"] * self.LAST, events[-1]
+        kind, done = events[-1]
+        assert kind == "done", done
+        assert [p["tool"] for p in done["content"] if p["type"] == "change"] == ["dataflow.plan.write"]
+        assert len(calls) == self.LAST
+
+    @pytest.mark.parametrize("last", ["readable", "unreadable"])
+    def test_a_plan_call_too_big_to_read_gets_the_same_tries(self, client, headers, project, last):
+        """A plan call the runtime cannot read is corrected as a broken plan
+        block is, and its last try lands, or ends with the plan's cap card."""
+        plans = [_too_big(RECOUNT)] * tool_rounds.MAX_TOOL_ROUNDS + [
+            RECOUNT if last == "readable" else _too_big(RECOUNT)]
+        resp, offered, calls = self._native(client, headers, project, plans)
+        assert [o["toolChoice"] for o in offered] == ["auto"] * self.LAST, resp.get_data(as_text=True)[:2000]
+        assert resp.status_code == 200, resp.get_data(as_text=True)[:2000]
+        body = resp.get_json()
+        assert len(calls) == self.LAST, "a round followed the plan's last try"
+        corrections = self._results(calls)
+        assert len(corrections) == tool_rounds.MAX_TOOL_ROUNDS
+        assert all(c.startswith("invalid call, not run.") and "toolRequest.params is" in c for c in corrections)
+        assert agent_text.message("tool-round.final-round") not in corrections[-1], corrections[-1]
+        if last == "readable":
+            assert [p["tool"] for p in routes_proposals._changes(body)] == ["dataflow.plan.write"]
+        else:
+            (card,) = [p for p in body["content"] if p["type"] == "card"]
+            assert card["title"] == "Plan could not be made" and "toolRequest.params is" in card["lines"][0], card
 
 
 class TestDelegation:

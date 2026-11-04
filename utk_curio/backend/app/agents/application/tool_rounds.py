@@ -102,13 +102,38 @@ def _handle_plan_reply(
                     errors = plan_errors + [fence_guidance]
     if rounds_used < MAX_TOOL_ROUNDS:
         return "correct", errors, None
-    card = {
+    card = _plan_cap_card(errors)
+    return "cap", [p for p in parts if p.get("type") != "dataflowPlan"] + [card], None
+
+
+def _plan_cap_card(errors: list[str]) -> dict:
+    """The visible outcome of a plan whose last try, after every correction
+    round, was still invalid (dev/54), whether a block, a request or a native
+    call made it."""
+    return {
         "type": "card",
         "kind": "error",
         "title": "Plan could not be made",
         "lines": [e[:300] for e in errors[:10]],
     }
-    return "cap", [p for p in parts if p.get("type") != "dataflowPlan"] + [card], None
+
+
+def _is_plan_request(loop_ctx: dict, req: dict) -> bool:
+    """Whether *req* is the run's plan made as a request: a native call of
+    dataflow.plan.write, or the toolRequest form a fenced reply may use
+    (dev/55). It gets a plan block's tries (dev/54): an invalid one is a
+    correction round while rounds remain, and the try after the last
+    correction lands or ends in :func:`_plan_cap_card`."""
+    return (
+        req.get("type") == "toolRequest"
+        and req.get("tool") == "dataflow.plan.write"
+        and "dataflow.plan.write" in (loop_ctx.get("granted") or [])
+    )
+
+
+def _is_plan_call(loop_ctx: dict, call: ToolCall) -> bool:
+    """Whether the native *call* is of the run's plan, readable or not."""
+    return _is_plan_request(loop_ctx, {"type": "toolRequest", "tool": tools.tool_id_of(call.name)})
 
 
 def _tool_correction_message(errors: list[str], *, native: bool = False) -> dict:
@@ -271,6 +296,8 @@ def _handle_tool_reply(
 # dev/73: 3, the Node Builder's documented modify flow (read the node →
 # delegate generation → write the node) is a three-round sequence; 2 forced
 # models that follow their instructions to answer in prose instead of writing.
+# A plan's last try, in the call after the last round, is judged too, as a
+# plan block in the reply after the last round is (``_is_plan_request``).
 MAX_TOOL_ROUNDS = 3
 
 
@@ -586,15 +613,18 @@ class _RunConversation:
     def messages(self) -> list:
         return self._native if self.native_tools else self._fenced
 
-    def offer(self, rounds_used: int) -> dict:
+    def offer(self, rounds_used: int, plan_try: bool = False) -> dict:
         """The next call's tool keywords. None on the fenced protocol, so its
         call is exactly what it was before native tools; on the last round the
-        model may not call one."""
+        model may not call one, unless the round before corrected a plan
+        (*plan_try*): that round asked for the plan again, and a native plan
+        is a call, as a fenced reply may still hold a plan block then."""
         if not self.native_tools:
             return {}
+        last = rounds_used >= MAX_TOOL_ROUNDS and not plan_try
         return {
             "tools": self.native_tools,
-            "tool_choice": "none" if rounds_used >= MAX_TOOL_ROUNDS else "auto",
+            "tool_choice": "none" if last else "auto",
         }
 
     def native_calls(self, turn: ChatTurn) -> tuple:
