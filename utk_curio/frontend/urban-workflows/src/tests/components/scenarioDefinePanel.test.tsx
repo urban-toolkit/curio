@@ -173,6 +173,18 @@ describe("defining a scenario", () => {
     expect(value.setDefine).toHaveBeenCalledWith(null);
   });
 
+  test("a new set's id comes from the scenario it is made for, never at random", () => {
+    renderPanel({ mode: "new" });
+    select("existing");
+    addTo("Scenario-specific nodes");
+    click("Next: shared context & outcomes");
+    click("Next: name & set");
+    fireEvent.change(screen.getByTestId("scenario-define-name"), { target: { value: "Existing" } });
+    fireEvent.click(screen.getByTestId("scenario-define-save"));
+    const [scenarios, sets] = mockFlow.setScenarios.mock.calls[0];
+    expect(sets.map((s: { id: string }) => s.id)).toEqual([`set-${scenarios[0].id}`]);
+  });
+
   test("Cancel writes nothing", () => {
     const value = renderPanel({ mode: "new", nodes: ["existing"] });
     click("Cancel");

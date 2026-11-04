@@ -234,6 +234,49 @@ describe("every field generateTrill writes has its place in the doc", () => {
     });
 });
 
+describe("scenario sets, kept by set id", () => {
+    const base = {
+        nodes: [{ id: "n", type: "t", minimized: true, minimizedWidth: 250, minimizedHeight: 40 }, { id: "m", type: "t" }],
+        edges: [],
+        scenarios: [
+            { id: "a", name: "Heights", color: "#4477aa", nodes: ["n"], set: "set-a", context: [], outcomes: [] },
+            { id: "b", name: "Roofs", color: "#228833", nodes: ["m"], set: "set-b", context: [], outcomes: [] },
+        ],
+        scenarioSets: [{ id: "set-a", name: "Tall towers" }, { id: "set-b", name: "Green roofs" }],
+    };
+
+    test("each set is an entry of the doc's scenarioSets, by its id, and comes back as written", () => {
+        const [doc, back] = roundTrip(base);
+        expect(Array.from(doc.getMap("scenarioSets").keys()).sort()).toEqual(["set-a", "set-b"]);
+        expect(back.scenarioSets).toEqual(base.scenarioSets);
+    });
+
+    test("two tabs that rename different sets while one resizes a chip converge on all three changes", () => {
+        const [server] = roundTrip(base);
+        const ana = new Y.Doc();
+        const ben = new Y.Doc();
+        Y.applyUpdate(ana, Y.encodeStateAsUpdate(server));
+        Y.applyUpdate(ben, Y.encodeStateAsUpdate(server));
+        const anas = JSON.parse(JSON.stringify(base));
+        anas.scenarioSets[0].name = "Tall towers, by Ana";
+        Object.assign(anas.nodes[0], { minimizedWidth: 320, minimizedHeight: 90 });
+        applyDataflow(ana, base, anas);
+        const bens = JSON.parse(JSON.stringify(base));
+        bens.scenarioSets[1].name = "Green roofs, by Ben";
+        applyDataflow(ben, base, bens);
+
+        Y.applyUpdate(ana, Y.encodeStateAsUpdate(ben, Y.encodeStateVector(ana)));
+        Y.applyUpdate(ben, Y.encodeStateAsUpdate(ana, Y.encodeStateVector(ben)));
+        const seen = docToDataflow(ana);
+        expect(JSON.stringify(docToDataflow(ben))).toBe(JSON.stringify(seen));
+        expect(seen.scenarioSets).toEqual([
+            { id: "set-a", name: "Tall towers, by Ana" },
+            { id: "set-b", name: "Green roofs, by Ben" },
+        ]);
+        expect([seen.nodes[0].minimizedWidth, seen.nodes[0].minimizedHeight]).toEqual([320, 90]);
+    });
+});
+
 describe("the rules the shipped dataflows do not all exercise", () => {
     test("absent and empty stay apart", () => {
         const cases = [

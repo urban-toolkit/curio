@@ -387,6 +387,83 @@ describe("the dataflow's own fields, connections and scenarios", () => {
     });
 });
 
+describe("scenario sets, a chip's size and a node's one name go both ways", () => {
+    /** The dataflow with node n a chip resized to 300 by 80, named, and two
+     *  scenarios in two sets. */
+    function withSets() {
+        const loaded = spec();
+        Object.assign(loaded.dataflow.nodes[0], {
+            minimized: true, minimizedWidth: 300, minimizedHeight: 80, title: "Shadow study",
+        });
+        Object.assign(loaded.dataflow, {
+            scenarios: [
+                { id: "a", name: "Heights", color: "#4477aa", nodes: ["n"], set: "set-a", context: [], outcomes: [] },
+                { id: "b", name: "Roofs", color: "#228833", nodes: ["m"], set: "set-b", context: [], outcomes: [] },
+            ],
+            scenarioSets: [{ id: "set-a", name: "Tall towers" }, { id: "set-b", name: "Green roofs" }],
+        });
+        return loaded;
+    }
+
+    test("another tab's chip size reaches this canvas", async () => {
+        await open(serverDoc(spec().dataflow));
+        await fromAnotherTab((df) => {
+            Object.assign(df.nodes[0], { minimized: true, minimizedWidth: 300, minimizedHeight: 80 });
+        });
+        expect([canvasNode().data.minimizedWidth, canvasNode().data.minimizedHeight]).toEqual([300, 80]);
+        expect(trillNodeOf(canvasNode())).toMatchObject({ minimizedWidth: 300, minimizedHeight: 80 });
+    });
+
+    test("a canvas opened from the doc, as a reload opens it, keeps the chip's size, the name and the sets", async () => {
+        const held = serverDoc(withSets().dataflow);
+        // What a reload gets: the doc's state, sent whole, read back as Trill.
+        const reloaded = new Y.Doc();
+        Y.applyUpdate(reloaded, Y.encodeStateAsUpdate(held.doc));
+        await open(held, { dataflow: docToDataflow(reloaded) } as any);
+        expect([canvasNode().data.minimizedWidth, canvasNode().data.minimizedHeight]).toEqual([300, 80]);
+        expect(canvasNode().data.title).toBe("Shadow study");
+        expect(api.scenarioSets).toEqual([{ id: "set-a", name: "Tall towers" }, { id: "set-b", name: "Green roofs" }]);
+    });
+
+    test("another tab's renamed set reaches this canvas", async () => {
+        await open(serverDoc(withSets().dataflow), withSets());
+        await fromAnotherTab((df) => {
+            df.scenarioSets = [{ id: "set-a", name: "Tall towers, by Ana" }, { id: "set-b", name: "Green roofs" }];
+        });
+        expect(api.scenarioSets).toEqual([{ id: "set-a", name: "Tall towers, by Ana" }, { id: "set-b", name: "Green roofs" }]);
+    });
+
+    test("this canvas's sets reach the doc, each scenario in its set", async () => {
+        await open(serverDoc(spec().dataflow));
+        act(() => {
+            api.setScenarios(
+                [{ id: "s2", name: "Shade", color: "#228833", nodes: ["m"], set: "set-s2", context: ["n"], outcomes: [] }],
+                [{ id: "set-s2", name: "Shade study" }],
+            );
+        });
+        await flush();
+        const df = docToDataflow(provider.doc);
+        expect(df.scenarioSets).toEqual([{ id: "set-s2", name: "Shade study" }]);
+        expect(df.scenarios).toEqual([
+            { id: "s2", name: "Shade", color: "#228833", nodes: ["m"], set: "set-s2", context: ["n"], outcomes: [] },
+        ]);
+    });
+
+    test("a header an older save holds beside the title is no name on this canvas", async () => {
+        const dataflow = spec().dataflow;
+        Object.assign(dataflow.nodes[0], { title: "Shadow study", metadata: { packageTemplateLabel: "Old header" } });
+        await open(serverDoc(dataflow), { dataflow } as any);
+        expect(canvasNode().data.title).toBe("Shadow study");
+        expect(canvasNode().data.packageTemplateLabel).toBeUndefined();
+        await fromAnotherTab((df) => {
+            df.nodes[0].title = "Shade at noon";
+            df.nodes[0].metadata = { packageTemplateLabel: "An older header" };
+        });
+        expect(canvasNode().data.title).toBe("Shade at noon");
+        expect(canvasNode().data.packageTemplateLabel).toBeUndefined();
+    });
+});
+
 describe("what the canvas changes in place, with no new node", () => {
     test("an editor's own copy of its code never reaches the doc, and a writer's code does", async () => {
         await open(serverDoc(spec().dataflow));

@@ -311,6 +311,36 @@ class TestThePlanLands:
         assert [s["id"] for s in _spec(user, alice_project)["dataflow"]["scenarios"]] == ["s0"]
 
 
+class TestTheSetsAPlanLeaves:
+    def test_a_plan_that_removes_a_node_of_a_scenarios_context_leaves_its_sets_normalized(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """A scenario on the canvas reads n1, its shared context: a plan that
+        removes n1 lands, and the scenario's context no longer names it, the
+        scenario still in the set the dataflow lists."""
+        user, token = user_and_token
+
+        def with_a_scenario():
+            spec = _spec(user, alice_project)
+            spec["dataflow"]["nodes"].append({"id": "n2", "type": CA, "content": "print(2)", "x": 10, "y": 400})
+            spec["dataflow"]["edges"] = [
+                {"id": "n1-n2", "source": "n1", "target": "n2", "sourceHandle": "out", "targetHandle": "in"},
+            ]
+            spec["dataflow"]["scenarios"] = [{"id": "s1", "name": "Mine", "color": "#3567c7", "nodes": ["n2"],
+                                              "set": "set-s1", "context": ["n1"], "outcomes": []}]
+            spec["dataflow"]["scenarioSets"] = [{"id": "set-s1", "name": "Mine alone"}]
+            _write_spec(user, alice_project, spec)
+
+        plan = {"goal": "drop the loader", "removeNodes": ["n1"]}
+        _, card, _ = _land(client, user, token, alice_project, monkeypatch, plan, before_run=with_a_scenario)
+        assert card is not None, "the plan never landed"
+        spec = _spec(user, alice_project)
+        assert [n["id"] for n in spec["dataflow"]["nodes"]] == ["n2"]
+        (scenario,) = spec["dataflow"]["scenarios"]
+        assert (scenario["set"], scenario["context"], scenario["outcomes"]) == ("set-s1", [], [])
+        assert spec["dataflow"]["scenarioSets"] == [{"id": "set-s1", "name": "Mine alone"}]
+
+
 class TestNodeCreateWidgets:
     def test_a_created_node_keeps_the_widgets_its_code_reads(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
