@@ -13,7 +13,7 @@ import { ReactFlowProvider, useStoreApi } from "reactflow";
 jest.mock("../../providers/FlowProvider", () => ({ useFlowContext: () => ({}) }));
 jest.mock("../../components/scenarios/useScenarioActions", () => ({ useScenarioActions: () => ({}) }));
 
-import { ScenarioLayers, boxLayout, groupBoxLayout } from "../../components/scenarios/ScenarioLayers";
+import { ScenarioLayers, boxLayout, groupBoxLayout, scenarioLayersExtent } from "../../components/scenarios/ScenarioLayers";
 import type { ScenarioBox, ScenarioCanvasView, SharedGroup } from "../../utils/scenarios/scenarioCanvasView";
 
 const scenario = { id: "tall", name: "Twice as tall", color: "#e86a3c", nodes: ["a", "map"], collapsed: true };
@@ -288,5 +288,46 @@ describe("a stand-in edge", () => {
     const d = document.querySelector("[data-scenario-stand-in]")!.getAttribute("d")!;
     // The box's right edge, at the middle of chart's card: 30 + 34 + 66 + 29.
     expect(d.startsWith("M 660 159 ")).toBe(true);
+  });
+});
+
+// A fit of the whole canvas frames what the layers draw beside the nodes,
+// read from the geometry they draw with: a set dropped in arrives collapsed,
+// and its shared context's box sat under the rail.
+describe("what the layers draw beside the nodes", () => {
+  const context: SharedGroup = { ...outcomes, key: "group:park:context", kind: "context", nodes: ["pool"], x: -300, y: 0 };
+  const drawn = view({
+    boxes: [],
+    frames: [{ scenario: { ...scenario, collapsed: false }, members: ["a", "map"] }],
+    groups: [context],
+    sets: [{ set: "park", frames: ["tall"], boxes: [], groups: [context.key] }],
+  });
+
+  test("is the set's outline the canvas draws, with its title over its top edge", () => {
+    renderMeasured(drawn);
+    const outline = document.querySelector('[data-scenario-set-outline="park"]') as HTMLElement;
+    // Around the frame and its header, and the box and its pill, 32 out.
+    expect([outline.style.left, outline.style.top, outline.style.width, outline.style.height]).toEqual([
+      "-332px",
+      "-78px",
+      "682px",
+      "278px",
+    ]);
+    const internals = new Map(measured.map((n) => [n.id, { ...n, positionAbsolute: n.position }]));
+    const extent = scenarioLayersExtent(drawn, internals as any);
+    // The title is 24 high, centered on the outline's top edge.
+    expect(extent[0]).toEqual({ x: -332, y: -90, width: 682, height: 290 });
+    expect(extent).toEqual(
+      expect.arrayContaining([
+        // The frame with its header, 28 over it.
+        { x: -18, y: -46, width: 336, height: 214 },
+        // The shared context's box with its pill over it.
+        { x: -300, y: -28, width: 260, height: groupBoxLayout(context).height + 28 },
+      ]),
+    );
+  });
+
+  test("is nothing on a canvas with no scenarios", () => {
+    expect(scenarioLayersExtent(view({ boxes: [] }), new Map() as any)).toEqual([]);
   });
 });

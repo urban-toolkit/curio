@@ -20,6 +20,7 @@ import {
     CANVAS_TITLE_ATTR,
     fitViewWithMenuOffset,
     fitViewWithMenuOffsetNow,
+    setDrawnBeside,
     setViewportNow,
     topOverlayBottom,
 } from "../utils/fitViewWithMenuOffset";
@@ -105,7 +106,7 @@ import { useCollab } from "../providers/CollaborationProvider";
 import { useDocBinding } from "../providers/collab/docContext";
 import { frameNodesInView, revealRectInView } from "../utils/focusDatasetNodes";
 import { scenarioCanvasView } from "../utils/scenarios/scenarioCanvasView";
-import { BOX_WIDTH, boxLayout, groupBoxLayout } from "./scenarios/ScenarioLayers";
+import { BOX_WIDTH, boxLayout, groupBoxLayout, scenarioLayersExtent } from "./scenarios/ScenarioLayers";
 import { CanvasScenarioLayers } from "./scenarios/CanvasScenarioLayers";
 import { useScenarioUi } from "./scenarios/scenarioUi";
 import { useProjectLoadState } from "./projectLoadState";
@@ -355,6 +356,18 @@ export function MainCanvas() {
             }
         };
     }, [reactFlow, flowStore]);
+
+    // What the scenario layers draw beside React Flow (a set's outline, a
+    // collapsed box) is in no fit of nodes, so a fit of the whole canvas, the
+    // load's, Fit view's or a capture's, reads it here: from the view as it is
+    // when the fit runs, around the nodes as React Flow measured them.
+    const scenarioViewRef = useRef(scenarioView);
+    scenarioViewRef.current = scenarioView;
+    useEffect(() => {
+        const read = () => scenarioLayersExtent(scenarioViewRef.current, flowStore.getState().nodeInternals);
+        setDrawnBeside(read);
+        return () => setDrawnBeside(null);
+    }, [flowStore]);
 
     // Test hook, as the one above: this tab's presence in the dataflow's room
     // (its doc's awareness), so Playwright can read what reached it and say

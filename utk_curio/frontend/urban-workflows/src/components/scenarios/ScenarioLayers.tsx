@@ -1,5 +1,5 @@
 import React, { useId, useMemo, useRef, useState } from "react";
-import { internalsSymbol, useStore, type ReactFlowState } from "reactflow";
+import { internalsSymbol, useStore, type ReactFlowState, type Rect } from "reactflow";
 
 import { colorForCategory } from "../../constants/nodeCategoryPalette";
 import type { SharedKind } from "../../utils/scenarios/scenarioModel";
@@ -35,6 +35,8 @@ const FRAME_HEADER_OFFSET = 28;
 const DOTS_HEIGHT = 34;
 /** How far in from its outline's left corner a set's title starts. */
 const SET_TITLE_INSET = 16;
+/** A set's title's height, its line height in the CSS; it sits centered on the outline's top edge. */
+const SET_TITLE_HEIGHT = 24;
 /** Room a scenario set's outline leaves around what it holds. */
 const SET_PAD = 32;
 /** Room above a scenario's top node that its frame and header take. */
@@ -104,6 +106,134 @@ function handlePoint(geo: Geometry, kind: "source" | "target", handle?: string |
     return { x, y: geo.y + found.y + found.height / 2 };
   }
   return { x: kind === "source" ? geo.x + geo.width : geo.x, y: geo.y + geo.height / 2 };
+}
+
+type Internals = ReactFlowState["nodeInternals"];
+type PlacedBox = { box: ScenarioBox; x: number; y: number; layout: BoxLayout };
+type PlacedGroupBox = { group: SharedGroup; x: number; y: number; layout: BoxLayout };
+
+/** Where each collapsed box sits, a scenario's or a shared group's, with its cards. */
+function placedBoxes(view: ScenarioCanvasView<any, any>): { boxes: PlacedBox[]; groupBoxes: PlacedGroupBox[] } {
+  return {
+    boxes: view.boxes.map((box) => ({ box, x: box.x, y: box.y, layout: boxLayout(box) })),
+    groupBoxes: (view.groups ?? [])
+      .filter((g) => g.collapsed)
+      .map((group) => ({ group, x: group.x, y: group.y, layout: groupBoxLayout(group) })),
+  };
+}
+
+/**
+ * Where the layers draw each scenario's frame, each expanded shared group's
+ * frame and each set's outline, in canvas units, around the nodes as React
+ * Flow measured them and the boxes where they sit: one geometry for the
+ * drawing and for a fit of the whole canvas.
+ */
+function layersGeometry(
+  view: ScenarioCanvasView<any, any>,
+  internals: Internals,
+  boxes: readonly PlacedBox[],
+  groupBoxes: readonly PlacedGroupBox[],
+) {
+  const frames = view.frames
+    .map(({ scenario, members }) => {
+      const geos = members.map((id) => geometryOf(internals, id)).filter((g): g is Geometry => !!g && g.width > 0);
+      if (geos.length === 0) return null;
+      const left = Math.min(...geos.map((g) => g.x)) - FRAME_PAD;
+      const top = Math.min(...geos.map((g) => g.y)) - FRAME_PAD;
+      const right = Math.max(...geos.map((g) => g.x + g.width)) + FRAME_PAD;
+      const bottom = Math.max(...geos.map((g) => g.y + g.height)) + FRAME_PAD;
+      return { scenario, left, top, width: right - left, height: bottom - top };
+    })
+    .filter((f): f is NonNullable<typeof f> => !!f);
+
+  // An expanded shared group's frame: around its nodes and their circles.
+  const dotted = new Set((view.dots ?? []).map((row) => row.node));
+  const groupFrames = (view.groups ?? [])
+    .filter((g) => !g.collapsed)
+    .map((group) => {
+      const rects = group.nodes
+        .map((id) => geometryOf(internals, id))
+        .filter((g): g is Geometry => !!g && g.width > 0)
+        .map((g) => ({ ...g, below: dotted.has(g.internal.id) ? DOTS_GAP + DOTS_HEIGHT : 0 }));
+      if (rects.length === 0) return null;
+      const left = Math.min(...rects.map((r) => r.x)) - FRAME_PAD;
+      const top = Math.min(...rects.map((r) => r.y)) - FRAME_PAD;
+      const right = Math.max(...rects.map((r) => r.x + r.width)) + FRAME_PAD;
+      const bottom = Math.max(...rects.map((r) => r.y + r.height + r.below)) + FRAME_PAD;
+      return { group, left, top, width: right - left, height: bottom - top };
+    })
+    .filter((f): f is NonNullable<typeof f> => !!f);
+
+  // Each scenario set's outline: around its frames and boxes, with their
+  // headers, and its shared groups.
+  const setOutlines = (view.sets ?? [])
+    .map((outline) => {
+      const rects: { left: number; top: number; right: number; bottom: number }[] = [];
+      for (const f of frames) {
+        if (!outline.frames.includes(f.scenario.id)) continue;
+        rects.push({ left: f.left, top: f.top - FRAME_HEADER_OFFSET, right: f.left + f.width, bottom: f.top + f.height });
+      }
+      for (const b of boxes) {
+        if (!outline.boxes.includes(b.box.scenario.id)) continue;
+        rects.push({ left: b.x, top: b.y, right: b.x + b.layout.width, bottom: b.y + b.layout.height });
+      }
+      for (const f of groupFrames) {
+        if (!outline.groups.includes(f.group.key)) continue;
+        rects.push({ left: f.left, top: f.top - FRAME_HEADER_OFFSET, right: f.left + f.width, bottom: f.top + f.height });
+      }
+      for (const b of groupBoxes) {
+        if (!outline.groups.includes(b.group.key)) continue;
+        rects.push({
+          left: b.x,
+          top: b.y - FRAME_HEADER_OFFSET,
+          right: b.x + b.layout.width,
+          bottom: b.y + b.layout.height,
+        });
+      }
+      if (rects.length === 0) return null;
+      const left = Math.min(...rects.map((r) => r.left)) - SET_PAD;
+      const top = Math.min(...rects.map((r) => r.top)) - SET_PAD;
+      const right = Math.max(...rects.map((r) => r.right)) + SET_PAD;
+      const bottom = Math.max(...rects.map((r) => r.bottom)) + SET_PAD;
+      return { set: outline.set, left, top, width: right - left, height: bottom - top };
+    })
+    .filter((o): o is NonNullable<typeof o> => !!o);
+
+  return { frames, groupFrames, setOutlines };
+}
+
+/**
+ * What the layers draw beside React Flow's nodes, in canvas units: each set's
+ * outline with its title over its top edge, each frame and each shared box
+ * with the header over it, and each scenario's box. No fit of nodes frames
+ * them, so a fit of the whole canvas adds them (`setDrawnBeside`).
+ */
+export function scenarioLayersExtent(view: ScenarioCanvasView<any, any>, internals: Internals): Rect[] {
+  const { boxes, groupBoxes } = placedBoxes(view);
+  const { frames, groupFrames, setOutlines } = layersGeometry(view, internals, boxes, groupBoxes);
+  const headed = (f: { left: number; top: number; width: number; height: number }) => ({
+    x: f.left,
+    y: f.top - FRAME_HEADER_OFFSET,
+    width: f.width,
+    height: f.height + FRAME_HEADER_OFFSET,
+  });
+  return [
+    ...setOutlines.map((o) => ({
+      x: o.left,
+      y: o.top - SET_TITLE_HEIGHT / 2,
+      width: o.width,
+      height: o.height + SET_TITLE_HEIGHT / 2,
+    })),
+    ...frames.map(headed),
+    ...groupFrames.map(headed),
+    ...boxes.map((b) => ({ x: b.x, y: b.y, width: b.layout.width, height: b.layout.height })),
+    ...groupBoxes.map((b) => ({
+      x: b.x,
+      y: b.y - FRAME_HEADER_OFFSET,
+      width: b.layout.width,
+      height: b.layout.height + FRAME_HEADER_OFFSET,
+    })),
+  ];
 }
 
 function curve(a: { x: number; y: number }, b: { x: number; y: number }) {
@@ -195,70 +325,7 @@ export function ScenarioLayers({
   );
   const hiddenInGroup = new Set(groupBoxes.flatMap((b) => b.group.nodes));
 
-  const frames = view.frames
-    .map(({ scenario, members }) => {
-      const geos = members.map((id) => geometryOf(internals, id)).filter((g): g is Geometry => !!g && g.width > 0);
-      if (geos.length === 0) return null;
-      const left = Math.min(...geos.map((g) => g.x)) - FRAME_PAD;
-      const top = Math.min(...geos.map((g) => g.y)) - FRAME_PAD;
-      const right = Math.max(...geos.map((g) => g.x + g.width)) + FRAME_PAD;
-      const bottom = Math.max(...geos.map((g) => g.y + g.height)) + FRAME_PAD;
-      return { scenario, left, top, width: right - left, height: bottom - top };
-    })
-    .filter((f): f is NonNullable<typeof f> => !!f);
-
-  // An expanded shared group's frame: around its nodes and their circles.
-  const dotted = new Set((view.dots ?? []).map((row) => row.node));
-  const groupFrames = groups
-    .filter((g) => !g.collapsed)
-    .map((group) => {
-      const rects = group.nodes
-        .map((id) => geometryOf(internals, id))
-        .filter((g): g is Geometry => !!g && g.width > 0)
-        .map((g) => ({ ...g, below: dotted.has(g.internal.id) ? DOTS_GAP + DOTS_HEIGHT : 0 }));
-      if (rects.length === 0) return null;
-      const left = Math.min(...rects.map((r) => r.x)) - FRAME_PAD;
-      const top = Math.min(...rects.map((r) => r.y)) - FRAME_PAD;
-      const right = Math.max(...rects.map((r) => r.x + r.width)) + FRAME_PAD;
-      const bottom = Math.max(...rects.map((r) => r.y + r.height + r.below)) + FRAME_PAD;
-      return { group, left, top, width: right - left, height: bottom - top };
-    })
-    .filter((f): f is NonNullable<typeof f> => !!f);
-
-  // Each scenario set's outline: around its frames and boxes, with their
-  // headers, and its shared groups.
-  const setOutlines = (view.sets ?? [])
-    .map((outline) => {
-      const rects: { left: number; top: number; right: number; bottom: number }[] = [];
-      for (const f of frames) {
-        if (!outline.frames.includes(f.scenario.id)) continue;
-        rects.push({ left: f.left, top: f.top - FRAME_HEADER_OFFSET, right: f.left + f.width, bottom: f.top + f.height });
-      }
-      for (const b of boxes) {
-        if (!outline.boxes.includes(b.box.scenario.id)) continue;
-        rects.push({ left: b.x, top: b.y, right: b.x + b.layout.width, bottom: b.y + b.layout.height });
-      }
-      for (const f of groupFrames) {
-        if (!outline.groups.includes(f.group.key)) continue;
-        rects.push({ left: f.left, top: f.top - FRAME_HEADER_OFFSET, right: f.left + f.width, bottom: f.top + f.height });
-      }
-      for (const b of groupBoxes) {
-        if (!outline.groups.includes(b.group.key)) continue;
-        rects.push({
-          left: b.x,
-          top: b.y - FRAME_HEADER_OFFSET,
-          right: b.x + b.layout.width,
-          bottom: b.y + b.layout.height,
-        });
-      }
-      if (rects.length === 0) return null;
-      const left = Math.min(...rects.map((r) => r.left)) - SET_PAD;
-      const top = Math.min(...rects.map((r) => r.top)) - SET_PAD;
-      const right = Math.max(...rects.map((r) => r.right)) + SET_PAD;
-      const bottom = Math.max(...rects.map((r) => r.bottom)) + SET_PAD;
-      return { set: outline.set, left, top, width: right - left, height: bottom - top };
-    })
-    .filter((o): o is NonNullable<typeof o> => !!o);
+  const { frames, groupFrames, setOutlines } = layersGeometry(view, internals, boxes, groupBoxes);
 
   const endPoint = (end: StandInEnd, kind: "source" | "target") => {
     if ("node" in end) {
