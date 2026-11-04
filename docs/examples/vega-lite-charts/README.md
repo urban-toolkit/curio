@@ -3,13 +3,12 @@
 Fifteen Vega-Lite specs for a **Vega-Lite** node (`curio.builtin/vis-vega`) that
 compares scenarios, one input per scenario. Each draws every scenario in its
 box's color and in the order the dataflow lists the boxes, through scenario
-chips. Seven are re-made from komar41's ScenarioCharts, and Dots with a range is
-the first view of his "Minutes of shadow per park" chart.
+chips.
 
 ## Using one
 
-1. Drop a **Vega-Lite** node from the Built-in palette and connect each
-   scenario's outcome to an input circle of its own.
+1. Drop a **Vega-Lite** node from the Built-in palette and connect a node of
+   each scenario's box to an input circle of its own.
 2. Paste the chart's spec into its grammar editor.
 3. In its **Widgets** tab, add the widgets the table lists ([`charts.json`](charts.json) holds each one's name, kind, default and choices), each a text widget
    named as listed (`combine` a choice of `mean`, `sum`, `median`, `min`, `max`
@@ -43,8 +42,9 @@ its circles.
 
 ## How a chart reads its inputs
 
-Each chart is a Vega-Lite node with one of these specs in its grammar editor. Connect each scenario's
-outcome to one of its input circles: each edge takes the next circle. Its spec
+Each chart is a Vega-Lite node with one of these specs in its grammar editor, a shared outcome
+of the scenarios it compares. Connect a node of each scenario's box to one of its input circles:
+each edge takes the next circle. Its spec
 reads all its inputs as the dataset its chip names (`"data": {"name": "[!! inputs !!]"}`):
 every input's rows, stacked in the order of its circles, each with `__input__`
 (its circle), `scenario` (the id of the scenario box its input comes from) and
@@ -86,8 +86,7 @@ A column name with a `'` in it cannot be read: rename the column first.
 
 A column whose name holds a `.` or a `[`, such as `rain.mm`, is set in its
 widget as it is. Where Vega-Lite reads a field, the chip writes the name escaped,
-`"field": "rain\\.mm"`, since Vega-Lite reads a `.` or a `[` in a field as a
-path into the row; in a title, a sort or an expression it writes `rain.mm`. A
+`"field": "rain\\.mm"`; in a title, a sort or an expression it writes `rain.mm`. A
 widget that holds the escaped name, `rain\.mm`, is written as it is. Bars with
 error bars draws no error bars for such a Y column: rename it upstream.
 

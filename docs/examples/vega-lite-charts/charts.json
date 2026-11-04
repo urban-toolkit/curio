@@ -1,5 +1,5 @@
 {
-  "$comment": "The Vega-Lite charts of this folder: each chart's spec file, label, what it draws and the widgets its spec reads through chips (#1270; they were the Scout package's chart templates). A Vega-Lite node draws one: paste the spec, add these widgets.",
+  "$comment": "The Vega-Lite charts of this folder: each chart's spec file, label, what it draws and the widgets its spec reads through chips. A Vega-Lite node draws one: paste the spec, add these widgets.",
   "charts": [
     {
       "id": "lines-with-band",
