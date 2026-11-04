@@ -218,6 +218,16 @@ def named_node_type(inputs: dict | None, read_spec) -> str | None:
     return node_type if isinstance(node_type, str) and node_type else None
 
 
+def named_node_id(inputs: dict | None) -> str | None:
+    """The id of the node a delegated run's *inputs* name: its ``nodeId``, or
+    its ``nodeContext.nodeId``. None when they name none, as for a new node
+    named by its type alone."""
+    inputs = inputs if isinstance(inputs, dict) else {}
+    context = inputs.get("nodeContext") if isinstance(inputs.get("nodeContext"), dict) else {}
+    node_id = inputs.get("nodeId") or context.get("nodeId")
+    return node_id if isinstance(node_id, str) and node_id else None
+
+
 def for_delegated_run(
     user_key: str, project_id: str, capability: str, inputs: dict | None, *, datasets=None, user=None,
 ) -> str | None:
