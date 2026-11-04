@@ -352,11 +352,21 @@ in, and `prepareDashboardNodes` places the columns.
 
 A node drawn hidden is never measured, so code that needs a node's size or hit-tests
 nodes leaves it out (`isDrawnHidden`): the load fit (`fitViewWithMenuOffset`) and the
-agent drop target do. `src/utils/scenarios/scenarioParts.ts` reads a scenario's fixed
-context, levers and outcomes from the live graph, and `savedSourceNodeIds` there is
-the one rule, read by a run and by a save, for which outputs are saved whatever a
-node's own toggle says: what a pinned tile reads and what a scenario's context and
-outcomes produce.
+agent drop target do. `src/utils/scenarios/scenarioParts.ts` reads a scenario's parts
+by role from the live graph, the twin of `scenario_catalog/domain/parts.py` on one
+table of cases (`scenarioParts.cases.json`): its Scenario-specific nodes; its Shared
+context and Shared outcomes, the lists it keeps, or the ones Curio infers when it keeps
+none; and its boundary, the nodes whose output crosses into it, or into one of its
+shared outcomes from outside every box and every shared outcome. The canvas marks, the
+In project tab, the Scenario Catalog's details, the dashboard by scenario and
+`dataflow.read` show the whole shared context and shared outcomes; the details give an
+output line to the boundary and the shared outcomes alone. `savedSourceNodeIds` there
+is the one rule, read by a run and by a save, for which outputs are saved whatever a
+node's own toggle says: what a pinned tile reads, and what stands for each scenario's
+boundary and shared outcomes (`savedSourcesOf`: a chart or a Data Pool stands for the
+nodes feeding it). A scenario's own nodes save nothing because of it. A drop copies
+those saved outputs: the boundary's to the Data Loading nodes that stand for it, and
+the shared outcomes' to their copies.
 
 ### Scenarios in charts and maps
 
@@ -2462,7 +2472,7 @@ The user-facing model is in [SCENARIO-CATALOG.md](SCENARIO-CATALOG.md) and the r
 - **Frontend.** `services/scenarioCatalog/` (client, types, hooks, the drag payload), the page `pages/scenarios/`, the canvas drawer `components/scenarios/catalog/` opened by `providers/scenarioCatalog/` from the bar's **Scenario** button, and the shared plain-box graph `components/DataflowThumbnail.tsx` with a `highlight`.
 - **Dragging a scenario into a dataflow.** A drawer card puts `application/x-curio-scenario` on the drag; `MainCanvas` hands the drop to `components/scenarios/useScenarioDrop.ts`, in five steps:
   1. `GET .../copy?target=` returns the plan: the levers as spec nodes, the edges into the levers, each context node with the one node whose saved output stands for it (`saved_sources`), the outcomes' saved sources, the packages the target lacks, `toRun` and `problems`. A standing-for node with no saved output goes in `toRun` when a run on the server can make it (`scenario_catalog/infrastructure/runs.py`): the account's runs go to the server (`refusal`: not a hosted guest, not `--no-project`, as `runsOnServer` decides on the canvas), and neither it nor any node it reads from has the run role `browser` or `missing` (`browser_node`, through `run_plan.node_role`). Otherwise it is a problem naming the node. Nothing changes, and a problem refuses the drop.
-  2. When `toRun` is not empty, the canvas starts a run of the scenario's project on those nodes (`runsApi.start(projectId, {targets})`), toasts "Running Buildings and Season in Chicago Loop shadow with towers removed or edited for Existing", follows the run (`runsApi.follow`) and asks for the plan again. A 409 that names a run already going in that project follows that run. The run saves the nodes' outputs in their project, since `save_policy.saved_source_node_ids` holds a scenario's context. A run that fails, the two-runs limit (429), or a plan that still lists nodes to run refuses the drop with its message, and `POST .../copy` refuses while `toRun` is not empty.
+  2. When `toRun` is not empty, the canvas starts a run of the scenario's project on those nodes (`runsApi.start(projectId, {targets})`), toasts "Running Buildings and Season in Chicago Loop shadow with towers removed or edited for Existing", follows the run (`runsApi.follow`) and asks for the plan again. A 409 that names a run already going in that project follows that run. The run saves the nodes' outputs in their project, since `save_policy.saved_source_node_ids` holds what stands for a scenario's boundary. A run that fails, the two-runs limit (429), or a plan that still lists nodes to run refuses the drop with its message, and `POST .../copy` refuses while `toRun` is not empty.
   3. `utils/scenarios/scenarioDrop.ts` `planScenarioDrop` picks the ids: `duplicateSelection` copies the levers (fresh ids, `copiedFrom`), one Data Loading node stands in for each context node, and the scenario is collapsed at the drop point with `source: {project, scenario}`. A context node an earlier drop from the same project brought (outside every scenario, with that lineage) is reused.
   4. `POST .../copy` adds the packages through `install_to_project`, as the Node Catalog's Add does, then copies each saved output to its copy's id with `datasets/install/copy.py` (the dataset folder, manifest rewritten to the new producer node and dataflow, never re-read from sandbox artifacts), in two steps (`scenario_catalog/infrastructure/projects.py::copy_outputs`). Under the source's spec lock, each folder is copied whole to a staging folder in the account's store (`stage_computed_copy`), its files linked rather than copied, so a drop adds no bytes; only the copy's manifest, written anew, and the counts sidecar a read rewrites are its own. Then, under the target's, each copy takes its place (`place_staged_copy`) and the target's manifest records it as its node's saved output, under the source's file name (`storage.record_outputs`), so the target's canvas reads it in place before any save. The drop holds one lock at a time, so the source may be the target and two drops each way between two projects never wait for each other. A copy that fails is a 409 that says to try again.
   5. The canvas refreshes the package registry, builds the loaders with `buildDatasetLoaderNodeOptions`, loads everything with `loadTrill(..., "none", ..., restored)` as Duplicate selection does, and applies the restored outputs with `utils/restoredOutputs.ts`, which `ProjectLoader` uses too.
@@ -2923,9 +2933,9 @@ file that cannot be served as asked (no preview, or not a format Curio serves),
 | Route | Method | Purpose |
 |---|---|---|
 | `/api/scenarios/catalog` | GET | Every scenario in the account's projects, each with its project and the project's graph preview (`q` filters by name, description and project name) |
-| `/api/scenarios/<projectId>/<scenarioId>` | GET | One scenario: its fixed context, levers and outcomes, each node with the outputs its project saved. **404** for another account's project, a deleted one, or a scenario the project does not have |
-| `/api/scenarios/<projectId>/<scenarioId>/copy?target=<projectId>` | GET | What dragging the scenario into the target project copies, `toRun` (the context nodes with no saved output that a run on the server makes first, in the scenario's project, as `{nodeId, label}`), and `problems` naming why it cannot be. Changes nothing. **400** without `target`; **404** when either project is not the caller's |
-| `/api/scenarios/<projectId>/<scenarioId>/copy` | POST | Body `{targetProjectId, outputs: [{source, node}]}`: adds the packages the plan names to the target, copies each named saved output to `computed.<targetId>.<node>`, and returns the target's packages, those added, each context loader's dataset, and the restored output refs. **409** while the plan has a problem or a node to run; **400** for a source the scenario does not bring or a node id that is not fresh |
+| `/api/scenarios/<projectId>/<scenarioId>` | GET | One scenario by role: its whole shared context (`context`), its Scenario-specific nodes (`levers`) and its shared outcomes (`outcomes`); the nodes of its boundary and its shared outcomes with the outputs its project saved, the others with no `results`. **404** for another account's project, a deleted one, or a scenario the project does not have |
+| `/api/scenarios/<projectId>/<scenarioId>/copy?target=<projectId>&present=<ids>` | GET | What dragging the scenario into the target project copies, where the target's copy of its set holds the scenarios `present` names already: its own nodes, the set's shared outcomes that land with it (`shared`), the context that crosses into those (`context`), `toRun` (the context nodes with no saved output that a run on the server makes first, in the scenario's project, as `{nodeId, label}`), and `problems` naming why it cannot be. Changes nothing. **400** without `target`; **404** when either project is not the caller's; **409** when `present` holds the scenario itself |
+| `/api/scenarios/<projectId>/<scenarioId>/copy` | POST | Body `{targetProjectId, present, outputs: [{source, node}]}`: adds the packages the plan names to the target, copies each named saved output to `computed.<targetId>.<node>`, and returns the target's packages, those added, each context loader's dataset, and the restored output refs. **409** while the plan has a problem or a node to run; **400** for a source the scenario does not bring or a node id that is not fresh |
 
 ### Agent Routes
 
