@@ -1,6 +1,7 @@
 import React, { useId, useMemo, useRef, useState } from "react";
 import { internalsSymbol, useStore, type ReactFlowState } from "reactflow";
 
+import { colorForCategory } from "../../constants/nodeCategoryPalette";
 import type { SharedKind } from "../../utils/scenarios/scenarioModel";
 import type { DrawnCursor, ViewTransform } from "../../providers/collab/cursors";
 import type {
@@ -115,6 +116,9 @@ export interface ScenarioLayersProps {
   labelOf: (id: string) => string;
   /** The kind of node *id* is, as its header names it: Python, Autark… */
   typeOf?: (id: string) => string;
+  /** Its template's category, whose color its card's left edge wears, as
+   *  the node's own card does. */
+  categoryOf?: (id: string) => string | null | undefined;
   statusOf: (id: string) => { text: string; tone: "done" | "error" | "stale" | "none" };
   /** Absent on a read-only canvas and the dashboard: a box then does not expand. */
   onExpand?: (id: string) => void;
@@ -140,6 +144,7 @@ export function ScenarioLayers({
   view,
   labelOf,
   typeOf,
+  categoryOf,
   statusOf,
   onExpand,
   onCollapse,
@@ -318,7 +323,9 @@ export function ScenarioLayers({
       setDrag(null);
     };
 
-  /** A node's card in a collapsed box: its kind, its title, and what it shows on the right. */
+  /** A node's card in a collapsed box: its kind, its title, and what it shows
+   *  on the right, its left edge in its category's color as the node's own
+   *  card's is. */
   const card = (
     boxKey: string,
     id: string,
@@ -332,7 +339,11 @@ export function ScenarioLayers({
     const portTop = top + CARD_HEIGHT / 2 - 5;
     return (
       <React.Fragment key={id}>
-        <div className={styles.card} style={{ top, height: CARD_HEIGHT }} {...rowAttr}>
+        <div
+          className={styles.card}
+          style={{ top, height: CARD_HEIGHT, borderLeftColor: colorForCategory(categoryOf?.(id)) }}
+          {...rowAttr}
+        >
           <div className={styles.cardTop}>
             {kind ? <span className={styles.cardKind}>{kind}</span> : <span />}
             {side}

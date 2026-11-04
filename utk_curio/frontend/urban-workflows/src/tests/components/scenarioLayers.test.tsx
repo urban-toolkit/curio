@@ -77,6 +77,27 @@ describe("a collapsed scenario's box", () => {
     expect(onExpand).toHaveBeenCalledWith("tall");
   });
 
+  test("each card's left edge wears its node's category color, as the node's own card does", () => {
+    const categories: Record<string, string> = { a: "computation", map: "vis_grammar" };
+    render(
+      <ReactFlowProvider>
+        <ScenarioLayers
+          view={view()}
+          editable
+          labelOf={(id) => labels[id] ?? id}
+          typeOf={(id) => kinds[id] ?? ""}
+          categoryOf={(id) => categories[id]}
+          statusOf={() => ({ text: "Not run", tone: "none" })}
+          onMoveBox={jest.fn()}
+        />
+      </ReactFlowProvider>,
+    );
+    const el = screen.getByTestId("scenario-box-tall");
+    const edge = (id: string) => (el.querySelector(`[data-scenario-row="${id}"]`) as HTMLElement).style.borderLeftColor;
+    expect(edge("a")).toBe("var(--curio-category-computation-fg)");
+    expect(edge("map")).toBe("var(--curio-category-vis-fg)");
+  });
+
   test("sits where the view puts it, as tall as its cards", () => {
     renderLayers();
     const el = screen.getByTestId("scenario-box-tall");

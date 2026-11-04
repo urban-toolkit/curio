@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 
 import { useFlowContext } from "../../providers/FlowProvider";
+import { tryGetNodeDescriptor } from "../../registry";
 import type { ScenarioCanvasView } from "../../utils/scenarios/scenarioCanvasView";
 import { CanvasCursors } from "../collab/CanvasCursors";
 import { ScenarioLayers } from "./ScenarioLayers";
@@ -23,6 +24,7 @@ export function CanvasScenarioLayers({ view, editable }: { view: ScenarioCanvasV
         editable={editable}
         labelOf={(id) => nodeLabel(byId.get(id), id)}
         typeOf={(id) => nodeKind(byId.get(id))}
+        categoryOf={(id) => tryGetNodeDescriptor(byId.get(id)?.data?.nodeType)?.category}
         statusOf={(id) => outputStatus(byId.get(id), nodeExecStatus ?? {})}
         onExpand={editable ? (id) => actions.setCollapsed(id, false) : undefined}
         onCollapse={editable ? (id) => actions.setCollapsed(id, true) : undefined}
