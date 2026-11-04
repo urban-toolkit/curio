@@ -12,6 +12,11 @@
  * the chat panel behind it, and the fork picker collapsed under any dialog
  * raised from the node dock.
  *
+ * A drawer also leaves an Escape a layer over it answered (`escapeAnswered`),
+ * which that layer marks as it closes (`answerEscape`): in a browser the close
+ * commits before the next listener runs, so a drawer whose listener runs later
+ * would find itself on top and close too (drawersOverDefine.test.tsx).
+ *
  * Read from disk rather than rendered, the same approach
  * `catalog/canvasDrawerParity.test.ts` takes and for the same reason: rendering
  * AgentChatPanel or ForkFamilyPicker for real needs most of the provider tree,
@@ -52,6 +57,14 @@ describe("window Escape listeners defer to an open modal", () => {
     },
   );
 
+  test.each(DRAWER_ESCAPE_LISTENERS)(
+    "%s leaves an Escape a layer over it answered, and marks the one it answers",
+    (file) => {
+      expect(read(file)).toMatch(/if \(escapeAnswered\((ev|e)\)\) return;/);
+      expect(read(file)).toMatch(/answerEscape\((ev|e)\);\s*onRequestClose/);
+    },
+  );
+
   test.each(PANEL_ESCAPE_LISTENERS)(
     "%s stands down while a modal is open",
     (file) => {
@@ -78,7 +91,9 @@ describe("window Escape listeners defer to an open modal", () => {
     // does.
     const source = read("components/layout/HeaderDrawer.tsx");
     expect(source).toContain("holdDrawerLayer()");
+    expect(source).toContain("if (escapeAnswered(ev)) return;");
     expect(source).toContain("if (!isTopDrawer(drawerRef.current)) return;");
+    expect(source).toMatch(/answerEscape\(ev\);\s*onRequestClose\(\);/);
     expect(source).toContain("data-curio-open-drawer={presented || undefined}");
     expect(source).toContain('window.addEventListener("keydown"');
   });
@@ -90,5 +105,8 @@ describe("window Escape listeners defer to an open modal", () => {
     const source = read("components/ModalShell.tsx");
     expect(source).toContain("export function modalStackDepth()");
     expect(source).toContain("export function isTopDrawer(");
+    expect(source).toContain("export function escapeAnswered(");
+    // A modal marks the Escape it closes on, so a drawer under it leaves it.
+    expect(source).toMatch(/answerEscape\(event\);\s*onCloseRef\.current\(\);/);
   });
 });

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { DrawerHeader } from "../packages/publishing/DrawerHeader";
 import shell from "../packages/publishing/CatalogDrawerShell.module.css";
 import { useDrawerDragThrough } from "../packages/publishing/useDrawerDragThrough";
-import { holdDrawerLayer, isTopDrawer, typedIntoAnotherPanel } from "../ModalShell";
+import { answerEscape, escapeAnswered, holdDrawerLayer, isTopDrawer, typedIntoAnotherPanel } from "../ModalShell";
 import styles from "./HeaderDrawer.module.css";
 
 export interface HeaderDrawerProps {
@@ -47,8 +47,8 @@ export interface HeaderDrawerProps {
  * can open API Settings over its own drawer. Over the canvas, while mounted it
  * holds a drawer's layer of the modal stack, so every Escape listener under the
  * drawers stands down; beside it, it holds none. Either way it answers Escape
- * only while it is the top layer (`isTopDrawer`): one Escape closes the drawer
- * on top alone.
+ * only while it is the top layer (`isTopDrawer`), and never one a layer over
+ * it answered (`escapeAnswered`): one Escape closes the drawer on top alone.
  */
 export const HeaderDrawer: React.FC<HeaderDrawerProps> = ({
   presented,
@@ -75,11 +75,17 @@ export const HeaderDrawer: React.FC<HeaderDrawerProps> = ({
   useEffect(() => {
     if (!presented) return;
     const onKey = (ev: KeyboardEvent) => {
+      // An Escape a layer over this one answered: in a browser that layer has
+      // closed by now, so this one would find itself on top.
+      if (escapeAnswered(ev)) return;
       // A modal, a menu, or a drawer opened over this one takes the Escape.
       if (!isTopDrawer(drawerRef.current)) return;
       // Beside the canvas, the chat or a picker takes an Escape typed into it.
       if (beside && typedIntoAnotherPanel(ev.target, drawerRef.current)) return;
-      if (ev.key === "Escape" && !pinned) onRequestClose();
+      if (ev.key === "Escape" && !pinned) {
+        answerEscape(ev);
+        onRequestClose();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

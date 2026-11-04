@@ -16,7 +16,7 @@ import shell from "components/packages/publishing/CatalogDrawerShell.module.css"
 import { useDrawerDragThrough } from "components/packages/publishing/useDrawerDragThrough";
 import styles from "./DatasetCatalogDrawer.module.css";
 import ConfirmDialog from "../../ConfirmDialog";
-import { isTopDrawer } from "../../ModalShell";
+import { answerEscape, escapeAnswered, isTopDrawer } from "../../ModalShell";
 
 export interface DatasetCatalogDrawerProps {
   presented: boolean;
@@ -68,13 +68,17 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
   //
   // Two conditions, both shared with the Agent drawer: a modal rendered on top
   // (the add/remove confirmation, the dataset detail) or a drawer opened over
-  // it owns Escape while it is open, and a pinned drawer is being deliberately
-  // kept open.
+  // it owns Escape while it is open, the one it closed on included
+  // (`escapeAnswered`), and a pinned drawer is being deliberately kept open.
   useEffect(() => {
     if (!presented) return;
     const onKey = (ev: KeyboardEvent) => {
+      if (escapeAnswered(ev)) return;
       if (!isTopDrawer(drawerRef.current)) return;
-      if (ev.key === "Escape" && !pinned) onRequestClose?.();
+      if (ev.key === "Escape" && !pinned) {
+        answerEscape(ev);
+        onRequestClose?.();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

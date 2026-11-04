@@ -27,7 +27,7 @@ import cardStyles from "../../packages/publishing/PackageCard.module.css";
 import styles from "./AgentCatalogDrawer.module.css";
 import { AgentScope, useAgentCatalogDrawer } from "./useAgentCatalogDrawer";
 import ConfirmDialog from "../../ConfirmDialog";
-import { isTopDrawer } from "../../ModalShell";
+import { answerEscape, escapeAnswered, isTopDrawer } from "../../ModalShell";
 
 export interface AgentCatalogDrawerProps {
   /** When true, the scrim fades in and the panel slides in from the right
@@ -180,11 +180,15 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
     if (!presented) return;
     const onKey = (e: KeyboardEvent) => {
       // A modal rendered inside this drawer (API Settings, agent import), or
-      // a drawer opened over it, owns Escape while it is open. This listener
-      // was registered first, so the modal cannot stop it from firing - it
-      // has to stand down itself.
+      // a drawer opened over it, owns Escape while it is open, the one it
+      // closed on included. This listener was registered first, so the modal
+      // cannot stop it from firing - it has to stand down itself.
+      if (escapeAnswered(e)) return;
       if (!isTopDrawer(panelRef.current)) return;
-      if (e.key === "Escape" && !pinned) onRequestClose?.();
+      if (e.key === "Escape" && !pinned) {
+        answerEscape(e);
+        onRequestClose?.();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

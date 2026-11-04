@@ -47,7 +47,7 @@ import { faFileCode } from "@fortawesome/free-solid-svg-icons";
 import shell from "./CatalogDrawerShell.module.css";
 import { useDrawerDragThrough } from "./useDrawerDragThrough";
 import styles from "./NodeCatalogDrawer.module.css";
-import { isTopDrawer } from "../../ModalShell";
+import { answerEscape, escapeAnswered, isTopDrawer } from "../../ModalShell";
 import ConfirmDialog from "../../ConfirmDialog";
 import { EditorRequestsSection } from "../../catalog/EditorRequestsSection";
 import { useAskForPackage } from "../useAskForPackage";
@@ -263,11 +263,15 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     if (!presented) return;
     const onKey = (ev: KeyboardEvent) => {
       // Defer to any open modal, or a drawer opened over this one (see
-      // ModalShell's stack).
+      // ModalShell's stack), the Escape it closed on included.
+      if (escapeAnswered(ev)) return;
       if (!isTopDrawer(drawerRef.current)) return;
       // ...and to the pin. This used to close a pinned drawer, discarding the
       // pin the user had just set - the Agent drawer already honoured it.
-      if (ev.key === "Escape" && !pinned) onRequestClose();
+      if (ev.key === "Escape" && !pinned) {
+        answerEscape(ev);
+        onRequestClose();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

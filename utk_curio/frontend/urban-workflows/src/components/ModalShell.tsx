@@ -77,6 +77,26 @@ export function isTopDrawer(self: HTMLElement | null): boolean {
   return open[open.length - 1] === self;
 }
 
+/** The Escapes a layer answered (`answerEscape`). */
+const answeredEscapes = new WeakSet<Event>();
+
+/**
+ * Mark *ev* as the Escape a layer answers as it closes. One Escape reaches
+ * every layer's `window` listener in turn, and a browser commits the close of
+ * the layer that answered before the next listener runs: a drawer under it
+ * whose listener runs later would find itself the top layer and close too.
+ * So every drawer leaves an Escape already answered (`escapeAnswered`), and
+ * one Escape closes one layer.
+ */
+export function answerEscape(ev: Event): void {
+  answeredEscapes.add(ev);
+}
+
+/** Whether a layer over this one answered *ev* already (`answerEscape`). */
+export function escapeAnswered(ev: Event): boolean {
+  return answeredEscapes.has(ev);
+}
+
 /** What answers an Escape typed into it itself: a dialog (the agents' chat), a
  *  menu, and an open picker, its button and its list (the fork picker's). The
  *  tool rail's palette buttons, which leave Escape alone, are none of them. */
@@ -146,6 +166,8 @@ export default function ModalShell({
       // not close both.
       if (!isTopModal(dialogRef.current)) return;
       event.stopPropagation();
+      // A drawer under it leaves the Escape it answered.
+      answerEscape(event);
       onCloseRef.current();
     };
     window.addEventListener("keydown", onKeyDown);
