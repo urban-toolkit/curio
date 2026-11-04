@@ -479,8 +479,10 @@ def _mint_content_review_from_delegate(
          "params": {"nodeId": node_id, "content": text_out}},
     )
     if part is None:
+        # Whole, as a node.content.write's refusal reaches its own agent: what
+        # to do instead comes last.
         return None, home_att, agent_text.message(
-            "delegate.content-not-written", error=(p_error or agent_text.message("delegate.content-not-minted-unknown"))[:200],
+            "delegate.content-not-written", error=p_error or agent_text.message("delegate.content-not-minted-unknown"),
         )
     if validation:
         # dev/115: an EXECUTED change carries its verdict and attempt trail,

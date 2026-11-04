@@ -27,7 +27,7 @@ from utk_curio.backend.app.agents.application.proposals import store as agents_s
 from utk_curio.backend.app.agents.application.turns import delegates as agents_delegates
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
-from utk_curio.backend.app.execution.code_references import normalize_widgets, resolve_references, waits_for_data
+from utk_curio.backend.app.execution.code_references import REFERENCE_RE, normalize_widgets, parse_reference
 from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.execution.workflow_spec import CONTENT_KIND_NONE
 from utk_curio.backend.app.projects import storage as projects_storage
@@ -600,34 +600,6 @@ def _target_node_id(loop_ctx: dict, params: dict) -> str | None:
     return target.get("targetId") if isinstance(target, dict) and target.get("kind") == "node" else None
 
 
-def _reference_refusal(code: str, current: str, engine: str | None, chips: dict | None) -> str | None:
-    """Why the node's run would refuse *code*, an agent's code for an existing
-    node: each reference the run cannot resolve over the node's chips
-    (*chips*, ``turns/grounding._chip_context``), in the run's own words
-    (``code_references.resolve_references``, as ``WorkflowSpec.node_code``
-    calls it), or None. A chart's or a map's spec (no *engine*) is the
-    document check's, and a dataflow that cannot be read (no *chips*) judges
-    nothing. As the editor marks a node's chips, an empty Data waiting for its
-    data is not the code at fault (``waits_for_data``); and a reference the
-    node's code holds now (*current*) is the user's own, however often the
-    agent's code reads it."""
-    if engine is None or chips is None:
-        return None
-    # The language a run resolves the code in (``run_engine.sent_code``).
-    language = "javascript" if engine == "javascript" else "python"
-    widgets = chips.get("widgets") or []
-
-    def problems(text: str) -> list[str]:
-        _resolved, found = resolve_references(
-            text, widgets, language, chips.get("inputs") or (), selections=chips.get("selections") or (),
-        )
-        return [problem["message"] for problem in found if not waits_for_data(problem, widgets)]
-
-    held = set(problems(current))
-    added = [message for message in dict.fromkeys(problems(code)) if message not in held]
-    return agent_text.message("mint.content-references", problems="\n".join(added)) if added else None
-
-
 def _mint_node_content_write(
     user_key: str, project_id: str, loop_ctx: dict, req: dict
 ) -> tuple[str, str, dict | None]:
@@ -662,9 +634,11 @@ def _mint_node_content_write(
     # Before the gate, which may probe a source: a reference the node's run
     # would refuse. This tool declares no widget, so writing the code again
     # could never mend the node.
-    unresolved = _reference_refusal(proposed, current, engine, chips)
+    unresolved = agents_grounding._reference_problems(proposed, current, engine, chips)
     if unresolved:
-        return agents_tool_rounds._refuse_params(unresolved)
+        return agents_tool_rounds._refuse_params(
+            agent_text.message("mint.content-references", problems="\n".join(unresolved))
+        )
     verdict, refusal = agents_grounding._gate_generated_content(
         user_key, project_id, loop_ctx,
         code=proposed, engine=engine,
@@ -823,6 +797,18 @@ def _node_create_declared_widgets(user_key: str, project_id: str, entry: dict) -
     return packages_services.declared_widgets(user_key, project_id, [entry["id"]]).get(entry["id"]) or []
 
 
+def _template_circles(code: str, entry: dict) -> list[dict]:
+    """The input circles a created node's run reads once they are wired, as
+    the user or a plan's edges wire them: each circle its template has
+    (``maxIncomingEdges``), or, for a template that takes any number, each
+    one *code* names."""
+    capacity = entry.get("maxIncomingEdges")
+    if isinstance(capacity, int):
+        return [{"slot": slot} for slot in range(capacity)]
+    named = {parse_reference(ref.group(1)).get("slot") for ref in REFERENCE_RE.finditer(code)}
+    return [{"slot": slot} for slot in sorted(slot for slot in named if isinstance(slot, int))]
+
+
 def _mint_node_create(
     user_key: str, project_id: str, loop_ctx: dict, req: dict
 ) -> tuple[str, str, dict | None]:
@@ -878,11 +864,21 @@ def _mint_node_create(
     # refused too: the user reviews and confirms a source first (DEC-006).
     if loop_ctx.get("_candidates_pending_review"):
         return agents_tool_rounds._refuse_params(agent_text.message("grounding.candidates-pending"))
+    engine = source_grounding.code_engine(entry)
+    # A reference the new node's run would refuse once the node is wired: its
+    # chips are the widgets it starts with and the circles its template has.
+    unresolved = [] if starter is not None else agents_grounding._reference_problems(
+        proposed, "", engine, {"widgets": widgets, "inputs": _template_circles(proposed, entry), "selections": []},
+    )
+    if unresolved:
+        return agents_tool_rounds._refuse_params(
+            agent_text.message("mint.create-references", problems="\n".join(unresolved))
+        )
     # A starter is the template's own content, which a plan does not gate
     # either; any other content passes the gate.
     verdict, refusal = (None, None) if starter is not None else agents_grounding._gate_generated_content(
         user_key, project_id, loop_ctx,
-        code=proposed, engine=source_grounding.code_engine(entry), node_type=entry["id"], params=params,
+        code=proposed, engine=engine, node_type=entry["id"], params=params,
         chips=agents_grounding._chip_context(saved, widgets=widgets),
         widgets=widgets,
     )

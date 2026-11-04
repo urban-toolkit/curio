@@ -607,10 +607,22 @@ class SolveBatch:
         # The child replies with response formatting around the code —
         # only the executable content is written (dev/57).
         text_out = content.extract_node_content(text)
+        node = self.nodes_by_id.get(node_id) or {}
+        # A reference the node's run would refuse, unrun too: the node fails
+        # with the run's own words, as its Play would say them. A plan's node
+        # is wired by the plan's edges by now.
+        roster_row = (self.batch_templates or {}).get(_pkg_services.canonical_template_id(node.get("type")))
+        unresolved = agents_grounding._reference_problems(
+            text_out, str(node.get("content") or ""), source_grounding.code_engine(roster_row),
+            agents_grounding._chip_context(self.current["spec"], node_id),
+        )
+        if unresolved:
+            error = "\n".join(unresolved)
+            self.results[node_id] = {"status": "failed", "error": error[:300]}
+            return {"nodeId": node_id, "status": "failed", "error": error[:300]}
         # dev/114 (DEC-072): the gate — a fabricated path or an
         # unverified URL never reaches the spec; the node fails LOUDLY
         # with the literal and the remedy named.
-        node = self.nodes_by_id.get(node_id) or {}
         err = self._gate_unverified(node_id, text_out)
         if err:
             self.results[node_id] = {"status": "failed", "error": err[:300]}

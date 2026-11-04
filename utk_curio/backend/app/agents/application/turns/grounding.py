@@ -33,6 +33,7 @@ from utk_curio.backend.app.datasets.domain.constants import is_layer_group_id, l
 from utk_curio.backend.app.datasets.domain.layer_group import group_base_title, ids_read, layer_group_formats
 from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.execution import workflow_spec
+from utk_curio.backend.app.execution.code_references import resolve_references, waits_for_data
 from utk_curio.backend.app.projects import storage as projects_storage
 from utk_curio.backend.app.agents.domain import agent_text
 
@@ -907,6 +908,34 @@ def _chip_context(spec: dict | None, node_id: object = None, widgets=None) -> di
     except Exception:  # noqa: BLE001 - a dataflow that cannot be read resolves no chip
         log.warning("Could not read the dataflow to resolve chips for source grounding", exc_info=True)
         return None
+
+
+def _reference_problems(code: str, current: str, engine: str | None, chips: dict | None) -> list[str]:
+    """The run's own words for each reference in *code*, an agent's code for
+    a node, that the node's run would refuse: what
+    ``code_references.resolve_references`` says over the node's chips
+    (*chips*, as :func:`_chip_context` gives them), as ``WorkflowSpec.node_code``
+    calls it, each once, in the code's order. None for content that is no
+    code (no *engine*: a chart's or a map's spec, which
+    :func:`_document_refusal` judges), and none where the dataflow cannot be
+    read (no *chips*). As the editor marks a node's chips, an empty Data
+    waiting for its data is not the code at fault (``waits_for_data``); and a
+    reference the node's code holds now (*current*) is the user's own, however
+    often *code* reads it."""
+    if engine is None or chips is None:
+        return []
+    # The language a run resolves the code in (``run_engine.sent_code``).
+    language = "javascript" if engine == "javascript" else "python"
+    widgets = chips.get("widgets") or []
+
+    def problems(text: str) -> list[str]:
+        _resolved, found = resolve_references(
+            text, widgets, language, chips.get("inputs") or (), selections=chips.get("selections") or (),
+        )
+        return [problem["message"] for problem in found if not waits_for_data(problem, widgets)]
+
+    held = set(problems(current))
+    return [message for message in dict.fromkeys(problems(code)) if message not in held]
 
 
 def _source_grounding_inputs(ctx: "source_grounding.GroundingContext") -> dict:
