@@ -23,7 +23,7 @@ _SEG = r"[a-z][a-z0-9-]{0,62}"
 ENTRY_RE = re.compile(rf"^(?P<id>{_SEG}(?:\.{_SEG}){{1,5}})@(?P<major>0|[1-9][0-9]{{0,3}})$")
 
 #: Each catalog folder, and the kind prefix its entries' ids start with: none
-#: for a node package (``curio.rasterization``), ``model.`` for a model package.
+#: for a node package (``curio.scout``), ``model.`` for a model package.
 FOLDERS = {
     "packages": None,
     "datasets": "data.",

@@ -64,15 +64,15 @@ PACKAGE = Path(REPO_ROOT) / "packages" / "model.scout.deep-umbra@1"
 SHADOW_TYPE = "model.scout.deep-umbra/accumulated-shadow"
 #: The node that takes the shadow's statistics: example 24's one Raster
 #: Calculator, Scout's node.
-STATISTICS_TYPE = "curio.rasterization/raster-calculator"
+STATISTICS_TYPE = "curio.scout/raster-calculator"
 #: The nodes of the example's chain, from the buildings to their statistics.
 CHAIN_TYPES = {
     "curio.builtin/data-loading",
-    "curio.rasterization/rasterize-buildings",
+    "curio.scout/rasterize-buildings",
     SHADOW_TYPE,
     STATISTICS_TYPE,
 }
-PACKAGES = ("curio.rasterization@1", "model.scout.deep-umbra@1")
+PACKAGES = ("curio.scout@1", "model.scout.deep-umbra@1")
 #: The first run rasterizes the buildings and runs Deep Umbra on four tiles.
 FIRST_RUN_MS = 300000
 RERUN_MS = 180000

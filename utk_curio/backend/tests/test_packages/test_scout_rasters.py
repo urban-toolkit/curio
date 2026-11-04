@@ -1,6 +1,6 @@
 """SCOUT's raster nodes in Curio, the Raster Calculator and SCOUT's building
 rasterizer (#662, step 17; the plan for #914, step 28.1), nodes of Scout
-(``curio.rasterization@1``) beside its seven charts (the plan answering komar41's
+(``curio.scout@1``) beside its seven charts (the plan answering komar41's
 review of his #914, step 10).
 
 The raster nodes: the Raster Calculator, which left the built-in nodes, and
@@ -38,7 +38,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[4]
-PACKAGE_ID = "curio.rasterization"
+PACKAGE_ID = "curio.scout"
 PACKAGE = REPO / "packages" / f"{PACKAGE_ID}@1"
 SOURCES = PACKAGE / "sources"
 MODULE = "scout_rasters"
@@ -184,7 +184,7 @@ def test_the_package_holds_the_raster_calculator_and_rasterize_buildings():
 
     manifest = load_package_manifest(PACKAGE)
     assert (manifest.package_id, manifest.major, manifest.name, manifest.publisher, manifest.license) == (
-        PACKAGE_ID, 1, "Rasterization", "Curio", "MIT",
+        PACKAGE_ID, 1, "Scout", "Curio", "MIT",
     )
     assert manifest.read_only is True and manifest.kind == "node"
     assert [(t.template_id, t.label, t.category, t.icon_ref) for t in manifest.templates] == [
@@ -270,7 +270,7 @@ def test_raster_conversion_is_retired_and_no_shipped_dataflow_names_the_old_type
 def test_every_shipped_dataflow_with_a_raster_node_declares_the_package():
     """A dataflow's lockfile is how opening it, a scenario dropped from it and
     ``--with-examples`` add the package: each shipped dataflow with one of the
-    two raster nodes names ``curio.rasterization@1``, and of the others only those
+    two raster nodes names ``curio.scout@1``, and of the others only those
     with the package's charts do."""
     with_a_raster_node, with_a_node, declaring = set(), set(), set()
     for pattern in SHIPPED_JSON[:2]:

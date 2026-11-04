@@ -68,7 +68,7 @@ PYTHON_TYPE = "curio.builtin/computation-analysis"
 AUTARK_TYPE = "curio.builtin/autk-grammar"
 COMPARE_TYPE = "curio.builtin/compare-scenarios"
 #: Scout's package, whose Bars node charts each metric.
-SCOUT_PACKAGE = REPO / "packages" / "curio.rasterization@1"
+SCOUT_PACKAGE = REPO / "packages" / "curio.scout@1"
 BARS_TYPE = "curio.builtin/vis-vega"
 DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "chicago-rain-wind-routing.json"
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "scout_routing"
@@ -752,7 +752,7 @@ def test_the_start_time_reads_scouts_weather_step(tmp_path):
 
 def test_the_shipped_dataflows_bars_chart_the_four_metrics():
     """As in SCOUT's example, the two routes are compared on four bar charts,
-    one per metric: each a Bars node of Scout's (``curio.rasterization@1``), which
+    one per metric: each a Bars node of Scout's (``curio.scout@1``), which
     replaced a Compare Scenarios node and keeps its id, its place and its
     header. Its spec is its template's own, and its widgets set what the
     Compare node's bar drew: the metric, each scenario's rows combined by

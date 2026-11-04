@@ -28,9 +28,9 @@
     }
   },
   "description": "SCOUT's raster nodes in Curio, ported from SCOUT (urban-toolkit/scout). The Raster Calculator runs one operation over rasters on one grid: add, subtract, multiply, divide or choose, cell by cell, or a raster's statistics as a table of one row. Rasterize Buildings, SCOUT's building rasterizer, turns a buildings layer into the zoom-16 height tiles SCOUT's Deep Umbra shadow model reads, side by side in one raster in metres that an Autark map draws.",
-  "id": "curio.rasterization",
+  "id": "curio.scout",
   "license": "MIT",
-  "name": "Rasterization",
+  "name": "Scout",
   "permissions": [],
   "publisher": "Curio",
   "readOnly": true,
@@ -141,5 +141,5 @@
       }
     }
   ],
-  "version": "1.0.0"
+  "version": "1.2.0"
 }

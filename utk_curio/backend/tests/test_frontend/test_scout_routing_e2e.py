@@ -10,7 +10,7 @@ it, which reads the roads layer through its layer chip
 route" and "Weather-aware route" (its copy), each keep one of them: a node with
 the route and one with its metrics. An Autark map outside both boxes draws both
 routes over the roads, each with a ``width``, in the color of the box its input
-comes from; four Bars nodes of Scout's (``curio.rasterization@1``) chart the two
+comes from; four Bars nodes of Scout's (``curio.scout@1``) chart the two
 routes' duration, distance, rain exposure and wind exposure, one bar per
 scenario, in the same colors, each reading both scenarios' metrics stacked as
 ``inputs``.
@@ -85,7 +85,7 @@ if TYPE_CHECKING:
     from .utils import FrontendPage
 
 DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "chicago-rain-wind-routing.json"
-PACKAGE_DIRS = ("curio.rasterization@1", "model.scout.weather-gnn@1")
+PACKAGE_DIRS = ("curio.scout@1", "model.scout.weather-gnn@1")
 ROUTING_TYPE = "model.scout.weather-gnn/weather-routing"
 AUTARK_TYPE = "curio.builtin/autk-grammar"
 BARS_TYPE = "curio.builtin/vis-vega"

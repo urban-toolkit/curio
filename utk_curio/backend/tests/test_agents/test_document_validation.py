@@ -944,7 +944,7 @@ class TestTheColumnsOfTheInputsDataset:
         measure = "value" if template_id in ("pie", "lollipops") else "y"
         # The measure left at its default name, a column the plans lack.
         assert f'"field": "{measure}"' in spec and '"aggregate": "count"' in spec
-        verdict = dv.validate(f"curio.rasterization/{template_id}", spec, grammar_id="vega-lite", columns=self.COLUMNS)
+        verdict = dv.validate(f"curio.scout/{template_id}", spec, grammar_id="vega-lite", columns=self.COLUMNS)
         assert verdict == {"status": dv.STATUS_VALID}
 
     def test_the_columns_are_the_ones_the_stack_writes(self):

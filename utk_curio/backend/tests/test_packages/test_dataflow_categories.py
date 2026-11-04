@@ -39,9 +39,9 @@ SHIPPED = {
     ("curio.media@1", "split-audio"): {"dataTypes": ["Audio"]},
     ("curio.media@1", "mosaic-rasters"): {"dataTypes": ["Rasters"]},
     # Scout: SCOUT on every node, Rasters on its two raster nodes alone.
-    ("curio.rasterization@1", None): {"tags": ["SCOUT"]},
-    ("curio.rasterization@1", "raster-calculator"): {"dataTypes": ["Rasters"]},
-    ("curio.rasterization@1", "rasterize-buildings"): {"dataTypes": ["Rasters"]},
+    ("curio.scout@1", None): {"tags": ["SCOUT"]},
+    ("curio.scout@1", "raster-calculator"): {"dataTypes": ["Rasters"]},
+    ("curio.scout@1", "rasterize-buildings"): {"dataTypes": ["Rasters"]},
     ("model.scout.deep-umbra@1", None): {"tags": ["SCOUT"]},
     ("model.scout.weather-gnn@1", None): {"tags": ["SCOUT"]},
 }

@@ -272,7 +272,7 @@
   "split": "validation",
   "review": {
     "status": "pending-owner-review",
-    "draftedBy": "the example 06 scenario study (#662), from the example JSON and its walkthrough, 2026-10-05; its third scenario from the Edit Features step, 2026-10-06; its difference map on an Autark node after the Compare Scenarios node, 2026-10-17; that map on a scale centered on no change, 2026-10-17; its comparisons without Compare Scenarios, a Roads step per scenario charted by Scout's Bars and a Python step taking the sunlight change, in the plan answering komar41's review (step 6.3), 2026-10-20; its Edit Features step feeding a map of the buildings, linked to it by an interaction edge, in the plan revising PR #1055 (step 7), 2026-10-22; its Scout nodes the Rasterization package's (curio.rasterization@1) and its charts Vega-Lite nodes (#1270), 2026-10-31",
+    "draftedBy": "the example 06 scenario study (#662), from the example JSON and its walkthrough, 2026-10-05; its third scenario from the Edit Features step, 2026-10-06; its difference map on an Autark node after the Compare Scenarios node, 2026-10-17; that map on a scale centered on no change, 2026-10-17; its comparisons without Compare Scenarios, a Roads step per scenario charted by Scout's Bars and a Python step taking the sunlight change, in the plan answering komar41's review (step 6.3), 2026-10-20; its Edit Features step feeding a map of the buildings, linked to it by an interaction edge, in the plan revising PR #1055 (step 7), 2026-10-22; its Scout charts Vega-Lite nodes (#1270), 2026-10-31",
     "reviewedBy": null,
     "reviewedAt": null
   },

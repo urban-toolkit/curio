@@ -20,12 +20,12 @@ context:
 Three scenarios: Existing; Towers removed, whose Map Editor node removes the
 marked parts; and Height cap, whose Map Editor node cuts them down to the
 Tall building height. Each rasterizes its buildings
-(``curio.rasterization@1``), runs Deep Umbra on them
+(``curio.scout@1``), runs Deep Umbra on them
 (``model.scout.deep-umbra@1``), measures the shade in each park, and draws its
 buildings in 3D and its shadow on Autark maps; each what-if's Map Editor node
 is linked to its buildings map, which it edits on. Scout's Dots with a range
 charts each park's mean minutes of shadow in the three scenarios, and for
-each what-if a Raster Calculator (``curio.rasterization@1``) takes the change in
+each what-if a Raster Calculator (``curio.scout@1``) takes the change in
 shadow cell by cell and a Python node each park's change in shade, each drawn
 by an Autark map after it. Until the plan answering komar41's review (step
 6.3), Compare Scenarios nodes did all three.
@@ -59,7 +59,7 @@ REPO = Path(__file__).resolve().parents[4]
 DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "lower-manhattan-park-shade.json"
 NAME = "Lower Manhattan park shade with towers removed or capped"
 EXTRACT = "docs/examples/data/lower_mnt.osm.pbf"
-RASTER_PACKAGE = REPO / "packages" / "curio.rasterization@1"
+RASTER_PACKAGE = REPO / "packages" / "curio.scout@1"
 RASTER_MODULE = "scout_rasters"
 MODEL_PACKAGE = REPO / "packages" / "model.scout.deep-umbra@1"
 MODEL_ID = "model.scout.deep-umbra"
@@ -69,9 +69,9 @@ PYTHON = "curio.builtin/computation-analysis"
 PARAMETER = "curio.builtin/parameter"
 INTERACTION = "curio.builtin/edit-features"
 COMPARE = "curio.builtin/compare-scenarios"
-RASTERIZE = "curio.rasterization/rasterize-buildings"
+RASTERIZE = "curio.scout/rasterize-buildings"
 SHADOW = "model.scout.deep-umbra/accumulated-shadow"
-CALCULATOR = "curio.rasterization/raster-calculator"
+CALCULATOR = "curio.scout/raster-calculator"
 DOTS = "curio.builtin/vis-vega"
 #: The chart and the changes, which keep the ids of the Compare Scenarios nodes
 #: they replaced.
@@ -282,7 +282,7 @@ def test_it_is_three_scenarios_over_one_context_from_the_extract():
     names both packages."""
     spec = _dataflow()
     assert spec["name"] == NAME
-    assert spec["packages"] == ["curio.rasterization@1", "model.scout.deep-umbra@1"]
+    assert spec["packages"] == ["curio.scout@1", "model.scout.deep-umbra@1"]
     assert not spec.get("datasets"), spec.get("datasets")
     assert spec["categories"] == {"city": ["New York"], "topic": ["Heat and climate", "Greenery"],
                                   "complexity": ["Beginner"]}

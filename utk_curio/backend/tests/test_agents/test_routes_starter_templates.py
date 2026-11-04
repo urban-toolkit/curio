@@ -95,9 +95,9 @@ def _install_scout_rasters(user_key: str) -> str:
     """The package Curio ships, as the repository holds it."""
     from utk_curio.backend.app.packages.repositories.store import user_packages_dir
 
-    shutil.copytree(REPO / "packages" / "curio.rasterization@1",
-                    user_packages_dir(user_key) / "curio.rasterization@1", dirs_exist_ok=True)
-    return "curio.rasterization@1"
+    shutil.copytree(REPO / "packages" / "curio.scout@1",
+                    user_packages_dir(user_key) / "curio.scout@1", dirs_exist_ok=True)
+    return "curio.scout@1"
 
 
 def _enlist(user_key: str, project_id: str, dirs: list[str]) -> None:
@@ -219,9 +219,9 @@ class TestEveryOtherTemplateKeepsItsPath:
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
         user, token = user_and_token
-        heights = {"ref": "heights", "nodeType": "curio.rasterization/rasterize-buildings",
+        heights = {"ref": "heights", "nodeType": "curio.scout/rasterize-buildings",
                    "title": "Heights", "intent": "rasterize the buildings"}
-        calc = {"ref": "calc", "nodeType": "curio.rasterization/raster-calculator",
+        calc = {"ref": "calc", "nodeType": "curio.scout/raster-calculator",
                 "title": "Change", "intent": "subtract the two rasters"}
         att_id, proposal = _minted(
             client, user, token, alice_project, monkeypatch,
@@ -230,7 +230,7 @@ class TestEveryOtherTemplateKeepsItsPath:
         body = _apply(client, token, alice_project, att_id, proposal["proposalId"])
         created = _by_type(body["appliedGraph"]["nodes"])
         session = body["builderSession"]
-        assert set(created) == {"curio.rasterization/rasterize-buildings", "curio.rasterization/raster-calculator"}
+        assert set(created) == {"curio.scout/rasterize-buildings", "curio.scout/raster-calculator"}
         for node in created.values():
             assert node["content"] == ""
         assert session["nodeRuns"] == {n["id"]: "pending" for n in created.values()}
@@ -275,7 +275,7 @@ def _install_bars_package(user_key: str) -> str:
     root = user_packages_dir(user_key) / BARS_PACKAGE
     (root / "sources").mkdir(parents=True, exist_ok=True)
     shutil.copyfile(VEGA_LITE_CHARTS / "bars.vl.json", root / "sources" / "bars.vl.json")
-    shipped = json.loads((REPO / "packages" / "curio.rasterization@1" / "manifest.json").read_text(encoding="utf-8"))
+    shipped = json.loads((REPO / "packages" / "curio.scout@1" / "manifest.json").read_text(encoding="utf-8"))
     manifest = {
         "$schema": shipped["$schema"], "compatibility": shipped["compatibility"],
         "createdAt": shipped["createdAt"], "dependencies": {"js": {}, "packages": {}, "python": {}},
@@ -321,7 +321,7 @@ class TestACreatedTemplateStartsFromItsStarter:
         user, token = user_and_token
         starter, widgets = _scout_bars()
         create = TestNodeCreate()._create_tail_json
-        calculator = create(nodeType="curio.rasterization/raster-calculator", content="")
+        calculator = create(nodeType="curio.scout/raster-calculator", content="")
         bars = create(nodeType="acme.charts/bars", title="Mean shadow", content="",
                       widgets=[{"name": "y", "type": "text", "value": "shadow_minutes"}])
         helper, att_id, proposal, results = self._run(

@@ -13,7 +13,7 @@ every Accumulated Shadow. In
 Existing, Towers removed and Height cap (whose Map Editor nodes remove or cut
 down the building parts Buildings around parks marks, each linked to the map
 of the buildings it feeds), Rasterize Buildings
-(``curio.rasterization@1``) and Accumulated Shadow
+(``curio.scout@1``) and Accumulated Shadow
 (``model.scout.deep-umbra@1``) give the shadow, Shade per park measures it in
 each park, and Autark maps draw the buildings in 3D and the shadow. Scout's
 Dots with a range charts each park's minutes of shadow in the three
@@ -93,7 +93,7 @@ if TYPE_CHECKING:
 
 DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "lower-manhattan-park-shade.json"
 TEST_NAME = "test_three_scenarios_of_lower_manhattans_park_shade_are_charted_and_mapped"
-PACKAGES = ("curio.rasterization@1", "model.scout.deep-umbra@1")
+PACKAGES = ("curio.scout@1", "model.scout.deep-umbra@1")
 #: The scenarios, in the order the chart reads them, and the key of their nodes.
 SCENARIOS = (("existing", "Existing", "existing"), ("towers-removed", "Towers removed", "removed"),
              ("height-cap", "Height cap", "capped"))
@@ -110,7 +110,7 @@ MINUTES = 0.5
 DIVERGING = {"interpolateRdBu", "interpolateRdYlBu"}
 COMPARE_TYPE = "curio.builtin/compare-scenarios"
 DOTS_TYPE = "curio.builtin/vis-vega"
-CALCULATOR_TYPE = "curio.rasterization/raster-calculator"
+CALCULATOR_TYPE = "curio.scout/raster-calculator"
 PYTHON_TYPE = "curio.builtin/computation-analysis"
 MAP_EDITS_TYPE = "curio.builtin/edit-features"
 #: The chart, which keeps the id of the Compare Scenarios node it replaced, as

@@ -1,7 +1,7 @@
 """Web map tiles: where a tile lies, and tiles side by side in one GeoTIFF on
 their own grid. Rasterize Buildings writes its mosaic of SCOUT's tiles with
 ``mosaic_web_tiles``, and Deep Umbra's node (``model.scout.deep-umbra@1``,
-whose package names Rasterization in ``dependencies.packages``) places each tile it
+whose package names Scout in ``dependencies.packages``) places each tile it
 predicts with ``tile_bounds``. The mosaic itself is written by Curio's
 ``mosaic_rasters``, which Curio Media's Mosaic Rasters writes with too.
 """

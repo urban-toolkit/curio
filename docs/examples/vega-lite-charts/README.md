@@ -6,10 +6,6 @@ box's color and in the order the dataflow lists the boxes, through scenario
 chips. Seven are re-made from komar41's ScenarioCharts, and Dots with a range is
 the first view of his "Minutes of shadow per park" chart.
 
-They were node types of the Scout package (`curio.scout/<chart>`) until #1270;
-a dataflow saved with one opens it as a Vega-Lite node with the same spec,
-widgets and title.
-
 ## Using one
 
 1. Drop a **Vega-Lite** node from the Built-in palette and connect each

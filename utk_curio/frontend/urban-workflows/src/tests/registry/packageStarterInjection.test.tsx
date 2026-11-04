@@ -31,7 +31,7 @@ jest.mock('../../providers/StarterProvider', () => ({
       if (type === 'model.example.tiny/image-segmentation@1') {
         return [{ id: 's2', type, name: 'image-segmentation', description: '', accessLevel: 'ANY', code: DEFAULT_CELL, custom: false }];
       }
-      if (type === 'curio.rasterization/raster-calculator@1') return mockCalculatorStarters(type);
+      if (type === 'curio.scout/raster-calculator@1') return mockCalculatorStarters(type);
       if (type === 'acme.charts/dots-with-a-range@1') return mockChartStarters(type);
       if (type === 'curio.builtin/data-export@1') return mockExportStarters(type);
       return [];
@@ -59,14 +59,14 @@ import { normalizeWidgets } from '../../utils/widgets/widgetModel';
 import type { NodeBehaviorData, UseNodeStateReturn } from '../../registry/types';
 
 const REPO_ROOT = path.resolve(__dirname, '../../../../../..');
-/** Rasterization, as the repository ships it. */
-const RASTERIZATION = path.join(REPO_ROOT, 'packages', 'curio.rasterization@1');
+/** Scout, as the repository ships it. */
+const SCOUT = path.join(REPO_ROOT, 'packages', 'curio.scout@1');
 /** The Vega-Lite charts that compare scenarios (#1270: Scout's chart templates once). */
 const CHARTS = path.join(REPO_ROOT, 'docs', 'examples', 'vega-lite-charts');
 
-/** The starter Rasterization ships for its Raster Calculator. */
+/** The starter Scout ships for its Raster Calculator. */
 function readCalculatorStarter(): string {
-  return fs.readFileSync(path.join(RASTERIZATION, 'sources', 'raster-calculator.py'), 'utf-8');
+  return fs.readFileSync(path.join(SCOUT, 'sources', 'raster-calculator.py'), 'utf-8');
 }
 
 /** What the starters feed (`application/starters.py`) lists for the Raster
@@ -233,9 +233,9 @@ describe('a model package\'s template without a source', () => {
   });
 });
 
-/** Rasterization with its Raster Calculator's template, read from its manifest. */
+/** Scout with its Raster Calculator's template, read from its manifest. */
 function calculatorPack(): StarterPack {
-  const manifest = JSON.parse(fs.readFileSync(path.join(RASTERIZATION, 'manifest.json'), 'utf-8'));
+  const manifest = JSON.parse(fs.readFileSync(path.join(SCOUT, 'manifest.json'), 'utf-8'));
   const template = manifest.templates.find((t: { id: string }) => t.id === 'raster-calculator');
   return {
     packageId: manifest.id,
@@ -274,7 +274,7 @@ function calculatorPack(): StarterPack {
   };
 }
 
-describe('Rasterization\'s Raster Calculator, as the repository ships it', () => {
+describe('Scout\'s Raster Calculator, as the repository ships it', () => {
   beforeEach(() => clearPackageNodes());
   const { getStarters } = useStarterContext();
 
@@ -303,7 +303,7 @@ describe('Rasterization\'s Raster Calculator, as the repository ships it', () =>
   test('is a package node with its icon and the PACKAGE pill, and core holds no node or behavior of its own', async () => {
     const read = (dir: string) =>
       JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'packages', dir, 'manifest.json'), 'utf-8'));
-    const templates = read('curio.rasterization@1').templates;
+    const templates = read('curio.scout@1').templates;
     const template = templates.find((t: { id: string }) => t.id === 'raster-calculator');
     expect([template.behavior, template.source]).toEqual(['code', 'sources/raster-calculator.py']);
     expect(read(`${BUILTIN_PACKAGE_ID}@1`).templates.map((t: { id: string }) => t.id)).not.toContain('raster-calculator');
@@ -315,8 +315,8 @@ describe('Rasterization\'s Raster Calculator, as the repository ships it', () =>
     // Its icon is loaded on demand, as the app loads it before building descriptors.
     await loadIconRefs([template.iconRef]);
     const [descriptor] = registerPackageTemplates([calculatorPack()]);
-    expect(descriptor.package?.packageId).toBe('curio.rasterization');
-    expect(descriptor.package?.name).toBe('Rasterization');
+    expect(descriptor.package?.packageId).toBe('curio.scout');
+    expect(descriptor.package?.name).toBe('Scout');
     expect(descriptor.package?.source).toBe('sources/raster-calculator.py');
     expect(descriptor.icon).toBe(faCalculator);
     expect(descriptor.badge).toBe('PACKAGE');

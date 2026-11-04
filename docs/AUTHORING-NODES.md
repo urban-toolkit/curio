@@ -168,9 +168,9 @@ one of its name, and **Solve** leaves its content as it is. Without it, a planne
 node is created with the template's widgets and no content, and Solve writes its
 content.
 
-A starter that each use edits leaves the flag out, as Rasterization's Raster
+A starter that each use edits leaves the flag out, as Scout's Raster
 Calculator does: its starter,
-[`sources/raster-calculator.py`](../packages/curio.rasterization@1/sources/raster-calculator.py),
+[`sources/raster-calculator.py`](../packages/curio.scout@1/sources/raster-calculator.py),
 returns one operation and lists the others, so a dropped calculator opens with
 it and Solve writes the operation each planned one needs.
 

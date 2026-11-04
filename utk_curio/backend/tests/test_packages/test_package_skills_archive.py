@@ -7,7 +7,7 @@ it, publishing puts it in the shared catalog, adding the catalog's copy brings
 it, and each copy's ``integrity.json`` covers its files. An import and a
 publish read each skill strictly, as the skills Curio ships are read, and
 refuse a package whose ``skills/`` breaks the format, naming what is wrong.
-Rasterization ships the first, ``rasterization``.
+Scout ships the first, ``scout``.
 
 New names are read inside each test, so this module imports on a checkout
 without them and each test fails on its own.
@@ -24,7 +24,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-SCOUT_DIR = REPO_ROOT / "packages" / "curio.rasterization@1"
+SCOUT_DIR = REPO_ROOT / "packages" / "curio.scout@1"
 #: The archive helper's package (``conftest._manifest_dict``).
 DIR = "ai.test.demo@1"
 SKILL = (
@@ -149,7 +149,7 @@ def test_a_package_whose_skills_break_the_format_is_refused_and_leaves_nothing(
 
 
 def test_scout_ships_its_skill_its_integrity_map_covers_it_and_an_add_brings_it(tmp_curio):
-    """Rasterization's ``skills/`` holds one skill, ``rasterization``, which Curio's strict
+    """Scout's ``skills/`` holds one skill, ``scout``, which Curio's strict
     reader takes; the package's ``integrity.json`` records its file; and an
     account's add of Scout from the catalog puts it in the account's copy,
     whose map records it too."""
@@ -159,14 +159,14 @@ def test_scout_ships_its_skill_its_integrity_map_covers_it_and_an_add_brings_it(
     from utk_curio.backend.app.packages.repositories.store import package_dir
 
     (folder,) = skill_folders(SCOUT_DIR)
-    assert (folder.name, skills.parse(folder).name) == ("rasterization", "rasterization")
+    assert (folder.name, skills.parse(folder).name) == ("scout", "scout")
     shipped = (folder / "SKILL.md").read_bytes()
     digest = hashlib.sha256(shipped).hexdigest()
     recorded = json.loads((SCOUT_DIR / "integrity.json").read_text(encoding="utf-8"))["sha256"]
-    assert recorded["skills/rasterization/SKILL.md"] == digest
+    assert recorded["skills/scout/SKILL.md"] == digest
 
     install_package_from_directory("guest", SCOUT_DIR)
-    added = package_dir("guest", "curio.rasterization@1")
-    assert (added / "skills" / "rasterization" / "SKILL.md").read_bytes() == shipped
+    added = package_dir("guest", "curio.scout@1")
+    assert (added / "skills" / "scout" / "SKILL.md").read_bytes() == shipped
     copied = json.loads((added / "integrity.json").read_text(encoding="utf-8"))["sha256"]
-    assert copied["skills/rasterization/SKILL.md"] == digest
+    assert copied["skills/scout/SKILL.md"] == digest

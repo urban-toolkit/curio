@@ -41,7 +41,7 @@ REPO = Path(__file__).resolve().parents[4]
 CHARTS = REPO / "docs" / "examples" / "vega-lite-charts"
 BUILTIN = REPO / "packages" / "curio.builtin@1" / "manifest.json"
 #: The package that held them as templates of its own, before #1270.
-RASTERIZATION = REPO / "packages" / "curio.rasterization@1"
+SCOUT = REPO / "packages" / "curio.scout@1"
 
 #: The fifteen charts, in order: the seven from ScenarioCharts, Dots with a
 #: range, and Compare's seven presets.
@@ -252,9 +252,9 @@ def test_each_chart_is_a_spec_for_the_vega_lite_node(template_id):
 
 def test_no_package_holds_a_chart_template():
     """A chart is a Vega-Lite node, never a node type of a package (#1270)."""
-    manifest = json.loads((RASTERIZATION / "manifest.json").read_text(encoding="utf-8"))
+    manifest = json.loads((SCOUT / "manifest.json").read_text(encoding="utf-8"))
     assert [t["id"] for t in manifest["templates"]] == ["raster-calculator", "rasterize-buildings"]
-    assert not list(RASTERIZATION.rglob("*.vl.json"))
+    assert not list(SCOUT.rglob("*.vl.json"))
 
 
 @pytest.mark.parametrize("template_id", TEMPLATES)

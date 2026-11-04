@@ -1453,9 +1453,9 @@ dashboard the node shows the output saved with the dataflow and never joins.
 
 The **Raster Calculator** works on rasters: a `rasterio` dataset from a Python
 node or the Data Catalog, or a raster an Autark node hands on. It is a node of
-Rasterization (`curio.rasterization@1`), a package that ships with Curio: once the
+Scout (`curio.scout@1`), a package that ships with Curio: once the
 package is in the dataflow (**Add to project** in the Node Catalog drawer), the
-node is under **Rasterization** in the Tools panel's **Node Catalog** dropdown.
+node is under **Scout** in the Tools panel's **Node Catalog** dropdown.
 It is a Python node whose code is written for it when it
 is dropped: input_0 minus input_1, with its other operations listed above it,
 statistics among them. Return another call to change what it does. Connect the
@@ -1470,8 +1470,8 @@ return raster_calculate("subtract", [input_0, input_1], output_file=curio_output
 
 A Python node of no package has no raster operations, so a raster step is a
 Raster Calculator node. A node of another package uses them when its package
-names Rasterization in `dependencies.packages` (see the
-[package's README](../packages/curio.rasterization@1/README.md#raster-math-in-another-package)).
+names Scout in `dependencies.packages` (see the
+[package's README](../packages/curio.scout@1/README.md#raster-math-in-another-package)).
 
 **Cell by cell**, an operation over rasters on one grid gives a raster, which
 `output_file=curio_output_file` writes where the node writes its files:

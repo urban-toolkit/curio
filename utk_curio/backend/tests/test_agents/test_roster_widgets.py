@@ -17,7 +17,7 @@ import pytest
 REPO = Path(__file__).resolve().parents[4]
 
 
-@pytest.mark.parametrize("folder", ["curio.rasterization@1", "model.scout.deep-umbra@1"])
+@pytest.mark.parametrize("folder", ["curio.scout@1", "model.scout.deep-umbra@1"])
 def test_each_package_templates_line_names_its_widgets(folder):
     from utk_curio.backend.app.agents.application.turns.roster import _template_line
     from utk_curio.backend.app.packages.application.templates import _template_entry

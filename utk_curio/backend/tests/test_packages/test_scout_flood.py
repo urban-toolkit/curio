@@ -4,7 +4,7 @@ Raster Calculator, on SCOUT's whole grid (#662, step 18; #819).
 The shipped test dataflow ``quad-cities-flood-vulnerability.json`` does what SCOUT's
 ``simulate_flood_projection`` does with no SCOUT code: three Data Loading nodes
 read the region's window of SCOUT's rasters, which the Data Catalog holds whole
-(``curio_load_data(..., bounds=...)``), a Raster Calculator (``curio.rasterization@1``)
+(``curio_load_data(..., bounds=...)``), a Raster Calculator (``curio.scout@1``)
 per scenario takes
 the depth with nature-based solutions (NbS) where the class is a chosen one and
 the depth without elsewhere (``choose``), a second takes the depth's
@@ -67,11 +67,11 @@ REPO = Path(__file__).resolve().parents[4]
 DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "quad-cities-flood-vulnerability.json"
 SCOUT_FUNCTION = Path(__file__).resolve().parent / "fixtures" / "scout_flood" / "flood_simulation.py"
 #: The starter a Raster Calculator opens with, which its package ships.
-CALCULATOR_STARTER = REPO / "packages" / "curio.rasterization@1" / "sources" / "raster-calculator.py"
+CALCULATOR_STARTER = REPO / "packages" / "curio.scout@1" / "sources" / "raster-calculator.py"
 LOADING = "curio.builtin/data-loading"
-CALCULATOR = "curio.rasterization/raster-calculator"
+CALCULATOR = "curio.scout/raster-calculator"
 #: The Raster Calculator's package, which the dataflow's lockfile names.
-RASTERS_PACKAGE = "curio.rasterization@1"
+RASTERS_PACKAGE = "curio.scout@1"
 #: What a Raster Calculator's code returns: an operation cell by cell, which
 #: gives a raster, statistics, which give a table of one row, or, in Average
 #: depth by period, its own table of each period's mean depth.

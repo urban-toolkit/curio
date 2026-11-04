@@ -66,8 +66,8 @@ const SPEC = '{\n  "data": {"name": "[!! inputs !!]"},\n  "mark": "bar"\n}';
  * header. */
 function setFlow(targets: string[]) {
   mockFlow.nodes = [
-    { id: "shadow-a", type: "curio.rasterization/raster-calculator", data: { title: "Shadow over the ground" } },
-    { id: "shadow-b", type: "curio.rasterization/raster-calculator", data: { title: "Shadow over the ground" } },
+    { id: "shadow-a", type: "curio.scout/raster-calculator", data: { title: "Shadow over the ground" } },
+    { id: "shadow-b", type: "curio.scout/raster-calculator", data: { title: "Shadow over the ground" } },
     {
       id: "season",
       type: "curio.builtin/computation-analysis",

@@ -177,7 +177,7 @@ class TestWhichOutputsAreNeeded:
         spec = spec_of(
             [
                 node("rasters", "curio.builtin/data-loading"),
-                node("calc", "curio.rasterization/raster-calculator@1"),
+                node("calc", "curio.scout/raster-calculator@1"),
                 node("chart", "curio.builtin/vis-vega", dashboardPinned=True),
             ],
             [edge("rasters", "calc"), edge("calc", "chart")],

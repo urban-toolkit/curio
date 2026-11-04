@@ -105,15 +105,15 @@ class TestRenderPrompt:
 
     def test_a_shipped_packages_template_label_follows_its_manifest(self):
         """A prompt names a template of a package Curio ships as its manifest
-        labels it, as it names a built-in one: Rasterization's nodes."""
-        manifest = json.loads((REPO_ROOT / "packages" / "curio.rasterization@1" / "manifest.json").read_text(
+        labels it, as it names a built-in one: Scout's nodes."""
+        manifest = json.loads((REPO_ROOT / "packages" / "curio.scout@1" / "manifest.json").read_text(
             encoding="utf-8"))
         assert len(manifest["templates"]) == 2
         for template in manifest["templates"]:
-            marker = "{{template.label:" + f"curio.rasterization/{template['id']}" + "}}"
+            marker = "{{template.label:" + f"curio.scout/{template['id']}" + "}}"
             assert contracts.render_template(marker) == template["label"]
         with pytest.raises(contracts.PromptTemplateError, match="no-such-chart"):
-            contracts.render_template("{{template.label:curio.rasterization/no-such-chart}}")
+            contracts.render_template("{{template.label:curio.scout/no-such-chart}}")
         with pytest.raises(contracts.PromptTemplateError, match="no.such.package"):
             contracts.render_template("{{template.label:no.such.package/chart}}")
 
@@ -124,7 +124,7 @@ class TestRenderPrompt:
         Python node for two tables' or layers' difference. It names no
         package's template: the fifteen charts of docs/examples/vega-lite-charts
         are specs for the Vega-Lite node (#1270), each saying in its own
-        description that it takes one input per scenario, and Rasterization's
+        description that it takes one input per scenario, and Scout's
         Raster Calculator says in its own
         how it takes two rasters' difference, with absolute=True for its size.
         A run that writes one of them reads that description and its starter
@@ -138,13 +138,13 @@ class TestRenderPrompt:
         )["skills"]
         template = prompt_path("scenarios/SKILL.md").read_text(encoding="utf-8")
         section = template.split("## Scenarios", 1)[1]
-        manifest = json.loads((REPO_ROOT / "packages" / "curio.rasterization@1" / "manifest.json").read_text(
+        manifest = json.loads((REPO_ROOT / "packages" / "curio.scout@1" / "manifest.json").read_text(
             encoding="utf-8"))
         assert "compare-scenarios" not in section and "Compare Scenarios" not in section
         for named in ("curio.builtin/vis-vega", "curio.builtin/computation-analysis"):
             assert "{{template.label:" + named + "}}" in section, named
         assert set(re.findall(r"\{\{template\.label:([^/{}]+)/", section)) == {"curio.builtin"}
-        assert "curio.rasterization" not in section
+        assert "curio.scout" not in section
         assert not [t for t in manifest["templates"] if t.get("grammarId") == "vega-lite"]
         charts = json.loads((REPO_ROOT / "docs" / "examples" / "vega-lite-charts" / "charts.json").read_text(
             encoding="utf-8"))["charts"]
@@ -157,7 +157,7 @@ class TestRenderPrompt:
             assert chart["description"].startswith("One input per scenario"), chart["id"]
         calculator = next(t for t in manifest["templates"] if t["id"] == "raster-calculator")
         assert "subtract" in calculator["description"] and "absolute=True" in calculator["description"]
-        starter = (REPO_ROOT / "packages" / "curio.rasterization@1" / calculator["source"]).read_text(encoding="utf-8")
+        starter = (REPO_ROOT / "packages" / "curio.scout@1" / calculator["source"]).read_text(encoding="utf-8")
         assert 'raster_calculate("subtract", [input_1, input_0], absolute=True' in starter
         assert "{{inputs.stacked}}" in section
         assert '"inputs"' not in section, "the section names the dataset bare"

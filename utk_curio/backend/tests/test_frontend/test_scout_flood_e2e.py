@@ -6,7 +6,7 @@ SCOUT's flood example's, which take every cell of SCOUT's 2592 by 2064 cell grid
 each wired into the nodes that read it; three Data Loading nodes reading the
 region's window of SCOUT's rasters, which the Data Catalog holds whole; and two
 scenarios, "No NbS" and "NbS" (its copy), each holding a Raster Calculator
-(``curio.rasterization@1``) that
+(``curio.scout@1``) that
 chooses the depth by nature-based solution (NbS) class, with its choice of NbS,
 a second that takes the depth's statistics, and an Autark map of the depth.
 Another Raster Calculator takes the size of NbS minus No NbS, which an Autark
@@ -100,8 +100,8 @@ if TYPE_CHECKING:
 
 DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "quad-cities-flood-vulnerability.json"
 TEST_NAME = "test_two_flood_scenarios_are_mapped_and_charted"
-CALCULATOR_TYPE = "curio.rasterization/raster-calculator"
-RASTERS_PACKAGE = "curio.rasterization@1"
+CALCULATOR_TYPE = "curio.scout/raster-calculator"
+RASTERS_PACKAGE = "curio.scout@1"
 MAP_TYPE = "curio.builtin/autk-grammar"
 COMPARE_TYPE = "curio.builtin/compare-scenarios"
 TRANSFORMATION_TYPE = "curio.builtin/data-transformation"

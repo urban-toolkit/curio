@@ -239,7 +239,7 @@
   "split": "train",
   "review": {
     "status": "pending-owner-review",
-    "draftedBy": "the SCOUT routing example step (#819's port, step 8), from the example JSON, 2026-10-15; its four charts as Scout's Bars nodes on the two scenarios' metrics, in the plan answering komar41's review (step 6.3), 2026-10-20; its Scout nodes the Rasterization package's (curio.rasterization@1) and its charts Vega-Lite nodes (#1270), 2026-10-31",
+    "draftedBy": "the SCOUT routing example step (#819's port, step 8), from the example JSON, 2026-10-15; its four charts as Scout's Bars nodes on the two scenarios' metrics, in the plan answering komar41's review (step 6.3), 2026-10-20; its Scout charts Vega-Lite nodes (#1270), 2026-10-31",
     "reviewedBy": null,
     "reviewedAt": null
   },

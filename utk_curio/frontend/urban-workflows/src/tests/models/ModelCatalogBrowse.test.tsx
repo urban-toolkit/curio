@@ -112,7 +112,7 @@ describe("the Model Catalog page", () => {
     expect(card("model.scout.deep-umbra@1")).not.toBeNull();
     expect(card("imported.xabc123def456@1")).not.toBeNull();
     expect(card("curio.builtin@1")).toBeNull();
-    expect(card("curio.rasterization@1")).toBeNull();
+    expect(card("curio.scout@1")).toBeNull();
     expect(screen.getByRole("heading", { name: /Model Catalog/ })).toBeInTheDocument();
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { apiFetch } = require("../../utils/authApi");
@@ -250,7 +250,7 @@ describe("the Model Catalog page", () => {
 describe("the Node Catalog page", () => {
   test("lists no model package", async () => {
     renderPage("/catalog/nodes");
-    await gridCard("curio.rasterization@1");
+    await gridCard("curio.scout@1");
     expect(card("curio.builtin@1")).not.toBeNull();
     for (const dirName of ["model.curio.ddrnet23-slim@1", "model.scout.deep-umbra@1", "imported.xabc123def456@1"]) {
       expect(card(dirName)).toBeNull();

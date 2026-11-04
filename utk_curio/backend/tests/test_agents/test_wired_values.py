@@ -23,10 +23,10 @@ REPO = Path(__file__).resolve().parents[4]
 
 PYTHON = "curio.builtin/computation-analysis"
 LOADER = "curio.builtin/data-loading"
-RASTERIZE = "curio.rasterization/rasterize-buildings"
-CALCULATOR = "curio.rasterization/raster-calculator"
+RASTERIZE = "curio.scout/rasterize-buildings"
+CALCULATOR = "curio.scout/raster-calculator"
 SHADOW = "model.scout.deep-umbra/accumulated-shadow"
-PACKAGES = ("curio.builtin@1", "curio.rasterization@1", "model.scout.deep-umbra@1")
+PACKAGES = ("curio.builtin@1", "curio.scout@1", "model.scout.deep-umbra@1")
 
 
 def _rows(*dir_names: str) -> dict:

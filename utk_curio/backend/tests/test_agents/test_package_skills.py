@@ -9,7 +9,7 @@ names that node's template among the package's own. A name shows once:
 Curio's skill, then the first package's in the lockfile's order, and a warning
 names each skill left out. A package's skill is read strictly, as Curio's
 are, and held as written: no marker of its own is filled. Scout
-(``curio.rasterization@1``) ships the first, ``rasterization``.
+(``curio.scout@1``) ships the first, ``scout``.
 
 Runs go through the scripted provider (``testing_provider``), on an account
 whose store holds Scout as the repository ships it. New names are read inside
@@ -52,15 +52,15 @@ from utk_curio.backend.tests.test_agents.test_skill_runs import (  # noqa: F401 
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-SCOUT = "curio.rasterization@1"
+SCOUT = "curio.scout@1"
 SCOUT_DIR = REPO_ROOT / "packages" / SCOUT
-SCOUT_SKILL = SCOUT_DIR / "skills" / "rasterization"
-CALC = "curio.rasterization/raster-calculator"
+SCOUT_SKILL = SCOUT_DIR / "skills" / "scout"
+CALC = "curio.scout/raster-calculator"
 BARS = "curio.builtin/vis-vega"
 #: An account whose store the pure calls read, under the test's own folder.
 KEY = "4343"
 PID = "p-package-skills"
-#: A dataflow that uses Rasterization: a Raster Calculator, a Vega-Lite chart, and a
+#: A dataflow that uses Scout: a Raster Calculator, a Vega-Lite chart, and a
 #: Python node of Curio's.
 SCOUT_NODES = [
     {"id": "calc", "type": CALC, "content": "", "x": 0, "y": 0},
@@ -128,7 +128,7 @@ def _scout_held() -> str:
     """Scout's skill as a run holds it: its body as written, wrapped."""
     from utk_curio.backend.app.agents.domain import skills
 
-    return f'<skill_content name="rasterization">\n{skills.parse(SCOUT_SKILL).body.rstrip()}\n</skill_content>'
+    return f'<skill_content name="scout">\n{skills.parse(SCOUT_SKILL).body.rstrip()}\n</skill_content>'
 
 
 def _warnings(caplog) -> list[str]:
@@ -152,16 +152,16 @@ def test_a_chat_on_a_scout_dataflow_lists_scout_after_its_agents_skills_and_load
     with_scout = _project(client, scripted, packages=[SCOUT], nodes=SCOUT_NODES)
     assert SCOUT in projects_storage.read_spec(key, with_scout)["dataflow"]["packages"]
     att = _attach(client, scripted, with_scout, NB)
-    testing_provider.push_replies(_read("rasterization"), "Done.")
+    testing_provider.push_replies(_read("scout"), "Done.")
     _run(client, scripted, with_scout, att)
     calls = _run_calls()
     listed = _listed(_slot(calls[0][0], "skill-catalog"))
     record_property("a chat's catalog on a Scout dataflow", json.dumps(listed))
-    assert listed == [*NB_SKILLS, "rasterization"]
+    assert listed == [*NB_SKILLS, "scout"]
     assert _scout_held() in calls[1][-1]["content"]
     record = _turns(client, scripted, with_scout, att)[-1]["execution"]
-    assert record["pins"]["skills"] == {"catalog": [*NB_SKILLS, "rasterization"], "handed": NB_INSTRUCTION}
-    assert record["skillsLoaded"] == ["rasterization"]
+    assert record["pins"]["skills"] == {"catalog": [*NB_SKILLS, "scout"], "handed": NB_INSTRUCTION}
+    assert record["skillsLoaded"] == ["scout"]
 
     testing_provider.reset()
     without = _project(client, scripted, nodes=SCOUT_NODES[2:])
@@ -170,7 +170,7 @@ def test_a_chat_on_a_scout_dataflow_lists_scout_after_its_agents_skills_and_load
     _run(client, scripted, without, att)
     (system, *_), = _run_calls()
     assert _listed(_slot(system, "skill-catalog")) == NB_SKILLS
-    assert '<name>rasterization</name>' not in system["content"]
+    assert '<name>scout</name>' not in system["content"]
 
 
 def test_a_run_writing_a_scout_node_is_handed_scout_and_one_writing_curios_python_node_is_not(
@@ -190,8 +190,8 @@ def test_a_run_writing_a_scout_node_is_handed_scout_and_one_writing_curios_pytho
     _store_scout(key)
     pid = _project(client, scripted, packages=[SCOUT], nodes=SCOUT_NODES)
     for inputs, handed in (
-        ({"nodeType": CALC, "intent": "how much the flood depth changed"}, [*CODE_SKILLS, "rasterization", "data-sources"]),
-        # Its chart is a Vega-Lite node (#1270): no Rasterization skill for it.
+        ({"nodeType": CALC, "intent": "how much the flood depth changed"}, [*CODE_SKILLS, "scout", "data-sources"]),
+        # Its chart is a Vega-Lite node (#1270): no Scout skill for it.
         ({"nodeId": "chart", "intent": "compare the scenarios' costs"}, [*VEGA_SKILLS, "data-sources"]),
         ({"nodeType": CA, "intent": "count the rows"}, [*CODE_SKILLS, "data-sources"]),
     ):
@@ -206,15 +206,15 @@ def test_a_run_writing_a_scout_node_is_handed_scout_and_one_writing_curios_pytho
                         json.dumps(_wrapped(_slot(system, "skills"))))
         assert _wrapped(_slot(system, "skills")) == handed, inputs
         assert record["pins"]["skills"] == {"handed": handed}
-        assert (_scout_held() in _slot(system, "skills")) == ("rasterization" in handed)
+        assert (_scout_held() in _slot(system, "skills")) == ("scout" in handed)
 
     testing_provider.reset()
     att = _attach(client, scripted, pid, NB, {"kind": "node", "targetId": "calc"})
     testing_provider.push_reply("Done.")
     _run(client, scripted, pid, att)
     (system, *_), = _run_calls()
-    assert _wrapped(_slot(system, "skills")) == [*CODE_SKILLS, "rasterization", *NB_INSTRUCTION]
-    assert _listed(_slot(system, "skill-catalog")) == [*NB_SKILLS, "rasterization"]
+    assert _wrapped(_slot(system, "skills")) == [*CODE_SKILLS, "scout", *NB_INSTRUCTION]
+    assert _listed(_slot(system, "skill-catalog")) == [*NB_SKILLS, "scout"]
 
 
 def test_every_scout_template_is_handed_scout_and_every_agent_on_its_dataflow_lists_it(tmp_curio):
@@ -231,21 +231,21 @@ def test_every_scout_template_is_handed_scout_and_every_agent_on_its_dataflow_li
     spec = {"dataflow": {"packages": [SCOUT], "nodes": SCOUT_NODES, "edges": []}}
     unhanded = [
         node_type for template in templates
-        for node_type in (f"curio.rasterization/{template}", f"curio.rasterization/{template}@1")
-        if "rasterization" not in _names(skill_runs.for_delegated(
+        for node_type in (f"curio.scout/{template}", f"curio.scout/{template}@1")
+        if "scout" not in _names(skill_runs.for_delegated(
             KEY, PID, _manifest(NB), "node.content.generate", {"nodeType": node_type}, spec, _preamble(NB),
         ).handed)
     ]
     assert unhanded == []
     reader = skill_runs.for_delegated(KEY, PID, _manifest(READER), "dataflow.explain", {}, spec, _preamble(READER))
-    assert _names(reader.handed)[-1] == "rasterization", _names(reader.handed)
+    assert _names(reader.handed)[-1] == "scout", _names(reader.handed)
 
     no_scout_nodes = {"dataflow": {"packages": [SCOUT], "nodes": SCOUT_NODES[2:], "edges": []}}
     reader = skill_runs.for_delegated(KEY, PID, _manifest(READER), "dataflow.explain", {}, no_scout_nodes,
                                       _preamble(READER))
     assert "scout" not in _names(reader.handed)
     finder = skill_runs.for_chat(KEY, PID, _manifest(DF), no_scout_nodes, {"kind": "canvas"}, _preamble(DF), [])
-    assert finder.names == ["catalogs", "data-sources", "rasterization"]
+    assert finder.names == ["catalogs", "data-sources", "scout"]
     assert skill_runs.grants([], finder) == ["skill.read"]
 
 
@@ -378,10 +378,10 @@ def test_every_skill_a_shipped_package_ships_serves_its_own_templates_by_names_t
             assert set(named[skill_runs.FEATURES_KEY]) <= set(skill_runs.FEATURES), folder
             assert "{{" not in skill.body, folder
             served[f"{root.name}/{folder.name}"] = named
-    assert list(served) == [f"{SCOUT}/rasterization"], list(served)
+    assert list(served) == [f"{SCOUT}/scout"], list(served)
     scout = skills.parse(SCOUT_SKILL)
     assert (scout.license, scout.metadata["author"]) == ("MIT", "curio")
     templates = [t["id"] for t in json.loads((SCOUT_DIR / "manifest.json").read_text(encoding="utf-8"))["templates"]]
-    assert served[f"{SCOUT}/rasterization"] == {
+    assert served[f"{SCOUT}/scout"] == {
         skill_runs.TEMPLATES_KEY: templates, skill_runs.BEHAVIORS_KEY: [], skill_runs.FEATURES_KEY: [],
     }

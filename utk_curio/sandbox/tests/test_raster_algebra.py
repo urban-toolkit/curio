@@ -30,7 +30,7 @@ GRID = {
     "crs": "EPSG:32616", "width": 3, "height": 2, "originX": 447000, "originY": 4637000, "resX": 30, "resY": -30,
 }
 #: Scout's sources folder, whose ``scout_rasters`` package holds the raster algebra.
-SCOUT_SOURCES = Path(__file__).resolve().parents[3] / "packages" / "curio.rasterization@1" / "sources"
+SCOUT_SOURCES = Path(__file__).resolve().parents[3] / "packages" / "curio.scout@1" / "sources"
 #: Scout's modules while a test that uses the ``scout_rasters`` fixture runs.
 _SCOUT: dict = {}
 

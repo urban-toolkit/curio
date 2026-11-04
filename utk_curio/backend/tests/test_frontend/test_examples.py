@@ -93,11 +93,11 @@ EXAMPLE_INVARIANTS = [
      {"curio.builtin/data-loading": 2, "curio.builtin/computation-analysis": 1,
       "curio.builtin/vis-vega": 1}, False),
     # Rasterize Buildings returns one raster, so no node picks it out (#819).
-    # It and the Raster Calculator are Scout's (curio.rasterization@1).
+    # It and the Raster Calculator are Scout's (curio.scout@1).
     ("24-scout-shadow-model-chicago-loop.json", 7, 7,
-     {"curio.builtin/data-loading": 1, "curio.rasterization/rasterize-buildings": 1,
+     {"curio.builtin/data-loading": 1, "curio.scout/rasterize-buildings": 1,
       "model.scout.deep-umbra/accumulated-shadow": 1,
-      "curio.rasterization/raster-calculator": 1, "curio.builtin/autk-grammar": 3}, False),
+      "curio.scout/raster-calculator": 1, "curio.builtin/autk-grammar": 3}, False),
     # #576: one Spatial Join per operation, plus two over a point on an edge.
     ("25-spatial-join-operations.json", 25, 28,
      {"curio.builtin/data-loading": 6, "curio.builtin/data-transformation": 1,
@@ -315,7 +315,7 @@ def test_example_flows_meet_on_input_circles(basename, expected_fan_in):
 WHATIF_CHART = "whatif-compare-chart"
 WHATIF_CHANGE = "whatif-compare-difference"
 WHATIF_ROADS = ["whatif-baseline-roads", "whatif-modified-roads", "whatif-towers-roads"]
-SCOUT_PACKAGE = os.path.join(REPO_ROOT, "packages", "curio.rasterization@1")
+SCOUT_PACKAGE = os.path.join(REPO_ROOT, "packages", "curio.scout@1")
 
 
 def test_example_06_is_three_scenarios_over_one_context():
@@ -402,7 +402,7 @@ def test_example_06_is_three_scenarios_over_one_context():
     # No Compare Scenarios node is left; Scout's package, whose Bars the chart
     # is, is the one the dataflow declares.
     assert not [n["id"] for n in flow["nodes"] if n["type"].split("@")[0] == "curio.builtin/compare-scenarios"]
-    assert flow["packages"] == ["curio.rasterization@1"]
+    assert flow["packages"] == ["curio.scout@1"]
     # Each scenario's Roads node, its last, reads its own shadow step and takes
     # the roads layer, each road with its sunlight, out of the five it hands on
     # by a layer chip: the chart reads one table per circle, not a node's

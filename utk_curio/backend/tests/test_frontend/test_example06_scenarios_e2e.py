@@ -8,7 +8,7 @@ towers, 200 Clarendon and Raffles, by their ``building_id`` before copies of
 Baseline's nodes, and feeds a map of the buildings it is linked to. The
 factor is a ``height_factor`` widget on each shadow step, read as an Autark
 uniform. Each scenario ends in a Roads node that takes the roads layer out of
-the five its shadow step hands on. Outside them, Scout's Bars (``curio.rasterization@1``)
+the five its shadow step hands on. Outside them, Scout's Bars (``curio.scout@1``)
 charts the three Roads nodes' mean road sunlight, and a Python node, Sunlight
 change, takes each road's sunlight change in Twice as tall from Baseline's map
 and Twice as tall's, the roads matched by their shapes, which an Autark map

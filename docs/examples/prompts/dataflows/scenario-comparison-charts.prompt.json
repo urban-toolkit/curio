@@ -634,7 +634,7 @@
   "split": "train",
   "review": {
     "status": "pending-owner-review",
-    "draftedBy": "the scenario comparison charts step (#914's port, step 19), from the example JSON, 2026-10-17; its seven charts the SCOUT Comparison package's nodes (step 28.2), 2026-10-18; those charts the Scout package's (curio.scout@1), 2026-10-20; each chart taking its scenarios' nodes directly, with no Compare Scenarios node, and the grouped bars and the table Scout's nodes too (the plan answering komar41's review, step 6.2), 2026-10-20; its Scout nodes the Rasterization package's (curio.rasterization@1) and its charts Vega-Lite nodes (#1270), 2026-10-31",
+    "draftedBy": "the scenario comparison charts step (#914's port, step 19), from the example JSON, 2026-10-17; its seven charts the SCOUT Comparison package's nodes (step 28.2), 2026-10-18; those charts the Scout package's (curio.scout@1), 2026-10-20; each chart taking its scenarios' nodes directly, with no Compare Scenarios node, and the grouped bars and the table Scout's nodes too (the plan answering komar41's review, step 6.2), 2026-10-20; its Scout charts Vega-Lite nodes (#1270), 2026-10-31",
     "reviewedBy": null,
     "reviewedAt": null
   },

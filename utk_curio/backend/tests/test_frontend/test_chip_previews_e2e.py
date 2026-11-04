@@ -81,7 +81,7 @@ VEGA_CHART = "node12"
 VEGA_POOL = "3a98c743-bee9-492a-b1ce-dbc17be97f14"
 #: Chicago Loop's chart, Scout's Bars, and the packages it needs.
 LOOP_CHART = "d0e547ba-e7d6-52e1-9c0e-f047443b715c"
-LOOP_PACKAGES = ("curio.rasterization@1", "model.scout.deep-umbra@1")
+LOOP_PACKAGES = ("curio.scout@1", "model.scout.deep-umbra@1")
 
 #: The stem of this module's frames.
 STEM = "chip-previews"

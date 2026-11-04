@@ -14,7 +14,7 @@ from utk_curio.backend.app.execution import workflow_spec as ws
 from utk_curio.backend.app.packages.application import templates as pkg_services
 
 BUILTIN = "curio.builtin"
-#: Scout's (``curio.rasterization@1``) two raster nodes and its fifteen charts.
+#: Scout's (``curio.scout@1``) two raster nodes and its fifteen charts.
 RASTER_NODES = ("raster-calculator", "rasterize-buildings")
 SCOUT_CHARTS = (
     "lines-with-band", "curves-by-group", "bars-with-error-bars", "ensemble-strips",
@@ -62,7 +62,7 @@ class TestTemplateContentKind:
         # Every shipped template is routed above, and no other ships: the
         # Merge Flow left the manifest (#662), its fan-in now lands on the
         # input circles of the node it fed, and the Raster Calculator is a
-        # node of Scout, curio.rasterization@1 (below).
+        # node of Scout, curio.scout@1 (below).
         assert set(kinds) == {
             "data-loading", "data-export", "data-transformation", "data-pool",
             "computation-analysis", "data-summary", "js-computation",
@@ -78,7 +78,7 @@ class TestTemplateContentKind:
 
         from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
-        root = Path(__file__).resolve().parents[4] / "packages" / "curio.rasterization@1"
+        root = Path(__file__).resolve().parents[4] / "packages" / "curio.scout@1"
         manifest = load_package_manifest(root)
         kinds = {t.template_id: pkg_services.template_content_kind(t) for t in manifest.templates}
         assert {key: kinds[key] for key in RASTER_NODES} == {"raster-calculator": "code", "rasterize-buildings": "code"}

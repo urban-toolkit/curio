@@ -336,7 +336,7 @@ def test_a_spec_is_kept_as_it_is_and_a_templates_widgets_set_in_a_plan_or_a_node
     assert any(place.endswith("default_preamble.md") for place in places), places
     assert any(place.endswith("orchestration_instruction.md") for place in places), places
     descriptions = [(where, text) for where, text in texts
-                    if where.startswith("curio.rasterization/") and where.endswith(", its description")]
+                    if where.startswith("curio.scout/") and where.endswith(", its description")]
     assert len(descriptions) == 2, descriptions
     unsaid = [(where, claim) for where, text in texts for claim in _claims(text) if _IN_BOTH not in claim]
     assert not unsaid, (

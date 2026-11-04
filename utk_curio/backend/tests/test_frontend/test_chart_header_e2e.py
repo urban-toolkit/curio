@@ -52,7 +52,7 @@ DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "chicago-loop-s
 TEST_NAME = "test_the_chart_header_lists_its_chips_and_each_scenario_tag_drags_its_chip"
 #: Scout's Bars, "Mean accumulated shadow".
 CHART = "d0e547ba-e7d6-52e1-9c0e-f047443b715c"
-PACKAGES = ("curio.rasterization@1", "model.scout.deep-umbra@1")
+PACKAGES = ("curio.scout@1", "model.scout.deep-umbra@1")
 SCENARIO_MIME = "application/x-curio-scenario"
 #: Each scenario tag under Scenarios, and what it writes dropped at the end of
 #: the spec's first line, outside any string.

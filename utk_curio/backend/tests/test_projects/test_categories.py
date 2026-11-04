@@ -21,8 +21,8 @@ example 06 ``Vega-Lite`` and ``SCOUT`` when its chart did, and
 chicago-loop-shadow-towers, lower-manhattan-park-shade and
 quad-cities-flood-vulnerability ``Vega-Lite`` when their charts did
 (2026-10-20).
-Their charts became Vega-Lite nodes and the package Rasterization
-(``curio.rasterization@1``, #1270): example 06 and the charts dataflow lost
+Their charts became Vega-Lite nodes and the package Scout
+(``curio.scout@1``, #1270): example 06 and the charts dataflow lost
 ``SCOUT``, which only their charts had given them.
 The automatic sections must reproduce it from the files alone, and the
 hand-set ones live in the files themselves.
@@ -150,8 +150,8 @@ def _tags(nodes: list[dict], datasets: list[dict] | None = None) -> list[str]:
 
 
 @pytest.mark.parametrize("node_type", [
-    "curio.rasterization/rasterize-buildings@1",
-    "curio.rasterization/raster-calculator@1",
+    "curio.scout/rasterize-buildings@1",
+    "curio.scout/raster-calculator@1",
 ])
 def test_a_node_from_a_scout_package_tags_the_dataflow_scout(node_type):
     node = {"id": "a", "type": node_type, "content": ""}
@@ -194,14 +194,14 @@ def test_the_park_shade_dataflow_is_tagged_scout_by_its_package_nodes_alone():
     assert "tags" not in hand_categories(spec)
     nodes = spec["dataflow"]["nodes"]
     without = {"dataflow": {**spec["dataflow"], "nodes": [
-        n for n in nodes if not n["type"].startswith(("curio.rasterization/", "model.scout."))
+        n for n in nodes if not n["type"].startswith(("curio.scout/", "model.scout."))
     ]}}
     assert "SCOUT" not in derive(without, DatasetKinds(None))["tags"]
 
 
 def test_the_flood_dataflow_is_tagged_scout_by_its_raster_calculators_alone():
     """``quad-cities-flood-vulnerability`` reads SCOUT's datasets, and its
-    Raster Calculators are Rasterization's (``curio.rasterization``) nodes:
+    Raster Calculators are Scout's (``curio.scout``) nodes:
     with no dataset and no code, its nodes alone still tag it, as computed
     tags are. Its three charts are Vega-Lite nodes (#1270), which tag it
     ``Vega-Lite``; without them, its Raster Calculators alone still tag it
@@ -209,7 +209,7 @@ def test_the_flood_dataflow_is_tagged_scout_by_its_raster_calculators_alone():
     spec = _spec("dataflows/quad-cities-flood-vulnerability")
     assert "tags" not in hand_categories(spec)
     nodes = spec["dataflow"]["nodes"]
-    calculators = [n for n in nodes if n["type"] == "curio.rasterization/raster-calculator"]
+    calculators = [n for n in nodes if n["type"] == "curio.scout/raster-calculator"]
     assert len(calculators) == 7
     charts = {n["id"]: n["type"] for n in nodes if n["type"] == "curio.builtin/vis-vega"}
     assert len(charts) == 3

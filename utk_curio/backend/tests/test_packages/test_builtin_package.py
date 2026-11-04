@@ -4,7 +4,7 @@ The built-in package is auto-installed for every user and provides the 14
 default node templates. A regression in its manifest would silently strand
 users with an empty palette, so we exercise the load + payload-serialize
 paths against the on-disk artefact. The Raster Calculator is not one of them:
-it is a node of Scout, ``curio.rasterization@1`` (``test_scout_rasters.py``).
+it is a node of Scout, ``curio.scout@1`` (``test_scout_rasters.py``).
 """
 
 from __future__ import annotations
@@ -113,7 +113,7 @@ def test_the_note_holds_text_and_runs_nothing(builtin_package_dir: Path):
 
 def test_no_raster_node_is_built_in(builtin_package_dir: Path):
     """The Raster Calculator left the built-in nodes for Scout,
-    ``curio.rasterization@1``, and no other raster node took its place."""
+    ``curio.scout@1``, and no other raster node took its place."""
     manifest = load_package_manifest(builtin_package_dir)
     assert not [t.template_id for t in manifest.templates if "raster" in t.template_id], (
         [t.template_id for t in manifest.templates]

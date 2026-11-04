@@ -85,8 +85,8 @@ import { clearPackageNodes, tryGetNodeDescriptor } from '../../registry/nodeRegi
 
 const LOADER = 'curio.builtin/data-loading@1';
 const PYTHON = 'curio.builtin/computation-analysis@1';
-const RASTERIZE = 'curio.rasterization/rasterize-buildings@1';
-const CALCULATOR = 'curio.rasterization/raster-calculator@1';
+const RASTERIZE = 'curio.scout/rasterize-buildings@1';
+const CALCULATOR = 'curio.scout/raster-calculator@1';
 const SHADOW = 'model.scout.deep-umbra/accumulated-shadow@1';
 
 const PACKAGES_ROOT = path.resolve(__dirname, '../../../../../../packages');
@@ -141,7 +141,7 @@ function listedPackage(dirName: string): any {
 beforeAll(() => {
   registerPackageTemplates([
     listedPackage('curio.builtin@1'),
-    listedPackage('curio.rasterization@1'),
+    listedPackage('curio.scout@1'),
     listedPackage('model.scout.deep-umbra@1'),
   ]);
 });
