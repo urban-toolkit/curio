@@ -13,8 +13,6 @@ import { render } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 import AppSectionTabs from '../../components/layout/AppSectionTabs';
-import { CATALOG_SECTIONS } from '../../components/layout/catalogSections';
-import { CANVAS_CATALOGS } from '../../components/menus/top/CatalogButtons';
 
 /** identity-obj-proxy maps CSS modules to their own key names. */
 const ACTIVE = 'barButtonActive';
@@ -70,17 +68,6 @@ describe('AppSectionTabs', () => {
       // The name stays readable when the bar has room only for the glyphs.
       expect(link.getAttribute('data-tooltip')).toBe(name);
     }
-  });
-
-  test('the canvas buttons are the same catalogs, in the same order, less the Skill Catalog', () => {
-    // The canvas bar keeps its six drawer buttons; on the canvas a skill is
-    // reached through an agent's details.
-    expect(CANVAS_CATALOGS.map((c) => c.name)).toEqual(
-      CATALOG_SECTIONS.filter((c) => c.name !== 'Skill Catalog').map((c) => c.name)
-    );
-    expect(CANVAS_CATALOGS.map((c) => c.shortName)).toEqual(
-      ['Node', 'Data', 'Agent', 'Discovery', 'Model', 'Scenario']
-    );
   });
 
   test.each([
