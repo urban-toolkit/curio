@@ -13,7 +13,9 @@ runs one job of either kind, so the desktops' room counts the jobs of both. A
 self-hosted runner's labels are its machine (arcade, utk, utk-desktop-01,
 utk-desktop-02; both desktops also carry utk-desktop) and its kind (cpu or
 gpu). The skill-evals job picks no runner: it runs on arcade-cpu-40, which
-carries ``skill-evals`` instead of ``cpu``, and holds no pool's room.
+carries ``skill-evals`` beside ``cpu``, and holds no pool's room. Since an
+evaluation can hold arcade-cpu-40 for hours, the pool's room leaves it out,
+and it takes CPU jobs between evaluations.
 GitHub cannot express "this runner, or that one if busy": ``runs-on`` has no
 "or", and it sends ``ubuntu-latest`` jobs only to its own runners. So a run
 picks twice: the pick-runners job, for the jobs that start at once, and
@@ -72,8 +74,9 @@ CPU_POOLS = ("arcade", "hosted", "desktop")
 #: The GPU pools a dispatch can name, and the place each one is.
 GPU_POOLS = {"arcade": "arcade-gpu", "utk": "utk", "desktop": "desktop-gpu"}
 
-#: Runners in the arcade CPU pool (arcade-cpu-01..39). arcade-cpu-40 carries
-#: EVAL_LABEL instead of cpu: it runs the skill-evals job alone.
+#: Runners of the arcade CPU pool a pick counts on (arcade-cpu-01..39).
+#: arcade-cpu-40 carries cpu and EVAL_LABEL: it runs the skill-evals job, which
+#: can hold it for hours, and takes CPU jobs in between, as room no pick needs.
 CPU_RUNNERS = 39
 #: The label of the runner the skill-evals job runs on (.github/workflows/skill-evals.yml).
 #: Its jobs hold no pool's room, whatever their runner's name.

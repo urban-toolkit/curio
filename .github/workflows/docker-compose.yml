@@ -204,7 +204,9 @@ env:
 #     (utk-desktop-01 and -02, [self-hosted, utk-desktop]) when arcade is full
 #     too.
 #   * skill-evals: arcade-cpu-40 alone ([self-hosted, arcade, skill-evals]),
-#     out of the CPU pool, so the skills' live evaluations queue there.
+#     so the skills' live evaluations queue there. It keeps its cpu label and
+#     takes CPU jobs between evaluations, but the CPU pick counts only the
+#     other 39.
 #   * test-gpu: an arcade GPU runner (arcade-gpu-01..04, [self-hosted, arcade,
 #     gpu]) while one is free, then utk-gpu ([self-hosted, utk, gpu]), and
 #     utk-desktop-01 ([self-hosted, utk-desktop-01, gpu]) when utk-gpu is
