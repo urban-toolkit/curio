@@ -258,6 +258,7 @@ not (a dataflow never saved, a hosted guest's own canvas).
 | `dashboardOn` | `boolean` | A PROP, not state: true when this tree is the dashboard page rather than the canvas |
 | `canvasView` | `"canvas" \| "notebook"` | How the canvas shows the dataflow, kept in the address as `?view=notebook` through the router (`CanvasViewAddress`), also across a navigation that keeps the dataflow open; always `"canvas"` on the dashboard |
 | `scenarios` | `Scenario[]` | The dataflow's scenarios (`dataflow.scenarios`), saved with it |
+| `scenarioSets` | `ScenarioSet[]` | The dataflow's scenario sets (`dataflow.scenarioSets`), saved with it ([Scenario sets](#scenario-sets)) |
 
 When a node produces output, it calls `outputCallback(nodeId, output)`, which updates `outputs`. React re-renders cause downstream nodes (those connected by an edge from the node that just executed) to detect the new input and request the data from the backend.
 
