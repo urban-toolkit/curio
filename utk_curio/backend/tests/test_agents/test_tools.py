@@ -366,6 +366,29 @@ class TestDataflowReadProjection:
         assert rows["a2"]["copiedFrom"] == ["a"]
         assert "widgets" not in rows["load"] and "copiedFrom" not in rows["a"]
 
+    def test_a_shipped_dataflow_past_the_bound_reads_as_whole_json_with_every_scenario(self, tmp_curio):
+        """scenario-comparison-charts is past the tool output bound as it
+        ships: the read leaves parts out rather than cutting its JSON, keeps
+        every node, every edge and every scenario, and says what it left out."""
+        from pathlib import Path
+
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        shipped = Path(__file__).resolve().parents[4] / "docs" / "examples" / "dataflows" / "scenario-comparison-charts.json"
+        spec = json.loads(shipped.read_text(encoding="utf-8"))
+        projects_storage.write_spec(self.UKEY, self.PID, spec)
+        status, text = tools.execute_read_tool(
+            "dataflow.read", user_key=self.UKEY, project_id=self.PID, target=None, params={}
+        )
+        assert status == "ok"
+        assert len(text) <= tools.TOOL_RESULT_MAX_CHARS, len(text)
+        payload = json.loads(text)
+        dataflow = spec["dataflow"]
+        assert [s["id"] for s in payload["scenarios"]] == [s["id"] for s in dataflow["scenarios"]]
+        assert sorted(e["id"] for e in payload["edges"]) == sorted(e["id"] for e in dataflow["edges"])
+        assert [n["id"] for n in payload["nodes"]] == [n["id"] for n in dataflow["nodes"]]
+        assert payload["elided"], "a read that left parts out says what it left out"
+
     def test_a_dataflow_without_scenarios_projects_as_before(self, tmp_curio):
         self._write_big_spec(n_nodes=3, content_chars=10)
         _, text = tools.execute_read_tool(
