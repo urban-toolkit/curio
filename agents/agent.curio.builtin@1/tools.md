@@ -63,7 +63,7 @@ Change the settings of ONE node already on the canvas, as picking them in the no
 - dataPool: The Data Pool's conflict modes to change: each mode given is picked, one left out stays, and {} puts both back to OVERWRITE.
 - simpleVis: The Simple View's image column: {"imageColumn": "<column>"} shows that column alone, and {} shows every image column.
 - spatialJoin: The Spatial Join's operation and output to change: each one given is picked, one left out stays, and {} puts both back to intersects and pairs.
-- widgets: A new value for each widget named, {"<widget name>": <value>}: a widget the node has, and a value its type and options take.
+- widgets: A new value for each widget named, {"<widget name>": <value>}: a widget the node has, and a value its type and options take, as JSON.
 
 ## catalog.search
 
@@ -163,7 +163,7 @@ Change the dataflow graph: the arguments are the plan, which lands step by step;
 - scenarios.nodes: A selection's nodes: refs of this plan or existing node ids.
 - scenarios.duplicateOf: A duplicate: the name of a scenario earlier in this list, whose nodes it copies.
 - scenarios.copies: A duplicate: each node of that scenario to the ref its copy takes.
-- scenarios.values: A duplicate: a copy's ref to the widget values it changes, {name: value}.
+- scenarios.values: A duplicate: a copy's ref to the widget values it changes, {name: value}, each as JSON.
 - scenarios.description: What it changes, in one line.
 - scenarios.color: A #RRGGBB color; the next free one when absent.
 - removeNodes: Existing node ids to remove.
@@ -254,6 +254,7 @@ Delegate one specialized capability to the agent that handles it, and receive it
 - widgets[]: A widget: name, type, label, default, and options (choices, display, min, max, step, units).
 - widgets.name: Letters, digits and underscores: the code places it as {{widgets.reference:name}}.
 - widgets.label: What the Widgets tab shows beside the control.
+- widgets.default: The value until one is set, as JSON: 2.5, true, [1, 5] or "north".
 - spatialJoin: A Spatial Join node's operation and output; it holds no content.
 - dataPool: A Data Pool node's conflict modes, each OVERWRITE when absent; it holds no content.
 - dataPool.insideChart: How the selects of one chart combine.

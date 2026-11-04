@@ -2855,6 +2855,32 @@ class TestPlanTopologyMint:
         ]
         assert card["canvas"]["removedEdgeIds"] == ["e5"]
 
+    def test_a_removal_names_a_connection_by_the_id_the_canvas_gave_it(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch,
+    ):
+        """The canvas names a connection reactflow__edge-<source><handle>-<target><handle>:
+        94 characters for the one docs/examples/dataflows/vega.json holds, which the
+        scenarios evaluation's second case asks to rewire, and 265 of the shipped
+        examples' 302 run past the 64 a node's id takes. On 11-03 gemma4's fenced
+        plans of that case named it, were refused for its length, and left it."""
+        from pathlib import Path
+
+        user, token = user_and_token
+        example = Path(__file__).resolve().parents[4] / "docs" / "examples" / "dataflows" / "vega.json"
+        (edge_id,) = [e["id"] for e in json.loads(example.read_text(encoding="utf-8"))["dataflow"]["edges"]]
+        assert len(edge_id) == 94
+        cyclic = self.EDGES + [{"id": edge_id, "source": "vis", "target": "combine",
+                                "sourceHandle": "out", "targetHandle": "in_1"}]
+        plan = {"goal": "break", "removeEdges": [edge_id]}
+        att_id, calls = self._setup(client, user, token, alice_project, monkeypatch,
+                                    replies=["Fix.\n" + self._tail(plan), "It was refused."], edges=cyclic)
+        card = self._landed(self._run(client, token, alice_project, att_id).get_json())
+        assert card is not None, calls[-1][-1]["content"]
+        assert card["plan"]["removedEdges"] == [
+            {"id": edge_id, "fromLabel": "Metric Distribution", "toLabel": "Pool Input Combine"},
+        ]
+        assert card["canvas"]["removedEdgeIds"] == [edge_id]
+
     def test_remove_and_readd_as_data_is_still_refused(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         # Rounds two to five of the session: removeEdges the loop edge, add it back as data.
         user, token = user_and_token
