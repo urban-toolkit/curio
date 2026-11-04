@@ -26,12 +26,12 @@ flowchart LR
   MC["Twice as tall · autk-grammar<br/>shadow WGSL, height_factor 2"]
   MM["Twice as tall · autk-grammar<br/>map · roads by sunlight"]
   MR["Twice as tall · Python<br/>Roads · the roads layer"]
-  TE["Two towers removed · Interaction<br/>remove building_id 29623484, 29628154"]
+  TE["Two towers removed · Map Editor<br/>remove building_id 29623484, 29628154"]
   TB["Two towers removed · autk-grammar<br/>map · buildings by height"]
   TC["Two towers removed · autk-grammar<br/>shadow WGSL, height_factor 1"]
   TM["Two towers removed · autk-grammar<br/>map · roads by sunlight"]
   TR["Two towers removed · Python<br/>Roads · the roads layer"]
-  CC["Scout · Bars<br/>mean sunlight"]
+  CC["Vega-Lite · Bars<br/>mean sunlight"]
   CD["Python<br/>sunlight change"]
   DM["autk-grammar<br/>map · roads by sunlight change"]
   D --> P
@@ -52,11 +52,14 @@ flowchart LR
 ```
 
 A single `data` node loads the PBF once, and a `data-pool` hands its layers to every scenario.
-The loader and the pool are the scenarios' fixed context: they sit outside all three, and all three
-read them. Each scenario's nodes are its levers: the shadow step, its map and its Roads node, and
-in Two towers removed the Map Editor node before them and its map of the buildings. In Twice as
-tall and in Two towers removed the shadow step, the map and the Roads node are copies of their
-Baseline twins and name them, so the scenarios' levers are paired when they are compared.
+The three scenarios are one scenario set, **Back Bay road sunlight**. The loader and the pool are
+its shared context: they sit outside all three boxes, and all three read them. Each scenario's
+scenario-specific nodes are its shadow step, its map and its Roads node, and in Two towers removed
+the Map Editor node before them and its map of the buildings. In Twice as tall and in Two towers
+removed the shadow step, the map and the Roads node are copies of their Baseline twins and name
+them, so the scenarios' nodes pair when they are compared. The chart of mean sunlight, the
+sunlight change and its map are the set's shared outcomes: the chart reads all three scenarios,
+and the change, which its map draws, reads Baseline and Twice as tall.
 
 ## Data
 
@@ -82,17 +85,18 @@ expects. The downstream compute and map nodes reference these layers by name (`t
 
 ## Scenarios
 
-| Scenario | Colour | Its nodes | height_factor |
+| Scenario | Colour | Scenario-specific nodes | height_factor |
 | --- | --- | --- | --- |
 | Baseline | blue | Shadow study, Roads by sunlight, Roads | 1 |
 | Twice as tall | orange | copies of the three, each naming its twin | 2 |
-| Two towers removed | green | Interaction and Buildings by height, then copies of the three | 1 |
+| Two towers removed | green | Two towers removed (a Map Editor node) and Buildings by height, then copies of the three | 1 |
 
-The **Scenario** catalog's **In project** tab (**Scenario** in the top bar) lists the three, and each
-one's details list the data pool as the fixed context it reads. Collapse them there and press
+The Scenario Catalog drawer's **In project** tab (**Scenario** in the top bar) lists the three in
+the set's panel, and each one's details list the loader and the pool as the shared context it
+reads. On the canvas, collapse each scenario with the **Collapse** button above its frame and press
 **Run All**: each scenario is one box, the loader and the pool run once for all three, and each box
-shows its outcomes, its maps and its Roads node, once they are done. Double-click a box to expand it
-in place.
+shows the latest output of its nodes, its maps and its Roads node, once they are done.
+Double-click a box to expand it in place.
 
 ## Removing two towers
 

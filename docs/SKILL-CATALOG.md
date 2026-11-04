@@ -51,7 +51,7 @@ The skills Curio ships are the folders of its [`skills/`](../skills/), one skill
 | `autark-starter` | start an Autark map from its node's starter document | Autark nodes |
 | `map-edits` | write a Map Editor node's call and edits, keeping filters in their own node | Map Editor nodes |
 | `interaction-edges` | link views with interaction edges and Data Pools | Data Pools, and dataflows with interaction edges |
-| `scenarios` | work with scenario boxes, their chips and colors | dataflows with scenario boxes, and a chat message that says scenario, scenarios, what if or what-if |
+| `scenarios` | work with scenario sets, each scenario's scenario-specific nodes, shared context and shared outcomes, and the chips and colors that compare them | dataflows with scenario boxes, and a chat message that says scenario, scenarios, what if or what-if |
 | `dashboards` | keep a dataflow's pinned tiles working on its dashboard | dataflows with pinned tiles |
 | `provenance` | read a node's history and the agents' entries in it | nothing: a chat loads it when a task needs it |
 | `reuse-first` | choose a node type: a listed template, then a package to add, then a written package | by name: the Node Builder's and the Researcher's chats, the Node Builder building a node for another agent, Write a package and Recommend packages |

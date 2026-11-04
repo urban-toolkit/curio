@@ -460,10 +460,10 @@ scenario box's color. An input whose node has not run says which node to run.
   ([Widgets](#widgets)).
 
 Drag a node's bottom-right corner to resize it. For someone who watches a dataflow,
-nodes keep their size and have no delete. A minimized node is a small chip with
+nodes keep their names and sizes and have no delete. A minimized node is a small chip with
 its icon and title, wrapped to the chip and cut short when it still doesn't fit;
 hover the title to read it whole. Drag the chip's bottom-right corner to resize
-the chip alone, so a longer title shows; the node opens back at its own size. The
+the chip alone: a larger chip shows more of the title, and the node opens back at its own size. The
 dataflow keeps it a chip at its size; click it to open the node again. Double-click a node where you
 would drag it, such as its header, to zoom the view onto it.
 
@@ -810,88 +810,101 @@ these node kinds, with a tuple on one of them.
 
 ## Scenarios
 
-A scenario is a named selection of a dataflow's nodes, or the whole dataflow, used
-to compare alternatives: the same analysis with buildings twice as tall, say. It
-splits the dataflow into three parts:
+A scenario is a named selection of a dataflow's nodes, used to compare
+alternatives: the same analysis with buildings twice as tall, say. It splits the
+dataflow into three parts:
 
-- **Its own nodes:** the nodes unique to it, which is what an alternative changes:
-  its data loaders, widget values, code and specs, and the features it removes or
-  changes by hand (see [The Map Editor node](#the-map-editor-node)).
-- **Shared context:** every node upstream of it, outside every scenario, that it
-  uses. The scenario takes their outputs as given.
-- **Shared outcomes:** every node downstream of it, outside every scenario, that it
+- **Scenario-specific nodes:** the nodes unique to it, in its box, which is what
+  an alternative changes: its data loaders, widget values, code and specs, and the
+  features it removes or changes by hand (see [The Map Editor node](#the-map-editor-node)).
+- **Shared context:** every node upstream of it, outside every box, that it uses.
+  The scenario takes their outputs as given.
+- **Shared outcomes:** every node downstream of it, outside every box, that it
   feeds: the maps, charts and tables the alternatives are compared on.
 
-Every scenario is in a **scenario set**, the scenarios that answer one question
-and are compared on the same context and outcomes; scenarios of different sets
-never mix. A context or outcome node can belong to some of a set's scenarios
-only. It carries a row of circles under it, one per scenario of its set, filled
-where that scenario uses it.
+Every scenario is in a **scenario set**: the scenarios that answer one question,
+compared on the same shared context and shared outcomes. Scenarios of different
+sets never mix. A node of a set's shared context or shared outcomes can belong to
+some of its scenarios only.
 
-A node belongs to one scenario at most. A scenario of the whole dataflow has no
-context.
+A node belongs to one scenario at most.
 
-To make one:
+To define one:
 
-1. Choose **View → Define scenario**. A panel opens beside the canvas and asks
-   for the nodes unique to the scenario: select them on the canvas (click one,
-   or hold Shift and drag a box around several) and click **+ Add selected
-   node**; **×** takes one out. Nodes selected before are listed already.
-2. **Next** lists the shared context and outcomes Curio found by following the
-   edges, marked on the canvas. Confirm them, remove a node with **×**, or
-   select one on the canvas and click **+ Add selected node**.
-3. **Next** asks for its name, its color and its scenario set: one of this dataflow's, or a
-   new one. **Save scenario** saves it; nothing changes before.
+1. Choose **View → Define scenario**. Define scenario opens in a drawer at the
+   side of the canvas, and the nodes on the canvas stay selectable while it is
+   open. Its first step asks for the scenario-specific nodes: select them on the
+   canvas (click one, or hold Shift and drag a box around several) and click
+   **+ Add selected node**; **×** takes one out. Nodes selected before are listed
+   already.
+2. **Next** lists the shared context and shared outcomes Curio found by following
+   the edges, marked on the canvas. In a dataflow that has scenarios, each list
+   marks its nodes **Already in the set** or **New to the set**, for the set the
+   last step picks. Confirm them, remove a node with **×**, or select one on the
+   canvas and click **+ Add selected node**.
+3. **Next** asks for its name, its color and its scenario set: name a new set, or
+   pick one of this dataflow's. **Save scenario** saves it; nothing changes before.
+
+A drawer opened meanwhile, such as Provenance or a catalog, opens over Define
+scenario, and closing it brings Define scenario back with what you picked.
 
 To build an alternative, click **Duplicate scenario** on the scenario's card in
 the **In project** tab. Its nodes are copied below themselves with the edges
 between them, and every edge entering them feeds the copy too. The copy becomes
 a scenario of the same set, with the next color and the same shared context, and
-the define panel opens on it at **Name & set**: rename it, recolor
-it, or put it in another set. Nothing reads the copy yet, so it has no shared
-outcomes: wire its outputs into a comparison and add them there. **View → Duplicate selection** copies the selected
-nodes without making a scenario.
+Define scenario opens on it at **Name & set**: rename it, recolor it, or put it
+in another set. Nothing reads the copy yet, so it has no shared outcomes: wire
+its nodes into a comparison, then add the comparison with **Edit**.
+**View → Duplicate selection** copies the selected nodes without making a
+scenario.
 
 Then change the copy's nodes: a widget value, a line of code. Each copy remembers
 the node it was copied from.
 
 The dataflow's scenarios are in the Scenario Catalog drawer's **In project** tab:
 click **Scenario** in the top bar, then **In project**, which shows how many the
-dataflow has. Saving the dataflow as a scenario opens that tab.
-On top of it is **Define scenario**, and each scenario's card offers:
+dataflow has. The tab lists them in a panel per scenario set, headed by the set's
+name and how many scenarios it holds; the pencil beside the name renames the set,
+and no two sets of a dataflow share a name. On top of the tab is **Define
+scenario**, and each scenario's card offers:
 
-- **Run scenario**: run its nodes, and of the nodes feeding it only those that
-  have not run or have changed since;
-- **Edit scenario**: the define panel, on what the scenario keeps: its nodes
-  are listed, and its context, outcomes, name, color and set are filled
-  in. Change any step; **Save** changes it in place;
+- **Run**: run its nodes, and of the nodes feeding it only those that have not
+  run or have changed since;
+- **Edit**: Define scenario, on what the scenario keeps: its nodes are listed,
+  and its context, outcomes, name, color and set are filled in. Change any step;
+  **Save** changes it in place;
 - **Duplicate scenario**: a copy of it, as above;
-- **Delete** (the bin). Its nodes stay on the canvas.
+- **Delete**, which asks first. Its nodes stay on the canvas.
 
 **View details** on a card renames, recolors and describes the scenario, and
-lists its shared context, its own nodes and its outcomes. Pointing at a card marks
-the scenario's context and outcomes on the canvas. The tab lists the scenarios
-in a panel per set, headed by its name and how many scenarios it holds; the pencil
-beside the name renames the set. No two sets of a dataflow share a name. In a dataflow you watch, the tab lists
-the scenarios without these controls.
+lists its shared context, its scenario-specific nodes and its shared outcomes.
+Pointing at a card marks the scenario's context and outcomes on the canvas. In a
+dataflow you watch, the tab lists the scenarios without these controls.
 
-On the canvas, an expanded scenario's nodes wear its color inside a frame, with its
-name and a **Collapse** button above. A collapsed scenario is one box tinted in its
-color, with a card for each of its nodes: the node's kind, its title and its latest
-output. The edges into and out of the scenario are drawn to the cards they enter and
-leave, and dragging the box moves it. Double-click the box to expand it. A collapsed
-scenario's nodes still run with **Run All**, and the context they share runs once.
+On the canvas, each scenario set is outlined, under its name: **Scenario set:**
+and the set's name. An expanded scenario's nodes wear its color inside a frame,
+with its name and a **Collapse** button above. A collapsed scenario is one box
+tinted in its color, with a card for each of its nodes: the node's kind, its title
+and its latest output. The edges into and out of the scenario are drawn to the
+cards they enter and leave, and dragging the box moves it. Double-click the box to
+expand it. A collapsed scenario's nodes still run with **Run All**, and the
+context they share runs once.
 
-Each scenario set's shared context and shared outcomes are framed in gray, under a
-**Shared context** or **Shared outcomes** pill with a **Collapse** button. Collapsed,
-a group is one gray box with a card for each node and the set's circles on it;
-double-click it to expand it.
+A set's shared context and shared outcomes are framed in gray, under a **Shared
+context** or **Shared outcomes** pill with a **Collapse** button. Under each of
+their nodes is a row of circles, one per scenario of the set, filled where that
+scenario uses the node; point at the circles to read which scenarios do.
+Collapsed, a group is one gray box with a card for each node and the set's
+circles on it; double-click it to expand it. In a dataflow you watch, scenarios
+and groups stay collapsed or expanded as they are.
 
-Defining a scenario saves the outputs of the nodes feeding it and its last nodes to your Data
-Catalog, whatever their **Save output** setting, as pinning a dashboard tile does. A
-chart or a Data Pool saves nothing itself: the node feeding it does. Scenarios and
-their sets, colors, descriptions, context and outcomes, collapsed state and box
-positions, and those of each set's shared groups, are saved with the dataflow. Deleting a node removes it from its scenario.
+Defining a scenario saves to your Data Catalog the outputs of the shared context
+nodes that feed it and of its shared outcomes, whatever their **Save output**
+setting, as pinning a dashboard tile does. A chart or a Data Pool saves nothing
+itself: the node feeding it does. Scenarios and their sets, colors, descriptions,
+context and outcomes, collapsed state and box positions, and whether each set's
+shared context and shared outcomes are collapsed and where, are saved with the
+dataflow. Deleting a node removes it from its scenario.
 
 ### The Map Editor node
 
@@ -933,13 +946,15 @@ A rule or an expression reads a feature's columns by name (`height`, or
 `false`, `null`, `+ - * / %`, `== != < <= > >=`, `and`, `or`, `not`,
 parentheses, `abs`, `round`, `min` and `max`.
 
-In a scenario, a Map Editor node is a lever.
+In a scenario, a Map Editor node is one of its scenario-specific nodes: its edits
+are what that scenario changes.
 
 ### Comparing scenarios
 
-To compare scenarios, connect each scenario's outcome to an input circle of its own
-on a node outside the scenario boxes. Each edge takes the next circle, as on any
-node with several inputs.
+To compare scenarios, connect the node in each scenario's box that the comparison
+reads to an input circle of its own on a node outside the boxes, which becomes a
+shared outcome of their set. Each edge takes the next circle, as on any node with
+several inputs.
 
 - **A chart.** A Vega-Lite node whose spec reads its inputs as the dataset its chip
   `[!! inputs !!]` names ([Every input in one dataset](#every-input-in-one-dataset)) draws every input's
@@ -986,7 +1001,7 @@ diverging scheme centered on 0, and an absolute one on a sequential scheme:
 ```
 
 A chart that compares scenarios is a **Vega-Lite** node that takes one input per
-scenario: connect each scenario's outcome to one of its circles. Its spec reads its
+scenario: connect a node of each scenario's box to one of its circles. Its spec reads its
 inputs as the dataset `[!! inputs !!]` ([Every input in one dataset](#every-input-in-one-dataset)),
 every row named by the scenario box its input comes from, and its scenario chips draw
 each scenario in its box's color, in the order the dataflow lists the boxes.
@@ -1000,13 +1015,14 @@ the widgets it lists in its **Widgets** tab, such as the column it plots and
 `min`, `max` or `count`).
 
 The **Scenario Catalog** lists the scenarios of all your projects, each with its
-shared context, its own nodes and outcomes and the results its project saved. Open it from
-the **Scenario Catalog** tab, or from the **Scenario** button in the canvas's top
-bar. Drag a scenario's card from the **Scenario** drawer onto the canvas to bring a
-copy of it into the open dataflow (Ctrl-click or Cmd-click picks several of one set,
-which come together): it arrives collapsed, with its results, and the
-nodes feeding it arrive as Data Loading nodes that read copies of what its project
-saved. See [docs/SCENARIO-CATALOG.md](SCENARIO-CATALOG.md#4-using-a-scenario-in-a-dataflow).
+shared context, its scenario-specific nodes and its shared outcomes, and the results
+its project saved. Open it from the **Scenario Catalog** tab, or from the
+**Scenario** button in the canvas's top bar. Drag a scenario's card from the
+**Scenario** drawer's **Browse all** tab onto the canvas to bring a copy of it into
+the open dataflow: it arrives collapsed, with its results, and the nodes feeding it
+arrive as Data Loading nodes that read copies of what its project saved. Another
+scenario of the same set dragged in after it joins its set and reads the same
+context. See [docs/SCENARIO-CATALOG.md](SCENARIO-CATALOG.md#4-using-a-scenario-in-a-dataflow).
 
 ## Node Catalog
 
@@ -1608,8 +1624,8 @@ the page opens.
   their title band and resize, and **Save layout** records where they sit, without
   touching the canvas positions.
 - **Scenarios** each get a column, framed under a header in the scenario's color. The
-  tiles they share (their shared context, and any other tile no outcome reaches) come
-  first, and tiles that read their outcomes, such as a comparison, come last. Tiles
+  tiles they share (their shared context, and any other tile no scenario feeds) come
+  first, and the tiles of their shared outcomes, such as a comparison, come last. Tiles
   without a saved place are laid out this way when the page opens; while editing the
   layout, **Arrange by scenario** puts every tile back in its column.
 - **Sharing**: the page is served with its data inside it, whether `--backend-url` is an
