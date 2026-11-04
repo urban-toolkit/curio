@@ -25,6 +25,12 @@
   font-family: inherit;
 }
 
+/* A compact header's pill: the icon alone, as tall as a pill with its word. */
+.datasetBadgeCompact {
+  padding: 2px 5px;
+  min-height: calc(1.15em + 6px);
+}
+
 .datasetBadge:hover {
   background-color: rgba(47, 143, 74, 0.22);
   border-color: var(--curio-role-installed-fg);

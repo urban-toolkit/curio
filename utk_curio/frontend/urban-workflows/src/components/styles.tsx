@@ -80,6 +80,7 @@ import { ICodeData } from "types";
 import { NodeRunControls } from "./nodes/NodeRunControls";
 import { NodeResizeHandle } from "./nodes/NodeResizeHandle";
 import { NodeDeleteTool } from "./nodes/NodeDeleteTool";
+import { useHeaderPillsFit } from "./nodes/useHeaderPillsFit";
 import { useSharedView } from "../hook/useSharedView";
 import { NodeHeaderSlotContext } from "./editing/nodeHeaderSlot";
 import { resolveSaveOutputDataset, showsSaveOutputToggle } from "../utils/saveOutputDataset";
@@ -420,6 +421,12 @@ export const NodeContainer = ({
     const nodeHeaderBandPx = 36;
     // Where the header holds the editor's tab switchers (nodeHeaderSlot).
     const [tabSlot, setTabSlot] = useState<HTMLElement | null>(null);
+    // A narrow node shows its title before its whole pills (useHeaderPillsFit).
+    const [header, setHeader] = useState<HTMLElement | null>(null);
+    const pillsCompact = useHeaderPillsFit(
+        header,
+        [headerKindLabel, hasPackageMetaHeader, !!consumerSource, !!producerDataset].join("|"),
+    );
     // Play, the Save output toggle and the status, each in its place in the
     // header.
     const runControls = {
@@ -865,7 +872,7 @@ export const NodeContainer = ({
 
                 {!noContent && !dashboardOn ? (
                     <>
-                        <div className="curio-node-header" style={{
+                        <div className="curio-node-header" ref={setHeader} style={{
                         display: "flex",
                         alignItems: "center",
                         height: `${nodeHeaderBandPx}px`,
@@ -903,6 +910,7 @@ export const NodeContainer = ({
                                 category={packageDescriptor.category}
                                 suggestionActive={suggestionActive}
                                 nodeId={nodeId}
+                                compact={pillsCompact}
                             />
                         ) : null}
 
@@ -914,6 +922,7 @@ export const NodeContainer = ({
                                 variant="consumer"
                                 selected={isNodeSelected}
                                 suggestionActive={suggestionActive}
+                                compact={pillsCompact}
                             />
                         ) : null}
 
@@ -928,6 +937,7 @@ export const NodeContainer = ({
                                 variant="producer"
                                 selected={isNodeSelected}
                                 suggestionActive={suggestionActive}
+                                compact={pillsCompact}
                             />
                         ) : null}
 

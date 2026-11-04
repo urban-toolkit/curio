@@ -23,6 +23,10 @@ export interface DatasetMetaHeaderProps {
   /** When the owning node is selected on the canvas, render a more vibrant pill. */
   selected?: boolean;
   suggestionActive?: boolean;
+  /** The header is short of room for the node's title (`useHeaderPillsFit`):
+   * the pill shows its icon alone, the same button with its name and tooltip.
+   * A pill that reads WAITING stays whole. */
+  compact?: boolean;
 }
 
 /**
@@ -41,6 +45,7 @@ export function DatasetMetaHeader({
   variant = "consumer",
   selected = false,
   suggestionActive = false,
+  compact = false,
 }: DatasetMetaHeaderProps) {
   const { setDatasetRevealId, installedComputedByProducer } = useDatasetPalette();
   const reactFlow = useReactFlow();
@@ -49,7 +54,10 @@ export function DatasetMetaHeader({
   const { requests, viewer } = useHeldEditorRequests();
   const waiting = isProducer ? undefined : requestFor(requests, { datasetId: source.datasetId });
   const label = isProducer ? "OUTPUT" : waiting ? "WAITING" : "DATASET";
-  const badgeClassName = `${styles.datasetBadge} ${selected ? styles.datasetBadgeSelected : ""}`;
+  const iconOnly = compact && !waiting;
+  const badgeClassName = `${styles.datasetBadge} ${selected ? styles.datasetBadgeSelected : ""} ${
+    iconOnly ? styles.datasetBadgeCompact : ""
+  }`;
 
   const tooltip = useMemo(() => {
     const lines = [source.title];
@@ -90,7 +98,7 @@ export function DatasetMetaHeader({
         {...badgeClick}
       >
         <FontAwesomeIcon icon={waiting ? faHourglassHalf : faDatabase} className={styles.icon} aria-hidden />
-        {label}
+        {iconOnly ? null : label}
       </button>
     </div>
   );

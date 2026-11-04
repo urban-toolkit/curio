@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faHourglassHalf } from "@fortawesome/free-solid-svg-icons";
+import { faCube, faHourglassHalf } from "@fortawesome/free-solid-svg-icons";
 import type { NodeCategory, NodePackageMeta } from "../../../registry/types";
 import { BUILTIN_PACKAGE_ID } from "../../../registry/packageKeys";
 import { NODE_CATEGORY_SHORT_LABEL } from "../../../constants/nodeCategoryShortLabels";
@@ -22,6 +22,10 @@ export interface PackageMetaHeaderProps {
   suggestionActive: boolean;
   /** The node the pills are on, which a request may name (a model dropped on it). */
   nodeId?: string;
+  /** The header is short of room for the node's title (`useHeaderPillsFit`):
+   * the category pill is left out, and PACKAGE shows its icon alone, the same
+   * button with its name and tooltip. A pill that reads WAITING stays whole. */
+  compact?: boolean;
 }
 
 /**
@@ -45,7 +49,7 @@ export interface PackageMetaHeaderProps {
  * (`editorRequests.ts`), reads WAITING: on the editor's canvas it waits for
  * her, and on hers she is asked.
  */
-export function PackageMetaHeader({ pkg, category, suggestionActive, nodeId }: PackageMetaHeaderProps) {
+export function PackageMetaHeader({ pkg, category, suggestionActive, nodeId, compact = false }: PackageMetaHeaderProps) {
   const { setActivePackageKey, setPaletteDockRevealCoord } = usePackagePalette();
   const coord = `${pkg.packageId}@${pkg.major}`;
   const { requests, viewer } = useHeldEditorRequests();
@@ -74,31 +78,41 @@ export function PackageMetaHeader({ pkg, category, suggestionActive, nodeId }: P
   // Not `pkg.readOnly`: that marks a package the user may not edit, which is a
   // different question and is also true of packages the pill works fine for.
   const revealable = pkg.packageId !== BUILTIN_PACKAGE_ID;
+  // A compact built-in node has no pill left to show.
+  if (compact && !revealable) return null;
+  const packageClassName = waiting
+    ? `${styles.packageBadge} ${styles.packageBadgeWaiting}`
+    : compact
+      ? `${styles.packageBadge} ${styles.packageBadgeCompact}`
+      : styles.packageBadge;
 
   return (
     <div className={styles.pills} style={suggestionActive ? { pointerEvents: "none" } : undefined}>
       {/* Coloured by category, like the node's own left border. It used to be
           one flat peach for every category, so the pill named the category
-          while the border beside it was the only thing showing it. */}
-      <span
-        className={`${styles.categoryBadge} ${
-          (styles as Record<string, string>)[`categoryBadge_${NODE_CATEGORY_KEY[category]}`] ?? ""
-        }`}
-        data-tooltip={NODE_CATEGORY_SHORT_LABEL[category]}
-      >
-        {NODE_CATEGORY_SHORT_LABEL[category]}
-      </span>
+          while the border beside it was the only thing showing it. A compact
+          header leaves it out: the border still shows the category. */}
+      {compact ? null : (
+        <span
+          className={`${styles.categoryBadge} ${
+            (styles as Record<string, string>)[`categoryBadge_${NODE_CATEGORY_KEY[category]}`] ?? ""
+          }`}
+          data-tooltip={NODE_CATEGORY_SHORT_LABEL[category]}
+        >
+          {NODE_CATEGORY_SHORT_LABEL[category]}
+        </span>
+      )}
       {revealable ? (
         <button
           type="button"
-          className={waiting ? `${styles.packageBadge} ${styles.packageBadgeWaiting}` : styles.packageBadge}
+          className={packageClassName}
           data-tooltip={packageTooltip}
           data-curio-waits-for-owner={waiting ? "true" : undefined}
           aria-label={`Open package ${coord} in Packages palette`}
           {...packageBadgeClick}
         >
           {waiting ? <FontAwesomeIcon icon={faHourglassHalf} aria-hidden /> : null}
-          {waiting ? "WAITING" : "PACKAGE"}
+          {waiting ? "WAITING" : compact ? <FontAwesomeIcon icon={faCube} aria-hidden /> : "PACKAGE"}
         </button>
       ) : null}
     </div>
