@@ -77,6 +77,39 @@ describe("summarizeNodeInput", () => {
     );
   });
 
+  // 11-04, the widgets skill's case 3 on Claude Haiku 5.5 and gemma4: a node
+  // multiplying by a factor its wired multiplier node returns from a widget
+  // was told only "wired from node mult (...)", and both models declared a
+  // second widget on the reader instead of setting the multiplier's.
+  it("names the widgets of a node wired in, which set what it hands on", () => {
+    const feeders = [
+      { id: "mult", type: "curio.builtin/computation-analysis", widgets: ["number_multiplier"] },
+      { id: "loader", type: "curio.builtin/data-loading" },
+    ];
+    expect(summarizeNodeInput({ in: "DEFAULT" }, feeders)).toBe(
+      "waiting for input (declared: DEFAULT): wired from node mult " +
+        "(curio.builtin/computation-analysis; widgets number_multiplier), which has not run; " +
+        "node loader (curio.builtin/data-loading), which has not run",
+    );
+  });
+
+  it("says, beside what arrived, which nodes wired in set it with widgets", () => {
+    const feeders = [
+      { id: "loader", type: "curio.builtin/data-loading", data: { output: { code: "success" } } },
+      {
+        id: "mult",
+        type: "curio.builtin/computation-analysis",
+        widgets: ["number_multiplier"],
+        data: { output: { code: "success" } },
+      },
+    ];
+    const arrived = { input: [{ dataType: "dataframe", path: "art-1" }, { dataType: "dict", path: "art-2" }] };
+    expect(summarizeNodeInput(arrived, feeders)).toBe(
+      "MULTIPLE (2 slots): [0] dataframe from artifact art-1; [1] dict from artifact art-2: " +
+        "wired from node mult (curio.builtin/computation-analysis; widgets number_multiplier), which ran",
+    );
+  });
+
   it("keeps saying no upstream input when no edge feeds the node", () => {
     expect(summarizeNodeInput({ in: "DATAFRAME" }, [])).toBe(
       "no upstream input (declared: DATAFRAME)",
