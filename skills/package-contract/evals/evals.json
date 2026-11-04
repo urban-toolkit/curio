@@ -49,7 +49,7 @@
     {"query": "What does the payload look like that my package handler gets when its node runs?", "should_trigger": true},
     {"query": "My package backend shells out to gdal with subprocess. Will the review let that through?", "should_trigger": true},
     {"query": "Extend my installed package with a template that parses PDF reports in Python on the server.", "should_trigger": true},
-    {"query": "Install the Scout package in this project.", "should_trigger": false},
+    {"query": "Install the Rasterization package in this project.", "should_trigger": false},
     {"query": "Write a package with a sticky-note style node that only shows markdown, no Python at all.", "should_trigger": false},
     {"query": "Add a Python node that clusters the roofs with scikit-learn.", "should_trigger": false},
     {"query": "Which packages in the Node Catalog have nodes for weather data?", "should_trigger": false},

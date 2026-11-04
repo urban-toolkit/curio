@@ -31,10 +31,10 @@
       "id": 3,
       "agent": "agent.curio.node-builder@1",
       "dataflow": "docs/examples/dataflows/chicago-loop-shadow-towers.json",
-      "prompt": "Add the Scout package to this project, I want to use its raster nodes.",
-      "expected_output": "Scout (curio.scout@1) is already in this project, so the answer says so and proposes no install and no package draft; its raster nodes are already templates the dataflow can use.",
+      "prompt": "Add the Rasterization package to this project, I want to use its raster nodes.",
+      "expected_output": "Rasterization (curio.rasterization@1) is already in this project, so the answer says so and proposes no install and no package draft; its raster nodes are already templates the dataflow can use.",
       "assertions": [
-        "The answer says the Scout package (curio.scout@1) is already in this project.",
+        "The answer says the Rasterization package (curio.rasterization@1) is already in this project.",
         "The answer proposes no package.install.",
         "The answer proposes no package draft and asks for no package to be written."
       ]
