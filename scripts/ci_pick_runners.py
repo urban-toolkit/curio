@@ -6,10 +6,10 @@ cpu]``) after that, and on the utk-desktop runners (utk-desktop-01 and -02,
 ``[self-hosted, desktop]``) when arcade is full too. The GPU job (test-gpu)
 runs on the arcade GPU pool (arcade-gpu-01..04, ``[self-hosted, gpu, h100]``)
 while it has a free runner, then on utk-gpu (``[self-hosted, gpu, curio]``),
-and on a utk-desktop runner (``[self-hosted, gpu, desktop]``, either one) when
-utk-gpu is busy too, where it runs as many workers as the desktop holds
-(scripts/ci_memory_budget.py). A desktop runs one job of either kind, so the
-desktops' room counts the jobs of both.
+and on utk-desktop-01 (``[self-hosted, gpu, desktop, rtx3070]``) when utk-gpu
+is busy too, where it runs as many workers as the desktop holds
+(scripts/ci_memory_budget.py). utk-desktop-02 takes CPU jobs only. A desktop
+runs one job of either kind, so the desktops' room counts the jobs of both.
 GitHub cannot express "this runner, or that one if busy": ``runs-on`` has no
 "or", and it sends ``ubuntu-latest`` jobs only to its own runners. So a run
 picks twice: the pick-runners job, for the jobs that start at once, and
@@ -62,7 +62,7 @@ RUNS_ON = {
     "arcade-gpu": ["self-hosted", "gpu", "h100"],
     "utk": ["self-hosted", "gpu", "curio"],
     "desktop": ["self-hosted", "desktop"],
-    "desktop-gpu": ["self-hosted", "gpu", "desktop"],
+    "desktop-gpu": ["self-hosted", "gpu", "desktop", "rtx3070"],
 }
 CPU_POOLS = ("arcade", "hosted", "desktop")
 #: The GPU pools a dispatch can name, and the place each one is.
@@ -76,10 +76,11 @@ GPU_RUNNERS = 4
 UTK_RUNNERS = 1
 #: The utk-desktop runners (utk-desktop-01 and -02), each one job at a time.
 DESKTOP_RUNNERS = 2
-#: Those of them that also take the GPU job: both carry the gpu label (owner,
-#: 10-25), utk-desktop-01 with 30 GB and an RTX 3070, utk-desktop-02 with
-#: 12 GB and an RTX 4070.
-GPU_DESKTOPS = ("utk-desktop-01", "utk-desktop-02")
+#: Those of them that also take the GPU job: utk-desktop-01 (30 GB, an RTX
+#: 3070), the one runner labelled rtx3070. utk-desktop-02 keeps its gpu label
+#: (owner, 10-25), but its 12 GB hold one worker and test-gpu took 47 min there
+#: against 20 on utk-desktop-01 (owner, 11-04: too slow).
+GPU_DESKTOPS = ("utk-desktop-01",)
 DESKTOP_GPU_RUNNERS = len(GPU_DESKTOPS)
 #: Concurrent GitHub-hosted jobs the organization's plan allows.
 HOSTED_SLOTS = 20
@@ -158,7 +159,7 @@ def desktop_room(counts: dict) -> tuple[int, int]:
     """Free desktops for CPU jobs, and for the GPU job.
 
     A CPU job can take any desktop, the GPU job only those in GPU_DESKTOPS (today
-    both, so each desktop job of either kind holds one GPU desktop). A running
+    utk-desktop-01, so a CPU job there leaves the GPU job no desktop). A running
     CPU job's runner says which desktop it holds; a queued one's does not, so
     CPU jobs are also taken to fill the desktops without a GPU first, and the
     rest to hold GPU desktops, whichever holds more.

@@ -60,7 +60,7 @@ other module whose source mentions Autark or WebGPU. Such tests carry the
 marked `needs_parallel` and runs on `utk` too. The GPU job runs as many
 workers as its runner's free memory and video memory hold
 (`scripts/ci_memory_budget.py`), and always at least two backend and sandbox
-pairs: on a runner that holds one worker (`utk-desktop-02`), the second pair
+pairs: on a runner that holds only one worker, the second pair
 answers only those tests, and the serial run counts it from
 `CURIO_E2E_SHARDS`. Everything else runs on the CPU runners. Two variables
 select a share, and a run with neither runs everything:
