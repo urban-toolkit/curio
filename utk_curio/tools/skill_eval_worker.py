@@ -45,6 +45,14 @@ runs, so no sandbox either.
   whose model's server stopped sending is not tried again.
 - **Not run:** the title call a conversation's first turn makes, which
   nothing here reads, and the kept outputs' sweep, which needs a sandbox.
+- **The calls:** each tool call a run makes is noted where a native call and
+  a fenced block meet (``tool_rounds._execute_tool_request`` for a call or a
+  toolRequest, ``plans._mint_dataflow_plan`` for a plan block), with its
+  tool, its status and the arguments it gave. A run's record keeps the
+  arguments of refused calls only, and what landed holds a plan's duplicate
+  scenario only as its copies, so the grader is shown what each call whose
+  change landed wrote (:meth:`Worker._calls`), and ``outputs/calls.json``
+  keeps the same.
 - **Graded:** a test case's answer goes to the grader, the same model through
   the same code, with the words of the base entry's ``skill-evals.md``. A
   grader reply its output cap cut is not read, however much of it parses: the
@@ -67,6 +75,7 @@ written (``report.scrub``), and so is every log line.
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import os
@@ -82,7 +91,9 @@ if str(REPO_ROOT) not in sys.path:
 
 from utk_curio.backend import config as backend_config  # noqa: E402
 from utk_curio.backend.app import create_app  # noqa: E402
-from utk_curio.backend.app.agents.application import attachments, skill_runs  # noqa: E402
+from utk_curio.backend.app.agents.application import attachments, skill_runs, tool_rounds  # noqa: E402
+from utk_curio.backend.app.agents.application.proposals import changes as agents_changes  # noqa: E402
+from utk_curio.backend.app.agents.application.proposals import plans as agents_plans  # noqa: E402
 from utk_curio.backend.app.agents.application.turns import prompts, titles  # noqa: E402
 from utk_curio.backend.app.agents.domain import agent_text  # noqa: E402
 from utk_curio.backend.app.agents.domain import skills as skill_format  # noqa: E402
@@ -145,6 +156,8 @@ class _HandedOff(BaseException):
 
 #: What only a chat's system turn holds: the list of skills it may load.
 _CATALOG_MARK = "<available_skills>"
+#: The tool a fenced reply's plan block calls, written as a block.
+_PLAN_TOOL = "dataflow.plan.write"
 
 
 class _Seams:
@@ -170,16 +183,27 @@ class _Seams:
         self.output_tokens = 0
         #: Each model call's own record (:func:`_model_call`), in call order.
         self.model_calls: list[dict] = []
+        #: Each tool call the run made, in call order (:meth:`called`).
+        self.tool_calls: list[dict] = []
+        #: How many tool requests are running now: a plan made while none is
+        #: was a fenced reply's plan block.
+        self.requests = 0
 
     def texts(self, *, chat: bool | None = None) -> list[str]:
         """The system turns sent: the chat's, the others', or all of them."""
         return [text for is_chat, text in self.systems if chat is None or is_chat == chat]
 
+    def called(self, tool, status, arguments) -> None:
+        """Note one tool call of the run: its tool, its status and the
+        arguments it gave, as the model gave them."""
+        self.tool_calls.append({"tool": tool, "status": status, "arguments": arguments})
+
     def install(self) -> None:
-        """Wrap the functions a run's skills and model calls go through, once."""
+        """Wrap the functions a run's skills, model calls and tool calls go through, once."""
         seams = self
         pool, resolve, read = skill_runs._pool, prompts._resolve_prompt_text, skill_runs.read
         for_chat, for_delegated, chat_turn = skill_runs.for_chat, skill_runs.for_delegated, providers.run_chat_turn
+        execute, mint_plan = tool_rounds._execute_tool_request, agents_plans._mint_dataflow_plan
 
         def _pool(user_key, manifest, preamble, spec=None, **kwargs):
             usable, placed, found, packages = pool(user_key, manifest, preamble, spec, **kwargs)
@@ -241,12 +265,36 @@ class _Seams:
                         seams.systems.append((_CATALOG_MARK in text, text))
             return turn
 
+        def _execute(user_key, project_id, loop_ctx, req, tool_calls, minted):
+            # A native call or a fenced toolRequest, its params as given:
+            # copied first, as a check may change what it reads.
+            arguments = copy.deepcopy(req.get("params"))
+            seams.requests += 1
+            try:
+                status, text = execute(user_key, project_id, loop_ctx, req, tool_calls, minted)
+            finally:
+                seams.requests -= 1
+            seams.called(req.get("tool"), status, arguments)
+            return status, text
+
+        def _mint_plan(user_key, project_id, loop_ctx, plan):
+            # The plan of a call or a toolRequest is noted as its call; one
+            # made while no request runs is a fenced reply's plan block.
+            block = not seams.requests
+            written = copy.deepcopy(plan) if block else None
+            outcome = mint_plan(user_key, project_id, loop_ctx, plan)
+            if block:
+                seams.called(_PLAN_TOOL, outcome[0], {key: value for key, value in written.items() if key != "type"})
+            return outcome
+
         skill_runs._pool = _pool
         prompts._resolve_prompt_text = _resolve
         skill_runs.for_chat = _for_chat
         skill_runs.for_delegated = _for_delegated
         skill_runs.read = _read
         providers.run_chat_turn = _chat_turn
+        tool_rounds._execute_tool_request = _execute
+        agents_plans._mint_dataflow_plan = _mint_plan
         # Nothing here reads a conversation's title, and it is one more call.
         titles._generate_conversation_title = lambda *args, **kwargs: None
 
@@ -637,10 +685,11 @@ class Worker:
             record["triggered"] = record["loaded"]
         else:
             changes = self._changes(before, project_id, body)
-            self._outputs(folder, body, changes)
+            calls = self._calls()
+            self._outputs(folder, body, changes, calls)
             _write(folder / "timing.json", timing)
             if "error" not in record:
-                grading = self._grade(task, body, changes)
+                grading = self._grade(task, body, changes, calls)
                 record["grading"] = grading
                 if grading.get("error"):
                     record["error"] = f"the grader failed: {grading['error']}"
@@ -675,33 +724,40 @@ class Worker:
         cards = skill_evals.change_cards(body.get("content") or [])
         return {"changed": _dataflow_changes(before, after), "cards": cards, "awaiting_review": pending}
 
-    def _outputs(self, folder: Path, body: dict, changes: dict) -> None:
+    def _outputs(self, folder: Path, body: dict, changes: dict, calls: list) -> None:
         _write(folder / "outputs" / "reply.md", scrub(str(body.get("reply") or ""), values=self.secrets) + "\n")
         _write(folder / "outputs" / "changes.json", scrub(changes, values=self.secrets))
+        _write(folder / "outputs" / "calls.json", calls)
 
-    def _calls(self, folder: Path) -> list[dict]:
-        """The tools the run called, from its turn's record in the transcript,
-        but skill.read: a run without the skill seldom calls it, so the grader
-        is not shown it, and judges the answer blind to its condition."""
-        try:
-            turns = json.loads((folder / "transcript.json").read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return []
-        execution = next((turn.get("execution") for turn in reversed(turns)
-                          if isinstance(turn, dict) and isinstance(turn.get("execution"), dict)), {})
-        return [{"tool": call.get("tool"), "status": call.get("status")}
-                for call in execution.get("toolCalls") or []
-                if isinstance(call, dict) and call.get("tool") != skill_runs.TOOL]
+    def _calls(self) -> list[dict]:
+        """The tools the run called, in call order, as the grader and
+        ``outputs/calls.json`` show them: each call's tool and status, and
+        the arguments of each call whose change landed, which say what it
+        wrote, each text scrubbed, then cut as a change's texts are
+        (:func:`_clip`): scrubbed first, so no cut leaves part of a secret.
+        A call that landed nothing shows no arguments. skill.read is left
+        out: a run without the skill seldom calls it, so the grader is not
+        shown it, and judges the answer blind to its condition."""
+        shown = []
+        for call in self.seams.tool_calls:
+            if call["tool"] == skill_runs.TOOL:
+                continue
+            entry = {"tool": call["tool"], "status": call["status"]}
+            if call["status"] == agents_changes.LANDED:
+                entry["arguments"] = _clip(scrub(call["arguments"], values=self.secrets))
+            shown.append(entry)
+        return scrub(shown, values=self.secrets)
 
-    def _grade(self, task: skill_evals.Task, body: dict, changes: dict) -> dict:
-        folder = self.results / task.path
+    def _grade(self, task: skill_evals.Task, body: dict, changes: dict, calls: list | None = None) -> dict:
+        """The grade of *task*'s answer: its reply, *changes*, what it changed,
+        and *calls*, the tools it called (:meth:`_calls`)."""
         values = {
             "prompt": task.message,
             "expected_output": task.expected_output or "",
             "assertions": "\n".join(f"{at}. {text}" for at, text in enumerate(task.assertions, start=1)),
             "reply": str(body.get("reply") or "").strip(),
             "changes": json.dumps(changes, indent=2, ensure_ascii=False),
-            "tools": json.dumps(self._calls(folder), ensure_ascii=False),
+            "tools": json.dumps(calls or [], ensure_ascii=False),
         }
         where = f"{agent_text.PAGE_PREFIX}{GRADER_PAGE}"
         system = agent_text.section(GRADER_PAGE, GRADER_SECTION)
