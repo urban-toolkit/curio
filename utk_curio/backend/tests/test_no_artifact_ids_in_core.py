@@ -85,11 +85,6 @@ _DIGESTS = (
 _EVALUATION = "the offline evaluation reconstructs runs of this one agent"
 _CASES = "cases beside the code they test, read only by the Jest and pytest suites"
 
-_LEGACY = ("the table of the node types and packages a saved dataflow held before #1270, "
-           "renamed on load to what replaced them")
-#: The replacements that table names.
-_RENAMED = {"curio.rasterization", "curio.rasterization/raster-calculator", "curio.rasterization/rasterize-buildings"}
-
 #: Each other hit app code may hold: file -> (ids, why).
 ALLOWED = {
     "utk_curio/backend/app/packages/repositories/legacy_catalog_digests.json": (
@@ -99,8 +94,6 @@ ALLOWED = {
     "utk_curio/backend/app/agents/evaluation/live.py": ({"agent.curio.dataflow-builder"}, _EVALUATION),
     "utk_curio/tools/agent_eval.py": ({"agent.curio.dataflow-builder"}, _EVALUATION),
     "utk_curio/frontend/urban-workflows/src/utils/nodeDisplayLabel.cases.json": ({"ai.utk.uhvi"}, _CASES),
-    "utk_curio/backend/app/projects/legacy_node_types.py": (_RENAMED, _LEGACY),
-    "utk_curio/frontend/urban-workflows/src/utils/flowNodeCanonicalType.ts": (_RENAMED, _LEGACY),
 }
 
 _PYTHON = {".py"}
@@ -133,8 +126,8 @@ def shipped_ids(root: Path) -> dict[str, str]:
 
 
 def _id_pattern(ids) -> re.Pattern:
-    """Any of *ids* as a whole id: ``curio.rasterization``, ``curio.rasterization@1`` or
-    ``packages/curio.rasterization@1/``, never part of a longer id. A node type
+    """Any of *ids* as a whole id: ``curio.scout``, ``curio.scout@1`` or
+    ``packages/curio.scout@1/``, never part of a longer id. A node type
     matches before its package."""
     names = "|".join(re.escape(name) for name in sorted(ids, key=len, reverse=True))
     return re.compile(rf"(?<![\w.-])(?:{names})(?![\w-]|\.\w)")

@@ -1,7 +1,6 @@
 /**
  * A node's one name, its title: a new node starts with its template's label, a
- * note with none, and a dataflow saved before `title` was the one name is read
- * with its renamed header first.
+ * note with none, and a saved node is read by its title alone.
  */
 import { initialNodeTitle, isNoteType, savedNodeTitle } from "../../utils/nodeTitle";
 
@@ -40,11 +39,13 @@ describe("savedNodeTitle", () => {
     expect(savedNodeTitle({})).toBe("");
   });
 
-  test("an older save's renamed header wins over the title beside it", () => {
-    expect(savedNodeTitle({ title: "Shadow study", metadata: { packageTemplateLabel: "Shade at noon" } })).toBe("Shade at noon");
-    expect(savedNodeTitle({ title: "Shadow study", data: { packageTemplateLabel: "Old shade" } })).toBe("Old shade");
-    expect(
-      savedNodeTitle({ metadata: { packageTemplateLabel: "Shade at noon" }, data: { packageTemplateLabel: "Old shade" } }),
-    ).toBe("Shade at noon");
+  test("a header an older save holds at packageTemplateLabel names nothing: the title does", () => {
+    type OlderNode = { title?: string; metadata?: Record<string, unknown>; data?: Record<string, unknown> };
+    const renamed: OlderNode = { title: "Shadow study", metadata: { packageTemplateLabel: "Shade at noon" } };
+    const older: OlderNode = { title: "Shadow study", data: { packageTemplateLabel: "Old shade" } };
+    const untitled: OlderNode = { metadata: { packageTemplateLabel: "Shade at noon" }, data: { packageTemplateLabel: "Old shade" } };
+    expect(savedNodeTitle(renamed)).toBe("Shadow study");
+    expect(savedNodeTitle(older)).toBe("Shadow study");
+    expect(savedNodeTitle(untitled)).toBe("");
   });
 });

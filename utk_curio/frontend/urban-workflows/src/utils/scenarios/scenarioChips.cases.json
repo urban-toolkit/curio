@@ -165,7 +165,7 @@
       "expected": "{\"map\": {\"layerRefs\": [{\"dataRef\": \"input_0\", \"title\": \"Roads\", \"color\": \"#8a8f98\"}, {\"dataRef\": \"input_1\", \"width\": 80, \"title\": \"Fastest route\", \"color\": \"#42A5F5\"}, {\"dataRef\": \"input_2\", \"width\": 40, \"title\": \"Weather-aware route\", \"color\": \"#00838F\"}]}}"
     },
     {
-      "name": "an input from no box whose node was saved with a renamed header, before title was its one name, is named by it, and a box with no nodes still counts in the order",
+      "name": "an input from no box is named by its node's title, never by a header an older save holds at packageTemplateLabel, and a box with no nodes still counts in the order",
       "grammar": "vega-lite",
       "node": "chart",
       "dataflow": {
@@ -176,8 +176,9 @@
             "x": 0,
             "y": 0,
             "content": "return input_0\n",
+            "title": "Survey of roofs",
             "metadata": {
-              "packageTemplateLabel": "Survey of roofs"
+              "packageTemplateLabel": "Roof survey, saved before"
             }
           },
           {

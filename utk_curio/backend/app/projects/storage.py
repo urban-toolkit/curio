@@ -42,7 +42,6 @@ from utk_curio.backend.app.common.safe_paths import (
     safe_join,
     validate_component,
 )
-from utk_curio.backend.app.projects.legacy_node_types import migrate_legacy_types
 from utk_curio.backend.app.projects.schemas import OutputRef
 
 
@@ -340,9 +339,7 @@ def read_spec_in(folder: Path) -> Optional[dict]:
     """The whole document of the project in *folder*: its spec file, and each
     history section the file does not hold, read back from its log. A spec
     file that still holds a section is read as it is; its next write moves
-    the section into the log. A node type Curio no longer ships reads as its
-    replacement (:func:`legacy_node_types.migrate_legacy_types`). ``None``
-    when there is no spec file.
+    the section into the log. ``None`` when there is no spec file.
 
     The files are read under the history lock, so a write is seen whole or
     not at all, and parsed once it is released.
@@ -351,7 +348,7 @@ def read_spec_in(folder: Path) -> Optional[dict]:
     if not p.exists():
         return None
     if not (folder / HISTORY_DIR).is_dir():
-        return migrate_legacy_types(json.loads(p.read_text(encoding="utf-8")))
+        return json.loads(p.read_text(encoding="utf-8"))
     with _history_lock(folder):
         text = p.read_text(encoding="utf-8")
         logs = {key: _read_log_bytes(folder, key) for key in HISTORY_KEYS}
@@ -363,7 +360,7 @@ def read_spec_in(folder: Path) -> Optional[dict]:
             value, _committed = _replay(logs[key], _SECTIONS[key])
             if value is not _ABSENT:
                 spec[key] = value
-    return migrate_legacy_types(spec)
+    return spec
 
 
 class SpecFile(NamedTuple):

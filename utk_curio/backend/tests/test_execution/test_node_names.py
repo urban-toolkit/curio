@@ -58,38 +58,33 @@ def test_a_saved_node_is_named_as_the_canvas_names_it(case):
 
 
 def test_the_older_saved_shape_is_read_too():
-    """``data.packageTemplateLabel`` and ``data.nodeType``, which the schema
-    still accepts and the save-time title has always read."""
+    """``data.nodeType``, which the schema still accepts and the save-time
+    title has always read."""
     from utk_curio.backend.app.execution import node_names
 
     labels = {"curio.builtin/computation-analysis": "Python Computation"}
     assert node_names.saved_node_label(
         {"id": "n", "data": {"nodeType": "curio.builtin/computation-analysis@1"}}, labels,
     ) == "Python Computation"
-    assert node_names.saved_node_label(
-        {"id": "n", "type": "curio.builtin/computation-analysis@1",
-         "data": {"packageTemplateLabel": "My Step"}}, labels,
-    ) == "My Step"
-    # The renamed header under ``metadata`` wins over the older one.
-    assert node_names.saved_node_label(
-        {"id": "n", "type": "curio.builtin/computation-analysis@1",
-         "metadata": {"packageTemplateLabel": "Renamed"},
-         "data": {"packageTemplateLabel": "My Step"}}, labels,
-    ) == "Renamed"
 
 
-def test_the_title_is_the_name_and_a_renamed_header_saved_before_it_wins():
-    """``title`` is a node's one name, whoever set it; a dataflow saved before
-    it was keeps a rename at ``metadata.packageTemplateLabel``, which the canvas
-    reads over the ``title`` beside it on load."""
+def test_the_title_is_the_name_and_a_header_an_older_save_holds_names_nothing():
+    """``title`` is a node's one name, whoever set it. A header an older save
+    holds at ``metadata.packageTemplateLabel`` (or ``data.packageTemplateLabel``)
+    is no name: the title wins, and without one the template's label, as
+    ``savedNodeTitle`` reads it on the canvas."""
     from utk_curio.backend.app.execution import node_names
 
     labels = {"curio.builtin/data-loading": "Data Loading"}
     node = {"id": "n", "type": "curio.builtin/data-loading@1", "title": "Load the census"}
     assert node_names.saved_node_label(node, labels) == "Load the census"
     assert node_names.saved_node_title(node) == "Load the census"
-    old = {**node, "metadata": {"packageTemplateLabel": "Census tracts"}}
-    assert node_names.saved_node_label(old, labels) == "Census tracts"
+    old = {**node, "metadata": {"packageTemplateLabel": "Census tracts"}, "data": {"packageTemplateLabel": "Tracts"}}
+    assert node_names.saved_node_label(old, labels) == "Load the census"
+    assert node_names.saved_node_title(old) == "Load the census"
+    untitled = {"id": "n", "type": "curio.builtin/data-loading@1", "metadata": {"packageTemplateLabel": "Census tracts"}}
+    assert node_names.saved_node_title(untitled) == ""
+    assert node_names.saved_node_label(untitled, labels) == "Data Loading"
     assert node_names.saved_node_title({"id": "n", "type": "curio.builtin/data-loading@1"}) == ""
 
 

@@ -9,10 +9,8 @@ on the server calls the node in its steps and skip reasons.
 - :func:`display_label`: the node's title, else its template's label, else its
   type in words without the version. A purely numeric type is a node id rather
   than a template: the title names it, else the id itself.
-- :func:`saved_node_title`: the title a saved node holds. ``title`` is the one
-  name a node has; a dataflow saved before it was holds a renamed header at
-  ``metadata.packageTemplateLabel`` (or ``data.packageTemplateLabel``), which
-  wins over a ``title`` beside it, as the canvas reads it on load.
+- :func:`saved_node_title`: the title a saved node holds, the one name a node
+  has.
 - :func:`saved_node_label`: :func:`display_label` of a saved node.
 - :func:`template_labels`: each template's label by unversioned id, for the
   templates a project can use (what the canvas's registry holds).
@@ -59,16 +57,9 @@ def display_label(node_type, custom_label=None, template_label=None) -> str:
 
 
 def saved_node_title(node: Mapping) -> str:
-    """The title a saved node holds, trimmed, or "": its ``title``, after the
-    renamed header a dataflow saved before ``title`` was the one name holds at
-    ``metadata.packageTemplateLabel`` (or the older ``data.packageTemplateLabel``)."""
-    data = node.get("data") if isinstance(node.get("data"), dict) else {}
-    metadata = node.get("metadata") if isinstance(node.get("metadata"), dict) else {}
-    return (
-        _label_text(metadata.get("packageTemplateLabel"))
-        or _label_text(data.get("packageTemplateLabel"))
-        or _label_text(node.get("title"))
-    )
+    """The title a saved node holds, trimmed, or "": its ``title``, as
+    ``savedNodeTitle`` in ``utils/nodeTitle.ts`` reads it."""
+    return _label_text(node.get("title"))
 
 
 def saved_node_label(node: Mapping, labels: Optional[Mapping[str, str]] = None) -> str:

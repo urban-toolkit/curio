@@ -27,7 +27,7 @@ interface TrillNode {
   title?: string;
   in?: unknown;
   out?: unknown;
-  metadata?: { widgets?: unknown; selections?: unknown; packageTemplateLabel?: unknown };
+  metadata?: { widgets?: unknown; selections?: unknown };
 }
 
 interface TrillEdge {
