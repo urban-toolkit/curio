@@ -221,6 +221,19 @@ def effective_value(widget: dict):
     return widget["value"] if "value" in widget else widget.get("default")
 
 
+def waits_for_data(problem: dict, widgets: Iterable = ()) -> bool:
+    """Whether *problem* (``{"reference", "message"}``, as
+    :func:`resolve_references` lists one) is only an empty dataset widget of
+    *widgets* waiting for its data: a node that has not been given its data,
+    not code at fault. A run still refuses it. Kept in sync with
+    ``waitsForData`` in ``codeReferences.ts``."""
+    return any(
+        widget.get("type") == "dataset" and effective_value(widget) == ""
+        and problem.get("message") == empty_dataset_message(problem.get("reference"), widget)
+        for widget in normalize_widgets(list(widgets or []))
+    )
+
+
 def js_number(x) -> str:
     """*x* as JavaScript's ``String(x)`` writes it."""
     if isinstance(x, int):

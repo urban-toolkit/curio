@@ -1994,6 +1994,14 @@ A chat message is an ask (`agents/application/turns/turn_jobs.py`), and its turn
 
 A mutate tool lands as soon as its mint's checks pass (`proposals/changes.py`): `node.content.write`, `node.settings.write`, `node.create` and `dataflow.plan.write`, and the runtime's own writes of them (a delegated node's code, a validated node's code, notes). Each lands through `dataflow_docs.write`, its `Actor` the agent, asked by the account (`spec_reads._agent_actor`), so every tab bound to the doc gets it at once and the history records it as the agent's point: a node's code or settings and a new node in one write, a plan in one write a step (below). A new node, a note among them, is the agent's action in the room (`in_the_room.act`): it is placed first, then dragged in from its template's tile to that place (`in_the_room.drag_in`: the Built-in palette's for the base package's templates, else the Packages palette's), and lands as the drop ends. A tab no doc binds, such as a hosted guest's, takes the change's canvas mutation from the server: a `change` event of its ask's stream, or of a follow of its ask, for each change, and the Undo's `canvas`. A change played as the agent's actions carries its `steps`, each step's mutation with `dragged`, the drag before it as the agent's state carried it (`in_the_room.dragged`); such a tab plays them in turn after the changes before it, each drag through the drag layer (`agentDrags.playChangeDrag`) before its mutation, and a tab the doc binds takes the whole `canvas` at once (`agentEvents.bridgeLandedChangeEvent`). The canvas bridge applies a mutation marked `landed` only on a tab no doc binds (`useAgentCanvasMutations`). Before a change lands on a node someone else holds (`room_state`'s soft lock), it waits up to `changes.LOCK_WAIT_S` (30 s), then is refused to the agent with the holder's name. The attachment keeps each change (`changes`, the last 50) with what its Undo needs, and the turn carries its card (a part of type `change`).
 
+Code an agent writes into a node is refused when the node's run would refuse one of its references (`turns/grounding.py` `_reference_problems`): each one `code_references.resolve_references` cannot resolve over the node's chips, as `WorkflowSpec.node_code` resolves them, such as a widget the node does not declare or a scenario chip in code.
+
+- The `node.content.write` mint, which a delegated node's code and a validated one land through too, reads the node's chips from the dataflow (`_chip_context`). The model gets the run's own words, then `mint.content-references` (`messages.md`), since the tool declares no widget. A delegated write's refusal reaches the agent that asked whole.
+- The `node.create` mint reads the widgets the new node starts with and each input circle its template has, which the user or a plan's edges wire, then says `mint.create-references`.
+- A plan carries no code (`plan.nodes-carry-content`). A Solve that writes without running holds a planned node's code to the node's chips, the circles the plan's edges wire among them, and fails the node in the run's words.
+
+As the editor marks chips, an empty Data waiting for its data (`waits_for_data`) is not refused, nor a reference the node's code holds already, which is the user's own. A chart's or a map's spec is held to the document check instead.
+
 Undo (`changes.undo`, `POST .../changes/<changeId>/undo`) is the caller's own change, by kind: a node's code back through `history.write_code`, held to the agent's code; a new node removed with its connections, while it holds what the agent gave it; settings put back step by step as a point of their own, while they hold what the agent set; a plan by `history.put_back` of the version before it (`plans._undo_plan`). Refused, it answers 409 naming who changed it after, and nothing changes.
 
 An install changes the account, so it stays a proposal the person applies (`proposals/apply.apply_proposal`): `package.install`, `package.draft.apply`, `dataset.install`, `discovery.acquire` and `project.install`.
@@ -3071,7 +3079,8 @@ the id as a string, so Data Loading's starter, `data = curio_load_data([!! data 
 loads whatever it holds; `code_references.reference_problem` and its twin
 `referenceProblem` refuse code that reads an empty one; the editor draws its
 chip as any other and the full Widgets tab leaves it out of its list
-(`waitsForData`). A template that declares `opensOnControls` has `NodeEditor`
+(`waitsForData`), and no write of an agent's code is refused for it (its twin
+`code_references.waits_for_data`). A template that declares `opensOnControls` has `NodeEditor`
 show only its controls on its Widgets tab, the rows a dashboard tile shows
 (`WidgetValueControls`), with no tag, edit, new widget or selection, and open
 there while its code reads one of its widgets (`readsAWidget`); a fresh node

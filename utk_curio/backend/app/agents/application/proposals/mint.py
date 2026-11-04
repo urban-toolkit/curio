@@ -27,7 +27,7 @@ from utk_curio.backend.app.agents.application.proposals import store as agents_s
 from utk_curio.backend.app.agents.application.turns import delegates as agents_delegates
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
-from utk_curio.backend.app.execution.code_references import normalize_widgets
+from utk_curio.backend.app.execution.code_references import REFERENCE_RE, normalize_widgets, parse_reference
 from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.execution.workflow_spec import CONTENT_KIND_NONE
 from utk_curio.backend.app.projects import storage as projects_storage
@@ -628,12 +628,23 @@ def _mint_node_content_write(
     from utk_curio.backend.app.packages import service as packages_services
 
     entry, _err = packages_services.resolve_template(user_key, project_id, node.get("type"))
+    engine = source_grounding.code_engine(entry)
+    chips = agents_grounding._chip_context(spec, node_id)
+    current = str(node.get("content") or "")
+    # Before the gate, which may probe a source: a reference the node's run
+    # would refuse. This tool declares no widget, so writing the code again
+    # could never mend the node.
+    unresolved = agents_grounding._reference_problems(proposed, current, engine, chips)
+    if unresolved:
+        return agents_tool_rounds._refuse_params(
+            agent_text.message("mint.content-references", problems="\n".join(unresolved))
+        )
     verdict, refusal = agents_grounding._gate_generated_content(
         user_key, project_id, loop_ctx,
-        code=proposed, engine=source_grounding.code_engine(entry),
+        code=proposed, engine=engine,
         node_type=node.get("type"), params=params,
-        base=loop_ctx.get("_grounding_base"), chips=agents_grounding._chip_context(spec, node_id),
-        node_id=node_id, current=str(node.get("content") or ""),
+        base=loop_ctx.get("_grounding_base"), chips=chips,
+        node_id=node_id, current=current,
     )
     if refusal:
         return agents_tool_rounds._refuse_params(refusal)
@@ -786,6 +797,18 @@ def _node_create_declared_widgets(user_key: str, project_id: str, entry: dict) -
     return packages_services.declared_widgets(user_key, project_id, [entry["id"]]).get(entry["id"]) or []
 
 
+def _template_circles(code: str, entry: dict) -> list[dict]:
+    """The input circles a created node's run reads once they are wired, as
+    the user or a plan's edges wire them: each circle its template has
+    (``maxIncomingEdges``), or, for a template that takes any number, each
+    one *code* names."""
+    capacity = entry.get("maxIncomingEdges")
+    if isinstance(capacity, int):
+        return [{"slot": slot} for slot in range(capacity)]
+    named = {parse_reference(ref.group(1)).get("slot") for ref in REFERENCE_RE.finditer(code)}
+    return [{"slot": slot} for slot in sorted(slot for slot in named if isinstance(slot, int))]
+
+
 def _mint_node_create(
     user_key: str, project_id: str, loop_ctx: dict, req: dict
 ) -> tuple[str, str, dict | None]:
@@ -841,11 +864,21 @@ def _mint_node_create(
     # refused too: the user reviews and confirms a source first (DEC-006).
     if loop_ctx.get("_candidates_pending_review"):
         return agents_tool_rounds._refuse_params(agent_text.message("grounding.candidates-pending"))
+    engine = source_grounding.code_engine(entry)
+    # A reference the new node's run would refuse once the node is wired: its
+    # chips are the widgets it starts with and the circles its template has.
+    unresolved = [] if starter is not None else agents_grounding._reference_problems(
+        proposed, "", engine, {"widgets": widgets, "inputs": _template_circles(proposed, entry), "selections": []},
+    )
+    if unresolved:
+        return agents_tool_rounds._refuse_params(
+            agent_text.message("mint.create-references", problems="\n".join(unresolved))
+        )
     # A starter is the template's own content, which a plan does not gate
     # either; any other content passes the gate.
     verdict, refusal = (None, None) if starter is not None else agents_grounding._gate_generated_content(
         user_key, project_id, loop_ctx,
-        code=proposed, engine=source_grounding.code_engine(entry), node_type=entry["id"], params=params,
+        code=proposed, engine=engine, node_type=entry["id"], params=params,
         chips=agents_grounding._chip_context(saved, widgets=widgets),
         widgets=widgets,
     )
