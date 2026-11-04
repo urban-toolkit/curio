@@ -2,7 +2,7 @@ import React from "react";
 
 import DataflowThumbnail, { type ThumbnailHighlight } from "../../DataflowThumbnail";
 import type { ScenarioRow } from "../../../services/scenarioCatalog";
-import { ScenarioName } from "./scenarioFacts";
+import { ScenarioName, scenarioNodeCount } from "./scenarioFacts";
 import styles from "../../packages/publishing/PackageCard.module.css";
 import local from "./ScenarioCatalogDrawer.module.css";
 
@@ -12,17 +12,12 @@ export interface ScenarioCardProps {
   /** In the In project tab: what can be done to this dataflow's scenario, a
    *  row of buttons under the card. */
   controls?: React.ReactNode;
-  /** In the In project tab: the card's top-right corner, Delete. */
-  corner?: React.ReactNode;
-  /** In Browse all: whether the card is selected, what a click on it does
-   *  (*toggle* with Ctrl or Cmd held), and its drag, which brings the
-   *  selected scenarios. */
-  selected?: boolean;
-  onSelect?: (toggle: boolean) => void;
+  /** In Browse all: the card's drag, which brings its scenario. */
   onDragStart?: (event: React.DragEvent<HTMLElement>) => void;
   onDragEnd?: () => void;
   /** In the In project tab: the pointer entering (true) or leaving (false)
-   *  the card, which marks the scenario's fixed context on the canvas. */
+   *  the card, which marks the scenario's shared context and shared outcomes
+   *  on the canvas. */
   onPoint?: (on: boolean) => void;
   /** The scenario's nodes marked on the graph, when they are known. */
   highlight?: ThumbnailHighlight | null;
@@ -33,23 +28,18 @@ export interface ScenarioCardProps {
  * One scenario in the canvas Scenario Catalog drawer.
  *
  * The Model drawer's card body: an avatar with the way into the details
- * beneath it, a title, then the description. The set panel it sits in
- * names the set and leads to its project (`ScenarioSetGroup`). The avatar is
- * the project's graph, the picture that tells two scenarios apart; which of its
- * nodes the scenario holds shows in the details, which load them. In Browse
- * all a click selects the card (Ctrl or Cmd adds one of its set), and the card
- * is the drag source of the selected scenarios, which arrive on the canvas as
- * copies and change nothing in their project. In the In project tab the scenario is
- * this dataflow's: the card marks its nodes on the graph and carries its
- * buttons.
+ * beneath it, a title and ONE meta line, then the description. The set panel
+ * it sits in names the set and leads to its project (`ScenarioSetGroup`). The
+ * avatar is the project's graph, the picture that tells two scenarios apart.
+ * In Browse all the card drags its scenario onto the canvas, as every
+ * catalog's card drags one item; the copy changes nothing in its project. In
+ * the In project tab the scenario is this dataflow's: the card marks its nodes
+ * on the graph and carries its buttons.
  */
 export const ScenarioCard: React.FC<ScenarioCardProps> = ({
   scenario,
   onOpenDetails,
   controls,
-  corner,
-  selected = false,
-  onSelect,
   onDragStart,
   onDragEnd,
   onPoint,
@@ -57,37 +47,18 @@ export const ScenarioCard: React.FC<ScenarioCardProps> = ({
   testId,
 }) => {
   const detailsLabel = `View ${scenario.name} (${scenario.project.name}) details`;
-  // A click on the card's own body selects it; its thumbnail, View details and
-  // any other control keep their own click.
-  const select = onSelect
-    ? (event: React.MouseEvent<HTMLElement>) => {
-        if ((event.target as HTMLElement).closest("button, a, input, select, textarea")) return;
-        onSelect(event.ctrlKey || event.metaKey);
-      }
-    : undefined;
-  const selectByKey = onSelect
-    ? (event: React.KeyboardEvent<HTMLElement>) => {
-        if (event.target !== event.currentTarget || (event.key !== " " && event.key !== "Enter")) return;
-        event.preventDefault();
-        onSelect(event.ctrlKey || event.metaKey);
-      }
-    : undefined;
+  const draggable = Boolean(onDragStart);
 
   return (
     <article
-      className={selected ? `${styles.card} ${local.cardSelected}` : styles.card}
+      className={draggable ? `${styles.card} ${styles.cardDraggable}` : styles.card}
       /* Same attribute the browse cards carry, so a scenario shares one
          identifier across surfaces. */
       data-scenario-key={scenario.key}
       data-testid={testId}
-      draggable={onDragStart ? true : undefined}
+      draggable={draggable || undefined}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
-      onClick={select}
-      onKeyDown={selectByKey}
-      role={onSelect ? "option" : undefined}
-      tabIndex={onSelect ? 0 : undefined}
-      aria-selected={onSelect ? selected : undefined}
       onMouseEnter={onPoint ? () => onPoint(true) : undefined}
       onMouseLeave={onPoint ? () => onPoint(false) : undefined}
     >
@@ -121,12 +92,15 @@ export const ScenarioCard: React.FC<ScenarioCardProps> = ({
         <h3 className={styles.cardTitle}>
           <ScenarioName row={scenario} />
         </h3>
+        <div className={styles.cardMetaRow}>
+          <span className={styles.cardMetaText}>
+            {[scenario.project.name, scenarioNodeCount(scenario)].join(" · ")}
+          </span>
+        </div>
         {scenario.description ? (
           <p className={local.cardDescription}>{scenario.description}</p>
         ) : null}
       </div>
-
-      {corner ? <div className={local.cardCorner}>{corner}</div> : null}
 
       {controls ? <div className={local.cardControls}>{controls}</div> : null}
     </article>

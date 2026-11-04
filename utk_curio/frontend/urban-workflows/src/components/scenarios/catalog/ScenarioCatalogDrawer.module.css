@@ -13,23 +13,6 @@
   --curio-drawer-z: var(--curio-z-dataset-drawer);
 }
 
-/* Browse all: a card's checkbox, before its name, for a drag of several. */
-/* A Browse all card a click selected (Ctrl or Cmd adds one of its set): its
-   drag brings every selected scenario. */
-.cardSelected {
-  outline: 2px solid var(--curio-focus-ring);
-  outline-offset: -1px;
-  background: var(--curio-accent-sky-bg);
-}
-
-/* The one line of help above Browse all's sets. */
-.browseHint {
-  margin: 0 0 12px;
-  font-size: 13px;
-  line-height: 1.45;
-  color: var(--curio-text-secondary);
-}
-
 /* The avatar square holds the project graph instead of a glyph. */
 .avatarThumb {
   overflow: hidden;
@@ -67,86 +50,32 @@
   text-decoration: underline;
 }
 
-/* In project: a scenario's buttons, a quiet toolbar under its card, and the
-   commands on top of the tab that make scenarios of the canvas selection. */
+/* In project: a scenario's buttons, a row under its card, in the catalogs'
+   two treatments (PackageCard.module.css: the dark fill acts, the bordered
+   light one takes away). Two classes deep, so the row's smaller box wins over
+   the shared buttons' whatever order the stylesheets load in. */
 .cardControls {
   grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
   gap: 6px;
-  padding-top: 10px;
-  border-top: 1px solid var(--curio-border);
 }
 
+.cardControls > button,
+.inProjectActions > button {
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px;
+  font-size: var(--curio-font-size-sm);
+  white-space: nowrap;
+}
+
+/* On top of the In project tab: Define scenario. */
 .inProjectActions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 12px;
-}
-
-.tool {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--curio-border-strong);
-  border-radius: var(--curio-radius-md);
-  background: var(--curio-card-bg);
-  color: var(--curio-text-primary);
-  font: inherit;
-  font-size: var(--curio-font-size-xs);
-  font-weight: 600;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.tool:hover:not(:disabled) {
-  background: var(--curio-surface-muted);
-}
-
-.tool:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.toolIcon {
-  font-size: 10px;
-  color: var(--curio-text-secondary);
-}
-
-/* The one a card or the tab is mostly for: Run scenario, Define scenario. */
-.toolPrimary {
-  border-color: var(--curio-text-primary);
-}
-
-.toolPrimary .toolIcon {
-  color: var(--curio-text-primary);
-}
-
-/* The card's top-right corner, beside its name: Delete. */
-.cardCorner {
-  align-self: start;
-}
-
-/* Delete: the icon alone, red under the pointer. */
-.toolDanger {
-  width: 28px;
-  padding: 0;
-  justify-content: center;
-  border-color: transparent;
-  background: none;
-}
-
-.toolDanger:hover:not(:disabled) {
-  border-color: var(--curio-danger-border);
-  background: var(--curio-danger-bg);
-}
-
-.toolDanger:hover:not(:disabled) .toolIcon {
-  color: var(--curio-danger);
 }
 
 .retry {

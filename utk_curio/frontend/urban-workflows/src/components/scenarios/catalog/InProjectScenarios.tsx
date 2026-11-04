@@ -1,14 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import {
-  faClone,
-  faPen,
-  faPlay,
-  faPlus,
-  faTrashCan,
-  type IconDefinition,
-} from "@fortawesome/free-solid-svg-icons";
 
+import ConfirmDialog from "../../ConfirmDialog";
 import { useSharedView } from "../../../hook/useSharedView";
 import { useFlowContext } from "../../../providers/FlowProvider";
 import type { ScenarioSortMode } from "../../../services/scenarioCatalog";
@@ -22,6 +14,7 @@ import { ScenarioDetailModal } from "./ScenarioDetailModal";
 import { ScenarioSetGroup } from "./ScenarioSetGroup";
 import { inProjectDetails, inProjectRow, liveGraphPreview, type LiveProject } from "./inProjectRows";
 import shell from "../../packages/publishing/CatalogDrawerShell.module.css";
+import buttons from "../../packages/publishing/PackageCard.module.css";
 import styles from "./ScenarioCatalogDrawer.module.css";
 
 export interface InProjectScenariosProps {
@@ -51,6 +44,8 @@ export function InProjectScenarios({ scenarios, search, sort, presented }: InPro
   const actions = useScenarioActions();
   const { setHighlighted } = useScenarioUi();
   const [detailId, setDetailId] = useState<string | null>(null);
+  // The scenario whose Delete waits for its confirm, as the Data drawer asks.
+  const [deleting, setDeleting] = useState<Scenario | null>(null);
 
   // A card that goes away under the pointer never sees it leave: the tab
   // changes, the drawer closes, the scenario is deleted. The canvas mark goes
@@ -105,7 +100,9 @@ export function InProjectScenarios({ scenarios, search, sort, presented }: InPro
     <>
       {!shared ? (
         <div className={styles.inProjectActions}>
-          <ToolButton icon={faPlus} label="Define scenario" primary onClick={actions.saveSelectionAsScenario} />
+          <button type="button" className={buttons.btnInstall} onClick={actions.saveSelectionAsScenario}>
+            Define scenario
+          </button>
         </div>
       ) : null}
 
@@ -146,11 +143,6 @@ export function InProjectScenarios({ scenarios, search, sort, presented }: InPro
                 }}
                 onOpenDetails={() => setDetailId(scenario.id)}
                 onPoint={(on) => setHighlighted(on ? scenario.id : null)}
-                corner={
-                  shared ? undefined : (
-                    <ToolButton icon={faTrashCan} label="Delete" danger onClick={() => remove(scenario.id)} />
-                  )
-                }
                 controls={
                   shared ? undefined : (
                     <ScenarioControls
@@ -158,6 +150,7 @@ export function InProjectScenarios({ scenarios, search, sort, presented }: InPro
                       parts={parts}
                       actions={actions}
                       notebookOn={notebookOn}
+                      onDelete={() => setDeleting(scenario)}
                     />
                   )
                 }
@@ -181,79 +174,70 @@ export function InProjectScenarios({ scenarios, search, sort, presented }: InPro
           onClose={() => setDetailId(null)}
         />
       ) : null}
+
+      {deleting ? (
+        <ConfirmDialog
+          title={`Delete ${deleting.name}?`}
+          body="The scenario leaves its set. Its nodes stay on the canvas."
+          confirmLabel="Delete"
+          destructive
+          layer="overlay"
+          onCancel={() => setDeleting(null)}
+          onConfirm={() => {
+            const { id } = deleting;
+            setDeleting(null);
+            remove(id);
+          }}
+        />
+      ) : null}
     </>
   );
 }
 
-/** A small bordered button with an icon. *danger* (Delete) shows the icon
- *  alone, named by its tooltip and accessible name. */
-function ToolButton({
-  icon,
-  label,
-  onClick,
-  disabled,
-  primary,
-  danger,
-}: {
-  icon: IconDefinition;
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-  primary?: boolean;
-  danger?: boolean;
-}) {
-  const className = [styles.tool, primary ? styles.toolPrimary : "", danger ? styles.toolDanger : ""]
-    .filter(Boolean)
-    .join(" ");
-  return (
-    <button
-      type="button"
-      className={className}
-      onClick={onClick}
-      disabled={disabled}
-      aria-label={danger ? label : undefined}
-      data-tooltip={danger ? label : undefined}
-    >
-      <FontAwesomeIcon icon={icon} className={styles.toolIcon} aria-hidden />
-      {danger ? null : label}
-    </button>
-  );
-}
-
-/** A card's buttons. A scenario with no node left can neither run nor be
- *  duplicated; it is collapsed and expanded on the canvas. Duplicate
- *  scenario copies its nodes into a new scenario of its set and opens the
- *  copy in Define scenario. Edit scenario opens Define scenario on it, where its nodes,
- *  shared context and outcomes, name and set are changed. */
+/** A card's buttons, the catalogs' own. A scenario with no node left can
+ *  neither run nor be duplicated. Duplicate scenario copies its nodes into a
+ *  new scenario of its set and opens the copy in Define scenario. Edit
+ *  scenario opens Define scenario on it, where its nodes, shared context and
+ *  shared outcomes, and name are changed. Delete asks first. */
 function ScenarioControls({
   scenario,
   parts,
   actions,
   notebookOn,
+  onDelete,
 }: {
   scenario: Scenario;
   parts: ScenarioParts;
   actions: ScenarioActions;
   notebookOn: boolean;
+  onDelete: () => void;
 }) {
   const empty = parts.nodes.length === 0;
   return (
     <>
-      <ToolButton
-        icon={faPlay}
-        label="Run scenario"
-        primary
+      <button
+        type="button"
+        className={buttons.btnInstall}
         onClick={() => actions.runScenario(scenario.id)}
         disabled={empty}
-      />
-      <ToolButton icon={faPen} label="Edit scenario" onClick={() => actions.editScenario(scenario.id)} />
+      >
+        Run scenario
+      </button>
+      <button type="button" className={buttons.btnSecondary} onClick={() => actions.editScenario(scenario.id)}>
+        Edit scenario
+      </button>
       {/* Duplicating adds nodes, which happens on the canvas only. */}
-      <ToolButton
-        icon={faClone}
-        label="Duplicate scenario"
+      <button
+        type="button"
+        className={buttons.btnSecondary}
         onClick={() => actions.duplicateScenario(scenario.id)}
         disabled={empty || notebookOn}
-      />
+      >
+        Duplicate scenario
+      </button>
+      <button type="button" className={buttons.btnSecondary} onClick={onDelete}>
+        Delete
+      </button>
     </>
   );
 }

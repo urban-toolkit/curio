@@ -1,9 +1,9 @@
 /**
- * The canvas Scenario Catalog drawer: fetched only while open, read-only, its
- * scenarios picked by a click (several of a set with Ctrl or Cmd) and dragged
- * by any picked card onto the canvas, and the way to a scenario's project asks
- * first when the dataflow behind it has unsaved changes. Browse all lists the
- * cards under the dataflow each comes from (from komar41's #914).
+ * The canvas Scenario Catalog drawer: fetched only while open, read-only, each
+ * card dragging its one scenario onto the canvas as every catalog's card drags
+ * one item, and the way to a scenario's project asks first when the dataflow
+ * behind it has unsaved changes. Browse all lists the cards under the
+ * dataflow each comes from (from komar41's #914).
  */
 import React from "react";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -130,7 +130,8 @@ describe("the canvas Scenario Catalog drawer", () => {
     expect(screen.getByRole("button", { name: "Close Scenario Catalog drawer" })).toBeInTheDocument();
     expect(await within(root()).findByText("Cool roofs")).toBeInTheDocument();
     const heat = within(card("p-heat/s-cool"));
-    expect(heat.queryByText(/\d+ nodes?$/)).toBeNull();
+    // Its one meta line: its project and how many nodes it holds.
+    expect(heat.getByText(/^Heat study · \d+ nodes?$/)).toBeInTheDocument();
     // Open source project is the set's, not each card's.
     expect(heat.queryByRole("button", { name: "Open source project" })).toBeNull();
     expect(heat.getByText("Raise roof albedo across the district.")).toBeInTheDocument();
@@ -138,15 +139,22 @@ describe("the canvas Scenario Catalog drawer", () => {
     expect(api.listCatalog).toHaveBeenCalledWith({ q: "" });
   });
 
-  test("a card is dragged onto the canvas as its scenario, and offers nothing that edits", async () => {
+  test("a card is dragged onto the canvas as its one scenario, and offers nothing that edits", async () => {
     renderDrawer();
     await within(root()).findByText("Cool roofs");
     const heat = card("p-heat/s-cool");
     expect(heat).toHaveAttribute("draggable", "true");
+    // The catalogs' shared drag look, as a package card's.
+    expect(heat.className).toMatch(/cardDraggable/);
     expect(within(heat).queryByRole("button", { name: /delete|rename|remove/i })).toBeNull();
     expect(within(root()).queryByRole("checkbox")).toBeNull();
     expect(within(root()).queryByRole("button", { name: "Pick scenarios to drag" })).toBeNull();
-    expect(within(root()).getByText(/Ctrl-click \(Cmd-click on a Mac\) to pick several scenarios of one set/)).toBeInTheDocument();
+    // The subtitle says what the drawer is and what a drag does, on one line;
+    // no help line of its own.
+    expect(within(root()).getByText(
+      "Scenarios from your projects, by scenario set. Drag one onto the canvas to copy it here.",
+    )).toBeInTheDocument();
+    expect(within(root()).queryByText(/Ctrl-click|Cmd-click|Saved selections of nodes/)).toBeNull();
 
     const data: Record<string, string> = {};
     const dataTransfer = {
@@ -157,16 +165,18 @@ describe("the canvas Scenario Catalog drawer", () => {
       effectAllowed: "",
     };
     fireEvent.dragStart(heat, { dataTransfer });
-    // The canvas reads this type (MainCanvas, useScenarioDrop).
-    // A scenario of no set drags alone, named after its project.
+    // The canvas reads this type (MainCanvas, useScenarioDrop). A scenario of
+    // no set drags with its project's name as the set's.
     expect(JSON.parse(data["application/x-curio-scenario"])).toEqual({
       projectId: "p-heat",
+      scenarioId: "s-cool",
+      name: "Cool roofs",
       setId: "",
       setName: "Heat study",
-      scenarioIds: ["s-cool"],
-      names: ["Cool roofs"],
     });
     expect(dataTransfer.effectAllowed).toBe("copy");
+    // The browser draws the card itself: no drag image of its own.
+    expect(dataTransfer.setDragImage).not.toHaveBeenCalled();
     // While it is dragged the scrim lets the drag through to the canvas.
     expect(root()).toHaveAttribute("data-dragging", "true");
 
@@ -174,15 +184,14 @@ describe("the canvas Scenario Catalog drawer", () => {
     expect(root()).not.toHaveAttribute("data-dragging");
   });
 
-  describe("a click selects scenarios, Ctrl or Cmd several of a set, and any selected card drags them", () => {
+  test("each card of a set drags its own scenario, and a click on a card selects nothing", async () => {
     const PARK = { id: "park", name: "Park shade" };
-    const rows = () => [
-      heatScenario({ key: "p-heat/s-a", id: "s-a", name: "Existing", set: PARK }),
-      heatScenario({ key: "p-heat/s-b", id: "s-b", name: "Towers", set: PARK }),
-      heatScenario({ key: "p-heat/s-c", id: "s-c", name: "Cap", set: PARK }),
-      exampleScenario({ set: { id: "loop", name: "Loop" } }),
-      exampleScenario({ key: "p-ex/s-d", id: "s-d", name: "Removed", set: { id: "loop", name: "Loop" } }),
-    ];
+    api.listCatalog.mockResolvedValue({
+      items: [
+        heatScenario({ key: "p-heat/s-a", id: "s-a", name: "Existing", set: PARK }),
+        heatScenario({ key: "p-heat/s-b", id: "s-b", name: "Towers", set: PARK }),
+      ],
+    });
     const dragFrom = (el: HTMLElement) => {
       const data: Record<string, string> = {};
       const dataTransfer = {
@@ -194,73 +203,18 @@ describe("the canvas Scenario Catalog drawer", () => {
       };
       fireEvent.dragStart(el, { dataTransfer });
       fireEvent.dragEnd(el);
-      return data["application/x-curio-scenario"] ? JSON.parse(data["application/x-curio-scenario"]) : null;
+      return JSON.parse(data["application/x-curio-scenario"]);
     };
-    const selected = () =>
-      Array.from(root().querySelectorAll('[data-scenario-key][aria-selected="true"]')).map((el) =>
-        el.getAttribute("data-scenario-key"),
-      );
-    // A click on the card's own body, away from its thumbnail and View details.
-    const body = (key: string) => card(key).querySelector("h3") as HTMLElement;
+    renderDrawer();
+    await within(root()).findByText("Towers");
 
-    beforeEach(() => api.listCatalog.mockResolvedValue({ items: rows() }));
-
-    test("a click selects one card, and a click on another moves the selection", async () => {
-      renderDrawer();
-      await within(root()).findByText("Towers");
-      expect(selected()).toEqual([]);
-      fireEvent.click(body("p-heat/s-a"));
-      expect(selected()).toEqual(["p-heat/s-a"]);
-      fireEvent.click(body("p-heat/s-b"));
-      expect(selected()).toEqual(["p-heat/s-b"]);
-      expect(within(setPanel("Park shade")).getByRole("listbox")).toHaveAttribute("aria-multiselectable", "true");
+    fireEvent.click(card("p-heat/s-a").querySelector("h3") as HTMLElement);
+    fireEvent.click(card("p-heat/s-b").querySelector("h3") as HTMLElement, { ctrlKey: true });
+    expect(root().querySelector("[aria-selected], [role='option'], [role='listbox']")).toBeNull();
+    expect(dragFrom(card("p-heat/s-b"))).toEqual({
+      projectId: "p-heat", scenarioId: "s-b", name: "Towers", setId: "park", setName: "Park shade",
     });
-
-    test("Ctrl or Cmd adds and takes out a card of the set; a card of another set starts anew", async () => {
-      renderDrawer();
-      await within(root()).findByText("Towers");
-      fireEvent.click(body("p-heat/s-a"));
-      fireEvent.click(body("p-heat/s-c"), { ctrlKey: true });
-      expect(selected()).toEqual(["p-heat/s-a", "p-heat/s-c"]);
-      fireEvent.click(body("p-heat/s-b"), { metaKey: true });
-      expect(selected()).toEqual(["p-heat/s-a", "p-heat/s-b", "p-heat/s-c"]);
-      fireEvent.click(body("p-heat/s-b"), { metaKey: true });
-      expect(selected()).toEqual(["p-heat/s-a", "p-heat/s-c"]);
-      fireEvent.click(body("p-ex/s-d"), { ctrlKey: true });
-      expect(selected()).toEqual(["p-ex/s-d"]);
-    });
-
-    test("a selected card drags every selected scenario, in the listing's order; another drags alone", async () => {
-      renderDrawer();
-      await within(root()).findByText("Towers");
-      fireEvent.click(body("p-heat/s-c"));
-      fireEvent.click(body("p-heat/s-a"), { ctrlKey: true });
-      expect(dragFrom(card("p-heat/s-c"))).toEqual({
-        projectId: "p-heat", setId: "park", setName: "Park shade", scenarioIds: ["s-a", "s-c"], names: ["Existing", "Cap"],
-      });
-      // An unselected card drags its scenario alone, and is selected then.
-      expect(dragFrom(card("p-heat/s-b")).scenarioIds).toEqual(["s-b"]);
-      expect(selected()).toEqual(["p-heat/s-b"]);
-    });
-
-    test("the thumbnail and View details select nothing; a click on no card drops the selection", async () => {
-      renderDrawer();
-      await within(root()).findByText("Towers");
-      fireEvent.click(within(card("p-heat/s-a")).getByRole("button", { name: /^View Existing .* details$/ }));
-      expect(selected()).toEqual([]);
-      fireEvent.click(body("p-heat/s-a"));
-      expect(selected()).toEqual(["p-heat/s-a"]);
-      fireEvent.click(root().querySelector("main") as HTMLElement);
-      expect(selected()).toEqual([]);
-    });
-
-    test("Space selects a focused card, and Ctrl with Space adds one", async () => {
-      renderDrawer();
-      await within(root()).findByText("Towers");
-      fireEvent.keyDown(card("p-heat/s-a"), { key: " " });
-      fireEvent.keyDown(card("p-heat/s-b"), { key: " ", ctrlKey: true });
-      expect(selected()).toEqual(["p-heat/s-a", "p-heat/s-b"]);
-    });
+    expect(dragFrom(card("p-heat/s-a")).scenarioId).toBe("s-a");
   });
 
   test("the search goes to the server as q", async () => {

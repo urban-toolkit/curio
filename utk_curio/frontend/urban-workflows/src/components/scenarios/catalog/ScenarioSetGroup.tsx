@@ -14,9 +14,6 @@ export interface ScenarioSetGroupProps {
   isSet?: boolean;
   /** Beside the count: Browse all's Open source project. */
   action?: React.ReactNode;
-  /** Browse all: its cards are selected by a click, several with Ctrl or
-   *  Cmd, so they are a list of options to pick from. */
-  selectable?: boolean;
   /** In project: renames the set. *problem* says why a name cannot be used. */
   rename?: { onRename: (name: string) => void; problem: (name: string) => string | null };
   /** Spread on the section: `data-scenario-set`, `data-scenario-group`. */
@@ -27,16 +24,14 @@ export interface ScenarioSetGroupProps {
 /**
  * One scenario set in the Scenario Catalog drawer, in both tabs: a panel
  * headed by the set's name, how many scenarios it holds and, in Browse all,
- * the way to its project; its scenarios' cards follow beneath, picked by a
- * click (several with Ctrl or Cmd) for a drag. In project, the set is
- * renamed in place.
+ * the way to its project; its scenarios' cards follow beneath, each dragged
+ * on its own. In project, the set is renamed in place, with its pencil.
  */
 export function ScenarioSetGroup({
   name,
   count,
   isSet = true,
   action,
-  selectable = false,
   rename,
   data,
   children,
@@ -61,14 +56,7 @@ export function ScenarioSetGroup({
         </span>
         {action}
       </header>
-      <div
-        className={styles.cards}
-        role={selectable ? "listbox" : undefined}
-        aria-multiselectable={selectable || undefined}
-        aria-labelledby={selectable ? nameId : undefined}
-      >
-        {children}
-      </div>
+      <div className={styles.cards}>{children}</div>
     </section>
   );
 }

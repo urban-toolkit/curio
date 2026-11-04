@@ -147,7 +147,9 @@ def test_browse_all_groups_the_cards_by_dataflow(
     ):
         group = drawer.get_by_role("region", name=name, exact=True)
         expect(group).to_have_attribute("data-scenario-group", project)
-        expect(group.locator("h3").first).to_have_text(f"{name} {count}")
+        # The set's name heads the panel, and its count stands beside it.
+        expect(group.locator("h3").first).to_have_text(name)
+        expect(group.locator("[data-scenario-set-count]")).to_have_text(count)
         held = group.locator("article[data-scenario-key]").evaluate_all(_CARD_KEYS_JS)
         assert held == keys, f"{name}'s group holds {held}, not its own cards {keys}"
 

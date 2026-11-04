@@ -183,10 +183,27 @@ describe("the Scenario Catalog drawer's In project tab", () => {
     expect(mockActions.runScenario).toHaveBeenCalledWith("s-doubled");
     fireEvent.click(button("s-doubled", "Edit scenario"));
     expect(mockActions.editScenario).toHaveBeenCalledWith("s-doubled");
+    // Delete asks first, as the Data drawer does: Cancel keeps the scenario.
     fireEvent.click(button("s-doubled", "Delete"));
+    expect(mockActions.remove).not.toHaveBeenCalled();
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Delete Doubled?" })).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog", { name: "Delete Doubled?" })).toBeNull();
+    expect(mockActions.remove).not.toHaveBeenCalled();
+    fireEvent.click(button("s-doubled", "Delete"));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Delete Doubled?" })).getByRole("button", { name: "Delete" }));
     expect(mockActions.remove).toHaveBeenCalledWith("s-doubled");
     // Each acted on its own scenario only.
     expect(mockActions.runScenario).toHaveBeenCalledTimes(1);
+    expect(mockActions.remove).toHaveBeenCalledTimes(1);
+  });
+
+  test("its buttons are the catalogs' own, Delete a word like every other", async () => {
+    await openInProject();
+    for (const name of ["Run scenario", "Edit scenario", "Duplicate scenario", "Delete"]) {
+      expect(button("s-doubled", name)).toHaveTextContent(name);
+    }
+    expect(button("s-doubled", "Run scenario").className).toMatch(/btnInstall/);
+    expect(button("s-doubled", "Delete").className).toMatch(/btnSecondary/);
   });
 
   test("a card has no Collapse or Expand: a scenario collapses on the canvas", async () => {
@@ -264,6 +281,7 @@ describe("the Scenario Catalog drawer's In project tab", () => {
     setPresented(true);
     fireEvent.mouseEnter(card("s-doubled"));
     fireEvent.click(button("s-doubled", "Delete"));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Delete Doubled?" })).getByRole("button", { name: "Delete" }));
     expect(highlighted()).toBe("");
   });
 
