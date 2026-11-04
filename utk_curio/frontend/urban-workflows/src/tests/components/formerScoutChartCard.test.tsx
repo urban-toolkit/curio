@@ -29,10 +29,12 @@ import type { NodeDescriptor } from "../../registry/types";
 
 const ROOT = path.resolve(__dirname, "../../../../../..");
 const read = (rel: string) => JSON.parse(fs.readFileSync(path.join(ROOT, rel), "utf8"));
-const MANIFEST = read("packages/curio.vega-lite@1/manifest.json");
-const EXAMPLE = read("docs/examples/06-back-bay-road-sunlight.json").dataflow;
+/** The package's manifest, read when the suite starts, so a checkout without
+ *  it fails its test rather than its import. */
+let MANIFEST: any;
 
 beforeAll(() => {
+  MANIFEST = read("packages/curio.vega-lite@1/manifest.json");
   for (const template of MANIFEST.templates) {
     registerNode({
       id: `${MANIFEST.id}/${template.id}@1`,
@@ -59,7 +61,8 @@ beforeAll(() => {
 });
 
 test("example 06's Mean sunlight, the Vega-Lite package's Bars, is tagged with its template's label on its card in a collapsed box", () => {
-  const chart = EXAMPLE.nodes.find((n: any) => n.title === "Mean sunlight");
+  const example = read("docs/examples/06-back-bay-road-sunlight.json").dataflow;
+  const chart = example.nodes.find((n: any) => n.title === "Mean sunlight");
   expect(chart).toBeDefined();
   expect(chart.type).toBe("curio.vega-lite/bars");
   const template = MANIFEST.templates.find((t: any) => t.id === "bars");

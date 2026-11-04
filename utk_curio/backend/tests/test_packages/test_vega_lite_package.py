@@ -529,7 +529,8 @@ def test_a_shipped_dataflow_lists_the_package_only_when_it_holds_one_of_its_char
     for path in sorted((REPO / "docs" / "examples").rglob("*.json")):
         if any(part in path.parts for part in ("prompts", "expected_outputs")):
             continue
-        dataflow = json.loads(path.read_text(encoding="utf-8")).get("dataflow")
+        spec = json.loads(path.read_text(encoding="utf-8"))
+        dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
         if not isinstance(dataflow, dict):
             continue
         relative = path.relative_to(REPO).as_posix()

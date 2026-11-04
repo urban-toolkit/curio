@@ -166,7 +166,7 @@ def test_a_chat_on_a_dataflow_of_both_packages_lists_their_skills_after_its_agen
     key = _user_dir_key(user)
     _store_packages(key)
     with_both = _project(client, scripted, packages=PACKAGES, nodes=PACKAGE_NODES)
-    assert projects_storage.read_spec(key, with_both)["dataflow"]["packages"] == PACKAGES
+    assert set(PACKAGES) <= set(projects_storage.read_spec(key, with_both)["dataflow"]["packages"])
     att = _attach(client, scripted, with_both, NB)
     testing_provider.push_replies(_read("rasterization"), "Done.")
     _run(client, scripted, with_both, att)

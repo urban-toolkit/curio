@@ -59,7 +59,7 @@ PACKAGE_CHART_STYLE = (
     '"y": {"field": "[!! y !!]", "type": "quantitative", "aggregate": "mean"}, '
     '"color": {"field": "scenario_name", "type": "nominal", "scale": [!! scenario colors !!]}}}'
 )
-SCOUT_WIDGETS = [
+PACKAGE_CHART_WIDGETS = [
     {"name": "opacity", "type": "slider", "default": 0.8, "options": {"min": 0, "max": 1}},
     {"name": "title", "type": "text", "default": "Mean daily trips"},
     {"name": "y", "type": "text", "default": "daily_trips"},
@@ -143,7 +143,7 @@ class TestACreatedNode:
         att = grounding_routes._attach(client, token, charts, NB)
         calls = grounding_routes._script(monkeypatch, [
             _create(VEGA, OWNERS_VEGA),
-            _create(VEGA, PACKAGE_CHART_STYLE, widgets=SCOUT_WIDGETS),
+            _create(VEGA, PACKAGE_CHART_STYLE, widgets=PACKAGE_CHART_WIDGETS),
             "Added it.",
         ])
         body = grounding_routes._run(client, token, charts, att, "chart the mean trips per scenario")

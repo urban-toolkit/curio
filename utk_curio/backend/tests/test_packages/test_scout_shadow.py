@@ -278,7 +278,7 @@ def staged(tmp_path, sources: Path, module: str, *names: str, also=()):
 
 def shadow_modules(tmp_path):
     """``(deep_umbra, node_outputs)``, as the node imports them, beside the
-    Scout modules its node is handed."""
+    Rasterization modules its node is handed."""
     return staged(tmp_path, SOURCES, MODULE, "deep_umbra", "node_outputs", also=[RASTER_MODULES])
 
 

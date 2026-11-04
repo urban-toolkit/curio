@@ -697,8 +697,8 @@ def _map_after(spec: dict, node_id: str) -> dict:
 
 
 def test_the_dataflow_is_made_of_curios_own_nodes_and_scouts_raster_calculator():
-    """One package, Scout, for the Raster Calculators and the charts, and
-    Curio's own nodes otherwise: two Python nodes holding the settings, the
+    """Two packages, Rasterization for the Raster Calculators and the
+    Vega-Lite package for the charts, and Curio's own nodes otherwise: two Python nodes holding the settings, the
     Region and the Projection period, and no Parameter node; five Data Loading
     nodes, three for the seven rasters and one each for the tracts and the
     waterways; a Data Transformation keeping the riverside tracts; three
