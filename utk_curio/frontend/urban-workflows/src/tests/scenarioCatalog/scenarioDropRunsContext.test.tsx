@@ -38,14 +38,23 @@ jest.mock("../../TrillGenerator", () => ({
 }));
 jest.mock("../../utils/scenarios/scenarioParts", () => ({ liveScenarios: (saved: unknown) => saved }));
 jest.mock("../../utils/scenarios/scenarioDrop", () => ({
-  planScenarioDrop: () => ({
-    outputs: [{ source: "buildings", node: "loader-1" }],
-    loaders: [],
-    scenarios: [{ id: "dropped", name: "Existing", color: "#2a9d8f", nodes: [] }],
-    set: { id: "set-new", name: "Park shade (copy)" },
-  }),
+  planScenarioDrop: () => {
+    const scenario = { id: "dropped", name: "Existing", color: "#2a9d8f", nodes: [] };
+    const set = { id: "set-dropped", name: "Park shade", source: { project: "src", set: "park" } };
+    return {
+      outputs: [{ source: "buildings", node: "loader-1" }],
+      loaders: [],
+      scenarios: [scenario],
+      sets: [set],
+      scenario,
+      set,
+      made: true,
+    };
+  },
   dropGraph: () => ({ nodes: [{ id: "loader-1" }], edges: [] }),
   loaderNodes: () => [],
+  alreadyInCopy: () => null,
+  presentInCopy: () => [],
 }));
 jest.mock("../../services/scenarioCatalog", () => ({
   scenarioCatalogApi: { getCopyPlan: jest.fn(), copyInto: jest.fn() },
@@ -63,19 +72,18 @@ import type { RunEvent } from "../../services/runs/runsApi";
 const catalog = scenarioCatalogApi as unknown as { getCopyPlan: jest.Mock; copyInto: jest.Mock };
 const runs = runsApi as unknown as { start: jest.Mock; follow: jest.Mock; get: jest.Mock };
 
-const PAYLOAD = { projectId: "src", setId: "park", setName: "Park shade", scenarioIds: ["existing"], names: ["Existing"] };
+const PAYLOAD = { projectId: "src", scenarioId: "existing", name: "Existing", setId: "park", setName: "Park shade" };
 
 /** What the server says a drop of "Existing" from chicago-loop-shadow-towers copies; *toRun* lists the context to run first. */
 function plan(toRun: { nodeId: string; label: string }[]): any {
   return {
     scenario: { id: "existing", name: "Existing", color: "#2a9d8f", description: "" },
-    scenarios: [{ id: "existing", name: "Existing", color: "#2a9d8f", description: "", levers: [], context: [], outcomes: [] }],
     set: { id: "park", name: "Park shade" },
-    shared: [],
     project: { id: "src", name: "Chicago Loop shadow with towers removed or edited" },
-    levers: ["shadow"],
+    nodes: ["shadow"],
     context: [{ nodeId: "buildings", label: "Buildings", source: { nodeId: "buildings", copiedFrom: [] } }],
-    outcomes: [{ nodeId: "shadow", label: "Accumulated Shadow", sources: [] }],
+    shared: [],
+    outcomes: [],
     dataflow: { nodes: [], edges: [] },
     packages: [],
     problems: [],
@@ -137,7 +145,7 @@ it("runs the context on the server in the scenario's project, plans again, then 
     "Running Buildings in Chicago Loop shadow with towers removed or edited for \"Existing\"", "info");
   expect(runs.follow.mock.calls.map(([runId]) => runId)).toEqual(["r1"]);
   expect(catalog.getCopyPlan).toHaveBeenCalledTimes(2);
-  expect(catalog.getCopyPlan).toHaveBeenLastCalledWith(PAYLOAD, "target");
+  expect(catalog.getCopyPlan).toHaveBeenLastCalledWith(PAYLOAD, "target", []);
   expect(catalog.copyInto).toHaveBeenCalledTimes(1);
   // In that order: the run, its end, the second plan, the copy.
   const [started] = runs.start.mock.invocationCallOrder;

@@ -49,37 +49,28 @@ export interface ScenarioResult {
   updatedAt: string | null;
 }
 
-/** A node of the scenario's fixed context, levers or outcomes. */
+/** A node of the scenario's shared context, its own nodes or its shared outcomes. */
 export interface ScenarioNodeEntry {
   id: string;
   /** The node's template, `curio.builtin/vis-vega@1`. */
   type: string;
   /** Its title, when it has one. */
   label?: string;
-  results: ScenarioResult[];
+  /** The outputs its project saved for it, for a node whose output the
+   *  scenario saves (a context node whose output crosses into it, or a shared
+   *  outcome); absent for another, which is listed without an output line. */
+  results?: ScenarioResult[];
 }
 
-/** One scenario as `GET /api/scenarios/<project>/<scenario>` describes it. */
+/** One scenario as `GET /api/scenarios/<project>/<scenario>` describes it:
+ *  its parts by role (`scenarioParts`). */
 export interface ScenarioDetails extends ScenarioRow {
+  /** Its Shared context. */
   context: ScenarioNodeEntry[];
+  /** Its Scenario-specific nodes. */
   levers: ScenarioNodeEntry[];
+  /** Its Shared outcomes. */
   outcomes: ScenarioNodeEntry[];
-}
-
-/** A shared context or outcome node of a set, with the set's scenarios that use it. */
-export interface ScenarioSetNodeEntry extends ScenarioNodeEntry {
-  scenarios: string[];
-}
-
-/** One scenario set as `GET /api/scenarios/sets/<project>/<set>` describes it. */
-export interface ScenarioSetDetails {
-  set: { id: string; name: string; description?: string };
-  /** `<projectId>/<setId>`. */
-  key: string;
-  project: ScenarioProjectRef;
-  scenarios: ScenarioRow[];
-  context: ScenarioSetNodeEntry[];
-  outcomes: ScenarioSetNodeEntry[];
 }
 
 /** A node of a saved spec, as a copy plan carries it. */
@@ -103,51 +94,36 @@ export interface SpecEdgeShape {
   [key: string]: unknown;
 }
 
-/** A context node of a scenario being dragged, in its own project. */
+/** A node whose output crosses into what a drop copies, in its own project. */
 export interface ScenarioCopyContext {
   nodeId: string;
   label: string;
   /** The node whose saved output stands for this one's, which arrives as data. */
   source?: { nodeId: string; copiedFrom: string[]; datasetId?: string };
-  /** The dragged scenarios that read it. */
-  scenarios?: string[];
-}
-
-/** One dragged scenario, as a drop plan gives it. Node ids are the source's. */
-export interface ScenarioCopyScenario {
-  id: string;
-  name: string;
-  color: string;
-  description: string;
-  /** Its own nodes. */
-  levers: string[];
-  /** The context nodes it reads that arrive. */
-  context: string[];
-  /** The shared outcome nodes it lists that come. */
-  outcomes: string[];
 }
 
 /**
- * What `GET /api/scenarios/<project>/<scenario>/copy?target=<id>` says a drop
- * of the scenario into the target copies. Ids are the source project's.
+ * What `GET /api/scenarios/<project>/<scenario>/copy?target=<id>&present=<ids>`
+ * says a drop of the scenario into the target copies, where the target's copy
+ * of its set holds the scenarios *present* already. Ids are the source
+ * project's.
  */
 export interface ScenarioCopyPlan {
-  /** The first scenario dragged. */
   scenario: { id: string; name: string; color: string; description: string };
-  /** Every scenario dragged, of one set. */
-  scenarios: ScenarioCopyScenario[];
-  /** Their set in the source project. */
+  /** Its set in the source project. */
   set: { id: string; name: string };
   project: { id: string; name: string };
-  levers: string[];
+  /** Its Scenario-specific nodes. */
+  nodes: string[];
+  /** What crosses into the nodes it copies from outside, each arriving as data. */
   context: ScenarioCopyContext[];
-  /** Each scenario's results, with the levers whose saved outputs they show. */
-  outcomes: { nodeId: string; label: string; sources: string[] }[];
-  /** The set's shared outcome nodes that come: every input of theirs comes
-   *  too. Each with the scenarios that list it and the copied nodes whose
-   *  saved outputs it shows. */
+  /** The set's shared outcomes that land with it: every input of theirs is in
+   *  once it is. Each with the scenarios dragged or present that list it and
+   *  the copied nodes whose saved outputs stand for it. */
   shared: { nodeId: string; label: string; scenarios: string[]; sources: string[] }[];
-  /** The levers and the shared outcomes that come, and the edges into them. */
+  /** The ids of its own shared outcomes. */
+  outcomes: string[];
+  /** Its nodes and the shared outcomes that land, and the edges into them. */
   dataflow: { nodes: SpecNodeShape[]; edges: SpecEdgeShape[] };
   /** Packages the target project gets. */
   packages: string[];

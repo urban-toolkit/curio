@@ -1,14 +1,18 @@
-"""What dragging scenarios of one set into another dataflow copies, read
-from their project's spec (#662).
+"""What dragging one scenario into another dataflow copies, read from its
+project's spec (#662). The first drop of a set's scenario makes the set's copy
+there; a later drop of another scenario of that set joins it.
 
-* Their levers, with the edges between them and the edges entering them.
-* Their fixed context, once. A context node stands for the output it passes
-  on, so it is the one node whose saved output (``saved_sources``) arrives as
+* Its Scenario-specific nodes, with the edges between them and the edges
+  entering them.
+* The set's shared outcomes that land with it: those whose every input is in
+  once it is (a node of it or of a scenario the copy holds, a context node
+  arriving as data, or another outcome landing or landed).
+* What crosses into those from outside, its boundary (``scenario_parts``),
+  each context node once. A context node stands for the output it passes on,
+  so it is the one node whose saved output (``saved_sources``) arrives as
   data. A context node that passes on several outputs, or none, cannot.
-* The set's shared outcome nodes that still work: those whose every input
-  comes too (a dragged scenario's node, a context node arriving as data, or
-  another outcome that comes).
-* The outputs their results show, which are the saved outputs of levers.
+* The saved outputs that stand for the shared outcomes landing, so they show
+  without a run.
 * What the copied nodes need: their packages, datasets and models.
 """
 from __future__ import annotations
@@ -35,65 +39,22 @@ def node_label(node: dict) -> str:
     return _humanize_node_type(_template(node)) or str(node.get("id"))
 
 
-def copy_plan(scenario: dict, nodes: list[dict], edges: list[dict], packages=None) -> dict[str, Any]:
-    """The nodes, edges and outputs a drop of *scenario* copies, as node ids
-    of its own project. ``context`` lists each context node with the one node
-    whose saved output stands for it (``source``), or ``sources`` when that is
-    not one node. *packages* (a ``TemplateGrammars``, the account's) reads what
-    each node's template declares, ``TemplateGrammars.for_account()`` when
-    None."""
-    from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
+def copy_plan(
+    scenario: dict, present: list[dict], scenarios: list[dict], nodes: list[dict], edges: list[dict], packages=None,
+) -> dict[str, Any]:
+    """What a drop of *scenario* copies, as node ids of its project, into a
+    dataflow whose copy of its set holds *present* already (scenarios of that
+    set). *scenarios* are every scenario of the project, as a save keeps them
+    (``kept_scenarios``). *packages* (a ``TemplateGrammars``, the account's)
+    reads what each node's template declares, ``TemplateGrammars.for_account()``
+    when None.
 
-    by_id = {n["id"]: n for n in nodes}
-    parts = scenario_parts(scenario, nodes, edges)
-    levers = parts["levers"]
-    inside = set(levers)
-    packages = packages or TemplateGrammars.for_account()
-
-    context: list[dict[str, Any]] = []
-    for node_id in parts["context"]:
-        node = by_id[node_id]
-        entry: dict[str, Any] = {"nodeId": node_id, "label": node_label(node)}
-        sources = saved_sources(node_id, nodes, edges, packages)
-        if len(sources) == 1:
-            source = by_id[sources[0]]
-            entry["source"] = {"nodeId": source["id"], "copiedFrom": lineage_of(source)}
-        else:
-            entry["sources"] = sources
-        context.append(entry)
-
-    outcomes = [
-        {
-            "nodeId": node_id,
-            "label": node_label(by_id[node_id]),
-            "sources": [s for s in saved_sources(node_id, nodes, edges, packages) if s in inside],
-        }
-        for node_id in parts["outcomes"]
-    ]
-    return {
-        "levers": levers,
-        "context": context,
-        "outcomes": outcomes,
-        "dataflow": {
-            "nodes": [by_id[i] for i in levers],
-            "edges": [e for e in edges if e["target"] in inside],
-        },
-    }
-
-
-def copy_set_plan(scenarios: list[dict], nodes: list[dict], edges: list[dict], packages=None) -> dict[str, Any]:
-    """What a drop of *scenarios*, all of one set and each with the
-    ``context`` and ``outcomes`` it keeps, copies, as node ids of their
-    project. A context node read by several of them is listed once.
-
-    ``context`` lists each context node with the one node whose saved output
-    stands for it (``source``), or ``sources`` when that is not one node, and
-    the scenarios that use it (``scenarios``). ``outcomes`` lists each
-    scenario's own results, as :func:`copy_plan` does. ``shared`` lists the
-    set's outcome nodes that come, each with the scenarios that list it and
-    the copied nodes whose saved outputs stand for it. ``scenarios`` gives
-    each scenario's levers, and the context and shared outcomes of its that
-    come."""
+    ``nodes`` are its own; ``shared`` the set's shared outcomes that land with
+    it, each with the scenarios dragged or present that list it and the copied
+    nodes whose saved outputs stand for it; ``context`` each node whose output
+    crosses into what is copied, with the one node whose saved output stands
+    for it (``source``), or ``sources`` when that is not one node; ``outcomes``
+    the ids of its own shared outcomes."""
     from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
 
     by_id = {n["id"]: n for n in nodes}
@@ -101,14 +62,17 @@ def copy_set_plan(scenarios: list[dict], nodes: list[dict], edges: list[dict], p
     order = {n["id"]: i for i, n in enumerate(nodes)}
     in_order = lambda ids: sorted(ids, key=lambda i: order[i])  # noqa: E731
 
-    parts = {s["id"]: scenario_parts(s, nodes, edges) for s in scenarios}
-    levers = [node_id for s in scenarios for node_id in parts[s["id"]]["levers"]]
-    inside = set(levers)
-    # Each scenario's context: what it reads directly, and what it keeps.
-    reads: dict[str, set[str]] = {
-        s["id"]: {i for i in [*parts[s["id"]]["context"], *(s.get("context") or [])] if i in by_id and i not in inside}
-        for s in scenarios
-    }
+    group = [scenario, *present]
+    parts = {s["id"]: scenario_parts(s, nodes, edges, scenarios) for s in group}
+    own = parts[scenario["id"]]["nodes"]
+    boxed = {i for s in scenarios for i in s.get("nodes") or []}
+    every_outcome = {i for s in scenarios for i in s.get("outcomes") or []}
+    incoming: dict[str, list[str]] = {}
+    for edge in edges:
+        if _is_interaction(edge) or edge["source"] not in by_id or edge["target"] not in by_id:
+            continue
+        incoming.setdefault(edge["target"], []).append(edge["source"])
+
     single: dict[str, str | None] = {}
 
     def source_of(node_id: str) -> str | None:
@@ -117,49 +81,39 @@ def copy_set_plan(scenarios: list[dict], nodes: list[dict], edges: list[dict], p
             single[node_id] = found[0] if len(found) == 1 else None
         return single[node_id]
 
-    known_context = set().union(*reads.values()) if reads else set()
-    incoming: dict[str, list[str]] = {}
-    for edge in edges:
-        if _is_interaction(edge) or edge["source"] not in by_id or edge["target"] not in by_id:
-            continue
-        incoming.setdefault(edge["target"], []).append(edge["source"])
+    def is_context(node_id: str) -> bool:
+        return node_id not in boxed and node_id not in every_outcome
 
-    # The shared outcomes that come: every input of theirs comes too. Read to
-    # a fixpoint, so an outcome reading another outcome comes with it.
-    candidates = in_order({
-        i for s in scenarios for i in (s.get("outcomes") or []) if i in by_id and i not in inside
-    })
-    shared: list[str] = []
-    brought_context: set[str] = set()
-    grew = True
-    while grew:
-        grew = False
-        for node_id in candidates:
-            if node_id in shared:
-                continue
-            inputs = incoming.get(node_id, [])
-            ok = bool(inputs) and all(
-                source in inside or source in shared
-                or (source in known_context and source_of(source) is not None)
-                for source in inputs
-            )
-            if ok:
-                shared.append(node_id)
-                brought_context.update(i for i in inputs if i in known_context)
-                grew = True
-    shared = in_order(shared)
-    copied = inside | set(shared)
+    def landed(scenarios_in: list[dict]) -> set[str]:
+        """The shared outcomes of *scenarios_in* whose every input is in with
+        them. Read to a fixpoint, so an outcome reading another lands with it."""
+        inside = {i for s in scenarios_in for i in parts[s["id"]]["nodes"]}
+        candidates = in_order({i for s in scenarios_in for i in parts[s["id"]]["outcomes"]})
+        done: set[str] = set()
+        grew = True
+        while grew:
+            grew = False
+            for node_id in candidates:
+                if node_id in done:
+                    continue
+                inputs = incoming.get(node_id, [])
+                if inputs and all(
+                    i in inside or i in done or (is_context(i) and source_of(i) is not None) for i in inputs
+                ):
+                    done.add(node_id)
+                    grew = True
+        return done
 
-    # The context: what the levers read, and what a shared outcome reads.
-    direct = {i for s in scenarios for i in parts[s["id"]]["context"]}
+    now = in_order(landed(group) - landed(present))
+    copied = set(own) | set(now)
+
+    # The context: what crosses into its own nodes (a node of another box
+    # among it, as main's rule reads it), and into the outcomes landing.
+    crossing = {i for node_id in own for i in incoming.get(node_id, []) if i not in copied}
+    crossing |= {i for node_id in now for i in incoming.get(node_id, []) if is_context(i)}
     context: list[dict[str, Any]] = []
-    for node_id in in_order(direct | brought_context):
-        node = by_id[node_id]
-        entry: dict[str, Any] = {
-            "nodeId": node_id,
-            "label": node_label(node),
-            "scenarios": [s["id"] for s in scenarios if node_id in reads[s["id"]]],
-        }
+    for node_id in in_order(crossing):
+        entry: dict[str, Any] = {"nodeId": node_id, "label": node_label(by_id[node_id])}
         sources = saved_sources(node_id, nodes, edges, packages)
         if len(sources) == 1:
             source = by_id[sources[0]]
@@ -167,39 +121,20 @@ def copy_set_plan(scenarios: list[dict], nodes: list[dict], edges: list[dict], p
         else:
             entry["sources"] = sources
         context.append(entry)
-    context_ids = {entry["nodeId"] for entry in context}
 
-    results = [
-        {
-            "nodeId": node_id,
-            "label": node_label(by_id[node_id]),
-            "sources": [x for x in saved_sources(node_id, nodes, edges, packages) if x in inside],
-        }
-        for s in scenarios
-        for node_id in parts[s["id"]]["outcomes"]
-    ]
     return {
-        "levers": levers,
+        "nodes": own,
         "context": context,
-        "outcomes": results,
         "shared": [
             {
                 "nodeId": node_id,
                 "label": node_label(by_id[node_id]),
-                "scenarios": [s["id"] for s in scenarios if node_id in (s.get("outcomes") or [])],
+                "scenarios": [s["id"] for s in group if node_id in parts[s["id"]]["outcomes"]],
                 "sources": [x for x in saved_sources(node_id, nodes, edges, packages) if x in copied],
             }
-            for node_id in shared
+            for node_id in now
         ],
-        "scenarios": [
-            {
-                "id": s["id"],
-                "levers": parts[s["id"]]["levers"],
-                "context": in_order(reads[s["id"]] & context_ids),
-                "outcomes": [i for i in shared if i in (s.get("outcomes") or [])],
-            }
-            for s in scenarios
-        ],
+        "outcomes": parts[scenario["id"]]["outcomes"],
         "dataflow": {
             "nodes": [by_id[i] for i in in_order(copied)],
             "edges": [e for e in edges if e["target"] in copied],

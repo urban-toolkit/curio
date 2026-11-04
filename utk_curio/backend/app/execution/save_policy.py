@@ -59,8 +59,9 @@ def should_save_output_on_run(
 
 def saved_source_node_ids(spec: object, packages=None) -> set[str]:
     """Every node whose output a save or a run records whatever its own Save
-    toggle says: what a pinned dashboard tile reads, and what a scenario's
-    context and outcomes produce. The twin of ``savedSourceNodeIds``.
+    toggle says: what a pinned dashboard tile reads, and what stands for each
+    scenario's boundary and shared outcomes (``scenario_source_node_ids``).
+    The twin of ``savedSourceNodeIds``.
     *packages* (a ``TemplateGrammars``) reads the manifests,
     ``TemplateGrammars.for_account()`` when None."""
     from utk_curio.backend.app.projects.dashboard_payload import dashboard_source_node_ids

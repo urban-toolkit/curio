@@ -13,16 +13,22 @@ import { runsApi, type RunStatus } from "../../services/runs/runsApi";
 import { scenarioCatalogApi, type ScenarioCopyPlan, type ScenarioDragPayload } from "../../services/scenarioCatalog";
 import { TrillGenerator } from "../../TrillGenerator";
 import { restoredByNode, restoredOutputs, withOutputs } from "../../utils/restoredOutputs";
-import { dropGraph, loaderNodes, planScenarioDrop } from "../../utils/scenarios/scenarioDrop";
+import {
+  alreadyInCopy,
+  dropGraph,
+  loaderNodes,
+  planScenarioDrop,
+  presentInCopy,
+} from "../../utils/scenarios/scenarioDrop";
 import { liveScenarios } from "../../utils/scenarios/scenarioParts";
 
 /** What a scenario drop added. */
 export interface DroppedScenario {
   /** The ids of the nodes the drop added. */
   nodes: string[];
-  /** The ids of the scenarios it added. */
-  scenarios: string[];
-  /** The id of the set it added them in. */
+  /** The id of the scenario it added. */
+  scenario: string;
+  /** The id of its set here: the copy it made or joined. */
   set: string;
 }
 
@@ -31,12 +37,9 @@ function listed(labels: string[]): string {
   return labels.length < 2 ? labels.join("") : `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}`;
 }
 
-/** What a message calls the scenarios a plan drops: one by its name, several
- *  by how many and their set. */
+/** What a message calls the scenario a plan drops. */
 function dragged(plan: ScenarioCopyPlan): string {
-  return plan.scenarios.length === 1
-    ? `"${plan.scenarios[0].name}"`
-    : `${plan.scenarios.length} scenarios of "${plan.set.name}"`;
+  return `"${plan.scenario.name}"`;
 }
 
 /**
@@ -73,18 +76,18 @@ async function runContext(
 }
 
 /**
- * Scenarios of one set dragged from the Scenario Catalog onto this canvas
- * (#662), arriving as a new scenario set, all collapsed.
+ * A scenario dragged from the Scenario Catalog onto this canvas (#662),
+ * arriving collapsed: the first of its set makes the set's copy here, a later
+ * one joins it (`planScenarioDrop`), and one the copy holds already is refused.
  *
  * The server says what the drop copies and whether it can (a package that
  * cannot be added, a context only the browser can make); a context node with
  * no saved output runs first on the server, in the scenario's project, and
- * the server is asked again; the canvas picks the copies' ids
- * (`planScenarioDrop`); the server then adds the packages and copies the
- * saved outputs to those ids; and the canvas loads the copies the way
- * Duplicate selection does, with the copied outputs restored the way opening
- * a project restores them, and adds the scenarios and their set. Nothing is
- * added unless all of them can be.
+ * the server is asked again; the canvas picks the copies' ids; the server then
+ * adds the packages and copies the saved outputs to those ids; and the canvas
+ * loads the copies the way Duplicate selection does, with the copied outputs
+ * restored the way opening a project restores them, and adds the scenario to
+ * its set. Nothing is added unless all of it can be.
  *
  * Resolves to what it added, null when the drop is refused.
  */
@@ -126,15 +129,22 @@ export function useScenarioDrop() {
         );
         return null;
       }
+      const from = { projectId: payload.projectId, setId: payload.setId, scenarioId: payload.scenarioId, name: payload.name };
+      const refused = alreadyInCopy(from, scenariosRef.current, setsRef.current ?? []);
+      if (refused) {
+        showToast(refused, "warning");
+        return null;
+      }
       try {
-        let plan = await scenarioCatalogApi.getCopyPlan(payload, target);
+        const present = () => presentInCopy(from, scenariosRef.current, setsRef.current ?? []);
+        let plan = await scenarioCatalogApi.getCopyPlan(payload, target, present());
         if (plan.problems.length === 0 && plan.toRun.length > 0) {
           const failed = await runContext(plan, showToast);
           if (failed) {
             showToast(failed, "error");
             return null;
           }
-          plan = await scenarioCatalogApi.getCopyPlan(payload, target);
+          plan = await scenarioCatalogApi.getCopyPlan(payload, target, present());
         }
         if (plan.problems.length > 0) {
           showToast(plan.problems.join(" "), "error");
@@ -158,7 +168,7 @@ export function useScenarioDrop() {
           showToast(drop.error, "warning");
           return null;
         }
-        const copied = await scenarioCatalogApi.copyInto(payload, target, drop.outputs);
+        const copied = await scenarioCatalogApi.copyInto(payload, target, present(), drop.outputs);
         if (copied.added.length > 0) {
           // As the Node Catalog's Add does, and before the nodes that use them
           // are built, so none of them comes up as an unknown kind.
@@ -182,15 +192,17 @@ export function useScenarioDrop() {
           setOutputs((prev) => withOutputs(prev, outputs));
           hydrateRestoredOutputs(outputs, loaded.edges);
         }
-        setScenarios([...scenarios, ...drop.scenarios], [...sets, drop.set]);
+        setScenarios(drop.scenarios, drop.sets);
         markDirty();
         const added = copied.added.length > 0 ? ` Added ${copied.added.join(", ")} to this project.` : "";
-        const from = plan.scenarios.length === 1 ? ` from ${plan.project.name}` : "";
-        showToast(`Added ${dragged(plan)}${from} as the scenario set "${drop.set.name}".${added}`, "success");
+        const into = drop.made
+          ? `as the scenario set "${drop.set.name}"`
+          : `to the scenario set "${drop.set.name}"`;
+        showToast(`Added ${dragged(plan)} from ${plan.project.name} ${into}.${added}`, "success");
         const before = new Set(live.dataflow.nodes.map((node: { id: string }) => node.id));
         return {
           nodes: graph.nodes.map((node) => node.id).filter((id) => !before.has(id)),
-          scenarios: drop.scenarios.map((s) => s.id),
+          scenario: drop.scenario.id,
           set: drop.set.id,
         };
       } catch (err: any) {

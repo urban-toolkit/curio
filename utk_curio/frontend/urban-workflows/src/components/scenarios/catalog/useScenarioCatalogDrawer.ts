@@ -93,12 +93,11 @@ export function useScenarioCatalogDrawer(presented: boolean) {
    *  listing's order; else its scenario alone, which it then selects. */
   const handleCardDragStart = useCallback(
     (row: ScenarioRow, event: DragEvent<HTMLElement>) => {
-      const selected = selection?.keys.includes(row.key) ? items.filter((r) => selection.keys.includes(r.key)) : [row];
       if (!selection?.keys.includes(row.key)) setSelection({ set: setKeyOf(row), keys: [row.key] });
-      writeScenarioDragData(event.dataTransfer, beginScenarioDrag(selected));
-      dragBadge(event, selected.length === 1 ? selected[0].name : `${selected.length} scenarios`);
+      writeScenarioDragData(event.dataTransfer, beginScenarioDrag(row));
+      dragBadge(event, row.name);
     },
-    [selection, items],
+    [selection],
   );
 
   return {

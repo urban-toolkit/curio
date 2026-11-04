@@ -116,6 +116,13 @@ def _sets(raw: object) -> list[dict]:
         shared = _shared(entry.get("shared"))
         if shared:
             kept["shared"] = shared
+        source = entry.get("source")
+        if (
+            isinstance(source, dict)
+            and isinstance(source.get("project"), str) and source["project"]
+            and isinstance(source.get("set"), str) and source["set"]
+        ):
+            kept["source"] = {"project": source["project"], "set": source["set"]}
         out.append(kept)
     return out
 

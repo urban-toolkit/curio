@@ -10,9 +10,9 @@
  *   are hidden, and each edge crossing the scenario's edge is drawn to or from
  *   its box instead, as a stand-in.
  * - An expanded scenario's members wear its color, inside a frame.
- * - The context and outcomes of the scenario pointed at in the Scenario
- *   Catalog drawer's In project tab are marked, and so are those of a
- *   scenario being defined (`preview`).
+ * - The shared context and shared outcomes of the scenario pointed at in the
+ *   Scenario Catalog drawer's In project tab are marked (`scenarioParts`), and
+ *   so are those of a scenario being defined (`preview`).
  * - Each scenario set's shared context and shared outcomes are a group each
  *   (`groups`), framed, or collapsed into one box the way a scenario is: its
  *   nodes hidden, and the edges crossing its edge drawn to or from the box.
@@ -31,7 +31,7 @@ import type { Edge, Node } from "reactflow";
 import { directedEdgesOf } from "../../providers/flow/runLevels";
 import { hideNode } from "../hiddenNodes";
 import type { Scenario, ScenarioSet, SharedKind } from "./scenarioModel";
-import { scenarioParts, type ScenarioParts } from "./scenarioParts";
+import { scenarioParts } from "./scenarioParts";
 
 export const SCENARIO_MEMBER_CLASS = "curio-scenario-member";
 export const SCENARIO_FIXED_CLASS = "curio-scenario-fixed";
@@ -42,7 +42,6 @@ export interface ScenarioBox {
   /** Where the box sits on the canvas: `scenario.box`, else its members' top left. */
   x: number;
   y: number;
-  parts: ScenarioParts;
   /** Its own nodes, one row each, in the dataflow's order. */
   rows: string[];
 }
@@ -142,12 +141,11 @@ export function scenarioCanvasView<N extends Node, E extends Edge>(
   const preview = options.preview;
   if (active.length === 0 && !preview) return { nodes, edges, boxes: [], frames: [], standIns: [], dots: [] };
 
+  // The shared context and shared outcomes of the scenario pointed at, or
+  // being defined.
   const highlighted = active.find((s) => s.id === options.fixedFor);
-  const marked = preview ?? highlighted;
-  // A scenario keeps its finalized context; one from before sets, the nodes it reads.
-  const fixed = new Set(
-    marked ? (marked.context ?? (highlighted ? scenarioParts(highlighted, nodes, edges).context : [])) : [],
-  );
+  const marked = preview ?? (highlighted ? scenarioParts(highlighted, nodes, edges, active) : null);
+  const fixed = new Set(marked?.context ?? []);
   const outcomeMarks = new Set(marked?.outcomes ?? []);
 
   const groups = sharedGroups(nodes, active, memberOf, options.sets ?? []);
@@ -208,13 +206,7 @@ export function scenarioCanvasView<N extends Node, E extends Edge>(
     }
     const x = scenario.box?.x ?? Math.min(...members.map((node) => node.position.x));
     const y = scenario.box?.y ?? Math.min(...members.map((node) => node.position.y));
-    boxes.push({
-      scenario,
-      x,
-      y,
-      parts: scenarioParts(scenario, nodes, edges),
-      rows: members.map((node) => node.id),
-    });
+    boxes.push({ scenario, x, y, rows: members.map((node) => node.id) });
   }
 
   return {

@@ -127,7 +127,6 @@ describe("scenarioCanvasView", () => {
     expect(scenarioCanvasView(NODES, EDGES, [branch({ collapsed: true })]).boxes[0]).toMatchObject({
       x: 800,
       y: 80,
-      parts: { levers: ["a", "map"], context: ["pool"], outcomes: ["map"] },
       rows: ["a", "map"],
     });
     const moved = scenarioCanvasView(NODES, EDGES, [branch({ collapsed: true, box: { x: -5, y: 7 } })]).boxes[0];
@@ -144,9 +143,16 @@ describe("scenarioCanvasView", () => {
     expect(view.edges).toEqual(EDGES);
   });
 
-  test("the scenario the panel highlights has its fixed context marked", () => {
+  test("the scenario the panel highlights has its whole shared context and its shared outcomes marked", () => {
     const view = scenarioCanvasView(NODES, EDGES, [branch()], { fixedFor: "tall" });
-    expect(view.nodes.filter((n) => n.className?.includes(SCENARIO_FIXED_CLASS)).map((n) => n.id)).toEqual(["pool"]);
+    const marked = (cls: string) => view.nodes.filter((n) => n.className?.includes(cls)).map((n) => n.id);
+    // Kept by none, they are the ones Curio infers: the loader deeper upstream too.
+    expect(marked(SCENARIO_FIXED_CLASS)).toEqual(["load", "pool"]);
+    expect(marked(SCENARIO_OUTCOME_CLASS)).toEqual(["chart"]);
+    // The lists it keeps, when it keeps them.
+    const kept = scenarioCanvasView(NODES, EDGES, [branch({ context: ["pool"], outcomes: [] })], { fixedFor: "tall" });
+    expect(kept.nodes.filter((n) => n.className?.includes(SCENARIO_FIXED_CLASS)).map((n) => n.id)).toEqual(["pool"]);
+    expect(kept.nodes.some((n) => n.className?.includes(SCENARIO_OUTCOME_CLASS))).toBe(false);
   });
 
   test("with none highlighted or being defined, nothing is marked", () => {

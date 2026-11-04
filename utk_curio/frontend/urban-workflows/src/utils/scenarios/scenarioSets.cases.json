@@ -796,6 +796,33 @@
       }
     },
     {
+      "name": "a set a drop made keeps the project and set it copies, and a malformed source is dropped",
+      "dataflowName": "Copies",
+      "nodes": ["load", "a", "b"],
+      "edges": [
+        {"source": "load", "target": "a"},
+        {"source": "load", "target": "b"}
+      ],
+      "sets": [
+        {"id": "copy", "name": "Park shade", "source": {"project": "p1", "set": "park"}},
+        {"id": "odd", "name": "Odd", "source": {"project": "p1", "set": ""}}
+      ],
+      "scenarios": [
+        {"id": "a", "name": "A", "color": "#2a9d8f", "nodes": ["a"], "set": "copy"},
+        {"id": "b", "name": "B", "color": "#e76f51", "nodes": ["b"], "set": "odd"}
+      ],
+      "expected": {
+        "scenarioSets": [
+          {"id": "copy", "name": "Park shade", "source": {"project": "p1", "set": "park"}},
+          {"id": "odd", "name": "Odd"}
+        ],
+        "scenarios": [
+          {"id": "a", "name": "A", "color": "#2a9d8f", "nodes": ["a"], "set": "copy", "context": ["load"], "outcomes": []},
+          {"id": "b", "name": "B", "color": "#e76f51", "nodes": ["b"], "set": "odd", "context": ["load"], "outcomes": []}
+        ]
+      }
+    },
+    {
       "name": "a scenario whose set the dataflow does not list gets a new set whose id comes from its first scenario, numbered when a set has it",
       "dataflowName": "Towers",
       "nodes": [

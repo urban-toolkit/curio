@@ -2,19 +2,18 @@
 
 Scenarios live in projects, so the catalog has no storage of its own. A
 listing reads the project summaries, which carry each project's scenarios
-and the set each is in; a scenario's details, and a set's, read its
-project's spec for the shared context and outcomes each scenario keeps, and
-the Data Catalog for the outputs the project saved. Editing a project
-changes its scenarios here; deleting it takes them away.
+and the set each is in; a scenario's details read its project's spec for
+its parts (``domain/parts.py``), and the Data Catalog for the outputs the
+project saved. Editing a project changes its scenarios here; deleting it
+takes them away.
 """
 from __future__ import annotations
 
 import re
 from typing import Any
 
-from utk_curio.backend.app.projects.scenario_sets import set_membership
 from utk_curio.backend.app.projects.scenarios import kept_scenarios, scenario_summaries
-from utk_curio.backend.app.scenario_catalog.domain.copy import copy_set_plan, node_label, requirements
+from utk_curio.backend.app.scenario_catalog.domain.copy import copy_plan, node_label, requirements
 from utk_curio.backend.app.scenario_catalog.domain.parts import (
     saved_sources,
     scenario_parts,
@@ -63,7 +62,9 @@ def scenario_row(scenario: dict, project: dict, preview: dict | None) -> dict[st
     }
 
 
-def _node_entry(node: dict, results: list[dict]) -> dict[str, Any]:
+def _node_entry(node: dict, results: list[dict] | None) -> dict[str, Any]:
+    """A node of a scenario's details. ``results`` only for a node whose output
+    the scenario saves; another is listed without an output line."""
     from utk_curio.backend.app.execution.node_names import saved_node_title
 
     # The node's title, its one name, as the canvas names it.
@@ -71,7 +72,8 @@ def _node_entry(node: dict, results: list[dict]) -> dict[str, Any]:
     entry: dict[str, Any] = {"id": node["id"], "type": str(node.get("type") or "")}
     if label:
         entry["label"] = label
-    entry["results"] = results
+    if results is not None:
+        entry["results"] = results
     return entry
 
 
@@ -136,13 +138,15 @@ class ScenarioCatalogService:
 
     def _entries(self, project_id: str, spec: dict):
         """A function from a node id to its entry: the node, with the outputs
-        its project saved for it."""
+        its project saved for it, or with no output line (*saves* false)."""
         nodes, edges = spec_nodes_and_edges(spec)
         by_id = {n["id"]: n for n in nodes}
         outputs = projects.saved_outputs(self.user, project_id)
         packages = self._packages()
 
-        def entry(node_id: str) -> dict[str, Any]:
+        def entry(node_id: str, saves: bool = True) -> dict[str, Any]:
+            if not saves:
+                return _node_entry(by_id[node_id], None)
             results = []
             for source_id in saved_sources(node_id, nodes, edges, packages):
                 item = outputs.get(projects.computed_dataset_id(source_id, project_id))
@@ -162,105 +166,65 @@ class ScenarioCatalogService:
         }
 
     def get_scenario(self, project_id: str, scenario_id: str) -> dict[str, Any]:
-        """One scenario: its shared context, its own nodes ("levers") and its
-        outcomes, each with the outputs its project saved for it. The context
-        and outcomes are those the scenario keeps; a scenario that feeds
-        nothing outside it shows its own last nodes as its outcomes."""
+        """One scenario by role (``scenario_parts``): its whole Shared context,
+        its Scenario-specific nodes ("levers") and its Shared outcomes. The
+        nodes whose outputs it saves, each context node whose output crosses
+        into it and each shared outcome, come with the outputs its project
+        saved for them; the others are listed without an output line."""
         row, spec, is_example, scenario = self._scenario(project_id, scenario_id)
         nodes, edges = spec_nodes_and_edges(spec)
-        parts = scenario_parts(scenario, nodes, edges)
-        kept = next((s for s in kept_scenarios(spec)[0] if s["id"] == scenario_id), {})
-        entry, by_id = self._entries(project_id, spec)
+        kept, _sets = kept_scenarios(spec)
+        parts = scenario_parts(next(s for s in kept if s["id"] == scenario_id), nodes, edges, kept)
+        boundary = set(parts["boundary"])
+        entry, _by_id = self._entries(project_id, spec)
         return {
             **scenario_row(scenario, self._project_of(row, is_example), projects.graph_preview(self.user, spec)),
-            "context": [entry(i) for i in kept.get("context", parts["context"]) if i in by_id],
-            "levers": [entry(i) for i in parts["levers"]],
-            "outcomes": [entry(i) for i in kept.get("outcomes") or parts["outcomes"] if i in by_id],
+            "context": [entry(i, saves=i in boundary) for i in parts["context"]],
+            "levers": [entry(i, saves=False) for i in parts["nodes"]],
+            "outcomes": [entry(i) for i in parts["outcomes"]],
         }
 
-    def get_set(self, project_id: str, set_id: str) -> dict[str, Any]:
-        """One scenario set: its scenarios, and its shared context and
-        outcomes, each node with the outputs its project saved and the ids of
-        the set's scenarios that use it."""
-        row, spec, is_example = self._project(project_id)
-        kept, sets = kept_scenarios(spec)
-        found = next((x for x in sets if x["id"] == set_id), None)
-        if found is None:
-            raise ScenarioCatalogError(f"{row.name} has no scenario set {set_id}", 404)
-        project = self._project_of(row, is_example)
-        member = set_membership(kept, set_id)
-        entry, by_id = self._entries(project_id, spec)
-        summaries = {s["id"]: s for s in scenario_summaries(spec)}
-        preview = projects.graph_preview(self.user, spec)
+    # -- Dragging a scenario into another dataflow ---------------------------
 
-        def listed(part: str) -> list[dict[str, Any]]:
-            order = [n["id"] for n in spec_nodes_and_edges(spec)[0]]
-            return [
-                {**entry(node_id), "scenarios": member[part][node_id]}
-                for node_id in order if node_id in member[part] and node_id in by_id
-            ]
+    def copy_plan(self, project_id: str, scenario_id: str, target_id: str, present: object = ()) -> dict[str, Any]:
+        """What dragging *scenario_id* into *target_id* copies, where the copy
+        of its set holds *present* already (ids of its project's scenarios of
+        that set), the context nodes a run on the server makes first in its
+        project (``toRun``), and why it cannot be, if it cannot (``problems``).
+        Changes nothing."""
+        return self._plan(project_id, scenario_id, target_id, present)[0]
 
-        return {
-            "set": found,
-            "key": scenario_key(project_id, set_id),
-            "project": project,
-            "scenarios": [scenario_row(summaries[i], project, preview) for i in member["scenarios"]],
-            "context": listed("context"),
-            "outcomes": listed("outcomes"),
-        }
-
-    # -- Dragging scenarios into another dataflow ---------------------------
-
-    def copy_plan(self, project_id: str, scenario_id: str, target_id: str) -> dict[str, Any]:
-        """:meth:`copy_set_plan` for the one scenario *scenario_id*, in its set."""
-        return self._plan(project_id, None, [scenario_id], target_id)[0]
-
-    def copy_set_plan(self, project_id: str, set_id: str, scenario_ids: object, target_id: str) -> dict[str, Any]:
-        """What dragging *scenario_ids*, all of the set *set_id*, into
-        *target_id* copies, the context nodes a run on the server makes first
-        in their project (``toRun``), and why it cannot be, if it cannot
-        (``problems``). Changes nothing."""
-        return self._plan(project_id, set_id, scenario_ids, target_id)[0]
-
-    def _selection(self, project_id: str, set_id: str | None, scenario_ids: object):
-        """``(row, spec, set, scenarios)``: the scenarios *scenario_ids* names,
-        each as its project keeps it, all of one set (*set_id*, else the first
-        one's). A scenario not there, or of another set, is refused."""
-        if not isinstance(scenario_ids, list) or not scenario_ids or not all(
-            isinstance(i, str) and i for i in scenario_ids
-        ):
-            raise ScenarioCatalogError("scenarios must name at least one scenario")
+    def _plan(
+        self, project_id: str, scenario_id: str, target_id: str, present: object,
+    ) -> tuple[dict[str, Any], Any, dict, Any]:
+        if not isinstance(present, (list, tuple)) or not all(isinstance(i, str) for i in present):
+            raise ScenarioCatalogError("present must list the ids of scenarios")
         row, spec, _is_example = self._project(project_id)
         kept, sets = kept_scenarios(spec)
         by_id = {s["id"]: s for s in kept}
-        chosen: list[dict] = []
-        for scenario_id in dict.fromkeys(scenario_ids):
-            scenario = by_id.get(scenario_id)
-            if scenario is None:
-                raise ScenarioCatalogError(f"{row.name} has no scenario {scenario_id}", 404)
-            chosen.append(scenario)
-        set_id = set_id if set_id is not None else chosen[0].get("set", "")
-        if any(s.get("set", "") != set_id for s in chosen):
-            raise ScenarioCatalogError("The scenarios dragged together must all be of one scenario set.")
+        scenario = by_id.get(scenario_id)
+        if scenario is None:
+            raise ScenarioCatalogError(f"{row.name} has no scenario {scenario_id}", 404)
+        set_id = scenario.get("set", "")
         names = {x["id"]: x["name"] for x in sets}
-        return row, spec, {"id": set_id, "name": names.get(set_id) or row.name}, chosen
-
-    def _plan(
-        self, project_id: str, set_id: str | None, scenario_ids: object, target_id: str,
-    ) -> tuple[dict[str, Any], Any, dict, Any]:
-        row, spec, the_set, chosen = self._selection(project_id, set_id, scenario_ids)
+        the_set = {"id": set_id, "name": names.get(set_id) or row.name}
+        if scenario_id in present:
+            raise ScenarioCatalogError(f'"{scenario["name"]}" is already in the copy of "{the_set["name"]}".', 409)
+        # Those still in its set, each once: one deleted since, or moved to
+        # another set, is no longer what the copy joins.
+        held = [by_id[i] for i in dict.fromkeys(present) if i in by_id and by_id[i].get("set", "") == set_id]
         target_row, target_spec, _ = self._project(target_id)
         nodes, edges = spec_nodes_and_edges(spec)
-        by_id = {n["id"]: n for n in nodes}
-        plan = copy_set_plan(chosen, nodes, edges, self._packages())
+        nodes_by_id = {n["id"]: n for n in nodes}
+        plan = copy_plan(scenario, held, kept, nodes, edges, self._packages())
         # What the scenario's project saved, read at once under its spec lock,
         # before anything else, so a save of it is waited for (#941).
         saved = projects.saved_outputs_of(self.user, project_id, spec, [
             entry["source"]["nodeId"]
             for entry in plan["context"]
             if entry.get("source") is not None
-        ] + [source for outcome in [*plan["outcomes"], *plan["shared"]] for source in outcome["sources"]])
-        name = chosen[0]["name"] if len(chosen) == 1 else the_set["name"]
+        ] + [source for outcome in plan["shared"] for source in outcome["sources"]])
+        name = scenario["name"]
         problems: list[str] = []
         to_run: list[dict[str, str]] = []
         runs_refused = server_runs.refusal(self.user)
@@ -294,21 +258,22 @@ class ScenarioCatalogService:
                 )
                 continue
             if all(item["nodeId"] != source["nodeId"] for item in to_run):
-                to_run.append({"nodeId": source["nodeId"], "label": node_label(by_id[source["nodeId"]])})
+                to_run.append({"nodeId": source["nodeId"], "label": node_label(nodes_by_id[source["nodeId"]])})
 
-        # An outcome without a saved output shows once the scenario runs.
-        for outcome in [*plan["outcomes"], *plan["shared"]]:
+        # A shared outcome without a saved output shows once the scenario runs.
+        for outcome in plan["shared"]:
             outcome["sources"] = [s for s in outcome["sources"] if (saved.get(s) or {}).get("computed")]
 
         ukey = projects.user_key(self.user)
         needed = requirements(plan["dataflow"]["nodes"])
-        present = needs.project_packages(ukey, target_id)
+        present_packages = needs.project_packages(ukey, target_id)
         packages: list[str] = []
 
         def add(dir_name: str) -> None:
-            """The package *dir_name* the levers need: added to the target the
-            way the Node Catalog adds one, unless it is there already."""
-            if needs.is_builtin(dir_name) or dir_name in present or dir_name in packages:
+            """The package *dir_name* the copied nodes need: added to the
+            target the way the Node Catalog adds one, unless it is there
+            already."""
+            if needs.is_builtin(dir_name) or dir_name in present_packages or dir_name in packages:
                 return
             problem = needs.package_problem(self.user, ukey, dir_name)
             if problem:
@@ -333,34 +298,25 @@ class ScenarioCatalogService:
             else:
                 add(dir_name)
 
-        described = {
-            s["id"]: {
-                "id": s["id"],
-                "name": s["name"],
-                "color": s["color"],
-                "description": s.get("description", ""),
-            }
-            for s in chosen
-        }
         return {
-            "scenario": described[chosen[0]["id"]],
+            "scenario": {
+                "id": scenario["id"],
+                "name": scenario["name"],
+                "color": scenario["color"],
+                "description": scenario.get("description", ""),
+            },
             "set": the_set,
             "project": {"id": row.id, "name": row.name},
             **plan,
-            "scenarios": [{**described[s["id"]], **s} for s in plan["scenarios"]],
             "packages": packages,
             "toRun": to_run,
             "problems": problems,
         }, row, spec, (target_row, target_spec)
 
-    def copy_into(self, project_id: str, scenario_id: str, target_id: str, outputs: object) -> dict[str, Any]:
-        """:meth:`copy_set_into` for the one scenario *scenario_id*, in its set."""
-        return self.copy_set_into(project_id, None, [scenario_id], target_id, outputs)
-
-    def copy_set_into(
-        self, project_id: str, set_id: str | None, scenario_ids: object, target_id: str, outputs: object,
+    def copy_into(
+        self, project_id: str, scenario_id: str, target_id: str, outputs: object, present: object = (),
     ) -> dict[str, Any]:
-        """Do what :meth:`copy_set_plan` says, for a drop into *target_id* whose
+        """Do what :meth:`copy_plan` says, for a drop into *target_id* whose
         copies have the node ids *outputs* names (``[{source, node}]``): add
         the packages it needs, copy each saved output to its copy, and restore
         those for the canvas. Each project is read or written under its own
@@ -368,7 +324,7 @@ class ScenarioCatalogService:
         nothing, while the plan has a problem or a context node still to run;
         a saved output that is gone, or that cannot be copied, is a 409, the
         second saying to try again."""
-        plan, row, spec, (target_row, target_spec) = self._plan(project_id, set_id, scenario_ids, target_id)
+        plan, row, spec, (target_row, target_spec) = self._plan(project_id, scenario_id, target_id, present)
         unsaved = [
             f'"{plan["scenario"]["name"]}" reads {item["label"]}, which has no saved output in {row.name}: '
             "run it there first."
@@ -381,7 +337,7 @@ class ScenarioCatalogService:
             for entry in plan["context"]
             if entry.get("source") and entry["source"].get("datasetId")
         }
-        outcomes = {source for outcome in [*plan["outcomes"], *plan["shared"]] for source in outcome["sources"]}
+        outcomes = {source for outcome in plan["shared"] for source in outcome["sources"]}
         taken = {node["id"] for node in spec_nodes_and_edges(target_spec)[0]}
         copies = self._copies(outputs, set(context) | outcomes, taken)
 

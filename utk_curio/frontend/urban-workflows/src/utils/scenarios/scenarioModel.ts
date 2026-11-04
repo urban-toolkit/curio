@@ -42,6 +42,8 @@ export interface ScenarioSet {
   description?: string;
   /** How its shared context and shared outcomes are drawn on the canvas. */
   shared?: Partial<Record<SharedKind, SharedLook>>;
+  /** The project and set it copies, for a set a drop from the Scenario Catalog made. */
+  source?: { project: string; set: string };
 }
 
 export type SharedKind = "context" | "outcomes";

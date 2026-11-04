@@ -5,7 +5,6 @@ import type {
   ScenarioCatalogQuery,
   ScenarioCatalogResponse,
   ScenarioDetails,
-  ScenarioSetDetails,
 } from "./scenarioCatalogTypes";
 
 const EMPTY: ScenarioCatalogResponse = { items: [] };
@@ -74,8 +73,8 @@ export interface UseScenarioDetailsResult {
   error: string | null;
 }
 
-/** One scenario's fixed context, levers and outcomes; nothing while *projectId*
- *  or *scenarioId* is missing. */
+/** One scenario's shared context, own nodes and shared outcomes; nothing while
+ *  *projectId* or *scenarioId* is missing. */
 export function useScenarioDetails(
   projectId: string | null | undefined,
   scenarioId: string | null | undefined,
@@ -110,44 +109,4 @@ export function useScenarioDetails(
   }, [projectId, scenarioId]);
 
   return { details, loading, error };
-}
-
-export interface UseScenarioSetResult {
-  set: ScenarioSetDetails | null;
-  loading: boolean;
-  error: string | null;
-}
-
-/** A scenario set's details, fetched while *projectId* and *setId* are given. */
-export function useScenarioSet(projectId: string | null | undefined, setId: string | null | undefined): UseScenarioSetResult {
-  const [set, setSet] = useState<ScenarioSetDetails | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setSet(null);
-    setError(null);
-    if (!projectId || !setId) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    let cancelled = false;
-    scenarioCatalogApi
-      .getSet(projectId, setId)
-      .then((res) => {
-        if (!cancelled) setSet(res);
-      })
-      .catch((err: Error) => {
-        if (!cancelled) setError(err.message || "Could not load this scenario set.");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId, setId]);
-
-  return { set, loading, error };
 }

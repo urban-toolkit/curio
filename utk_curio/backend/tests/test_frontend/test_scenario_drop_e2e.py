@@ -1,20 +1,24 @@
 """Playwright E2E: dragging a scenario into another project (#662).
 
-A source project holds a loader feeding a branch: a Python node that scales a
-column, and an Autark map of the result. The branch is the scenario "Twice as
-tall", so the loader is its fixed context. Then, in a second project:
+A source project holds a loader feeding a Python node that scales a column,
+and an Autark map of the result. The Python node is the scenario "Twice as
+tall": the loader is its shared context, and the map its shared outcome. Then,
+in a second project:
 
 1. Drag the scenario from the Scenario Catalog drawer onto the canvas. It
-   arrives in a new scenario set, collapsed, where it was dropped; its
+   arrives in the copy of its set, collapsed, where it was dropped; its
    context arrives as a Data Loading node reading a copy of the loader's
-   saved output, in the set's shared context, collapsed too; its lever and
-   that loader show the source's results, with nothing run.
-2. Run scenario runs the lever and reuses the copied context. Expanded, the
+   saved output, in the set's shared context, collapsed too; the map, every
+   input of which came, lands in the set's shared outcomes; the scaled node,
+   which stands for the map, and that loader show the source's results, with
+   nothing run.
+2. Run scenario runs its own node and reuses the copied context. Expanded, the
    map is drawn.
 3. The source runs again with other data: its own saved output changes, the
    copy in the second project does not.
 4. The copied loader is replaced by a node of the second project, wired to the
-   lever. Run scenario runs that node, and the lever reads its output.
+   scenario's node. Run scenario runs that node, and the scenario reads its
+   output.
 
 A second test drops a scenario whose lever needs ``curio.weather`` into a
 project without it: the package is added. One whose package is in no catalog
@@ -144,7 +148,7 @@ def _source_spec() -> dict:
             {"id": "e-load-scale", "source": LOADER, "target": SCALE, "sourceHandle": "out", "targetHandle": "in"},
             {"id": "e-scale-map", "source": SCALE, "target": MAP, "sourceHandle": "out", "targetHandle": "in"},
         ],
-        [{"id": SCENARIO, "name": "Twice as tall", "color": "#e86a3c", "nodes": [SCALE, MAP]}],
+        [{"id": SCENARIO, "name": "Twice as tall", "color": "#e86a3c", "nodes": [SCALE]}],
     )
 
 
@@ -220,23 +224,10 @@ def _card(page, project_id: str, scenario_id: str):
     return page.locator(f'[data-curio-scenario-catalog-drawer="true"] [data-scenario-key="{project_id}/{scenario_id}"]')
 
 
-def _select_scenarios(page, project_id: str, scenario_ids: list[str]):
-    """Select the scenarios of one set as a person does: a click on the first
-    card's body, Ctrl-click (Cmd on a Mac) on each other. Returns the first
-    card, whose drag brings them all."""
-    cards = [_card(page, project_id, scenario_id) for scenario_id in scenario_ids]
-    for index, card in enumerate(cards):
-        card.wait_for(state="visible", timeout=20000)
-        card.locator("h3").click(modifiers=["ControlOrMeta"] if index else [])
-    expect(page.locator('[data-curio-scenario-catalog-drawer="true"] [aria-selected="true"]')).to_have_count(len(cards))
-    return cards[0]
-
-
 def _drag_scenario_onto_canvas(page, project_id: str, scenario_id: str, at=(700.0, 120.0)) -> None:
     """Drag the scenario's card from the open drawer onto the canvas, as
     ``drag_to_canvas`` drags a dataset: dragstart on the card, then dragover
-    and drop on the canvas, then dragend. A card no click selected drags its
-    scenario alone."""
+    and drop on the canvas, then dragend. A card drags its scenario alone."""
     _drag_onto_canvas(page, _card(page, project_id, scenario_id), at)
 
 
@@ -365,7 +356,7 @@ def test_a_scenario_dragged_into_another_project_brings_its_results_and_its_own_
         node_locator(page, node_id).wait_for(state="visible", timeout=45000)
     require_webgpu(page)
 
-    # The source runs and saves: its context and what its outcome shows are saved.
+    # The source runs and saves: its context and what its shared outcome shows are saved.
     run_all_and_wait(page, timeout_ms=240000)
     status = wait_for_node_settled(page, MAP, node_type="autk-grammar", timeout_ms=120000)
     assert status == "done", read_node_error_text(node_locator(page, MAP))
@@ -401,7 +392,8 @@ def test_a_scenario_dragged_into_another_project_brings_its_results_and_its_own_
     [dropped] = saved["scenarios"]
     assert dropped["source"] == {"project": source, "scenario": SCENARIO}, dropped
     assert dropped["collapsed"] is True and dropped.get("box"), dropped
-    assert sorted(dropped["nodes"]) == sorted([scale, map_copy]), dropped
+    assert dropped["nodes"] == [scale], dropped
+    assert dropped["outcomes"] == [map_copy], dropped
     by_id = {n["id"]: n for n in saved["nodes"]}
     assert by_id[loader]["type"].startswith("curio.builtin/data-loading"), by_id[loader]
     copy_id = computed_dataset_id(loader, target)
@@ -413,20 +405,26 @@ def test_a_scenario_dragged_into_another_project_brings_its_results_and_its_own_
         member.wait_for(state="attached", timeout=10000)
         assert not member.is_visible(), f"{node_id} shows, though the scenario and its set arrived collapsed"
     [new_set] = saved["scenarioSets"]
-    assert dropped["set"] == new_set["id"] and new_set["name"] == "Shadows (copy)", new_set
+    # The copy of its set, named as the set (the source's one set, named after
+    # its dataflow), knows where it came from.
+    assert dropped["set"] == new_set["id"] and new_set["name"] == "Shadows", new_set
+    assert new_set["source"]["project"] == source, new_set
 
-    # 2. Run scenario: the lever runs, the copied context is reused.
+    # 2. Run scenario: its own node runs, the copied context is reused.
     sent, _outputs, stop = _record_python_runs(page)
-    # The map drew from the lever's result when the scenario arrived, so wait
-    # for its own run, which starts when the lever's new output reaches it (#892).
+    # The map drew from the scaled node's result when the scenario arrived, so
+    # wait for its own run, which starts when that node's new output reaches it (#892).
     watch_node_run(page, map_copy)
     _run_scenario(page, dropped["id"])
     status = wait_for_node_run_to_end(page, map_copy, node_type="autk-grammar", timeout_ms=180000)
     wait_for_run_guard_released(page, timeout_ms=60000)
     stop()
     assert status == "done", read_node_error_text(node_locator(page, map_copy))
-    assert [node for node, _ in sent] == [scale], f"Run scenario sent {sent}: only its lever should run"
-    _expand(page, dropped["id"], [scale, map_copy])
+    assert [node for node, _ in sent] == [scale], f"Run scenario sent {sent}: only its own node should run"
+    _expand(page, dropped["id"], [scale])
+    # The map is the set's shared outcome, collapsed with it: expand that too.
+    page.get_by_test_id(f"shared-box-{new_set['id']}-outcomes").dispatch_event("dblclick")
+    node_locator(page, map_copy).wait_for(state="visible", timeout=10000)
     frame_nodes(page, [map_copy])
     assert_autark_map_drawn(page, map_copy, timeout=60000, attach_as="dropped, run and expanded")
     save_dataflow(page)
@@ -799,14 +797,35 @@ def test_a_scenario_from_a_project_never_run_runs_its_context_there_and_drops(
     )
 
 
-def test_two_scenarios_checked_and_dragged_together_arrive_as_a_new_set(
+def _drop_and_wait(page, source: str, scenario_id: str) -> None:
+    """Drag one scenario's card onto the canvas and wait for its copy."""
+    with page.expect_response(
+        lambda r: r.request.method == "POST" and r.url.endswith(f"/api/scenarios/{source}/{scenario_id}/copy"),
+        timeout=240000,
+    ) as copied:
+        _drag_scenario_onto_canvas(page, source, scenario_id)
+    assert copied.value.ok, copied.value.text()
+
+
+def _by_origin(saved: dict) -> dict[str, list[dict]]:
+    """The copied nodes of a saved dataflow, by the node of the source each copies."""
+    by_origin: dict[str, list[dict]] = {}
+    for node in saved["nodes"]:
+        lineage = (node.get("metadata") or {}).get("copiedFrom") or []
+        if lineage:
+            by_origin.setdefault(lineage[-1], []).append(node)
+    return by_origin
+
+
+def test_two_scenarios_of_a_set_dragged_one_after_the_other_form_one_set(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
     """A set of three scenarios reads one loader. ``compare`` reads two of
-    them, ``all`` reads all three. A click on one and a Ctrl-click (Cmd on a
-    Mac) on the other selects the two, and dragging either brings both as a new set, "Heights (copy)": the loader once, as
-    data, shared by both; ``compare``, every input of which came; not
-    ``all``, which would miss the third. Everything arrives collapsed. Python
+    them, ``all`` reads all three. A card drags one scenario: the first drop
+    makes the set's copy, "Heights", with the loader once, as data; the second
+    joins that copy, reads the same loader, and brings ``compare``, every input
+    of which is now in; not ``all``, which would miss the third. A scenario the
+    copy holds is refused, saying so. Everything arrives collapsed. Python
     nodes only, so it runs without WebGPU."""
     require_project_page()
     require_user_auth()
@@ -854,41 +873,52 @@ def test_two_scenarios_checked_and_dragged_together_arrive_as_a_new_set(
     spec["dataflow"]["scenarioSets"] = [{"id": "hs", "name": "Heights"}]
     source = _create_project(current_server, token, "Heights", spec)
 
+    # 1. The first: the set's copy, its context, and no shared outcome yet.
     _open_scenario_catalog(page)
-    _select_scenarios(page, source, ["s-double", "s-triple"])
-    handle = _card(page, source, "s-triple")
-    with page.expect_response(
-        lambda r: r.request.method == "POST" and r.url.endswith("/api/scenarios/sets/" + source + "/hs/copy"),
-        timeout=240000,
-    ) as copied:
-        _drag_onto_canvas(page, handle)
-    assert copied.value.ok, copied.value.text()
-    _toast(page, 'Added 2 scenarios of "Heights" as the scenario set "Heights (copy)"')
-    page.keyboard.press("Escape")
-    wait_for_drawer_closed(page, '[data-curio-scenario-catalog-drawer="true"]')
-
+    _drop_and_wait(page, source, "s-double")
+    _toast(page, 'Added "Doubled" from Heights as the scenario set "Heights"')
     save_dataflow_and_settle_header(page)
     saved = _saved_spec(current_server, token, target)["dataflow"]
     [new_set] = saved["scenarioSets"]
-    assert new_set["name"] == "Heights (copy)", new_set
+    assert new_set["name"] == "Heights", new_set
+    assert new_set.get("source") == {"project": source, "set": "hs"}, new_set
     assert new_set.get("shared") == {"context": {"collapsed": True}, "outcomes": {"collapsed": True}}, new_set
+    first = _by_origin(saved)
+    assert len(first.get(LOADER, [])) == 1 and "compare" not in first, sorted(first)
+
+    # 2. The second joins the copy: the same loader, and compare lands.
+    dismiss_toasts(page)
+    _drop_and_wait(page, source, "s-triple")
+    _toast(page, 'Added "Tripled" from Heights to the scenario set "Heights"')
+    save_dataflow_and_settle_header(page)
+    saved = _saved_spec(current_server, token, target)["dataflow"]
+    assert [s["id"] for s in saved["scenarioSets"]] == [new_set["id"]], saved["scenarioSets"]
     dropped = {s["name"]: s for s in saved["scenarios"]}
     assert sorted(dropped) == ["Doubled", "Tripled"], dropped
     assert all(s["set"] == new_set["id"] and s["collapsed"] is True for s in dropped.values()), dropped
-
-    by_origin = {}
-    for node in saved["nodes"]:
-        lineage = (node.get("metadata") or {}).get("copiedFrom") or []
-        if lineage:
-            by_origin.setdefault(lineage[-1], []).append(node)
+    by_origin = _by_origin(saved)
     assert len(by_origin.get(LOADER, [])) == 1, f"the loader came {len(by_origin.get(LOADER, []))} times"
-    assert by_origin[LOADER][0]["type"].startswith("curio.builtin/data-loading")
-    assert "compare" in by_origin, "compare, every input of which came, did not come"
+    loader = by_origin[LOADER][0]
+    assert loader["type"].startswith("curio.builtin/data-loading") and loader["id"] == first[LOADER][0]["id"]
+    assert "compare" in by_origin, "compare, every input of which is in after the second drop, did not land"
+    assert len(by_origin["compare"]) == 1
     assert "all" not in by_origin and "half" not in by_origin, sorted(by_origin)
     compare = by_origin["compare"][0]["id"]
     double, triple = by_origin["double"][0]["id"], by_origin["triple"][0]["id"]
     assert {(e["source"], e["target"]) for e in saved["edges"] if e["target"] == compare} == {
         (double, compare), (triple, compare),
     }
-    assert dropped["Doubled"]["outcomes"] == [compare], dropped["Doubled"]
-    assert dropped["Doubled"]["context"] == [by_origin[LOADER][0]["id"]], dropped["Doubled"]
+    assert {(e["source"], e["target"]) for e in saved["edges"] if e["source"] == loader["id"]} == {
+        (loader["id"], double), (loader["id"], triple),
+    }
+    for name in ("Doubled", "Tripled"):
+        assert dropped[name]["outcomes"] == [compare], dropped[name]
+        assert dropped[name]["context"] == [loader["id"]], dropped[name]
+
+    # 3. One the copy holds is refused, and nothing is asked of the server.
+    dismiss_toasts(page)
+    asked = []
+    page.on("request", lambda r: asked.append(r.url) if "/api/scenarios/" in r.url and "/copy" in r.url else None)
+    _drag_scenario_onto_canvas(page, source, "s-double")
+    _toast(page, '"Doubled" is already in the scenario set "Heights" here. A scenario comes in once.')
+    assert asked == [], asked

@@ -688,7 +688,7 @@ export function MainCanvas() {
             case "scenario":
                 void dropScenario(drop.scenario, drop.position).then((dropped) => {
                     if (!dropped || revealNodes(dropped.nodes)) return;
-                    setBoxToReveal({ scenarios: dropped.scenarios, set: dropped.set });
+                    setBoxToReveal({ scenarios: [dropped.scenario], set: dropped.set });
                 });
                 return;
             case "agent": {

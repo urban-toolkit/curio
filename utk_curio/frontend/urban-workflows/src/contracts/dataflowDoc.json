@@ -103,6 +103,7 @@
     "id": "@key",
     "name": "name",
     "description": "description",
-    "shared": "shared"
+    "shared": "shared",
+    "source": "source"
   }
 }

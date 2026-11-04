@@ -1,10 +1,13 @@
 /**
- * A scenario's fixed context, levers and outcomes, read from the live graph
- * (#662), and the outputs a scenario has saved.
+ * A scenario's parts by role, read from the live graph (#662), and the outputs
+ * the scenarios save.
  *
- * The context is what enters the selection: an edge from outside, a value
- * node's among them. The outcomes are the levers whose output nothing inside
- * reads, or that something outside reads.
+ * Its own nodes are its Scenario-specific nodes; its shared context and shared
+ * outcomes are the lists it keeps, or the ones Curio infers when it keeps
+ * none; its boundary is what crosses into it, or into one of its shared
+ * outcomes from outside every box and every shared outcome. What saves its
+ * output because of the scenarios is what stands for each one's boundary and
+ * shared outcomes, and nothing else.
  */
 import { NodeType } from "../../constants";
 import {
@@ -44,7 +47,7 @@ const scenario = (nodes: string[], extra: Partial<Scenario> = {}): Scenario => (
 });
 
 describe("scenarioParts", () => {
-  // load -> pool -> a -> b -> chart, and pool -> other: {a, b} is the branch.
+  // load -> pool -> a -> b -> chart, and pool -> other: {a, b} is the scenario.
   const nodes = [node("load"), node("pool"), node("a"), node("b"), chart("chart"), node("other")];
   const edges = [
     edge("load", "pool"),
@@ -54,22 +57,22 @@ describe("scenarioParts", () => {
     edge("pool", "other"),
   ];
 
-  test("a branch reads its context through the edge entering it, and its last node is the outcome", () => {
-    expect(scenarioParts(scenario(["a", "b"]), nodes, edges)).toEqual({
-      levers: ["a", "b"],
-      context: ["pool"],
-      outcomes: ["b"],
+  test("a scenario that keeps no lists has the context and outcomes Curio infers, and the node entering it as its boundary", () => {
+    const s = scenario(["a", "b"]);
+    expect(scenarioParts(s, nodes, edges, [s])).toEqual({
+      nodes: ["a", "b"],
+      context: ["load", "pool"],
+      outcomes: ["chart"],
+      boundary: ["pool"],
     });
   });
 
-  test("a node read inside and outside the selection is an outcome too", () => {
-    const parts = scenarioParts(scenario(["pool", "a"]), nodes, edges);
-    expect(parts.context).toEqual(["load"]);
-    // pool feeds a (inside) and other (outside); a feeds b (outside).
-    expect(parts.outcomes).toEqual(["pool", "a"]);
+  test("the lists a scenario keeps are its shared context and outcomes, whatever the edges say", () => {
+    const s = scenario(["a", "b"], { context: ["pool"], outcomes: [] });
+    expect(scenarioParts(s, nodes, edges, [s])).toEqual({ nodes: ["a", "b"], context: ["pool"], outcomes: [], boundary: ["pool"] });
   });
 
-  test("a value node wired into a lever is context, and one wired into nothing is not", () => {
+  test("a value node wired into its node is its boundary, and one wired into nothing is not", () => {
     const withValue = [
       ...nodes.filter((n) => n.id !== "a"),
       node("a", { code: "return input_0 * input_1" }),
@@ -77,33 +80,42 @@ describe("scenarioParts", () => {
       valueNode("unused-node", "height"),
     ];
     const wired = [...edges, edge("season-node", "a", { targetHandle: "in_1" })];
-    const parts = scenarioParts(scenario(["a", "b"]), withValue, wired);
-    expect(parts.context).toEqual(["pool", "season-node"]);
+    const s = scenario(["a", "b"]);
+    const parts = scenarioParts(s, withValue, wired, [s]);
+    expect(parts.boundary).toEqual(["pool", "season-node"]);
+    expect(parts.context).toEqual(["load", "pool", "season-node"]);
   });
 
-  test("a value node inside the scenario that a lever reads is a lever, never its context or an outcome", () => {
+  test("a value node inside the scenario is its own node, never its context or an outcome", () => {
     const withValue = [...nodes.filter((n) => n.id !== "a"), node("a", { code: "return input_1" }), valueNode("p", "season")];
     const wired = [...edges, edge("p", "a", { targetHandle: "in_1" })];
-    const parts = scenarioParts(scenario(["p", "a", "b"]), withValue, wired);
-    expect(parts.levers).toEqual(["p", "a", "b"]);
-    expect(parts.context).toEqual(["pool"]);
-    expect(parts.outcomes).toEqual(["b"]);
+    const s = scenario(["p", "a", "b"]);
+    const parts = scenarioParts(s, withValue, wired, [s]);
+    expect(parts.nodes).toEqual(["p", "a", "b"]);
+    expect(parts.boundary).toEqual(["pool"]);
+    expect(parts.outcomes).toEqual(["chart"]);
   });
 
-  test("a whole-dataflow scenario has no context", () => {
-    const parts = scenarioParts(scenario(nodes.map((n) => n.id)), nodes, edges);
-    expect(parts.context).toEqual([]);
-    expect(parts.outcomes).toEqual(["chart", "other"]);
+  test("another scenario's box stops its context and outcomes", () => {
+    const first = scenario(["a"], { id: "s1" });
+    const second = scenario(["b"], { id: "s2", name: "Real heights" });
+    expect(scenarioParts(first, nodes, edges, [first, second])).toEqual({
+      nodes: ["a"], context: ["load", "pool"], outcomes: [], boundary: ["pool"],
+    });
+    expect(scenarioParts(second, nodes, edges, [first, second])).toEqual({
+      nodes: ["b"], context: [], outcomes: ["chart"], boundary: ["a"],
+    });
   });
 
   test("an interaction link is not data the scenario reads", () => {
     const linked = [...edges, edge("other", "a", { sourceHandle: "in/out", targetHandle: "in/out" })];
-    expect(scenarioParts(scenario(["a", "b"]), nodes, linked).context).toEqual(["pool"]);
+    const s = scenario(["a", "b"]);
+    expect(scenarioParts(s, nodes, linked, [s]).boundary).toEqual(["pool"]);
   });
 
   test("a member deleted since the last save is not read", () => {
-    const parts = scenarioParts(scenario(["a", "gone", "b"]), nodes, edges);
-    expect(parts.levers).toEqual(["a", "b"]);
+    const s = scenario(["a", "gone", "b"], { context: ["gone", "pool"], outcomes: ["gone"] });
+    expect(scenarioParts(s, nodes, edges, [s])).toEqual({ nodes: ["a", "b"], context: ["pool"], outcomes: [], boundary: ["pool"] });
   });
 });
 
@@ -124,29 +136,35 @@ describe("liveScenarios", () => {
   });
 });
 
-describe("the outputs a scenario saves", () => {
-  test("its context and its outcomes, each where it is made", () => {
+describe("the outputs the scenarios save", () => {
+  test("what crosses into it and its shared outcomes, each where it is made; a node deeper upstream saves nothing", () => {
+    const nodes = [node("raw"), node("load"), node("a"), node("b")];
+    const edges = [edge("raw", "load"), edge("load", "a"), edge("a", "b")];
+    expect([...scenarioSourceNodeIds(nodes, edges, [scenario(["a"])])].sort()).toEqual(["b", "load"]);
+  });
+
+  test("its own nodes save nothing because of it", () => {
     const nodes = [node("load"), node("a"), node("b")];
     const edges = [edge("load", "a"), edge("a", "b")];
-    expect([...scenarioSourceNodeIds(nodes, edges, [scenario(["a", "b"])])].sort()).toEqual(["b", "load"]);
+    expect([...scenarioSourceNodeIds(nodes, edges, [scenario(["a", "b"])])]).toEqual(["load"]);
   });
 
   test("a chart outcome saves nothing itself: the node feeding it does", () => {
     const nodes = [node("load"), node("a"), chart("chart")];
     const edges = [edge("load", "a"), edge("a", "chart")];
-    expect([...scenarioSourceNodeIds(nodes, edges, [scenario(["a", "chart"])])].sort()).toEqual(["a", "load"]);
+    expect([...scenarioSourceNodeIds(nodes, edges, [scenario(["a"])])].sort()).toEqual(["a", "load"]);
   });
 
-  test("a value node in the context saves its output, which a drop brings as data", () => {
+  test("a value node in the boundary saves its output, which a drop brings as data", () => {
     const nodes = [node("a"), valueNode("p", "season")];
-    expect([...scenarioSourceNodeIds(nodes, [edge("p", "a")], [scenario(["a"])])].sort()).toEqual(["a", "p"]);
+    expect([...scenarioSourceNodeIds(nodes, [edge("p", "a")], [scenario(["a"])])]).toEqual(["p"]);
   });
 
-  test("the save rule adds a scenario's to a pinned tile's, and without scenarios is the tile's alone", () => {
-    const nodes = [node("load"), node("a"), chart("pinned"), node("x"), node("y")];
+  test("the save rule adds the scenarios' to a pinned tile's, and without scenarios is the tile's alone", () => {
+    const nodes = [node("load"), node("a"), chart("pinned"), node("x"), node("y"), node("z")];
     nodes[2].data.dashboardPinned = true;
-    const edges = [edge("load", "a"), edge("a", "pinned"), edge("x", "y")];
+    const edges = [edge("load", "a"), edge("a", "pinned"), edge("x", "y"), edge("y", "z")];
     expect([...savedSourceNodeIds(nodes, edges, [])]).toEqual([...dashboardSourceNodeIds(nodes, edges)]);
-    expect([...savedSourceNodeIds(nodes, edges, [scenario(["y"])])].sort()).toEqual(["a", "x", "y"]);
+    expect([...savedSourceNodeIds(nodes, edges, [scenario(["y"])])].sort()).toEqual(["a", "x", "z"]);
   });
 });

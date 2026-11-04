@@ -62,6 +62,16 @@
             "context": { "$ref": "#/$defs/sharedLook" },
             "outcomes": { "$ref": "#/$defs/sharedLook" }
           }
+        },
+        "source": {
+          "type": "object",
+          "required": ["project", "set"],
+          "additionalProperties": false,
+          "properties": {
+            "project": { "type": "string", "minLength": 1 },
+            "set": { "type": "string", "minLength": 1 }
+          },
+          "description": "The project and scenario set it copies, made by the first drop of one of that set's scenarios through the Scenario Catalog; a later drop of another joins it."
         }
       }
     },

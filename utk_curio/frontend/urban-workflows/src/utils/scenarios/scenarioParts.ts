@@ -1,34 +1,47 @@
 /**
- * What a scenario is made of on the canvas (#662), read from the live graph:
+ * What a scenario is made of on the canvas (#662), by role, read from the live
+ * graph:
  *
- * - its levers, the nodes in it, which an alternative changes;
- * - its fixed context, the nodes outside it that it reads, through an edge
- *   into it;
- * - its outcomes, the nodes in it whose output nothing in it reads, or that
- *   something outside it reads.
+ * - `nodes`, its Scenario-specific nodes;
+ * - `context`, its Shared context: the nodes upstream of it, outside every
+ *   scenario's box, that it keeps (`scenarioSets.ts`);
+ * - `outcomes`, its Shared outcomes: the nodes downstream of it, outside every
+ *   box, that it keeps;
+ * - `boundary`, the nodes whose output crosses into it, or into one of its
+ *   shared outcomes from outside every box and every shared outcome: the
+ *   context a drop brings as data.
  *
- * A scenario's member list can name a node deleted since the last save, so
- * everything here reads the members that are still on the canvas.
+ * The canvas and the Scenario Catalog show the whole shared context and shared
+ * outcomes. What saves its output because of a scenario is what stands for its
+ * boundary and its shared outcomes, and nothing else (`scenarioSourceNodeIds`).
+ *
+ * The twin of `utk_curio/backend/app/scenario_catalog/domain/parts.py`; both
+ * read `scenarioParts.cases.json`. A scenario's member list can name a node
+ * deleted since the last save, so everything here reads the nodes still on
+ * the canvas.
  */
-import { directedEdgesOf } from "../../providers/flow/runLevels";
 import { dashboardSourceNodeIds, isPassThroughNode, producersFeeding } from "../dashboardLayout";
 import type { Scenario } from "./scenarioModel";
+import { inferContextOutcomes, isInteraction } from "./scenarioSets";
 
 type FlowNodeLike = { id: string; type?: string | null; data?: any };
 type FlowEdgeLike = {
   source: string;
   target: string;
+  type?: string | null;
   sourceHandle?: string | null;
   targetHandle?: string | null;
 };
 
 export interface ScenarioParts {
-  /** Its nodes on the canvas, in the scenario's order. */
-  levers: string[];
-  /** The nodes outside it that it reads, in canvas order. */
+  /** Its Scenario-specific nodes on the canvas, in the scenario's order. */
+  nodes: string[];
+  /** Its Shared context, in canvas order. */
   context: string[];
-  /** The levers whose output is not read inside it, or is read outside it. */
+  /** Its Shared outcomes, in canvas order. */
   outcomes: string[];
+  /** What crosses into it or its shared outcomes from outside, in canvas order. */
+  boundary: string[];
 }
 
 /**
@@ -44,33 +57,47 @@ export function liveScenarios(scenarios: readonly Scenario[], nodes: readonly { 
   );
 }
 
+/**
+ * The parts of *scenario*, one of the dataflow's *scenarios*. A node of a box
+ * is never in its context or outcomes; a list the scenario does not keep is
+ * the one Curio infers for it (`inferContextOutcomes`), as a save fills it in.
+ */
 export function scenarioParts(
   scenario: Scenario,
   nodes: readonly FlowNodeLike[],
   edges: readonly FlowEdgeLike[],
+  scenarios: readonly Scenario[],
 ): ScenarioParts {
-  const byId = new Map(nodes.map((node) => [node.id, node]));
-  const members = new Set(scenario.nodes.filter((id) => byId.has(id)));
-  const levers = [...members];
+  const order = nodes.map((node) => node.id);
+  const known = new Set(order);
+  const own = [...new Set(scenario.nodes.filter((id) => known.has(id)))];
+  const members = new Set(own);
+  const boxed = new Set([...own, ...scenarios.flatMap((s) => s.nodes)]);
+  const links = edges.filter((edge) => !isInteraction(edge) && known.has(edge.source) && known.has(edge.target));
 
-  const context = new Set<string>();
-  const readInside = new Set<string>();
-  const readOutside = new Set<string>();
-  for (const edge of directedEdgesOf([...edges])) {
-    if (!byId.has(edge.source) || !byId.has(edge.target)) continue;
-    const fromInside = members.has(edge.source);
-    const toInside = members.has(edge.target);
-    if (!fromInside && toInside) context.add(edge.source);
-    else if (fromInside && toInside) readInside.add(edge.source);
-    else if (fromInside && !toInside) readOutside.add(edge.source);
-  }
-
-  const outcomes = levers.filter((id) => !readInside.has(id) || readOutside.has(id));
-  return {
-    levers,
-    context: nodes.filter((node) => context.has(node.id)).map((node) => node.id),
-    outcomes,
+  let inferred: { context: string[]; outcomes: string[] } | null = null;
+  const kept = (key: "context" | "outcomes"): string[] => {
+    let given = scenario[key];
+    if (!Array.isArray(given)) {
+      inferred ??= inferContextOutcomes(own, order, links, boxed);
+      given = inferred[key];
+    }
+    const listed = new Set(given);
+    return order.filter((id) => listed.has(id) && !boxed.has(id));
   };
+  const context = kept("context");
+  const outcomes = kept("outcomes");
+
+  const outcomeSet = new Set(outcomes);
+  const everyOutcome = new Set([...outcomes, ...scenarios.flatMap((s) => s.outcomes ?? [])]);
+  const boundary = new Set<string>();
+  for (const edge of links) {
+    if (members.has(edge.target) && !members.has(edge.source)) boundary.add(edge.source);
+    else if (outcomeSet.has(edge.target) && !boxed.has(edge.source) && !everyOutcome.has(edge.source)) {
+      boundary.add(edge.source);
+    }
+  }
+  return { nodes: own, context, outcomes, boundary: order.filter((id) => boundary.has(id)) };
 }
 
 /**
@@ -93,7 +120,8 @@ export function savedSourcesOf(
 
 /**
  * The nodes whose outputs the scenarios need saved: what stands for each
- * context node and each outcome, so another project can read them.
+ * one's boundary and shared outcomes, so a drop into another project brings
+ * them and the Scenario Catalog shows them.
  */
 export function scenarioSourceNodeIds(
   nodes: readonly FlowNodeLike[],
@@ -102,8 +130,8 @@ export function scenarioSourceNodeIds(
 ): Set<string> {
   const sources = new Set<string>();
   for (const scenario of scenarios) {
-    const { context, outcomes } = scenarioParts(scenario, nodes, edges);
-    for (const id of [...context, ...outcomes]) {
+    const { boundary, outcomes } = scenarioParts(scenario, nodes, edges, scenarios);
+    for (const id of [...boundary, ...outcomes]) {
       savedSourcesOf(id, nodes, edges).forEach((source) => sources.add(source));
     }
   }
@@ -112,9 +140,9 @@ export function scenarioSourceNodeIds(
 
 /**
  * Every node whose output a save or a run records whatever its own Save toggle
- * says: what a pinned dashboard tile reads, and what a scenario's context and
- * outcomes produce. The one rule both the run (`isDashboardSource`) and the
- * save (`buildOutputRefs`) read.
+ * says: what a pinned dashboard tile reads, and what stands for a scenario's
+ * boundary and shared outcomes. The one rule both the run
+ * (`isDashboardSource`) and the save (`buildOutputRefs`) read.
  */
 export function savedSourceNodeIds(
   nodes: readonly FlowNodeLike[],

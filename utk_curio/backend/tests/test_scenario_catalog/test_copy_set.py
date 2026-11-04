@@ -1,12 +1,16 @@
-"""Dragging several scenarios of one set into another project at once (#662).
+"""Dragging the scenarios of one set into another project one after the other
+(#662). A card drags one scenario: the first of a set makes the set's copy in
+the target, and each later one joins it.
 
-``GET /sets/<project>/<set>/copy?target=&scenarios=a,b`` plans the drop of
-the scenarios named, all of the set: their levers, the context they read,
-once, and the set's shared outcomes whose every input comes too (a dragged
-scenario's node, a context node arriving as data, or another outcome that
-comes). ``POST`` copies the saved outputs, an outcome's own among them.
+``GET /<project>/<scenario>/copy?target=&present=a,b`` plans the drop of one
+scenario where the target's copy of its set holds *present* already: its own
+nodes, the context that crosses into what it copies, and the set's shared
+outcomes that land with it, those whose every input is in once it is (a node
+of it or of a scenario present, a context node arriving as data, or another
+outcome landing or landed), less those the scenarios present brought before.
+``POST`` copies the saved outputs, a shared outcome's own among them.
 
-The project: a loader feeds three scenarios' levers ``a``, ``b`` and ``c``.
+The project: a loader feeds three scenarios' nodes ``a``, ``b`` and ``c``.
 ``merge`` reads ``a`` and ``b`` and feeds ``chart_ab``; ``chart_abc`` reads all
 three; ``map`` reads ``a`` and the loader.
 
@@ -71,91 +75,94 @@ def _projects(client, token):
     return source, target
 
 
-def _plan(client, token, source, target, ids, set_id="park"):
-    return client.get(
-        f"/api/scenarios/sets/{source}/{set_id}/copy?target={target}&scenarios={','.join(ids)}",
-        headers=_headers(token),
-    )
+def _plan(client, token, source, target, scenario, present=()):
+    query = f"target={target}" + (f"&present={','.join(present)}" if present else "")
+    return client.get(f"/api/scenarios/{source}/{scenario}/copy?{query}", headers=_headers(token))
 
 
 def _shared(plan):
     return [entry["nodeId"] for entry in plan["shared"]]
 
 
-def test_two_scenarios_bring_their_context_once_and_the_outcomes_they_feed_whole(client, user_and_token):
+def test_the_first_scenario_of_a_set_brings_only_the_shared_outcomes_it_feeds_alone(client, user_and_token):
     _, token = user_and_token
     source, target = _projects(client, token)
     _save_outputs(client, token, source, {"load": "id\n1\n"})
 
-    resp = _plan(client, token, source, target, ["s1", "s2"])
+    plan = _plan(client, token, source, target, "s1").get_json()
+
+    assert plan["problems"] == []
+    assert plan["set"] == {"id": "park", "name": "Park shade"}
+    assert plan["nodes"] == ["a"]
+    assert [entry["nodeId"] for entry in plan["context"]] == ["load"]
+    # The map reads a and the loader, which comes as data; merge waits for b.
+    assert _shared(plan) == ["map"]
+    assert plan["outcomes"] == SHARED
+    assert [n["id"] for n in plan["dataflow"]["nodes"]] == ["a", "map"]
+
+
+def test_a_later_scenario_joins_and_brings_the_shared_outcomes_that_land_now_once(client, user_and_token):
+    _, token = user_and_token
+    source, target = _projects(client, token)
+    _save_outputs(client, token, source, {"load": "id\n1\n"})
+
+    resp = _plan(client, token, source, target, "s2", ["s1"])
 
     assert resp.status_code == 200, resp.get_data(as_text=True)
     plan = resp.get_json()
     assert plan["problems"] == []
-    assert plan["set"] == {"id": "park", "name": "Park shade"}
-    assert plan["levers"] == ["a", "b"]
-    [load] = plan["context"]
-    assert (load["nodeId"], load["scenarios"]) == ("load", ["s1", "s2"])
-    # merge and its chart read a and b alone; the map reads a and the loader,
-    # which comes as data. The chart of all three would miss c.
-    assert _shared(plan) == ["merge", "chart_ab", "map"]
-    assert {e["nodeId"]: e["scenarios"] for e in plan["shared"]} == {
-        "merge": ["s1", "s2"], "chart_ab": ["s1", "s2"], "map": ["s1"],
-    }
-    assert [s["id"] for s in plan["scenarios"]] == ["s1", "s2"]
-    assert plan["scenarios"][0]["name"] == "Existing"
-    assert plan["scenarios"][1]["outcomes"] == ["merge", "chart_ab"]
-    assert {n["id"] for n in plan["dataflow"]["nodes"]} == {"a", "b", "merge", "chart_ab", "map"}
+    assert plan["nodes"] == ["b"]
+    # With a in, merge and its chart land; the map came with s1, and the chart
+    # of all three waits for c.
+    assert _shared(plan) == ["merge", "chart_ab"]
+    assert {e["nodeId"]: e["scenarios"] for e in plan["shared"]} == {"merge": ["s2", "s1"], "chart_ab": ["s2", "s1"]}
+    assert [entry["nodeId"] for entry in plan["context"]] == ["load"]
+    assert [n["id"] for n in plan["dataflow"]["nodes"]] == ["b", "merge", "chart_ab"]
+    # merge's edge from a comes from the copy of s1 that is there already.
+    assert ("a", "merge") in {(e["source"], e["target"]) for e in plan["dataflow"]["edges"]}
 
 
-def test_one_scenario_brings_only_the_outcomes_it_feeds_alone(client, user_and_token):
+def test_the_whole_set_one_after_another_brings_every_shared_outcome_once(client, user_and_token):
     _, token = user_and_token
     source, target = _projects(client, token)
     _save_outputs(client, token, source, {"load": "id\n1\n"})
-    plan = _plan(client, token, source, target, ["s1"]).get_json()
-    assert _shared(plan) == ["map"]
+    landed = []
+    for scenario, present in (("s1", []), ("s2", ["s1"]), ("s3", ["s1", "s2"])):
+        landed += _shared(_plan(client, token, source, target, scenario, present).get_json())
+    assert sorted(landed) == sorted(SHARED)
 
 
-def test_the_whole_set_brings_every_shared_outcome(client, user_and_token):
+def test_a_scenario_the_copy_holds_is_refused_and_an_unknown_one_is_not_found(client, user_and_token):
     _, token = user_and_token
     source, target = _projects(client, token)
-    _save_outputs(client, token, source, {"load": "id\n1\n"})
-    plan = _plan(client, token, source, target, ["s1", "s2", "s3"]).get_json()
-    assert _shared(plan) == SHARED
-    assert plan["context"][0]["scenarios"] == ["s1", "s2", "s3"]
+
+    refused = _plan(client, token, source, target, "s1", ["s1"])
+    assert refused.status_code == 409
+    assert refused.get_json()["error"] == '"Existing" is already in the copy of "Park shade".'
+    assert _plan(client, token, source, target, "s9").status_code == 404
+    # A scenario of another set, or one no longer there, is not what the copy joins.
+    assert _shared(_plan(client, token, source, target, "s1", ["s4", "gone"]).get_json()) == ["map"]
 
 
-def test_scenarios_of_two_sets_are_refused_and_an_unknown_one_is_not_found(client, user_and_token):
-    _, token = user_and_token
-    source, target = _projects(client, token)
-    assert _plan(client, token, source, target, ["s1", "s4"]).status_code == 400
-    assert _plan(client, token, source, target, ["s4"]).status_code == 400
-    assert _plan(client, token, source, target, ["s9"]).status_code == 404
-    assert _plan(client, token, source, target, []).status_code == 400
-
-
-def test_a_drop_copies_an_outcomes_own_saved_output(client, user_and_token):
+def test_a_drop_copies_an_outcomes_own_saved_output_and_no_scenarios_node(client, user_and_token):
     _, token = user_and_token
     source, target = _projects(client, token)
     _save_outputs(client, token, source, {"load": "id\n1\n", "a": "v\n1\n", "b": "v\n2\n", "merge": "v\n3\n"})
-    plan = _plan(client, token, source, target, ["s1", "s2"]).get_json()
+    plan = _plan(client, token, source, target, "s2", ["s1"]).get_json()
     merge = next(e for e in plan["shared"] if e["nodeId"] == "merge")
     assert merge["sources"] == ["merge"]
 
-    resp = client.post(
-        f"/api/scenarios/sets/{source}/park/copy",
-        data=json.dumps({
-            "targetProjectId": target,
-            "scenarioIds": ["s1", "s2"],
-            "outputs": [
-                {"source": "load", "node": "load-copy"},
-                {"source": "a", "node": "a-copy"},
-                {"source": "b", "node": "b-copy"},
-                {"source": "merge", "node": "merge-copy"},
-            ],
-        }),
-        headers=_headers(token),
-    )
+    def copy(outputs):
+        return client.post(
+            f"/api/scenarios/{source}/s2/copy",
+            data=json.dumps({"targetProjectId": target, "present": ["s1"], "outputs": outputs}),
+            headers=_headers(token),
+        )
+
+    # A scenario's own node stands for no shared outcome landing: a drop does
+    # not bring its saved output.
+    assert copy([{"source": "b", "node": "b-copy"}]).status_code == 400
+    resp = copy([{"source": "load", "node": "load-copy"}, {"source": "merge", "node": "merge-copy"}])
     assert resp.status_code == 200, resp.get_data(as_text=True)
     restored = {o["node_id"] for o in resp.get_json()["outputs"]}
-    assert {"a-copy", "b-copy", "merge-copy"} <= restored
+    assert {"load-copy", "merge-copy"} <= restored

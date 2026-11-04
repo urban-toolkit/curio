@@ -21,7 +21,6 @@ const box: ScenarioBox = {
   scenario,
   x: 10,
   y: 20,
-  parts: { levers: ["a", "map"], context: ["pool", "season"], outcomes: ["map"] },
   rows: ["a", "map"],
 };
 

@@ -40,8 +40,10 @@ type ScenarioActions = ReturnType<typeof useScenarioActions>;
  * The Scenario Catalog drawer's In project tab: the open dataflow's scenarios,
  * read off the canvas, so an unsaved one is listed too, inside a panel per
  * scenario set. On top, Define scenario; on each card, Run scenario, Edit
- * scenario (Define scenario on it), Duplicate scenario and Delete; in its details, its name, color and description. Pointing at a card marks the scenario's fixed context on the
- * canvas. A shared viewer reads them and changes nothing.
+ * scenario (Define scenario on it), Duplicate scenario and Delete; in its
+ * details, its name, color and description. Pointing at a card marks the
+ * scenario's shared context and shared outcomes on the canvas. A shared viewer
+ * reads them and changes nothing.
  */
 export function InProjectScenarios({ scenarios, search, sort, presented }: InProjectScenariosProps) {
   const { nodes, edges, projectId, notebookOn, workflowNameRef, scenarioSets } = useFlowContext();
@@ -63,7 +65,7 @@ export function InProjectScenarios({ scenarios, search, sort, presented }: InPro
   const preview = useMemo(() => liveGraphPreview(liveNodes, liveEdges), [liveNodes, liveEdges]);
   const project: LiveProject = { id: projectId ?? null, name: workflowNameRef?.current ?? "" };
   const cards = useMemo(
-    () => scenarios.map((scenario) => ({ scenario, parts: scenarioParts(scenario, liveNodes, liveEdges) })),
+    () => scenarios.map((scenario) => ({ scenario, parts: scenarioParts(scenario, liveNodes, liveEdges, scenarios) })),
     [scenarios, liveNodes, liveEdges],
   );
 
@@ -138,9 +140,9 @@ export function InProjectScenarios({ scenarios, search, sort, presented }: InPro
                 testId={`scenario-card-${scenario.id}`}
                 highlight={{
                   color: scenario.color,
-                  members: parts.levers,
-                  context: scenario.context ?? parts.context,
-                  outcomes: scenario.outcomes ?? parts.outcomes,
+                  members: parts.nodes,
+                  context: parts.context,
+                  outcomes: parts.outcomes,
                 }}
                 onOpenDetails={() => setDetailId(scenario.id)}
                 onPoint={(on) => setHighlighted(on ? scenario.id : null)}
@@ -234,7 +236,7 @@ function ScenarioControls({
   actions: ScenarioActions;
   notebookOn: boolean;
 }) {
-  const empty = parts.levers.length === 0;
+  const empty = parts.nodes.length === 0;
   return (
     <>
       <ToolButton

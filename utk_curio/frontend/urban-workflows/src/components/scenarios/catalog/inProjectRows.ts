@@ -69,15 +69,15 @@ export function inProjectRow(
     name: scenario.name,
     color: scenario.color,
     description: scenario.description ?? "",
-    nodeCount: parts.levers.length,
+    nodeCount: parts.nodes.length,
     project: { id: project.id ?? "", name: project.name, isExample: false, updatedAt: "" },
     preview,
   };
 }
 
-/** Its details: its fixed context, levers and outcomes, each node by the
- *  label the canvas gives it. Nothing is said of saved outputs: what the
- *  canvas shows may not be saved yet. */
+/** Its details: its parts by role (`scenarioParts`), each node by the label
+ *  the canvas gives it. Nothing is said of saved outputs: what the canvas
+ *  shows may not be saved yet. */
 export function inProjectDetails(
   scenario: Scenario,
   parts: ScenarioParts,
@@ -88,14 +88,12 @@ export function inProjectDetails(
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const entry = (id: string): ScenarioNodeEntry => {
     const node = byId.get(id);
-    return { id, type: node?.data?.nodeType ?? node?.type ?? "", label: nodeLabel(node, id), results: [] };
+    return { id, type: node?.data?.nodeType ?? node?.type ?? "", label: nodeLabel(node, id) };
   };
   return {
     ...inProjectRow(scenario, parts, project, preview),
-    // What it keeps; a scenario that feeds nothing outside it shows its own
-    // last nodes, as the catalog does.
-    context: (scenario.context ?? parts.context).filter((id) => byId.has(id)).map(entry),
-    levers: parts.levers.map(entry),
-    outcomes: (scenario.outcomes?.length ? scenario.outcomes : parts.outcomes).filter((id) => byId.has(id)).map(entry),
+    context: parts.context.map(entry),
+    levers: parts.nodes.map(entry),
+    outcomes: parts.outcomes.map(entry),
   };
 }

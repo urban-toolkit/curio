@@ -5,20 +5,23 @@ The shipped dataflows with scenarios are example 06 and the test dataflows
 ``scenarios``, ``chicago-loop-shadow-towers``, ``quad-cities-flood-vulnerability``, ``chicago-rain-wind-routing``,
 ``lower-manhattan-park-shade``, ``scenario-comparison-charts`` and
 ``crown-heights-1550-bedford-shadow``; there is one test per scenario. Each signs in a fresh account, whose first listing seeds its
-own copies of the shipped dataflows. Those have never run, so the scenario's
-fixed context has no saved output. Then, in an empty dataflow:
+own copies of the shipped dataflows. Those have never run, so the context
+whose output crosses into the scenario has no saved output. Then, in an empty
+dataflow:
 
 1. The scenario is dragged in from the Scenario Catalog drawer. The drop runs
    its context on the server, in the seeded project: the plan lists those
    nodes to run, and the page asks for a run of exactly them and runs nothing
-   itself. It lands as one collapsed box, and the context arrives with the
-   output that run saved.
-2. Run scenario ends with every outcome done.
-3. Expanded, every outcome shows its output: a map drawn, a chart drawn, or
+   itself. It lands as one collapsed box, with the shared outcomes of its set
+   that need nothing more, and the context arrives with the output that run
+   saved.
+2. Run scenario ends with every last node of what the drop brought done: the
+   scenario's own, or a shared outcome that landed with it.
+3. Expanded, each of those shows its output: a map drawn, a chart drawn, or
    the result of a code node. Each map gets a close-up. A Map Editor node
-   among the levers edits on a map it feeds and is linked to, one of the
-   outcomes, and lists the layers it is fed there. A frame of the whole
-   dataflow is taken.
+   among the scenario's nodes edits on a map it feeds and is linked to, one of
+   those last nodes, and lists the layers it is fed there. A frame of the
+   whole dataflow is taken.
 
 A test whose dataflow has an Autark node runs on the GPU runner
 (``runner_split.SHIPPED_DROPS_MODULE``), the others on the CPU runners.
@@ -253,14 +256,24 @@ def test_a_shipped_scenario_drops_from_a_project_never_run_and_runs(
     assert page.locator('[data-testid^="scenario-box-"]').count() == 1
     _box(page, dropped["id"]).wait_for(state="visible", timeout=15000)
     members = dropped["nodes"]
-    assert sorted(members) == sorted(copies[lever] for lever in plan["levers"]), (members, copies)
+    assert sorted(members) == sorted(copies[own] for own in plan["nodes"]), (members, copies)
     for member in members:
         node_locator(page, member).wait_for(state="attached", timeout=15000)
         assert not node_locator(page, member).is_visible(), f"{member} shows, though the scenario is collapsed"
+    landed = [copies[entry["nodeId"]] for entry in plan["shared"]]
+    assert sorted(dropped["outcomes"]) == sorted(landed), (dropped["outcomes"], landed)
 
-    # 2. Run scenario ends with every outcome done.
-    outcomes = [(copies[outcome["nodeId"]], outcome) for outcome in plan["outcomes"]]
-    assert outcomes, f"{name} has no outcomes"
+    # 2. Run scenario ends with every last node of what the drop brought done:
+    # a node it copied that no other node it copied reads.
+    brought = [node["id"] for node in plan["dataflow"]["nodes"]]
+    read = {
+        e["source"] for e in plan["dataflow"]["edges"]
+        if e["target"] in brought and e.get("type") != "Interaction"
+        and not (e.get("sourceHandle") == "in/out" and e.get("targetHandle") == "in/out")
+    }
+    titles = {node["id"]: node.get("title") or node["type"] for node in plan["dataflow"]["nodes"]}
+    outcomes = [(copies[i], {"nodeId": i, "label": titles[i]}) for i in brought if i not in read]
+    assert outcomes, f"{name} brings no last node"
     for node_id, _outcome in outcomes:
         watch_node_run(page, node_id)
     # From its card in the In project tab; the drawer, which lies over the
@@ -273,8 +286,12 @@ def test_a_shipped_scenario_drops_from_a_project_never_run_and_runs(
         )
     wait_for_run_guard_released(page, timeout_ms=60000)
 
-    # 3. Expanded, each outcome shows its output.
+    # 3. Expanded, each shows its output. A shared outcome that landed is in
+    # its set's shared outcomes, collapsed too.
     _expand(page, dropped["id"], members)
+    if landed:
+        page.get_by_test_id(f"shared-box-{dropped['set']}-outcomes").dispatch_event("dblclick")
+        node_locator(page, landed[-1]).wait_for(state="visible", timeout=10000)
     for node_id, outcome in outcomes:
         node_type = types[outcome["nodeId"]]
         if node_type.startswith(AUTARK):
@@ -298,11 +315,11 @@ def test_a_shipped_scenario_drops_from_a_project_never_run_and_runs(
     charts = [node_id for node_id, outcome in outcomes if types[outcome["nodeId"]].startswith(VEGA)]
     if charts:
         assert_vega_charts_fit(page, f"{Path(dataflow).name}, {name}", charts, every=False)
-    # A Map Editor lever edits on the map it feeds and is linked to, an
-    # outcome drawn above, and lists the layers it is fed, before the whole
-    # dataflow is framed.
-    outcome_ids = {outcome["nodeId"] for outcome in plan["outcomes"]}
-    for lever in plan["levers"]:
+    # A Map Editor node of the scenario edits on the map it feeds and is
+    # linked to, a last node drawn above, and lists the layers it is fed,
+    # before the whole dataflow is framed.
+    outcome_ids = {outcome["nodeId"] for _node_id, outcome in outcomes}
+    for lever in plan["nodes"]:
         if types[lever].startswith(MAP_EDITS):
             linked = _linked_maps(plan["dataflow"], lever)
             assert len(linked) == 1 and linked[0] in outcome_ids, (

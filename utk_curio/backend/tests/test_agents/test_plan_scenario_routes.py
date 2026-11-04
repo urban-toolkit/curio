@@ -227,7 +227,8 @@ class TestThePlanLands:
         )
         read = {s["name"]: s for s in json.loads(text)["scenarios"]}
         assert read["Twice as tall"]["context"] == [buildings["id"]]
-        assert read["Twice as tall"]["levers"] == [copy["id"]]
+        assert read["Twice as tall"]["nodes"] == [copy["id"]]
+        assert "levers" not in read["Twice as tall"]
         # What it feeds: the comparison, which reads both scenarios.
         assert read["Twice as tall"]["outcomes"] == read["Real heights"]["outcomes"] == [compare["id"]]
         assert read["Twice as tall"]["set"] == read["Real heights"]["set"]

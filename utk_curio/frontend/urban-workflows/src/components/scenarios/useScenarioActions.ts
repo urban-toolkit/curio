@@ -177,17 +177,17 @@ export function useScenarioActions() {
     [scenarios, reactFlow, copyBelow, setScenarios, closeScenarioCatalogDrawer, setDefine],
   );
 
-  /** Run the scenario's levers, and only those of its context nodes that cannot be reused. */
+  /** Run the scenario's own nodes, and only those of its context nodes that cannot be reused. */
   const runScenario = useCallback(
     (id: string) => {
       const scenario = scenarios.find((s) => s.id === id);
       if (!scenario) return;
-      const { levers } = scenarioParts(scenario, reactFlow.getNodes(), reactFlow.getEdges());
-      if (levers.length === 0) {
+      const { nodes: own } = scenarioParts(scenario, reactFlow.getNodes(), reactFlow.getEdges(), scenarios);
+      if (own.length === 0) {
         showToast(`"${scenario.name}" has no nodes to run.`, "warning");
         return;
       }
-      playNodesUpTo(levers);
+      playNodesUpTo(own);
     },
     [scenarios, reactFlow, playNodesUpTo, showToast],
   );

@@ -165,19 +165,43 @@ def test_an_unknown_scenario_is_not_found(client, user_and_token):
     assert resp.get_json()["error"] == "Shadows has no scenario nope"
 
 
-def test_the_details_name_context_levers_and_outcomes_with_their_saved_outputs(client, user_and_token):
+def test_the_details_list_its_parts_by_role_with_the_saved_outputs_of_what_it_saves(client, user_and_token):
+    """Its whole shared context, its own nodes and its shared outcomes. The
+    nodes whose outputs it saves, the context node its output crosses into it
+    from and each shared outcome, come with their saved outputs; a node deeper
+    upstream and its own nodes are listed without an output line."""
     import pandas as pd
 
     _, token = user_and_token
-    project_id = _create(client, token, "Shadows", [BASELINE])
-    load_out = store_sandbox_artifact(pd.DataFrame({"id": [1], "height": [10]}))
-    a_out = store_sandbox_artifact(pd.DataFrame({"id": [1], "sunlight": [0.5]}))
+    spec = {"dataflow": {
+        "name": "Shadows",
+        "nodes": [
+            _node("raw", "data-loading", "return 1"),
+            _node("load", x=150),
+            _node("a", x=300),
+            _node("chart", "vis-vega", "{}", x=600),
+            _node("b", x=300),
+        ],
+        "edges": [
+            {"id": "e0", "source": "raw", "target": "load"},
+            {"id": "e1", "source": "load", "target": "a"},
+            {"id": "e2", "source": "a", "target": "chart"},
+            {"id": "e3", "source": "load", "target": "b"},
+        ],
+        "scenarios": [{**BASELINE, "nodes": ["a"]}, TALL],
+    }}
+    resp = client.post(
+        "/api/projects", data=json.dumps({"name": "Shadows", "spec": spec, "outputs": []}), headers=_headers(token),
+    )
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+    project_id = resp.get_json()["id"]
+    outputs = {
+        node_id: store_sandbox_artifact(pd.DataFrame({"id": [1], "value": [n]}))
+        for n, node_id in enumerate(["raw", "load", "a"])
+    }
     resp = client.put(
         f"/api/projects/{project_id}",
-        data=json.dumps({"outputs": [
-            {"node_id": "load", "filename": load_out},
-            {"node_id": "a", "filename": a_out},
-        ]}),
+        data=json.dumps({"outputs": [{"node_id": k, "filename": v} for k, v in outputs.items()]}),
         headers=_headers(token),
     )
     assert resp.status_code == 200, resp.get_data(as_text=True)
@@ -187,15 +211,19 @@ def test_the_details_name_context_levers_and_outcomes_with_their_saved_outputs(c
     body = resp.get_json()
 
     assert (body["key"], body["name"], body["project"]["name"]) == (f"{project_id}/s1", "Baseline", "Shadows")
-    assert [n["id"] for n in body["context"]] == ["load"]
-    assert [n["id"] for n in body["levers"]] == ["a", "chart"]
+    assert [n["id"] for n in body["context"]] == ["raw", "load"]
+    assert [n["id"] for n in body["levers"]] == ["a"]
     assert [n["id"] for n in body["outcomes"]] == ["chart"]
     assert body["outcomes"][0]["type"] == "curio.builtin/vis-vega@1"
     # The chart saves nothing itself: what it draws is node a's saved output.
     [outcome] = body["outcomes"][0]["results"]
     assert (outcome["datasetId"], outcome["nodeId"]) == (computed_dataset_id("a", project_id), "a")
-    [context] = body["context"][0]["results"]
+    # The node whose output crosses into it has its output line; the node
+    # deeper upstream and its own node have none, saved or not.
+    [context] = body["context"][1]["results"]
     assert (context["datasetId"], context["nodeId"]) == (computed_dataset_id("load", project_id), "load")
+    assert "results" not in body["context"][0]
+    assert "results" not in body["levers"][0]
     assert "path" not in json.dumps(body["context"] + body["levers"] + body["outcomes"])
 
 

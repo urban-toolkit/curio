@@ -21,7 +21,8 @@ type EdgeLike = {
   targetHandle?: string | null;
 };
 
-const isInteraction = (e: EdgeLike) =>
+/** A two-way link between views, which a run does not follow. */
+export const isInteraction = (e: EdgeLike) =>
   e.type === "Interaction" || (e.sourceHandle === "in/out" && e.targetHandle === "in/out");
 
 function walk(start: string[], step: Map<string, string[]>, boxed: Set<string>): Set<string> {
@@ -115,6 +116,11 @@ function wellFormedSets(raw: unknown): ScenarioSet[] {
     if (typeof e.description === "string" && e.description) kept.description = e.description;
     const shared = wellFormedShared(e.shared);
     if (shared) kept.shared = shared;
+    const source = e.source as Record<string, unknown> | undefined;
+    if (source && typeof source === "object" && typeof source.project === "string" && source.project
+      && typeof source.set === "string" && source.set) {
+      kept.source = { project: source.project, set: source.set };
+    }
     out.push(kept);
   }
   return out;

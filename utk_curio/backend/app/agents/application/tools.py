@@ -1184,12 +1184,13 @@ def _node_row(node: dict, goal_cap: int) -> dict:
 
 
 def _scenario_rows(stripped: dict) -> list[dict]:
-    """#662: the dataflow's scenarios, each with what it is made of: its
-    levers (its nodes), its set, its shared context (the nodes upstream of it
-    that it uses) and its outcomes (the nodes downstream of it that it feeds),
-    as the scenario keeps them, or as a save would fill them in for a
-    dataflow from before sets. A scenario dragged in from another project
-    also names where it came from (:func:`_scenario_sources`)."""
+    """#662: the dataflow's scenarios, each with its scenario set's name
+    ("set") and its parts as the Scenario Catalog's details list them
+    (``scenario_parts``): its Scenario-specific nodes ("nodes"), its Shared
+    context ("context") and its Shared outcomes ("outcomes"). They are read as
+    a save keeps them, so a dataflow saved before sets reads with its sets and
+    lists filled in. A scenario dragged in from another project also names
+    where it came from (:func:`_scenario_sources`)."""
     from utk_curio.backend.app.projects.scenarios import kept_scenarios
     from utk_curio.backend.app.scenario_catalog.domain.parts import scenario_parts, spec_nodes_and_edges
 
@@ -1199,18 +1200,16 @@ def _scenario_rows(stripped: dict) -> list[dict]:
     sources = _scenario_sources([scenario["source"] for scenario in scenarios if "source" in scenario])
     rows = []
     for scenario in scenarios:
-        parts = scenario_parts(scenario, nodes, edges)
+        parts = scenario_parts(scenario, nodes, edges, scenarios)
         row = {"id": scenario["id"], "name": scenario["name"], "color": scenario["color"]}
         if scenario.get("description"):
             row["description"] = scenario["description"]
         row = {
             **row,
             "set": set_names.get(scenario.get("set"), ""),
-            "levers": parts["levers"],
-            "context": scenario.get("context", []),
-            # One that feeds nothing outside it: its own last nodes, as the
-            # Scenario Catalog shows it.
-            "outcomes": scenario.get("outcomes") or parts["outcomes"],
+            "nodes": parts["nodes"],
+            "context": parts["context"],
+            "outcomes": parts["outcomes"],
         }
         source = scenario.get("source")
         if source is not None and (source["project"], source["scenario"]) in sources:

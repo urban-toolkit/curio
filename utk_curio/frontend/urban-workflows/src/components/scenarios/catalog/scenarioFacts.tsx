@@ -60,10 +60,9 @@ export function scenarioProjectPath(projectId: string): string {
   return `/dataflow/${encodeURIComponent(projectId)}`;
 }
 
-/** The project graph's marks: the levers in the scenario's colour, the fixed
- *  context dashed. */
 /** A listing row's scenario marked on its project's graph, as its details
- *  mark it; a row without its marks marks nothing. */
+ *  mark it: its own nodes in its colour, its shared context and shared
+ *  outcomes besides. A row without its marks marks nothing. */
 export function rowHighlight(row: ScenarioRow): ThumbnailHighlight | null {
   return row.marks ? { color: row.color, ...row.marks } : null;
 }
@@ -127,9 +126,10 @@ export function scenarioInfoRows(
   return rows.filter((fact): fact is ScenarioFact => fact != null);
 }
 
-/** One section of the details view: its nodes, each with its saved outputs.
- *  Without *results*, the nodes alone: a scenario read off the canvas, whose
- *  outputs may not be saved yet. */
+/** One section of the details view: its nodes, each whose output the
+ *  scenario saves with its saved outputs, the others bare. Without *results*,
+ *  the nodes alone: a scenario read off the canvas, whose outputs may not be
+ *  saved yet. */
 export const ScenarioNodeList: React.FC<{
   entries: ScenarioNodeEntry[];
   /** What an empty section says. */
@@ -142,7 +142,7 @@ export const ScenarioNodeList: React.FC<{
       {entries.map((entry) => (
         <li key={entry.id} className={styles.nodeItem} data-scenario-node-id={entry.id}>
           <span className={styles.nodeLabel}>{scenarioNodeLabel(entry)}</span>
-          {!results ? null : entry.results.length > 0 ? (
+          {!results || !entry.results ? null : entry.results.length > 0 ? (
             <ul className={styles.resultList}>
               {entry.results.map((result) => (
                 <li key={result.datasetId}>{scenarioResultLine(result)}</li>

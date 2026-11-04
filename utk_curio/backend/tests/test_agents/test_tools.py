@@ -326,10 +326,11 @@ class TestDataflowReadProjection:
         assert "kind" not in by_id["e1"]  # data stays byte-absent, as in the plan
 
     def test_scenarios_ride_the_projection_with_their_parts(self, tmp_curio):
-        """#662: each scenario with what it is made of, read by the rule the
-        canvas reads it by: its levers, its fixed context (each node an edge
-        into it comes from, a value node's among them) and its outcomes. Nodes
-        show their widgets' values and a copy its lineage."""
+        """#662: each scenario with its parts, read by the rule the canvas and
+        the Scenario Catalog read it by: its Scenario-specific nodes
+        ("nodes"), its Shared context ("context", every node upstream of it
+        outside every box, a value node's among them) and its Shared outcomes
+        ("outcomes"). Nodes show their widgets' values and a copy its lineage."""
         from utk_curio.backend.app.projects import storage as projects_storage
 
         spec = {"dataflow": {"nodes": [
@@ -349,7 +350,7 @@ class TestDataflowReadProjection:
             {"id": "e4", "source": "p", "target": "a", "targetHandle": "in_1"},
         ], "scenarios": [
             {"id": "s1", "name": "Real heights", "color": "#3567c7", "description": "as mapped",
-             "nodes": ["a", "b", "ghost"], "collapsed": True, "box": {"x": 1, "y": 2}},
+             "nodes": ["a", "ghost"], "collapsed": True, "box": {"x": 1, "y": 2}},
         ]}}
         projects_storage.write_spec(self.UKEY, self.PID, spec)
         _, text = tools.execute_read_tool(
@@ -358,7 +359,7 @@ class TestDataflowReadProjection:
         payload = json.loads(text)
         assert payload["scenarios"] == [{
             "id": "s1", "name": "Real heights", "color": "#3567c7", "description": "as mapped",
-            "set": "Real heights", "levers": ["a", "b"], "context": ["load", "p"], "outcomes": ["b"],
+            "set": "Real heights", "nodes": ["a"], "context": ["load", "p"], "outcomes": ["b"],
         }]
         rows = {n["id"]: n for n in payload["nodes"]}
         assert rows["a"]["widgets"] == [{"name": "factor", "type": "number", "value": 2}]
