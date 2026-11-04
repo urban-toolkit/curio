@@ -1,4 +1,4 @@
-# `curio.scout@1`: Scout
+# `curio.rasterization@1`: Rasterization
 
 SCOUT's raster nodes in Curio, ported from
 [SCOUT](https://github.com/urban-toolkit/scout). The **Raster Calculator** runs
@@ -9,19 +9,15 @@ tiles and joins the tiles into one raster, which an Autark map draws and SCOUT's
 Deep Umbra shadow model reads.
 
 Once the package is in a dataflow (**Add to project** in the Node Catalog
-drawer), its two nodes are under **Scout** in the Tools panel's **Node
+drawer), its two nodes are under **Rasterization** in the Tools panel's **Node
 Catalog** dropdown.
-
-Charts that compare scenarios are built-in **Vega-Lite** nodes, not nodes of
-this package: [docs/examples/vega-lite-charts](../../docs/examples/vega-lite-charts/README.md)
-holds fifteen specs to start from.
 
 ## Nodes
 
 | Canonical id | Label | Input | Output |
 |---|---|---|---|
-| `curio.scout/raster-calculator` | Raster Calculator | One to three RASTERs on one grid, one per input circle; a GeoDataFrame on a circle is a layer its code reads as zones or a mask, and a JSON value one its code reads as it is, such as a region's corners | One RASTER, or a DATAFRAME of one row of statistics |
-| `curio.scout/rasterize-buildings` | Rasterize Buildings | A buildings GeoDataFrame: polygons, a CRS and a column of heights in metres | One RASTER of heights in metres |
+| `curio.rasterization/raster-calculator` | Raster Calculator | One to three RASTERs on one grid, one per input circle; a GeoDataFrame on a circle is a layer its code reads as zones or a mask, and a JSON value one its code reads as it is, such as a region's corners | One RASTER, or a DATAFRAME of one row of statistics |
+| `curio.rasterization/rasterize-buildings` | Rasterize Buildings | A buildings GeoDataFrame: polygons, a CRS and a column of heights in metres | One RASTER of heights in metres |
 
 ## Raster Calculator
 
@@ -60,13 +56,13 @@ option.
 The functions are the package's module, `scout_rasters`: `raster_algebra`
 holds the operations and the statistics, and `web_tiles` the web map tile
 helpers `tile_bounds` and `mosaic_web_tiles`. A node of another package
-imports them when its package names Scout in its manifest's
+imports them when its package names Rasterization in its manifest's
 `dependencies.packages`, as Deep Umbra
 ([`model.scout.deep-umbra@1`](../model.scout.deep-umbra@1/README.md)) does for
 `tile_bounds`:
 
 ```json
-"dependencies": {"packages": {"curio.scout@1": "*"}}
+"dependencies": {"packages": {"curio.rasterization@1": "*"}}
 ```
 
 A Python node of no package has none of them, so a raster step is a Raster
@@ -126,10 +122,10 @@ waterways, two layers, as zones and a mask.
 ## Skills
 
 The package ships one skill for Curio's agents,
-[`skills/scout/SKILL.md`](skills/scout/SKILL.md): which of its
+[`skills/rasterization/SKILL.md`](skills/rasterization/SKILL.md): which of its
 nodes does what, the Raster Calculator's calls and its rules on grids, masks and
 zones, and what Rasterize Buildings writes. Every agent on a dataflow that uses
-Scout lists it, and a run that writes one of its two nodes is handed it
+Rasterization lists it, and a run that writes one of its two nodes is handed it
 ([a package's skills](../../docs/NODE-CATALOG.md#6-the-manifest)).
 
 ## Setup

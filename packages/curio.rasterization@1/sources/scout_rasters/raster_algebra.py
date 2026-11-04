@@ -1,5 +1,5 @@
 """Raster algebra: operations over rasters on one grid, cell by cell, and a
-raster's statistics, for Scout's Raster Calculator. Its code imports them:
+raster's statistics, for Rasterization's Raster Calculator. Its code imports them:
 
     from scout_rasters.raster_algebra import raster_calculate, raster_statistics
 
@@ -7,7 +7,7 @@ raster's statistics, for Scout's Raster Calculator. Its code imports them:
 the raster it returns where *output_file(name)* says, which a node's code
 gives as ``curio_output_file``; with ``absolute=True`` it gives the size of
 its result. A node of another package imports them when its package names
-Scout in ``dependencies.packages``.
+Rasterization in ``dependencies.packages``.
 
 Rasters are combined only on one grid: the same size, origin, cell size and
 CRS. Anything else is refused with a sentence that names both, since putting

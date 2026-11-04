@@ -1,14 +1,14 @@
 {
-  "skill_name": "scout",
+  "skill_name": "rasterization",
   "agent": "agent.curio.node-builder@1",
   "dataflow": "docs/examples/dataflows/chicago-loop-shadow-towers.json",
   "evals": [
     {
       "id": 1,
       "prompt": "Add a node that gives, cell by cell, how much the accumulated shadow changed when the towers come out, whichever way it went. I only want the size of the change.",
-      "expected_output": "One node.create of Scout's Raster Calculator whose code imports raster_calculate from scout_rasters.raster_algebra and returns raster_calculate(\"subtract\", [input_1, input_0], absolute=True, output_file=curio_output_file), with the answer saying which Accumulated Shadow node goes on input_0 and which on input_1.",
+      "expected_output": "One node.create of Rasterization's Raster Calculator whose code imports raster_calculate from scout_rasters.raster_algebra and returns raster_calculate(\"subtract\", [input_1, input_0], absolute=True, output_file=curio_output_file), with the answer saying which Accumulated Shadow node goes on input_0 and which on input_1.",
       "assertions": [
-        "The answer makes one node.create of type curio.scout/raster-calculator, not a node of another template.",
+        "The answer makes one node.create of type curio.rasterization/raster-calculator, not a node of another template.",
         "The code it writes imports raster_calculate from scout_rasters.raster_algebra and returns one raster_calculate(\"subtract\", ...) call over input_0 and input_1.",
         "The call passes absolute=True.",
         "The call passes output_file=curio_output_file.",
@@ -18,9 +18,9 @@
     {
       "id": 2,
       "prompt": "Add a node that gives the towers removed scenario's shadow statistics over only the cells in shadow less than an hour.",
-      "expected_output": "One node.create of Scout's Raster Calculator whose code imports raster_statistics from scout_rasters.raster_algebra and returns raster_statistics(input_0, where=lambda value: value < 60), with the answer saying that the towers removed scenario's Accumulated Shadow goes on input_0.",
+      "expected_output": "One node.create of Rasterization's Raster Calculator whose code imports raster_statistics from scout_rasters.raster_algebra and returns raster_statistics(input_0, where=lambda value: value < 60), with the answer saying that the towers removed scenario's Accumulated Shadow goes on input_0.",
       "assertions": [
-        "The answer makes one node.create of type curio.scout/raster-calculator, not a node of another template.",
+        "The answer makes one node.create of type curio.rasterization/raster-calculator, not a node of another template.",
         "The code it writes imports raster_statistics from scout_rasters.raster_algebra and returns one raster_statistics call over input_0.",
         "The call keeps only the cells under 60 minutes of shadow, through where=.",
         "The answer says to connect the towers removed scenario's Accumulated Shadow node to input_0."
@@ -41,9 +41,9 @@
       "agent": "agent.curio.dataflow-builder@1",
       "dataflow": "docs/examples/dataflows/quad-cities-flood-vulnerability.json",
       "prompt": "Plan a step that divides the NbS scenario's flood depth by the No NbS one's, cell by cell, so a map can show the ratio.",
-      "expected_output": "A dataflow plan with one node of type curio.scout/raster-calculator wired from both scenarios' Flood depth rasters, one data edge each, whose intent says it divides the NbS depth by the No NbS depth cell by cell, with no Python node of its own doing the raster math.",
+      "expected_output": "A dataflow plan with one node of type curio.rasterization/raster-calculator wired from both scenarios' Flood depth rasters, one data edge each, whose intent says it divides the NbS depth by the No NbS depth cell by cell, with no Python node of its own doing the raster math.",
       "assertions": [
-        "The answer writes a dataflow plan with a node of type curio.scout/raster-calculator.",
+        "The answer writes a dataflow plan with a node of type curio.rasterization/raster-calculator.",
         "The plan wires both scenarios' Flood depth rasters into that node, one data edge each.",
         "The node's intent says it divides the NbS scenario's depth by the No NbS one's, cell by cell.",
         "The plan adds no curio.builtin/computation-analysis node to do the raster math."
@@ -61,15 +61,15 @@
     {"query": "What does the Rasterize Buildings node draw for a tile that has no building near it?", "should_trigger": true},
     {"query": "How do I take the mean shadow over only the cells where it is under 60 minutes?", "should_trigger": true},
     {"query": "Why would the Raster Calculator refuse to subtract one shadow raster from the other?", "should_trigger": true},
-    {"query": "Could the Mean accumulated shadow bars be a lollipop chart instead? What would that node need set?", "should_trigger": false},
-    {"query": "How do I order the bars so Existing comes before Towers removed, and keep the box colors?", "should_trigger": false},
-    {"query": "What would a donut chart of how much of each scenario's ground stays in shadow take as its inputs and widgets?", "should_trigger": false},
-    {"query": "The Y axis title of the shadow bars says 'mean of mean'. Where does that come from, and how do I make it 'Mean shadow (minutes)'?", "should_trigger": false},
     {"query": "Color the Shadow change map from blue to red.", "should_trigger": false},
     {"query": "Remove the two tallest towers that are left in the Remove towers node.", "should_trigger": false},
     {"query": "Make the season a dropdown instead of radio buttons.", "should_trigger": false},
     {"query": "Pin the Shadow change map to the dashboard.", "should_trigger": false},
     {"query": "Which model does the Accumulated Shadow node run, and who published it?", "should_trigger": false},
-    {"query": "Link the Buildings map to a table so picking a building shows its row.", "should_trigger": false}
+    {"query": "Link the Buildings map to a table so picking a building shows its row.", "should_trigger": false},
+    {"query": "Explain what the Season node returns.", "should_trigger": false},
+    {"query": "Add a Data Summary of the Buildings table.", "should_trigger": false},
+    {"query": "Who changed the Remove towers node last?", "should_trigger": false},
+    {"query": "Draw the remaining buildings on the Buildings map in 3D, colored by height.", "should_trigger": false}
   ]
 }

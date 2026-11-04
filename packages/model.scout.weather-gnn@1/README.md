@@ -52,8 +52,8 @@ The modes:
   `duration_minutes` and its `rain_exposure`, `heat_exposure`, `wind_exposure`
   and `humidity_exposure`. An Autark map draws it.
 - **metrics**: the same routes as a table: `route`, `route_index`, `distance` in
-  kilometres, `duration` in minutes and the four exposures. A Vega-Lite node
-  charts it, one input per scenario.
+  kilometres, `duration` in minutes and the four exposures. The Vega-Lite
+  package's charts draw it, one input per scenario.
 
 A route's exposure to a factor is the sum, over its roads, of the factor's
 predicted value weighted by the factor's weight plus the road's travel time
