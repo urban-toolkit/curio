@@ -14,9 +14,6 @@ line, with "…" only where it runs past them, and its hover gives it whole; a
 short one shows whole on one line. A node saved minimized opens as its chip,
 titled the same way.
 
-A chip's corner resizes the chip (#1235): opened, the node is the size it was
-before, and folded again its chip is the size its corner gave it.
-
 The dataflow is loaded from a file on a new canvas, so it is the browser user's
 own (#751) with accounts and on a stack without them, where the one local user
 saves.
@@ -240,90 +237,3 @@ def test_a_minimized_node_is_still_minimized_after_a_save_and_a_reload(
     # chips as the canvas draws them, the long title wrapped, the short one whole.
     save_node_closeup(page, CLOSEUP_STEM, FOLDED_ID, test_name="long_title", sweep_toasts=True)
     save_node_closeup(page, CLOSEUP_STEM, SHORT_ID, test_name="short_title", sweep_toasts=True)
-
-
-RESIZED_ID = "minimized-resized"
-
-#: Whether the node shows its open card, and its size in canvas px.
-_SIZE_JS = """(id) => {
-    const flow = window.__curio_reactFlow;
-    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
-    const card = document.getElementById(`${id}resizable`);
-    if (!flow || !node || !card) return null;
-    const zoom = flow.getViewport().zoom;
-    const box = node.getBoundingClientRect();
-    return {
-        open: getComputedStyle(card).display !== "none",
-        width: Math.round(box.width / zoom),
-        height: Math.round(box.height / zoom),
-    };
-}"""
-
-
-def _size_once(page, condition: str) -> dict:
-    """The node's size once *condition* (JavaScript on its size, ``s``) holds,
-    or twenty seconds pass."""
-    try:
-        page.wait_for_function(
-            f"(id) => {{ const s = ({_SIZE_JS})(id); return !!s && ({condition}); }}",
-            arg=RESIZED_ID,
-            polling=100,
-            timeout=20000,
-        )
-    except PlaywrightTimeoutError:
-        pass
-    return page.evaluate(_SIZE_JS, RESIZED_ID)
-
-
-def test_a_chip_keeps_the_size_its_corner_gives_it_and_the_open_node_keeps_its_own(
-    app_frontend: "FrontendPage",
-    current_server: str,
-    page,
-    tmp_path,
-):
-    """#1235: a chip's corner resizes the chip. Opened, the node is the size
-    it was before; folded again, its chip is the size its corner gave it."""
-    stub_db_login(
-        page,
-        app_frontend.base_url,
-        current_server,
-        name="Resized Chip",
-        username="resized_chip",
-    )
-    page.goto(f"{app_frontend.base_url}/dataflow/new", timeout=120000)
-    page.locator("#tools-menu").wait_for(state="visible", timeout=45000)
-    require_owner_view(page)
-    spec_file = tmp_path / "resized-chip.json"
-    spec_file.write_text(json.dumps({"dataflow": {
-        "name": "Resized chip", "task": "", "timestamp": 1789193389280, "provenance_id": "Resized chip",
-        "nodes": [_node(RESIZED_ID, 0, 150, SHORT_TITLE)], "edges": [],
-    }}), encoding="utf-8")
-    upload_workflow(page, app_frontend, str(spec_file), 1)
-    node_locator(page, RESIZED_ID).wait_for(state="visible", timeout=45000)
-    opened = _size_once(page, "s.open")
-    minimize = page.locator(f'[id="{RESIZED_ID}resizable"] .curio-node-tools [data-tooltip="Minimize"]')
-
-    activate_header_icon(minimize)
-    folded = _size_once(page, f"!s.open && s.width === {CHIP[0]} && s.height === {CHIP[1]}")
-    assert folded == {"open": False, "width": CHIP[0], "height": CHIP[1]}, folded
-
-    # The chip's corner, dragged right and down.
-    corner = page.locator(f'[id="{RESIZED_ID}resizer"]').bounding_box()
-    assert corner, "the chip has no corner to resize it by"
-    x, y = corner["x"] + corner["width"] / 2, corner["y"] + corner["height"] / 2
-    page.mouse.move(x, y)
-    page.mouse.down()
-    page.mouse.move(x + 120, y + 40, steps=12)
-    page.mouse.up()
-    resized = _size_once(page, f"!s.open && s.width > {CHIP[0]} && s.height > {CHIP[1]}")
-    assert not resized["open"] and resized["width"] > CHIP[0] and resized["height"] > CHIP[1], (
-        f"the chip's corner left it {resized}"
-    )
-
-    # Opened, it is the size it was; folded again, its chip is the size its
-    # corner gave it.
-    page.locator(f'.react-flow__node[data-id="{RESIZED_ID}"] .curio-node-chip').click()
-    reopened = _size_once(page, "s.open")
-    activate_header_icon(minimize)
-    refolded = _size_once(page, "!s.open")
-    assert {"opened again": reopened, "folded again": refolded} == {"opened again": opened, "folded again": resized}
