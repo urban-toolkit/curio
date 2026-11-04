@@ -9,8 +9,8 @@ is:
 
 1. the Dataflow Builder plans a first version from a short prompt, and Solve
    writes its code;
-2. the two scenarios are made by hand, a Map Editor goes into the second, and
-   the agent's check table comes out;
+2. the two scenarios and their scenario set are defined by hand, a Map Editor
+   goes into the second, and the agent's check table comes out;
 3. the Node Builder adds the tower's two parts in the Map Editor;
 4. the Dataflow Builder adds the day's plot and the map of the shade the tower
    adds, and Solve writes their specs;
@@ -36,6 +36,7 @@ from utk_curio.backend.app.agents.infrastructure.testing_provider import FALLBAC
 
 from ..utils import (
     CANVAS_DROP_TARGET,
+    SCENARIO_DRAWER,
     _DRAG_TO_CANVAS_JS,
     api_json,
     captured_agent_prompts,
@@ -59,7 +60,9 @@ from ..utils import (
     save_dataflow,
     scenario_card_button,
     script_agent_replies,
+    settled_viewport,
     use_scripted_llm,
+    wait_for_drawer_closed,
     wait_for_node_done,
 )
 from ..utils.capture_waits import _wait_for_no_node_running
@@ -108,10 +111,15 @@ TABLE_GOAL = "Show the open-ground cells as a table, to check the grid."
 #: left of the chain, so outside the box a Shift-drag selects the chain with.
 TABLE_AT = (1290, -450)
 #: How far right of the example's place the second scene's first version puts
-#: the chain: one column, so the copies Duplicate as scenario makes below it
+#: the chain: one column, so the copies Duplicate scenario makes below it
 #: leave the grid's column free for the Map Editor, left of the copies, and
 #: the second scenario's frame takes in no node of the context.
 CHAIN_SHIFT = 645
+
+#: The nodes of the example's shared context the first version's chain does
+#: not read: the scenarios' maps, added after this scene, read them. The
+#: second scene adds them to each scenario's shared context by hand.
+FOR_THE_MAPS = ("streets", "map-area")
 
 #: What the fourth scene's agent adds: the plot of the block's share in shadow
 #: through the day, and the map of the shade the tower adds.
@@ -168,13 +176,20 @@ def _nodes(spec: dict) -> dict[str, dict]:
 
 def _cut(spec: dict, keep: set[str], *, scenarios: bool) -> dict:
     """*spec* with only the nodes in *keep* and the connections between them,
-    and its scenarios only when *scenarios*."""
+    and its scenarios and their set only when *scenarios*: each scenario then
+    lists the nodes in *keep* alone, as its own, its context and its outcomes."""
     cut = copy.deepcopy(spec)
     flow = cut["dataflow"]
     flow["nodes"] = [node for node in flow["nodes"] if node["id"] in keep]
     flow["edges"] = [edge for edge in flow["edges"] if edge["source"] in keep and edge["target"] in keep]
     if not scenarios:
         flow.pop("scenarios", None)
+        flow.pop("scenarioSets", None)
+        return cut
+    for scenario in flow.get("scenarios") or []:
+        for part in ("nodes", "context", "outcomes"):
+            if part in scenario:
+                scenario[part] = [node_id for node_id in scenario[part] if node_id in keep]
     return cut
 
 
@@ -509,16 +524,25 @@ def _same_code(written: str, expected: str) -> bool:
         return written.strip() == expected.strip()
 
 
-def _shift_drag_around(ctx: Ctx, node_ids: list[str]) -> None:
+_ON_PANE_JS = """([x, y]) => {
+    const hit = document.elementFromPoint(x, y);
+    return !!hit && !!hit.closest('.react-flow__pane') && !hit.closest('.react-flow__node');
+}"""
+
+
+def _shift_drag_around(ctx: Ctx, node_ids: list[str], *, frame: bool = True) -> None:
     """Select *node_ids* the way a person does: Shift, and a box dragged around
-    them on the empty canvas, from the bottom right."""
+    them on the empty canvas, from the bottom right. *frame* fits the canvas
+    to them first; without it they are where the view already shows them."""
     page = ctx.page
-    frame_nodes(page, node_ids)
+    if frame:
+        frame_nodes(page, node_ids)
     boxes = [node_locator(page, node_id).bounding_box() for node_id in node_ids]
     left = min(b["x"] for b in boxes) - 12
     top = min(b["y"] for b in boxes) - 12
     right = max(b["x"] + b["width"] for b in boxes) + 12
     bottom = max(b["y"] + b["height"] for b in boxes) + 12
+    assert page.evaluate(_ON_PANE_JS, [right, bottom]), f"({right}, {bottom}) is not on the empty canvas"
     ctx.point_at(right, bottom, hold=400)
     page.mouse.move(right, bottom)
     page.keyboard.down("Shift")
@@ -618,20 +642,160 @@ _SCENARIO_CARDS_JS = """(root) => Array.from(
 ).map((card) => card.getAttribute('data-testid').slice('scenario-card-'.length))"""
 
 
-def _name_scenario(ctx: Ctx, scenario_id: str, name: str, color: str) -> None:
-    """Give a scenario its name and its color in its details."""
-    page = ctx.page
-    card = page.locator(f'[data-testid="scenario-card-{scenario_id}"]')
-    ctx.focus(card.get_by_role("button", name=re.compile(r"^View .+ details$")), hold=500)
-    details = open_scenario_details(page, scenario_id)
-    field = details.get_by_label("Scenario name")
+#: The Scenario Catalog drawer, open.
+_OPEN_SCENARIO_DRAWER = f'{SCENARIO_DRAWER}[aria-hidden="false"]'
+
+
+def _define_panel(page):
+    """Define scenario, open beside the canvas, once the Scenario Catalog
+    drawer that opened it, if one did, has gone."""
+    panel = page.get_by_test_id("scenario-define-panel")
+    expect(panel).to_be_visible(timeout=10000)
+    wait_for_drawer_closed(page, SCENARIO_DRAWER)
+    return panel
+
+
+def _at_step(panel, step: str) -> None:
+    expect(panel.get_by_role("listitem").filter(has_text=step)).to_have_attribute("aria-current", "step")
+
+
+def _lists(panel, part: str, node_ids: list[str]) -> None:
+    """One of Define scenario's lists holds the nodes *node_ids*, whatever
+    their order: the scenario's own nodes ("nodes"), its shared "context" or
+    its shared "outcomes"."""
+    rows = panel.get_by_test_id(f"scenario-define-{part}").locator("[data-node]")
+    try:
+        expect(rows).to_have_count(len(node_ids), timeout=10000)
+    except AssertionError:
+        pass  # the check below says what the list holds
+    listed = [row.get_attribute("data-node") for row in rows.all()]
+    assert sorted(listed) == sorted(node_ids), f"Define scenario's {part} lists {listed}, not {node_ids}"
+
+
+#: True once every node *ids* names lies whole between the tools rail and
+#: Define scenario's panel, under what covers the top of the canvas.
+_BESIDE_THE_PANEL_JS = """([ids, panel]) => {
+    const edge = document.querySelector(panel).getBoundingClientRect().left;
+    const rail = document.getElementById('tools-palette-dock').getBoundingClientRect().right;
+    return ids.every((id) => {
+        const el = document.querySelector(`.react-flow__node[data-id="${id}"]`);
+        const box = el && el.getBoundingClientRect();
+        return !!box && box.width > 0 && box.left > rail && box.right < edge;
+    });
+}"""
+
+#: Sets the view so the nodes *ids* name fill, at most at 100% zoom, the
+#: canvas between the tools rail and Define scenario's panel, under the top
+#: bar and the dataflow's title. The canvas's own fit leaves no room for the
+#: panel, which sits over the canvas's right.
+_FRAME_BESIDE_THE_PANEL_JS = """([ids, panel, pad]) => {
+    const flow = window.__curio_reactFlow;
+    const nodes = flow.getNodes().filter((n) => ids.includes(n.id));
+    const pane = document.querySelector('.react-flow').getBoundingClientRect();
+    const tops = [...document.querySelectorAll(
+        '[data-curio-menu-bar], [data-curio-canvas-title], [data-curio-canvas-title] [data-curio-category-chips]',
+    )].map((el) => el.getBoundingClientRect().bottom);
+    const area = {
+        left: document.getElementById('tools-palette-dock').getBoundingClientRect().right + pad,
+        right: document.querySelector(panel).getBoundingClientRect().left - pad,
+        top: Math.max(pane.top, ...tops) + pad,
+        bottom: pane.bottom - pad,
+    };
+    const x0 = Math.min(...nodes.map((n) => n.position.x));
+    const y0 = Math.min(...nodes.map((n) => n.position.y));
+    const x1 = Math.max(...nodes.map((n) => n.position.x + (n.width || 0)));
+    const y1 = Math.max(...nodes.map((n) => n.position.y + (n.height || 0)));
+    const zoom = Math.min(1, (area.right - area.left) / (x1 - x0), (area.bottom - area.top) / (y1 - y0));
+    flow.setViewport({
+        x: area.left - pane.left + (area.right - area.left - (x1 - x0) * zoom) / 2 - x0 * zoom,
+        y: area.top - pane.top + (area.bottom - area.top - (y1 - y0) * zoom) / 2 - y0 * zoom,
+        zoom,
+    });
+    return nodes.length;
+}"""
+
+_PANEL = '[data-testid="scenario-define-panel"]'
+
+
+def _frame_beside_the_panel(page, node_ids: list[str]) -> None:
+    """Show *node_ids* whole beside Define scenario's panel, the pointer
+    parked first."""
+    park_pointer(page)
+    framed = page.evaluate(_FRAME_BESIDE_THE_PANEL_JS, [node_ids, _PANEL, 48])
+    assert framed == len(node_ids), f"only {framed} of {node_ids} are on the canvas"
+    settled_viewport(page)
+    page.wait_for_function(_BESIDE_THE_PANEL_JS, arg=[node_ids, _PANEL], timeout=10000)
+
+
+def _add_to_shared_context(ctx: Ctx, panel, node_ids: list[str]) -> None:
+    """Add *node_ids* to the shared context Define scenario found: selected
+    on the canvas beside the panel, Shift and a box dragged around them, then
+    + Add selected node."""
+    _frame_beside_the_panel(ctx.page, node_ids)
+    _shift_drag_around(ctx, node_ids, frame=False)
+    context = panel.get_by_test_id("scenario-define-context")
+    ctx.click(context.get_by_role("button", name="+ Add selected node"))
+    for node_id in node_ids:
+        expect(context.locator(f'[data-node="{node_id}"]')).to_have_count(1, timeout=10000)
+
+
+def _name_and_set(ctx: Ctx, panel, scenario: dict, *, new_set: str | None = None) -> None:
+    """Name & set: *scenario*'s name typed and its color, and, with *new_set*,
+    the name of the scenario set it starts."""
+    _at_step(panel, "Name & set")
+    field = panel.get_by_test_id("scenario-define-name")
     field.fill("")
-    ctx.narrator.type_into(field, name)
-    field.press("Enter")
-    expect(details.get_by_role("heading", name=name)).to_be_visible(timeout=10000)
-    details.get_by_label(f"Color of {name}").fill(color)
+    ctx.narrator.type_into(field, scenario["name"])
+    panel.get_by_test_id("scenario-define-color").fill(scenario["color"])
+    if new_set is not None:
+        # The dataflow has no set yet, so the scenario starts one, named
+        # after the dataflow until it is named.
+        named = panel.get_by_test_id("scenario-define-set-name")
+        expect(named).to_be_visible(timeout=10000)
+        named.fill("")
+        ctx.narrator.type_into(named, new_set)
     ctx.beat(700)
+
+
+def _save_define(ctx: Ctx, panel) -> None:
+    ctx.click(panel.get_by_test_id("scenario-define-save"))
+    expect(panel).to_be_hidden(timeout=10000)
+
+
+def _describe(page, scenario_id: str, description: str) -> None:
+    """Write a scenario's description in its details, which keep it once the
+    field is left."""
+    details = open_scenario_details(page, scenario_id)
+    field = details.get_by_label("Scenario description")
+    field.fill(description)
+    field.blur()
+    expect(page.locator(f'{_OPEN_SCENARIO_DRAWER} [data-testid="scenario-card-{scenario_id}"]')).to_contain_text(
+        description, timeout=10000,
+    )
     close_scenario_details(page)
+
+
+def _scenario_as_kept(scenario: dict) -> dict:
+    """What a saved scenario says: its name, color and description, and its
+    own nodes, shared context and shared outcomes, each in any order."""
+    return {
+        "name": scenario["name"], "color": scenario["color"], "description": scenario.get("description"),
+        **{part: sorted(scenario.get(part) or []) for part in ("nodes", "context", "outcomes")},
+    }
+
+
+def _scenario_as_built(entry: dict, ours: dict[str, str], present: set[str]) -> dict:
+    """The example's scenario *entry* as far as a scene has built it, as
+    :func:`_scenario_as_kept` reads a saved one: each node by the id the scene
+    gave it (*ours*, else the example's own), the nodes the scene's dataflow
+    holds (*present*) alone."""
+    def here(ids: list[str]) -> list[str]:
+        return sorted(node_id for node_id in (ours.get(n, n) for n in ids) if node_id in present)
+
+    return {
+        "name": entry["name"], "color": entry["color"], "description": entry.get("description"),
+        **{part: here(entry.get(part) or []) for part in ("nodes", "context", "outcomes")},
+    }
 
 
 def _frame_all(ctx: Ctx) -> None:
@@ -747,11 +911,13 @@ def crown_heights_first_version(ctx: Ctx) -> None:
 @walkthrough(
     slug="crown-heights-build-scenarios",
     title="Crown Heights: two scenarios by hand",
-    premise="The first version's GPU chain is duplicated as a scenario, the two "
-            "scenarios are named without and with the proposed building, a Map Editor "
-            "node goes into the second between the buildings and its chain, and the "
-            "agent's check table comes out.",
-    tests=["test_frontend/test_scenarios_canvas_e2e.py",
+    premise="The first version's GPU chain is defined as a scenario, in a scenario set of its "
+            "own, its shared context with the streets and the map extent the maps will read, "
+            "and duplicated as a second; the two are named without and with the proposed "
+            "building. A Map Editor node goes into the second between the buildings and its "
+            "chain, and the agent's check table comes out.",
+    tests=["test_frontend/test_scenario_sets_define_e2e.py",
+           "test_frontend/test_scenarios_canvas_e2e.py",
            "test_frontend/test_scenarios_in_project_e2e.py"],
     example=EXAMPLE,
     dataflow_name=NAME,
@@ -762,17 +928,52 @@ def crown_heights_scenarios(ctx: Ctx) -> None:
     page = ctx.page
     token, project_id = _session(page)
     chain = [nid(key) for key in TO_THE_GPU]
-    without, with_ = _example()["dataflow"]["scenarios"]
+    example = _example()["dataflow"]
+    without, with_ = example["scenarios"]
+    [scenario_set] = example["scenarioSets"]
+    for_the_maps = [nid(key) for key in FOR_THE_MAPS]
+    # The shared context Curio finds for the chain: the example's, but for the
+    # nodes only the maps read.
+    found = [node_id for node_id in without["context"] if node_id not in for_the_maps]
     frame_nodes(page, [nid("ground"), *chain, TABLE])
 
     ctx.mark("clip", "start")
-    # The chain, duplicated as a scenario: the copy reads what the chain reads.
+    # The chain, defined as the first scenario: its own nodes; the shared
+    # context Curio finds, with the streets and the map extent added, and no
+    # outcome yet; then its name, its color and a scenario set of its own.
     _shift_drag_around(ctx, chain)
     ctx.click(page.get_by_role("button", name="View menu"))
-    ctx.click(page.get_by_role("button", name="Duplicate as scenario", exact=True))
-    open_in_project_tab(page, opened_by_command=True)
-    cards = page.evaluate(_SCENARIO_CARDS_JS, '[data-curio-scenario-catalog-drawer="true"][aria-hidden="false"]')
-    assert len(cards) == 2, f"the In project tab lists {cards}, not two scenarios"
+    ctx.click(page.get_by_role("button", name="Define scenario", exact=True))
+    panel = _define_panel(page)
+    _at_step(panel, "Scenario-specific nodes")
+    _lists(panel, "nodes", chain)
+    ctx.click(panel.get_by_role("button", name="Next: shared context & outcomes"))
+    _at_step(panel, "Shared context & outcomes")
+    _lists(panel, "context", found)
+    _lists(panel, "outcomes", [])
+    _add_to_shared_context(ctx, panel, for_the_maps)
+    _lists(panel, "context", without["context"])
+    ctx.click(panel.get_by_role("button", name="Next: name & set"))
+    _name_and_set(ctx, panel, without, new_set=scenario_set["name"])
+    _save_define(ctx, panel)
+
+    # Duplicated, from its card: the copy, below the chain, reads what the
+    # chain reads, in the same set with the same shared context, and Define
+    # scenario opens on it at Name & set.
+    ctx.focus(page.get_by_role("button", name="Scenario Catalog", exact=True), hold=400)
+    open_in_project_tab(page)
+    cards = page.evaluate(_SCENARIO_CARDS_JS, _OPEN_SCENARIO_DRAWER)
+    assert len(cards) == 1, f"the In project tab lists {cards}, not one scenario"
+    [first] = cards
+    ctx.click(scenario_card_button(page, first, "Duplicate scenario"))
+    panel = _define_panel(page)
+    _at_step(panel, "Name & set")
+    ctx.beat(800)
+    # It is named the same way; the clip cuts to it named.
+    ctx.mark("cut", "start")
+    _name_and_set(ctx, panel, with_)
+    _save_define(ctx, panel)
+    ctx.mark("cut", "end")
     copies = {
         node["copiedFrom"][-1]: node["id"]
         for node in page.evaluate(
@@ -781,12 +982,6 @@ def crown_heights_scenarios(ctx: Ctx) -> None:
         if node["copiedFrom"]
     }
     assert sorted(copies) == sorted(chain), f"the copies name {sorted(copies)} as their originals"
-    _name_scenario(ctx, cards[0], without["name"], without["color"])
-    # The second is named the same way; the clip cuts to it named.
-    ctx.mark("cut", "start")
-    _name_scenario(ctx, cards[1], with_["name"], with_["color"])
-    ctx.mark("cut", "end")
-    close_scenario_drawer(page)
 
     # A Map Editor node in the second scenario, between the buildings and the
     # copy of the chain, where the proposed building will be added. The copy's
@@ -794,7 +989,7 @@ def crown_heights_scenarios(ctx: Ctx) -> None:
     # first: then the other never moves up a circle, and the copy's code still
     # reads input_0 and input_1 as written.
     tower = copies[nid("base-tower")]
-    # Duplicate as scenario's toast sits where the copy's connections arrive.
+    # Define scenario's toast sits where the copy's connections arrive.
     dismiss_toasts(page)
     frame_nodes(page, [nid("buildings"), nid("ground"), tower])
     _delete_edge(ctx, nid("ground"), tower)
@@ -820,14 +1015,32 @@ def crown_heights_scenarios(ctx: Ctx) -> None:
     _connect(ctx, nid("buildings"), editor)
     _connect(ctx, editor, tower, target_handle="in")
     _connect(ctx, nid("ground"), tower, target_handle="in_1")
-    _select(ctx, editor)
+
+    # The Map Editor joins the second scenario: Edit scenario on its card, the
+    # node selected on the canvas and added. Its shared context is found anew
+    # from its nodes, and the streets and the map extent go in again; the clip
+    # cuts that.
     ctx.focus(page.get_by_role("button", name="Scenario Catalog", exact=True), hold=400)
     open_in_project_tab(page)
-    ctx.click(scenario_card_button(page, cards[1], "Add selected"))
-    expect(page.locator(f'[data-testid="scenario-card-{cards[1]}"]')).to_contain_text(
-        f"{len(chain) + 1} nodes", timeout=10000,
-    )
-    close_scenario_drawer(page)
+    cards = page.evaluate(_SCENARIO_CARDS_JS, _OPEN_SCENARIO_DRAWER)
+    assert len(cards) == 2 and cards[0] == first, f"the In project tab lists {cards}"
+    second = cards[1]
+    ctx.click(scenario_card_button(page, second, "Edit scenario"))
+    panel = _define_panel(page)
+    _at_step(panel, "Scenario-specific nodes")
+    _lists(panel, "nodes", list(copies.values()))
+    _frame_beside_the_panel(page, [editor, tower])
+    _select(ctx, editor)
+    ctx.click(panel.get_by_test_id("scenario-define-nodes").get_by_role("button", name="+ Add selected node"))
+    _lists(panel, "nodes", [editor, *copies.values()])
+    ctx.click(panel.get_by_role("button", name="Next: shared context & outcomes"))
+    ctx.mark("cut", "start")
+    _at_step(panel, "Shared context & outcomes")
+    _lists(panel, "context", found)
+    _lists(panel, "outcomes", [])
+    _add_to_shared_context(ctx, panel, for_the_maps)
+    _save_define(ctx, panel)
+    ctx.mark("cut", "end")
 
     # The check table goes: the grid is right.
     frame_nodes(page, [nid("ground"), TABLE])
@@ -841,23 +1054,35 @@ def crown_heights_scenarios(ctx: Ctx) -> None:
     ctx.beat(2500)
     ctx.mark("clip", "end")
 
+    # Each scenario's description, as the example words it, in its details.
+    open_in_project_tab(page)
+    for scenario_id, entry in ((first, without), (second, with_)):
+        _describe(page, scenario_id, entry["description"])
+    close_scenario_drawer(page)
+
     save_dataflow(page)
     saved = _saved(ctx, token, project_id)
-    scenarios = saved.get("scenarios") or []
-    assert [(s["name"], s["color"]) for s in scenarios] == [
-        (without["name"], without["color"]), (with_["name"], with_["color"]),
-    ], f"the scenarios saved are {[(s['name'], s['color']) for s in scenarios]}"
-    assert sorted(scenarios[0]["nodes"]) == sorted(chain), scenarios[0]
-    assert sorted(scenarios[1]["nodes"]) == sorted([editor, *copies.values()]), scenarios[1]
     by_id = {node["id"]: node for node in saved["nodes"]}
     assert TABLE not in by_id, "the check table is still in the saved dataflow"
+    # Each scenario is the example's own as far as this scene builds it: its
+    # name, color and description; its nodes, the second's by the ids its
+    # copies and its Map Editor have here; its shared context; and its
+    # outcomes, which no node of the first version is.
+    ours = {nid("add-building"): editor, **{nid(key.removeprefix("base-")): copies[nid(key)] for key in TO_THE_GPU}}
+    scenarios = saved.get("scenarios") or []
+    kept = [_scenario_as_kept(s) for s in scenarios]
+    built = [_scenario_as_built(entry, ours, set(by_id)) for entry in (without, with_)]
+    assert kept == built, f"the scenarios saved are {kept}, not the example's {built}"
+    # Both in the one scenario set, named as the example's.
+    sets = {s["id"]: s["name"] for s in saved.get("scenarioSets") or []}
+    assert list(sets.values()) == [scenario_set["name"]], f"the scenario sets saved are {sets}"
+    assert {s["set"] for s in scenarios} == set(sets), [(s["name"], s["set"]) for s in scenarios]
     for original, copied in copies.items():
         assert (by_id[copied].get("metadata") or {}).get("copiedFrom") == [original], by_id[copied]
     wiring = {(e["source"], e["target"], e.get("targetHandle") or "in") for e in saved["edges"]}
     assert (nid("buildings"), editor, "in") in wiring, "the buildings do not feed the Map Editor"
     # The copy reads what the example's second scenario reads, on the same
     # circles, with its code as the original's.
-    ours = {nid("add-building"): editor}
     expected = sorted(
         (ours.get(e["source"], e["source"]), e.get("targetHandle") or "in")
         for e in _example()["dataflow"]["edges"] if e["target"] == nid("tower")
