@@ -10,6 +10,8 @@ import { useFlowContext } from '../../providers/FlowProvider';
 import { useToastContext } from '../../providers/ToastProvider';
 import { emptyRenderKind, renderOutcome, type RenderCounts } from '../../utils/renderOutcome';
 import { defaultSpecText } from '../../utils/vegaDefaultSpec';
+import { geoProjection } from '../../utils/vegaGeoSpec';
+import { parseGeoDataframeWithGeometry } from '../../utils/parsing';
 import { isEmptySpecBuffer } from '../../utils/starterSpec';
 import { toRows } from '../../utils/rowSource';
 import { resolveGeometryField } from '../../utils/geometryField';
@@ -232,5 +234,10 @@ function chooseVegaStarter(read: GrammarInput): string | null {
   // A DataFrame's geometry column is typed `str` or `object`, so it is found
   // by value, as the Autark node finds it.
   const geometryName = geo ? frame.geometryName : resolveGeometryField(rows, null).field;
-  return defaultSpecText(frame.schema, rows, geometryName);
+  // A map is drawn in the projection the chart's draw gives it, judged on the
+  // same rows (a GeoDataFrame's with their geometry) and the CRS the frame
+  // declares (utils/vegaInput, utils/vegaGeoSpec).
+  const drawn = geo ? parseGeoDataframeWithGeometry(frame.payload, true).values : rows;
+  const projection = geoProjection(drawn, { geometryName, crsName: frame.crsName });
+  return defaultSpecText(frame.schema, rows, geometryName, projection);
 }
