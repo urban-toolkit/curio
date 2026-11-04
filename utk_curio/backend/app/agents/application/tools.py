@@ -85,7 +85,11 @@ def _texts(description: str) -> dict:
 
 
 def _map(description: str) -> dict:
-    """An object whose keys the tool does not fix, such as a manifest."""
+    """An object whose keys the tool does not fix and whose values are texts,
+    or objects of texts, such as a package draft's files. A server whose tool
+    parser reads a call by its schema keeps a text as it was written, so none
+    of it needs a type; an object that holds other values is JSON text
+    (:func:`_json_value`)."""
     return {"type": "object", "description": description}
 
 
@@ -338,6 +342,7 @@ def _scenario(say: Say) -> dict:
             "name": _text(say("scenarios.name")),
             "nodes": _texts(say("scenarios.nodes")),
             "duplicateOf": _text(say("scenarios.duplicateOf")),
+            # Each node to its copy's ref: texts (_map).
             "copies": _map(say("scenarios.copies")),
             # A copy's ref to its widget values by name.
             "values": _values_map(say("scenarios.values"), depth=2),
@@ -720,9 +725,15 @@ REGISTRY: dict[str, ToolContract] = {
                 "mode": {"type": "string", "enum": ["create", "extend"]},
                 "baseDigest": _text(say("baseDigest")),
                 "target": _text(say("target")),
-                "manifest": _map(say("manifest")),
+                # Its numbers and true/false (compatibility.major, a
+                # template's hasCode) as JSON text: typed from the package
+                # schema, the manifest would cost every turn about 1,500
+                # characters, and a widget's default has no type there.
+                "manifest": _json_value(say("manifest")),
+                # A file's text or base64: texts (_map).
                 "files": _map(say("files")),
                 "behaviorEntries": _texts(say("behaviorEntries")),
+                # A dependency's constraint: a text (_map).
                 "dependencies": _map(say("dependencies")),
                 "previewTemplates": _texts(say("previewTemplates")),
                 "nodes": {
@@ -796,7 +807,9 @@ def delegate_tool(capabilities: Iterable[str]) -> dict:
                     "enum": list(capabilities),
                     "description": say("capability"),
                 },
-                "inputs": _map(say("inputs")),
+                # Whatever the delegate needs, keys and values, so no schema
+                # can type them: JSON text keeps each value's type.
+                "inputs": _json_value(say("inputs")),
             },
             "capability",
         ),
@@ -831,16 +844,23 @@ def native_tools(
 
 
 def native_arguments(tool_id: str, arguments: dict) -> dict:
-    """The params a native call of *tool_id* gives, as its fenced block would
-    hold them: each value its schema gives as JSON text (:func:`_json_value`)
-    read back into the value it encodes, with ``json.loads`` as a fenced block
-    is read. A text that is no JSON stays a text, which the tool's own reader
-    then judges, as it judges every other value. Copies: the call keeps its
-    arguments as the model sent them."""
-    contract = REGISTRY.get(tool_id)
-    if contract is None or not isinstance(arguments, dict):
+    """The params a native call of *tool_id*, or the arguments of a call of
+    the delegation tool (:data:`DELEGATE_TOOL`), gives, as its fenced block
+    would hold them: each value its schema gives as JSON text
+    (:func:`_json_value`) read back into the value it encodes, with
+    ``json.loads`` as a fenced block is read. A text that is no JSON stays a
+    text, which the tool's own reader then judges, as it judges every other
+    value. Copies: the call keeps its arguments as the model sent them."""
+    if tool_id == DELEGATE_TOOL:
+        schema = delegate_tool(())["parameters"]
+    else:
+        contract = REGISTRY.get(tool_id)
+        if contract is None:
+            return arguments
+        schema = contract.parameters
+    if not isinstance(arguments, dict):
         return arguments
-    return _read_json_text(arguments, contract.parameters)
+    return _read_json_text(arguments, schema)
 
 
 def _read_json_text(value, schema):
