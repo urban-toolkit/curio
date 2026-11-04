@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { DrawerHeader } from "../packages/publishing/DrawerHeader";
 import shell from "../packages/publishing/CatalogDrawerShell.module.css";
 import { useDrawerDragThrough } from "../packages/publishing/useDrawerDragThrough";
-import { holdDrawerLayer, isTopDrawer } from "../ModalShell";
+import { holdDrawerLayer, isTopDrawer, typedIntoAnotherPanel } from "../ModalShell";
 import styles from "./HeaderDrawer.module.css";
 
 export interface HeaderDrawerProps {
@@ -25,8 +25,10 @@ export interface HeaderDrawerProps {
   /** Beside the canvas rather than over it (Define scenario): no scrim, so
    *  the canvas and the top bar stay usable, and under the top bar at the
    *  catalog drawers' tier, so a drawer opened while it is open slides in over
-   *  it. It takes the focus as it opens, and its body scrolls with the thin
-   *  scrollbar. */
+   *  it. It holds no layer of the modal stack, so the canvas's shortcuts and
+   *  the panels beside it keep their keys, and an Escape typed into another
+   *  panel is that panel's. It takes the focus as it opens, and its body
+   *  scrolls with the thin scrollbar. */
   beside?: boolean;
   /** Controls kept under the scroll body, such as a form's buttons. */
   footer?: React.ReactNode;
@@ -42,10 +44,11 @@ export interface HeaderDrawerProps {
  * the canvas.
  *
  * The catalog drawers' shell and header, one tier above them: a catalog card
- * can open API Settings over its own drawer. While mounted it holds a drawer's
- * layer of the modal stack, so every Escape listener under the drawers stands
- * down, and it answers Escape only while it is the top layer (`isTopDrawer`):
- * one Escape closes the drawer on top alone.
+ * can open API Settings over its own drawer. Over the canvas, while mounted it
+ * holds a drawer's layer of the modal stack, so every Escape listener under the
+ * drawers stands down; beside it, it holds none. Either way it answers Escape
+ * only while it is the top layer (`isTopDrawer`): one Escape closes the drawer
+ * on top alone.
  */
 export const HeaderDrawer: React.FC<HeaderDrawerProps> = ({
   presented,
@@ -66,18 +69,21 @@ export const HeaderDrawer: React.FC<HeaderDrawerProps> = ({
   const dragThrough = useDrawerDragThrough();
   const [pinned, setPinned] = useState(false);
 
-  useEffect(() => holdDrawerLayer(), []);
+  // Beside the canvas it holds no layer: the canvas stays usable beside it.
+  useEffect(() => (beside ? undefined : holdDrawerLayer()), [beside]);
 
   useEffect(() => {
     if (!presented) return;
     const onKey = (ev: KeyboardEvent) => {
       // A modal, a menu, or a drawer opened over this one takes the Escape.
       if (!isTopDrawer(drawerRef.current)) return;
+      // Beside the canvas, the chat or a picker takes an Escape typed into it.
+      if (beside && typedIntoAnotherPanel(ev.target, drawerRef.current)) return;
       if (ev.key === "Escape" && !pinned) onRequestClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [presented, pinned, onRequestClose]);
+  }, [presented, pinned, onRequestClose, beside]);
 
   // Beside the canvas nothing else takes the focus: the panel does, as the
   // catalog drawers' panels do. Over it, API Settings puts it on the field a

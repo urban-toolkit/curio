@@ -47,10 +47,11 @@ export function holdModalStack(): () => void {
   };
 }
 
-/** A header drawer's layer of the stack (API Settings, Monitor, provenance,
- *  Define scenario): while it is held every Escape listener under the drawers
- *  stands down, as for `holdModalStack`, and `isTopDrawer` counts it as a
- *  drawer's, not as a layer over the drawers. Returns the release. */
+/** A header drawer's layer of the stack (API Settings, Monitor, provenance):
+ *  while it is held every Escape listener under the drawers stands down, as
+ *  for `holdModalStack`, and `isTopDrawer` counts it as a drawer's, not as a
+ *  layer over the drawers. Returns the release. Define scenario, beside the
+ *  canvas, holds none. */
 export function holdDrawerLayer(): () => void {
   const token = Symbol("curio-drawer");
   modalStack.add(token);
@@ -74,6 +75,22 @@ export function isTopDrawer(self: HTMLElement | null): boolean {
   if (!self || modalStack.size > drawerLayers.size) return false;
   const open = document.querySelectorAll<HTMLElement>("[data-curio-open-drawer]");
   return open[open.length - 1] === self;
+}
+
+/** What answers an Escape typed into it itself: a dialog (the agents' chat), a
+ *  list or a menu open over the page, and the control whose popup is open (the
+ *  fork picker's). */
+const ANSWERS_ITS_OWN_ESCAPE = '[role="dialog"], [role="listbox"], [role="menu"], [aria-haspopup][aria-expanded="true"]';
+
+/**
+ * Whether an Escape at `target` was typed into another panel than the drawer
+ * whose panel is `self`, one that answers it itself. A drawer beside the
+ * canvas holds no layer of the stack, so those panels keep their Escape while
+ * it is open; it leaves them the Escape typed into them, and takes any other.
+ */
+export function typedIntoAnotherPanel(target: EventTarget | null, self: HTMLElement | null): boolean {
+  if (!(target instanceof Element) || self?.contains(target)) return false;
+  return target.closest(ANSWERS_ITS_OWN_ESCAPE) !== null;
 }
 
 interface ModalShellProps {
