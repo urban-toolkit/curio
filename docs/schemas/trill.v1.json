@@ -91,7 +91,7 @@
     },
     "scenario": {
       "type": "object",
-      "description": "One scenario (#662): a named selection of the dataflow's own nodes for it. It belongs to one scenario set, and keeps the shared context it uses (nodes upstream of it) and the outcomes it feeds (nodes downstream of it), both outside every scenario's box.",
+      "description": "One scenario: a named selection of the dataflow's own nodes for it. It belongs to one scenario set, and keeps the shared context it uses (nodes upstream of it) and the outcomes it feeds (nodes downstream of it), both outside every scenario's box.",
       "required": ["id", "name", "color", "nodes"],
       "additionalProperties": false,
       "properties": {
@@ -197,7 +197,7 @@
         },
         "scenarios": {
           "type": "array",
-          "description": "The dataflow's scenarios (#662): named selections of its nodes, each a lever set compared against the others over the context outside it. A node belongs to at most one scenario, which the backend checks on save (projects/scenarios.py) because this schema cannot say it. A save drops member ids that are not nodes of the dataflow, so deleting a node removes it from its scenario. Written by TrillGenerator.generateTrill when the canvas saves, an empty list clearing them; the backend drops an empty list and keeps the on-disk value when a writer omits the key. Version snapshots and agent views carry it only when there are scenarios.",
+          "description": "The dataflow's scenarios: named selections of its nodes, each scenario's Scenario-specific nodes, compared with the other scenarios of its set on their Shared context and Shared outcomes. A node belongs to at most one scenario, which the backend checks on save (projects/scenarios.py) because this schema cannot say it. A save drops member ids that are not nodes of the dataflow, so deleting a node removes it from its scenario. Written by TrillGenerator.generateTrill when the canvas saves, an empty list clearing them; the backend drops an empty list and keeps the on-disk value when a writer omits the key. Version snapshots and agent views carry it only when there are scenarios.",
           "items": { "$ref": "#/$defs/scenario" }
         },
         "scenarioSets": {
@@ -286,7 +286,7 @@
         },
         "minimizedWidth": {
           "type": "number",
-          "description": "The width of the node's chip, when the user has resized it with its corner handle (#1235); 250 when absent. Apart from 'width', the size the node opens back to."
+          "description": "The width of the node's chip, when the user has resized it with its corner handle; 250 when absent. Apart from 'width', the size the node opens back to."
         },
         "minimizedHeight": {
           "type": "number",
@@ -346,7 +346,7 @@
     },
     "widget": {
       "type": "object",
-      "description": "One widget of a node (#662): a named value the user sets in the node's Widgets tab, and the code reads through a `[!! name !!]` reference.",
+      "description": "One widget of a node: a named value the user sets in the node's Widgets tab, and the code reads through a `[!! name !!]` reference.",
       "required": ["name", "type"],
       "additionalProperties": false,
       "properties": {
@@ -371,7 +371,7 @@
     },
     "selectionTag": {
       "type": "object",
-      "description": "One selection tag of a node (#662): the current selection of a view (a Vega-Lite or Autark node), which the node's code reads through a `[!! selection name !!]` reference as the ids of the selected rows. It holds `ids`, or `count` in their place when the selection holds more ids than a tag takes.",
+      "description": "One selection tag of a node: the current selection of a view (a Vega-Lite or Autark node), which the node's code reads through a `[!! selection name !!]` reference as the ids of the selected rows. It holds `ids`, or `count` in their place when the selection holds more ids than a tag takes.",
       "required": ["name", "node", "column"],
       "additionalProperties": false,
       "properties": {
@@ -467,18 +467,18 @@
         "widgets": {
           "type": "array",
           "items": { "$ref": "#/$defs/widget" },
-          "description": "The node's widgets (#662), declared in its Widgets tab. Its code places each one as a `[!! name !!]` reference, which a run replaces with the widget's value (`value` when set, else `default`). Emitted only when the node has widgets."
+          "description": "The node's widgets, declared in its Widgets tab. Its code places each one as a `[!! name !!]` reference, which a run replaces with the widget's value (`value` when set, else `default`). Emitted only when the node has widgets."
         },
         "copiedFrom": {
           "type": "array",
           "items": { "type": "string", "minLength": 1 },
           "minItems": 1,
-          "description": "Where a copy made by Duplicate selection (#662) comes from: the ids of the nodes it descends from, oldest first, ending with the node it was copied from. Two nodes are the same lever in two scenarios when their ids and these lists meet. Emitted only on a copy."
+          "description": "Where a copy made by Duplicate selection comes from: the ids of the nodes it descends from, oldest first, ending with the node it was copied from. Two nodes are the same Scenario-specific node of two scenarios when their ids and these lists meet. Emitted only on a copy."
         },
         "selections": {
           "type": "array",
           "items": { "$ref": "#/$defs/selectionTag" },
-          "description": "The node's selection tags (#662), added in its Widgets tab. Its code places each one as a `[!! selection name !!]` reference, which a run replaces with the tag's `ids`. A new selection in the view writes new ids. Emitted only when the node has selection tags."
+          "description": "The node's selection tags, added in its Widgets tab. Its code places each one as a `[!! selection name !!]` reference, which a run replaces with the tag's `ids`. A new selection in the view writes new ids. Emitted only when the node has selection tags."
         },
         "dataPool": {
           "type": "object",

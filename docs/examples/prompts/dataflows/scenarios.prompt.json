@@ -156,5 +156,5 @@
     "licence": "MIT (this repository)",
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the data is six made-up buildings typed into the example."
   },
-  "notes": "Two scenarios over one shared context: a widget lever, a copy that sets it to 2 and names its original, and a step with two inputs that compares their outcomes."
+  "notes": "Two scenarios over one shared context: a node with a widget, a copy that sets it to 2 and names its original, and a step with two inputs that compares their results, their shared outcome."
 }

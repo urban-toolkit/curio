@@ -1,7 +1,7 @@
 {
   "sha256": {
     "README.md": "55bbf25e71f60a3a8ceee9171c69a3ad7ec829528b89673846775d14ddd07981",
-    "manifest.json": "cd9e3585cd3606965c15313effacc5e394f28bbcab9b90fe641da0bbe5a58473",
+    "manifest.json": "ae89bbb33addff3e7080d79cc1ceb1365eda0618014a94d8d4b190834462f7a9",
     "skills/scout/SKILL.md": "bf86ff1ff9c2b671d15460ffd17fb2b03bbe8b47024014c4c45c9cb339f099e3",
     "skills/scout/evals/evals.json": "9403113041d4ce19d9f3135a7c6cc76e1cd1420a76a9a7837ea4fc8824b3d10b",
     "sources/raster-calculator.py": "463a522521da2453290c6a06525edf97f305eb4082dc304b85c8fbe9e28761dc",

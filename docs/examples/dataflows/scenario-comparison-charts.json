@@ -2101,7 +2101,7 @@
       }
     ],
     "name": "Nine ways to chart scenario comparisons",
-    "description": "Nine example tables, each charted a different way to compare its scenarios: lines with a band, curves by state, bars with error bars, ensemble strips, grouped bars, stacked bars with totals, donuts, a weighted matrix and a table. In each row a Data Transformation node per scenario keeps its rows, and a chart of the Scout package takes each scenario's node on an input of its own.",
+    "description": "Nine example tables, each charted a different way to compare its scenarios: lines with a band, curves by state, bars with error bars, ensemble strips, grouped bars, stacked bars with totals, donuts, a weighted matrix and a table. In each row a Data Transformation node per scenario keeps its rows, and a Vega-Lite chart takes each scenario's node on an input of its own.",
     "task": "",
     "timestamp": 1792195200000,
     "provenance_id": "scenario-comparison-charts",
