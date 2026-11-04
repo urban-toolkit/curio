@@ -14,6 +14,9 @@
  * - The drop stays at its point of the dataflow through pans and zooms, and
  *   under reduced motion the drag waits there.
  * - The agent has one cursor, the drag's, and two agents' drags play at once.
+ * - A drag is on the page before this tab reads the room's next message, so a
+ *   drag whose drop comes right behind it, as both reach a busy tab at once,
+ *   is still drawn.
  */
 import fs from "fs";
 import path from "path";
@@ -567,6 +570,70 @@ describe("on its way to the drop", () => {
             builderIs(null);
             expect(dragOf(builder)).toBeNull();
         } finally {
+            window.matchMedia = matchMedia;
+        }
+    });
+});
+
+/** The message the server relays of *peer* once its state is *state*, for
+ *  this tab to read when it comes. */
+function relayedAs(peer: Awareness, state: Record<string, unknown>): Uint8Array {
+    peer.setLocalState(state);
+    return encodeAwarenessUpdate(peer, [peer.clientID]);
+}
+
+/** The microtasks queued so far, and those they queue, run, as they do in a
+ *  browser before its next task: no timer fires and no other message is read. */
+async function microtasks() {
+    for (let turn = 0; turn < 5; turn++) await Promise.resolve();
+}
+
+describe("a drag whose drop comes right behind it", () => {
+    // The server holds a drag for its ms, then sends its drop. A tab that was
+    // busy all that while (a node mounting, an editor loading) reads both
+    // messages back to back: the socket hands it each in a microtask of its
+    // own (socket.io-client's `nextTick`), with no task between them. That
+    // fits what Ben's tab showed in the two agents e2e (test_agent_queue_e2e.py):
+    // it held the Fetch drag's state, yet never drew its drag.
+    test("is drawn before this tab reads the drop, as both reach a busy tab at once", async () => {
+        const matchMedia = window.matchMedia;
+        window.matchMedia = ((query: string) => ({
+            matches: query.includes("prefers-reduced-motion: reduce"),
+            media: query,
+            addEventListener: () => undefined,
+            removeEventListener: () => undefined,
+        })) as unknown as typeof window.matchMedia;
+        const page = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
+        const wasActEnvironment = page.IS_REACT_ACT_ENVIRONMENT;
+        try {
+            renderCanvas(builtinPalette(true));
+            placeBuiltinPalette();
+            // The agent is in the room, carrying nothing yet.
+            builderIs(null);
+
+            // From here on this tab runs as a page does: on its own clock, with
+            // no act() to draw a change for it.
+            jest.useRealTimers();
+            page.IS_REACT_ACT_ENVIRONMENT = false;
+            const drags = relayedAs(builder, agentAt("Dataflow Builder", "canvas", adding(BUILTIN_DATA_LOADING)));
+            const drops = relayedAs(builder, agentAt("Dataflow Builder", "canvas", null));
+
+            // The drag's message: this tab holds the drag, and has drawn it,
+            // from its tile, waiting at its drop point, before it reads the drop.
+            applyAwarenessUpdate(mine, drags, "server");
+            await microtasks();
+            expect((mine.getStates().get(builder.clientID) as { carrying?: { id: string } }).carrying?.id).toBe("drag-1");
+            const drawn = dragOf(builder);
+            expect(drawn).not.toBeNull();
+            expect(drawn!.getAttribute("data-drag-start")).toBe("tile");
+            expect(at(drawn)).toEqual([DROP.x, DROP.y]);
+
+            // The drop's message, right behind it: the drop ends, and the drag goes.
+            applyAwarenessUpdate(mine, drops, "server");
+            await microtasks();
+            expect(dragOf(builder)).toBeNull();
+        } finally {
+            page.IS_REACT_ACT_ENVIRONMENT = wasActEnvironment;
             window.matchMedia = matchMedia;
         }
     });
