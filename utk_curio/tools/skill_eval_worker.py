@@ -53,6 +53,14 @@ runs, so no sandbox either.
   scenario only as its copies, so the grader is shown what each call whose
   change landed wrote (:meth:`Worker._calls`), and ``outputs/calls.json``
   keeps the same.
+- **The delegations:** a task a run delegates is no tool call, and a run's
+  record keeps none of its inputs. Each one is noted among the calls, where a
+  native ``delegate`` call and a fenced delegateRequest meet: as it starts
+  (``turns.delegates._resolve_delegate_request``), with the capability it
+  asks for, the inputs the model wrote for it and the agent that takes it,
+  and as it ends (``turns.delegates._delegation_part_for``, its card), with
+  its outcome as the card says it. The grader and ``outputs/calls.json`` are
+  shown each one in its place among the calls.
 - **Graded:** a test case's answer goes to the grader, the same model through
   the same code, with the words of the base entry's ``skill-evals.md``. A
   grader reply its output cap cut is not read, however much of it parses: the
@@ -94,8 +102,9 @@ from utk_curio.backend.app import create_app  # noqa: E402
 from utk_curio.backend.app.agents.application import attachments, skill_runs, tool_rounds  # noqa: E402
 from utk_curio.backend.app.agents.application.proposals import changes as agents_changes  # noqa: E402
 from utk_curio.backend.app.agents.application.proposals import plans as agents_plans  # noqa: E402
+from utk_curio.backend.app.agents.application.turns import delegates as agents_delegates  # noqa: E402
 from utk_curio.backend.app.agents.application.turns import prompts, titles  # noqa: E402
-from utk_curio.backend.app.agents.domain import agent_text  # noqa: E402
+from utk_curio.backend.app.agents.domain import agent_text, tool_names  # noqa: E402
 from utk_curio.backend.app.agents.domain import skills as skill_format  # noqa: E402
 from utk_curio.backend.app.agents.evaluation import run_context, skill_evals  # noqa: E402
 from utk_curio.backend.app.agents.evaluation.report import scrub  # noqa: E402
@@ -188,6 +197,9 @@ class _Seams:
         #: How many tool requests are running now: a plan made while none is
         #: was a fenced reply's plan block.
         self.requests = 0
+        #: The delegation an agent runs now, noted as it started
+        #: (:meth:`delegated`), which gets its outcome as it ends.
+        self.delegating: dict | None = None
 
     def texts(self, *, chat: bool | None = None) -> list[str]:
         """The system turns sent: the chat's, the others', or all of them."""
@@ -198,12 +210,24 @@ class _Seams:
         arguments it gave, as the model gave them."""
         self.tool_calls.append({"tool": tool, "status": status, "arguments": arguments})
 
+    def delegated(self, capability, inputs) -> dict:
+        """Note one delegation of the run as it starts, among its tool calls,
+        as a call of ``delegate``: the capability it asks for and the inputs
+        the model wrote for it. The agent that takes it and its status are
+        set once they are known."""
+        entry = {"tool": tool_names.DELEGATE_TOOL, "capability": capability, "agent": None, "status": None,
+                 "inputs": inputs}
+        self.tool_calls.append(entry)
+        return entry
+
     def install(self) -> None:
-        """Wrap the functions a run's skills, model calls and tool calls go through, once."""
+        """Wrap the functions a run's skills, model calls, tool calls and delegations go through, once."""
         seams = self
         pool, resolve, read = skill_runs._pool, prompts._resolve_prompt_text, skill_runs.read
         for_chat, for_delegated, chat_turn = skill_runs.for_chat, skill_runs.for_delegated, providers.run_chat_turn
         execute, mint_plan = tool_rounds._execute_tool_request, agents_plans._mint_dataflow_plan
+        resolve_delegate = agents_delegates._resolve_delegate_request
+        delegation_part = agents_delegates._delegation_part_for
 
         def _pool(user_key, manifest, preamble, spec=None, **kwargs):
             usable, placed, found, packages = pool(user_key, manifest, preamble, spec, **kwargs)
@@ -287,6 +311,29 @@ class _Seams:
                 seams.called(_PLAN_TOOL, outcome[0], {key: value for key, value in written.items() if key != "type"})
             return outcome
 
+        def _resolve_delegate(user_key, project_id, loop_ctx, req, minted):
+            # A native delegate call or a fenced delegateRequest, as it
+            # starts: its inputs as the model wrote them, copied first, as the
+            # runtime adds its own to what it hands the agent. One that no
+            # agent takes ends here: refused, or with that agent's install
+            # proposed.
+            entry = seams.delegated(req.get("capability"), copy.deepcopy(req.get("inputs")))
+            status, text, resolution = resolve_delegate(user_key, project_id, loop_ctx, req, minted)
+            if resolution is None:
+                entry["status"] = status
+            else:
+                entry["agent"] = resolution.coord
+                seams.delegating = entry
+            return status, text, resolution
+
+        def _delegation_part(resolution, capability, status, text, home_attachment_id, child=None):
+            # The card of a delegation an agent took, made as it ends: its
+            # outcome, as the card says it.
+            if seams.delegating is not None:
+                seams.delegating["status"] = status
+                seams.delegating = None
+            return delegation_part(resolution, capability, status, text, home_attachment_id, child=child)
+
         skill_runs._pool = _pool
         prompts._resolve_prompt_text = _resolve
         skill_runs.for_chat = _for_chat
@@ -295,6 +342,8 @@ class _Seams:
         providers.run_chat_turn = _chat_turn
         tool_rounds._execute_tool_request = _execute
         agents_plans._mint_dataflow_plan = _mint_plan
+        agents_delegates._resolve_delegate_request = _resolve_delegate
+        agents_delegates._delegation_part_for = _delegation_part
         # Nothing here reads a conversation's title, and it is one more call.
         titles._generate_conversation_title = lambda *args, **kwargs: None
 
@@ -733,18 +782,29 @@ class Worker:
         """The tools the run called, in call order, as the grader and
         ``outputs/calls.json`` show them: each call's tool and status, and
         the arguments of each call whose change landed, which say what it
-        wrote, each text scrubbed, then cut as a change's texts are
-        (:func:`_clip`): scrubbed first, so no cut leaves part of a secret.
-        A call that landed nothing shows no arguments. skill.read is left
-        out: a run without the skill seldom calls it, so the grader is not
-        shown it, and judges the answer blind to its condition."""
+        wrote. A task the run delegated is a call of ``delegate`` in its
+        place: the capability it asked for, the agent that took it, its
+        status and the inputs the model wrote for that agent. Each text is
+        scrubbed, then cut as a change's texts are (:func:`_clip`): scrubbed
+        first, so no cut leaves part of a secret. A call that landed nothing
+        shows no arguments, and a delegation no agent took shows its
+        capability and status alone. skill.read is left out: a run without
+        the skill seldom calls it, so the grader is not shown it, and judges
+        the answer blind to its condition."""
         shown = []
         for call in self.seams.tool_calls:
             if call["tool"] == skill_runs.TOOL:
                 continue
-            entry = {"tool": call["tool"], "status": call["status"]}
-            if call["status"] == agents_changes.LANDED:
-                entry["arguments"] = _clip(scrub(call["arguments"], values=self.secrets))
+            if call["tool"] == tool_names.DELEGATE_TOOL:
+                entry = {"tool": call["tool"], "capability": call["capability"], "agent": call["agent"],
+                         "status": call["status"], "inputs": _clip(scrub(call["inputs"], values=self.secrets))}
+                if call["agent"] is None:
+                    # No agent took it, so its inputs reached none.
+                    del entry["agent"], entry["inputs"]
+            else:
+                entry = {"tool": call["tool"], "status": call["status"]}
+                if call["status"] == agents_changes.LANDED:
+                    entry["arguments"] = _clip(scrub(call["arguments"], values=self.secrets))
             shown.append(entry)
         return scrub(shown, values=self.secrets)
 
