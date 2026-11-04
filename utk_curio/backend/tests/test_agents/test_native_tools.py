@@ -441,13 +441,15 @@ class TestAPlansTries:
         testing_provider.script_chat_capabilities(tools=True)
         return body, _run_calls()[before:]
 
-    def _native(self, client, headers, project, plans, stream=False):
-        """*plans* as native calls of the plan tool, one a reply: the run's
-        answer, then what each of its calls offered and the calls."""
+    def _native(self, client, headers, project, plans, stream=False, then=()):
+        """*plans* as native calls of the plan tool, one a reply, then the
+        replies *then*: the run's answer, then what each of its calls offered
+        and the calls."""
         att = _attach(client, headers, project, DFB)
+        self.att = att
         before = len(_run_calls())
         testing_provider.push_replies(
-            *[{"toolCalls": [_call("dataflow.plan.write", plan)]} for plan in plans], attachment=att)
+            *[{"toolCalls": [_call("dataflow.plan.write", plan)]} for plan in plans], *then, attachment=att)
         if stream:
             answer = _stream(client, headers, project, att)
         else:
@@ -497,6 +499,45 @@ class TestAPlansTries:
         (card,) = [p for p in body["content"] if p["type"] == "card"]
         assert card == next(p for p in fenced["content"] if p["type"] == "card")
         assert card["title"] == "Plan could not be made" and GHOST in card["lines"][0], card
+
+    def test_another_call_on_the_plans_last_try_ends_with_the_cap_card(self, client, headers, project):
+        """The last try is the plan's: a read the model calls in it instead,
+        as the refusal's "dataflow.read shows them" invites, is dropped at the
+        cap as on the fenced protocol, and the turn ends with the plan's card,
+        not with nothing."""
+        resp, offered, calls = self._native(
+            client, headers, project, [RECOUNT_BROKEN] * tool_rounds.MAX_TOOL_ROUNDS,
+            then=[{"text": "Let me read the node ids first.", "toolCalls": [_call("dataflow.read")]}],
+        )
+        assert [o["toolChoice"] for o in offered] == ["auto"] * self.LAST, resp.get_data(as_text=True)
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        body = resp.get_json()
+        assert len(calls) == self.LAST, "a round followed the plan's last try"
+        assert routes_proposals._changes(body) == []
+        (card,) = [p for p in body["content"] if p["type"] == "card"]
+        assert card["title"] == "Plan could not be made" and GHOST in card["lines"][0], card
+        assert body["reply"] == "Let me read the node ids first."
+        execution = _last_turn(client, headers, project, self.att)["execution"]
+        assert [c["tool"] for c in execution["toolCalls"]] == ["dataflow.plan.write"] * tool_rounds.MAX_TOOL_ROUNDS
+
+    def test_a_fenced_plan_request_gets_a_blocks_tries_too(self, client, headers, project):
+        """The toolRequest form of a fenced plan (dev/55) takes the native
+        call's path, so it gets the same tries: three refusals, then a valid
+        request at the cap, which lands instead of being cut off."""
+        testing_provider.script_chat_capabilities(tools=False)
+        att = _attach(client, headers, project, DFB)
+        before = len(_run_calls())
+        testing_provider.push_replies(
+            *[_block("dataflow.plan.write", RECOUNT_BROKEN)] * tool_rounds.MAX_TOOL_ROUNDS,
+            _block("dataflow.plan.write", RECOUNT), attachment=att)
+        body = _run(client, headers, project, att)
+        assert [p["tool"] for p in routes_proposals._changes(body)] == ["dataflow.plan.write"], body["content"]
+        calls = _run_calls()[before:]
+        assert len(calls) == self.LAST, "a round followed the plan's last try"
+        results = [m["content"] for m in calls[-1]
+                   if m.get("role") == "user" and str(m.get("content")).startswith("[tool result]")]
+        assert len(results) == tool_rounds.MAX_TOOL_ROUNDS and all(GHOST in r for r in results), results
+        assert agent_text.message("tool-round.final-round") not in results[-1], results[-1]
 
     def test_a_streamed_plan_gets_the_same_tries(self, client, headers, project):
         plans = [RECOUNT_BROKEN] * tool_rounds.MAX_TOOL_ROUNDS + [RECOUNT]

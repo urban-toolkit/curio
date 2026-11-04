@@ -162,8 +162,12 @@ class AttachmentTurn:
         self.conversation = _RunConversation(messages, self.loop_ctx)
         self.rounds_used = 0
         # The last round corrected a plan, so the next call is the plan's next
-        # try, which a run on native tools is offered at the cap too.
+        # try, which a run on native tools is offered at the cap too
+        # (plan_corrected); this round is that try (plan_try); and what the
+        # plan's last refusal said (plan_errors).
         self.plan_corrected = False
+        self.plan_try = False
+        self.plan_errors: list[str] = []
         self.refusals_used = 0  # dev/105 D2: free parameter corrections taken
         self.skill_reads = 0  # skill.read calls, free up to skill_runs.FREE_READS a turn
         self.started = time.monotonic()
@@ -212,7 +216,7 @@ class AttachmentTurn:
                 self.conversation.fall_back(refusal, self.pins)
                 continue
             # Only a correction of a plan in this round opens the next call.
-            self.plan_corrected = False
+            self.plan_try, self.plan_corrected = self.plan_corrected, False
             if self.usage_sink:
                 # dev/80: interim Actual sums, once per provider round — the
                 # client's live token counter ticks during long tool loops.
@@ -263,6 +267,7 @@ class AttachmentTurn:
                 # outcome — never a silent drop under confident prose.
                 if req["type"] == "toolRequest" and req.get("tool") in agents_tool_rounds.MUTATE_PROPOSAL_TOOLS:
                     self.minted.append(agents_tool_rounds._round_cap_cutoff_card(req["tool"]))
+                self._plan_not_made()
                 break  # dangling read request at the cap: dropped, text kept
             if req["type"] == "delegateRequest":
                 yield from self._delegate_round(req, result, native_calls)
@@ -312,6 +317,8 @@ class AttachmentTurn:
             self.rounds_used += 1
             yield from self._emit("tool_revision", {"attempt": self.rounds_used, "errors": len(call_errors)})
             self.plan_corrected = plan
+            if plan:
+                self.plan_errors = list(call_errors)
             self.conversation.add_unreadable_call_round(
                 result["turn"], call_errors,
                 final=self.rounds_used >= agents_tool_rounds.MAX_TOOL_ROUNDS and not plan,
@@ -321,8 +328,10 @@ class AttachmentTurn:
             self.folded.append(result["visible"])
         if plan:
             self.final_parts = [agents_tool_rounds._plan_cap_card(call_errors)]
-        elif agents_tool_rounds._is_mutate_call(native_calls[0]):
+            return BREAK
+        if agents_tool_rounds._is_mutate_call(native_calls[0]):
             self.final_parts = [agents_tool_rounds._tool_cap_card(call_errors)]
+        self._plan_not_made()
         return BREAK
 
     def _reply_without_request(self, result: dict):
@@ -334,11 +343,12 @@ class AttachmentTurn:
             self.minted, self.rounds_used,
         )
         req = None
+        request_capped = False  # a request block still broken at the cap
         if kind == "correct":
             # Corrective prose is not folded: the invalid attempt never
             # reaches the user; the final round's text is the truth.
             self.rounds_used += 1
-            self.plan_corrected = True
+            self.plan_corrected, self.plan_errors = True, list(payload)
             yield from self._emit("plan_revision", {"attempt": self.rounds_used, "errors": len(payload)})
             self.conversation.add_text_round(
                 result["reply"], agents_tool_rounds._plan_correction_message(payload),
@@ -360,6 +370,7 @@ class AttachmentTurn:
                     agents_tool_rounds._tool_correction_message(payload, native=True),
                 )
                 return CONTINUE
+            request_capped = kind == "cap"
             # A held request tail is NOT released at the cap: see
             # _handle_tool_reply — a source file is not a spec.
         if kind == "cap" and result.get("heldPlanTail"):
@@ -377,7 +388,16 @@ class AttachmentTurn:
         if effective_visible:
             self.folded.append(effective_visible)
         self.final_parts = payload
+        if request_capped:
+            self._plan_not_made()
         return BREAK
+
+    def _plan_not_made(self) -> None:
+        """At the cap, the try a plan's correction asked for went to another
+        request, which the cap drops or cuts off: the plan could not be made,
+        and its card says why, as it does for a plan refused at the cap."""
+        if self.plan_try:
+            self.final_parts = [*self.final_parts, agents_tool_rounds._plan_cap_card(self.plan_errors)]
 
     def _re_prompt(self, result: dict, native_calls: list, req: dict, status: str, text,
                    *, final: bool, result_msg: dict) -> None:
@@ -730,6 +750,8 @@ class AttachmentTurn:
             self.rounds_used += 1
         # Its result asks for the plan again, and the next call may make it.
         self.plan_corrected = plan_refused
+        if plan_refused:
+            self.plan_errors = [text]
         final = self.rounds_used >= agents_tool_rounds.MAX_TOOL_ROUNDS and not plan_refused
         result_msg = agents_tool_rounds._tool_result_message(req["tool"], status, text, final=final)
         self._re_prompt(result, native_calls, req, status, text, final=final, result_msg=result_msg)
