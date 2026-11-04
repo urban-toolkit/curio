@@ -296,6 +296,8 @@ def _handle_tool_reply(
 # dev/73: 3, the Node Builder's documented modify flow (read the node →
 # delegate generation → write the node) is a three-round sequence; 2 forced
 # models that follow their instructions to answer in prose instead of writing.
+# A plan's last try, in the call after the last round, is judged too, as a
+# plan block in the reply after the last round is (``_is_plan_request``).
 MAX_TOOL_ROUNDS = 3
 
 

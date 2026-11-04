@@ -191,7 +191,8 @@ class AttachmentTurn:
     def rounds(self):
         """The bounded tool loop (memos dev/41/48): parse → execute granted
         read tool / mint proposal / run depth-1 delegate → re-prompt, at most
-        MAX_TOOL_ROUNDS request executions per run (one shared budget). Each
+        MAX_TOOL_ROUNDS request executions per run (one shared budget), and a
+        plan's last try at the cap, as a plan block has one (dev/54). Each
         streamed round streams its own deltas; a toolRequest tail becomes tool
         events and a delegateRequest tail becomes delegate events, never text.
         A stop ends the loop before its next round, or in a round as the
