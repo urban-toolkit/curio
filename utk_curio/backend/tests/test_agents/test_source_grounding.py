@@ -13,6 +13,21 @@ from utk_curio.backend.app.agents.application import source_grounding as sg
 
 ISSUE_298 = 'import pandas as pd\ndf = pd.read_csv("bras_ibge_data.csv")\nreturn df'
 CATALOG_PATH = "/curio/users/4242/datasets/census-acs@1/census_acs.parquet"
+#: The data-sources skill's evaluation case 3: a person asking for made-up data.
+MAKE_UP_ROOFS = ("I don't have the real numbers yet. Make up about 50 fake green roofs with a zip code "
+                 "and a vegetated area so I can try the chart.")
+#: What models wrote for it (Haiku 5.5 and gemma4, 11-04): labeled roofs drawn from a seeded generator.
+MADE_UP_ROOFS = (
+    "import numpy as np\nimport pandas as pd\n\n"
+    "# Made-up data: 50 fake green roofs, not real permits.\n"
+    "rng = np.random.default_rng(42)\n"
+    'zips = ["60601", "60602", "60606", "60607", "60611", "60614"]\n'
+    "roofs = pd.DataFrame({\n"
+    '    "zip_code": rng.choice(zips, size=50),\n'
+    '    "vegetated_sqft": rng.uniform(500, 20000, size=50).round(0),\n'
+    "})\n"
+    "return roofs"
+)
 
 
 def _ctx(**kw) -> sg.GroundingContext:
@@ -381,8 +396,50 @@ class TestUserTexts:
         # The model's declaration alone never authorizes.
         assert sg.synthetic_requested(["load the IBGE data"], {"synthetic": True}) is False
 
+    def test_synthetic_hears_the_ways_people_ask_for_made_up_data(self):
+        """The data-sources skill's case 3 asks to "Make up about 50 fake green
+        roofs", words no marker held, so every model's labeled made-up roofs
+        were refused as values the user never typed (Haiku 5.5 and gemma4)."""
+        for asked in (
+            MAKE_UP_ROOFS,
+            "make up some numbers for the bike counts",
+            "Can you make up 20 stations?",
+            "please make some readings up for the sensors",
+            "invent a few weather stations with readings",
+            "give me fictional parcels for the demo",
+            "use made up numbers until the survey comes back",
+            "fill the table with dummy values",
+            "a few fake trees will do",
+        ):
+            assert sg.synthetic_requested([asked]) is True, asked
+
+    def test_synthetic_is_not_heard_in_words_that_mean_something_else(self):
+        for said in (
+            "show the tracts that make up downtown",
+            "parks make up 30% of the area",
+            "the region is made up of 12 counties",
+            "create dummy variables for the land use column",
+            "keep a random sample of the rows",
+            "list the inventory of street trees",
+            "load the IBGE demographic data",
+        ):
+            assert sg.synthetic_requested([said]) is False, said
+
 
 class TestVerdicts:
+    def test_made_up_roofs_the_person_asked_for_are_grounded(self):
+        """The whole path of the data-sources skill's case 3: the person's words
+        reach the gate as the run's texts, and the labeled made-up roofs a model
+        writes for them pass as synthetic, not as values the user never typed."""
+        from utk_curio.backend.app.agents.application.turns import grounding
+
+        base = {"catalog_paths": {}, "catalog_ids": {}, "verified": {}, "secrets": {}, "texts": [MAKE_UP_ROOFS]}
+        ctx = grounding._grounding_context("4242", "p-1", {"message": MAKE_UP_ROOFS},
+                                           node_type="curio.builtin/data-loading", base=base)
+        verdict = sg.check_grounding(MADE_UP_ROOFS, "python", ctx)
+        assert verdict.ok, verdict.violations
+        assert [ref["kind"] for ref in verdict.source["refs"]] == ["synthetic"], verdict.source
+
     def test_issue_298_shape_is_refused_with_the_literal_named(self):
         verdict = sg.check_grounding(ISSUE_298, "python", _ctx(is_data_loading=True))
         assert verdict.ok is False
