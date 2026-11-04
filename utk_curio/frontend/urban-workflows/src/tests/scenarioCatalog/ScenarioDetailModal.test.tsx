@@ -99,6 +99,27 @@ describe("ScenarioDetailModal", () => {
     expect(section("Shared context").queryByText("No saved output")).toBeNull();
   });
 
+  test("a node whose output the scenario does not save is listed without an output line", async () => {
+    // As the server lists them: a node deeper upstream, and the scenario's own
+    // nodes, come with no results at all.
+    const details = heatDetails();
+    api.getScenario.mockResolvedValue({
+      ...details,
+      context: [{ id: "raw", type: "curio.builtin/data-loading@1", label: "Raw parcels" }, ...details.context],
+      levers: details.levers.map(({ results: _results, ...entry }) => entry),
+    });
+    renderModal();
+    await modal().findByRole("region", { name: "Scenario-specific nodes" });
+    const raw = document.querySelector('[data-scenario-node-id="raw"]') as HTMLElement;
+    expect(within(raw).getByText("Raw parcels")).toBeInTheDocument();
+    expect(within(raw).queryByText("No saved output")).toBeNull();
+    expect(raw.querySelector("ul")).toBeNull();
+    expect(section("Scenario-specific nodes").queryByText("No saved output")).toBeNull();
+    expect(section("Scenario-specific nodes").queryByText("Year · json")).toBeNull();
+    // The node its output crosses in from keeps its line.
+    expect(section("Shared context").getByText("Parcels · geojson · 1,204 features")).toBeInTheDocument();
+  });
+
   test("marks the levers, the shared context and the shared outcomes on the project graph", async () => {
     api.getScenario.mockResolvedValue(heatDetails());
     renderModal();
