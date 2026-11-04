@@ -57,7 +57,7 @@ def _saved_spec(user, project) -> dict:
 
 
 def _saved_content(user, project, node_id) -> str:
-    return next(n for n in _saved_spec(user, project)["dataflow"]["nodes"] if n["id"] == node_id)["content"]
+    return next(n for n in _saved_spec(user, project)["dataflow"]["nodes"] if n["id"] == node_id).get("content") or ""
 
 
 def _the_runs_words(user, project, node_id, code) -> list[str]:
@@ -181,6 +181,8 @@ class TestCodeTheNodesRunResolvesIsWritten:
         project = _project(client, user, token, [
             {"id": "load", "type": DL, "content": "", "x": 0, "y": 0, "metadata": {"widgets": [dict(DATA)]}},
         ])
+        # Code that read Data already would be the user's own, which passes on its own.
+        assert _saved_content(user, project, "load") == "", "the planned loader holds code"
         code = "data = curio_load_data([!! data !!])\nreturn data"
         att = _attached_builder(client, token, project, "load")
         calls = _script(monkeypatch, [_write_tail("load", code), "Written."])
