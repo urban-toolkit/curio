@@ -306,6 +306,18 @@ describe("planScenarioDrop", () => {
 });
 
 describe("loaderNodes and dropGraph", () => {
+  // A set's shared context arrives collapsed, a box whose cards show each
+  // node's kind and title: loaders all titled "Data Loading" read the same.
+  test("a loader is named as the context node it stands for", () => {
+    const d = drop(plan());
+    const loaderId = d.loaders[0].id;
+    const dataset = { id: "computed.p-here.abc", title: "Data Loading", format: "csv", origin: "computed" };
+
+    const [node] = loaderNodes(d.loaders, { [loaderId]: dataset }, buildDatasetLoaderNodeOptions);
+
+    expect(node.title).toBe("Data pool");
+  });
+
   test("a loader is the Data Loading node a Data Catalog drop makes, reading the copy", () => {
     const d = drop(plan());
     const loaderId = d.loaders[0].id;
