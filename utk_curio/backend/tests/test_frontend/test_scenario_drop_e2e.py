@@ -874,9 +874,12 @@ def test_two_scenarios_of_a_set_dragged_one_after_the_other_form_one_set(
     source = _create_project(current_server, token, "Heights", spec)
 
     # 1. The first: the set's copy, its context, and no shared outcome yet.
+    # The drawer's scrim lies over the top bar, so it is closed before each
+    # save and opened again for the next drag.
     _open_scenario_catalog(page)
     _drop_and_wait(page, source, "s-double")
     _toast(page, 'Added "Doubled" from Heights as the scenario set "Heights"')
+    close_scenario_drawer(page)
     save_dataflow_and_settle_header(page)
     saved = _saved_spec(current_server, token, target)["dataflow"]
     [new_set] = saved["scenarioSets"]
@@ -888,8 +891,10 @@ def test_two_scenarios_of_a_set_dragged_one_after_the_other_form_one_set(
 
     # 2. The second joins the copy: the same loader, and compare lands.
     dismiss_toasts(page)
+    _open_scenario_catalog(page)
     _drop_and_wait(page, source, "s-triple")
     _toast(page, 'Added "Tripled" from Heights to the scenario set "Heights"')
+    close_scenario_drawer(page)
     save_dataflow_and_settle_header(page)
     saved = _saved_spec(current_server, token, target)["dataflow"]
     assert [s["id"] for s in saved["scenarioSets"]] == [new_set["id"]], saved["scenarioSets"]
@@ -917,6 +922,7 @@ def test_two_scenarios_of_a_set_dragged_one_after_the_other_form_one_set(
 
     # 3. One the copy holds is refused, and nothing is asked of the server.
     dismiss_toasts(page)
+    _open_scenario_catalog(page)
     asked = []
     page.on("request", lambda r: asked.append(r.url) if "/api/scenarios/" in r.url and "/copy" in r.url else None)
     _drag_scenario_onto_canvas(page, source, "s-double")
