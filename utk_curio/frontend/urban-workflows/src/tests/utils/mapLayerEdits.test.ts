@@ -68,6 +68,6 @@ test("World Mercator there and back", () => {
 
 test("a layer is called by its node's header as renamed, else by the node's title", () => {
   expect(circleTitles("edit", nodes, edges)).toEqual({ 0: "Roads", 1: "Parks" });
-  const renamed = nodes.map((n) => (n.id === "roads" ? { ...n, data: { ...n.data, packageTemplateLabel: "Streets" } } : n));
+  const renamed = nodes.map((n) => (n.id === "roads" ? { ...n, data: { ...n.data, title: "Streets" } } : n));
   expect(circleTitles("edit", renamed, edges)).toEqual({ 0: "Streets", 1: "Parks" });
 });

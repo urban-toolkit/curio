@@ -8,9 +8,11 @@ include package-lock.json
 
 # The folders Curio ships beside its code, at their repository paths here;
 # setup.py puts them, and the files of docs/ below, in the wheel at
-# utk_curio/_shipped/<folder>/. agents/ holds everything the agents read: each
-# agent's prompts, and the base entry's pages, its folders included.
+# utk_curio/_shipped/<folder>/. agents/ holds each agent's prompts and the base
+# entry's pages, its folders included, and skills/ the skills they read, one
+# folder each with every file in it.
 recursive-include agents *
+recursive-include skills *
 recursive-include packages *
 recursive-include datasets *
 recursive-include discovery *

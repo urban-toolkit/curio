@@ -24,6 +24,12 @@ jest.mock("../../api/llmConfigsApi", () => ({
   llmConfigsApi: { listing: jest.fn(() => Promise.resolve(mockListing)) },
 }));
 
+// The Skills section reads the agent's skills; agentSkillsSection.test.tsx
+// covers it, so here it stays loading.
+jest.mock("../../services/agents/skillsApi", () => ({
+  skillsApi: { agentSkills: jest.fn(() => new Promise(() => {})) },
+}));
+
 import { AgentDetailModal } from "../../components/agents/catalog/AgentDetailModal";
 import {
   API_SETTINGS_EVENT,
@@ -81,7 +87,7 @@ const NODE_BUILDER = {
   tools: [
     { id: "dataflow.read", label: "Read the dataflow" },
     { id: "node.runtime.read", label: "Read a node's last run" },
-    { id: "node.create", label: "Propose a node" },
+    { id: "node.create", label: "Add a node" },
   ],
   modes: [
     {
@@ -136,7 +142,7 @@ describe("the details say what the agent does in the docs' three words", () => {
     expect(section("Tools").getAllByRole("listitem").map((li) => li.textContent)).toEqual([
       "Read the dataflow",
       "Read a node's last run",
-      "Propose a node",
+      "Add a node",
     ]);
   });
 

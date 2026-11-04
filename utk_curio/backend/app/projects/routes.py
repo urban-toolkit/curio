@@ -1,12 +1,12 @@
 """Flask blueprint: /api/projects - all endpoints require @require_auth."""
 from __future__ import annotations
 
-import re
 from dataclasses import asdict
 from flask import Blueprint, current_app, g, jsonify, request
 
 from utk_curio.backend.app.users.dependencies import get_current_token, require_auth
 from utk_curio.backend.app.projects import services
+from utk_curio.backend.app.projects import visitor_copies
 from utk_curio.backend.app.projects.repositories import NotFoundError
 from utk_curio.backend.app.projects.schemas import (
     OutputRef,
@@ -65,17 +65,6 @@ def _optional_int(value):
         return None
 
 
-_TAB_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
-
-
-def _optional_tab(value):
-    """A tab id as the page makes one (a UUID), or ``None`` for anything else,
-    which leaves the save unchecked, as a malformed basis does."""
-    if isinstance(value, str) and _TAB_ID.fullmatch(value):
-        return value
-    return None
-
-
 # ---------------------------------------------------------------------------
 # PUT /api/projects/:id - update
 # ---------------------------------------------------------------------------
@@ -103,9 +92,8 @@ def update_project(project_id: str):
                 body.get("baseRevision", body.get("base_revision"))
             ),
             categories=body.get("categories"),
-            # Which tab sent this save, and its number among the tab's saves.
-            save_tab=_optional_tab(body.get("saveTab", body.get("save_tab"))),
-            save_number=_optional_int(body.get("saveNumber", body.get("save_number"))),
+            # A tab bound to the dataflow's doc sends its history, not the dataflow.
+            history=body.get("history"),
         )
     except (ValueError, TypeError) as exc:
         return _error(str(exc))
@@ -118,6 +106,92 @@ def update_project(project_id: str):
         return _error(str(exc), exc.status)
 
     return jsonify(asdict(detail)), 200
+
+
+# ---------------------------------------------------------------------------
+# POST /api/projects/:id/outputs - the outputs a canvas holds
+# ---------------------------------------------------------------------------
+@projects_bp.route("/<project_id>/outputs", methods=["POST"])
+@require_auth
+def record_outputs(project_id: str):
+    """The outputs the owner's canvas holds that the dataflow records (after a
+    run in the browser, a pin, a scenario), recorded in its manifest and the
+    account's Data Catalog. No tab saves the dataflow, which its doc keeps.
+    Answered with the dataflow's categories as it is now, which the canvas
+    title shows, as a save's answer carried them (``GET .../categories``)."""
+    body = request.get_json(silent=True) or {}
+    raw = body.get("outputs")
+    if not isinstance(raw, list):
+        return _error("'outputs' must list a node's output each")
+    try:
+        outputs = [OutputRef(**o) if isinstance(o, dict) else o for o in raw]
+    except TypeError as exc:
+        return _error(str(exc))
+    warnings: list = []
+    try:
+        recorded = services.record_node_outputs(
+            g.user, project_id, outputs, warnings, sign_in=get_current_token(), canvas=True,
+        )
+    except NotFoundError:
+        return _error("Project not found", 404)
+    except ProjectError as exc:
+        return _error(str(exc), exc.status)
+    return jsonify({
+        "outputs": [asdict(ref) for ref in recorded],
+        "dataset_install_warnings": warnings,
+        "categories": services.dataflow_categories(project_id),
+    }), 200
+
+
+# ---------------------------------------------------------------------------
+# GET /api/projects/:id/categories - the categories the canvas title shows
+# ---------------------------------------------------------------------------
+@projects_bp.route("/<project_id>/categories", methods=["GET"])
+@require_auth
+def get_categories(project_id: str):
+    """The dataflow's categories as it is now, for every tab that opens it:
+    the owner's, an invited editor's and a watcher's, as the shared read
+    serves the dataflow to anyone who opens its link. No save answers them
+    any more, so its tabs ask again as it changes."""
+    try:
+        categories = services.dataflow_categories(project_id)
+    except NotFoundError:
+        return _error("Project not found", 404)
+    return jsonify({"categories": categories}), 200
+
+
+# ---------------------------------------------------------------------------
+# PUT /api/projects/:id/name - an invited editor's rename
+# ---------------------------------------------------------------------------
+@projects_bp.route("/<project_id>/name", methods=["PUT"])
+@require_auth
+def rename_shared_dataflow(project_id: str):
+    """The dataflow's name, from an invited editor's canvas: the project row
+    and the dataflow both, as the owner's name-only PUT renames them."""
+    body = request.get_json(silent=True) or {}
+    try:
+        answer = services.rename_shared_dataflow(g.user, project_id, body.get("name"))
+    except NotFoundError:
+        return _error("Project not found", 404)
+    except ProjectError as exc:
+        return _error(str(exc), exc.status)
+    return jsonify(answer), 200
+
+
+# ---------------------------------------------------------------------------
+# PUT /api/projects/:id/dashboard/layout - the dashboard's Save layout
+# ---------------------------------------------------------------------------
+@projects_bp.route("/<project_id>/dashboard/layout", methods=["PUT"])
+@require_auth
+def save_dashboard_layout(project_id: str):
+    body = request.get_json(silent=True) or {}
+    try:
+        answer = services.save_dashboard_layout(g.user, project_id, body.get("tiles"))
+    except NotFoundError:
+        return _error("Project not found", 404)
+    except ProjectError as exc:
+        return _error(str(exc), exc.status)
+    return jsonify(answer), 200
 
 
 # ---------------------------------------------------------------------------
@@ -157,9 +231,15 @@ def get_project(project_id: str):
     except ProjectError as exc:
         return _error(str(exc), exc.status)
 
+    # A hosted guest's canvas opens the copy its agents work on, once they
+    # have written one (visitor_copies.py).
+    project, spec = result["project"], result["spec"]
+    own = visitor_copies.canvas_spec(g.user, project_id)
+    if own is not None:
+        project, spec = visitor_copies.with_spec(project, own), own
     return jsonify({
-        "project": asdict(result["project"]),
-        "spec": result["spec"],
+        "project": asdict(project),
+        "spec": spec,
         "outputs": result["outputs"],
     }), 200
 
@@ -169,8 +249,17 @@ def get_project(project_id: str):
 # ---------------------------------------------------------------------------
 @projects_bp.route("/<project_id>/shared", methods=["GET"])
 def get_shared_project(project_id: str):
+    """The dataflow for anyone who opens its link. With ``?results=last``, an
+    editor the owner invited, signed in, gets it as his canvas left it, each
+    node his runs ran showing his newest kept result; anyone else gets its
+    saved outputs."""
+    from utk_curio.backend.app.users.dependencies import get_current_user
+
+    last_results = request.args.get("results") == "last"
     try:
-        result = services.load_shared_project(project_id)
+        result = services.load_shared_project(
+            project_id, user=get_current_user() if last_results else None, last_results=last_results,
+        )
     except NotFoundError:
         return _error("Project not found", 404)
     except ProjectError as exc:
@@ -184,6 +273,57 @@ def get_shared_project(project_id: str):
 
 
 # ---------------------------------------------------------------------------
+# /api/projects/:id/editors - who the owner invited to edit (projects/access.py)
+# ---------------------------------------------------------------------------
+@projects_bp.route("/<project_id>/editors", methods=["GET"])
+@require_auth
+def list_editors(project_id: str):
+    """The dataflow's editors, for its owner alone: anyone else is told it is
+    not found, as the other owner routes tell them, and a guest is refused."""
+    from utk_curio.backend.app.projects import access
+
+    try:
+        editors = access.list_editors(g.user, project_id)
+    except NotFoundError:
+        return _error("Project not found", 404)
+    except ProjectError as exc:
+        return _error(str(exc), exc.status)
+    return jsonify({"editors": editors}), 200
+
+
+@projects_bp.route("/<project_id>/editors", methods=["POST"])
+@require_auth
+def add_editor(project_id: str):
+    """Invite an account by ``{"username": ...}``; answers with the list."""
+    from utk_curio.backend.app.projects import access
+
+    body = request.get_json(silent=True) or {}
+    username = body.get("username")
+    try:
+        editors = access.add_editor(g.user, project_id, username if isinstance(username, str) else "")
+    except NotFoundError:
+        return _error("Project not found", 404)
+    except ProjectError as exc:
+        return _error(str(exc), exc.status)
+    return jsonify({"editors": editors}), 201
+
+
+@projects_bp.route("/<project_id>/editors/<int:user_id>", methods=["DELETE"])
+@require_auth
+def remove_editor(project_id: str, user_id: int):
+    """Take an editor off the list; answers with the list."""
+    from utk_curio.backend.app.projects import access
+
+    try:
+        editors = access.remove_editor(g.user, project_id, user_id)
+    except NotFoundError:
+        return _error("Not found", 404)
+    except ProjectError as exc:
+        return _error(str(exc), exc.status)
+    return jsonify({"editors": editors}), 200
+
+
+# ---------------------------------------------------------------------------
 # GET /api/projects/:id/outputs/{get,get-preview,raster} - a canvas's reads
 # ---------------------------------------------------------------------------
 def _output_read(project_id: str):
@@ -192,10 +332,10 @@ def _output_read(project_id: str):
     the store under that session first; a name the dataflow saved is then
     read from the file its owner's store holds, in place.
 
-    The session is the caller's, but for the owner's read of an output their
-    runs of this dataflow kept (``runs/kept.py``), which is read under the
-    session that made it, from any sign-in. No one else reads a kept output
-    here."""
+    The session is the caller's, but for the read of an output the caller's
+    runs of this dataflow kept (``runs/kept.py``): the owner's, or an invited
+    editor's own, which is read under the session that made it, from any
+    sign-in. No one reads another's kept output here."""
     from utk_curio.backend.app.projects.models import Project
     from utk_curio.backend.app.runs import kept
     from utk_curio.backend.extensions import db
@@ -208,10 +348,13 @@ def _output_read(project_id: str):
         return None, None, None, _error("Project not found", 404)
     saved = services.saved_output_of(project_id, file_name)
     saved_path = saved.path if saved is not None else None
-    if project.user_id == getattr(g.user, "id", None):
+    user_id = getattr(g.user, "id", None)
+    if project.user_id == user_id:
         entry = kept.owner_entry(project_id, file_name)
-        if entry is not None:
-            return file_name, entry.session_id, saved_path, None
+    else:
+        entry = kept.editor_entry(project_id, user_id, file_name)
+    if entry is not None:
+        return file_name, entry.session_id, saved_path, None
     return file_name, get_current_token(), saved_path, None
 
 
@@ -360,3 +503,81 @@ def duplicate_project(project_id: str):
         return _error(str(exc), exc.status)
 
     return jsonify(asdict(detail)), 201
+
+
+# ---------------------------------------------------------------------------
+# /api/projects/:id/history - the dataflow's history, for its owner and the
+# editors the owner invited (services.project_history and the rest)
+# ---------------------------------------------------------------------------
+def _history_answer(answer, status: int = 200):
+    try:
+        return jsonify(answer()), status
+    except NotFoundError:
+        return _error("Project not found", 404)
+    except ProjectError as exc:
+        return _error(str(exc), exc.status)
+
+
+@projects_bp.route("/<project_id>/history", methods=["GET"])
+@require_auth
+def get_history(project_id: str):
+    """The dataflow's versions, the one on the canvas, and whether you may
+    clear the history."""
+    return _history_answer(lambda: services.project_history(g.user, project_id))
+
+
+@projects_bp.route("/<project_id>/history/nodes/<node_id>", methods=["GET"])
+@require_auth
+def get_node_history(project_id: str, node_id: str):
+    """A node's runs and edits, each with its code."""
+    return _history_answer(lambda: services.node_history(g.user, project_id, node_id))
+
+
+@projects_bp.route("/<project_id>/history/nodes/<node_id>/runs", methods=["POST"])
+@require_auth
+def post_node_run(project_id: str, node_id: str):
+    """A run of the node: ``{code, inputs, outputs, startTime, endTime}``."""
+    body = request.get_json(silent=True) or {}
+    return _history_answer(lambda: services.record_run(g.user, project_id, node_id, body), 201)
+
+
+@projects_bp.route("/<project_id>/history/nodes/<node_id>/edits", methods=["POST"])
+@require_auth
+def post_node_edit(project_id: str, node_id: str):
+    """An edit made in the node's body: ``{label}``."""
+    body = request.get_json(silent=True) or {}
+    return _history_answer(lambda: services.record_edit(g.user, project_id, node_id, body.get("label")), 201)
+
+
+@projects_bp.route("/<project_id>/history/nodes/<node_id>/code", methods=["POST"])
+@require_auth
+def post_node_code(project_id: str, node_id: str):
+    """Put code back in the node if it still holds what you saw:
+    ``{from, code, label}``; 409 when someone changed it after."""
+    body = request.get_json(silent=True) or {}
+    return _history_answer(lambda: services.write_node_code(g.user, project_id, node_id, body))
+
+
+@projects_bp.route("/<project_id>/history/saved", methods=["POST"])
+@require_auth
+def post_saved_version(project_id: str):
+    """File > Save: a version named Saved."""
+    return _history_answer(lambda: services.record_saved(g.user, project_id), 201)
+
+
+@projects_bp.route("/<project_id>/history/<point_id>/put-back", methods=["POST"])
+@require_auth
+def post_put_back(project_id: str, point_id: str):
+    """Put a version back on the canvas, for every tab."""
+    return _history_answer(lambda: services.put_back_version(g.user, project_id, point_id))
+
+
+@projects_bp.route("/<project_id>/history/clear", methods=["POST"])
+@require_auth
+def post_clear_history(project_id: str):
+    """The owner clears the history before a version: ``{before}``."""
+    body = request.get_json(silent=True) or {}
+    before = body.get("before")
+    if not isinstance(before, str) or not before:
+        return _error("Name the version to keep the history from (before).")
+    return _history_answer(lambda: services.clear_history(g.user, project_id, before))

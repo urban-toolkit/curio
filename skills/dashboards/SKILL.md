@@ -1,0 +1,27 @@
+---
+name: dashboards
+description: >-
+  Use this skill when a dataflow has nodes pinned to its dashboard, or when a task changes or
+  removes a pinned node or writes its spec. It says what a tile draws and runs, which widget
+  values viewers can change and what such a run keeps, the two cases a dashboard refuses to open
+  and how to fix each, and that only the user pins and unpins.
+license: MIT
+compatibility: Written for Curio's agents, their tools and node code.
+metadata:
+  author: curio
+  version: "1.0.0"
+  curio-features: pinned-tiles
+  curio-refusals: dashboard-tile
+---
+## Dashboards
+
+A dataflow's dashboard is a page of its own that shows the nodes pinned to it, each as a tile, and anyone with its link can open it. A tile draws from the outputs saved with the dataflow: a chart or a map draws the saved output of the nodes that feed it, and a tile whose nodes have no saved output runs them on the server when the page opens. In `dataflow.read`, the row of a pinned node says "pinned": true; a node whose row does not say so is not on the dashboard.
+
+Anyone viewing the dashboard can change the values of the widgets of a pinned node, except text, text list and file widgets. A change runs the nodes it reaches on the server with the owner's datasets, models and packages and no connection keys. A viewer never changes the dataflow, its saved outputs or the Data Catalog; what such a run makes is kept for 7 days for the next viewer who picks the same values. A node whose code reads a connection key stops on the dashboard. A pinned node's tile shows its widgets as controls: above a chart or a map, and in place of a code node's code. To let viewers try a value, make it a widget of a node the user pins.
+
+The dashboard refuses to open, saying why and naming the nodes to change, in two cases:
+
+- Its saved data is over 25 MB, the most a page carries. Aggregate or filter upstream of the heaviest tiles, or the user unpins them.
+- A pinned {{template.label:curio.builtin/autk-grammar}} tile loads its own data: its spec has a "data" section, which it would fetch when the page draws. Move the "data" section into a node of its own upstream of the tile, such as an {{template.label:curio.builtin/autk-grammar}} node whose spec holds only that section, and draw that node's output in the tile. A spec an agent writes for a pinned tile with a "data" section is sent back.
+
+The user pins and unpins a node with the pin in its header; an agent never pins or unpins a node. A plan that removes a pinned node takes its tile off the dashboard, and the plan's card says so.

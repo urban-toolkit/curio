@@ -1,8 +1,9 @@
 /**
- * The canvas Scenario Catalog drawer: fetched only while open, read-only, its
- * cards dragged onto the canvas, and the way to a scenario's project asks
- * first when the dataflow behind it has unsaved changes. Browse all lists the
- * cards under the dataflow each comes from (from komar41's #914).
+ * The canvas Scenario Catalog drawer: fetched only while open, read-only, each
+ * card dragging its one scenario onto the canvas as every catalog's card drags
+ * one item, and the way to a scenario's project asks first when the dataflow
+ * behind it has unsaved changes. Browse all lists the cards under the
+ * dataflow each comes from (from komar41's #914).
  */
 import React from "react";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -58,6 +59,11 @@ function renderDrawer(presented = true, onRequestClose = jest.fn()) {
 const root = () =>
   document.querySelector('[data-curio-scenario-catalog-drawer="true"]') as HTMLElement;
 
+/** A set's panel, by its name. */
+function setPanel(name: string): HTMLElement {
+  return within(root()).getByRole("region", { name });
+}
+
 function card(key: string): HTMLElement {
   const el = root().querySelector(`[data-scenario-key="${key}"]`);
   if (!el) throw new Error(`no card for ${key}`);
@@ -84,7 +90,7 @@ function groups() {
     .getAllByRole("region")
     .map((group) => ({
       project: group.getAttribute("data-scenario-group"),
-      heading: group.querySelector("h3")?.textContent,
+      heading: `${group.querySelector("h3")?.textContent} ${group.querySelector("[data-scenario-set-count]")?.textContent}`,
       cards: Array.from(group.querySelectorAll("[data-scenario-key]")).map((el) =>
         el.getAttribute("data-scenario-key"),
       ),
@@ -124,39 +130,91 @@ describe("the canvas Scenario Catalog drawer", () => {
     expect(screen.getByRole("button", { name: "Close Scenario Catalog drawer" })).toBeInTheDocument();
     expect(await within(root()).findByText("Cool roofs")).toBeInTheDocument();
     const heat = within(card("p-heat/s-cool"));
-    expect(heat.getByText("Heat study · 2 nodes")).toBeInTheDocument();
+    // Its one meta line: its project and how many nodes it holds.
+    expect(heat.getByText(/^Heat study · \d+ nodes?$/)).toBeInTheDocument();
+    // Open source project is the set's, not each card's.
+    expect(heat.queryByRole("button", { name: "Open source project" })).toBeNull();
     expect(heat.getByText("Raise roof albedo across the district.")).toBeInTheDocument();
     expect(within(card("p-ex/s-cool")).getByText("Baseline")).toBeInTheDocument();
     expect(api.listCatalog).toHaveBeenCalledWith({ q: "" });
   });
 
-  test("a card is dragged onto the canvas as its scenario, and offers nothing that edits", async () => {
+  test("a card is dragged onto the canvas as its one scenario, and offers nothing that edits", async () => {
     renderDrawer();
     await within(root()).findByText("Cool roofs");
     const heat = card("p-heat/s-cool");
     expect(heat).toHaveAttribute("draggable", "true");
+    // The catalogs' shared drag look, as a package card's.
+    expect(heat.className).toMatch(/cardDraggable/);
     expect(within(heat).queryByRole("button", { name: /delete|rename|remove/i })).toBeNull();
+    expect(within(root()).queryByRole("checkbox")).toBeNull();
+    expect(within(root()).queryByRole("button", { name: "Pick scenarios to drag" })).toBeNull();
+    // The subtitle says what the drawer is and what a drag does, on one line;
+    // no help line of its own.
+    expect(within(root()).getByText(
+      "Scenarios from your projects, by scenario set. Drag one onto the canvas to copy it here.",
+    )).toBeInTheDocument();
+    expect(within(root()).queryByText(/Ctrl-click|Cmd-click|Saved selections of nodes/)).toBeNull();
 
     const data: Record<string, string> = {};
     const dataTransfer = {
       setData: (type: string, value: string) => { data[type] = value; },
       getData: (type: string) => data[type] ?? "",
+      setDragImage: jest.fn(),
       types: [] as string[],
       effectAllowed: "",
     };
     fireEvent.dragStart(heat, { dataTransfer });
-    // The canvas reads this type (MainCanvas, useScenarioDrop).
+    // The canvas reads this type (MainCanvas, useScenarioDrop). A scenario of
+    // no set drags with its project's name as the set's.
     expect(JSON.parse(data["application/x-curio-scenario"])).toEqual({
       projectId: "p-heat",
       scenarioId: "s-cool",
       name: "Cool roofs",
+      setId: "",
+      setName: "Heat study",
     });
     expect(dataTransfer.effectAllowed).toBe("copy");
+    // The browser draws the card itself: no drag image of its own.
+    expect(dataTransfer.setDragImage).not.toHaveBeenCalled();
     // While it is dragged the scrim lets the drag through to the canvas.
     expect(root()).toHaveAttribute("data-dragging", "true");
 
     fireEvent.dragEnd(heat);
     expect(root()).not.toHaveAttribute("data-dragging");
+  });
+
+  test("each card of a set drags its own scenario, and a click on a card selects nothing", async () => {
+    const PARK = { id: "park", name: "Park shade" };
+    api.listCatalog.mockResolvedValue({
+      items: [
+        heatScenario({ key: "p-heat/s-a", id: "s-a", name: "Existing", set: PARK }),
+        heatScenario({ key: "p-heat/s-b", id: "s-b", name: "Towers", set: PARK }),
+      ],
+    });
+    const dragFrom = (el: HTMLElement) => {
+      const data: Record<string, string> = {};
+      const dataTransfer = {
+        setData: (type: string, value: string) => { data[type] = value; },
+        getData: (type: string) => data[type] ?? "",
+        setDragImage: jest.fn(),
+        types: [] as string[],
+        effectAllowed: "",
+      };
+      fireEvent.dragStart(el, { dataTransfer });
+      fireEvent.dragEnd(el);
+      return JSON.parse(data["application/x-curio-scenario"]);
+    };
+    renderDrawer();
+    await within(root()).findByText("Towers");
+
+    fireEvent.click(card("p-heat/s-a").querySelector("h3") as HTMLElement);
+    fireEvent.click(card("p-heat/s-b").querySelector("h3") as HTMLElement, { ctrlKey: true });
+    expect(root().querySelector("[aria-selected], [role='option'], [role='listbox']")).toBeNull();
+    expect(dragFrom(card("p-heat/s-b"))).toEqual({
+      projectId: "p-heat", scenarioId: "s-b", name: "Towers", setId: "park", setName: "Park shade",
+    });
+    expect(dragFrom(card("p-heat/s-a")).scenarioId).toBe("s-a");
   });
 
   test("the search goes to the server as q", async () => {
@@ -173,7 +231,7 @@ describe("the canvas Scenario Catalog drawer", () => {
     renderDrawer();
     expect(
       await screen.findByText(
-        "No scenarios yet. Select nodes on a canvas and choose View > Save selection as scenario.",
+        "No scenarios yet. On a canvas, choose View > Define scenario.",
       ),
     ).toBeInTheDocument();
   });
@@ -195,14 +253,28 @@ describe("the canvas Scenario Catalog drawer", () => {
     await within(root()).findByText("Cool roofs");
     fireEvent.click(screen.getByRole("button", { name: "View Cool roofs (Heat study) details" }));
     const modal = await screen.findByRole("dialog", { name: "Scenario details" });
-    expect(await within(modal).findByRole("region", { name: "Levers" })).toBeInTheDocument();
+    expect(await within(modal).findByRole("region", { name: "Scenario-specific nodes" })).toBeInTheDocument();
     expect(api.getScenario).toHaveBeenCalledWith("p-heat", "s-cool");
+  });
+
+  test("a card's graph marks its scenario as its details do", async () => {
+    api.listCatalog.mockResolvedValue({
+      items: [heatScenario({ marks: { members: ["year", "filter"], context: ["load"], outcomes: ["chart"] } })],
+    });
+    renderDrawer();
+    await within(root()).findByText("Cool roofs");
+    const svg = card("p-heat/s-cool").querySelector("svg")!;
+    expect(svg).toHaveAttribute("data-thumbnail-highlight", "true");
+    const roles = Array.from(svg.querySelectorAll("g[data-thumbnail-role]")).map((g) =>
+      g.getAttribute("data-thumbnail-role"),
+    );
+    expect(roles.sort()).toEqual(["context", "member", "member", "outcome"]);
   });
 
   test("Open source project goes there and closes the drawer", async () => {
     const { onRequestClose } = renderDrawer();
     await within(root()).findByText("Cool roofs");
-    fireEvent.click(within(card("p-heat/s-cool")).getByRole("button", { name: "Open source project" }));
+    fireEvent.click(within(setPanel("Heat study")).getByRole("button", { name: "Open source project" }));
     await waitFor(() => expect(location).toBe("/dataflow/p-heat"));
     expect(onRequestClose).toHaveBeenCalled();
   });
@@ -211,13 +283,13 @@ describe("the canvas Scenario Catalog drawer", () => {
     mockFlow.projectDirty = true;
     const { onRequestClose } = renderDrawer();
     await within(root()).findByText("Cool roofs");
-    fireEvent.click(within(card("p-heat/s-cool")).getByRole("button", { name: "Open source project" }));
+    fireEvent.click(within(setPanel("Heat study")).getByRole("button", { name: "Open source project" }));
     const ask = screen.getByRole("dialog", { name: LEAVE_DATAFLOW.title });
     fireEvent.click(within(ask).getByRole("button", { name: "Stay here" }));
     expect(location).toBe("/dataflow/p-current");
     expect(onRequestClose).not.toHaveBeenCalled();
 
-    fireEvent.click(within(card("p-heat/s-cool")).getByRole("button", { name: "Open source project" }));
+    fireEvent.click(within(setPanel("Heat study")).getByRole("button", { name: "Open source project" }));
     fireEvent.click(screen.getByRole("button", { name: "Discard and continue" }));
     await waitFor(() => expect(location).toBe("/dataflow/p-heat"));
   });
@@ -227,7 +299,7 @@ describe("the canvas Scenario Catalog drawer", () => {
     mockFlow.projectDirty = true;
     const { onRequestClose } = renderDrawer();
     await within(root()).findByText("Cool roofs");
-    fireEvent.click(within(card("p-heat/s-cool")).getByRole("button", { name: "Open source project" }));
+    fireEvent.click(within(setPanel("Heat study")).getByRole("button", { name: "Open source project" }));
     expect(onRequestClose).toHaveBeenCalled();
     expect(screen.queryByRole("dialog", { name: LEAVE_DATAFLOW.title })).toBeNull();
     expect(location).toBe("/dataflow/p-current");

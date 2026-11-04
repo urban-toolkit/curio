@@ -26,6 +26,7 @@
 - [Discovery Catalog](#discovery-catalog)
 - [Model Catalog](#model-catalog)
 - [Agent Catalog](#agent-catalog)
+- [Skill Catalog](#skill-catalog)
 - [Real-time collaboration](#real-time-collaboration)
 - [Quick start](#quick-start)
 
@@ -65,7 +66,6 @@ curio setup                  # install deps and exit
 | *(none)* | Auto sign-in as shared guest, projects page shown |
 | `--no-project` | Skip both login and projects; open the canvas directly |
 | `--deploy` | Auth **and** projects on, and isolated node execution, which it requires. The only way to turn auth on, so use it locally too when you need the login page |
-| `--collab` | Real-time collaborative editing. Experimental, LAN-only. `--collab-origins` and `--collab-namespace` set the origins it accepts and its Socket.IO namespace; see [COLLABORATION.md](COLLABORATION.md) |
 
 **Frontend**
 
@@ -91,7 +91,7 @@ Curio needs Node.js 26 and refuses to start on an earlier version, naming the on
 | `--media-cache-max-gb GB` | `20` | How much each account may hold in cached bucket files and downloaded street-level images |
 | `--packages-root PATH` | `<repo_root>/packages/` | Where the shared Node Catalog is read from and published to. Start it from a copy of `packages/`: the built-in nodes are installed from it |
 | `--save-node-outputs` / `--no-save-node-outputs` | off | Whether a new node's **Save output dataset** toggle starts on. Users can still flip it on each node |
-| `--allow-publish` / `--no-allow-publish` | on | Whether the node, data and agent catalogs allow Publish/Unpublish |
+| `--allow-publish` / `--no-allow-publish` | on | Whether the node, model, data, agent and skill catalogs allow Publish/Unpublish |
 | `--testing` | off | Run against the dedicated test database under `.curio/test/` and mount the test-only `/api/testing/*` routes. Also the one exemption to `--deploy` requiring isolated execution. Never for a real instance: those routes reset the database and sign in as any user without a password |
 | `--with-examples` | off | Seed the use cases, examples and tests from `docs/examples/` |
 | `--reseed` | off | Force re-seeding catalog packages into the guest package store |
@@ -112,6 +112,7 @@ Curio needs Node.js 26 and refuses to start on an earlier version, naming the on
 | `--proxy-hops N` | 0 | How many reverse proxies in front of the backend add the visitor's address to `X-Forwarded-For`. The limits per address (sign-in attempts, error reports, a dashboard's runs) then read it there. See [DEPLOYMENT.md](DEPLOYMENT.md#security-checklist) |
 | `--shared-guest-name NAME` / `--shared-guest-username NAME` | `Shared Guest` / `guest_shared` | The shared guest, the one account every guest sign-in uses. A new username gives guests a new, empty account |
 | `--log-to-stdout` / `--no-log-to-stdout` | on | Whether the backend and sandbox write their logs to their output, which the launcher keeps in its own log, or to `utk_curio/logs/` |
+| `--collab-origins ORIGINS` / `--collab-namespace NAMESPACE` | `*` / `/collab` | The origins whose pages may connect to the backend's Socket.IO, which [real-time collaboration](#real-time-collaboration) travels over, and its namespace. See [COLLABORATION.md](COLLABORATION.md) |
 
 **Hosts, ports, and diagnostics**
 
@@ -123,7 +124,7 @@ Curio needs Node.js 26 and refuses to start on an earlier version, naming the on
 > [!NOTE]
 > `--force-rebuild` deletes `node_modules/`, `dist/` and `build/` and rebuilds from source, so it needs the frontend sources and a working npm; the Docker image ships only the built `dist/` and cannot rebuild in place.
 
-Some flags set their variable on every start, passed or not: the backend and sandbox host and port flags, `--backend-url`, `--dev`, `--with-examples`, `--reseed`, `--allow-publish`, `--save-node-outputs`, `--deploy`, `--no-project` and `--collab`. For those, the matching variable in a `.env` has no effect when you launch through `curio.py`; use the flag. Every other flag sets its variable only when it is passed.
+Some flags set their variable on every start, passed or not: the backend and sandbox host and port flags, `--backend-url`, `--dev`, `--with-examples`, `--reseed`, `--allow-publish`, `--save-node-outputs`, `--deploy` and `--no-project`. For those, the matching variable in a `.env` has no effect when you launch through `curio.py`; use the flag. Every other flag sets its variable only when it is passed.
 
 `CURIO_BACKEND_DEBUG=1` turns on Flask's debug mode for the backend, which is off by default. It has no flag of its own, so, unlike the variables above, setting it in a `.env` does work when you launch through `curio.py`. Auto-reload is a separate switch (`FLASK_USE_RELOADER`) and is unaffected.
 
@@ -134,7 +135,6 @@ The three startup modes control which pages are shown when a user first opens Cu
 | *(default)* | No (auto sign-in as shared guest) | Yes | Local single-user development |
 | `--deploy` | Yes | Yes | Multi-user instance, locally or on a server |
 | `--no-project` | No (auto sign-in as shared guest) | No, opens the canvas directly | Demos or embedding Curio in a kiosk |
-| `--collab` | Stackable with other modes (pairs naturally with `--deploy`) | n/a | Real-time multi-user editing. See [COLLABORATION.md](COLLABORATION.md). |
 
 > [!NOTE]
 > When reading files from inside Curio's dataflow nodes, paths are resolved relative to the directory where you started Curio. If you see a "No such file or directory" error while loading a file, double-check the folder you're running Curio from, because the file path you provide is interpreted relative to that location. A path written out as `docs/examples/data/...` that this folder does not hold reads the example data Curio ships.
@@ -305,6 +305,8 @@ The following providers are supported:
 | **Gemini** | Uses the Gemini API. Requires an API key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey). |
 | **Custom** | Any OpenAI-compatible endpoint. Covers self-hosted models (Ollama, LM Studio, vLLM), Groq, Azure OpenAI, and others. Provide the base URL of the endpoint; the API key is optional for keyless local servers. |
 
+With OpenAI and Custom, an agent's turn waits up to five minutes for a reply to begin, and ends when a reply that has begun sends nothing for two minutes; its error then says that the model's server stopped sending.
+
 A **Data source** key is one the Discovery Catalog sends to a source: the Socrata app token, the Hugging Face token, the Google Maps API key or the Mapillary access token. In **Add configuration**, the **Kind** list offers each one you have not saved, under **Data source**. A saved one is listed with **Replace** and **Remove**, and its **Details** say which sources use it. A key whoever runs this Curio set for everyone is listed with **set by this Curio** in its **Key** column, and **Override** saves your own. [DISCOVERY-CATALOG.md part 5](DISCOVERY-CATALOG.md#5-api-tokens) walks through setting one, step by step.
 
 ### Keys for node code
@@ -333,11 +335,11 @@ api_key = curio_secret("census")
 ```
 
 `curio_secret` is one of the functions Curio gives node code, listed with their
-arguments in [Functions node code calls](../agents/agent.curio.builtin@1/knowledge/node-functions.md).
+arguments in [Functions node code calls](../skills/node-functions/SKILL.md).
 
 Curio resolves the name when the node runs, on Play and when an agent's Solve
 runs it, and hands the value to the sandbox for that run only. The key never
-appears in your saved dataflow, in proposals, in the chat or in the run log, and
+appears in your saved dataflow, in an agent's changes, in the chat or in the run log, and
 a key the code prints is redacted. A node that names a key you have not saved
 fails with one sentence naming the key. When an agent's Solve reaches an
 endpoint that wants a key you have not saved, the failure offers **Add key for
@@ -398,17 +400,23 @@ with its catalog: [Node Catalog](#node-catalog), [Data Catalog](#data-catalog),
 ## Inside a node
 
 A node's header shows **Play** at its left, the node's name and kind, and its run
-status. Its other buttons show while the pointer is over the node or the node is
+status. The name starts as the node's kind, such as "Python Computation"; click it
+to rename the node. The new name is what the node is called everywhere: in
+scenario boxes, input chips, its computed dataset and the saved dataflow. Its other buttons show while the pointer is over the node or the node is
 selected: the editor's tabs (code, widgets, spec, output), **Provenance** (the
 node's runs, see [Provenance](#provenance)), the **Save output dataset** toggle,
 settings, about, pin, **Minimize** and delete.
 Code and specs sit in a gray box, and a code node's output is below its code.
-A Data Loading node opens on its **Widgets** tab, on its **Data** widget: drop
-a file or a Data Catalog dataset on the node, or click **Choose file** to pick
-a file, and its code, on the **Code** tab, loads it ([Data Catalog](#data-catalog)).
+In the code or spec, **Ctrl+Z** (Cmd+Z on a Mac) undoes your own typing in that
+node, and **Ctrl+Shift+Z** or **Ctrl+Y** redoes it. When others have the
+dataflow open, their typing shows as they type, with each person's cursor in
+their color and their name over it ([Real-time collaboration](#real-time-collaboration)).
+A Data Loading node opens on its **Widgets** tab, which holds only its **Data**
+box: drop a file or a Data Catalog dataset on the node, or click **Choose file**
+to pick a file, and its code, on the **Code** tab, loads it ([Data Catalog](#data-catalog)).
 
-A Data Export node opens on its **Widgets** tab, on its **File name** and its
-**Download** button. Its code, on the **Code** tab,
+A Data Export node opens on its **Widgets** tab, which holds only its
+**File name** and its **Download** button. Its code, on the **Code** tab,
 `return curio_export(input_0, [!! file_name !!])`, writes the data wired into
 it to a file: a table as CSV, a GeoDataFrame as GeoJSON, a raster as GeoTIFF
 and anything else as JSON. Once the node has run, the button names the file,
@@ -451,16 +459,18 @@ scenario box's color. An input whose node has not run says which node to run.
 - **Widgets** and **Selections**: the node's widgets and its selection tags
   ([Widgets](#widgets)).
 
-Drag a node's bottom-right corner to resize it. For viewers of a shared dataflow,
-nodes keep their size and have no delete. A minimized node is a small chip with
-its icon and title, cut short when long; hover the title to read it whole. A save
-keeps it a chip; click it to open the node again. Double-click a node where you
+Drag a node's bottom-right corner to resize it. For someone who watches a dataflow,
+nodes keep their names and sizes and have no delete. A minimized node is a small chip with
+its icon and title, wrapped to the chip and cut short when it still doesn't fit;
+hover the title to read it whole. Drag the chip's bottom-right corner to resize
+the chip alone: a larger chip shows more of the title, and the node opens back at its own size. The
+dataflow keeps it a chip at its size; click it to open the node again. Double-click a node where you
 would drag it, such as its header, to zoom the view onto it.
 
 ## Notes
 
 A **Note** node holds a title and a short text on a color, to explain a part of
-the dataflow. Drag **Note** from the **Built-in** palette onto the canvas, write
+the dataflow. Its title shows in its header. Drag **Note** from the **Built-in** palette onto the canvas, write
 its title and text, pick its color and click **Save**. **Edit** on the note
 opens them again.
 
@@ -471,17 +481,17 @@ opens them again.
 - A note has no inputs or outputs, and a run skips it.
 - The **Researcher** answers questions from the web with notes (see
   [Agent Catalog](#agent-catalog)).
-- On the dashboard and on a shared dataflow, a note shows its text and cannot be
-  edited.
+- On the dashboard and on a dataflow you watch, a note shows its text and cannot
+  be edited.
 
 ## Running a dataflow
 
 **Run All** runs every node. A node's **Play** button, or Ctrl+Enter (Cmd+Enter
 on a Mac), runs that node and the nodes above it whose output is out of date.
 
-On your own dataflow, a run saves the dataflow first and then runs on the
-server, so it goes on when you close the tab. A dataflow you never saved is
-saved under its title by its first run.
+On your own dataflow, and on one whose owner invited you to edit it, a run is
+made on the server, so it goes on when you close the tab. A dataflow you never
+saved is saved under its title by its first run.
 
 - Charts, maps and the other nodes that draw in the browser draw while the
   dataflow is open.
@@ -497,16 +507,22 @@ saved under its title by its first run.
   starts; a node already running finishes, and its result is not kept.
 
 A dataflow opened while it runs shows the run going on. Opened afterwards, in
-any browser and after signing in again, each code node shows the last result you
-ran it to, for 7 days, as long as its code, its inputs, your packages and the
-datasets it reads are unchanged; charts and maps below it draw from it. A node
-with no such result shows its saved output, if its **Save output dataset**
-toggle is on. Nodes below an Autark compute node or a Spatial Join wait for a
-run. After Curio is upgraded, only saved outputs come back. A dashboard shows
-its saved outputs.
+any browser and after signing in again, each code node of your own dataflow
+shows the last result you ran it to, for 7 days, as long as its code, its
+inputs, your packages and the datasets it reads are unchanged; charts and maps
+below it draw from it. A node with no such result shows its saved output, if its
+**Save output dataset** toggle is on. Nodes below an Autark compute node or a
+Spatial Join wait for a run. After Curio is upgraded, only saved outputs come
+back. A dashboard shows its saved outputs.
 
-Guests, viewers of a shared dataflow, and a Curio started with `--no-project`
-run dataflows in the browser, and a run stops when its tab closes.
+An invited editor's runs are the editor's own: their results show on the
+editor's canvas, not the owner's, and the dataflow's saved outputs stay those of
+the owner's runs. Opened afterwards, the dataflow shows the editor the last
+result he ran each code node to, for 7 days, as it shows the owner hers.
+
+Guests, anyone who watches another account's dataflow, and a Curio started with
+`--no-project` run dataflows in the browser, and a run stops when its tab
+closes.
 
 ### Running stale nodes automatically
 
@@ -520,44 +536,61 @@ bolt while it is on.
 - The setting is saved with the dataflow and is off for a new one.
 - Code you type, a new connection, and a selection in a chart do not start a
   run: the nodes they change wait for **Run** or **Run All**.
-- It is offered where a run goes on the server: not to guests, viewers of a
-  shared dataflow, a Curio started with `--no-project`, or a dashboard, which
-  runs a changed control on its own ([Dashboards](#dashboards)).
+- It is offered where a run goes on the server: not to guests, anyone who
+  watches another account's dataflow, a Curio started with `--no-project`, or a
+  dashboard, which runs a changed control on its own ([Dashboards](#dashboards)).
 
 ## Provenance
 
 **View > Provenance** opens the dataflow's version history in a drawer on the
-right. Each node or connection added or removed makes a version.
+right. Each node or connection added or removed makes a version, and so do
+each person's typing in a node once they pause or leave its editor ("Ana
+edited"), an agent's change ("Node Builder, asked by Ana"), each
+**File > Save** and each version put back.
 
 - The versions are listed in the order they were made, on a line that leads to
   the newest. Versions made from an earlier one you went back to fold under the
   version they left from; click the fold to show them.
 - The pin keeps the drawer open when you click outside it or press Escape.
 
-Click a version to open it: its thumbnail, when it was recorded, and its nodes
-and connections. **Put this version on the canvas** goes back to it. The history
-stays, the dataflow reads **Unsaved**, and the next change branches from that
-version.
+Click a version to open it: its thumbnail, when it was recorded and by whom,
+and its nodes and connections. **Put this version on the canvas** goes back to
+it; putting it back is a version of its own, made from the one you went back
+to, so the next change branches from there.
+
+A saved dataflow's history is kept by Curio, the same for you and the editors
+you invited, and it shows each change as it is made. Putting a version back
+changes everyone's canvas, and the dataflow keeps its name, its categories,
+**Run stale nodes automatically**, and the packages and datasets installed in
+it. Only the owner sees **Clear history before this
+version**, which removes the versions before it; someone who only watches the
+dataflow sees no history. A dataflow not saved yet keeps its history in its
+tab: putting a version back there leaves the dataflow **Unsaved**, and its
+first save keeps the history.
 
 A node's **Provenance** button, in its header, lists the node's runs in the same
 drawer, with the same folds. Each run reads what it took in and gave back
 ("In: DATAFRAME | Out: GEODATAFRAME", or ERROR for a run that failed). Click a
 run to open it: when it ran, for how long, and its code. **Put this code back in
-the node** puts that code in the node's editor without running it, and the
-node's next run branches from that run.
+the node** puts that code in the node without running it, and the node's next
+run branches from that run. On a saved dataflow it does so only if the node
+still holds the code you saw: if someone changed it meanwhile, nothing changes,
+and Curio says who did. A Map Editor node's **Undo** and **Redo** work the same
+way.
 
-A change an agent made to the node's code that you applied is an entry too,
-named after the agent, such as **Node Builder**, and a node an agent proposed
-with its code starts with one. Open it to see when it was made and the code it left, and
-put that code back as you would a run's. The Node Builder and the Dataflow
-Builder read these histories as the dataflow was last saved, so you can ask
-either what changed in a node since a run.
+Your typing in a node is an entry too, named after you, and so is a change an
+agent made to the node's code, named after the agent, such as **Node Builder**;
+a node an agent added with its code starts with one. Open one to see when it was
+made and the code it left, and put that code back as you would a run's. The Node
+Builder and the Dataflow Builder read these histories, so you can ask either
+what changed in a node since a run.
 
 ## Widgets
 
 A widget is a value a node's code reads that you set in a form, without editing
 the code: a threshold, a season, a list of years. Python, Vega-Lite and Autark
-nodes have them.
+nodes have them. A Data Loading or Data Export node keeps the widgets it comes
+with: its **Widgets** tab shows only their controls.
 
 1. Open the node's **Widgets** tab (toolbox icon) and click **Add widget**.
 2. Give it a name (letters, digits and underscores), a type, a label, and a
@@ -714,7 +747,7 @@ When the node runs:
 - In Python and JavaScript, a layer chip becomes that layer of the input:
   `roads = [!! input_0:table_osm_roads !!]` runs as
   `roads = curio_layer(input_0, "table_osm_roads", 0)`
-  ([Functions node code calls](../agents/agent.curio.builtin@1/knowledge/node-functions.md)),
+  ([Functions node code calls](../skills/node-functions/SKILL.md)),
   which gives a GeoDataFrame
   in Python and a GeoJSON FeatureCollection in JavaScript. An input that is one
   frame with no layer name, such as a GeoDataFrame a Python node returns, is
@@ -777,65 +810,101 @@ these node kinds, with a tuple on one of them.
 
 ## Scenarios
 
-A scenario is a named selection of a dataflow's nodes, or the whole dataflow, used
-to compare alternatives: the same analysis with buildings twice as tall, say. Its
-boundary splits the dataflow into three parts:
+A scenario is a named selection of a dataflow's nodes, used to compare
+alternatives: the same analysis with buildings twice as tall, say. It splits the
+dataflow into three parts:
 
-- **Fixed context:** the nodes outside the scenario that it reads, through an edge
-  into it. The scenario takes their outputs as given. A node two alternatives
-  share sits outside both, as their common context.
-- **Levers:** the nodes in the scenario, which is what an alternative changes: its
-  data loaders, widget values, code and specs, and the features it removes or
-  changes by hand (see [The Map Editor node](#the-map-editor-node)).
-- **Outcomes:** the outputs of the scenario's last nodes, which is what gets
-  compared.
+- **Scenario-specific nodes:** the nodes unique to it, in its box, which is what
+  an alternative changes: its data loaders, widget values, code and specs, and the
+  features it removes or changes by hand (see [The Map Editor node](#the-map-editor-node)).
+- **Shared context:** every node upstream of it, outside every box, that it uses.
+  The scenario takes their outputs as given.
+- **Shared outcomes:** every node downstream of it, outside every box, that it
+  feeds: the maps, charts and tables the alternatives are compared on.
 
-A node belongs to one scenario at most. A scenario of the whole dataflow has no
-fixed context.
+Every scenario is in a **scenario set**: the scenarios that answer one question,
+compared on the same shared context and shared outcomes. Scenarios of different
+sets never mix. A node of a set's shared context or shared outcomes can belong to
+some of its scenarios only.
 
-To make one:
+A node belongs to one scenario at most.
 
-1. Select its nodes: hold Shift and drag a box around them.
-2. Choose **View → Save selection as scenario**, or **File → Save dataflow as
-   scenario** for the whole dataflow.
-3. To build an alternative, choose **View → Duplicate as scenario**. The
-   selected nodes are copied below themselves with the edges between them, every
-   edge entering the selection feeds the copy too, and the selection and the copy
-   become two scenarios. **Duplicate selection** copies the nodes without making
-   scenarios.
+To define one:
 
-Then change the copy's levers: a widget value, a line of code. Each copy remembers
+1. Choose **View → Define scenario**. Define scenario opens in a drawer at the
+   side of the canvas, and the nodes on the canvas stay selectable while it is
+   open. Its first step asks for the scenario-specific nodes: select them on the
+   canvas (click one, or hold Shift and drag a box around several) and click
+   **+ Add selected node**; **×** takes one out. Nodes selected before are listed
+   already.
+2. **Next** lists the shared context and shared outcomes Curio found by following
+   the edges, marked on the canvas. In a dataflow that has scenarios, each list
+   marks its nodes **Already in the set** or **New to the set**, for the set the
+   last step picks. Confirm them, remove a node with **×**, or select one on the
+   canvas and click **+ Add selected node**.
+3. **Next** asks for its name, its color and its scenario set: name a new set, or
+   pick one of this dataflow's. **Save scenario** saves it; nothing changes before.
+
+A drawer opened meanwhile, such as Provenance or a catalog, opens over Define
+scenario, and closing it brings Define scenario back with what you picked.
+
+To build an alternative, click **Duplicate scenario** on the scenario's card in
+the **In project** tab. Its nodes are copied below themselves with the edges
+between them, and every edge entering them feeds the copy too. The copy becomes
+a scenario of the same set, with the next color and the same shared context, and
+Define scenario opens on it at **Name & set**: rename it, recolor it, or put it
+in another set. Nothing reads the copy yet, so it has no shared outcomes: wire
+its nodes into a comparison, then add the comparison with **Edit scenario**.
+**View → Duplicate selection** copies the selected nodes without making a
+scenario.
+
+Then change the copy's nodes: a widget value, a line of code. Each copy remembers
 the node it was copied from.
 
 The dataflow's scenarios are in the Scenario Catalog drawer's **In project** tab:
 click **Scenario** in the top bar, then **In project**, which shows how many the
-dataflow has. Saving a selection or duplicating it as a scenario opens that tab.
-On top of it are **Save selection as scenario** and **Duplicate as scenario**,
-and each scenario's card offers:
+dataflow has. The tab lists them in a panel per scenario set, headed by the set's
+name and how many scenarios it holds; the pencil beside the name renames the set,
+and no two sets of a dataflow share a name. On top of the tab is **Define
+scenario**, and each scenario's card offers:
 
-- **Run scenario**: run its levers, and of its fixed context only the nodes that
-  have not run or have changed since;
-- **Collapse** or **Expand**;
-- **Add selected** or **Remove selected**: the nodes selected on the canvas
-  before the drawer opened;
-- **Delete**. Its nodes stay on the canvas.
+- **Run scenario**: run its nodes, and of the nodes feeding it only those that have not
+  run or have changed since;
+- **Edit scenario**: Define scenario, on what the scenario keeps: its nodes are listed,
+  and its context, outcomes, name, color and set are filled in. Change any step;
+  **Save** changes it in place;
+- **Duplicate scenario**: a copy of it, as above;
+- **Delete**, which asks first. Its nodes stay on the canvas.
 
 **View details** on a card renames, recolors and describes the scenario, and
-lists its fixed context, levers and outcomes. Pointing at a card marks the
-scenario's fixed context on the canvas. In a dataflow someone shares with you,
-the tab lists the scenarios without these controls.
+lists its shared context, its scenario-specific nodes and its shared outcomes.
+Pointing at a card marks the scenario's context and outcomes on the canvas. In a
+dataflow you watch, the tab lists the scenarios without these controls.
 
-On the canvas, an expanded scenario's nodes wear its color inside a frame, with its
-name and a **Collapse** button above. A collapsed scenario is one box in its color
-that lists its fixed context and its outcomes with their latest output. The edges
-into and out of the scenario are drawn to the box, and dragging the box moves it.
-Double-click the box to expand it. A collapsed scenario's nodes still run with
-**Run All**, and the context they share runs once.
+On the canvas, each scenario set is outlined, under its name: **Scenario set:**
+and the set's name. An expanded scenario's nodes wear its color inside a frame,
+with its name and a **Collapse** button above. A collapsed scenario is one box
+tinted in its color, with a card for each of its nodes: the node's kind, its title
+and its latest output. The edges into and out of the scenario are drawn to the
+cards they enter and leave, and dragging the box moves it. Double-click the box to
+expand it. A collapsed scenario's nodes still run with **Run All**, and the
+context they share runs once.
 
-Defining a scenario saves the outputs of its fixed context and outcomes to your Data
-Catalog, whatever their **Save output** setting, as pinning a dashboard tile does. A
-chart or a Data Pool saves nothing itself: the node feeding it does. Scenarios,
-their colors, descriptions, collapsed state and box positions are saved with the
+A set's shared context and shared outcomes are framed in gray, under a **Shared
+context** or **Shared outcomes** pill with a **Collapse** button. Under each of
+their nodes is a row of circles, one per scenario of the set, filled where that
+scenario uses the node; point at the circles to read which scenarios do.
+Collapsed, a group is one gray box with a card for each node and the set's
+circles on it; double-click it to expand it. In a dataflow you watch, scenarios
+and groups stay collapsed or expanded as they are.
+
+Defining a scenario saves to your Data Catalog the outputs of the shared context
+nodes that feed it, of its own last nodes (those whose output nothing else in it
+reads, or a node outside it reads) and of its shared outcomes, whatever their
+**Save output** setting, as pinning a dashboard tile does. A chart or a Data Pool saves nothing
+itself: the node feeding it does. Scenarios and their sets, colors, descriptions,
+context and outcomes, collapsed state and box positions, and whether each set's
+shared context and shared outcomes are collapsed and where, are saved with the
 dataflow. Deleting a node removes it from its scenario.
 
 ### The Map Editor node
@@ -878,19 +947,21 @@ A rule or an expression reads a feature's columns by name (`height`, or
 `false`, `null`, `+ - * / %`, `== != < <= > >=`, `and`, `or`, `not`,
 parentheses, `abs`, `round`, `min` and `max`.
 
-In a scenario, a Map Editor node is a lever.
+In a scenario, a Map Editor node is one of its scenario-specific nodes: its edits
+are what that scenario changes.
 
 ### Comparing scenarios
 
-To compare scenarios, connect each scenario's outcome to an input circle of its own
-on a node outside the scenario boxes. Each edge takes the next circle, as on any
-node with several inputs.
+To compare scenarios, connect the node in each scenario's box that the comparison
+reads to an input circle of its own on a node outside the boxes, which becomes a
+shared outcome of their set. Each edge takes the next circle, as on any node with
+several inputs.
 
 - **A chart.** A Vega-Lite node whose spec reads its inputs as the dataset its chip
   `[!! inputs !!]` names ([Every input in one dataset](#every-input-in-one-dataset)) draws every input's
   rows, each named by the scenario box its input comes from, and its scenario chips
   draw them in the boxes' colors and order
-  ([Scenario colors and order](#scenario-colors-and-order)). The Scout package's
+  ([Scenario colors and order](#scenario-colors-and-order)). The Vega-Lite package's
   charts, below, are such nodes.
 - **The difference of two rasters.** A [Raster Calculator](#rasters) subtracts them
   cell by cell: `raster_calculate("subtract", [input_1, input_0],
@@ -930,12 +1001,12 @@ diverging scheme centered on 0, and an absolute one on a sequential scheme:
 }
 ```
 
-The Scout package (`curio.scout@1`) has fifteen charts that compare scenarios:
+The Vega-Lite package (`curio.vega-lite@1`) has fifteen charts that compare scenarios:
 **Lines with a band**, **Curves by group**, **Bars with error bars**, **Ensemble
 strips**, **Stacked bars with totals**, **Donuts**, **Weighted matrix**, **Dots with a
 range**, **Bars**, **Grouped bars**, **Lines**, **Points**, **Pie**, **Lollipops** and
-**Table**. Each is a Vega-Lite node that takes one input per scenario: connect each
-scenario's outcome to one of its circles. Its spec reads its inputs as the dataset
+**Table**. Each is a Vega-Lite node that takes one input per scenario: connect a node of
+each scenario's box to one of its circles. Its spec reads its inputs as the dataset
 `[!! inputs !!]` ([Every input in one dataset](#every-input-in-one-dataset)), every row named by
 the scenario box its input comes from, and its scenario chips draw each scenario in its
 box's color, in the order the dataflow lists the boxes. Set the columns it plots in its **Widgets** tab,
@@ -943,17 +1014,19 @@ and the Vega-Lite aggregate Bars, Grouped bars, Lines, Pie and Lollipops combine
 scenario's rows with (**Combine**: `mean`, `sum`, `median`, `min`, `max` or `count`). A
 new node's widgets hold their own names (`y`, `part`), so the chart says which column
 its inputs lack until you set them. A new chart opens with its template's spec,
-which you can edit. The [package's README](../packages/curio.scout@1/README.md) lists
+which you can edit. The [package's README](../packages/curio.vega-lite@1/README.md) lists
 each chart's widgets. Add the package to a dataflow from the Node Catalog drawer; the
-charts are then under **Scout** in the Tools panel's **Node Catalog** dropdown.
+charts are then under **Vega-Lite** in the Tools panel's **Node Catalog** dropdown.
 
 The **Scenario Catalog** lists the scenarios of all your projects, each with its
-fixed context, levers and outcomes and the results its project saved. Open it from
-the **Scenario Catalog** tab, or from the **Scenario** button in the canvas's top
-bar. Drag a scenario from the **Scenario** drawer onto the canvas to bring a copy
-of it into the open dataflow: it arrives collapsed, with its results, and its
-fixed context arrives as Data Loading nodes that read copies of what its project
-saved. See [docs/SCENARIO-CATALOG.md](SCENARIO-CATALOG.md#4-using-a-scenario-in-a-dataflow).
+shared context, its scenario-specific nodes and its shared outcomes, and the results
+its project saved. Open it from **Scenario Catalog** in the top bar of the Projects
+page and the catalog pages, or from the **Scenario** button in the canvas's top bar.
+Drag a scenario's card from the **Scenario** drawer's **Browse all** tab onto the
+canvas to bring a copy of it into the open dataflow: it arrives collapsed, with its
+results, and the nodes feeding it arrive as Data Loading nodes that read copies of
+what its project saved. Another scenario of the same set dragged in after it joins
+its set and reads the same context. See [docs/SCENARIO-CATALOG.md](SCENARIO-CATALOG.md#4-using-a-scenario-in-a-dataflow).
 
 ## Node Catalog
 
@@ -1428,9 +1501,9 @@ dashboard the node shows the output saved with the dataflow and never joins.
 
 The **Raster Calculator** works on rasters: a `rasterio` dataset from a Python
 node or the Data Catalog, or a raster an Autark node hands on. It is a node of
-Scout (`curio.scout@1`), a package that ships with Curio: once the
+Rasterization (`curio.rasterization@1`), a package that ships with Curio: once the
 package is in the dataflow (**Add to project** in the Node Catalog drawer), the
-node is under **Scout** in the Tools panel's **Node Catalog** dropdown.
+node is under **Rasterization** in the Tools panel's **Node Catalog** dropdown.
 It is a Python node whose code is written for it when it
 is dropped: input_0 minus input_1, with its other operations listed above it,
 statistics among them. Return another call to change what it does. Connect the
@@ -1445,8 +1518,8 @@ return raster_calculate("subtract", [input_0, input_1], output_file=curio_output
 
 A Python node of no package has no raster operations, so a raster step is a
 Raster Calculator node. A node of another package uses them when its package
-names Scout in `dependencies.packages` (see the
-[package's README](../packages/curio.scout@1/README.md#raster-math-in-another-package)).
+names Rasterization in `dependencies.packages` (see the
+[package's README](../packages/curio.rasterization@1/README.md#raster-math-in-another-package)).
 
 **Cell by cell**, an operation over rasters on one grid gives a raster, which
 `output_file=curio_output_file` writes where the node writes its files:
@@ -1531,12 +1604,11 @@ saved with the dataflow, and a tile with none runs the nodes before it on the se
 the page opens.
 
 - **Pin** the nodes to show, with the pin control in each node's header. Pinning saves
-  the dataflow, and saves the outputs feeding those nodes to your Data Catalog, which is
-  what the page draws from later.
+  the outputs feeding those nodes to your Data Catalog, which is what the page draws
+  from later.
 - **Open** it from **Share → Open dashboard**, which opens a new tab. The same menu
-  copies either link.
-- **Save the dataflow** after changing anything else the page shows, such as a chart's
-  spec: the page shows what is on disk.
+  copies either link, and invites editors to the dataflow
+  ([Real-time collaboration](#real-time-collaboration)).
 - **Controls**: a pinned node's widgets show on its tile, above a chart or map and in
   place of a code node's code, and anyone viewing the page can change them. A chart or
   map draws again with a new value of its own widget.
@@ -1556,8 +1628,8 @@ the page opens.
   their title band and resize, and **Save layout** records where they sit, without
   touching the canvas positions.
 - **Scenarios** each get a column, framed under a header in the scenario's color. The
-  tiles they share (their fixed context, and any other tile no outcome reaches) come
-  first, and tiles that read their outcomes, such as a comparison, come last. Tiles
+  tiles they share (their shared context, and any other tile no scenario feeds) come
+  first, and the tiles of their shared outcomes, such as a comparison, come last. Tiles
   without a saved place are laid out this way when the page opens; while editing the
   layout, **Arrange by scenario** puts every tile back in its column.
 - **Sharing**: the page is served with its data inside it, whether `--backend-url` is an
@@ -1598,7 +1670,8 @@ dataset (a GeoTIFF gives Rasters), and the tags and data types its packages, mod
 datasets declare in their manifests' `dataflowCategories` (SCOUT's give SCOUT). A package
 or dataset of your own can declare them too ([Authoring nodes](AUTHORING-NODES.md#tags-and-data-types),
 [Data Catalog](DATA-CATALOG.md#7-the-manifest)), and a new name adds an entry to the
-rail. They change when you save, and cannot be removed by hand. Add a tag, a
+rail. They follow the dataflow's changes within a few seconds, in every tab that has it
+open, and cannot be removed by hand. Add a tag, a
 city, a topic or a complexity with **+ Category** under the dataflow's title on the
 canvas, which saves with the dataflow, or with **Edit categories** on the Projects page.
 
@@ -1612,7 +1685,7 @@ Three surfaces manage datasets:
 - The **Data Catalog** dropdown in the Tools panel, listing the datasets added to the open dataflow and, under **Saved outputs**, the outputs its nodes saved. Drag one onto the canvas to create a Data Loading node that loads it, or onto a node to load it there.
 
 A file from your computer, dropped on the canvas or on a Data Loading node, or picked with a Data Loading node's **Choose file**, is imported into your account and added to the open dataflow, then loaded as a dataset dragged there is.
-- The **`/catalog/data`** page, the library view for your whole account, reached from `/projects` and the **Data Catalog** tab. **Add to all projects** there adds a dataset to every dataflow you have.
+- The **`/catalog/data`** page, the library view for your whole account, reached from **Data Catalog** in the top bar of `/projects` and every catalog page. **Add to all projects** there adds a dataset to every dataflow you have.
 
 A node can also save its output as a **computed dataset** in your account (the database toggle among the buttons in its header), so its result can be reused as an input elsewhere.
 
@@ -1650,18 +1723,20 @@ Agents are AI assistants you attach to your dataflow. The catalog lists four:
   helps you define what to build, answers questions from the web as
   [notes](#notes), and checks facts.
 - **Node Builder**: builds a node or rewrites one's content, suggests nodes for
-  a connection, and installs or writes the node packages your nodes need.
+  a connection, and finds or writes the node packages your nodes need.
 - **Dataflow Builder**: plans a whole dataflow, then solves its nodes.
 - **Dataset Finder**: finds datasets in the Data Catalog and in portals.
 
-What each does in chat, the tools it uses and the modes other agents ask it
-for are in [AGENT-CATALOG.md](AGENT-CATALOG.md#the-agents). Each agent answers
+What each does in chat, the tools it uses, the modes other agents ask it for
+and the skills it reads are in [AGENT-CATALOG.md](AGENT-CATALOG.md#the-agents).
+In an agent's details you add a skill to it or remove one, for your account.
+Each agent answers
 with the LLM configuration chosen for it on the **Agent configuration** tab of
 **API Settings** (above), else your default.
 
 There are two scopes:
 
-- **`/catalog/agents`**, the **Agent Catalog** tab, is your **account**.
+- **`/catalog/agents`**, the **Agent Catalog** page, is your **account**.
   **Add to all projects** there adds an agent to every dataflow you have, and
   to every new one.
 - **The Agent Catalog drawer**, opened on the canvas from the **Agent
@@ -1693,17 +1768,45 @@ the dock at the top of the canvas.
 
 Click an agent to open its chat panel. From there you can rename the
 conversation, clear it, cycle through every attached agent with the ‹ › arrows,
-and edit the initial intent the agent starts from. Agents that propose changes
-(new nodes, edges, node content, packages) put them up for review first: nothing
-lands on your canvas until you apply it.
+and edit the initial intent the agent starts from. A change an agent makes to
+your dataflow (a node's code or settings, a new node, a plan) lands at once, for
+everyone on the dataflow, as your own edit does; it waits while someone else is
+working in the node it changes. A new node is dragged in from its tile in the
+tool rail, and lands as the drop ends. Its card in the chat has **Undo**, which puts
+back what it replaced, unless someone changed it after: then Undo says who, and
+nothing changes. An install (a package, a dataset, a download, an agent) waits
+for your review: nothing installs until you apply it.
+
+Each message runs on the server: close or reload the tab and the agent goes on,
+its reply in the chat when you come back. Everyone who edits the dataflow sees
+it as it runs. One message of a chat runs at a time: one you send while another
+runs waits its turn (*Waiting its turn*), and **Withdraw** takes it back before
+it starts. **Stop** stops the message that runs at its next step, keeping what
+it said and changed so far. A reply that reaches the output limit (4,096
+tokens) stops there and ends with a line that says it was cut off.
+
+Type `/` at the start of a message to list the agent's
+[skills](SKILL-CATALOG.md#3-using-a-skill). Pick one with the arrow keys and Enter, or a
+click, or keep typing its name, then write the rest of your message: the skill
+goes to the agent with it, as in `/map-edits remove the two tallest towers`.
+Escape closes the list. A line under each reply names the skills its run used;
+hover a name to see how the run came to hold it.
 
 The **Dataflow Builder** is the composite agent that plans a whole dataflow. Its
-strip adds planning phases, per-node progress, and **Solve**, which fills in the
-planned nodes in one batch: it runs each node's code in the sandbox, corrects
-it when the run fails, and writes only code that ran. Applying a plan also
-gives every created node a **Node Builder**, and every data-loading node a
-**Dataset Finder**, which Solve asks for candidates when the node's source is
-not settled. See [Solve](AGENT-CATALOG.md#solve) in the Agent Catalog guide.
+plan lands as one change you can undo: first the nodes and connections it
+removes, then its nodes, dragged in from their tiles one after another, then its
+connections. When someone removes a node the plan connects while it lands, the
+plan stops there, and its card says what was left undone. Its strip then offers **Build & validate plan**, which fills the
+plan's nodes in order: each node's code is run in the sandbox, and code that
+passes lands, with its **Undo**, before the next node; the first failure pauses
+the build with nothing written after it, and **Resume** continues from there.
+**Step** does one action at a time. The strip also has per-node progress and
+**Solve**, which fills in the planned nodes in one batch: it runs each node's
+code in the sandbox, corrects it when the run fails, and writes only code that
+ran. A plan also gives every created node a **Node Builder**, and every
+data-loading node a **Dataset Finder**, which Solve asks for candidates when
+the node's source is not settled. See [Solve](AGENT-CATALOG.md#solve) in the
+Agent Catalog guide.
 A plan can also declare the widgets each node's code reads, and save
 [scenarios](#scenarios), including a copy of one with a widget value changed;
 see [Widgets and scenarios](AGENT-CATALOG.md#widgets-and-scenarios).
@@ -1726,9 +1829,31 @@ Operators who would rather not send queries to a third party can point
 For the full guide, covering the roster, the storage layers, attaching, the
 provider, publishing, and writing your own, see [docs/AGENT-CATALOG.md](AGENT-CATALOG.md).
 
+## Skill Catalog
+
+Skills tell Curio's agents how to do a specific task, such as writing a Map Editor node's edits, in the open [Agent Skills](https://agentskills.io/specification) format. Curio ships its own, a node package can ship more, such as Rasterization's `rasterization`, and you can import a skill written for any Agent Skills tool.
+
+- **`/catalog/skills`**, the **Skill Catalog** page, lists every skill you see: Curio's, your own, the published ones and those of the packages you can add. A card's drawer names the agents that use the skill, and **View details** shows what an agent reads. **Import skill**, in the header, takes a skill's folder, its files or a `.zip` of it, and shows a review before anything is kept. **Publish** offers a skill you imported to everyone on the install.
+- **An agent's details**, in the Agent Catalog, list its skills, and **Add skill**, **Remove** and **Restore** change them for your account. On the canvas, open them from the Agent Catalog drawer.
+
+In a chat, `/` lists the agent's skills, and a line under each reply names the skills its run used ([Working with an agent](#working-with-an-agent)).
+
+For the full guide, covering how a call holds its skills, your own skills and their names, importing, publishing and the skill format, see [docs/SKILL-CATALOG.md](SKILL-CATALOG.md).
+
 ## Real-time collaboration
 
-`curio start --collab` opens an opt-in Socket.IO channel that lets multiple signed-in users edit the same project simultaneously: presence indicators, per-node soft locks, code-change proposals with peer approval, and shared execution output. The feature is disabled by default and needs no rebuild to turn on.
+Every tab that opens a saved dataflow while signed in holds one shared copy of it, which the server keeps as each change is made. A change in one tab shows in every other tab that has the dataflow open: code and specs as they are typed, with each person's cursor, and nodes, connections, widgets, scenarios and drags at once. Each person's pointer shows on the others' canvases too, in their color with their name, and fades while it rests. A tab that opens the dataflow later finds every change. A hosted guest's canvas of an example stays its own.
+
+Who is here shows in the dock at the top of the canvas, beside the canvas agents: a chip for each other person, with their initials in their color. Hover one for their name, their role and the node they are editing, and click it to move your view to where they point on the canvas. The **Activity** button at the end of the row lists who joined, who left and whose role changed. A node someone is in shows their initials in its corner.
+
+The owner decides who edits. **Share → Invite editors**, shown to the owner of a saved dataflow, adds an account by its username and lists the editors, each with a button that removes it. An editor opens the dataflow's link (**Share → Copy dataflow link**) and edits it with the owner, and the editor's runs go to the server as the owner's do ([Running a dataflow](#running-a-dataflow)). Anyone else signed in who opens the link watches it, read-only, and a guest on a Curio started with `--deploy` only watches.
+
+When two people change the same thing:
+
+- Removing a node someone else is typing in asks first.
+- A node someone removes while you type in it goes, with a message that names who removed it and **Put it back**.
+- A connection you draw to a node someone removes at the same moment is not kept, and a message says so.
+- A widget, and a node's place, end on one value in every tab.
 
 See [COLLABORATION.md](COLLABORATION.md) for the full architecture, security model, setup instructions, and current limitations.
 

@@ -8,19 +8,23 @@ import type { PackageKind } from "./types";
  * drawer of the package's kind to run that drawer's own Add (the review, then
  * the install of the package and its libraries), and the node is made once
  * the package is added. A hosted guest's drop is refused before any of it:
- * guests never install.
+ * guests never install. On the owner's dataflow, an invited editor's drop
+ * makes the node at once and asks the owner to add the package
+ * (`useAskForPackage`), whose review she applies.
  */
 
 /** What a dropped card does. */
-export type PackageDropAction = "create" | "refuse" | "add";
+export type PackageDropAction = "create" | "refuse" | "add" | "ask";
 
 /** Make the node when the dataflow has the package; otherwise refuse a
- *  hosted guest, and ask anyone else to add it first. */
+ *  hosted guest, make it and ask the owner on an invited editor's canvas
+ *  (*asksTheOwner*), and ask anyone else to add it first. */
 export function packageDropAction(
-  { inDataflow, hostedGuest }: { inDataflow: boolean; hostedGuest: boolean },
+  { inDataflow, hostedGuest, asksTheOwner = false }: { inDataflow: boolean; hostedGuest: boolean; asksTheOwner?: boolean },
 ): PackageDropAction {
   if (inDataflow) return "create";
-  return hostedGuest ? "refuse" : "add";
+  if (hostedGuest) return "refuse";
+  return asksTheOwner ? "ask" : "add";
 }
 
 /** What a hosted guest is told when a drop would add a package. */

@@ -8,19 +8,23 @@ the share pipeline and canvas saves) never contains conversation content:
     {"sessionId": ..., "attachmentId": ..., "turns": [{"role", "text", ...}]}
 
 A transcript lives exactly as long as its attachment (fail-closed interim
-retention; final durations remain ``OQ-008``): detach and orphan-prune delete
-the file. A missing or unreadable file reads as an empty transcript, so
-records that predate this store need no migration.
+retention; final durations remain ``OQ-008``): every removal of attachments
+deletes their files (:func:`delete_sessions_of`). A missing or unreadable
+file reads as an empty transcript, so records that predate this store need no
+migration.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 
 from utk_curio.backend.app.projects import storage as projects_storage
+
+log = logging.getLogger(__name__)
 
 # Session ids are service-minted ``uuid4().hex``; the pattern keeps any value
 # that reaches the filesystem a single safe path segment.
@@ -31,6 +35,11 @@ SESSION_ID_RE = re.compile(r"^[0-9a-f]{8,64}$")
 CONTEXT_WINDOW_TURNS = 20
 
 TURN_ROLES = ("user", "agent")
+
+#: How the user turn the runtime writes for a delegated task begins, in the
+#: session of the agent the task was handed to: ``[Delegated by Node Builder]
+#: ...``. Its words are the delegating agent's, not a person's.
+DELEGATED_TURN_PREFIX = "[Delegated by "
 
 
 class SessionError(ValueError):
@@ -60,6 +69,15 @@ def read_turns(user_key: str, project_id: str, session_id: str) -> list[dict]:
     return [t for t in turns if isinstance(t, dict)] if isinstance(turns, list) else []
 
 
+def a_persons_message(turn: dict) -> bool:
+    """Whether *turn* is a message a person wrote: a user turn that is not
+    the task the runtime recorded for a delegate (:data:`DELEGATED_TURN_PREFIX`)."""
+    if not isinstance(turn, dict):
+        return False
+    text = turn.get("text")
+    return turn.get("role") == "user" and isinstance(text, str) and not text.startswith(DELEGATED_TURN_PREFIX)
+
+
 def make_turn(
     role: str,
     text: str,
@@ -67,7 +85,12 @@ def make_turn(
     error: bool = False,
     execution: dict | None = None,
     content: list | None = None,
+    by: dict | None = None,
 ) -> dict:
+    """One turn of a transcript. *by*, on a person's message, names who wrote
+    it, as a point of the dataflow's history names a person (``{kind,
+    account, name}``): the owner and the editors the owner invited share an
+    attachment's chat."""
     if role not in TURN_ROLES:
         raise SessionError(f"turn role must be one of {TURN_ROLES}, got {role!r}")
     turn: dict = {
@@ -75,6 +98,8 @@ def make_turn(
         "text": text,
         "ts": datetime.now(timezone.utc).isoformat(),
     }
+    if by:
+        turn["by"] = by
     if error:
         turn["error"] = True
     if execution is not None:
@@ -114,14 +139,29 @@ def update_proposal_status(
     dismiss/supersede update the part in place (the one sanctioned turn edit —
     it changes proposal state, never text). Returns True when a part was
     updated; a missing session/part is False, never an error."""
+    return _set_part_status(user_key, project_id, session_id, "proposal", "proposalId", proposal_id, status)
+
+
+def update_change_status(
+    user_key: str, project_id: str, session_id: str, change_id: str, status: str
+) -> bool:
+    """Set the status of one persisted change part: an agent's change, undone
+    from the chat. Returns True when a part was updated."""
+    return _set_part_status(user_key, project_id, session_id, "change", "changeId", change_id, status)
+
+
+def _set_part_status(user_key: str, project_id: str, session_id: str, kind: str, key: str,
+                     part_id: str, status: str) -> bool:
+    """Set *status* on the transcript's parts of type *kind* whose *key* is
+    *part_id*; whether any changed."""
     turns = read_turns(user_key, project_id, session_id)
     changed = False
     for turn in turns:
         for part in turn.get("content") or []:
             if (
                 isinstance(part, dict)
-                and part.get("type") == "proposal"
-                and part.get("proposalId") == proposal_id
+                and part.get("type") == kind
+                and part.get(key) == part_id
                 and part.get("status") != status
             ):
                 part["status"] = status
@@ -165,11 +205,51 @@ def delete_session(user_key: str, project_id: str, session_id: str) -> None:
         pass
 
 
+#: What else ends with a removed attachment: each called with the dataflow's
+#: key, its id and the attachment ids, after their transcripts are deleted.
+#: The chat turns register theirs (``turns/turn_jobs.py``): an attachment's
+#: asks end with it.
+_removal_hooks: list = []
+
+
+def when_removed(hook) -> None:
+    """Call *hook* with ``(user_key, project_id, attachment_ids)`` each time
+    attachments leave a dataflow (:func:`delete_sessions_of`)."""
+    if hook not in _removal_hooks:
+        _removal_hooks.append(hook)
+
+
+def delete_sessions_of(user_key: str, project_id: str, records) -> None:
+    """Delete the transcript of each attachment record of *records* a write
+    took out of the dataflow: a transcript lives exactly as long as its
+    attachment. Every removal of attachments ends here, after its write:
+    a detach, removing an agent from the dataflow, a save or a plan that
+    deletes the node or the connection an agent is attached to. What else
+    ends with them is told (:func:`when_removed`)."""
+    removed = []
+    for record in records or ():
+        if not isinstance(record, dict):
+            continue
+        session_id = record.get("sessionId")
+        if isinstance(session_id, str):
+            delete_session(user_key, project_id, session_id)
+        if isinstance(record.get("attachmentId"), str):
+            removed.append(record["attachmentId"])
+    if removed:
+        for hook in list(_removal_hooks):
+            try:
+                hook(user_key, project_id, removed)
+            except Exception:  # noqa: BLE001 - what else ends never blocks the removal
+                log.exception("what ends with attachments %s of %s failed", removed, project_id)
+
+
 def context_messages(turns: list[dict], limit: int = CONTEXT_WINDOW_TURNS) -> list[dict]:
     """Map the last ``limit`` non-error turns to OpenAI-style chat messages.
 
     Error markers are display-only history and are excluded from provider
-    context.
+    context. An agent turn's changes follow its text, each as its card says
+    what it did and whether it was undone, so a later run knows what landed:
+    a plan's topology verdict among it.
     """
     usable = [
         t
@@ -180,4 +260,16 @@ def context_messages(turns: list[dict], limit: int = CONTEXT_WINDOW_TURNS) -> li
         and not t.get("error")
     ]
     role_map = {"user": "user", "agent": "assistant"}
-    return [{"role": role_map[t["role"]], "content": t["text"]} for t in usable[-limit:]]
+    return [{"role": role_map[t["role"]], "content": t["text"] + _changes_said(t)} for t in usable[-limit:]]
+
+
+def _changes_said(turn: dict) -> str:
+    """The changes *turn* holds, each in one bracketed line."""
+    said = []
+    for part in turn.get("content") or []:
+        if not (isinstance(part, dict) and part.get("type") == "change"):
+            continue
+        lines = "; ".join(str(line) for line in part.get("lines") or [])
+        undone = " (undone)" if part.get("status") == "undone" else ""
+        said.append(f"[{part.get('summary')}{undone}{': ' + lines if lines else ''}]")
+    return ("\n\n" + "\n".join(said)) if said else ""

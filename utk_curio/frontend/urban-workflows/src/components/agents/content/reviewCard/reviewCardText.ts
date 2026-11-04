@@ -1,19 +1,23 @@
 /**
- * The review card's pure text and state derivations (memo dev/142, F4 — split
- * out of `AgentReviewCard.tsx`; every function keeps its name): the source
- * block's labels, the row-state chips, the outcome and effect lines, and the
- * per-row readiness the plan lists compute from the attachment's ledgers.
+ * The review and change cards' pure text and state derivations (memo dev/142,
+ * F4: split out of `AgentReviewCard.tsx`): the source block's labels, the
+ * row-state chips, an install's outcome and effect lines, and the per-row
+ * readiness a landed plan's rows compute from the attachment's ledgers.
  */
 import type { AgentProposalPart, AgentSourceRef } from "../../../../services/agents";
+
+/** What a plan's sections read of its card, a change's: its tool and plan. */
+export type PlanDisplay = { tool: string; plan?: AgentProposalPart["plan"] };
 import { tryGetNodeDescriptor } from "../../../../registry/nodeRegistry";
 import nodeSettings from "../../../../contracts/nodeSettings.json";
 
 /** dev/114 (DEC-072): the Source block's kind headline — how the runtime
- * grounded what the proposed code opens or fetches. */
+ * grounded what the agent's code opens or fetches. */
 export const SOURCE_KIND_LABEL: Record<string, string> = {
   catalog: "Data Catalog",
   external: "External source",
   "user-path": "User-provided path",
+  "user-values": "User-provided values",
   synthetic: "Synthetic data",
   secret: "Connection key",
   mixed: "Several sources",
@@ -35,35 +39,36 @@ export function sourceRefText(ref: AgentSourceRef): string {
       return `Connection key · ${ref.name ?? ""}${ref.host ? ` · ${ref.host}` : ""}`;
     case "user-path":
       return `${ref.value ?? ""} (not checked by Curio)`;
+    case "user-values":
+      // The values the code added to the node's own, each typed in the chat.
+      return `${ref.value ?? ""} (typed in the chat)`;
     case "synthetic":
-      return "generated in the node, no external source";
+      // Beside another source, the calls that made values up, as the user asked.
+      return ref.value
+        ? `${ref.value} (made up in the node, as the user asked)`
+        : "generated in the node, no external source";
     default:
       return ref.value ?? String(ref.kind);
   }
 }
 
-/** dev/67-5/67-8/71: the per-node review state (mirror + builderSession). */
+/** A landed plan's per-node state (its mirror + the builder session). */
 export interface PlanNodeReviewState {
+  /** The refs the plan placed. */
   appliedRefs: string[];
-  editedGoals: Record<string, string>;
-  /** dev/67-8: edge index → planned|applied|refused. */
-  edgeStates?: Record<string, string>;
-  /** dev/71: ref → planned|created|solving|validated|approved|failed. */
+  /** dev/71: ref → created|solving|validated|approved|failed. */
   nodeStates?: Record<string, string>;
-  /** dev/72: ref → its content proposal + the attachment it lives on (the
-   * node's own agent when homed; legacy string = builder-homed). */
-  nodeProposals?: Record<
-    string,
-    string | { proposalId: string; attachmentId?: string | null }
-  >;
-  /** #662: scenario index → applied|refused, once the apply reached it. */
+  /** ref → the change its validated code landed as, and the attachment
+   * whose chat holds it (dev/72: the node's own agent). */
+  nodeChanges?: Record<string, { changeId: string; attachmentId?: string | null }>;
+  /** #662: scenario index → applied|refused. */
   scenarioStates?: Record<string, string>;
 }
 
 /** dev/71: what a row's lifecycle state means for its action cluster. */
 export const ROW_STATE_CHIP: Record<string, string> = {
-  solving: "Content review pending",
-  validated: "Validated: review below",
+  solving: "Validating",
+  validated: "Validated ✓",
   approved: "Solved ✓",
   failed: "Failed: Solve retries",
 };
@@ -75,7 +80,16 @@ export const OUTCOME_LABEL: Record<string, string> = {
   stale: "The target changed since this was proposed; ask the agent to propose again",
 };
 
-/** What one Apply click does, per proposal kind — stated on the card. */
+/** What a pending install says on an invited editor's chat, in place of
+ * Apply and Dismiss: the dataflow's owner reviews it. */
+export const WAITS_FOR_OWNER = "Waits for the dataflow's owner to review it: an install changes their account.";
+
+/** What a pending review of a change (`landsAsAChange`) says in place of
+ * Apply: it was saved before agents changed the dataflow directly, so only
+ * its Dismiss is left (the server's refusal of its Apply says the same). */
+export const MADE_BEFORE_DIRECT_EDITS =
+  "Made before agents edited the dataflow directly, so it can no longer be applied: dismiss it and ask the agent again.";
+
 /**
  * dev/119 (DEC-076): can the sandbox run a node.create's kind? The roster's
  * own flag rides the proposal (`pins.executable`); a part minted before that
@@ -90,10 +104,8 @@ export function nodeKindExecutable(pins: AgentProposalPart["pins"] | undefined):
   return descriptor ? Boolean(descriptor.hasCode) : null;
 }
 
+/** What one Apply click of an install does, per kind: stated on its card. */
 export const EFFECT_LINE: Record<string, string> = {
-  "node.create": "Applying adds this node to the canvas.",
-  "node.settings.write":
-    "Applying makes only these changes, as picking them in the node does; its code is untouched.",
   "project.install":
     "Applying installs only this project template: nothing is imported, attached, run, or published.",
   "dataset.install":
@@ -104,8 +116,8 @@ export const EFFECT_LINE: Record<string, string> = {
     "Applying installs the exact reviewed artifact and creates its requested nodes; nothing else changes.",
 };
 
-/** dev/112: the removals block title — nodes, connections, and the cascade,
- * each only when present. */
+/** dev/112: the removals block title of a landed plan: nodes, connections,
+ * and the cascade, each only when present. */
 export function removalsTitle(nodes: number, edges: number, cascade: number): string {
   const parts: string[] = [];
   if (nodes) parts.push(`${nodes} node${nodes === 1 ? "" : "s"}`);
@@ -113,91 +125,46 @@ export function removalsTitle(nodes: number, edges: number, cascade: number): st
   const cascadeNote = cascade
     ? ` (and ${cascade} connected edge${cascade === 1 ? "" : "s"})`
     : "";
-  return `Removes ${parts.join(" · ")}${cascadeNote}`;
+  return `Removed ${parts.join(" · ")}${cascadeNote}`;
 }
 
-/** dev/52 (+dev/59): the plan card's effect line — dynamic and honest about
- * removals; #662: and about the scenarios it saves. */
-export function planEffectLine(part: AgentProposalPart): string | null {
-  const line = planChangeLine(part);
-  const saved = part.plan?.scenarios?.length ?? 0;
-  if (line === null || !saved) return line;
-  return `${line} It saves ${saved} scenario${saved === 1 ? "" : "s"}.`;
-}
-
-function planChangeLine(part: AgentProposalPart): string | null {
-  if (part.tool !== "dataflow.plan.write" || !part.plan) return null;
-  const n = part.plan.nodes.length;
-  const removed = part.plan.removals?.length ?? 0;
-  const removedEdges = part.plan.removedEdges?.length ?? 0;
-  if (removed) {
-    return (
-      `Applying adds ${n} node${n === 1 ? "" : "s"} and removes ${removed}. ` +
-      "Removal deletes their content and cannot be undone." +
-      tilesLeavingLine(part.plan.removals ?? [])
-    );
-  }
-  if (removedEdges) {
-    // dev/112: an edge-only revision — truthful about what changes.
-    const e = part.plan.edgeCount;
-    return (
-      `Applying adds ${e} connection${e === 1 ? "" : "s"} and removes ${removedEdges}; ` +
-      "nodes and their content are untouched."
-    );
-  }
-  if (n === 0) {
-    const e = part.plan.edgeCount;
-    return `Applying adds ${e} connection${e === 1 ? "" : "s"}; existing work is untouched.`;
-  }
-  return `Applying adds these ${n} connected node${n === 1 ? "" : "s"} to the canvas; existing work is untouched.`;
-}
-
-/** How many of a plan's removals are dashboard tiles, which leave the
- * dashboard, as the effect line's last sentence; empty when none is. */
-function tilesLeavingLine(removals: Array<{ pinned?: boolean }>): string {
+/** How many of a landed plan's removals were dashboard tiles, which left the
+ * dashboard; null when none was. */
+export function tilesLeftLine(removals: Array<{ pinned?: boolean }>): string | null {
   const tiles = removals.filter((victim) => victim.pinned).length;
-  if (!tiles) return "";
+  if (!tiles) return null;
   return tiles === 1
-    ? " 1 of them is a dashboard tile, which leaves the dashboard."
-    : ` ${tiles} of them are dashboard tiles, which leave the dashboard.`;
+    ? "1 of them was a dashboard tile, which left the dashboard."
+    : `${tiles} of them were dashboard tiles, which left the dashboard.`;
 }
 
-/** A plan node's readiness for its row (dev/71): dependencies by name, its
- * lifecycle state, whether Solve may run, and — when not — why. */
+/** A landed plan node's readiness for its row (dev/71): dependencies by name,
+ * its lifecycle state, whether Solve may run, and: when not: why. Its
+ * connections landed with the plan, so only an upstream plan node that is not
+ * solved yet holds it back. */
 export function planNodeRowState(
-  part: AgentProposalPart,
-  node: { ref: string; copyOf?: string },
+  part: PlanDisplay,
+  node: { ref: string },
   planNodeState: PlanNodeReviewState | undefined,
 ) {
   const planEdges = part.plan!.edges ?? [];
   const nodeStates = planNodeState?.nodeStates ?? {};
-  const edgeStates = planNodeState?.edgeStates ?? {};
   const planRefSet = new Set(part.plan!.nodes.map((n) => n.ref));
-  const incoming = planEdges.map((edge, index) => ({ ...edge, index })).filter((edge) => edge.to === node.ref);
+  const incoming = planEdges.filter((edge) => edge.to === node.ref);
   const deps = incoming.map((edge) => edge.fromLabel);
-  const applied = (planNodeState?.appliedRefs ?? []).includes(node.ref);
+  // The plan landed whole: without the attachment's ledger of it (it moved on
+  // to another plan), each of its nodes was placed.
+  const applied = planNodeState ? planNodeState.appliedRefs.includes(node.ref) : true;
   const state = nodeStates[node.ref] ?? (applied ? "created" : "planned");
-  const disconnected = incoming.filter((edge) => edgeStates[String(edge.index)] !== "applied");
   const unsolvedUpstream = incoming.filter(
-    (edge) => planRefSet.has(edge.from) && nodeStates[edge.from] !== "approved",
+    (edge) => planRefSet.has(edge.from) && !["validated", "approved"].includes(nodeStates[edge.from] ?? ""),
   );
-  const solvable = applied && disconnected.length === 0 && unsolvedUpstream.length === 0;
-  const solveBlocker = !applied
-    ? null
-    : disconnected.length
-      ? `needs '${disconnected[0].fromLabel}' connected first`
-      : unsolvedUpstream.length
-        ? `needs '${unsolvedUpstream[0].fromLabel}' solved first`
-        : null;
-  // dev/72: the ref's content review lives on the node's own agent when homed.
-  const proposalEntry = planNodeState?.nodeProposals?.[node.ref];
-  const reviewHomeId =
-    proposalEntry && typeof proposalEntry === "object" ? (proposalEntry.attachmentId ?? null) : null;
-  // #662: a copy names the node it copies, so that node is created first.
-  const original = node.copyOf ? part.plan!.nodes.find((n) => n.ref === node.copyOf) : undefined;
-  const createBlocker =
-    original && !(planNodeState?.appliedRefs ?? []).includes(original.ref) ? `create '${original.title}' first` : null;
-  return { deps, applied, state, solvable, solveBlocker, reviewHomeId, createBlocker };
+  const solvable = applied && unsolvedUpstream.length === 0;
+  const solveBlocker =
+    applied && unsolvedUpstream.length ? `needs '${unsolvedUpstream[0].fromLabel}' solved first` : null;
+  // dev/72: the chat that holds the change its validated code landed as.
+  const changeHomeId = planNodeState?.nodeChanges?.[node.ref]?.attachmentId ?? null;
+  return { deps, applied, state, solvable, solveBlocker, changeHomeId };
 }
 
 /** #662: a widget as its row reads it: its name, kind and value. */
@@ -230,7 +197,7 @@ function settingText(
 /** #662: a planned node's widgets, its scenario, and the node a copy copies;
  * a Spatial Join's operation and output; a Data Pool's modes and a Simple
  * View's image column, in the pool's and the view's own words. */
-export function planNodeExtras(part: AgentProposalPart, node: { ref: string }): string[] {
+export function planNodeExtras(part: PlanDisplay, node: { ref: string }): string[] {
   const row = part.plan!.nodes.find((n) => n.ref === node.ref);
   if (!row) return [];
   const lines: string[] = [];
@@ -260,20 +227,4 @@ export function planScenarioLine(scenario: {
   );
   if (changed.length) parts.push(`sets ${changed.join(", ")}`);
   return parts.join(" · ");
-}
-
-/** A plan edge's readiness for its row (dev/67-8): both endpoints must exist
- * (a plan ref must already be applied) before it can be connected. */
-export function planEdgeRowState(
-  part: AgentProposalPart,
-  edge: { from: string; to: string; fromLabel: string; toLabel: string },
-  index: number,
-  planNodeState: PlanNodeReviewState | undefined,
-) {
-  const state = planNodeState?.edgeStates?.[String(index)];
-  const applied = planNodeState?.appliedRefs ?? [];
-  const fromReady = !part.plan!.nodes.some((n) => n.ref === edge.from) || applied.includes(edge.from);
-  const toReady = !part.plan!.nodes.some((n) => n.ref === edge.to) || applied.includes(edge.to);
-  const blockedBy = !fromReady ? edge.fromLabel : !toReady ? edge.toLabel : null;
-  return { state, blockedBy };
 }

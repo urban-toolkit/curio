@@ -1,8 +1,10 @@
 /**
  * "Run stale nodes automatically" (#845) is a setting of the dataflow, saved
  * with it at `dataflow.autoRun` and off by default. Turning it on or off is an
- * unsaved change; a save writes it; opening a dataflow reads it; a version
- * snapshot, which carries none, keeps it; a new dataflow starts with it off.
+ * unsaved change of a canvas never saved; the dataflow a save makes holds it;
+ * opening a dataflow reads it; a version snapshot, which carries none, keeps
+ * it; a new dataflow starts with it off. On a dataflow bound to its doc, the
+ * doc takes it as every other field (dataflowDocBridge.test.tsx).
  */
 import { renderHook, act } from "@testing-library/react";
 
@@ -86,26 +88,28 @@ describe("the auto-run setting", () => {
     expect(result.current.autoRun).toBe(false);
   });
 
-  it("is an unsaved change, and a save writes it (#845)", async () => {
+  it("is an unsaved change, and the dataflow a save makes holds it (#845)", async () => {
     const { result } = renderHook(() => useWorkflowOperations(deps()));
     act(() => result.current.setAutoRun(true));
     expect(result.current.autoRun).toBe(true);
     expect(result.current.projectDirty).toBe(true);
 
     await act(async () => {
-      await result.current.saveCurrentProject();
+      await result.current.saveDataflow();
     });
     expect(mockCreate).toHaveBeenCalledTimes(1);
     expect(mockCreate.mock.calls[0][0].spec.dataflow.autoRun).toBe(true);
 
-    // Off is written as off, so the backend does not keep the saved "on".
+    // Off is written as off in what a canvas sends, so the server never keeps
+    // an "on" it already held: a copy made with it off holds it off.
     act(() => result.current.setAutoRun(false));
     await act(async () => {
-      await result.current.saveCurrentProject();
+      await result.current.saveAsNewProject("A copy", "p1");
     });
-    expect(mockUpdate).toHaveBeenCalledTimes(1);
-    expect(mockUpdate.mock.calls[0][0]).toBe("p1");
-    expect(mockUpdate.mock.calls[0][1].spec.dataflow.autoRun).toBe(false);
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+    expect(mockCreate.mock.calls[1][0].spec.dataflow.autoRun).toBe(false);
+    // No tab saves a dataflow it is open on.
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 
   it("is read when a dataflow opens; a snapshot without it keeps it (#845)", async () => {

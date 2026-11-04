@@ -28,7 +28,7 @@ concurrency:
 
 jobs:
   repro:
-    runs-on: [self-hosted, linux, gpu, curio]
+    runs-on: [self-hosted, utk, gpu]
     timeout-minutes: 240
 
     env:

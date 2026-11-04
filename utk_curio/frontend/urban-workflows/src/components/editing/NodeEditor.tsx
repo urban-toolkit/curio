@@ -52,9 +52,32 @@ import { nodeLabel } from "../scenarios/scenarioLabels";
 import type { ChipPreviewData } from "./widgets/ChipPreview";
 import { useChipPreviewSource } from "./widgets/chipPreviewSource";
 import { WidgetValueControls } from "./widgets/WidgetValueControls";
+import { agentHoldOf, useAgentHold } from "../../providers/collab/agentHolds";
+import type { AgentWrites } from "../../providers/collab/participants";
+import { agentCategoryKey } from "../menus/nodes/agentsPalette/agentCategoryStyle";
+import { AGENT_MARK_MS, changedWidgets, type WidgetMarks } from "./agentChangeMarks";
 
 const NO_WIDGETS: WidgetDef[] = [];
 const NO_SELECTIONS: SelectionTag[] = [];
+
+/** The tab that shows what an agent writes into a node: the pane that holds
+ *  its content, its code's or its spec's, for either; its Widgets tab for a
+ *  widget's value; none for a setting, or for a tab the node lacks. */
+function tabShowingWrites(
+    writes: AgentWrites | null,
+    tabs: { code: boolean; grammar: boolean; widgets: boolean },
+): string | null {
+    switch (writes) {
+        case "code":
+            return tabs.code ? "code" : tabs.grammar ? "grammar" : null;
+        case "spec":
+            return tabs.grammar ? "grammar" : tabs.code ? "code" : null;
+        case "widgets":
+            return tabs.widgets ? "widgets" : null;
+        default:
+            return null;
+    }
+}
 
 /** What one resolution of the node's code came from: the code as written,
  * its chips unresolved, and the scope they were resolved in. */
@@ -135,14 +158,17 @@ function NodeEditor({
     const [replacedCode, setReplacedCode] = useState<string>(""); // python or grammar with marks resolved
     const [replacedCodeDirty, setReplacedCodeDirty] = useState<number>(0); // code has to rerun every time button is pressed (having changes or not)
     const [fullscreen, setFullscreen] = useState<string>("");
-    const { dashboardOn, markDirty, markNodeStale, requestAutoRun, nodes: flowNodes } = useFlowContext();
-    // A template that declares opensOnWidgets (Data Loading) opens on its
-    // Widgets tab, where the user sets what its code reads, while its code
-    // reads one of its widgets; its code stays on the Code tab. A node whose
-    // code reads none, such as an example's literal loader, opens on its code.
-    const opensOnWidgets = !dashboardOn && widgetsTab && code
-        && tryGetNodeDescriptor(nodeType)?.opensOnWidgets === true;
-    const widgetsFirst = (written: unknown, held: unknown) => opensOnWidgets && readsAWidget(held, written);
+    const { dashboardOn, markDirty, markNodeStale, requestAutoRun, nodes: flowNodes, dataflowDoc } = useFlowContext();
+    // A template that declares opensOnControls (Data Loading, Data Export)
+    // shows only its controls on its Widgets tab, as a dashboard tile shows
+    // them: each widget's label and control, then the behavior's own (Data
+    // Export's Download), with no tags, edits, new widgets or selections. The
+    // node opens there while its code reads one of its widgets; its code stays
+    // on the Code tab. A node whose code reads none, such as an example's
+    // literal loader, opens on its code.
+    const controlsOnly = widgetsTab && tryGetNodeDescriptor(nodeType)?.opensOnControls === true;
+    const opensOnControls = !dashboardOn && controlsOnly && code;
+    const widgetsFirst = (written: unknown, held: unknown) => opensOnControls && readsAWidget(held, written);
     // Not the literal "code": grammar-only kinds (autk-grammar, vis-vega declare
     // hasCode:false) have no code pane, so hardcoding it left NO pane active on
     // mount and the editor rendered inside a display:none tab (#157).
@@ -156,15 +182,52 @@ function NodeEditor({
     // user picks a tab.
     const tabSettledRef = useRef(Boolean(defaultValue) && normalizeWidgets(data.widgets).length > 0);
 
+    // While an agent is writing the node (agentHolds: its awareness says so,
+    // with or without the node's lock), the node shows what it writes, in
+    // every tab: its code or spec, or its Widgets tab. The tab it had stays
+    // `activeTab`, and the node shows it again once the agent is done. A tab
+    // a person picks meanwhile shows at once, and stays.
+    const hold = useAgentHold(data.nodeId);
+    const heldTab = hold && !dashboardOn ? tabShowingWrites(hold.writes, { code, grammar, widgets: widgetsTab }) : null;
+    const [pickedWhileHeld, setPickedWhileHeld] = useState(false);
+    useEffect(() => {
+        if (!heldTab) setPickedWhileHeld(false);
+    }, [heldTab]);
+    const shownTab = heldTab && !pickedWhileHeld ? heldTab : activeTab;
+
     // #662: the node's widgets. Node data holds them (TrillGenerator saves
     // data.widgets), set directly as data.code is, so a value change does not
     // re-render the canvas; this state re-renders the editors.
     const [widgets, setWidgets] = useState<WidgetDef[]>(() => normalizeWidgets(data.widgets));
     const dataWidgets = data.widgets;
+    // The widgets as the node last showed them, and the ones this tab wrote.
+    const shownWidgetsRef = useRef<WidgetDef[]>(widgets);
+    const ownWidgetsRef = useRef<unknown>(undefined);
+    // The widgets an agent's change just set, marked for a moment in its tint.
+    const [widgetMarks, setWidgetMarks] = useState<WidgetMarks | null>(null);
     useEffect(() => {
-        // Replaced from outside: a package template's widgets seeded on drop.
-        setWidgets(normalizeWidgets(dataWidgets));
+        // Replaced from outside: a package template's widgets seeded on drop,
+        // or another tab's or an agent's change, through the dataflow's doc.
+        const next = normalizeWidgets(dataWidgets);
+        const before = shownWidgetsRef.current;
+        shownWidgetsRef.current = next;
+        setWidgets(next);
+        if (dataWidgets === ownWidgetsRef.current) return;
+        const writer = agentHoldOf(data.nodeId);
+        if (writer?.writes !== "widgets") return;
+        const names = changedWidgets(before, next);
+        if (names.size > 0) setWidgetMarks({ names, tint: agentCategoryKey(writer.category) });
     }, [dataWidgets]);
+    useEffect(() => {
+        if (!widgetMarks) return undefined;
+        const timer = setTimeout(() => setWidgetMarks(null), AGENT_MARK_MS);
+        return () => clearTimeout(timer);
+    }, [widgetMarks]);
+    // The marks go when the agent lets go of the node, at the latest: what a
+    // tab shows once the agent is done is the node as it is.
+    useEffect(() => {
+        if (!hold) setWidgetMarks(null);
+    }, [hold]);
     // A fresh node takes its template's starter and widgets after it mounts:
     // it turns to its Widgets tab when they arrive, once, unless the user has
     // picked a tab.
@@ -175,10 +238,13 @@ function NodeEditor({
     }, [defaultCode, widgets]);
     const updateWidgets = (next: WidgetDef[]) => {
         data.widgets = next;
+        ownWidgetsRef.current = next;
         setWidgets(next);
         markNodeStale?.(data.nodeId);
         // A value tried on a dashboard never changes the dataflow (#1117).
         if (!dashboardOn) markDirty?.();
+        // Written in place, so the dataflow's doc is told: every tab gets it.
+        if (!dashboardOn) dataflowDoc?.noteNodeData?.(data.nodeId);
     };
     // An agent's applied change gives widgets new values as the Widgets tab
     // gives one (utils/nodeSettingsWriters): the node is out of date, the
@@ -193,11 +259,12 @@ function NodeEditor({
         if (!widgetsTab) return undefined;
         return registerNodeSettingWriter(data.nodeId, "widgets", (values) => writeValuesRef.current(values));
     }, [data.nodeId, widgetsTab]);
-    // A control on the node's dashboard tile sets a value as the Widgets tab
-    // does, and a viewer's run takes it (#1117). Read from node data, which
-    // updateWidgets writes at once: two controls that settle together each
-    // keep the other's value.
-    const commitTileValue = (name: string, value: WidgetValue) => {
+    // A control on the node's dashboard tile, or on the Widgets tab of a node
+    // that shows only its controls, sets a value as the full Widgets tab does,
+    // and a run takes it (a viewer's on a tile, #1117). Read from node data,
+    // which updateWidgets writes at once: two controls that settle together
+    // each keep the other's value.
+    const commitValue = (name: string, value: WidgetValue) => {
         updateWidgets(withWidgetValues(normalizeWidgets(data.widgets), { [name]: value }));
         requestAutoRun?.([data.nodeId]);
     };
@@ -216,6 +283,7 @@ function NodeEditor({
         setSelections(next);
         markNodeStale?.(data.nodeId);
         markDirty?.();
+        dataflowDoc?.noteNodeData?.(data.nodeId);
     };
     const views = useSelectionViews(data.nodeId);
     const nodeIdsKey = (Array.isArray(flowNodes) ? flowNodes : []).map((n: any) => n.id).join("\u0000");
@@ -286,10 +354,11 @@ function NodeEditor({
             }
         }
     });
-    // The play callback is registered once, so a run without a Widgets tab
-    // reads the scope from here.
-    const runScopeRef = useRef({ scope, emptyInputs, referenceGrammar });
-    runScopeRef.current = { scope, emptyInputs, referenceGrammar };
+    // The play callback is registered once, so a run without the full Widgets
+    // tab reads the scope from here, and whether WidgetsEditor resolves it.
+    const editorResolves = widgetsTab && !controlsOnly;
+    const runScopeRef = useRef({ scope, emptyInputs, referenceGrammar, editorResolves });
+    runScopeRef.current = { scope, emptyInputs, referenceGrammar, editorResolves };
     // The code last handed to the widgets, its chips unresolved, and what the
     // last resolution came from, so a grammar node's spec can be written again
     // for new scenario labels.
@@ -336,9 +405,9 @@ function NodeEditor({
         ? "output"
         : tileControls
             ? "controls"
-            : split && activeTab === "output"
+            : split && shownTab === "output"
                 ? resolveInitialEditorTab({ code, grammar, widgets: widgetsTab })
-                : activeTab;
+                : shownTab;
 
     const contentComponentBypass = useRef(false);
     // Set while a *load* is priming the widgets, so the marker round-trip it
@@ -372,14 +441,15 @@ function NodeEditor({
     const sendCodeToWidgets = (code: string) => {
         userCodeRef.current = String(code ?? "");
         setUserCode(code);
-        if (!widgetsTab) {
+        if (!runScopeRef.current.editorResolves) {
             // Why: WidgetsEditor is the bridge that resolves references and
             // hands the result to CodeEditor (via sendReplacedCode). It only
-            // mounts when the widgets tab is enabled, so for code nodes with
-            // hasWidgets=false (e.g. js-computation) a change of markersDirty
-            // has no listener and CodeEditor's interpretCode is never reached:
-            // the play spinner spins forever. Resolve here instead, with the
-            // same table, so input chips work in those nodes too.
+            // mounts on the full widgets tab, so for code nodes with
+            // hasWidgets=false (e.g. js-computation), and for a node that
+            // shows only its controls (opensOnControls), a change of
+            // markersDirty has no listener and CodeEditor's interpretCode is
+            // never reached: the play spinner spins forever. Resolve here
+            // instead, with the same table, so chips work in those nodes too.
             const { scope: runScope, emptyInputs: waiting, referenceGrammar: runGrammar } = runScopeRef.current;
             const resolved = resolveReferences(String(code ?? ""), runScope, widgetLanguage, runGrammar);
             if (waiting.length > 0) resolveError(describeEmptyInputs(waiting, runScope.inputs));
@@ -437,9 +507,14 @@ function NodeEditor({
     // the node re-renders.
     const [restoredCode, setRestoredCode] = useState<{ code: string; nonce: number } | null>(null);
     const restoreRunRef = useRef<(runCode: string) => void>(() => undefined);
+    // The code the server put back reaches the editor through the doc.
+    const showCodeRef = useRef<() => void>(() => undefined);
+    showCodeRef.current = () => {
+        if (code || grammar) setActiveTab(resolveInitialEditorTab({ code, grammar, widgets: false }));
+    };
     restoreRunRef.current = (runCode: string) => {
         setRestoredCode((prev) => ({ code: runCode, nonce: (prev?.nonce ?? 0) + 1 }));
-        if (code || grammar) setActiveTab(resolveInitialEditorTab({ code, grammar, widgets: false }));
+        showCodeRef.current();
     };
 
     // The Provenance pill is not a tab: it opens the node's runs in the
@@ -449,12 +524,14 @@ function NodeEditor({
         if (eventKey === "provenance") {
             provenanceDrawer?.openNodeProvenance({
                 nodeId: data.nodeId,
-                title: resolveNodeDisplayLabel({ nodeType, packageTemplateLabel: data.packageTemplateLabel }),
+                title: resolveNodeDisplayLabel({ nodeType, title: data.title }),
                 restore: (runCode: string) => restoreRunRef.current(runCode),
+                showCode: () => showCodeRef.current(),
             });
             return;
         }
         tabSettledRef.current = true;
+        if (heldTab) setPickedWhileHeld(true);
         setActiveTab(eventKey);
     };
 
@@ -693,7 +770,7 @@ function NodeEditor({
                                                 widgets={widgets}
                                                 dashboard
                                                 disabled={disableWidgets}
-                                                onCommit={commitTileValue}
+                                                onCommit={commitValue}
                                             />
                                         ) : null}
                                         {ownControls}
@@ -737,32 +814,47 @@ function NodeEditor({
                                         eventKey="widgets"
                                         style={widgetsPaneStyle}
                                     >
-                                        <WidgetsEditor
-                                            customWidgetsCallback={
-                                                customWidgetsCallback
-                                            }
-                                            markersDirty={markersDirty}
-                                            sendReplacedCode={sendReplacedCode}
-                                            userCode={userCode}
-                                            nodeId={data.nodeId}
-                                            data={{...data, nodeType}}
-                                            disableWidgets={disableWidgets}
-                                            valuesOnly={dashboardOn}
-                                            widgets={widgets}
-                                            onWidgetsChange={updateWidgets}
-                                            onValueChange={() => requestAutoRun?.([data.nodeId])}
-                                            language={widgetLanguage}
-                                            grammar={referenceGrammar}
-                                            onResolveError={resolveError}
-                                            inputs={inputs}
-                                            emptyInputs={emptyInputs}
-                                            selections={selections}
-                                            onSelectionsChange={updateSelections}
-                                            views={views}
-                                            nodeIds={nodeIds}
-                                            // A tile shows them with its own controls.
-                                            controls={dashboardOn ? undefined : controlsComponent}
-                                        />
+                                        {controlsOnly ? (
+                                            // Only the controls, as the node's
+                                            // tile shows them; on a dashboard
+                                            // the tile's own pane holds them.
+                                            dashboardOn ? null : (
+                                                <WidgetValueControls
+                                                    widgets={widgets}
+                                                    disabled={disableWidgets}
+                                                    onCommit={commitValue}
+                                                    controls={hasOwnControls ? controlsComponent : undefined}
+                                                    empty="This node has no widgets."
+                                                    marks={widgetMarks}
+                                                />
+                                            )
+                                        ) : (
+                                            <WidgetsEditor
+                                                customWidgetsCallback={
+                                                    customWidgetsCallback
+                                                }
+                                                marks={widgetMarks}
+                                                markersDirty={markersDirty}
+                                                sendReplacedCode={sendReplacedCode}
+                                                userCode={userCode}
+                                                nodeId={data.nodeId}
+                                                data={{...data, nodeType}}
+                                                disableWidgets={disableWidgets}
+                                                valuesOnly={dashboardOn}
+                                                widgets={widgets}
+                                                onWidgetsChange={updateWidgets}
+                                                onValueChange={() => requestAutoRun?.([data.nodeId])}
+                                                language={widgetLanguage}
+                                                grammar={referenceGrammar}
+                                                onResolveError={resolveError}
+                                                inputs={inputs}
+                                                emptyInputs={emptyInputs}
+                                                selections={selections}
+                                                onSelectionsChange={updateSelections}
+                                                views={views}
+                                                nodeIds={nodeIds}
+                                            />
+                                        )}
                                     </Tab.Pane>
                                 ) : null}
 
@@ -814,7 +906,7 @@ function NodeEditor({
                                                     widgets={widgets}
                                                     dashboard
                                                     disabled={disableWidgets}
-                                                    onCommit={commitTileValue}
+                                                    onCommit={commitValue}
                                                     aboveOutput
                                                 />
                                                 {ownControls}

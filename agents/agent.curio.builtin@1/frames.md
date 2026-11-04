@@ -1,8 +1,9 @@
 # Frames
 
 The lines that frame what the runtime hands a run: the canvas context, the dataflow block, a
-delegated task's inputs, the configuration, the worked examples and the template rosters. One
-section per line, by the name the runtime reads it by; the runtime puts what each frames after it.
+delegated task's inputs, the configuration, the worked examples, the template rosters, the list of
+skills a chat loads from and the list of a skill's files. One section per line, by the name the
+runtime reads it by; the runtime puts what each frames after it.
 In `delegated-task`, `{parent}` and `{capability}` are filled with the delegating agent and the
 capability it asked for, and in `templates-left-out`, `{count}` with how many templates a roster
 did not list. The dataflow block's other words are the sections of `dataflow-block.md`.
@@ -46,3 +47,11 @@ Installed but NOT enlisted in this project (you already have these; propose pack
 ## templates-left-out
 
 (and {count} more not listed)
+
+## skill-catalog
+
+The following skills provide specialized instructions for specific tasks. When a task matches a skill's description, call the skill.read tool with the skill's name to load its full instructions.
+
+## skill-files
+
+This skill's other files, which skill.read reads when you give it the skill's name and the file's path:

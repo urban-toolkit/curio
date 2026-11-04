@@ -1,0 +1,81 @@
+{
+  "skill_name": "node-functions",
+  "agent": "agent.curio.node-builder@1",
+  "dataflow": "docs/examples/dataflows/chicago-loop-layers.json",
+  "evals": [
+    {
+      "id": 1,
+      "dataflow": "docs/examples/dataflows/default-workflow.json",
+      "prompt": "Add a node that loads the trees.parquet and cta_stations.geojson files of the Chicago Loop Layers dataset and keeps the trees within 50 m of a CTA 'L' station.",
+      "expected_output": "One new Python node whose code loads each file on its own, curio_load_data(\"data.curio.chicago-loop-layers\", part=\"trees.parquet\") and curio_load_data(\"data.curio.chicago-loop-layers\", part=\"cta_stations.geojson\"), and returns the trees within 50 m of a station, opening no file by a path of its own.",
+      "assertions": [
+        "The answer creates one new node (node.create) of a Python code template, such as Python Computation, Data Transformation or Data Loading.",
+        "The code it writes loads the trees with curio_load_data(\"data.curio.chicago-loop-layers\", part=\"trees.parquet\"): the dataset's id and the file's name, each written as a string.",
+        "The code loads the stations the same way, with part=\"cta_stations.geojson\".",
+        "The code opens no file by a path of its own: no gpd.read_file, pd.read_parquet or curio_data_path for either file.",
+        "The code returns the trees that lie within 50 m of a station."
+      ]
+    },
+    {
+      "id": 2,
+      "dataflow": "docs/examples/dataflows/default-workflow.json",
+      "prompt": "Add a node that reads only the cells of the SCOUT flood depth raster for 2050 to 2080 without NbS that lie inside this box: north 41.53, south 41.50, west -90.60, east -90.55. Return the mean depth of the cells that hold one.",
+      "expected_output": "One new Python node whose code reads the window with curio_load_data(\"data.scout.flood-depth-2050-2080-no-nbs\", bounds=(-90.60, 41.50, -90.55, 41.53)), the box ordered west, south, east, north, and returns the mean of the cells that hold a depth.",
+      "assertions": [
+        "The answer creates one new node (node.create) of a Python code template.",
+        "The code it writes calls curio_load_data with the dataset id \"data.scout.flood-depth-2050-2080-no-nbs\" and a bounds argument.",
+        "The bounds are ordered west, south, east, north: (-90.60, 41.50, -90.55, 41.53), not in the order the prompt named them.",
+        "The code makes no window of its own: it opens no raster by a path (no rasterio.open on curio_data_path or a file name) and builds no rasterio window from the box.",
+        "The code reads the cells from the dataset curio_load_data returns, leaves out the cells with no value (masked or nodata), and returns their mean."
+      ]
+    },
+    {
+      "id": 3,
+      "dataflow": "docs/examples/dataflows/default-workflow.json",
+      "prompt": "In a Python node, label the Lincoln Park street photos with the street-scene segmentation model in my Model Catalog, and give me each photo's share of vegetation and of sky, with a link to its overlay.",
+      "expected_output": "One new Python node whose code reads the photos with curio_load_collection(\"data.curio.mapillary-sample\"), loads the model with curio_load_model(\"model.curio.ddrnet23-slim\"), and labels the photos with curio_segment(photos, model, classes=[\"vegetation\", \"sky\"]), returning its rows with vegetation_pct, sky_pct and overlay_url.",
+      "assertions": [
+        "The answer creates one new node (node.create) of a Python code template.",
+        "The code it writes reads the photos with curio_load_collection(\"data.curio.mapillary-sample\").",
+        "The code loads the model with curio_load_model and the model's id written as a string, model.curio.ddrnet23-slim (with or without @1).",
+        "The code labels the photos by calling curio_segment with the collection's rows and the loaded model, with classes naming vegetation and sky; it runs no model session and counts no pixels itself.",
+        "The code returns the rows curio_segment gives, or a part of them that keeps vegetation_pct, sky_pct and overlay_url."
+      ]
+    },
+    {
+      "id": 4,
+      "dataflow": "docs/examples/dataflows/default-workflow.json",
+      "prompt": "In a Python node, take one frame every half second from the video in the Example street survey collection, and return the frames as rows a Simple View can show as cards.",
+      "expected_output": "One new Python node whose code reads the collection with curio_load_collection(\"data.curio.storage-survey\"), takes the video's row, and for each frame at 0, 500, 1000 ms and on gets where to write it from curio_derived_file(dataset_id, file_id, t_ms, kind=\"video\"), writes the frame there, and returns the rows curio_derived_file gives.",
+      "assertions": [
+        "The answer creates one new node (node.create) of a Python code template.",
+        "The code it writes reads the collection with curio_load_collection(\"data.curio.storage-survey\") and takes the video's row from it.",
+        "For each frame, the code calls curio_derived_file with the row's dataset_id and file_id, the frame's time in milliseconds (0, 500, 1000, ...) and kind=\"video\".",
+        "The code writes each frame image to the path in the row curio_derived_file returns, and makes no folder or file path of its own (no tempfile, no hard-coded directory).",
+        "The code returns the frames' rows, which carry the thumbnail and image_url that curio_derived_file gives."
+      ]
+    }
+  ],
+  "trigger_queries": [
+    {"query": "Does curio_load_data take one file of a bundle dataset, or always the whole bundle? I only need the CTA lines file in a new node.", "should_trigger": true},
+    {"query": "In a JS step after the OpenStreetMap layers node, how would the code pull out just the roads as GeoJSON to count them by highway type?", "should_trigger": true},
+    {"query": "i saved my mapillary token in API settings as mapillary_token. can a python node use it to fetch photos near the L stations without pasting the token into the code?", "should_trigger": true},
+    {"query": "How does a node write the CTA stations to a GeoPackage file it returns, so people can download it?", "should_trigger": true},
+    {"query": "Can a node label the Lincoln Park street photos with the segmentation model from my Model Catalog and keep each photo's vegetation share? Which calls would it make?", "should_trigger": true},
+    {"query": "From the Example street survey collection, how would Python code cut a frame every half second out of its video?", "should_trigger": true},
+    {"query": "Is there a way to read only the part of the SCOUT 2050-2080 flood depth raster around downtown Davenport, not the whole GeoTIFF?", "should_trigger": true},
+    {"query": "The energy usage CSV needs a reader with special options. How does my node's code get the actual file path of that dataset?", "should_trigger": true},
+    {"query": "How would a node list every file of the Example drone orthoimagery collection, with where it can open each one?", "should_trigger": true},
+    {"query": "Could our census tracts loader also bring in the CTA lines file from the same bundle and hand on both, so the map gets two layers from one node? How?", "should_trigger": true},
+    {"query": "Which datasets in my Data Catalog cover downtown Chicago?", "should_trigger": false},
+    {"query": "Color the census tracts on the Downtown Chicago layers map with a red to blue scale.", "should_trigger": false},
+    {"query": "When I pick a tract on the map, show that tract's row in a table beside it.", "should_trigger": false},
+    {"query": "What did the Map Editor's code look like before my last edit?", "should_trigger": false},
+    {"query": "Compare the map with and without the trees layer as two scenarios.", "should_trigger": false},
+    {"query": "Let me set the tracts layer's opacity with a slider instead of editing the map.", "should_trigger": false},
+    {"query": "Pin the Downtown Chicago layers map to the dashboard for my team.", "should_trigger": false},
+    {"query": "Draw the census tracts as a Vega-Lite choropleth of RPL_THEMES.", "should_trigger": false},
+    {"query": "is there a node package for routing on the road network I could add?", "should_trigger": false},
+    {"query": "Rename the Trees node to 'Street trees' and give it a one-line description.", "should_trigger": false}
+  ]
+}

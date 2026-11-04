@@ -119,10 +119,10 @@ describe("pickEdgeAtPoint", () => {
 });
 
 describe("attachAgentOnDrop with a connection target", () => {
-  it("persists the graph first, like a node target", async () => {
-    // The backend validates the target id against the SAVED spec, so a drop
-    // onto a freshly drawn edge 400s without this flush.
-    const saveProject = jest.fn().mockResolvedValue({ id: "p1" });
+  it("waits for the server to hold the graph first, like a node target", async () => {
+    // The backend validates the target id against the dataflow as the server
+    // holds it, so a drop onto a freshly drawn edge 400s without this wait.
+    const keepDataflow = jest.fn().mockResolvedValue("p1");
     const attach = jest.fn().mockResolvedValue(undefined);
     const target: AgentDropTarget = { kind: "connection", targetId: "edge-7" };
 
@@ -130,27 +130,27 @@ describe("attachAgentOnDrop with a connection target", () => {
       projectId: null,
       target,
       agentCoord: "agent.curio.node-builder@1",
-      saveProject,
+      keepDataflow,
       attach,
     });
 
-    expect(saveProject).toHaveBeenCalled();
+    expect(keepDataflow).toHaveBeenCalled();
     expect(attach).toHaveBeenCalledWith("p1", "agent.curio.node-builder@1", target);
   });
 
-  it("still skips the flush for a canvas target", async () => {
-    const saveProject = jest.fn();
+  it("still skips the wait for a canvas target", async () => {
+    const keepDataflow = jest.fn();
     const attach = jest.fn().mockResolvedValue(undefined);
 
     await attachAgentOnDrop({
       projectId: "p1",
       target: { kind: "canvas" },
       agentCoord: "agent.curio.researcher@1",
-      saveProject,
+      keepDataflow,
       attach,
     });
 
-    expect(saveProject).not.toHaveBeenCalled();
+    expect(keepDataflow).not.toHaveBeenCalled();
   });
 });
 

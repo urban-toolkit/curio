@@ -1,4 +1,4 @@
-"""SCOUT's flood example on SCOUT's whole grid, in two scenarios from Curio's own nodes and Scout's Raster Calculator, each on an Autark map, compared on an absolute difference and a chart, and weighed against CDC's Social Vulnerability Index on the riverside tracts (#662, step 18; #819; #914).
+"""SCOUT's flood example on SCOUT's whole grid, in two scenarios from Curio's own nodes and Rasterization's Raster Calculator, each on an Autark map, compared on an absolute difference and a chart, and weighed against CDC's Social Vulnerability Index on the riverside tracts (#662, step 18; #819; #914).
 
 The shipped test dataflow ``quad-cities-flood-vulnerability.json``: a Region and a
 Projection period Python node holding the region's corners and the period, at
@@ -6,11 +6,11 @@ SCOUT's flood example's, which take every cell of SCOUT's 2592 by 2064 cell grid
 each wired into the nodes that read it; three Data Loading nodes reading the
 region's window of SCOUT's rasters, which the Data Catalog holds whole; and two
 scenarios, "No NbS" and "NbS" (its copy), each holding a Raster Calculator
-(``curio.scout@1``) that
+(``curio.rasterization@1``) that
 chooses the depth by nature-based solution (NbS) class, with its choice of NbS,
 a second that takes the depth's statistics, and an Autark map of the depth.
 Another Raster Calculator takes the size of NbS minus No NbS, which an Autark
-map after it draws on a sequential scale, and Scout's Bars charts each
+map after it draws on a sequential scale, and the Vega-Lite package's Bars charts each
 scenario's median flood depth (#720).
 
 Run All drives the whole path:
@@ -44,10 +44,10 @@ Run All drives the whole path:
    outputs, which the Autark map after it draws, its legend titled "Absolute
    change in mean flood depth (m)": 23 of the 28 tracts change, by up to
    1.603 m.
-7. Scout's Points charts each tract's SVI percentile against its mean depth
+7. The Vega-Lite package's Points charts each tract's SVI percentile against its mean depth
    in both scenarios' colors, from its rows: the 28 tracts in each scenario,
    the two Tract depth outputs stacked under their boxes, row for row.
-8. Scout's Grouped bars chart each scenario's Average depth by period over
+8. The Vega-Lite package's Grouped bars chart each scenario's Average depth by period over
    the riverside land, a row a bar: 1.988, 1.923 and 2.237 m without NbS in
    SCOUT's three periods, and 1.337, 1.691 and 1.872 m with every NbS.
 
@@ -100,14 +100,14 @@ if TYPE_CHECKING:
 
 DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "quad-cities-flood-vulnerability.json"
 TEST_NAME = "test_two_flood_scenarios_are_mapped_and_charted"
-CALCULATOR_TYPE = "curio.scout/raster-calculator"
-RASTERS_PACKAGE = "curio.scout@1"
+CALCULATOR_TYPE = "curio.rasterization/raster-calculator"
+PACKAGES = ("curio.rasterization@1", "curio.vega-lite@1")
 MAP_TYPE = "curio.builtin/autk-grammar"
 COMPARE_TYPE = "curio.builtin/compare-scenarios"
 TRANSFORMATION_TYPE = "curio.builtin/data-transformation"
 PYTHON_TYPE = "curio.builtin/computation-analysis"
 LOADER_TYPE = "curio.builtin/data-loading"
-BARS_TYPE, POINTS_TYPE, GROUPED_BARS_TYPE = "curio.scout/bars", "curio.scout/points", "curio.scout/grouped-bars"
+BARS_TYPE, POINTS_TYPE, GROUPED_BARS_TYPE = "curio.vega-lite/bars", "curio.vega-lite/points", "curio.vega-lite/grouped-bars"
 CHART_TYPES = (BARS_TYPE, POINTS_TYPE, GROUPED_BARS_TYPE)
 COLORS = {"no-nbs": "#e76f51", "nbs": "#2a9d8f"}
 #: The legend title of the Autark map after the Depth change.
@@ -200,7 +200,7 @@ def _settings(spec: dict) -> dict:
     members = _members(spec)
     fed = {edge["target"] for edge in spec["dataflow"]["edges"]}
     found = {
-        node["metadata"]["packageTemplateLabel"]: node["id"] for node in spec["dataflow"]["nodes"]
+        node["title"]: node["id"] for node in spec["dataflow"]["nodes"]
         if node["type"] == PYTHON_TYPE and node["id"] not in members and node["id"] not in fed
     }
     assert sorted(found) == ["Projection period", "Region"], found
@@ -425,11 +425,12 @@ def test_two_flood_scenarios_are_mapped_and_charted(
         project_spec=spec,
     )
     require_owner_view(page)
-    # The Raster Calculators and the charts are Scout's nodes: the account has
-    # the package because the stack starts --with-examples and the dataflow
-    # declares it.
+    # The Raster Calculators are Rasterization's nodes and the charts the
+    # Vega-Lite package's: the account has both because the stack starts
+    # --with-examples and the dataflow declares them.
     store = [p.get("dirName") for p in api_json(f"{current_server}/api/packages", session["token"])["packages"]]
-    assert RASTERS_PACKAGE in store, f"{RASTERS_PACKAGE} is not in the account's store {store}: start the stack --with-examples"
+    missing = [package for package in PACKAGES if package not in store]
+    assert not missing, f"{missing} are not in the account's store {store}: start the stack --with-examples"
     for node in spec["dataflow"]["nodes"]:
         node_locator(page, node["id"]).wait_for(state="visible", timeout=45000)
     comparisons = _comparisons(spec)
@@ -565,10 +566,10 @@ def test_two_flood_scenarios_are_mapped_and_charted(
                       test_name=TEST_NAME, sweep_toasts=True)
 
     # 7. Each tract's SVI percentile against its mean depth, in both scenarios:
-    # the rows Scout's Points reads.
+    # the rows the Vega-Lite package's Points reads.
     scatter = comparisons[("tract depth", "chart")]
     rows = _chart_rows(page, scatter, 2 * RIVERSIDE_TRACTS)
-    where = "the rows Scout's Points reads"
+    where = "the rows the Vega-Lite package's Points reads"
     assert [row["scenario_name"] for row in rows] == ["No NbS"] * RIVERSIDE_TRACTS + ["NbS"] * RIVERSIDE_TRACTS, where
     assert all(0 <= row["RPL_THEMES"] <= 1 and row["mean_depth_m"] >= 0 for row in rows), (where, rows)
     # Row for row, the two Tract depth nodes' rows stacked under their boxes.
@@ -580,11 +581,11 @@ def test_two_flood_scenarios_are_mapped_and_charted(
     save_node_closeup(page, "scout-flood-vulnerability-against-depth", scatter, test_name=TEST_NAME, sweep_toasts=True)
 
     # 8. The mean depth over the riverside land in each period, in both
-    # scenarios, a row a bar: the rows Scout's Grouped bars reads.
+    # scenarios, a row a bar: the rows the Vega-Lite package's Grouped bars reads.
     period_chart = comparisons[("by period", "chart")]
     rows = _chart_rows(page, period_chart, 6)
     read = {name: [row.get(name) for row in rows] for name in ("scenario_name", "period", "mean_depth_m")}
-    where = "the rows Scout's Grouped bars reads"
+    where = "the rows the Vega-Lite package's Grouped bars reads"
     assert read["scenario_name"] == ["No NbS"] * 3 + ["NbS"] * 3, (where, read["scenario_name"])
     assert read["period"] == PERIODS * 2, (where, read["period"])
     assert read["mean_depth_m"] == PERIOD_DEPTHS["No NbS"] + PERIOD_DEPTHS["NbS"], (where, read["mean_depth_m"])

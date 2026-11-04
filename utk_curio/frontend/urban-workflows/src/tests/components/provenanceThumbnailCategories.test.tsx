@@ -20,7 +20,7 @@ import { clearCategoryDescriptors, registerCategoryDescriptor } from "../_suppor
 
 beforeAll(() => {
   registerCategoryDescriptor("acme.hydro/gauge@1", "data");
-  registerCategoryDescriptor("curio.scout/donuts@1", "vis_grammar");
+  registerCategoryDescriptor("curio.vega-lite/donuts@1", "vis_grammar");
 });
 
 afterAll(() => clearCategoryDescriptors());
@@ -38,7 +38,7 @@ beforeEach(() => {
         preview: {
           nodes: [
             { id: "a", type: "acme.hydro/gauge@1", x: 0, y: 0 },
-            { id: "b", type: "curio.scout/donuts", x: 300, y: 0 },
+            { id: "b", type: "curio.vega-lite/donuts", x: 300, y: 0 },
           ],
           edges: [{ source: "a", target: "b" }],
         },

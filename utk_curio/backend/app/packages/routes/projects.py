@@ -1,4 +1,4 @@
-"""A project's package lockfile on the wire: read, install, uninstall (memo dev/101).
+"""A project's package lockfile on the wire: read, install, uninstall (memo dev/101), and the packages a dataflow uses as its owner's store holds them, for every canvas of it.
 
 Presentation layer of the packages package (memo dev/143, B4): handlers parse (``schemas.requests``),
 call the use case and serialize (``schemas.responses``); every exception is mapped once by
@@ -10,11 +10,31 @@ from __future__ import annotations
 from flask import jsonify, request
 
 from utk_curio.backend.app.users.dependencies import require_auth
+from utk_curio.backend.app.packages.application import catalog as packages_catalog
 from utk_curio.backend.app.packages.application import project_packages as packages_project_packages
-from utk_curio.backend.app.packages.routes.common import _map_package_errors, packages_bp, require_project, user_key
+from utk_curio.backend.app.packages.routes.common import (
+    _map_package_errors,
+    opened_dataflow_packages,
+    packages_bp,
+    require_project,
+    user_key,
+)
 from utk_curio.backend.app.packages.schemas import requests
 
 # The drawer in the canvas uses these; the `/catalog` page uses `/defaults`.
+
+
+@packages_bp.route("/dataflows/<project_id>", methods=["GET"])
+@require_auth
+@_map_package_errors
+def list_dataflow_packages(project_id: str):
+    """``{"packages": [...]}``: the packages the dataflow uses, read from its
+    owner's store, for anyone who may open it by its link
+    (``opened_dataflow_packages``). Manifests only, each ``readOnly``: the
+    canvas of an editor the owner invited, and a watcher's, draws the nodes of
+    a package it does not hold from them."""
+    owners = opened_dataflow_packages(project_id)
+    return jsonify({"packages": packages_catalog.dataflow_package_payloads(owners)}), 200
 
 
 @packages_bp.route("/projects/<project_id>", methods=["GET"])

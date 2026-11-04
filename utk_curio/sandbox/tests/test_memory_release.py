@@ -4,16 +4,24 @@ When the last request in flight has finished, the sandbox returns what its
 allocators keep free to the system (``sandbox/util/memory_release.py``). These
 tests pin the parts: the release runs once the last response has been sent and
 never while one is still being served, the sandbox app is served through it,
-and on glibc the release returns the freed heap memory a request thread left
-behind. ``test_rerun_memory.py`` measures the whole effect on a real sandbox.
+on glibc the release returns the freed heap memory a request thread left
+behind, and on a many-core host what hundreds of threads freed does not stay
+in hundreds of arenas, since the launcher starts the server with its allocators
+fitted as its isolated children's are: arenas capped, Arrow allocating in them,
+and glibc's thresholds held fixed, so a block of 8 MiB or more is unmapped when
+a thread frees it, and an arena whose free top passes 16 MiB gives it back
+rather than keeping it. ``test_rerun_memory.py`` measures the whole effect on a
+real sandbox.
 """
 
 import ctypes
+import io
 import json
 import os
 import subprocess
 import sys
 import textwrap
+import types
 
 import pytest
 
@@ -151,3 +159,262 @@ def test_a_release_returns_the_heap_memory_a_request_thread_freed():
         f"the release returned {returned:.0f} MB of the {seen['freed']:.0f} MB "
         f"a request thread freed (resident {seen['before']:.0f} MB -> {seen['after']:.0f} MB)"
     )
+
+
+#: In a fresh interpreter: one block bigger than the others is mapped on its
+#: own and freed, which raises glibc's mmap and trim thresholds as a sandbox's
+#: first runs do. Then request threads, all alive at once, take turns to
+#: allocate a block, fill it and free it, so each block goes back to the top of
+#: its thread's arena. Prints the resident anonymous memory before the threads
+#: and after one release, and how many arenas glibc made, as a ``RESULT`` line
+#: of JSON. ``CURIO_TEST_PRIMER_MIB`` and ``CURIO_TEST_BLOCK_MIB`` size the two
+#: kinds of block (9 and 8 MiB unless set), and ``CURIO_TEST_BLOCKS_A_TURN``
+#: says how many blocks a thread allocates in its turn before it frees them
+#: (one unless set).
+THREADS_FREE_THEN_RELEASE = textwrap.dedent("""
+    import ctypes
+    import json
+    import os
+    import re
+    import tempfile
+    import threading
+
+    from utk_curio.sandbox.util.memory_release import release_free_memory
+
+    libc = ctypes.CDLL(None)
+    libc.malloc.restype = ctypes.c_void_p
+    libc.malloc.argtypes = [ctypes.c_size_t]
+    libc.free.argtypes = [ctypes.c_void_p]
+    libc.memset.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_size_t]
+    libc.fopen.restype = ctypes.c_void_p
+    libc.fopen.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+    libc.fclose.argtypes = [ctypes.c_void_p]
+    libc.malloc_info.argtypes = [ctypes.c_int, ctypes.c_void_p]
+
+    MIB = 2**20
+    PRIMER = int(os.environ.get("CURIO_TEST_PRIMER_MIB", "9")) * MIB
+    BLOCK = int(os.environ.get("CURIO_TEST_BLOCK_MIB", "8")) * MIB
+    BLOCKS_A_TURN = int(os.environ.get("CURIO_TEST_BLOCKS_A_TURN", "1"))
+    THREADS = 96
+
+    def anon_mib():
+        with open("/proc/self/status") as handle:
+            for line in handle:
+                if line.startswith("RssAnon:"):
+                    return int(line.split()[1]) / 1024
+
+    def arenas():
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, "malloc.xml")
+            stream = libc.fopen(path.encode(), b"w")
+            libc.malloc_info(0, stream)
+            libc.fclose(stream)
+            with open(path) as handle:
+                return len(re.findall(r"<heap nr=", handle.read()))
+
+    primer = libc.malloc(PRIMER)
+    libc.memset(primer, 1, PRIMER)
+    libc.free(primer)
+    release_free_memory()
+    before = anon_mib()
+
+    together = threading.Barrier(THREADS)
+    turn = threading.Lock()
+
+    def request_thread():
+        together.wait()
+        with turn:
+            blocks = [libc.malloc(BLOCK) for _ in range(BLOCKS_A_TURN)]
+            for block in blocks:
+                libc.memset(block, 1, BLOCK)
+            for block in blocks:
+                libc.free(block)
+        together.wait()
+
+    threads = [threading.Thread(target=request_thread) for _ in range(THREADS)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    release_free_memory()
+    print("RESULT " + json.dumps({
+        "before": before, "after": anon_mib(), "arenas": arenas(), "threads": THREADS,
+        "block": BLOCK / MIB, "blocks_a_turn": BLOCKS_A_TURN,
+        "arena_max": os.environ.get("MALLOC_ARENA_MAX"),
+        "mmap_threshold": os.environ.get("MALLOC_MMAP_THRESHOLD_"),
+        "trim_threshold": os.environ.get("MALLOC_TRIM_THRESHOLD_"),
+    }))
+""")
+
+
+def _sandbox_launch_environment(monkeypatch):
+    """The environment the launcher starts the sandbox server with
+    (``utk_curio.cli.services.start_sandbox``), no process started."""
+    from utk_curio.cli import services
+
+    started = {}
+
+    class _Started:
+        def __init__(self):
+            self.stdout = io.StringIO("")
+            self.stderr = None
+
+        def poll(self):
+            return 0
+
+    def popen(args, **kwargs):
+        started["env"] = kwargs["env"]
+        return _Started()
+
+    monkeypatch.setattr(services, "subprocess", types.SimpleNamespace(
+        Popen=popen, PIPE=subprocess.PIPE, STDOUT=subprocess.STDOUT))
+    monkeypatch.setattr(services, "_kill_port", lambda port: None)
+    monkeypatch.setattr(services, "_skip_dep_install", lambda: True)
+    services.start_sandbox("127.0.0.1", 2999)
+    return started["env"]
+
+
+@pytest.mark.skipif(
+    not sys.platform.startswith("linux") or not hasattr(ctypes.CDLL(None), "malloc_trim"),
+    reason="malloc_trim is glibc's",
+)
+def test_on_a_many_core_host_the_idle_sandbox_keeps_little_of_what_its_threads_freed(monkeypatch):
+    from utk_curio.sandbox.isolation.lifecycle import malloc_arena_cap
+
+    # glibc's own limit on a 64-core host (eight arenas a core), as on the CI
+    # GPU runners, whatever this runner has.
+    monkeypatch.setenv("MALLOC_ARENA_MAX", "512")
+    monkeypatch.setenv("CURIO_EXEC_MEMORY_MB", "4096")
+    cap = malloc_arena_cap(4096)
+    env = _sandbox_launch_environment(monkeypatch)
+    done = subprocess.run(
+        [sys.executable, "-c", THREADS_FREE_THEN_RELEASE],
+        cwd=REPO_ROOT, env={**env, "PYTHONPATH": REPO_ROOT},
+        capture_output=True, text=True, timeout=300,
+    )
+    lines = [line for line in done.stdout.splitlines() if line.startswith("RESULT ")]
+    assert done.returncode == 0 and lines, (
+        f"exit {done.returncode}\n{done.stdout[-2000:]}\n{done.stderr[-4000:]}"
+    )
+    seen = json.loads(lines[-1][len("RESULT "):])
+    kept = seen["after"] - seen["before"]
+    # One freed block at the top of each arena the cap allows, and some slack.
+    allowed = cap * seen["block"] + 64
+    assert kept <= allowed, (
+        f"after the idle release the sandbox kept {kept:.0f} MiB of what "
+        f"{seen['threads']} request threads freed, in {seen['arenas']} malloc arenas "
+        f"(MALLOC_ARENA_MAX {seen['arena_max']}); at most {allowed:.0f} MiB, with its "
+        f"arenas capped at {cap} as an isolated child's are"
+    )
+    assert seen["arenas"] <= cap, seen
+
+
+@pytest.mark.skipif(
+    not sys.platform.startswith("linux") or not hasattr(ctypes.CDLL(None), "malloc_trim"),
+    reason="malloc_trim is glibc's",
+)
+@pytest.mark.parametrize("block_mib, blocks_a_turn", [
+    pytest.param(12, 1, id="a block past the mmap threshold"),
+    pytest.param(6, 3, id="blocks under it whose free top passes the trim threshold"),
+])
+def test_the_idle_sandbox_keeps_none_of_the_big_blocks_its_threads_freed(
+        monkeypatch, block_mib, blocks_a_turn):
+    """With the thresholds glibc raises by itself, what a request thread
+    frees goes back to the top of the thread's arena. A 24 MiB block freed
+    first raises the mmap threshold to 24 MiB and the trim threshold to
+    48 MiB, so each arena keeps a 12 MiB block, or three 6 MiB blocks freed
+    together, at its top, and the idle release cannot trim it (``malloc_trim``
+    trims only the main arena's top): 16 arenas under the cap, each keeping
+    what its last thread freed. Held fixed, as the launcher holds them, a
+    block of 8 MiB or more is unmapped as soon as it is freed, and an arena
+    whose free top passes 16 MiB gives it back then."""
+    monkeypatch.setenv("MALLOC_ARENA_MAX", "512")
+    monkeypatch.setenv("CURIO_EXEC_MEMORY_MB", "4096")
+    monkeypatch.delenv("MALLOC_MMAP_THRESHOLD_", raising=False)
+    monkeypatch.delenv("MALLOC_TRIM_THRESHOLD_", raising=False)
+    env = _sandbox_launch_environment(monkeypatch)
+    sizes = {"CURIO_TEST_PRIMER_MIB": "24", "CURIO_TEST_BLOCK_MIB": str(block_mib),
+             "CURIO_TEST_BLOCKS_A_TURN": str(blocks_a_turn)}
+    done = subprocess.run(
+        [sys.executable, "-c", THREADS_FREE_THEN_RELEASE],
+        cwd=REPO_ROOT, env={**env, **sizes, "PYTHONPATH": REPO_ROOT},
+        capture_output=True, text=True, timeout=300,
+    )
+    lines = [line for line in done.stdout.splitlines() if line.startswith("RESULT ")]
+    assert done.returncode == 0 and lines, (
+        f"exit {done.returncode}\n{done.stdout[-2000:]}\n{done.stderr[-4000:]}"
+    )
+    seen = json.loads(lines[-1][len("RESULT "):])
+    kept = seen["after"] - seen["before"]
+    assert kept <= seen["block"], (
+        f"after the idle release the sandbox kept {kept:.0f} MiB of what {seen['threads']} "
+        f"request threads freed, {seen['blocks_a_turn']} block(s) of {seen['block']:.0f} MiB "
+        f"each, in {seen['arenas']} malloc arenas (MALLOC_ARENA_MAX {seen['arena_max']}, "
+        f"MALLOC_MMAP_THRESHOLD_ {seen['mmap_threshold']}, MALLOC_TRIM_THRESHOLD_ "
+        f"{seen['trim_threshold']}); at most one block: what glibc neither unmaps nor trims "
+        "stays at the top of its arena"
+    )
+
+
+#: In a fresh interpreter: the pool Arrow allocates from, as a ``RESULT`` line.
+ARROW_POOL = textwrap.dedent("""
+    import json
+
+    import pyarrow
+
+    print("RESULT " + json.dumps({"pool": pyarrow.default_memory_pool().backend_name}))
+""")
+
+
+def test_the_sandbox_server_allocates_arrow_memory_in_its_capped_arenas(monkeypatch):
+    monkeypatch.delenv("ARROW_DEFAULT_MEMORY_POOL", raising=False)
+    env = _sandbox_launch_environment(monkeypatch)
+    done = subprocess.run(
+        [sys.executable, "-c", ARROW_POOL],
+        cwd=REPO_ROOT, env={**env, "PYTHONPATH": REPO_ROOT},
+        capture_output=True, text=True, timeout=120,
+    )
+    lines = [line for line in done.stdout.splitlines() if line.startswith("RESULT ")]
+    assert done.returncode == 0 and lines, (
+        f"exit {done.returncode}\n{done.stdout[-2000:]}\n{done.stderr[-4000:]}"
+    )
+    pool = json.loads(lines[-1][len("RESULT "):])["pool"]
+    assert pool == "system", (
+        f"the sandbox server's Arrow allocates from {pool}, not from glibc's capped arenas; "
+        "in test-gpu's repeat runs its mimalloc pool kept up to about 500 MiB a sandbox "
+        "that the idle release did not reach"
+    )
+
+
+def test_the_sandbox_server_fits_its_allocators_as_its_isolated_children_do():
+    from utk_curio.sandbox.isolation.lifecycle import (
+        malloc_arena_cap,
+        server_environment,
+        zygote_environment,
+    )
+
+    fixed = {"MALLOC_MMAP_THRESHOLD_": str(8 * 2**20), "MALLOC_TRIM_THRESHOLD_": str(16 * 2**20)}
+    for budget in (4096, 16384):
+        server = server_environment({"CURIO_EXEC_MEMORY_MB": str(budget), "MALLOC_ARENA_MAX": "512"})
+        assert server["MALLOC_ARENA_MAX"] == str(malloc_arena_cap(budget))
+        assert server["ARROW_DEFAULT_MEMORY_POOL"] == "system"
+        assert {name: server.get(name) for name in fixed} == fixed, (
+            "glibc's thresholds rise by themselves unless they are set; risen, a big block a "
+            "request frees stays at the top of an arena the idle release cannot trim"
+        )
+        # The zygote inherits the server's environment: its children's cap is
+        # the one their budget gives, not lowered by the server's.
+        children = zygote_environment({"memory_mb": budget}, server)
+        assert children["MALLOC_ARENA_MAX"] == str(malloc_arena_cap(budget))
+        assert children["ARROW_DEFAULT_MEMORY_POOL"] == "system"
+        assert {name: children.get(name) for name in fixed} == fixed
+    assert server_environment({})["MALLOC_ARENA_MAX"] == "16", "the default budget, 4096 MB"
+    assert server_environment({"CURIO_EXEC_MEMORY_MB": "oops"})["MALLOC_ARENA_MAX"] == "16"
+    assert server_environment({"MALLOC_ARENA_MAX": "4"})["MALLOC_ARENA_MAX"] == "4", (
+        "an operator's lower cap stands"
+    )
+    assert server_environment({"ARROW_DEFAULT_MEMORY_POOL": "jemalloc"})[
+        "ARROW_DEFAULT_MEMORY_POOL"] == "jemalloc", "an operator's pool stands"
+    operator = server_environment({"MALLOC_MMAP_THRESHOLD_": "65536"})
+    assert (operator.get("MALLOC_MMAP_THRESHOLD_"), operator.get("MALLOC_TRIM_THRESHOLD_")) == (
+        "65536", fixed["MALLOC_TRIM_THRESHOLD_"]), "an operator's threshold stands"

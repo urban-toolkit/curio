@@ -2,6 +2,7 @@ import React from "react";
 import { HeaderDrawer } from "../layout/HeaderDrawer";
 import { useFlowContext } from "../../providers/FlowProvider";
 import type { NodeProvenanceTarget } from "../../providers/provenanceDrawerContext";
+import { resolveNodeDisplayLabel } from "../../utils/palettePackageFactoryDraft";
 import { DataflowProvenance } from "./DataflowProvenance";
 import { NodeRunsProvenance } from "./NodeRunsProvenance";
 
@@ -20,8 +21,12 @@ export interface ProvenanceDrawerProps {
  * with the catalog drawers' pin and width, listed as Curio's Nest lists work.
  */
 export function ProvenanceDrawer({ presented, onRequestClose, onExitComplete, target }: ProvenanceDrawerProps) {
-  const { workflowNameRef } = useFlowContext();
+  const { workflowNameRef, nodes } = useFlowContext();
   const node = target.kind === "node" ? target : null;
+  // The node's name as its header shows it now, so a rename shows at once;
+  // the one it opened with while the canvas holds no data for it.
+  const live = node ? nodes?.find((n) => n.id === node.nodeId)?.data : undefined;
+  const nodeName = live?.nodeType ? resolveNodeDisplayLabel({ nodeType: live.nodeType, title: live.title }) : node?.title;
   return (
     <HeaderDrawer
       presented={presented}
@@ -30,12 +35,18 @@ export function ProvenanceDrawer({ presented, onRequestClose, onExitComplete, ta
       title={node ? "Node provenance" : "Dataflow provenance"}
       titleId="provenance-drawer-title"
       name="provenance"
-      subtitle={node ? `Runs of ${node.title}` : `Versions of ${workflowNameRef.current || "Untitled dataflow"}`}
+      subtitle={node ? `Runs of ${nodeName}` : `Versions of ${workflowNameRef.current || "Untitled dataflow"}`}
       pinnable
       wide={false}
     >
       {node ? (
-        <NodeRunsProvenance key={node.nodeId} nodeId={node.nodeId} restore={node.restore} onNodeGone={onRequestClose} />
+        <NodeRunsProvenance
+          key={node.nodeId}
+          nodeId={node.nodeId}
+          restore={node.restore}
+          showCode={node.showCode}
+          onNodeGone={onRequestClose}
+        />
       ) : (
         <DataflowProvenance key="dataflow" />
       )}

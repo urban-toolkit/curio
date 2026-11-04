@@ -3,6 +3,7 @@ import CSS from 'csstype';
 import { ImageSource, resolveImageSources } from '../../../utils/imageColumns';
 import { backendUrl } from '../../../utils/backendUrl';
 import { apiFetch } from '../../../utils/authApi';
+import { collectionMediaPath } from '../../../utils/collectionMedia';
 import { useAuthedObjectUrl } from '../../../utils/useAuthedObjectUrl';
 
 /**
@@ -30,6 +31,10 @@ interface ImageCardGridProps {
   /** Parallel to `rows`: '1' marks a row selected from a linked Data Pool. */
   interacted: string[];
   onClickRow: (rowIndex: number) => void;
+  /** The dataflow a collection's files are read through (`collectionMediaPath`):
+   *  on an invited editor's canvas, the owner's, whose collections the
+   *  editor's runs load. */
+  dataflowId?: string | null;
 }
 
 const containerStyle: CSS.Properties = {
@@ -71,10 +76,11 @@ const fieldStyle: CSS.Properties = {
 
 /**
  * An `<img>` for one cell. A same-origin `/api/...` image is fetched with the
- * token; see useAuthedObjectUrl.
+ * token; see useAuthedObjectUrl. A collection's file is read through the
+ * canvas's dataflow (`collectionMediaPath`).
  */
-function FrameImage({ source, alt }: { source: ImageSource; alt: string }) {
-  const authed = useAuthedObjectUrl(source.kind === 'authed' ? source.path : null);
+function FrameImage({ source, alt, dataflowId }: { source: ImageSource; alt: string; dataflowId: string | null }) {
+  const authed = useAuthedObjectUrl(source.kind === 'authed' ? collectionMediaPath(source.path, dataflowId) : null);
   const src = source.kind === 'direct' ? source.src : authed.url;
   if (!src) {
     // Still fetching, or the fetch failed. Hold the slot either way so the
@@ -120,14 +126,22 @@ const playButtonStyle: CSS.Properties = {
  * Plays one file. `<video>` and `<audio>` cannot send the token, so the
  * backend is asked for a short-lived signed link first.
  */
-function Player({ datasetId, fileId, kind }: { datasetId: string; fileId: string; kind: 'video' | 'audio' }) {
+function Player({ datasetId, fileId, kind, dataflowId }: {
+  datasetId: string;
+  fileId: string;
+  kind: 'video' | 'audio';
+  dataflowId: string | null;
+}) {
   const [src, setSrc] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     apiFetch<{ url: string }>(
-      `/api/datasets/${encodeURIComponent(datasetId)}/media/${encodeURIComponent(fileId)}/link`,
+      collectionMediaPath(
+        `/api/datasets/${encodeURIComponent(datasetId)}/media/${encodeURIComponent(fileId)}/link`,
+        dataflowId,
+      ),
       { method: 'POST' },
     )
       .then((res) => !cancelled && setSrc(`${backendUrl()}${res.url}`))
@@ -135,7 +149,7 @@ function Player({ datasetId, fileId, kind }: { datasetId: string; fileId: string
     return () => {
       cancelled = true;
     };
-  }, [datasetId, fileId]);
+  }, [datasetId, fileId, dataflowId]);
 
   if (error) return <div style={{ ...captionStyle, color: '#b42318' }}>{error}</div>;
   if (!src) return <div style={{ ...imgStyle, background: '#f8fafc' }} />;
@@ -169,6 +183,7 @@ export default function ImageCardGrid({
   imageColumns,
   interacted,
   onClickRow,
+  dataflowId = null,
 }: ImageCardGridProps) {
   const [page, setPage] = useState(0);
   const [playing, setPlaying] = useState<number | null>(null);
@@ -203,7 +218,7 @@ export default function ImageCardGrid({
           >
             {media && playing === index ? (
               <div onClick={(e) => e.stopPropagation()}>
-                <Player {...media} />
+                <Player {...media} dataflowId={dataflowId} />
               </div>
             ) : (
               <div style={{ ...imageRowStyle, position: 'relative' }}>
@@ -214,6 +229,7 @@ export default function ImageCardGrid({
                       key={`${column}-${i}`}
                       source={source}
                       alt={`${column} ${index}`}
+                      dataflowId={dataflowId}
                     />
                   )),
                 )}

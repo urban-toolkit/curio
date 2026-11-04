@@ -5,13 +5,16 @@ visitor who opens the page or picks values someone ran before gets the outputs
 at once, and a request for a run already going joins it. So do the owner's own
 runs of a saved dataflow, a play or a run on the server
 (``execution/node_exec.py``), whose outputs the owner reads through the
-dataflow's routes. Each output is kept for :data:`KEPT_DAYS` after it was
-made, under a key of what made it (:func:`step_key`); past that time it goes,
-and the next run that needs it makes it again. Each dataflow keeps at most
-:data:`MAX_KEPT_BYTES` of what its viewers made; past it the least recently
-used go. What the owner's runs made (``made_by``) is bounded by its days
-alone: the owner's open canvas shows it. An output goes with its artifacts:
-the sandbox forgets the session that made them (``common/kept_sessions.py``).
+dataflow's routes, and the runs of an editor the owner invited, whose outputs
+are his: kept for his account alone (:func:`account_private`), read under any
+of his sign-ins and by no one else. Each output is kept for :data:`KEPT_DAYS`
+after it was made, under a key of what made it (:func:`step_key`); past that
+time it goes, and the next run that needs it makes it again. Each dataflow
+keeps at most :data:`MAX_KEPT_BYTES` of what its viewers made; past it the
+least recently used go. What the owner's and the editors' runs made
+(``made_by``) is bounded by its days alone: their open canvases show it. An
+output goes with its artifacts: the sandbox forgets the session that made them
+(``common/kept_sessions.py``).
 The sweep runs every :data:`PRUNE_INTERVAL_HOURS` (:func:`start_prune_scheduler`),
 at the end of each run, and at the first start after a restart.
 
@@ -56,9 +59,13 @@ TAB_OWN_HOURS = 1
 #: The most one dataflow keeps of what one maker made; past it the least
 #: recently used go.
 MAX_KEPT_BYTES = 2 * 1024 ** 3
-#: Who made a kept output: the dataflow's owner, or a viewer of its dashboard.
+#: Who made a kept output: the dataflow's owner, an editor the owner invited,
+#: or a viewer of its dashboard.
 MADE_BY_OWNER = "owner"
+MADE_BY_EDITOR = "editor"
 MADE_BY_VIEWER = "viewer"
+#: The makers whose outputs are bounded by their days alone, private or not.
+_FOR_THEIR_DAYS = (MADE_BY_OWNER, MADE_BY_EDITOR)
 #: The ``private_to`` of an output the owner's keys made, or one made from
 #: such an output: never a digest, so no run token, and so no viewer, reads
 #: or reuses it.
@@ -74,6 +81,13 @@ STORE_SWEEP_TIMEOUT = 300
 def digest(token: str) -> str:
     """The digest a run token is kept as (``private_to``)."""
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def account_private(user_id) -> str:
+    """The ``private_to`` of an output the runs of an editor the owner
+    invited kept: his account's alone. Never a digest (64 hex digits) or
+    :data:`OWNER_ONLY`, so no run token and no owner reads it."""
+    return f"account:{user_id}"
 
 
 def canonical(value) -> str:
@@ -256,17 +270,18 @@ def forget_sessions(session_ids) -> None:
 
 def _alive(now):
     """The kept outputs still within their time, whether or not a sweep has
-    run since: a shared one, and every one the owner's runs made, for
-    :data:`KEPT_DAYS` after it was made; a tab's own for :data:`TAB_OWN_HOURS`."""
-    owners = KeptStepOutput.made_by == MADE_BY_OWNER
+    run since: a shared one, and every one the owner's or an editor's runs
+    made, for :data:`KEPT_DAYS` after it was made; a tab's own for
+    :data:`TAB_OWN_HOURS`."""
+    for_their_days = KeptStepOutput.made_by.in_(_FOR_THEIR_DAYS)
     return db.or_(
         db.and_(
-            db.or_(KeptStepOutput.private_to.is_(None), owners),
+            db.or_(KeptStepOutput.private_to.is_(None), for_their_days),
             KeptStepOutput.created_at >= now - timedelta(days=KEPT_DAYS),
         ),
         db.and_(
             KeptStepOutput.private_to.isnot(None),
-            db.not_(owners),
+            db.not_(for_their_days),
             KeptStepOutput.created_at >= now - timedelta(hours=TAB_OWN_HOURS),
         ),
     )
@@ -302,14 +317,53 @@ def owner_entry(project_id: str, name: str) -> Optional[KeptStepOutput]:
 
 
 def project_entry(project_id: str, name: str) -> Optional[KeptStepOutput]:
-    """The live output any run of *project_id* kept, its owner's or a
+    """The live output a run of *project_id* kept, its owner's or a
     viewer's, that holds the artifact *name*, the newest, or None: whether
-    *name* is one of that dataflow's kept outputs."""
+    *name* is one of that dataflow's kept outputs. An editor's are his own,
+    so none of them is one."""
     if not name:
         return None
     return _newest_holding(
-        KeptStepOutput.query.filter(KeptStepOutput.project_id == project_id), name, made_by=None,
+        KeptStepOutput.query.filter(
+            KeptStepOutput.project_id == project_id, KeptStepOutput.made_by != MADE_BY_EDITOR,
+        ),
+        name, made_by=None,
     )
+
+
+def _editors(user_id):
+    """The entries the runs of the account *user_id* kept as an editor."""
+    return KeptStepOutput.query.filter(KeptStepOutput.private_to == account_private(user_id))
+
+
+def editor_entry(project_id: str, user_id, name: str) -> Optional[KeptStepOutput]:
+    """The live output the runs of the account *user_id* kept as an editor
+    of *project_id* that holds the artifact *name*, the newest, or None. Only
+    that account reads it, as only the owner reads hers (:func:`owner_entry`)."""
+    if not name or user_id is None:
+        return None
+    return _newest_holding(
+        _editors(user_id).filter(KeptStepOutput.project_id == project_id), name, made_by=MADE_BY_EDITOR,
+    )
+
+
+def editor_outputs_by_key(project_id: str, user_id) -> dict:
+    """``{step key: entry}``: the newest live output the runs of the account
+    *user_id* kept as an editor of *project_id* under each key, as
+    :func:`owner_outputs_by_key` gives the owner's."""
+    newest: dict = {}
+    if user_id is None:
+        return newest
+    for entry in (
+        _editors(user_id).filter(
+            KeptStepOutput.project_id == project_id, KeptStepOutput.made_by == MADE_BY_EDITOR,
+        )
+        .filter(_alive(naive_utc_now()))
+        .order_by(KeptStepOutput.created_at.desc())
+        .all()
+    ):
+        newest.setdefault(entry.step_key, entry)
+    return newest
 
 
 def owner_outputs_by_key(project_id: str) -> dict:
@@ -344,13 +398,24 @@ def owner_session(user_id, name: str) -> Optional[str]:
     return entry.session_id if entry is not None else None
 
 
+def editor_session(user_id, name: str) -> Optional[str]:
+    """The kept session that made the artifact *name*, when the runs of the
+    account *user_id* kept it as an editor of another account's dataflow,
+    else None."""
+    if not name or user_id is None:
+        return None
+    entry = _newest_holding(_editors(user_id), name, made_by=MADE_BY_EDITOR)
+    return entry.session_id if entry is not None else None
+
+
 def read_session(user_id, name: str, sign_in: Optional[str]) -> Optional[str]:
     """The session the account *user_id*, signed in as *sign_in*, reads the
     artifact *name* under where no dataflow is named: the kept session that
     made it, when the runs of a dataflow the account owns kept it
-    (:func:`owner_session`), else the sign-in, as when that lookup fails."""
+    (:func:`owner_session`) or the account's own runs as an editor did
+    (:func:`editor_session`), else the sign-in, as when that lookup fails."""
     try:
-        session = owner_session(user_id, name)
+        session = owner_session(user_id, name) or editor_session(user_id, name)
     except Exception:  # noqa: BLE001 - a read never fails on this lookup
         log.warning("could not look up the kept output %s", name)
         try:
@@ -553,8 +618,9 @@ def prune(now=None) -> int:
         .group_by(KeptStepOutput.project_id, KeptStepOutput.made_by).all()
     )
     for project_id, made_by, total in totals:
-        if made_by == MADE_BY_OWNER:
-            # Bounded by its days alone: the owner's open canvas shows it.
+        if made_by in _FOR_THEIR_DAYS:
+            # Bounded by its days alone: the owner's or the editor's open
+            # canvas shows it.
             continue
         total = int(total or 0) - sum(
             e.size_bytes for e in going.values() if e.project_id == project_id and e.made_by == made_by

@@ -6,7 +6,7 @@ Join its operation and output (``spatial_join_settings``), a Data Pool its
 conflict modes (``data_pool_settings``) and a Simple View its image column
 (``simple_vis_settings``). Each module parses its setting by its node's own
 rule, says why a template keeps none (only one whose ``behavior`` is the
-node's does), words it as the node does for the review card, and reads what a
+node's does), words it as the node does for the change card, and reads what a
 saved node's setting makes it do. A change of a node on the canvas is parsed
 by the same rule, each key it gives picked as the node's select picks it and
 each key it leaves out kept (``parse_change``, ``after``). This module walks
@@ -78,7 +78,7 @@ def changes_anything(metadata: object, changes: dict) -> bool:
 
 
 def describe_change(changes: dict) -> list[str]:
-    """Each setting *changes* picks, as the review card words it: each key it
+    """Each setting *changes* picks, as the change card words it: each key it
     gives, one put back to its default among them, and a Simple View's every
     image column in the view's own word."""
     return [module.describe(changes[module.KEY]) for module in SETTINGS if module.KEY in changes]
@@ -119,7 +119,7 @@ def of(holder: dict) -> dict:
 
 
 def describe(holder: dict) -> list[str]:
-    """Each setting *holder* carries, as the review card words it."""
+    """Each setting *holder* carries, as the change card words it."""
     return [module.describe(holder[module.KEY]) for module in SETTINGS if holder.get(module.KEY)]
 
 

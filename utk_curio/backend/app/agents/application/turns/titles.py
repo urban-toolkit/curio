@@ -14,7 +14,7 @@ from utk_curio.backend.app.agents.infrastructure.providers import ChatTurn
 from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 from utk_curio.backend.app.agents.repositories import ledger
 from utk_curio.backend.app.agents.infrastructure import providers as agents_providers
-from utk_curio.backend.app.projects import storage as projects_storage
+from utk_curio.backend.app.collaboration import dataflow_docs
 
 
 # ── conversation titles (memo dev/25) ────────────────────────────────────────
@@ -26,6 +26,12 @@ def title_prompt() -> str:
 
 # A 3–4 word title needs very few tokens; keep the utility call cheap.
 TITLE_MAX_OUTPUT_TOKENS = 16
+#: The room a model that thinks gets for its thinking before it writes the
+#: title (``providers``, its "A model that thinks"): a model whose server
+#: counts its thinking against the cap spends a bare 16 tokens thinking and
+#: writes no title. The title is written before the turn's ``done``, so its
+#: room stays small: at most about 20 s at 48 tokens a second.
+TITLE_THINKING_TOKENS = 1024
 
 
 def sanitize_title(raw: object) -> str | None:
@@ -74,6 +80,7 @@ def _generate_conversation_title(
             ],
             max_output_tokens=TITLE_MAX_OUTPUT_TOKENS,
             usage_out=usage_sink,
+            thinking_tokens=TITLE_THINKING_TOKENS,
         )
         ledger.record_housekeeping_usage(
             user_key, usage_sink, note="title-call", llm_config_id=config.config_id
@@ -81,13 +88,13 @@ def _generate_conversation_title(
         title = sanitize_title(raw)
         if title is None:
             return
-        spec = projects_storage.read_spec(user_key, project_id)
+        spec = dataflow_docs.live(user_key, project_id)
         if spec is None:
             return
         record = attachments.get_attachment(spec, attachment_id)
         if record is None or record.get("title") or record.get("titleEdited"):
             return
         attachments.set_title(spec, attachment_id, title, edited=False)
-        projects_storage.write_spec(user_key, project_id, spec)
+        dataflow_docs.write(user_key, project_id, spec, dataflow_docs.by_agent(record.get("coord"), user_key, "title"))
     except Exception:
         pass  # a missing title is a cosmetic gap, never a run error

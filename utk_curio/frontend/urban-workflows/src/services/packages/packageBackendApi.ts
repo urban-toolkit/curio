@@ -22,14 +22,19 @@ export interface PackageBackendInvokeResult {
  * handler runs in a per-invocation sandboxed worker, never in Curio's host
  * process. Non-2xx statuses throw via ``apiFetch`` (404 undeclared, 409
  * digest drift, 413/422 bounds, 503 busy, 507 data-dir cap, 502 worker
- * failure); a well-formed ``ok: false`` reply resolves normally. */
+ * failure); a well-formed ``ok: false`` reply resolves normally.
+ *
+ * *dataflowId* is the dataflow the calling node's run is of, as a play names
+ * it (`agentsDataflowId`): on another account's dataflow, an editor the owner
+ * invited then calls her copy of a package the dataflow uses. */
 export function invokePackageBackend(
     dirName: string,
     handler: string,
     payload: unknown,
+    dataflowId?: string | null,
 ): Promise<PackageBackendInvokeResult> {
     return apiFetch(
         `/api/packages/${encodeURIComponent(dirName)}/backend/${encodeURIComponent(handler)}`,
-        { method: "POST", body: JSON.stringify({ payload }) },
+        { method: "POST", body: JSON.stringify(dataflowId ? { payload, dataflowId } : { payload }) },
     );
 }

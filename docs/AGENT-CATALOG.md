@@ -2,15 +2,15 @@
 
 The Agent Catalog is where Curio's **hookable agents** live: the assistants you attach to a node, a connection, or the whole canvas.
 
-Curio has six catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the [Model Catalog](MODEL-CATALOG.md) the models they run, the Agent Catalog the assistants you attach to them, the [Discovery Catalog](DISCOVERY-CATALOG.md) the portals, storage, services and models you take datasets and models from, and the [Scenario Catalog](SCENARIO-CATALOG.md) the scenarios saved in your projects.
+Curio has seven catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the [Model Catalog](MODEL-CATALOG.md) the models they run, the Agent Catalog the assistants you attach to them, the [Skill Catalog](SKILL-CATALOG.md) the skills those assistants read, the [Discovery Catalog](DISCOVERY-CATALOG.md) the portals, storage, services and models you take datasets and models from, and the [Scenario Catalog](SCENARIO-CATALOG.md) the scenarios saved in your projects.
 
 This guide is in six parts, plus operator notes:
 
-- [1. What is the Agent Catalog?](#1-what-is-the-agent-catalog): agents, the ones that ship and how each picks what to run, and the storage layers.
+- [1. What is the Agent Catalog?](#1-what-is-the-agent-catalog): agents, the ones that ship, the skills each one holds and how each picks what to run, and the storage layers.
 - [2. Surfaces and workflows](#2-surfaces-and-workflows): the three places you manage agents, the action matrix, walkthroughs, and catalog settings.
-- [3. Using an agent in a dataflow](#3-using-an-agent-in-a-dataflow): adding, attaching, and the difference between the two.
+- [3. Using an agent in a dataflow](#3-using-an-agent-in-a-dataflow): adding, attaching, the difference between the two, and the editors the owner invites.
 - [4. LLM configurations](#4-llm-configurations): which model answers, and where it is set.
-- [5. Importing, publishing, and sharing](#5-importing-publishing-and-sharing): your own definitions, and offering them to everyone.
+- [5. Importing, publishing, and sharing](#5-importing-publishing-and-sharing): your own definitions and offering them to everyone, and an agent of your own that holds a skill of your own.
 - [6. The manifest](#6-the-manifest): writing your own agent.
 - [Operator notes](#operator-notes): the Deployment default and launcher flags.
 
@@ -43,40 +43,61 @@ An agent id is **`agent.`**, its publisher and its name (`agent.curio.researcher
 
 ### The agents
 
-Agents build with Curio's own nodes, [functions](../agents/agent.curio.builtin@1/knowledge/node-functions.md), catalogs and chips, as you do, and read what you made with them.
+Agents build with Curio's own nodes, [functions](../skills/node-functions/SKILL.md), catalogs and chips, as you do, and read what you made with them.
 
 An agent uses only what you have: the code it writes reads your Data Catalog's datasets, runs the models you added and uses the keys you saved, calling only the functions and importing only the modules its node gets.
 
-**Seven agents ship with Curio.** Four of them are the catalog: **Researcher**, **Node Builder**, **Dataflow Builder** and **Dataset Finder**. This guide uses three words for what an agent does:
+**Seven agents ship with Curio.** Four of them are the catalog: **Researcher**, **Node Builder**, **Dataflow Builder** and **Dataset Finder**. This guide uses four words for what an agent does and knows:
 
 - **In chat:** what you can ask an agent where you dropped it.
-- **Tools:** the actions an agent takes during a chat, such as reading the dataflow, searching the web, proposing a node or proposing a package install. Anything that changes your dataflow is a proposal you apply.
+- **Tools:** the actions an agent takes during a chat, such as reading the dataflow, searching the web, adding a node or asking to install a package. A change to your dataflow lands at once, as your own edit does, and you can undo it from the chat; an install waits for your review.
 - **Modes:** what another agent, Solve or the agent itself can ask it to do. A mode runs as a separate call with no tools, on evidence Curio gathers for it, and has its own prompt when it needs one. You never chat with a mode. Each mode's capability id and prompt are listed under [Modes](#modes).
+- **Skills:** what tells an agent how to do a specific task, such as writing a Map Editor node's edits. See [Skills](#skills), and the [Skill Catalog](SKILL-CATALOG.md) for every skill.
 
-| Agent | In chat | Tools | Modes (who asks) |
-|---|---|---|---|
-| **Researcher** | Explains a node or the dataflow, diagnoses errors, helps define what to build, answers web questions as notes, checks facts | Read the dataflow and a node's last run; search and read the web; propose notes as Note nodes; propose a notes package | Notes from search results (Dataflow Builder); Check a fact (Node Builder, Dataset Finder, Dataflow Builder) |
-| **Node Builder** | Builds a node, rewrites a node's content, changes a node's settings, suggests nodes for a connection, finds or writes node types | Read the dataflow, a node's last run and its history; search the Data and Model Catalogs; propose a node, a content change, a settings change, a package install or a package draft | Write a node's content (Node Builder, Dataflow Builder, Solve); Recommend packages (Dataflow Builder); Write a package (Node Builder, Researcher, Dataflow Builder) |
-| **Dataflow Builder** | Plans a whole dataflow, then solves its nodes | Read the dataflow, runs and node histories; search the Scenario Catalog; propose a plan, a node, a settings change or a package draft; read worked examples | None |
-| **Dataset Finder** | Finds datasets in the Data Catalog and in portals | Search the catalog and portals; propose a download | Find datasets (Node Builder, Dataflow Builder, Solve) |
+| Agent | In chat | Tools | Modes (who asks) | Skills |
+|---|---|---|---|---|
+| **Researcher** | Explains a node or the dataflow, diagnoses errors, helps define what to build, answers web questions as notes, checks facts | Read the dataflow and a node's last run; search and read the web; place notes as Note nodes; propose a notes package | Notes from search results (Dataflow Builder); Check a fact (Node Builder, Dataset Finder, Dataflow Builder) | The feature skills, loaded in chat when a task needs one; `reuse-first`, `fact-checking` and `research-notes` from its chat's first message, and each mode is handed its own |
+| **Node Builder** | Builds a node, rewrites a node's content, changes a node's settings, suggests nodes for a connection, finds or writes node types | Read the dataflow, a node's last run and its history; search the Data and Model Catalogs; add a node, write a node's content or change its settings; propose a package install or a package draft | Write a node's content (Node Builder, Dataflow Builder, Solve); Recommend packages (Dataflow Builder); Write a package (Node Builder, Researcher, Dataflow Builder) | The feature skills, loaded in chat; `reuse-first` and `data-sources` from its chat's first message; its modes are handed those of what they write and their own |
+| **Dataflow Builder** | Plans a whole dataflow, then solves its nodes | Read the dataflow, runs and node histories; search the Scenario Catalog; make a plan, add a node or change a node's settings; propose a package draft; read worked examples | None | The feature skills, `reuse-first` and `data-sources`, loaded in chat |
+| **Dataset Finder** | Finds datasets in the Data Catalog and in portals | Search the catalog and portals; propose a download | Find datasets (Node Builder, Dataflow Builder, Solve) | `catalogs` and `data-sources`, loaded in chat; `catalogs` handed to Find datasets |
 
 The other three are helpers. They have modes only, never a chat: they are never listed, added or attached, and a catalog agent asks for their modes without them being added to the dataflow.
 
-| Helper | Modes (who asks) |
-|---|---|
-| **Dataflow Planner** | Plan a follow-up from a node's run (Node Builder); bind the keywords of a description (Dataset Finder); plan a dataflow's tasks, refresh them, check a plan's coherence and extract a description's keywords (no agent asks for these) |
-| **Dataflow Reader** | Explain the whole dataflow (Dataflow Builder); suggest its next steps (Dataset Finder, Dataflow Builder) |
-| **Generated Content Evaluator** | Check generated node content against its goal (Node Builder, Dataflow Builder) |
+| Helper | Modes (who asks) | Skills |
+|---|---|---|
+| **Dataflow Planner** | Plan a follow-up from a node's run (Node Builder); bind the keywords of a description (Dataset Finder); plan a dataflow's tasks, refresh them, check a plan's coherence and extract a description's keywords (no agent asks for these) | Those of the features the dataflow holds, handed to the modes that read it |
+| **Dataflow Reader** | Explain the whole dataflow (Dataflow Builder); suggest its next steps (Dataset Finder, Dataflow Builder) | Those of the dataflow's kinds of node and features |
+| **Generated Content Evaluator** | Check generated node content against its goal (Node Builder, Dataflow Builder) | Those of the kind of node it checks |
 
 Each of the seven is a folder in Curio's [`agents/`](../agents/), `agents/<agentId>@1/`, in the format of an agent you import ([The manifest](#6-the-manifest)). Its manifest's `catalog` says whether it is a catalog agent or a helper, and its place in the order the lists of who asks follow.
 
+### Skills
+
+A skill is a folder in the [Agent Skills format](https://agentskills.io/specification), which an agent reads when a task needs it. The [Skill Catalog](SKILL-CATALOG.md) lists every skill you see, Curio's, your own, the published ones and those of node packages, and is where you import, publish and remove your own, and export a skill to use elsewhere. How a call comes to hold a skill, in chat, in a mode or from your message, is in [Using a skill](SKILL-CATALOG.md#3-using-a-skill).
+
+An agent's manifest names its skills ([`skills`](#6-the-manifest)). An agent of yours that names none lists every skill Curio ships but those its preamble holds. Every agent on a dataflow that uses a node package also lists the package's skills, after its own ([Skills from packages](SKILL-CATALOG.md#skills-from-packages)).
+
+**Your changes.** In an agent's details, the **Skills** section lists the core skills first, then the agent's own, then those its chat, a mode of it or a call another agent asks it for always holds. **Add skill** gives the agent one of the skills it does not hold, and **Remove** takes one away. **Restore** brings back the list the agent ships with, Curio's for an agent Curio ships. Each change is yours alone: in every project, from the agent's next run, its chat lists what you added and never what you removed, and its modes are handed them the same way. **Add skill** offers no skill of a node package, which comes and goes with its package. A skill the agent's runs hold whatever its list says has no **Remove**, and its row says why: *Every call* for a core skill, *Always in chat*, *Always for* one of its modes, or *Always when another agent asks*. The Researcher's `reuse-first` is always in its chat, and the Dataset Finder's `catalogs` always in its Find datasets mode. A skill's name opens that skill's details over the agent's. A guest on a hosted Curio sees an agent's skills and changes none.
+
+**Each agent's skills,** as its manifest names them, each skill as the [Skill Catalog](SKILL-CATALOG.md#what-ships-with-curio) describes it:
+
+| Agent | Skills | Its modes are handed |
+|---|---|---|
+| **Researcher** | `node-functions`, `catalogs`, `widgets`, `selection-chips`, `autark`, `vega-lite-starter`, `autark-starter`, `vega-lite-maps`, `interaction-edges`, `map-edits`, `scenarios`, `dashboards`, `provenance`, `reuse-first`, `fact-checking`, `research-notes` | Notes from search results: `research-notes`. Check a fact: `fact-checking`. Each also those of a node its task names |
+| **Node Builder** | `node-functions`, `catalogs`, `widgets`, `selection-chips`, `autark`, `vega-lite-starter`, `autark-starter`, `vega-lite-maps`, `interaction-edges`, `map-edits`, `scenarios`, `dashboards`, `provenance`, `reuse-first`, `data-sources`, `package-contract` | Write a node's content, Solve's included: the node's, and `data-sources`. Write a package: those of node code, `package-contract` and `reuse-first`. Build a node or a dataset's fetch for the Dataset Finder: those of node code, `reuse-first` and `data-sources`. Recommend packages: `reuse-first` |
+| **Dataflow Builder** | `node-functions`, `catalogs`, `widgets`, `selection-chips`, `autark`, `vega-lite-starter`, `autark-starter`, `vega-lite-maps`, `interaction-edges`, `map-edits`, `scenarios`, `dashboards`, `provenance`, `reuse-first`, `data-sources` | No modes |
+| **Dataset Finder** | `catalogs`, `data-sources` | Find datasets: `catalogs` |
+| **Dataflow Planner** | `interaction-edges`, `scenarios`, `dashboards` | The modes that read the dataflow: those of the features it holds |
+| **Dataflow Reader** | `node-functions`, `catalogs`, `widgets`, `selection-chips`, `autark`, `vega-lite-starter`, `autark-starter`, `vega-lite-maps`, `interaction-edges`, `map-edits`, `scenarios`, `dashboards` | Explain and Suggest next steps: those of the dataflow's kinds of node and features |
+| **Generated Content Evaluator** | `node-functions`, `catalogs`, `widgets`, `selection-chips`, `autark`, `vega-lite-starter`, `autark-starter`, `vega-lite-maps`, `map-edits` | Check generated content: those of the node it checks |
+
 ### How an agent picks what to run
 
-- Every model call is the shared preamble plus one instruction, never two combined.
+- Every model call is the shared preamble, the [skills](SKILL-CATALOG.md#3-using-a-skill) the call holds and one instruction, never two instructions combined.
 - A message you type goes to the agent's chat instruction, and the model follows its rules: in the same call that answers you, it decides what you asked for and which tools to use.
 - A mode runs only when another agent, Solve or the agent itself asks for it, as a separate call with no tools.
 - Curio picks the file from what the call is for; the model does not.
-- Curio finds the agent for a job by the capability its manifest declares, never by its name or id (see [Capabilities](#capabilities)). An agent of your own that declares what a shipped one does is picked where the shipped one would be.
+- Curio finds the agent for a task by the capability its manifest declares, never by its name or id (see [Capabilities](#capabilities)). An agent of your own that declares what a shipped one does is picked where the shipped one would be.
 
 Each agent's prompts, by the key its manifest gives them:
 
@@ -118,14 +139,14 @@ Each agent's prompts, by the key its manifest gives them:
 
 **Node Builder on a node: "turn this into a bar chart".**
 
-1. Your message goes to the chat: the preamble and `node_build_instruction.md`, with the node, its last run and the Node Builder's tools. The model may read the node first, then asks for its content mode, with the node's id and what you asked for.
+1. Your message goes to the chat: the preamble and `node_build_instruction.md`, with the node, what feeds it, its last run and the Node Builder's tools. The model may read the node first, then asks for its content mode, with the node's id and what you asked for.
 2. The content mode runs: the preamble and `new_content_prompt.md`, or the Autark prompt for an Autark node, with no tools. Curio hands it the node, what feeds it and the dataflow's task, and it replies with the node's new content.
-3. Curio turns that content into a review card, and the chat runs again to tell you what changed. The node changes when you apply the card.
+3. Curio writes that content into the node, for everyone on the dataflow, and the chat runs again to tell you what changed. The chat shows the change with its **Undo**.
 
 **Node Builder on a connection.**
 
 1. Drop the Node Builder on the connection between two nodes and ask what could go there. The chat runs with `node_build_instruction.md`, told which node's output feeds which node's input, and suggests up to three nodes in prose.
-2. Tell it which one you want. The chat proposes that node, and you review it. You connect the new node on the canvas yourself.
+2. Tell it which one you want. The chat adds that node, which you can undo from the chat. You connect the new node on the canvas yourself.
 
 **Node Builder writing a node type: "score the sentiment of each review".**
 
@@ -142,7 +163,7 @@ Each agent's prompts, by the key its manifest gives them:
 **Researcher on a web question: "which open datasets give building heights for downtown Chicago?"**
 
 1. The chat runs with `researcher_instruction.md` and searches the web; a further round reads a page it will cite.
-2. It answers in prose and proposes notes as Note nodes: the question in yellow, then each answer in green with its sources. Each proposal waits for your review.
+2. It answers in prose and places notes as Note nodes: the question in yellow, then each answer in green with its sources. Each note can be undone from the chat.
 
 **Researcher on a fact check: "is the dataset id abcd-1234 real?"**
 
@@ -153,7 +174,7 @@ Each agent's prompts, by the key its manifest gives them:
 
 1. You ask the Dataflow Builder a research question. Its chat runs with `orchestration_instruction.md` and asks for the Researcher's notes mode, with your question.
 2. Curio runs one web search. The notes mode runs: the preamble and `researcher_notes_instruction.md`, with no tools, given the search results, the notes templates the dataflow can use and the reply shape. It replies in JSON.
-3. Curio turns the reply into note proposals in the Dataflow Builder's chat, and that chat runs again to state the answer. The notes are placed when you apply them.
+3. Curio places the reply's notes, each a change in the Dataflow Builder's chat with its **Undo**, and that chat runs again to state the answer.
 
 ### Categories
 
@@ -180,13 +201,16 @@ Agent state lives in files under `.curio/` and inside each project's spec; the a
 | **Definition store**, the agents themselves | `.curio/users/<user-key>/agents/<agentId>@<major>/` (`manifest.json` and `prompts/`) | **Import agent** adds one; adding a built-in or published agent copies it here. |
 | **Per-user list**, the agents in all your projects | `.curio/users/<user-key>/imported-agents.json` | **Add to all projects** and **Import agent** add an entry; **Remove from all projects** drops it. |
 | **Catalog settings**, values you own | `.curio/users/<user-key>/catalog-settings.json` | **Settings** on `/catalog/agents` saves a setting you changed; **Restore default** removes it. See [Catalog settings](#catalog-settings). |
+| **Agent skills**, the skills you changed on an agent | `.curio/users/<user-key>/agent-skills.json`, by agent id, so one change covers every version of the agent and every project | **Add skill** and **Remove** in an agent's details change its entry; **Restore** removes it. See [Skills](#skills). |
 | **Per-dataflow lockfile**, the agents one dataflow has | `dataflow.agents` in the project's `spec.trill.json` | **Add to project** and **Remove from project** in the drawer. **Add to all projects** and **Remove from all projects** change every project. |
-| **Attachments**, private instances bound to a target | `dataflow.agentAttachments` in the project's `spec.trill.json` | Attaching (dragging an agent onto a node, a connection, or the canvas) creates one. **Detach** deletes it and its transcript, and **Remove from project** deletes every attachment of that agent. |
+| **Attachments**, an agent's instances bound to a target | `dataflow.agentAttachments` in the project's `spec.trill.json` | Attaching (dragging an agent onto a node, a connection, or the canvas) creates one. **Detach** deletes it and its transcript, and **Remove from project** deletes every attachment of that agent. |
 | **Usage record** | `.curio/users/<user-key>/agents/ledger/<date>.jsonl` | Every run appends to it. It is not editable and not shown in the interface. |
+
+The skills themselves, Curio's, the packages', yours and the published ones, are in the Skill Catalog's [storage layers](SKILL-CATALOG.md#storage-layers).
 
 > [!NOTE]
 > **Adding is not attaching.** Adding an agent to a dataflow makes it available
-> in that dataflow's palette. Attaching it creates a private instance bound to
+> in that dataflow's palette. Attaching it creates an instance of it bound to
 > one node, one connection, or the canvas, with its own chat transcript. One
 > added agent can carry many attachments. See
 > [part 3](#3-using-an-agent-in-a-dataflow).
@@ -197,11 +221,11 @@ Agent state lives in files under `.curio/` and inside each project's spec; the a
 
 There are three places you work with agents, and as with the Data Catalog they are **not** interchangeable:
 
-- **The `/catalog/agents` page** is the account-level library. Reach it from `/projects` and the **Agent Catalog** tab. It lists the built-in agents, every published one, and the ones you imported yourself. Filter by status (**All agents**, **In all projects**) and by category, search, and read an agent's full details. **Add to all projects**, **Publish**, **Unpublish**, **Settings** and **Import agent** live here. You cannot add an agent to just one dataflow from this page: the drawer does that.
+- **The `/catalog/agents` page** is the account-level library. Reach it from **Agent Catalog** in the top bar of `/projects` and every catalog page. It lists the built-in agents, every published one, and the ones you imported yourself. Filter by status (**All agents**, **In all projects**) and by category, search, and read an agent's full details. **Add to all projects**, **Publish**, **Unpublish**, **Settings** and **Import agent** live here. You cannot add an agent to just one dataflow from this page: the drawer does that. The skills the agents read are on the [Skill Catalog](SKILL-CATALOG.md) page, **Skill Catalog** beside it in the top bar.
 - **The Agent Catalog drawer**, inside the canvas, is the working surface. Open it from the **Agent Catalog** button in the top bar, or from the left Tools panel's **Agent Catalog** dropdown and **Browse Agent Catalog +**. Its tabs are **Browse all** (the default) and **In project**, and everything scoped to the open dataflow happens here, including **Import agent** in its footer.
 - **The Agent palette**, the **Agent Catalog** dropdown in the left Tools panel, holds the agents already added to this dataflow, ready to drag onto a node, a connection, or the canvas. It sits below the **Node Catalog** and **Data Catalog** dropdowns.
 
-**View details**, on any agent card and beside each agent in the palette, opens the agent's details window. Its first three sections use the three words defined in [The agents](#the-agents): **In chat** says what you can ask the agent where you drop it, **Tools** lists the actions it takes in that chat, what it reads before what it proposes, and **Modes (who asks)** lists each mode with the agents, or Solve, that ask for it, and the mode's capability ids beneath it. **Agent info** gives its identifier, version, category, publisher, what it attaches to and the model it runs on. **Prompts** shows each prompt file, labeled by when it runs: every call, a message you type, or the mode that reads it. **Requires** names the agents it cannot work without, and **Export** saves the agent as one file.
+**View details**, on any agent card and beside each agent in the palette, opens the agent's details window. Its first four sections are named by the four words defined in [The agents](#the-agents): **In chat**; **Tools**, which lists what the agent reads before what it changes and what it proposes to install; **Modes (who asks)**, each mode with the agents, or Solve, that ask for it, and the mode's capability ids beneath it; and **Skills**, the core skills first, then its own and those its chat, a mode of it or a call another agent asks it for always holds, with **Add skill**, **Remove** and **Restore** (see [Skills](#skills)); a skill's name opens the skill's details over the agent's. **Agent info** gives its identifier, version, category, publisher, what it attaches to and the model it runs on. **Prompts** shows each prompt file, labeled by when it runs: every call, a message you type, or the mode that reads it. **Requires** names the agents it cannot work without, and **Export** saves the agent as one file.
 
 ### Action matrix
 
@@ -210,14 +234,17 @@ There are three places you work with agents, and as with the Data Catalog they a
 | **Add to project** | Drawer | This dataflow's lockfile, plus any agent it requires | The agent appears in this dataflow's **Agent Catalog** palette, ready to drag. |
 | **Remove from project** | Drawer | This dataflow's lockfile and that agent's attachments | It leaves this dataflow's palette, and its attachments and their transcripts are deleted; the definition is **kept**. Refused while another added agent requires it. |
 | **Add to all projects** | `/catalog/agents`, in the right-hand drawer or the right-click menu | Your per-user list and every project's lockfile | The agent is added to every dataflow you have, and new projects start with it. |
-| **Remove from all projects** | `/catalog/agents`, in the right-hand drawer or the right-click menu | Your per-user list, every project's lockfile, and the agent's attachments | The agent and its attachments leave every dataflow. The definition stays on disk. |
+| **Remove from all projects** | `/catalog/agents`, in the right-hand drawer or the right-click menu | Your per-user list, every project's lockfile, and the agent's attachments | The agent leaves every dataflow, its attachments and their transcripts deleted. The definition stays on disk. While another agent requires it in one of your dataflows, nothing is removed: the agent stays in all your projects, and the message names those dataflows and the agents that require it. |
 | **Import agent** | Drawer footer, or the `/catalog/agents` header | Definition store and your per-user list | Your own `manifest.json` and prompt files are registered as a definition. It is not added to your existing dataflows and not published. |
 | **Publish** | `/catalog/agents` drawer, for your own imports only | Shared catalog | Every user on this install can browse the agent. |
 | **Unpublish** | `/catalog/agents` drawer | Shared catalog | It leaves the shared catalog. Other users who added it keep their copy. |
-| **Attach** | Drag a palette row onto a node, a connection, or the canvas | Attachments | A private instance with its own chat panel. The agent must be added first. |
+| **Attach** | Drag a palette row onto a node, a connection, or the canvas | Attachments | An instance with its own chat panel. The agent must be added first. |
 | **Detach** | The attachment's own control | Attachments | The instance and its transcript are deleted. The agent stays added. |
+| **Add skill** | An agent's details | Your agent skills | The agent's runs hold the skill in every project, from its next run: its chat lists it, and its modes are handed it when their task needs it. |
+| **Remove** (a skill) | An agent's details | Your agent skills | The agent's runs go without the skill in every project, and a conversation that loaded it stops holding it. Not offered for the core skills, or a skill the agent's chat instruction, a mode or a call another agent asks for names as its own. |
+| **Restore** (skills) | An agent's details | Your agent skills | The agent holds the skills it ships with again. |
 
-Nothing in this table deletes an agent definition from disk.
+Nothing in this table deletes an agent definition from disk. A skill's own actions, **Import skill**, **Export**, **Publish**, **Unpublish** and **Remove from your skills**, are in the Skill Catalog's [action matrix](SKILL-CATALOG.md#action-matrix).
 
 ### Workflows
 
@@ -225,9 +252,15 @@ Nothing in this table deletes an agent definition from disk.
 
 **I want an agent in all my projects, present and future.** On `/catalog/agents`, click the agent's card and then **Add to all projects** in the drawer. It is added to every dataflow you have, and every project you create from then on starts with it.
 
-**I want to browse without opening a dataflow.** Go to `/projects` and pick the **Agent Catalog** tab. Filter by status or category in the left rail, and click **View details** on a card to read everything about it.
+**I want to browse without opening a dataflow.** Go to `/projects` and pick **Agent Catalog** in the top bar. Filter by status or category in the left rail, and click **View details** on a card to read everything about it.
 
 **I want to write my own agent.** Author a `manifest.json` and its prompt files ([part 6](#6-the-manifest)), then use **Import agent** in the drawer's footer. It is listed on `/catalog/agents` beside the built-in and published agents, where **Publish** offers it to everyone on the install. Adding it to a dataflow and publishing it are separate actions.
+
+**I want an agent to use a skill it does not have.** On `/catalog/agents`, click **View details** on the agent, then **Add skill** in its **Skills** section and pick the skill. The agent's next chat lists it, in every project. **Remove** takes a skill away, and **Restore** brings back the agent's own list.
+
+**I want an agent to use a skill for one message.** In its chat, type `/` at the start of the message and pick the skill, then write the rest: `/map-edits remove the two tallest towers`. The line under the reply names the skills its run used.
+
+To read what a skill says, or to import one written for another tool, see the Skill Catalog's [workflows](SKILL-CATALOG.md#workflows).
 
 ### Catalog settings
 
@@ -245,7 +278,7 @@ Each setting lists the agents that read it. **Restore default** returns a settin
 
 **Adding** an agent makes it available in the dataflow's palette. Nothing runs yet.
 
-**Attaching** it creates a private instance bound to a target:
+**Attaching** it creates an instance bound to a target:
 
 | Target kind | Bound to | Reached by | Shown as |
 |---|---|---|---|
@@ -257,67 +290,86 @@ While you drag a palette row across the canvas, the connection that would receiv
 
 A connection agent is listed in **both** places. The badge says *which* connection the agent is about; the dock is the roster, always reachable. Detaching works from either.
 
+While an agent works on the dataflow, it is in the dataflow's room as one more participant, as people are (see [COLLABORATION.md](COLLABORATION.md)): from the moment a chat message, a task another agent hands it, a **Solve** or **Build & validate** starts it, until just before its reply ends. Before it writes a node's code, spec, widgets or settings, it waits while someone other than whoever asked it is editing that node, then holds the node while it writes and a second after, and every tab shows the node's code meanwhile. Every tab's dock has a chip for it, with its glyph in its category's color and a dot while it works, the tab of whoever asked it included, and a node agent's too, whose badge stays under its node. Hover the chip for who asked the agent, the nodes it is writing and the skills it is using: *Node Builder (asked by Ana), editing Map Editor, using map-edits*. A canvas or connection agent at work keeps its one chip in the dock, which shows the same and still opens its chat. Clicking an agent's chip opens its chat; on a watcher's canvas, it moves the view to the node the agent is writing. The dock's **Activity** list says when the agent joined and who asked it, and what it did as it left: *Dataflow Builder left: added 3 nodes and 2 connections*.
+
 Not every agent accepts every target: an agent declares which kinds it works with. A `canvas` agent dropped on a node is refused. Of the four catalog agents, the Node Builder is the one that accepts a connection.
 
-The Researcher reads the dataflow as it is on screen with every message, unsaved edits included, and when it is attached to a node, that node's content, what feeds it and its last run.
+The Researcher reads the dataflow as it is on screen with every message, and when it is attached to a node, that node's content, what feeds it and its last run.
 
 An agent that writes code, in its chat or when Solve or another agent asks it, also reads what the dataflow can use: the datasets and models under **Datasets in project** and **Models in project**, each with the line that loads it, and the names of your Node code keys, never their values. When it writes a node's code, it reads that node's template too: its whole description, its starter, and the functions the node's code can import from the template's package and from the packages that package needs. When that is more than fits, it reads the first part and how much was left out.
 
 Each attachment has its own chat transcript and its own **intent**, the editable first instruction, which starts as the definition's own prompt. An agent must be added to the dataflow before you can attach it.
 
-When an agent proposes a change to your dataflow, it does not apply it. The proposal appears as a **review card**, and applying it is a separate click, which first checks that the target has not changed since the proposal. Dismissing it leaves nothing behind. A chart or a map an agent proposes is checked against its grammar's schema before its card appears.
+A message you send is a turn of the agent, which runs on the server: closing or reloading your tab does not stop it, and its reply is in the chat when you come back. One turn of a chat runs at a time. A message sent while one runs, yours or someone else's, waits under the chat's last message (*Waiting its turn*) and starts when the turn before it ends, reading that turn's reply; until then, whoever sent it can **Withdraw** it. **Stop**, under a running turn, stops it at its next step: what its reply said and the changes it made until then stay, and the reply says who stopped it (*Stopped by Ana after 12s*). A reply has an output limit of 4,096 tokens. A model that thinks before it answers gets 8,192 more for its thinking, 12,288 in all, once Curio has seen it think; a reply that ran out while the model was still thinking is asked for again with them. One that reaches its limit stops there, keeps what it said, and ends with a line that says it was cut off and names the limit; when the model spent the whole limit thinking, the line says that. What the model was asking for at that point does not run, and a task it handed another agent that reaches the limit fails with the same reason, changing nothing. The chats of different attachments run their turns at the same time. Detaching an agent, or removing what it is attached to, withdraws its waiting messages and stops its running turn. A turn does not outlive a restart of the server.
 
-Once you apply a change an agent made to a node's code, the change is an entry of the node's [Provenance](USAGE.md#provenance) drawer, named after the agent, with the code it left, and the dataflow reads **Unsaved** until it is saved with the entry. A node an agent proposes with its code starts its history with one once you apply it. You open the entry and put its code back as you would a run's; an agent never does that for you. The Node Builder and the Dataflow Builder read a node's history as the dataflow was last saved, so you can ask either what changed in a node since a run.
+When an agent changes your dataflow, by writing a node's code, setting a node's settings, adding a node or making a plan, the change lands at once, for everyone on the dataflow, as your own edit does. A node it adds, a note included, is dragged in from its tile in the tool rail, and lands as the drop ends. When someone is working in a node it changes, it waits for them to leave the node; after 30 seconds it gives up, and the agent is told who is in it. The chat shows each change as a card with **Undo**, which puts back what the change replaced: a node's code as it was, a new node taken away with its connections, settings back to their old values, or the dataflow as it was before a plan, the nodes the plan removed and their connections included. Undo is your own change. When someone changed what Undo would put back after the agent did, Undo is refused, saying who, and nothing is undone. In the dataflow's history, each change is a point named after the agent and the person who asked, such as *Node Builder, asked by Ana*. A chart or a map an agent writes is checked against its grammar's schema before it lands.
 
-A reply of Node Builder or Dataflow Builder that carries no review card says **No changes were made to the canvas** under it. A web address the egress policy refused shows its reason under the reply. So does any other tool call that failed, unless a later call of the same tool in that reply succeeded.
+An install changes your account, so it waits for you: a package, a package draft, a dataset, a download from the Discovery Catalog or an agent added to the dataflow appears as a **review card**, and applying it is a separate click, which first checks that what it installs has not changed since. Dismissing it leaves nothing behind.
+
+A change an agent made to a node's code is an entry of the node's [Provenance](USAGE.md#provenance) drawer, named after the agent, with the code it left, and a node an agent adds with its code starts its history with one. You open the entry and put its code back as you would a run's; an agent never does that for you. The Node Builder and the Dataflow Builder read a node's history as it is, so you can ask either what changed in a node since a run.
+
+A reply of Node Builder or Dataflow Builder that carries no change and no review card says **No changes were made to the canvas** under it. A web address the egress policy refused shows its reason under the reply. So does any other tool call that failed, unless a later call of the same tool in that reply succeeded. A last, quieter line names the [skills](SKILL-CATALOG.md#3-using-a-skill) the reply's run used.
 
 ### Required agents
 
-An agent may require others: the agents a job of its own runs without asking the model, such as the Node Builder and the Dataset Finder that the Dataflow Builder's Solve runs. The drawer says so before you click: the button reads **Add to project (+2 required)**, and its tooltip names what else will be added. Adding brings in all of them at once. A required agent that ships with Curio is added at its shipped version; one of your own at the highest version in your imports or the catalog.
+An agent may require others: the agents a task of its own runs without asking the model, such as the Node Builder and the Dataset Finder that the Dataflow Builder's Solve runs. The drawer says so before you click: the button reads **Add to project (+2 required)**, and its tooltip names what else will be added. Adding brings in all of them at once. A required agent that ships with Curio is added at its shipped version; one of your own at the highest version in your imports or the catalog.
 
-The job itself goes to the agent in the dataflow that declares its capability: the one the requiring agent's `delegatesTo` names first, else any other that declares it and that `delegatesTo` does not name. So an agent of your own that requires your own copies of the Node Builder and the Dataset Finder runs them.
+The task itself goes to the agent in the dataflow that declares its capability: the one the requiring agent's `delegatesTo` names first, else any other that declares it and that `delegatesTo` does not name. So an agent of your own that requires your own copies of the Node Builder and the Dataset Finder runs them.
 
 The reverse holds too. Removing an agent that another added agent requires is refused, with a message naming the agent that needs it, so a dataflow never holds a broken reference.
 
+### Invited editors
+
+The editors the dataflow's owner invited (**Share > Invite editors**, see [COLLABORATION.md](COLLABORATION.md#who-edits-owner-editors-and-watchers)) work with its agents as the owner does: they add and attach agents, chat, undo what an agent changed and run **Solve**. Anyone else who opens the dataflow's link watches: no agent's badge or chat shows on their canvas, only the chip in the dock of an agent at work, and the server refuses their requests to the agents. A guest on a hosted Curio works with the agents of the examples, each guest on a copy of its own, and watches every other dataflow.
+
+- **The owner's model and key.** An editor's runs answer with the owner's LLM configurations: the one the owner's **API Settings** choose for each agent, else the owner's default ([LLM configurations](#4-llm-configurations)). The agents' skills and the catalog settings they read are the owner's too.
+- **The editor's own saved keys.** An agent in an editor's chat or Solve is told the names of the editor's Node code keys, never the owner's, and a key it names that only the owner saved gives it nothing. The Discovery Catalog sends the editor's own Data source keys, and an editor's searches of the Scenario Catalog and the Discovery Catalog read the editor's own account.
+- **The datasets an editor's agents load.** In an editor's chat or Solve, an agent's Data Catalog searches, and the code it writes and runs, reach three kinds of dataset, collections among them: those the owner added to the dataflow, read from the owner's Data Catalog; those every account reads (the shared catalog's, Curio's sample data and the workspace's data); and the editor's own. The searches also list the dataflow's saved outputs, without a path. No other dataset of the owner's is listed or loaded.
+- **One chat per attachment.** The owner and every editor read and write the same chat, and each of their tabs follows every turn as it runs: its message, the reply as it is written, and the changes it makes. A message someone else wrote shows their name above it; yours show none. Any of them can stop a running turn; only whoever sent a waiting message can withdraw it.
+- **The packages and models an editor's agents use.** The code an agent runs in an editor's chat or Solve runs a node of a package, and a model, the owner added to the dataflow with the owner's copy, and any other package or model with the editor's own. The skills of the packages the owner added to the dataflow reach its agents from the owner's copies, in an editor's chats, Solve and Simulation as in the owner's.
+- **Installs wait for the owner.** An install an agent proposes changes an account, the owner's, so in an editor's chat its card reads *Waits for the dataflow's owner to review it* in place of **Apply** and **Dismiss**: a package, a package an agent drafted, a dataset for the dataflow, or a download from the Discovery Catalog. The owner reviews it in the same chat. Confirming a candidates card row that Curio would download waits for the owner too. A dataset, a collection, a package or a model of the editor's own that the editor drops, adds or drags onto the dataflow waits on the same card, under **Waiting for review** in the drawer of its catalog: the Data, Node or Model Catalog's ([COLLABORATION.md](COLLABORATION.md#who-edits-owner-editors-and-watchers)).
+- **Agents an editor adds.** An editor adds the agents the owner's account holds: those Curio ships, and those the owner imported.
+- **Provenance.** A change an agent makes in an editor's chat is named after the agent and the editor who asked, such as *Node Builder, asked by Ana*.
+
 ### Solve
 
-The **Dataflow Builder** plans a whole dataflow. Once you apply its plan, **Solve** in its strip fills in the planned nodes in one batch, and **Solve this node**, in the chat of an agent attached to a node, does the same for one node.
+The **Dataflow Builder** plans a whole dataflow. Its plan is checked whole, then lands as one change you can undo from its card: first the nodes and connections it removes, then its nodes, with no code yet, each dragged in from its tile one after another, then its connections and its scenarios. The card names each of them, says what changed and whether the dataflow is left with a cycle. When someone edits a node the plan removes while the plan waits for them to leave it, the plan is refused and nothing changes: ask the agent to plan again. When someone removes a node the plan connects while it lands, the plan stops there: what landed stays, and the card says what was left undone. The plan's **Undo** puts back the dataflow as it was before the plan, and is refused when someone changed the dataflow while the plan landed, or after it.
 
-You apply a plan whole, with the card's **Apply**, or a node at a time, with each row's **Apply** and then **Connect all**; the card's **Apply** after some rows adds only the rest. Either way, the nodes and connections the plan removes leave the dataflow when the last of it is applied, and the chat's result says what changed and whether the dataflow is left with a cycle. If you edited a node the plan removes after you reviewed it, the plan is refused: ask the agent to plan again.
+**Build & validate plan**, in its strip, then fills the plan's nodes in plan order. Each node's code is written and run in the sandbox, and code that passes lands as the agent's change, with its **Undo** in the chat of the node's agent, before the node is approved. At the first failure the build pauses with nothing written after it: the chat of the node's agent shows every attempt with the code it ran, and **Resume** continues from that node. **Step** does one action at a time. Each row of the plan's card has **Solve**, for that node alone, and **Run**, once its code is in. **Solve** in the strip fills the planned nodes in one batch instead, and **Solve this node**, in the chat of an agent attached to a node, does the same for one node.
 
-Solve runs what it writes. A node with code is generated, run in the sandbox, corrected when the run fails, and written only once a run passes. The nodes run in waves, each after the nodes that feed it, so a loader runs after a node wired into it and before what reads it, and the strip shows which wave is running (*wave 2 of 3*). A chart or map document is checked against its grammar's schema and reported as validated, not executed. A node with nothing to write, such as a Data Pool or a Spatial Join, is left wired as it is. A node of a package template whose starter is its whole content ([Authoring nodes](AUTHORING-NODES.md#widgets-in-a-template)), such as each chart of the Scout package, starts with that starter and the template's widgets, set as the plan declares them, and Solve leaves it as it is too. Such a chart the **Node Builder** proposes starts the same way, with the values it asked for in its widgets, and its review card shows the template's spec as the node will hold it.
+Solve runs what it writes. A node with code is generated, run in the sandbox, corrected when the run fails, and written only once a run passes. The nodes run in waves, each after the nodes that feed it, so a loader runs after a node wired into it and before what reads it, and the strip shows which wave is running (*wave 2 of 3*). A chart or map document is checked against its grammar's schema and reported as validated, not executed. A node with nothing to write, such as a Data Pool or a Spatial Join, is left wired as it is. A node of a package template whose starter is its whole content ([Authoring nodes](AUTHORING-NODES.md#widgets-in-a-template)), such as each chart of the Vega-Lite package, starts with that starter and the template's widgets, set as the plan declares them, and Solve leaves it as it is too. Such a chart the **Node Builder** adds starts the same way, with the values it asked for in its widgets, and its card shows the template's spec as the node holds it.
 
-When Solve cannot fix a node, nothing is written, and the chat shows every attempt as its own row: the exception, where it was raised, and the code that attempt ran. The message names what stopped the loop, normally the time budget: the Solve's 15 minutes, or the node's own 15 minutes when you use **Solve this node**. When the Node Builder answers in one line instead of writing code, for example that two inputs cannot be joined, Solve stops there and gives that answer. A Solve keeps working for up to 15 minutes, and runs on if you close the chat or reload the page. **Stop** ends it after the current node, and what was written stays. What it did not reach stays *pending* with the reason, and **Solve** continues from there; after a failure or a server restart, the same button reads **Retry**.
+When Solve cannot fix a node, nothing is written, and the chat shows every attempt as its own row: the exception, where it was raised, and the code that attempt ran. The message names what stopped the loop, normally the time budget: the Solve's 15 minutes, or the node's own 15 minutes when you use **Solve this node**. When the Node Builder answers in one line instead of writing code, for example that two inputs cannot be joined, Solve stops there and gives that answer. When the code it writes is cut off at the output limit, Solve stops that node there and says so, and nothing of that code runs. A Solve keeps working for up to 15 minutes, and runs on if you close the chat or reload the page. **Stop** ends it after the current node, and what was written stays. What it did not reach stays *pending* with the reason, and **Solve** continues from there; after a failure or a server restart, the same button reads **Retry**.
 
-Applying a plan gives every created node the agent that writes its content, the one that declares `node.content.generate` (the **Node Builder**). Every node that loads a dataset, one whose template declares `loadsDataset` such as Data Loading, also gets the agent that finds datasets, the one that declares `dataset.discover` (the **Dataset Finder**). When such a node's source is not settled, Solve asks that agent for candidates: they appear in its chat, and the node stays pending, *awaiting your dataset selection*, with an **Open Dataset Finder** button. **Confirm source for this node**, in the chat of an agent that declares `dataset.select`, records your choice, and the next Solve builds the loader from that source.
+A plan gives every node it creates the agent that writes its content, the one that declares `node.content.generate` (the **Node Builder**). Every node that loads a dataset, one whose template declares `loadsDataset` such as Data Loading, also gets the agent that finds datasets, the one that declares `dataset.discover` (the **Dataset Finder**). When such a node's source is not settled, Solve asks that agent for candidates: they appear in its chat, and the node stays pending, *awaiting your dataset selection*, with an **Open Dataset Finder** button. **Confirm source for this node**, in the chat of an agent that declares `dataset.select`, records your choice, and the next Solve builds the loader from that source.
 
 A node with several inputs reads each through its input chip, `[!! input_0 !!]`, `[!! input_1 !!]` and so on, in the order of its input circles (see [Several inputs](USAGE.md#several-inputs)), and the agent is told which dataset sits on each circle. Code that treats the inputs as one value is refused before it runs.
 
 ### Widgets and scenarios
 
-A planned node can declare widgets: values you set in its **Widgets** tab, which its code reads through references such as `[!! threshold !!]` (see [Widgets](USAGE.md#widgets)). The review card lists each node's widgets, and Solve writes code that places them and is told their current values. A value several nodes read is a widget on one Python node that returns it, wired into each node that reads it. A node the **Node Builder** proposes can declare widgets too. A widget a plan or a proposal declares is checked as the **Widgets** tab checks one you add.
+A planned node can declare widgets: values you set in its **Widgets** tab, which its code reads through references such as `[!! threshold !!]` (see [Widgets](USAGE.md#widgets)). The plan's card lists each node's widgets, and Solve writes code that places them and is told their current values. A value several nodes read is a widget on one Python node that returns it, wired into each node that reads it. A node the **Node Builder** adds can declare widgets too. A widget a plan or a new node declares is checked as the **Widgets** tab checks one you add.
 
-A planned **Spatial Join** says how its inputs' shapes meet and what it outputs, the two choices its body offers, and the review card lists them. A Spatial Join the **Node Builder** proposes carries them too. An agent can set only an operation and an output the node offers.
+A planned **Spatial Join** says how its inputs' shapes meet and what it outputs, the two choices its body offers, and the plan's card lists them. A Spatial Join the **Node Builder** adds carries them too. An agent can set only an operation and an output the node offers.
 
-A planned **Data Pool** says how the selections that reach it combine, and a planned **Simple View** which image column it shows. The review card names them as the node's own selects do, such as *Conflict between visualizations: Merge (AND)* or *Image column: overlay_url*, and the node arrives set that way. A Data Pool or a Simple View the **Node Builder** proposes carries them too. A pool no agent sets starts at Overwrite, as one you drop does, and an agent can set only the modes the pool offers and a column name that is not empty.
+A planned **Data Pool** says how the selections that reach it combine, and a planned **Simple View** which image column it shows. The plan's card names them as the node's own selects do, such as *Conflict between visualizations: Merge (AND)* or *Image column: overlay_url*, and the node arrives set that way. A Data Pool or a Simple View the **Node Builder** adds carries them too. A pool no agent sets starts at Overwrite, as one you drop does, and an agent can set only the modes the pool offers and a column name that is not empty.
 
-The **Node Builder** and the **Dataflow Builder** also change a node already on your canvas: a Data Pool's modes, a Simple View's image column, a Spatial Join's operation and output, or the value of a widget. Ask, for example, to make a pool merge with AND, to show only the overlays, to use *within* instead of *intersects*, or to plot the maximum instead of the mean. The review card names the node and says each change as the node's own controls say it, such as *Conflict between visualizations: Merge (AND)*, *Image column: overlay_url* or *Combine: max*. Applying it changes only what the card lists, as picking it in the node would: the pool resolves its selections again, the join runs again, and a node whose widget value changed is out of date and runs again when **Run stale nodes automatically** is on. A value the widget does not offer, or a setting the node does not have, is never proposed.
+The **Node Builder** and the **Dataflow Builder** also change a node already on your canvas: a Data Pool's modes, a Simple View's image column, a Spatial Join's operation and output, or the value of a widget. Ask, for example, to make a pool merge with AND, to show only the overlays, to use *within* instead of *intersects*, or to plot the maximum instead of the mean. The change's card names the node and says each change as the node's own controls say it, such as *Conflict between visualizations: Merge (AND)*, *Image column: overlay_url* or *Combine: max*. The change makes only what the card lists, as picking it in the node would: the pool resolves its selections again, the join runs again, and a node whose widget value changed is out of date and runs again when **Run stale nodes automatically** is on. Its **Undo** puts the old values back. A value the widget does not offer, or a setting the node does not have, is refused to the agent, and nothing changes.
 
-A plan can also save [scenarios](USAGE.md#scenarios). A scenario in a plan is either a named selection of its nodes, or a duplicate of one: its nodes are copied with the connections between them and every connection entering them, as **Duplicate as scenario** copies them on the canvas, and the copies can be given other widget values. The review card names each scenario with its nodes, and for a duplicate the scenario it copies and the values it changes; each copy is listed as a node with its scenario beside its title.
+A plan can also save [scenarios](USAGE.md#scenarios). A scenario in a plan is either a named selection of its nodes, or a duplicate of one: its nodes are copied with the connections between them and every connection entering them, as **Duplicate scenario** copies them on the canvas, and the copies can be given other widget values. The plan's card names each scenario with its nodes, and for a duplicate the scenario it copies and the values it changes; each copy is listed as a node with its scenario beside its title.
 
-Applying the whole plan saves its scenarios. Applied node by node, a copy can be created only after the node it copies, and a scenario is saved with the last of its nodes. A scenario that would take a node another scenario holds is not saved, since a node belongs to one scenario. A plan's scenario takes a name no scenario of the dataflow has, and one that would repeat a name you gave a scenario after the review is not saved. A duplicate copies nodes the plan adds; scenarios already on the canvas are duplicated there. Solve writes a copy's code as it writes any planned node's, so the two can differ; compare them before relying on the comparison.
+A plan saves its scenarios as it lands, each in a scenario set, with the shared context and shared outcomes Curio finds from its connections. A node belongs to one scenario: a scenario that would take a node another scenario holds is not saved. A plan's scenario takes a name no scenario of the dataflow has. A duplicate copies nodes the plan adds; scenarios already on the canvas are duplicated there. Solve writes a copy's code as it writes any planned node's, so the two can differ; compare them before relying on the comparison.
 
-An agent that reads the dataflow sees each scenario with its fixed context, levers and outcomes, each node's widget values, each node's [selection tags](USAGE.md#selection-tags), with the view each reads and how many rows it holds, and what each Spatial Join, Data Pool and Simple View is set to when it is not the node's default. For a scenario dragged in from another project, it sees the project and the scenario it came from, by their names now, or that the project or the scenario is gone.
+An agent that reads the dataflow sees each scenario with its scenario set, its scenario-specific nodes, its shared context and its shared outcomes, each node's widget values, each node's [selection tags](USAGE.md#selection-tags), with the view each reads and how many rows it holds, and what each Spatial Join, Data Pool and Simple View is set to when it is not the node's default. For a scenario dragged in from another project, it sees the project and the scenario it came from, by their names now, or that the project or the scenario is gone.
 
 The **Dataflow Builder** finds the scenarios in your [Scenario Catalog](SCENARIO-CATALOG.md). Asked for a scenario of another project, such as *Towers removed* from *Loop shadow*, it names the scenario and its project and tells you to drag it in from **Scenario**, **Browse all**, where it arrives with its saved results, rather than rebuilding it.
 
 ### Map Editor
 
-An agent writes a Map Editor node's code as the node writes it: one call that holds the node's edits, which the node lists and shows on its map. Code the node cannot read is refused, and the agent is told why in the node's own words. An edit names its features by ids their layer holds, or by a condition; when a run says an edit names ids no feature has, Solve corrects it. Solve makes edits in an empty Map Editor node only when its goal names them, such as *Remove the two tallest towers*; otherwise the node gets its call with no edits, as when you drop it, and you make the edits on the map. An agent writing a node beside a Map Editor node reads its edits. Once you apply a change an agent made to a Map Editor node, it is an entry named after the agent in the node's Provenance drawer, as on any node, and the nodes below it are out of date until they run again, as when you edit the node yourself.
+An agent writes a Map Editor node's code as the node writes it: one call that holds the node's edits, which the node lists and shows on its map. Code the node cannot read is refused, and the agent is told why in the node's own words. An edit names its features by ids their layer holds, or by a condition; when a run says an edit names ids no feature has, Solve corrects it. Solve makes edits in an empty Map Editor node only when its goal names them, such as *Remove the two tallest towers*; otherwise the node gets its call with no edits, as when you drop it, and you make the edits on the map. An agent writing a node beside a Map Editor node reads its edits. A change an agent made to a Map Editor node is an entry named after the agent in the node's Provenance drawer, as on any node, and the nodes below it are out of date until they run again, as when you edit the node yourself.
 
 ### Dashboards
 
-An agent knows which nodes are tiles of the dataflow's [dashboard](USAGE.md#dashboards), so it can tell you whether a chart is on it. You pin and unpin nodes; an agent never does. A spec an agent writes for a pinned Autark node is sent back when it loads its own data, which the dashboard cannot carry, and the agent is told to load that data in a node upstream of the tile instead. Solve stops on such a node, says why, and leaves it for you. The review card of a plan that removes pinned nodes marks each tile it removes and says how many leave the dashboard.
+An agent knows which nodes are tiles of the dataflow's [dashboard](USAGE.md#dashboards), so it can tell you whether a chart is on it. You pin and unpin nodes; an agent never does. A spec an agent writes for a pinned Autark node is sent back when it loads its own data, which the dashboard cannot carry, and the agent is told to load that data in a node upstream of the tile instead. Solve stops on such a node, says why, and leaves it for you. The card of a plan that removed pinned nodes marks each tile it removed and says how many left the dashboard.
 
 ### Finding data in portals
 
@@ -327,7 +379,7 @@ The **Dataset Finder** can search the portals in the [Discovery Catalog](DISCOVE
 
 ## 4. LLM configurations
 
-Every agent, on every dataflow, answers with an **LLM configuration**: the one chosen for it in **API Settings**, else your default. Configurations belong to your account. **API Settings** is in the top bar: on `/projects` and the catalog pages it opens the settings page; on the canvas and the dashboard it opens on the right side, and the dataflow stays open. The **API Settings** button in the Agent Catalog drawer's header opens it on the **Agent configuration** tab. Configurations are the rows of kind **Language model** on the **API keys** tab. A configuration is:
+Every agent, on every dataflow, answers with an **LLM configuration**: the one chosen for it in **API Settings**, else your default. Configurations belong to your account. On a dataflow you edit at its owner's invitation, the agents answer with the owner's ([Invited editors](#invited-editors)). **API Settings** is in the top bar: on `/projects` and the catalog pages it opens the settings page; on the canvas and the dashboard it opens on the right side, and the dataflow stays open. The **API Settings** button in the Agent Catalog drawer's header opens it on the **Agent configuration** tab. Configurations are the rows of kind **Language model** on the **API keys** tab. A configuration is:
 
 | Field | What it is |
 |---|---|
@@ -365,7 +417,7 @@ A Solve of the Dataflow Builder runs on the Builder's configuration, and writes 
 
 The choice is per account, for every version of the agent and every project. A shared project carries none, so it runs on the configurations of whoever runs it. An agent's details show what it runs on, with **Change in API Settings**, which opens the **Agent configuration** tab on its row; a reply's status line says, on hover, which configuration and model answered it; and a mode another agent asked for names, in the chat, what it ran on.
 
-An agent's tools (reading the dataflow, searching the Data Catalog, the Model Catalog or the Scenario Catalog, reading a shipped example dataflow, proposing a node or a plan, asking another agent for one of its modes) work the same on every configuration, and every change waits for your review. For a Custom endpoint, Curio asks once per model whether it calls tools, the first time an agent with tools runs on it: one short request, billed like any other and kept in the usage record.
+An agent's tools (reading the dataflow, searching the Data Catalog, the Model Catalog or the Scenario Catalog, reading a shipped example dataflow, adding a node or making a plan, asking another agent for one of its modes) work the same on every configuration: every change lands with its **Undo**, and every install waits for your review. For a Custom endpoint, Curio asks once per model whether it calls tools, the first time an agent with tools runs on it: one short request, and a second with room to think when the model spent the first one thinking, billed like any other and kept in the usage record.
 
 ### Choosing the model
 
@@ -391,6 +443,20 @@ Whoever runs the install can set a Deployment default with `curio.py start` flag
 **Import agent**, in the drawer's footer or the `/catalog/agents` header, takes a `manifest.json` and its `.md` or `.txt` prompt files, not an archive. The prompt files must match what the manifest references, except a `curio:<path>` path, which names a page of Curio's own and takes no file; size limits apply; and a manifest that sets `catalog` is refused. An agent whose id and major you already have replaces yours when its version is newer, and is refused otherwise.
 
 **Publish**, on `/catalog/agents`, copies one of your own imported definitions into the shared catalog, where every user on the install can browse it. Built-in agents cannot be published. **Unpublish** removes it from the shared catalog, and only the publisher can do it; only the publisher can publish over it, too. Other users who added the agent keep their copy and keep running it, and a newer version of the same major reaches them the next time they add the agent to a dataflow.
+
+Skills are imported, published, removed and exported the same way, on the Skill Catalog ([Importing, publishing, and sharing](SKILL-CATALOG.md#5-importing-publishing-and-sharing)). A guest on a hosted Curio imports, publishes, unpublishes and removes no agent.
+
+### Add skills and agents
+
+Write a skill and an agent, import both, and connect them: the agent holds the skill, and its chat loads the skill when a task needs it. The worked example is in Curio's repository: the skill [`street-trees`](examples/skills/street-trees/SKILL.md), by a parks team, with its file [`references/species.md`](examples/skills/street-trees/references/species.md), and your agent **Tree Counter**, [`agent.you.tree-counter@1`](examples/agents/agent.you.tree-counter@1/manifest.json), whose manifest names the skill.
+
+1. **Write the skill.** A folder named as the skill holds its `SKILL.md`, in the [Agent Skills format](https://agentskills.io/specification): frontmatter with its `name` and a `description` that says when to use it, then the body, the instructions an agent follows. A file the body links, such as `references/species.md`, sits one level below the folder, and a chat reads it when the body says to. [The skill format](SKILL-CATALOG.md#6-the-skill-format) lists its fields, and [EXTENDING](EXTENDING.md#9-writing-a-skill) gives the format's rules.
+2. **Import the skill.** On the **Skill Catalog** page, **Import skill** takes its folder or a `.zip` of it ([Importing a skill](SKILL-CATALOG.md#importing-a-skill)). In the review, untick each agent that should not hold it, then **Import**.
+3. **Write the agent.** A folder named `<agentId>@<major>` holds its `manifest.json` and, in `prompts/`, its prompt files ([The manifest](#6-the-manifest)). Its id is `agent.`, you as its publisher and its name. The manifest names its instruction, the tools it uses and, in `skills`, your skill.
+4. **Import the agent.** **Import agent** takes its `manifest.json` and its prompt files.
+5. **Chat with it.** Add the agent to a dataflow and attach it to the canvas. Its chat lists the skill and loads it with **skill.read** when your message asks for its task, and the line under the reply names it.
+
+An agent holds a skill in three ways: its manifest names the skill in `skills`, as Tree Counter's names `street-trees`; the skill's import review left the agent ticked; or **Add skill** in the agent's details gave it the skill. An agent of yours whose manifest has no `skills` holds every skill Curio ships and none of yours until you give it one. A skill the instruction names in its own `skills` (`prompts.instruction.skills`) is in the chat from its first message, with no **skill.read**.
 
 ---
 
@@ -431,17 +497,18 @@ A minimal, complete manifest:
 | `version` | Yes | Semver-style version string. A newer version of the same major replaces an older one. |
 | `name` | Yes | Human-readable name shown in the catalog. |
 | `category` | Yes | One of `data`, `node`, `canvas`, `package`, `evaluate`. See [Categories](#categories). |
-| `capabilities` | Yes | Non-empty list of `{ id, contractVersion }`: the contracts this agent implements. A capability that also names an `instruction` is a mode; see [Modes](#modes). |
+| `capabilities` | Yes | Non-empty list of `{ id, contractVersion }`: the contracts this agent implements. A capability that also names an `instruction` is a mode; see [Modes](#modes). A capability's own `skills` are handed to every run of it, whatever the agent's `skills` are. |
 | `provenance` | Yes | `{ publisher, license?, trust? }`; `trust` is one of `built-in`, `global`, `imported`. |
 | `purpose`, `roles` | | One-line description and display roles. |
 | `delegatesTo` | | Other `agent.` ids this agent may call, in preference order. An entry `{ "id", "capabilities": [...] }` delegates only those capabilities of that agent. An entry may name the agent itself only in that form, with capabilities that are its own [modes](#modes). A preference only: it grants nothing and never adds or imports anything. |
 | `requiresAgents` | | A subset of `delegatesTo`: the agents this one cannot work without. See [Required agents](#required-agents). |
-| `prompts` | | Prompt files by package-relative `path`, `sha256`, and declared `variables`. Absolute paths and `..` are rejected. A path `curio:<path>` names one of [the pages Curio shares](../agents/agent.curio.builtin@1/) with every agent, by its path there: `curio:default_preamble.md`, the preamble Curio's own agents run, or `curio:rules/research_verify_rules.md`, the rules for checking a fact. Curio reads the page from its own, an import takes no file and no digest for it, and an export carries it as `prompts/<path>`. A `curio:` path that names no page, or leads out of them, is refused. |
+| `prompts` | | Prompt files by package-relative `path`, `sha256`, and declared `variables`. Absolute paths and `..` are rejected. A path `curio:<path>` names one of [the pages Curio shares](../agents/agent.curio.builtin@1/) with every agent, by its path there: `curio:default_preamble.md`, the preamble Curio's own agents run, or `curio:rules/plan-rules.md`, the rules of a dataflow plan. Curio reads the page from its own, an import takes no file and no digest for it, and an export carries it as `prompts/<path>`. A `curio:` path that names no page, or leads out of them, is refused. The `instruction` entry may name `skills`: the procedures it follows, which its chat holds from its first message, and so does a call of a capability with no instruction of its own, whatever the agent's `skills` are. No other prompt names skills. |
 | `compatibleTargets` | | Where the agent can attach: `{ kind: node\|canvas\|connection, requires: [...] }`. For `node`, `requires` lists what the node may be, any one of them enough: a flag its template declares, such as `loadsDataset` for a node that loads a dataset ([Node Catalog](NODE-CATALOG.md#6-the-manifest)), or a template id, such as `data-loading`. Empty means any node. |
 | `inputs`, `outputs` | | The context the agent reads (`inputs.reads`), the [catalog settings](#catalog-settings) every run of it receives (`inputs.requiredConfig`), and the named outputs it produces. |
 | `runtime` | | `execution` (`foreground` or `background`) and `reviewPolicy` (`report-only` or `review-before-apply`). |
 | `providerRequirements` | | Provider *capability* requirements such as `structured-output`, as a preference: an agent runs on the configuration chosen for it whatever these say. Credentials and configurations are never in a manifest. |
-| `tools` | | Typed, allowlisted tool **requirements**, not a permission grant. |
+| `tools` | | Typed, allowlisted tool **requirements**, not a permission grant. A chat that lists skills holds **skill.read** whatever this names. |
+| `skills` | | The [skills](SKILL-CATALOG.md#what-ships-with-curio) the agent's calls may hold, by name: skills Curio ships and [your own](#add-skills-and-agents). Its chat lists those its preamble does not hold and loads one when a task needs it; its modes are handed the ones their task needs. Without this field, every skill Curio ships; an empty list, none, and then its chat lists no skills and holds no skill.read. |
 | `settingsDefaults` | | Non-secret seed suggestions. |
 | `catalog` | | `{ listed, order }`, set by the agents Curio ships only: `listed` is `true` for a catalog agent and `false` for a helper, and `order` is the agent's place in the order the lists of who asks follow. No other key is accepted, and an import that sets it is refused. |
 | `workedExamples` | | `true` gives a run of the agent's instruction worked examples, the shipped dataflows closest to its task. A mode says so for itself, with `workedExamples` on its capability. Read for the agents Curio ships. |
@@ -457,7 +524,7 @@ node.output.interpret   dataset.fetch.author       research.verify
 
 Capability ids drive catalog discovery, orchestration and substitution, and are **never** used for authorization. A capability id must not contain a prompt filename, a path separator, an underscore, `.txt` or `.md`: `node.explain` is valid, while `explain_node_prompt` and `prompts/explain.txt` are rejected. A prompt can then be edited or replaced without changing the contract.
 
-Curio finds the agent for each of its own jobs by the capability it declares:
+Curio finds the agent for each of its own tasks by the capability it declares:
 
 | Capability | Curio picks the agent that declares it to |
 |---|---|
@@ -543,7 +610,7 @@ Curio ships with **no default LLM endpoint**. Until an operator sets a Deploymen
 | `CURIO_SOLVE_BATCH_DEADLINE` | `--solve-batch-deadline` | Seconds a Solve batch may run in all. Default 2700. |
 | `CURIO_VALIDATION_EXEC_TIMEOUT` | `--validation-exec-timeout` | Seconds one node may run when an agent validates code. Default 300. |
 | `CURIO_VALIDATION_NODE_LIMIT` | `--validation-node-limit` | How many nodes one validation run may execute. Upstream nodes whose earlier output is reused do not count. Default 25. |
-| `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH` | `--allow-publish` (default), `--no-allow-publish` | Allows or forbids **Publish** and **Unpublish** of agents, as it does for node packages and datasets. When forbidden, both are refused and their buttons are hidden on `/catalog/agents`. |
+| `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH` | `--allow-publish` (default), `--no-allow-publish` | Allows or forbids **Publish** and **Unpublish** of agents, as it does for node packages, datasets and skills. When forbidden, both are refused and their buttons are hidden on `/catalog/agents`. |
 
 Run `python curio.py start --help` for the current list. A flag writes its variable only when passed, so a value already in the environment is not cleared by a start that omits it. `--allow-publish` is the exception: `curio.py start` sets it on every start.
 
@@ -555,6 +622,7 @@ Run `python curio.py start --help` for the current list. A flag writes its varia
 
 ## See also
 
+- [`docs/SKILL-CATALOG.md`](SKILL-CATALOG.md): the skills agents read, how a call holds them, and importing, publishing and removing your own.
 - [`docs/NODE-CATALOG.md`](NODE-CATALOG.md): the node package catalog, whose storage and publish model this one mirrors.
 - [`docs/DATA-CATALOG.md`](DATA-CATALOG.md): the dataset catalog, the closest peer to this one.
 - [`docs/DISCOVERY-CATALOG.md`](DISCOVERY-CATALOG.md): the data portals the Dataset Finder can search.

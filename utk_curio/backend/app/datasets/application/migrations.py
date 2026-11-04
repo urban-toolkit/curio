@@ -175,11 +175,13 @@ def _owning_dataflow_for(
 def _rewrite_spec_ref(
     user_key: str, dataflow_id: str, old_id: str, new_id: str, new_dir_name: str
 ) -> None:
-    """Point a project's computed ref at the renamed dataset (id + dirName)."""
+    """Point a project's computed ref at the renamed dataset (id + dirName),
+    through the dataflow's doc, its one writer."""
+    from utk_curio.backend.app.collaboration import dataflow_docs
     from utk_curio.backend.app.projects import storage as project_storage
 
     with project_storage.spec_write_lock(user_key, dataflow_id):
-        spec = project_storage.read_spec(user_key, dataflow_id)
+        spec = dataflow_docs.live(user_key, dataflow_id)
         if not isinstance(spec, dict):
             return
         dataflow = spec.get("dataflow")
@@ -194,7 +196,7 @@ def _rewrite_spec_ref(
                 ref["dirName"] = new_dir_name
                 changed = True
         if changed:
-            project_storage.write_spec(user_key, dataflow_id, spec)
+            dataflow_docs.write(user_key, dataflow_id, spec, dataflow_docs.by_curio(user_key, "migration"))
 
 
 def _self_heal_crashed_migration(user_key: str, dataset_root: Path) -> bool:

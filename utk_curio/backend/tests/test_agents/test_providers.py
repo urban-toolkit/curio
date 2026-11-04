@@ -23,16 +23,38 @@ def _cfg(**kw):
     return ProviderConfig(**base)
 
 
+def _openai_answer(asked: dict, *, content=None, tool_calls=None, finish_reason="stop", usage=None):
+    """What an OpenAI-compatible server answers the request *asked*: a
+    completion when it is not streamed; when it is, its chunks: the text, each
+    call whole, the finish reason, then the usage."""
+    if not asked.get("stream"):
+        message = types.SimpleNamespace(content=content, tool_calls=tool_calls)
+        return types.SimpleNamespace(
+            choices=[types.SimpleNamespace(message=message, finish_reason=finish_reason)], usage=usage)
+
+    def _chunk(delta=None, finish=None):
+        delta = types.SimpleNamespace(**{"content": None, "tool_calls": None, **(delta or {})})
+        return types.SimpleNamespace(
+            choices=[types.SimpleNamespace(delta=delta, finish_reason=finish)], usage=None)
+
+    chunks = [_chunk({"content": content})] if content is not None else []
+    for index, call in enumerate(tool_calls or []):
+        chunks.append(_chunk({"tool_calls": [types.SimpleNamespace(
+            index=index, id=call.id,
+            function=types.SimpleNamespace(name=call.function.name, arguments=call.function.arguments))]}))
+    chunks.append(_chunk(finish=finish_reason))
+    chunks.append(types.SimpleNamespace(choices=[], usage=usage))
+    return iter(chunks)
+
+
 class TestOpenAICompatible:
     def test_dispatch_wires_model_messages_and_base_url(self, monkeypatch):
         seen = {}
 
-        def _create(model, messages):
+        def _create(model, messages, **asked):
             seen["model"] = model
             seen["messages"] = messages
-            return types.SimpleNamespace(
-                choices=[types.SimpleNamespace(message=types.SimpleNamespace(content="hello"))]
-            )
+            return _openai_answer(asked, content="hello")
 
         class FakeOpenAI:
             def __init__(self, **kwargs):
@@ -61,9 +83,7 @@ class TestOpenAICompatible:
                 seen["kwargs"] = kwargs
                 self.chat = types.SimpleNamespace(
                     completions=types.SimpleNamespace(
-                        create=lambda model, messages: types.SimpleNamespace(
-                            choices=[types.SimpleNamespace(message=types.SimpleNamespace(content="x"))]
-                        )
+                        create=lambda model, messages, **asked: _openai_answer(asked, content="x")
                     )
                 )
 
@@ -180,12 +200,14 @@ class TestStreaming:
 
         seen = {}
 
-        def _chunk(text):
-            return t.SimpleNamespace(choices=[t.SimpleNamespace(delta=t.SimpleNamespace(content=text))])
+        def _chunk(text, finish=None):
+            return t.SimpleNamespace(choices=[t.SimpleNamespace(
+                delta=t.SimpleNamespace(content=text), finish_reason=finish)])
 
         def _create(model, messages, stream, **kwargs):
             seen["model"], seen["messages"], seen["stream"] = model, messages, stream
-            return iter([_chunk("he"), _chunk(None), _chunk("llo")])
+            # A stream ends with its finish reason, as a server ends one.
+            return iter([_chunk("he"), _chunk(None), _chunk("llo"), _chunk(None, "stop")])
 
         class FakeOpenAI:
             def __init__(self, **kwargs):
@@ -272,9 +294,7 @@ class TestMaxOutputTokens:
 
         def _create(**kwargs):
             seen.update(kwargs)
-            if kwargs.get("stream"):
-                return iter([t.SimpleNamespace(choices=[t.SimpleNamespace(delta=t.SimpleNamespace(content="x"))])])
-            return t.SimpleNamespace(choices=[t.SimpleNamespace(message=t.SimpleNamespace(content="x"))])
+            return _openai_answer(kwargs, content="x")
 
         class FakeOpenAI:
             def __init__(self, **kwargs):
@@ -327,7 +347,8 @@ class TestUsageCapture:
                 assert kwargs["stream_options"] == {"include_usage": True}
                 final = t.SimpleNamespace(choices=[], usage=usage_obj)
                 delta = t.SimpleNamespace(
-                    choices=[t.SimpleNamespace(delta=t.SimpleNamespace(content="x"))], usage=None
+                    choices=[t.SimpleNamespace(delta=t.SimpleNamespace(content="x"), finish_reason="stop")],
+                    usage=None,
                 )
                 return iter([delta, final])
             return t.SimpleNamespace(
@@ -382,9 +403,7 @@ class TestUsageCapture:
         from utk_curio.backend.app.agents.infrastructure.providers import run_chat_completion
 
         def _create(**kwargs):
-            return t.SimpleNamespace(
-                choices=[t.SimpleNamespace(message=t.SimpleNamespace(content="x"))], usage=None
-            )
+            return _openai_answer(kwargs, content="x", usage=None)
 
         class FakeOpenAI:
             def __init__(self, **kwargs):
@@ -521,9 +540,8 @@ class TestTheSystemTurnPerProvider:
 
         def _create(**kwargs):
             seen.update(kwargs)
-            return types.SimpleNamespace(
-                choices=[types.SimpleNamespace(message=types.SimpleNamespace(content=None),
-                                               finish_reason="tool_calls")],
+            return _openai_answer(
+                kwargs, content=None, finish_reason="tool_calls",
                 usage=types.SimpleNamespace(prompt_tokens=120, completion_tokens=6,
                                             prompt_tokens_details=types.SimpleNamespace(cached_tokens=100)),
             )
@@ -598,9 +616,10 @@ def _fake_openai(monkeypatch, *, message=None, chunks=None, error=None):
         seen.update(kwargs)
         if error is not None:
             raise error
-        if kwargs.get("stream"):
+        if chunks is not None:
             return iter(chunks)
-        return types.SimpleNamespace(choices=[types.SimpleNamespace(message=message, finish_reason="tool_calls")])
+        return _openai_answer(kwargs, content=message.content, tool_calls=message.tool_calls,
+                              finish_reason="tool_calls")
 
     class FakeOpenAI:
         def __init__(self, **kwargs):
@@ -664,9 +683,10 @@ class TestNativeToolsOnOpenAI:
             stream_chat_turn,
         )
 
-        def _chunk(text=None, calls=None):
+        def _chunk(text=None, calls=None, finish=None):
             delta = types.SimpleNamespace(content=text, tool_calls=calls)
-            return types.SimpleNamespace(choices=[types.SimpleNamespace(delta=delta)], usage=None)
+            return types.SimpleNamespace(choices=[types.SimpleNamespace(delta=delta, finish_reason=finish)],
+                                         usage=None)
 
         def _piece(index, call_id=None, name=None, arguments=None):
             return types.SimpleNamespace(index=index, id=call_id,
@@ -677,6 +697,8 @@ class TestNativeToolsOnOpenAI:
             _chunk(calls=[_piece(0, "c1", "node__read", '{"node')]),
             _chunk(calls=[_piece(0, None, None, 'Id": "n1"}')]),
             _chunk(calls=[_piece(1, "c2", "delegate", '{"capability": "node.content.generate"}')]),
+            # A stream ends with its finish reason, as a server ends one.
+            _chunk(finish="tool_calls"),
         ]
         seen = _fake_openai(monkeypatch, chunks=chunks)
         events = list(stream_chat_turn(_cfg(), [{"role": "user", "content": "go"}], tools=_TOOLS))
@@ -896,6 +918,34 @@ class TestTheRealSDKs:
     def _sse(events) -> bytes:
         return "".join(events).encode("utf-8")
 
+    @classmethod
+    def _openai_reply(cls, request, completion: dict):
+        """The endpoint's answer to *request*: *completion* as JSON when the
+        request is not streamed; when it is, the same completion as the chunks
+        a server streams (the text, each call whole, the finish reason, the
+        usage), then ``[DONE]``."""
+        import json as _json
+
+        httpx = cls._http("openai")
+        if not _json.loads(request.content).get("stream"):
+            return httpx.Response(200, json=completion)
+        choice = completion["choices"][0]
+        head = {"id": completion["id"], "object": "chat.completion.chunk", "created": 0,
+                "model": completion["model"]}
+
+        def chunk(delta, finish=None):
+            return "data: " + _json.dumps(
+                {**head, "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}) + "\n\n"
+
+        events = [chunk({"role": "assistant", "content": choice["message"].get("content")})]
+        for index, call in enumerate(choice["message"].get("tool_calls") or []):
+            events.append(chunk({"tool_calls": [{"index": index, **call}]}))
+        events.append(chunk({}, choice["finish_reason"]))
+        if completion.get("usage"):
+            events.append("data: " + _json.dumps({**head, "choices": [], "usage": completion["usage"]}) + "\n\n")
+        events.append("data: [DONE]\n\n")
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=cls._sse(events))
+
     def _openai(self, monkeypatch, respond):
         import json as _json
 
@@ -911,7 +961,7 @@ class TestTheRealSDKs:
 
         real = openai.OpenAI
         monkeypatch.setattr(openai, "OpenAI", lambda **kw: real(
-            **kw, max_retries=0, http_client=httpx.Client(transport=httpx.MockTransport(handler))))
+            **{**kw, "max_retries": 0, "http_client": httpx.Client(transport=httpx.MockTransport(handler))}))
         return seen
 
     def _anthropic(self, monkeypatch, respond):
@@ -933,14 +983,12 @@ class TestTheRealSDKs:
         return seen
 
     def test_openai_a_call_and_a_native_round(self, monkeypatch):
-        httpx = self._http("openai")
-
         from utk_curio.backend.app.agents.infrastructure.providers import (
             ToolCall,
             run_chat_turn,
         )
 
-        seen = self._openai(monkeypatch, lambda request: httpx.Response(200, json={
+        seen = self._openai(monkeypatch, lambda request: self._openai_reply(request, {
             "id": "chatcmpl-1", "object": "chat.completion", "created": 0, "model": "m",
             "choices": [{"index": 0, "finish_reason": "tool_calls", "message": {
                 "role": "assistant", "content": None, "tool_calls": [{
@@ -1153,8 +1201,7 @@ class TestReplySchemas:
         from utk_curio.backend.app.agents.infrastructure.providers import run_chat_turn
 
         sdks = TestTheRealSDKs()
-        http = sdks._http("openai")
-        sent = sdks._openai(monkeypatch, lambda request: http.Response(200, json={
+        sent = sdks._openai(monkeypatch, lambda request: sdks._openai_reply(request, {
             "id": "c", "object": "chat.completion", "created": 0, "model": "m",
             "choices": [{"index": 0, "finish_reason": "stop",
                          "message": {"role": "assistant", "content": '{"map": null}'}}]}))

@@ -80,8 +80,9 @@ def _shipped(m: AgentManifest) -> AgentManifest | None:
 
 def agent_tools(m: AgentManifest) -> list[dict]:
     """The tools *m* uses in a chat, ``{id, label}`` each: its grants, by their
-    contracts' labels, what it reads before what it proposes. A tool Curio
-    does not define is never granted, so it is not listed."""
+    contracts' labels, what it reads before what it changes and what it
+    proposes to install. A tool Curio does not define is never granted, so it
+    is not listed."""
     granted = [tools.REGISTRY[tool_id] for tool_id in tools.resolve_grants(m.tools)]
     granted.sort(key=lambda contract: contract.effect != "read")
     return [{"id": contract.id, "label": contract.label or contract.id} for contract in granted]
@@ -380,12 +381,16 @@ def _materialize_definition(user_key: str, coord: str) -> None:
 
 
 # ── read ────────────────────────────────────────────────────────────────────
-def list_global_catalog(user_key: str, project_id: str | None = None) -> list[dict]:
-    """The Global Catalog: the built-in agent definitions available to import/install."""
+def list_global_catalog(user_key: str, project_id: str | None = None, *,
+                        spec_key: str | None = None) -> list[dict]:
+    """The Global Catalog: the built-in agent definitions available to import/install.
+
+    *spec_key* is the storage key of the dataflow *project_id* names, which
+    says what is in it: its owner's, for an editor the owner invited."""
     imported = imports.load_imported_agents(user_key)
     installed: set[str] = set()
     if project_id:
-        spec = projects_storage.read_spec(user_key, project_id)
+        spec = projects_storage.read_spec(spec_key or user_key, project_id)
         if spec is not None:
             installed = set(project_agents.project_agents(spec))
     # Global Catalog = shipped cards ∪ published definitions (published wins on dupes).
@@ -408,17 +413,19 @@ def list_global_catalog(user_key: str, project_id: str | None = None) -> list[di
     ]
 
 
-def list_my_imports(user_key: str, project_id: str | None = None) -> list[dict]:
+def list_my_imports(user_key: str, project_id: str | None = None, *,
+                    spec_key: str | None = None) -> list[dict]:
     """Account "My Imports": each imported coordinate whose definition resolves.
 
     With *project_id*, ``installedInProject`` is read from the project's
     lockfile — the same single source of truth the Global scope uses (memo
     dev/47; previously hardcoded False, so an installed agent's row could
-    show an active Install on this tab)."""
+    show an active Install on this tab). *spec_key* is the storage key of
+    that dataflow, its owner's for an editor the owner invited."""
     imported = imports.load_imported_agents(user_key)
     installed: set[str] = set()
     if project_id:
-        spec = projects_storage.read_spec(user_key, project_id)
+        spec = projects_storage.read_spec(spec_key or user_key, project_id)
         if spec is not None:
             installed = set(project_agents.project_agents(spec))
     out: list[dict] = []

@@ -10,10 +10,12 @@ from __future__ import annotations
 
 from typing import Iterable
 
+from utk_curio.backend.app.collaboration import dataflow_docs, owner_uses
 from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
 from utk_curio.backend.app.projects import storage as projects_storage
 from utk_curio.backend.app.packages.domain.package_id import PACKAGE_DIR_RE
 from utk_curio.backend.app.packages.domain.spec_packages import (
+    named_in_lockfile,
     project_packages,
     referencing_nodes,
     set_project_packages,
@@ -26,6 +28,41 @@ from utk_curio.backend.app.packages.application import (
 from utk_curio.backend.app.packages.repositories import defaults as defaults_io
 from utk_curio.backend.app.packages.domain.errors import PackageServiceError
 from utk_curio.backend.app.packages.application.seeding import BUILTIN_PACKAGE_ID
+
+
+class OwnersPackages:
+    """The packages of a dataflow's owner that a run of an editor she invited
+    reads from her store, *store_key*: those the dataflow *project_id* uses
+    (``prune.dataflow_packages``) that she put in it herself
+    (``collaboration.owner_uses``), read from its spec there the first time
+    the run asks. Nothing of them is copied into the editor's store, and her
+    other packages are not read, nor one only an editor's change named.
+
+    A run hands this to ``python_modules.modules_for_node`` and
+    ``model_packages.resolve_model_dirs`` (*owners*), which resolve a package
+    or a model the dataflow uses from her store, as her own run does, and any
+    other from the editor's."""
+
+    def __init__(self, store_key: str, project_id: str):
+        self.store_key = store_key
+        self.project_id = project_id
+        self._used: frozenset[str] | None = None
+
+    @property
+    def used(self) -> frozenset[str]:
+        """The dirNames of the packages the dataflow uses that its owner put in it."""
+        if self._used is None:
+            spec = projects_storage.read_spec(self.store_key, self.project_id)
+            majors = packages_store_reads._installed_majors_by_pkg(self.store_key)
+            hers = owner_uses.recorded(self.store_key, self.project_id)
+            self._used = frozenset(
+                dir_name for dir_name in packages_prune.dataflow_packages(spec, majors) if hers.package(dir_name)
+            )
+        return self._used
+
+    def uses(self, dir_name: str | None) -> bool:
+        """Whether the dataflow uses the package *dir_name*."""
+        return dir_name is not None and dir_name in self.used
 
 
 def get_project_lockfile(user_key: str, project_id: str) -> set[str]:
@@ -46,17 +83,58 @@ def _lockfile_or_empty(user_key: str, project_id: str) -> set[str]:
         return set()
 
 
-def _write_lockfile(user_key: str, project_id: str, dirs: Iterable[str]) -> dict:
+def _write_lockfile(user_key: str, project_id: str, dirs: Iterable[str], *, added: Iterable[str] = ()) -> dict:
+    """Write *dirs* as the lockfile of the dataflow *project_id*, *added* the
+    packages among them the write adds as its own.
+
+    A lockfile that names no package reads as the packages of the dataflow's
+    nodes (``spec_packages.project_packages``), and the callers write that
+    reading out whole, so each package this write names that the lockfile did
+    not name itself, other than those *added*, is one it read as already:
+    written down, no one's choice of it. The write says so
+    (``dataflow_docs.write``'s *backfilled*), and none of them goes on the
+    owner's record of what the dataflow uses (``collaboration.owner_uses``),
+    where a package an invited editor's node counted in would reach his runs
+    (:class:`OwnersPackages`)."""
     # Hold the per-project spec lock across the read-modify-write so a concurrent
     # dataset mutation (replace_dataflow_datasets) or project save can't
-    # clobber the package lockfile (or vice versa).
+    # clobber the package lockfile (or vice versa). The lockfile is written
+    # through the dataflow's doc, its one writer, so a tab in its room gets it.
     with projects_storage.spec_write_lock(user_key, project_id):
-        spec = projects_storage.read_spec(user_key, project_id)
+        spec = dataflow_docs.live(user_key, project_id)
         if spec is None:
             raise PackageServiceError(f"project {project_id} has no spec", 404)
+        backfilled = set(dirs) - named_in_lockfile(spec) - set(added)
         set_project_packages(spec, dirs)
-        projects_storage.write_spec(user_key, project_id, spec)
+        dataflow_docs.write(user_key, project_id, spec, dataflow_docs.person(user_key, "packages"),
+                            backfilled=backfilled)
         return spec
+
+
+def _add_to_lockfile(user_key: str, project_id: str, added: set[str]) -> tuple[set[str], bool]:
+    """Add the packages *added* to the lockfile of the dataflow *project_id*:
+    the packages it names then, backfill included (:func:`get_project_lockfile`),
+    and whether this wrote it.
+
+    It is written unless the lockfile names each of them itself
+    (``spec_packages.named_in_lockfile``). A lockfile that names no package
+    reads as the packages of the dataflow's nodes, so a node an invited editor
+    put on the canvas counts its package in before the dataflow's owner adds
+    it. Her add is her change all the same: written as hers, the lockfile puts
+    the package in her record of what the dataflow uses
+    (``collaboration.owner_uses``), and an editor's runs read her copy
+    (:class:`OwnersPackages`). Only what she adds: the other packages the
+    lockfile is written to name, as it read, go on no one's record
+    (:func:`_write_lockfile`). A lockfile that names them already, by an
+    editor's change or by such a write, is not written, and her add puts
+    them on her record all the same (``owner_uses.packages_put_in``)."""
+    current = get_project_lockfile(user_key, project_id)
+    if added <= named_in_lockfile(projects_storage.read_spec(user_key, project_id)):
+        owner_uses.packages_put_in(user_key, project_id, added)
+        return current, False
+    current |= added
+    _write_lockfile(user_key, project_id, current, added=added)
+    return current, True
 
 
 def install_to_project(
@@ -90,11 +168,7 @@ def install_to_project(
     # "nothing is broken" is a different statement from "nobody looked".
     extra["importErrors"] = outcome.import_errors
 
-    current = get_project_lockfile(user_key, project_id)
-    added = {dir_name, *outcome.packages}
-    if not added <= current:
-        current |= added
-        _write_lockfile(user_key, project_id, current)
+    current, _wrote = _add_to_lockfile(user_key, project_id, {dir_name, *outcome.packages})
     return {
         "packages": sorted(current),
         "addedToUserStore": outcome.copied,

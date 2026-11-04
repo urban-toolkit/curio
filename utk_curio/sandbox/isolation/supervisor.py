@@ -25,6 +25,7 @@ not here. Two reasons:
 import contextlib
 import json
 import os
+import re
 import shutil
 import signal
 import socket
@@ -249,6 +250,30 @@ def user_overlay_dir(shared_data_dir, user_key):
         os.path.dirname(os.path.abspath(shared_data_dir)),
         OVERLAY_SUBDIR, "users", str(user_key),
     )
+
+
+#: The most accounts other than the run's own whose node libraries one run
+#: reads (:func:`library_keys`).
+MAX_LIBRARY_KEYS = 4
+
+#: A storage key as one path segment: no separator, no dot.
+_STORAGE_KEY_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
+
+
+def library_keys(raw, user_key=None):
+    """The storage keys of the accounts other than the run's own, *user_key*,
+    whose node libraries a run reads, from an ``/exec`` body's
+    ``library_keys``: the dataflow owner's, for a run of an editor she invited
+    (the backend's ``node_exec.library_keys_of``, which alone decides). Each
+    a plain storage key, in order, at most :data:`MAX_LIBRARY_KEYS`;
+    anything else, and the run's own key, is left out."""
+    if not isinstance(raw, (list, tuple)):
+        return []
+    found = []
+    for key in raw:
+        if isinstance(key, str) and _STORAGE_KEY_RE.fullmatch(key) and key != user_key and key not in found:
+            found.append(key)
+    return found[:MAX_LIBRARY_KEYS]
 
 
 def prepare_user_overlay_dir(path, *, exec_uid=None):

@@ -629,7 +629,8 @@ MAX_NOTES = 16
 # file (``agent_text``). Each field is one small function that reads its
 # source when the file is rendered, so a change there reaches the agents with
 # no edit to the text. ``{{include:<path>}}`` puts another page of the base
-# entry there whole.
+# entry there whole, and ``{{skill:<name>}}`` a skill Curio ships, its body
+# without its frontmatter.
 
 #: A marker: a field name, then the argument after a colon when it takes one.
 _MARKER_RE = re.compile(r"\{\{([a-z][a-z0-9_.]*)(?::([^{}]+))?\}\}")
@@ -643,7 +644,7 @@ class PromptTemplateError(ValueError):
 
 class _Sources:
     """The files the fields read, each loaded at most once per render, and
-    the pages being rendered around the marker, outermost first."""
+    the pages and skills being rendered around the marker, outermost first."""
 
     def __init__(self, including: tuple[str, ...] = ()) -> None:
         self.including = including
@@ -714,8 +715,8 @@ def _agent_name(_src: _Sources, agent_id: str) -> str:
 
 def _template_label(src: _Sources, coord: str) -> str:
     """A template's label, by ``<package id>/<template id>``: a built-in
-    one's, or one's of a package Curio ships, such as Scout's charts
-    (``packages/curio.scout@1``)."""
+    one's, or one's of a package Curio ships, such as the Vega-Lite package's
+    charts (``packages/curio.vega-lite@1``)."""
     package_id = coord.rpartition("/")[0]
     where = BUILTIN_MANIFEST if package_id == BUILTIN_PACKAGE else f"packages/{package_id}"
     try:
@@ -1002,7 +1003,15 @@ def _include(src: _Sources, page: str) -> str:
     return agent_text.include(page, src.including)
 
 
-_NUMBER_WORDS = ("no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
+def _skill(src: _Sources, name: str) -> str:
+    """A skill Curio ships, by its name, its body rendered without its
+    frontmatter and its final line breaks (``agent_text.skill_text``)."""
+    from utk_curio.backend.app.agents.domain import agent_text
+
+    return agent_text.skill_text(name, src.including)
+
+
+_NUMBER_WORDS =("no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
 
 
 def _number(n: int) -> str:
@@ -1124,6 +1133,7 @@ PROMPT_FIELDS: dict[str, PromptField] = {
     "tools.wire_name": PromptField(_wire_name, takes_arg=True),
     "tools.delegate": PromptField(_delegate_tool),
     "include": PromptField(_include, takes_arg=True),
+    "skill": PromptField(_skill, takes_arg=True),
     "vega.schema_url": PromptField(lambda _src: VEGA_SCHEMA_URL),
     "vega.starter_ladder": PromptField(lambda _src: render_starter_ladder(VEGA_STARTER_LADDER)),
     "autk.starter_ladder": PromptField(lambda _src: render_starter_ladder(AUTK_STARTER_LADDER)),
@@ -1137,8 +1147,9 @@ PROMPT_FIELDS: dict[str, PromptField] = {
 
 def render_template(text: str, name: str = "the template", *, including: tuple[str, ...] = ()) -> str:
     """*text* with every marker filled from ``PROMPT_FIELDS``. *including*
-    holds the pages of the base entry being rendered around it, outermost
-    first, for ``{{include:<path>}}`` to refuse a page that includes itself.
+    holds the pages of the base entry and the skills being rendered around
+    it, outermost first, for ``{{include:<path>}}`` and ``{{skill:<name>}}``
+    to refuse a page or a skill that includes itself.
 
     Raises ``PromptTemplateError`` on a field the registry does not define, on
     a marker whose argument does not fit its field, and on any ``{{`` left in
@@ -1169,14 +1180,19 @@ def render_template(text: str, name: str = "the template", *, including: tuple[s
 # kind of text with one owner:
 #
 #   preamble       the built-ins' shared preamble, or a definition's own; optional
+#   skill-catalog  the skills a chat run may load, by name and description; optional
+#   skills         the skills a run is handed or loaded earlier, each whole; optional
 #   instruction    exactly one: the agent's, the invoked mode's, or an edited intent
 #   configuration  the catalog settings the run reads, framed as data
 #   tool-protocol  how to request a tool, and which tools are granted
 #   runtime        blocks composed per run: template rosters, the delegation paragraph
 #
-# A run selects its instruction; it never appends to one. Everything a user
-# wrote (an edited intent, a setting) comes before every runtime-owned slot, so
-# none of it can strip or pose as one.
+# The slots run from what the most runs share to what varies most, so a
+# provider's cache holds the longest prefix: the preamble and the catalog an
+# agent's runs share, then the skills of what one run works on. Skills are
+# the repository's text, as the preamble is. A run selects its instruction; it
+# never appends to one. Everything a user wrote (an edited intent, a setting)
+# comes before every runtime-owned slot, so none of it can strip or pose as one.
 
 
 @dataclass(frozen=True)
@@ -1189,6 +1205,8 @@ def compose_system(
     *,
     instruction: str,
     preamble: str | None = None,
+    skill_catalog: str | None = None,
+    skills: str | None = None,
     configuration: str | None = None,
     tool_protocol: str | None = None,
     runtime: tuple[str | None, ...] | list[str | None] = (),
@@ -1197,6 +1215,8 @@ def compose_system(
     Empty pieces are left out."""
     pieces = [
         ("preamble", preamble),
+        ("skill-catalog", skill_catalog),
+        ("skills", skills),
         ("instruction", instruction),
         ("configuration", configuration),
         ("tool-protocol", tool_protocol),

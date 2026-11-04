@@ -470,27 +470,37 @@ class TestTheSources:
                     marked.add(source.name)
         # Eleven state facts the code owns, each through a marker.
         assert len(marked) == 11, sorted(marked)
-        # The shared preamble, the knowledge pages it includes, one per
-        # feature, the rules other prompts include, the text the runtime
-        # composes a run's turns from, the words of the dataflow block, the
-        # words of the preamble's Autark section and the messages the checks
-        # send are the pages of the base entry, each listed once and each a
-        # file there: a page added or forgotten fails here.
+        # The shared preamble, the plan rules the tools include, the text the
+        # runtime composes a run's turns from, the words of the dataflow
+        # block, the words of the preamble's Autark section, the messages
+        # the checks send and the words of a skill evaluation's grader are the
+        # pages of the base entry, each listed once and each a file there: a
+        # page added or forgotten fails here. The procedures the prompts
+        # shared are skills.
         pages = _raw(BASE)["pages"]
         assert len(pages) == len(set(pages)), pages
         assert set(pages) == {
-            "default_preamble.md", "examples.md", "dataflow-block.md", "rules/package_contract.md",
-            "rules/research_notes_rules.md", "rules/research_verify_rules.md",
+            "default_preamble.md", "examples.md", "dataflow-block.md",
             "tools.md", "rules/plan-rules.md", "protocol.md", "frames.md",
             "delegate-contracts.md", "conversation-title.md", "keyword-types.md", "messages.md",
-            "autark-grammar.md",
-            *(f"knowledge/{name}.md" for name in (
-                "nodes", "node-control", "node-functions", "catalogs", "widgets", "selection-chips", "autark",
-                "compatibility", "vega-lite-starter", "autark-starter", "vega-lite-maps", "interaction-edges",
-                "map-edits", "scenarios", "dashboards", "provenance",
-            )),
+            "autark-grammar.md", "skill-evals.md",
         }
         assert {path.relative_to(BASE).as_posix() for path in BASE.rglob("*.md")} - {"README.md"} == set(pages)
+        # What the agents know of each feature is a skill Curio ships, one
+        # folder of skills/ each: a skill added or forgotten fails here. The
+        # preamble places the core three, and the agents' manifests name the
+        # others (test_skill_listing.py lists which run holds which).
+        skills = sorted(path.parent.name for path in (REPO_ROOT / "skills").glob("*/SKILL.md"))
+        assert skills == sorted((
+            "nodes", "node-control", "node-functions", "catalogs", "widgets", "selection-chips", "autark",
+            "compatibility", "vega-lite-starter", "autark-starter", "vega-lite-maps", "interaction-edges",
+            "map-edits", "scenarios", "dashboards", "provenance",
+            "reuse-first", "data-sources", "package-contract", "fact-checking", "research-notes",
+        ))
+        preamble = (BASE / "default_preamble.md").read_text(encoding="utf-8")
+        assert sorted(re.findall(r"\{\{skill:([^{}]+)\}\}", preamble)) == ["compatibility", "node-control", "nodes"]
+        named = {name for path in AGENTS.glob("*/manifest.json") for name in _raw(path.parent).get("skills", [])}
+        assert sorted(named | {"compatibility", "node-control", "nodes"}) == skills
         # No template anywhere: a source is the file the backend renders.
         assert not list(AGENTS.rglob("*.template.md"))
 

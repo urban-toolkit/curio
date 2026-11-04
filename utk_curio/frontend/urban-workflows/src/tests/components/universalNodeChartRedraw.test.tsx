@@ -49,6 +49,7 @@ jest.mock("vega", () => {
     initialize() { return this; }
     tooltip() { return this; }
     hover() { return this; }
+    addEventListener() { return this; }
     width() { return this; }
     height() { return this; }
     resize() { return this; }
@@ -77,12 +78,9 @@ jest.mock("../../providers/ProvenanceProvider", () => ({
 jest.mock("../../providers/ToastProvider", () => ({ useToastContext: () => ({ showToast: () => undefined }) }));
 jest.mock("../../providers/CollaborationProvider", () => ({
   useCollab: () => ({
-    enabled: false,
     connected: false,
     users: [],
-    proposals: [],
     lockedNodes: {},
-    currentUserId: null,
     onRemote: () => () => undefined,
   }),
 }));

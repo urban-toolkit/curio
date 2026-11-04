@@ -1,0 +1,60 @@
+{
+  "skill_name": "catalogs",
+  "agent": "agent.curio.node-builder@1",
+  "dataflow": "docs/examples/dataflows/data-pool-vega-2.json",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I saved a scenario called 'Cool roofs' in my other project, 'Heat 2026'. Bring it into this dataflow with its results.",
+      "expected_output": "No nodes rebuilt: the answer tells the user that a scenario of another project comes into this dataflow, with its saved results, when they drag its card in from Scenario, Browse all (the Scenario Catalog), naming Cool roofs and Heat 2026.",
+      "assertions": [
+        "The answer tells the user to bring the scenario in by dragging its card from the Scenario Catalog (Scenario, Browse all) into this dataflow.",
+        "The answer names the scenario and its project: Cool roofs and Heat 2026.",
+        "The answer makes no node, plan or code that rebuilds the scenario.",
+        "The answer does not claim that the scenario is already in this dataflow."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "The City of Chicago's data portal has a building footprints dataset. Get it into this project so a node can load it.",
+      "expected_output": "The answer explains that the footprints first come into the Data Catalog as a dataset, downloaded from the portal through the Discovery Catalog (the Dataset Finder proposes the download), or it hands the search to the Dataset Finder, and that a node then loads the dataset by its Data Catalog id. It writes no URL, file name or dataset id from memory.",
+      "assertions": [
+        "The answer creates no loader node whose code holds a URL, a file name or a dataset id that no tool returned.",
+        "The answer says the footprints come into the Data Catalog as a dataset, downloaded from the portal through the Discovery Catalog or the Dataset Finder, or it delegates finding them to the Dataset Finder.",
+        "The answer does not claim the footprints are already in the Data Catalog, or that a node can load them before they are downloaded."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "I have an API key for OpenWeather. Where do I put it so a node's code can call their API, and how does the code read it?",
+      "expected_output": "The answer says to save the key in API Settings as a Node code key, under a name, for the API's host, and that node code reads it only as api_key = curio_secret(\"<name>\"), never with the key written in the code.",
+      "assertions": [
+        "The answer tells the user to save the key in API Settings as a Node code key, under a name of their choice, for the OpenWeather API's host.",
+        "The answer says node code reads the key as curio_secret(\"<name>\"), with the name it was saved under.",
+        "The answer writes no code with the key's value in it, and does not ask the user to paste the key into the chat."
+      ]
+    }
+  ],
+  "trigger_queries": [
+    {"query": "Is there a package in the Node Catalog with a raster calculator I could add to this project?", "should_trigger": true},
+    {"query": "which trained models do i have that can tell trees from buildings in street photos", "should_trigger": true},
+    {"query": "Bring the Chicago Neighborhoods boundaries into this project so the roofs can be grouped by neighborhood.", "should_trigger": true},
+    {"query": "The city's open data portal has building footprints. How would they get into my catalog so a node here can use them?", "should_trigger": true},
+    {"query": "I saved a 'Cool roofs' scenario in my other project. Can I reuse it here instead of building it again?", "should_trigger": true},
+    {"query": "Do I already have Chicago community area boundaries somewhere, or do I need to download them?", "should_trigger": true},
+    {"query": "Is there an agent that can find a data source for the loading node for me?", "should_trigger": true},
+    {"query": "Where do I keep the API key for the weather service so a node's code can use it?", "should_trigger": true},
+    {"query": "Before we start: what packages, models and datasets do I have that would help study green roofs?", "should_trigger": true},
+    {"query": "Where would a collection of street-level photos of Chicago that I could analyze here live, and how would a node open it?", "should_trigger": true},
+    {"query": "Sort the bars by vegetated area and color them dark green.", "should_trigger": false},
+    {"query": "Let me pick how many zip codes the chart shows with a slider.", "should_trigger": false},
+    {"query": "When I click a zip code's bar, show its roofs in a table next to the chart.", "should_trigger": false},
+    {"query": "What did the transformation node look like before my last edit?", "should_trigger": false},
+    {"query": "Put the roofs on a Vega-Lite map colored by vegetated area.", "should_trigger": false},
+    {"query": "Draw the roofs as points on an Autark map.", "should_trigger": false},
+    {"query": "Compare the top 10 and the top 20 zip codes as two scenarios side by side.", "should_trigger": false},
+    {"query": "The transformation node fails with a KeyError on 'zip'. Why?", "should_trigger": false},
+    {"query": "Pin the bar chart to the dashboard.", "should_trigger": false},
+    {"query": "Write a node that keeps only the roofs larger than 10,000 square feet.", "should_trigger": false}
+  ]
+}

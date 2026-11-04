@@ -46,6 +46,7 @@ if str(REPO_ROOT) not in sys.path:
 from jsonschema import Draft202012Validator  # noqa: E402
 
 from utk_curio.backend.app.packages.service import unversioned_node_type
+from utk_curio.backend.app.projects import storage as project_storage
 from utk_curio.backend.app.projects.scenarios import scenario_problems
 
 SCHEMA_PATH = REPO_ROOT / "docs" / "schemas" / "trill.v1.json"
@@ -163,10 +164,18 @@ def _validate_one(
     max_errors: int,
     quiet: bool,
 ) -> int:
-    """Report on one file. Returns 0 when it validated, 1 otherwise."""
+    """Report on one file. Returns 0 when it validated, 1 otherwise.
+
+    A project's ``spec.trill.json`` is read with the history its project
+    keeps beside it, so the whole document is validated."""
     try:
-        with path.open(encoding="utf-8") as fh:
-            doc = json.load(fh)
+        if path.name == project_storage.SPEC_FILE:
+            doc = project_storage.read_spec_in(path.parent)
+            if doc is None:
+                raise FileNotFoundError(path)
+        else:
+            with path.open(encoding="utf-8") as fh:
+                doc = json.load(fh)
     except json.JSONDecodeError as exc:
         if not quiet:
             print(f"  FAIL {_rel(path)}\n    not valid JSON: {exc}", file=sys.stderr)

@@ -1,6 +1,6 @@
 /**
  * A package template that draws with the Vega-Lite grammar (`grammarId:
- * "vega-lite"`), as the Scout package's charts do, registered as
+ * "vega-lite"`), as the Vega-Lite package's charts do, registered as
  * `packagesClient` registers one. Suites that check a rule keyed on the
  * Vega-Lite node run it for such a template too: it draws with the node's own
  * behavior, so it must be drawn, saved and walked the same way.
@@ -8,15 +8,15 @@
 import { clearPackageNodes, registerNode } from "../../registry/nodeRegistry";
 import type { NodeDescriptor } from "../../registry/types";
 
-/** One of Scout's charts, versioned as a palette drop writes it. */
-export const VEGA_LITE_TEMPLATE = "curio.scout/donuts@1";
+/** One of the Vega-Lite package's charts, versioned as a palette drop writes it. */
+export const VEGA_LITE_TEMPLATE = "curio.vega-lite/donuts@1";
 
 /** Registers {@link VEGA_LITE_TEMPLATE}; undo it with {@link clearVegaLiteTemplate}. */
 export function registerVegaLiteTemplate(id: string = VEGA_LITE_TEMPLATE): void {
   const descriptor = {
     id,
     source: "package",
-    package: { packageId: id.split("/")[0], major: 1, version: "1.0.0", name: "Scout", publisher: "Curio" },
+    package: { packageId: id.split("/")[0], major: 1, version: "1.0.0", name: "Vega-Lite", publisher: "Curio" },
     category: "vis_grammar",
     label: "Donuts",
     icon: {},

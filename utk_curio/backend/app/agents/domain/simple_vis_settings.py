@@ -92,7 +92,7 @@ def template_problem(behavior: object, label: object, where: str) -> str | None:
 
 
 def describe(setting: dict | None) -> str:
-    """The setting as the view's select names it, as a review card reads it:
+    """The setting as the view's select names it, as a change card reads it:
     ``Image column: overlay_url``, or the select's own word for every image
     column, ``Image column: all``, when it names none."""
     return f"{_WORDS['settings']['imageColumn']}: {_column((setting or {}).get('imageColumn')) or _WORDS['all']}"

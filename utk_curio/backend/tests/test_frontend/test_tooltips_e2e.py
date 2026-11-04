@@ -21,7 +21,9 @@ tooltip, no Monaco hover. Checked where jsdom has no layout to read:
    a mouse click on a button shows none after it.
 4. A bar of example 02's zip chart: the tooltip at the pointer says what the
    chart element's ``data-tooltip`` says, the bar's fields, and the chart
-   carries no ``title``.
+   carries no ``title``. And a line saying ``"tooltip": true``, between its two
+   points, where Vega gives no tooltip of its own: on it and 5 px from it, the
+   nearer point's fields at the pointer; 30 px from it, none.
 5. No element with a ``title`` and no SVG ``<title>``: on the canvas with 26
    open, its editors, their Inputs and the tool rail's palettes open; on the
    Data Catalog and Node Catalog pages, a card's details open; on a
@@ -75,6 +77,7 @@ from .utils import (
     one_tooltip,
     open_strip_category,
     open_tools_palette,
+    play_node,
     require_owner_view,
     require_project_page,
     require_user_auth,
@@ -86,6 +89,7 @@ from .utils import (
     tooltip_close_up,
     tooltip_saying,
     tooltips_on_screen,
+    wait_for_node_done,
 )
 from .walkthroughs import load_example_spec
 
@@ -110,6 +114,26 @@ PLACE_PX = 2.0
 GAP_PX = 6.0
 #: How long example 02 may take to run, in ms.
 RUN_MS = 180000
+
+#: A line through two points far apart, whose tooltip is Vega-Lite's own
+#: `"tooltip": true`. Vega answers a line only within its stroke's width of
+#: one of its points, so most of this one gave no tooltip until the nearest
+#: mark's (components/tooltip/vegaTooltip.ts). Its stroke is 4 px, so a probe
+#: of its pixels finds a point well inside it.
+LINE_ROWS = "tooltips-line-rows"
+LINE_CHART = "tooltips-line-chart"
+LINE_ROWS_CODE = (
+    "import pandas as pd\n\n"
+    "return pd.DataFrame({'day': [1, 5], 'shade': [10, 90]})\n"
+)
+LINE_CHART_SPEC = json.dumps({
+    "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+    "mark": {"type": "line", "tooltip": True, "strokeWidth": 4},
+    "encoding": {
+        "x": {"field": "day", "type": "quantitative"},
+        "y": {"field": "shade", "type": "quantitative"},
+    },
+}, indent=2)
 
 #: The join's targets, by name: what the pointer rests on.
 TARGETS = {
@@ -391,6 +415,26 @@ def _open_first_details(page, card: str) -> None:
     expect(page.get_by_role("dialog").first).to_be_visible(timeout=10000)
 
 
+def _line_spec() -> dict:
+    """A dataflow of LINE_ROWS' two rows drawn as LINE_CHART's line."""
+    def node(node_id: str, node_type: str, x: int, content: str) -> dict:
+        return {
+            "id": node_id, "type": node_type, "x": x, "y": 0, "content": content,
+            "in": "DEFAULT", "out": "DEFAULT", "goal": "", "metadata": {"keywords": []},
+        }
+
+    return {"dataflow": {
+        "name": "Line tooltips", "task": "", "description": "", "packages": [], "datasets": [],
+        "nodes": [
+            node(LINE_ROWS, "curio.builtin/data-loading", 0, LINE_ROWS_CODE),
+            node(LINE_CHART, "curio.builtin/vis-vega", 700, LINE_CHART_SPEC),
+        ],
+        "edges": [
+            {"id": f"reactflow__edge-{LINE_ROWS}out-{LINE_CHART}in", "source": LINE_ROWS, "target": LINE_CHART},
+        ],
+    }}
+
+
 @pytest.mark.parametrize("target", list(TARGETS))
 def test_a_tooltip_is_the_same_at_every_canvas_zoom(
     app_frontend: "FrontendPage",
@@ -622,6 +666,56 @@ def test_a_chart_mark_shows_its_data_at_the_pointer_and_no_title(
         f"the tooltip says {tip['text']!r}; the chart's data-tooltip, {chart['tooltip']!r}"
     )
     _assert_at_pointer(tip, point, "the zip chart's tooltip")
+
+
+def test_a_line_shows_its_tooltip_between_its_points(
+    app_frontend: "FrontendPage",
+    current_server: str,
+    page,
+):
+    require_project_page()
+    require_user_auth()
+    page.emulate_media(reduced_motion="reduce")
+    stub_login_and_enter_workflow(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name="Line Tooltips",
+        username="tooltips_line",
+        project_name="Line tooltips",
+        project_spec=_line_spec(),
+    )
+    require_owner_view(page)
+    node_locator(page, LINE_CHART).wait_for(state="visible", timeout=45000)
+    play_node(page, LINE_CHART)
+    wait_for_node_done(page, LINE_CHART, node_type="vis-vega", timeout_ms=RUN_MS)
+    frame_node(page, LINE_CHART)
+    page.locator(f"#vega{LINE_CHART} canvas").first.wait_for(state="attached", timeout=60000)
+    selector = drawing_selector(page, LINE_CHART)
+    assert selector, "the line chart drew nothing"
+
+    # The line runs from (1, 10) at the bottom left to (5, 90) at the top
+    # right, so the place 40% across its box and 60% down it is on it, 40% of
+    # the way from the first point: the nearer one.
+    mark = mark_point(page, selector, (0.4, 0.6))
+    assert mark, "no pixel of the line was found 40% along it"
+    on_line = assert_in_view(page, mark["x"], mark["y"], "the line, 40% along it")
+    move_pointer_away(page, f"#vega{LINE_CHART}")
+    page.mouse.move(*on_line)
+    tip = one_tooltip(page, "the line, 40% along it")
+    assert tip["text"] == "day: 1 shade: 10", f"on the line, 40% along it: {tip}"
+    _assert_at_pointer(tip, on_line, "the line's tooltip")
+
+    # 5 px under it, the same; 30 px under it, at least 13 px from it whatever
+    # its slope on screen, none.
+    near = assert_in_view(page, on_line[0], on_line[1] + 5, "5 px under the line")
+    move_pointer_away(page, f"#vega{LINE_CHART}")
+    page.mouse.move(*near)
+    tip = one_tooltip(page, "5 px under the line")
+    assert tip["text"] == "day: 1 shade: 10", f"5 px under the line: {tip}"
+    far = assert_in_view(page, on_line[0], on_line[1] + 30, "30 px under the line")
+    page.mouse.move(*far)
+    no_tooltip(page, "30 px under the line")
 
 
 def test_the_canvas_draws_no_native_tooltip(

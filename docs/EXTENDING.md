@@ -18,8 +18,9 @@ Each catalog lists folders, one per item, each with a `manifest.json` that decla
 | Data | [`datasets/`](../datasets/) | [`dataset.v1.json`](schemas/dataset.v1.json) | [DATA-CATALOG §7](DATA-CATALOG.md#7-the-manifest) |
 | Discovery | [`discovery/`](../discovery/) | [`discovery-source.v1.json`](schemas/discovery-source.v1.json) | [DISCOVERY-CATALOG §8](DISCOVERY-CATALOG.md#8-the-manifest) |
 | Agent | [`agents/`](../agents/) | [`agent-package.v1.json`](schemas/agent-package.v1.json) | [AGENT-CATALOG §6](AGENT-CATALOG.md#6-the-manifest) |
+| Skill | [`skills/`](../skills/), and a package's `skills/` | The frontmatter of the [Agent Skills format](https://agentskills.io/specification) | [SKILL-CATALOG §6](SKILL-CATALOG.md#6-the-skill-format), and [§9 Writing a skill](#9-writing-a-skill) |
 
-The Scenario Catalog has no manifests: it lists the scenarios saved in your projects.
+The Scenario Catalog has no manifests: it lists the scenarios saved in your projects. A skill's folder holds a `SKILL.md` in place of a `manifest.json`, and its frontmatter says what the skill is.
 
 Curio's code names no artifact these folders ship: it reads what each one brings off its manifest, so yours gets what Curio's own get. [`test_no_artifact_ids_in_core.py`](../utk_curio/backend/tests/test_no_artifact_ids_in_core.py) fails on a shipped id in Curio's code, outside its short list of exceptions.
 
@@ -33,6 +34,7 @@ packages/<packageId>@<major>/
 ├── LICENSE         ← optional
 ├── sources/        ← Python / JS starters, or the TSX behavior hooks
 ├── scripts/        ← REQUIRED for custom UI: the compiled behaviors.js bundle
+├── skills/         ← optional: what the package tells Curio's agents, one folder per skill (§9)
 └── starters/       ← optional per-template starter snippets
 ```
 
@@ -45,7 +47,7 @@ A `template` inside `manifest.json` declares one node kind. It carries:
 - `behavior`: string key resolved through [`registry/behaviorRegistry`](../utk_curio/frontend/urban-workflows/src/registry/behaviorRegistry.ts) to the React hook that implements the node's behaviour
 - `engine` (`python` | `javascript`): if the node runs user code, which sandbox executes it. A template with `hasCode`, an `engine` and no `backendHandler` is one an agent's Solve runs in the sandbox to verify what it writes
 - `source` + `starterIsContent`: the starter a fresh node opens with, and whether it is the node's whole content, set through the template's `widgets`. With `starterIsContent`, a node an agent's plan creates starts with the starter too, and Solve leaves it as it is ([Authoring nodes](AUTHORING-NODES.md#widgets-in-a-template))
-- `widgets` + `opensOnWidgets`: the widgets a fresh node starts with, a node an agent creates included, and whether the node opens on its Widgets tab ([Authoring nodes](AUTHORING-NODES.md#widgets-in-a-template))
+- `widgets` + `opensOnControls`: the widgets a fresh node starts with, a node an agent creates included, and whether the node's Widgets tab shows only their controls and the node opens there ([Authoring nodes](AUTHORING-NODES.md#widgets-in-a-template))
 - `loadsDataset`: a node of this template loads a dataset into the dataflow. The Dataset Finder attaches to it, Solve finds it a source before writing its code ([Agent Catalog](AGENT-CATALOG.md#solve)), and the Data Catalog counts the nodes after it as the dataset's consumers ([Data Catalog](DATA-CATALOG.md#lineage))
 - `dataflowCategories` (`{"tags": [...], "dataTypes": [...]}`): the tags and data types a dataflow with a node of this template is filed under on the **Projects** page. At the top level of the manifest it covers every template of the package. Curio finds the rest in the dataflow itself, such as Pandas for code that imports it, so declare only what a node's code does not show ([Authoring nodes](AUTHORING-NODES.md#tags-and-data-types))
 
@@ -314,7 +316,7 @@ Each entry names a *behavior key* (a string), not a JS module path. The same key
 
 ```jsonc
 "kind": "model",
-"dependencies": { "js": {}, "packages": { "curio.scout@1": "*" },
+"dependencies": { "js": {}, "packages": { "curio.rasterization@1": "*" },
                   "python": { "numpy": "", "onnxruntime": ">=1.17", "pyproj": ">=3.7.2", "rasterio": ">=1.4" } },
 "model": { "type": "image-to-image", "runtime": "onnx", "entry": "models/deep_umbra.onnx", ... },
 "templates": [
@@ -337,7 +339,7 @@ model = curio_load_model("model.scout.deep-umbra")
 return accumulated_shadow(input_0, season=[!! season !!], model=model, output_file=curio_output_file)
 ```
 
-`deep_umbra` imports `tile_bounds` from `scout_rasters`, the module of the Scout package, which Deep Umbra names in `dependencies.packages`. Adding Deep Umbra adds Scout too (§3.8, "Packages a package needs").
+`deep_umbra` imports `tile_bounds` from `scout_rasters`, the module of the Rasterization package, which Deep Umbra names in `dependencies.packages`. Adding Deep Umbra adds Rasterization too (§3.8, "Packages a package needs").
 
 Agents read the same files. A run that writes an Accumulated Shadow node's code gets the template's whole `description`, this starter, and the public functions of `deep_umbra` and of `scout_rasters`, each by its signature and the first paragraph of its docstring, the functions the starter imports first. They are read from the sources with `ast`, never imported (`read_functions` in [`packages/domain/function_nodes.py`](../utk_curio/backend/app/packages/domain/function_nodes.py)), from the modules the sandbox makes importable for the node (`modules_for_node`), in the run's dataflow block ([ARCHITECTURE.md, Agent Prompt Composition](ARCHITECTURE.md#agent-prompt-composition)). `packages.resolve` gives an agent a package's functions and its `dependencies.packages` too. The preamble names no package's templates or functions, so a package documents its functions in their docstrings and shows their use in its starters: that is what an agent knows of them.
 
@@ -350,7 +352,7 @@ classes = None  # every class the model names
 return curio_segment(input_0, model, classes)
 ```
 
-These helpers are in the sandbox's namespace for every Python node, with the other functions node code calls, each given with its arguments in [`node-functions.md`](../agents/agent.curio.builtin@1/knowledge/node-functions.md):
+These helpers are in the sandbox's namespace for every Python node, with the other functions node code calls, each given with its arguments in [the functions page](../skills/node-functions/SKILL.md):
 
 - `curio_load_model("<model id>")` ([`sandbox/util/catalog_helpers.py`](../utk_curio/sandbox/util/catalog_helpers.py)) loads a model package's model: its `folder`, its `manifest`, its `labels`, the `runner` that labels an image's pixels, opened on first use, and `run`, which feeds an ONNX graph the arrays a node prepared. Before the run the backend resolves every id a node's code names to the folder of a model package in the account's store (`resolve_models` in [`execution/node_exec.py`](../utk_curio/backend/app/execution/node_exec.py), over `packages.service.resolve_model_dirs`); a model the store does not hold gets none, and the call says to add it. Models ship as model packages under [`packages/`](../packages/), or are added from the Discovery Catalog's Hugging Face models source (§3).
 - `curio_segment(images, model, classes=None, *, overlays=True)` ([`sandbox/util/vision.py`](../utk_curio/sandbox/util/vision.py)) runs a loaded segmentation model the way its manifest describes (a `runtime` of `onnx` on onnxruntime, `transformers` on Transformers) over every row's `path`, and returns the rows with `dominant_class`, `dominant_pct`, a `<class>_pct` per class, `overlay_url` and `segment_error` first. With `overlays`, each overlay is written with `curio_derived_file` (kind `"image"`, [`sandbox/util/collections.py`](../utk_curio/sandbox/util/collections.py)) and served back by the media route (§3.6).
@@ -373,7 +375,7 @@ This one belongs in `curio.builtin@1`, not in a model package, because it's reus
 
 The agents' prompts describe every `curio.builtin@1` template from this manifest: the shared preamble gives its label, description, control, port types, how many connections its inputs accept, and interaction support, and other prompts name templates by label. The backend reads them from the manifest when it starts, so those lists follow a built-in template you add or change with no other edit (see [CONTRIBUTING.md, Agent Text](CONTRIBUTING.md#agent-text)).
 
-A new feature of Curio, a built-in template among them, also gets its page in the base entry of the agents, [`agents/agent.curio.builtin@1/knowledge/`](../agents/agent.curio.builtin@1/knowledge/), in the same change: what the feature does, written for the agents, in a page the preamble includes. A built-in template is on a page when a page names it as `{{template.label:curio.builtin/<id>}}`, a kind of chip when a page shows one through its marker, and a function node code calls when [`node-functions.md`](../agents/agent.curio.builtin@1/knowledge/node-functions.md) gives it, in that page's fixed line shapes (`agents/domain/node_functions.py` reads them). `test_knowledge_pages.py` fails while one is on no page, and `test_node_functions_sandbox.py` while the functions page and what node code gets in each engine differ.
+A new feature of Curio, a built-in template among them, also gets a skill in [`skills/`](../skills/), in the same change: what the feature does, written for the agents, in a skill the agents that work with it name in their manifests ([§9](#9-writing-a-skill)). A built-in template is in a skill when a skill names it as `{{template.label:curio.builtin/<id>}}`, a kind of chip when a skill shows one through its marker, and a function node code calls when [the functions page](../skills/node-functions/SKILL.md) gives it, in that page's fixed line shapes (`agents/domain/node_functions.py` reads them). `test_feature_skills.py` fails while one is in no skill, and `test_node_functions_sandbox.py` while the functions page and what node code gets in each engine differ.
 
 ### 4.4 Behavior hooks
 
@@ -406,7 +408,7 @@ Spatial Join's route is a single handler at the end of [`api/routes.py`](../utk_
 
 The three packages are bundled in-repo under [`packages/`](../packages/). Seeding covers `curio.builtin@1` plus, when Curio starts with `--with-examples`, whatever the shipped example dataflows declare as dependencies (`example_dep_package_ids` in [`backend/app/packages/application/seeding.py`](../utk_curio/backend/app/packages/application/seeding.py)). Example 24 declares `model.scout.deep-umbra@1`, so Deep Umbra is installed with the examples. `curio.example-ui@1` is in neither set: users opt in by clicking **Add to project** in the catalog. Generally:
 
-- **Bundled-and-auto-installed** → `curio.builtin@1`, which every user must have, and, with `--with-examples`, the packages a shipped dataflow declares (`curio.weather@1`, `curio.media@1`, `curio.scout@1`, and the model packages `model.curio.ddrnet23-slim@1`, `model.scout.deep-umbra@1` and `model.scout.weather-gnn@1`).
+- **Bundled-and-auto-installed** → `curio.builtin@1`, which every user must have, and, with `--with-examples`, the packages a shipped dataflow declares (`curio.weather@1`, `curio.media@1`, `curio.rasterization@1`, `curio.vega-lite@1`, and the model packages `model.curio.ddrnet23-slim@1`, `model.scout.deep-umbra@1` and `model.scout.weather-gnn@1`).
 - **Bundled-and-installable** → optional first-party packages like `curio.example-ui@1`, `ai.utk.uhvi@1`. Visible in the catalog without a remote registry roundtrip.
 - **Remote** → publishing through Curio's catalog endpoint, for third-party packages. Same manifest schema.
 
@@ -720,3 +722,63 @@ quarantined for 120s with an honest 503 (handler-level errors never count; a rei
 it immediately). **Resident services, background jobs, and secret mediation remain out of
 scope** - and a draft
 needing them is refused with a finding naming exactly that.
+
+## 9. Writing a skill
+
+A skill tells Curio's agents how to do a specific task: instructions, procedural knowledge and reference facts, written for an agent. Curio's skills are in [`skills/`](../skills/), one folder each, in the open [Agent Skills format](https://agentskills.io/specification), and a package's in its own `skills/` (below).
+
+**The folder.** A skill is `skills/<name>/SKILL.md`, in a folder named as the skill: YAML frontmatter between two `---` lines, then the body, the Markdown an agent reads. Files a skill keeps beside its `SKILL.md`, such as `references/REFERENCE.md`, sit one level below its folder, as the format asks; a run reads the body of `SKILL.md`, and a chat reads one of those files with skill.read when the body names it. The skill's evaluations, in its `evals/` folder, are never among them ([Evaluating a skill](#evaluating-a-skill)).
+
+**The frontmatter** holds the format's fields and no other:
+
+```yaml
+---
+name: widgets
+description: >-
+  Use this skill when a node declares, places or changes a widget, such as a threshold, a year or
+  a dataset the user sets without editing code, or when several nodes share one value.
+license: MIT
+compatibility: Written for Curio's agents, their tools and node code.
+metadata:
+  author: curio
+  version: "1.0.0"
+  curio-behaviors: code data-export data-summary edit-features vega autk-grammar
+---
+```
+
+- `name`: the folder's name, 1 to 64 lowercase letters, digits and hyphens, with no hyphen first or last and none twice in a row.
+- `description`: when to use the skill, in 1 to 1,024 characters. Start it with "Use this skill when", name the task in the words a user types for it, not in the words of the skill's own mechanics, including requests that never name the skill's subject ("even if they never say catalog"), and say what the skill gives beyond the tools that could answer alone. Where a near task belongs to another skill, say so. In the format, the description is what an agent reads of a skill before it loads it, so it says when to use the skill, not only what the skill is ([optimizing descriptions](https://agentskills.io/skill-creation/optimizing-descriptions)).
+- `license`, `compatibility` (at most 500 characters) and `metadata`, strings by string keys, which holds Curio's facts about the skill: Curio's skills give `MIT`, the compatibility above, and `author` and `version`, the version quoted so YAML reads it as a string. Three more keys say what the skill serves, each a list of names with a space between each: `curio-behaviors`, the node behaviors (a template's `behavior`, such as `code`, `vega`, `autk-grammar` or `edit-features`) whose nodes a run writing one is handed the skill for; `curio-features`, the features of a dataflow (`scenario-boxes`, `interaction-edges`, `pinned-tiles`) a run reading one with them, or writing a node that takes part in one, is handed it for; and `curio-refusals`, the kinds a Solve check records when it refuses an attempt, whose next attempt is handed the skill. A package's skill can name a fourth, `curio-templates` (below). `curio-asks` names the words of a person's chat message that hand the skill to that turn, the way `/<name>` does: words or phrases, a comma between each, as `scenarios` gives `curio-asks: scenario, scenarios, what if, what-if`. Each counts whole and in any case, never inside a longer word, and only in a message a person typed, never in a task one agent hands another; the rest of the conversation keeps the skill. Each word a chat matches adds the skill's body to that turn and every later one, so name only words that mean the skill's task. A package's skill and a user's skill may name `curio-asks` too. The format's `allowed-tools` is allowed too, and Curio's skills leave it out.
+- A value that holds `: ` or ` #` goes in a folded block (`>-`), as the description above does, or in quotes: YAML reads those as a field's end and a comment.
+
+**The body** starts on the line after the closing `---`. It may hold Curio's markers wherever it states a fact the code owns, as the pages of the base entry do ([its README](../agents/agent.curio.builtin@1/README.md#editing-a-page)), and the backend fills them when it starts. A page or a prompt places a skill as `{{skill:<name>}}`, its body rendered without its frontmatter; the preamble places the core skills, `nodes`, `node-control` and `compatibility`, so every agent reads them. Keep `SKILL.md` under 500 lines.
+
+**Who reads it.** An agent reads a skill its manifest names in `skills` ([SKILL-CATALOG § Using a skill](SKILL-CATALOG.md#3-using-a-skill)): its chat lists the skill and loads it when a task matches the description, and its modes are handed it when what they work on is what the skill serves. Add a new skill to the `skills` of each agent in `agents/` that should read it; an agent of a user's that names no skills reads every skill Curio ships. A skill that holds a procedure a prompt follows, such as `reuse-first`, serves no behavior or feature: the prompt's runs are handed it by name, a mode's in its capability's `skills` and a chat's in its instruction's (`prompts.instruction.skills`), and the prompt keeps its role and its rules, not the procedure's text.
+
+**A user's skills.** A user's skill is kept in their account, not in `skills/`: **Import skill**, on the Skill Catalog page ([SKILL-CATALOG §5](SKILL-CATALOG.md#5-importing-publishing-and-sharing)), reads it leniently and keeps it in the format, and an agent of theirs holds it when the agent's manifest names it in `skills`, as the agents in `agents/` name Curio's. The worked example of [Add skills and agents](AGENT-CATALOG.md#add-skills-and-agents) is such a skill and an agent that names it: [`docs/examples/skills/street-trees/`](examples/skills/street-trees/SKILL.md) and [`docs/examples/agents/agent.you.tree-counter@1/`](examples/agents/agent.you.tree-counter@1/manifest.json). `test_skill_and_agent_example.py` imports both as a user does and loads the skill in a chat, and `test_user_skills_e2e.py` imports the same skill through the Skill Catalog page.
+
+**A package's skills.** A package keeps its skills in its own `skills/`, as `packages/<packageId>@<major>/skills/<name>/SKILL.md`, in the same format and held to the same rules: an install, an import or a publish of a package whose skill breaks one is refused, and the message names the file. A package's skill is read as written, so it holds no marker: nothing fills one. Every agent on a dataflow that uses the package holds the package's skills, whatever the agent's manifest names: its chat lists them after the agent's own, and a run is handed the ones that serve what it works on, as Curio's are. A package's templates often share their behaviors with Curio's nodes (Rasterization's Raster Calculator is `code` and the Vega-Lite package's charts `vega`, like Curio's Python and Vega-Lite nodes), so `curio-behaviors` would hand a package's skill to every Python node or chart. `curio-templates` names templates of the skill's own package instead, by their `id` in its manifest, and a run that writes or checks a node of one of them is handed the skill. A name means one skill: Curio's skills come first, then the account's own skills the agent holds ([SKILL-CATALOG §4](SKILL-CATALOG.md#4-your-own-skills)), then the packages' in the order of the dataflow's lockfile (`dataflow.packages`), and a skill whose name an earlier one has is left out, with a warning in the backend's log. The Skill Catalog lists a package's skills with their package, read-only ([Skills from packages](SKILL-CATALOG.md#skills-from-packages)). [Rasterization's skill](../packages/curio.rasterization@1/skills/rasterization/SKILL.md) and [the Vega-Lite package's](../packages/curio.vega-lite@1/skills/vega-lite-charts/SKILL.md) are examples.
+
+**The checks.** The backend reads each skill in `skills/` strictly when it starts ([`agents/domain/skills.py`](../utk_curio/backend/app/agents/domain/skills.py)), so a skill that breaks the format's rules, or names a marker no field defines, stops the start and names its file. In the backend suite, `test_skills.py` and `test_agent_text.py` hold every skill to the format's rules, `test_skills_ref.py` runs agentskills.io's reference validator on each and on each skill a shipped package ships, `test_skill_listing.py` lists the skills each agent's runs hold and fails on a skill no agent's run reaches and on a run of a prompt that no longer holds a procedure's text and is not handed its skill, and `test_package_skills.py` holds a package's skills in runs to the rules above. To run the validator yourself, `pip install skills-ref==0.1.1`, then `agentskills validate skills/<name>`.
+
+### Evaluating a skill
+
+Each skill Curio ships holds its evaluations in `evals/evals.json`, as agentskills.io's guide on [evaluating skills](https://agentskills.io/skill-creation/evaluating-skills) lays them out. A skill's listing leaves that folder out, so no run is offered it and no export carries it.
+
+- `skill_name`, and `evals`: test cases, each an `id`, a `prompt` a user would type, an `expected_output` and its `assertions`, which a grader checks each answer against.
+- `trigger_queries`, for a skill a chat loads: about twenty, each a `query` and whether it `should_trigger` the skill, eight to ten of each ([optimizing descriptions](https://agentskills.io/skill-creation/optimizing-descriptions)). A skill the preamble holds, or one an instruction hands to every chat, has none.
+- Curio's fields, at the top level or on a test case: `agent`, whose chat runs it; `dataflow`, the dataflow its project starts as (a shipped example, or a file under the skill's `evals/`); `target`, the canvas (the default, and where trigger queries run) or `{"kind": "node", "node": "<id>"}`.
+
+`agent_eval.py skills` runs them against an OpenAI-compatible endpoint you name in three variables, from a Python environment with Curio's requirements (`pip install -r requirements.txt`). It needs no running Curio: each worker is a backend of its own, and no node runs. Each run sends its message with the context a browser's chat sends beside it: the node its agent is attached to, or the whole dataflow, as the agent's reads say.
+
+```bash
+CURIO_EVAL_BASE_URL='<base URL>' CURIO_EVAL_API_KEY='<key>' CURIO_EVAL_MODEL='<model>' \
+  python utk_curio/tools/agent_eval.py skills --pilot --out ../skill-evals
+```
+
+- Each trigger query runs three times (`--runs`). Its trigger rate is the share of its runs that loaded the skill with skill.read, and it passes above one half when it should trigger, below it when it should not. A trigger run stops once its chat loads the skill, or once it delegates its work, before loading it, to a run Curio hands the skill, such as a node's content writer: that run did not load it, and `triggers.json` counts it as handed off. Any other delegation runs on. `--full-trigger-runs` lets every run finish. A query or a test case's prompt that holds a word the skill's `curio-asks` names hands the chat the skill: a trigger run of it is an error, which no rate counts, its `run.json` saying the chat was handed the skill, and a test case's runs with the skill hold it without `--hand`.
+- A run whose model call the server failed (a 5xx or a lost connection) runs again, up to twice, after 15 and 45 seconds; its `run.json` counts the attempts. A run that still fails is an error, which no rate counts.
+- Each test case runs three times with the skill, as Curio ships it, and three times without it: the same agent, with the skill taken out of the skills its run lists, of what it is handed and of its preamble. The same model grades each answer, with the words of [`skill-evals.md`](../agents/agent.curio.builtin@1/skill-evals.md). A grade cut off at the grader's output limit (8,192 tokens, the model's thinking included) is asked for again, and one that never comes whole is an error that says so, and whether the grader spent the limit thinking. Each `grading.json` records the grader's output tokens. `--hand` hands the skill over as `/<name>` in the runs with it.
+- `--pilot` runs one skill (the first, or the one it names) and says how long the whole run would take. `--skills a,b` picks skills, `--only trigger` or `--only task` one kind of run, `--jobs` the workers that run at once (4), and `--resume <folder>` goes on with an interrupted run.
+- Under `--out`, a run writes one folder: for each skill, `triggers.json`, `benchmark.json` and a folder per run with its reply, what it changed in its dataflow and the installs it asked for, the tools it called as the grader reads them (`calls.json`: each call's tool and status, and the arguments of each call whose change landed; each task it delegated is a call of `delegate` in its place, with the capability it asked for, the agent that took it, its status and the inputs it wrote for that agent), its transcript, `timing.json` and `grading.json`; then `summary.md`. A run's `run.json` lists each of its model calls (`modelCalls`): its output tokens, the limit it was asked with, whether the model's thinking came apart from its reply, whether the limit cut it, and whether the server refused the room for thinking. The endpoint's key and base URL come from the variables alone: nothing written holds them or its host, and the tool reads every file again at the end and fails if one does.
+- CI never runs it. `test_skill_evals.py` holds every skill's `evals/evals.json` to the rules above.

@@ -346,7 +346,7 @@ class TestDataflowBuilderNotesLane:
             ],
         })
 
-    def test_full_lane_delegate_two_cards_apply_both(
+    def test_full_lane_delegate_lands_both_notes(
             self, client, user_and_token, tmp_curio, monkeypatch):
         from utk_curio.backend.app.projects import storage as projects_storage
         from utk_curio.backend.app.projects.services import _user_dir_key
@@ -355,7 +355,7 @@ class TestDataflowBuilderNotesLane:
         pid, att_id, calls = self._setup(client, user, token, monkeypatch, replies=[
             self._delegate_tail(),   # parent round 1: delegate
             self._child_reply(),     # CHILD (Researcher): the schema reply
-            "Answered — review the notes above.",  # parent round 2
+            "Answered: the notes are on the canvas.",  # parent round 2
         ])
         run = client.post(
             f"/api/agents/projects/{pid}/attachments/{att_id}/run",
@@ -363,12 +363,13 @@ class TestDataflowBuilderNotesLane:
             headers=_auth(token))
         assert run.status_code == 200, run.get_data(as_text=True)
         parts = run.get_json()["content"]
-        proposals = [p for p in parts if p["type"] == "proposal"]
-        assert len(proposals) == 2  # the A13 row, jointly pending (A16)
-        assert all(p["tool"] == "node.create" and p["status"] == "pending"
-                   for p in proposals)
-        assert proposals[0]["preview"] == self.QUESTION
-        assert "30°F" in proposals[1]["preview"]
+        assert all(p["type"] != "proposal" for p in parts)
+        changes = [p for p in parts if p["type"] == "change"]
+        assert len(changes) == 2  # the A13 row, each note its own change
+        assert all(p["tool"] == "node.create" and p["status"] == "applied"
+                   for p in changes)
+        assert changes[0]["preview"] == self.QUESTION
+        assert "30°F" in changes[1]["preview"]
         # The child saw runtime-gathered inputs, not tools.
         child_prompt = json.dumps(calls[1])
         assert "searchResults" in child_prompt and "30F cooler roofs" in child_prompt
@@ -376,14 +377,6 @@ class TestDataflowBuilderNotesLane:
         # The delegation card reports ok with the answer riding the summary.
         delegation = next(p for p in parts if p["type"] == "delegation")
         assert delegation["status"] == "ok"
-
-        # Apply BOTH — out of order, per A16.
-        for proposal in reversed(proposals):
-            resp = client.post(
-                f"/api/agents/projects/{pid}/attachments/{att_id}"
-                f"/proposals/{proposal['proposalId']}/apply",
-                headers=_auth(token))
-            assert resp.status_code == 200, resp.get_data(as_text=True)
         with client.application.app_context():
             user_key = _user_dir_key(user)
         spec = projects_storage.read_spec(user_key, pid)
@@ -404,7 +397,7 @@ class TestDataflowBuilderNotesLane:
             f"/api/agents/projects/{pid}/attachments/{att_id}/run",
             json={"message": "hi"}, headers=_auth(token))
         assert run.status_code == 200
-        assert all(p["type"] != "proposal" for p in run.get_json()["content"])
+        assert all(p["type"] not in ("proposal", "change") for p in run.get_json()["content"])
 
 
 class TestNotesLandOnTheBuiltInNote:
@@ -455,13 +448,12 @@ class TestNotesLandOnTheBuiltInNote:
                  "snippet": "30F cooler roofs"}]})))
         return pid, att_id, calls, user_key
 
-    def _apply_all(self, client, token, pid, att_id, proposals):
-        for proposal in proposals:
-            resp = client.post(
-                f"/api/agents/projects/{pid}/attachments/{att_id}"
-                f"/proposals/{proposal['proposalId']}/apply",
-                headers=_auth(token))
-            assert resp.status_code == 200, resp.get_data(as_text=True)
+    @staticmethod
+    def _landed(run) -> list:
+        """The tool and node type of each change the run landed."""
+        body = run.get_json()
+        assert all(p["type"] != "proposal" for p in body["content"])
+        return [(p["tool"], p["nodeType"]) for p in body["content"] if p["type"] == "change"]
 
     def _notes(self, user_key, pid):
         from utk_curio.backend.app.projects import storage as projects_storage
@@ -487,16 +479,13 @@ class TestNotesLandOnTheBuiltInNote:
         })
         pid, att_id, calls, user_key = self._setup(
             client, user, token, monkeypatch, parent=DFB,
-            replies=[delegate, child, "Answered: review the notes above."])
+            replies=[delegate, child, "Answered: the notes are on the canvas."])
         run = client.post(f"/api/agents/projects/{pid}/attachments/{att_id}/run",
                           json={"message": self.QUESTION}, headers=_auth(token))
         assert run.status_code == 200, run.get_data(as_text=True)
         # The notes mode was handed the Note as its notes template.
         assert NOTE in json.dumps(calls[1])
-        proposals = [p for p in run.get_json()["content"] if p["type"] == "proposal"]
-        assert [(p["tool"], p["pins"]["nodeType"]) for p in proposals] == [("node.create", NOTE)] * 2
-
-        self._apply_all(client, token, pid, att_id, proposals)
+        assert self._landed(run) == [("node.create", NOTE)] * 2
         notes = self._notes(user_key, pid)
         assert notes["Question"]["type"] == NOTE
         assert notes["Question"]["content"] == self.QUESTION
@@ -518,7 +507,7 @@ class TestNotesLandOnTheBuiltInNote:
             client, user, token, monkeypatch, parent=RESEARCHER, replies=[
                 create("Question", self.QUESTION),
                 create("Cool roofs in Chicago", self.ANSWER),
-                "Cool roofs run about 30°F cooler; the notes await your review.",
+                "Cool roofs run about 30°F cooler; the notes are on the canvas.",
             ])
         run = client.post(f"/api/agents/projects/{pid}/attachments/{att_id}/run",
                           json={"message": self.QUESTION}, headers=_auth(token))
@@ -527,10 +516,7 @@ class TestNotesLandOnTheBuiltInNote:
         system = calls[0][0]["content"]
         assert ROSTER_LINE in system
         assert "None of these renders a note" not in system
-        proposals = [p for p in run.get_json()["content"] if p["type"] == "proposal"]
-        assert [(p["tool"], p["pins"]["nodeType"]) for p in proposals] == [("node.create", NOTE)] * 2
-
-        self._apply_all(client, token, pid, att_id, proposals)
+        assert self._landed(run) == [("node.create", NOTE)] * 2
         notes = self._notes(user_key, pid)
         # No color was asked for: the question is yellow and the answer green.
         assert notes["Question"]["type"] == NOTE

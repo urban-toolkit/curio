@@ -96,7 +96,7 @@ class TestReachability:
         """Solve makes edits in an empty Map Editor node only when its goal
         names them, and a planned node's goal is its intent, so the oracle's
         plan names the edits each example Map Editor node holds, as the
-        knowledge page on Map Editor asks a planner to. Without that, the
+        map-edits skill asks a planner to. Without that, the
         reachability above would rebuild such a node as its call with no
         edits and still find content there."""
         from utk_curio.backend.app.agents.domain import map_edits
@@ -582,8 +582,8 @@ class TestResolutionModePackageTemplates:
         phase["name"] = "plan"
         driver.with_attachment(dfb)
         second = driver.run_turn("go ahead with the plan")
-        assert second.plan_proposal, second.reply[:200]
-        driver.apply(second.plan_proposal)
+        # The plan landed with the reply, as the agent's change.
+        assert second.plan_change, second.reply[:200]
         driver.solve()
         spec = driver.read_spec()
         built = {
@@ -822,7 +822,7 @@ class TestSolveOutcomesAreReadHonestly:
             "utk_curio.backend.app.execution.runner._http_exec", _exec
         )
         turn = driver.run_turn(fixture.prompt)
-        driver.apply(turn.plan_proposal)
+        assert turn.plan_change, turn.reply[:200]
         solve = driver.solve()
         outcomes = attempt_mod.execution_outcomes(
             solve.results, actual_spec=driver.read_spec(), templates=TEMPLATES

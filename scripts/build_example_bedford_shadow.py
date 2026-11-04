@@ -53,10 +53,14 @@ same file.
 from __future__ import annotations
 
 import json
+import sys
 import uuid
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO))
+
+from utk_curio.backend.app.projects.scenarios import normalize_spec_scenarios  # noqa: E402
 OUT = REPO / "docs" / "examples" / "dataflows" / "crown-heights-1550-bedford-shadow.json"
 NAME = "Crown Heights shade from 1550 Bedford Avenue"
 NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, f"https://curio.dev/examples/{NAME}")
@@ -869,11 +873,12 @@ def node(key, type_, x, y, content, goal, title=None, widgets=None, copied=None,
     if copied:
         metadata["copiedFrom"] = [nid(copied)]
     entry = {"id": nid(key), "type": type_, "x": x, "y": y, "content": content, "out": "DEFAULT",
-             "in": "DEFAULT", "goal": goal, "metadata": metadata}
+             "in": "DEFAULT", "goal": goal}
+    if metadata:
+        entry["metadata"] = metadata
     if title:
+        # The node's one name, what its header shows in place of its type's name.
         entry["title"] = title
-        # What the node's header shows in place of its type's name (#412).
-        metadata["packageTemplateLabel"] = title
     if size:
         entry["width"], entry["height"] = size
     return entry
@@ -1074,7 +1079,7 @@ def build() -> dict:
         scenarios.append({"id": scenario["id"], "name": scenario["name"], "color": scenario["color"],
                           "description": scenario["description"],
                           "nodes": [nid(key) for key in levers + [scenario["prefix"] + k for k in CHAIN]]})
-    return {"dataflow": {
+    spec = {"dataflow": {
         "categories": {"complexity": ["Beginner"]},
         "nodes": nodes,
         "edges": edges,
@@ -1087,6 +1092,19 @@ def build() -> dict:
         "timestamp": TIMESTAMP,
         "provenance_id": NAME,
     }}
+    # Both scenarios in one set, each with the context and outcomes it uses.
+    return with_sets(spec, "1550 Bedford Avenue shade")
+
+
+def with_sets(spec: dict, name: str | None = None) -> dict:
+    """*spec* with its scenarios in sets, each with its context and outcomes,
+    as a save writes them; a lone set new to it is called *name* when given."""
+    had = {s.get("id") for s in spec.get("dataflow", {}).get("scenarioSets") or []}
+    normalize_spec_scenarios(spec)
+    sets = spec.get("dataflow", {}).get("scenarioSets") or []
+    if name and len(sets) == 1 and sets[0]["id"] not in had:
+        sets[0]["name"] = name
+    return spec
 
 
 def main() -> None:

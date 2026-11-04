@@ -207,7 +207,7 @@ def _first_version(spec: dict) -> dict:
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": TABLE_GOAL,
-        "metadata": {"keywords": [], "packageTemplateLabel": TABLE_TITLE},
+        "metadata": {"keywords": []},
         "title": TABLE_TITLE,
     })
     flow["edges"].append({
@@ -479,10 +479,11 @@ def _said_only_what_was_scripted(panel) -> None:
 
 
 def _shows_headers(page, titles: list[str]) -> None:
-    """Each of *titles* is a node's header on the canvas, not only in the
-    save: the name a plan gave the node, in place of its template's."""
+    """Each of *titles* is a node's title on the canvas, which its header
+    shows, not only in the save: the name a plan gave the node, in place of
+    its template's, which a node with no title of its own starts with."""
     headers = page.evaluate(
-        "() => window.__curio_reactFlow.getNodes().map((n) => n.data && n.data.packageTemplateLabel)"
+        "() => window.__curio_reactFlow.getNodes().map((n) => n.data && n.data.title)"
     )
     missing = [title for title in titles if title not in headers]
     assert not missing, f"no node on the canvas is headed {missing}"
@@ -729,12 +730,9 @@ def crown_heights_first_version(ctx: Ctx) -> None:
     saved = _saved(ctx, token, project_id)
     by_ref = {ref: _by_title(saved, nodes[node_id]["title"])["id"] for ref, node_id in refs.items()}
     by_ref["check-table"] = _by_title(saved, TABLE_TITLE)["id"]
-    # Named as the example names them: a title, and a header that shows it.
+    # Named as the example names them: a title, which the header shows.
     by_name = {title: _by_title(saved, title) for title in [*titles, TABLE_TITLE]}
-    untitled = [
-        title for title, node in by_name.items()
-        if node.get("title") != title or (node.get("metadata") or {}).get("packageTemplateLabel") != title
-    ]
+    untitled = [title for title, node in by_name.items() if node.get("title") != title]
     assert not untitled, f"the plan's nodes {untitled} did not land with their titles"
     _shows_headers(page, [*titles, TABLE_TITLE])
     days =(_by_title(saved, nodes[nid("steps")]["title"]).get("metadata") or {}).get("widgets") or []

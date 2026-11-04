@@ -34,13 +34,13 @@ EXAMPLE_INVARIANTS = [
      {"curio.builtin/computation-analysis": 3, "curio.builtin/vis-vega": 2}, False),
     ("05-vega-lite-multi-view-drilldown.json", 27, 22,
      {"curio.builtin/data-loading": 5, "curio.builtin/vis-vega": 2}, False),
-    # Its comparisons are Scout's Bars over a Roads node per scenario and a
+    # Its comparisons are a Vega-Lite Bars chart over a Roads node per scenario and a
     # Python node that takes the sunlight change (no Compare Scenarios node).
     # Its Map Editor node feeds a map of the buildings and is linked to it.
     ("06-back-bay-road-sunlight.json", 16, 19,
      {"curio.builtin/autk-grammar": 9, "curio.builtin/data-pool": 1,
       "curio.builtin/computation-analysis": 4, "curio.builtin/edit-features": 1,
-      "curio.scout/bars": 1}, True),
+      "curio.vega-lite/bars": 1}, True),
     ("07-autark-gpu-shader.json", 4, 4,
      {"curio.builtin/autk-grammar": 4}, True),
     ("08-autark-spatial-join-regression.json", 6, 6,
@@ -93,11 +93,11 @@ EXAMPLE_INVARIANTS = [
      {"curio.builtin/data-loading": 2, "curio.builtin/computation-analysis": 1,
       "curio.builtin/vis-vega": 1}, False),
     # Rasterize Buildings returns one raster, so no node picks it out (#819).
-    # It and the Raster Calculator are Scout's (curio.scout@1).
+    # It and the Raster Calculator are Rasterization's (curio.rasterization@1).
     ("24-scout-shadow-model-chicago-loop.json", 7, 7,
-     {"curio.builtin/data-loading": 1, "curio.scout/rasterize-buildings": 1,
+     {"curio.builtin/data-loading": 1, "curio.rasterization/rasterize-buildings": 1,
       "model.scout.deep-umbra/accumulated-shadow": 1,
-      "curio.scout/raster-calculator": 1, "curio.builtin/autk-grammar": 3}, False),
+      "curio.rasterization/raster-calculator": 1, "curio.builtin/autk-grammar": 3}, False),
     # #576: one Spatial Join per operation, plus two over a point on an edge.
     ("25-spatial-join-operations.json", 25, 28,
      {"curio.builtin/data-loading": 6, "curio.builtin/data-transformation": 1,
@@ -307,20 +307,19 @@ def test_example_flows_meet_on_input_circles(basename, expected_fan_in):
         )
 
 
-#: Example 06's comparisons since Compare Scenarios went (the plan answering
-#: komar41's review, step 6.3): Scout's Bars chart of the scenarios' mean
-#: sunlight, which reads a Roads node in each scenario, and the Python node
-#: that takes each road's sunlight change. Both keep the ids of the Compare
-#: nodes they replaced.
+#: Example 06's comparisons: the Bars chart of the scenarios' mean sunlight, a
+#: Vega-Lite node that reads a Roads node in each scenario, and the Python
+#: node that takes each road's sunlight change. Both keep the ids of the
+#: Compare nodes they replaced.
 WHATIF_CHART = "whatif-compare-chart"
 WHATIF_CHANGE = "whatif-compare-difference"
 WHATIF_ROADS = ["whatif-baseline-roads", "whatif-modified-roads", "whatif-towers-roads"]
-SCOUT_PACKAGE = os.path.join(REPO_ROOT, "packages", "curio.scout@1")
+VEGA_LITE_PACKAGE = os.path.join(REPO_ROOT, "packages", "curio.vega-lite@1")
 
 
 def test_example_06_is_three_scenarios_over_one_context():
     """Example 06 is a scenario study (#662). Baseline, Twice as tall and Two
-    towers removed share the loader and the pool as fixed context. Each node of
+    towers removed share the loader and the pool as shared context. Each node of
     Twice as tall is a copy that names its Baseline twin and holds the same
     code, and the one value that differs is the shadow step's ``height_factor``
     widget, 1 against 2, which its spec reads as a uniform. Two towers removed
@@ -330,8 +329,9 @@ def test_example_06_is_three_scenarios_over_one_context():
     Baseline's three nodes with factor 1. Each scenario ends in a Roads node
     that takes the roads layer out of the five its shadow step hands on.
 
-    Outside them, no Compare Scenarios node is left. Scout's Bars charts the
-    three Roads nodes' mean sunlight, its circles in the order of the boxes; a
+    Outside them, no Compare Scenarios node is left. A Vega-Lite node, the
+    Bars chart, charts the three Roads nodes' mean sunlight, its circles in the
+    order of the boxes; a
     Python node takes Twice as tall's sunlight minus Baseline's from their
     maps' roads layers, matching the roads by shape as Compare's Difference
     did; and an Autark map after it draws the change."""
@@ -399,10 +399,10 @@ def test_example_06_is_three_scenarios_over_one_context():
     assert (
         factor("whatif-baseline-compute"), factor("whatif-modified-compute"), factor("whatif-towers-compute"),
     ) == (1, 2, 1)
-    # No Compare Scenarios node is left; Scout's package, whose Bars the chart
-    # is, is the one the dataflow declares.
+    # No Compare Scenarios node is left; the Vega-Lite package, whose Bars the
+    # chart is, is the one the dataflow declares.
     assert not [n["id"] for n in flow["nodes"] if n["type"].split("@")[0] == "curio.builtin/compare-scenarios"]
-    assert flow["packages"] == ["curio.scout@1"]
+    assert flow["packages"] == ["curio.vega-lite@1"]
     # Each scenario's Roads node, its last, reads its own shadow step and takes
     # the roads layer, each road with its sunlight, out of the five it hands on
     # by a layer chip: the chart reads one table per circle, not a node's
@@ -421,17 +421,17 @@ def test_example_06_is_three_scenarios_over_one_context():
     assert [nodes[roads]["metadata"].get("copiedFrom") for roads in WHATIF_ROADS] == [
         None, [WHATIF_ROADS[0]], [WHATIF_ROADS[0]],
     ]
-    # The chart: Scout's Bars, its spec its template's own, its widgets set as
-    # the Compare node's bar drew it: each scenario's mean sunlight, the Y axis
-    # titled as Compare titled it. Its circles take the three Roads nodes in
-    # the order of the boxes, and it stores no label of its own: each bar takes
-    # its name and color from its input's box.
-    with open(os.path.join(SCOUT_PACKAGE, "manifest.json"), "r", encoding="utf-8") as f:
+    # The chart: the Vega-Lite package's Bars, its spec its template's own, its
+    # widgets set as the Compare node's bar drew it: each scenario's mean
+    # sunlight, the Y axis titled as Compare titled it. Its circles take the
+    # three Roads nodes in the order of the boxes, and it stores no label of
+    # its own: each bar takes its name and color from its input's box.
+    with open(os.path.join(VEGA_LITE_PACKAGE, "manifest.json"), "r", encoding="utf-8") as f:
         (template,) = [t for t in json.load(f)["templates"] if t["id"] == "bars"]
-    with open(os.path.join(SCOUT_PACKAGE, template["source"]), "r", encoding="utf-8") as f:
+    with open(os.path.join(VEGA_LITE_PACKAGE, template["source"]), "r", encoding="utf-8") as f:
         starter = f.read()
     chart = nodes[WHATIF_CHART]
-    assert (chart["type"], chart["title"]) == ("curio.scout/bars", "Mean sunlight")
+    assert (chart["type"], chart["title"]) == ("curio.vega-lite/bars", "Mean sunlight")
     assert chart["content"] == starter
     assert set(chart["metadata"]) == {"keywords", "widgets"}, chart["metadata"]
     widgets = chart["metadata"]["widgets"]

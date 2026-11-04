@@ -17,6 +17,7 @@ from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.application import dataset_resolution as agents_dataset_resolution
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application.proposals import store as agents_store
+from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.projects import storage as projects_storage
 from utk_curio.backend.app.agents.domain import agent_text
 
@@ -142,9 +143,9 @@ def _settle_discovery_acquisitions(user_key: str, project_id: str) -> None:
                     project_id, exc_info=True)
         return
     with projects_storage.spec_write_lock(user_key, project_id):
-        fresh = projects_storage.read_spec(user_key, project_id)
+        fresh = dataflow_docs.live(user_key, project_id)
         if fresh is not None and agents_dataset_resolution.settle_acquisitions(fresh, held):
-            projects_storage.write_spec(user_key, project_id, fresh)
+            dataflow_docs.write(user_key, project_id, fresh, dataflow_docs.by_curio(user_key, "dataset"))
 
 
 def _discovery_service():
@@ -257,7 +258,7 @@ def _mint_discovery_acquire(
             None,
         )
 
-    spec = projects_storage.read_spec(user_key, project_id)
+    spec = dataflow_docs.live(user_key, project_id)
     if spec is None:
         return "refused", agent_text.message("mint.no-saved-spec"), None
 

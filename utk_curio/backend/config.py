@@ -82,10 +82,9 @@ CURIO_SEED_EXAMPLES = _env_flag("CURIO_SEED_EXAMPLES", False)
 # The sandbox has always run debug=False; this makes the two processes match.
 CURIO_BACKEND_DEBUG = _env_flag("CURIO_BACKEND_DEBUG", False)
 
-# Real-time collaboration (opt-in). When False, the SocketIO server is never
-# instantiated and the flask-socketio package is never imported — installs
-# without this feature pay zero runtime cost.
-ENABLE_COLLAB = _env_flag("ENABLE_COLLAB", False)
+# Real-time collaboration, which every backend serves over Socket.IO
+# (app/__init__.py): the origins whose pages may open a connection, and its
+# namespace, which /api/config/public tells the page.
 COLLAB_CORS_ORIGINS = os.environ.get("COLLAB_CORS_ORIGINS", "*")
 COLLAB_NAMESPACE = os.environ.get("COLLAB_NAMESPACE", "/collab")
 

@@ -76,16 +76,11 @@ export function linkedMaps(nodeId: string, nodes: readonly any[], edges: readonl
   return out;
 }
 
-/**
- * What a node is called on the canvas: its header, as renamed
- * (`packageTemplateLabel`, what `nodeDisplayLabel` reads first), else the
- * title the dataflow gave it.
- */
+/** What a node is called on the canvas: its title, its one name
+ *  (utils/nodeTitle.ts); "" when it has none. */
 export function nodeName(node: any): string {
-  for (const value of [node?.data?.packageTemplateLabel, node?.data?.title]) {
-    if (typeof value === "string" && value.trim()) return value.trim();
-  }
-  return "";
+  const title = node?.data?.title;
+  return typeof title === "string" ? title.trim() : "";
 }
 
 /** What each circle of *nodeId* brought: the name of the node it came from. */

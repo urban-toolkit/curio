@@ -425,9 +425,8 @@ class TestEveryRunThatWritesCodeGetsTheBlock:
                             lambda endpoint, payload: {"stdout": [], "stderr": "",
                                                        "output": {"path": "art-1", "dataType": "dataframe"}})
         r = client.post(f"/api/agents/projects/{pid}/attachments/{att}/run", json={"message": "plan"}, headers=_auth(token))
-        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
-        client.post(f"/api/agents/projects/{pid}/attachments/{att}/proposals/{proposal['proposalId']}/apply-node",
-                    json={"ref": "load"}, headers=_auth(token))
+        # The plan landed with the reply: its node is on the canvas.
+        assert routes_proposals._landed_plan(r.get_json())["canvas"]["nodes"]
         r = client.post(f"/api/agents/projects/{pid}/attachments/{att}/validate-node",
                         json={"ref": "load"}, headers=_auth(token))
         assert r.status_code == 200, r.get_json()
@@ -578,25 +577,25 @@ class TestPackagesResolveGivesFunctions:
         })
         status, text = tools.execute_read_tool(
             "packages.resolve", user_key=self.UKEY, project_id=self.PID, target=None,
-            params={"dirNames": ["model.scout.deep-umbra@1", "curio.scout@1"]},
+            params={"dirNames": ["model.scout.deep-umbra@1", "curio.rasterization@1"]},
         )
         assert status == "ok", text
         report = json.loads(text)  # whole: never cut mid-text
         rows = {row["dirName"]: row for row in report["packages"]}
-        umbra, scout = rows["model.scout.deep-umbra@1"], rows["curio.scout@1"]
+        umbra, rasters = rows["model.scout.deep-umbra@1"], rows["curio.rasterization@1"]
         # The packages its manifest names, which adding it adds.
-        assert umbra.get("packageDeps") == {"curio.scout@1": "*"}, umbra
-        assert scout.get("packageDeps") == {}, scout
+        assert umbra.get("packageDeps") == {"curio.rasterization@1": "*"}, umbra
+        assert rasters.get("packageDeps") == {}, rasters
         # Each module's public functions: the call and its docstring's first paragraph.
         modules = {row["module"]: row for row in umbra.get("functions") or []}
         assert "deep_umbra.node_outputs" in modules, sorted(modules)
         shadow = next(f for f in modules["deep_umbra.node_outputs"]["functions"] if f["name"] == "accumulated_shadow")
         assert shadow["call"] == "accumulated_shadow(value, season, model, output_file)"
         assert shadow["doc"].startswith("The accumulated shadow of the heights")
-        algebra = {f["name"] for row in scout["functions"] if row["module"] == "scout_rasters.raster_algebra"
+        algebra = {f["name"] for row in rasters["functions"] if row["module"] == "scout_rasters.raster_algebra"
                    for f in row["functions"]}
         assert {"raster_calculate", "raster_statistics"} <= algebra
-        assert not any(f["name"].startswith("_") for row in scout["functions"] for f in row["functions"])
+        assert not any(f["name"].startswith("_") for row in rasters["functions"] for f in row["functions"])
         contract = tools.REGISTRY["packages.resolve"].description
         assert "functions" in contract and "dependencies.packages" in contract
 
@@ -610,30 +609,39 @@ def _shipped_package_ids() -> list[str]:
     return ids
 
 
-def test_the_preamble_names_no_packages_templates_or_functions():
-    """The preamble every agent reads is Curio's own: of the templates it names,
-    each is the built-in package's, and it names no other package Curio ships
+def test_the_preamble_and_curios_skills_name_no_packages_templates_or_functions():
+    """The preamble every agent reads, and every skill Curio ships, which a
+    run lists or is handed, are Curio's own: of the templates they name, each
+    is the built-in package's, and they name no other package Curio ships
     and no function a package's modules define. A package's templates and
     functions reach a run that writes one of its nodes through the dataflow
     block, from its manifest and its modules."""
-    from utk_curio.backend.app.agents.domain import agent_text
+    from utk_curio.backend.app.agents.domain import agent_text, skills
     from utk_curio.backend.app.packages.domain.function_nodes import read_functions
     from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
     from utk_curio.backend.app.packages.repositories.python_modules import module_files
 
+    # The preamble and every skill, the pages they include and the skills
+    # they place, and theirs.
     preamble = agent_text.page_file("default_preamble.md")
-    pages = {"default_preamble.md"}
-    queue = [preamble.read_text(encoding="utf-8")]
+    every_skill = [folder / skills.SKILL_FILE for folder in skills.shipped_folders()]
+    files = {preamble, *every_skill}
+    queue = [file.read_text(encoding="utf-8") for file in files]
     while queue:
-        for page in re.findall(r"\{\{include:([^{}]+)\}\}", queue.pop()):
-            if page not in pages:
-                pages.add(page)
-                queue.append((BASE / page).read_text(encoding="utf-8"))
-    assert "knowledge/scenarios.md" in pages and "knowledge/node-functions.md" in pages, sorted(pages)
-    for page in sorted(pages):
-        named = set(re.findall(r"\{\{template\.label:([^/{}]+)/", (BASE / page).read_text(encoding="utf-8")))
-        assert named <= {"curio.builtin"}, f"{page} names templates of {sorted(named - {'curio.builtin'})}"
-    rendered = agent_text.render(preamble)
+        text = queue.pop()
+        found = [BASE / page for page in re.findall(r"\{\{include:([^{}]+)\}\}", text)]
+        found += [REPO_ROOT / "skills" / name / "SKILL.md" for name in re.findall(r"\{\{skill:([^{}]+)\}\}", text)]
+        for file in found:
+            if file not in files:
+                files.add(file)
+                queue.append(file.read_text(encoding="utf-8"))
+    names = {file.relative_to(REPO_ROOT).as_posix() for file in files}
+    assert {"skills/scenarios/SKILL.md", "skills/node-functions/SKILL.md"} <= names, sorted(names)
+    assert len([name for name in names if name.startswith("skills/")]) == 21, sorted(names)
+    for file in sorted(files):
+        named = set(re.findall(r"\{\{template\.label:([^/{}]+)/", file.read_text(encoding="utf-8")))
+        assert named <= {"curio.builtin"}, f"{file.name} names templates of {sorted(named - {'curio.builtin'})}"
+    rendered = "\n\n".join([agent_text.render(preamble), *(agent_text.render(file) for file in every_skill)])
     for package_id in _shipped_package_ids():
         assert not re.search(rf"(?<![\w.]){re.escape(package_id)}(?![\w-])", rendered), package_id
     for folder in sorted(path.parent for path in (REPO_ROOT / "packages").glob("*/manifest.json")):

@@ -95,7 +95,7 @@ def _rounds(app, node, *, replies, exec_fn, start_from_current=False, spec=None,
     delegate_inputs: list[dict] = []
     script = list(replies)
 
-    def _delegate(inputs):
+    def _delegate(inputs, refused=None):
         delegate_inputs.append(inputs)
         reply = script.pop(0) if script else "df = input_0[0]\nreturn df"
         return "ok", reply, {"executionId": f"child-{len(delegate_inputs)}"}
@@ -184,6 +184,31 @@ class TestVerifiedRounds:
         verdicts = [p["verdict"] for k, p in events if k == "round_verdict"]
         assert verdicts == ["fail", "pass"]
 
+    def test_a_round_that_makes_values_up_is_refused_and_the_nodes_own_draws_run(self, app, tmp_curio):
+        """Step 45: a round's data-loading code that adds a column of random
+        numbers beside its source is refused before the sandbox runs it, the
+        call named. The code the node holds is the user's own: round 0 runs
+        it, its draws and all."""
+        goal = "load data/heat.csv"
+        loads = 'import pandas as pd\ndf = pd.read_csv("data/heat.csv")\n'
+        made_up = loads + 'df["noise"] = np.random.rand(len(df))\nreturn df'
+        exec_fn = _Exec()
+        _events, outcome, inputs = _rounds(
+            app, {"id": "n1", "type": DL, "goal": goal, "content": ""},
+            replies=[made_up, loads + "return df"], exec_fn=exec_fn,
+        )
+        assert outcome["attempts"][0]["kind"] == "ungrounded-source", outcome["attempts"]
+        assert "np.random.rand (line 3)" in outcome["attempts"][0]["detail"], outcome["attempts"][0]
+        assert "np.random.rand (line 3)" in inputs[1]["validationError"]
+        assert outcome["verdict"] == "pass" and len(exec_fn.calls) == 1
+        assert 'df["noise"]' not in exec_fn.calls[0]["code"]
+        own = {"id": "n1", "type": DL, "goal": goal, "content": made_up}
+        exec_fn = _Exec()
+        _events, outcome, inputs = _rounds(app, own, replies=[], exec_fn=exec_fn, start_from_current=True)
+        assert outcome["verdict"] == "pass" and outcome["rounds"] == 1, outcome["attempts"]
+        assert inputs == [] and outcome["attempts"][0]["source"] == "current content"
+        assert 'df["noise"]' in exec_fn.calls[0]["code"]
+
     def test_http_failure_feeds_fresh_url_evidence_to_the_correction(self, app, tmp_curio, monkeypatch):
         # The owner's Census case: the BASE endpoint answers 200 (so the DEC-072
         # gate lets the candidate run), the composed request answers 400. The
@@ -219,7 +244,7 @@ class TestVerifiedRounds:
                 KEY, PID, spec=_spec(node), node=node, resolution=_Resolution(), config=None,
                 parent_execution_id="e", parent_coord="c", attachment_id=None, exec_fn=_Exec(),
                 grounding_loop_ctx={"granted": [], "manifest": None},
-                delegate_runner=lambda inputs: ("error", "provider unavailable", None),
+                delegate_runner=lambda inputs, refused=None: ("error", "provider unavailable", None),
             )
             _, outcome = _drive(gen)
         assert outcome["verdict"] == "fail"
@@ -570,7 +595,8 @@ class TestConnectionKeys:
                 KEY, PID, spec=_spec(node), node=node, resolution=_Resolution(), config=None,
                 parent_execution_id="e", parent_coord="agent.curio.dataflow-builder@1",
                 attachment_id="att-1", exec_fn=exec_fn, grounding_loop_ctx=shared_ctx,
-                delegate_runner=lambda inputs: ("ok", replies[min(len(probes) // 2, 2)], {"executionId": "c"}),
+                delegate_runner=lambda inputs, refused=None: (
+                    "ok", replies[min(len(probes) // 2, 2)], {"executionId": "c"}),
             )
             _events, outcome = _drive(gen)
         assert outcome["verdict"] == "fail" and outcome["rounds"] == 3
@@ -663,7 +689,7 @@ class TestScenarioChipsInTheCheck:
             "edges": [{"id": "e-py", "source": "py", "target": "chart", "sourceHandle": "out", "targetHandle": "in"}],
             "name": "wf", "task": "compare",
         }}
-        # As Scout's charts write it: the dataset its inputs are stacked in, by its chip.
+        # As the Vega-Lite package's charts write it: the dataset its inputs are stacked in, by its chip.
         reply = (
             '{"data": {"name": "[!! inputs !!]"}, "mark": "bar", "encoding": '
             '{"x": {"field": "scenario_name", "type": "nominal", "sort": [!! scenario order !!]}}}'
@@ -953,11 +979,8 @@ class TestValidateNodeCarriesDatasetPaths:
 
         monkeypatch.setattr("utk_curio.backend.app.execution.runner._http_exec", _exec)
         r = client.post(f"/api/agents/projects/{pid}/attachments/{att}/run", json={"message": "plan"}, headers=_auth(token))
-        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
-        client.post(
-            f"/api/agents/projects/{pid}/attachments/{att}/proposals/{proposal['proposalId']}/apply-node",
-            json={"ref": "load"}, headers=_auth(token),
-        )
+        # The plan landed with the reply: its node is on the canvas.
+        assert [c["tool"] for c in r.get_json().get("changes") or []] == ["dataflow.plan.write"]
         r = client.post(f"/api/agents/projects/{pid}/attachments/{att}/validate-node",
                         json={"ref": "load"}, headers=_auth(token))
         assert r.status_code == 200, r.get_json()
@@ -968,16 +991,16 @@ class TestValidateNodeCarriesDatasetPaths:
         assert dataset_id in exec_payloads[0]["dataset_paths"]
         assert exec_payloads[0]["dataset_paths"][dataset_id].endswith("heat.csv")
         assert exec_payloads[0]["user_key"] == ukey
-        # The trail rides the done payload and the minted review part.
+        # The trail rides the done payload and the landed change's card.
         assert done["attempts"][0]["verdict"] == "pass"
         turns = client.get(f"/api/agents/projects/{pid}/attachments/{att}/session", headers=_auth(token)).get_json()["turns"]
-        parts = [p for t in turns for p in (t.get("content") or []) if p.get("type") == "proposal"]
+        parts = [p for t in turns for p in (t.get("content") or []) if p.get("type") == "change"]
         home_turns = None
         if not any("validation" in p for p in parts):
-            # dev/72: the review lives at the node's Node Builder home.
-            home_att = done["proposalAttachmentId"]
+            # dev/72: the change lives at the node's Node Builder home.
+            home_att = done["changeAttachmentId"]
             home_turns = client.get(f"/api/agents/projects/{pid}/attachments/{home_att}/session", headers=_auth(token)).get_json()["turns"]
-            parts = [p for t in home_turns for p in (t.get("content") or []) if p.get("type") == "proposal"]
+            parts = [p for t in home_turns for p in (t.get("content") or []) if p.get("type") == "change"]
         validated = next(p for p in parts if p.get("validation"))
         assert validated["validation"]["attempts"][0]["kind"] == "executed"
         # The data-loading child was handed sourceGrounding with the seeded dataset.
@@ -987,9 +1010,9 @@ class TestValidateNodeCarriesDatasetPaths:
 
 class TestVerifiedSolve:
     """dev/115 commit 2: Solve verifies data-loading plan nodes — only code
-    that ran and passed is written; exhaustion fails with the trail; a sandbox
-    outage leaves the node pending; propose mode mints an EXECUTED review;
-    ``verify: false`` keeps the legacy write."""
+    that ran and passed is written, with its executed trail; exhaustion fails
+    with the trail; a sandbox outage leaves the node pending; ``verify:
+    false`` keeps the legacy write."""
 
     DFB = "agent.curio.dataflow-builder@1"
     NB = "agent.curio.node-builder@1"
@@ -1005,7 +1028,7 @@ class TestVerifiedSolve:
 
     def _setup(self, client, user, token, monkeypatch, *, dl_replies, ca_reply="df = input_0[0]\nreturn df.describe()",
                with_stats=True, exec_outcomes=None, exec_raises=None, ca_replies=None, ca_gate=None):
-        """Applied plan with a data-loading node; scripted children keyed by
+        """A landed plan with a data-loading node; scripted children keyed by
         the delegated frame; a fake sandbox keyed by content markers."""
         from utk_curio.backend.app.projects.services import _user_dir_key
 
@@ -1056,11 +1079,11 @@ class TestVerifiedSolve:
 
         monkeypatch.setattr("utk_curio.backend.app.execution.runner._http_exec", _exec)
         r = client.post(f"/api/agents/projects/{pid}/attachments/{att}/run", json={"message": "plan"}, headers=_auth(token))
-        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
-        applied = client.post(
-            f"/api/agents/projects/{pid}/attachments/{att}/proposals/{proposal['proposalId']}/apply",
-            headers=_auth(token),
-        ).get_json()["appliedGraph"]
+        # The plan landed with the reply; its graph is what the reply carries
+        # for a canvas no doc binds.
+        assert not [p for p in r.get_json()["content"] if p["type"] == "proposal"]
+        [landed] = [c for c in r.get_json().get("changes") or [] if c["tool"] == "dataflow.plan.write"]
+        applied = landed["canvas"]
         load = next(n["id"] for n in applied["nodes"] if str(n.get("type", "")).startswith(DL))
         stats = next((n["id"] for n in applied["nodes"] if str(n.get("type", "")).startswith(CA)), None)
         return dict(pid=pid, att=att, load=load, stats=stats, dataset_id=dataset_id, ukey=ukey,
@@ -1208,23 +1231,25 @@ class TestVerifiedSolve:
         result = next(p for k, p in events if k == "node_result")
         assert result["status"] == "solved" and result["verdict"] == "pass"
 
-    def test_propose_mode_mints_an_executed_review_with_the_trail(self, client, user_and_token, tmp_curio, monkeypatch):
+    def test_a_streamed_solve_writes_the_code_that_ran_with_its_trail(self, client, user_and_token, tmp_curio, monkeypatch):
+        # Solve holds no code back for review: what passed is written, and its
+        # executed trail rides the result and the session's Solve card.
         user, token = user_and_token
         ctx = self._setup(client, user, token, monkeypatch, dl_replies=[self.LOADER], with_stats=False)
         r = client.post(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/solve/stream",
-                        json={"mode": "propose"}, headers=_auth(token))
+                        json={}, headers=_auth(token))
         events = routes_solve.TestStreamedSolve()._sse_events(r)
         result = next(p for k, p in events if k == "node_result")
-        assert result["status"] == "proposed" and result["verdict"] == "pass"
-        assert self._node_content(ctx, ctx["load"]) == ""  # nothing written in propose mode
-        home = result["proposalAttachmentId"]
-        turns = client.get(f"/api/agents/projects/{ctx['pid']}/attachments/{home}/session",
+        assert result["status"] == "solved" and result["verdict"] == "pass"
+        assert result["attempts"][0]["kind"] == "executed"
+        assert "proposalId" not in result
+        assert ctx["dataset_id"] in self._node_content(ctx, ctx["load"])
+        turns = client.get(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/session",
                            headers=_auth(token)).get_json()["turns"]
-        part = next(p for t in reversed(turns) for p in (t.get("content") or [])
-                    if p.get("type") == "proposal" and p.get("proposalId") == result["proposalId"])
-        assert part["validation"]["verdict"] == "pass"
-        assert part["validation"]["attempts"][0]["kind"] == "executed"
-        assert ctx["dataset_id"] in part["preview"]
+        assert not [p for t in turns for p in (t.get("content") or []) if p.get("type") == "proposal"]
+        card = next(p for t in reversed(turns) for p in (t.get("content") or []) if p.get("type") == "card")
+        assert any(line.startswith(ctx["load"][:8]) and "solved" in line and "pass after 1 round" in line
+                   for line in card["lines"]), card["lines"]
 
     def test_verify_flag_is_validated(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
@@ -1509,8 +1534,9 @@ class TestDetachedSolveJobs(TestVerifiedSolve):
 
 class TestSolveNode:
     """dev/115 Amendment A2: the per-node Solve from the node's own agent —
-    round 0 runs the current code; a node with content lands as an executed
-    review; an empty node is written on PASS; exhaustion mints nothing."""
+    round 0 runs the current code; into a node with content, the code that
+    passed lands as the agent's change with its Undo; an empty node is
+    written on PASS; exhaustion writes nothing."""
 
     NB = "agent.curio.node-builder@1"
     LOADER = 'import pandas as pd\ndataset_path = curio_data_path("{DATASET}")\ndf = pd.read_csv(dataset_path)\nreturn df'
@@ -1585,7 +1611,7 @@ class TestSolveNode:
         assert "no change needed" in turns[-1]["text"]
         assert turns[-1]["content"][0]["title"].startswith("Solve · PASS")
 
-    def test_failing_current_content_is_fixed_into_an_executed_review(self, client, user_and_token, tmp_curio, monkeypatch):
+    def test_failing_current_content_is_fixed_into_a_change_with_its_undo(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
         bad = 'import pandas as pd\ndataset_path = curio_data_path("{DATASET}")\ndf = pd.read_csv(dataset_path, sep="|||")\nbad_sep()\nreturn df'
         ctx = self._setup(client, user, token, monkeypatch, content=bad, child_replies=[self.LOADER],
@@ -1599,21 +1625,25 @@ class TestSolveNode:
         # The correction saw the failing current code and its traceback.
         correction = ctx["calls"][0][-1]["content"]
         assert '"previousAttempt"' in correction and "ParserError" in correction
-        # The node itself is untouched — the fix is an EXECUTED review.
-        assert "bad_sep" in self._content(ctx)
-        turns = client.get(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/session",
+        # The code that ran is on the node: the fix landed as the agent's
+        # change, with no review, and its card carries the executed trail.
+        assert "bad_sep" not in self._content(ctx) and ctx["dataset_id"] in self._content(ctx)
+        assert "proposalId" not in done
+        home = done["changeAttachmentId"]
+        turns = client.get(f"/api/agents/projects/{ctx['pid']}/attachments/{home}/session",
                            headers=_auth(token)).get_json()["turns"]
+        assert not [p for t in turns for p in (t.get("content") or []) if p.get("type") == "proposal"]
         part = next(p for t in reversed(turns) for p in (t.get("content") or [])
-                    if p.get("type") == "proposal" and p.get("proposalId") == done["proposalId"])
+                    if p.get("type") == "change" and p.get("changeId") == done["changeId"])
         assert part["tool"] == "node.content.write"
         assert part["validation"]["verdict"] == "pass"
         assert part["validation"]["attempts"][1]["kind"] == "executed"
         assert "bad_sep" not in part["preview"]
-        # Applying it puts the code that ran on the node.
-        r = client.post(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/proposals/{done['proposalId']}/apply",
+        # Its Undo puts the code that failed back on the node.
+        r = client.post(f"/api/agents/projects/{ctx['pid']}/attachments/{home}/changes/{done['changeId']}/undo",
                         headers=_auth(token))
         assert r.status_code == 200, r.get_json()
-        assert "bad_sep" not in self._content(ctx) and ctx["dataset_id"] in self._content(ctx)
+        assert self._content(ctx) == bad.replace("{DATASET}", ctx["dataset_id"])
 
     def test_empty_node_is_written_directly_on_pass(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
@@ -1628,7 +1658,8 @@ class TestSolveNode:
         ctx = self._setup(client, user, token, monkeypatch, content=bad, child_replies=[bad],
                           exec_outcomes={"always_bad": "Traceback: NameError: always_bad"})
         done = self._solve_node(client, token, ctx)[-1][1]
-        assert done["verdict"] == "fail" and done["rounds"] == 3 and "proposalId" not in done
+        assert done["verdict"] == "fail" and done["rounds"] == 3
+        assert "proposalId" not in done and "changeId" not in done
         assert self._content(ctx) == bad.replace("{DATASET}", ctx["dataset_id"])
         turns = client.get(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/session",
                            headers=_auth(token)).get_json()["turns"]
@@ -2208,15 +2239,16 @@ class TestOneLineAnswers:
 
 class TestNoReviewOfAnAnswer:
     """A one-line answer, or a loader's decline, is the builder's line, not
-    content: no path mints a review of it, so Apply anyway can never write
-    that prose into a node. Simulation Mode's validate (validate-node) and a
-    proposing Solve, run or unrun, report it instead."""
+    content: no path lands it in a node, as the agent's change or as a review
+    someone could apply anyway. A row's Solve (validate-node) and a streamed
+    Solve, run or unrun, report it instead."""
 
     DECLINE = "No catalog dataset covers the tract heat data."
 
     @staticmethod
-    def _reviews_holding(client, token, pid, words):
-        """Every review, in every chat of the project, that holds *words*."""
+    def _cards_holding(client, token, pid, words):
+        """Every change and every review, in every chat of the project, that
+        holds *words*."""
         cards = client.get(f"/api/agents/projects/{pid}/attachments", headers=_auth(token)).get_json()["attachments"]
         found = []
         for card in cards:
@@ -2224,19 +2256,19 @@ class TestNoReviewOfAnAnswer:
                            headers=_auth(token))
             for turn in (r.get_json() or {}).get("turns") or []:
                 found += [p for p in (turn.get("content") or [])
-                          if p.get("type") == "proposal" and words in json.dumps(p)]
+                          if p.get("type") in ("change", "proposal") and words in json.dumps(p)]
         return found
 
     @staticmethod
-    def _propose(client, token, ctx, **body):
-        """A proposing Solve's final results, from its stream."""
+    def _streamed(client, token, ctx, **body):
+        """A streamed Solve's final results, from its stream."""
         r = client.post(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/solve/stream",
-                        json={"mode": "propose", **body}, headers=_auth(token))
+                        json=body, headers=_auth(token))
         assert r.status_code == 200, r.get_json()
         events = routes_solve.TestStreamedSolve()._sse_events(r)
         return next(p for kind, p in reversed(events) if kind == "done")["results"]
 
-    def test_validate_mints_no_review_of_an_answer(self, client, user_and_token, tmp_curio, monkeypatch):
+    def test_validate_lands_no_change_of_an_answer(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
         h = TestSolveNode()
         ctx = h._setup(client, user, token, monkeypatch, content="", child_replies=[JOIN_ANSWER], node_type=CA)
@@ -2244,39 +2276,82 @@ class TestNoReviewOfAnAnswer:
                         json={"nodeId": "n1"}, headers=_auth(token))
         assert r.status_code == 200, r.get_json()
         done = routes_solve.TestStreamedSolve()._sse_events(r)[-1][1]
-        assert done["verdict"] == "fail" and "proposalId" not in done, done
-        assert self._reviews_holding(client, token, ctx["pid"], JOIN_ANSWER) == []
+        assert done["verdict"] == "fail" and "proposalId" not in done and "changeId" not in done, done
+        assert self._cards_holding(client, token, ctx["pid"], JOIN_ANSWER) == []
         # The answer is said in the node's chat instead, and nothing ran.
         turns = client.get(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/session",
                            headers=_auth(token)).get_json()["turns"]
         assert any(JOIN_ANSWER in (t.get("text") or "") for t in turns), [t.get("text") for t in turns]
         assert ctx["payloads"] == [] and h._content(ctx) == ""
 
-    def test_a_proposing_solve_mints_no_review_of_an_answer(self, client, user_and_token, tmp_curio, monkeypatch):
+    def test_a_streamed_solve_writes_no_answer(self, client, user_and_token, tmp_curio, monkeypatch):
         helper = TestVerifiedSolve()
         user, token = user_and_token
         ctx = helper._setup(client, user, token, monkeypatch, dl_replies=[helper.LOADER], ca_replies=[JOIN_ANSWER])
-        stats = self._propose(client, token, ctx)[ctx["stats"]]
+        stats = self._streamed(client, token, ctx)[ctx["stats"]]
         assert stats["status"] == "failed" and JOIN_ANSWER in stats["error"] and "proposalId" not in stats, stats
-        assert self._reviews_holding(client, token, ctx["pid"], JOIN_ANSWER) == []
+        assert self._cards_holding(client, token, ctx["pid"], JOIN_ANSWER) == []
+        assert helper._node_content(ctx, ctx["stats"]) == ""
 
-    def test_a_proposing_solve_mints_no_review_of_a_loaders_decline(
+    def test_a_streamed_solve_writes_no_loaders_decline(
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
         helper = TestVerifiedSolve()
         user, token = user_and_token
         ctx = helper._setup(client, user, token, monkeypatch, with_stats=False, dl_replies=[self.DECLINE])
-        load = self._propose(client, token, ctx)[ctx["load"]]
+        load = self._streamed(client, token, ctx)[ctx["load"]]
         assert load["status"] == "failed" and "source-missing" in load["error"] and "proposalId" not in load, load
-        assert self._reviews_holding(client, token, ctx["pid"], self.DECLINE) == []
+        assert self._cards_holding(client, token, ctx["pid"], self.DECLINE) == []
+        assert helper._node_content(ctx, ctx["load"]) == ""
 
-    def test_an_unverified_proposing_solve_mints_no_review_of_an_answer(
+    def test_an_unverified_streamed_solve_writes_no_answer(
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
         helper = TestVerifiedSolve()
         user, token = user_and_token
         ctx = helper._setup(client, user, token, monkeypatch, dl_replies=[helper.LOADER], ca_replies=[JOIN_ANSWER])
-        stats = self._propose(client, token, ctx, verify=False)[ctx["stats"]]
+        stats = self._streamed(client, token, ctx, verify=False)[ctx["stats"]]
         assert stats["status"] == "failed" and JOIN_ANSWER in stats["error"] and "proposalId" not in stats, stats
-        assert self._reviews_holding(client, token, ctx["pid"], JOIN_ANSWER) == []
+        assert self._cards_holding(client, token, ctx["pid"], JOIN_ANSWER) == []
+        assert helper._node_content(ctx, ctx["stats"]) == ""
         assert ctx["exec_payloads"] == []  # nothing ran
+
+
+class TestUnverifiedSolveValuesACallMakesUp:
+    """Step 45 (#1264) on batch Solve's unverified path (``verify: false``),
+    which writes content without running it: a round whose data-loading code
+    adds a column of random numbers beside the catalog dataset it reads is
+    refused before anything is written, the call named, as the verified loop
+    refuses it (``TestVerifiedRounds``). A node that holds such code, the
+    user's own, keeps it: Solve asks for nothing there."""
+
+    #: The batch's loader with a column of random numbers, on its line 4.
+    MADE_UP = TestVerifiedSolve.LOADER.replace("return df", 'df["noise"] = np.random.rand(len(df))\nreturn df')
+
+    def test_a_round_that_adds_a_random_column_is_refused_by_name_and_writes_nothing(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        helper = TestVerifiedSolve()
+        user, token = user_and_token
+        ctx = helper._setup(client, user, token, monkeypatch, dl_replies=[self.MADE_UP], with_stats=False)
+        load = helper._solve(client, token, ctx, verify=False)["results"][ctx["load"]]
+        assert load["status"] == "failed", load
+        assert "np.random.rand (line 4)" in load["error"], load["error"]
+        assert helper._node_content(ctx, ctx["load"]) == ""
+        assert ctx["exec_payloads"] == []  # nothing ran
+
+    def test_a_node_that_holds_random_code_keeps_it(self, client, user_and_token, tmp_curio, monkeypatch):
+        from utk_curio.backend.app.collaboration import dataflow_docs
+
+        helper = TestVerifiedSolve()
+        user, token = user_and_token
+        ctx = helper._setup(client, user, token, monkeypatch, dl_replies=[helper.LOADER], with_stats=False)
+        held = self.MADE_UP.replace("{DATASET}", ctx["dataset_id"])
+        # The user writes it on the canvas once the plan has landed.
+        spec = dataflow_docs.live(ctx["ukey"], ctx["pid"])
+        next(n for n in spec["dataflow"]["nodes"] if n["id"] == ctx["load"])["content"] = held
+        dataflow_docs.write(ctx["ukey"], ctx["pid"], spec, dataflow_docs.person(ctx["ukey"], "edit"))
+        load = helper._solve(client, token, ctx, verify=False)["results"][ctx["load"]]
+        assert load["status"] == "skipped", load
+        assert helper._node_content(ctx, ctx["load"]) == held
+        assert ctx["dl_calls"] == [] and ctx["exec_payloads"] == []

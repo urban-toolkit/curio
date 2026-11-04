@@ -1,0 +1,2434 @@
+"""Each open dataflow's Yjs doc, kept by the server, and its sync with the tabs.
+
+One pycrdt ``Doc`` and one ``Awareness`` per open dataflow live in this
+process's memory, each behind a lock of its own. What the doc holds, and how it
+maps to and from Trill, is ``doc_mapping.py``.
+
+**The protocol.** The Yjs sync protocol and awareness travel as bytes, framed as
+y-protocols frames them (sync 0, with step 1, step 2 and update 0 to 2;
+awareness 1), in the ``message`` of a ``yjs`` event on the collaboration
+namespace: ``{projectId, message}``. Only a socket that joined the dataflow's
+room (``join_session``, ``events.py``) takes part.
+
+* A tab starts with sync step 1, naming the doc it holds as ``docId`` if it
+  holds one. The server answers with step 2, with its own step 1 when the tab
+  edits, and with everyone's awareness; the ack is ``{ok, docId, role}``. A tab
+  holding another doc than the server's, one built anew since, is told
+  ``reload`` and starts again holding none. It sends updates once this ack is
+  in; the server handles each socket's events one at a time, in the order the
+  socket sent them (``extensions.init_socketio``).
+* The owner's and an editor's step 2 and updates are applied, appended to the
+  update log and relayed to the doc's other tabs. When nothing waits for the
+  doc, an update is applied at once, and its ack, ``{ok, kept}``, gives for
+  each client the update brought changes of the clock the doc now holds for
+  it, which the top bar's Saved reads.
+* Otherwise, as under a burst of typing in a room, it waits for the doc's
+  thread, which applies batch after batch of what waits (:func:`_take`), and
+  its ack is ``{ok, queued}`` at once, so the socket goes on reading. In a
+  batch each socket's updates are one transaction, in the order it sent them;
+  the batch makes one write to the log, a record a transaction, and sends
+  each tab one message, every change of the batch but the tab's own merged
+  into one update. Each socket whose updates it held gets one
+  :data:`KEPT_EVENT` message, ``{projectId, answered, kept}``, with
+  ``refused``, by why, when some were.
+* A watcher's step 2 and updates are dropped, ``read_only``: nothing is applied
+  or relayed. The role is the room's (``room_state``), which a change to the
+  editors updates at once (``roles.py``).
+* A change that leaves a connection pointing at a node that is gone, a node
+  removed while someone drew a connection to it, has that connection taken out
+  at once, for every tab, and the tab that drew it is told who removed the
+  node (:func:`_drop_dangling_connections`).
+* Awareness is relayed to the doc's other tabs and sent whole to a tab that
+  starts. It waits for the doc with the updates: a batch keeps each client's
+  latest state and sends each tab one message, its own clients' left out. The
+  server writes each state's ``user``, the participant the room knows; a
+  socket sets only client ids no other person's socket set (an account, and
+  on a guest account, which every guest signs in to, a sign-in), and never an
+  agent's; a watcher's state keeps only its presence (:data:`PRESENCE_FIELDS`),
+  never an edit; and a socket's states are cleared when it disconnects
+  (:func:`leave`).
+* An agent at work is in the room too: the server writes its state under a
+  client id no tab holds, and puts it back when the doc opens again
+  (:func:`set_agent_state`, ``agent_peers.py``).
+
+**The log, the dataflow's one history.** Every change to the doc is appended to
+its update log the moment it lands, and the log is never emptied. It is kept
+beside ``spec.trill.json``, in ``ydoc/<doc id>/``, as a segment a day (UTC):
+``<day>.bin``, the doc's state when the day's first change came, and
+``<day>.updates``, that day's updates, each a length and then the update. So
+the doc at any place in the log is that day's checkpoint and the updates up to
+it (:func:`rebuilt`), and a damaged segment loses that day only. The doc keeps
+garbage collection on, so no tab ever receives text deleted before it joined.
+
+``ydoc.json`` says where the log is: the doc, its segment of today, and the
+place in the log the spec was last written from, with that write's revision
+(``storage.spec_revision``).
+
+* After :data:`SAVE_IDLE_S` with no change, or every :data:`SAVE_EVERY_S` of
+  steady changes, the doc is written to ``spec.trill.json`` through
+  ``storage.write_spec``. The write carries what the spec file holds with the
+  doc's dataflow, the agents' sections included, and leaves the history out
+  (``storage.HISTORY_KEYS``), which storage keeps as it is.
+* A restart reloads the same doc from its log, so tabs that reconnect sync with
+  nothing doubled.
+* A spec written outside the doc (its revision moved) becomes a transaction on
+  the doc, of what that write changed since the doc last read or wrote the
+  file; what the doc changed meanwhile stays (``doc_mapping.apply_dataflow``).
+* A doc is built anew from Trill, with a new id and a new log, when its state
+  is lost, or when no tab holds it and it has grown to :data:`GROWN_TOO_LARGE`
+  times a doc built anew; the old log stays where it is, readable.
+* A doc leaves memory :data:`CLOSE_AFTER_S` after its last tab, written first.
+* Each change a write to the log holds is a point of the dataflow's history,
+  named after the change's origin, and a dataflow's first open gives it its
+  first points (``history.py``).
+
+**Writers.** This module is the one writer of ``spec.trill.json``
+(``storage.write_spec``), and every backend writer of a dataflow goes through
+it, so every change reaches the doc's tabs and its log:
+
+* A writer gets the dataflow as it is now as a dict (:func:`live`, or the
+  block :func:`writing`), changes it with no lock held, and hands it to
+  :func:`write`: one short transaction, its :class:`Actor` the origin, applies
+  only what the writer changed. A node's code lands only where the doc still
+  holds the code the writer was handed; otherwise the doc keeps its own and
+  the writer is told (:attr:`Written.refused`). A connection the writer draws
+  to a node someone removed meanwhile is taken out in the writer's own
+  transaction, by the rule a tab's change meets
+  (:func:`_drop_dangling_connections`), so it never lands pointing nowhere,
+  and the writer is told (:attr:`Written.dropped`). The agents' sections
+  (``doc_mapping.OUTSIDE_THE_DOC``) are written beside the doc, and a change
+  to them alone is written to the file alone.
+* The whole-dataflow PUT is the one deliberate exception (:func:`put`): its
+  transaction makes the doc match the PUT. A dataflow made anew starts through
+  :func:`create`.
+* The file is written at once, from the doc, each part that reads as the file
+  holds it kept as the file holds it.
+
+**What the owner put in.** Each transaction's origin says whether the items of
+the owner's store it names anew (a dataset, a package, a model) are within her
+editors' reach: those the owner's tab, a writer for her account or a spec
+written outside the doc names are, and those an editor's tab or a writer for an
+editor names are not (``owner_uses.py``, :func:`_by_its_owner`). A lockfile
+that names no package reads as the packages of the dataflow's nodes; a writer
+that names those in it says which they are (:func:`write`'s *backfilled*), and
+they name nothing anew.
+
+**Locks**, in this order: the spec lock (``storage.spec_write_lock``), then a
+doc's lock, then this module's own; storage's history lock, a doc's queue
+of updates (:attr:`_OpenDoc.queue`) and ``owner_uses``' lock are leaves. The spec
+lock is never asked for while a doc's lock is held, and the thread that writes
+the docs touches no database. A writer under the spec lock already (a
+read-modify-write that must not interleave) is not made to ask for it again.
+No holder of a doc's lock touches the database, so a thread holding a
+database write may wait for one: the PUT writes its row before its spec, and a
+create comes before its row is committed (#909).
+
+**Reads**: :func:`read` is the dataflow as it is now, an open doc's over the
+file.
+"""
+from __future__ import annotations
+
+import copy
+import json
+import logging
+import os
+import re
+import threading
+import time
+import uuid
+from contextlib import contextmanager
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable, Iterable, Iterator, NamedTuple, Optional
+
+from flask import request
+from flask_socketio import join_room
+from pycrdt import (
+    Array,
+    Awareness,
+    Decoder,
+    Map,
+    Encoder,
+    YMessageType,
+    YSyncMessageType,
+    create_awareness_message,
+    create_sync_message,
+    create_update_message,
+    handle_sync_message,
+    merge_updates,
+    write_message,
+)
+
+from utk_curio.backend.app.collaboration import doc_mapping, history, owner_uses, room_state
+from utk_curio.backend.app.collaboration.events import (
+    READ_ONLY_REFUSAL,
+    _project,
+    _valid_project_id,
+)
+from utk_curio.backend.app.projects import scenarios as project_scenarios
+from utk_curio.backend.app.projects import storage
+from utk_curio.backend.config import COLLAB_NAMESPACE
+
+logger = logging.getLogger(__name__)
+
+EVENT = doc_mapping.EVENT
+#: What answers a tab's queued updates once their batch is applied (:func:`_update`).
+KEPT_EVENT = doc_mapping.KEPT_EVENT
+
+#: Beside ``spec.trill.json``: the docs' logs, a folder per doc.
+LOG_DIR = "ydoc"
+#: Where the log is.
+POINTER_FILE = "ydoc.json"
+#: The origin of the transaction that carries a spec written outside the doc.
+SPEC_ORIGIN = "spec"
+#: The origin of the transaction a merge rule makes (:func:`_drop_dangling_connections`).
+RULES_ORIGIN = "rules"
+#: What a tab whose connection a merge rule took out is told, on its socket.
+CONNECTION_DROPPED_EVENT = "connection_dropped"
+#: How many removed nodes an open doc remembers the remover of.
+REMOVERS_KEPT = 500
+
+#: Seconds with no change before the doc is written to ``spec.trill.json``
+#: (JupyterLab's default save delay).
+SAVE_IDLE_S = 1.0
+#: Seconds of steady changes after which it is written anyway.
+SAVE_EVERY_S = 10.0
+#: Seconds a doc stays in memory after its last tab leaves (JupyterLab's).
+CLOSE_AFTER_S = 60.0
+#: A doc no tab holds is built anew once its state is this many times the
+#: size of a doc built anew from its Trill...
+GROWN_TOO_LARGE = 4.0
+#: ...and at least this many bytes, which each tab downloads when it joins.
+REBUILD_FLOOR_BYTES = 256 * 1024
+
+#: Whether a thread of this module writes the docs as their times come. Off,
+#: :func:`flush_due` does it when it is called.
+BACKGROUND = True
+
+#: The awareness field the server writes: who the state is.
+USER_FIELD = "user"
+#: The awareness fields a watcher's state keeps: where it is, never an edit.
+PRESENCE_FIELDS = frozenset({"pointer", "selection"})
+
+_DOC_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+_DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _today() -> str:
+    """The day a change is logged under, in UTC."""
+    return time.strftime("%Y-%m-%d", time.gmtime())
+
+
+class _NoDataflow(Exception):
+    """The dataflow has no spec on disk."""
+
+
+#: The kinds of a tab's message to the doc (:class:`_Queued`): its sync step 2
+#: or an update, and its awareness.
+_UPDATE, _AWARENESS = "update", "awareness"
+
+
+class _Queued:
+    """A tab's message for its doc (:func:`_take`): its sync step 2 or an
+    update, as bytes, or its awareness, as the entries it sets."""
+
+    __slots__ = ("sid", "me", "kind", "data")
+
+    def __init__(self, sid: str, me: dict, kind: str, data):
+        self.sid = sid
+        #: The participant the socket is, as the room knows it.
+        self.me = me
+        self.kind = kind
+        self.data = data
+
+
+class _OpenDoc:
+    """One open dataflow. Its fields are guarded by :attr:`lock`, but the
+    times, which this module's lock guards."""
+
+    def __init__(self, project_id: str, user_key: str):
+        self.project_id = project_id
+        self.user_key = user_key
+        self.lock = threading.RLock()
+        self.doc = None
+        self.awareness: Optional[Awareness] = None
+        self.doc_id: Optional[str] = None
+        #: The spec revision the doc last read or wrote, and the doc's part of
+        #: the dataflow the spec file held then.
+        self.revision = 0
+        self.base: dict = {}
+        #: The day of the log's segment changes go to, and the place in the
+        #: log the spec was last written from.
+        self.segment: Optional[str] = None
+        self.folded: dict = {}
+        self.loaded = False
+        self.closed = False
+        #: The sockets that started a sync: sid -> participant.
+        self.tabs: dict[str, dict] = {}
+        #: Each awareness client id, and the socket that set it.
+        self.awareness_owners: dict[int, str] = {}
+        self.updates: list[bytes] = []
+        self.awareness_changed: list[int] = []
+        #: The tabs' messages waiting for the doc, in the order they came;
+        #: whether a thread holds the doc's turn, applying a message at once or
+        #: a batch of them; and the doc's thread, while it drains them
+        #: (:func:`_take`). Guarded by :attr:`queue`, a leaf: taken under
+        #: :attr:`lock` or alone, and never held while waiting for another lock.
+        self.queue = threading.Condition(threading.Lock())
+        self.queued: list[_Queued] = []
+        self.applying = False
+        self.drainer: Optional[threading.Thread] = None
+        #: Who drew each connection, by the socket whose update added it, and
+        #: who removed each node lately: what a merge rule's notice names.
+        self.edge_authors: dict[str, str] = {}
+        self.removers: dict[str, dict] = {}
+        #: What the doc's last transaction added, removed and typed, the
+        #: observers that note it, each node's code's digest as the last
+        #: change left it, and the history's own state of this doc
+        #: (``history.py``).
+        self.touched = None
+        self.watching = None
+        self.codes = None
+        self.history = None
+        #: The items of the owner's store the doc names, whether a transaction
+        #: since may have changed them, and the observers that note it
+        #: (``owner_uses.py``).
+        self.uses = None
+        self.uses_touched = False
+        self.uses_watching = None
+        # Guarded by this module's lock.
+        self.changed_at: Optional[float] = None
+        self.dirty_since: Optional[float] = None
+        self.idle_since: Optional[float] = None
+        #: The last change's Unix time, which the dataflow's "Updated" shows
+        #: until ``spec.trill.json`` is written (:func:`unwritten_change_at`).
+        self.changed_wall: Optional[float] = None
+
+    def folder(self) -> Path:
+        return storage.project_dir(self.user_key, self.project_id)
+
+    def log_dir(self) -> Path:
+        return self.folder() / LOG_DIR / self.doc_id
+
+    def on_update(self, event) -> None:
+        self.updates.append(event.update)
+
+    def on_awareness(self, topic, change) -> None:
+        if topic == "update":
+            changes, _origin = change
+            self.awareness_changed += changes["added"] + changes["updated"] + changes["removed"]
+
+
+_lock = threading.RLock()
+_wake = threading.Condition(_lock)
+_docs: dict[str, _OpenDoc] = {}
+_sid_docs: dict[str, set[str]] = {}
+_flusher: Optional[threading.Thread] = None
+_clock = time.monotonic
+
+
+def _relay_room(project_id: str) -> str:
+    """The Socket.IO room of the tabs that sync the dataflow's doc."""
+    return f"doc:{project_id}"
+
+
+# ---------------------------------------------------------------------------
+# The log
+# ---------------------------------------------------------------------------
+
+def _write_atomically(path: Path, data: bytes) -> None:
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        tmp.write_bytes(data)
+        os.replace(tmp, path)
+    finally:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+
+
+def _records(data: bytes) -> list[tuple[int, bytes]]:
+    """The updates in a segment, each with the place its record ends at. A
+    record cut short, by a crash in the middle of an append, ends the segment."""
+    records: list[tuple[int, bytes]] = []
+    i, end = 0, len(data)
+    while i < end:
+        length = shift = 0
+        while True:
+            if i >= end:
+                return records
+            byte = data[i]
+            i += 1
+            length |= (byte & 0x7F) << shift
+            shift += 7
+            if byte < 0x80:
+                break
+        if i + length > end:
+            logger.warning("a segment of an update log ends with an update cut short; the rest is dropped")
+            return records
+        records.append((i + length, data[i:i + length]))
+        i += length
+    return records
+
+
+def _segment_files(log_dir: Path, day: str) -> tuple[Path, Path]:
+    return log_dir / f"{day}.bin", log_dir / f"{day}.updates"
+
+
+def _rebuild(folder: Path, doc_id: str, day: str, *, upto: Optional[int] = None):
+    """The doc *doc_id* as its log holds it at the end of *day*'s segment, or
+    *upto* bytes into its updates: the day's checkpoint, then its updates."""
+    checkpoint, updates = _segment_files(folder / LOG_DIR / doc_id, day)
+    doc = doc_mapping.new_doc()
+    doc.apply_update(checkpoint.read_bytes())
+    try:
+        data = updates.read_bytes()
+    except FileNotFoundError:
+        data = b""
+    for end, record in _records(data):
+        if upto is not None and end > upto:
+            break
+        try:
+            doc.apply_update(record)
+        except ValueError:
+            logger.warning("the log of doc %s, %s: an update does not apply; the rest is dropped", doc_id, day)
+            break
+    return doc
+
+
+def segments(user_key: str, project_id: str, doc_id: str) -> list[str]:
+    """The days of a doc's log, oldest first, the docs built anew since
+    included."""
+    log_dir = storage.project_dir(user_key, project_id) / LOG_DIR / doc_id
+    if not _DOC_ID_RE.match(doc_id) or not log_dir.is_dir():
+        return []
+    return sorted(path.stem for path in log_dir.glob("*.bin") if _DAY_RE.match(path.stem))
+
+
+def rebuilt(user_key: str, project_id: str, doc_id: str, day: str, *, upto: Optional[int] = None):
+    """The doc *doc_id* at the end of *day*'s segment of its log, or *upto*
+    bytes into that day's updates: any doc of the dataflow, the ones built anew
+    since included."""
+    if not _DOC_ID_RE.match(doc_id) or not _DAY_RE.match(day):
+        raise ValueError(f"no log {doc_id!r} {day!r}")
+    return _rebuild(storage.project_dir(user_key, project_id), doc_id, day, upto=upto)
+
+
+def logged_updates(user_key: str, project_id: str, doc_id: str, day: str) -> list[bytes]:
+    """The updates of *day*'s segment of a doc's log, in order."""
+    if not _DOC_ID_RE.match(doc_id) or not _DAY_RE.match(day):
+        return []
+    _, updates = _segment_files(storage.project_dir(user_key, project_id) / LOG_DIR / doc_id, day)
+    try:
+        return [record for _end, record in _records(updates.read_bytes())]
+    except FileNotFoundError:
+        return []
+
+
+def _read_pointer(folder: Path) -> Optional[dict]:
+    try:
+        pointer = json.loads((folder / POINTER_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    folded = pointer.get("folded") if isinstance(pointer, dict) else None
+    if not (
+        isinstance(folded, dict)
+        and isinstance(pointer.get("doc"), str) and _DOC_ID_RE.match(pointer["doc"])
+        and isinstance(pointer.get("segment"), str) and _DAY_RE.match(pointer["segment"])
+        and isinstance(pointer.get("specRevision"), int)
+        and isinstance(folded.get("segment"), str) and _DAY_RE.match(folded["segment"])
+        and isinstance(folded.get("offset"), int)
+    ):
+        return None
+    return pointer
+
+
+def _write_pointer(entry: _OpenDoc) -> None:
+    _write_atomically(entry.folder() / POINTER_FILE, json.dumps({
+        "doc": entry.doc_id,
+        "segment": entry.segment,
+        "specRevision": entry.revision,
+        "folded": entry.folded,
+    }).encode("utf-8"))
+
+
+def _start_segment(entry: _OpenDoc, day: str) -> None:
+    """Start the log's segment of *day*, the doc's state now its checkpoint."""
+    log_dir = entry.log_dir()
+    log_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint, updates = _segment_files(log_dir, day)
+    _write_atomically(checkpoint, entry.doc.get_update())
+    updates.touch(exist_ok=True)
+    entry.segment = day
+
+
+def _begin_log(entry: _OpenDoc) -> None:
+    """A log for a doc built anew, its first segment today."""
+    _start_segment(entry, _today())
+    entry.folded = {"segment": entry.segment, "offset": 0}
+    _write_pointer(entry)
+
+
+def _roll(entry: _OpenDoc) -> None:
+    """Start today's segment, if the next change is the day's first. The
+    history's typing points end with the day they began in."""
+    day = _today()
+    if day != entry.segment:
+        history.close_typing(entry)
+        _start_segment(entry, day)
+        _write_pointer(entry)
+
+
+def _append(entry: _OpenDoc, updates: list[bytes]) -> tuple[int, int]:
+    """Add *updates* to the log's segment; where in it they start and end."""
+    _, path = _segment_files(entry.log_dir(), entry.segment)
+    with open(path, "ab") as log:
+        start = log.seek(0, os.SEEK_END)
+        for update in updates:
+            log.write(write_message(update))
+        return start, log.tell()
+
+
+def log_end(entry: _OpenDoc) -> tuple[str, str, int]:
+    """Where the open doc's log ends now: its doc, its segment and the place
+    in the segment's updates, a point of the history (``history.py``)."""
+    _, path = _segment_files(entry.log_dir(), entry.segment)
+    try:
+        return entry.doc_id, entry.segment, path.stat().st_size
+    except FileNotFoundError:
+        return entry.doc_id, entry.segment, 0
+
+
+def segment_in(folder: Path, doc_id: str, day: str) -> tuple[bytes, list[tuple[int, bytes]]]:
+    """*day*'s segment of the log of doc *doc_id* in the dataflow folder
+    *folder*: its checkpoint, and its updates, each with the place its record
+    ends at."""
+    if not _DOC_ID_RE.match(doc_id) or not _DAY_RE.match(day):
+        raise ValueError(f"no log {doc_id!r} {day!r}")
+    checkpoint, updates = _segment_files(folder / LOG_DIR / doc_id, day)
+    data = checkpoint.read_bytes()
+    try:
+        records = _records(updates.read_bytes())
+    except FileNotFoundError:
+        records = []
+    return data, records
+
+
+def write_segment(folder: Path, doc_id: str, day: str, checkpoint: bytes, updates: bytes) -> None:
+    """Write *day*'s segment of the log of doc *doc_id* in *folder*: its
+    checkpoint, then its updates, records as the log writes them."""
+    if not _DOC_ID_RE.match(doc_id) or not _DAY_RE.match(day):
+        raise ValueError(f"no log {doc_id!r} {day!r}")
+    log_dir = folder / LOG_DIR / doc_id
+    log_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_path, updates_path = _segment_files(log_dir, day)
+    _write_atomically(checkpoint_path, checkpoint)
+    _write_atomically(updates_path, updates)
+
+
+def doc_ids_in(folder: Path) -> list[str]:
+    """The docs whose logs the dataflow folder *folder* holds."""
+    try:
+        return sorted(path.name for path in (folder / LOG_DIR).iterdir()
+                      if path.is_dir() and _DOC_ID_RE.match(path.name))
+    except FileNotFoundError:
+        return []
+
+
+def live_doc_id(folder: Path) -> Optional[str]:
+    """The doc the dataflow folder *folder*'s pointer names: the one its next
+    open loads."""
+    pointer = _read_pointer(folder)
+    return pointer["doc"] if pointer is not None else None
+
+
+def restart_log(entry: _OpenDoc) -> None:
+    """Start the open doc's log again, today's segment its first, from the
+    doc as it is now: its earlier segments go. The doc keeps its id, so its
+    tabs sync on. Under the doc's lock, its spec written first."""
+    log_dir = entry.log_dir()
+    day = _today()
+    log_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint, updates = _segment_files(log_dir, day)
+    _write_atomically(checkpoint, entry.doc.get_update())
+    _write_atomically(updates, b"")
+    entry.segment = day
+    entry.folded = {"segment": day, "offset": 0}
+    _write_pointer(entry)
+    for path in list(log_dir.glob("*.bin")) + list(log_dir.glob("*.updates")):
+        if path.stem != day:
+            path.unlink(missing_ok=True)
+
+
+def _mark_written(entry: _OpenDoc) -> None:
+    """The spec now holds the doc as the log holds it here."""
+    _, path = _segment_files(entry.log_dir(), entry.segment)
+    try:
+        offset = path.stat().st_size
+    except FileNotFoundError:
+        offset = 0
+    entry.folded = {"segment": entry.segment, "offset": offset}
+    _write_pointer(entry)
+
+
+def _behind(user_key: str, project_id: str) -> bool:
+    """Whether a doc's log holds changes its spec was not written from, as a
+    stopped backend can leave it."""
+    try:
+        folder = storage.project_dir(user_key, project_id)
+    except ValueError:
+        return False
+    pointer = _read_pointer(folder)
+    if pointer is None:
+        return False
+    _, path = _segment_files(folder / LOG_DIR / pointer["doc"], pointer["segment"])
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return False
+    folded = pointer["folded"]
+    return size > (folded["offset"] if folded["segment"] == pointer["segment"] else 0)
+
+
+# ---------------------------------------------------------------------------
+# The spec beside the doc
+# ---------------------------------------------------------------------------
+
+def _spec_file(entry: _OpenDoc) -> "storage.SpecFile":
+    """``spec.trill.json`` as the file holds it, with its revision
+    (``storage.read_spec_file``): the dataflow, without the history
+    ``storage.read_spec`` replays, which neither building the doc nor writing it
+    needs."""
+    try:
+        return storage.read_spec_file(entry.user_key, entry.project_id)
+    except ValueError:
+        logger.error("the spec of dataflow %s does not read as JSON", entry.project_id)
+        return storage.SpecFile(None, storage.spec_revision(entry.user_key, entry.project_id))
+
+
+def _owned(spec: dict) -> dict:
+    dataflow = spec.get("dataflow") if isinstance(spec.get("dataflow"), dict) else {}
+    return doc_mapping.owned(dataflow)
+
+
+def _in_sets(spec: dict) -> dict:
+    """*spec* with each of its scenarios in a set, with its context and
+    outcomes, as the canvas writes them (``scenarios.normalize_spec_scenarios``):
+    the doc holds no scenario outside a set, whoever wrote it. *spec* is left
+    as it is."""
+    if not isinstance(spec.get("dataflow"), dict):
+        return spec
+    out = {**spec, "dataflow": {**spec["dataflow"]}}
+    project_scenarios.normalize_spec_scenarios(out, keep_empty=True)
+    return out
+
+
+def _normalized(dataflow: dict) -> dict:
+    """*dataflow* as a doc built from it reads it back."""
+    doc = doc_mapping.new_doc()
+    doc_mapping.dataflow_to_doc(dataflow, doc, doc_id="normalized")
+    return doc_mapping.doc_to_dataflow(doc)
+
+
+def _catch_up(entry: _OpenDoc, file: "storage.SpecFile") -> None:
+    """Carry a spec written outside the doc, since the doc last read or wrote
+    the file, into the doc: one transaction of what that write changed, logged
+    and relayed to every tab like a person's."""
+    if file.revision == entry.revision or not isinstance(file.spec, dict):
+        return
+    # The doc takes the file's scenarios in sets; its base is the file.
+    theirs = _owned(_in_sets(file.spec))
+    _roll(entry)
+    try:
+        with entry.doc.transaction(origin=SPEC_ORIGIN):
+            refused = doc_mapping.apply_dataflow(entry.doc, entry.base, theirs)
+    except doc_mapping.DocMappingError:
+        logger.error("dataflow %s: a spec written outside its doc has a node field the doc has no "
+                     "place for; the doc keeps its own", entry.project_id, exc_info=True)
+        refused = []
+    owner_uses.noted(entry, by_owner=_by_its_owner(entry.user_key, SPEC_ORIGIN))
+    for node_id in refused:
+        logger.warning("dataflow %s: node %s's code changed outside its doc and in it; the doc's stays",
+                       entry.project_id, node_id)
+    entry.revision, entry.base = file.revision, _owned(file.spec)
+    _commit(entry, skip_sid=None, origin=SPEC_ORIGIN)
+
+
+# ---------------------------------------------------------------------------
+# Opening, writing and closing a doc
+# ---------------------------------------------------------------------------
+
+def _attach(entry: _OpenDoc, doc) -> None:
+    entry.doc = doc
+    entry.doc_id = doc_mapping.doc_id(doc)
+    entry.updates = []
+    entry.awareness = Awareness(doc)
+    entry.awareness.set_local_state(None)  # the server is no one in the room
+    _put_agents_back(entry)
+    doc.observe(entry.on_update)
+    entry.awareness.observe(entry.on_awareness)
+    history.observe(entry)
+    owner_uses.watch(entry)
+
+
+def _built_anew(entry: _OpenDoc, dataflow: dict) -> None:
+    """Make the open doc one built anew from *dataflow*, with a new id and a
+    new log; the old doc's log stays where it is."""
+    doc = doc_mapping.new_doc()
+    doc_mapping.dataflow_to_doc(dataflow, doc, doc_id=uuid.uuid4().hex)
+    _attach(entry, doc)
+    _begin_log(entry)
+
+
+def _load(entry: _OpenDoc) -> None:
+    """Open the doc from its log, or build it anew from the spec when its state
+    is lost; then carry in a spec written outside it, and build anew one grown
+    too large."""
+    folder = entry.folder()
+    file = _spec_file(entry)
+    if not isinstance(file.spec, dict):
+        raise _NoDataflow(entry.project_id)
+    pointer = _read_pointer(folder)
+    doc = None
+    if pointer is not None:
+        try:
+            doc = _rebuild(folder, pointer["doc"], pointer["segment"])
+            if doc_mapping.doc_id(doc) != pointer["doc"]:
+                logger.warning("the log of dataflow %s holds another doc than its pointer names", entry.project_id)
+                doc = None
+        except (OSError, ValueError, RuntimeError):
+            logger.warning("the log of dataflow %s could not be read; its doc is built anew",
+                           entry.project_id, exc_info=True)
+            doc = None
+    if doc is not None:
+        _attach(entry, doc)
+        entry.segment, entry.revision, entry.folded = pointer["segment"], pointer["specRevision"], pointer["folded"]
+        if file.revision == entry.revision:
+            entry.base = _owned(file.spec)
+        else:
+            # What the file held when the doc last wrote it: the log at that place.
+            try:
+                entry.base = doc_mapping.doc_to_dataflow(
+                    _rebuild(folder, entry.doc_id, entry.folded["segment"], upto=entry.folded["offset"])
+                )
+            except (OSError, ValueError, RuntimeError):
+                entry.base = doc_mapping.doc_to_dataflow(doc)  # the file's changes take every field
+    else:
+        # Built with its scenarios in sets; a file saved before sets is then
+        # behind the doc, and written so.
+        entry.revision, entry.base = file.revision, _owned(file.spec)
+        _built_anew(entry, _owned(_in_sets(file.spec)))
+    entry.loaded = True
+    # Before anything this open changes: the dataflow's first points are the
+    # history it carries, or the dataflow as its doc holds it.
+    history.first_points(entry)
+    _catch_up(entry, file)
+    if not entry.tabs:
+        _built_anew_if_grown(entry)
+    with _wake:
+        # Idle until a tab starts its sync (a read opens a doc with none).
+        entry.idle_since = _clock()
+        _wake.notify_all()
+    if not doc_mapping.same(_normalized(entry.base), doc_mapping.doc_to_dataflow(entry.doc)):
+        _changed(entry)  # the spec is behind the doc
+    else:
+        _ensure_flusher()
+
+
+def _built_anew_if_grown(entry: _OpenDoc) -> None:
+    """Build anew a doc grown too large: each tab downloads its whole state when
+    it joins, deleted items included."""
+    size = len(entry.doc.get_update())
+    if size <= REBUILD_FLOOR_BYTES:
+        return
+    dataflow = doc_mapping.doc_to_dataflow(entry.doc)
+    fresh = doc_mapping.new_doc()
+    doc_mapping.dataflow_to_doc(dataflow, fresh, doc_id="measure")
+    if size <= GROWN_TOO_LARGE * len(fresh.get_update()):
+        return
+    logger.info("the doc of dataflow %s grew to %d bytes; it is built anew", entry.project_id, size)
+    _built_anew(entry, dataflow)
+
+
+@contextmanager
+def _held(project_id: str, user_key: str) -> Iterator[_OpenDoc]:
+    """The open doc of the dataflow, opened if it is not, with its lock held.
+    A doc open under the same id for another account is not this dataflow's
+    (only tests reuse an id across accounts): it is dropped, writing nothing."""
+    user_key = str(user_key)
+    while True:
+        with _lock:
+            entry = _docs.get(project_id)
+            if entry is not None and not entry.closed and entry.user_key != user_key:
+                logger.warning("dataflow %s: a doc of another account's dataflow by that id is dropped", project_id)
+                entry.closed = True
+                entry = None
+            if entry is None or entry.closed:
+                entry = _docs[project_id] = _OpenDoc(project_id, user_key)
+        with entry.lock:
+            if entry.closed:
+                continue
+            if not entry.loaded:
+                try:
+                    _load(entry)
+                except BaseException:
+                    entry.closed = True
+                    with _lock:
+                        if _docs.get(project_id) is entry:
+                            del _docs[project_id]
+                    raise
+            yield entry
+            return
+
+
+def _open_entry(project_id: str, user_key: Optional[str] = None) -> Optional[_OpenDoc]:
+    """The dataflow's doc, if it is open; with *user_key*, only if it is that
+    account's."""
+    with _lock:
+        entry = _docs.get(project_id)
+    if entry is None or entry.closed:
+        return None
+    if user_key is not None and entry.user_key != str(user_key):
+        return None
+    return entry
+
+
+def _changed(entry: _OpenDoc) -> None:
+    """Note a change the spec does not have yet. The writing thread is woken
+    only when the doc's write becomes due: a later change moves that time no
+    sooner (:func:`_save_due`), and the thread reads it again when it wakes,
+    so steady typing does not wake it at every keystroke."""
+    with _wake:
+        now = _clock()
+        entry.changed_at = now
+        entry.changed_wall = time.time()
+        due = entry.dirty_since is None
+        if due:
+            entry.dirty_since = now
+            _wake.notify_all()
+        running = _flusher is not None and _flusher.is_alive()
+    if due or not running:
+        _ensure_flusher()
+
+
+def _save_due(entry: _OpenDoc) -> Optional[float]:
+    """When the doc's changes are due in ``spec.trill.json``: a second after
+    the last, and at most ten after the first."""
+    if entry.dirty_since is None:
+        return None
+    return min(entry.changed_at + SAVE_IDLE_S, entry.dirty_since + SAVE_EVERY_S)
+
+
+def _close_due(entry: _OpenDoc) -> Optional[float]:
+    return None if entry.idle_since is None else entry.idle_since + CLOSE_AFTER_S
+
+
+def _discard(entry: _OpenDoc) -> None:
+    """Drop a doc whose dataflow is gone, writing nothing."""
+    with entry.lock:
+        entry.closed = True
+        with _lock:
+            if _docs.get(entry.project_id) is entry:
+                del _docs[entry.project_id]
+
+
+def _flush(entry: _OpenDoc) -> bool:
+    """Write the doc's changes to ``spec.trill.json``, a spec written outside
+    the doc carried in first. Whether it wrote."""
+    try:
+        folder = entry.folder()
+    except ValueError:
+        return False
+    if not (folder / storage.SPEC_FILE).is_file():
+        _discard(entry)  # the dataflow was deleted: its folder must not come back
+        return False
+    with _spec_lock(entry.user_key, entry.project_id):
+        with entry.lock:
+            with _lock:
+                dirty = entry.dirty_since is not None
+            if entry.closed or not entry.loaded or not dirty:
+                return False
+            file = _spec_file(entry)
+            if not isinstance(file.spec, dict):
+                _discard(entry)
+                return False
+            _catch_up(entry, file)
+            _written(entry, file, file.spec)
+            return True
+
+
+def _written(entry: _OpenDoc, file: "storage.SpecFile", spec: dict, *,
+             history: Optional[dict] = None) -> None:
+    """Write ``spec.trill.json`` from the doc, which is then in step with it:
+    *spec*, what the file holds (with a writer's changes beside the doc merged
+    in, :func:`_merged_beside`), its dataflow the doc's. Each part of that
+    dataflow that reads as the file holds it is kept as the file holds it, so a
+    write changes only what changed (:func:`_as_the_file_holds`). The history
+    stays out: a section a write leaves out stays on record (``write_spec``),
+    so no write of the doc reads or rewrites it, but the sections *history*
+    puts on record (the PUT's). Under the spec lock and the doc's."""
+    out = _writable(spec)
+    out["dataflow"] = _as_the_file_holds(
+        doc_mapping.doc_to_dataflow(entry.doc), _dataflow_of(file.spec), _dataflow_of(spec),
+    )
+    if history:
+        out.update(history)
+    storage.write_spec(entry.user_key, entry.project_id, out)
+    entry.revision = storage.spec_revision(entry.user_key, entry.project_id)
+    entry.base = doc_mapping.owned(out["dataflow"])
+    _mark_written(entry)
+    with _lock:
+        entry.dirty_since = entry.changed_at = None
+        if not entry.tabs:
+            entry.idle_since = _clock()  # leaves memory a while after its last write
+
+
+def _as_the_file_holds(dataflow: dict, on_file: dict, beside: dict) -> dict:
+    """The dataflow to write: *dataflow*, the doc's, as the file holds it
+    (*on_file*, the file's whole dataflow), with the sections *beside* keeps
+    beside the doc. The file's fields stay in its order, each that reads as the
+    file holds it taken as the file holds it, and each node, connection and
+    scenario likewise: a node the doc reads back in another form (an empty
+    ``metadata`` left out, its fields in the layout's order) keeps the file's
+    form until it changes. New fields come after, and a list the file leaves
+    out, which the doc reads back empty, stays out."""
+    held = doc_mapping.owned(on_file)
+    try:
+        normal = _normalized(held)
+    except doc_mapping.DocMappingError:
+        normal = None
+    out: dict = {}
+    for name in on_file:
+        if name in doc_mapping.OUTSIDE_THE_DOC:
+            if name in beside:
+                out[name] = beside[name]
+        elif name in dataflow:
+            out[name] = dataflow[name] if normal is None else _field_as_the_file_holds(
+                name, dataflow[name], held[name], normal.get(name, doc_mapping.MISSING),
+            )
+    for name, value in dataflow.items():
+        if name not in out and not (
+            name not in held and normal is not None and doc_mapping.same(normal.get(name, doc_mapping.MISSING), value)
+        ):
+            out[name] = value
+    for name in sorted(doc_mapping.OUTSIDE_THE_DOC):
+        if name in beside and name not in out:
+            out[name] = beside[name]
+    return out
+
+
+def _field_as_the_file_holds(name: str, value, held, read):
+    """The doc's *value* of the dataflow's field *name*: as the file holds it
+    (*held*, read back as *read*) when it reads the same, and a list of nodes,
+    connections or scenarios entry by entry."""
+    if doc_mapping.same(read, value):
+        return held
+    key = doc_mapping.KEYED_LISTS.get(name)
+    if key and isinstance(value, list) and isinstance(held, list) and isinstance(read, list):
+        return _entries_as_the_file_holds(value, held, read, key)
+    return value
+
+
+def _entries_as_the_file_holds(entries: list, held: list, read: list, key: str) -> list:
+    """*entries*, each one that reads as the file's entry of its id reads
+    (*held* as the file holds them, *read* as the doc reads them back) taken as
+    the file holds it, and each that changed with its unchanged fields so."""
+
+    def by_key(items: list) -> dict:
+        return {item[key]: item for item in items if isinstance(item, dict) and isinstance(item.get(key), str)}
+
+    theirs, normal = by_key(held), by_key(read)
+    out = []
+    for entry in entries:
+        name = entry.get(key) if isinstance(entry, dict) else None
+        if name not in theirs or name not in normal or not isinstance(theirs[name], dict):
+            out.append(entry)
+        elif doc_mapping.same(normal[name], entry):
+            out.append(theirs[name])
+        else:
+            out.append(_fields_as_the_file_holds(entry, theirs[name], normal[name]))
+    return out
+
+
+def _fields_as_the_file_holds(entry: dict, held: dict, read: dict) -> dict:
+    """*entry*, a changed one, in the order the file holds its fields: each
+    field that reads as the file's (*held*, read back as *read*) taken as the
+    file holds it, each the doc reads back as nothing (an empty ``metadata``)
+    kept, each the doc took out left out, and new ones after."""
+    out: dict = {}
+    for field, was in held.items():
+        if field in entry:
+            out[field] = entry[field] if field not in read else _value_as_the_file_holds(
+                entry[field], was, read[field],
+            )
+        elif field not in read:
+            out[field] = was
+    for field, value in entry.items():
+        if field not in out:
+            out[field] = value
+    return out
+
+
+def _value_as_the_file_holds(value, held, read):
+    """A field's *value* as the file holds it (*held*, read back as *read*)
+    when it reads the same, and an object (a node's ``metadata``) field by
+    field."""
+    if doc_mapping.same(read, value):
+        return held
+    if isinstance(value, dict) and isinstance(held, dict) and isinstance(read, dict):
+        return _fields_as_the_file_holds(value, held, read)
+    return value
+
+
+def _close(entry: _OpenDoc) -> bool:
+    """Take a doc no tab syncs out of memory, written first. Whether it went."""
+    if entry.dirty_since is not None:
+        _flush(entry)
+    with entry.lock:
+        if not entry.closed:
+            history.close_typing(entry)
+        with _lock:
+            if entry.closed or entry.tabs or entry.dirty_since is not None or entry.idle_since is None:
+                return False
+            entry.closed = True
+            if _docs.get(entry.project_id) is entry:
+                del _docs[entry.project_id]
+    return True
+
+
+def unwritten_change_at(project_id: str) -> Optional[float]:
+    """When the open doc last changed, as a Unix time, while
+    ``spec.trill.json`` does not hold that change yet: the file is written a
+    second after the last change (:data:`SAVE_IDLE_S`), so until then only the
+    doc knows the dataflow changed. ``None`` for a doc not open or written."""
+    entry = _open_entry(project_id)
+    if entry is None:
+        return None
+    with _lock:
+        return entry.changed_wall if entry.dirty_since is not None else None
+
+
+def flush(project_id: str) -> bool:
+    """Write the open doc's changes now. Whether it wrote ``spec.trill.json``."""
+    entry = _open_entry(project_id)
+    return entry is not None and _flush(entry)
+
+
+def close(project_id: str) -> bool:
+    """Take the doc out of memory now, written first, if no tab syncs it."""
+    entry = _open_entry(project_id)
+    if entry is None:
+        return False
+    with _lock:
+        if entry.idle_since is None and not entry.tabs:
+            entry.idle_since = _clock()
+    return _close(entry)
+
+
+def flush_due(now: Optional[float] = None) -> None:
+    """Write each doc whose changes are due, and close each that is idle long
+    enough."""
+    now = _clock() if now is None else now
+    with _lock:
+        entries = list(_docs.values())
+    for entry in entries:
+        with _lock:
+            close_due, save_due = _close_due(entry), _save_due(entry)
+        typing_due = history.next_due(entry)
+        if typing_due is not None and now >= typing_due:
+            with entry.lock:
+                if not entry.closed:
+                    history.typing_due(entry, now)
+        if close_due is not None and now >= close_due:
+            _close(entry)
+        elif save_due is not None and now >= save_due:
+            _flush(entry)
+
+
+def _ensure_flusher() -> None:
+    global _flusher
+    if not BACKGROUND:
+        return
+    with _wake:
+        if _flusher is None or not _flusher.is_alive():
+            _flusher = threading.Thread(target=_run_flusher, name="dataflow-docs", daemon=True)
+            _flusher.start()
+        _wake.notify_all()
+
+
+def _run_flusher() -> None:
+    global _flusher
+    while True:
+        failed = False
+        try:
+            flush_due()
+        except Exception:  # noqa: BLE001 - a failed write must not stop the next ones
+            logger.exception("writing the open dataflows' docs failed")
+            failed = True
+        with _wake:
+            if not _docs or not BACKGROUND:
+                if _flusher is threading.current_thread():
+                    _flusher = None
+                return
+            dues = [due for entry in _docs.values()
+                    for due in (_save_due(entry), _close_due(entry), history.next_due(entry))
+                    if due is not None]
+            wait = max(0.0, min(dues) - _clock()) if dues else CLOSE_AFTER_S
+            if failed:
+                wait = max(wait, SAVE_IDLE_S)  # a write that fails is tried again, not in a spin
+            _wake.wait(timeout=wait)
+
+
+def close_all() -> None:
+    """Write every open doc and take them all out of memory."""
+    with _lock:
+        entries = list(_docs.values())
+    for entry in entries:
+        if entry.dirty_since is not None:
+            _flush(entry)
+        with entry.lock:
+            if not entry.closed:
+                history.close_typing(entry)
+            entry.closed = True
+    with _lock:
+        _docs.clear()
+        _sid_docs.clear()
+
+
+def reset_for_tests() -> None:
+    """Forget every open doc, writing nothing, as a backend that stopped does.
+    A doc's thread still draining its queue refuses what is left and ends
+    first."""
+    with _lock:
+        entries = list(_docs.values())
+        for entry in entries:
+            entry.closed = True
+        _docs.clear()
+        _sid_docs.clear()
+        _agent_states.clear()
+    for entry in entries:
+        with entry.queue:
+            drainer = entry.drainer
+        if drainer is not None:
+            drainer.join(timeout=10)
+
+
+# ---------------------------------------------------------------------------
+# Reads
+# ---------------------------------------------------------------------------
+
+def read(user_key: str, project_id: str) -> Optional[dict]:
+    """The dataflow's spec as it is now: its open doc's dataflow over the file.
+    A doc that is not open but whose log holds changes its spec does not, which
+    a stopped backend can leave, is opened to read them."""
+    spec = storage.read_spec(user_key, project_id)
+    if spec is None:
+        return None
+    if _open_entry(project_id, user_key) is None and not _behind(user_key, project_id):
+        return spec
+    try:
+        with _held(project_id, user_key) as entry:
+            _catch_up(entry, _spec_file(entry))
+            return _as_read(spec, entry)
+    except (_NoDataflow, doc_mapping.DocMappingError):
+        return spec
+
+
+def _as_read(spec: dict, entry: _OpenDoc) -> dict:
+    """*spec*, what the file holds, with the open doc's dataflow as its own,
+    each part of it that reads as the file holds it as the file holds it: a
+    read of an open doc reads as the file the doc will write."""
+    dataflow = _dataflow_of(spec)
+    out = dict(spec)
+    out["dataflow"] = _as_the_file_holds(doc_mapping.doc_to_dataflow(entry.doc), dataflow, dataflow)
+    return out
+
+
+def is_open(project_id: str) -> bool:
+    return _open_entry(project_id) is not None
+
+
+def doc_id_of(project_id: str) -> Optional[str]:
+    """The id of the dataflow's open doc."""
+    entry = _open_entry(project_id)
+    return entry.doc_id if entry is not None else None
+
+
+# ---------------------------------------------------------------------------
+# Writers
+# ---------------------------------------------------------------------------
+
+#: The kinds of :class:`Actor`.
+PERSON = "person"
+AGENT = "agent"
+CURIO = "curio"
+
+
+@dataclass(frozen=True)
+class Actor:
+    """Who makes a change to a dataflow: the origin of its transaction on the
+    doc, so the change's place in the log can be named after it (Provenance's
+    points). A person's own change names their account; an agent's, the agent
+    and the account that asked it; Curio's own (an example's shipped copy, a
+    dataset moved to its new id), the account it writes for."""
+
+    #: :data:`PERSON`, :data:`AGENT` or :data:`CURIO`.
+    kind: str
+    #: The account: the person who made the change, or who asked the agent.
+    by: str
+    #: The agent that made it, as its manifest's coordinate.
+    agent: Optional[str] = None
+    #: What made it, in a word: ``save``, ``apply``, ``plan``, ``solve``...
+    what: str = ""
+
+
+def person(by, what: str) -> Actor:
+    """A person's own change: *by* is their account."""
+    return Actor(PERSON, str(by), None, what)
+
+
+def by_agent(agent: Optional[str], by, what: str) -> Actor:
+    """An agent's change: *agent* its coordinate, *by* the account that asked."""
+    return Actor(AGENT, str(by), agent or None, what)
+
+
+def by_curio(by, what: str) -> Actor:
+    """Curio's own change to the account *by*'s dataflow."""
+    return Actor(CURIO, str(by), None, what)
+
+
+#: The room's role of the account that owns the dataflow (``projects/access.OWNER``).
+_OWNER_ROLE = "owner"
+
+
+def _by_its_owner(user_key: str, origin) -> bool:
+    """Whether a change of *origin* to the dataflow the store *user_key*
+    holds is its owner's own, which puts what it names of her store within
+    her editors' reach (``owner_uses.py``): her tab's (the room's owner), a
+    writer's for her account (her request, an agent run she asked for,
+    Curio's own change for her), or a spec written on the server outside the
+    doc. An editor's tab, and a writer's for an editor, an agent run an
+    editor asked for among them, are not; nor is a merge rule's."""
+    if isinstance(origin, history.Tab):
+        return (origin.me or {}).get("role") == _OWNER_ROLE
+    if isinstance(origin, Actor):
+        return origin.by == str(user_key)
+    return origin == SPEC_ORIGIN
+
+
+def _writable(spec) -> dict:
+    """*spec* but its history, which no writer writes."""
+    return {key: value for key, value in spec.items() if key not in storage.HISTORY_KEYS}
+
+
+class Live(dict):
+    """A dataflow's spec as it is now (:func:`live`), handed to one writer,
+    which changes it as a dict and hands it to :func:`write`. It remembers
+    what it was handed, :attr:`base`, so a write applies only what the writer
+    changed since and leaves alone what anyone else changed meanwhile. It holds
+    no history: no writer writes one, and storage keeps it as it is."""
+
+    def __init__(self, spec: dict, *, user_key: str, project_id: str):
+        super().__init__(spec)
+        self.user_key = str(user_key)
+        self.project_id = project_id
+        self.base = copy.deepcopy(_writable(self))
+        #: What the last :func:`write` of it did, or of the block of
+        #: :func:`writing` that handed it.
+        self.written: Optional[Written] = None
+
+
+class Written(NamedTuple):
+    """What a write did."""
+
+    #: Whether ``spec.trill.json`` was written: not when the writer changed
+    #: nothing, nor for a dataflow deleted while it worked.
+    wrote: bool
+    #: The nodes whose code the doc kept: each held other code than the
+    #: writer was handed, so the writer's did not land.
+    refused: tuple = ()
+    #: The connections the writer drew that did not land: an end of each was
+    #: a node someone removed before the write.
+    dropped: tuple = ()
+
+
+def _has_spec(user_key: str, project_id: str) -> bool:
+    try:
+        return (storage.project_dir(user_key, project_id) / storage.SPEC_FILE).is_file()
+    except (OSError, ValueError):
+        return False
+
+
+@contextmanager
+def _spec_lock(user_key: str, project_id: str) -> Iterator[None]:
+    """The dataflow's spec lock, unless this thread holds it already (it is
+    not reentrant): a writer may run under the lock its caller took for a
+    longer read-modify-write."""
+    if storage.holds_spec_lock(user_key, project_id):
+        yield
+        return
+    with storage.spec_write_lock(user_key, project_id):
+        yield
+
+
+def live(user_key: str, project_id: str) -> Optional[Live]:
+    """The dataflow's spec as it is now, for a writer to change and hand to
+    :func:`write`: its open doc's dataflow over what ``spec.trill.json``
+    holds (a doc whose log holds changes the file does not is opened to read
+    them), without the history. ``None`` when the dataflow has no spec."""
+    user_key = str(user_key)
+    file = storage.read_spec_file(user_key, project_id)
+    if not isinstance(file.spec, dict):
+        return None
+    spec = file.spec
+    if _open_entry(project_id, user_key) is not None or _behind(user_key, project_id):
+        try:
+            with _held(project_id, user_key) as entry:
+                now = _spec_file(entry)
+                if isinstance(now.spec, dict):
+                    _catch_up(entry, now)
+                    spec = _as_read(now.spec, entry)
+        except (_NoDataflow, doc_mapping.DocMappingError):
+            pass
+    return Live(_writable(spec), user_key=user_key, project_id=project_id)
+
+
+def write(user_key: str, project_id: str, spec: Live, actor: Actor, *,
+          on_refused: Optional[Callable[[tuple], None]] = None,
+          on_dropped: Optional[Callable[[tuple], None]] = None,
+          point: Optional[dict] = None,
+          backfilled: Iterable[str] = ()) -> Written:
+    """Write what a writer changed in *spec*, which :func:`live` handed it,
+    since then (or since its last write): one short transaction on the
+    dataflow's doc, *actor* its origin, under the spec lock (unless this
+    thread holds it) and then the doc's lock. The change is added to the
+    doc's log and relayed to its tabs, and ``spec.trill.json`` is written at
+    once.
+
+    * A node's code lands only where the doc still holds the code the writer
+      was handed (the check Undo uses). Otherwise the doc keeps its own and the
+      node is in :attr:`Written.refused`; *on_refused*, given, is called with
+      those ids before the file is written, so the writer can say so in the
+      sections it writes beside the doc. Any other change lands as a person's
+      does.
+    * A connection the writer drew lands only where the doc still holds both
+      its ends, checked in the same transaction: one to a node someone
+      removed after the writer read the dataflow is taken out there, and is
+      in :attr:`Written.dropped`; *on_dropped*, given, is called with those
+      ids before the file is written, as *on_refused* is.
+    * The agents' sections are written beside the doc
+      (:func:`_merged_beside`). A change to them alone is written to the file
+      alone: a tab gets none of it, and the doc reads the file's next
+      revision as one that changed nothing it holds.
+    * Nothing is written when the writer changed nothing, nor for a dataflow
+      deleted meanwhile, whose folder must not come back.
+    * *point*, given, is the history's point the change is (``history.py``):
+      its kind, what it is and whose, in place of the point the history names
+      a writer's change by.
+    * *backfilled*, given, are packages the write names in a lockfile that
+      named none, which read as them already, from the dataflow's nodes
+      (``spec_packages.project_packages``): writing them down is no one's
+      choice of them, so their lockfile entries put none of them on the record
+      of what the owner put in (``owner_uses.py``).
+
+    *spec* then remembers what it holds as written, so its next write applies
+    only what changed after this one."""
+    if not isinstance(spec, Live):
+        raise TypeError("a writer writes the spec dataflow_docs.live handed it")
+    user_key = str(user_key)
+    if (spec.user_key, spec.project_id) != (user_key, project_id):
+        raise ValueError(f"the spec handed to write is not dataflow {project_id}'s")
+    if doc_mapping.same(_writable(spec), spec.base):
+        spec.written = Written(False)
+        return spec.written
+    written = _write(user_key, project_id, spec.base, spec, actor, on_refused=on_refused, on_dropped=on_dropped,
+                     point=point, backfilled=backfilled)
+    spec.base = copy.deepcopy(_writable(spec))
+    spec.written = written
+    return written
+
+
+@contextmanager
+def writing(user_key: str, project_id: str, actor: Actor, *,
+            on_refused: Optional[Callable[[tuple], None]] = None) -> Iterator[Optional[Live]]:
+    """The block form of :func:`live` and :func:`write`: the dataflow as it
+    is now, for the block to change with no lock held, written when the block
+    ends without an exception (what the write did is the spec's
+    :attr:`Live.written`). ``None`` when the dataflow has no spec, and then
+    nothing is written."""
+    spec = live(user_key, project_id)
+    yield spec
+    if spec is not None:
+        write(user_key, project_id, spec, actor, on_refused=on_refused)
+
+
+def put(user_key: str, project_id: str, spec: dict, *, over: Optional[Live], actor: Actor,
+        backfilled: Iterable[str] = ()) -> Written:
+    """The whole-dataflow PUT (scripts, tests, the Projects page), the one
+    write that is not a writer's change and so the deliberate exception: one
+    transaction makes the doc match *spec*, from *over*, the dataflow as the
+    PUT read it under the spec lock (:func:`live`), so what changed in the doc
+    since stays wherever *spec* leaves it alone; the history sections *spec*
+    holds go on record. The loss rule is the caller's
+    (``concurrency.assert_save_keeps_server_work``), checked against *over*.
+    *backfilled* is :func:`write`'s. A dataflow with no spec, *over*
+    ``None``, is made by it (:func:`create`)."""
+    if over is None:
+        create(user_key, project_id, spec, actor)
+        return Written(True)
+    history = {key: spec[key] for key in storage.HISTORY_KEYS if key in spec}
+    return _write(str(user_key), project_id, over.base, spec, actor, history=history, backfilled=backfilled)
+
+
+def create(user_key: str, project_id: str, spec: dict, actor: Actor) -> Live:
+    """Write a dataflow made anew: a new one, or an example's shipped copy
+    written over the copy it replaces. Its doc is built from it when it next
+    opens, with a new id and a new log, beside the log of any doc it replaces.
+    While a doc of it is open, one transaction makes that doc match it
+    instead, so its tabs stay in step. The spec as written, for a writer to
+    change next.
+
+    No spec lock: a create writes before its dataflow's row is committed, and
+    the example seeder holds its database write through its walk (#909); an
+    open doc's lock keeps the doc and the file whole."""
+    user_key = str(user_key)
+    mine = _writable(spec)
+    if _open_entry(project_id, user_key) is not None and doc_mapping.mappable(doc_mapping.owned(_dataflow_of(mine))):
+        try:
+            with _held(project_id, user_key) as entry:
+                file = _spec_file(entry)
+                if isinstance(file.spec, dict):
+                    _catch_up(entry, file)
+                    _roll(entry)
+                    with entry.doc.transaction(origin=actor):
+                        doc_mapping.apply_dataflow(
+                            entry.doc, doc_mapping.doc_to_dataflow(entry.doc), doc_mapping.owned(_dataflow_of(mine)),
+                        )
+                    owner_uses.noted(entry, by_owner=_by_its_owner(user_key, actor))
+                    _commit(entry, skip_sid=None, origin=actor)
+                    _written(entry, file, mine, history={
+                        key: spec[key] for key in storage.HISTORY_KEYS if key in spec
+                    })
+                    _made_anew(user_key, project_id, actor)
+                    return Live(mine, user_key=user_key, project_id=project_id)
+        except (_NoDataflow, doc_mapping.DocMappingError):
+            pass
+    entry = _open_entry(project_id)
+    if entry is not None:
+        _discard(entry)
+    storage.write_spec(user_key, project_id, spec)
+    # A doc that opens before its pointer goes reads this file's revision as a
+    # write outside it and catches up to it (:func:`_catch_up`).
+    _drop_pointer(user_key, project_id)
+    _made_anew(user_key, project_id, actor)
+    return Live(mine, user_key=user_key, project_id=project_id)
+
+
+def _made_anew(user_key: str, project_id: str, actor: Actor) -> None:
+    """The record of what the owner put in a dataflow made anew
+    (``owner_uses.py``): when its owner made it, the record is dropped and
+    made again from what it names when it is next read or changed. Made by
+    anyone else, it keeps its record, and one it had none of is recorded with
+    nothing of hers."""
+    if _by_its_owner(user_key, actor):
+        owner_uses.forget(user_key, project_id)
+    else:
+        nothing = owner_uses.entries({})
+        owner_uses.changed(user_key, project_id, nothing, nothing, by_owner=False)
+
+
+def _dataflow_of(spec: dict) -> dict:
+    return spec.get("dataflow") if isinstance(spec.get("dataflow"), dict) else {}
+
+
+def _member(source, name: str):
+    """*source*'s member *name*, or ``doc_mapping.MISSING``."""
+    return source[name] if isinstance(source, dict) and name in source else doc_mapping.MISSING
+
+
+def _drop_pointer(user_key: str, project_id: str) -> None:
+    """Forget where the dataflow's log is, so its doc is built anew from
+    ``spec.trill.json`` when it next opens. The log stays where it is."""
+    try:
+        (storage.project_dir(user_key, project_id) / POINTER_FILE).unlink()
+    except (FileNotFoundError, ValueError):
+        pass
+
+
+def _write(user_key: str, project_id: str, base: dict, mine, actor: Actor, *,
+           on_refused: Optional[Callable[[tuple], None]] = None,
+           on_dropped: Optional[Callable[[tuple], None]] = None,
+           history: Optional[dict] = None, point: Optional[dict] = None,
+           backfilled: Iterable[str] = ()) -> Written:
+    """What :func:`write` and :func:`put` write: the change from *base* to
+    *mine*, under the spec lock. A connection it draws whose end the doc no
+    longer holds is taken out in its own transaction (:func:`_dangling`)."""
+    if not _has_spec(user_key, project_id):
+        return Written(False)
+    with _spec_lock(user_key, project_id):
+        # Every writer's scenarios land in sets, as the canvas writes them, and
+        # the writer's own spec holds them so after its write.
+        theirs = _writable(mine)
+        project_scenarios.normalize_spec_scenarios(theirs, keep_empty=True)
+        if not doc_mapping.mappable(doc_mapping.owned(_dataflow_of(theirs))):
+            return _without_doc(user_key, project_id, base, theirs, history, actor, backfilled)
+        if doc_mapping.same(doc_mapping.owned(_dataflow_of(base)), doc_mapping.owned(_dataflow_of(theirs))):
+            # Nothing the doc holds: the sections beside it, to the file alone.
+            file = storage.read_spec_file(user_key, project_id)
+            if not isinstance(file.spec, dict):
+                return Written(False)
+            out = _merged_beside(file.spec, base, theirs)
+            if history:
+                out.update(history)
+            storage.write_spec(user_key, project_id, out)
+            return Written(True)
+        try:
+            with _held(project_id, user_key) as entry:
+                file = _spec_file(entry)
+                if not isinstance(file.spec, dict):
+                    _discard(entry)
+                    return Written(False)
+                _catch_up(entry, file)
+                _roll(entry)
+                drawn = _drawn(base, theirs)
+                with entry.doc.transaction(origin=actor):
+                    refused = tuple(doc_mapping.apply_dataflow(
+                        entry.doc, doc_mapping.owned(_dataflow_of(base)), doc_mapping.owned(_dataflow_of(theirs)),
+                    ))
+                    # Checked again here, under the doc's lock: a node removed
+                    # after the writer read the dataflow takes the writer's
+                    # connections to it out, as the rule a tab's change meets.
+                    dropped = tuple(_dangling(entry.doc, drawn))
+                    _take_out(entry.doc, dropped)
+                owner_uses.noted(entry, by_owner=_by_its_owner(user_key, actor), backfilled=backfilled)
+                _commit(entry, skip_sid=None, origin=actor, point=point)
+                if refused:
+                    for node_id in refused:
+                        logger.info("dataflow %s: node %s's code changed while %s worked; the doc's stays",
+                                    project_id, node_id, actor.what or actor.kind)
+                    if on_refused is not None:
+                        on_refused(refused)
+                if dropped:
+                    logger.info("dataflow %s: %s drew %d connection(s) to a node removed meanwhile; none landed",
+                                project_id, actor.what or actor.kind, len(dropped))
+                    if on_dropped is not None:
+                        on_dropped(dropped)
+                if (refused and on_refused is not None) or (dropped and on_dropped is not None):
+                    theirs = _writable(mine)
+                _written(entry, file, _merged_beside(file.spec, base, theirs), history=history)
+                return Written(True, refused, dropped)
+        except _NoDataflow:
+            return Written(False)
+        except doc_mapping.DocMappingError:
+            return _without_doc(user_key, project_id, base, theirs, history, actor, backfilled)
+
+
+def _without_doc(user_key: str, project_id: str, base: dict, mine: dict, history: Optional[dict],
+                 actor: Actor, backfilled: Iterable[str] = ()) -> Written:
+    """A write the doc has no place for (``doc_mapping.DocMappingError``),
+    made to the file alone as before the doc: each member the writer changed
+    is the writer's, *actor* its maker for the record of what the owner put
+    in (``owner_uses.py``), *backfilled* as :func:`write` says. The doc is
+    forgotten, so it is built anew from the file when it next opens, which
+    says why no tab can sync it."""
+    logger.warning("dataflow %s: a write the doc's layout has no place for is written to the file alone",
+                   project_id)
+    entry = _open_entry(project_id)
+    if entry is not None:
+        _discard(entry)
+    _drop_pointer(user_key, project_id)
+    file = storage.read_spec_file(user_key, project_id)
+    if not isinstance(file.spec, dict):
+        return Written(False)
+    out = _merged_beside(file.spec, base, mine, every_field=True)
+    if history:
+        out.update(history)
+    storage.write_spec(user_key, project_id, out)
+    owner_uses.changed(user_key, project_id, owner_uses.entries(_dataflow_of(file.spec)),
+                       owner_uses.entries(_dataflow_of(out)), by_owner=_by_its_owner(user_key, actor),
+                       backfilled=backfilled)
+    return Written(True)
+
+
+#: The sections beside the doc whose entries a write merges one by one, and
+#: what keys each entry: an attachment its id, an agent its coordinate.
+_SECTION_KEYS: dict[str, Callable] = {
+    "agentAttachments": lambda entry: entry.get("attachmentId") if isinstance(entry, dict) else None,
+    "agents": lambda entry: entry if isinstance(entry, str) else None,
+}
+
+
+def _merged_beside(on_file: dict, base: dict, mine: dict, *, every_field: bool = False) -> dict:
+    """What the file holds, with what a writer changed from *base* to *mine*
+    outside the doc merged in: each top-level member but the dataflow and the
+    history, and each section of the dataflow kept beside the doc
+    (``doc_mapping.OUTSIDE_THE_DOC``), the agents' attachments one by one. A
+    member the writer changed is the writer's, and one it left alone stays as
+    the file has it. *every_field*: each field of the dataflow is merged so,
+    for a write made without the doc."""
+    out = _writable(on_file)
+    for key in dict.fromkeys([*base, *mine]):
+        if key in storage.HISTORY_KEYS or key == "dataflow":
+            continue
+        before, after = _member(base, key), _member(mine, key)
+        if doc_mapping.same(before, after):
+            continue
+        if after is doc_mapping.MISSING:
+            out.pop(key, None)
+        else:
+            out[key] = after
+    dataflow = dict(_dataflow_of(out))
+    was, now = _dataflow_of(base), _dataflow_of(mine)
+    names = dict.fromkeys([*was, *now]) if every_field else sorted(doc_mapping.OUTSIDE_THE_DOC)
+    for name in names:
+        before, after = _member(was, name), _member(now, name)
+        if doc_mapping.same(before, after):
+            continue
+        if after is doc_mapping.MISSING:
+            dataflow.pop(name, None)
+        else:
+            dataflow[name] = _merged_section(name, before, after, dataflow.get(name, doc_mapping.MISSING))
+    if dataflow or "dataflow" in out or "dataflow" in mine:
+        out["dataflow"] = dataflow
+    return out
+
+
+def _merged_section(name: str, before, after, theirs):
+    """The section *name* beside the doc, a writer having changed it from
+    *before* to *after*, and the file holding *theirs*: an entry the writer
+    added, changed or removed is the writer's, one it left alone stays as the
+    file has it, and one taken out meanwhile stays out. A section whose entries
+    have no keys is the writer's whole."""
+    key_of = _SECTION_KEYS.get(name)
+    if key_of is None or theirs is doc_mapping.MISSING:
+        return after
+    was = {} if before is doc_mapping.MISSING else _keyed_by(before, key_of)
+    now, held = _keyed_by(after, key_of), _keyed_by(theirs, key_of)
+    if was is None or now is None or held is None:
+        return after
+    out = []
+    for key, entry in held.items():
+        if key in now:
+            out.append(entry if key in was and doc_mapping.same(was[key], now[key]) else now[key])
+        elif key not in was:
+            out.append(entry)  # added meanwhile
+    out += [entry for key, entry in now.items() if key not in held and key not in was]
+    return out
+
+
+def _keyed_by(entries, key_of) -> Optional[dict]:
+    """*entries* by their keys, in order, or ``None`` when they cannot each be
+    keyed once."""
+    if not isinstance(entries, list):
+        return None
+    out: dict = {}
+    for entry in entries:
+        key = key_of(entry)
+        if key is None or key in out:
+            return None
+        out[key] = entry
+    return out
+
+
+# ---------------------------------------------------------------------------
+# The protocol
+# ---------------------------------------------------------------------------
+
+def _refused(error: str, **extra) -> dict:
+    return {"ok": False, "error": error, **extra}
+
+
+def _socketio():
+    """The SocketIO server of the app at hand, else the backend's."""
+    from flask import current_app, has_app_context
+
+    from utk_curio.backend import extensions
+
+    if has_app_context() and current_app.extensions.get("socketio") is not None:
+        return current_app.extensions["socketio"]
+    return extensions.socketio
+
+
+def _emit(message: bytes, project_id: str, *, to: str, skip_sid: Optional[str | list[str]] = None) -> None:
+    """Send *message* to *to*, a room or a socket, but *skip_sid*, a socket
+    or a list of them. A doc message is a binary event, several packets, put
+    whole to each client (``extensions.emit_whole``): a socket's own thread
+    answers its updates while another relays to it."""
+    from utk_curio.backend import extensions
+
+    sio = _socketio()
+    if sio is not None:
+        extensions.emit_whole(sio, EVENT, {"projectId": project_id, "message": message},
+                              namespace=COLLAB_NAMESPACE, to=to, skip_sid=skip_sid)
+
+
+def _framed(data: bytes) -> bytes:
+    """What a y-protocols frame carries after its type bytes: a length, then
+    that many bytes."""
+    payload = Decoder(data).read_message() if data else None
+    if payload is None:
+        raise ValueError("a frame with nothing in it")
+    return payload
+
+
+def _clocks(doc) -> dict[int, int]:
+    """The doc's state vector: each client's next clock."""
+    decoder = Decoder(doc.get_state())
+    clocks: dict[int, int] = {}
+    for _ in range(decoder.read_var_uint()):
+        client = decoder.read_var_uint()
+        clocks[client] = decoder.read_var_uint()
+    return clocks
+
+
+def _commit(entry: _OpenDoc, *, skip_sid: Optional[str], origin=None,
+            point: Optional[dict] = None) -> bool:
+    """Log and relay what the doc's last transaction changed, *skip_sid* the
+    socket whose update it applied, if any, and *origin* its origin: the tab
+    (``history.Tab``), a writer's :class:`Actor`, :data:`SPEC_ORIGIN`. While the
+    history records, the change is a point of it, or *point*, as the writer
+    names it (``history.py``). Whether the log has it."""
+    updates, entry.updates = entry.updates, []
+    touched = history.take_touched(entry)
+    return _logged_and_relayed(entry, [(skip_sid, updates)], [(origin, touched)], point=point)
+
+
+def _logged_and_relayed(entry: _OpenDoc, changes: list[tuple[Optional[str], list[bytes]]],
+                        taken: Optional[list[tuple]] = None, *, point: Optional[dict] = None) -> bool:
+    """Add what the doc's transactions changed to its log, in one write, and
+    relay it to the doc's tabs (:func:`_relay`). *changes* are each
+    transaction's updates as the doc observed them, in order, each with the
+    socket whose update the transaction applied, or ``None``. Each update is
+    a record of its own: the log, the dataflow's one history, never merges
+    two tabs' changes. *taken*, each change's origin and what it touched in
+    the same order, makes each a point of the history while it records
+    (:func:`_spans`). Whether the log has them."""
+    updates = [update for _sid, observed in changes for update in observed]
+    if not updates:
+        return True
+    logged = True
+    span = None
+    try:
+        span = _append(entry, updates)
+    except OSError:
+        logged = False
+        logger.error("dataflow %s: a change could not be added to its update log", entry.project_id,
+                     exc_info=True)
+    _relay(entry, changes)
+    _changed(entry)
+    if span is not None and taken:
+        history.recorded(entry, _spans(changes, taken, span[0]), point=point)
+    return logged
+
+
+def _spans(changes: list[tuple[Optional[str], list[bytes]]], taken: list[tuple], start: int) -> list:
+    """Each change of one write to the log as the history takes it
+    (``history.Change``): its origin, what it touched, and where its records
+    start and end in the segment, the write starting at *start*. A change that
+    brought no update is no point."""
+    out = []
+    at = start
+    for (_sid, observed), (origin, touched) in zip(changes, taken):
+        end = at + sum(len(write_message(update)) for update in observed)
+        if observed:
+            out.append(history.Change(origin, at, end, touched))
+        at = end
+    return out
+
+
+def _merged(updates: list[bytes]) -> bytes:
+    """*updates* as one update (``pycrdt.merge_updates``)."""
+    return updates[0] if len(updates) == 1 else merge_updates(*updates)
+
+
+def _relay(entry: _OpenDoc, changes: list[tuple[Optional[str], list[bytes]]]) -> None:
+    """Send the doc's tabs what *changes* brought (:func:`_logged_and_relayed`),
+    one update to each tab, merged: every change but the tab's own, so no tab
+    is sent its own update back. The tabs that brought none get it all in one
+    message to the doc's room; a tab that brought some, the others' alone."""
+    everything = [update for _sid, observed in changes for update in observed]
+    if not everything:
+        return
+    senders = list(dict.fromkeys(sid for sid, observed in changes if sid is not None and observed))
+    _emit(create_update_message(_merged(everything)), entry.project_id,
+          to=_relay_room(entry.project_id), skip_sid=senders or None)
+    for sid in senders:
+        others = [update for other, observed in changes if other != sid for update in observed]
+        if others:
+            _emit(create_update_message(_merged(others)), entry.project_id, to=sid)
+
+
+def _relay_awareness(entry: _OpenDoc, *, skip_sid: Optional[str]) -> None:
+    changed, entry.awareness_changed = entry.awareness_changed, []
+    ids = sorted(set(changed))
+    if ids:
+        _emit(create_awareness_message(entry.awareness.encode_awareness_update(ids)), entry.project_id,
+              to=_relay_room(entry.project_id), skip_sid=skip_sid)
+
+
+def _relay_states(entry: _OpenDoc, own: dict[str, set[int]]) -> None:
+    """Send the doc's tabs the awareness states a batch changed, one message
+    to each tab, each client's latest state: a tab that set none gets them all
+    in one message to the room, and one that set some, all but its own
+    clients' (*own*: each such socket and the client ids it set)."""
+    changed, entry.awareness_changed = entry.awareness_changed, []
+    ids = sorted(set(changed))
+    if not ids:
+        return
+    _emit(create_awareness_message(entry.awareness.encode_awareness_update(ids)), entry.project_id,
+          to=_relay_room(entry.project_id), skip_sid=list(own) or None)
+    for sid, mine in own.items():
+        others = [client for client in ids if client not in mine]
+        if others:
+            _emit(create_awareness_message(entry.awareness.encode_awareness_update(others)), entry.project_id,
+                  to=sid)
+
+
+def _user(me: dict) -> dict:
+    """Who an awareness state is, as the room knows the participant: a tab of
+    the guest account with its number (``room_state.GUEST_NUMBER``)."""
+    return {
+        "participant_id": me.get("participant_id"),
+        "user_id": me.get("user_id"),
+        "username": me.get("username"),
+        "name": me.get("name"),
+        "role": me.get("role"),
+        **room_state.numbered(me),
+    }
+
+
+def _named(state: dict, me: dict) -> dict:
+    """*state* as the server relays it: named by the server, and a watcher's
+    without its edits."""
+    if me.get("role") in room_state.EDIT_ROLES:
+        kept = {field: value for field, value in state.items() if field != USER_FIELD}
+    else:
+        kept = {field: value for field, value in state.items() if field in PRESENCE_FIELDS}
+    kept[USER_FIELD] = _user(me)
+    return kept
+
+
+def _awareness_entries(data: bytes) -> list[tuple[int, int, str]]:
+    """An awareness update's entries: each client id, its clock and its
+    state's JSON text."""
+    decoder = Decoder(data)
+    entries = []
+    for _ in range(decoder.read_var_uint()):
+        client_id = decoder.read_var_uint()
+        clock = decoder.read_var_uint()
+        entries.append((client_id, clock, decoder.read_var_string()))
+    return entries
+
+
+def _latest(entries: list[tuple[int, int, str]]) -> list[tuple[int, int, str]]:
+    """Awareness *entries*, several updates' in the order they came, as each
+    client's last: its state of the highest clock, the later on a tie."""
+    latest: dict[int, tuple[int, int, str]] = {}
+    for client_id, clock, text in entries:
+        held = latest.get(client_id)
+        if held is None or clock >= held[1]:
+            latest[client_id] = (client_id, clock, text)
+    return list(latest.values())
+
+
+def _accepted_awareness(entry: _OpenDoc, sid: str, me: dict,
+                        entries: list[tuple[int, int, str]]) -> tuple[bytes, set[int]]:
+    """The states among awareness *entries* a socket may set, as the server
+    relays them, and their client ids. An agent's client id is never a
+    socket's (:func:`set_agent_state`), not even to clear it, and a client id
+    another socket set is this one's only as :func:`_may_take` says."""
+    agents = _agent_clients(entry.project_id)
+    accepted = []
+    for client_id, clock, text in entries:
+        if client_id in agents:
+            continue
+        owner = entry.awareness_owners.get(client_id)
+        if owner is not None and owner != sid and not _may_take(entry, owner, sid, me):
+            continue
+        try:
+            state = json.loads(text) if text else None
+        except ValueError:
+            continue
+        if state is None:
+            entry.awareness_owners.pop(client_id, None)
+            accepted.append((client_id, clock, None))
+        elif isinstance(state, dict):
+            entry.awareness_owners[client_id] = sid
+            accepted.append((client_id, clock, _named(state, me)))
+    return _encoded_states(accepted), {client_id for client_id, _clock, _state in accepted}
+
+
+def _may_take(entry: _OpenDoc, owner: str, sid: str, me: dict) -> bool:
+    """Whether the socket *sid*, the participant *me*, may set a client id the
+    socket *owner* set: once *owner* is no tab of the doc (a tab whose socket
+    reconnected sets its own client id again), and while it is one, when both
+    are one person's tabs. A person is an account, but on a guest account,
+    which every guest signs in to, a sign-in (``room_state``'s identity)."""
+    other = entry.tabs.get(owner)
+    if other is None:
+        return True
+    if other.get("user_id") != me.get("user_id"):
+        return False
+    mine = room_state.get_identity(sid) or {}
+    if not mine.get("is_guest"):
+        return True
+    theirs = room_state.get_identity(owner) or {}
+    sign_in = mine.get("token_session_id")
+    return sign_in is not None and sign_in == theirs.get("token_session_id")
+
+
+def _encoded_states(rows) -> bytes:
+    """Awareness states as an update: each client id, its clock and its state,
+    ``None`` for a state taken out."""
+    encoder = Encoder()
+    encoder.write_var_uint(len(rows))
+    for client_id, clock, state in rows:
+        encoder.write_var_uint(client_id)
+        encoder.write_var_uint(clock)
+        # ASCII JSON: pycrdt's encoder writes a string's length in characters.
+        encoder.write_var_string(json.dumps(state, separators=(",", ":")))
+    return encoder.to_bytes()
+
+
+def _start(sid: str, me: dict, project_id: str, message: bytes, held_id) -> dict:
+    """A tab's sync step 1."""
+    from utk_curio.backend.app.projects.services import _owner_user_dir_key
+
+    project = _project(project_id)
+    if project is None:
+        return _refused("unknown_project")
+    try:
+        with _held(project_id, _owner_user_dir_key(project)) as entry:
+            if held_id is not None and held_id != entry.doc_id:
+                return _refused("reload", docId=entry.doc_id)
+            _framed(message[2:])  # the tab's state, which step 2 answers
+            _catch_up(entry, _spec_file(entry))
+            replies = [handle_sync_message(message[1:], entry.doc)]
+            if me.get("role") in room_state.EDIT_ROLES:
+                replies.append(create_sync_message(entry.doc))
+            states = sorted(entry.awareness.states)
+            if states:
+                replies.append(create_awareness_message(entry.awareness.encode_awareness_update(states)))
+            entry.tabs[sid] = me
+            with _lock:
+                entry.idle_since = None
+                _sid_docs.setdefault(sid, set()).add(project_id)
+            join_room(_relay_room(project_id), sid=sid, namespace=COLLAB_NAMESPACE)
+            for reply in replies:
+                if reply:
+                    _emit(reply, project_id, to=sid)
+            return {"ok": True, "docId": entry.doc_id, "role": me.get("role")}
+    except _NoDataflow:
+        return _refused("no_dataflow")
+    except doc_mapping.DocMappingError as exc:
+        return _refused("unmappable", message=str(exc))
+    except OSError:
+        logger.error("the doc of dataflow %s could not be opened", project_id, exc_info=True)
+        return _refused("unavailable")
+
+
+def _synced(project_id: str, sid: str) -> Optional[_OpenDoc]:
+    entry = _open_entry(project_id)
+    return entry if entry is not None and sid in entry.tabs else None
+
+
+def _update(sid: str, me: dict, project_id: str, message: bytes) -> dict:
+    """A tab's sync step 2 or update.
+
+    Applied at once, on the socket's own thread, when nothing waits for the
+    doc, and answered as it always was: ``{ok, kept}``. Otherwise it waits
+    for the doc's thread (:func:`_take`) and is answered at once
+    ``{ok, queued}``, so the socket goes on reading; its answer comes once its
+    batch is applied, in a :data:`KEPT_EVENT` message (:func:`_send_kept`)."""
+    if me.get("role") not in room_state.EDIT_ROLES:
+        return _refused("read_only", message=READ_ONLY_REFUSAL)
+    entry = _synced(project_id, sid)
+    if entry is None:
+        return _refused("not_synced")
+    answers = _take(entry, _Queued(sid, me, _UPDATE, _framed(message[2:])))
+    if answers is None:
+        return {"ok": True, "queued": True}
+    answer = answers.get(sid) or _answer()
+    if answer["refused"]:
+        return _refused(next(iter(answer["refused"])))
+    return {"ok": True, "kept": answer["kept"]}
+
+
+def _take(entry: _OpenDoc, item: _Queued) -> Optional[dict[str, dict]]:
+    """Take a tab's message for its doc.
+
+    When no thread holds the doc's turn, nothing waits either: the message is
+    applied at once, on its socket's own thread, and this is what that batch
+    of one answers (:func:`_apply_batch`). Otherwise it waits for the doc's
+    thread, in the order it came, and this is ``None``. A socket's events come
+    one at a time (``extensions.init_socketio``), so a socket never kept
+    waiting goes on reading, its Engine.IO pings included, and its next
+    messages queue behind this one."""
+    with entry.queue:
+        if entry.applying:
+            entry.queued.append(item)
+            return None
+        entry.applying = True
+    try:
+        with entry.lock:
+            return _apply_batch(entry, [item])
+    finally:
+        _hand_on(entry)
+
+
+def _hand_on(entry: _OpenDoc) -> None:
+    """End a turn at the doc taken by :func:`_take`: the messages queued
+    meanwhile go to the doc's thread, which then holds the turn."""
+    with entry.queue:
+        if entry.queued:
+            entry.drainer = threading.Thread(target=_drain, args=(entry,), name="dataflow-doc-batches",
+                                             daemon=True)
+            entry.drainer.start()
+            return
+        entry.applying = False
+        entry.queue.notify_all()
+
+
+def _drain(entry: _OpenDoc) -> None:
+    """The doc's thread: it applies batch after batch of the messages queued
+    for the doc, every message waiting then in each, answers each socket
+    whose updates a batch held with one :data:`KEPT_EVENT` message, and ends
+    once none is left."""
+    while True:
+        with entry.queue:
+            batch, entry.queued = entry.queued, []
+            if not batch:
+                entry.applying = False
+                entry.drainer = None
+                entry.queue.notify_all()
+                return
+        try:
+            with entry.lock:
+                answers = _apply_batch(entry, batch)
+        except BaseException:  # noqa: BLE001 - the doc's turn must outlive a batch that failed
+            logger.exception("dataflow %s: a batch of its tabs' messages could not be applied", entry.project_id)
+            answers = _unkept(batch)
+        _send_kept(entry, answers)
+
+
+def _answer() -> dict:
+    """What a batch answers a socket: how many of its updates it held, the
+    clock the doc now holds for each client they changed, and how many were
+    refused, by why."""
+    return {"answered": 0, "kept": {}, "refused": {}}
+
+
+def _refuse(answers: dict[str, dict], sid: str, error: str, count: int = 1) -> None:
+    refused = answers.setdefault(sid, _answer())["refused"]
+    refused[error] = refused.get(error, 0) + count
+
+
+def _unkept(batch: list[_Queued]) -> dict[str, dict]:
+    """What a batch that could not be applied answers: no update kept."""
+    answers: dict[str, dict] = {}
+    for item in batch:
+        if item.kind == _UPDATE:
+            answers.setdefault(item.sid, _answer())["answered"] += 1
+            _refuse(answers, item.sid, "not_kept")
+    return answers
+
+
+def _send_kept(entry: _OpenDoc, answers: dict[str, dict]) -> None:
+    """Answer each socket whose queued updates a batch held: one
+    :data:`KEPT_EVENT` message, ``{projectId, answered, kept}``, and
+    ``refused``, by why, when some were. A socket's answers come in the order
+    it sent its updates, but this one may come before the ``queued`` answer of
+    the last update it answers."""
+    sio = _socketio()
+    if sio is None:
+        return
+    for sid, answer in answers.items():
+        if not answer["answered"]:
+            continue
+        message = {"projectId": entry.project_id, "answered": answer["answered"], "kept": answer["kept"]}
+        if answer["refused"]:
+            message["refused"] = answer["refused"]
+        sio.emit(KEPT_EVENT, message, to=sid, namespace=COLLAB_NAMESPACE)
+
+
+def _apply_batch(entry: _OpenDoc, batch: list[_Queued]) -> dict[str, dict]:
+    """Apply a batch of tabs' messages (:func:`_take`), under the doc's lock;
+    what it answers each socket (:func:`_answer`).
+
+    * Each socket's updates are one transaction, the socket its origin, in the
+      order it sent them, so they reach the log as one record: the history's
+      point of one author. An answer's ``kept`` is what that transaction moved,
+      and the merge rules run on what it changed
+      (:func:`_drop_dangling_connections`). The batch then makes one write to
+      the log and one message to each tab, every change but the tab's own
+      merged into one update, the rules' changes sent to every tab
+      (:func:`_logged_and_relayed`); and then the tabs a rule names are told.
+    * Of each client's awareness, the batch keeps its latest state and sends
+      each tab one message with the states the batch changed but its own
+      clients' (:func:`_relay_states`).
+    * A message of a socket no longer among the doc's tabs is refused
+      ``not_synced``."""
+    answers: dict[str, dict] = {}
+    updates: dict[str, list[_Queued]] = {}
+    states: dict[str, list[_Queued]] = {}
+    for item in batch:
+        if entry.closed or item.sid not in entry.tabs:
+            if item.kind == _UPDATE:
+                answers.setdefault(item.sid, _answer())["answered"] += 1
+            _refuse(answers, item.sid, "not_synced")
+        else:
+            (updates if item.kind == _UPDATE else states).setdefault(item.sid, []).append(item)
+    if updates:
+        _apply_updates(entry, updates, answers)
+    if states:
+        _apply_states(entry, states)
+    return answers
+
+
+def _apply_updates(entry: _OpenDoc, updates: dict[str, list[_Queued]], answers: dict[str, dict]) -> None:
+    """A batch's updates (:func:`_apply_batch`), each socket's as one
+    transaction, the sockets in the order each first came."""
+    _roll(entry)
+    clocks = _clocks(entry.doc)
+    changes: list[tuple[Optional[str], list[bytes]]] = []
+    #: Each change's origin and what it touched, for the history: a point per
+    #: origin and transaction.
+    taken: list[tuple] = []
+    notices: list[tuple[str, dict]] = []
+    for sid, items in updates.items():
+        answer = answers.setdefault(sid, _answer())
+        answer["answered"] += len(items)
+        graph = _graph_keys(entry.doc)
+        with entry.doc.transaction(origin=sid):
+            for item in items:
+                if item.data == b"\x00\x00":
+                    continue
+                try:
+                    entry.doc.apply_update(item.data)
+                except (ValueError, RuntimeError, IndexError, AssertionError):
+                    logger.info("an update from %s for dataflow %s does not apply", sid, entry.project_id,
+                                exc_info=True)
+                    _refuse(answers, sid, "invalid_message")
+        tab = history.Tab(sid, items[-1].me)
+        owner_uses.noted(entry, by_owner=_by_its_owner(entry.user_key, tab))
+        now = _clocks(entry.doc)
+        observed, entry.updates = entry.updates, []
+        changes.append((sid, observed))
+        taken.append((tab, history.take_touched(entry)))
+        answer["kept"] = {str(client): clock for client, clock in now.items() if clocks.get(client) != clock}
+        notices += _drop_dangling_connections(entry, sid, items[-1].me, graph)
+        owner_uses.noted(entry, by_owner=_by_its_owner(entry.user_key, RULES_ORIGIN))
+        ruled, entry.updates = entry.updates, []
+        if ruled:
+            changes.append((None, ruled))
+            taken.append((RULES_ORIGIN, history.take_touched(entry)))
+            now = _clocks(entry.doc)
+        clocks = now
+    if not _logged_and_relayed(entry, changes, taken):
+        for sid in updates:
+            answer = answers[sid]
+            applied = answer["answered"] - sum(answer["refused"].values())
+            if applied > 0:
+                _refuse(answers, sid, "not_kept", applied)
+            answer["kept"] = {}
+    _tell(notices)
+
+
+def _apply_states(entry: _OpenDoc, states: dict[str, list[_Queued]]) -> None:
+    """A batch's awareness (:func:`_apply_batch`): each socket's entries as
+    each client's latest state, accepted and applied, then one message to
+    each tab. A person whose states left a node's editor ends their typing
+    point there."""
+    own: dict[str, set[int]] = {}
+    editing: list[tuple[str, dict, dict]] = []
+    for sid, items in states.items():
+        accepted, ids = _accepted_awareness(entry, sid, items[-1].me,
+                                            _latest([state for item in items for state in item.data]))
+        editing.append((sid, items[-1].me, history.editing(entry, sid)))
+        entry.awareness.apply_awareness_update(accepted, sid)
+        own[sid] = ids | {client for client, owner in entry.awareness_owners.items() if owner == sid}
+    _relay_states(entry, own)
+    for sid, me, before in editing:
+        history.left_editors(entry, sid, me, before)
+
+
+def _graph_keys(doc) -> tuple[frozenset, frozenset]:
+    """The ids of the doc's nodes and of its connections."""
+    return (frozenset(doc.get("nodes", type=Map).keys()),
+            frozenset(doc.get("edges", type=Map).keys()))
+
+
+def _drop_dangling_connections(entry: _OpenDoc, sid: str, me: dict,
+                               before: tuple[frozenset, frozenset]) -> list[tuple[str, dict]]:
+    """The merge rule for a connection to a node that is gone, after the change
+    the socket *sid* (the participant *me*) brought, *before* being the doc's
+    node and connection ids until then.
+
+    A node removed while someone drew a connection to it leaves that
+    connection pointing nowhere once both changes merge, whichever came first.
+    It is taken out at once, in a transaction of the rule's own, whose update
+    :func:`_apply_updates` logs and sends every tab with the rest of its batch,
+    and the tab that drew it is told who removed the node
+    (:data:`CONNECTION_DROPPED_EVENT`). The notices, each a socket and what it
+    is told, for :func:`_tell` once the change is relayed."""
+    nodes_before, edges_before = before
+    nodes_now, edges_now = _graph_keys(entry.doc)
+    if nodes_now == nodes_before and edges_now == edges_before:
+        return []
+    for node_id in nodes_before - nodes_now:
+        entry.removers.pop(node_id, None)
+        entry.removers[node_id] = _user(me)
+    while len(entry.removers) > REMOVERS_KEPT:
+        entry.removers.pop(next(iter(entry.removers)))
+    added = edges_now - edges_before
+    for edge_id in added:
+        entry.edge_authors[edge_id] = sid
+    dangling = _dangling(entry.doc)
+    drawers: dict[str, list[str]] = {}
+    for edge_id in dangling:
+        drawer = sid if edge_id in added else entry.edge_authors.get(edge_id)
+        if drawer is not None and drawer in entry.tabs:
+            drawers.setdefault(drawer, []).append(edge_id)
+    for edge_id in list(entry.edge_authors):
+        if edge_id not in edges_now or edge_id in dangling:
+            del entry.edge_authors[edge_id]
+    if not dangling:
+        return []
+    with entry.doc.transaction(origin=RULES_ORIGIN):
+        _take_out(entry.doc, dangling)
+    return [(drawer, {"projectId": entry.project_id, "edgeIds": edge_ids,
+                      "by": entry.removers.get(dangling[edge_ids[0]]) or _user(me)})
+            for drawer, edge_ids in drawers.items()]
+
+
+def _dangling(doc, edge_ids=None) -> dict[str, str]:
+    """The connections of *doc*, of *edge_ids* only when given, that point at
+    a node it does not hold: each with its first end that is gone."""
+    nodes = frozenset(doc.get("nodes", type=Map).keys())
+    edges = doc.get("edges", type=Map)
+    out: dict[str, str] = {}
+    for edge_id in (list(edges.keys()) if edge_ids is None else edge_ids):
+        if edge_id not in edges:
+            continue
+        edge = doc_mapping.decode(edges[edge_id])
+        if not isinstance(edge, dict):
+            continue
+        gone = [end for end in (edge.get("source"), edge.get("target"))
+                if isinstance(end, str) and end not in nodes]
+        if gone:
+            out[edge_id] = gone[0]
+    return out
+
+
+def _take_out(doc, edge_ids) -> None:
+    """Take the connections *edge_ids* out of *doc*, and out of its order, in
+    the transaction the caller holds."""
+    if not edge_ids:
+        return
+    edges = doc.get("edges", type=Map)
+    order = doc.get("edgeOrder", type=Array)
+    for edge_id in edge_ids:
+        if edge_id in edges:
+            del edges[edge_id]
+    for index in reversed(range(len(order))):
+        if order[index] in edge_ids:
+            del order[index]
+
+
+def _drawn(base: dict, mine: dict) -> list[str]:
+    """The connections *mine* holds that *base* does not: the ones a writer
+    drew, by id."""
+    def ids(spec: dict) -> set[str]:
+        return {str(edge.get("id")) for edge in _dataflow_of(spec).get("edges") or []
+                if isinstance(edge, dict) and edge.get("id") is not None}
+
+    before = ids(base)
+    return sorted(edge_id for edge_id in ids(mine) if edge_id not in before)
+
+
+def _tell(notices: list[tuple[str, dict]]) -> None:
+    """Send each socket the notice a merge rule made for it
+    (:func:`_drop_dangling_connections`)."""
+    sio = _socketio()
+    if sio is not None:
+        for drawer, notice in notices:
+            sio.emit(CONNECTION_DROPPED_EVENT, notice, to=drawer, namespace=COLLAB_NAMESPACE)
+
+
+def _awareness(sid: str, me: dict, project_id: str, message: bytes) -> dict:
+    """A tab's awareness: applied and relayed at once when nothing waits for
+    the doc, else in the doc's next batch, which keeps each client's latest
+    state (:func:`_take`). The canvas asks for no answer to it."""
+    entry = _synced(project_id, sid)
+    if entry is None:
+        return _refused("not_synced")
+    answers = _take(entry, _Queued(sid, me, _AWARENESS, _awareness_entries(_framed(message[1:]))))
+    if answers is None:
+        return {"ok": True, "queued": True}
+    refused = (answers.get(sid) or _answer())["refused"]
+    return _refused(next(iter(refused))) if refused else {"ok": True}
+
+
+def receive(sid: str, payload) -> dict:
+    """One ``yjs`` message from the socket *sid*; the ack."""
+    if not room_state.get_identity(sid):
+        return _refused("unauthorized")
+    if not isinstance(payload, dict):
+        return _refused("invalid_payload")
+    project_id = payload.get("projectId")
+    if not _valid_project_id(project_id):
+        return _refused("invalid_project_id")
+    message = payload.get("message")
+    if isinstance(message, bytearray):
+        message = bytes(message)
+    if not isinstance(message, bytes) or not message:
+        return _refused("invalid_message")
+    me = room_state.participant(room_state.room_for(project_id), sid)
+    if me is None:
+        return _refused("not_joined")
+    try:
+        if message[0] == YMessageType.SYNC and len(message) > 1:
+            if message[1] == YSyncMessageType.SYNC_STEP1:
+                return _start(sid, me, project_id, message, payload.get("docId"))
+            if message[1] in (YSyncMessageType.SYNC_STEP2, YSyncMessageType.SYNC_UPDATE):
+                return _update(sid, me, project_id, message)
+        elif message[0] == YMessageType.AWARENESS:
+            return _awareness(sid, me, project_id, message)
+    except (ValueError, RuntimeError, IndexError, AssertionError):
+        logger.info("a yjs message from %s for dataflow %s does not read", sid, project_id, exc_info=True)
+    return _refused("invalid_message")
+
+
+def leave(sid: str) -> None:
+    """The socket *sid* disconnected: its tab leaves each doc it synced, and its
+    awareness states are cleared for the others."""
+    with _lock:
+        project_ids = _sid_docs.pop(sid, set())
+    for project_id in project_ids:
+        entry = _open_entry(project_id)
+        if entry is None:
+            continue
+        with entry.lock:
+            if entry.closed:
+                continue
+            history.close_typing(entry, sid=sid)
+            entry.tabs.pop(sid, None)
+            ids = [client for client, owner in entry.awareness_owners.items() if owner == sid]
+            for client in ids:
+                del entry.awareness_owners[client]
+            if ids:
+                entry.awareness.remove_awareness_states(ids, sid)
+                _relay_awareness(entry, skip_sid=sid)
+            if not entry.tabs:
+                with _wake:
+                    entry.idle_since = _clock()
+                    _wake.notify_all()
+                _ensure_flusher()
+
+
+def register(sio) -> None:
+    """Attach the doc's event to the SocketIO server."""
+
+    @sio.on(EVENT, namespace=COLLAB_NAMESPACE)
+    def _yjs(payload=None):
+        return receive(request.sid, payload)
+
+
+# ---------------------------------------------------------------------------
+# Agents in the room
+# ---------------------------------------------------------------------------
+
+#: The origin an agent's awareness state is applied with.
+AGENT_ORIGIN = "agent"
+
+#: The awareness state of each agent at work in a dataflow's room
+#: (``agent_peers.py``), by the client id the server writes it under, one no
+#: tab holds: its clock and its state. Kept apart from the open doc, so a doc
+#: that opens again has them back (:func:`_attach`). Guarded by this module's
+#: lock.
+_agent_states: dict[str, dict[int, list]] = {}
+
+
+def has_tabs(project_id: str) -> bool:
+    """Whether some tab is synced with the dataflow's open doc: someone to see
+    an agent at its pace. Read without the doc's lock: a moment's answer."""
+    entry = _open_entry(project_id)
+    return entry is not None and bool(entry.tabs)
+
+
+def set_agent_state(project_id: str, client_id: int, fields: dict, *, joining: bool = False) -> bool:
+    """Write *fields* into the awareness state of the agent at work under
+    *client_id*: its whole state as it joins (*joining*), then the fields that
+    change, and none to renew it. Each write moves the state's clock on, so
+    every tab takes it as new; the first is 1, since an awareness takes a
+    client it has not seen only above clock 0. The open doc, if any, takes it
+    under its lock and relays it to its tabs as a tab's state; a doc that
+    opens later puts it back. Whether the agent is at work: one that left is
+    not written again."""
+    with _lock:
+        held = _agent_states.get(project_id) or {}
+        if client_id not in held and not joining:
+            return False
+        clock, state = held.get(client_id, (0, {}))
+        _agent_states.setdefault(project_id, {})[client_id] = [clock + 1, {**state, **copy.deepcopy(fields)}]
+    entry = _open_entry(project_id)
+    if entry is not None:
+        with entry.lock:
+            if entry.loaded and not entry.closed:
+                _apply_agents(entry, [client_id])
+                _relay_awareness(entry, skip_sid=None)
+    return True
+
+
+def clear_agent_state(project_id: str, client_id: int) -> None:
+    """Take the state of the agent at work under *client_id* out of the
+    dataflow's room: it left."""
+    with _lock:
+        held = _agent_states.get(project_id)
+        if not held or held.pop(client_id, None) is None:
+            return
+        if not held:
+            del _agent_states[project_id]
+    entry = _open_entry(project_id)
+    if entry is None:
+        return
+    with entry.lock:
+        if entry.loaded and not entry.closed and client_id in entry.awareness.states:
+            entry.awareness.remove_awareness_states([client_id], AGENT_ORIGIN)
+            _relay_awareness(entry, skip_sid=None)
+
+
+def _agent_clients(project_id: str) -> frozenset:
+    """The client ids of the agents at work in the dataflow's room."""
+    with _lock:
+        return frozenset(_agent_states.get(project_id) or ())
+
+
+def _put_agents_back(entry: _OpenDoc) -> None:
+    """Put the agents at work in the dataflow's room into the awareness of its
+    doc, which a doc opening again starts without (:func:`_attach`), each a
+    clock on from the one its tabs last took."""
+    _apply_agents(entry, list(_agent_clients(entry.project_id)), step=1)
+
+
+def _apply_agents(entry: _OpenDoc, client_ids: list, *, step: int = 0) -> None:
+    """Apply agents' states, as this module holds them now, to the open doc's
+    awareness, under its lock: each at a clock above the one the awareness
+    holds for its client id (0 for one it has not seen, which y-protocols and
+    pycrdt take only a higher clock of), which no socket then holds."""
+    rows = []
+    with _lock:
+        held = _agent_states.get(entry.project_id) or {}
+        for client_id in client_ids:
+            kept = held.get(client_id)
+            if kept is None:
+                continue
+            seen = (entry.awareness.meta.get(client_id) or {}).get("clock", 0)
+            kept[0] = max(kept[0] + step, seen + 1)
+            rows.append((client_id, kept[0], copy.deepcopy(kept[1])))
+    for client_id, _clock_at, _state in rows:
+        entry.awareness_owners.pop(client_id, None)
+    if rows:
+        entry.awareness.apply_awareness_update(_encoded_states(rows), AGENT_ORIGIN)

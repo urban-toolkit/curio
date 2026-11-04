@@ -136,6 +136,9 @@ class SelectionTest(unittest.TestCase):
     def test_a_bad_setting_is_refused(self):
         with self.assertRaises(ValueError):
             runner_split.select([], "gpu", None)
+        # Every stack serves collaboration, so no runner of its own is left.
+        with self.assertRaises(ValueError):
+            runner_split.select([], "collab", None)
         with self.assertRaises(ValueError):
             runner_split.parse_shard("4/3")
         with self.assertRaises(ValueError):
@@ -247,6 +250,12 @@ class NoTestIsLostTest(unittest.TestCase):
         self.assertEqual(len(placed), len(set(placed)), "a test would run twice")
         self.assertTrue(utk, "nothing selected for the GPU runner")
         self.assertTrue(all(shards), "an empty desktop shard")
+        # Every stack serves collaboration: its e2e runs on the desktop parts.
+        desktop = [nodeid for shard in shards for nodeid in shard]
+        for module in ("test_collaboration_editors_e2e.py::", "test_collaboration_doc_e2e.py::",
+                       "test_people_in_the_dock_e2e.py::"):
+            self.assertTrue(any(module in nodeid for nodeid in desktop),
+                            f"no desktop part runs {module.rstrip(':')}")
         # The modules --with-examples adds are in the check.
         self.assertTrue(any("test_shipped_scenario_drops_e2e.py::" in nodeid for nodeid in placed))
 

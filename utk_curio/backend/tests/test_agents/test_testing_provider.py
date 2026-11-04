@@ -111,6 +111,42 @@ class TestRoutingByIntent:
         assert reply == testing_provider.FALLBACK_REPLY
 
 
+class TestRepliesForOneAttachment:
+    """Two agents working at once each take the replies scripted for their
+    own attachment, never each other's: a run says whose it is
+    (``answering``), and its calls take that attachment's replies before the
+    shared queue's."""
+
+    def test_each_attachments_runs_take_their_own_replies_whatever_order_the_calls_come_in(self):
+        assert hasattr(testing_provider, "answering"), "the scripted provider keys no reply by attachment"
+        testing_provider.push_replies("plan of A", "done A", attachment="att-a")
+        testing_provider.push_replies("node of B", "done B", attachment="att-b")
+        testing_provider.push_reply("shared")
+        taken = []
+        for att in ("att-b", "att-a", "att-a", "att-b"):
+            with testing_provider.answering(att):
+                taken.append((att, testing_provider.run_scripted_completion([])))
+        assert taken == [("att-b", "node of B"), ("att-a", "plan of A"), ("att-a", "done A"), ("att-b", "done B")]
+        # A call of no attachment's run takes the shared queue, and so does a
+        # run whose own replies ran out.
+        assert testing_provider.run_scripted_completion([]) == "shared"
+        with testing_provider.answering("att-a"):
+            assert testing_provider.run_scripted_completion([]) == testing_provider.FALLBACK_REPLY
+
+    def test_the_innermost_run_answers_and_its_replies_go_with_a_reset(self):
+        assert hasattr(testing_provider, "answering"), "the scripted provider keys no reply by attachment"
+        testing_provider.push_reply("parent", attachment="att-a")
+        testing_provider.push_reply("delegate", attachment="att-home")
+        with testing_provider.answering("att-a"):
+            with testing_provider.answering("att-home"):
+                assert testing_provider.run_scripted_completion([]) == "delegate"
+            assert testing_provider.run_scripted_completion([]) == "parent"
+        testing_provider.push_reply("stale", attachment="att-a")
+        assert testing_provider.pending() == 1
+        testing_provider.reset()
+        assert testing_provider.pending() == 0
+
+
 class TestUsageAccounting:
     def test_default_counts_are_reported(self):
         usage: dict = {}

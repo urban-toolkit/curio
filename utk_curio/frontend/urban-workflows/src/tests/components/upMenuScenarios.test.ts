@@ -30,7 +30,7 @@ describe("the scenario commands", () => {
     expect(UP_MENU).not.toMatch(/<HeaderMenu\s+label="Scenarios"/);
   });
 
-  test.each(["Save selection as scenario", "Duplicate selection", "Duplicate as scenario"])(
+  test.each(["Define scenario", "Duplicate selection"])(
     "View offers %s, to an editor only",
     (item) => {
       const view = menuSource("View", "</HeaderMenu>");
@@ -40,18 +40,21 @@ describe("the scenario commands", () => {
     },
   );
 
+  test("View has no Duplicate as scenario: a scenario is duplicated from its In project card", () => {
+    expect(menuSource("View", "</HeaderMenu>")).not.toContain("Duplicate as scenario");
+  });
+
   test("View has no Show scenarios or Hide scenarios: the scenarios are the Scenario Catalog's In project tab", () => {
     const view = menuSource("View", "</HeaderMenu>");
     expect(view).not.toContain("Show scenarios");
     expect(view).not.toContain("Hide scenarios");
-    // Nor the panel's open state it toggled. (`collab.panelOpen` is the
-    // collaboration panel's, which stays.)
+    // Nor the panel's open state it toggled.
     expect(UP_MENU).not.toContain("scenarioUi.panelOpen");
     expect(UP_MENU).not.toContain("useScenarioUi");
   });
 
-  test("File saves the whole dataflow as a scenario, for an editor only", () => {
+  test("File no longer saves the whole dataflow as a scenario", () => {
     const file = menuSource("File", /<HeaderMenu\s+label="View"/);
-    expect(file).toMatch(/\{!isSharedView && \(\s*<HeaderMenuItem[^>]*saveDataflowAsScenario[\s\S]*?Save dataflow as scenario/);
+    expect(file).not.toContain("Save dataflow as scenario");
   });
 });

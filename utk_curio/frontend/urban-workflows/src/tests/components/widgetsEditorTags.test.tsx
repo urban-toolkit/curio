@@ -71,25 +71,6 @@ describe("declaring widgets", () => {
     expect(props.onWidgetsChange).toHaveBeenCalledWith([]);
   });
 
-  test("controls of the node's own sit under its widgets' rows, and only when it has some", () => {
-    const fileName: WidgetDef = { name: "file_name", type: "text", label: "File name", default: "" };
-    const download = <button type="button">Download trees.csv</button>;
-    const { view } = renderEditor({ widgets: [fileName, factor], controls: download });
-
-    const panel = view.container.querySelector<HTMLElement>("[data-widgets-panel]")!;
-    const own = panel.querySelector<HTMLElement>("[data-node-controls]");
-    expect(own?.textContent).toBe("Download trees.csv");
-    // After the last widget's row, before Add widget.
-    const order = Array.from(panel.children);
-    const lastRow = panel.querySelector('[data-widget-row="factor"]')!;
-    expect(order.indexOf(own!)).toBe(order.indexOf(lastRow) + 1);
-    expect(order.indexOf(screen.getByRole("button", { name: "Add widget" }))).toBe(order.indexOf(own!) + 1);
-
-    view.rerender(<WidgetsEditor {...{ userCode: "", sendReplacedCode: jest.fn(), nodeId: "n1", markersDirty: 0,
-      widgets: [fileName], onWidgetsChange: jest.fn(), language: "python", onResolveError: jest.fn() }} />);
-    expect(view.container.querySelector("[data-node-controls]")).toBeNull();
-  });
-
   test("an edit that keeps the type keeps the value set", () => {
     const { props } = renderEditor({ widgets: [{ ...factor, value: 3 }] });
     fireEvent.click(screen.getByRole("button", { name: "Edit widget factor" }));
@@ -153,14 +134,14 @@ describe("a run", () => {
   });
 });
 
-describe("a Scout chart dropped before an input is wired", () => {
-  /** Scout's Bars, as the repository ships it: its spec and its widgets. Read
-   *  when asked, so a checkout without it fails test by test. */
+describe("a Vega-Lite package chart dropped before an input is wired", () => {
+  /** The Vega-Lite package's Bars, as the repository ships it: its spec and its
+   *  widgets. Read when asked, so a checkout without it fails test by test. */
   function bars(): { spec: string; widgets: unknown } {
-    const scout = path.join(path.resolve(__dirname, "../../../../../.."), "packages", "curio.scout@1");
-    const manifest = JSON.parse(fs.readFileSync(path.join(scout, "manifest.json"), "utf-8"));
+    const vegaLite = path.join(path.resolve(__dirname, "../../../../../.."), "packages", "curio.vega-lite@1");
+    const manifest = JSON.parse(fs.readFileSync(path.join(vegaLite, "manifest.json"), "utf-8"));
     const template = manifest.templates.find((t: { id: string }) => t.id === "bars");
-    return { spec: fs.readFileSync(path.join(scout, template.source), "utf-8"), widgets: template.widgets };
+    return { spec: fs.readFileSync(path.join(vegaLite, template.source), "utf-8"), widgets: template.widgets };
   }
 
   test("lists the dataset's chip among the references that do not resolve, until an input is wired", () => {

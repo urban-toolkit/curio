@@ -37,6 +37,7 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'agents/**'
+      - 'skills/**'
       - 'packages/**'
       - 'datasets/**'
       - 'discovery/**'
@@ -88,6 +89,7 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'agents/**'
+      - 'skills/**'
       - 'packages/**'
       - 'datasets/**'
       - 'discovery/**'
@@ -155,7 +157,7 @@ on:
         options: [auto, hosted, arcade, desktop]
         default: auto
       gpu_pool:
-        description: 'test-gpu: auto (arcade GPU runners first, then utk, then the utk-desktop runners), arcade, utk, or desktop'
+        description: 'test-gpu: auto (arcade GPU runners first, then utk, then utk-desktop-01), arcade, utk, or desktop (utk-desktop-01)'
         type: choice
         options: [auto, arcade, utk, desktop]
         default: auto
@@ -186,13 +188,18 @@ env:
 # Where the jobs run:
 #
 #   * CPU jobs: GitHub-hosted ubuntu-latest while the organization's hosted
-#     runners have room, the self-hosted arcade runners ([self-hosted, cpu],
-#     40 of them) for the rest, and the utk-desktop runners (utk-desktop-01
-#     and -02, [self-hosted, desktop]) when arcade is full too.
-#   * test-gpu: an arcade GPU runner (arcade-gpu-01..04, [self-hosted, gpu,
-#     h100]) while one is free, then utk-gpu ([self-hosted, gpu, curio]), and
-#     a utk-desktop runner ([self-hosted, gpu, desktop], either one) when
-#     utk-gpu is busy too, with as many workers as the desktop holds.
+#     runners have room, the self-hosted arcade runners ([self-hosted, arcade,
+#     cpu], 40 of them) for the rest, and the utk-desktop runners
+#     (utk-desktop-01 and -02, [self-hosted, utk-desktop]) when arcade is full
+#     too.
+#   * test-gpu: an arcade GPU runner (arcade-gpu-01..04, [self-hosted, arcade,
+#     gpu]) while one is free, then utk-gpu ([self-hosted, utk, gpu]), and
+#     utk-desktop-01 ([self-hosted, utk-desktop-01, gpu]) when utk-gpu is
+#     busy too, with as many workers as the desktop holds. Never
+#     utk-desktop-02: its 12 GB hold one worker, 47 minutes.
+#   * A self-hosted runner's labels are its machine (arcade, utk,
+#     utk-desktop-01, utk-desktop-02; both desktops also carry utk-desktop)
+#     and its kind (cpu or gpu).
 #   * test-desktop-stress, unit (sandbox) and preview-runner: always
 #     ubuntu-latest. The first two measure a 4-core, 16 GB laptop.
 #   * test-gpu-stress: always utk-gpu.
@@ -433,11 +440,11 @@ jobs:
     needs: pick-runners
     runs-on: ${{ fromJSON(needs.pick-runners.outputs.runners)['test-gpu'] }}
     timeout-minutes: ${{ inputs.repeat > 1 && 350 || 90 }}
-    # One queue per ref and GPU pool (h100 is arcade's, curio is utk-gpu,
-    # desktop is the utk-desktop runners), so a run on one pool never waits for, or
-    # evicts, a run on another.
+    # One queue per ref and GPU pool, named by the pool's machine label
+    # (arcade, utk or utk-desktop-01), so a run on one pool never waits for,
+    # or evicts, a run on another.
     concurrency:
-      group: gpu-ci-${{ github.ref }}-${{ fromJSON(needs.pick-runners.outputs.runners || '{"test-gpu":["","","none"]}')['test-gpu'][2] }}${{ inputs.remint && '-remint' || '' }}
+      group: gpu-ci-${{ github.ref }}-${{ fromJSON(needs.pick-runners.outputs.runners || '{"test-gpu":["","none"]}')['test-gpu'][1] }}${{ inputs.remint && '-remint' || '' }}
       cancel-in-progress: false
 
     # SECURITY (public repo + self-hosted): fork PRs must never execute on
@@ -550,7 +557,9 @@ jobs:
 
       # Six workers fill a desktop's memory and an RTX 3070's video memory,
       # and the container's limit has to be set before it starts. Read once,
-      # before the build, while nothing of this job holds memory yet.
+      # before the build, while nothing of this job holds memory yet. A
+      # runner that holds one worker runs one, beside a second shard for
+      # test_shard_isolation_e2e.
       - name: 📏 Size this job to the runner's free memory
         run: |
           python3 scripts/ci_memory_budget.py --github-env --workers-max "$CURIO_E2E_MAX_PARALLEL" \
@@ -746,6 +755,15 @@ jobs:
           nohup python3 scripts/ci_memory_budget.py sample --out ci-report/memory.tsv > /dev/null 2>&1 &
           echo $! > "$RUNNER_TEMP/memory-sampler.pid"
 
+      # What each process in the container holds, every 20 s: the container's
+      # total above cannot say which backend, sandbox or Node run grows
+      # (scripts/ci_stack_processes.py).
+      - name: 📈 Record each process's memory in the CI container
+        run: |
+          nohup python3 scripts/ci_stack_processes.py sample --project curio-ci \
+            --out ci-report/stack-processes.jsonl > "$RUNNER_TEMP/stack-processes.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/stack-processes.pid"
+
       - name: 🧩 Start the extra e2e shards inside the CI container
         shell: bash
         run: |
@@ -757,7 +775,11 @@ jobs:
           # under /app/.curio/shards/k, which the bind mount shares with the host
           # worker that will drive it. `umask 000` for the same reason the base
           # command has it: root-created files the host-side pytest must write.
-          for k in $(seq 1 $((CURIO_E2E_PARALLEL - 1))); do
+          # A runner that holds one worker still gets a second shard, which
+          # only test_shard_isolation_e2e calls (CURIO_E2E_SHARDS, written by
+          # scripts/ci_memory_budget.py only when shards outnumber workers).
+          shards="${CURIO_E2E_SHARDS:-$CURIO_E2E_PARALLEL}"
+          for k in $(seq 1 $((shards - 1))); do
             echo "==> starting shard $k"
             docker compose -p curio-ci exec -d -T curio sh -c '
               umask 000
@@ -788,7 +810,7 @@ jobs:
             ' sh "$k"
           done
           # Same shape as the base health gate: poll /live on each host port.
-          for k in $(seq 1 $((CURIO_E2E_PARALLEL - 1))); do
+          for k in $(seq 1 $((shards - 1))); do
             for port in $((CURIO_E2E_BACKEND_PORT + k)) $((CURIO_E2E_SANDBOX_PORT + k)); do
               echo "==> waiting for shard $k on :$port"
               timeout 240 bash -c "until curl -sf http://localhost:$port/live >/dev/null; do sleep 2; done" \
@@ -805,9 +827,8 @@ jobs:
           PYTEST_ADDOPTS: --junitxml=${{ github.workspace }}/ci-report/e2e{run}.xml
           # This runner's GPU model, for the frames that keep a baseline per
           # GPU kind (GPU_KINDS in utils/screenshots.py): the arcade runners
-          # share an H100, utk-gpu has an RTX PRO 6000, and the utk-desktop
-          # runners share frames: utk-desktop-02's RTX 4070 drew 07's plot
-          # close-up minted on utk-desktop-01's RTX 3070 exactly (10-25). Any
+          # share an H100, utk-gpu has an RTX PRO 6000, and utk-desktop-01 an
+          # RTX 3070, kind utk-desktop. Any
           # other runner gets none, so its frames compare with their default
           # baselines.
           CURIO_E2E_GPU_KIND: ${{ startsWith(runner.name, 'arcade-gpu-') && 'arcade-gpu' || (runner.name == 'utk-gpu' && 'utk-gpu' || (startsWith(runner.name, 'utk-desktop-') && 'utk-desktop' || '')) }}
@@ -838,6 +859,9 @@ jobs:
             export PYTEST_ADDOPTS
             echo "Re-minting with PYTEST_ADDOPTS=$PYTEST_ADDOPTS"
           fi
+          # One worker runs without xdist, and finds the second shard from
+          # CURIO_E2E_SHARDS (tests/shards.py shard_count); xdist workers
+          # count theirs from PYTEST_XDIST_WORKER_COUNT.
           bash scripts/ci_repeat.sh bash scripts/test.sh --e2e-only --use-existing --skip-setup "${extra[@]}" \
             --parallel "$CURIO_E2E_PARALLEL"
 
@@ -889,6 +913,7 @@ jobs:
         shell: bash
         run: |
           kill "$(cat "$RUNNER_TEMP/memory-sampler.pid" 2>/dev/null)" 2>/dev/null || true
+          kill "$(cat "$RUNNER_TEMP/stack-processes.pid" 2>/dev/null)" 2>/dev/null || true
           python3 scripts/ci_memory_budget.py report --samples ci-report/memory.tsv
 
       # Everything the ci-report job builds the run's page from: this job's
@@ -1551,7 +1576,11 @@ jobs:
   #   below the ceiling (utk_curio/sandbox/tests/_rerun_memory.py). The unit
   #   suite runs the same replay at 200k.
   # * The stress harness at the tiers a desktop sees (1, 5 and 10 users)
-  #   against the deployment-shaped stack, with nothing OOM-killed.
+  #   against the deployment-shaped stack, with nothing OOM-killed: each user
+  #   runs its dataflow and, in rooms of five, types and drags in a shared
+  #   dataflow through its tab's socket; the report gives the sync times, and
+  #   the backend's threads, memory and doc files the probe reads in the stack's
+  #   container (--probe).
   test-desktop-stress:
     needs: build-image
     if: ${{ !cancelled() && needs.build-image.result == 'success' && !inputs.remint }}
@@ -1629,13 +1658,17 @@ jobs:
         with:
           node-version: "26"
 
+      # The probe reads the backend in its container: the stack's .curio is
+      # its root's alone.
       - name: 🔥 Run the desktop tiers (1, 5, 10 users)
         run: |
+          cid="$(docker compose -p curio-ci-stress ps -q curio | head -n1)"
           python -m utk_curio.backend.tests.stress \
             --backend "http://localhost:5072" \
             --tiers 1,5,10 \
             --out "$GITHUB_WORKSPACE/ci-report/stress" \
-            --stats-log "$GITHUB_WORKSPACE/ci-report/docker-stats.log"
+            --stats-log "$GITHUB_WORKSPACE/ci-report/docker-stats.log" \
+            --probe "docker exec $cid python"
 
       - name: 📈 Stop the container stats sampler
         if: always()
@@ -1684,7 +1717,11 @@ jobs:
   # The two tiers measure different halves of a dataflow. The HTTP tiers drive
   # the backend endpoints the canvas calls -- including the Autark data load,
   # which is compiled to autk-db JavaScript and runs in the sandbox -- and
-  # scale to 100 users because they need no browser. The browser tier is five
+  # scale to 100 users because they need no browser. In rooms of five, each of
+  # those users also opens a tab of a shared dataflow, a pycrdt doc synced over
+  # Socket.IO as the canvas syncs it, and types and drags in it; the report
+  # gives the sync times, and the backend's threads, memory and doc files read
+  # in the stack's container (--probe). The browser tier is five
   # real Chrome contexts rendering Autark on WebGPU, which is the half that
   # cannot be driven any other way and does not scale past a handful on one GPU.
   test-gpu-stress:
@@ -1703,7 +1740,7 @@ jobs:
        (github.event_name == 'workflow_dispatch' && (inputs.stress || inputs.repeat > 1) && !inputs.remint) ||
        (github.event_name == 'pull_request' &&
         contains(github.event.pull_request.labels.*.name, 'stress')))
-    runs-on: [self-hosted, linux, gpu, curio]
+    runs-on: [self-hosted, utk, gpu]
     timeout-minutes: ${{ inputs.repeat > 1 && 350 || 75 }}
     concurrency:
       group: utk-ci-stress-${{ github.ref }}
@@ -1759,13 +1796,16 @@ jobs:
             done
           '
 
-      - name: 🐍 Set up Python
-        uses: actions/setup-python@v6
+      # The harness and the browser tier run on the packages of the image this
+      # job built, as test-gpu's pytest runs on curio-ci-curio's: they import
+      # the backend, whose requirements a hand-picked install misses as soon
+      # as one is added (PyYAML failed the browser tier's import on 10-28, run
+      # 40710854233), and the runner's own Python keeps whatever earlier jobs
+      # installed. The image also holds pycrdt, python-socketio and
+      # websocket-client, which the users' tabs need.
+      - uses: ./.github/actions/image-env
         with:
-          python-version: "3.12"
-
-      - name: 📦 Install harness dependencies
-        run: python -m pip install --quiet requests "pytest==9.0.3" pytest-playwright allure-pytest
+          image: curio-ci-stress-curio
 
       # Sampled next to the run, not after it: peak memory and PID count are
       # the two numbers that say how close 100 users came to the container's
@@ -1792,13 +1832,17 @@ jobs:
       # With `repeat`, each stage below runs that many times on this one stack,
       # as the three stages already share it; every run signs up users of its
       # own (a fresh --run-id) and writes its own report folder ({run}).
+      # The probe reads the backend in its container: the stack's .curio is
+      # its root's alone.
       - name: 🔥 Run the HTTP tiers (5, 10, 50, 100 users)
         run: |
+          cid="$(docker compose -p curio-ci-stress ps -q curio | head -n1)"
           bash scripts/ci_repeat.sh python -m utk_curio.backend.tests.stress \
             --backend "http://localhost:5072" \
             --tiers 5,10,50,100 \
             --out "$GITHUB_WORKSPACE/stress{run}" \
-            --stats-log "$GITHUB_WORKSPACE/docker-stats.log"
+            --stats-log "$GITHUB_WORKSPACE/docker-stats.log" \
+            --probe "docker exec $cid python"
 
       # The same 100 users, behaving like people rather than a thundering
       # herd: arrivals spread over two minutes and a pause between node runs.
@@ -1811,11 +1855,13 @@ jobs:
       - name: 🚶 Run the session profile (100 users, realistic pacing)
         if: ${{ !cancelled() }}
         run: |
+          cid="$(docker compose -p curio-ci-stress ps -q curio | head -n1)"
           bash scripts/ci_repeat.sh python -m utk_curio.backend.tests.stress \
             --backend "http://localhost:5072" \
             --tiers 100 --profile session \
             --out "$GITHUB_WORKSPACE/stress-session{run}" \
-            --stats-log "$GITHUB_WORKSPACE/docker-stats.log"
+            --stats-log "$GITHUB_WORKSPACE/docker-stats.log" \
+            --probe "docker exec $cid python"
 
       # Separate step so a red HTTP tier does not hide the state of the WebGPU
       # half, and vice versa: they fail for different reasons and get fixed by

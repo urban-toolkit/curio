@@ -47,10 +47,6 @@ AGENTS_DIR = agent_text.AGENTS_DIR
 #: The page of the base entry every agent Curio ships composes before its
 #: instruction, its preamble (``curio:default_preamble.md``).
 PREAMBLE_FILE = "default_preamble.md"
-#: The page of the package backend contract: the Node Builder's
-#: package-writing prompt includes it, and a delegated call of that mode
-#: receives it as an input.
-PACKAGE_CONTRACT_FILE = "rules/package_contract.md"
 #: The pages of the base entry the runtime composes a run's turns from, each
 #: read by its sections (``agent_text.section``): what a run is told of each
 #: tool, how it replies, and the lines that frame what it is given.

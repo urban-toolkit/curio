@@ -22,6 +22,18 @@ def _prompt(coord: str, key: str = "instruction") -> str:
     return text
 
 
+def _held(coord: str) -> str:
+    """What *coord*'s chat holds of its agent text beyond the preamble, on the
+    canvas: the skills it is handed, among them the procedures its
+    instruction names, then its instruction."""
+    from utk_curio.backend.app.agents.application import skill_runs
+    from utk_curio.backend.app.agents.domain import builtin
+
+    m = builtin.get_builtin_manifest(coord)
+    run = skill_runs.for_chat("4242", "p", m, None, {"kind": "canvas"}, builtin.read_prompt_text(coord, "system"), [])
+    return f"{skill_runs.skills_text(run) or ''}\n\n{_prompt(coord)}"
+
+
 def _sentence(text: str, words: str) -> str:
     """The sentence of *text* that holds *words*."""
     found = [s for s in re.split(r"(?<=[.!?])\s+", text) if words in s]
@@ -45,18 +57,35 @@ def test_the_dataflow_builder_is_not_offered_a_decomposition_that_only_rewords_g
     assert '"workflow.plan.create"' not in _prompt(DATAFLOW_BUILDER)
 
 
-def test_the_dataflow_builder_is_told_every_applied_plan_ends_with_a_topology_verdict():
-    """Every way a plan is applied ends its result with the verdict: Apply plan
-    (``plans._log_plan_applied``), and the row or Connect all that completes a
-    plan applied a part at a time, which writes it through the same function.
-    ``test_routes_proposals.py::TestPlansAppliedRowByRow`` checks the last
-    row's result and Connect all's, word for word as Apply plan's, and
-    ``test_routes_solve.py::TestSimulationDriver::test_auto_removes_what_the_plan_removes_and_the_stream_carries_it``
-    Simulation Mode's."""
+def test_the_dataflow_builder_is_told_every_plan_that_lands_ends_with_a_topology_verdict():
+    """A plan lands whole, and what it did ends with the verdict
+    (``plans._plan_landed_lines``): the result of the native call, which
+    ``test_native_tools.py::TestMutations::test_the_plan_is_a_call_whose_errors_come_back_as_its_result``
+    checks, and the last line of the plan's card, which
+    ``test_routes_proposals.py::TestALandedPlansResult`` and
+    ``TestPlanTopologyApply`` check."""
     assert (
-        "After the user applies a plan, the applied result names what changed and ends with a Topology verdict"
+        "After a plan lands, its result names what changed and ends with a Topology verdict"
         in _prompt(DATAFLOW_BUILDER)
     )
+
+
+def test_each_change_tool_says_it_lands_at_once_and_the_user_can_undo_it():
+    """``proposals/changes.py`` lands a node's code, its settings, a new node
+    and a plan once their checks pass, as the agent's change with its Undo;
+    only an install waits for the person's review (``editors.ACCOUNT_INSTALL_TOOLS``).
+    ``test_agent_changes.py::TestEachFamilyLandsAtOnce`` and ``TestUndoByKind``
+    check it, so no change tool is told it proposes or awaits a review."""
+    from utk_curio.backend.app.agents.application import editors
+    from utk_curio.backend.app.agents.application import tools
+
+    for tool_id in ("node.content.write", "node.settings.write", "node.create", "dataflow.plan.write"):
+        assert tool_id not in editors.ACCOUNT_INSTALL_TOOLS
+        text = tools.tool_text(tool_id)
+        for told in (text.description, text.native_description or ""):
+            low = told.lower()
+            assert "propose" not in low and "review" not in low, (tool_id, told)
+        assert "can undo it" in text.description, (tool_id, text.description)
 
 
 def test_the_node_builder_names_the_new_nodes_type_when_it_delegates_its_content():
@@ -77,8 +106,11 @@ def test_the_node_builder_is_not_told_its_chat_starts_discovery():
     """Only Solve asks the Dataset Finder for a node's candidates
     (``grounding._source_resolver``, which calls ``dataset_resolution.initiate``,
     from ``solve/batch.py``, ``node_solve.py`` and ``validate.py``); a chat run
-    that cannot ground a source starts none."""
-    assert "the runtime initiates that discovery itself" not in _prompt(NODE_BUILDER)
+    that cannot ground a source starts none. The chat reads it from its
+    instruction and the data-sources skill it is handed."""
+    held = _held(NODE_BUILDER)
+    assert '"dataset.discover"' in held, "the chat is no longer told how it asks for candidates"
+    assert "the runtime initiates that discovery itself" not in held
 
 
 def test_no_agent_is_told_to_declare_a_synthetic_flag_the_gate_ignores():
@@ -87,7 +119,9 @@ def test_no_agent_is_told_to_declare_a_synthetic_flag_the_gate_ignores():
     source refusal's list of allowed sources asks for one."""
     from utk_curio.backend.app.agents.application.turns import grounding
 
-    assert '"synthetic": true' not in _prompt(NODE_BUILDER)
+    held = _held(NODE_BUILDER)
+    assert "synthetic data ONLY when the user explicitly asked for made-up data in their own words" in held
+    assert '"synthetic": true' not in held
     base = {"catalog_paths": {}, "catalog_ids": {}, "verified": {}, "secrets": {}, "texts": []}
     ctx = grounding._grounding_context("4242", "p-1", {}, node_type="curio.builtin/data-loading", base=base)
     assert not any('"synthetic"' in hint for hint in ctx.hints), ctx.hints
@@ -152,6 +186,51 @@ def test_solves_refusals_offer_a_one_line_answer_on_every_node():
     }
     for name, (text, words) in offers.items():
         assert "loads data" not in _sentence(text, words), name
+
+
+#: Words that tell a model to load a skill: the tool, by its id or its native
+#: name, or a verb of loading and a skill in one sentence.
+_LOADS_A_SKILL = re.compile(r"skill\.read|skill__read|\bload(?:s|ed|ing)?\b[^.;\n]*\bskills?\b", re.IGNORECASE)
+
+
+def _loads(text: str) -> list[str]:
+    """The sentences of *text* that tell a model to load a skill."""
+    return [s.strip() for s in re.split(r"(?<=[.!?])\s+|\n", text or "") if _LOADS_A_SKILL.search(s)]
+
+
+def test_a_run_with_no_tools_is_never_told_to_load_a_skill(tmp_curio):
+    """A mode runs as a delegated call with no tools (``delegation`` pins
+    ``"tools": []``), and so does every Solve round: neither can call
+    skill.read, so each is handed the skills it needs
+    (``skill_runs.for_delegated``). So no mode's prompt, no message a check
+    sends back, and no skill a tool-less run is handed tells a model to load
+    a skill. Only skill.read's own answers, which a chat that holds the tool
+    reads, and the catalog's instruction, which only such a chat is given,
+    name it."""
+    from utk_curio.backend.app.agents.application import skill_runs
+    from utk_curio.backend.app.agents.domain import agent_text, builtin
+
+    assert _loads("When a task matches, call the skill.read tool.") and _loads("Load the widgets skill first.")
+    assert not _loads("A widget is a value the node's code reads. Load the dataset by its id.")
+    told = []
+    for m in builtin.list_builtin_manifests():
+        for capability in m.capabilities:
+            if capability.instruction:
+                told += [(m.dir_name, capability.id, said)
+                         for said in _loads(builtin.read_prompt_text(m.dir_name, capability.instruction))]
+    page = agent_text.MESSAGES_PAGE
+    for name, text in agent_text.split_sections(agent_text.page_text(page), page).items():
+        if not name.startswith("skills."):
+            told += [(page, name, said) for said in _loads(text)]
+    preamble = builtin.read_page("default_preamble.md", wanted_by="the test")
+    told += [("default_preamble.md", "", said) for said in _loads(preamble)]
+    for node_type in ("curio.builtin/computation-analysis", "curio.builtin/vis-vega", "curio.builtin/autk-grammar"):
+        run = skill_runs.for_delegated("4242", "p", builtin.get_builtin_manifest(NODE_BUILDER), "node.content.generate",
+                                       {"nodeType": node_type}, None, preamble, refused="document-invalid")
+        assert run.handed, node_type
+        told += [(node_type, "handed", said) for said in _loads(skill_runs.skills_text(run))]
+    assert not told, f"these tell a run with no tools to load a skill: {told}"
+    assert _loads(agent_text.section(builtin.FRAMES_FILE, skill_runs.CATALOG_SECTION))
 
 
 def test_a_research_check_is_told_which_inputs_the_runtime_probes():
@@ -274,15 +353,110 @@ def test_a_spec_is_kept_as_it_is_and_a_templates_widgets_set_in_a_plan_or_a_node
     assert any(place.endswith("default_preamble.md") for place in places), places
     assert any(place.endswith("orchestration_instruction.md") for place in places), places
     charts = [(where, text) for where, text in texts
-              if where.startswith("curio.scout/") and where.endswith(", its description")]
-    assert len(charts) >= 15, charts
+              if where.startswith("curio.vega-lite/") and where.endswith(", its description")]
+    assert len(charts) == 15, charts
+    rasters = [(where, text) for where, text in texts
+               if where.startswith("curio.rasterization/") and where.endswith(", its description")]
+    assert len(rasters) == 2, rasters
     unsaid = [(where, claim) for where, text in texts for claim in _claims(text) if _IN_BOTH not in claim]
     assert not unsaid, (
         "these tell an agent to keep a spec as it is or to set a template's widgets, which a plan and a "
         f"node.create do, and do not say where: {unsaid}"
     )
-    assert not [(where, claim) for where, text in charts for claim in _claims(text) if _IN_BOTH not in claim]
+    assert not [(where, claim) for where, text in [*charts, *rasters] for claim in _claims(text) if _IN_BOTH not in claim]
     (tools_page,) = [text for where, text in texts if where.endswith("agent.curio.builtin@1/tools.md")]
     for tool in ("dataflow.plan.write", "node.create"):
         said = _claims(_tool_section(tools_page, tool))
         assert said and all(_IN_BOTH in claim for claim in said), (tool, said)
+
+
+#: A verb of proposing, which an install takes and a change never does.
+_PROPOSES = re.compile(r"\bpropos(?:e|es|ing)\b", re.IGNORECASE)
+#: What a change lands in the dataflow, a word of its tool's id among them:
+#: a note, a node, a plan, its code or content, its settings, a connection.
+_LANDS = re.compile(r"^(?:notes?|nodes?|plans?|content|code|settings?|connections?|edges?)$", re.IGNORECASE)
+#: What is still proposed: an install, a download, a package or its draft, a
+#: word of each install tool's id among them, and the dataset candidates a
+#: person picks from.
+_STILL_PROPOSED = re.compile(r"\binstall|\bdownload|\bdraft|\bpackage|\bcandidate|\bacquire", re.IGNORECASE)
+#: A verb of proposing with nothing after it but the end of its clause.
+_NO_OBJECT = re.compile(r"^\s*(?:[.;:,)!?]|$)")
+
+
+def _proposes_a_change(text: str) -> list[str]:
+    """The sentences of *text* that tell an agent it proposes a change: a verb
+    of proposing whose next few words name what a change lands, or which has
+    no object at all ("instead of proposing."), in a sentence that names
+    nothing still proposed."""
+    found = []
+    for sentence in re.split(r"(?<=[.!?;])\s+|\n", text or ""):
+        if _STILL_PROPOSED.search(sentence):
+            continue
+        for verb in _PROPOSES.finditer(sentence):
+            after = sentence[verb.end():]
+            if _NO_OBJECT.match(after) or any(_LANDS.match(word) for word in re.findall(r"[A-Za-z]+", after)[:4]):
+                found.append(sentence.strip())
+                break
+    return found
+
+
+def _package_skills() -> list[tuple[str, str]]:
+    """Each skill of each package Curio ships, which the agents on a dataflow
+    that uses the package read, with where it is."""
+    from pathlib import Path
+
+    from utk_curio.backend.app.agents.domain import skills
+    from utk_curio.backend.app.packages.repositories import skills as package_skills
+
+    repo = Path(__file__).resolve().parents[4]
+    texts = []
+    for package in sorted(path.parent for path in (repo / "packages").glob("*/manifest.json")):
+        for folder in package_skills.skill_folders(package):
+            file = folder / skills.SKILL_FILE
+            texts.append((file.relative_to(repo).as_posix(), file.read_text(encoding="utf-8")))
+    return texts
+
+
+def test_no_agent_is_told_it_proposes_a_change():
+    """A change an agent makes lands at once, as its change with its Undo
+    (``changes.CHANGE_TOOLS``: a node's content, its settings, a new node, a
+    note among them, and a plan), and only an install waits for a person's
+    review (``editors.ACCOUNT_INSTALL_TOOLS``), as
+    ``test_agent_changes.py::TestEachFamilyLandsAtOnce`` checks. So no text an
+    agent reads tells it that it proposes a note, a node, a plan, code,
+    content, a setting or a connection, or to answer instead of proposing:
+    only an install, a download, a package draft and dataset candidates are
+    proposed. Every page and prompt is held to it, every skill, a package's
+    among them, and every template's description and starter."""
+    from utk_curio.backend.app.agents.application import editors
+    from utk_curio.backend.app.agents.application.proposals import changes
+
+    # The words follow the code's lists: each install tool's id names what is
+    # still proposed, and each change tool's id what lands.
+    for tool in editors.ACCOUNT_INSTALL_TOOLS:
+        assert _STILL_PROPOSED.search(tool), tool
+    for tool in changes.CHANGE_TOOLS:
+        assert not _STILL_PROPOSED.search(tool), tool
+        assert any(_LANDS.match(word) for word in tool.split(".")), tool
+    # The check finds what the Researcher was told before agents edited
+    # directly, and lets an install's proposal and other words be.
+    for stale in ("Search the web, answer in prose, and propose notes that carry the findings.",
+                  "Use no web tools and propose no notes.",
+                  "If no source can be grounded, ask the user for a path or URL instead of proposing."):
+        assert _proposes_a_change(stale) == [stale], stale
+    for innocent in (
+        "catalog.search lists them, and dataset.install proposes adding one to this project.",
+        "You already have these; propose package.install with the named package to use one.",
+        "Two scenarios, without and with a proposed building that a Map Editor node adds.",
+        "You never modify anything, never propose changes as actions, and never run code.",
+        "If a confirmed dataset is already installed, say so instead of proposing.",
+    ):
+        assert _proposes_a_change(innocent) == [], innocent
+
+    texts = _what_agents_read() + _package_skills()
+    places = [where for where, _text in texts]
+    for read in ("researcher_instruction.md", "data-sources/SKILL.md", "agent.curio.builtin@1/messages.md"):
+        assert any(place.endswith(read) for place in places), (read, places)
+    assert any(place.startswith("packages/") and "/skills/" in place for place in places), places
+    told = [(where, said) for where, text in texts for said in _proposes_a_change(text)]
+    assert not told, f"these tell an agent it proposes a change, which lands at once with its Undo: {told}"

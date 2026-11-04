@@ -15,6 +15,7 @@ import {
   CatalogKindIcon,
 } from "../../catalog/CatalogKindVisuals";
 import { modelMetaLine } from "../../models/catalog/modelFacts";
+import { paletteItemAttrs } from "../../menus/nodes/toolsPaletteDismiss";
 import styles from "./PackageCard.module.css";
 
 /**
@@ -89,6 +90,7 @@ export const PackageCard: React.FC<PackageCardProps> = ({
     ? {
         draggable: true,
         "data-model-id": model.packageId,
+        ...paletteItemAttrs("models", model.packageId),
         onDragStart: (event: React.DragEvent<HTMLElement>) => writeModelCardDrag(event.dataTransfer, model),
         onDragEnd: () => endModelCardDrag(),
       }
@@ -97,10 +99,12 @@ export const PackageCard: React.FC<PackageCardProps> = ({
   // canvas it becomes that node, or the one picked from a menu of the
   // package's nodes, after the package's Add when the dataflow has not added
   // it (`usePackageCardDrop`).
-  const nodeDraggable = !model && packageCardNodes(pkg).length > 0;
+  const cardNodes = model ? [] : packageCardNodes(pkg);
+  const nodeDraggable = cardNodes.length > 0;
   const nodeDrag = nodeDraggable
     ? {
         draggable: true,
+        ...paletteItemAttrs("packages", cardNodes.map((node) => node.nodeType)),
         onDragStart: (event: React.DragEvent<HTMLElement>) => {
           const payload = beginPackageCardDrag(pkg);
           if (payload) writePackageCardDragData(event.dataTransfer, payload);

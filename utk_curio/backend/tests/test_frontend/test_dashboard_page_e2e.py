@@ -58,6 +58,7 @@ from .utils import (
     allow_guest_login_env,
     api_json,
     assert_vega_canvas_rendered,
+    close_after_routes,
     dismiss_toasts,
     empty_pane_point,
     node_locator,
@@ -343,7 +344,7 @@ def test_a_dashboard_served_as_the_hosted_stacks_serve_it_carries_its_data(
         )
         assert drawn_problem is None, drawn_problem
     finally:
-        visitor_ctx.close()
+        close_after_routes(visitor_ctx)
 
 
 #: The one thing a page served with its data asks when the browser holds a
@@ -441,7 +442,7 @@ def test_the_owner_of_a_dashboard_served_with_its_data_edits_its_layout(
         assert len(checked) == 1, f"the viewer's page asked whether it may edit {len(checked)} times"
         assert asked == [], "the viewer's page asked the server for more: " + ", ".join(asked)
     finally:
-        viewer_ctx.close()
+        close_after_routes(viewer_ctx)
 
 
 def test_the_editor_restores_saved_outputs_on_reload(
@@ -565,6 +566,22 @@ _VIEWER_ROUTE_RE = re.compile(
     r"|GET /api/projects/[^/?]+/dashboard/outputs/(get|get-preview|raster)\?.*)$"
 )
 
+#: Where a page reports a browser error to the monitor (clientErrorReporter.ts).
+CLIENT_ERROR_PATH = "/api/monitor/errors/client"
+
+
+def _client_error_report(body: str | None) -> str:
+    """One browser error report as the page sent it: its message, the first
+    lines of its stack and the page it came from."""
+    try:
+        report = json.loads(body or "")
+    except ValueError:
+        return f"not JSON: {str(body)[:600]}"
+    if not isinstance(report, dict):
+        return str(report)[:600]
+    stack = " / ".join(str(report.get("stack") or "").strip().splitlines()[:3])
+    return f"{report.get('message')!r} at {stack or 'no stack'} on {report.get('url')}"[:1200]
+
 #: Each node's run status (``data-curio-node-status``), how often a run
 #: triggered it and whether an input reached it, and for a node in error what
 #: it says (its text, the code editors left out), then every toast on the page.
@@ -664,7 +681,9 @@ class _Visitor:
     hosted stack's pages do, is passed on the way that stack's proxy passes it,
     with ``/api`` taken off. A run's stream reaches the page whole, once the
     run is over, and is kept whole in :attr:`streams`. A CORS preflight is
-    passed on and not counted as asked.
+    passed on and not counted as asked. What the page reports to the monitor
+    as a browser error, and each error it leaves uncaught, are kept whole for
+    a failure to name, where its last messages may start after them.
     """
 
     def __init__(self, browser, current_server: str):
@@ -680,10 +699,18 @@ class _Visitor:
         #: What the page sent of each step a run left to it, and its size.
         self.sent: list[str] = []
         self.console: list[str] = []
+        #: Each browser error the page reported to the monitor, from its report.
+        self.reported: list[str] = []
+        #: Each error the page left uncaught.
+        self.page_errors: list[str] = []
         self.page.on("console", lambda message: self.console.append(f"[{message.type}] {message.text}"))
-        self.page.on("pageerror", lambda error: self.console.append(f"[pageerror] {error}"))
+        self.page.on("pageerror", self._uncaught)
         self.page.route(f"{self.backend_origin}/**", self._to_backend)
         self.page.route("**/api/api/**", self._to_backend)
+
+    def _uncaught(self, error) -> None:
+        self.page_errors.append(str(error))
+        self.console.append(f"[pageerror] {error}")
 
     def _to_backend(self, route, request) -> None:
         parts = urlsplit(request.url)
@@ -693,6 +720,8 @@ class _Visitor:
         line = f"{request.method} {path}{query}"
         if request.method != "OPTIONS":
             self.asked.append(line)
+        if request.method == "POST" and path == CLIENT_ERROR_PATH:
+            self.reported.append(_client_error_report(request.post_data))
         if request.method == "POST" and "/steps/" in path:
             self.sent.append(f"{line}: {len(request.post_data_buffer or b'')} bytes")
         target = request.url if on_backend else f"{self.backend}{path}{query}"
@@ -718,7 +747,8 @@ class _Visitor:
 
     def story(self) -> str:
         """What the page asked and was answered, where each node stands and
-        what the page says, and what it logged last."""
+        what the page says, every browser error it reported or left uncaught,
+        and what it logged last."""
         try:
             standing = self.page.evaluate(_NODES_STANDING_JS)
         except Exception as exc:  # noqa: BLE001 - the story is told with what can be read
@@ -727,6 +757,9 @@ class _Visitor:
             "\nAsked and answered:\n  " + "\n  ".join(self.answered or ["nothing"])
             + "\nWhat the page sent of the steps left to it:\n  " + "\n  ".join(self.sent or ["nothing"])
             + "\nThe page's nodes and notices:\n  " + "\n  ".join(standing or ["none"])
+            + "\nWhat the page reported to the monitor as browser errors:\n  "
+            + "\n  ".join(self.reported or ["nothing"])
+            + "\nThe page's uncaught errors:\n  " + "\n  ".join(self.page_errors or ["none"])
             + "\nThe page's last messages:\n  " + "\n  ".join(self.console[-60:] or ["none"])
         )
 
@@ -769,7 +802,11 @@ class _Visitor:
             waited += 250
 
     def close(self) -> None:
-        self.ctx.close()
+        """Close the visitor's browser once no call of its routes is still
+        running: a call still reading the backend's answer when the context
+        closes fails, and Playwright raises that at the worker's next call
+        (utils/routes.py)."""
+        close_after_routes(self.ctx)
 
 
 def _step_outputs(visitor: "_Visitor") -> list[dict[str, str]]:
@@ -999,6 +1036,108 @@ def test_a_tile_with_no_saved_output_runs_the_nodes_before_it_when_the_page_open
     after = _project(current_server, session["token"], project_id)
     assert after["spec"] == before["spec"], "the run on open changed the owner's dataflow"
     assert after["outputs"] == [], "the run on open saved outputs to the dataflow"
+
+
+#: The request whose route call the probe visitor holds: a JSON answer, which
+#: :meth:`_Visitor._to_backend` reads with ``response.text()``, as it was
+#: reading one when its visitor was closed in run 40721143993.
+_HELD_PROBE = "/api/config/public?route-call-held=1"
+
+#: How long, at most, the probe's route call waits between the backend's
+#: answer and its reading for the visitor's page to close.
+_HOLD_MS = 5000
+
+
+class _HeldRoute:
+    """The probe's route, as :meth:`_Visitor._to_backend` uses it: its
+    ``fetch`` hands back the backend's answer only once the visitor's page
+    has closed or :data:`_HOLD_MS` have passed, so that the visitor can be
+    closed in between."""
+
+    def __init__(self, visitor: "_ProbeVisitor", route):
+        self._visitor = visitor
+        self._route = route
+
+    def fetch(self, *args, **kwargs):
+        answer = self._route.fetch(*args, **kwargs)
+        visitor = self._visitor
+        visitor.holding = True
+        try:
+            visitor.page.wait_for_event("close", timeout=_HOLD_MS)
+            page_closed = True
+        except PlaywrightTimeoutError:
+            page_closed = False
+        visitor.held.append({"after the close began": visitor.closing, "the page closed": page_closed})
+        return answer
+
+    def fulfill(self, *args, **kwargs) -> None:
+        self._route.fulfill(*args, **kwargs)
+
+
+class _ProbeVisitor(_Visitor):
+    """A visitor whose route call for :data:`_HELD_PROBE` holds between the
+    backend's answer and its reading (:class:`_HeldRoute`). Every request
+    goes through :meth:`_Visitor._to_backend` as it is."""
+
+    def __init__(self, browser, current_server: str):
+        #: Whether the probe's route call has the backend's answer and holds.
+        self.holding = False
+        #: Whether the test has begun to close the visitor.
+        self.closing = False
+        #: How each hold ended.
+        self.held: list[dict[str, bool]] = []
+        super().__init__(browser, current_server)
+
+    def _to_backend(self, route, request) -> None:
+        if request.url.endswith(_HELD_PROBE):
+            route = _HeldRoute(self, route)
+        super()._to_backend(route, request)
+
+
+def test_closing_a_visitor_waits_for_a_route_call_still_reading_its_answer(current_server, browser):
+    """A visitor's close lets the calls of its routes that are still running
+    end first.
+
+    In run 40721143993 a visitor's page asked for a JSON answer as its test
+    closed it. :meth:`_Visitor._to_backend` had the backend's answer, the
+    context closed, which disposes of every answer its ``route.fetch()``
+    calls got, and reading the answer raised "Response has been disposed".
+    Playwright's sync API raises a route call's error at the worker's next
+    call, so the next visitor's ``browser.new_context()`` failed, after every
+    check of the first visitor had passed. Here the probe's route call holds
+    at that moment, between the answer and its reading, while its visitor is
+    closed. The next visitor opens and loads a page, and the held call read
+    its answer whole, after the close began and with the page still open.
+    """
+    visitor = _ProbeVisitor(browser, current_server)
+    try:
+        visitor.page.goto(f"{current_server}/live")
+        visitor.page.evaluate("probe => { fetch(probe); }", _HELD_PROBE)
+        waited = 0
+        while not visitor.holding:
+            assert waited < 30000, f"the probe never reached the visitor's route{visitor.story()}"
+            visitor.page.wait_for_timeout(50)
+            waited += 50
+        visitor.closing = True
+    finally:
+        visitor.close()
+
+    following = _Visitor(browser, current_server)
+    try:
+        answer = following.page.goto(f"{current_server}/live")
+        assert answer is not None and answer.ok, f"the next visitor's page did not load{following.story()}"
+        expect(following.page.locator("body")).to_have_text("Backend is live.")
+    finally:
+        following.close()
+
+    assert visitor.held == [{"after the close began": True, "the page closed": False}], (
+        f"the probe's route call held {visitor.held!r}: it should have read its answer after "
+        "the close began, with the page still open"
+    )
+    probe = f"GET {_HELD_PROBE} -> 200 "
+    assert any(line.startswith(probe) for line in visitor.answered), (
+        f"the probe's route call did not read its answer whole: {visitor.answered!r}"
+    )
 
 
 #: A producer whose run fails on the server.

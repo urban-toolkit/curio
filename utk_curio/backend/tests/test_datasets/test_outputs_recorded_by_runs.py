@@ -256,6 +256,47 @@ def test_a_save_drops_the_output_of_a_node_whose_code_changed(app, client, user_
     assert _outputs(user, project_id) == {"a": a}
 
 
+def test_a_save_keeps_an_output_for_the_code_the_doc_holds_though_the_file_is_behind(app, client, user_and_token):
+    """b's code was typed in a tab: the dataflow's doc holds it, its file not
+    yet. A run recorded b's output for that code. A save that sends that code
+    and leaves b's output out keeps the output: the save reads the dataflow as
+    the doc holds it, never a file behind the doc, so it changed nothing of b."""
+    from utk_curio.backend.app.collaboration import room_state
+    from utk_curio.backend.tests.test_collaboration._ydoc_client import synced_tab
+
+    user, token = user_and_token
+    spec = _both_saving()
+    project_id = _create(client, token, spec=spec)
+    a = _artifact(1790000000000, {"v": "a"})
+    assert _save(client, token, project_id, [("a", a)], spec=spec).status_code == 200
+    try:
+        tab = synced_tab(app, token, project_id)
+
+        def typed(doc):
+            from pycrdt import Map
+
+            code = doc.get("nodes", type=Map)["b"]["content"]
+            del code[0:len(code)]
+            code.insert(0, "return 3")
+
+        assert tab.edit(typed)[0]["ok"] is True
+        b = _artifact(1790000000100, {"v": "b"})
+        _record(user, project_id, [("b", b)])
+        as_typed = _dataflow(
+            _node("a", "return 1", saveOutputDataset=True),
+            _node("b", "return 3", saveOutputDataset=True),
+        )
+
+        saved = _save(client, token, project_id, [("a", a)], spec=as_typed)
+
+        assert saved.status_code == 200, saved.get_data(as_text=True)
+        assert _outputs(user, project_id) == {"a": a, "b": b}, (
+            "the save read b's code from a file behind the doc, and took out b's output"
+        )
+    finally:
+        room_state.reset_for_tests()
+
+
 def test_a_save_keeps_the_output_a_pinned_tile_reads_whatever_its_toggle(app, client, user_and_token):
     """A pinned tile's source is recorded with its Save off, by a run and by a
     save alike (``savedSourceNodeIds``), so a save that leaves it out keeps it."""

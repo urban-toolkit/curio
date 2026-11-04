@@ -1,7 +1,7 @@
 /**
- * The left rail of every browse page: the four catalogs and /projects.
+ * The left rail of every browse page: each catalog's and /projects'.
  *
- * One component, so the five rails cannot drift apart again. They had: some
+ * One component, so the rails cannot drift apart again. They had: some
  * sections opened with an "All formats" or "All categories" row and others did
  * not, the Data Lake page kept its total inside "By provider", the Projects
  * rail had an unlabelled first group the others did not, and zero-count rows

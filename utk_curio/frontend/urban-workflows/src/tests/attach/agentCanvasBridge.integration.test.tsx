@@ -33,7 +33,7 @@ jest.mock('../../hook/useWorkflowOperations', () => ({
     markNodeExecuted: jest.fn(),
     markNodeStale: (...args: unknown[]) => mockMarkNodeStale(...args),
     markDirty: jest.fn(),
-    persistDataflowForInstall: jest.fn().mockResolvedValue(undefined),
+    recordOutputs: jest.fn().mockResolvedValue(undefined),
     beginPendingInstall: jest.fn(),
     endPendingInstall: jest.fn(),
     applyRemoveChanges: jest.fn(),
@@ -55,17 +55,9 @@ jest.mock('../../providers/ToastProvider', () => ({
 
 jest.mock('../../providers/CollaborationProvider', () => ({
   useCollab: () => ({
-    enabled: false,
     lockedNodes: {},
-    currentUserId: null,
     lockNode: jest.fn(),
     unlockNode: jest.fn(),
-    signalExecDisplay: jest.fn(),
-    broadcastOutputProduced: jest.fn(),
-    broadcastNodeAdded: jest.fn(),
-    broadcastNodeRemoved: jest.fn(),
-    broadcastEdgeAdded: jest.fn(),
-    broadcastEdgeRemoved: jest.fn(),
     onRemote: jest.fn(),
   }),
 }));
@@ -176,7 +168,7 @@ describe('apply→canvas bridge integration (dev/48 §3.3 / dev/51 regression)',
     expect(api.nodes.filter((n: any) => n.id === CREATED.id)).toHaveLength(1);
   });
 
-  it('a node a plan names lands with that name as its header (#412), as a load reads it', async () => {
+  it('a node a plan names lands with that name as its title, which its header shows, as a load reads it', async () => {
     renderCanvas();
     await flush();
     const name = 'Load existing buildings';
@@ -184,13 +176,13 @@ describe('apply→canvas bridge integration (dev/48 §3.3 / dev/51 regression)',
       notifyAgentCanvasMutation({
         kind: 'graph-created',
         planId: 'plan-names-its-nodes',
-        nodes: [{ ...CREATED, title: name, metadata: { packageTemplateLabel: name } }],
+        nodes: [{ ...CREATED, title: name }],
         edges: [],
       });
     });
     await flush();
     const inserted = api.nodes.find((n: any) => n.id === CREATED.id);
-    expect(inserted?.data?.packageTemplateLabel).toBe(name);
+    expect(inserted?.data?.title).toBe(name);
   });
 
   it('node-content-applied updates the live node data.code (the dev/41 clobber fix)', async () => {
@@ -287,16 +279,22 @@ describe('edges an agent applies hand over what their sources hold, as a drawn c
     expect(mockMarkNodeStale).toHaveBeenCalledWith(PLANNED.id);
   });
 
-  it('a node a plan created gets its result when the plan\'s edges are applied one review at a time', async () => {
+  it('a node a plan lands in one step gets its result when the plan\'s connections land in a later one', async () => {
     await canvasWithARunNode();
+    // A canvas no doc binds takes a plan a step at a time: its node first,
+    // then its connections.
     await act(async () => {
-      notifyAgentCanvasMutation({ kind: 'node-created', node: PLANNED });
+      notifyAgentCanvasMutation({
+        kind: 'graph-created', planId: 'plan-in-steps', step: 1, nodes: [PLANNED], edges: [],
+      });
     });
     await flush();
     await act(async () => {
       notifyAgentCanvasMutation({
-        kind: 'edges-created',
-        batchId: 'batch-reads-a-result',
+        kind: 'graph-created',
+        planId: 'plan-in-steps',
+        step: 2,
+        nodes: [],
         edges: [{ id: 'e-reads-later', source: CREATED.id, target: PLANNED.id }],
       });
     });

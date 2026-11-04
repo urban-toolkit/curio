@@ -17,11 +17,16 @@ export interface ScenarioRow {
   name: string;
   color: string;
   description: string;
-  /** How many nodes it holds: its levers. */
+  /** How many nodes it holds: its own nodes. */
   nodeCount: number;
+  /** The scenario set it is in, in its project. */
+  set?: { id: string; name: string };
   project: ScenarioProjectRef;
   /** Its project's graph, drawn as plain boxes with its own nodes marked. */
   preview: GraphPreview | null;
+  /** The ids its card marks on `preview`: its own nodes, and the shared
+   *  context and outcomes it keeps. */
+  marks?: { members: string[]; context: string[]; outcomes: string[] };
 }
 
 export interface ScenarioCatalogResponse {
@@ -44,20 +49,27 @@ export interface ScenarioResult {
   updatedAt: string | null;
 }
 
-/** A node of the scenario's fixed context, levers or outcomes. */
+/** A node of the scenario's shared context, its own nodes or its shared outcomes. */
 export interface ScenarioNodeEntry {
   id: string;
   /** The node's template, `curio.builtin/vis-vega@1`. */
   type: string;
   /** Its title, when it has one. */
   label?: string;
-  results: ScenarioResult[];
+  /** The outputs its project saved for it, for a node whose output the
+   *  scenario saves (a context node whose output crosses into it, or a shared
+   *  outcome); absent for another, which is listed without an output line. */
+  results?: ScenarioResult[];
 }
 
-/** One scenario as `GET /api/scenarios/<project>/<scenario>` describes it. */
+/** One scenario as `GET /api/scenarios/<project>/<scenario>` describes it:
+ *  its parts by role (`scenarioParts`). */
 export interface ScenarioDetails extends ScenarioRow {
+  /** Its Shared context. */
   context: ScenarioNodeEntry[];
+  /** Its Scenario-specific nodes. */
   levers: ScenarioNodeEntry[];
+  /** Its Shared outcomes. */
   outcomes: ScenarioNodeEntry[];
 }
 
@@ -82,7 +94,7 @@ export interface SpecEdgeShape {
   [key: string]: unknown;
 }
 
-/** A context node of a scenario being dragged, in its own project. */
+/** A node whose output crosses into what a drop copies, in its own project. */
 export interface ScenarioCopyContext {
   nodeId: string;
   label: string;
@@ -91,17 +103,29 @@ export interface ScenarioCopyContext {
 }
 
 /**
- * What `GET /api/scenarios/<project>/<scenario>/copy?target=<id>` says a drop
- * of the scenario into the target copies. Ids are the source project's.
+ * What `GET /api/scenarios/<project>/<scenario>/copy?target=<id>&present=<ids>`
+ * says a drop of the scenario into the target copies, where the target's copy
+ * of its set holds the scenarios *present* already. Ids are the source
+ * project's.
  */
 export interface ScenarioCopyPlan {
   scenario: { id: string; name: string; color: string; description: string };
+  /** Its set in the source project. */
+  set: { id: string; name: string };
   project: { id: string; name: string };
-  levers: string[];
+  /** Its Scenario-specific nodes. */
+  nodes: string[];
+  /** Its own last nodes, each with the copied nodes whose saved outputs stand for it. */
+  last: { nodeId: string; sources: string[] }[];
+  /** What crosses into the nodes it copies from outside, each arriving as data. */
   context: ScenarioCopyContext[];
-  /** Each outcome, with the levers whose saved outputs it shows. */
-  outcomes: { nodeId: string; label: string; sources: string[] }[];
-  /** The levers, and the edges into them. */
+  /** The set's shared outcomes that land with it: every input of theirs is in
+   *  once it is. Each with the scenarios dragged or present that list it and
+   *  the copied nodes whose saved outputs stand for it. */
+  shared: { nodeId: string; label: string; scenarios: string[]; sources: string[] }[];
+  /** The ids of its own shared outcomes. */
+  outcomes: string[];
+  /** Its nodes and the shared outcomes that land, and the edges into them. */
   dataflow: { nodes: SpecNodeShape[]; edges: SpecEdgeShape[] };
   /** Packages the target project gets. */
   packages: string[];
@@ -175,4 +199,35 @@ export function groupScenariosByProject(items: readonly ScenarioRow[]): Scenario
     }
   }
   return Array.from(byProject.values());
+}
+
+/** One scenario set's scenarios, as Browse all lists them under its name. */
+export interface ScenarioSetGroup {
+  /** `<projectId>/<setId>`. */
+  key: string;
+  set: { id: string; name: string };
+  project: ScenarioProjectRef;
+  items: ScenarioRow[];
+}
+
+/**
+ * *items*, already sorted, under their scenario sets: a project's sets
+ * together, where its first scenario is (`groupScenariosByProject`), each set
+ * where its first scenario is within them. A row from before sets is in a set
+ * named after its project.
+ */
+export function groupScenariosBySet(items: readonly ScenarioRow[]): ScenarioSetGroup[] {
+  const out: ScenarioSetGroup[] = [];
+  for (const project of groupScenariosByProject(items)) {
+    const bySet = new Map<string, ScenarioSetGroup>();
+    for (const row of project.items) {
+      const set = row.set?.id ? row.set : { id: "", name: row.project.name };
+      const key = `${row.project.id}/${set.id}`;
+      const group = bySet.get(key);
+      if (group) group.items.push(row);
+      else bySet.set(key, { key, set: { id: set.id, name: set.name || row.project.name }, project: row.project, items: [row] });
+    }
+    out.push(...bySet.values());
+  }
+  return out;
 }

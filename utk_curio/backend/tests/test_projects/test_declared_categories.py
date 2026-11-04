@@ -206,10 +206,13 @@ def test_what_an_accounts_package_and_dataset_declare_reaches_its_dataflows(app,
     assert derive(spec, lookup=ManifestLookup(None)) == NOTHING
 
 
-def test_the_shared_guest_reads_the_guest_store(app, db, shared_guest):
+def test_the_shared_guest_reads_the_guest_store(app, db, shared_guest, monkeypatch):
+    from utk_curio.backend import config
     from utk_curio.backend.app.common.user_storage import GUEST_KEY
     from utk_curio.backend.app.packages import service as packages_service
 
+    # The shared guest saves where it is the one local user, without --deploy.
+    monkeypatch.setattr(config, "CURIO_NO_AUTH", True)
     packages_service.install_package_from_archive(GUEST_KEY, _archive("acme.hydro", HYDROLOGY))
     _store_dataset(GUEST_KEY, "imported.rain-gauges", {"tags": ["Rain gauges"]})
 

@@ -1,8 +1,9 @@
 """Every built-in prompt names only things that exist.
 
-The pages of the base entry (``agents/agent.curio.builtin@1/``) and the
-prompts in each shipped agent's folder (``agents/<id>@<major>/prompts/``),
-as an agent reads them, name tools, capabilities, node
+The pages of the base entry (``agents/agent.curio.builtin@1/``), the
+prompts in each shipped agent's folder (``agents/<id>@<major>/prompts/``)
+and the skills Curio ships (``skills/<name>/SKILL.md``), as an agent reads
+them, name tools, capabilities, node
 templates, package folders, sandbox helpers and Data Catalog datasets, and they
 carry Vega-Lite examples. Each of those is defined somewhere else: the tool
 registry, the built-in agents, the shipped manifests, the sandbox, the shipped
@@ -39,19 +40,27 @@ from utk_curio.backend.app.datasets.domain.code_refs import (
     MODEL_CALL_RE,
 )
 from utk_curio.backend.app.projects.shipped import shipped_dataflows
-from utk_curio.backend.tests._support.prompt_files import prompt_files, prompt_path, prompt_text
+from utk_curio.backend.tests._support.prompt_files import prompt_files, prompt_name, prompt_path, prompt_text
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
-#: Every prompt file a built-in agent receives, the shared preamble included.
+#: Every prompt file a built-in agent receives, the shared preamble included,
+#: and every skill its manifest names, which its runs load or are handed
+#: (``<name>/SKILL.md``): the agent's, its capabilities' own and its
+#: instruction's.
 PROMPT_FILES = sorted({
     asset.file.rsplit("/", 1)[-1] for m in builtin.list_builtin_manifests() for asset in m.prompts.values()
+} | {
+    f"{name}/SKILL.md" for m in builtin.list_builtin_manifests()
+    for name in (*(getattr(m, "skills", None) or ()), *(name for c in m.capabilities for name in c.skills),
+                 *getattr(m, "instruction_skills", ()))
 })
-#: Every page of the base entry and every prompt in the shipped agents'
-#: ``prompts/``, the included rules and ``examples.md`` too: each a source an
-#: agent reads rendered. A source's fence can hold a ``{{field}}`` marker, not
-#: JSON, so the checks of the text sent read the render.
-ALL_PROMPTS = sorted(path.name for path in prompt_files("*.md"))
+#: Every page of the base entry, every prompt in the shipped agents'
+#: ``prompts/`` and every skill, the included rules and ``examples.md`` too:
+#: each a source an agent reads rendered, a skill's file without its
+#: frontmatter. A source's fence can hold a ``{{field}}`` marker, not JSON, so
+#: the checks of the text sent read the render.
+ALL_PROMPTS = sorted(prompt_name(path) for path in prompt_files("*.md"))
 
 #: The worked-examples index, and the dataflows in its "Used" section.
 INDEX = examples.read_index()
@@ -59,10 +68,7 @@ USED = [entry for entry in INDEX if entry.section == examples.USED]
 
 #: Words a prompt uses that look like an id but are not one, each with the
 #: reason. An entry no prompt uses any more fails ``test_every_exception_is_still_used``.
-NOT_IDS = {
-    "curio.notes@1": "the notes package the Researcher writes into a user's store, "
-                     "shown as the shape of a versioned dirName",
-}
+NOT_IDS: dict[str, str] = {}
 
 # A tool or capability id, by the manifest's own grammar, standing alone: not
 # part of a longer dotted name, a path, a URL or a call.
@@ -190,7 +196,7 @@ def _dataflow(entry: examples.IndexEntry) -> dict:
 def _as_a_run_reads_it(entry: examples.IndexEntry) -> dict:
     """A dataflow with each chart's spec read as a run reads it, its references
     resolved: a chart of a package's that places its widgets as values, as
-    Scout's Bars places its Combine (``"aggregate": "[!! combine !!]"``), is a
+    the Vega-Lite package's Bars places its Combine (``"aggregate": "[!! combine !!]"``), is a
     Vega-Lite document once its widgets are written. Every other node is as
     the dataflow holds it."""
     from utk_curio.backend.app.execution.workflow_spec import parse_workflow_dict
@@ -301,17 +307,26 @@ def test_the_checks_find_what_the_prompts_name():
     every_id = {i for name in PROMPT_FILES for i in _ids(name)}
     assert {"catalog.search", "node.content.generate", "dataflow.plan.write"} <= every_id
     corpus = "\n".join(_text(name) for name in PROMPT_FILES)
-    # The preamble names the Autark template by id (the Merge Flow it used to
+    # Every skill an agent names is scanned, the core three in the preamble
+    # and the rest as runs load them or are handed them, the procedures among
+    # them.
+    skill_files = [name for name in PROMPT_FILES if name.endswith("/SKILL.md")]
+    assert len(skill_files) == 18, PROMPT_FILES
+    for procedure in ("reuse-first", "data-sources", "package-contract", "fact-checking", "research-notes"):
+        assert f"{procedure}/SKILL.md" in skill_files, procedure
+    # The skills name the Autark template by id (the Merge Flow they used to
     # name here left with #662).
     assert "curio.builtin/autk-grammar" in _TEMPLATE_RE.findall(corpus)
     assert "curio_load_data" in _HELPER_RE.findall(corpus)
     # The dataset calls a run is shown live in the worked examples now, not
     # in a prompt, so this scan must find them there.
     assert DATASET_PATH_CALL_RE.findall("\n".join(_node_text(entry) for entry in USED))
-    preamble_specs = [s for v in _json_values(_text(builtin.PREAMBLE_FILE)) for s in _vega_specs(v)]
-    assert len(preamble_specs) >= 3
-    # The Trill block and the Vega-Lite examples are fenced as json.
-    assert len(_JSON_FENCE_RE.findall(_text(builtin.PREAMBLE_FILE))) >= 3
+    specs = [s for name in PROMPT_FILES for v in _json_values(_text(name)) for s in _vega_specs(v)]
+    assert len(specs) >= 3
+    # The Trill block is fenced as json in the preamble, and the Vega-Lite
+    # examples in the skills.
+    assert _JSON_FENCE_RE.findall(_text(builtin.PREAMBLE_FILE))
+    assert len(_JSON_FENCE_RE.findall(corpus)) >= 3
 
 
 def test_every_exception_is_still_used():
@@ -371,7 +386,7 @@ def test_every_dataset_and_model_a_used_dataflow_loads_ships(entry):
 
 @pytest.mark.parametrize("entry", USED, ids=lambda entry: entry.path.stem)
 def test_every_vega_lite_spec_in_a_used_dataflow_validates(entry):
-    # As a run reads each one: example 06 charts with Scout's Bars, whose
+    # As a run reads each one: example 06 charts with the Vega-Lite package's Bars, whose
     # widgets reach its spec as values once they are written.
     for spec in _vega_specs(_as_a_run_reads_it(entry)):
         result = validate_vega_lite(json.dumps(spec))

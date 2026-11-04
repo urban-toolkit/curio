@@ -44,6 +44,7 @@ def script_agent_replies(
     backend_url: str, *replies: str | dict, reset: bool = True,
     by_intent: dict | None = None, native_tools: bool = False,
     structured_output: bool = False, node_ids: tuple = (),
+    attachment: str | None = None,
 ) -> int:
     """Queue *replies* for the next agent turns, one per provider call.
 
@@ -52,7 +53,10 @@ def script_agent_replies(
     again, so script the follow-up too. Returns how many are pending.
 
     A reply is its text, ``{"text", "toolCalls"}`` for native tool calls, or
-    ``{"error", "status"}`` for an endpoint error. *native_tools* makes the
+    ``{"error", "status"}`` for an endpoint error. ``"hold": <name>`` in a
+    reply object keeps the call that takes it waiting, as a slow model does,
+    until ``release_agent_hold`` names it (``held_agent_calls`` says which
+    holds calls wait on). *native_tools* makes the
     scripted endpoint call tools natively, so runs are offered their tools
     instead of the fenced syntax (a reset puts it back on the fenced protocol).
     *structured_output* makes it take a reply schema, so a content generation
@@ -66,6 +70,10 @@ def script_agent_replies(
     order, for a capture that shows the id: the applied turn prints it, and a
     random one wraps that line or not by its width.
 
+    *attachment* gives the replies to that attachment's runs alone: two agents
+    working at once each take their own, before the shared queue. Script the
+    second agent with ``reset=False``, or the first one's replies go.
+
     Resets by default. A reply left over from a previous test would be consumed
     by this one, and the failure would point anywhere but at the cause.
     """
@@ -74,8 +82,23 @@ def script_agent_replies(
         payload["chatCapabilities"] = {"tools": native_tools, "structuredOutput": structured_output}
     if node_ids:
         payload["nodeIds"] = list(node_ids)
+    if attachment:
+        payload["attachmentId"] = attachment
     body =_post_json(f"{backend_url}/api/testing/agent-script", payload)
     return body["pending"]
+
+
+def held_agent_calls(backend_url: str) -> dict:
+    """The holds scripted calls wait on now, each with how many calls wait on
+    it: a turn whose reply is held is at its model call. The read names
+    ``held`` only while a call is held."""
+    return _get_json(f"{backend_url}/api/testing/agent-script").get("held", {})
+
+
+def release_agent_hold(backend_url: str, name: str) -> dict:
+    """Let the calls held on *name* answer, and every later reply held on it,
+    until the next reset. Returns the holds calls still wait on."""
+    return _post_json(f"{backend_url}/api/testing/agent-script/release", {"hold": name})["held"]
 
 
 def captured_agent_prompts(backend_url: str) -> list:

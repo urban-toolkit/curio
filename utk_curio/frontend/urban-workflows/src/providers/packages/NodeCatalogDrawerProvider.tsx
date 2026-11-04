@@ -9,6 +9,7 @@ import React, {
 import { createPortal } from "react-dom";
 import { NodeCatalogDrawer } from "../../components/packages/publishing";
 import { useSlideDrawerPresentation } from "../../hook/useSlideDrawerPresentation";
+import { useOpensForRequests } from "../../services/editorRequests";
 
 type OpenNodeCatalogDrawerOptions = {
   /** Seed the drawer's search box, so a caller can land the user on one
@@ -45,6 +46,10 @@ export function NodeCatalogDrawerProvider({ children }: { children: React.ReactN
     },
     [present],
   );
+  // The review of the packages the dataflow's editors asked its owner to add
+  // waits in this drawer (`openRequestsReview`).
+  const openForRequests = useCallback(() => openNodeCatalogDrawer(), [openNodeCatalogDrawer]);
+  useOpensForRequests("node", openForRequests);
 
   useEffect(() => {
     if (!mounted) return;

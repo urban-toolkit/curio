@@ -8,8 +8,6 @@ and import order between siblings cannot matter.
 
 from __future__ import annotations
 
-import hashlib
-import json
 import uuid
 
 from utk_curio.backend.app.agents.application import source_grounding
@@ -22,13 +20,15 @@ from utk_curio.backend.app.agents.domain import widget_grammar
 from utk_curio.backend.app.agents.application import tool_rounds as agents_tool_rounds
 from utk_curio.backend.app.agents.application.proposals import acquire as agents_acquire
 from utk_curio.backend.app.agents.application.proposals import cards as agents_cards
+from utk_curio.backend.app.agents.application.proposals import changes as agents_changes
 from utk_curio.backend.app.agents.application.proposals import plan_scenarios as agents_plan_scenarios
 from utk_curio.backend.app.agents.application.proposals import plans as agents_plans
 from utk_curio.backend.app.agents.application.proposals import store as agents_store
 from utk_curio.backend.app.agents.application.turns import delegates as agents_delegates
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
-from utk_curio.backend.app.execution.code_references import normalize_widgets
+from utk_curio.backend.app.execution.code_references import REFERENCE_RE, normalize_widgets, parse_reference
+from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.execution.workflow_spec import CONTENT_KIND_NONE
 from utk_curio.backend.app.projects import storage as projects_storage
 from utk_curio.backend.app.agents.domain import agent_text
@@ -76,7 +76,7 @@ def _mint_dataset_install(
             agent_text.message("mint.dataset-already-installed", title=repr(item.get('title'))),
             None,
         )
-    spec = projects_storage.read_spec(user_key, project_id)
+    spec = dataflow_docs.live(user_key, project_id)
     if spec is None:
         return "refused", agent_text.message("mint.no-saved-spec"), None
     dataset_id = str(params.get("datasetId")).strip()
@@ -212,7 +212,7 @@ def _mint_package_install(
         return agents_tool_rounds._refuse_params(
             agent_text.message("mint.package-already-installed", name=repr(row['name']))
         )
-    spec = projects_storage.read_spec(user_key, project_id)
+    spec = dataflow_docs.live(user_key, project_id)
     if spec is None:
         return "refused", agent_text.message("mint.no-saved-spec"), None
     reason = params.get("reason")
@@ -428,7 +428,7 @@ def _mint_package_draft_apply(
     )
     if refusal is not None:
         return refusal
-    spec = projects_storage.read_spec(user_key, project_id)
+    spec = dataflow_docs.live(user_key, project_id)
     if spec is None:
         return "refused", agent_text.message("mint.no-saved-spec"), None
     try:
@@ -528,15 +528,14 @@ def _mint_package_draft_apply(
 def _mint_proposal(
     user_key: str, project_id: str, loop_ctx: dict, req: dict
 ) -> tuple[str, str, dict | None]:
-    """Turn a granted mutate toolRequest into a review proposal (memos dev/41,
-    dev/48 — a per-tool dispatch over one shared persistence path).
-
-    The loop never executes a mutation (`DEC-006`): validation failures come
-    back as tool results the model recovers from; success mints a ``proposal``
-    part (persisted with the turn) plus the attachment's ``activeProposal``
-    mirror, carrying the tool's revision-safety basis the apply endpoint
-    re-checks (`REQ-REVIEW-001`).
-    Returns ``(status, text_for_model, proposal_part | None)``."""
+    """Run a granted mutate toolRequest (memos dev/41, dev/48: a per-tool
+    dispatch). Its checks come first, and a failure comes back as a tool
+    result the model recovers from. A change to the dataflow then lands at
+    once, as the agent's change (``changes.land``): its ``change`` part rides
+    the turn. An install changes the account, so it becomes a ``proposal``
+    part, persisted with the turn, plus the attachment's ``activeProposal``
+    mirror, which the person applies (`REQ-REVIEW-001`).
+    Returns ``(status, text_for_model, part | None)``."""
     session_id = loop_ctx.get("session_id")
     if not isinstance(session_id, str):
         return "refused", agent_text.message("mint.no-conversation"), None
@@ -584,11 +583,14 @@ def _mint_plan_from_params(
 
 def _node_display_name(node: dict, entry: dict | None) -> str:
     """The words a card uses for an existing node: "Python Computation node",
-    or "Python Computation node · Load boundaries" when the node has a title."""
+    or "Python Computation node · Load boundaries" when the node's title is
+    not its template's label."""
+    from utk_curio.backend.app.execution.node_names import saved_node_title
+
     label = (entry or {}).get("label")
     name = f"{label} node" if isinstance(label, str) and label.strip() else "node"
-    title = node.get("title")
-    return name + (f" · {title}" if isinstance(title, str) and title.strip() else "")
+    title = saved_node_title(node)
+    return name + (f" · {title}" if title and title != (label or "").strip() else "")
 
 
 def _target_node_id(loop_ctx: dict, params: dict) -> str | None:
@@ -615,7 +617,7 @@ def _mint_node_content_write(
         return "refused", agent_text.message("mint.content-required"), None
     if len(proposed) > content.PROPOSAL_CONTENT_MAX_CHARS:
         return "refused", agent_text.message("mint.content-too-large"), None
-    spec = projects_storage.read_spec(user_key, project_id)
+    spec = dataflow_docs.live(user_key, project_id)
     if spec is None:
         return "refused", agent_text.message("mint.no-saved-spec"), None
     nodes = (spec.get("dataflow") or {}).get("nodes") or []
@@ -624,15 +626,28 @@ def _mint_node_content_write(
         return "refused", agent_text.message("tools.node-not-in-spec", node_id=repr(node_id)), None
     # dev/114 (DEC-072): the gate, keyed on the EXISTING node's type — the
     # dev/73 runtime review mint inherits it (a refusal is its honest text).
+    # The content the node holds now is the user's own: inline data may add
+    # to it the values the user typed.
     from utk_curio.backend.app.packages import service as packages_services
 
     entry, _err = packages_services.resolve_template(user_key, project_id, node.get("type"))
+    engine = source_grounding.code_engine(entry)
+    chips = agents_grounding._chip_context(spec, node_id)
+    current = str(node.get("content") or "")
+    # Before the gate, which may probe a source: a reference the node's run
+    # would refuse. This tool declares no widget, so writing the code again
+    # could never mend the node.
+    unresolved = agents_grounding._reference_problems(proposed, current, engine, chips)
+    if unresolved:
+        return agents_tool_rounds._refuse_params(
+            agent_text.message("mint.content-references", problems="\n".join(unresolved))
+        )
     verdict, refusal = agents_grounding._gate_generated_content(
         user_key, project_id, loop_ctx,
-        code=proposed, engine=source_grounding.code_engine(entry),
+        code=proposed, engine=engine,
         node_type=node.get("type"), params=params,
-        base=loop_ctx.get("_grounding_base"), chips=agents_grounding._chip_context(spec, node_id),
-        node_id=node_id,
+        base=loop_ctx.get("_grounding_base"), chips=chips,
+        node_id=node_id, current=current,
     )
     if refusal:
         return agents_tool_rounds._refuse_params(refusal)
@@ -645,59 +660,26 @@ def _mint_node_content_write(
     unpublishable = dashboards.refusal(user_key, project_id, node, proposed)
     if unpublishable:
         return agents_tool_rounds._refuse_params(unpublishable)
-    basis = hashlib.sha256((node.get("content") or "").encode("utf-8")).hexdigest()
-    proposal_id = uuid.uuid4().hex
     # The node as the user knows it, the way node.create names one: its kind,
-    # and its title when it has one. The id is for the pins (#506).
+    # and its title when it has one (#506).
     node_name = _node_display_name(node, entry)
-    summary = f"Replace the content of the {node_name}"
-    part = content.make_proposal_part(
-        proposal_id=proposal_id,
-        tool="node.content.write",
-        summary=summary,
-        preview=proposed,
-        pins={"nodeId": node_id, "contentSha256": basis},
-    )
-    proposal = {
-        "proposalId": proposal_id,
+    summary = f"Replaced the content of the {node_name}"
+    part = {"tool": "node.content.write", "summary": summary, "preview": proposed}
+    change = {
         "tool": "node.content.write",
         "nodeId": node_id,
         "nodeName": node_name,
         "content": proposed,
-        "contentSha256": basis,
         "summary": summary,
-        "status": "pending",
     }
     if verdict.source:
         part["source"] = verdict.source
-        proposal["source"] = verdict.source
-    agents_store._store_proposal(user_key, project_id, spec, loop_ctx, proposal, part)
-    return (
-        "proposed",
-        agent_text.message("mint.content-write-proposed", proposal_id=proposal_id, node_id=repr(node_id)),
-        part,
-    )
+    return agents_changes.land(user_key, project_id, loop_ctx, spec, change, part)
 
 
 #: What node.settings.write changes, in the order its schema lists them: the
 #: settings ``node_settings`` walks, then the node's widget values.
 _SETTING_PARAMS = ("dataPool", "simpleVis", "spatialJoin", "widgets")
-
-
-def _settings_basis(node: dict, change: dict) -> str:
-    """The digest of what *change* touches on *node*, as the node reads it:
-    its type, each setting the change names as the node does it
-    (``node_settings.saved``) and each widget it gives a value to. The apply
-    takes it again, so a setting changed since the review stales the card and
-    one the change does not touch leaves it as it is."""
-    metadata = node.get("metadata") if isinstance(node.get("metadata"), dict) else {}
-    values = change.get("widgets") or {}
-    touched = {
-        "type": node.get("type"),
-        "settings": {key: setting for key, setting in node_settings.saved(metadata).items() if key in change},
-        "widgets": [widget for widget in normalize_widgets(metadata.get("widgets")) if widget["name"] in values],
-    }
-    return hashlib.sha256(json.dumps(touched, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
 def _mint_node_settings_write(
@@ -706,8 +688,8 @@ def _mint_node_settings_write(
     """A change of one existing node's settings: a Data Pool's modes, a Simple
     View's image column, a Spatial Join's operation and output, and the values
     of its widgets, each judged by its node's own rule on a node whose
-    template keeps it, worded for the card as the node words it, and pinned to
-    what it touches (``_settings_basis``)."""
+    template keeps it, worded for the card as the node words it, then landed
+    as the agent's change (``apply.land_settings``)."""
     params = req.get("params") or {}
     taken = ("nodeId", *_SETTING_PARAMS)
     unknown = sorted(str(key) for key in set(params) - set(taken))
@@ -722,7 +704,7 @@ def _mint_node_settings_write(
     node_id = _target_node_id(loop_ctx, params)
     if not node_id:
         return "refused", agent_text.message("tools.no-node-id"), None
-    spec = projects_storage.read_spec(user_key, project_id)
+    spec = dataflow_docs.live(user_key, project_id)
     if spec is None:
         return "refused", agent_text.message("mint.no-saved-spec"), None
     nodes = (spec.get("dataflow") or {}).get("nodes") or []
@@ -755,36 +737,19 @@ def _mint_node_settings_write(
         ))
     if values is not None:
         change["widgets"] = values
-    basis = _settings_basis(node, change)
-    proposal_id = uuid.uuid4().hex
     node_name = _node_display_name(node, entry)
-    summary = f"Change the settings of the {node_name}"
-    part = content.make_proposal_part(
-        proposal_id=proposal_id,
-        tool="node.settings.write",
-        summary=summary,
-        preview="\n".join(lines),
-        pins={"nodeId": node_id, "settingsSha256": basis},
-    )
+    summary = f"Changed the settings of the {node_name}"
     # The card's lines, each change in its node's own words.
-    part["settingLines"] = lines
-    proposal = {
-        "proposalId": proposal_id,
+    part = {"tool": "node.settings.write", "summary": summary, "preview": "\n".join(lines), "settingLines": lines}
+    landing = {
         "tool": "node.settings.write",
         "nodeId": node_id,
         "nodeName": node_name,
         "settings": change,
         "settingLines": lines,
-        "settingsSha256": basis,
         "summary": summary,
-        "status": "pending",
     }
-    agents_store._store_proposal(user_key, project_id, spec, loop_ctx, proposal, part)
-    return (
-        "proposed",
-        agent_text.message("mint.settings-write-proposed", proposal_id=proposal_id, node_id=repr(node_id)),
-        part,
-    )
+    return agents_changes.land(user_key, project_id, loop_ctx, spec, landing, part)
 
 
 def _node_create_widgets(entry: dict, raw: object) -> tuple[list, list[str]]:
@@ -835,10 +800,22 @@ def _node_create_declared_widgets(user_key: str, project_id: str, entry: dict) -
     return packages_services.declared_widgets(user_key, project_id, [entry["id"]]).get(entry["id"]) or []
 
 
+def _template_circles(code: str, entry: dict) -> list[dict]:
+    """The input circles a created node's run reads once they are wired, as
+    the user or a plan's edges wire them: each circle its template has
+    (``maxIncomingEdges``), or, for a template that takes any number, each
+    one *code* names."""
+    capacity = entry.get("maxIncomingEdges")
+    if isinstance(capacity, int):
+        return [{"slot": slot} for slot in range(capacity)]
+    named = {parse_reference(ref.group(1)).get("slot") for ref in REFERENCE_RE.finditer(code)}
+    return [{"slot": slot} for slot in sorted(slot for slot in named if isinstance(slot, int))]
+
+
 def _mint_node_create(
     user_key: str, project_id: str, loop_ctx: dict, req: dict
 ) -> tuple[str, str, dict | None]:
-    """The dev/48 graph-shape mutation: propose ONE new node of an existing,
+    """The dev/48 graph-shape mutation: add ONE new node of an existing,
     project-available template. No digest pin — the node id is server-minted
     at apply (there is no target whose drift can corrupt); the template is
     re-validated at apply instead (`REQ-REVIEW-001` stays structural)."""
@@ -848,9 +825,9 @@ def _mint_node_create(
     if entry is None:
         return agents_tool_rounds._refuse_params(err)
     proposed = content.extract_node_content(params.get("content"))
-    # A template whose starter is its whole content, such as each Scout
-    # chart, gives the node that starter, as a plan does: the request gives
-    # no content, and sets the template's widgets by name.
+    # A template whose starter is its whole content, such as each chart of
+    # the Vega-Lite package, gives the node that starter, as a plan does:
+    # the request gives no content, and sets the template's widgets by name.
     starter = _node_create_starter(user_key, project_id, entry)
     if starter is not None and proposed:
         return agents_tool_rounds._refuse_params(agent_text.message(
@@ -859,7 +836,7 @@ def _mint_node_create(
         ))
     if starter is not None:
         proposed = starter["content"]
-    # A node that holds no content, such as a Spatial Join, is proposed without it.
+    # A node that holds no content, such as a Spatial Join, is added without it.
     if not proposed and entry.get("contentKind") != CONTENT_KIND_NONE:
         return agents_tool_rounds._refuse_params(agent_text.message("mint.content-required"))
     if len(proposed) > content.PROPOSAL_CONTENT_MAX_CHARS:
@@ -877,7 +854,7 @@ def _mint_node_create(
     if widget_errors:
         return agents_tool_rounds._refuse_params("; ".join(widget_errors))
     # The template's widgets, each the request names set as it says, at mint,
-    # so the card shows what Apply writes: a starter's, which it places, or
+    # so the change card shows what lands: a starter's, which it places, or
     # the ones any other template declares, which a node of it starts with on
     # the canvas and the roster names (Data Loading's Data).
     template_widgets = starter["widgets"] if starter is not None else _node_create_declared_widgets(
@@ -890,11 +867,21 @@ def _mint_node_create(
     # refused too: the user reviews and confirms a source first (DEC-006).
     if loop_ctx.get("_candidates_pending_review"):
         return agents_tool_rounds._refuse_params(agent_text.message("grounding.candidates-pending"))
+    engine = source_grounding.code_engine(entry)
+    # A reference the new node's run would refuse once the node is wired: its
+    # chips are the widgets it starts with and the circles its template has.
+    unresolved = [] if starter is not None else agents_grounding._reference_problems(
+        proposed, "", engine, {"widgets": widgets, "inputs": _template_circles(proposed, entry), "selections": []},
+    )
+    if unresolved:
+        return agents_tool_rounds._refuse_params(
+            agent_text.message("mint.create-references", problems="\n".join(unresolved))
+        )
     # A starter is the template's own content, which a plan does not gate
     # either; any other content passes the gate.
     verdict, refusal = (None, None) if starter is not None else agents_grounding._gate_generated_content(
         user_key, project_id, loop_ctx,
-        code=proposed, engine=source_grounding.code_engine(entry), node_type=entry["id"], params=params,
+        code=proposed, engine=engine, node_type=entry["id"], params=params,
         chips=agents_grounding._chip_context(saved, widgets=widgets),
         widgets=widgets,
     )
@@ -929,54 +916,42 @@ def _mint_node_create(
         appearance = node_appearance.normalize_appearance(raw_appearance, NOTE_PALETTE)
     except node_appearance.AppearanceError as exc:
         return agents_tool_rounds._refuse_params(agent_text.message("mint.appearance-invalid", exc=exc))
-    spec = projects_storage.read_spec(user_key, project_id)
+    spec = dataflow_docs.live(user_key, project_id)
     if spec is None:
         return "refused", agent_text.message("mint.no-saved-spec"), None
-    proposal_id = uuid.uuid4().hex
-    summary = f"Create a new {entry['label']} node" + (f" · {title}" if title else "")
+    summary = f"Created a new {entry['label']} node" + (f" · {title}" if title else "")
     if widgets:
         summary += " · widgets " + ", ".join(w["name"] for w in widgets)
     for words in node_settings.describe(settings):
         summary += " · " + words
-    part = content.make_proposal_part(
-        proposal_id=proposal_id,
-        tool="node.create",
-        summary=summary,
-        preview=proposed,
-        # dev/119 (DEC-076): the roster's own answer to "can the sandbox run
-        # this kind" rides the card — display, never a revision pin — so no
-        # frontend file keeps a list of executable kinds.
-        pins={"nodeType": entry["id"], "executable": bool(entry.get("executable"))},
-    )
-    proposal = {
-        "proposalId": proposal_id,
+    # dev/119 (DEC-076): the roster's own answer to "can the sandbox run this
+    # kind" rides the card, so no frontend file keeps a list of executable kinds.
+    part = {"tool": "node.create", "summary": summary, "preview": proposed,
+            "nodeType": entry["id"], "executable": bool(entry.get("executable"))}
+    landing = {
         "tool": "node.create",
         "nodeType": entry["id"],
+        "label": entry["label"],
         "content": proposed,
         "summary": summary,
-        "status": "pending",
     }
     if verdict is not None and verdict.source:
-        # dev/114: what the code opens/fetches and how it was grounded — the
-        # card's Source block; display + provenance, never a pin.
+        # dev/114: what the code opens/fetches and how it was grounded: the
+        # card's Source block, display and provenance.
         part["source"] = verdict.source
-        proposal["source"] = verdict.source
     if goal:
-        proposal["goal"] = goal
+        landing["goal"] = goal
     if title:
-        proposal["title"] = title
+        landing["title"] = title
     if appearance:
-        proposal["appearance"] = appearance
+        landing["appearance"] = appearance
     if widgets:
-        proposal["widgets"] = widgets
-    proposal.update(settings)
-    agents_store._store_proposal(user_key, project_id, spec, loop_ctx, proposal, part)
-    loop_ctx["_note_creates"] = loop_ctx.get("_note_creates", 0) + 1  # A13 index
-    return (
-        "proposed",
-        agent_text.message("mint.node-create-proposed", proposal_id=proposal_id, label=entry['label']),
-        part,
-    )
+        landing["widgets"] = widgets
+    landing.update(settings)
+    outcome = agents_changes.land(user_key, project_id, loop_ctx, spec, landing, part)
+    if outcome[0] == agents_changes.LANDED:
+        loop_ctx["_note_creates"] = loop_ctx.get("_note_creates", 0) + 1  # A13 index
+    return outcome
 
 
 def _mint_row_access(row: dict) -> None:
@@ -1012,7 +987,7 @@ def _mint_project_install(
             agent_text.message("mint.specialist-no-conversation", coord=coord),
             None,
         )
-    spec = projects_storage.read_spec(user_key, project_id)
+    spec = dataflow_docs.live(user_key, project_id)
     if spec is None:
         return "refused", agent_text.message("mint.no-saved-spec"), None
     proposal_id = uuid.uuid4().hex

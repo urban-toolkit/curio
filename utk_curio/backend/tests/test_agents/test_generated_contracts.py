@@ -1,10 +1,11 @@
 """Every fact the agents' text states from code is read from that code.
 
-The pages and prompts in ``agents/`` state facts the code owns through
-markers that ``contracts.PROMPT_FIELDS`` fills when the backend renders them
-(``agent_text``). These tests read each one as written and as an agent reads
-it (``prompt_text``). The tables the frontend shares, which several markers
-read, are held to their files in ``test_shared_constants.py``.
+The pages and prompts in ``agents/`` and the skills in ``skills/`` state
+facts the code owns through markers that ``contracts.PROMPT_FIELDS`` fills
+when the backend renders them (``agent_text``). These tests read each one as
+written and as an agent reads it (``prompt_text``). The tables the frontend
+shares, which several markers read, are held to their files in
+``test_shared_constants.py``.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from pathlib import Path
 import pytest
 
 from utk_curio.backend.app.agents.domain import agent_text, contracts
-from utk_curio.backend.tests._support.prompt_files import prompt_files, prompt_path, prompt_text
+from utk_curio.backend.tests._support.prompt_files import prompt_files, prompt_name, prompt_path, prompt_text
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
@@ -82,7 +83,7 @@ class TestRenderPrompt:
         marker = "{{agent.name:agent.curio.dataflow-builder}}"
         naming = [path for path in prompt_files() if marker in path.read_text(encoding="utf-8")]
         assert len(naming) >= 2, naming
-        rendered = {path.name: agent_text.render(path) for path in naming}
+        rendered = {prompt_name(path): agent_text.render(path) for path in naming}
         for name, text in rendered.items():
             assert "Flow Architect" in text and "Dataflow Builder" not in text, name
         assert any(
@@ -104,43 +105,52 @@ class TestRenderPrompt:
 
     def test_a_shipped_packages_template_label_follows_its_manifest(self):
         """A prompt names a template of a package Curio ships as its manifest
-        labels it, as it names a built-in one: Scout's nodes."""
-        manifest = json.loads((REPO_ROOT / "packages" / "curio.scout@1" / "manifest.json").read_text(
-            encoding="utf-8"))
-        assert len(manifest["templates"]) == 17
-        for template in manifest["templates"]:
-            marker = "{{template.label:" + f"curio.scout/{template['id']}" + "}}"
-            assert contracts.render_template(marker) == template["label"]
+        labels it, as it names a built-in one: Rasterization's nodes and the
+        Vega-Lite package's charts."""
+        for package, count in (("curio.rasterization", 2), ("curio.vega-lite", 15)):
+            manifest = json.loads((REPO_ROOT / "packages" / f"{package}@1" / "manifest.json").read_text(
+                encoding="utf-8"))
+            assert len(manifest["templates"]) == count, package
+            for template in manifest["templates"]:
+                marker = "{{template.label:" + f"{package}/{template['id']}" + "}}"
+                assert contracts.render_template(marker) == template["label"]
         with pytest.raises(contracts.PromptTemplateError, match="no-such-chart"):
-            contracts.render_template("{{template.label:curio.scout/no-such-chart}}")
+            contracts.render_template("{{template.label:curio.vega-lite/no-such-chart}}")
         with pytest.raises(contracts.PromptTemplateError, match="no.such.package"):
             contracts.render_template("{{template.label:no.such.package/chart}}")
 
-    def test_the_preamble_compares_scenarios_with_curios_nodes_and_scouts_templates_say_how_they_do(self):
+    def test_the_scenarios_skill_compares_scenarios_with_curios_nodes_and_the_packages_templates_say_how_they_do(self):
         """Its Scenarios section says how scenarios are compared with Curio's
         own nodes: a Vega-Lite spec reading every input stacked, as the dataset
         its chip names, ``[!! inputs !!]``, never by the bare name, and a
         Python node for two tables' or layers' difference. It names no
-        package's template: Scout's fifteen charts, the package's templates
-        that draw with Vega-Lite, each say in their own description that they
-        take one input per scenario, and its Raster Calculator says in its own
+        package's template: the Vega-Lite package's fifteen charts, each a
+        template that draws with Vega-Lite, each say in their own description
+        that they take one input per scenario, and Rasterization's Raster
+        Calculator says in its own
         how it takes two rasters' difference, with absolute=True for its size.
         A run that writes one of them reads that description and its starter
         in the dataflow block (``test_dataflow_block.py``). Compare Scenarios
         is gone, and the section names it nowhere. The section is the
-        knowledge page the preamble includes, read here as written."""
-        preamble = prompt_path("default_preamble.md").read_text(encoding="utf-8")
-        assert preamble.count("{{include:knowledge/scenarios.md}}") == 1
-        template = prompt_path("scenarios.md").read_text(encoding="utf-8")
+        scenarios skill, which the chats that build list and a run reading a
+        dataflow with scenario boxes is handed (``test_skill_listing.py``),
+        read here as written."""
+        assert "scenarios" in json.loads(
+            (REPO_ROOT / "agents" / "agent.curio.dataflow-builder@1" / "manifest.json").read_text(encoding="utf-8")
+        )["skills"]
+        template = prompt_path("scenarios/SKILL.md").read_text(encoding="utf-8")
         section = template.split("## Scenarios", 1)[1]
-        manifest = json.loads((REPO_ROOT / "packages" / "curio.scout@1" / "manifest.json").read_text(
+        rasters = json.loads((REPO_ROOT / "packages" / "curio.rasterization@1" / "manifest.json").read_text(
             encoding="utf-8"))
+        charts = json.loads((REPO_ROOT / "packages" / "curio.vega-lite@1" / "manifest.json").read_text(
+            encoding="utf-8"))["templates"]
         assert "compare-scenarios" not in section and "Compare Scenarios" not in section
         for named in ("curio.builtin/vis-vega", "curio.builtin/computation-analysis"):
             assert "{{template.label:" + named + "}}" in section, named
         assert set(re.findall(r"\{\{template\.label:([^/{}]+)/", section)) == {"curio.builtin"}
-        assert "curio.scout" not in section
-        charts = [t for t in manifest["templates"] if t.get("grammarId") == "vega-lite"]
+        assert "curio.vega-lite" not in section and "curio.rasterization" not in section
+        assert not [t for t in rasters["templates"] if t.get("grammarId") == "vega-lite"]
+        assert all(chart.get("grammarId") == "vega-lite" for chart in charts)
         assert [chart["id"] for chart in charts] == [
             "lines-with-band", "curves-by-group", "bars-with-error-bars", "ensemble-strips",
             "stacked-bars-with-totals", "donuts", "weighted-matrix", "dots-with-a-range",
@@ -148,13 +158,13 @@ class TestRenderPrompt:
         ]
         for chart in charts:
             assert chart["description"].startswith("One input per scenario"), chart["id"]
-        calculator = next(t for t in manifest["templates"] if t["id"] == "raster-calculator")
+        calculator = next(t for t in rasters["templates"] if t["id"] == "raster-calculator")
         assert "subtract" in calculator["description"] and "absolute=True" in calculator["description"]
-        starter = (REPO_ROOT / "packages" / "curio.scout@1" / calculator["source"]).read_text(encoding="utf-8")
+        starter = (REPO_ROOT / "packages" / "curio.rasterization@1" / calculator["source"]).read_text(encoding="utf-8")
         assert 'raster_calculate("subtract", [input_1, input_0], absolute=True' in starter
         assert "{{inputs.stacked}}" in section
         assert '"inputs"' not in section, "the section names the dataset bare"
-        scenarios = prompt_text("default_preamble.md").split("## Scenarios", 1)[1]
+        scenarios = prompt_text("scenarios/SKILL.md").split("## Scenarios", 1)[1]
         assert '"data": {"name": "[!! inputs !!]"}' in scenarios
 
 
@@ -216,12 +226,12 @@ class TestThePromptFacts:
     def test_the_stacked_dataset_chip_comes_from_the_runtime(self):
         """The chip a Vega-Lite spec names its inputs stacked by is the
         runtime's own (``STACKED_DATASET``, ``reference_text``), and the
-        preamble says exactly that."""
+        scenarios skill says exactly that."""
         from utk_curio.backend.app.execution.code_references import STACKED_DATASET, reference_text
 
         chip = contracts.render_template("{{inputs.stacked}}")
         assert chip == reference_text(STACKED_DATASET) == "[!! inputs !!]"
-        assert f'"data": {{"name": "{chip}"}}' in prompt_text("default_preamble.md")
+        assert f'"data": {{"name": "{chip}"}}' in prompt_text("scenarios/SKILL.md")
 
     def test_the_orchestration_rule_links_two_views_directly_and_names_the_four_pool_cases(self):
         """An interaction edge carries selections, never data. Two views link
@@ -266,14 +276,15 @@ class TestThePromptFacts:
         with pytest.raises(contracts.PromptTemplateError, match="not a widget name"):
             contracts.render_template("{{widgets.reference:2x}}")
         python = contracts.render_template("{{template.label:curio.builtin/computation-analysis}}")
-        preamble = prompt_text("default_preamble.md")
-        assert f'a "type" ({kinds})' in preamble
-        assert "`[!! threshold !!]` for the widget named threshold" in preamble
+        widgets = prompt_text("widgets/SKILL.md")
+        assert f'a "type" ({kinds})' in widgets
+        assert "`[!! threshold !!]` for the widget named threshold" in widgets
         assert (
             f"A value several nodes read is a widget on one {python} node that returns it, wired into each reader."
-            in preamble
+            in widgets
         )
-        assert "## Scenarios" in preamble and '"metadata"."copiedFrom"' in preamble
+        scenarios = prompt_text("scenarios/SKILL.md")
+        assert "## Scenarios" in scenarios and '"metadata"."copiedFrom"' in scenarios
         orchestration = prompt_text("orchestration_instruction.md")
         assert f"`{factor}` for the widget named factor" in orchestration
         assert "A value several nodes read is a widget on one Python node that returns it, wired into each reader." in (
@@ -285,9 +296,10 @@ class TestThePromptFacts:
         assert "`[!! threshold !!]` for the widget named threshold" in prompt_text("node_build_instruction.md")
         # No page or prompt teaches the old marker form, or a shared tag, any more.
         for path in prompt_files():
-            assert "$TYPE$" not in prompt_text(path.name), path.name
-            assert "[!! @" not in prompt_text(path.name), path.name
-            assert '"sharedTags"' not in prompt_text(path.name), path.name
+            name = prompt_name(path)
+            assert "$TYPE$" not in prompt_text(name), name
+            assert "[!! @" not in prompt_text(name), name
+            assert '"sharedTags"' not in prompt_text(name), name
 
     def test_no_marker_names_a_shared_tag(self):
         """A widget's value reaches another node by an edge, so no prompt field
@@ -301,7 +313,7 @@ class TestThePromptFacts:
         with pytest.raises(contracts.PromptTemplateError, match="has no labelled template 'curio.builtin/parameter'"):
             contracts.render_template("{{template.label:curio.builtin/parameter}}")
         for path in prompt_files():
-            assert "curio.builtin/parameter" not in path.read_text(encoding="utf-8"), path.name
+            assert "curio.builtin/parameter" not in path.read_text(encoding="utf-8"), prompt_name(path)
 
     def test_a_widget_name_that_ends_in_a_line_break_is_refused(self):
         """A marker's argument may hold a line break, and a widget name is read
@@ -323,9 +335,9 @@ class TestThePromptFacts:
     def test_the_web_call_budget_is_the_egress_policys(self):
         from utk_curio.backend.app.common.egress_policy import MAX_CALLS_PER_RUN
 
-        # The Researcher's chat and its checking mode; the notes mode makes
-        # no web call of its own.
-        for name in ("research_instruction.md", "researcher_instruction.md"):
+        # The Researcher's chat, and the fact-checking skill its chat and its
+        # checking mode are handed; the notes mode makes no web call of its own.
+        for name in ("researcher_instruction.md", "fact-checking/SKILL.md"):
             assert f"at most {MAX_CALLS_PER_RUN} web calls per run" in prompt_text(name), name
 
     def test_the_rows_per_lane_are_the_candidate_cards(self):
@@ -363,8 +375,8 @@ class TestThePromptFacts:
         files = prompt_files("*.md")
         texts = {}
         for path in files:
-            texts[f"{path.name}, as written"] = path.read_text(encoding="utf-8")
-            texts[f"{path.name}, as read"] = prompt_text(path.name)
+            texts[f"{prompt_name(path)}, as written"] = path.read_text(encoding="utf-8")
+            texts[f"{prompt_name(path)}, as read"] = prompt_text(prompt_name(path))
         assert files and len(texts) == 2 * len(files)
         for name, rendered in texts.items():
             assert not re.search(r"(?<![\w.$])arg(?![\w$])", rendered), name
@@ -373,18 +385,33 @@ class TestThePromptFacts:
     def test_the_package_contract_is_the_backend_contracts(self):
         from utk_curio.backend.app.packages.domain import backend_contract as bc
 
-        fragment = prompt_text("package_contract.md")
+        fragment = prompt_text("package-contract/SKILL.md")
         assert f'"name": "<a name matching {bc.HANDLER_NAME_RE.pattern}>"' in fragment
         assert '"timeoutClass": ' + "|".join(f'"{c}"' for c in bc.TIMEOUT_CLASSES) + "}]}" in fragment
         assert f"the '{bc.PERMISSION_SERVER_CODE}' permission" in fragment
         assert f"(add '{bc.PERMISSION_SERVER_NETWORK}' if and only if" in fragment
         assert f"rides the {bc.DATA_DIR_ENV} env var" in fragment
 
-    def test_the_package_writing_mode_includes_the_contract_whole(self):
-        fragment = prompt_text("package_contract.md")
+    def test_every_package_writing_run_is_handed_the_contract_whole(self):
+        """The contract is the skill ``package-contract``: each package-writing
+        mode's run is handed it whole, wrapped as a skill, and its prompt no
+        longer carries it."""
+        from utk_curio.backend.app.agents.application import skill_runs
+        from utk_curio.backend.app.agents.domain import builtin
+
+        fragment = prompt_text("package-contract/SKILL.md")
         assert fragment.endswith(".\n") and not fragment.endswith("\n\n")
-        instruction = prompt_text("package_build_instruction.md")
-        assert "\n\n" + fragment.rstrip("\n") + "\n\n" in instruction
+        assert fragment.startswith("## Backend contract\n\nServer-side compute follows ONE backend contract")
+        coord = builtin.builtin_coord("agent.curio.node-builder")
+        manifest = builtin.get_builtin_manifest(coord)
+        preamble = builtin.read_prompt_text(coord, "system")
+        for capability in ("package.build", "package.extend", "node.kind.author"):
+            run = skill_runs.for_delegated("4242", "p", manifest, capability, {}, None, preamble)
+            held = skill_runs.skills_text(run) or ""
+            assert ('<skill_content name="package-contract">\n' + fragment.rstrip("\n") + "\n</skill_content>"
+                    in held), capability
+            assert fragment.rstrip("\n") not in builtin.read_prompt_text(coord, capability), capability
+        assert "{{include:" not in prompt_path("package_build_instruction.md").read_text(encoding="utf-8")
 
     def test_every_vega_lite_schema_url_is_the_one_the_frontend_writes(self):
         import re
@@ -392,18 +419,18 @@ class TestThePromptFacts:
         assert contracts.render_template("{{vega.schema_url}}") == contracts.VEGA_SCHEMA_URL
         urls = re.findall(r"https://vega\.github\.io/schema/vega-lite/[^\"\\\s]+", prompt_text("default_preamble.md"))
         assert urls and set(urls) == {contracts.VEGA_SCHEMA_URL}
-        # No page or prompt writes the URL by hand, the pages the preamble
-        # includes among them: each names it by its marker.
-        written = [path.name for path in prompt_files("*.md")
+        # No page, prompt or skill writes the URL by hand, the skills the
+        # preamble places among them: each names it by its marker.
+        written = [prompt_name(path) for path in prompt_files("*.md")
                    if "vega.github.io/schema" in path.read_text(encoding="utf-8")]
         assert not written, written
-        assert "{{vega.schema_url}}" in prompt_path("node-control.md").read_text(encoding="utf-8")
+        assert "{{vega.schema_url}}" in prompt_path("node-control/SKILL.md").read_text(encoding="utf-8")
 
-    @pytest.mark.parametrize("field, ladder", [
-        ("vega.starter_ladder", "VEGA_STARTER_LADDER"),
-        ("autk.starter_ladder", "AUTK_STARTER_LADDER"),
+    @pytest.mark.parametrize("field, ladder, skill", [
+        ("vega.starter_ladder", "VEGA_STARTER_LADDER", "vega-lite-starter"),
+        ("autk.starter_ladder", "AUTK_STARTER_LADDER", "autark-starter"),
     ])
-    def test_a_starter_ladder_is_its_table_in_order(self, field, ladder):
+    def test_a_starter_ladder_is_its_table_in_order(self, field, ladder, skill):
         rules = getattr(contracts, ladder)
         text = contracts.render_template("{{" + field + "}}")
         lines = text.splitlines()
@@ -422,7 +449,7 @@ class TestThePromptFacts:
                 # A bare role is at least one column; anything else is spelt out.
                 assert (term == role) == (count.least == 1 and count.most is None)
                 assert term.startswith("exactly ") == (count.most == count.least)
-        assert text in prompt_text("default_preamble.md")
+        assert text in prompt_text(f"{skill}/SKILL.md")
 
     def test_the_dtype_roles_are_the_table_in_order(self):
         import re
@@ -434,7 +461,7 @@ class TestThePromptFacts:
             assert part.endswith(f" {entry.role}")
             assert re.findall(r"`([^`]+)`", part) == [*entry.names, *entry.prefixes]
             assert ("starts with" in part) == bool(entry.prefixes)
-        assert text in prompt_text("default_preamble.md")
+        assert text in prompt_text("vega-lite-starter/SKILL.md")
 
     def test_the_image_facts_are_the_tables(self):
         import re
@@ -505,10 +532,10 @@ class TestTheAutarkRenderers:
         [plot_line] = [row for row in region.splitlines() if row.startswith('- "plot":')]
         assert map_line.startswith(f'- "map": {one_view} Requires "layerRefs"')
         assert plot_line.startswith(f'- "plot": {one_view} Every plot requires')
-        preamble = prompt_text("default_preamble.md")
+        autark = prompt_text("autark/SKILL.md")
         for line in (map_line, plot_line):
             assert "several" not in line
-            assert line in preamble
+            assert line in autark
 
     def test_the_preamble_fills_every_field_and_names_no_retired_node(self):
         text = prompt_text("default_preamble.md")
@@ -602,9 +629,10 @@ class TestThePreambleVocabulary:
         files = prompt_files("*.md")
         assert files
         for path in files:
-            for how, text in (("as written", path.read_text(encoding="utf-8")), ("as read", prompt_text(path.name))):
+            name = prompt_name(path)
+            for how, text in (("as written", path.read_text(encoding="utf-8")), ("as read", prompt_text(name))):
                 found = re.findall(r"\b(" + "|".join(_LEGACY_NAMES) + r")\b", text)
-                assert not found, f"{path.name}, {how}, names {sorted(set(found))}"
+                assert not found, f"{name}, {how}, names {sorted(set(found))}"
 
 
 class TestTheTrillBlock:

@@ -9,15 +9,15 @@ import local from "./ScenarioCatalogDrawer.module.css";
 export interface ScenarioCardProps {
   scenario: ScenarioRow;
   onOpenDetails?: (scenario: ScenarioRow) => void;
-  onOpenProject?: (scenario: ScenarioRow) => void;
-  /** With these, the whole card is a drag source onto the canvas. */
-  onDragStart?: (event: React.DragEvent<HTMLElement>) => void;
-  onDragEnd?: () => void;
   /** In the In project tab: what can be done to this dataflow's scenario, a
    *  row of buttons under the card. */
   controls?: React.ReactNode;
+  /** In Browse all: the card's drag, which brings its scenario. */
+  onDragStart?: (event: React.DragEvent<HTMLElement>) => void;
+  onDragEnd?: () => void;
   /** In the In project tab: the pointer entering (true) or leaving (false)
-   *  the card, which marks the scenario's fixed context on the canvas. */
+   *  the card, which marks the scenario's shared context and shared outcomes
+   *  on the canvas. */
   onPoint?: (on: boolean) => void;
   /** The scenario's nodes marked on the graph, when they are known. */
   highlight?: ThumbnailHighlight | null;
@@ -28,22 +28,20 @@ export interface ScenarioCardProps {
  * One scenario in the canvas Scenario Catalog drawer.
  *
  * The Model drawer's card body: an avatar with the way into the details
- * beneath it, a title and ONE meta line, then the description. The avatar is
- * the project's graph, the picture that tells two scenarios apart; which of its
- * nodes the scenario holds shows in the details, which load them. In Browse
- * all the whole card is the drag source, as a model card is: dropped on the
- * canvas, the scenario arrives as a copy, and the card changes nothing in its
- * project, where the scenario is edited. In the In project tab the scenario is
- * this dataflow's: the card marks its nodes on the graph and carries its
- * buttons.
+ * beneath it, a title and ONE meta line, then the description. The set panel
+ * it sits in names the set and leads to its project (`ScenarioSetGroup`). The
+ * avatar is the project's graph, the picture that tells two scenarios apart.
+ * In Browse all the card drags its scenario onto the canvas, as every
+ * catalog's card drags one item; the copy changes nothing in its project. In
+ * the In project tab the scenario is this dataflow's: the card marks its nodes
+ * on the graph and carries its buttons.
  */
 export const ScenarioCard: React.FC<ScenarioCardProps> = ({
   scenario,
   onOpenDetails,
-  onOpenProject,
+  controls,
   onDragStart,
   onDragEnd,
-  controls,
   onPoint,
   highlight = null,
   testId,
@@ -103,19 +101,6 @@ export const ScenarioCard: React.FC<ScenarioCardProps> = ({
           <p className={local.cardDescription}>{scenario.description}</p>
         ) : null}
       </div>
-
-      {onOpenProject ? (
-        <div className={styles.cardAction}>
-          <button
-            type="button"
-            className={local.openLink}
-            data-tooltip={`Open ${scenario.project.name}, where this scenario is edited`}
-            onClick={() => onOpenProject(scenario)}
-          >
-            Open source project
-          </button>
-        </div>
-      ) : null}
 
       {controls ? <div className={local.cardControls}>{controls}</div> : null}
     </article>

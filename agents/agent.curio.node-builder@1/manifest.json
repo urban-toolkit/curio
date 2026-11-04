@@ -3,23 +3,53 @@
   "name": "Node Builder",
   "category": "node",
   "version": "1.0.0",
-  "purpose": "Create a node, or rewrite a node's content, as a proposal you review. On a connection it suggests what could go there. It installs or writes the node packages your nodes need.",
+  "purpose": "Create a node, or rewrite a node's content, as a change you can undo from its chat. On a connection it suggests what could go there. It installs or writes the node packages your nodes need.",
   "catalog": {
     "listed": true,
     "order": 4
   },
   "workedExamples": true,
+  "skills": [
+    "node-functions",
+    "catalogs",
+    "widgets",
+    "selection-chips",
+    "autark",
+    "vega-lite-starter",
+    "autark-starter",
+    "vega-lite-maps",
+    "interaction-edges",
+    "map-edits",
+    "scenarios",
+    "dashboards",
+    "provenance",
+    "reuse-first",
+    "data-sources",
+    "package-contract"
+  ],
   "roles": [
     "authoring"
   ],
   "capabilities": [
     {
       "id": "node.build",
-      "contractVersion": "1"
+      "contractVersion": "1",
+      "skills": [
+        "node-functions",
+        "catalogs",
+        "widgets",
+        "selection-chips"
+      ]
     },
     {
       "id": "dataset.fetch.author",
-      "contractVersion": "1"
+      "contractVersion": "1",
+      "skills": [
+        "node-functions",
+        "catalogs",
+        "widgets",
+        "selection-chips"
+      ]
     },
     {
       "id": "node.content.generate",
@@ -33,7 +63,10 @@
       ],
       "requiredConfig": [],
       "label": "Write a node's content",
-      "workedExamples": true
+      "workedExamples": true,
+      "skills": [
+        "data-sources"
+      ]
     },
     {
       "id": "package.recommend",
@@ -45,7 +78,10 @@
         "existingPackages"
       ],
       "requiredConfig": [],
-      "label": "Recommend packages"
+      "label": "Recommend packages",
+      "skills": [
+        "reuse-first"
+      ]
     },
     {
       "id": "package.build",
@@ -57,7 +93,11 @@
         "existingPackages"
       ],
       "requiredConfig": [],
-      "label": "Write a package"
+      "label": "Write a package",
+      "skills": [
+        "package-contract",
+        "reuse-first"
+      ]
     },
     {
       "id": "package.extend",
@@ -69,7 +109,11 @@
         "existingPackages"
       ],
       "requiredConfig": [],
-      "label": "Write a package"
+      "label": "Write a package",
+      "skills": [
+        "package-contract",
+        "reuse-first"
+      ]
     },
     {
       "id": "node.kind.author",
@@ -81,7 +125,11 @@
         "existingPackages"
       ],
       "requiredConfig": [],
-      "label": "Write a package"
+      "label": "Write a package",
+      "skills": [
+        "package-contract",
+        "reuse-first"
+      ]
     }
   ],
   "prompts": {
@@ -91,7 +139,11 @@
     },
     "instruction": {
       "path": "prompts/node_build_instruction.md",
-      "variables": []
+      "variables": [],
+      "skills": [
+        "reuse-first",
+        "data-sources"
+      ]
     },
     "node.content.generate": {
       "path": "prompts/new_content_prompt.md",

@@ -106,6 +106,9 @@ def create_app(config_class=config_class):
 
     from utk_curio.backend.app.projects.routes import projects_bp
     app.register_blueprint(projects_bp)
+    # What a dataflow's invited editors ask its owner to add, of every kind.
+    from utk_curio.backend.app.projects.request_routes import requests_bp
+    app.register_blueprint(requests_bp)
 
     # The run tables, and the cascade that deletes a project's runs with it.
     from utk_curio.backend.app.runs import models as _run_models  # noqa: F401
@@ -239,17 +242,15 @@ def create_app(config_class=config_class):
         except Exception:  # noqa: BLE001 - before the migration that makes the tables
             db.session.rollback()
 
-    # Real-time collaboration: opt-in via ENABLE_COLLAB. The collaboration
-    # package and flask-socketio are imported only inside this branch so the
-    # default (flag off) deployment never loads them.
-    from utk_curio.backend.config import ENABLE_COLLAB, COLLAB_NAMESPACE
-    if ENABLE_COLLAB:
-        from utk_curio.backend.extensions import init_socketio
-        sio = init_socketio(app)
-        from utk_curio.backend.app.collaboration import events as _collab_events
-        _collab_events.register(sio)
-        app.logger.info(
-            "Real-time collaboration ENABLED on namespace=%s", COLLAB_NAMESPACE,
-        )
+    # Every backend serves Socket.IO: the collaboration room and each open
+    # dataflow's Yjs doc travel over it.
+    from utk_curio.backend.config import COLLAB_NAMESPACE
+    from utk_curio.backend.extensions import init_socketio
+    sio = init_socketio(app)
+    from utk_curio.backend.app.collaboration import dataflow_docs as _dataflow_docs
+    from utk_curio.backend.app.collaboration import events as _collab_events
+    _collab_events.register(sio)
+    _dataflow_docs.register(sio)
+    app.logger.info("Socket.IO serves namespace=%s", COLLAB_NAMESPACE)
 
     return app

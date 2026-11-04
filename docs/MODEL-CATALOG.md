@@ -2,7 +2,7 @@
 
 The Model Catalog is where Curio keeps the **trained models** your nodes can run. A model ships with Curio, or you add one from the [Discovery Catalog](DISCOVERY-CATALOG.md) or import its package. You add a model to one dataflow, or to all your projects, as you add a node package in the [Node Catalog](NODE-CATALOG.md). Each model has a node that runs it, such as **Image Segmentation**: drag the model's card onto the canvas to add that node, or onto a node of the same type of model to run it there.
 
-Curio has six catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the Model Catalog the models they run, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, the [Discovery Catalog](DISCOVERY-CATALOG.md) the portals, storage, services and models you take datasets and models from, and the [Scenario Catalog](SCENARIO-CATALOG.md) the scenarios saved in your projects.
+Curio has seven catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the Model Catalog the models they run, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, the [Skill Catalog](SKILL-CATALOG.md) the skills those assistants read, the [Discovery Catalog](DISCOVERY-CATALOG.md) the portals, storage, services and models you take datasets and models from, and the [Scenario Catalog](SCENARIO-CATALOG.md) the scenarios saved in your projects.
 
 This guide is in six parts, plus operator notes:
 
@@ -60,6 +60,8 @@ The weather GNN, SCOUT's weather graph network, is about 52 KB. Its package, `mo
 
 A node runs a model whose package is in your store: one you added, one a dataflow that names it brought, or one installed for the examples. A model whose package your store does not hold stops the node, with a message saying to add it.
 
+On a dataflow you edit at its owner's invitation ([COLLABORATION.md](COLLABORATION.md#who-edits-owner-editors-and-watchers)), a node also runs the models the owner added to the dataflow, those its lockfile names and those dropped onto its nodes, from the owner's store, without your adding them: in a play, a run on the server and a run its agents make for you. No other model of the owner's runs, and the owner's models stay the owner's to publish, export and remove.
+
 An agent writes only models your store holds into a node, and asks you to add any other.
 
 ---
@@ -67,7 +69,7 @@ An agent writes only models your store holds into a node, and asks you to add an
 ## 2. Surfaces and workflows
 
 - **The Model Catalog drawer**, on the canvas, works on the open dataflow. Open it from the **Model Catalog** button in the top bar, or from the left Tools panel's **Model Catalog** dropdown and **Browse Model Catalog +**. Its two tabs are **Browse all**, the shared catalog's models and your own (imported, published, or downloaded from the Discovery Catalog), and **In project**, this dataflow's models, with their count. Each card shows the runtime, the label count (the type, for a model with no labels), the size and the weights' license. **Import package** is in its footer.
-- **The `/catalog/models` page**, reached from the **Model Catalog** tab, works on your whole account: a model added here goes into every project you have and every new one. Search with **Search models…**, sort, and filter in the left rail by **All models**, **In all projects**, **By type** or **By runtime**. Each card shows the runtime, the type, the label count, the size and the weights' license. Click a card to describe it in the right-hand drawer, which offers **Add to all projects** (or **Update all projects**), **Publish** or **Unpublish** for a model of your own, **Remove from account** for a model of your own that no dataflow uses, and **View details**. **Import package** is in the header, and `/catalog/models/<id>` opens the page with that model's details.
+- **The `/catalog/models` page**, reached from **Model Catalog** in the top bar, works on your whole account: a model added here goes into every project you have and every new one. Search with **Search models…**, sort, and filter in the left rail by **All models**, **In all projects**, **By type** or **By runtime**. Each card shows the runtime, the type, the label count, the size and the weights' license. Click a card to describe it in the right-hand drawer, which offers **Add to all projects** (or **Update all projects**), **Publish** or **Unpublish** for a model of your own, **Remove from account** for a model of your own that no dataflow uses, and **View details**. **Import package** is in the header, and `/catalog/models/<id>` opens the page with that model's details.
 - **The Model Catalog dropdown**, in the left Tools panel, holds the models already added to this dataflow, under **Models in project** with their count, as cards to drag onto the canvas or a node. **Browse Model Catalog +** opens the drawer for the others.
 
 **View details** opens the same details window as a node package's. For a model it starts with a **Model** section: **Type**, **Runtime**, **Input size**, **Labels**, **Size**, **Weights license** (with **View license** when the package ships its text), **Weights publisher**, **Homepage**, **Node** (the node a drop on the canvas creates), and **Weights**: *Downloads on first use* for weights a pip install left out that no node has fetched yet. Then come the labels, **Downloaded from** (the Discovery Catalog source, linked) for a model you downloaded, **Package info** (**Identifier**, **Version**, **Category**, **Publisher**, **Code license**, **Channel**, **Nodes**, **In all projects**, **In the catalog**), **Nodes in this package**, **Modules** (the Python modules the package ships, such as Deep Umbra's `deep_umbra`), **Permissions** and **Dependencies**. **Export** is in the header.
@@ -103,6 +105,8 @@ An agent writes only models your store holds into a node, and asks you to add an
 
 **I want to remove a model.** Open each dataflow that has it and use **Remove from project** in the Model Catalog drawer. When you remove it from the last one, Curio deletes it from your account, drops it from your defaults and uninstalls its Python libraries.
 
+**I edit someone else's dataflow and want to use a model of mine.** On a dataflow whose owner invited you to edit it ([Collaboration](COLLABORATION.md#who-edits-owner-editors-and-watchers)), a model reaches the dataflow through the owner's review, as a package does ([Node Catalog](NODE-CATALOG.md#workflows)). **Add to project** in the drawer, a card dropped on the canvas, which makes its node at once, and a model dropped on a node each ask the owner to add it, and the node reads **WAITING** until the owner reviews it. The owner's Model Catalog drawer lists your request under **Waiting for review**; **Apply** copies the model into the owner's Model Catalog with its weights, installs its libraries there and adds it to the dataflow, and your runs then load the owner's copy.
+
 ---
 
 ## 3. Using a model in a dataflow
@@ -127,7 +131,7 @@ A new Image Segmentation node opens with `classes = None`, every class the model
 | `overlay_url` | The image tinted by class, which **Simple View** shows beside the image. |
 | `segment_error` | Empty, or why the row was skipped: *the image is not on this machine* when the row's file is missing, *the image could not be read* when the file is not an image Curio can open or is cut short. |
 
-Every input column follows. A class the model does not label stops the node, with a message naming the labels it has. `curio_load_model`, `curio_segment` and their arguments are in [Functions node code calls](../agents/agent.curio.builtin@1/knowledge/node-functions.md).
+Every input column follows. A class the model does not label stops the node, with a message naming the labels it has. `curio_load_model`, `curio_segment` and their arguments are in [Functions node code calls](../skills/node-functions/SKILL.md).
 
 Dragging a model onto a node rewrites the id in its first `curio_load_model(...)` call and nothing else, so `classes` stays as you set it. The model must be of the type the node runs, the type of the model its code names: a segmentation model takes another segmentation model's place. The dataflow saves the node's code, so it reopens with the same model.
 

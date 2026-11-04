@@ -31,6 +31,21 @@ def is_shared_guest(user) -> bool:
     )
 
 
+def is_hosted_guest(user) -> bool:
+    """A guest on a Curio started with ``--deploy``, an account every visitor shares.
+
+    The rule the page applies as ``isHostedGuest`` (``useHostedGuest.ts``): a
+    guest, with sign-in on. Such a guest saves no dataflow and edits no other
+    account's dataflow. Without ``--deploy`` the shared guest is the one local
+    user and saves like any account.
+
+    Read at call time so tests and a reloaded config are honoured.
+    """
+    from utk_curio.backend import config
+
+    return bool(user is not None and getattr(user, "is_guest", False)) and not config.CURIO_NO_AUTH
+
+
 def can_manage_shared_catalog(user) -> bool:
     """Whether *user* may publish to, or remove from, a shared catalog tree.
 
@@ -118,6 +133,47 @@ def settings_refusal(user) -> str | None:
         return (
             "Changing catalog settings is not available for guest users, because "
             "every guest shares one account. Sign in with an account to change them."
+        )
+    return None
+
+
+def agent_skills_refusal(user) -> str | None:
+    """Why *user* may not add a skill to an agent or remove one, or ``None``.
+
+    The same two parts as :func:`settings_refusal`: a local run always may,
+    and a hosted guest may not, because every guest shares one account and
+    one visitor's change would reach every visitor's agents.
+    """
+    from utk_curio.backend import config
+
+    if config.CURIO_NO_AUTH or user is None:
+        return None
+    if getattr(user, "is_guest", False):
+        return (
+            "Changing an agent's skills is not available for guest users, because "
+            "every guest shares one account. Sign in with an account to change them."
+        )
+    return None
+
+
+def catalog_entry_refusal(user, action: str) -> str | None:
+    """Why *user* may not *action*, such as "import agents" or "publish
+    skills", or ``None``: importing, removing, publishing or unpublishing an
+    entry of the Agent or Skill Catalog, an agent or a skill.
+
+    The same two parts as :func:`settings_refusal`: a local run always may,
+    and a hosted guest may not, because every guest shares one account, so
+    what one visitor imports or removes would be every visitor's, and what it
+    publishes would have no account behind it.
+    """
+    from utk_curio.backend import config
+
+    if config.CURIO_NO_AUTH or user is None:
+        return None
+    if getattr(user, "is_guest", False):
+        return (
+            f"Guests on this Curio cannot {action}, because every guest shares one "
+            f"account. Sign in with an account to {action}."
         )
     return None
 

@@ -10,8 +10,17 @@
  *   are hidden, and each edge crossing the scenario's edge is drawn to or from
  *   its box instead, as a stand-in.
  * - An expanded scenario's members wear its color, inside a frame.
- * - The fixed context of the scenario pointed at in the Scenario Catalog
- *   drawer's In project tab is marked.
+ * - The shared context and shared outcomes of the scenario pointed at in the
+ *   Scenario Catalog drawer's In project tab are marked (`scenarioParts`), and
+ *   so are those of a scenario being defined (`preview`).
+ * - Each scenario set's shared context and shared outcomes are a group each
+ *   (`groups`), framed, or collapsed into one box the way a scenario is: its
+ *   nodes hidden, and the edges crossing its edge drawn to or from the box.
+ * - A shared context or outcome node of a set with two scenarios or more gets
+ *   a row of circles under it, one per scenario of the set: filled when that
+ *   scenario uses it (`dots`).
+ * - A scenario set is outlined around its scenarios' frames and boxes and the
+ *   context and outcomes they share, under the set's title (`sets`).
  *
  * Boxes, frames and stand-ins are not React Flow nodes or edges: React Flow's
  * store is what `reactFlow.getNodes()` returns to Run All and to a save, so
@@ -21,34 +30,71 @@ import type { CSSProperties } from "react";
 import type { Edge, Node } from "reactflow";
 import { directedEdgesOf } from "../../providers/flow/runLevels";
 import { hideNode } from "../hiddenNodes";
-import type { Scenario } from "./scenarioModel";
-import { scenarioParts, type ScenarioParts } from "./scenarioParts";
+import type { Scenario, ScenarioSet, SharedKind } from "./scenarioModel";
+import { scenarioParts } from "./scenarioParts";
 
 export const SCENARIO_MEMBER_CLASS = "curio-scenario-member";
 export const SCENARIO_FIXED_CLASS = "curio-scenario-fixed";
+export const SCENARIO_OUTCOME_CLASS = "curio-scenario-outcome";
 
 export interface ScenarioBox {
   scenario: Scenario;
   /** Where the box sits on the canvas: `scenario.box`, else its members' top left. */
   x: number;
   y: number;
-  parts: ScenarioParts;
+  /** Its own nodes, one row each, in the dataflow's order. */
+  rows: string[];
 }
+
+/** A scenario set's shared context or shared outcomes: the nodes outside every box. */
+export interface SharedGroup {
+  /** `group:<set>:<kind>`, which a stand-in edge's end names as its box. */
+  key: string;
+  set: string;
+  kind: SharedKind;
+  nodes: string[];
+  collapsed: boolean;
+  /** Where its collapsed box sits: where it was moved, else its nodes' top left. */
+  x: number;
+  y: number;
+}
+
+export const sharedGroupKey = (set: string, kind: SharedKind) => `group:${set}:${kind}`;
 
 export interface ScenarioFrame {
   scenario: Scenario;
   members: string[];
 }
 
-/** A stand-in edge's end: a node's handle, or a box's port for one of its nodes. */
+/**
+ * A stand-in edge's end: a node's handle, or the port of a box's row for one
+ * of its nodes. *box* is a scenario's id or a shared group's key.
+ */
 export type StandInEnd =
   | { node: string; handle?: string | null }
-  | { box: string; port: "context" | "outcome"; of: string };
+  | { box: string; port: "in" | "out"; of: string };
 
 export interface StandInEdge {
   id: string;
   source: StandInEnd;
   target: StandInEnd;
+}
+
+/** The circles under a shared node: one per scenario of its set, in the set's order. */
+export interface MembershipDots {
+  node: string;
+  dots: { scenario: string; name: string; color: string; member: boolean }[];
+}
+
+/** What a scenario set's outline goes around. */
+export interface ScenarioSetOutline {
+  set: string;
+  /** Its expanded scenarios, drawn as frames. */
+  frames: string[];
+  /** Its collapsed scenarios, drawn as boxes. */
+  boxes: string[];
+  /** Its shared groups, framed or collapsed, by key. */
+  groups: string[];
 }
 
 export interface ScenarioCanvasView<N extends Node, E extends Edge> {
@@ -57,6 +103,9 @@ export interface ScenarioCanvasView<N extends Node, E extends Edge> {
   boxes: ScenarioBox[];
   frames: ScenarioFrame[];
   standIns: StandInEdge[];
+  dots: MembershipDots[];
+  sets?: ScenarioSetOutline[];
+  groups?: SharedGroup[];
 }
 
 function withClass<N extends Node>(node: N, extra: string): N {
@@ -72,7 +121,13 @@ export function scenarioCanvasView<N extends Node, E extends Edge>(
   nodes: N[],
   edges: E[],
   scenarios: readonly Scenario[],
-  options: { fixedFor?: string | null } = {},
+  options: {
+    fixedFor?: string | null;
+    /** The context and outcomes of a scenario being defined, marked like the pointed one's. */
+    preview?: { context: readonly string[]; outcomes: readonly string[] } | null;
+    /** The dataflow's scenario sets: how each draws its shared groups. */
+    sets?: readonly ScenarioSet[];
+  } = {},
 ): ScenarioCanvasView<N, E> {
   const live = new Set(nodes.map((node) => node.id));
   const memberOf = new Map<string, Scenario>();
@@ -83,43 +138,58 @@ export function scenarioCanvasView<N extends Node, E extends Edge>(
     members.forEach((id) => memberOf.set(id, scenario));
     active.push(scenario);
   }
-  if (active.length === 0) return { nodes, edges, boxes: [], frames: [], standIns: [] };
+  const preview = options.preview;
+  if (active.length === 0 && !preview) return { nodes, edges, boxes: [], frames: [], standIns: [], dots: [] };
 
+  // The shared context and shared outcomes of the scenario pointed at, or
+  // being defined.
   const highlighted = active.find((s) => s.id === options.fixedFor);
-  const fixed = new Set(highlighted ? scenarioParts(highlighted, nodes, edges).context : []);
-  const collapsedOf = (id: string) => {
+  const marked = preview ?? (highlighted ? scenarioParts(highlighted, nodes, edges, active) : null);
+  const fixed = new Set(marked?.context ?? []);
+  const outcomeMarks = new Set(marked?.outcomes ?? []);
+
+  const groups = sharedGroups(nodes, active, memberOf, options.sets ?? []);
+  const groupOf = new Map<string, SharedGroup>();
+  for (const group of groups) {
+    if (group.collapsed) group.nodes.forEach((id) => groupOf.set(id, group));
+  }
+  // The box a node is hidden in: its collapsed scenario's, or its collapsed group's.
+  const hiddenIn = (id: string): string | undefined => {
     const scenario = memberOf.get(id);
-    return scenario?.collapsed ? scenario : undefined;
+    if (scenario?.collapsed) return scenario.id;
+    return groupOf.get(id)?.key;
   };
 
   const viewNodes = nodes.map((node) => {
     const scenario = memberOf.get(node.id);
-    if (scenario?.collapsed) return { ...hideNode(node), selected: false };
+    if (hiddenIn(node.id)) return { ...hideNode(node), selected: false };
     let next = scenario ? memberLook(node, scenario) : node;
     if (fixed.has(node.id)) next = withClass(next, SCENARIO_FIXED_CLASS);
+    if (outcomeMarks.has(node.id)) next = withClass(next, SCENARIO_OUTCOME_CLASS);
     return next;
   });
 
   const viewEdges = edges.map((edge) =>
-    collapsedOf(edge.source) || collapsedOf(edge.target) ? { ...edge, hidden: true } : edge,
+    hiddenIn(edge.source) || hiddenIn(edge.target) ? { ...edge, hidden: true } : edge,
   );
 
   const standIns: StandInEdge[] = [];
   const seen = new Set<string>();
   for (const edge of directedEdgesOf(edges)) {
     if (!live.has(edge.source) || !live.has(edge.target)) continue;
-    const from = collapsedOf(edge.source);
-    const to = collapsedOf(edge.target);
+    const from = hiddenIn(edge.source);
+    const to = hiddenIn(edge.target);
     if (!from && !to) continue;
-    // Inside one collapsed scenario: nothing crosses its edge.
-    if (from && to && from.id === to.id) continue;
+    // Inside one box: nothing crosses its edge.
+    if (from && to && from === to) continue;
+    // An edge leaves a box from its source's row, and enters one at its target's.
     const source: StandInEnd = from
-      ? { box: from.id, port: "outcome", of: edge.source }
+      ? { box: from, port: "out", of: edge.source }
       : { node: edge.source, handle: edge.sourceHandle };
     const target: StandInEnd = to
-      ? { box: to.id, port: "context", of: edge.source }
+      ? { box: to, port: "in", of: edge.target }
       : { node: edge.target, handle: edge.targetHandle };
-    // Two edges from one context node into a box meet at one port.
+    // Two edges between the same two ends draw once.
     const id = `${JSON.stringify(source)}->${JSON.stringify(target)}`;
     if (seen.has(id)) continue;
     seen.add(id);
@@ -136,8 +206,103 @@ export function scenarioCanvasView<N extends Node, E extends Edge>(
     }
     const x = scenario.box?.x ?? Math.min(...members.map((node) => node.position.x));
     const y = scenario.box?.y ?? Math.min(...members.map((node) => node.position.y));
-    boxes.push({ scenario, x, y, parts: scenarioParts(scenario, nodes, edges) });
+    boxes.push({ scenario, x, y, rows: members.map((node) => node.id) });
   }
 
-  return { nodes: viewNodes, edges: viewEdges, boxes, frames, standIns };
+  return {
+    nodes: viewNodes,
+    edges: viewEdges,
+    boxes,
+    frames,
+    standIns,
+    dots: membershipDots(active, live, memberOf),
+    sets: setOutlines(active, groups),
+    groups,
+  };
+}
+
+/**
+ * Each set's shared context and shared outcomes: the nodes its scenarios list,
+ * on the canvas and outside every box, in the dataflow's order. A node two
+ * groups list is in the first only.
+ */
+export function sharedGroups<N extends Node>(
+  nodes: readonly N[],
+  scenarios: readonly Scenario[],
+  memberOf: ReadonlyMap<string, Scenario>,
+  sets: readonly ScenarioSet[],
+): SharedGroup[] {
+  const lookOf = new Map(sets.map((set) => [set.id, set.shared ?? {}]));
+  const setIds = [...new Set(scenarios.map((s) => s.set).filter((id): id is string => !!id))];
+  const claimed = new Set<string>();
+  const groups: SharedGroup[] = [];
+  for (const set of setIds) {
+    const members = scenarios.filter((s) => s.set === set);
+    for (const kind of ["context", "outcomes"] as const) {
+      const listed = new Set(members.flatMap((s) => s[kind] ?? []));
+      const held = nodes.filter((n) => listed.has(n.id) && !memberOf.has(n.id) && !claimed.has(n.id));
+      if (held.length === 0) continue;
+      held.forEach((n) => claimed.add(n.id));
+      const look = lookOf.get(set)?.[kind] ?? {};
+      groups.push({
+        key: sharedGroupKey(set, kind),
+        set,
+        kind,
+        nodes: held.map((n) => n.id),
+        collapsed: look.collapsed === true,
+        x: look.box?.x ?? Math.min(...held.map((n) => n.position.x)),
+        y: look.box?.y ?? Math.min(...held.map((n) => n.position.y)),
+      });
+    }
+  }
+  return groups;
+}
+
+/** Each scenario set's outline: its scenarios, and its shared groups. */
+export function setOutlines(scenarios: readonly Scenario[], groups: readonly SharedGroup[] = []): ScenarioSetOutline[] {
+  const bySet = new Map<string, ScenarioSetOutline>();
+  for (const scenario of scenarios) {
+    if (!scenario.set) continue;
+    const outline = bySet.get(scenario.set) ?? { set: scenario.set, frames: [], boxes: [], groups: [] };
+    (scenario.collapsed ? outline.boxes : outline.frames).push(scenario.id);
+    bySet.set(scenario.set, outline);
+  }
+  for (const group of groups) bySet.get(group.set)?.groups.push(group.key);
+  return [...bySet.values()];
+}
+
+/**
+ * The circles under each shared node of a set with two scenarios or more: one
+ * per scenario of the set, filled when it lists the node in its context or
+ * outcomes. A node in a collapsed scenario's box draws none.
+ */
+export function membershipDots(
+  scenarios: readonly Scenario[],
+  live: ReadonlySet<string>,
+  memberOf: ReadonlyMap<string, Scenario> = new Map(),
+): MembershipDots[] {
+  const bySet = new Map<string, Scenario[]>();
+  for (const scenario of scenarios) {
+    if (!scenario.set) continue;
+    bySet.set(scenario.set, [...(bySet.get(scenario.set) ?? []), scenario]);
+  }
+  const out = new Map<string, MembershipDots>();
+  for (const members of bySet.values()) {
+    if (members.length < 2) continue;
+    const shared = new Set(members.flatMap((s) => [...(s.context ?? []), ...(s.outcomes ?? [])]));
+    for (const node of shared) {
+      if (!live.has(node) || memberOf.has(node)) continue;
+      const entry = out.get(node) ?? { node, dots: [] };
+      for (const s of members) {
+        entry.dots.push({
+          scenario: s.id,
+          name: s.name,
+          color: s.color,
+          member: (s.context ?? []).includes(node) || (s.outcomes ?? []).includes(node),
+        });
+      }
+      out.set(node, entry);
+    }
+  }
+  return [...out.values()];
 }

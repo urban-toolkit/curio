@@ -12,6 +12,7 @@ export function EditableNodeHeaderLabel({
   keywordHighlighted,
   onLabelCommit,
   onConfigure,
+  lines,
 }: {
   displayLabel: string;
   editable: boolean;
@@ -20,6 +21,10 @@ export function EditableNodeHeaderLabel({
   keywordHighlighted: boolean;
   onLabelCommit: (label: string) => void;
   onConfigure: () => void;
+  /** Wrap the title to at most this many lines, the last cut with an
+   *  ellipsis (a minimized node's chip, which centers it beside the icon); one
+   *  line when not given. */
+  lines?: number;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(displayLabel);
@@ -89,7 +94,10 @@ export function EditableNodeHeaderLabel({
         </button>
       ) : (
         <span
-          className={`${styles.labelText} ${keywordHighlighted ? styles.labelTextHighlighted : ""}`}
+          className={`${styles.labelText} ${lines !== undefined ? styles.labelTextWrapped : ""} ${
+            keywordHighlighted ? styles.labelTextHighlighted : ""
+          }`}
+          style={lines !== undefined ? { WebkitLineClamp: lines } : undefined}
           data-tooltip={displayLabel}
         >
           {displayLabel}

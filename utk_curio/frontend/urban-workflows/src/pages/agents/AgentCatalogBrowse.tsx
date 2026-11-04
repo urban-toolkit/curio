@@ -14,6 +14,9 @@
  * not present in any one of them. One vocabulary across the three catalogs was
  * judged worth more than that distinction, so the button borrows the label and
  * the intro carries the nuance ("makes it available to all your projects").
+ *
+ * The skills the agents read have a catalog page of their own, the Skill
+ * Catalog's. An agent's skills are added and removed in its details here.
  */
 import React, { useEffect, useState } from "react";
 
@@ -276,14 +279,15 @@ export const AgentCatalogBrowse: React.FC = () => {
       {settingsOpen ? <AgentCatalogSettingsModal onClose={() => setSettingsOpen(false)} /> : null}
 
       {/* The same modal the drawer's footer opens. Uploading writes a new
-          definition into the account, so the roster has to be re-read. */}
+          definition into the account, so the roster is read again, and the
+          new agent is selected once it holds it: a selection the roster does
+          not hold yet falls back to the first row. */}
       {importOpen ? (
         <AgentImportModal
           onClose={() => setImportOpen(false)}
           onImported={(dirName) => {
             setImportOpen(false);
-            setSelectedCoord(dirName);
-            void reload();
+            void reload().then(() => setSelectedCoord(dirName));
           }}
         />
       ) : null}

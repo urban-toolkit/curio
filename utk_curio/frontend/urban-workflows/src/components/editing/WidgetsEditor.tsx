@@ -10,6 +10,7 @@ import { WidgetForm } from "./widgets/WidgetForm";
 import { SelectionSection } from "./widgets/SelectionTags";
 import { checkWidgetValue, effectiveValue, type WidgetDef } from "../../utils/widgets/widgetModel";
 import { changeableOnDashboard } from "../../utils/widgets/dashboardControls";
+import { agentMarkClass, type WidgetMarks } from "./agentChangeMarks";
 import type { SelectionTag } from "../../utils/references/selectionTags";
 import type { SelectionView } from "../../hook/useSelectionViews";
 import {
@@ -62,9 +63,8 @@ type WidgetsEditorProps = {
     /** On a dashboard's tile (#1117): a viewer changes the values, except a
      * read-only kind's, and nothing else (no tags to drag, no edits). */
     valuesOnly?: boolean;
-    /** Controls of the node's own, under its widgets' rows: Data Export's
-     * Download, beside the File name it saves under (`controlsComponent`). */
-    controls?: React.ReactNode;
+    /** The widgets an agent's change just set, marked for a moment. */
+    marks?: WidgetMarks | null;
 };
 
 type Editing = { mode: "add" } | { mode: "edit"; name: string } | null;
@@ -95,7 +95,7 @@ function WidgetsEditor({
     customWidgetsCallback,
     disableWidgets,
     valuesOnly = false,
-    controls,
+    marks = null,
 }: WidgetsEditorProps) {
     // Tags, edits and selections are the dataflow's author's, never a viewer's.
     const frozen = disableWidgets || valuesOnly;
@@ -167,7 +167,12 @@ function WidgetsEditor({
                         onCancel={() => setEditing(null)}
                     />
                 ) : (
-                    <div key={widget.name} className={styles.row} data-widget-row={widget.name}>
+                    <div
+                        key={widget.name}
+                        className={marks?.names.has(widget.name) ? `${styles.row} ${agentMarkClass(marks.tint)}` : styles.row}
+                        data-widget-row={widget.name}
+                        data-agent-change={marks?.names.has(widget.name) ? "true" : undefined}
+                    >
                         <span className={styles.rowLabel}>{widget.label || widget.name}</span>
                         <WidgetTag name={widget.name} disabled={frozen} />
                         <span className={styles.rowControl}>
@@ -203,11 +208,6 @@ function WidgetsEditor({
                     </div>
                 ),
             )}
-            {controls ? (
-                <div className={styles.nodeControls} data-node-controls="true">
-                    {controls}
-                </div>
-            ) : null}
             {valuesOnly ? null : editing?.mode === "add" ? (
                 <WidgetForm
                     others={widgets}

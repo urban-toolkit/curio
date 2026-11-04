@@ -1,0 +1,40 @@
+{
+  "skill_name": "nodes",
+  "agent": "agent.curio.node-builder@1",
+  "dataflow": "evals/files/photo-cards.json",
+  "evals": [
+    {
+      "id": 1,
+      "target": {"kind": "node", "node": "photo-cards"},
+      "prompt": "These cards show only the small thumbnails. I want the full photos from image_url as well.",
+      "expected_output": "The answer explains that a Simple View leaves image_url out when thumbnail holds images too, the thumbnail being the small view of the same file, and changes the Lincoln Park photos node (not the view) so the full photos show, for example by renaming image_url to image so both columns show side by side.",
+      "assertions": [
+        "The answer says the view leaves image_url out because thumbnail holds images too, the thumbnail being the small view of the same file.",
+        "The answer makes or describes a change in the Lincoln Park photos node, not in the Simple View, that makes the full photos show: for example renaming image_url to image, so both columns show side by side, or leaving the thumbnail column out.",
+        "The answer does not claim that the Simple View's Image column select alone can show image_url while thumbnail holds images."
+      ]
+    },
+    {
+      "id": 2,
+      "target": {"kind": "node", "node": "survey-cards"},
+      "prompt": "Why does this view show a table instead of photo cards?",
+      "expected_output": "The answer says the photo column holds local file paths, which a Simple View does not count as images: in a column with another name than the image names, an image is a data:image/ URI, an /api/ path, or an http(s) URL ending in an image extension. Any fix changes the Survey photos node to return such values.",
+      "assertions": [
+        "The answer says the photo column holds local file paths, which the view does not count as images.",
+        "The answer says what the view does show as an image in such a column: a data:image/ URI, an /api/ path, or an http(s) URL ending in an image extension such as .jpg.",
+        "The answer's fix is in the Survey photos node (survey-photos): it returns such values, for example data: URIs, or Base64 in an image_content column, and nothing changes in the Simple View."
+      ]
+    },
+    {
+      "id": 3,
+      "dataflow": "docs/examples/dataflows/data-pool-vega-2.json",
+      "prompt": "Add a loader for the Chicago Neighborhoods boundaries that I can later point at another dataset just by dropping it on the node.",
+      "expected_output": "One new Data Loading node whose code loads through its data widget, curio_load_data([!! data !!]), and returns it, with the data widget (a dataset widget) holding data.cityofchicago.neighborhoods, so a dataset dropped on the node later replaces it.",
+      "assertions": [
+        "The answer creates one new node (node.create) of type curio.builtin/data-loading.",
+        "The code it writes loads the dataset through the data widget's reference, curio_load_data([!! data !!]), and returns it; no dataset id is typed into the code.",
+        "The node's data widget, of type dataset, holds data.cityofchicago.neighborhoods as its default or value."
+      ]
+    }
+  ]
+}

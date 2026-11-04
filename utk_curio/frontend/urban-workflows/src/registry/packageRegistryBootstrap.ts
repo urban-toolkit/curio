@@ -8,6 +8,7 @@
 import { loadInstalledPackages } from './packagesClient';
 import { getToken } from '../utils/authApi';
 import { isStandaloneDashboard } from '../standalone/dashboardPayload';
+import { markOpenedFromLink } from './projectPackagesStore';
 import { registryLoadSettled, registryLoadStarted } from './registryReadiness';
 
 function notifyTemplatesAfterPackageRefresh(): void {
@@ -26,8 +27,14 @@ function notifyTemplatesAfterPackageRefresh(): void {
  * Registers every installed package. The per-dataflow scope is applied when the
  * palette is read (``getPaletteNodeTypes``), so this does not need re-running
  * when the open dataflow changes -- only when the INSTALLED set does.
+ *
+ * *openedFromLink* names the open dataflow when the canvas opened it from its
+ * link, another account's (``ProjectLoader``): from then on, while it is open,
+ * every refresh also registers the packages it uses that this account does
+ * not hold, from its owner's copies (``loadInstalledPackages``).
  */
-export function refreshPackageRegistry(): Promise<void> {
+export function refreshPackageRegistry(opts?: { openedFromLink?: string }): Promise<void> {
+  if (opts?.openedFromLink) markOpenedFromLink(opts.openedFromLink);
   // Nothing to fetch without a session. ``/api/packages`` is ``@require_auth``
   // and its response is per-user, so an anonymous call could only ever 401 —
   // and although ``loadInstalledPackages`` suppresses its own warning for that

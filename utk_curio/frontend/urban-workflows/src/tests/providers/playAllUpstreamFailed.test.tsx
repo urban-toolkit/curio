@@ -35,7 +35,7 @@ jest.mock('../../hook/useWorkflowOperations', () => ({
     markNodeStale: jest.fn(),
     markNodeErrored: mockMarkNodeErrored,
     markDirty: jest.fn(),
-    persistDataflowForInstall: jest.fn().mockResolvedValue(undefined),
+    recordOutputs: jest.fn().mockResolvedValue(undefined),
     beginPendingInstall: jest.fn(),
     endPendingInstall: jest.fn(),
     applyRemoveChanges: jest.fn(),
@@ -57,17 +57,9 @@ jest.mock('../../providers/ToastProvider', () => ({
 
 jest.mock('../../providers/CollaborationProvider', () => ({
   useCollab: () => ({
-    enabled: false,
     lockedNodes: {},
-    currentUserId: null,
     lockNode: jest.fn(),
     unlockNode: jest.fn(),
-    signalExecDisplay: jest.fn(),
-    broadcastOutputProduced: jest.fn(),
-    broadcastNodeAdded: jest.fn(),
-    broadcastNodeRemoved: jest.fn(),
-    broadcastEdgeAdded: jest.fn(),
-    broadcastEdgeRemoved: jest.fn(),
     onRemote: jest.fn(),
   }),
 }));
@@ -111,7 +103,7 @@ function makeNode(id: string, label: string = `Node ${id}`) {
     data: {
       nodeId: id,
       nodeType: 'curio.builtin/computation-analysis',
-      packageTemplateLabel: label,
+      title: label,
       output: { code: '', content: '' },
     },
   } as any;

@@ -79,7 +79,9 @@ def node_settings_reads_plainly(ctx: Ctx) -> None:
     # The gear activates on pointerdown/pointerup and swallows the native
     # click (useHeaderIconDragClick), so a plain click does nothing.
     activate_header_icon(cog)
-    expect(page.get_by_role("heading", name="Node settings")).to_be_visible(timeout=15000)
+    # The dialog's heading, exactly: the canvas title is the scene's dataflow
+    # name, "Node settings say what they mean", a heading too.
+    expect(page.get_by_role("heading", name="Node settings", exact=True)).to_be_visible(timeout=15000)
     ctx.beat(600)
 
     # The claim, stated as an assertion as well as a picture: a baseline alone
@@ -236,13 +238,13 @@ def spatial_join_explains_itself(ctx: Ctx) -> None:
          "dataflow collided under one name. The node's Python code writes the "
          "file, curio_export(input_0, [!! file_name !!]): a table as CSV, a "
          "GeoDataFrame as GeoJSON, a raster as GeoTIFF. The node opens on its "
-         "Widgets tab, its File name and one Download button under it, and the "
-         "button names the file once a run wrote it. Its code is on its Code "
-         "tab, and it has a play, as any code node has.",
+         "Widgets tab, which shows only its File name and one Download button "
+         "under it, and the button names the file once a run wrote it. Its code "
+         "is on its Code tab, and it has a play, as any code node has.",
     tests=[
         "src/tests/utils/dataExportTarget.test.ts",
         "src/tests/adapters/node/dataExportBehavior.test.tsx",
-        "src/tests/components/nodeEditorOpensOnWidgets.test.tsx",
+        "src/tests/components/nodeEditorOpensOnControls.test.tsx",
         "sandbox/tests/test_data_export_files.py",
     ],
     # The one node carrying a Download button, so the clip cannot land on one
@@ -255,7 +257,7 @@ def spatial_join_explains_itself(ctx: Ctx) -> None:
     example="dataflows/default-workflow.json",
 )
 def data_export_is_one_button(ctx: Ctx) -> None:
-    from ..utils import drag_builtin_to_canvas, node_locator, wait_for_node_code
+    from ..utils import assert_shows_only_controls, drag_builtin_to_canvas, node_locator, wait_for_node_code
 
     ctx.say("Data Export", "Its File name and one Download button, on its Widgets tab.")
     node_id = drag_builtin_to_canvas(ctx.page, "#tile-data-export", at=(260, 200))
@@ -273,9 +275,11 @@ def data_export_is_one_button(ctx: Ctx) -> None:
         re.compile(r"\bactive\b"), timeout=20000,
     )
 
-    # On the Widgets tab: the File name, and under it the one Download button.
-    panel = node.locator("[data-widgets-panel]")
+    # On the Widgets tab, alone: the File name, and under it the one Download
+    # button.
+    panel = node.locator("[data-widget-controls]")
     expect(panel.get_by_text("File name", exact=True)).to_be_visible(timeout=20000)
+    assert_shows_only_controls(ctx.page, node_id)
     download = panel.locator('[data-node-controls] button[aria-label^="Download"]')
     expect(download).to_have_count(1)
     expect(node.locator('button[aria-label^="Download"]')).to_have_count(1)

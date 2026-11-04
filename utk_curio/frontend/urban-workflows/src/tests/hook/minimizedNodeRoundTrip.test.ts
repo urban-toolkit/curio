@@ -48,6 +48,8 @@ function spec() {
             provenance_id: "Minimized",
             nodes: [
                 node("folded", 0, { minimized: true, width: 640, height: 400 }),
+                // Its chip resized with its handle (#1235).
+                node("chip", 3000, { minimized: true, width: 640, height: 400, minimizedWidth: 180, minimizedHeight: 72 }),
                 node("open", 1000),
                 // Never written, but a hand-edited spec may say it.
                 node("unfolded", 2000, { minimized: false }),
@@ -81,7 +83,23 @@ describe("a minimized node across a save and a load", () => {
         // A save writes it on the folded node alone.
         const saved = TrillGenerator.generateTrill(loaded.nodes, loaded.edges, "Minimized");
         const written = saved.dataflow.nodes.map((node: any) => [node.id, "minimized" in node ? node.minimized : "absent"]);
-        expect(written).toEqual([["folded", true], ["open", "absent"], ["unfolded", "absent"]]);
+        expect(written).toEqual([["folded", true], ["chip", true], ["open", "absent"], ["unfolded", "absent"]]);
         expect(saved.dataflow.nodes[0]).toMatchObject({ width: 640, height: 400 });
+    });
+
+    test("a resized chip loads and saves its size beside the size it opens back to (#1235)", () => {
+        const { result } = renderHook(() => useCode());
+        let loaded: { nodes: any[]; edges: any[] } = { nodes: [], edges: [] };
+        act(() => {
+            loaded = result.current.loadTrill(spec());
+        });
+        const chip = loaded.nodes.find((node) => node.id === "chip").data;
+        expect([chip.minimizedWidth, chip.minimizedHeight, chip.nodeWidth, chip.nodeHeight]).toEqual([180, 72, 640, 400]);
+
+        const saved = TrillGenerator.generateTrill(loaded.nodes, loaded.edges, "Minimized");
+        const byId = Object.fromEntries(saved.dataflow.nodes.map((node: any) => [node.id, node]));
+        expect(byId.chip).toMatchObject({ minimized: true, width: 640, height: 400, minimizedWidth: 180, minimizedHeight: 72 });
+        // A chip never resized writes no chip size.
+        expect("minimizedWidth" in byId.folded).toBe(false);
     });
 });

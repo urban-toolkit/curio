@@ -243,8 +243,9 @@ class TestAttachedRunOrder:
         # The provider receives the same turn as slots, in the same order.
         slots = calls[0][0]["slots"]
         kinds = [slot["kind"] for slot in slots]
-        assert kinds[:4] == ["preamble", "instruction", "configuration", "tool-protocol"]
-        assert kinds[4:] and set(kinds[4:]) == {"runtime"}
+        # It names no skills, so its chat lists every skill, after its preamble.
+        assert kinds[:5] == ["preamble", "skill-catalog", "instruction", "configuration", "tool-protocol"]
+        assert kinds[5:] and set(kinds[5:]) == {"runtime"}
         assert "\n\n".join(slot["text"] for slot in slots) == system
         assert "- Hazard: a natural hazard." in system
         # A key no setting defines is skipped with a warning, not an error.

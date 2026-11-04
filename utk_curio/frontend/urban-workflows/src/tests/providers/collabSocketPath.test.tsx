@@ -22,7 +22,7 @@ jest.mock("../../utils/backendUrl", () => ({
 jest.mock("../../utils/authApi", () => ({
   getToken: () => "tok",
   authApi: {
-    getPublicConfig: () => Promise.resolve({ enable_collab: true }),
+    getPublicConfig: () => Promise.resolve({}),
     getMe: () => Promise.resolve({ id: 1 }),
   },
 }));

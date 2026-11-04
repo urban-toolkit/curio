@@ -1,0 +1,146 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+import { skillServes, skillsApi, type SkillCard } from "../../services/agents";
+
+/** Which skills the rail shows: all, or the core ones. */
+export type SkillBrowseFilter = "all" | "core";
+
+export interface SkillCatalogBrowseState {
+  loading: boolean;
+  /** Every skill the account sees, unfiltered. */
+  skills: SkillCard[];
+  /** The skills after the search and the rail's filter, by name. */
+  filtered: SkillCard[];
+  coreCount: number;
+  /** `undefined` = nothing chosen yet (show the first); `null` = closed. */
+  selectedName: string | null | undefined;
+  setSelectedName: (name: string | null | undefined) => void;
+  selectedSkill: SkillCard | null;
+  /** Read the skills again: an import or a removal changed them, or who uses them. */
+  reload: () => Promise<void>;
+  /** The skill an action is running on, or null. */
+  busyName: string | null;
+  /** Why the last action failed, as a sentence about the skill. */
+  actionError: string | null;
+  dismissActionError: () => void;
+  onPublish: (skill: SkillCard) => Promise<void>;
+  onUnpublish: (skill: SkillCard) => Promise<void>;
+  /** Delete a skill this account holds, and take it off its agents. */
+  onRemove: (skill: SkillCard) => Promise<void>;
+}
+
+/** What a skill's action is, as its failure names it. */
+type SkillVerb = "publish" | "unpublish" | "remove";
+
+/** Whether *skill* matches the search *query*: its name, its description or
+ *  what it serves. */
+export function matchesSkillSearch(skill: SkillCard, query: string): boolean {
+  const wanted = query.trim().toLowerCase();
+  if (!wanted) return true;
+  return [skill.name, skill.description, ...skillServes(skill)].some((text) =>
+    text.toLowerCase().includes(wanted),
+  );
+}
+
+/**
+ * The skills the Skill Catalog page lists, read once on arrival so the rail
+ * can count them. A failure is logged and leaves the list empty.
+ */
+export function useSkillCatalogBrowse(search: string, filter: SkillBrowseFilter): SkillCatalogBrowseState {
+  const [skills, setSkills] = useState<SkillCard[]>([]);
+  const [loading, setLoading] = useState(true);
+  // Tri-state, as the agents' selection is: `undefined` falls back to the
+  // first row, `null` is a drawer the user closed.
+  const [selectedName, setSelectedName] = useState<string | null | undefined>(undefined);
+
+  const reload = useCallback(async () => {
+    try {
+      const resp = await skillsApi.list();
+      setSkills(resp.skills ?? []);
+    } catch (err) {
+      console.warn("[skill-catalog] could not read the skills:", err);
+      setSkills([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  const filtered = useMemo(
+    () =>
+      skills
+        .filter((skill) => (filter === "core" ? skill.core : true))
+        .filter((skill) => matchesSkillSearch(skill, search))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [skills, filter, search],
+  );
+
+  const selectedSkill = useMemo(() => {
+    if (selectedName === null) return null;
+    if (selectedName != null) return filtered.find((skill) => skill.name === selectedName) ?? null;
+    return filtered[0] ?? null;
+  }, [filtered, selectedName]);
+
+  // A chosen skill that leaves the list drops back to the first row; a
+  // closed drawer stays closed.
+  useEffect(() => {
+    if (selectedName == null) return;
+    if (!filtered.some((skill) => skill.name === selectedName)) setSelectedName(undefined);
+  }, [filtered, selectedName]);
+
+  const [busyName, setBusyName] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  /** Run one action, then read the skills again; a failure reads as a
+   *  sentence about the skill, over the cards, as an agent's does. */
+  const run = useCallback(
+    async (verb: SkillVerb, skill: SkillCard, action: () => Promise<unknown>) => {
+      setBusyName(skill.name);
+      setActionError(null);
+      try {
+        await action();
+        await reload();
+      } catch (err) {
+        const detail = err instanceof Error && err.message ? err.message : "unknown error";
+        setActionError(`Couldn't ${verb} ${skill.name}: ${detail}`);
+      } finally {
+        setBusyName(null);
+      }
+    },
+    [reload],
+  );
+
+  const onPublish = useCallback(
+    (skill: SkillCard) => run("publish", skill, () => skillsApi.publishSkill(skill.name)),
+    [run],
+  );
+  const onUnpublish = useCallback(
+    (skill: SkillCard) => run("unpublish", skill, () => skillsApi.unpublishSkill(skill.name)),
+    [run],
+  );
+  const onRemove = useCallback(
+    (skill: SkillCard) => run("remove", skill, () => skillsApi.removeOwnSkill(skill.name)),
+    [run],
+  );
+  const dismissActionError = useCallback(() => setActionError(null), []);
+
+  return {
+    loading,
+    skills,
+    filtered,
+    coreCount: skills.filter((skill) => skill.core).length,
+    selectedName,
+    setSelectedName,
+    selectedSkill,
+    reload,
+    busyName,
+    actionError,
+    dismissActionError,
+    onPublish,
+    onUnpublish,
+    onRemove,
+  };
+}

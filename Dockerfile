@@ -54,8 +54,8 @@ RUN pip install --no-input --no-cache-dir -r /ci-requirements.txt
 FROM ci_deps_${CURIO_CI_SETUP} AS runtime_base
 
 COPY curio.py ./
-# pyproject.toml / MANIFEST.in / setup.py are what carry agents/, every file
-# of every folder in it, into an sdist and a wheel, and setup.py copies the
+# pyproject.toml / MANIFEST.in / setup.py are what carry agents/ and skills/,
+# every file of every folder in them, into an sdist and a wheel, and setup.py copies the
 # package.json and package-lock.json above into the wheel.
 # tests/test_agents/test_prompt_assets.py and
 # tests/test_scripts/test_launcher_sandbox_nodejs.py assert against these
@@ -64,8 +64,10 @@ COPY curio.py ./
 COPY pyproject.toml MANIFEST.in setup.py ./
 COPY scripts/ scripts/
 # The Agent Catalog Curio ships, one folder each: the agents, with their own
-# prompts, and the base entry, with the pages they share.
+# prompts, and the base entry, with the pages they share. Beside it, the
+# skills the agents read, one folder each.
 COPY agents/ agents/
+COPY skills/ skills/
 COPY packages/ packages/
 COPY datasets/ datasets/
 # The Discovery Catalog's source manifests. Needed for the same reason

@@ -14,11 +14,18 @@ And a spec names the dataset its inputs are stacked in by its chip,
 ``"data": {"name": "[!! inputs !!]"}``, as every other input is a chip: the
 bare name draws the same, so only reading the specs as written finds it.
 
+And a spec's description says what the spec holds. vega.json's and
+data-pool-vega.json's bar charts kept Vega-Lite's gallery description, "A
+simple bar chart with embedded data.", though their rows come from the loading
+node before them. Asked to add two bars to that chart, a Node Builder took the
+description's word and wrote the rows into the spec.
+
 The specs are read from the example dataflows, their walkthroughs, the default
-preamble as agents read it, and the worked examples the builder agents are
-shown (the base entry's ``examples.md``), which include example 09's scatter. A
+preamble and the skills Curio ships as agents read them, and the worked
+examples the builder agents are shown (the base entry's ``examples.md``),
+which include example 09's scatter. A
 dataflow's chart is a Vega-Lite node, or a node of a shipped template that
-draws with the Vega-Lite grammar, as Scout's charts do.
+draws with the Vega-Lite grammar, as the Vega-Lite package's charts do.
 """
 from __future__ import annotations
 
@@ -30,7 +37,7 @@ from pathlib import Path
 import pytest
 
 from utk_curio.backend.app.agents.application.turns import examples as worked_examples
-from utk_curio.backend.app.agents.domain import builtin
+from utk_curio.backend.app.agents.domain import agent_text, builtin, skills
 from utk_curio.backend.app.agents.evaluation.fixtures import EXAMPLES_ROOT, example_paths
 
 VEGA = "curio.builtin/vis-vega"
@@ -54,8 +61,8 @@ def _flow(path: Path) -> dict:
 
 def _vega_lite_types() -> set:
     """The node types that draw a Vega-Lite spec: every shipped template whose
-    grammar is ``vega-lite``, the Vega-Lite node's and Scout's
-    charts, read off the manifests."""
+    grammar is ``vega-lite``, the Vega-Lite node's and the Vega-Lite
+    package's charts, read off the manifests."""
     types = {VEGA}
     for path in sorted((REPO_ROOT / "packages").glob("*/manifest.json")):
         manifest = json.loads(path.read_text(encoding="utf-8"))
@@ -99,6 +106,8 @@ def _shipped_specs():
     for path in sorted(Path(EXAMPLES_ROOT).glob("*.md")):
         yield from _block_specs(path.read_text(encoding="utf-8"), path.name)
     yield from _block_specs(builtin.read_page(builtin.PREAMBLE_FILE, wanted_by="the Vega-Lite spec test"), "default preamble")
+    for skill in skills.shipped_skills():
+        yield from _block_specs(agent_text.skill_text(skill.name), f"skill {skill.name}")
     for example in worked_examples.used_examples():
         yield from _node_specs(_flow_of(example.spec), f"worked example {example.key}")
 
@@ -162,9 +171,39 @@ class TestHollowPoints:
         assert {
             "09-heterogeneous-data-linked-views.json",
             "09-heterogeneous-data-linked-views.md",
-            "default preamble",
+            "skill interaction-edges",
             "worked example 09-heterogeneous-data-linked-views",
         } <= brushed_points
+
+
+EMBEDDED = re.compile(r"\b(embedded|inline) data\b", re.I)
+
+
+def _holds_rows(spec) -> bool:
+    """Whether *spec* holds rows of its own: ``values`` in any ``data`` of
+    its views or lookups, or a ``datasets`` entry."""
+    if isinstance(spec, list):
+        return any(_holds_rows(item) for item in spec)
+    if not isinstance(spec, dict):
+        return False
+    data = spec.get("data")
+    if (isinstance(data, dict) and "values" in data) or spec.get("datasets"):
+        return True
+    return any(_holds_rows(value) for value in spec.values())
+
+
+class TestADescriptionSaysWhatTheSpecHolds:
+    def test_no_spec_says_its_data_is_embedded_when_it_holds_none(self):
+        offenders = [where for where, spec in SHIPPED
+                     if EMBEDDED.search(str(spec.get("description") or "")) and not _holds_rows(spec)]
+        assert offenders == [], (
+            "these specs say their data is embedded, but they hold no rows: the chart draws "
+            f"the table its input hands it. In: {offenders}"
+        )
+
+    def test_the_scan_reads_the_bar_charts_of_vega_and_data_pool_vega(self):
+        read = {where.split(" node ")[0] for where, _ in SHIPPED}
+        assert {"vega.json", "data-pool-vega.json"} <= read
 
 
 def _written_specs():
@@ -211,7 +250,7 @@ def _dataset_names(spec) -> list:
 class TestTheStackedDatasetIsNamedByItsChip:
     def test_no_shipped_spec_names_the_dataset_inputs_bare(self):
         """Read as written, each chip standing on its own held by a string of
-        its text (``with_chip_placeholders``): Scout's fifteen charts and their
+        its text (``with_chip_placeholders``): the Vega-Lite package's fifteen charts and their
         copies in the shipped dataflows name the dataset by its chip, and no
         spec names it bare. Every spec reads so, or the scan would pass over
         it."""
@@ -229,7 +268,7 @@ class TestTheStackedDatasetIsNamedByItsChip:
             chipped.extend(where for name in names if name == "[!! inputs !!]")
         assert unread == [], f"these specs do not read as JSON, so their datasets went unchecked: {unread}"
         assert bare == [], f"these specs name the dataset inputs bare, not as [!! inputs !!]: {bare}"
-        assert len([where for where in chipped if where.startswith("curio.scout@1/")]) == 15, chipped
+        assert len([where for where in chipped if where.startswith("curio.vega-lite@1/")]) == 15, chipped
         assert len(chipped) >= 34, chipped
 
 

@@ -324,6 +324,8 @@ def remove_dataset_from_defaults(dataset_id: str):
 @require_auth
 @_map_catalog_errors
 def uninstall_dataset(dataflow_id: str, dataset_id: str):
+    """Remove from project: the owner's, or an invited editor's, which takes
+    the dataset out of the dataflow and leaves the owner's store alone."""
     payload = _service().uninstall_dataset(dataflow_id, dataset_id)
     return jsonify(payload), 200
 

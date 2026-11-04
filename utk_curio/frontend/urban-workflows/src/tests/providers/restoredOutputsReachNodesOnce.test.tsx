@@ -82,18 +82,9 @@ jest.mock('../../providers/ToastProvider', () => ({
 
 jest.mock('../../providers/CollaborationProvider', () => ({
   useCollab: () => ({
-    enabled: false,
     lockedNodes: {},
-    currentUserId: null,
     lockNode: jest.fn(),
     unlockNode: jest.fn(),
-    signalExecDisplay: jest.fn(),
-    broadcastOutputProduced: jest.fn(),
-    broadcastNodeAdded: jest.fn(),
-    broadcastNodeRemoved: jest.fn(),
-    broadcastNodeUpdated: jest.fn(),
-    broadcastEdgeAdded: jest.fn(),
-    broadcastEdgeRemoved: jest.fn(),
     onRemote: jest.fn(),
   }),
 }));
@@ -356,7 +347,8 @@ describe('a load hands each restored output to each node below it once', () => {
     open('dataflow');
     await settle();
 
-    expect(mockGetShared).toHaveBeenCalledWith(PROJECT_ID);
+    // A canvas asks for the results an invited editor's runs left it with.
+    expect(mockGetShared).toHaveBeenCalledWith(PROJECT_ID, { lastResults: true });
     expectEachRestoredOutputOnce();
   });
 
@@ -390,7 +382,7 @@ describe('what the load still does', () => {
       api.onNodesChange([{ id: SUMMARY, type: 'select', selected: true }]);
     });
     await act(async () => {
-      scenarioActions.duplicate(false);
+      scenarioActions.duplicate();
     });
     await wait(50);
 
@@ -453,7 +445,7 @@ async function duplicate(id: string) {
     api.onNodesChange([{ id, type: 'select', selected: true }]);
   });
   await act(async () => {
-    scenarioActions.duplicate(false);
+    scenarioActions.duplicate();
   });
   await wait(50);
   const copies = api.nodes.filter((n) => !present.has(n.id));

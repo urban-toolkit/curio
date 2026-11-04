@@ -22,6 +22,12 @@ Key invariants enforced here (the point of this module):
   and never from the agent's folder (``agent_text.page_file``).
 * ``catalog`` takes exactly ``listed`` and ``order``. It is parsed here for
   every manifest but counts only for the agents Curio ships (``builtin``).
+* ``skills`` names the skills the agent's runs may hold, each by its name
+  (``skills.is_name``), at most once; without it, every skill Curio ships. A
+  capability's own ``skills`` are handed to every run of it, and the
+  instruction's (``prompts.instruction.skills``) to every run of the
+  instruction: the agent's chat, and each capability with no instruction of
+  its own. No other prompt names skills.
 * A manifest of ``kind`` ``base`` is the base entry Curio ships, no agent:
   it never loads as one.
 
@@ -38,7 +44,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from utk_curio.backend.app.agents.domain import agent_text
+from utk_curio.backend.app.agents.domain import agent_text, skills as skill_format
 from utk_curio.common import shared_constants
 
 # ── identifier grammars ─────────────────────────────────────────────────────
@@ -87,6 +93,9 @@ SHARED_PROMPT_FOLDER = "prompts"
 _CATALOG_KEYS = ("listed", "order")
 #: What a manifest that loads as an agent says it is (``kind``), when it says.
 _KIND_AGENT = "agent"
+#: The prompt an agent's chat runs, and each capability with no instruction
+#: of its own: the only prompt that names skills.
+_INSTRUCTION = "instruction"
 
 
 class AgentManifestError(ValueError):
@@ -139,6 +148,24 @@ def _require_bool(raw: object, *, where: str) -> bool:
     return raw
 
 
+def _skill_names(raw: object, *, where: str) -> tuple[str, ...]:
+    """A ``skills`` list: skill names, each a name as the Agent Skills format
+    has it (``skills.is_name``) and each once."""
+    if not isinstance(raw, list):
+        raise AgentManifestError(f"{where} must be a list of skill names")
+    names: list[str] = []
+    for i, name in enumerate(raw):
+        if not skill_format.is_name(name):
+            raise AgentManifestError(
+                f"{where}[{i}] {name!r} is no skill's name: 1 to {skill_format.NAME_MAX} lowercase letters, "
+                "digits and single hyphens"
+            )
+        if name in names:
+            raise AgentManifestError(f"{where}: duplicate skill {name!r}")
+        names.append(name)
+    return tuple(names)
+
+
 def _validate_asset_path(raw: object, *, where: str) -> str:
     path = _require_str(raw, where=where)
     if path.startswith(SHARED_PROMPT_PREFIX):
@@ -169,7 +196,8 @@ class CapabilityDeclaration:
 
     ``label`` names it in the agent details window, and a mode's
     ``worked_examples`` says whether its runs get worked examples; both count
-    for the agents Curio ships only.
+    for the agents Curio ships only. ``skills`` are the skills every run of
+    the capability is handed, its own procedures.
     """
 
     id: str
@@ -179,6 +207,7 @@ class CapabilityDeclaration:
     required_config: tuple[str, ...] = ()
     label: str | None = None
     worked_examples: bool = False
+    skills: tuple[str, ...] = ()
 
     @classmethod
     def from_json(cls, raw: object, *, where: str) -> "CapabilityDeclaration":
@@ -207,9 +236,10 @@ class CapabilityDeclaration:
                     "says whether its runs get worked examples; any other run follows the "
                     "agent's workedExamples"
                 )
+        own_skills = _skill_names(raw["skills"], where=f"{where}.skills") if "skills" in raw else ()
         return cls(id=cap_id, contract_version=contract_version, instruction=instruction,
                    reads=lists["reads"], required_config=lists["requiredConfig"],
-                   label=label, worked_examples=bool(worked))
+                   label=label, worked_examples=bool(worked), skills=own_skills)
 
 
 @dataclass(frozen=True)
@@ -220,6 +250,8 @@ class PromptAsset:
     ``runs`` says when a prompt that is neither the preamble, the instruction
     nor a mode's runs, in the words the agent details window shows (the
     Node Builder's Autark prompt); it counts for the agents Curio ships only.
+    ``skills`` are the skills every run of the instruction is handed, the
+    procedures it follows; only the instruction names them.
     """
 
     name: str
@@ -227,6 +259,7 @@ class PromptAsset:
     sha256: str | None
     variables: list[str]
     runs: str | None = None
+    skills: tuple[str, ...] = ()
 
     @property
     def shared(self) -> str | None:
@@ -258,7 +291,9 @@ class PromptAsset:
         runs = raw.get("runs")
         if runs is not None:
             runs = _require_str(runs, where=f"{where}.runs")
-        return cls(name=name, path=path, sha256=sha_raw or None, variables=list(vars_raw), runs=runs)
+        own_skills = _skill_names(raw["skills"], where=f"{where}.skills") if "skills" in raw else ()
+        return cls(name=name, path=path, sha256=sha_raw or None, variables=list(vars_raw), runs=runs,
+                   skills=own_skills)
 
 
 @dataclass(frozen=True)
@@ -397,6 +432,9 @@ class AgentManifest:
     # examples (a mode's capability decides for itself). Read only for the
     # agents Curio ships (builtin.gets_worked_examples).
     worked_examples: bool = False
+    # The skills the agent's runs may hold, by name; None, for a manifest
+    # that names none, is every skill Curio ships, and () none.
+    skills: tuple[str, ...] | None = None
 
     @property
     def major(self) -> int:
@@ -414,6 +452,13 @@ class AgentManifest:
 
     def capability(self, capability_id: str) -> CapabilityDeclaration | None:
         return next((c for c in self.capabilities if c.id == capability_id), None)
+
+    @property
+    def instruction_skills(self) -> tuple[str, ...]:
+        """The skills every run of the instruction is handed: its chat, and
+        each capability with no instruction of its own."""
+        instruction = self.prompts.get(_INSTRUCTION)
+        return instruction.skills if instruction is not None else ()
 
     def delegates(self, agent_id: str, capability_id: str) -> bool:
         """Whether this agent delegates *capability_id* to *agent_id*."""
@@ -571,11 +616,17 @@ def parse_agent_manifest(raw: object, *, where: str = "manifest") -> AgentManife
                 f"{where}.prompts.{name}.runs: the preamble, the instruction and a mode's prompt "
                 "say no runs; only another prompt says when it runs"
             )
+        if asset.skills and name != _INSTRUCTION:
+            raise AgentManifestError(
+                f"{where}.prompts.{name}.skills: only the instruction names the skills its runs are "
+                "handed; a mode's own are its capability's skills"
+            )
 
     catalog_raw = raw.get("catalog")
     catalog = None if catalog_raw is None else CatalogPlacement.from_json(catalog_raw, where=f"{where}.catalog")
     worked_examples = raw.get("workedExamples", False)
     _require_bool(worked_examples, where=f"{where}.workedExamples")
+    agent_skills = _skill_names(raw["skills"], where=f"{where}.skills") if "skills" in raw else None
 
     targets_raw = raw.get("compatibleTargets", [])
     if not isinstance(targets_raw, list):
@@ -664,6 +715,7 @@ def parse_agent_manifest(raw: object, *, where: str = "manifest") -> AgentManife
         delegate_scopes=delegate_scopes,
         catalog=catalog,
         worked_examples=worked_examples,
+        skills=agent_skills,
     )
 
 

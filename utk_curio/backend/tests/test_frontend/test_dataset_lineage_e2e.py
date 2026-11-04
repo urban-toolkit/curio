@@ -12,8 +12,8 @@ The test makes one user gesture, a single edge from a dataset's loader node to a
 Data Transformation node, and checks three surfaces that must all follow it:
 
 * **The panel, with nothing saved.** "Consumed by (0)" becomes "Consumed by
-  (1)". Nothing was written to the server between the two reads, so the change
-  can only have come through the canvas. This is also where the ``#141``
+  (1)". That section is recomputed from the open canvas, never fetched, so the
+  change can only have come through the canvas. This is also where the ``#141``
   invariant is visible for free: before the edge, a dropped-but-unconnected
   loader is the dataset's *source*, not a consumer, so it registers no usage.
 * **The catalog card's connection badge.** ``DatasetConnectionBadge`` renders
@@ -71,6 +71,7 @@ from .utils import (
     save_workflow_test_screenshot,
     require_owner_view,
     stub_login_and_enter_workflow,
+    wait_for_changes_kept,
 )
 
 if TYPE_CHECKING:
@@ -232,6 +233,26 @@ def _close_details_and_drawer(page):
     _close_drawer(page)
 
 
+def _wait_for_server_consumer(page, server: str, token: str, node_id: str, timeout_ms: int = 20000) -> None:
+    """Wait until ``GET /api/datasets/<id>/usage`` names *node_id* as a consumer.
+
+    The route reads the dataflow the server keeps, so this is the moment a
+    panel opened next shows the consumer in its usage row.
+    """
+    usage: list = []
+    waited = 0
+    while waited <= timeout_ms:
+        usage = api_json(f"{server}/api/datasets/{DATASET_ID}/usage", token)["dataflows"]
+        if any(node.get("nodeId") == node_id for flow in usage for node in flow.get("nodes", [])):
+            return
+        page.wait_for_timeout(250)
+        waited += 250
+    raise AssertionError(
+        f"the server did not name {node_id} as the dataset's consumer within "
+        f"{timeout_ms / 1000:.0f} s: {usage}"
+    )
+
+
 def test_wiring_a_consumer_grows_dataset_lineage(
     app_frontend: "FrontendPage",
     current_server: str,
@@ -308,9 +329,19 @@ def test_wiring_a_consumer_grows_dataset_lineage(
     edge_id = connect_nodes(page, loader_id, transform_id)
     assert edge_id == f"reactflow__edge-{loader_id}out-{transform_id}in"
 
-    # 5. AFTER, WITH NOTHING SAVED. THE POINT: no request went out between step 3
-    #    and here, so a consumer appearing now can only have come through
-    #    FlowContext -> useDatasetLineage -> the panel.
+    # The tab keeps each change on the server as it is made, through the
+    # dataflow's doc, with no save, and the usage row the frame below shows is
+    # fetched from that copy when the panel opens. Opened before the edge got
+    # there, the row still read "Produced here"; opened after, it named the
+    # consumer; and the frame recorded whichever the run met. So the panel opens
+    # once the server names the consumer.
+    wait_for_changes_kept(page)
+    _wait_for_server_consumer(page, current_server, token, transform_id)
+
+    # 5. AFTER, WITH NOTHING SAVED. THE POINT: the Consumed by section is
+    #    recomputed from the open canvas on every render, so a consumer appearing
+    #    there can only have come through FlowContext -> useDatasetLineage -> the
+    #    panel.
     card, center, sidebar = _open_lineage_tab(page)
     expect(center.get_by_text("Consumed by (1)")).to_be_visible(timeout=10000)
     consumer = center.locator("article").filter(has_text=TRANSFORM_LABEL)
@@ -331,6 +362,11 @@ def test_wiring_a_consumer_grows_dataset_lineage(
     # Same hook, different component, different subtree: the card behind the
     # overlay now advertises one downstream connection.
     expect(card.get_by_text("1↓", exact=True)).to_be_visible(timeout=10000)
+    # And the fetched usage row names the same consumer, so the frame shows one
+    # state in every run.
+    usage_section = center.locator('section[aria-label="Projects using this dataset"]')
+    expect(usage_section.get_by_text("Produced here")).to_have_count(0)
+    expect(usage_section).to_contain_text(f"Consumed by {TRANSFORM_LABEL}")
 
     # Visual baseline for the panel nobody hand-checks otherwise. Compared at the
     # suite's default tolerance (10% of pixels, 30/255 per channel); the helper

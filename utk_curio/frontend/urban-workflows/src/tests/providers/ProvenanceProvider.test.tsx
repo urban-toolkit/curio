@@ -1,6 +1,16 @@
 import React from 'react';
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
+
+jest.mock('../../api/historyApi', () => ({
+    historyApi: {
+        noteRun: jest.fn().mockResolvedValue({}),
+        noteEdit: jest.fn().mockResolvedValue({}),
+    },
+}));
+
 import ProvenanceProvider, { useProvenanceContext, NodeExecRecord } from '../../providers/ProvenanceProvider';
+import { historyApi } from '../../api/historyApi';
+import { setServerHistory, type ServerHistory } from '../../providers/history/serverHistory';
 
 const wrapper = ({ children }: { children: React.ReactNode }) =>
     React.createElement(ProvenanceProvider, null, children);
@@ -187,5 +197,97 @@ describe('a dataflow loaded with its node histories', () => {
         expect(result.current.selectedParentExecRef.current).toEqual({ n1: 9, n2: 1 });
         act(() => { result.current.nodeExecProv('t', 't', 'wf', 'n1', [], [], 'z'); });
         expect(result.current.provenanceGraphNodes.n1[3].parentId).toBe(9);
+    });
+});
+
+// A canvas bound to the dataflow's doc: the server keeps the history, and the
+// tab sends it each run and each edit made in a node's body.
+describe('on a canvas whose history the server keeps', () => {
+    const noteRun = historyApi.noteRun as jest.Mock;
+    const noteEdit = historyApi.noteEdit as jest.Mock;
+    const START = '2026-10-28T14:05:03.000Z';
+    const END = '2026-10-28T14:05:04.000Z';
+
+    function server(reads = true): ServerHistory & { whenKept: jest.Mock } {
+        return { projectId: 'proj', reads: () => reads, whenKept: jest.fn().mockResolvedValue(true), codeOf: () => undefined };
+    }
+
+    afterEach(() => {
+        act(() => setServerHistory(null));
+        noteRun.mockClear();
+        noteEdit.mockClear();
+    });
+
+    it("sends a run after the tab's changes are kept, and files nothing here", async () => {
+        const { result } = renderHook(() => useProvenanceContext(), { wrapper });
+        const bound = server();
+        act(() => setServerHistory(bound));
+        act(() => {
+            result.current.nodeExecProv(START, END, 'wf', 'node-1', ['DATAFRAME'], ['VALUE'], 'return 1');
+        });
+        await waitFor(() => expect(noteRun).toHaveBeenCalledTimes(1));
+        expect(noteRun).toHaveBeenCalledWith('proj', 'node-1', {
+            code: 'return 1', inputs: ['DATAFRAME'], outputs: ['VALUE'], startTime: START, endTime: END,
+        });
+        expect(bound.whenKept).toHaveBeenCalled();
+        expect(bound.whenKept.mock.invocationCallOrder[0]).toBeLessThan(noteRun.mock.invocationCallOrder[0]);
+        expect(result.current.provenanceGraphNodes).toEqual({});
+    });
+
+    it("sends an edit made in a node's body under its label, and an agent's change not at all", async () => {
+        const { result } = renderHook(() => useProvenanceContext(), { wrapper });
+        act(() => setServerHistory(server()));
+        act(() => {
+            result.current.nodeEditProv('edit-1', 'code 1', 'Remove building_id 12', 'start');
+            result.current.agentEditProv('py-1', 'x = 2', 'Node Builder', 'x = 1');
+        });
+        await waitFor(() => expect(noteEdit).toHaveBeenCalledTimes(1));
+        expect(noteEdit).toHaveBeenCalledWith('proj', 'edit-1', 'Remove building_id 12');
+        expect(noteRun).not.toHaveBeenCalled();
+        expect(result.current.provenanceGraphNodes).toEqual({});
+    });
+
+    it("a watcher's tab sends nothing and files nothing", async () => {
+        const { result } = renderHook(() => useProvenanceContext(), { wrapper });
+        const bound = server(false);
+        act(() => setServerHistory(bound));
+        act(() => {
+            result.current.nodeExecProv(START, END, 'wf', 'node-1', [], [], 'return 1');
+            result.current.nodeEditProv('edit-1', 'code 1', 'Remove building_id 12');
+        });
+        await act(async () => {
+            await new Promise((resolve) => setTimeout(resolve, 10));
+        });
+        expect(bound.whenKept).not.toHaveBeenCalled();
+        expect(noteRun).not.toHaveBeenCalled();
+        expect(noteEdit).not.toHaveBeenCalled();
+        expect(result.current.provenanceGraphNodes).toEqual({});
+    });
+
+    it('binding sends the runs no save carried, and what was filed here goes', async () => {
+        const { result } = renderHook(() => useProvenanceContext(), { wrapper });
+        act(() => { result.current.nodeExecProv(START, END, 'wf', 'carried', [], [], 'saved run'); });
+        // A save carries the history as it stands now.
+        expect(result.current.getAllNodeProvenance().carried).toHaveLength(1);
+        act(() => {
+            result.current.nodeExecProv(START, END, 'wf', 'after', ['DATAFRAME'], ['VALUE'], 'later run');
+            result.current.nodeEditProv('after', 'later edit', 'Remove building_id 3');
+        });
+        act(() => setServerHistory(server()));
+        await waitFor(() => expect(noteRun).toHaveBeenCalledTimes(1));
+        expect(noteRun).toHaveBeenCalledWith('proj', 'after', expect.objectContaining({ code: 'later run' }));
+        expect(noteEdit).not.toHaveBeenCalled();
+        expect(result.current.provenanceGraphNodes).toEqual({});
+        expect(result.current.selectedParentExecRef.current).toEqual({});
+    });
+
+    it('the entry this tab chose stays the one in use while the node holds the code it left', () => {
+        const { result } = renderHook(() => useProvenanceContext(), { wrapper });
+        act(() => { result.current.chooseEntry('n1', 3, 'code 3'); });
+        expect(result.current.chosenEntry('n1', 'code 3')).toBe(3);
+        expect(result.current.chosenEntry('n1', 'someone else\'s code')).toBeUndefined();
+        act(() => { result.current.chooseEntry('n1', null, 'before the first'); });
+        expect(result.current.chosenEntry('n1', 'before the first')).toBeNull();
+        expect(result.current.chosenEntry('n2', 'code 3')).toBeUndefined();
     });
 });

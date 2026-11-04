@@ -879,6 +879,10 @@ def exec():
     # them. The backend is the only component that knows who is logged in; it
     # sends the storage key, not a name, and only the isolated path uses it.
     user_key = request.json.get('user_key') or None
+    # The other accounts whose node libraries an isolated run reads after the
+    # user's own: the dataflow owner's, for a run of an editor she invited.
+    # Shaped by the isolated path (supervisor.library_keys), which alone uses it.
+    library_keys = request.json.get('library_keys') or None
     # dev/116: {name: value} for the code's curio_secret("<name>") calls,
     # resolved by the backend from the user's connection keys. Injected as a
     # callable in both execution modes; never an env var, never staged, never
@@ -931,6 +935,7 @@ def exec():
                 secrets=secrets, collections=collections, media_dir=media_dir, models=models,
                 dataset_formats=dataset_formats, package_modules=package_modules,
                 input_slots=input_slots, saved_paths=saved_paths, imports_session=imports_session,
+                **({"library_keys": library_keys} if library_keys else {}),
             )
         return execute_code(
             code, str(file_path), str(node_type), str(data_type), launch_dir,

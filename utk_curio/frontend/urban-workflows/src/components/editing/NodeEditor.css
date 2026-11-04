@@ -149,6 +149,15 @@ select:focus {
     cursor: not-allowed;
 }
 
+/* What an agent's change just set, for a moment as it lands, in the agent's
+   category tint (agentChangeMarks.ts): a line of a node's code or spec, a
+   decoration of its editor, or a widget's row. */
+.curio-agent-change.curio-agent-change--node { background-color: var(--curio-category-agent-node-bg); }
+.curio-agent-change.curio-agent-change--canvas { background-color: var(--curio-category-agent-canvas-bg); }
+.curio-agent-change.curio-agent-change--data { background-color: var(--curio-category-agent-data-bg); }
+.curio-agent-change.curio-agent-change--evaluate { background-color: var(--curio-category-agent-evaluate-bg); }
+.curio-agent-change.curio-agent-change--package { background-color: var(--curio-category-agent-package-bg); }
+
 /* The Vega output's canvas as a block, not inline. An inline canvas sits on a
    text baseline and leaves a descender gap under it, so a container-sized chart
    came out 4 px taller than its mount and the mount scrolled both ways (#496). */

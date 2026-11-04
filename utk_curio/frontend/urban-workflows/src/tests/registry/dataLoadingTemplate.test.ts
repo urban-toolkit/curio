@@ -1,7 +1,8 @@
 /**
  * The built-in Data Loading node, as its shipped manifest declares it: a Data
- * widget where a file or a Data Catalog dataset is dropped, which the node opens
- * on (opensOnWidgets), and a starter whose code loads what the widget holds.
+ * widget where a file or a Data Catalog dataset is dropped, the only control
+ * its Widgets tab shows and the one the node opens on (opensOnControls), and a
+ * starter whose code loads what the widget holds.
  */
 import fs from "fs";
 import path from "path";
@@ -22,7 +23,7 @@ function dataLoading(): Record<string, any> {
 
 test("its Data widget is a dataset widget, which the node opens on", () => {
   const template = dataLoading();
-  expect(template.opensOnWidgets).toBe(true);
+  expect(template.opensOnControls).toBe(true);
   expect(template.hasWidgets).toBe(true);
   expect(normalizeWidgets(template.widgets)).toEqual([
     { name: "data", type: "dataset", label: "Data", default: "" },

@@ -38,13 +38,23 @@ jest.mock("../../TrillGenerator", () => ({
 }));
 jest.mock("../../utils/scenarios/scenarioParts", () => ({ liveScenarios: (saved: unknown) => saved }));
 jest.mock("../../utils/scenarios/scenarioDrop", () => ({
-  planScenarioDrop: () => ({
-    outputs: [{ source: "buildings", node: "loader-1" }],
-    loaders: [],
-    scenario: { id: "dropped", name: "Existing", color: "#2a9d8f", nodes: [] },
-  }),
+  planScenarioDrop: () => {
+    const scenario = { id: "dropped", name: "Existing", color: "#2a9d8f", nodes: [] };
+    const set = { id: "set-dropped", name: "Park shade", source: { project: "src", set: "park" } };
+    return {
+      outputs: [{ source: "buildings", node: "loader-1" }],
+      loaders: [],
+      scenarios: [scenario],
+      sets: [set],
+      scenario,
+      set,
+      made: true,
+    };
+  },
   dropGraph: () => ({ nodes: [{ id: "loader-1" }], edges: [] }),
   loaderNodes: () => [],
+  alreadyInCopy: () => null,
+  presentInCopy: () => [],
 }));
 jest.mock("../../services/scenarioCatalog", () => ({
   scenarioCatalogApi: { getCopyPlan: jest.fn(), copyInto: jest.fn() },
@@ -62,16 +72,19 @@ import type { RunEvent } from "../../services/runs/runsApi";
 const catalog = scenarioCatalogApi as unknown as { getCopyPlan: jest.Mock; copyInto: jest.Mock };
 const runs = runsApi as unknown as { start: jest.Mock; follow: jest.Mock; get: jest.Mock };
 
-const PAYLOAD = { projectId: "src", scenarioId: "existing" } as any;
+const PAYLOAD = { projectId: "src", scenarioId: "existing", name: "Existing", setId: "park", setName: "Park shade" };
 
 /** What the server says a drop of "Existing" from chicago-loop-shadow-towers copies; *toRun* lists the context to run first. */
 function plan(toRun: { nodeId: string; label: string }[]): any {
   return {
     scenario: { id: "existing", name: "Existing", color: "#2a9d8f", description: "" },
+    set: { id: "park", name: "Park shade" },
     project: { id: "src", name: "Chicago Loop shadow with towers removed or edited" },
-    levers: ["shadow"],
+    nodes: ["shadow"],
+    last: [],
     context: [{ nodeId: "buildings", label: "Buildings", source: { nodeId: "buildings", copiedFrom: [] } }],
-    outcomes: [{ nodeId: "shadow", label: "Accumulated Shadow", sources: [] }],
+    shared: [],
+    outcomes: [],
     dataflow: { nodes: [], edges: [] },
     packages: [],
     problems: [],
@@ -130,10 +143,10 @@ it("runs the context on the server in the scenario's project, plans again, then 
   expect(runs.start).toHaveBeenCalledTimes(1);
   expect(runs.start).toHaveBeenCalledWith("src", { targets: ["buildings"] });
   expect(mockShowToast).toHaveBeenCalledWith(
-    "Running Buildings in Chicago Loop shadow with towers removed or edited for Existing", "info");
+    "Running Buildings in Chicago Loop shadow with towers removed or edited for \"Existing\"", "info");
   expect(runs.follow.mock.calls.map(([runId]) => runId)).toEqual(["r1"]);
   expect(catalog.getCopyPlan).toHaveBeenCalledTimes(2);
-  expect(catalog.getCopyPlan).toHaveBeenLastCalledWith("src", "existing", "target");
+  expect(catalog.getCopyPlan).toHaveBeenLastCalledWith(PAYLOAD, "target", []);
   expect(catalog.copyInto).toHaveBeenCalledTimes(1);
   // In that order: the run, its end, the second plan, the copy.
   const [started] = runs.start.mock.invocationCallOrder;
@@ -141,7 +154,7 @@ it("runs the context on the server in the scenario's project, plans again, then 
   const [, replanned] = catalog.getCopyPlan.mock.invocationCallOrder;
   const [copied] = catalog.copyInto.mock.invocationCallOrder;
   expect(started < followed && followed < replanned && replanned < copied).toBe(true);
-  expect(dropped).toEqual({ nodes: ["loader-1"], scenario: "dropped" });
+  expect(dropped).toEqual({ nodes: ["loader-1"], scenario: "dropped", set: "set-dropped" });
   expect(errors()).toEqual([]);
 });
 
@@ -156,7 +169,7 @@ it("names every node it runs", async () => {
 
   expect(runs.start).toHaveBeenCalledWith("src", { targets: ["buildings", "trees"] });
   expect(mockShowToast).toHaveBeenCalledWith(
-    "Running Buildings and Trees in Chicago Loop shadow with towers removed or edited for Existing", "info");
+    "Running Buildings and Trees in Chicago Loop shadow with towers removed or edited for \"Existing\"", "info");
 });
 
 it("a run that fails says why and copies nothing", async () => {
@@ -199,7 +212,7 @@ it("follows a run already going in the scenario's project, then copies", async (
   expect(runs.start).toHaveBeenCalledTimes(1);
   expect(runs.follow.mock.calls.map(([runId]) => runId)).toEqual(["r9"]);
   expect(catalog.copyInto).toHaveBeenCalledTimes(1);
-  expect(dropped).toEqual({ nodes: ["loader-1"], scenario: "dropped" });
+  expect(dropped).toEqual({ nodes: ["loader-1"], scenario: "dropped", set: "set-dropped" });
 });
 
 it("a run that ends with the context still unsaved adds nothing", async () => {
@@ -223,5 +236,5 @@ it("a plan with nothing to run copies at once, as before", async () => {
   expect(runs.start).not.toHaveBeenCalled();
   expect(catalog.getCopyPlan).toHaveBeenCalledTimes(1);
   expect(catalog.copyInto).toHaveBeenCalledTimes(1);
-  expect(dropped).toEqual({ nodes: ["loader-1"], scenario: "dropped" });
+  expect(dropped).toEqual({ nodes: ["loader-1"], scenario: "dropped", set: "set-dropped" });
 });

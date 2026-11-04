@@ -1,6 +1,6 @@
 import React from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faCheck, faTriangleExclamation } from "@fortawesome/free-solid-svg-icons";
+import { faCheck, faCircleStop, faTriangleExclamation } from "@fortawesome/free-solid-svg-icons";
 import { formatDuration, formatTokenCount, type RunStatusDisplay } from "../../../services/agents";
 import { useRunTicker } from "./useRunTicker";
 import styles from "./AgentRunStatusLine.module.css";
@@ -13,6 +13,8 @@ import styles from "./AgentRunStatusLine.module.css";
  * done:    "✓ Finished in 12s · 1.4k tokens" — this reply's own duration and
  *          Actual tokens (+ the review chip when a proposal awaits the user)
  * error:   "Failed after 8s" (the error turn itself keeps the message)
+ * stopped: "Stopped by Ana after 8s": someone stopped the turn, and what it
+ *          said until then stays
  *
  * The container is a polite live region announcing phase transitions only:
  * the visible spans are aria-hidden (the per-second elapsed and the label
@@ -45,6 +47,20 @@ export const AgentRunStatusLine: React.FC<{
         <span className={styles.text} aria-hidden="true">
           {runningLabel ?? processingLabel}… · {elapsedLabel}
           {runningDetail ? ` · ${runningDetail}` : ""}
+        </span>
+      </span>
+    );
+  }
+
+  if (display.kind === "stopped") {
+    const who = display.by ? `Stopped by ${display.by}` : "Stopped";
+    const text = display.durationMs != null ? `${who} after ${formatDuration(display.durationMs)}` : who;
+    return (
+      <span className={styles.line} role="status" aria-live="polite">
+        <span className={styles.srOnly}>Run stopped</span>
+        <FontAwesomeIcon icon={faCircleStop} className={styles.icon} aria-hidden="true" />
+        <span className={styles.text} aria-hidden="true">
+          {text}
         </span>
       </span>
     );

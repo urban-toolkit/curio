@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import type { DurationBucket, SizeBucket } from "../../api/monitorApi";
 import { formatBytes } from "../../utils/diagnosticsBundle";
-import { vegaTooltipHandler } from "../../components/tooltip/vegaTooltip";
+import { reachVegaTooltips, vegaTooltipHandler } from "../../components/tooltip/vegaTooltip";
 
 const vega = require("vega");
 const lite = require("vega-lite");
@@ -89,6 +89,8 @@ const VegaChart: React.FC<{ spec: any; height: number; label: string }> = ({
         // A bar's tooltip in the Curio tooltip, not the browser's title.
         tooltip: vegaTooltipHandler,
       });
+      // And the nearest bar's, as the node's charts reach it.
+      reachVegaTooltips(view);
       void view.runAsync();
     } catch {
       // A chart that cannot render must not take the page down with it; the

@@ -30,6 +30,11 @@ from utk_curio.backend.app.agents.application.catalog import (
 from utk_curio.backend.app.agents.application.dataset_selection import (
     record_dataset_selection,
 )
+from utk_curio.backend.app.agents.application.editors import (
+    ACCOUNT_INSTALL_TOOLS,
+    download_refusal,
+    install_refusal,
+)
 from utk_curio.backend.app.agents.application.errors import (
     AgentServiceError,
 )
@@ -46,10 +51,28 @@ from utk_curio.backend.app.agents.application.proposals.apply import (
     apply_proposal,
     dismiss_proposal,
 )
-from utk_curio.backend.app.agents.application.proposals.plans import (
-    apply_plan_edges,
-    apply_plan_node,
-    set_plan_goal,
+from utk_curio.backend.app.agents.application.skill_catalog import (
+    add_skill,
+    agent_skill_rows,
+    remove_skill,
+    restore_skills,
+    run_skills,
+    skill_text,
+    skills_listing,
+)
+from utk_curio.backend.app.agents.application.skill_lifecycle import (
+    check_import,
+    export_skill,
+    import_skill,
+    publish_skill,
+    remove_own_skill,
+    unpublish_skill,
+)
+from utk_curio.backend.app.agents.application.upload_import import (
+    SKILL_UPLOAD,
+)
+from utk_curio.backend.app.agents.application.proposals.changes import (
+    undo as undo_change,
 )
 from utk_curio.backend.app.agents.application.solve.budgets import (
     DEFAULT_SOLVE_ATTEMPTS,
@@ -100,6 +123,13 @@ from utk_curio.backend.app.agents.application.turns.attachment_turn import (
     run_attachment,
     stream_attachment,
 )
+from utk_curio.backend.app.agents.application.turns.turn_jobs import (
+    ask_at_once as ask_turn,
+    follow as follow_turn,
+    stop as stop_turn,
+    stop_all as stop_turns,
+    withdraw as withdraw_turn,
+)
 from utk_curio.backend.app.agents.application.turns.delegates import (
     PACKAGE_AUTHORING_CAPABILITIES,
 )
@@ -133,6 +163,9 @@ __all__ = [
     "list_my_imports",
     "read_definition_bundle_anywhere",
     "record_dataset_selection",
+    "ACCOUNT_INSTALL_TOOLS",
+    "download_refusal",
+    "install_refusal",
     "AgentServiceError",
     "import_agent",
     "install_in_project",
@@ -143,9 +176,21 @@ __all__ = [
     "unpublish_agent",
     "apply_proposal",
     "dismiss_proposal",
-    "apply_plan_edges",
-    "apply_plan_node",
-    "set_plan_goal",
+    "add_skill",
+    "agent_skill_rows",
+    "remove_skill",
+    "restore_skills",
+    "run_skills",
+    "skill_text",
+    "skills_listing",
+    "check_import",
+    "export_skill",
+    "import_skill",
+    "publish_skill",
+    "remove_own_skill",
+    "unpublish_skill",
+    "SKILL_UPLOAD",
+    "undo_change",
     "DEFAULT_SOLVE_ATTEMPTS",
     "DEFAULT_SOLVE_BATCH_DEADLINE_S",
     "DEFAULT_SOLVE_NODE_BUDGET_S",
@@ -175,6 +220,11 @@ __all__ = [
     "ParamRefusal",
     "run_attachment",
     "stream_attachment",
+    "ask_turn",
+    "follow_turn",
+    "stop_turn",
+    "stop_turns",
+    "withdraw_turn",
     "PACKAGE_AUTHORING_CAPABILITIES",
     "CONTEXT_MAX_CHARS",
     "DEPLOYMENT_MAX_OUTPUT_TOKENS",

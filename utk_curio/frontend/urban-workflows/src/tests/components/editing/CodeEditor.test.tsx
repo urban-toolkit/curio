@@ -38,7 +38,13 @@ jest.mock("@monaco-editor/react", () => {
                 return true;
             }),
             pushUndoStop: () => {},
-            onDidBlurEditorText: () => {},
+            // What leaving the editor runs, which a test fires (`__blur`).
+            __blurs: [] as Array<() => void>,
+            onDidBlurEditorText: (handler: () => void) => {
+                editor.__blurs.push(handler);
+                return { dispose: () => {} };
+            },
+            __blur: () => editor.__blurs.forEach((handler: () => void) => handler()),
             // Ctrl/Cmd+Enter registers through addAction on mount (#223).
             // Captured so a test can assert the binding, and present at all so
             // the mount does not run against a fake missing half the API.
@@ -89,19 +95,27 @@ jest.mock("../../../providers/FlowProvider", () => ({
 jest.mock("../../../providers/ProvenanceProvider", () => ({
     useProvenanceContext: () => ({ nodeExecProv: jest.fn() }),
 }));
+// In no room, unless a test joins one: `onRemote` keeps each handler, which
+// the test fires as the room would.
+const mockCollabHandlers: Record<string, (payload: any) => void> = {};
+const mockCollabOff = () => ({
+    connected: false,
+    users: [],
+    proposals: [],
+    participantId: null,
+    role: null,
+    lockedNodes: {},
+    onRemote: (event: string, handler: (payload: any) => void) => {
+        mockCollabHandlers[event] = handler;
+        return () => undefined;
+    },
+    requestCodeChange: jest.fn(),
+    approveCodeChange: jest.fn(),
+    rejectCodeChange: jest.fn(),
+});
+let mockCollab: any = mockCollabOff();
 jest.mock("../../../providers/CollaborationProvider", () => ({
-    useCollab: () => ({
-        enabled: false,
-        connected: false,
-        users: [],
-        proposals: [],
-        currentUserId: null,
-        lockedNodes: {},
-        onRemote: () => () => undefined,
-        requestCodeChange: jest.fn(),
-        approveCodeChange: jest.fn(),
-        rejectCodeChange: jest.fn(),
-    }),
+    useCollab: () => mockCollab,
 }));
 jest.mock("../../../utils/saveOutputDataset", () => ({
     resolveSaveOutputDataset: () => false,
@@ -155,6 +169,14 @@ describe("CodeEditor content sync (dev/70)", () => {
         expect(sendCodeToWidgets).toHaveBeenCalledWith(SAVED_CODE);
     });
 
+    test("floats the node's code from the first render, never the editor's empty \"\"", () => {
+        // Floated at mount, "" was the node's code until its code came in, and
+        // a save taken then kept "" as the node's code.
+        const { floatCode } = renderCodeEditor(SAVED_CODE);
+        expect(floatCode).toHaveBeenCalledWith(SAVED_CODE);
+        expect(floatCode).not.toHaveBeenCalledWith("");
+    });
+
     test("an undefined defaultValue leaves the editor empty (fresh palette node)", () => {
         const { sendCodeToWidgets } = renderCodeEditor(undefined);
         expect(lastEditor().getValue()).toBe("");
@@ -206,6 +228,59 @@ describe("CodeEditor content sync (dev/70)", () => {
         const editor = lastEditor();
         act(() => { editor.__type("x = 1"); });
         expect(mockMarkNodeStale).toHaveBeenCalledWith("n1");
+    });
+});
+
+
+describe("code is typed together, with no vote", () => {
+    // ana edits n1 in a room where fabio edits too, and fabio's change to n1
+    // is the kind the room used to put to a vote.
+    const fabiosChange = {
+        id: "prop-1",
+        nodeId: "n1",
+        kind: "code",
+        oldValue: SAVED_CODE,
+        newValue: "x = 2",
+        proposed_by: { user_id: 8, username: "fabio", participant_id: "p-9" },
+        approvals: [],
+        rejections: [],
+        created_at: 0,
+    };
+
+    beforeEach(() => {
+        __editors.length = 0;
+        for (const key of Object.keys(mockCollabHandlers)) delete mockCollabHandlers[key];
+        mockCollab = {
+            ...mockCollabOff(),
+            connected: true,
+            participantId: "p-2",
+            role: "owner",
+            users: [
+                { user_id: 7, username: "ana", participant_id: "p-2", role: "owner" },
+                { user_id: 8, username: "fabio", participant_id: "p-9", role: "editor" },
+            ],
+            proposals: [fabiosChange],
+        };
+    });
+    afterEach(() => {
+        mockCollab = mockCollabOff();
+    });
+
+    test("leaving the editor after typing proposes nothing", () => {
+        renderCodeEditor(SAVED_CODE);
+        const editor = lastEditor();
+        act(() => { editor.__type("x = 3"); });
+        act(() => { editor.__blur(); });
+        expect(mockCollab.requestCodeChange).not.toHaveBeenCalled();
+    });
+
+    test("no banner asks anyone to approve or reject a change", () => {
+        const { screen } = require("@testing-library/react");
+        renderCodeEditor(SAVED_CODE);
+        expect(screen.queryByText(/proposed a code change/)).toBeNull();
+        expect(screen.queryByText(/Awaiting approval/)).toBeNull();
+        expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+        expect(screen.queryByRole("button", { name: "Reject" })).toBeNull();
     });
 });
 

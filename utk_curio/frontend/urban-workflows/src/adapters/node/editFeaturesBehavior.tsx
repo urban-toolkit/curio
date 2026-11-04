@@ -12,8 +12,8 @@
  * the node's Provenance drawer at once, holding the code it left. A run then
  * applies the new edits, in the browser or on the server, as any Python
  * node's code runs, and Commit edits in the body starts one. Undo and Redo put
- * back an entry's code and file none. Nothing is written where nobody can
- * save it: the dashboard, a shared view. An agent's applied change to the
+ * back an entry's code and file none. Nothing is written on the dashboard or
+ * a watcher's read-only canvas. An agent's applied change to the
  * code is written the same way (`nodeCodeWriters`), its entry named after
  * the agent.
  *
@@ -24,6 +24,7 @@ import React, { useEffect, useMemo, useRef } from "react";
 import type { NodeBehaviorHook } from "../../registry/types";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { useProvenanceContext } from "../../providers/ProvenanceProvider";
+import { useSharedView } from "../../hook/useSharedView";
 import { autoRunTargets } from "../../providers/flow/useAutoRun";
 import { EditFeaturesBody, type CodeWrite } from "../../components/editFeatures/EditFeaturesBody";
 import { editFeaturesCode, readEditFeaturesCode } from "../../utils/editFeatures/editFeatures";
@@ -34,8 +35,10 @@ import { failureLine } from "../../utils/runFailure";
 export const useEditFeaturesBehavior: NodeBehaviorHook = (data, nodeState) => {
   const flow = useFlowContext() as any;
   const { nodeEditProv } = useProvenanceContext();
-  // Nothing is written where nobody can save it: the dashboard, a shared view.
-  const writable = !flow?.dashboardOn && flow?.viewerMode !== "shared";
+  // Nothing is written on the dashboard or a read-only canvas, a watcher's
+  // (useSharedView, the rule every edit reads).
+  const readOnly = useSharedView();
+  const writable = !flow?.dashboardOn && !readOnly;
   // The code hands the step every circle that feeds the node.
   const circles = circlesInto(data.nodeId, flow?.edges ?? []);
 

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 from utk_curio.backend.extensions import db, retry_on_write_conflict
-from utk_curio.backend.app.projects.models import Project
+from utk_curio.backend.app.projects.models import Project, ProjectEditor
 from utk_curio.backend.app.projects.schemas import _slugify
 
 
@@ -115,5 +115,45 @@ def touch_last_opened(project_id: str, user_id: int) -> Project:
         project.last_opened_at = datetime.now(timezone.utc)
         db.session.flush()
         return project
+
+    return retry_on_write_conflict(_apply)
+
+
+# ---------------------------------------------------------------------------
+# A dataflow's editors (projects/access.py)
+# ---------------------------------------------------------------------------
+
+def editors_of(project_id: str) -> List[ProjectEditor]:
+    """The dataflow's editors, the earliest invited first."""
+    return (
+        ProjectEditor.query.filter_by(project_id=project_id)
+        .order_by(ProjectEditor.added_at.asc(), ProjectEditor.id.asc())
+        .all()
+    )
+
+
+def editor_row(project_id: str, user_id: int) -> Optional[ProjectEditor]:
+    return ProjectEditor.query.filter_by(project_id=project_id, user_id=user_id).first()
+
+
+def add_editor_row(project_id: str, user_id: int, added_by: int) -> ProjectEditor:
+    def _apply() -> ProjectEditor:
+        row = ProjectEditor(project_id=project_id, user_id=user_id, added_by=added_by)
+        db.session.add(row)
+        db.session.flush()
+        return row
+
+    return retry_on_write_conflict(_apply)
+
+
+def delete_editor_row(project_id: str, user_id: int) -> bool:
+    """Whether a row was there to delete."""
+    def _apply() -> bool:
+        row = editor_row(project_id, user_id)
+        if row is None:
+            return False
+        db.session.delete(row)
+        db.session.flush()
+        return True
 
     return retry_on_write_conflict(_apply)

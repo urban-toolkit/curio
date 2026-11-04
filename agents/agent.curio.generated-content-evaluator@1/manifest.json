@@ -8,6 +8,17 @@
     "listed": false,
     "order": 7
   },
+  "skills": [
+    "node-functions",
+    "catalogs",
+    "widgets",
+    "selection-chips",
+    "autark",
+    "vega-lite-starter",
+    "autark-starter",
+    "vega-lite-maps",
+    "map-edits"
+  ],
   "roles": [
     "validation"
   ],

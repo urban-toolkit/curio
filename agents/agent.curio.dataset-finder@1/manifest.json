@@ -8,6 +8,10 @@
     "listed": true,
     "order": 5
   },
+  "skills": [
+    "catalogs",
+    "data-sources"
+  ],
   "roles": [
     "discovery",
     "selection"
@@ -16,7 +20,10 @@
     {
       "id": "dataset.discover",
       "contractVersion": "1",
-      "label": "Find datasets"
+      "label": "Find datasets",
+      "skills": [
+        "catalogs"
+      ]
     },
     {
       "id": "dataset.select",

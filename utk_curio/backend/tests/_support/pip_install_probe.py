@@ -302,6 +302,42 @@ def _agent_text():
     }
 
 
+def _skills():
+    """The skills Curio ships (``agents/domain/skills.py``): their folder,
+    and by name the sha256 of each skill's body as an agent reads it, its
+    frontmatter left out, or None for one it cannot read."""
+    from utk_curio.backend.app.agents.domain import agent_text, skills
+
+    found = {}
+    for folder in skills.shipped_folders():
+        try:
+            found[folder.name] = _digest(agent_text.skill_text(folder.name))
+        except Exception:  # noqa: BLE001 - None says it could not
+            found[folder.name] = None
+    return {"root": str(skills.skills_dir()), "skills": found}
+
+
+def _package_skills():
+    """The skills the packages Curio ships ship, each a folder of a
+    package's ``skills/`` (``packages/repositories/skills.py``): by
+    ``<packageId>@<major>/<name>``, the sha256 of each skill's body as an
+    agent reads it, as written, or None for one it cannot read."""
+    from utk_curio.backend.app.agents.application import skill_runs
+    from utk_curio.backend.app.agents.domain import skills
+    from utk_curio.backend.app.packages.repositories import catalog_dir
+    from utk_curio.backend.app.packages.repositories.skills import skill_folders
+
+    root = catalog_dir.catalog_root()
+    found = {}
+    for package in sorted(path for path in root.iterdir() if path.is_dir()):
+        for folder in skill_folders(package):
+            try:
+                found[f"{package.name}/{folder.name}"] = _digest(skill_runs.text_of(skills.parse(folder)))
+            except Exception:  # noqa: BLE001 - None says it could not
+                found[f"{package.name}/{folder.name}"] = None
+    return {"root": str(root), "skills": found}
+
+
 def _default_preamble():
     """The preamble every agent shares, its page in the base entry rendered."""
     from utk_curio.backend.app.agents.domain import agent_text, builtin
@@ -392,6 +428,8 @@ def main():
     report["default_preamble"] = _guarded(_default_preamble)
     report["agents"] = _guarded(_shipped_agents)
     report["agent_text"] = _guarded(_agent_text)
+    report["skills"] = _guarded(_skills)
+    report["package_skills"] = _guarded(_package_skills)
     report["prompt_fixtures"] = _guarded(_prompt_fixtures)
     report["folder_sources"] = _guarded(_folder_sources)
 

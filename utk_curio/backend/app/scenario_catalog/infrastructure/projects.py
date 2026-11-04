@@ -64,6 +64,13 @@ def owned_project(user, project_id: str) -> tuple[Any, dict, bool]:
     return row, spec, is_example_project(user, project_id)
 
 
+def updated_at(row) -> str:
+    """When the project *row* last changed, as the Projects page says it."""
+    from utk_curio.backend.app.projects.services import updated_at_of
+
+    return updated_at_of(row)
+
+
 def graph_preview(user, spec: dict) -> dict | None:
     """The plain-box graph a project card draws, each node with the category
     its template declares in the account's manifests or the catalog's."""
@@ -91,6 +98,14 @@ def user_key(user) -> str:
     from utk_curio.backend.app.projects.services import _user_dir_key
 
     return _user_dir_key(user)
+
+
+def template_labels(user, project_id: str) -> dict:
+    """Each template's label by unversioned id, for the templates
+    *project_id* may use: what its nodes' headers call a node with no title."""
+    from utk_curio.backend.app.execution.node_names import template_labels as labels_of
+
+    return labels_of(user_key(user), project_id)
 
 
 def saved_output(user, project_id: str, spec: dict, node_id: str) -> dict | None:

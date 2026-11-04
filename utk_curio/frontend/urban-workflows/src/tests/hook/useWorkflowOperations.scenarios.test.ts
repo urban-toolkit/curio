@@ -76,6 +76,12 @@ const NODES = [makeNode("a"), makeNode("b"), makeNode("c")];
 const BASELINE: Scenario = { id: "s1", name: "Baseline", color: "#2a9d8f", nodes: ["a"] };
 const TALL: Scenario = { id: "s2", name: "Twice as tall", color: "#e76f51", nodes: ["b", "gone"] };
 
+/** *s* as a save keeps it: in a set of its own (these dataflows have no
+ * edges, so no two scenarios share a node), with no context or outcomes. */
+const kept = (s: Scenario, extra: Partial<Scenario> = {}): Scenario => ({
+  ...s, set: `set-${s.id}`, context: [], outcomes: [], ...extra,
+});
+
 beforeEach(() => {
   jest.clearAllMocks();
   TrillGenerator.reset();
@@ -88,7 +94,8 @@ describe("loading a dataflow with scenarios", () => {
     await act(async () => {
       await result.current.loadParsedTrill("wf", "", NODES, [], false, false, [], "", [], {}, [BASELINE, TALL]);
     });
-    expect(result.current.scenarios).toEqual([BASELINE, { ...TALL, nodes: ["b"] }]);
+    expect(result.current.scenarios).toEqual([kept(BASELINE), kept(TALL, { nodes: ["b"] })]);
+    expect(result.current.scenarioSets.map((x) => x.id)).toEqual(["set-s1", "set-s2"]);
     expect(result.current.projectDirty).toBe(false);
   });
 
@@ -101,7 +108,7 @@ describe("loading a dataflow with scenarios", () => {
     expect(versions.length).toBeGreaterThan(1);
     // The empty initial version has no nodes, so its scenario has no members.
     const last = versions.at(-1);
-    expect(last.dataflow.scenarios).toEqual([BASELINE]);
+    expect(last.dataflow.scenarios).toEqual([kept(BASELINE)]);
   });
 
   test("an absent list keeps the scenarios, and an empty one clears them", async () => {
@@ -112,8 +119,8 @@ describe("loading a dataflow with scenarios", () => {
     await act(async () => {
       await result.current.loadParsedTrill("wf", "", NODES, [], false, false, [], "", []);
     });
-    expect(result.current.scenarios).toEqual([BASELINE]);
-    expect(TrillGenerator.scenarios).toEqual([BASELINE]);
+    expect(result.current.scenarios).toEqual([kept(BASELINE)]);
+    expect(TrillGenerator.scenarios).toEqual([kept(BASELINE)]);
     await act(async () => {
       await result.current.loadParsedTrill("wf", "", NODES, [], false, false, [], "", [], {}, []);
     });
@@ -131,10 +138,19 @@ describe("editing the scenarios", () => {
     expect(result.current.projectDirty).toBe(true);
     TrillGenerator.addNewVersionProvenance(NODES, [], "wf", "", "scenario");
     const last = (Object.values(TrillGenerator.list_of_trills) as any[]).at(-1);
-    expect(last.dataflow.scenarios).toEqual([BASELINE]);
+    expect(last.dataflow.scenarios).toEqual([kept(BASELINE)]);
   });
 
-  test("a save writes them, against the nodes on the canvas", async () => {
+  test("records the outputs they read a moment later, as a pin does (#662)", () => {
+    const deps = { ...makeDeps(), recordSourcesRef: { current: jest.fn() } };
+    const { result } = renderHook(() => useWorkflowOperations(deps));
+    act(() => {
+      result.current.setScenarios([BASELINE]);
+    });
+    expect(deps.recordSourcesRef.current).toHaveBeenCalledTimes(1);
+  });
+
+  test("the dataflow a save makes holds them, against the nodes on the canvas", async () => {
     (projectsApi.create as jest.Mock).mockResolvedValue({
       id: "proj-1",
       name: "wf",
@@ -146,13 +162,13 @@ describe("editing the scenarios", () => {
       result.current.setScenarios([BASELINE, TALL]);
     });
     await act(async () => {
-      await result.current.saveCurrentProject();
+      await result.current.saveDataflow();
     });
     const sent = (projectsApi.create as jest.Mock).mock.calls[0][0];
-    expect(sent.spec.dataflow.scenarios).toEqual([BASELINE, { ...TALL, nodes: ["b"] }]);
+    expect(sent.spec.dataflow.scenarios).toEqual([kept(BASELINE), kept(TALL, { nodes: ["b"] })]);
   });
 
-  test("a save with none writes an empty list, so the server clears them", async () => {
+  test("the dataflow a save makes with none holds an empty list", async () => {
     (projectsApi.create as jest.Mock).mockResolvedValue({
       id: "proj-1",
       name: "wf",
@@ -160,7 +176,7 @@ describe("editing the scenarios", () => {
     });
     const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
     await act(async () => {
-      await result.current.saveCurrentProject();
+      await result.current.saveDataflow();
     });
     const sent = (projectsApi.create as jest.Mock).mock.calls[0][0];
     expect(sent.spec.dataflow.scenarios).toEqual([]);

@@ -46,14 +46,13 @@
                 "display": "radio"
               }
             }
-          ],
-          "packageTemplateLabel": "Season"
+          ]
         },
         "title": "Season"
       },
       {
         "id": "0fde14ff-f2f8-5510-849e-0ddfa30531f8",
-        "type": "curio.scout/rasterize-buildings",
+        "type": "curio.rasterization/rasterize-buildings",
         "x": 645,
         "y": 0,
         "content": "\"\"\"Rasterize Buildings: SCOUT's building rasterizer, \"OSM vector to raster\".\n\nInput: a buildings layer, a GeoDataFrame of polygons with a CRS and a column\nof heights in metres.\nOutput: one raster in EPSG:3395, each cell a height in metres: the 256 by 256\nmap tiles SCOUT draws, 8-bit gray where 255 is the maximum height, side by\nside. A tile SCOUT writes no file for, because no building is near it, is no\ndata. An Autark map draws it as input_0, band band_1, and SCOUT's Deep Umbra\nshadow model (Accumulated Shadow) reads it.\nThe Widgets tab sets the height column, the zoom level and the maximum height.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_rasters.node_outputs import rasterize_buildings\n\nreturn rasterize_buildings(\n    input_0,\n    attribute=[!! attribute !!],\n    zoom=int([!! zoom !!]),\n    max_height=float([!! max_height !!]),\n    output_file=curio_output_file,\n)\n",
@@ -109,7 +108,7 @@
       },
       {
         "id": "74e0af5a-c06e-52ae-94ad-94acc2de1642",
-        "type": "curio.scout/raster-calculator",
+        "type": "curio.rasterization/raster-calculator",
         "x": 1935,
         "y": 0,
         "content": "# Statistics: the mean, median, minimum, maximum and count of a\n# raster's cells, nodata left out, as a table of one row.\n# input_0 is the accumulated shadow in minutes, input_1 the heights it was\n# predicted from, as the mask: SCOUT's metrics count the ground, the cells\n# Deep Umbra reads as gray level 0, a height under 1.08 m.\nfrom scout_rasters.raster_algebra import raster_statistics\n\nreturn raster_statistics(input_0, mask=input_1, where=lambda height: height < 1.08)\n",
@@ -151,7 +150,7 @@
       },
       {
         "id": "abd7fc96-4bfc-5eff-85a3-5e4991ba89b9",
-        "type": "curio.scout/rasterize-buildings",
+        "type": "curio.rasterization/rasterize-buildings",
         "x": 1290,
         "y": 900,
         "content": "\"\"\"Rasterize Buildings: SCOUT's building rasterizer, \"OSM vector to raster\".\n\nInput: a buildings layer, a GeoDataFrame of polygons with a CRS and a column\nof heights in metres.\nOutput: one raster in EPSG:3395, each cell a height in metres: the 256 by 256\nmap tiles SCOUT draws, 8-bit gray where 255 is the maximum height, side by\nside. A tile SCOUT writes no file for, because no building is near it, is no\ndata. An Autark map draws it as input_0, band band_1, and SCOUT's Deep Umbra\nshadow model (Accumulated Shadow) reads it.\nThe Widgets tab sets the height column, the zoom level and the maximum height.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_rasters.node_outputs import rasterize_buildings\n\nreturn rasterize_buildings(\n    input_0,\n    attribute=[!! attribute !!],\n    zoom=int([!! zoom !!]),\n    max_height=float([!! max_height !!]),\n    output_file=curio_output_file,\n)\n",
@@ -213,7 +212,7 @@
       },
       {
         "id": "ac470b24-69c3-5242-8d07-cc969e868e54",
-        "type": "curio.scout/raster-calculator",
+        "type": "curio.rasterization/raster-calculator",
         "x": 2580,
         "y": 900,
         "content": "# Statistics: the mean, median, minimum, maximum and count of a\n# raster's cells, nodata left out, as a table of one row.\n# input_0 is the accumulated shadow in minutes, input_1 the heights it was\n# predicted from, as the mask: SCOUT's metrics count the ground, the cells\n# Deep Umbra reads as gray level 0, a height under 1.08 m.\nfrom scout_rasters.raster_algebra import raster_statistics\n\nreturn raster_statistics(input_0, mask=input_1, where=lambda height: height < 1.08)\n",
@@ -230,7 +229,7 @@
       },
       {
         "id": "d0e547ba-e7d6-52e1-9c0e-f047443b715c",
-        "type": "curio.scout/bars",
+        "type": "curio.vega-lite/bars",
         "x": 3225,
         "y": 0,
         "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"data\": {\n    \"name\": \"[!! inputs !!]\"\n  },\n  \"mark\": {\n    \"type\": \"bar\",\n    \"tooltip\": true\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": \"Scenario\",\n      \"axis\": {\n        \"labelAngle\": 0\n      },\n      \"sort\": [!! scenario order !!]\n    },\n    \"y\": {\n      \"field\": \"[!! y !!]\",\n      \"type\": \"quantitative\",\n      \"aggregate\": \"[!! combine !!]\",\n      \"title\": \"[!! y_title !!]\"\n    },\n    \"color\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": \"Scenario\",\n      \"scale\": [!! scenario colors !!]\n    }\n  }\n}\n",
@@ -277,7 +276,7 @@
       },
       {
         "id": "608c35fc-5b51-546f-8305-7612a680f16a",
-        "type": "curio.scout/raster-calculator",
+        "type": "curio.rasterization/raster-calculator",
         "x": 3225,
         "y": 450,
         "content": "# Towers removed's accumulated shadow, on input_1, minus Existing's, on\n# input_0, cell by cell, in minutes: below zero where removing the towers\n# takes shadow away, 0 where nothing changes.\nfrom scout_rasters.raster_algebra import raster_calculate\n\nreturn raster_calculate(\"subtract\", [input_1, input_0], output_file=curio_output_file)\n",
@@ -485,6 +484,16 @@
           "f7786d1f-9f64-5bbe-b007-dff18db386c6",
           "74e0af5a-c06e-52ae-94ad-94acc2de1642",
           "83fc7c29-f196-5f7d-9fe0-a412936dc4b8"
+        ],
+        "set": "set-existing",
+        "context": [
+          "f120f6c9-aa89-538f-9ada-55c866fb2e3c",
+          "44d857bc-c25f-5c9b-8945-c43d60ba6301"
+        ],
+        "outcomes": [
+          "d0e547ba-e7d6-52e1-9c0e-f047443b715c",
+          "608c35fc-5b51-546f-8305-7612a680f16a",
+          "f09ef56c-42c4-56b6-ab30-cf7d3c752e6b"
         ]
       },
       {
@@ -498,11 +507,22 @@
           "a2c5b8ed-658d-52ea-8e5b-18041d9385de",
           "ac470b24-69c3-5242-8d07-cc969e868e54",
           "4d8f9df6-6320-538d-9d58-ec45cb2af5f4"
+        ],
+        "set": "set-existing",
+        "context": [
+          "f120f6c9-aa89-538f-9ada-55c866fb2e3c",
+          "44d857bc-c25f-5c9b-8945-c43d60ba6301"
+        ],
+        "outcomes": [
+          "d0e547ba-e7d6-52e1-9c0e-f047443b715c",
+          "608c35fc-5b51-546f-8305-7612a680f16a",
+          "f09ef56c-42c4-56b6-ab30-cf7d3c752e6b"
         ]
       }
     ],
     "packages": [
-      "curio.scout@1",
+      "curio.rasterization@1",
+      "curio.vega-lite@1",
       "model.scout.deep-umbra@1"
     ],
     "datasets": [
@@ -518,6 +538,12 @@
     "name": "Chicago Loop shadow with towers removed or edited",
     "task": "",
     "timestamp": 1791244800000,
-    "provenance_id": "Chicago Loop shadow with towers removed or edited"
+    "provenance_id": "Chicago Loop shadow with towers removed or edited",
+    "scenarioSets": [
+      {
+        "id": "set-existing",
+        "name": "Chicago Loop shadow"
+      }
+    ]
   }
 }

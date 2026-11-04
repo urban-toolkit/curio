@@ -3,12 +3,29 @@
   "name": "Dataflow Builder",
   "category": "canvas",
   "version": "1.0.0",
-  "purpose": "Plan a connected dataflow from a goal as one reviewable proposal; solve unresolved nodes through delegated specialists. Never mutates without review.",
+  "purpose": "Plan a connected dataflow from a goal, landed on the canvas at once and undone from its chat; build and validate its nodes through delegated specialists.",
   "catalog": {
     "listed": true,
     "order": 6
   },
   "workedExamples": true,
+  "skills": [
+    "node-functions",
+    "catalogs",
+    "widgets",
+    "selection-chips",
+    "autark",
+    "vega-lite-starter",
+    "autark-starter",
+    "vega-lite-maps",
+    "interaction-edges",
+    "map-edits",
+    "scenarios",
+    "dashboards",
+    "provenance",
+    "reuse-first",
+    "data-sources"
+  ],
   "roles": [
     "orchestration"
   ],

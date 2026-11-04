@@ -113,7 +113,9 @@ def make_collection_helpers(resolve_index, collections, media_dir, *, output_dir
             return None
 
         frame["dataset_id"] = dataset_id
-        frame["path"] = [where(row) for _, row in frame.iterrows()]
+        # Kept as objects, so a file not here reads None: pandas would store a
+        # column of strings with NaN for it, which is truthy.
+        frame["path"] = pd.Series([where(row) for _, row in frame.iterrows()], index=frame.index, dtype=object)
         frame["thumbnail"] = [media_url(dataset_id, fid) for fid in frame["file_id"]]
         kinds = list(frame["kind"])
         frame["image_url"] = [

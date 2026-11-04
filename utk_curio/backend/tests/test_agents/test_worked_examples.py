@@ -207,6 +207,57 @@ class TestAnEvaluationNeverSeesItsExample:
         assert examples.excluded_by(payload["spec"]) == {SIXTEEN}
 
 
+class TestADataflowIsNeverItsOwnExample:
+    """A project made from a shipped dataflow keeps its node and edge ids, and
+    an example that shares one is that dataflow, which a run in the project
+    reads already: no run there is shown it, attached, delegated or through
+    examples.read. A dataflow made from a shipped one used to be handed it
+    back as a worked example, about 9,500 characters for example 26."""
+
+    TWENTY_SIX = "26-several-inputs"
+
+    def _made_from_it(self) -> dict:
+        return json.loads(_pool()[self.TWENTY_SIX].entry.path.read_text(encoding="utf-8"))
+
+    def test_an_example_that_shares_a_node_or_an_edge_id_with_the_dataflow_is_left_out(self):
+        spec = self._made_from_it()
+        own = examples._ids(spec)
+        assert own, "example 26 has no ids; this test would be vacuous"
+        excluded = examples.excluded_by(spec)
+        assert self.TWENTY_SIX in excluded
+        for example in _pool().values():
+            assert (example.key in excluded) == bool(examples._ids(example.spec) & own), example.key
+        assert examples.excluded_by(TestAnEvaluationNeverSeesItsExample.PLAIN) == set()
+
+    def test_attached_and_delegated_runs_in_the_dataflow_leave_it_out(self):
+        spec = self._made_from_it()
+        task = spec["dataflow"]["task"]
+        line = _pool()[self.TWENTY_SIX].entry.line
+        plain = TestAnEvaluationNeverSeesItsExample.PLAIN
+        dfb, nb, capability = "agent.curio.dataflow-builder@1", "agent.curio.node-builder@1", "node.content.generate"
+        # Its own task chooses it, so a dataflow of other ids is shown it.
+        assert line in (examples.attached_block(dfb, plain, {"kind": "canvas"}, task) or "")
+        assert line in (examples.delegated_block(nb, capability, plain, {"subtask": task}) or "")
+        assert line not in (examples.attached_block(dfb, spec, {"kind": "canvas"}, task) or "")
+        assert line not in (examples.delegated_block(nb, capability, spec, {"subtask": task}) or "")
+
+    def test_the_builder_cannot_read_it_by_its_key_there(self, tmp_curio):
+        from utk_curio.backend.app.agents.application import tools
+        from utk_curio.backend.app.agents.domain import agent_text
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        projects_storage.write_spec("4242", "p-made-from-26", self._made_from_it())
+        status, text = tools.execute_read_tool(
+            "examples.read", user_key="4242", project_id="p-made-from-26", target=None,
+            params={"key": self.TWENTY_SIX},
+        )
+        assert (status, text) == ("error", agent_text.message("turn.example-excluded", key=repr(self.TWENTY_SIX)))
+        status, text = tools.execute_read_tool(
+            "examples.read", user_key="4242", project_id="p-made-from-26", target=None, params={},
+        )
+        assert status == "ok" and self.TWENTY_SIX not in [row["key"] for row in json.loads(text)["examples"]]
+
+
 class TestWithoutTheExamplesFolder:
     def test_there_is_no_block_and_one_warning(self, monkeypatch, tmp_path, caplog):
         # An install whose shipped dataflows are missing.

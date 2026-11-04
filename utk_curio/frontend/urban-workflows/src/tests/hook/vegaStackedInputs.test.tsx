@@ -39,6 +39,7 @@ jest.mock("vega", () => {
     initialize() { return this; }
     tooltip() { return this; }
     hover() { return this; }
+    addEventListener() { return this; }
     width() { return this; }
     height() { return this; }
     resize() { return this; }
@@ -89,7 +90,7 @@ const BARS = JSON.stringify({
   },
 });
 
-/** BARS as Scout's charts write it: its dataset named by its chip. */
+/** BARS as the Vega-Lite package's charts write it: its dataset named by its chip. */
 const CHIP_BARS = BARS.replace('"name":"inputs"', '"name":"[!! inputs !!]"');
 
 /** *raw* as the node's editor writes it before a run (components/editing/NodeEditor):

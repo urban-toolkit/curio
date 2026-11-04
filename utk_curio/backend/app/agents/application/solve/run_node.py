@@ -19,7 +19,9 @@ from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application.solve import budgets as agents_budgets
 from utk_curio.backend.app.agents.application.solve import validate as agents_validate
-from utk_curio.backend.app.projects import storage as projects_storage
+from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
+from utk_curio.backend.app.agents.application.turns import roster as agents_roster
+from utk_curio.backend.app.collaboration import dataflow_docs
 
 
 def _validate_node_inline(
@@ -54,7 +56,7 @@ def run_node_stream(
     ``done {ok, nodes, blocker, error}``; a result card joins the transcript.
     """
 
-    spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
+    spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
     record = agents_spec_reads._record_or_404(spec, attachment_id)
     session = record.get("builderSession") or {}
     if ref and not node_id:
@@ -72,11 +74,61 @@ def run_node_stream(
         raise AgentServiceError("a run is already in progress for this attachment", 409)
     session["runningSince"] = now
     record["builderSession"] = session
-    projects_storage.write_spec(user_key, project_id, spec)
+    dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._agent_actor(user_key, spec, attachment_id, "run"))
     session_id = record.get("sessionId")
     return _run_node_events(
         user_key, project_id, attachment_id, spec, node, session_id, exec_fn
     )
+
+
+def _run_inputs(user_key: str, project_id: str, spec: dict) -> dict:
+    """What a Run node hands the runner beside the node, as keywords of
+    ``runner.run_through_node``: resolved in the request context the stream
+    carries, before the worker thread starts."""
+    from utk_curio.backend.app.discovery.application.exec_collections import (
+        resolve_spec_collections,
+    )
+    from utk_curio.backend.app.execution.code_references import node_run_code
+    from utk_curio.backend.app.execution.node_exec import exec_user_key
+
+    # The models are looked up on the worker thread, so it gets the account
+    # too, and the token its artifacts are tagged with. An untagged artifact
+    # is readable by any signed-in session.
+    acting_user = agents_spec_reads._acting_user()
+    artifact_session = agents_spec_reads._acting_token()
+    # Under the runner's key, as Play's: what the run derives goes to the
+    # media folder of whoever asked, and the dataflow's collections are
+    # read from the store that holds them. *user_key* is the dataflow's
+    # store, which for an editor is the owner's.
+    collections, media_dir = resolve_spec_collections(
+        spec, exec_user_key(acting_user) or user_key, user=acting_user, dataflow_id=project_id,
+    )
+    # The paths of the Data Catalog datasets the run reads, and how
+    # curio_load_data reads a layer group, as Play and Solve's runs
+    # resolve them: over each node's code as the run writes it, so the id
+    # a Data widget holds counts (node_run_code).
+    dataset_formats: dict = {}
+    dataset_paths = agents_grounding._exec_dataset_paths(
+        project_id,
+        *(
+            node_run_code(n)
+            for n in ((spec.get("dataflow") or {}).get("nodes") or [])
+            if isinstance(n, dict)
+        ),
+        formats=dataset_formats,
+    )
+    return {
+        "session_id": artifact_session,
+        "acting_user": acting_user,
+        "dataset_paths": dataset_paths or None,
+        "dataset_formats": dataset_formats or None,
+        "collections": collections,
+        "media_dir": media_dir,
+        # The dataflow's template roster, which Solve's runs classify its
+        # nodes by: without it, a node of a package the dataflow's store
+        # holds and the catalog does not read as one with no code to run.
+        "templates": agents_roster._roster_templates(user_key, project_id),
+    }
 
 
 def _run_node_events(
@@ -94,36 +146,24 @@ def _run_node_events(
 
     from utk_curio.backend.app.execution import runner
 
-    from utk_curio.backend.app.discovery.application.exec_collections import (
-        resolve_spec_collections,
-    )
-
     node_id = node.get("id")
     execution_id = uuid.uuid4().hex
     try:
         yield "run_started", {"nodeId": node_id, "executionId": execution_id}
         progress_queue: _queue.Queue = _queue.Queue()
-        # Resolved here, in the request context the stream carries, before
-        # the worker thread starts; the models are looked up on that thread,
-        # so it gets the account too, and the token its artifacts are tagged
-        # with. An untagged artifact is readable by any signed-in session.
-        acting_user = agents_spec_reads._acting_user()
-        artifact_session = agents_spec_reads._acting_token()
-        collections, media_dir = resolve_spec_collections(spec, user_key, user=acting_user)
+        inputs = _run_inputs(user_key, project_id, spec)
 
         def _run():
             try:
                 report = runner.run_through_node(
                     user_key, project_id, spec, node_id,
                     candidate_content=None,
-                    session_id=artifact_session,
                     exec_fn=exec_fn,
-                    acting_user=acting_user,
-                    collections=collections, media_dir=media_dir,
                     as_validation=False,  # a REAL run, journaled as one
                     progress=lambda nid, i, total: progress_queue.put(
                         ("progress", nid, i, total)
                     ),
+                    **inputs,
                 )
             except Exception as exc:  # the runner must never kill the stream
                 report = {
@@ -190,11 +230,14 @@ def _run_node_events(
     finally:
         # Disconnect-safe: the in-flight guard never wedges the attachment.
         try:
-            cleanup_spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
+            cleanup_spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
             cleanup_record = agents_spec_reads._record_or_404(cleanup_spec, attachment_id)
             cleanup_session = cleanup_record.get("builderSession") or {}
             if cleanup_session.pop("runningSince", None) is not None:
                 cleanup_record["builderSession"] = cleanup_session
-                projects_storage.write_spec(user_key, project_id, cleanup_spec)
+                dataflow_docs.write(
+                    user_key, project_id, cleanup_spec,
+                    agents_spec_reads._agent_actor(user_key, cleanup_spec, attachment_id, "run"),
+                )
         except Exception:
             pass

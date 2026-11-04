@@ -70,16 +70,10 @@ jest.mock("../../../providers/FlowProvider", () => ({
 
 jest.mock("../../../providers/CollaborationProvider", () => ({
     useCollab: () => ({
-        enabled: false,
         connected: false,
         users: [],
-        proposals: [],
-        currentUserId: null,
         lockedNodes: {},
         onRemote: () => () => undefined,
-        requestCodeChange: jest.fn(),
-        approveCodeChange: jest.fn(),
-        rejectCodeChange: jest.fn(),
     }),
 }));
 
@@ -186,6 +180,15 @@ describe("GrammarEditor content sync (dev/70)", () => {
         renderGrammarEditor(DEFAULT_SPEC);
         expect(lastEditor().getValue()).toBe(DEFAULT_SPEC);
         expect(lastEditor().executeEdits).toHaveBeenCalledTimes(1);
+    });
+
+    test("floats the node's spec from the first render, never the editor's empty \"{}\"", () => {
+        // Floated at mount, "{}" was the node's code until its spec came in,
+        // and the save that makes a dataflow loaded from a file a project,
+        // taken then, kept "{}" as the node's spec.
+        const { floatCode } = renderGrammarEditor(DEFAULT_SPEC);
+        expect(floatCode).toHaveBeenCalledWith(DEFAULT_SPEC);
+        expect(floatCode).not.toHaveBeenCalledWith("{}");
     });
 
     test("regression: defaultValue flipping spec→undefined→spec never resets typed content", () => {

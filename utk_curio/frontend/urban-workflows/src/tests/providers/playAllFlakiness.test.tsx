@@ -28,7 +28,7 @@ if (!(global as any).DOMMatrixReadOnly) {
 }
 
 // ── Mocks: replace the heavy/IO collaborators, keep reactflow REAL ──────────
-const mockPersistDataflowForInstall = jest.fn().mockResolvedValue(undefined);
+const mockRecordOutputs = jest.fn().mockResolvedValue(undefined);
 const mockBeginPendingInstall = jest.fn();
 const mockEndPendingInstall = jest.fn();
 const mockFailPendingInstall = jest.fn();
@@ -43,7 +43,7 @@ jest.mock('../../hook/useWorkflowOperations', () => ({
     markNodeExecuted: jest.fn(),
     markNodeStale: jest.fn(),
     markDirty: jest.fn(),
-    persistDataflowForInstall: mockPersistDataflowForInstall,
+    recordOutputs: mockRecordOutputs,
     beginPendingInstall: mockBeginPendingInstall,
     endPendingInstall: mockEndPendingInstall,
     failPendingInstall: mockFailPendingInstall,
@@ -66,17 +66,9 @@ jest.mock('../../providers/ToastProvider', () => ({
 
 jest.mock('../../providers/CollaborationProvider', () => ({
   useCollab: () => ({
-    enabled: false,
     lockedNodes: {},
-    currentUserId: null,
     lockNode: jest.fn(),
     unlockNode: jest.fn(),
-    signalExecDisplay: jest.fn(),
-    broadcastOutputProduced: jest.fn(),
-    broadcastNodeAdded: jest.fn(),
-    broadcastNodeRemoved: jest.fn(),
-    broadcastEdgeAdded: jest.fn(),
-    broadcastEdgeRemoved: jest.fn(),
     onRemote: jest.fn(),
   }),
 }));
@@ -397,13 +389,13 @@ describe('Play All orchestration — flakiness vectors', () => {
       act(() => {
         jest.advanceTimersByTime(499);
       });
-      expect(mockPersistDataflowForInstall).not.toHaveBeenCalled();
+      expect(mockRecordOutputs).not.toHaveBeenCalled();
 
       // Provider unmounts inside the window -> cleanup now FLUSHES the save.
       unmount();
 
       // The save fired despite the early unmount -> A's dataset is persisted.
-      expect(mockPersistDataflowForInstall).toHaveBeenCalledTimes(1);
+      expect(mockRecordOutputs).toHaveBeenCalledTimes(1);
     } finally {
       jest.useRealTimers();
     }
@@ -430,7 +422,7 @@ describe('Play All orchestration — flakiness vectors', () => {
         jest.advanceTimersByTime(500);
       });
 
-      expect(mockPersistDataflowForInstall).toHaveBeenCalledTimes(1);
+      expect(mockRecordOutputs).toHaveBeenCalledTimes(1);
     } finally {
       jest.useRealTimers();
     }
@@ -470,7 +462,7 @@ describe('install-sync scoping (#180): the save is told which nodes it covers', 
         jest.advanceTimersByTime(500);
       });
 
-      expect(mockPersistDataflowForInstall).toHaveBeenCalledWith(['A']);
+      expect(mockRecordOutputs).toHaveBeenCalledWith(['A']);
     } finally {
       jest.useRealTimers();
     }
@@ -493,8 +485,8 @@ describe('install-sync scoping (#180): the save is told which nodes it covers', 
         jest.advanceTimersByTime(500);
       });
 
-      expect(mockPersistDataflowForInstall).toHaveBeenCalledTimes(1);
-      const [ids] = mockPersistDataflowForInstall.mock.calls[0];
+      expect(mockRecordOutputs).toHaveBeenCalledTimes(1);
+      const [ids] = mockRecordOutputs.mock.calls[0];
       expect([...ids].sort()).toEqual(['A', 'B']);
     } finally {
       jest.useRealTimers();
@@ -515,7 +507,7 @@ describe('install-sync scoping (#180): the save is told which nodes it covers', 
         jest.advanceTimersByTime(500);
       });
 
-      const [ids] = mockPersistDataflowForInstall.mock.calls[0];
+      const [ids] = mockRecordOutputs.mock.calls[0];
       expect([...ids]).toEqual(['A']);
     } finally {
       jest.useRealTimers();
@@ -535,7 +527,7 @@ describe('install-sync scoping (#180): the save is told which nodes it covers', 
       });
       unmount();
 
-      expect(mockPersistDataflowForInstall).toHaveBeenCalledWith(['A']);
+      expect(mockRecordOutputs).toHaveBeenCalledWith(['A']);
     } finally {
       jest.useRealTimers();
     }
@@ -563,7 +555,7 @@ describe('install-sync scoping (#180): the save is told which nodes it covers', 
   test('clears the placeholder only for producers whose dataset installed', async () => {
     jest.useFakeTimers();
     try {
-      mockPersistDataflowForInstall.mockResolvedValue({ saved: true, failedNodeIds: ['B'] });
+      mockRecordOutputs.mockResolvedValue({ saved: true, failedNodeIds: ['B'] });
 
       await runInstallSyncFor(['A', 'B']);
 
@@ -573,14 +565,14 @@ describe('install-sync scoping (#180): the save is told which nodes it covers', 
       expect(mockFailPendingInstall).toHaveBeenCalledWith('B');
     } finally {
       jest.useRealTimers();
-      mockPersistDataflowForInstall.mockResolvedValue(undefined);
+      mockRecordOutputs.mockResolvedValue(undefined);
     }
   });
 
   test('fails every placeholder when the save itself did not land', async () => {
     jest.useFakeTimers();
     try {
-      mockPersistDataflowForInstall.mockResolvedValue({
+      mockRecordOutputs.mockResolvedValue({
         saved: false,
         failedNodeIds: ['A', 'B'],
       });
@@ -592,7 +584,7 @@ describe('install-sync scoping (#180): the save is told which nodes it covers', 
       expect(mockFailPendingInstall).toHaveBeenCalledWith('B');
     } finally {
       jest.useRealTimers();
-      mockPersistDataflowForInstall.mockResolvedValue(undefined);
+      mockRecordOutputs.mockResolvedValue(undefined);
     }
   });
 
@@ -601,7 +593,7 @@ describe('install-sync scoping (#180): the save is told which nodes it covers', 
     // a warning triangle beside every dataset that installed perfectly well.
     jest.useFakeTimers();
     try {
-      mockPersistDataflowForInstall.mockResolvedValue({ saved: true, failedNodeIds: [] });
+      mockRecordOutputs.mockResolvedValue({ saved: true, failedNodeIds: [] });
 
       await runInstallSyncFor(['A']);
 
@@ -609,7 +601,7 @@ describe('install-sync scoping (#180): the save is told which nodes it covers', 
       expect(mockFailPendingInstall).not.toHaveBeenCalled();
     } finally {
       jest.useRealTimers();
-      mockPersistDataflowForInstall.mockResolvedValue(undefined);
+      mockRecordOutputs.mockResolvedValue(undefined);
     }
   });
 
@@ -619,7 +611,7 @@ describe('install-sync scoping (#180): the save is told which nodes it covers', 
     // the middle of the install scheduler.
     jest.useFakeTimers();
     try {
-      mockPersistDataflowForInstall.mockResolvedValue(undefined);
+      mockRecordOutputs.mockResolvedValue(undefined);
 
       await runInstallSyncFor(['A']);
 

@@ -49,6 +49,13 @@ const LOCAL_COMPOUND_CARDS = [
     localImport: "cardStyles",
     keys: ["scenario"],
   },
+  {
+    label: "skill",
+    component: "pages/skills/SkillCatalogBrowseCard.tsx",
+    stylesheet: "pages/skills/SkillCatalogBrowseCard.module.css",
+    localImport: "cardStyles",
+    keys: ["skill"],
+  },
 ];
 
 describe.each(LOCAL_COMPOUND_CARDS)(

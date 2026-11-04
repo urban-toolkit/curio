@@ -190,6 +190,8 @@ repository in the Discovery Catalog. The manifest format is in
 
 Caddy terminates HTTPS and forwards traffic into the Docker container. The two `handle_path` blocks below split incoming requests by URL prefix: anything under `/curio/api/` goes to the backend on port 5002, everything else under `/curio/` goes to the frontend on port 8080. The `handle_path` directive strips the prefix before forwarding, so your backend code sees normal paths like `/live` and `/upload`.
 
+The backend's WebSocket connections, which collaboration travels over, are at the backend's address plus `/socket.io` (here `/curio/api/socket.io/`). Caddy's `reverse_proxy` passes their upgrade as it is. Another reverse proxy must forward the `Upgrade` and `Connection` headers on that path.
+
 You have two TLS options depending on what your IT department provides. Pick one.
 
 **Path A: Let's Encrypt** (port 80 reachable from the public internet, no institutional cert):
@@ -268,6 +270,8 @@ curl https://lab-name.your-uni.edu/curio/api/live
 ```
 
 Then load `https://lab-name.your-uni.edu/curio/` in a browser. If something looks off, `docker compose logs -f` shows the running container's output.
+
+**Run one backend process.** The backend keeps each open dataflow's live copy, the one everyone editing it shares, in its own memory. So one backend process serves a deployment's data directories: never run a second process, worker or replica on them, where each would keep its own copy of a dataflow and the two would drift apart.
 
 ## Updating
 
@@ -437,6 +441,7 @@ flooding it cannot push real errors out of the log.
 - Keep `--no-allow-publish` (the overlay supplies it). Without it, any signed-in user can publish into the shared node catalog, including over a package already there. See [NODE-CATALOG.md § Operator notes](NODE-CATALOG.md#operator-notes).
 - `--no-allow-publish` covers the shared Data Catalog too. Without it, any signed-in user other than a guest can publish a dataset there; only the original publisher can unpublish or delete it. See [DATA-CATALOG.md](DATA-CATALOG.md#operator-notes).
 - `--no-allow-publish` covers the shared Agent Catalog as well. Without it, any signed-in user can publish an agent they imported there. See [AGENT-CATALOG.md](AGENT-CATALOG.md#operator-notes).
+- `--no-allow-publish` covers the skills the Skill Catalog shares too. Without it, any signed-in user other than a guest can publish a skill they imported there; only its publisher can publish over it or unpublish it. See [SKILL-CATALOG.md](SKILL-CATALOG.md#operator-notes).
 - **Library installs are on, and scoped per user.** With isolation on (below), an install goes to `.curio/exec-overlays/users/<key>/` rather than the interpreter every user's nodes share. Three limits: a user's tree is readable by other users' node code (the execution account is shared), there is no size quota, so disk is the operator's to watch, and the shared guest cannot install at all.
 - **Keys saved without `--deploy` are not used with it.** Without `--deploy`, Curio signs everyone in as the shared guest, which saves data source keys and node code keys like any account. Started with `--deploy` on the same `.curio/` and database, Curio sends none of them, and guests cannot save new ones. The keys stay where they are, and a later run without `--deploy` uses them again.
 - **A deployment that cannot isolate does not start.** `--deploy` needs Linux, fork, setrlimit, pyseccomp and the `curio-exec` account; without them it exits with what is missing instead of serving accounts that share one interpreter. Run the Docker image, which has all of it, or drop `--deploy` and run Curio as the single-user tool it then is.

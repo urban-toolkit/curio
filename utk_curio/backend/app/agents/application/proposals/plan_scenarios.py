@@ -10,7 +10,7 @@ what needs the saved dataflow:
   takes a name none of the dataflow's has, since scenario chips color and
   order scenarios by name; each scenario takes its color, as a scenario made
   on the canvas does;
-* on the review card: each scenario with its nodes by name, and each node in
+* on the plan's card: each scenario with its nodes by name, and each node in
   one labelled with it, so a copy and its original read apart;
 * at apply: a created node carries its widgets, its settings (a Spatial
   Join's operation and output, a Data Pool's modes, a Simple View's image
@@ -91,7 +91,7 @@ def scenario_names(plan: dict) -> dict[str, str]:
 
 
 def node_display(node: dict, names: dict) -> dict:
-    """What the review card shows of a node beside its title: its widgets, its
+    """What the plan's card shows of a node beside its title: its widgets, its
     settings (a Spatial Join's operation and output, a Data Pool's modes, a
     Simple View's image column), the scenario it is in, and the node it
     copies."""
@@ -110,7 +110,7 @@ def node_display(node: dict, names: dict) -> dict:
 
 
 def display_scenarios(plan: dict, existing_nodes: dict) -> list[dict]:
-    """The plan's scenarios for the review card: each with its nodes by name."""
+    """The plan's scenarios for the plan's card: each with its nodes by name."""
     titles = {n["ref"]: n["title"] for n in plan["nodes"]}
     rows = []
     for scenario in plan.get("scenarios") or []:
@@ -231,6 +231,8 @@ def apply_scenarios(spec: dict, proposal: dict, ref_to_id: dict, *, final: bool)
         saved_ids[key] = entry["id"]
         created.append(entry)
     if created:
+        # Each goes in a set, with its context and outcomes, as the plan's
+        # write lands (``dataflow_docs._write``).
         dataflow["scenarios"] = current
     return created
 

@@ -4,17 +4,17 @@
 Manifest ``tools`` entries are untrusted *requirements*, never grants
 (`DEC-017`, `REQ-PERM-001`); this module owns what actually exists and what a
 run may be granted. Per `ADR-AG-007` a contract only *names* a domain-owned
-operation — the read executors below are thin wrappers over the owning
-domain's functions (``projects.storage``, ``project_agents``), and the one
-mutate contract is executed **only** by the review-before-apply apply endpoint
-(memo dev/41), never here and never by the model loop.
+operation: the read executors below are thin wrappers over the owning
+domain's functions (``projects.storage``, ``project_agents``), and a mutate
+contract runs through its mint (``proposals/mint.py``), never here.
 
 Grant policy: ``granted = requested ∩ registry ∩ policy``. ``read`` contracts
-execute inside the bounded run loop; ``mutate`` contracts are grantable **for
-proposal purposes only** — requesting one mints a review proposal, and
-execution authority lives solely in the authenticated apply endpoint
-(`DEC-006`/`REQ-REVIEW-001` — the gate is structural, not a flag). Granted ids
-are pinned on the execution record (``pins.tools``, `REQ-CAP-002`).
+execute inside the bounded run loop; a granted ``mutate`` contract runs its
+mint's checks, and then a change to the dataflow lands as the agent's change
+(``proposals/changes.py``), while an install becomes a proposal whose only
+execution authority is the authenticated apply endpoint (`DEC-006`/
+`REQ-REVIEW-001`: the gate is structural, not a flag). Granted ids are pinned
+on the execution record (``pins.tools``, `REQ-CAP-002`).
 
 **Native tools.** Each contract carries the JSON Schema of its params. A run
 whose LLM configuration calls tools natively (``chat_capabilities``) is offered
@@ -48,6 +48,7 @@ from utk_curio.backend.app.agents.domain import (
     data_pool_settings,
     node_settings,
     plan_topology,
+    widget_grammar,
 )
 from utk_curio.backend.app.agents.domain.tool_names import (
     DELEGATE_TOOL,
@@ -56,6 +57,7 @@ from utk_curio.backend.app.agents.domain.tool_names import (
 )
 from utk_curio.backend.app.agents.domain.manifest import ToolRequirement
 from utk_curio.backend.app.agents.domain import dashboards
+from utk_curio.backend.app.agents.domain import skills as skill_format
 from utk_curio.backend.app.common import spatial
 from utk_curio.backend.app.execution.code_references import WIDGET_KINDS
 
@@ -83,8 +85,42 @@ def _texts(description: str) -> dict:
 
 
 def _map(description: str) -> dict:
-    """An object whose keys the tool does not fix, such as a manifest."""
+    """An object whose keys the tool does not fix and whose values are texts,
+    or objects of texts, such as a package draft's files. A server whose tool
+    parser reads a call by its schema keeps a text as it was written, so none
+    of it needs a type; an object that holds other values is JSON text
+    (:func:`_json_value`)."""
     return {"type": "object", "description": description}
+
+
+#: What a schema says of a string that holds a JSON document: the value a
+#: native call gives as JSON text, which :func:`native_arguments` reads back.
+JSON_TEXT = "application/json"
+
+
+def _json_value(description: str | None = None) -> dict:
+    """A value whose type the schema cannot fix, such as a widget's, whose
+    type is its widget's: a native call gives it as JSON text.
+
+    A server whose tool parser reads a call by its schema, as vLLM's parser
+    for Gemma 4 does, keeps a value's JSON type only where the schema names
+    one, so a number or a list it cannot type arrives as its text. JSON text
+    survives every parser, and is read back into the value it encodes before
+    the call takes the fenced request's path."""
+    schema: dict = {"type": "string", "contentMediaType": JSON_TEXT}
+    if description is not None:
+        schema["description"] = description
+    return schema
+
+
+def _values_map(description: str, depth: int = 1) -> dict:
+    """An object whose keys the tool does not fix, holding *depth* levels of
+    objects whose leaves are values (:func:`_json_value`), such as widget
+    values by widget name."""
+    leaf = _json_value()
+    for _ in range(depth - 1):
+        leaf = {"type": "object", "additionalProperties": leaf}
+    return {"type": "object", "description": description, "additionalProperties": leaf}
 
 
 #: models.search bounds: the most rows a call returns, and the most labels per
@@ -211,8 +247,22 @@ def _appearance(say: Say) -> dict:
     return _object({"backgroundColor": _text(say("appearance.backgroundColor"))})
 
 
+def _widget_options() -> dict:
+    """A widget's options as ``$defs.widget`` types them, so a server that
+    reads a call by its schema keeps their numbers."""
+    return _object({
+        "choices": {"type": "array", "items": {"type": "string"}},
+        "display": {"type": "string", "enum": list(widget_grammar.CHOICE_DISPLAYS)},
+        "min": {"type": "number"},
+        "max": {"type": "number"},
+        "step": {"type": "number"},
+        "units": {"type": "string"},
+    })
+
+
 def _widgets(say: Say) -> dict:
-    """#662: the widgets a node declares (``$defs.widget``); the server checks the rest."""
+    """#662: the widgets a node declares (``$defs.widget``): every key a run is
+    told of, each typed, its default as JSON text; the server checks the rest."""
     return {
         "type": "array",
         "items": {
@@ -221,6 +271,8 @@ def _widgets(say: Say) -> dict:
                     "name": _text(say("widgets.name")),
                     "type": {"type": "string", "enum": list(WIDGET_KINDS)},
                     "label": _text(say("widgets.label")),
+                    "default": _json_value(say("widgets.default")),
+                    "options": _widget_options(),
                 },
                 "name", "type",
             ),
@@ -266,6 +318,23 @@ def _simple_vis(say: Say) -> dict:
     }
 
 
+#: The tool a chat run loads a skill with (``skill_runs``).
+SKILL_TOOL = "skill.read"
+
+
+def _skill_read(say: Say) -> dict:
+    """``skill.read``'s params: the name of a skill, one Curio ships unless
+    the run gives its own list (:func:`native_tools`), and one of its files."""
+    names = [folder.name for folder in skill_format.shipped_folders()]
+    return _object(
+        {
+            "name": {"type": "string", "enum": names, "description": say("name")},
+            "path": _text(say("path")),
+        },
+        "name",
+    )
+
+
 def _scenario(say: Say) -> dict:
     """#662: one scenario a plan saves: a selection, or a duplicate of one."""
     return _object(
@@ -273,8 +342,10 @@ def _scenario(say: Say) -> dict:
             "name": _text(say("scenarios.name")),
             "nodes": _texts(say("scenarios.nodes")),
             "duplicateOf": _text(say("scenarios.duplicateOf")),
+            # Each node to its copy's ref: texts (_map).
             "copies": _map(say("scenarios.copies")),
-            "values": _map(say("scenarios.values")),
+            # A copy's ref to its widget values by name.
+            "values": _values_map(say("scenarios.values"), depth=2),
             "description": _text(say("scenarios.description")),
             "color": _text(say("scenarios.color")),
         },
@@ -301,7 +372,8 @@ class ToolContract:
     #: The JSON Schema of its params, given the text of each (``_Say``).
     parameter_schema: Callable[[Say], dict] = field(default=_no_parameters, compare=False)
     #: What the tool does, in plain words for people, where the agent details
-    #: window lists an agent's tools. A mutate contract's starts "Propose".
+    #: window lists an agent's tools. An install's starts "Propose"; a
+    #: change's says what it does.
     label: str = ""
 
     def __post_init__(self):
@@ -388,7 +460,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="node.content.write",
         contract_version="1",
         effect="mutate",
-        label="Propose a content change",
+        label="Write a node's content",
         parameter_schema=lambda say: _object(
             {"nodeId": _node_id(say), "content": _text(say("content"))},
             "content",
@@ -397,19 +469,19 @@ REGISTRY: dict[str, ToolContract] = {
     # Consumers: the Node Builder and the Dataflow Builder. A node already on
     # the canvas: a Data Pool's modes, a Simple View's image column, a Spatial
     # Join's operation and output and its widget values, each judged by its
-    # node's own rule; the apply writes them, and the canvas makes the change
+    # node's own rule; the change lands at once, and the canvas makes it
     # through the node's own setters.
     "node.settings.write": ToolContract(
         id="node.settings.write",
         contract_version="1",
         effect="mutate",
-        label="Propose a settings change",
+        label="Change a node's settings",
         parameter_schema=lambda say: _object({
             "nodeId": _node_id(say),
             "dataPool": _data_pool(say),
             "simpleVis": _simple_vis(say),
             "spatialJoin": _spatial_join(say),
-            "widgets": _map(say("widgets")),
+            "widgets": _values_map(say("widgets")),
         }),
     ),
     # dev/50, consumer: the Dataset Finder. Grounds the "From your Data
@@ -458,6 +530,17 @@ REGISTRY: dict[str, ToolContract] = {
         effect="read",
         label="Search the Scenario Catalog",
         parameter_schema=lambda say: _object({"q": _text(say("q"))}),
+    ),
+    # Consumers: every chat run whose system turn lists skills, an agent's
+    # Curio ships or a user's (``skill_runs.grants``): it is granted exactly
+    # then, never by a manifest, and executed against the run's skills
+    # (``skill_runs.read``), never here.
+    SKILL_TOOL: ToolContract(
+        id=SKILL_TOOL,
+        contract_version="1",
+        effect="read",
+        label="Read a skill",
+        parameter_schema=_skill_read,
     ),
     # Discovery Catalog, consumer: the Dataset Finder. Three contracts, not
     # two, and deliberately the same roster/detail/reviewed-mutate shape
@@ -515,13 +598,13 @@ REGISTRY: dict[str, ToolContract] = {
     ),
     # dev/52, consumer: the Dataflow Builder. The DR-1 graph-level
     # mutation: the model emits a `dataflowPlan` tail block (not a
-    # toolRequest) and the runtime mints the reviewed plan proposal from it;
-    # the authenticated apply endpoint inserts the whole ADDITIVE graph.
+    # toolRequest), and the runtime checks the plan whole and lands it whole,
+    # as the agent's change (``proposals/plans._land_dataflow_plan``).
     "dataflow.plan.write": ToolContract(
         id="dataflow.plan.write",
         contract_version="1",
         effect="mutate",
-        label="Propose a plan",
+        label="Write a plan",
         parameter_schema=lambda say: _object(
             {
                 "goal": _text(say("goal")),
@@ -607,7 +690,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="node.create",
         contract_version="1",
         effect="mutate",
-        label="Propose a node",
+        label="Add a node",
         parameter_schema=lambda say: _object(
             {
                 "nodeType": _text(say("nodeType")),
@@ -642,9 +725,15 @@ REGISTRY: dict[str, ToolContract] = {
                 "mode": {"type": "string", "enum": ["create", "extend"]},
                 "baseDigest": _text(say("baseDigest")),
                 "target": _text(say("target")),
-                "manifest": _map(say("manifest")),
+                # Its numbers and true/false (compatibility.major, a
+                # template's hasCode) as JSON text: typed from the package
+                # schema, the manifest would cost every turn about 1,500
+                # characters, and a widget's default has no type there.
+                "manifest": _json_value(say("manifest")),
+                # A file's text or base64: texts (_map).
                 "files": _map(say("files")),
                 "behaviorEntries": _texts(say("behaviorEntries")),
+                # A dependency's constraint: a text (_map).
                 "dependencies": _map(say("dependencies")),
                 "previewTemplates": _texts(say("previewTemplates")),
                 "nodes": {
@@ -672,8 +761,9 @@ def resolve_grants(requested: Iterable[ToolRequirement]) -> list[str]:
     """The tool ids this run is granted: requested ∩ registry ∩ policy.
 
     Both effects are grantable (dev/41): ``read`` executes inside the bounded
-    loop; ``mutate`` may only be *proposed* — execution authority is the apply
-    endpoint alone. Anything unregistered resolves to "not granted" silently
+    loop; ``mutate`` runs its mint's checks, then a change lands as the
+    agent's change, and an install's only execution authority is the apply
+    endpoint. Anything unregistered resolves to "not granted" silently
     (required-ness is :func:`missing_required`'s concern)."""
     granted: list[str] = []
     for req in requested:
@@ -717,31 +807,79 @@ def delegate_tool(capabilities: Iterable[str]) -> dict:
                     "enum": list(capabilities),
                     "description": say("capability"),
                 },
-                "inputs": _map(say("inputs")),
+                # Whatever the delegate needs, keys and values, so no schema
+                # can type them: JSON text keeps each value's type.
+                "inputs": _json_value(say("inputs")),
             },
             "capability",
         ),
     }
 
 
-def native_tools(granted: Iterable[str], delegate_capabilities: Iterable[str] = ()) -> list[dict]:
+def native_tools(
+    granted: Iterable[str], delegate_capabilities: Iterable[str] = (), skills: Iterable[str] | None = None,
+) -> list[dict]:
     """The run's grants as native tools, ``{name, description, parameters}``
     each, in grant order, then the delegation tool when there is something to
-    delegate. Copies: a provider's conversion never reaches the registry."""
+    delegate. ``skill.read``'s ``name`` takes exactly *skills*, the skills the
+    run lists, when it gives them. Copies: a provider's conversion never
+    reaches the registry."""
     specs: list[dict] = []
     for tool_id in granted:
         contract = REGISTRY.get(tool_id)
         if contract is None:
             continue
+        parameters = copy.deepcopy(contract.parameters)
+        if contract.id == SKILL_TOOL and skills is not None:
+            parameters["properties"]["name"]["enum"] = list(skills)
         specs.append({
             "name": wire_name(contract.id),
             "description": contract.native_description or contract.description,
-            "parameters": copy.deepcopy(contract.parameters),
+            "parameters": parameters,
         })
     capabilities = list(dict.fromkeys(delegate_capabilities))
     if capabilities:
         specs.append(delegate_tool(capabilities))
     return specs
+
+
+def native_arguments(tool_id: str, arguments: dict) -> dict:
+    """The params a native call of *tool_id*, or the arguments of a call of
+    the delegation tool (:data:`DELEGATE_TOOL`), gives, as its fenced block
+    would hold them: each value its schema gives as JSON text
+    (:func:`_json_value`) read back into the value it encodes, with
+    ``json.loads`` as a fenced block is read. A text that is no JSON stays a
+    text, which the tool's own reader then judges, as it judges every other
+    value. Copies: the call keeps its arguments as the model sent them."""
+    if tool_id == DELEGATE_TOOL:
+        schema = delegate_tool(())["parameters"]
+    else:
+        contract = REGISTRY.get(tool_id)
+        if contract is None:
+            return arguments
+        schema = contract.parameters
+    if not isinstance(arguments, dict):
+        return arguments
+    return _read_json_text(arguments, schema)
+
+
+def _read_json_text(value, schema):
+    if not isinstance(schema, dict):
+        return value
+    if schema.get("contentMediaType") == JSON_TEXT:
+        if not isinstance(value, str):
+            return value
+        try:
+            return json.loads(value)
+        except (ValueError, RecursionError):
+            return value
+    if isinstance(value, dict):
+        properties = schema.get("properties") or {}
+        others = schema.get("additionalProperties")
+        return {key: _read_json_text(item, properties.get(key, others)) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_read_json_text(item, schema.get("items")) for item in value]
+    return value
 
 
 def _truncate(text: str) -> str:
@@ -1002,7 +1140,12 @@ def _execute_packages_resolve(user_key: str, params: dict) -> tuple[str, str]:
     return "ok", _truncate(json.dumps(report, ensure_ascii=False))
 
 
-def _node_row(node: dict, goal_cap: int) -> dict:
+def _node_row(node: dict, goal_cap: int | None, *, lineage: bool = True, values: bool = True) -> dict:
+    """One node as dataflow.read lists it, its goal cut to *goal_cap*
+    characters. A read past the tool output bound sheds parts of it
+    (:func:`_fit_projection`): with no *goal_cap* its goal, without *lineage*
+    the nodes it was copied from, and without *values* its widgets, selection
+    tags and settings."""
     from utk_curio.backend.app.execution.code_references import (
         effective_value,
         normalize_selections,
@@ -1010,62 +1153,70 @@ def _node_row(node: dict, goal_cap: int) -> dict:
     )
 
     content = str(node.get("content") or "")
-    row = {
-        "id": node.get("id"),
-        "type": node.get("type"),
-        "goal": str(node.get("goal") or "")[:goal_cap],
-        "hasContent": bool(content.strip()),
-        "contentChars": len(content),
-    }
+    row: dict = {"id": node.get("id"), "type": node.get("type")}
+    if goal_cap is not None:
+        row["goal"] = str(node.get("goal") or "")[:goal_cap]
+    row["hasContent"] = bool(content.strip())
+    row["contentChars"] = len(content)
     # A node pinned to the dataflow's dashboard is one of its tiles.
     if dashboards.is_pinned(node):
         row["pinned"] = True
-    # #662: the values its code reads through widget references, and the node
-    # a copy was copied from; each only when there is one.
-    widgets = normalize_widgets((node.get("metadata") or {}).get("widgets"))
-    if widgets:
-        row["widgets"] = [{"name": w["name"], "type": w["type"], "value": effective_value(w)} for w in widgets]
-    # The selection tags its code reads as [!! selection <name> !!]: each
-    # names its view and the column that identifies the view's rows. How many
-    # ids each holds, never the ids (up to SELECTION_ID_CAP of them).
-    selections = normalize_selections((node.get("metadata") or {}).get("selections"))
-    if selections:
-        row["selections"] = [
-            {"name": tag["name"], "view": tag["node"], "column": tag["column"],
-             "selected": len(tag["ids"]) if "ids" in tag else tag["count"]}
-            for tag in selections
-        ]
-    lineage = (node.get("metadata") or {}).get("copiedFrom")
-    if isinstance(lineage, list) and lineage:
-        row["copiedFrom"] = [str(i) for i in lineage]
-    # What its body's settings make it do, each only when it is not the
-    # node's default: a Spatial Join's operation and output, a Data Pool's
-    # conflict modes, a Simple View's image column.
-    row.update(node_settings.saved(node.get("metadata")))
+    if values:
+        # #662: the values its code reads through widget references, only
+        # when there are some.
+        widgets = normalize_widgets((node.get("metadata") or {}).get("widgets"))
+        if widgets:
+            row["widgets"] = [{"name": w["name"], "type": w["type"], "value": effective_value(w)} for w in widgets]
+        # The selection tags its code reads as [!! selection <name> !!]: each
+        # names its view and the column that identifies the view's rows. How
+        # many ids each holds, never the ids (up to SELECTION_ID_CAP of them).
+        selections = normalize_selections((node.get("metadata") or {}).get("selections"))
+        if selections:
+            row["selections"] = [
+                {"name": tag["name"], "view": tag["node"], "column": tag["column"],
+                 "selected": len(tag["ids"]) if "ids" in tag else tag["count"]}
+                for tag in selections
+            ]
+    # The node a copy was copied from, only for a copy.
+    copied_from = (node.get("metadata") or {}).get("copiedFrom")
+    if lineage and isinstance(copied_from, list) and copied_from:
+        row["copiedFrom"] = [str(i) for i in copied_from]
+    if values:
+        # What its body's settings make it do, each only when it is not the
+        # node's default: a Spatial Join's operation and output, a Data Pool's
+        # conflict modes, a Simple View's image column.
+        row.update(node_settings.saved(node.get("metadata")))
     return row
 
 
 def _scenario_rows(stripped: dict) -> list[dict]:
-    """#662: the dataflow's scenarios, each with what it is made of: its
-    levers (its nodes), its fixed context (the nodes outside it that it reads)
-    and its outcomes (what gets compared). The parts are read by the rule the
-    canvas and the Scenario Catalog read them by (``scenarioParts``). A
-    scenario dragged in from another project also names where it came from
-    (:func:`_scenario_sources`)."""
-    from utk_curio.backend.app.projects.scenarios import normalize_scenarios
+    """#662: the dataflow's scenarios, each with its scenario set's name
+    ("set") and its parts as the Scenario Catalog's details list them
+    (``scenario_parts``): its Scenario-specific nodes ("nodes"), its Shared
+    context ("context") and its Shared outcomes ("outcomes"). They are read as
+    a save keeps them, so a dataflow saved before sets reads with its sets and
+    lists filled in. A scenario dragged in from another project also names
+    where it came from (:func:`_scenario_sources`)."""
+    from utk_curio.backend.app.projects.scenarios import kept_scenarios
     from utk_curio.backend.app.scenario_catalog.domain.parts import scenario_parts, spec_nodes_and_edges
 
     nodes, edges = spec_nodes_and_edges(stripped)
-    raw = (stripped.get("dataflow") or {}).get("scenarios")
-    scenarios = normalize_scenarios(raw, [n["id"] for n in nodes])
+    scenarios, sets = kept_scenarios(stripped)
+    set_names = {x["id"]: x["name"] for x in sets}
     sources = _scenario_sources([scenario["source"] for scenario in scenarios if "source" in scenario])
     rows = []
     for scenario in scenarios:
-        parts = scenario_parts(scenario, nodes, edges)
+        parts = scenario_parts(scenario, nodes, edges, scenarios)
         row = {"id": scenario["id"], "name": scenario["name"], "color": scenario["color"]}
         if scenario.get("description"):
             row["description"] = scenario["description"]
-        row = {**row, "levers": parts["levers"], "context": parts["context"], "outcomes": parts["outcomes"]}
+        row = {
+            **row,
+            "set": set_names.get(scenario.get("set"), ""),
+            "nodes": parts["nodes"],
+            "context": parts["context"],
+            "outcomes": parts["outcomes"],
+        }
         source = scenario.get("source")
         if source is not None and (source["project"], source["scenario"]) in sources:
             row["source"] = sources[(source["project"], source["scenario"])]
@@ -1120,8 +1271,9 @@ def _dataflow_projection(stripped: dict, user_key: str, project_id: str) -> dict
     Edges are NEVER the truncation casualty: node content is elided to lengths
     (node.read serves any one node's content), goals are bounded, and the
     runtime journal's status map rides along so one call answers "what exists,
-    how it is wired, what ran, what failed". If the projection still exceeds
-    the tool budget, node GOALS shrink next — never the edge list.
+    how it is wired, what ran, what failed". A projection past the tool
+    output bound sheds parts in a stated order (:func:`_fit_projection`),
+    never its edges or its scenarios, so it is never cut mid-JSON.
     """
     from utk_curio.backend.app.execution import runtime_journal
 
@@ -1156,9 +1308,63 @@ def _dataflow_projection(stripped: dict, user_key: str, project_id: str) -> dict
     scenarios = _scenario_rows(stripped)
     if scenarios:
         projection["scenarios"] = scenarios
-    if len(json.dumps(projection, ensure_ascii=False)) > TOOL_RESULT_MAX_CHARS:
+    return _fit_projection(projection, nodes_raw)
+
+
+def _fit_projection(projection: dict, nodes_raw: list[dict]) -> dict:
+    """*projection* within the tool output bound, its parts shed in this
+    order, each only while it is still past the bound:
+
+    1. node goals cut to 40 characters;
+    2. the nodes a copy was copied from;
+    3. node goals;
+    4. the dataflow's datasets, each to its id;
+    5. the nodes' widgets, selection tags and settings;
+    6. the node rows past the bound, from the last, counted in
+       ``nodesElided``: the edges still name each.
+
+    node.read gives any one node whole. Its ``elided`` lists, in that order,
+    a message for each part it shed. The edges and the scenarios are never
+    shed, so a dataflow whose edges and scenarios alone pass the bound reads
+    whole past it rather than cut mid-JSON."""
+    elided: list[str] = []
+
+    def over() -> bool:
+        shown = {**projection, "elided": elided} if elided else projection
+        return len(json.dumps(shown, ensure_ascii=False)) > TOOL_RESULT_MAX_CHARS
+
+    if over():
+        elided.append(agent_text.message("tools.goals-shortened"))
         projection["nodes"] = [_node_row(n, goal_cap=40) for n in nodes_raw]
-        projection["elided"] = agent_text.message("tools.goals-shortened")
+    if over():
+        elided.append(agent_text.message("tools.lineage-left-out"))
+        projection["nodes"] = [_node_row(n, goal_cap=40, lineage=False) for n in nodes_raw]
+    if over():
+        elided.append(agent_text.message("tools.goals-left-out"))
+        projection["nodes"] = [_node_row(n, goal_cap=None, lineage=False) for n in nodes_raw]
+    if over():
+        elided.append(agent_text.message("tools.datasets-shortened"))
+        projection["datasets"] = [
+            {"datasetId": d.get("datasetId")} if isinstance(d, dict) else d for d in projection["datasets"]
+        ]
+    if over():
+        elided.append(agent_text.message("tools.values-left-out"))
+        projection["nodes"] = [_node_row(n, goal_cap=None, lineage=False, values=False) for n in nodes_raw]
+    if over():
+        elided.append(agent_text.message("tools.nodes-left-out"))
+        rows = projection["nodes"]
+        # The most rows that fit, found by halving.
+        low, high = 0, len(rows)
+        while low < high:
+            middle = (low + high + 1) // 2
+            projection["nodes"], projection["nodesElided"] = rows[:middle], len(rows) - middle
+            if over():
+                high = middle - 1
+            else:
+                low = middle
+        projection["nodes"], projection["nodesElided"] = rows[:low], len(rows) - low
+    if elided:
+        projection["elided"] = elided
     return projection
 
 
@@ -1208,23 +1414,33 @@ def _history_row(record: dict) -> dict:
     }
 
 
-def _execute_node_history_read(spec: dict, target: dict | None, params: dict) -> tuple[str, str]:
+def _execute_node_history_read(spec: dict, target: dict | None, params: dict,
+                               user_key: str = "", project_id: str = "") -> tuple[str, str]:
     """``node.history.read``: a node's entries, newest first, or with
-    ``entryId`` that entry's code, from the saved dataflow's
-    ``nodeProvenance``, keyed by node id as a load keys it
-    (``projects/node_provenance``, the twin of ``utils/nodeProvenanceKeys.ts``)."""
+    ``entryId`` that entry's code. A dataflow whose history the server keeps
+    as points reads the node's entries there (``collaboration/history``);
+    another reads the saved dataflow's ``nodeProvenance``, keyed by node id
+    as a load keys it (``projects/node_provenance``, the twin of
+    ``utils/nodeProvenanceKeys.ts``)."""
+    from utk_curio.backend.app.collaboration import history
     from utk_curio.backend.app.projects.node_provenance import rekey_node_provenance
 
     node_id = _resolve_node_id(target, params)
     if not node_id:
         return "error", agent_text.message("tools.no-node-id")
     nodes = [n for n in (spec.get("dataflow") or {}).get("nodes") or [] if isinstance(n, dict)]
-    if not any(n.get("id") == node_id for n in nodes):
+    node = next((n for n in nodes if n.get("id") == node_id), None)
+    if node is None:
         return "error", agent_text.message("tools.node-not-in-spec", node_id=repr(node_id))
-    saved = spec.get("nodeProvenance")
-    keyed = rekey_node_provenance(saved if isinstance(saved, dict) else {}, [str(n.get("id")) for n in nodes])
+    if user_key and project_id and history.has_points(user_key, project_id):
+        code = node.get("content") if isinstance(node.get("content"), str) else None
+        found = history.entries(user_key, project_id, node_id, code=code)["entries"]
+    else:
+        saved = spec.get("nodeProvenance")
+        keyed = rekey_node_provenance(saved if isinstance(saved, dict) else {}, [str(n.get("id")) for n in nodes])
+        found = keyed.get(node_id) or []
     records = sorted(
-        (record for record in keyed.get(node_id) or [] if isinstance(record, dict)),
+        (record for record in found if isinstance(record, dict)),
         key=lambda record: _whole_number(record.get("id")) or 0,
         reverse=True,
     )
@@ -1436,8 +1652,8 @@ def execute_read_tool(
             if isinstance(include, list) and "content" in include:
                 # The pre-dev/67-2 full dump, on request (large; may truncate).
                 return "ok", _truncate(json.dumps(stripped, ensure_ascii=False))
-            projection = _dataflow_projection(stripped, user_key, project_id)
-            return "ok", _truncate(json.dumps(projection, ensure_ascii=False))
+            # Fit to the bound by the parts it sheds, never cut.
+            return "ok", json.dumps(_dataflow_projection(stripped, user_key, project_id), ensure_ascii=False)
         if tool_id == "node.read":
             node_id = _resolve_node_id(target, params)
             if not node_id:
@@ -1479,7 +1695,7 @@ def execute_read_tool(
             record["contentChangedSinceRun"] = bool(executed_sha) and executed_sha != current_sha
             return "ok", _truncate(json.dumps(record, ensure_ascii=False))
         if tool_id == "node.history.read":
-            return _execute_node_history_read(spec, target, params)
+            return _execute_node_history_read(spec, target, params, user_key, project_id)
         if tool_id == "catalog.search":
             rows = _catalog_listing_rows(user_key, project_id, params)
             return "ok", _truncate(json.dumps(_cut("datasets", rows, _CATALOG_SEARCH_MAX_ROWS), ensure_ascii=False))

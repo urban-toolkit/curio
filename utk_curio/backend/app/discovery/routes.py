@@ -86,12 +86,14 @@ def _icon_path(manifest: DiscoverySourceManifest):
     return candidate
 
 
-def _service() -> DiscoveryService:
+def _service(dataflow_id: str | None = None) -> DiscoveryService:
     """The per-request service, carrying who is asking.
 
     The user is needed for two things and nothing else: the per-source rate
     limit is per account, and a portal token is an account credential. Both
     come from ``g.user``, which ``@require_auth`` has already resolved.
+    *dataflow_id*, for a read of a collection's files, is the dataflow the
+    caller reads it through (``DiscoveryService.collection``).
     """
     from utk_curio.backend.app.projects.services import _user_dir_key
 
@@ -100,6 +102,7 @@ def _service() -> DiscoveryService:
         _user_dir_key(user) if user is not None else None,
         user=user,
         icon_url_for=_icon_url_for,
+        dataflow_id=dataflow_id,
     )
 
 
@@ -307,8 +310,10 @@ def list_discovery_resource_files(source_dir: str, resource_id: str):
 @_map_discovery_errors
 def get_discovery_collection(dataset_id: str):
     """Where a collection's files are (all local, or how many are cached) and a
-    few of them, by id, for a thumbnail strip."""
-    return jsonify(_service().collection_status(dataset_id)), 200
+    few of them, by id, for a thumbnail strip. ``?dataflowId=`` reads it
+    through that dataflow (``DiscoveryService.collection``)."""
+    service = _service(dataflow_id=request.args.get("dataflowId") or None)
+    return jsonify(service.collection_status(dataset_id)), 200
 
 
 @discovery_bp.route("/collections/<dataset_id>/cache", methods=["POST"])

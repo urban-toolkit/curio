@@ -9,13 +9,14 @@ import {
 import { drawerPendingInstalls } from "../../../services/datasetCatalog/pendingInstallView";
 import { DatasetCard } from "./DatasetCard";
 import { DatasetInstallingCard } from "./DatasetInstallingCard";
+import { EditorRequestsSection } from "../../catalog/EditorRequestsSection";
 import { useDatasetCatalogDrawer } from "./useDatasetCatalogDrawer";
 import { PackageSearchRow } from "components/packages/publishing/PackageSearchRow";
 import shell from "components/packages/publishing/CatalogDrawerShell.module.css";
 import { useDrawerDragThrough } from "components/packages/publishing/useDrawerDragThrough";
 import styles from "./DatasetCatalogDrawer.module.css";
 import ConfirmDialog from "../../ConfirmDialog";
-import { modalStackDepth } from "../../ModalShell";
+import { answerEscape, escapeAnswered, isTopDrawer } from "../../ModalShell";
 
 export interface DatasetCatalogDrawerProps {
   presented: boolean;
@@ -66,13 +67,18 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
   // gesture on either peer pressed it here and nothing happened.
   //
   // Two conditions, both shared with the Agent drawer: a modal rendered on top
-  // (the add/remove confirmation, the dataset detail) owns Escape while it is
-  // open, and a pinned drawer is being deliberately kept open.
+  // (the add/remove confirmation, the dataset detail) or a drawer opened over
+  // it owns Escape while it is open, the one it closed on included
+  // (`escapeAnswered`), and a pinned drawer is being deliberately kept open.
   useEffect(() => {
     if (!presented) return;
     const onKey = (ev: KeyboardEvent) => {
-      if (modalStackDepth() > 0) return;
-      if (ev.key === "Escape" && !pinned) onRequestClose?.();
+      if (escapeAnswered(ev)) return;
+      if (!isTopDrawer(drawerRef.current)) return;
+      if (ev.key === "Escape" && !pinned) {
+        answerEscape(ev);
+        onRequestClose?.();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -117,6 +123,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
           aria-modal="true"
           aria-labelledby="dataset-catalog-title"
           tabIndex={-1}
+          data-curio-open-drawer={presented || undefined}
           onTransitionEnd={handleDrawerTransitionEnd}
         >
           <DrawerHeader
@@ -182,6 +189,9 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
           </nav>
 
           <main className={shell.scrollBody}>
+            {/* What the dataflow's editors asked its owner to add, which she
+                reviews here: nothing while no request waits. */}
+            <EditorRequestsSection catalog="datasets" />
             {catalog.error ? <div className={shell.error}>{catalog.error}</div> : null}
             {catalog.loading && items.length === 0 ? (
               <div className={styles.skeletonList} aria-busy="true" aria-label="Loading datasets">

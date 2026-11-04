@@ -47,8 +47,10 @@ import { faFileCode } from "@fortawesome/free-solid-svg-icons";
 import shell from "./CatalogDrawerShell.module.css";
 import { useDrawerDragThrough } from "./useDrawerDragThrough";
 import styles from "./NodeCatalogDrawer.module.css";
-import { modalStackDepth } from "../../ModalShell";
+import { answerEscape, escapeAnswered, isTopDrawer } from "../../ModalShell";
 import ConfirmDialog from "../../ConfirmDialog";
+import { EditorRequestsSection } from "../../catalog/EditorRequestsSection";
+import { useAskForPackage } from "../useAskForPackage";
 
 
 export interface NodeCatalogDrawerProps {
@@ -129,7 +131,9 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
 
   // The drawer is *per-project*: Install/Uninstall write to the current
   // project's lockfile (see docs/NODE-CATALOG.md).
-  const { projectId, projectName, packages: projectPackages, requestProjectSave, projectDirty, nodes } = useFlowContext();
+  const {
+    projectId, projectName, packages: projectPackages, ensureProjectId: keepDataflow, projectDirty, whenChangesKept, nodes,
+  } = useFlowContext();
   const { showToast } = useToastContext();
   const hostedGuest = useHostedGuest();
 
@@ -143,26 +147,24 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   // actions here are mutually exclusive from the user's point of view, and a
   // single slot keeps the "what am I confirming" state next to the copy.
   const [confirmAction, setConfirmAction] = useState<{
-    title: string; body: string; confirmLabel: string; run: () => Promise<void>;
+    title: string; body: string; confirmLabel: string; run: () => Promise<void>; destructive?: boolean;
   } | null>(null);
 
   /**
    * A dataflow is created on its FIRST SAVE, so every lockfile write (Install,
-   * Remove, Import) saves first when there is no id (#220); the hook owns the
-   * sequencing and reports a refused save. Mirrors ``useDatasetCatalogDrawer``.
-   * Through the save queue: this save creates the project, and beside a create
-   * already out (an install save after a run) it would make a second dataflow.
-   * A hosted guest cannot save one, so it is told to sign in instead, in the
-   * words of the action that asked.
+   * Remove, Import) makes it first when there is no id (#220); the hook owns
+   * the sequencing and reports a refusal. Mirrors ``useDatasetCatalogDrawer``.
+   * One create at a time: beside one already out (after a run) it would make
+   * a second dataflow. A hosted guest cannot save one, so it is told to sign
+   * in instead, in the words of the action that asked.
    */
   const onEnsureProject = useCallback(async (action: ProjectSaveAction = "add") => {
     if (hostedGuest) {
       showToast(hostedGuestSignInNote(`${action} ${copy.items}`), "warning");
       return null;
     }
-    const detail = await requestProjectSave();
-    return (detail as { id?: string } | undefined)?.id ?? null;
-  }, [requestProjectSave, hostedGuest, showToast, copy.items]);
+    return keepDataflow();
+  }, [keepDataflow, hostedGuest, showToast, copy.items]);
 
   /** memo dev/101: when the backend's lockfile differs from the mirror, the
    *  palette/registry must follow — not only the drawer's pill. */
@@ -171,6 +173,12 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
       await refreshPackageRegistry();
     }
   }, []);
+
+  // On the owner's dataflow, an invited editor's Add of a package or a model
+  // asks her to add it (`useAskForPackage`): her review applies it. A card he
+  // drops on her canvas asks her too, and makes its node at once
+  // (`usePackageCardDrop`).
+  const askForPackage = useAskForPackage();
 
   const {
     installed, catalogByDir, catalog, catalogPublishedDirs, busy, cardActionDir, actionError, restartNoticeText,
@@ -192,6 +200,22 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     refreshRegistry: refreshPackageRegistry,
     logLabel: "NodeCatalogDrawer",
   });
+
+  const onAdd = useCallback((pkg: PackagePayload) => {
+    if (!askForPackage) {
+      void onInstall(pkg);
+      return;
+    }
+    setConfirmAction({
+      title: `Ask to add ${pkg.name}?`,
+      body: `Ask the dataflow's owner to add ${pkg.name} to this dataflow? It is added once the owner applies your request.`,
+      confirmLabel: "Ask the owner",
+      destructive: false,
+      run: async () => {
+        await askForPackage({ dirName: pkg.dirName, name: pkg.name }, { add: true });
+      },
+    });
+  }, [askForPackage, onInstall]);
 
   /** dirNames the current project has declared in its lockfile. Drives the
    * Install vs Uninstall affordance per card. */
@@ -238,11 +262,16 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   useEffect(() => {
     if (!presented) return;
     const onKey = (ev: KeyboardEvent) => {
-      // Defer to any open modal (see ModalShell's stack).
-      if (modalStackDepth() > 0) return;
+      // Defer to any open modal, or a drawer opened over this one (see
+      // ModalShell's stack), the Escape it closed on included.
+      if (escapeAnswered(ev)) return;
+      if (!isTopDrawer(drawerRef.current)) return;
       // ...and to the pin. This used to close a pinned drawer, discarding the
       // pin the user had just set - the Agent drawer already honoured it.
-      if (ev.key === "Escape" && !pinned) onRequestClose();
+      if (ev.key === "Escape" && !pinned) {
+        answerEscape(ev);
+        onRequestClose();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -327,6 +356,31 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
       }
     },
     [ensureProjectId, importArchive, reportActionError],
+  );
+
+  /**
+   * On the owner's dataflow, an invited editor's Import package: the archive's
+   * package goes into his own account, as a file he drops goes into his Data
+   * Catalog, and asks her to add it. His canvas saves no dataflow of his, so
+   * nothing lands in a lockfile here. A throw after the upload is reported, as
+   * `onPickArchive` reports it.
+   */
+  const importAndAskTheOwner = useCallback(
+    async (file: File) => {
+      if (!askForPackage) return;
+      setImportBusy(true);
+      try {
+        const imported = await importArchive(file, null);
+        if (imported) {
+          await askForPackage({ dirName: imported.package.dirName, name: imported.package.name }, { add: true });
+        }
+      } catch (err) {
+        reportActionError(`Couldn't import ${file.name}`, err);
+      } finally {
+        setImportBusy(false);
+      }
+    },
+    [askForPackage, importArchive, reportActionError],
   );
 
   /**
@@ -419,6 +473,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
           aria-modal="true"
           aria-labelledby={copy.titleId}
           tabIndex={-1}
+          data-curio-open-drawer={presented || undefined}
           onTransitionEnd={handleDrawerTransitionEnd}
         >
           <DrawerHeader
@@ -448,6 +503,10 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
           />
 
           <div className={shell.scrollBody}>
+            {/* What the dataflow's editors asked its owner to add, of this
+                catalog's kind, which she reviews here: nothing while no
+                request waits. */}
+            <EditorRequestsSection catalog={packageKind} />
             {noticeText ? (
               <div className={styles.noticeBanner} role="status">
                 <span className={styles.errorBannerText}>{noticeText}</span>
@@ -499,7 +558,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
                       busy={anyBusy}
                       cardActionDir={cardActionDir}
                       onOpenDetails={setDetailPkg}
-                      onInstall={(p) => void onInstall(p)}
+                      onInstall={(p) => onAdd(p)}
                       onUpdate={(p) => void onUpdate(p)}
                       onUninstall={(p) => onUninstall(p)}
                       hasProject={Boolean(projectId)}
@@ -546,7 +605,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
                           // No publish/unpublish here: account-level decisions
                           // live in the Node Catalog page's detail drawer.
                           onOpenDetails={setDetailPkg}
-                          onInstall={(p) => void onInstall(p)}
+                          onInstall={(p) => onAdd(p)}
                           onUpdate={(p) => void onUpdate(p)}
                           onUninstall={(p) => onUninstall(p)}
                           hasProject={Boolean(projectId)}
@@ -563,7 +622,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
 
           <DrawerFooter
             busy={anyBusy}
-            onSideload={(file) => void onPickArchive(file)}
+            onSideload={(file) => void (askForPackage ? importAndAskTheOwner(file) : onPickArchive(file))}
           >
             {/* A node, not a model, is written from a Python function. */}
             {packageKind === "node" ? (
@@ -596,6 +655,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
           pkg={detailPkg}
           isPublished={catalogPublishedDirs.has(detailPkg.dirName)}
           unsavedChanges={projectDirty}
+          whenChangesKept={whenChangesKept}
           onClose={() => setDetailPkg(null)}
         />
       ) : null}
@@ -617,7 +677,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
           title={confirmAction.title}
           body={confirmAction.body}
           confirmLabel={confirmAction.confirmLabel}
-          destructive
+          destructive={confirmAction.destructive ?? true}
           layer="overlay"
           onCancel={() => setConfirmAction(null)}
           onConfirm={() => {

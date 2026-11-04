@@ -1,14 +1,33 @@
 """dev/114 (DEC-072) — the one source-grounding gate: a local path is grounded
 only by the user or the Data Catalog, a URL only by the runtime's probe, inline
-data only when synthetic was asked for; everything else is refused with the
-correction named. Pure — no Flask, no network, no store."""
+data only when the user typed the values it adds or asked for synthetic data,
+and values a call makes up only when the user asked for synthetic data;
+everything else is refused with the correction named. Pure: no Flask, no
+network, no store."""
 
 from __future__ import annotations
+
+import pytest
 
 from utk_curio.backend.app.agents.application import source_grounding as sg
 
 ISSUE_298 = 'import pandas as pd\ndf = pd.read_csv("bras_ibge_data.csv")\nreturn df'
 CATALOG_PATH = "/curio/users/4242/datasets/census-acs@1/census_acs.parquet"
+#: The data-sources skill's evaluation case 3: a person asking for made-up data.
+MAKE_UP_ROOFS = ("I don't have the real numbers yet. Make up about 50 fake green roofs with a zip code "
+                 "and a vegetated area so I can try the chart.")
+#: What models wrote for it (Haiku 5.5 and gemma4, 11-04): labeled roofs drawn from a seeded generator.
+MADE_UP_ROOFS = (
+    "import numpy as np\nimport pandas as pd\n\n"
+    "# Made-up data: 50 fake green roofs, not real permits.\n"
+    "rng = np.random.default_rng(42)\n"
+    'zips = ["60601", "60602", "60606", "60607", "60611", "60614"]\n'
+    "roofs = pd.DataFrame({\n"
+    '    "zip_code": rng.choice(zips, size=50),\n'
+    '    "vegetated_sqft": rng.uniform(500, 20000, size=50).round(0),\n'
+    "})\n"
+    "return roofs"
+)
 
 
 def _ctx(**kw) -> sg.GroundingContext:
@@ -377,8 +396,50 @@ class TestUserTexts:
         # The model's declaration alone never authorizes.
         assert sg.synthetic_requested(["load the IBGE data"], {"synthetic": True}) is False
 
+    def test_synthetic_hears_the_ways_people_ask_for_made_up_data(self):
+        """The data-sources skill's case 3 asks to "Make up about 50 fake green
+        roofs", words no marker held, so every model's labeled made-up roofs
+        were refused as values the user never typed (Haiku 5.5 and gemma4)."""
+        for asked in (
+            MAKE_UP_ROOFS,
+            "make up some numbers for the bike counts",
+            "Can you make up 20 stations?",
+            "please make some readings up for the sensors",
+            "invent a few weather stations with readings",
+            "give me fictional parcels for the demo",
+            "use made up numbers until the survey comes back",
+            "fill the table with dummy values",
+            "a few fake trees will do",
+        ):
+            assert sg.synthetic_requested([asked]) is True, asked
+
+    def test_synthetic_is_not_heard_in_words_that_mean_something_else(self):
+        for said in (
+            "show the tracts that make up downtown",
+            "parks make up 30% of the area",
+            "the region is made up of 12 counties",
+            "create dummy variables for the land use column",
+            "keep a random sample of the rows",
+            "list the inventory of street trees",
+            "load the IBGE demographic data",
+        ):
+            assert sg.synthetic_requested([said]) is False, said
+
 
 class TestVerdicts:
+    def test_made_up_roofs_the_person_asked_for_are_grounded(self):
+        """The whole path of the data-sources skill's case 3: the person's words
+        reach the gate as the run's texts, and the labeled made-up roofs a model
+        writes for them pass as synthetic, not as values the user never typed."""
+        from utk_curio.backend.app.agents.application.turns import grounding
+
+        base = {"catalog_paths": {}, "catalog_ids": {}, "verified": {}, "secrets": {}, "texts": [MAKE_UP_ROOFS]}
+        ctx = grounding._grounding_context("4242", "p-1", {"message": MAKE_UP_ROOFS},
+                                           node_type="curio.builtin/data-loading", base=base)
+        verdict = sg.check_grounding(MADE_UP_ROOFS, "python", ctx)
+        assert verdict.ok, verdict.violations
+        assert [ref["kind"] for ref in verdict.source["refs"]] == ["synthetic"], verdict.source
+
     def test_issue_298_shape_is_refused_with_the_literal_named(self):
         verdict = sg.check_grounding(ISSUE_298, "python", _ctx(is_data_loading=True))
         assert verdict.ok is False
@@ -619,3 +680,260 @@ class TestConnectionKeys:
             assert self._VALUE not in repr(found)
         for code in self.SHARED_NEGATIVE:
             assert sg.credential_literals(code, "python") == [], code
+
+
+#: The Data Loading node of docs/examples/dataflows/vega.json, as it ships.
+VEGA_LOADER = (
+    'import pandas as pd\r\n\r\nd = {\'a\': ["A", "B", "C", "D", "E", "F", "G", "H", "I"], '
+    "'b': [28, 55, 43, 91, 81, 53, 19, 87, 52]}\r\ndf = pd.DataFrame(data=d)\r\n\r\nreturn df"
+)
+
+
+def _chat(*messages: str, current: str | None = None) -> sg.GroundingContext:
+    """A data-loading node's context in a chat whose user typed *messages*,
+    for a node that holds *current*, as ``_grounding_context`` gives it."""
+    ctx = _ctx(is_data_loading=True)
+    ctx.user_messages = messages
+    ctx.current_content = current
+    return ctx
+
+
+class TestValuesTheUserTyped:
+    """Step 39's live runs (10-30): asked "Add two more bars to this chart: J
+    with 60 and K with 33." on vega.json, every write of the two rows into its
+    Data Loading node was refused as made-up data, so the agent made a new
+    node instead. The values a write adds to those the node holds are
+    grounded when the user typed them in the conversation; any other value is
+    still refused, and named."""
+
+    MESSAGE = "Add two more bars to this chart: J with 60 and K with 33."
+    ROWS = VEGA_LOADER.replace('"I"]', '"I", "J", "K"]').replace("52]", "52, 60, 33]")
+
+    def test_the_rows_the_user_typed_are_grounded_beside_the_nodes_own(self):
+        verdict = sg.check_grounding(self.ROWS, "python", _chat(self.MESSAGE, current=VEGA_LOADER))
+        assert verdict.ok, verdict.violations
+        assert verdict.source["kind"] == "user-values"
+        assert verdict.source["refs"] == [{"kind": "user-values", "value": "'J', 'K', 60, 33"}]
+        assert verdict.source["label"] == "User-provided values · 'J', 'K', 60, 33"
+        # The same rows as a frame of their own, joined: a flag is no value,
+        # and a column name the node holds is the node's own.
+        joined = VEGA_LOADER.replace(
+            "\r\n\r\nreturn df",
+            "\r\nrows = pd.DataFrame({'a': ['J', 'K'], 'b': [60, 33]})"
+            "\r\ndf = pd.concat([df, rows], ignore_index=True)\r\n\r\nreturn df",
+        )
+        verdict = sg.check_grounding(joined, "python", _chat(self.MESSAGE, current=VEGA_LOADER))
+        assert verdict.ok and verdict.source["kind"] == "user-values", verdict.violations
+
+    def test_a_value_the_user_did_not_type_is_refused_by_name(self):
+        invented = self.ROWS.replace('"K"]', '"K", "L"]').replace("33]", "33, 99]")
+        ctx = _chat(self.MESSAGE, current=VEGA_LOADER)
+        verdict = sg.check_grounding(invented, "python", ctx)
+        assert not verdict.ok and verdict.source is None
+        assert len(verdict.violations) == 2, verdict.violations
+        assert "'L' (line 3)" in verdict.violations[0] and "99 (line 3)" in verdict.violations[0]
+        assert "'J'" not in verdict.violations[0] and "60" not in verdict.violations[0]
+        assert "no grounded source" in verdict.violations[1]
+        text = sg.refusal_text(verdict, ctx)
+        assert "values the user typed in this conversation" in text, text
+        # A number of the node's is its own only as many times as the node
+        # holds it: 28 is A's, so J's 28 is a value the user did not give.
+        moved = self.ROWS.replace("52, 60, 33]", "52, 28, 33]")
+        verdict = sg.check_grounding(moved, "python", ctx)
+        assert not verdict.ok and "28 (line 3)" in verdict.violations[0], verdict.violations
+        # Moved where the user said, it is theirs: "set B to 28".
+        set_b = VEGA_LOADER.replace("[28, 55,", "[28, 28,")
+        verdict = sg.check_grounding(set_b, "python", _chat("Set B to 28.", current=VEGA_LOADER))
+        assert verdict.ok and verdict.source["refs"][0]["value"] == "28", verdict.violations
+
+    def test_a_number_is_read_by_its_value_and_a_word_whole(self):
+        table = 'return pd.DataFrame({"name": ["Lincoln Park"], "trees": [1200.0], "low": [-5]})'
+        said = 'A table where "name" is Lincoln Park, "trees" is 1,200 and "low" is -5.'
+        verdict = sg.check_grounding(table, "python", _chat(said))
+        assert verdict.ok, verdict.violations
+        for code, message, named in (
+            ('return pd.DataFrame({"J": [60]})', "Add Jay with 60", "'J' (line 1)"),
+            ('return pd.DataFrame({"J": [2]})', "Add J with J2", "2 (line 1)"),
+            ('return pd.DataFrame({"J": [5]})', "Add J with -5", "5 (line 1)"),
+            ('return pd.DataFrame({"J": [0.5]})', "Add J with 3.5", "0.5 (line 1)"),
+        ):
+            verdict = sg.check_grounding(code, "python", _chat(message))
+            assert not verdict.ok and named in verdict.violations[0], (code, message, verdict.violations)
+
+    def test_a_write_that_adds_no_value_the_user_typed_is_refused_as_before(self):
+        """The node's own values ground nothing alone: its rows with random
+        numbers in place of b add no value, and a write where no conversation
+        is read (a Solve) adds none the user typed."""
+        random_b = VEGA_LOADER.replace(
+            "df = pd.DataFrame(data=d)", "df = pd.DataFrame(data=d)\r\ndf['b'] = np.random.rand(len(df))",
+        )
+        ctx = _chat(self.MESSAGE, current=VEGA_LOADER)
+        verdict = sg.check_grounding(random_b, "python", ctx)
+        assert not verdict.ok and len(verdict.violations) == 1, verdict.violations
+        assert "no grounded source" in verdict.violations[0]
+        assert "values the user typed in this conversation" in sg.refusal_text(verdict, ctx)
+        solve = _chat(current=VEGA_LOADER)
+        verdict = sg.check_grounding(self.ROWS, "python", solve)
+        assert not verdict.ok and len(verdict.violations) == 1, verdict.violations
+        assert "values the user typed" not in sg.refusal_text(verdict, solve)
+
+
+#: A Data Catalog dataset of the project, and a data-loading node that loads it.
+CENSUS = sg.CatalogRef("census-acs", "Census ACS", "parquet", CATALOG_PATH)
+LOADS_CENSUS = 'df = curio_load_data("census-acs")'
+
+#: Each grounded source a data-loading node may read: its loader, ending in
+#: ``return df``, and the context that grounds it.
+GROUNDED_SOURCES = {
+    "catalog-id": (LOADS_CENSUS + "\nreturn df", {"catalog_ids": {"census-acs": CENSUS}}),
+    "catalog-path": (f'df = pd.read_parquet("{CATALOG_PATH}")\nreturn df', {"catalog_paths": {CATALOG_PATH: CENSUS}}),
+    "user-path": ('df = pd.read_csv("data/tracts.csv")\nreturn df', {"user_paths": {"data/tracts.csv"}}),
+    "verified-url": (
+        'df = pd.read_json("https://data.example.gov/tracts.json")\nreturn df',
+        {"verified_urls": {"https://data.example.gov/tracts.json": {"status": "verified", "httpStatus": 200}}},
+    ),
+    "saved-key": (
+        'import requests\napi_key = curio_secret("census")\n'
+        'r = requests.get("https://api.census.gov/data/2020/acs", params={"key": api_key})\n'
+        "df = pd.DataFrame(r.json())\nreturn df",
+        {"secrets": {"census": sg.SecretRef("census", "api.census.gov", "query:key")},
+         "probe": lambda url: {"status": "unreachable", "httpStatus": 401}},
+    ),
+}
+
+
+def _census(**kw) -> sg.GroundingContext:
+    """A data-loading node's context in a project whose Data Catalog holds CENSUS."""
+    return _ctx(is_data_loading=True, catalog_ids={"census-acs": CENSUS}, **kw)
+
+
+def _beside(loads: str, line: str) -> str:
+    """*loads*, a loader that ends in ``return df``, with *line* before its return."""
+    return loads.replace("\nreturn df", f"\n{line}\nreturn df")
+
+
+class TestValuesACallMakesUp:
+    """Step 45 (10-30, the limit step 40 found): the gate read only literals,
+    so values code makes up with a call (a column of random numbers, faked
+    names, a sample dataset) passed beside the values the user typed and
+    beside any grounded source, though the user never asked for made-up
+    data. Each call that makes values up is refused by name unless the user
+    asked for synthetic data; what the code computes from what it loads is
+    not made up."""
+
+    MESSAGE = "Add a bar J with 60, and a column c with each bar's share of the total."
+    BAR = VEGA_LOADER.replace('"I"]', '"I", "J"]').replace("52]", "52, 60]")
+    RANDOM_C = BAR.replace("df = pd.DataFrame(data=d)", "df = pd.DataFrame(data=d)\r\ndf['c'] = np.random.rand(len(df))")
+    SHARE_C = BAR.replace("df = pd.DataFrame(data=d)", "df = pd.DataFrame(data=d)\r\ndf['c'] = df['b'] / df['b'].sum()")
+    NOISE = 'df["noise"] = np.random.normal(0, 1, len(df))'
+
+    def test_a_random_column_beside_the_values_the_user_typed_is_refused_by_name(self):
+        ctx = _chat(self.MESSAGE, current=VEGA_LOADER)
+        verdict = sg.check_grounding(self.RANDOM_C, "python", ctx)
+        assert not verdict.ok and verdict.source is None, verdict.source
+        assert len(verdict.violations) == 2, verdict.violations
+        assert "np.random.rand (line 5)" in verdict.violations[0], verdict.violations
+        assert "'J'" not in verdict.violations[0] and "60" not in verdict.violations[0]
+        assert "no grounded source" in verdict.violations[1]
+        # A source is missing, which the node's Dataset Finder can look for.
+        assert sg.failure_kind(verdict) == sg.SOURCE_KIND
+        text = sg.refusal_text(verdict, ctx)
+        assert "np.random.rand (line 5)" in text and "DataFrame.sample" in text, text
+        # The column the user asked for, computed from the bars, is theirs.
+        verdict = sg.check_grounding(self.SHARE_C, "python", ctx)
+        assert verdict.ok, verdict.violations
+        assert verdict.source["refs"] == [{"kind": "user-values", "value": "'J', 60, 'c'"}]
+
+    @pytest.mark.parametrize("source", sorted(GROUNDED_SOURCES))
+    def test_a_random_column_beside_any_grounded_source_is_refused_by_name(self, source):
+        loads, grounds = GROUNDED_SOURCES[source]
+        ctx = _ctx(is_data_loading=True, **grounds)
+        alone = sg.check_grounding(loads, "python", ctx)
+        assert alone.ok, alone.violations
+        made_up = _beside(loads, self.NOISE)
+        line = made_up.count("\n", 0, made_up.index("np.random")) + 1
+        verdict = sg.check_grounding(made_up, "python", ctx)
+        assert not verdict.ok and verdict.source is None, verdict.source
+        assert len(verdict.violations) == 1, verdict.violations
+        assert f"np.random.normal (line {line})" in verdict.violations[0], verdict.violations
+        assert sg.failure_kind(verdict) == sg.SOURCE_KIND
+        # A column derived from what the node loads stays grounded by its source.
+        derived = sg.check_grounding(_beside(loads, 'df["density"] = df["pop"] / df["area"]'), "python", ctx)
+        assert derived.ok and derived.source["kind"] == alone.source["kind"], derived.violations
+
+    def test_each_way_code_draws_fakes_or_makes_up_a_dataset_is_named(self):
+        ctx = _census()
+        for lines, named in (
+            ('import numpy as xp\ndf["x"] = xp.random.normal(size=len(df))', "xp.random.normal (line 3)"),
+            ('import numpy.random as npr\ndf["x"] = npr.poisson(3, len(df))', "npr.poisson (line 3)"),
+            ('from numpy.random import default_rng\nrng = default_rng(0)\ndf["x"] = rng.integers(0, 9, len(df))',
+             "rng.integers (line 4)"),
+            ('df["x"] = np.random.default_rng(0).uniform(size=len(df))', "np.random.default_rng(0).uniform (line 2)"),
+            ('df["kind"] = np.random.choice(["low", "high"], size=len(df))', "np.random.choice (line 2)"),
+            ('import random\ndf["x"] = [random.randint(1, 9) for _ in range(len(df))]', "random.randint (line 3)"),
+            ('from random import choice\ndf["kind"] = [choice("AB") for _ in range(len(df))]', "choice (line 3)"),
+            ('from faker import Faker\nfake = Faker()\ndf["owner"] = [fake.name() for _ in range(len(df))]',
+             "fake.name (line 4)"),
+            ('from sklearn.datasets import make_blobs\nX, labels = make_blobs(n_samples=len(df))\ndf["k"] = labels',
+             "make_blobs (line 3)"),
+        ):
+            verdict = sg.check_grounding(LOADS_CENSUS + "\n" + lines + "\nreturn df", "python", ctx)
+            assert not verdict.ok and len(verdict.violations) == 1, (lines, verdict.violations)
+            assert named in verdict.violations[0], (lines, verdict.violations)
+
+    def test_what_draws_nothing_or_samples_the_loaded_rows_is_not_made_up(self):
+        ctx = _census()
+        verdict = sg.check_grounding(_beside(LOADS_CENSUS + "\nreturn df", self.NOISE), "python", ctx)
+        assert not verdict.ok, "a column of random numbers beside the dataset is made up"
+        for lines in (
+            "np.random.seed(0)\nrandom.seed(0)",
+            "df = df.sample(frac=0.1, random_state=42)",
+            "rng = np.random.default_rng(0)\ndf = df.sample(n=10, random_state=rng)",
+            "random = df.sample(5)\ndf = random.head(3)",
+            'df["density"] = df["pop"] / df["area"]\ndf = df[df["density"] > 1000]',
+            'df = df.merge(df.groupby("county", as_index=False)["pop"].sum(), on="county", suffixes=("", "_all"))',
+            'df["rank"] = range(len(df))',
+        ):
+            verdict = sg.check_grounding(LOADS_CENSUS + "\n" + lines + "\nreturn df", "python", ctx)
+            assert verdict.ok and verdict.source["kind"] == "catalog", (lines, verdict.violations)
+        # Code of a node that loads no data is not judged: it may draw.
+        verdict = sg.check_grounding('df = input_0[0]\ndf["x"] = np.random.rand(len(df))\nreturn df', "python", _ctx())
+        assert verdict.ok and verdict.source is None, verdict.violations
+
+    def test_a_call_the_node_holds_is_its_own(self):
+        held = _beside(LOADS_CENSUS + "\nreturn df", self.NOISE)
+        ctx = _census(current_content=held)
+        kept = _beside(held, 'df["density"] = df["pop"] / df["area"]')
+        verdict = sg.check_grounding(kept, "python", ctx)
+        assert verdict.ok and verdict.source["kind"] == "catalog", verdict.violations
+        # The node's own draws, beside the rows the user typed.
+        random_b = VEGA_LOADER.replace(
+            "df = pd.DataFrame(data=d)", "df = pd.DataFrame(data=d)\r\ndf['b'] = np.random.rand(len(df))",
+        )
+        bar = random_b.replace('"I"]', '"I", "J"]').replace("52]", "52, 60]")
+        verdict = sg.check_grounding(bar, "python", _chat("Add a bar J with 60.", current=random_b))
+        assert verdict.ok and verdict.source["refs"] == [{"kind": "user-values", "value": "'J', 60"}], verdict.violations
+        # A call the node holds is its own as many times as the node holds it:
+        # a second draw is one the write adds, named at its own line.
+        more = _beside(held, self.NOISE.replace('"noise"', '"more"'))
+        verdict = sg.check_grounding(more, "python", ctx)
+        assert not verdict.ok and len(verdict.violations) == 1, verdict.violations
+        assert "np.random.normal (line 3)" in verdict.violations[0], verdict.violations
+        assert "(line 2)" not in verdict.violations[0]
+
+    def test_a_user_who_asked_for_synthetic_data_still_gets_it(self):
+        made_up = _beside(LOADS_CENSUS + "\nreturn df", self.NOISE)
+        verdict = sg.check_grounding(made_up, "python", _census(synthetic_requested=True))
+        assert verdict.ok, verdict.violations
+        # Beside the dataset, the card names the calls the user asked for.
+        assert verdict.source["kind"] == "mixed"
+        assert verdict.source["refs"][-1] == {"kind": "synthetic", "value": "np.random.normal"}
+        assert "Synthetic · np.random.normal" in verdict.source["label"], verdict.source["label"]
+        # Beside values the user typed, and with no source: synthetic, as before.
+        ctx = _chat(self.MESSAGE, current=VEGA_LOADER)
+        ctx.synthetic_requested = True
+        verdict = sg.check_grounding(self.RANDOM_C, "python", ctx)
+        assert verdict.ok and verdict.source["kind"] == "synthetic", verdict.violations
+        verdict = sg.check_grounding('df = pd.DataFrame({"x": np.random.rand(5)})\nreturn df', "python",
+                                     _ctx(is_data_loading=True, synthetic_requested=True))
+        assert verdict.ok and verdict.source["refs"] == [{"kind": "synthetic"}], verdict.violations

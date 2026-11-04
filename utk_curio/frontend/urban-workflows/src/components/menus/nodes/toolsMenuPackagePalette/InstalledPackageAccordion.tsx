@@ -43,6 +43,11 @@ export const InstalledPackageAccordion = memo(function InstalledPackageAccordion
     const [metadataOpen, setMetadataOpen] = useState(false);
     const [detailPkg, setDetailPkg] = useState<PackagePayload | null>(null);
     const isReadOnly = !!group.descriptors[0]?.package?.readOnly;
+    // The dataflow owner's copy of a package this account does not hold, on
+    // the canvas of her dataflow: its nodes are here to drag, and nothing
+    // else, since details, export, metadata and publish act on this
+    // account's own copy, which it does not have.
+    const isOwnersCopy = !!group.descriptors[0]?.package?.ownersCopy;
 
     const onExportClick = useCallback(
         async (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -152,7 +157,7 @@ export const InstalledPackageAccordion = memo(function InstalledPackageAccordion
             title={rowTitle}
             titleTooltip={group.label !== rowTitle ? `${rowTitle} — ${group.label}` : rowTitle}
             count={group.descriptors.length}
-            actions={actions}
+            actions={isOwnersCopy ? undefined : actions}
             selected={group.key === activePackageKey}
             onSummaryClick={() => setActivePackageKey(group.key)}
         >

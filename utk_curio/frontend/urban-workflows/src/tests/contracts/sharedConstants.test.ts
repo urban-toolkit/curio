@@ -149,6 +149,36 @@ describe("what a visualization node does by itself", () => {
   });
 });
 
+describe("the installs a dataflow's owner reviews", () => {
+  test("a proposal installs into an account exactly when the file names its tool", () => {
+    // Read here, so a checkout without the file or the module fails this test alone.
+    expect(fs.existsSync(path.join(CONTRACTS, "agentInstalls.json"))).toBe(true);
+    const { ACCOUNT_INSTALL_TOOLS, installsIntoAccount } = require("../../services/agents/agentEditors");
+    const { tools } = shared("agentInstalls");
+    expect(tools.length).toBeGreaterThan(0);
+    for (const tool of tools) expect(installsIntoAccount(tool)).toBe(true);
+    expect([...ACCOUNT_INSTALL_TOOLS].sort()).toEqual([...tools].sort());
+    for (const tool of ["node.create", "node.content.write", "dataflow.plan.write", "project.install"]) {
+      expect(installsIntoAccount(tool)).toBe(false);
+    }
+  });
+});
+
+describe("the tools whose work lands as the agent's change", () => {
+  test("a review lands as a change exactly when the file names its tool, and no install does", () => {
+    // Read here, so a checkout without the file or the module fails this test alone.
+    expect(fs.existsSync(path.join(CONTRACTS, "agentChanges.json"))).toBe(true);
+    const { AGENT_CHANGE_TOOLS, landsAsAChange } = require("../../services/agents/agentChanges");
+    const { tools } = shared("agentChanges");
+    expect(tools.length).toBeGreaterThan(0);
+    for (const tool of tools) expect(landsAsAChange(tool)).toBe(true);
+    expect([...AGENT_CHANGE_TOOLS].sort()).toEqual([...tools].sort());
+    for (const tool of [...shared("agentInstalls").tools, "project.install"]) {
+      expect(landsAsAChange(tool)).toBe(false);
+    }
+  });
+});
+
 /** Every value of the shared files with a space in it, and every palette color. */
 function sentencesAndColors(): string[] {
   const found = new Set<string>();

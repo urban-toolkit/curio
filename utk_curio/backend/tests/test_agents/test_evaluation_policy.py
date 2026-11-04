@@ -31,11 +31,19 @@ def _proposal(tool: str, **pins) -> dict:
 
 
 class TestTheDecisions:
-    def test_a_plan_is_applied_whole(self):
-        policy = policy_mod.UserPolicy.for_fixture(WITH_DATASETS)
-        decision = policy.decide(_proposal("dataflow.plan.write"))
-        assert decision.apply is True
-        assert decision.pending is False
+    def test_a_plan_lands_whole_so_there_is_nothing_to_apply(self):
+        """Rule 2: a plan is the agent's change, landed with the reply, never
+        a proposal; both callers read it from the reply's change parts."""
+        from utk_curio.backend.tests.test_agents._reconstruction_driver import TurnResult
+
+        assert "dataflow.plan.write" not in policy_mod.APPLICABLE_TOOLS
+        landed = {"type": "change", "changeId": "c-1", "tool": "dataflow.plan.write", "kind": "plan"}
+        turn = TurnResult(parts=[landed])
+        assert turn.plan_change == landed
+        assert turn.proposals == [] and turn.refused is False
+        assert TurnResult(parts=[]).refused is True
+        live_source = inspect.getsource(live_mod.LiveRun.run_fixture)
+        assert '"change"' in live_source and "dataflow.plan.write" in live_source
 
     def test_a_required_dataset_install_is_applied(self):
         policy = policy_mod.UserPolicy.for_fixture(WITH_DATASETS)
@@ -95,16 +103,16 @@ class TestTheDecisions:
     def test_decide_all_keeps_order(self):
         policy = policy_mod.UserPolicy.for_fixture(WITH_DATASETS)
         decisions = policy.decide_all([
-            _proposal("dataflow.plan.write"),
-            _proposal("node.content.write"),
+            _proposal("package.draft.apply"),
+            _proposal("project.install"),
         ])
         assert [d.tool for d in decisions] == [
-            "dataflow.plan.write", "node.content.write",
+            "package.draft.apply", "project.install",
         ]
 
     def test_no_agents_review_policy_was_widened(self):
-        """Nothing global changed: the Dataflow Builder still reviews before
-        applying, everywhere."""
+        """Nothing global changed: the Dataflow Builder's installs still wait
+        for review, everywhere."""
         from utk_curio.backend.app.agents.domain import builtin
 
         manifest = next(

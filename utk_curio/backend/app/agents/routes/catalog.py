@@ -12,6 +12,7 @@ from flask import request
 
 from utk_curio.backend.app.agents import service as agents_services
 from utk_curio.backend.app.agents.repositories import catalog_settings
+from utk_curio.backend.app.agents.routes.common import _driven_dataflow_key
 from utk_curio.backend.app.agents.routes.common import _error
 from utk_curio.backend.app.agents.routes.common import _map_agent_errors
 from utk_curio.backend.app.agents.routes.common import _svc_error
@@ -43,7 +44,9 @@ def list_catalog():
     so the existing drawer keeps working while the browse page is built.
     """
     project_id = request.args.get("projectId") or None
-    agents = agents_services.list_global_catalog(_user_dir_key(g.user), project_id)
+    agents = agents_services.list_global_catalog(
+        _user_dir_key(g.user), project_id, spec_key=_driven_dataflow_key(project_id),
+    )
     facets = agents_services.agent_catalog_facets(agents)
     return jsonify({"items": agents, "agents": agents, "facets": facets}), 200
 
@@ -213,7 +216,9 @@ def list_imports():
     project (memo dev/47 — the lockfile is the one source of truth)."""
     project_id = request.args.get("projectId") or None
     return (
-        jsonify({"agents": agents_services.list_my_imports(_user_dir_key(g.user), project_id)}),
+        jsonify({"agents": agents_services.list_my_imports(
+            _user_dir_key(g.user), project_id, spec_key=_driven_dataflow_key(project_id),
+        )}),
         200,
     )
 
@@ -243,7 +248,7 @@ def upload_import():
     body = request.get_json(silent=True) or {}
     try:
         payload = agents_services.upload_import(
-            _user_dir_key(g.user), body.get("manifest"), body.get("prompts") or {}
+            _user_dir_key(g.user), body.get("manifest"), body.get("prompts") or {}, user=g.user,
         )
     except AgentServiceError as exc:
         return _svc_error(exc)
@@ -253,7 +258,13 @@ def upload_import():
 @agents_bp.route("/imports/<coord>", methods=["DELETE"])
 @require_auth
 def remove_import(coord: str):
-    return jsonify(agents_services.remove_import(_user_dir_key(g.user), coord, user=g.user)), 200
+    """Remove an agent from all the account's projects: a 409 names each
+    dataflow that keeps it, and then the account keeps it too."""
+    try:
+        payload = agents_services.remove_import(_user_dir_key(g.user), coord, user=g.user)
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+    return jsonify(payload), 200
 
 
 # ── Publish to the Global Catalog (imported-only) ────────────────────────────
@@ -284,7 +295,7 @@ def publish_agent():
     if not isinstance(coord, str):
         return _error("body must include 'coord'")
     try:
-        payload = agents_services.publish_agent(_user_dir_key(g.user), coord)
+        payload = agents_services.publish_agent(_user_dir_key(g.user), coord, user=g.user)
     except AgentServiceError as exc:
         return _svc_error(exc)
     return jsonify(payload), 201
@@ -296,7 +307,7 @@ def unpublish_agent(coord: str):
     if not packages_routes_common.CURIO_ALLOW_FACTORY_CATALOG_PUBLISH:
         return packages_routes_common.catalog_publish_disabled()
     try:
-        payload = agents_services.unpublish_agent(_user_dir_key(g.user), coord)
+        payload = agents_services.unpublish_agent(_user_dir_key(g.user), coord, user=g.user)
     except AgentServiceError as exc:
         return _svc_error(exc)
     return jsonify(payload), 200

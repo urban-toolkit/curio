@@ -1,8 +1,7 @@
 """The page of the functions node code calls, against what node code gets in each engine.
 
-``agents/agent.curio.builtin@1/knowledge/node-functions.md`` gives each
-function Curio gives a node's code, with the engines whose code has it and its
-arguments. Here node code runs as the sandbox runs it and reports every
+``skills/node-functions/SKILL.md`` gives each function Curio gives a node's
+code, with the engines whose code has it and its arguments. Here node code runs as the sandbox runs it and reports every
 ``curio_*`` function it can call, with its arguments:
 
 - Python in process: ``worker.execute_code``, over the namespace

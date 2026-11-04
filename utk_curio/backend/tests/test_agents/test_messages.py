@@ -1,7 +1,8 @@
 """What a check tells a model when it refuses or corrects what the model wrote is a section of messages.md.
 
-A tool call the runtime does not run, a proposal it does not make, a plan, a
-request, code or a document it sends back for another attempt: each says why
+A tool call the runtime does not run, a change it makes to the dataflow or
+does not, an install it proposes for the user's review, a plan, a request,
+code or a document it sends back for another attempt: each says why
 in words the base entry holds, ``agents/agent.curio.builtin@1/messages.md``,
 one section per message, by its id. A check reads its message by id through
 ``agent_text.message``, which fills each ``{name}`` with a value the check
@@ -235,8 +236,6 @@ _CUT_RE = re.compile(r"(?<=[.;:!?])\s+|\n|\{[a-z][a-z0-9_]*\}")
 SHARED_WITH_USERS = {
     ("utk_curio/backend/app/agents/application/dataset_resolution.py",
      "external rows carry the runtime's verification verdict."): "the Dataset Finder's chat record of its candidates",
-    ("utk_curio/backend/app/agents/application/proposals/plans.py",
-     "the node template registry is unavailable:"): "the reason an Apply gives",
     ("utk_curio/backend/app/packages/application/templates.py",
      "the node template registry is unavailable:"): "the node templates' own error",
     ("utk_curio/backend/app/agents/application/solve/batch.py",

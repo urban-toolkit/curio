@@ -39,6 +39,7 @@ describe("removed catalog chrome stays removed", () => {
       "pages/catalog/NodeCatalogBrowse.tsx",
       "pages/dataCatalog/DataCatalogBrowse.tsx",
       "pages/agents/AgentCatalogBrowse.tsx",
+      "pages/skills/SkillCatalogBrowse.tsx",
       "pages/models/ModelCatalogBrowse.tsx",
       "pages/scenarios/ScenarioCatalogBrowse.tsx",
     ]) {

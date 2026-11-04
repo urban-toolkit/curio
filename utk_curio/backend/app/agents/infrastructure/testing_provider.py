@@ -6,7 +6,7 @@ import, so a stray ``testing`` provider config on a real deployment cannot
 quietly turn into a working agent - it raises instead.
 
 Why this exists: every agent surface worth an end-to-end test (chat, solve, a
-minted proposal, the review card) is downstream of one LLM call. Pointing that
+change or an install and its card) is downstream of one LLM call. Pointing that
 call at a real provider would make the suite need a key, a network, and a model
 that answers the same way twice. Pointing it at a script keeps the WHOLE
 backend loop under test - tools, the ledger, the content parser
@@ -17,7 +17,10 @@ FIFO. Each call pops one reply; the queue is per-process and cleared by
 :func:`reset`. :func:`route_by_intent` adds replies keyed by what a delegated
 call asks for: Solve requests one node's content per call, in wave order and
 interleaved with other delegations, so a position in the queue cannot know
-which node it answers, but the call's ``intent`` can.
+which node it answers, but the call's ``intent`` can. Replies pushed for an
+attachment answer only the calls of that attachment's runs (each run says
+whose it is, :func:`answering`), first, before the shared queue: two agents
+working at once each take their own, never each other's.
 
 Out-of-process e2e reaches the same FIFO over HTTP, through
 ``/api/testing/agent-script`` (see ``app/testing/routes.py``). A previous
@@ -38,7 +41,10 @@ model makes natively, each ``{"name", "arguments", "id"}`` (``name`` is the
 tool id or its native name, ``id`` optional), or ``{"error", "status"}``,
 which the call raises as that endpoint error. A native call can only answer a
 call that offered tools (:func:`script_chat_capabilities`), and what each call
-offered is recorded (:func:`offered`).
+offered is recorded (:func:`offered`). An entry with ``"hold": <name>`` keeps
+the call that takes it waiting, as a slow model does, until the test releases
+that name (:func:`release`), at most :data:`HOLD_MAX_S`; :func:`held` names
+the holds a call waits on now, and :func:`reset` releases every one.
 
 When nothing matches, :data:`FALLBACK_REPLY` is returned rather than raising:
 a test that forgot to script one leg of a multi-turn conversation should fail
@@ -51,6 +57,7 @@ import itertools
 import json
 import threading
 from collections import deque
+from contextlib import contextmanager
 
 #: Returned when neither the queue nor the script has an answer. Deliberately
 #: inert prose: it carries no ```curio.v1``` block, so it parses as a plain
@@ -68,6 +75,11 @@ MAX_CAPTURED = 64
 
 _lock = threading.Lock()
 _queue: deque = deque()
+#: Replies pushed for one attachment, by its id: its runs' calls take them
+#: before the shared queue's.
+_by_attachment: dict[str, deque] = {}
+#: The attachments whose runs this thread is in, innermost last (:func:`answering`).
+_answering = threading.local()
 _captured: deque = deque(maxlen=MAX_CAPTURED)
 #: Which LLM configuration each call answered with: ``{configId, model}``, in
 #: the same order as ``_captured``.
@@ -83,6 +95,13 @@ _DEFAULT_CHAT_CAPABILITIES = {"tools": False, "structuredOutput": False}
 _chat_capabilities: dict = dict(_DEFAULT_CHAT_CAPABILITIES)
 #: Ids for scripted calls that name none, unique for the process.
 _call_ids = itertools.count(1)
+#: The longest a held call waits for its release: a test that never releases
+#: its hold fails at its own wait, and no thread waits forever.
+HOLD_MAX_S = 120.0
+#: Each hold by name: released once its event is set (:func:`release`).
+_holds: dict[str, threading.Event] = {}
+#: How many calls wait on each hold now (:func:`held`).
+_holding: dict[str, int] = {}
 #: Ids the next nodes an apply creates are given (:func:`next_node_id`).
 _node_ids: deque = deque()
 
@@ -107,17 +126,42 @@ def enabled() -> bool:
     return _is_testing()
 
 
-def push_reply(reply: str | dict, *, usage: dict | None = None) -> None:
+def push_reply(reply: str | dict, *, usage: dict | None = None, attachment: str | None = None) -> None:
     """Queue one reply for the next completion call: its text, or an entry
-    (see the module docstring)."""
+    (see the module docstring). With *attachment*, only a call of that
+    attachment's runs takes it."""
     with _lock:
-        _queue.append((reply, usage))
+        queue = _by_attachment.setdefault(str(attachment), deque()) if attachment else _queue
+        queue.append((reply, usage))
 
 
-def push_replies(*replies: str | dict) -> None:
-    """Queue several replies, consumed in order."""
+def push_replies(*replies: str | dict, attachment: str | None = None) -> None:
+    """Queue several replies, consumed in order, for *attachment*'s runs when
+    it is given."""
     for reply in replies:
-        push_reply(reply)
+        push_reply(reply, attachment=attachment)
+
+
+@contextmanager
+def answering(attachment_id):
+    """The block is a run of the attachment *attachment_id*: the model's calls
+    this thread makes in it take the replies pushed for that attachment
+    first. Nothing outside a test run."""
+    if not attachment_id or not enabled():
+        yield
+        return
+    stack = _answering.__dict__.setdefault("attachments", [])
+    stack.append(str(attachment_id))
+    try:
+        yield
+    finally:
+        stack.pop()
+
+
+def _answering_for() -> str | None:
+    """The attachment whose run this thread's call is in, if any."""
+    stack = getattr(_answering, "attachments", None)
+    return stack[-1] if stack else None
 
 
 def route_by_intent(routes: dict) -> None:
@@ -167,9 +211,11 @@ def _routed_reply(messages: list):
 
 
 def reset() -> None:
-    """Drop anything still queued and everything captured. Call between tests."""
+    """Drop anything still queued and everything captured, and release every
+    hold, so no call waits for a test that is over. Call between tests."""
     with _lock:
         _queue.clear()
+        _by_attachment.clear()
         _captured.clear()
         _calls.clear()
         _offered.clear()
@@ -177,6 +223,47 @@ def reset() -> None:
         _chat_capabilities.clear()
         _chat_capabilities.update(_DEFAULT_CHAT_CAPABILITIES)
         _node_ids.clear()
+        _release_every_hold()
+
+
+def release_holds() -> None:
+    """Release every hold, keeping what is queued: a reset between tests
+    lets no call wait for a test that is over."""
+    with _lock:
+        _release_every_hold()
+
+
+def _release_every_hold() -> None:
+    """Under the lock."""
+    for hold in _holds.values():
+        hold.set()
+    _holds.clear()
+
+
+def release(name: str) -> None:
+    """Let the calls held on *name* answer, and every later one that takes a
+    reply held on it, until :func:`reset`."""
+    with _lock:
+        _holds.setdefault(str(name), threading.Event()).set()
+
+
+def held() -> dict[str, int]:
+    """The holds calls wait on now, each with how many calls wait on it."""
+    with _lock:
+        return {name: count for name, count in _holding.items() if count}
+
+
+def _wait_for_release(name: str) -> None:
+    """Keep this call waiting until *name* is released (:func:`release`, or a
+    :func:`reset`), at most :data:`HOLD_MAX_S`."""
+    with _lock:
+        hold = _holds.setdefault(name, threading.Event())
+        _holding[name] = _holding.get(name, 0) + 1
+    try:
+        hold.wait(HOLD_MAX_S)
+    finally:
+        with _lock:
+            _holding[name] -= 1
 
 
 def push_node_ids(*node_ids: str) -> None:
@@ -250,9 +337,10 @@ def last_messages() -> list | None:
 
 
 def pending() -> int:
-    """How many scripted replies are still queued."""
+    """How many scripted replies are still queued, for any attachment's runs
+    or none's."""
     with _lock:
-        return len(_queue)
+        return len(_queue) + sum(len(queue) for queue in _by_attachment.values())
 
 
 def run_scripted_completion(messages: list, usage_out: dict | None = None, config=None) -> str:
@@ -268,10 +356,13 @@ def run_scripted_turn(
     tool_choice: str = "auto",
     reply_schema: dict | None = None,
 ):
-    """Return the next scripted reply as a turn and record its token usage.
+    """Return the next scripted reply as a turn and record its token usage,
+    once its hold, when it has one, is released.
 
     ``messages`` does not choose the reply - the queue does, so a test's
-    scripting stays independent of prompt wording. It is recorded, though, so a
+    scripting stays independent of prompt wording: the queue of the attachment
+    whose run makes the call (:func:`answering`) while it holds a reply, else
+    the shared one. It is recorded, though, so a
     test can assert what actually reached the model (see :func:`captured`), as
     are the tools the call offered and the reply schema it carried
     (:func:`offered`). A reply to a call with a reply schema is scripted as the
@@ -302,11 +393,15 @@ def run_scripted_turn(
             "replySchema": (reply_schema or {}).get("name"),
         })
         routed = _routed_reply(messages)
-        queued = None if routed is not None else (_queue.popleft() if _queue else None)
+        own = _by_attachment.get(_answering_for() or "")
+        queue = own if own else _queue
+        queued = None if routed is not None else (queue.popleft() if queue else None)
     if routed is not None:
         reply, usage = routed, None
     else:
         reply, usage = queued if queued is not None else (FALLBACK_REPLY, None)
+    if isinstance(reply, dict) and reply.get("hold"):
+        _wait_for_release(str(reply["hold"]))
     if isinstance(reply, dict) and reply.get("error") is not None:
         # A failed call is not charged, so it reports no usage.
         raise ScriptedEndpointError(str(reply["error"]), int(reply.get("status") or 500))

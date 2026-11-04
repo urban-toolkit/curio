@@ -217,7 +217,9 @@ def test_a_delegated_run_s_contracts_the_title_prompt_and_the_keyword_types_are_
     _fresh_loader(monkeypatch)
     page = builtin.DELEGATE_CONTRACTS_FILE
     build = delegates._build_request_contract()
-    assert build.pop("backendContract") == builtin.read_page(builtin.PACKAGE_CONTRACT_FILE, wanted_by="the test")
+    # The package backend contract is a skill the run is handed, so the
+    # build-request contract is its page's section alone.
+    assert "backendContract" not in build
     assert build == agent_text.json_block(_section(page, "build-request"), "build-request")
     notes = agent_text.json_block(_section(page, "notes-reply"), "notes-reply")
     # One dict while the page reads the same, as the module constant was.

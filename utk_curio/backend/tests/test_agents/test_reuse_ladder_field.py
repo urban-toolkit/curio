@@ -182,13 +182,13 @@ def _install_with_notes():
 
 
 class TestFieldReplay:
-    def test_variant_d_apply_on_the_install_card_queues_the_notes_one_card_at_a_time(
+    def test_variant_d_apply_on_the_install_card_lands_the_notes_in_order(
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
         """The owner's ask after the 14:09 run: Apply on the install card must
-        proceed to the notes — as cards BELOW it, one node at a time — with no
-        second message. The install apply queues the A16 sequence and returns
-        the ordered ids; applying each (the frontend walk) lands its node."""
+        proceed to the notes, as cards BELOW it, with no second message. The
+        install apply lands each note, in row order, as the agent's change, and
+        returns the nodes for a canvas no doc binds."""
         from utk_curio.backend.app.packages.application.note_palette import NOTE_PALETTE
         from utk_curio.backend.app.packages.domain import node_appearance
         from utk_curio.backend.app.projects.services import _user_dir_key
@@ -209,37 +209,31 @@ class TestFieldReplay:
         assert f"Question · {QUESTION}" in install["preview"]
         assert len(_spec_nodes(client, token, pid)) == 0
 
-        # Apply the install: the package is enlisted, the notes are QUEUED (not
-        # inserted), their cards ride the applied turn below the install card.
+        # Apply the install: the package is enlisted and the notes land, their
+        # change cards on the applied turn below the install card, in order.
         applied = _apply(client, token, pid, att_id, install["proposalId"])
         assert applied.status_code == 200, applied.get_data(as_text=True)
         body = applied.get_json()
         assert body["installedPackage"]["dirName"] == "curio.notes@1"
-        follow_ups = body["followUpProposals"]
-        assert len(follow_ups) == 2
-        assert "createdNodes" not in body  # nothing inserted by the install apply
-        # dev/105 A4: the lockfile changed — the frontend must pulse its registry
-        # BEFORE the walk paints the notes (the 15:04 "Loading node…" run).
+        created = body["createdNodes"]
+        assert [n["title"] for n in created] == ["Question", "Cool roofs in Chicago"]
+        # dev/105 A4: the lockfile changed: the frontend must pulse its registry
+        # BEFORE it paints the notes (the 15:04 "Loading node" run).
         assert body["requiresRegistryRefresh"] is True
-        assert len(_spec_nodes(client, token, pid)) == 0
         turns = client.get(
             f"/api/agents/projects/{pid}/attachments/{att_id}/session", headers=_auth(token),
         ).get_json()["turns"]
         applied_turn = turns[-1]
-        assert "2 notes queued below" in applied_turn["text"]
-        cards = [p for p in applied_turn["content"] if p.get("type") == "proposal"]
-        assert [p["proposalId"] for p in cards] == follow_ups  # cards below, in order
+        assert "2 notes added below" in applied_turn["text"]
+        cards = [p for p in applied_turn["content"] if p.get("type") == "change"]
+        assert [p["nodeId"] for p in cards] == [n["id"] for n in created]  # cards below, in order
         assert cards[0]["summary"].endswith("· Question")
 
-        # The frontend walk: one apply at a time, each landing exactly one node.
         yellow = node_appearance.normalize_appearance({"backgroundColor": "yellow"}, NOTE_PALETTE)
         green = node_appearance.normalize_appearance({"backgroundColor": "green"}, NOTE_PALETTE)
-        for i, fid in enumerate(follow_ups):
-            assert _apply(client, token, pid, att_id, fid).status_code == 200
-            assert len(_spec_nodes(client, token, pid)) == i + 1
         notes = [n for n in _spec_nodes(client, token, pid) if "note-surface" in n["type"]]
-        assert [(n["title"], n["metadata"]["appearance"]) for n in notes] == [
-            ("Question", yellow), ("Cool roofs in Chicago", green),
+        assert [(n["id"], n["title"], n["metadata"]["appearance"]) for n in notes] == [
+            (created[0]["id"], "Question", yellow), (created[1]["id"], "Cool roofs in Chicago", green),
         ]
 
     def test_variant_c_enlisted_notes_land_titled_and_colored(
@@ -259,7 +253,7 @@ class TestFieldReplay:
         att_id, calls = _setup(client, token, pid, monkeypatch, replies=[
             _create_note("Question", QUESTION),
             _create_note("Cool roofs in Chicago", ANSWER),
-            "Two notes await your review.",
+            "Two notes are on the canvas.",
         ])
         key = _user_dir_key(user)
         _field_store(key, pid, with_notes=True)
@@ -267,11 +261,10 @@ class TestFieldReplay:
 
         run = _run(client, token, pid, att_id)
         assert run.status_code == 200, run.get_data(as_text=True)
-        proposals = [p for p in run.get_json()["content"] if p["type"] == "proposal"]
-        assert [p["tool"] for p in proposals] == ["node.create", "node.create"]
-        assert proposals[0]["summary"].endswith("· Question")
-        for p in proposals:
-            assert _apply(client, token, pid, att_id, p["proposalId"]).status_code == 200
+        assert all(p["type"] != "proposal" for p in run.get_json()["content"])
+        changes = [p for p in run.get_json()["content"] if p["type"] == "change"]
+        assert [p["tool"] for p in changes] == ["node.create", "node.create"]
+        assert changes[0]["summary"].endswith("· Question")
 
         yellow = node_appearance.normalize_appearance({"backgroundColor": "yellow"}, NOTE_PALETTE)
         green = node_appearance.normalize_appearance({"backgroundColor": "green"}, NOTE_PALETTE)
@@ -282,7 +275,7 @@ class TestFieldReplay:
         assert "goal" not in notes[0]  # title is the header, not the purpose line
 
         execution = _execution(client, token, pid, att_id)
-        assert [c["status"] for c in execution["toolCalls"]] == ["proposed", "proposed"]
+        assert [c["status"] for c in execution["toolCalls"]] == ["applied", "applied"]
 
     def test_live_sequence_ends_in_an_install_proposal_not_a_chat_answer(
         self, client, user_and_token, tmp_curio, monkeypatch

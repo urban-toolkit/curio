@@ -1,5 +1,8 @@
-"""Flask blueprint for dataflow runs on the server. Every route requires sign-in,
-and a user sees only the runs they started."""
+"""Flask blueprint for dataflow runs on the server. Every route requires sign-in.
+A dataflow's owner and the editors the owner invited each run it. The owner
+lists, follows and cancels every run of her dataflow, each naming who started
+it; an editor, the runs he started. Only a run's starter reports its browser
+steps."""
 from __future__ import annotations
 
 import json
@@ -49,14 +52,10 @@ def start_run(project_id: str):
         return jsonify({"error": "Send 'target' or 'targets', not both"}), 400
     if reuse is not None and not isinstance(reuse, dict):
         return jsonify({"error": "'reuse' must map node ids to outputs"}), 400
-    revision = body.get("specRevision")
-    if revision is not None and (isinstance(revision, bool) or not isinstance(revision, int)):
-        return jsonify({"error": "'specRevision' must be a whole number"}), 400
     try:
         run = service.start_run(
             g.user, get_current_token(), project_id,
             target_node_id=target or None, target_node_ids=targets, reuse=reuse,
-            spec_revision=revision,
         )
     except RunError as exc:
         return _error(exc)
@@ -66,11 +65,13 @@ def start_run(project_id: str):
 @runs_bp.route("/api/projects/<project_id>/runs", methods=["GET"])
 @require_auth
 def list_project_runs(project_id: str):
+    """The dataflow's runs: every account's for its owner, an editor's own
+    for him; ``?mine=1`` keeps the caller's own."""
     try:
         limit, offset = _paging()
         runs = service.list_project_runs(
             g.user, project_id, whole_dataflow=_kind(request.args.get("kind")),
-            limit=limit, offset=offset,
+            limit=limit, offset=offset, mine=request.args.get("mine") in ("1", "true"),
         )
     except RunError as exc:
         return _error(exc)
@@ -98,7 +99,7 @@ def get_run(run_id: str):
         run = service.get_run(g.user, run_id)
     except RunError as exc:
         return _error(exc)
-    current = service.current_code_hashes(g.user, run.project_id)
+    current = service.current_code_hashes(run.project_id)
     return jsonify(service.run_payload(run, steps=True, current=current))
 
 

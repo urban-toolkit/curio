@@ -4,8 +4,8 @@ ScenarioCharts in #914 on main's nodes).
 
 ``docs/examples/dataflows/scenario-comparison-charts.json`` loads each example
 table from the Data Catalog and keeps each scenario's rows in a Data
-Transformation node whose Case widget picks them. A chart of the Scout package
-(``curio.scout@1``) takes each scenario's node on an input of its own, in the
+Transformation node whose Case widget picks them. A chart of the Vega-Lite package
+(``curio.vega-lite@1``) takes each scenario's node on an input of its own, in the
 order of the scenarios' boxes (the plan answering komar41's review, step
 6.2): a Vega-Lite chart whose spec is its template's, unchanged, which reads
 its inputs as the dataset ``inputs``, every row named by its input's box, and
@@ -38,7 +38,7 @@ DATAFLOW = REPO_ROOT / "docs" / "examples" / "dataflows" / "scenario-comparison-
 SCRIPT = REPO_ROOT / "scripts" / "build_example_scenario_charts.py"
 BUILTIN_MANIFEST = REPO_ROOT / "packages" / "curio.builtin@1" / "manifest.json"
 #: The package whose templates draw the charts.
-COMPARISON_DIR = "curio.scout@1"
+COMPARISON_DIR = "curio.vega-lite@1"
 COMPARISON = REPO_ROOT / "packages" / COMPARISON_DIR
 
 LOAD = "curio.builtin/data-loading"
@@ -47,7 +47,7 @@ KEEP = "curio.builtin/data-transformation"
 STORMS = ["10-year storm", "50-year storm", "100-year storm"]
 
 #: Each example table's chart: its scenarios in the order of the chart's
-#: circles, which is their boxes' order, and the Scout template that draws it.
+#: circles, which is their boxes' order, and the Vega-Lite package's template that draws it.
 CHARTS = {
     "data.curio.example-pedestrians-by-hour": (["Weekday", "Weekend"], "lines-with-band"),
     "data.curio.example-flood-damage-curves": (["As built", "Floodproofed"], "curves-by-group"),
@@ -61,7 +61,7 @@ CHARTS = {
 }
 DATASETS = list(CHARTS)
 #: The nine chart nodes' types, one per template.
-CHART_TYPES = {f"curio.scout/{template}" for _names, template in CHARTS.values()}
+CHART_TYPES = {f"curio.vega-lite/{template}" for _names, template in CHARTS.values()}
 
 #: What a reference chip looks like (``[!! y !!]``).
 CHIP = re.compile(r"\[!!\s*(.*?)\s*!!\]")
@@ -191,7 +191,7 @@ def test_the_nine_tables_and_their_manifests_fit_their_budget():
 def test_each_table_has_a_row_that_loads_keeps_and_charts_it():
     flow = _flow()
     assert flow["name"] == "Nine ways to chart scenario comparisons"
-    # Each table's chart is one of Scout's charts, each a different one.
+    # Each table's chart is one of the Vega-Lite package's charts, each a different one.
     assert len(CHART_TYPES) == 9
     assert Counter(node["type"] for node in flow["nodes"]) == {
         LOAD: 9, KEEP: 24, **{chart_type: 1 for chart_type in CHART_TYPES},
@@ -204,7 +204,9 @@ def test_each_table_has_a_row_that_loads_keeps_and_charts_it():
         names, template = CHARTS[dataset_id]
         assert len(row["keeps"]) == len(names)
         assert [circle for circle, _source in _inputs(flow, row["chart"]["id"])] == list(range(len(names)))
-        assert row["chart"]["type"] == f"curio.scout/{template}", dataset_id
+        assert row["chart"]["type"] == f"curio.vega-lite/{template}", dataset_id
+        assert row["chart"]["content"] == (COMPARISON / "sources" / f"{template}.vl.json").read_text(
+            encoding="utf-8"), dataset_id
 
 
 def test_the_dataflow_declares_the_datasets_it_reads_as_the_backend_writes_them():
@@ -284,8 +286,8 @@ def test_each_chart_takes_its_scenarios_in_the_order_of_their_boxes():
         assert set(chart["metadata"]) == {"keywords", "widgets"}, chart["title"]
 
 
-def test_every_chart_is_a_scout_chart_fed_by_its_scenarios_nodes_alone():
-    """Nine charts, each a node of Scout's that reads only its scenarios'
+def test_every_chart_is_a_vega_lite_package_chart_fed_by_its_scenarios_nodes_alone():
+    """Nine charts, each a node of the Vega-Lite package's that reads only its scenarios'
     Data Transformation nodes and feeds nothing."""
     flow = _flow()
     by_id = {node["id"]: node for node in flow["nodes"]}
@@ -352,8 +354,8 @@ def test_the_grouped_bars_and_the_table_draw_what_their_compare_presets_drew():
     ``daily_trips`` by ``mode``, combining nothing, and titled its axes by
     those columns; the one that drew the green roofs, a table of the scenario
     names and then the table's three columns by name, as its close-up on main
-    shows them (``screenshot_scenario-charts-green-roofs_...``). Their Scout
-    nodes keep their ids and titles, and set their widgets so. Combine offers
+    shows them (``screenshot_scenario-charts-green-roofs_...``). Their
+    nodes, the Vega-Lite package's, keep their ids and titles, and set their widgets so. Combine offers
     Vega-Lite's aggregates, which have no "none": the trips' bars take the
     mean, and each bar is one row, whose mean is its value."""
     flow = _flow()

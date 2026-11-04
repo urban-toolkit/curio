@@ -125,8 +125,12 @@ def test_seeding_does_not_delete_a_users_own_project(app, db, user_and_token):
     )
 
 
-def test_guest_prune_still_runs(app, db, shared_guest):
+def test_guest_prune_still_runs(app, db, shared_guest, monkeypatch):
     """The guest's overwrite posture is unchanged: scratch projects are pruned."""
+    from utk_curio.backend import config
+
+    # The shared guest saves where it is the one local user, without --deploy.
+    monkeypatch.setattr(config, "CURIO_NO_AUTH", True)
     scratch = services.save_project(
         shared_guest,
         ProjectCreate(name="Scratch", spec={"dataflow": {"name": "Scratch"}}),

@@ -199,13 +199,17 @@ class LiveRun:
                 part for part in (turn.get("content") or [])
                 if isinstance(part, Mapping) and part.get("type") == "proposal"
             ]
+            # A plan lands with the reply, as the agent's change; an install
+            # is a proposal the policy applies or leaves pending.
+            changes = [
+                part for part in (turn.get("content") or [])
+                if isinstance(part, Mapping) and part.get("type") == "change"
+            ]
             record.proposals = [dict(p) for p in proposals]
-            applied = self._apply_under_policy(
-                project_id, attachment_id, proposals, fixture
-            )
+            self._apply_under_policy(project_id, attachment_id, proposals, fixture)
             solve_results: dict = {}
             timed_out = False
-            if any(tool == "dataflow.plan.write" for tool, _ in applied):
+            if any(part.get("tool") == "dataflow.plan.write" for part in changes):
                 solve_results, timed_out = self._solve(project_id, attachment_id)
             spec = self.client.json(f"/api/projects/{project_id}")["spec"]
             record.generated_spec = spec
@@ -222,7 +226,7 @@ class LiveRun:
                 example=example,
                 universe=self._universe(project_id, fixture),
                 solve_results=solve_results,
-                refused=not proposals,
+                refused=not proposals and not changes,
                 timed_out=timed_out,
             )
             record.score = scored.score

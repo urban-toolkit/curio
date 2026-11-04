@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState, type DragEvent } from "react
 import {
   beginScenarioDrag,
   endScenarioDrag,
-  groupScenariosByProject,
+  groupScenariosBySet,
   sortScenarios,
   useScenarioCatalog,
   writeScenarioDragData,
@@ -13,11 +13,9 @@ import {
 
 /**
  * The canvas Scenario Catalog drawer's state, kept out of the component the
- * way `useModelCatalogDrawer` keeps the Model drawer's.
- *
- * Smaller still: a scenario is read-only here, so there is nothing to add,
- * remove or delete. What is left is the search, the sort, the details being
- * viewed, and the drag of a card onto the canvas.
+ * way `useModelCatalogDrawer` keeps the Model drawer's: the search, the sort,
+ * the details being viewed, and a card's drag onto the canvas, which brings
+ * its one scenario, as every catalog's card brings one item.
  */
 export function useScenarioCatalogDrawer(presented: boolean) {
   const [search, setSearch] = useState("");
@@ -25,15 +23,11 @@ export function useScenarioCatalogDrawer(presented: boolean) {
   const [sort, setSort] = useState<ScenarioSortMode>("recent");
   const [pinned, setPinned] = useState(false);
 
-  const handleScenarioDragStart = useCallback((scenario: ScenarioRow, event: DragEvent<HTMLElement>) => {
-    writeScenarioDragData(event.dataTransfer, beginScenarioDrag(scenario));
-  }, []);
-
   const handleScenarioDragEnd = useCallback(() => {
     endScenarioDrag();
   }, []);
-  // Its own state, not shared with anything that selects: a card's
-  // "View details" opens the modal and nothing else.
+  // Its own state, not shared with anything else: a card's "View details"
+  // opens the modal and nothing else.
   const [detailScenario, setDetailScenario] = useState<ScenarioRow | null>(null);
 
   useEffect(() => {
@@ -45,8 +39,13 @@ export function useScenarioCatalogDrawer(presented: boolean) {
   // listing is read off the account's projects, which change with every save.
   const catalog = useScenarioCatalog({ q: debouncedSearch, enabled: presented });
   const items = useMemo(() => sortScenarios(catalog.data.items, sort), [catalog.data.items, sort]);
-  // Browse all lists each project's scenarios under its name.
-  const groups = useMemo(() => groupScenariosByProject(items), [items]);
+  // Browse all lists each project's scenarios under their sets.
+  const groups = useMemo(() => groupScenariosBySet(items), [items]);
+
+  /** A card's drag: its scenario. */
+  const handleCardDragStart = useCallback((row: ScenarioRow, event: DragEvent<HTMLElement>) => {
+    writeScenarioDragData(event.dataTransfer, beginScenarioDrag(row));
+  }, []);
 
   return {
     search,
@@ -58,8 +57,8 @@ export function useScenarioCatalogDrawer(presented: boolean) {
     catalog,
     items,
     groups,
-    handleScenarioDragStart,
     handleScenarioDragEnd,
+    handleCardDragStart,
     detailScenario,
     openScenarioDetails: setDetailScenario,
     closeScenarioDetails: useCallback(() => setDetailScenario(null), []),

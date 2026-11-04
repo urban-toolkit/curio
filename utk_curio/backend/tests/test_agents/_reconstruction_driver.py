@@ -2,7 +2,7 @@
 
 A transport, not a runtime: it drives the SAME endpoints a browser drives --
 create a project, install and attach the Dataflow Builder, send one turn, apply
-what came back, Solve, read the persisted spec -- through the Flask test client,
+the installs that came back, Solve, read the persisted spec -- through the Flask test client,
 with the provider and the sandbox replaced the way every agent test replaces
 them (``services.run_chat_turn`` and ``runner._http_exec``).
 
@@ -16,7 +16,7 @@ The user policy is fixed and written down, because a harness whose "user" makes
 different choices from run to run measures nothing:
 
 1. Send the fixture's prompt once. Never rephrase.
-2. Apply a plan proposal whole -- no per-node edits.
+2. A plan lands whole, as the agent's change: there is nothing to apply.
 3. Apply a dataset, package or project install proposal ONLY when the fixture
    required that resource; anything else is left pending and recorded.
 4. Add no correction rounds of our own; the runtime's bound is the bound.
@@ -44,7 +44,7 @@ def auth(token: str) -> dict:
 
 @dataclass
 class TurnResult:
-    """One agent turn: what it said, and what it proposed."""
+    """One agent turn: what it said, what it changed, and what it proposed."""
 
     reply: str = ""
     parts: list = field(default_factory=list)
@@ -55,6 +55,11 @@ class TurnResult:
     def proposals(self) -> list:
         return [p for p in self.parts if p.get("type") == "proposal"]
 
+    @property
+    def changes(self) -> list:
+        """The changes that landed with the turn, each its card."""
+        return [p for p in self.parts if p.get("type") == "change"]
+
     def proposal_of(self, tool: str) -> dict | None:
         for part in self.proposals:
             if part.get("tool") == tool:
@@ -62,12 +67,13 @@ class TurnResult:
         return None
 
     @property
-    def plan_proposal(self) -> dict | None:
-        return self.proposal_of("dataflow.plan.write")
+    def plan_change(self) -> dict | None:
+        """The plan that landed with the turn, or None."""
+        return next((p for p in self.changes if p.get("tool") == "dataflow.plan.write"), None)
 
     @property
     def refused(self) -> bool:
-        return not self.proposals
+        return not self.proposals and not self.changes
 
 
 @dataclass
@@ -377,13 +383,13 @@ class InProcessDriver:
             required_packages=frozenset(str(p) for p in required.get("packages") or ()),
         )
         applied = []
+        # A plan landed with the turn; only installs wait for review.
         for proposal in turn.proposals:
             decision = policy.decide(proposal)
             if decision.pending:
                 self.left_pending.append((decision.tool, decision.target))
                 continue
-            label = "plan" if decision.tool == "dataflow.plan.write" else decision.tool
-            applied.append((label, self.apply(proposal)))
+            applied.append((decision.tool, self.apply(proposal)))
         return applied
 
     def solve(self, node_ids: Iterable | None = None, *, verify: bool = True) -> SolveResult:

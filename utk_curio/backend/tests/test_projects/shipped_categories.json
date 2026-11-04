@@ -52,8 +52,7 @@
     "tags": [
       "Autark",
       "Vega-Lite",
-      "GPU compute",
-      "SCOUT"
+      "GPU compute"
     ],
     "data_type": [
       "Geometries",
@@ -520,8 +519,7 @@
   },
   "dataflows/scenario-comparison-charts": {
     "tags": [
-      "Vega-Lite",
-      "SCOUT"
+      "Vega-Lite"
     ],
     "data_type": [
       "Tables"

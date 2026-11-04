@@ -26,6 +26,7 @@ from utk_curio.cli.logs import (
     log_warning,
     logger,
 )
+from utk_curio.sandbox.isolation.lifecycle import server_environment
 
 
 def start_frontend(host="localhost", port=8080, force_rebuild=False, no_server=False, base_path=""):
@@ -327,6 +328,9 @@ def start_sandbox(host, port):
     # sandbox_server = os.path.join(script_dir, "sandbox", "server.py")
     env = os.environ.copy()
     env = {**os.environ, "PYTHONPATH": project_root + os.pathsep + env.get("PYTHONPATH", "")}
+    # Its allocators fitted as its isolated children's are, before it starts:
+    # glibc and Arrow settle theirs once per process (isolation/lifecycle.py).
+    env = server_environment(env)
 
     process = subprocess.Popen(
         [sys.executable, "-u", "-m", "sandbox.server"],

@@ -10,6 +10,8 @@
 
 export * from "./types";
 export * from "./agentsApi";
+export * from "./skillsApi";
+export * from "./agentSkills";
 export * from "./agentEvents";
 export * from "./agentDrag";
 export * from "./useAgentCatalog";
@@ -20,5 +22,7 @@ export * from "./attachmentDisplayName";
 export * from "./builderTemplates";
 export * from "./agentListUtils";
 export * from "./agentCapabilities";
+export * from "./agentEditors";
+export * from "./agentChanges";
 export * from "./buildUploadPayload";
 export * from "./sanitizeAgentContent";

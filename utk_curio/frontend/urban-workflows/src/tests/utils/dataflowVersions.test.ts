@@ -2,7 +2,15 @@
  * A dataflow's versions as its provenance history lists them: numbered in the
  * order they were recorded, each named by the change that made it.
  */
-import { changedNodeKind, versionCounts, versionItems, versionTitle } from "../../utils/dataflowVersions";
+import {
+  changedNodeKind,
+  serverVersionItems,
+  versionCounts,
+  versionItems,
+  versionTitle,
+} from "../../utils/dataflowVersions";
+import type { ServerVersion } from "../../api/historyApi";
+import { historyLines } from "../../utils/provenanceTree";
 import { clearCategoryDescriptors, registerCategoryDescriptor } from "../_support/categoryDescriptors";
 
 const node = (id: string, type = "acme.charts/bar@1") => ({ id, type, x: 0, y: 0 });
@@ -68,6 +76,58 @@ describe("versionItems", () => {
   test("an empty or missing history has no item", () => {
     expect(versionItems(null)).toEqual([]);
     expect(versionItems({})).toEqual([]);
+  });
+});
+
+describe("serverVersionItems", () => {
+  const at = (minute: number) => Date.UTC(2026, 9, 28, 14, minute);
+  const ana = { kind: "person", account: "1", name: "Ana" };
+  // The server's points for a loaded dataflow of one node, then Ana's typing,
+  // version 2 put back, and a File > Save.
+  const versions: ServerVersion[] = [
+    { id: "p1", parent: null, at: at(0), kind: "load", what: "", by: null, preview: preview([]) },
+    { id: "p2", parent: "p1", at: at(0), kind: "load", what: "Node added", by: null, preview: preview(["a"]) },
+    { id: "p3", parent: "p2", at: at(1), kind: "typing", what: "Ana edited", by: ana, preview: preview(["a"]) },
+    { id: "p4", parent: "p2", at: at(2), kind: "putBack", what: "Put back", restores: "p2", by: ana, preview: preview(["a"]) },
+    { id: "p5", parent: "p4", at: at(3), kind: "saved", what: "Saved", by: ana, preview: preview(["a"]) },
+  ];
+
+  test("numbers the versions from 1 in the order they were made, each from the one it was made from", () => {
+    expect(serverVersionItems(versions).map((item) => [item.id, item.tag, item.order, item.parentId])).toEqual([
+      ["p1", "1", 0, null],
+      ["p2", "2", 1, "p1"],
+      ["p3", "3", 2, "p2"],
+      ["p4", "4", 3, "p2"],
+      ["p5", "5", 4, "p4"],
+    ]);
+  });
+
+  test("names a version by its change, a put-back by the version it put back, and the rest by what changed", () => {
+    expect(serverVersionItems(versions).map((item) => item.title)).toEqual([
+      "Empty dataflow",
+      "Node added: Bar chart",
+      "Ana edited",
+      "Put back version 2",
+      "Saved",
+    ]);
+  });
+
+  test("a put-back starts the line to the newest version, and the versions after the one put back fold under it", () => {
+    const [line] = historyLines(serverVersionItems(versions));
+    expect(line.rows.map((row) => row.id)).toEqual(["p1", "p2", "p4", "p5"]);
+    const p2 = line.rows[1];
+    expect(p2.branches.map((branch) => branch.rows.map((row) => row.id))).toEqual([["p3"]]);
+  });
+
+  test("a put-back of a version the history no longer holds, and a first version left after a clear", () => {
+    const items = serverVersionItems([
+      { id: "p9", parent: null, at: at(5), kind: "typing", what: "Ana edited", by: ana, preview: preview(["a"]) },
+      { id: "p10", parent: "p9", at: at(6), kind: "putBack", what: "Put back", restores: "p2", by: ana, preview: preview([]) },
+    ]);
+    expect(items.map((item) => [item.title, item.parentId])).toEqual([
+      ["Ana edited", null],
+      ["Put back", "p9"],
+    ]);
   });
 });
 

@@ -1,4 +1,4 @@
-"""The ``.curio.zip`` archive format: member-name safety, the allowed layout, size caps, extraction, integrity hashing, the staging-dir manifest validation, and the deterministic re-zip.
+"""The ``.curio.zip`` archive format: member-name safety, the allowed layout, size caps, extraction, integrity hashing, the staging-dir validation of the manifest and the skills, and the deterministic re-zip.
 
 Repositories layer of the packages package (memo dev/143, B2): cut from ``installer.py``
 by responsibility; every function keeps its name and body.
@@ -18,6 +18,7 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+from utk_curio.backend.app.agents.domain import skills as skill_format
 from utk_curio.backend.app.common import safe_archive
 from utk_curio.backend.app.common.safe_paths import (
     is_within,
@@ -28,6 +29,7 @@ from utk_curio.backend.app.packages.domain.model_block import MODELS_DIR
 from utk_curio.backend.app.packages.domain.package_id import PACKAGE_DIR_RE
 from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 from utk_curio.backend.app.packages.repositories.publisher_record import RECORD_FILENAME
+from utk_curio.backend.app.packages.repositories.skills import SKILLS_DIR
 
 
 # A package archive may ship these top-level files and these top-level dirs.
@@ -42,7 +44,9 @@ _ALLOWED_TOP_FILES: frozenset[str] = frozenset({
 _ALLOWED_TOP_DIRS: frozenset[str] = frozenset({
     # "backend" (memo dev/91): the package's declared server-side entry —
     # inert on disk like sources/; executed ONLY by the backend sandbox.
-    "sources", "starters", "grammars", "widgets", "icons", "scripts", "backend",
+    # "skills": what the package tells Curio's agents, one folder per skill
+    # (repositories/skills.py); text an agent reads, never run.
+    "sources", "starters", "grammars", "widgets", "icons", "scripts", "backend", SKILLS_DIR,
 })
 
 
@@ -264,6 +268,32 @@ def refresh_package_integrity(package_root: Path) -> dict[str, str]:
     return integrity
 
 
+def integrity_mismatch(package_root: Path) -> str | None:
+    """Why the files of the package at *package_root* are not the ones the
+    record its install wrote names (``integrity.json``, rewritten by each of
+    Curio's own changes to the package), or None when they are: a file the
+    record names that is gone or changed, or one it does not name. A package
+    with no record that reads has nothing to be checked against, which is a
+    reason too."""
+    try:
+        raw = json.loads((package_root / "integrity.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        raw = None
+    listed = raw.get("sha256") if isinstance(raw, dict) else None
+    if not isinstance(listed, dict) or not listed:
+        return "it has no record of its files (integrity.json) to check them against"
+    actual = _build_integrity(package_root)
+    for rel in sorted(listed):
+        if rel not in actual:
+            return f"its file {rel} is gone since it was installed"
+        if actual[rel] != listed[rel]:
+            return f"its file {rel} changed since it was installed"
+    added = sorted(set(actual) - set(listed))
+    if added:
+        return f"its file {added[0]} was added since it was installed"
+    return None
+
+
 def _extract_into(zf: zipfile.ZipFile, target: Path) -> int:
     """Extract every member of *zf* under *target*.
 
@@ -321,7 +351,8 @@ def _extract_into(zf: zipfile.ZipFile, target: Path) -> int:
 
 
 def load_package_manifest_from_dir(package_root: Path) -> PackageManifest:
-    """Load + validate a manifest from a staging dir.
+    """Load + validate a manifest from a staging dir, then the package's
+    skills (:func:`refuse_unreadable_skills`).
 
     The on-disk validator in :func:`load_package_manifest` cross-checks the
     dir name against the manifest's ``<packageId>@<major>``. The installer
@@ -369,9 +400,47 @@ def load_package_manifest_from_dir(package_root: Path) -> PackageManifest:
         validate_root = side_parent / expected
         validate_root.mkdir()
         shutil.copyfile(manifest_path, validate_root / "manifest.json")
-        return load_package_manifest(validate_root)
+        manifest = load_package_manifest(validate_root)
     finally:
         shutil.rmtree(side_parent, ignore_errors=True)
+    refuse_unreadable_skills(package_root)
+    return manifest
+
+
+def refuse_unreadable_skills(package_root: Path) -> None:
+    """Refuse a package whose ``skills/`` breaks the Agent Skills format,
+    checked as strictly as the skills Curio ships: ``skills/`` holds one
+    folder per skill, each with a ``SKILL.md`` the strict reader takes
+    (``agents/domain/skills.py``). Raises :class:`InstallerError` naming
+    every problem; a package with no ``skills/`` has none."""
+    root = Path(package_root) / SKILLS_DIR
+    if not root.exists() and not root.is_symlink():
+        return
+    if root.is_symlink() or not root.is_dir():
+        raise InstallerError(f"{SKILLS_DIR} is not a folder: a package's {SKILLS_DIR}/ holds one folder per skill")
+    problems: list[str] = []
+    for entry in sorted(root.iterdir()):
+        if entry.name.startswith("."):
+            continue
+        where = f"{SKILLS_DIR}/{entry.name}"
+        skill_file = entry / skill_format.SKILL_FILE
+        if entry.is_symlink() or not entry.is_dir():
+            problems.append(f"{where} is no skill's folder: {SKILLS_DIR}/ holds one folder per skill, "
+                            f"each with its {skill_format.SKILL_FILE}")
+        elif skill_file.is_symlink() or not skill_file.is_file():
+            problems.append(f"{where} holds no {skill_format.SKILL_FILE}")
+        else:
+            try:
+                skill_format.parse(entry)
+            except skill_format.SkillError as exc:
+                problems.append(f"{SKILLS_DIR}/{exc}")
+            except UnicodeDecodeError:
+                problems.append(f"{where}/{skill_format.SKILL_FILE} is not UTF-8 text")
+    if problems:
+        raise InstallerError(
+            "the package's skills break the Agent Skills format (https://agentskills.io/specification): "
+            + "; ".join(problems)
+        )
 
 
 def _package_members(

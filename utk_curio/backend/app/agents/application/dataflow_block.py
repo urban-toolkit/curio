@@ -10,7 +10,9 @@ Tools panel and a node's run read it:
   "Datasets in project", each with the line the catalog gives it;
 - the models: the model packages the dataflow's lockfile names that the
   account holds, its "Models in project", each with its loader line;
-- the keys: the account's Node code keys, by name, from API Settings;
+- the keys: the Node code keys of whoever asked for the run, by name, from
+  API Settings: an invited editor's own, never the dataflow owner's
+  (``askers.keys_account``);
 - the template being written, for a run that writes one node's code: the
   node's template as the project's roster resolves it, its starter as the
   starters feed reads it, and the functions of the modules a node of it can
@@ -25,6 +27,7 @@ from __future__ import annotations
 
 import logging
 
+from utk_curio.backend.app.agents.application import askers as agents_askers
 from utk_curio.backend.app.agents.application import source_grounding
 from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.domain import dataflow_block as block
@@ -34,7 +37,7 @@ log = logging.getLogger(__name__)
 
 #: The grant with which a chat run rewrites a node's content, its code included.
 REWRITE_GRANT = "node.content.write"
-#: The grant with which a chat run proposes a new node and its content.
+#: The grant with which a chat run adds a new node and its content.
 CREATE_GRANT = "node.create"
 #: The capabilities a delegated run writes code for: one node's content, or a package's.
 CODE_CAPABILITIES = frozenset({"node.content.generate", *content.PACKAGE_AUTHORING_CAPABILITIES})
@@ -116,7 +119,8 @@ def _models(user_key: str, project_id: str) -> tuple[block.Model, ...]:
 
 
 def _keys(user_key: str) -> tuple[block.Key, ...]:
-    """The account's Node code keys: name, host and delivery, never a value."""
+    """The Node code keys the account *user_key* saved, whoever asked for the
+    run (``askers.keys_account``): name, host and delivery, never a value."""
     from utk_curio.backend.app.users.connection_keys import default_store
 
     try:
@@ -159,18 +163,21 @@ def compose(
     datasets=None,
     tools=(),
     user=None,
+    keys: str | None = None,
 ) -> str | None:
     """The block for a run of *project_id* that writes code: the one place a
     run's block is composed. *node_type* is the type of the node it writes,
     if one; *datasets* the dataflow's rows when the caller read them already
     (a Solve job), else they are read now as *user*; *tools* the run's grants,
-    of which the cut list names only those it holds. None when the block would
-    hold nothing."""
+    of which the cut list names only those it holds. *keys* is the storage
+    key whose saved keys the block lists, when the caller resolved it already
+    (a Solve job's grounding base), else those of *user*, who asked
+    (``askers.keys_account``). None when the block would hold nothing."""
     rows = read_datasets(project_id, user) if datasets is None else tuple(datasets)
     return block.layout(
         datasets=rows,
         models=_models(user_key, project_id),
-        keys=_keys(user_key),
+        keys=_keys(keys or agents_askers.keys_account(user_key, user)),
         template=_template(user_key, project_id, node_type),
         tools=tools,
     )
@@ -199,21 +206,38 @@ def for_chat_run(
     return compose(user_key, project_id, node_type=node_type_of(spec, node_id), datasets=datasets, tools=granted)
 
 
+def named_node_type(inputs: dict | None, read_spec) -> str | None:
+    """The type of the node a delegated run's *inputs* name: its ``nodeType``,
+    its ``nodeContext.nodeType``, or the type of its ``nodeId`` in the spec
+    *read_spec* returns, read only then. None when they name none."""
+    inputs = inputs if isinstance(inputs, dict) else {}
+    context = inputs.get("nodeContext") if isinstance(inputs.get("nodeContext"), dict) else {}
+    node_type = inputs.get("nodeType") or context.get("nodeType")
+    if not node_type and isinstance(inputs.get("nodeId"), str):
+        node_type = node_type_of(read_spec(), inputs["nodeId"])
+    return node_type if isinstance(node_type, str) and node_type else None
+
+
+def named_node_id(inputs: dict | None) -> str | None:
+    """The id of the node a delegated run's *inputs* name: its ``nodeId``, or
+    its ``nodeContext.nodeId``. None when they name none, as for a new node
+    named by its type alone."""
+    inputs = inputs if isinstance(inputs, dict) else {}
+    context = inputs.get("nodeContext") if isinstance(inputs.get("nodeContext"), dict) else {}
+    node_id = inputs.get("nodeId") or context.get("nodeId")
+    return node_id if isinstance(node_id, str) and node_id else None
+
+
 def for_delegated_run(
     user_key: str, project_id: str, capability: str, inputs: dict | None, *, datasets=None, user=None,
 ) -> str | None:
     """The block of a delegated run of *capability* with *inputs*, or None for
     a run that writes no code. A run that writes one node's code writes for
-    the node its inputs name (``nodeType``, ``nodeContext.nodeType``, or the
-    type of ``nodeId``). A delegated run holds no tool, so the cut list names
-    none."""
+    the node its inputs name (:func:`named_node_type`). A delegated run holds
+    no tool, so the cut list names none."""
     if capability not in CODE_CAPABILITIES:
         return None
     node_type = None
     if capability == NODE_CAPABILITY:
-        inputs = inputs if isinstance(inputs, dict) else {}
-        context = inputs.get("nodeContext") if isinstance(inputs.get("nodeContext"), dict) else {}
-        node_type = inputs.get("nodeType") or context.get("nodeType")
-        if not node_type and isinstance(inputs.get("nodeId"), str):
-            node_type = node_type_of(projects_storage.read_spec(user_key, project_id), inputs["nodeId"])
+        node_type = named_node_type(inputs, lambda: projects_storage.read_spec(user_key, project_id))
     return compose(user_key, project_id, node_type=node_type, datasets=datasets, user=user)

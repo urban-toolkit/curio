@@ -12,6 +12,7 @@ import {
   type DiscoveryAcquireJob,
   type DiscoveryCollectionStatus,
 } from "../../../services/discoveryCatalog";
+import { collectionMediaPath } from "../../../utils/collectionMedia";
 import { useAuthedObjectUrl } from "../../../utils/useAuthedObjectUrl";
 import { DetailLink } from "./DetailLink";
 import { absoluteDate, formatBytes } from "./datasetDetailHelpers";
@@ -79,8 +80,10 @@ function narrowedLabel(block: DatasetCollection): string | null {
 
 const POLL_MS = 1000;
 
-/** The collection's status, and a Cache files job that refreshes it. */
-export function useCollectionStatus(datasetId: string | undefined) {
+/** The collection's status, and a Cache files job that refreshes it. With
+ *  *dataflowId*, the status is read through that dataflow; Cache files never
+ *  is, since it writes into the store that holds the collection. */
+export function useCollectionStatus(datasetId: string | undefined, dataflowId: string | null = null) {
   const [status, setStatus] = useState<DiscoveryCollectionStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [job, setJob] = useState<DiscoveryAcquireJob | null>(null);
@@ -92,7 +95,7 @@ export function useCollectionStatus(datasetId: string | undefined) {
   const load = useCallback(() => {
     if (!datasetId) return;
     discoveryCatalogApi
-      .getCollection(datasetId)
+      .getCollection(datasetId, dataflowId)
       .then((s) => {
         if (current.current !== datasetId) return;
         setStatus(s);
@@ -101,7 +104,7 @@ export function useCollectionStatus(datasetId: string | undefined) {
       .catch((err: Error) => {
         if (current.current === datasetId) setError(err.message || "Could not read this collection.");
       });
-  }, [datasetId]);
+  }, [datasetId, dataflowId]);
 
   useEffect(() => {
     current.current = datasetId;
@@ -150,13 +153,17 @@ export function useCollectionStatus(datasetId: string | undefined) {
   return { status, error, job, cacheFiles };
 }
 
-const StripThumb: React.FC<{ datasetId: string; fileId: string; name: string }> = ({
+const StripThumb: React.FC<{ datasetId: string; fileId: string; name: string; dataflowId: string | null }> = ({
   datasetId,
   fileId,
   name,
+  dataflowId,
 }) => {
   const { url, failed } = useAuthedObjectUrl(
-    `/api/datasets/${encodeURIComponent(datasetId)}/media/${encodeURIComponent(fileId)}?variant=thumb`,
+    collectionMediaPath(
+      `/api/datasets/${encodeURIComponent(datasetId)}/media/${encodeURIComponent(fileId)}?variant=thumb`,
+      dataflowId,
+    ),
   );
   return url ? (
     <img className={stripStyles.thumb} src={url} alt={name} data-tooltip={name} />
@@ -171,8 +178,12 @@ const StripThumb: React.FC<{ datasetId: string; fileId: string; name: string }> 
   );
 };
 
-/** The first files of the collection, above its index preview. */
-export const CollectionStrip: React.FC<{ status: DiscoveryCollectionStatus | null }> = ({ status }) => {
+/** The first files of the collection, above its index preview, read through
+ *  *dataflowId* as its status was. */
+export const CollectionStrip: React.FC<{ status: DiscoveryCollectionStatus | null; dataflowId?: string | null }> = ({
+  status,
+  dataflowId = null,
+}) => {
   if (!status || status.samples.length === 0) return null;
   return (
     <div className={stripStyles.strip} role="group" aria-label="Files in this collection">
@@ -182,6 +193,7 @@ export const CollectionStrip: React.FC<{ status: DiscoveryCollectionStatus | nul
           datasetId={status.datasetId}
           fileId={sample.fileId}
           name={sample.name}
+          dataflowId={dataflowId}
         />
       ))}
     </div>

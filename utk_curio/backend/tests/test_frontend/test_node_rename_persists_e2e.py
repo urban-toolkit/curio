@@ -2,7 +2,7 @@
 layout save.
 
 The node's data is checked through its name: a node renamed from its header
-keeps the name in its data (``packageTemplateLabel``), which a save writes to
+keeps the name in its data (``title``, its one name), which a save writes to
 the spec. Two paths write a node's data to disk: the canvas's own save, and the
 dashboard page's Save layout, which saves the whole spec from the nodes the
 PAGE loaded. The name has to come through both.
@@ -91,7 +91,7 @@ def _rename(page, node_id: str, name: str) -> None:
 
 
 def _node_data_name(page, node_id: str):
-    """The name the canvas node itself carries (``data.packageTemplateLabel``).
+    """The name the canvas node itself carries (``data.title``).
 
     This, not the header, is what a save writes: a name shown from component
     state alone would pass a look at the header and still be lost. Waits for
@@ -107,7 +107,7 @@ def _node_data_name(page, node_id: str):
         """(nodeId) => {
             const rf = window.__curio_reactFlow;
             const node = rf ? rf.getNodes().find((n) => n.id === nodeId) : null;
-            return node && node.data ? (node.data.packageTemplateLabel ?? null) : null;
+            return node && node.data ? (node.data.title ?? null) : null;
         }""",
         node_id,
     )
@@ -137,7 +137,7 @@ def test_a_renamed_node_survives_save_and_reopen(
     stored = _node_data_name(page, node_id)
     assert stored == NEW_NAME, (
         f"the header shows the new name but the node's data does not carry it, "
-        f"so a save has nothing to write; node.data.packageTemplateLabel = {stored!r}"
+        f"so a save has nothing to write; node.data.title = {stored!r}"
     )
 
     save_dataflow(page)
@@ -154,7 +154,7 @@ def test_a_renamed_node_survives_save_and_reopen(
     reopened = _node_data_name(page, node_id)
     assert reopened == NEW_NAME, (
         f"the name is gone from the node after save and reopen; "
-        f"node.data.packageTemplateLabel = {reopened!r}"
+        f"node.data.title = {reopened!r}"
     )
     expect(_header_title(page, node_id, NEW_NAME)).to_be_visible(timeout=15000)
 
@@ -210,7 +210,7 @@ def test_a_renamed_node_survives_a_dashboard_layout_save(
     stored = _node_data_name(page, node_id)
     assert stored == NEW_NAME, (
         f"the header shows the new name but the node's data does not carry it; "
-        f"node.data.packageTemplateLabel = {stored!r}"
+        f"node.data.title = {stored!r}"
     )
 
     # Pin the renamed node and save, so the dashboard has it as a tile.
@@ -254,6 +254,6 @@ def test_a_renamed_node_survives_a_dashboard_layout_save(
     survived = _node_data_name(page, node_id)
     assert survived == NEW_NAME, (
         f"the dashboard's layout save dropped the name from the node, so the "
-        f"spec on disk no longer has it; node.data.packageTemplateLabel = {survived!r}"
+        f"spec on disk no longer has it; node.data.title = {survived!r}"
     )
     expect(_header_title(page, node_id, NEW_NAME)).to_be_visible(timeout=15000)

@@ -1,13 +1,21 @@
 import React, { useLayoutEffect, useState } from "react";
+import clsx from "clsx";
 import type { AgentAttachment } from "../../../services/agents";
+import type { Person } from "../../../providers/collab/people";
+import { usePeopleHere } from "../../../providers/collab/usePeopleHere";
 import { AgentAvatarBadge } from "./AgentAvatarBadge";
+import { PeopleHere, useAgentAtWorkText } from "./PeopleHere";
 import styles from "./AgentDock.module.css";
 
 /**
- * Canvas-agent dock: the same avatar chips as the node badges (per the
- * concept), clustered in a persistent bar centered at the top of the canvas.
- * Clicking an avatar opens its chat; the hover ✕ detaches. Renders nothing when
- * there are no canvas agents.
+ * The canvas's dock, centered at the top of the canvas: who is here. The
+ * canvas agents, as the same avatar chips as the node badges (per the
+ * concept), and beside them a chip for each other person in the dataflow's
+ * room, read from its doc's awareness, and for each agent at work there, with
+ * the Activity button at the row's end (`PeopleHere`). A canvas agent at work
+ * keeps its one chip, shown at work. Clicking an agent's avatar opens its
+ * chat; the hover ✕ detaches. Your own chip is not in the row, so with nobody
+ * else and no canvas agent the dock renders nothing.
  *
  * The goal field here is NOT a chat composer, which is what #227 assumed when
  * it asked which of several attached agents answers a question typed into it.
@@ -21,71 +29,93 @@ export const GOAL_PLACEHOLDER = "What is this dataflow for?";
 
 const GOAL_INPUT_ID = "curio-dataflow-goal";
 
-/** The least room left between the dataflow's title and the dock. */
-const TITLE_GAP = 16;
-
 /**
- * How far right of its centered place the dock goes to start past the
- * dataflow's title, which sits at the canvas's left (UpMenu's
- * `[data-curio-canvas-title]`) and which a long name stretches under the dock
- * on a narrow window. 0 while the two do not meet, so a dock with room stays
- * where its stylesheet puts it; never past the canvas's right edge.
+ * The dock's left edge, in pixels from the window's left, set on the page's
+ * root while the dock shares the canvas title's row. The title, on the same
+ * row from the left, is cut short where it would run under the dock
+ * (`.workflowNameStyle` in UpMenu.module.css); a long dataflow name used to be
+ * drawn over the dock and its goal field. Taken off, it is its default in
+ * curioTokens.css, the window's width.
  */
-function useRoomBesideTitle(dock: HTMLDivElement | null): number {
-  const [shift, setShift] = useState(0);
+export const DOCK_LEFT_PROPERTY = "--curio-canvas-dock-left";
+
+/** Keep {@link DOCK_LEFT_PROPERTY} at *dock*'s left edge while it is drawn on
+ *  the title's row, through its size, its container's and the window's, and
+ *  take it off when the dock goes. */
+function usePublishedLeftEdge(dock: HTMLElement | null, onTheTitlesRow: boolean): void {
   useLayoutEffect(() => {
-    const title = document.querySelector<HTMLElement>("[data-curio-canvas-title]");
-    if (!dock || !title) return;
-    const measure = () => {
-      // The name as shown, or its input while it is being renamed.
-      const name = title.firstElementChild?.getBoundingClientRect();
-      const area = (dock.offsetParent ?? document.body).getBoundingClientRect();
-      const box = dock.getBoundingClientRect();
-      const centered = area.left + area.width / 2 - dock.offsetWidth / 2;
-      const wanted = name && name.bottom > box.top && name.top < box.bottom
-        ? name.right + TITLE_GAP - centered
-        : 0;
-      const room = area.right - TITLE_GAP - (centered + dock.offsetWidth);
-      setShift(Math.max(0, Math.min(wanted, room)));
+    if (!dock || !onTheTitlesRow) return undefined;
+    const root = document.documentElement;
+    const publish = () => {
+      root.style.setProperty(DOCK_LEFT_PROPERTY, `${Math.floor(dock.getBoundingClientRect().left)}px`);
     };
-    measure();
-    // A rename changes the title's size, and so does the switch between the
-    // name and its input; agents attached or detached change the dock's.
-    const resized = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
-    resized?.observe(title);
+    publish();
+    // Centered, the dock's left edge moves when its row grows or shrinks (an
+    // agent, a person, the goal field) and when the canvas around it does.
+    const resized = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(publish);
     resized?.observe(dock);
-    const swapped = new MutationObserver(measure);
-    swapped.observe(title, { childList: true });
-    window.addEventListener("resize", measure);
+    if (dock.offsetParent) resized?.observe(dock.offsetParent);
+    window.addEventListener("resize", publish);
     return () => {
       resized?.disconnect();
-      swapped.disconnect();
-      window.removeEventListener("resize", measure);
+      window.removeEventListener("resize", publish);
+      root.style.removeProperty(DOCK_LEFT_PROPERTY);
     };
-  }, [dock]);
-  return shift;
+  }, [dock, onTheTitlesRow]);
+}
+
+const NO_AGENTS: AgentAttachment[] = [];
+const noop = () => undefined;
+
+type BadgeProps = React.ComponentProps<typeof AgentAvatarBadge>;
+
+/** A canvas agent at work, *work* in the room: its one chip, shown at work. */
+function AgentAtWorkBadge({ work, ...badge }: Omit<BadgeProps, "atWork"> & { work: Person }) {
+  const atWork = useAgentAtWorkText(work);
+  return <AgentAvatarBadge {...badge} atWork={atWork} />;
 }
 
 export const AgentDock: React.FC<{
-  attachments: AgentAttachment[];
-  selectedId: string | null;
-  onSelect: (attachmentId: string) => void;
-  onDetach: (attachmentId: string) => void;
+  /** The canvas agents: the owner's canvas has them, anyone else's none. */
+  attachments?: AgentAttachment[];
+  selectedId?: string | null;
+  onSelect?: (attachmentId: string) => void;
+  onDetach?: (attachmentId: string) => void;
   /** Shown whenever any agent is attached, canvas-target or not. */
   showGoal?: boolean;
   goal?: string;
   onGoalChange?: (goal: string) => void;
-}> = ({ attachments, selectedId, onSelect, onDetach, showGoal, goal, onGoalChange }) => {
+  /** A read-only canvas: the dock sits under its banner. */
+  belowBanner?: boolean;
+}> = ({
+  attachments = NO_AGENTS,
+  selectedId = null,
+  onSelect = noop,
+  onDetach = noop,
+  showGoal,
+  goal,
+  onGoalChange,
+  belowBanner = false,
+}) => {
+  const here = usePeopleHere();
   const [dock, setDock] = useState<HTMLDivElement | null>(null);
-  const shift = useRoomBesideTitle(dock);
-  if (attachments.length === 0 && !showGoal) return null;
+  // Under a read-only canvas's banner the dock is below the title's row.
+  usePublishedLeftEdge(dock, !belowBanner);
+  if (attachments.length === 0 && !showGoal && here.people.length === 0) return null;
+  // A canvas agent at work is its chip among the canvas agents, shown at
+  // work, never a second one in the row.
+  const docked = new Set(attachments.map((a) => a.attachmentId));
+  const working = new Map<string, Person>();
+  const inRow = here.people.filter((person) => {
+    const attachmentId = person.agent?.attachmentId;
+    if (!attachmentId || !docked.has(attachmentId)) return true;
+    working.set(attachmentId, person);
+    return false;
+  });
   return (
     <div
       ref={setDock}
-      className={styles.dock}
-      // Past a long title (useRoomBesideTitle). No style at all while there
-      // is room, so the stylesheet's centering stands.
-      style={shift > 0 ? { transform: `translateX(calc(-50% + ${shift}px))` } : undefined}
+      className={clsx(styles.dock, belowBanner && styles.dockBelowBanner)}
       role="toolbar"
       aria-label="Canvas agents"
     >
@@ -118,15 +148,21 @@ export const AgentDock: React.FC<{
           />
         </span>
       )}
-      {attachments.map((a) => (
-        <AgentAvatarBadge
-          key={a.attachmentId}
-          attachment={a}
-          active={selectedId === a.attachmentId}
-          onOpen={() => onSelect(a.attachmentId)}
-          onDetach={() => onDetach(a.attachmentId)}
-        />
-      ))}
+      {attachments.map((a) => {
+        const badge = {
+          attachment: a,
+          active: selectedId === a.attachmentId,
+          onOpen: () => onSelect(a.attachmentId),
+          onDetach: () => onDetach(a.attachmentId),
+        };
+        const work = working.get(a.attachmentId);
+        return work
+          ? <AgentAtWorkBadge key={a.attachmentId} {...badge} work={work} />
+          : <AgentAvatarBadge key={a.attachmentId} {...badge} />;
+      })}
+      {/* The Activity button ends the row whenever someone else is here, a
+          canvas agent at work among them. */}
+      {here.people.length > 0 && <PeopleHere people={inRow} pointerOf={here.pointerOf} onOpenAgent={onSelect} />}
     </div>
   );
 };

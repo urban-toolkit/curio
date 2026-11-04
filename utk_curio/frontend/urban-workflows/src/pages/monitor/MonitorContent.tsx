@@ -131,7 +131,6 @@ export const MonitorContent: React.FC = () => {
           />
           <Chip label="Projects" value={m?.deployment.projectsEnabled ? "on" : "off"} />
           <Chip label="Guest login" value={m?.deployment.guestLoginAllowed ? "allowed" : "off"} />
-          <Chip label="Collaboration" value={m?.deployment.collabEnabled ? "on" : "off"} />
           <Chip label="Exec account" value={m?.deployment.execUserConfigured ? "configured" : "none"} />
           <Chip label="Deployment LLM" value={m?.deployment.llmProviderConfigured ? "configured" : "none"} />
           <Chip label="Environment" value={m?.deployment.env ?? "…"} />

@@ -1,0 +1,41 @@
+---
+name: nodes
+description: >-
+  Use this skill when choosing the type of a node to place or plan, or when a task relies on what
+  a built-in node does. It lists Curio's built-in templates, says how a node takes several
+  connections on numbered input circles, and says what Data Loading, Data Transformation, Data
+  Summary, JS Computation, Data Export, Spatial Join, Simple View, Data Pool and Note nodes read,
+  hold, show and hand on, such as the image columns a Simple View shows as cards.
+license: MIT
+compatibility: Written for Curio's agents, their tools and node code.
+metadata:
+  author: curio
+  version: "1.0.0"
+---
+## Nodes
+
+Nodes in these dataflows either process data or visualize it. Each type of node has a different role.
+
+A node's "type" is the id of the template it was made from. A run that can place or plan nodes receives a roster of the templates this dataflow can use, listed by id, and that roster is the authority on them. These are the built-in templates, by name:
+
+{{builtin.nodes}}
+
+A node that accepts more than one connection takes each one on its own input circle, numbered from 0 in the order they were connected. An edge names the circle it connects to in "targetHandle": {{inputs.handles}}, circle 0 first.
+
+A {{template.label:curio.builtin/data-pool}} node is represented to the user as a table.
+
+A {{template.label:curio.builtin/vis-simple}} node renders a table for DataFrames/GeoDataFrames, or a card per row when the frame carries images: one image plus that row's other values. A column holds images when at least {{image.threshold}} of its non-empty values are images; a value that is a list counts when any of its items is one. The columns named {{image.columns}} are checked first, in that order, and in them an image is a "data:image/" URI, an "/api/" path, any http(s) URL, or bare Base64 image bytes. When any of them holds images, those columns are the image columns and no other column is checked, except that {{image.column:image_url}} is left out when {{image.column:thumbnail}} holds images too, since the thumbnail is the small view of the same file. Otherwise every column is checked, and an image there is a "data:image/" URI, an "/api/" path, or an http(s) URL with an image extension ({{image.extensions}}) at its end or just before a "?" or "#"; bare Base64 does not count there. Both frame shapes work, so a GeoDataFrame whose features carry an image property displays as images too. Users can click on a card to select its row, and the selection reaches the nodes linked to it by an interaction edge. A card shows every image column of its row side by side; the node's Image column select narrows it to one, which a plan or a node.create names in the node's "simpleVis"."imageColumn" (a node's "metadata"."simpleVis" in the Trill schema). So to show only the overlays of a frame whose rows carry a photo and its overlay, name the overlay column there, and keep the frame as it is: a node that drops the photo column drops it for every node below too. A view already on the canvas changes its column through node.settings.write, its "simpleVis" naming the column, and {} shows every image column again.
+
+A {{template.label:curio.builtin/data-loading}} node's python code brings data into the dataflow, such as a Data Catalog dataset through `curio_load_data("<id>")`, and returns it. It needs no input, and it can read values from the nodes wired into it, each input circle its own variable, input_0, input_1 and so on, such as the area or the period that several loaders read from one node. It starts with a dataset widget named data and the code `data = curio_load_data({{widgets.reference:data}})`, which loads the Data Catalog dataset the widget holds: a file or a dataset the user drops on the node sets the widget, and so does setting its value to a dataset's id. Code that loads data some other way leaves the widget empty.
+
+A {{template.label:curio.builtin/data-transformation}} node's python code reads its inputs and returns them transformed.
+
+A {{template.label:curio.builtin/data-summary}} node starts with python code that returns a summary of the table on its input, its shape, dtypes, missing values and describe(), and shows that summary as tables.
+
+A {{template.label:curio.builtin/js-computation}} node runs JavaScript in Node.js: each input circle is its own variable, input_0, input_1 and so on, and `return` passes its output on.
+
+A {{template.label:curio.builtin/data-export}} node's python code writes the data on its input to a file, which its Download button saves; a run writes the file and never downloads it. It starts with a text widget named file_name and the code `return curio_export(input_0, {{widgets.reference:file_name}})`, which writes a table as CSV, a GeoDataFrame as GeoJSON, a raster as GeoTIFF and anything else as JSON, and returns the file's name. Code that writes another format writes it to `curio_output_file("<name>")` and returns that path.
+
+A {{template.label:curio.builtin/spatial-join}} node holds no code: it pairs the rows of the GeoDataFrames on its two input circles whose shapes meet. A plan or a node.create gives a new one its operation and output in "spatialJoin", and one already on the canvas changes them through node.settings.write.
+
+A {{template.label:curio.builtin/note}} node is a note on the canvas, a title and a short markdown text on a color of its own; it connects to nothing and runs nothing.

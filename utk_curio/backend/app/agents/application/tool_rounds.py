@@ -21,6 +21,8 @@ from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 from utk_curio.backend.app.agents.infrastructure.providers import ToolCall
 from utk_curio.backend.app.agents.application.proposals import mint as agents_mint
 from utk_curio.backend.app.agents.application.proposals import plans as agents_plans
+from utk_curio.backend.app.agents.application import in_the_room as agents_room
+from utk_curio.backend.app.agents.application import skill_runs as agents_skill_runs
 from utk_curio.backend.app.agents.domain import agent_text
 
 
@@ -58,8 +60,8 @@ def _handle_plan_reply(
     Returns ``(kind, payload, visible_override)``: ``("none", parts, None)``
     — not a plan situation (ungranted agents keep the informational part;
     generic fail-open untouched); ``("mint", parts, override?)`` — the
-    proposal was minted (appended to *minted*; the override strips a scanned
-    fence block from the persisted text, dev/56); ``("correct", errors,
+    plan landed (its change card appended to *minted*; the override strips a
+    scanned fence block from the persisted text, dev/56); ``("correct", errors,
     None)`` — feed the errors back and re-round (shares the MAX_TOOL_ROUNDS
     budget); ``("cap", parts+card, None)`` — budget exhausted: fail loudly,
     never silently."""
@@ -92,21 +94,46 @@ def _handle_plan_reply(
                     )
                     if part is not None:
                         minted.append(part)
-                        # The review card is the plan's home — the raw JSON
-                        # block is stripped from the persisted text.
+                        # The plan's card is its home: the raw JSON block is
+                        # stripped from the persisted text.
                         return "mint", parts, stripped
                     errors = [error_text, fence_guidance]
                 else:
                     errors = plan_errors + [fence_guidance]
     if rounds_used < MAX_TOOL_ROUNDS:
         return "correct", errors, None
-    card = {
+    card = _plan_cap_card(errors)
+    return "cap", [p for p in parts if p.get("type") != "dataflowPlan"] + [card], None
+
+
+def _plan_cap_card(errors: list[str]) -> dict:
+    """The visible outcome of a plan whose last try, after every correction
+    round, was still invalid (dev/54), whether a block, a request or a native
+    call made it."""
+    return {
         "type": "card",
         "kind": "error",
-        "title": "Plan not proposable",
+        "title": "Plan could not be made",
         "lines": [e[:300] for e in errors[:10]],
     }
-    return "cap", [p for p in parts if p.get("type") != "dataflowPlan"] + [card], None
+
+
+def _is_plan_request(loop_ctx: dict, req: dict) -> bool:
+    """Whether *req* is the run's plan made as a request: a native call of
+    dataflow.plan.write, or the toolRequest form a fenced reply may use
+    (dev/55). It gets a plan block's tries (dev/54): an invalid one is a
+    correction round while rounds remain, and the try after the last
+    correction lands or ends in :func:`_plan_cap_card`."""
+    return (
+        req.get("type") == "toolRequest"
+        and req.get("tool") == "dataflow.plan.write"
+        and "dataflow.plan.write" in (loop_ctx.get("granted") or [])
+    )
+
+
+def _is_plan_call(loop_ctx: dict, call: ToolCall) -> bool:
+    """Whether the native *call* is of the run's plan, readable or not."""
+    return _is_plan_request(loop_ctx, {"type": "toolRequest", "tool": tools.tool_id_of(call.name)})
 
 
 def _tool_correction_message(errors: list[str], *, native: bool = False) -> dict:
@@ -128,18 +155,21 @@ def _tool_correction_message(errors: list[str], *, native: bool = False) -> dict
     }
 
 
-def _tool_cap_card(errors: list[str]) -> dict:
-    """The visible outcome of a request attempt that never became proposable.
+def _tool_cap_card(errors: list[str], *, title: str = "Request not made") -> dict:
+    """The visible outcome of a request attempt that never became a request
+    the runtime could run.
 
     Distinct from :func:`_round_cap_cutoff_card`, which reports a *valid*
-    request dangling at the round cap. This one reports a request the runtime
-    could never turn into a proposal, and it is the ONLY thing the user sees
-    of that block — see ``_handle_tool_reply`` for why the raw JSON is dropped.
+    request dangling at the round cap. This one reports a tool request the
+    runtime could never parse, whatever its tool (a change, an install or a
+    read), or a delegation it could never make (*title* says which), and it is
+    the ONLY thing the user sees of that block: see ``_handle_tool_reply`` for
+    why the raw JSON is dropped.
     """
     return {
         "type": "card",
         "kind": "error",
-        "title": "Proposal not created",
+        "title": title,
         "lines": [e[:300] for e in errors[:10]],
     }
 
@@ -157,7 +187,8 @@ def _handle_tool_reply(
     rounds_used: int,
 ) -> tuple[str, list, str | None, dict | None]:
     """In-loop toolRequest recovery (#245) — the dev/56 fence-agnostic scan and
-    the dev/54 correction rounds that plans already have, for tool requests.
+    the dev/54 correction rounds that plans already have, for tool requests,
+    and for a delegation's ``delegateRequest`` the same way.
 
     Consulted ONLY after ``extract_content`` produced no request and
     ``_handle_plan_reply`` returned ``"none"``, so every existing path is
@@ -174,34 +205,52 @@ def _handle_tool_reply(
     None)`` — budget exhausted: fail loudly, never silently.
     """
     granted = loop_ctx.get("granted") or []
-    if not granted:
-        # A run with no tools cannot be attempting one — an agent quoting the
-        # protocol keeps the pre-#245 fail-open behaviour exactly.
+    # The capabilities the run may delegate: a delegation names one, as a tool
+    # request names a granted tool.
+    delegable = loop_ctx.get("delegable") or []
+    if not granted and not delegable:
+        # A run with no tools and no delegates cannot be attempting either: an
+        # agent quoting the protocol keeps the pre-#245 fail-open behaviour exactly.
         return "none", parts, None, None
 
     def _claimed(payload: object) -> bool:
-        """A request is ours to correct only when it names a GRANTED tool.
+        """A request is ours to correct only when it names a GRANTED tool, or,
+        for a delegation, a capability the run may delegate.
 
         Without this the runtime would 'correct' a model that merely echoed
         the literal ``{"tool": "<tool id>", "params": {}}`` out of the tail
-        instruction — which is valid JSON — burning rounds on nothing.
+        instruction (valid JSON) and burn rounds on nothing.
         """
+        delegation = payload.get("delegateRequest") if isinstance(payload, dict) else None
+        if isinstance(delegation, dict):
+            return delegation.get("capability") in delegable
         tool = _requested_tool_of(payload)
         return tool is not None and tool in granted
+
+    def _names_ours(text: str, delegation: bool) -> bool:
+        """Whether broken JSON names a granted tool or, for a delegation, a
+        capability the run may delegate, so a malformed block about something
+        else stays the model's text."""
+        return any(f'"{name}"' in text for name in (delegable if delegation else granted))
 
     visible_override: str | None = None
     fence_guidance = agent_text.message("tool-round.tool-fence")
 
     _, tail_body = content.split_tail(reply)
     errors = content.tool_tail_diagnosis(tail_body)
+    delegation = bool(errors) and '"delegateRequest"' in tail_body
     if errors:
-
         try:
-            tool = _requested_tool_of((_json.loads(tail_body) or {}).get("toolRequest"))
-        except (ValueError, TypeError, AttributeError):
-            tool = None
-        if tool is not None and tool not in granted:
-            return "none", parts, None, None
+            payload = _json.loads(tail_body)
+        except (ValueError, TypeError):
+            payload = None
+        if delegation:
+            if not (_claimed(payload) if isinstance(payload, dict) else _names_ours(tail_body, True)):
+                return "none", parts, None, None
+        else:
+            tool = _requested_tool_of(payload.get("toolRequest")) if isinstance(payload, dict) else None
+            if tool is not None and tool not in granted:
+                return "none", parts, None, None
     else:
         # No terminal-tail attempt (or a valid one, which never reaches here):
         # scan every fence, wherever the model put it.
@@ -209,15 +258,19 @@ def _handle_tool_reply(
         if raw is None:
             return "none", parts, None, None
         if isinstance(raw, str):
-            # Broken JSON: claim it only when it names a granted tool, so a
-            # malformed block about something else stays the model's text.
-            if not any(f'"{t}"' in raw for t in granted):
+            # Broken JSON: claim it only when it names what the run holds.
+            delegation = '"delegateRequest"' in raw
+            if not _names_ours(raw, delegation):
                 return "none", parts, None, None
             errors = (content.tool_tail_diagnosis(raw) or []) + [fence_guidance]
         else:
             if not _claimed(raw):
                 return "none", parts, None, None
-            request, request_errors = content.parse_tool_request_verbose(raw)
+            delegation = "delegateRequest" in raw
+            request, request_errors = (
+                content.parse_delegate_request_verbose(raw["delegateRequest"]) if delegation
+                else content.parse_tool_request_verbose(raw)
+            )
             if request is not None:
                 return "request", parts, stripped, request
             errors = request_errors + [fence_guidance]
@@ -233,15 +286,18 @@ def _handle_tool_reply(
     # precisely why, which is more actionable than the JSON ever was.
     if visible_override is None:
         visible_override, _ = content.split_tail(reply)
-    return "cap", list(parts) + [_tool_cap_card(errors)], visible_override, None
+    card = _tool_cap_card(errors, title="Delegation not made" if delegation else "Request not made")
+    return "cap", list(parts) + [card], visible_override, None
 
 
 # How many tool executions one run may make (memo dev/41): total provider
 # calls per run ≤ MAX_TOOL_ROUNDS + 1. A runtime constant until someone needs
 # to tune it.
-# dev/73: 3 — the Node Builder's documented modify flow (read the node →
-# delegate generation → propose) is a three-round sequence; 2 forced models
-# that follow their instructions to answer in prose instead of proposing.
+# dev/73: 3, the Node Builder's documented modify flow (read the node →
+# delegate generation → write the node) is a three-round sequence; 2 forced
+# models that follow their instructions to answer in prose instead of writing.
+# A plan's last try, in the call after the last round, is judged too, as a
+# plan block in the reply after the last round is (``_is_plan_request``).
 MAX_TOOL_ROUNDS = 3
 
 
@@ -275,8 +331,8 @@ def _refuse_params(text: str) -> tuple[str, str, None]:
 
 
 # The mutate tools _mint_proposal dispatches (dev/73): a request for one of
-# these dangling at the round cap is a cut-off PROPOSAL — surfaced as an
-# error card, never silently dropped under the reply's confident prose.
+# these dangling at the round cap is a cut-off change or install, surfaced
+# as an error card, never silently dropped under the reply's confident prose.
 MUTATE_PROPOSAL_TOOLS = frozenset({
     "node.content.write",
     "node.settings.write",
@@ -294,10 +350,10 @@ def _round_cap_cutoff_card(tool: str) -> dict:
     return {
         "type": "card",
         "kind": "error",
-        "title": "Proposal step cut off",
+        "title": "Request cut off",
         "lines": [
-            f"the run hit its tool-round limit before the {tool} proposal "
-            "could be created — ask the agent to continue",
+            f"the run hit its tool-round limit before the {tool} request "
+            "could be made: ask the agent to continue",
         ],
     }
 
@@ -320,13 +376,15 @@ def _execute_tool_request(
 ) -> tuple[str, str]:
     """Handle one model toolRequest inside the loop (memo dev/41).
 
-    Only granted read contracts execute; a granted mutate contract mints a
-    review proposal (never executes — `DEC-006`); everything else resolves to
-    a synthetic result the model can recover from — loudly to the model,
-    invisibly to the user, never a run error. Appends to ``tool_calls`` (the
-    execution record's tool history) and ``minted`` (proposal parts for the
-    persisted turn). A granted call that failed also records the line the chat
-    may show for it (:func:`_failure_fields`, #447)."""
+    A granted read contract executes; a granted mutate contract runs its
+    mint: a change to the dataflow lands as the agent's change, and an
+    install becomes a proposal the person reviews (`DEC-006`). Everything
+    else resolves to a synthetic result the model can recover from: loudly
+    to the model, invisibly to the user, never a run error. Appends to
+    ``tool_calls`` (the execution record's tool history) and ``minted`` (the
+    change and proposal parts for the persisted turn). A granted call that
+    failed also records the line the chat may show for it
+    (:func:`_failure_fields`, #447)."""
     tool_id = req.get("tool", "")
     started = time.monotonic()
     granted = tool_id in loop_ctx["granted"]
@@ -350,6 +408,15 @@ def _execute_tool_request(
         contract = tools.REGISTRY.get(tool_id)
         if contract is None:
             status, text = "refused", agent_text.message("tool-round.not-available", tool=repr(tool_id))
+        elif tool_id == agents_skill_runs.TOOL and loop_ctx.get("skills") is not None:
+            # A skill, from the run's own list, recorded as loaded; a name or
+            # a path the model can fix is a parameter refusal.
+            status, text = agents_skill_runs.read(loop_ctx["skills"], req.get("params") or {})
+            if status == "refused":
+                text = ParamRefusal(text)
+            else:
+                # The agent at work in the room lists what it loaded.
+                agents_room.uses_skills(project_id, loop_ctx.get("attachment_id"), loop_ctx["skills"].loaded)
         elif contract.effect == "mutate":
             status, text, part = agents_mint._mint_proposal(user_key, project_id, loop_ctx, req)
             if part is not None:
@@ -370,6 +437,7 @@ def _execute_tool_request(
     if granted:
         # An ungranted request stays the model's alone (dev/41).
         record.update(_failure_fields(status, text))
+        record.update(_failure_record(status, text, req.get("params")))
     tool_calls.append(record)
     return status, text
 
@@ -390,8 +458,9 @@ def _delegate_result_message(
     return {"role": "user", "content": f"[delegate result] {who}: {status}\n{text}{suffix}"}
 
 
-#: The statuses of a result that is not an error.
-_NATIVE_OK_STATUSES = frozenset({"ok", "proposed"})
+#: The statuses of a result that is not an error: a read, an install
+#: proposed for review, a change that landed (``changes.LANDED``).
+_NATIVE_OK_STATUSES = frozenset({"ok", "proposed", "applied"})
 
 #: How long a failed call's reason may be: one line under the reply (#447).
 _FAILURE_REASON_MAX_CHARS = 300
@@ -417,6 +486,39 @@ def _failure_reason(status: str, text: object) -> str | None:
     return reason
 
 
+#: How much of a failed call's whole result, and of the params it gave, its
+#: record keeps.
+_FAILURE_DETAIL_MAX_CHARS = 2000
+_FAILURE_ARGUMENTS_MAX_CHARS = 4000
+
+
+def _bounded_text(text: str, limit: int) -> str:
+    """*text* with URL query strings cut and its length bounded."""
+    text = _URL_QUERY.sub("?…", text)
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _failure_record(status: str, text: object, params: object) -> dict:
+    """What the record of a granted call that did not succeed keeps beside
+    its reason, so a look at the run later finds why it failed: the whole
+    result, every problem a refusal lists (``detail``), and the params the call
+    gave, as JSON (``arguments``), each bounded and with URL query strings cut,
+    as the reason is. The chat's event carries neither. Empty for a call that
+    succeeded."""
+    if status in _NATIVE_OK_STATUSES:
+        return {}
+    fields: dict = {}
+    detail = str(text or "").strip()
+    if detail:
+        fields["detail"] = _bounded_text(detail, _FAILURE_DETAIL_MAX_CHARS)
+    try:
+        arguments = _json.dumps(params if params is not None else {}, ensure_ascii=False)
+    except (TypeError, ValueError):
+        arguments = str(params)
+    fields["arguments"] = _bounded_text(arguments, _FAILURE_ARGUMENTS_MAX_CHARS)
+    return fields
+
+
 def _failure_fields(status: str, text: object) -> dict:
     """The fields a granted call that did not succeed adds to its record and
     its ``tool_result`` event (#447): ``reason``, and ``egress`` when the
@@ -438,11 +540,18 @@ def _native_request(call: ToolCall) -> tuple[dict | None, list[str]]:
     if call.error:
         return None, [call.error]
     if call.name == tools.DELEGATE_TOOL:
-        return content.parse_delegate_request_verbose(call.arguments)
+        # Its inputs given as JSON text, read back first, as below.
+        return content.parse_delegate_request_verbose(
+            tools.native_arguments(tools.DELEGATE_TOOL, call.arguments)
+        )
     tool_id = tools.tool_id_of(call.name)
     if tool_id is None:
         return None, [agent_text.message("tool-round.no-such-tool", name=repr(call.name))]
-    return content.parse_tool_request_verbose({"tool": tool_id, "params": call.arguments})
+    # The values its schema gives as JSON text, read back first, so the
+    # parser sees the params a fenced block would hold.
+    return content.parse_tool_request_verbose(
+        {"tool": tool_id, "params": tools.native_arguments(tool_id, call.arguments)}
+    )
 
 
 def _native_result_text(status: str, text: str, *, final: bool) -> str:
@@ -504,15 +613,18 @@ class _RunConversation:
     def messages(self) -> list:
         return self._native if self.native_tools else self._fenced
 
-    def offer(self, rounds_used: int) -> dict:
+    def offer(self, rounds_used: int, plan_try: bool = False) -> dict:
         """The next call's tool keywords. None on the fenced protocol, so its
         call is exactly what it was before native tools; on the last round the
-        model may not call one."""
+        model may not call one, unless the round before corrected a plan
+        (*plan_try*): that round asked for the plan again, and a native plan
+        is a call, as a fenced reply may still hold a plan block then."""
         if not self.native_tools:
             return {}
+        last = rounds_used >= MAX_TOOL_ROUNDS and not plan_try
         return {
             "tools": self.native_tools,
-            "tool_choice": "none" if rounds_used >= MAX_TOOL_ROUNDS else "auto",
+            "tool_choice": "none" if last else "auto",
         }
 
     def native_calls(self, turn: ChatTurn) -> tuple:

@@ -37,6 +37,7 @@ class TestRegistry:
             "examples.read",  # the worked examples
             "node.settings.write",  # an existing node's settings and widget values
             "scenarios.search",  # the Scenario Catalog
+            "skill.read",  # a skill a chat lists, loaded when a task needs it
         }
         assert tools.REGISTRY["dataflow.read"].effect == "read"
         assert tools.REGISTRY["node.read"].effect == "read"
@@ -63,6 +64,7 @@ class TestRegistry:
         assert tools.REGISTRY["models.search"].effect == "read"
         assert tools.REGISTRY["examples.read"].effect == "read"
         assert tools.REGISTRY["scenarios.search"].effect == "read"
+        assert tools.REGISTRY["skill.read"].effect == "read"
 
     def test_contract_validates_effect(self):
         with pytest.raises(ValueError):
@@ -324,10 +326,11 @@ class TestDataflowReadProjection:
         assert "kind" not in by_id["e1"]  # data stays byte-absent, as in the plan
 
     def test_scenarios_ride_the_projection_with_their_parts(self, tmp_curio):
-        """#662: each scenario with what it is made of, read by the rule the
-        canvas reads it by: its levers, its fixed context (each node an edge
-        into it comes from, a value node's among them) and its outcomes. Nodes
-        show their widgets' values and a copy its lineage."""
+        """#662: each scenario with its parts, read by the rule the canvas and
+        the Scenario Catalog read it by: its Scenario-specific nodes
+        ("nodes"), its Shared context ("context", every node upstream of it
+        outside every box, a value node's among them) and its Shared outcomes
+        ("outcomes"). Nodes show their widgets' values and a copy its lineage."""
         from utk_curio.backend.app.projects import storage as projects_storage
 
         spec = {"dataflow": {"nodes": [
@@ -347,7 +350,7 @@ class TestDataflowReadProjection:
             {"id": "e4", "source": "p", "target": "a", "targetHandle": "in_1"},
         ], "scenarios": [
             {"id": "s1", "name": "Real heights", "color": "#3567c7", "description": "as mapped",
-             "nodes": ["a", "b", "ghost"], "collapsed": True, "box": {"x": 1, "y": 2}},
+             "nodes": ["a", "ghost"], "collapsed": True, "box": {"x": 1, "y": 2}},
         ]}}
         projects_storage.write_spec(self.UKEY, self.PID, spec)
         _, text = tools.execute_read_tool(
@@ -356,12 +359,93 @@ class TestDataflowReadProjection:
         payload = json.loads(text)
         assert payload["scenarios"] == [{
             "id": "s1", "name": "Real heights", "color": "#3567c7", "description": "as mapped",
-            "levers": ["a", "b"], "context": ["load", "p"], "outcomes": ["b"],
+            "set": "Real heights", "nodes": ["a"], "context": ["load", "p"], "outcomes": ["b"],
         }]
         rows = {n["id"]: n for n in payload["nodes"]}
         assert rows["a"]["widgets"] == [{"name": "factor", "type": "number", "value": 2}]
         assert rows["a2"]["copiedFrom"] == ["a"]
         assert "widgets" not in rows["load"] and "copiedFrom" not in rows["a"]
+
+    def test_a_shipped_dataflow_past_the_bound_reads_as_whole_json_with_every_scenario(self, tmp_curio):
+        """scenario-comparison-charts is past the tool output bound as it
+        ships: the read leaves parts out rather than cutting its JSON, keeps
+        every node, every edge and every scenario, and says what it left out."""
+        from pathlib import Path
+
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        shipped = Path(__file__).resolve().parents[4] / "docs" / "examples" / "dataflows" / "scenario-comparison-charts.json"
+        spec = json.loads(shipped.read_text(encoding="utf-8"))
+        projects_storage.write_spec(self.UKEY, self.PID, spec)
+        status, text = tools.execute_read_tool(
+            "dataflow.read", user_key=self.UKEY, project_id=self.PID, target=None, params={}
+        )
+        assert status == "ok"
+        assert len(text) <= tools.TOOL_RESULT_MAX_CHARS, len(text)
+        payload = json.loads(text)
+        dataflow = spec["dataflow"]
+        assert [s["id"] for s in payload["scenarios"]] == [s["id"] for s in dataflow["scenarios"]]
+        assert sorted(e["id"] for e in payload["edges"]) == sorted(e["id"] for e in dataflow["edges"])
+        assert [n["id"] for n in payload["nodes"]] == [n["id"] for n in dataflow["nodes"]]
+        assert payload["elided"], "a read that left parts out says what it left out"
+
+    @staticmethod
+    def _shedding_spec(count: int, goal: int, edges: int = 0) -> dict:
+        """*count* nodes with goals of *goal* characters, a widget and a
+        lineage each, the first *edges* of them chained."""
+        nodes = [
+            {"id": f"node-{i:04d}", "type": "curio.builtin/computation-analysis", "goal": "g" * goal, "content": "x",
+             "metadata": {"widgets": [{"name": "w", "type": "number", "default": 1}], "copiedFrom": [f"origin-{i}"]}}
+            for i in range(count)
+        ]
+        chain = [{"id": f"e{i}", "source": f"node-{i:04d}", "target": f"node-{i + 1:04d}"} for i in range(edges)]
+        return {"dataflow": {"name": "wf", "nodes": nodes, "edges": chain,
+                             "datasets": [{"datasetId": "d", "dirName": "d@1", "origin": "imported"}]}}
+
+    def _read(self, spec: dict) -> tuple[str, dict]:
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        projects_storage.write_spec(self.UKEY, self.PID, spec)
+        _, text = tools.execute_read_tool(
+            "dataflow.read", user_key=self.UKEY, project_id=self.PID, target=None, params={}
+        )
+        return text, json.loads(text)
+
+    def test_a_read_past_the_bound_sheds_its_parts_in_order_and_never_an_edge(self, tmp_curio):
+        """Each part goes only while the read is still past the bound, in the
+        stated order; with every part gone, the node rows past the bound go,
+        counted, and every edge stays."""
+        from utk_curio.backend.app.agents.domain import agent_text
+
+        text, payload = self._read(self._shedding_spec(400, goal=300, edges=150))
+        assert len(text) <= tools.TOOL_RESULT_MAX_CHARS, len(text)
+        assert payload["elided"] == [agent_text.message(message_id) for message_id in (
+            "tools.goals-shortened", "tools.lineage-left-out", "tools.goals-left-out",
+            "tools.datasets-shortened", "tools.values-left-out", "tools.nodes-left-out",
+        )]
+        assert len(payload["edges"]) == 150
+        assert payload["nodesElided"] > 0
+        assert len(payload["nodes"]) + payload["nodesElided"] == 400
+        assert [n["id"] for n in payload["nodes"]] == [f"node-{i:04d}" for i in range(len(payload["nodes"]))]
+        assert payload["nodes"][0] == {
+            "id": "node-0000", "type": "curio.builtin/computation-analysis", "hasContent": True, "contentChars": 1,
+        }
+        assert payload["datasets"] == [{"datasetId": "d"}]
+
+    def test_a_read_just_past_the_bound_sheds_only_what_it_must(self, tmp_curio):
+        """Goals cut to 40 characters bring it within the bound: its lineage,
+        its widgets and every node stay."""
+        from utk_curio.backend.app.agents.domain import agent_text
+
+        text, payload = self._read(self._shedding_spec(100, goal=200))
+        assert len(text) <= tools.TOOL_RESULT_MAX_CHARS, len(text)
+        assert payload["elided"] == [agent_text.message("tools.goals-shortened")]
+        assert "nodesElided" not in payload
+        assert len(payload["nodes"]) == 100
+        row = payload["nodes"][0]
+        assert row["goal"] == "g" * 40
+        assert row["copiedFrom"] == ["origin-0"]
+        assert row["widgets"] == [{"name": "w", "type": "number", "value": 1}]
 
     def test_a_dataflow_without_scenarios_projects_as_before(self, tmp_curio):
         self._write_big_spec(n_nodes=3, content_chars=10)

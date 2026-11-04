@@ -81,8 +81,26 @@ def _endpoint_not_asked_about_tools(monkeypatch):
 
     monkeypatch.setattr(
         providers, "probe_native_tools",
-        lambda config, usage_out=None: (None, "not asked in the test suite"),
+        lambda config, usage_out=None: (None, "not asked in the test suite", "unanswered"),
     )
+
+
+@pytest.fixture(autouse=True)
+def _no_endpoint_seen_thinking():
+    """Every test starts as a fresh process does: no endpoint seen thinking.
+
+    The provider port remembers, for the process, the endpoints whose model
+    it saw thinking and those whose server refused room for it (``providers``,
+    its "A model that thinks"), by base URL. A stub server's port can come
+    back in a later test, whose model may not think. A checkout without that
+    memory has nothing to forget.
+    """
+    from utk_curio.backend.app.agents.infrastructure import providers
+
+    for name in ("_thinking_endpoints", "_room_refused"):
+        seen = getattr(providers, name, None)
+        if seen is not None:
+            seen.clear()
 
 
 @pytest.fixture(autouse=True)
@@ -115,10 +133,24 @@ def _pinned_repair_budget(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _fresh_agent_jobs():
+def _fresh_agent_jobs(monkeypatch):
     """dev/115: the detached-job registry is process state — every test starts
     with none and leaves none behind (a leaked live job would hit the
-    per-attachment guard or the per-user cap in an unrelated test)."""
+    per-attachment guard or the per-user cap in an unrelated test). A chat
+    turn is a job too: a test's turns are stopped and waited for before its
+    patches are undone, so none takes the next test's scripted replies."""
+    try:
+        from utk_curio.backend.app.agents.application.turns import turn_jobs
+    except ImportError:  # a checkout whose turns run in their request
+        turn_jobs = None
+
     agent_jobs.reset_registry()
+    if turn_jobs is not None:
+        turn_jobs.forget_all()
     yield
+    if turn_jobs is not None:
+        for job in turn_jobs.stop_all():
+            if job.thread is not None:
+                job.thread.join(30)
+        turn_jobs.forget_all()
     agent_jobs.reset_registry()

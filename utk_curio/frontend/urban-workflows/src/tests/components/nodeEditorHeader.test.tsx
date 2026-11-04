@@ -2,7 +2,7 @@
  * A node's header is the same for a built-in node and a package node (#662).
  * It reads only the editor's language and grammar and the node's inputs with
  * their boxes, never the node's kind or its spec, so the built-in Vega-Lite
- * node and one of Scout's charts (`curio.scout/bars`, a package template that
+ * node and one of the Vega-Lite package's charts (`curio.vega-lite/bars`, a package template that
  * draws with the Vega-Lite grammar) over the same inputs list the same chips,
  * each dragging the same chip. A code node over those inputs shows no
  * Scenarios and no `inputs` tag.
@@ -33,14 +33,8 @@ jest.mock("@monaco-editor/react", () => ({
 
 jest.mock("../../providers/CollaborationProvider", () => ({
   useCollab: () => ({
-    enabled: false,
     connected: false,
     users: [],
-    proposals: [],
-    currentUserId: null,
-    requestCodeChange: jest.fn(),
-    approveCodeChange: jest.fn(),
-    rejectCodeChange: jest.fn(),
     onRemote: jest.fn(() => jest.fn()),
   }),
 }));
@@ -54,7 +48,7 @@ import NodeEditor from "../../components/editing/NodeEditor";
 import { clearVegaLiteTemplate, registerVegaLiteTemplate } from "../_support/vegaLiteTemplate";
 import { chipsOf, draggedText, eachCategory, headerRow, openCategory } from "../_support/stripCategories";
 
-const SCOUT_BARS = "curio.scout/bars@1";
+const PACKAGE_BARS = "curio.vega-lite/bars@1";
 const WIDGETS = [
   { name: "y", type: "text", label: "Y column", default: "y", value: "mean" },
   { name: "y_title", type: "text", label: "Y axis title", default: "" },
@@ -66,8 +60,8 @@ const SPEC = '{\n  "data": {"name": "[!! inputs !!]"},\n  "mark": "bar"\n}';
  * header. */
 function setFlow(targets: string[]) {
   mockFlow.nodes = [
-    { id: "shadow-a", type: "curio.scout/raster-calculator", data: { title: "Shadow over the ground" } },
-    { id: "shadow-b", type: "curio.scout/raster-calculator", data: { title: "Shadow over the ground" } },
+    { id: "shadow-a", type: "curio.rasterization/raster-calculator", data: { title: "Shadow over the ground" } },
+    { id: "shadow-b", type: "curio.rasterization/raster-calculator", data: { title: "Shadow over the ground" } },
     {
       id: "season",
       type: "curio.builtin/computation-analysis",
@@ -118,18 +112,18 @@ function headerOf(container: HTMLElement) {
   return { row, chips };
 }
 
-beforeAll(() => registerVegaLiteTemplate(SCOUT_BARS));
+beforeAll(() => registerVegaLiteTemplate(PACKAGE_BARS));
 afterAll(() => clearVegaLiteTemplate());
 
-test("a built-in Vega-Lite node and a Scout chart over the same inputs give the same header", () => {
-  setFlow(["builtin-chart", "scout-chart"]);
+test("a built-in Vega-Lite node and a package chart over the same inputs give the same header", () => {
+  setFlow(["builtin-chart", "package-chart"]);
   const builtin = render(chartEditor("builtin-chart", "curio.builtin/vis-vega"));
   const builtinHeader = headerOf(builtin.container);
   builtin.unmount();
-  const scout = render(chartEditor("scout-chart", SCOUT_BARS));
-  const scoutHeader = headerOf(scout.container);
+  const packaged = render(chartEditor("package-chart", PACKAGE_BARS));
+  const packagedHeader = headerOf(packaged.container);
 
-  expect(scoutHeader).toEqual(builtinHeader);
+  expect(packagedHeader).toEqual(builtinHeader);
   expect(builtinHeader.row).toEqual(["Inputs 3", "Scenarios 5", "Widgets 2"]);
   expect(builtinHeader.chips).toEqual({
     inputs: ["input_0 -> [!! input_0 !!]", "input_1 -> [!! input_1 !!]", "inputs -> [!! inputs !!]"],

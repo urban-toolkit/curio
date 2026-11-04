@@ -85,12 +85,12 @@ SAFE_READ_TOOLS = (
 # baseline captures is what surfaced the ordering: with node.create ahead of
 # dataflow.plan.write, agent.curio.dataflow-builder - whose whole capability is
 # dataflow.orchestrate - minted a single node instead of a plan. node.create
-# sits ahead of node.content.write for the same reason and one more: applying it
+# sits ahead of node.content.write for the same reason and one more: landing it
 # puts a NEW NODE on the canvas, which is the most visible proof an agent did
 # something. The spread this produces is deliberate: a plan and two node
 # creations. Since node content is the Node Builder's mode, no card's first
-# match is node.content.write; TestAgentReviewCard (test_agent_chat_e2e.py)
-# applies a content replacement in the browser.
+# match is node.content.write; TestAgentChangeCard (test_agent_chat_e2e.py)
+# lands a content replacement in the browser and undoes it.
 MINTABLE_TOOLS = ("dataflow.plan.write", "node.create", "node.content.write")
 
 # What each mint writes, so the apply assertion and the scripted params cannot
@@ -245,7 +245,7 @@ def _scripted_replies(spec: AgentManifest) -> tuple[str, str | None, list[str]]:
     if leg == "mint":
         return leg, tool, [
             _tail({"toolRequest": {"tool": tool, "params": _mint_params(tool, spec)}}),
-            "I have proposed the change for your review.",
+            "The change is on the canvas.",
         ]
     if leg == "read":
         return leg, tool, [
@@ -362,23 +362,29 @@ def test_agent_installs_attaches_and_runs(spec, current_server: str):
     parts = run["content"]
     kinds = [p.get("type") for p in parts]
     if leg == "mint":
-        proposals = [p for p in parts if p.get("type") == "proposal"]
-        assert proposals, (
-            f"{coord} declares the mutate tool {tool!r} but minted no proposal; "
+        changes = [p for p in parts if p.get("type") == "change"]
+        assert changes, (
+            f"{coord} declares the mutate tool {tool!r} but nothing landed; "
             f"parts were {kinds}"
         )
-        assert proposals[0]["tool"] == tool
-        assert proposals[0].get("proposalId")
-        # DEC-006: a mutate request mints a review, it never executes. The node
-        # the proposal names must be untouched until the user applies it.
+        assert changes[0]["tool"] == tool and changes[0].get("changeId")
+        assert "proposal" not in kinds, f"{coord}'s {tool!r} waited for review: {kinds}"
+        # The change landed at once, as the agent's: the saved dataflow holds it.
+        nodes = api_json(f"{current_server}/api/projects/{project_id}", token)["spec"]["dataflow"]["nodes"]
         if tool == "node.content.write":
             node_id = _mint_params(tool, spec)["nodeId"]
-            saved = api_json(f"{current_server}/api/projects/{project_id}", token)
-            node = next(
-                n for n in saved["spec"]["dataflow"]["nodes"] if n["id"] == node_id
+            node = next(n for n in nodes if n["id"] == node_id)
+            assert PROPOSED_CONTENT in (node.get("content") or ""), (
+                f"the change never reached node {node_id}: {node.get('content')!r}"
             )
-            assert PROPOSED_CONTENT not in (node.get("content") or ""), (
-                "the mutate tool executed instead of minting a review"
+        elif tool == "node.create":
+            assert any(CREATED_CONTENT in (n.get("content") or "") for n in nodes), (
+                "the new node never reached the saved dataflow"
+            )
+        else:
+            goals = [n.get("goal") or "" for n in nodes]
+            assert all(any(goal.startswith(title) for goal in goals) for title in PLAN_NODE_TITLES), (
+                f"the plan's nodes never reached the saved dataflow: {goals}"
             )
     elif leg == "read":
         # Two provider calls: the request, then the re-prompt carrying its
@@ -440,7 +446,7 @@ def _native_replies(spec: AgentManifest) -> tuple[str, str | None, list]:
     else:
         arguments = _read_params(tool, spec)
     follow_up = (
-        "I have proposed the change for your review." if leg == "mint"
+        "The change is on the canvas." if leg == "mint"
         else "That is what the project currently contains."
     )
     return leg, tool, [
@@ -496,18 +502,62 @@ def test_agent_runs_on_native_tools(spec, current_server: str):
         "a run on native tools was still taught the fenced request syntax"
     )
     offers = captured_agent_offers(current_server)
-    names = {tools.wire_name(t) for t in _tool_ids(spec)} | ({"delegate"} if spec.delegates_to else set())
+    # Its tools, skill.read, which a chat that lists skills holds, and the
+    # delegation tool when it delegates.
+    skill_read = tools.wire_name("skill.read")
+    names = {tools.wire_name(t) for t in _tool_ids(spec)} | {skill_read} | ({"delegate"} if spec.delegates_to else set())
     assert set(offers[0]["tools"]) <= names and offers[0]["toolChoice"] == "auto", offers[0]
+    assert skill_read in offers[0]["tools"], offers[0]
     if leg == "prompts":
         return
     assert tools.wire_name(tool) in offers[0]["tools"], offers[0]
     result = captured_agent_prompts(current_server)[1][-1]
     assert result["role"] == "tool" and result["is_error"] is False, result
     if leg == "mint":
-        proposals = [p for p in run["content"] if p.get("type") == "proposal"]
-        assert proposals and proposals[0]["tool"] == tool, run["content"]
+        changes = [p for p in run["content"] if p.get("type") == "change"]
+        assert changes and changes[0]["tool"] == tool, run["content"]
+        assert not [p for p in run["content"] if p.get("type") == "proposal"], run["content"]
     else:
         assert result["name"] == tools.wire_name(tool)
+
+
+@pytest.mark.parametrize("native", [False, True], ids=["fenced", "native"])
+def test_a_chat_loads_a_skill_and_holds_it_for_its_next_turn(native: bool, current_server: str):
+    """The Node Builder's chat loads ``widgets`` with skill.read, fenced and
+    natively: the call's result is the skill, wrapped as
+    ``<skill_content>``, and the turn records it. The next turn holds it in
+    its system turn, and loading it again answers that the conversation holds
+    it already, with no second copy."""
+    require_project_page()
+    require_user_auth()
+    spec = next(s for s in _CARDS if s.agent_id == "agent.curio.node-builder")
+    token, base, attachment_id = _attached(spec, current_server, "skill" + ("n" if native else "f"))
+    if native:
+        ask = {"text": VISIBLE_PROSE, "toolCalls": [{"name": "skill.read", "arguments": {"name": "widgets"}}]}
+    else:
+        ask = _tail({"toolRequest": {"tool": "skill.read", "params": {"name": "widgets"}}})
+
+    script_agent_replies(current_server, ask, "Loaded.", native_tools=native)
+    api_json(f"{base}/attachments/{attachment_id}/run", token, method="POST",
+             payload={"message": "Which widgets can a chart have?"})
+    first = captured_agent_prompts(current_server)
+    assert '<available_skills>' in first[0][0]["content"] and "<name>widgets</name>" in first[0][0]["content"]
+    result = first[1][-1]
+    assert result["role"] == ("tool" if native else "user"), result
+    assert result["content"].count('<skill_content name="widgets">') == 1, result["content"][:300]
+    turns = api_json(f"{base}/attachments/{attachment_id}/session", token)["turns"]
+    assert turns[-1]["execution"]["skillsLoaded"] == ["widgets"], turns[-1]["execution"]
+
+    script_agent_replies(current_server, ask, "Still loaded.", native_tools=native)
+    api_json(f"{base}/attachments/{attachment_id}/run", token, method="POST",
+             payload={"message": "And for a map?"})
+    second = captured_agent_prompts(current_server)
+    assert second[0][0]["content"].count('<skill_content name="widgets">') == 1
+    again = second[1][-1]["content"]
+    assert "already in this conversation" in again and "<skill_content" not in again, again
+    turns = api_json(f"{base}/attachments/{attachment_id}/session", token)["turns"]
+    assert turns[-1]["execution"]["pins"]["skills"]["kept"] == ["widgets"]
+    assert "skillsLoaded" not in turns[-1]["execution"]
 
 
 def test_a_refusal_of_native_tools_falls_back_to_the_fenced_protocol(current_server: str):
@@ -552,8 +602,8 @@ AUTK_DOCUMENT = {
 def test_an_autark_document_is_written_under_its_schema(current_server: str):
     """On an endpoint that takes a reply schema, the content the Node Builder
     delegates to its own content mode for an Autark node is held to the
-    Autark document's schema, and the review minted at the node's own agent
-    carries the document decoded from that reply."""
+    Autark document's schema, and the change that lands at the node's own
+    agent carries the document decoded from that reply, which the node holds."""
     from utk_curio.backend.app.agents.application import reply_schemas
 
     require_project_page()
@@ -574,7 +624,7 @@ def test_an_autark_document_is_written_under_its_schema(current_server: str):
         _tail({"delegateRequest": {"capability": "node.content.generate",
                                    "inputs": {"nodeId": AUTK_NODE_ID, "intent": "map the points"}}}),
         json.dumps(constrained),
-        "I have proposed the document for your review.",
+        "The map is in the node.",
         structured_output=True,
     )
     run = api_json(
@@ -588,7 +638,10 @@ def test_an_autark_document_is_written_under_its_schema(current_server: str):
     assert entry["status"] == "ok", entry
     assert entry["coord"] == builtin.builtin_coord("agent.curio.node-builder"), entry
     turns = api_json(f"{base}/attachments/{entry['attachmentId']}/session", token)["turns"]
-    proposals = [part for turn in turns for part in (turn.get("content") or [])
-                 if part.get("type") == "proposal"]
-    assert [p["tool"] for p in proposals] == ["node.content.write"], turns
-    assert json.loads(proposals[0]["preview"]) == AUTK_DOCUMENT
+    changes = [part for turn in turns for part in (turn.get("content") or [])
+               if part.get("type") == "change"]
+    assert [p["tool"] for p in changes] == ["node.content.write"], turns
+    assert json.loads(changes[0]["preview"]) == AUTK_DOCUMENT
+    project_id = base.rstrip("/").rsplit("/", 1)[-1]
+    nodes = api_json(f"{current_server}/api/projects/{project_id}", token)["spec"]["dataflow"]["nodes"]
+    assert json.loads(next(n for n in nodes if n["id"] == AUTK_NODE_ID)["content"]) == AUTK_DOCUMENT

@@ -29,7 +29,7 @@ def test_guest_save_is_blocked(app_frontend: FrontendPage, page):
     2. Frontend (client-side guard, the layer actually exercised here):
        ``hook/useWorkflowOperations.ts`` sets
        ``blockGuestSaves = enableUserAuth && !!user?.is_guest`` and
-       ``saveCurrentProject`` throws before issuing the POST, so the click
+       ``saveDataflow`` throws before issuing the POST, so the click
        on 'Save dataflow' fires a toast and **no** ``POST /api/projects``
        leaves the browser.
 
@@ -65,18 +65,18 @@ def test_guest_save_is_blocked(app_frontend: FrontendPage, page):
     page.wait_for_url("**/dataflow/**", timeout=15000)
     page.wait_for_load_state("domcontentloaded")
 
-    # Wait on the File button explicitly instead of a fixed sleep — the
+    # Wait on the File button explicitly instead of a fixed sleep: the
     # canvas-mount completion is what we actually depend on. Once the
     # button is visible, the FlowProvider + UpMenu are mounted and
-    # `saveCurrentProject` is wired through the React tree.
+    # `saveDataflow` is wired through the React tree.
     file_btn = page.get_by_test_id("file-menu-btn")
     file_btn.wait_for(state="visible", timeout=15000)
 
-    # Assert the block by *expecting no request* — `expect_request` with
-    # the inverse semantics. `saveCurrentProject` throws synchronously
-    # inside the click handler before any `fetch` runs, so a real block
-    # produces no POST and we hit the timeout; an unintended save flow
-    # fires the matching request and the with-block resolves early.
+    # Assert the block by *expecting no request*: `expect_request` with
+    # the inverse semantics. `saveDataflow` throws inside the click handler
+    # before any `fetch` runs, so a real block produces no POST and we hit
+    # the timeout; an unintended save flow fires the matching request and
+    # the with-block resolves early.
     try:
         with page.expect_request(
             lambda r: r.method == "POST" and "/api/projects" in r.url,

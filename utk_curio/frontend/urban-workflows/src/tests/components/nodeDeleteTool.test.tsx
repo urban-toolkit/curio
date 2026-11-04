@@ -9,7 +9,7 @@ import React from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 
 const mockFlow: { viewerMode: "owner" | "shared" } = { viewerMode: "owner" };
-const mockCollab = { enabled: false };
+const mockCollab: { role: "owner" | "editor" | "watcher" | null } = { role: null };
 
 jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => mockFlow,
@@ -36,7 +36,7 @@ const tool = () => screen.queryByRole("button", { name: "Delete node" });
 
 afterEach(() => {
   mockFlow.viewerMode = "owner";
-  mockCollab.enabled = false;
+  mockCollab.role = null;
 });
 
 describe("a node's Delete node tool", () => {
@@ -61,10 +61,20 @@ describe("a node's Delete node tool", () => {
     expect(tool()).toBeNull();
   });
 
-  test("with collaboration on, another user's dataflow is edited on the canvas, so the tool is there", () => {
+  test("an editor the owner invited edits on the canvas, so the tool is there", () => {
     mockFlow.viewerMode = "shared";
-    mockCollab.enabled = true;
+    mockCollab.role = "editor";
     draw(false);
     expect(tool()).not.toBeNull();
   });
+
+  test.each([["watcher"], [null]] as const)(
+    "a %s on another user's dataflow only watches, so a node has none",
+    (role) => {
+      mockFlow.viewerMode = "shared";
+      mockCollab.role = role;
+      draw(false);
+      expect(tool()).toBeNull();
+    },
+  );
 });

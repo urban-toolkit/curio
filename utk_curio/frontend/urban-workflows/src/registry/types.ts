@@ -61,6 +61,11 @@ export interface NodePackageMeta {
   lineage?: NodePackageLineage;
   /** When true, the package rejects factory-install / Save-As writes (manifest `readOnly`). */
   readOnly?: boolean;
+  /** When true, the package is not this account's: the canvas of another
+   *  account's dataflow, opened from its link, draws its nodes from the
+   *  owner's copy (`GET /api/packages/dataflows/<id>`). An invited editor's
+   *  runs use that copy; a watcher's canvas has no Play for its nodes. */
+  ownersCopy?: boolean;
   /** Canonical creation instant from manifest `createdAt`. */
   createdAt?: string;
   /** Parsed ``createdAt`` for ordering (palette + Nodes Hub). */
@@ -251,9 +256,10 @@ export interface NodeDescriptor {
   /** True when the template declares `loadsDataset`: a node of it loads the
    *  dataset it names (`loadsData` in `registry/declaredNodes`). */
   loadsDataset?: boolean;
-  /** True when the template declares `opensOnWidgets`: a node of it opens on
-   *  its Widgets tab while its code reads one of its widgets (NodeEditor). */
-  opensOnWidgets?: boolean;
+  /** True when the template declares `opensOnControls`: a node of it shows
+   *  only its controls on its Widgets tab, and opens there while its code
+   *  reads one of its widgets (NodeEditor). */
+  opensOnControls?: boolean;
   inPalette: boolean;
   paletteOrder?: number;
   /** Optional small label rendered as a badge over the icon in ToolsMenu (e.g. "AUTK", "Vega-Lite"). */

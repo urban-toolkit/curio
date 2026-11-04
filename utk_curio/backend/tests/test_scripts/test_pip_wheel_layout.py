@@ -1,11 +1,11 @@
 """The pip package installs nothing in site-packages but ``utk_curio/`` and its
 dist-info, and a pip install still finds everything Curio ships beside its code.
 
-The repository keeps the Agent Catalog's agents, the Data Catalog's datasets,
-the Discovery Catalog's sources, the packages of the Node and Model Catalogs,
-the scripts and DuckDB's extensions in folders beside ``utk_curio/``:
-``agents/``, ``datasets/``, ``discovery/``, ``packages/``, ``scripts/`` and
-``vendor/``. A
+The repository keeps the Agent Catalog's agents, the skills they read, the
+Data Catalog's datasets, the Discovery Catalog's sources, the packages of the
+Node and Model Catalogs, the scripts and DuckDB's extensions in folders beside
+``utk_curio/``: ``agents/``, ``skills/``, ``datasets/``, ``discovery/``,
+``packages/``, ``scripts/`` and ``vendor/``. A
 wheel that installs those folders as they are puts a ``datasets/`` of Curio's
 into site-packages, where Hugging Face's ``datasets`` package lives: the two
 mix in one folder, uninstalling either can break the other, and without
@@ -59,7 +59,7 @@ REPO = Path(__file__).resolve().parents[4]
 PROBE = REPO / "utk_curio" / "backend" / "tests" / "_support" / "pip_install_probe.py"
 #: The folders the repository keeps beside utk_curio/, and docs/, part of
 #: which the package ships.
-FOLDERS = ("agents", "datasets", "discovery", "docs", "packages", "scripts", "vendor")
+FOLDERS = ("agents", "datasets", "discovery", "docs", "packages", "scripts", "skills", "vendor")
 #: Where the wheel carries them, under the folder that holds utk_curio/.
 IN_THE_WHEEL = PurePosixPath("utk_curio", "_shipped")
 #: The credits of the Example storage's Mapillary photos, whose license
@@ -314,6 +314,7 @@ def test_a_pip_install_reads_every_shipped_folder_from_inside_utk_curio(pip_inst
     where = {
         "the Agent Catalog's agents (agents/)": _read(pip_install, "agents")["root"],
         "the pages the agents share (the base entry in agents/)": _read(pip_install, "agent_text")["root"],
+        "the skills the agents read (skills/)": _read(pip_install, "skills")["root"],
         "the Data Catalog (datasets/)": report["datasets"]["root"],
         "the Discovery Catalog (discovery/)": report["discovery"]["root"],
         "the Node and Model Catalogs (packages/)": report["packages"]["root"],
@@ -497,9 +498,49 @@ def test_a_pip_installs_agents_run_the_prompts_a_clone_runs(pip_install):
         page: hashlib.sha256(builtin.read_page(page, wanted_by="the test").encode("utf-8")).hexdigest()
         for page in agent_text.pages()
     }
-    assert {"default_preamble.md", "examples.md", "rules/package_contract.md"} <= set(pages), pages
+    assert {"default_preamble.md", "examples.md", "rules/plan-rules.md"} <= set(pages), pages
     found = _read(pip_install, "agent_text")["pages"]
     assert found == pages, f"a pip install renders the pages {found}, where a clone renders {pages}"
+
+
+def test_a_pip_installs_agents_read_every_skill_a_clone_reads(pip_install):
+    """Every skill Curio ships, in a pip install, is a folder of the
+    ``skills/`` it carries, and an agent reads its body as in a clone, its
+    frontmatter left out and its markers filled."""
+    import hashlib
+
+    from utk_curio.backend.app.agents.domain import agent_text, skills
+
+    clone = {
+        folder.name: hashlib.sha256(agent_text.skill_text(folder.name).encode("utf-8")).hexdigest()
+        for folder in skills.shipped_folders()
+    }
+    assert len(clone) >= 16 and {"nodes", "node-functions", "map-edits"} <= set(clone), clone
+    found = _read(pip_install, "skills")["skills"]
+    assert found == clone, f"a pip install's agents read the skills {found}, where a clone's read {clone}"
+
+
+def test_a_pip_installs_agents_read_every_skill_a_shipped_package_ships(pip_install):
+    """The pip package carries each shipped package's ``skills/`` with the
+    package, and an agent reads each skill's body as in a clone, as
+    written."""
+    import hashlib
+
+    from utk_curio.backend.app.agents.application import skill_runs
+    from utk_curio.backend.app.agents.domain import skills
+    from utk_curio.backend.app.packages.repositories.skills import skill_folders
+
+    clone = {
+        f"{package.name}/{folder.name}": hashlib.sha256(
+            skill_runs.text_of(skills.parse(folder)).encode("utf-8")).hexdigest()
+        for package in sorted(path for path in (REPO / "packages").iterdir() if path.is_dir())
+        for folder in skill_folders(package)
+    }
+    assert {"curio.rasterization@1/rasterization", "curio.vega-lite@1/vega-lite-charts"} <= set(clone), clone
+    found = _read(pip_install, "package_skills")
+    package = (pip_install.site / "utk_curio").resolve()
+    assert Path(found["root"]).resolve().is_relative_to(package), f"{found['root']} is outside {package}"
+    assert found["skills"] == clone, f"a pip install's agents read the package skills {found}, where a clone's {clone}"
 
 
 def test_a_pip_installs_prompt_fields_read_the_trill_schema(pip_install):

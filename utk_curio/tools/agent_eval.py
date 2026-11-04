@@ -9,6 +9,14 @@
     python -m utk_curio.tools.agent_eval list
     python -m utk_curio.tools.agent_eval export --split validation --out eval.jsonl
 
+    python utk_curio/tools/agent_eval.py skills --pilot --out ../skill-evals
+
+``skills`` evaluates the skills Curio ships as agentskills.io describes, each
+from its ``evals/evals.json``, against the endpoint the variables
+``CURIO_EVAL_BASE_URL``, ``CURIO_EVAL_API_KEY`` and ``CURIO_EVAL_MODEL`` name,
+with no web stack (``skill_eval_runner.py``, EXTENDING's "Evaluating a
+skill").
+
 What comes out is an **evaluation report**, not a gate: ``report.json`` carries
 ``isReleaseGate: false`` and ``report.md`` says so in its header. Nothing in
 Curio passes or fails because of these numbers, and the first thing to do with a
@@ -16,10 +24,11 @@ low score is read the transcript the report kept. Without ``--out``, the
 reports go to ``eval/`` in Curio's state directory: ``.curio/`` in the folder
 the tool runs from, or ``CURIO_STATE_DIR``.
 
-The tool never reads a provider key. Which model answers is whatever the
+``run`` never reads a provider key. Which model answers is whatever the
 evaluation account saved in API Settings; the report records the provider type,
 the base URL's host and the model name. Every transcript byte is scrubbed before
-it is written.
+it is written. ``skills`` reads its endpoint from its three variables, and
+writes none of them but the model's name.
 
 Cost is not computed unless you supply a rate (``--price-per-mtoken IN,OUT``),
 and then it is labelled as yours -- Curio has no price table and will not invent
@@ -50,6 +59,7 @@ from utk_curio.backend.app.agents.evaluation.report import (
     new_run_id,
 )
 from utk_curio.backend.app.common.user_storage import curio_root
+from utk_curio.tools import skill_eval_runner
 
 #: The folder of Curio's state directory ``run`` writes its reports to when no
 #: ``--out`` is given.
@@ -167,7 +177,7 @@ def cmd_run(args) -> int:
     if not args.token:
         print(
             "a token for the evaluation account is required (--token, or "
-            "CURIO_EVAL_TOKEN); this tool never reads a provider key",
+            "CURIO_EVAL_TOKEN); run never reads a provider key",
             file=sys.stderr,
         )
         return 2
@@ -291,6 +301,8 @@ def build_parser() -> argparse.ArgumentParser:
     exporter.add_argument("--include-unapproved", action="store_true",
                           help="export prompts a person has not reviewed")
     exporter.set_defaults(func=cmd_export)
+
+    skill_eval_runner.add_parser(sub)
     return parser
 
 

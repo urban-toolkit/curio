@@ -2,7 +2,7 @@
 
 The Data Catalog is where Curio's **datasets** live: files shipped with your deployment, files you import from your machine, and the outputs your own dataflows compute.
 
-Curio has six catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the Data Catalog the datasets they read, the [Model Catalog](MODEL-CATALOG.md) the models they run, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, the [Discovery Catalog](DISCOVERY-CATALOG.md) the portals, storage, services and models you take datasets and models from, and the [Scenario Catalog](SCENARIO-CATALOG.md) the scenarios saved in your projects.
+Curio has seven catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the Data Catalog the datasets they read, the [Model Catalog](MODEL-CATALOG.md) the models they run, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, the [Skill Catalog](SKILL-CATALOG.md) the skills those assistants read, the [Discovery Catalog](DISCOVERY-CATALOG.md) the portals, storage, services and models you take datasets and models from, and the [Scenario Catalog](SCENARIO-CATALOG.md) the scenarios saved in your projects.
 
 This guide is in seven parts, plus operator notes:
 
@@ -89,7 +89,7 @@ Dataset state lives in four places. Knowing which one an action writes is the ke
 
 There are three places you work with datasets, and they are **not** interchangeable:
 
-- **The `/catalog/data` page** is the library view, for your whole account. Reach it from `/projects` and the **Data Catalog** tab. You can browse, filter by status, format and origin, preview, import, publish, open a dataset's details, and add a dataset to all your projects. You **cannot add a dataset to just one dataflow from here**: that is the drawer's job.
+- **The `/catalog/data` page** is the library view, for your whole account. Reach it from **Data Catalog** in the top bar of `/projects` and every catalog page. You can browse, filter by status, format and origin, preview, import, publish, open a dataset's details, and add a dataset to all your projects. You **cannot add a dataset to just one dataflow from here**: that is the drawer's job.
 - **The Data Catalog drawer**, inside the canvas, is the working surface. Open it from the **Data Catalog** button in the top bar, or from the left Tools panel's **Data Catalog** dropdown and **Browse Data Catalog +**. Everything scoped to the open dataflow happens here: adding, removing, importing, and deleting. Its tabs are **Browse all** (the default), **In project**, and **Computed**.
 - **The Data palette**, the **Data Catalog** dropdown in the left Tools panel, holds the datasets already added to this dataflow, ready to drag onto the canvas, and under **Saved outputs** the outputs this dataflow's nodes saved. It lists them in the drawer's **Sort: Recent activity** order. It sits below the built-in nodes and the **Node Catalog** dropdown.
 
@@ -119,6 +119,8 @@ There are three places you work with datasets, and they are **not** interchangea
 **I want to reuse a node's output somewhere else.** Turn on the node's save-output toggle (the database icon among the buttons in its header) and run it: the output is saved as a computed dataset. It is listed under **Saved outputs** in the left Tools panel's **Data Catalog** dropdown, ready to drag. To add it to this dataflow or another one, open the drawer's **Computed** tab and click **Add to project** on it.
 
 **I want to remove a dataset from one dataflow but keep it.** Use **Remove from project** in the drawer. Only the dataflow's ref goes, with one exception: your own upload is deleted when no other dataflow uses it, and the confirmation says so before anything is deleted.
+
+**I edit someone else's dataflow and want to add data of mine.** On a dataflow whose owner invited you to edit it ([Collaboration](COLLABORATION.md#who-edits-owner-editors-and-watchers)), your data reaches the dataflow through the owner's review. A file you drop on the canvas or on a node goes into your own Data Catalog, and that drop, **Add to project**, and a card of your Data Catalog dragged onto the canvas or a node each ask the owner to add the dataset. The node it made reads **WAITING** on its dataset pill until the owner reviews it. The owner's drawer lists your request under **Waiting for review**, with your name: **Apply** copies the dataset into the owner's Data Catalog and adds it to the dataflow, and **Dismiss** leaves nothing behind. Only the owner applies or dismisses it. A dataset of the shared catalog dragged onto the canvas asks nothing, since every account reads it. A collection of yours asks as a dataset does, and the owner's **Apply** copies with it the files of a bucket or a service your Data Catalog holds. Your **Remove from project** takes a dataset out of the dataflow and deletes nothing from the owner's Data Catalog or yours.
 
 **I want a dataset gone for good.** Use **Delete** in the drawer. It removes your stored copy and strips the references from every dataflow that used it, and its confirmation says how many nodes are affected.
 
@@ -177,7 +179,7 @@ A name the bundle does not list stops the node with a message naming the dataset
 
 To read the file another way, for example a CSV with another separator, use `curio_data_path("<datasetId>")`, which gives the file's path: `pd.read_csv(curio_data_path("<datasetId>"), sep=";")`, or `netCDF4.Dataset(curio_data_path("<datasetId>"))` for a NetCDF file.
 
-These calls name the dataset by id instead of a file path, so the code keeps working when the dataflow is shared or moved. [Functions node code calls](../agents/agent.curio.builtin@1/knowledge/node-functions.md) lists each with its arguments. The details' **Use in a node** box shows the `curio_load_data` call, or for a group the lines that load each of its layers, with a copy button.
+These calls name the dataset by id instead of a file path, so the code keeps working when the dataflow is shared or moved. [Functions node code calls](../skills/node-functions/SKILL.md) lists each with its arguments. The details' **Use in a node** box shows the `curio_load_data` call, or for a group the lines that load each of its layers, with a copy button.
 
 **Clicking** a palette row, rather than dragging it, highlights every node on the canvas that uses that dataset. If none does, a message says so.
 
@@ -394,7 +396,7 @@ Only the dataset's publisher may unpublish or delete it.
 | `CURIO_CATALOG_ROOT` | `--catalog-root` | The shared catalog's location. Defaults to `<repo_root>/datasets/`. |
 | `CURIO_LAUNCH_CWD` | none | Where per-user stores live (`.curio/users/<key>/datasets/` under it). Defaults to the process's working directory. |
 | `CURIO_STATE_DIR` | `--state-dir` | Moves `.curio/`, and every per-user store in it, to this directory. |
-| `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH` | `--allow-publish` (default), `--no-allow-publish` | Allows or forbids **Publish** and **Unpublish** of datasets, as it does for node packages and agents. When forbidden, both are refused and their buttons are hidden on `/catalog/data`. |
+| `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH` | `--allow-publish` (default), `--no-allow-publish` | Allows or forbids **Publish** and **Unpublish** of datasets, as it does for node packages, agents and skills. When forbidden, both are refused and their buttons are hidden on `/catalog/data`. |
 
 **Relocating the catalog.** The default root resolves relative to the installed package. That suits a checkout, but on a `pip` install it lands inside `site-packages`, where it is read-only and publishing fails. Set `CURIO_CATALOG_ROOT` (or `--catalog-root`) to a writable, persistent path there.
 

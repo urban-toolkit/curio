@@ -211,6 +211,48 @@ def test_failure_text_is_escaped(tmp_path):
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in page
 
 
+RECORDED = """<?xml version="1.0" encoding="utf-8"?>
+<testsuites><testsuite name="pytest" failures="1" tests="3" time="2.0">
+<testcase classname="tests.test_agents.test_prompt_sizes" name="test_sizes" time="1.5">
+  <properties><property name="agent.curio.node-builder@1 chat" value="{&quot;chars&quot;: 61234}"/>
+  <property name="&lt;b&gt;bold&lt;/b&gt;" value="&lt;script&gt;x&lt;/script&gt;"/></properties>
+</testcase>
+<testcase classname="tests.test_a" name="test_budget" time="0.4">
+  <properties><property name="size" value="12"/></properties>
+  <failure message="past its budget">trace</failure>
+</testcase>
+<testcase classname="tests.test_a" name="test_quiet" time="0.1"/>
+</testsuite></testsuites>
+"""
+
+
+def test_the_values_a_test_recorded_are_on_its_entry(tmp_path):
+    """What a test records with record_property, which its JUnit holds, is
+    shown with the test: in a failure's own entry, and for any other test in
+    an entry of its own, escaped like every other text."""
+    (tmp_path / "unit.xml").write_text(RECORDED, encoding="utf-8")
+    suite = ci_report.read_junit("unit", str(tmp_path / "unit.xml"))
+    by_name = {case.name: case for case in suite.cases}
+    assert by_name["tests.test_agents.test_prompt_sizes::test_sizes"].properties == [
+        ("agent.curio.node-builder@1 chat", '{"chars": 61234}'), ("<b>bold</b>", "<script>x</script>")]
+    assert by_name["tests.test_a::test_budget"].properties == [("size", "12")]
+    assert by_name["tests.test_a::test_quiet"].properties == []
+
+    out = tmp_path / "report.html"
+    assert ci_report.main(["--junit", f"Backend unit tests={tmp_path / 'unit.xml'}", "--out", str(out)]) == 0
+    page = out.read_text(encoding="utf-8")
+    failure = page.index("tests.test_a::test_budget")
+    recorded = page.index('<details class="recorded">')
+    assert failure < recorded
+    assert "<td>size</td><td>12</td>" in page[failure:recorded]
+    assert "Values recorded by 1 test</summary>" in page[recorded:]
+    assert "tests.test_agents.test_prompt_sizes::test_sizes" in page[recorded:]
+    assert "<td>agent.curio.node-builder@1 chat</td><td>{&quot;chars&quot;: 61234}</td>" in page[recorded:]
+    assert "&lt;b&gt;bold&lt;/b&gt;" in page and "&lt;script&gt;x&lt;/script&gt;" in page
+    assert "<b>bold</b>" not in page and "<script>x</script>" not in page
+    assert "test_quiet" not in page
+
+
 def test_comparisons_are_ordered_over_missing_then_near_misses(tmp_path):
     page, _ = _build(tmp_path)
     order = [page.index(f"screenshot_{name}.png") for name in ("c_over", "d_missing", "b_near", "a_pass")]
@@ -503,7 +545,7 @@ RUN_JOBS = {"jobs": [
     {"name": "test-gpu", "status": "completed", "conclusion": "success",
      "html_url": "https://github.com/o/r/actions/runs/1/job/2",
      "runner_name": "utk-gpu", "runner_group_name": "gpu",
-     "labels": ["self-hosted", "linux", "gpu", "curio"],
+     "labels": ["self-hosted", "utk", "gpu"],
      "created_at": "2026-09-30T11:59:58Z",
      "started_at": "2026-09-30T12:00:00Z", "completed_at": "2026-09-30T12:08:00Z",
      "steps": [{"name": "Run e2e tests", "status": "completed", "conclusion": "success",
@@ -511,7 +553,7 @@ RUN_JOBS = {"jobs": [
     {"name": "e2e-desktop (3)", "status": "completed", "conclusion": "failure",
      "html_url": "https://github.com/o/r/actions/runs/1/job/3",
      "runner_name": "arcade-cpu-07", "runner_group_name": "cpu",
-     "labels": ["self-hosted", "cpu"],
+     "labels": ["self-hosted", "arcade", "cpu"],
      "created_at": "2026-09-30T12:01:00Z",
      "started_at": "2026-09-30T12:02:00Z", "completed_at": "2026-09-30T12:11:00Z",
      "steps": [{"name": "Run this part of the e2e tests", "status": "completed",
@@ -541,7 +583,7 @@ def test_a_run_wide_page_lists_every_job_and_what_failed_in_each(tmp_path):
 def test_the_page_and_the_where_table_say_where_each_job_ran(tmp_path):
     # As the jobs API reports a skipped job: no runner, and done before it started.
     skipped = {"name": "test-gpu-stress", "status": "completed", "conclusion": "skipped",
-               "runner_name": "", "labels": ["self-hosted", "linux", "gpu", "curio"], "steps": [],
+               "runner_name": "", "labels": ["self-hosted", "utk", "gpu"], "steps": [],
                "created_at": "2026-09-30T12:08:01Z", "started_at": "2026-09-30T12:08:01Z",
                "completed_at": "2026-09-30T12:08:00Z"}
     jobs = {"jobs": [*RUN_JOBS["jobs"], skipped]}
@@ -566,7 +608,7 @@ def test_the_page_and_the_where_table_say_where_each_job_ran(tmp_path):
 def _part_job(name, minutes, seconds=0):
     """A finished job of the run that took minutes:seconds."""
     return {"name": name, "status": "completed", "conclusion": "success",
-            "runner_name": "arcade-cpu-01", "runner_group_name": "cpu", "labels": ["self-hosted", "cpu"],
+            "runner_name": "arcade-cpu-01", "runner_group_name": "cpu", "labels": ["self-hosted", "arcade", "cpu"],
             "created_at": "2026-10-18T12:00:00Z", "started_at": "2026-10-18T12:00:00Z",
             "completed_at": f"2026-10-18T12:{minutes:02d}:{seconds:02d}Z", "steps": []}
 

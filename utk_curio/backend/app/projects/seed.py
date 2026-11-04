@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from utk_curio.backend.extensions import db, retry_on_write_conflict
+from utk_curio.backend.app.collaboration import dataflow_docs, history
 from utk_curio.backend.app.common.file_locks import exclusive_lock
 from utk_curio.backend.app.projects import repositories as repo
 from utk_curio.backend.app.projects import storage
@@ -238,7 +239,9 @@ def seed_example_projects(
                         # Theirs now. Repair a missing spec file (the row without
                         # its spec is unopenable) and otherwise leave it alone.
                         if storage.read_spec(ukey, project_id) is None:
-                            storage.write_spec(ukey, project_id, spec)
+                            storage.drop_history(ukey, project_id)
+                            history.drop(ukey, project_id)
+                            dataflow_docs.create(ukey, project_id, spec, dataflow_docs.by_curio(ukey, "seed"))
                         continue
                     if existing is not None and existing.user_id == user.id:
                         existing.name = name
@@ -263,7 +266,11 @@ def seed_example_projects(
                         db.session.add(project)
                         db.session.flush()
 
-                    storage.write_spec(ukey, project_id, spec)
+                    # The shipped copy as the whole document: an example put
+                    # back to it keeps none of the history of what it replaces.
+                    storage.drop_history(ukey, project_id)
+                    history.drop(ukey, project_id)
+                    dataflow_docs.create(ukey, project_id, spec, dataflow_docs.by_curio(ukey, "seed"))
                     storage.write_manifest(
                         ukey,
                         project_id,

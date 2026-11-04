@@ -6,6 +6,7 @@ import {
   faDatabase,
 } from "@fortawesome/free-solid-svg-icons";
 import { useFlowContext } from "../../../../providers/FlowProvider";
+import { useAgentsDataflowId } from "../../../../providers/agents/useAgentsDataflowId";
 import { useDatasetCatalogDrawer } from "../../../../providers/datasetCatalog";
 import { PaletteDragHint } from "../PaletteDragHint";
 import { useDatasetPalette } from "../../../../providers/DatasetPaletteContext";
@@ -34,7 +35,11 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown({
   setOpen: (open: boolean) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { projectId, outputs, nodes, defaultSaveOutputDataset, pendingInstalls } = useFlowContext();
+  const { outputs, nodes, defaultSaveOutputDataset, pendingInstalls } = useFlowContext();
+  // The dataflow the palette lists, by the rule the canvas's agents and runs
+  // follow: the one the owner's canvas saves, the one an invited editor's
+  // route opened, none on a watcher's canvas.
+  const dataflowId = useAgentsDataflowId();
   const { openDatasetCatalogDrawer } = useDatasetCatalogDrawer();
   const { datasetRevealId, setDatasetRevealId } = useDatasetPalette();
   const { openDatasetDetails } = useDatasetDetails();
@@ -49,7 +54,7 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown({
   );
 
   const catalog = useDatasetCatalog({
-    dataflowId: projectId,
+    dataflowId,
     // Matches the drawer. `false` was not a narrower view of the same data - it
     // takes a different branch server-side: with no `dataflowId` the listing
     // then skips `user_store.list_items()` entirely, so the account's datasets
@@ -82,8 +87,8 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown({
     // `isInThisDataflow`, not `isUserInstalledDataset`: with no project yet
     // nothing is `installed`, and this palette rendered empty even for datasets
     // the user had just added to every project.
-    () => rows.filter((item) => isInThisDataflow(item, Boolean(projectId))),
-    [rows, projectId],
+    () => rows.filter((item) => isInThisDataflow(item, Boolean(dataflowId))),
+    [rows, dataflowId],
   );
 
   // Fold multilayer OSM PBF imports (layers sharing a groupId) into collapsible
@@ -102,9 +107,9 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown({
   const savedOutputRows = useMemo(() => {
     const listed = new Set(installedRows.map((item) => item.id));
     return rows.filter(
-      (item) => !listed.has(item.id) && isSavedOutputOfDataflow(item, projectId),
+      (item) => !listed.has(item.id) && isSavedOutputOfDataflow(item, dataflowId),
     );
-  }, [rows, installedRows, projectId]);
+  }, [rows, installedRows, dataflowId]);
 
   // In-flight installs without a real row yet, rendered as "Adding…"
   // placeholders above the rows.
@@ -272,7 +277,7 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown({
               className={styles.catalogButton}
               onMouseEnter={() => {
                 prefetchDatasetCatalog({
-                  dataflowId: projectId,
+                  dataflowId,
                   includeHub: true,
                   sort: "recent",
                 });

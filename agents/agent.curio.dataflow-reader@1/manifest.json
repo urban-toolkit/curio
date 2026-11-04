@@ -8,6 +8,20 @@
     "listed": false,
     "order": 3
   },
+  "skills": [
+    "node-functions",
+    "catalogs",
+    "widgets",
+    "selection-chips",
+    "autark",
+    "vega-lite-starter",
+    "autark-starter",
+    "vega-lite-maps",
+    "interaction-edges",
+    "map-edits",
+    "scenarios",
+    "dashboards"
+  ],
   "roles": [
     "explanation",
     "planning"

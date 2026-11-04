@@ -14,6 +14,20 @@ inputs:
 runs:
   using: composite
   steps:
+    # On a self-hosted runner the container has a memory limit
+    # (scripts/ci_memory_budget.py), and the kernel ends a stack that outgrows
+    # it by killing a process in it, which a test sees only as a server that
+    # stopped answering. Its memory.events counts those kills: an error line
+    # names them before the containers go.
+    - name: 📏 Processes killed at the container's memory limit
+      if: runner.environment == 'self-hosted'
+      shell: bash
+      env:
+        PROJECT: ${{ inputs.project }}
+      run: |
+        docker compose -p "$PROJECT" exec -T curio cat /sys/fs/cgroup/memory.events 2>/dev/null \
+          | python3 "$GITHUB_WORKSPACE/scripts/ci_memory_budget.py" kills || true
+
     - name: 🧹 Tear down containers
       shell: bash
       env:

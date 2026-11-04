@@ -120,7 +120,10 @@ def locate(service, dataset_id: str, file_id: str) -> Located:
     ``<file_id>@<t_ms>``, or ``<file_id>@<t_ms>-<tag>``, names a file a node
     derived from one of the collection's: a video's frame, a recording's
     window or an image's overlay (its tag names the model that drew it),
-    written where ``curio_derived_file`` put it.
+    written where ``curio_derived_file`` put it, in this account's media
+    folder. A collection the service's dataflow lists from its owner's store
+    (``DiscoveryService.collection``) has its cached files read from that
+    store's media folder, and nothing else of it.
     """
     from utk_curio.backend.app.discovery.application import cache_collection
     from utk_curio.sandbox.util.collections import DERIVED_ID_RE
@@ -141,12 +144,12 @@ def locate(service, dataset_id: str, file_id: str) -> Located:
     if manifest.is_service:
         # A service's files came down with its collection, into the objects
         # folder a bucket's cached files use; there is no source to read.
-        local = cache_collection.cached_file(service.user_key, dataset_id, row.file_id, row.ext)
+        local = cache_collection.cached_file(service.collection_store(item), dataset_id, row.file_id, row.ext)
         return Located(dataset_id=dataset_id, row=row, local=Path(local) if local else None, provider=None)
     provider = service._storage_for(manifest)
     local = provider.local_path(row.relpath)
     if local is None:
-        local = cache_collection.cached_file(service.user_key, dataset_id, row.file_id, row.ext)
+        local = cache_collection.cached_file(service.collection_store(item), dataset_id, row.file_id, row.ext)
     return Located(dataset_id=dataset_id, row=row, local=Path(local) if local else None, provider=provider)
 
 
@@ -444,8 +447,14 @@ def _serializer():
     return URLSafeTimedSerializer(_link_secret(), salt=_LINK_SALT)
 
 
-def sign(user_id: int | None, user_key: str, dataset_id: str, file_id: str) -> str:
-    return _serializer().dumps({"u": user_id, "k": user_key, "d": dataset_id, "f": file_id})
+def sign(user_id: int | None, user_key: str, dataset_id: str, file_id: str, dataflow_id: str | None = None) -> str:
+    """A link to one file, for ten minutes: *dataflow_id*, when the file was
+    found through a dataflow's collections, is the dataflow its use reads
+    through again."""
+    claims = {"u": user_id, "k": user_key, "d": dataset_id, "f": file_id}
+    if dataflow_id:
+        claims["df"] = dataflow_id
+    return _serializer().dumps(claims)
 
 
 def verify(token: str) -> dict[str, Any]:

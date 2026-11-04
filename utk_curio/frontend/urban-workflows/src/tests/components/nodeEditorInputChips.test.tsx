@@ -36,8 +36,8 @@ import NodeEditor from "../../components/editing/NodeEditor";
 
 function setFlow() {
   mockFlow.nodes = [
-    { id: "roads", data: { nodeType: "x", packageTemplateLabel: "Roads" } },
-    { id: "parcels", data: { nodeType: "x", packageTemplateLabel: "Parcels" } },
+    { id: "roads", data: { nodeType: "x", title: "Roads" } },
+    { id: "parcels", data: { nodeType: "x", title: "Parcels" } },
   ];
   mockFlow.edges = [
     { id: "e0", source: "roads", target: "t", sourceHandle: "out", targetHandle: "in" },

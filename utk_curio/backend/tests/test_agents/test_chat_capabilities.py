@@ -40,7 +40,8 @@ def _cfg(**kw):
 
 
 class _Trial:
-    """A fake OpenAI client whose one completion answers the trial."""
+    """A fake OpenAI client whose one completion answers the trial, whole or
+    as a stream, as the request asks: a call of ping, or "pong" and no call."""
 
     def __init__(self, monkeypatch, *, calls_tool=True, error=None):
         self.requests = []
@@ -49,13 +50,26 @@ class _Trial:
             self.requests.append(kwargs)
             if error is not None:
                 raise error
+            usage = types.SimpleNamespace(prompt_tokens=20, completion_tokens=3)
+            if kwargs.get("stream"):
+                call = types.SimpleNamespace(index=0, id="c1",
+                                             function=types.SimpleNamespace(name="ping", arguments="{}"))
+                delta = types.SimpleNamespace(content=None if calls_tool else "pong",
+                                              tool_calls=[call] if calls_tool else None)
+                ended = types.SimpleNamespace(content=None, tool_calls=None)
+                return iter([
+                    types.SimpleNamespace(usage=None, choices=[types.SimpleNamespace(delta=delta, finish_reason=None)]),
+                    types.SimpleNamespace(usage=None, choices=[types.SimpleNamespace(
+                        delta=ended, finish_reason="tool_calls" if calls_tool else "stop")]),
+                    types.SimpleNamespace(usage=usage, choices=[]),
+                ])
             message = types.SimpleNamespace(
                 content=None if calls_tool else "pong",
                 tool_calls=[types.SimpleNamespace(id="c1")] if calls_tool else None,
             )
             return types.SimpleNamespace(
                 choices=[types.SimpleNamespace(message=message)],
-                usage=types.SimpleNamespace(prompt_tokens=20, completion_tokens=3),
+                usage=usage,
             )
 
         class FakeOpenAI:

@@ -1,5 +1,6 @@
 """What every packages route shares (memo dev/143, B4): the blueprint, the ONE
-error mapping, the caller's user key and the project ownership check. The
+error mapping, the caller's user key, the project ownership check and who may
+read the packages a dataflow uses. The
 resource modules import from here and register their handlers on
 ``packages_bp``; ``routes/__init__.py`` imports them.
 
@@ -16,10 +17,11 @@ from flask import Blueprint, Response, g, jsonify
 
 from utk_curio.backend.app.projects import repositories as projects_repo
 from utk_curio.backend.app.projects.repositories import NotFoundError
-from utk_curio.backend.app.projects.services import _user_dir_key
+from utk_curio.backend.app.projects.services import _opened_by_link, _user_dir_key
 from utk_curio.backend.config import CURIO_ALLOW_FACTORY_CATALOG_PUBLISH  # noqa: F401 — read through this module
 
 from utk_curio.backend.app.packages.domain.errors import PackageServiceError
+from utk_curio.backend.app.packages.application.project_packages import OwnersPackages
 from utk_curio.backend.app.packages.builder.factory import FactoryError
 from utk_curio.backend.app.packages.domain.package_id import PackageIdError
 from utk_curio.backend.app.packages.domain.versions import ResolverError
@@ -88,6 +90,16 @@ def require_project(project_id: str) -> None:
         projects_repo.get_for_user(project_id, g.user.id)
     except NotFoundError:
         raise PackageServiceError("project not found", 404) from None
+
+
+def opened_dataflow_packages(project_id: str):
+    """The packages the dataflow *project_id* uses, as its owner's store holds
+    them (``project_packages.OwnersPackages``), for anyone who may open the
+    dataflow by its link (``projects.services._opened_by_link``, the rule of
+    its shared read): its owner, an editor the owner invited, a watcher. A
+    dataflow that is gone is "project not found" (404)."""
+    project, store_key = _opened_by_link(project_id)
+    return OwnersPackages(store_key, project.id)
 
 
 def catalog_publish_disabled():

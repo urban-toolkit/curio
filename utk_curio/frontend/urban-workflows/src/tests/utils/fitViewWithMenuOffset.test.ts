@@ -5,6 +5,7 @@ import {
   fitViewWithMenuOffset,
   fitViewWithMenuOffsetNow,
   MENU_BAR_ATTR,
+  setDrawnBeside,
 } from '../../utils/fitViewWithMenuOffset';
 import { getNodesBounds, getViewportForBounds } from 'reactflow';
 
@@ -294,6 +295,46 @@ describe('fitViewWithMenuOffset', () => {
     const rf = makeRf([{ id: 'b', width: null, height: null, style: { display: 'none' } } as any]);
     expect(fitViewWithMenuOffset(rf)).toBe(true);
     expect(rf.setViewport).toHaveBeenCalledTimes(1);
+  });
+
+  // A scenario set dropped in arrives collapsed: its shared context is a box
+  // the scenario layers draw where its hidden nodes stand, beside React Flow,
+  // so a fit of the shown nodes alone left it under the rail or off screen.
+  describe('what the canvas draws beside the nodes', () => {
+    const paneOf = () => {
+      const container = document.createElement('div');
+      container.className = 'react-flow';
+      document.body.appendChild(container);
+      container.getBoundingClientRect = () =>
+        ({ width: 800, height: 600, left: 0, top: 0 }) as DOMRect;
+    };
+    // Left of the shown nodes, whose bounds the mock gives as 0,0 100x100.
+    const box = { x: -300, y: -40, width: 260, height: 120 };
+    afterEach(() => setDrawnBeside(null));
+
+    test('a fit of the whole canvas frames it with the nodes', () => {
+      paneOf();
+      setDrawnBeside(() => [box]);
+      const rf = makeRf([{ id: 'a', width: 120, height: 80 }]);
+      expect(fitViewWithMenuOffset(rf)).toBe(true);
+      expect(getViewportForBoundsMock.mock.calls.at(-1)![0]).toEqual({ x: -300, y: -40, width: 400, height: 140 });
+    });
+
+    test('a fit of named nodes frames only those nodes', () => {
+      paneOf();
+      setDrawnBeside(() => [box]);
+      const rf = makeRf([{ id: 'a', width: 120, height: 80 }]);
+      expect(fitViewWithMenuOffset(rf, { nodes: [{ id: 'a' }] })).toBe(true);
+      expect(getViewportForBoundsMock.mock.calls.at(-1)![0]).toEqual({ x: 0, y: 0, width: 100, height: 100 });
+    });
+
+    test('when every node is drawn hidden, the fit frames the boxes they are drawn in', () => {
+      paneOf();
+      setDrawnBeside(() => [box]);
+      const rf = makeRf([{ id: 'b', width: null, height: null, style: { display: 'none' } } as any]);
+      expect(fitViewWithMenuOffset(rf)).toBe(true);
+      expect(getViewportForBoundsMock.mock.calls.at(-1)![0]).toEqual(box);
+    });
   });
 
   // The dashboard draws each scenario's header above its top tile (#662).

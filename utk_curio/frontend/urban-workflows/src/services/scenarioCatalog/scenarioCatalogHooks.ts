@@ -73,8 +73,8 @@ export interface UseScenarioDetailsResult {
   error: string | null;
 }
 
-/** One scenario's fixed context, levers and outcomes; nothing while *projectId*
- *  or *scenarioId* is missing. */
+/** One scenario's shared context, own nodes and shared outcomes; nothing while
+ *  *projectId* or *scenarioId* is missing. */
 export function useScenarioDetails(
   projectId: string | null | undefined,
   scenarioId: string | null | undefined,

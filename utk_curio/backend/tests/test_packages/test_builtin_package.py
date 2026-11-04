@@ -4,7 +4,7 @@ The built-in package is auto-installed for every user and provides the 14
 default node templates. A regression in its manifest would silently strand
 users with an empty palette, so we exercise the load + payload-serialize
 paths against the on-disk artefact. The Raster Calculator is not one of them:
-it is a node of Scout, ``curio.scout@1`` (``test_scout_rasters.py``).
+it is a node of Rasterization, ``curio.rasterization@1`` (``test_scout_rasters.py``).
 """
 
 from __future__ import annotations
@@ -112,8 +112,8 @@ def test_the_note_holds_text_and_runs_nothing(builtin_package_dir: Path):
 
 
 def test_no_raster_node_is_built_in(builtin_package_dir: Path):
-    """The Raster Calculator left the built-in nodes for Scout,
-    ``curio.scout@1``, and no other raster node took its place."""
+    """The Raster Calculator left the built-in nodes for Rasterization,
+    ``curio.rasterization@1``, and no other raster node took its place."""
     manifest = load_package_manifest(builtin_package_dir)
     assert not [t.template_id for t in manifest.templates if "raster" in t.template_id], (
         [t.template_id for t in manifest.templates]
@@ -189,14 +189,15 @@ def test_only_data_loading_and_data_export_ship_a_starter(builtin_package_dir: P
 
 
 def test_data_export_is_a_python_code_node_that_opens_on_its_file_name(builtin_package_dir: Path):
-    """Data Export runs its code: it opens on its Widgets tab, File name, and
-    it keeps its behavior, one input and no output."""
+    """Data Export runs its code: it opens on its Widgets tab, which shows only
+    its controls, File name, and it keeps its behavior, one input and no
+    output."""
     manifest = load_package_manifest(builtin_package_dir)
     export = next(t for t in manifest.templates if t.template_id == "data-export")
     assert (export.editor, export.engine, export.has_code, export.has_widgets) == ("code", "python", True, True)
     assert export.behavior == "data-export"
     assert export.widgets == [{"name": "file_name", "type": "text", "label": "File name", "default": ""}]
-    assert export.opens_on_widgets is True
+    assert export.opens_on_controls is True
     assert len(export.input_ports) == 1 and export.output_ports == []
 
 

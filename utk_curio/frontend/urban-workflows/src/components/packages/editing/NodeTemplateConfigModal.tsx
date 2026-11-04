@@ -35,7 +35,7 @@ export function NodeTemplateConfigModal({
     if (!show || !desc) return;
     const nodeData = {
       packageTemplateConfig: storedConfig ?? undefined,
-      packageTemplateLabel: storedLabel,
+      title: storedLabel,
     };
     setConfig(
       canvasTemplateConfigFromDescriptor(

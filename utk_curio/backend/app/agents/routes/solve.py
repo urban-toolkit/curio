@@ -8,13 +8,13 @@ from __future__ import annotations
 
 import json
 from flask import Response
-from flask import g
 from flask import jsonify
 from flask import request
 from flask import stream_with_context
 
 from utk_curio.backend.app.agents import service as agents_services
 from utk_curio.backend.app.agents.infrastructure.provider_config import ProviderConfigError
+from utk_curio.backend.app.agents.routes.common import _dataflow
 from utk_curio.backend.app.agents.routes.common import _error
 from utk_curio.backend.app.agents.routes.common import _llm_for_attachment
 from utk_curio.backend.app.agents.routes.common import _provider_error
@@ -22,7 +22,6 @@ from utk_curio.backend.app.agents.routes.common import _svc_error
 from utk_curio.backend.app.agents.routes.common import agents_bp
 from utk_curio.backend.app.agents.service import AgentServiceError
 from utk_curio.backend.app.projects import repositories as projects_repo
-from utk_curio.backend.app.projects.services import _user_dir_key
 from utk_curio.backend.app.users.dependencies import require_auth
 
 
@@ -31,8 +30,8 @@ from utk_curio.backend.app.users.dependencies import require_auth
 )
 @require_auth
 def solve_attachment(project_id: str, attachment_id: str):
-    """The dev/52 Solve batch (DEC-048): one explicit, owner-authenticated
-    action fills the applied plan's pending nodes through bounded-concurrency
+    """The dev/52 Solve batch (DEC-048): one explicit, authenticated action
+    of the owner or an invited editor fills the applied plan's pending nodes through bounded-concurrency
     depth-1 children. The endpoint consumes no quota; each child reserves
     under its own policy. Body: optional ``{"nodeIds": [...]}`` for Retry."""
 
@@ -46,10 +45,10 @@ def solve_attachment(project_id: str, attachment_id: str):
     if not isinstance(verify, bool):
         return _error("'verify' must be a boolean when present")
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        config = _llm_for_attachment(project_id, attachment_id)
+        flow = _dataflow(project_id)
+        config = _llm_for_attachment(flow, attachment_id)
         payload = agents_services.solve_attachment(
-            _user_dir_key(g.user), project_id, attachment_id, config, node_ids,
+            flow.key, flow.project_id, attachment_id, config, node_ids,
             verify=verify,
         )
     except projects_repo.NotFoundError:
@@ -81,18 +80,15 @@ def solve_attachment_stream(project_id: str, attachment_id: str):
         isinstance(node_ids, list) and all(isinstance(n, str) for n in node_ids)
     ):
         return _error("'nodeIds' must be a list of node id strings when present")
-    mode = body.get("mode", "write")
-    if mode not in ("write", "propose"):
-        return _error("'mode' must be 'write' or 'propose' when present")
     verify = body.get("verify", True)
     if not isinstance(verify, bool):
         return _error("'verify' must be a boolean when present")
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        config = _llm_for_attachment(project_id, attachment_id)
+        flow = _dataflow(project_id)
+        config = _llm_for_attachment(flow, attachment_id)
         events = agents_services.solve_attachment_stream(
-            _user_dir_key(g.user), project_id, attachment_id, config, node_ids,
-            mode=mode, verify=verify,
+            flow.key, flow.project_id, attachment_id, config, node_ids,
+            verify=verify,
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
@@ -118,21 +114,21 @@ def solve_attachment_stream(project_id: str, attachment_id: str):
 )
 @require_auth
 def simulate(project_id: str, attachment_id: str):
-    """The Simulation Mode driver (dev/67-9, DEC-054) as Server-Sent Events.
-    Body: ``{"mode": "step"|"auto"}`` (default step). Auto runs
-    create → validate → auto-approve-on-PASS per node in topological order,
-    then the connection stage — pausing on any failure with the reason and
-    the pending review. Resume = calling this endpoint again."""
+    """Build & validate (dev/67-9, DEC-054) over the plan that landed, as
+    Server-Sent Events. Body: ``{"mode": "step"|"auto"}`` (default step).
+    Auto runs validate (code that passes lands) then approve per node in
+    topological order, pausing at the first failure with the reason. Resume =
+    calling this endpoint again."""
 
     body = request.get_json(silent=True) or {}
     mode = body.get("mode", "step")
     if mode not in ("step", "auto"):
         return _error("'mode' must be 'step' or 'auto' when present")
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        config = _llm_for_attachment(project_id, attachment_id)
+        flow = _dataflow(project_id)
+        config = _llm_for_attachment(flow, attachment_id)
         events = agents_services.simulate_stream(
-            _user_dir_key(g.user), project_id, attachment_id, config, mode=mode
+            flow.key, flow.project_id, attachment_id, config, mode=mode
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
@@ -161,9 +157,9 @@ def cancel_simulate(project_id: str, attachment_id: str):
     """Cancel a running simulation (dev/67-9): stops at the next action
     boundary; everything already done stays done."""
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
+        flow = _dataflow(project_id)
         payload = agents_services.request_simulate_cancel(
-            _user_dir_key(g.user), project_id, attachment_id
+            flow.key, flow.project_id, attachment_id
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
@@ -189,9 +185,9 @@ def run_node(project_id: str, attachment_id: str):
     if node_id is not None and not isinstance(node_id, str):
         return _error("'nodeId' must be a string when present")
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
+        flow = _dataflow(project_id)
         events = agents_services.run_node_stream(
-            _user_dir_key(g.user), project_id, attachment_id,
+            flow.key, flow.project_id, attachment_id,
             ref=ref or None, node_id=node_id or None,
         )
     except projects_repo.NotFoundError:
@@ -219,8 +215,8 @@ def solve_node(project_id: str, attachment_id: str):
     """dev/115 (DEC-073, Amendment A2): the per-node Solve — the user's
     explicit ask to run, fix, and re-run ONE node's code from the node's own
     agent. Body: ``{"nodeId": "<node id>"}``. Round 0 executes the current
-    content; corrections run the shared loop; a node that had content lands
-    as an already-executed content review, an empty one is written on PASS.
+    content; corrections run the shared loop; code that passed is written,
+    into a node that had content as the agent's change with its Undo.
     Detached: the response subscribes to the job (replay + tail); closing it
     does not stop the run — ``GET …/jobs/stream`` re-attaches."""
 
@@ -229,10 +225,10 @@ def solve_node(project_id: str, attachment_id: str):
     if not isinstance(node_id, str) or not node_id:
         return _error("'nodeId' is required")
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        config = _llm_for_attachment(project_id, attachment_id)
+        flow = _dataflow(project_id)
+        config = _llm_for_attachment(flow, attachment_id)
         events = agents_services.solve_node_stream(
-            _user_dir_key(g.user), project_id, attachment_id, config, node_id=node_id,
+            flow.key, flow.project_id, attachment_id, config, node_id=node_id,
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
@@ -258,11 +254,11 @@ def solve_node(project_id: str, attachment_id: str):
 )
 @require_auth
 def validate_node(project_id: str, attachment_id: str):
-    """Generate → execute-through → validate → self-correct → propose, for ONE
-    node, as Server-Sent Events (dev/67-7 — Simulation Mode: validate).
-    Body: ``{"ref": "<plan ref>"}`` or ``{"nodeId": "<node id>"}``. The
-    outcome lands as a reviewed content proposal carrying the validation
-    verdict; the saved spec is never mutated by validation itself."""
+    """Generate, execute through, validate, self-correct and write, for ONE
+    node of a plan, as Server-Sent Events (dev/67-7: a row's Solve). Body:
+    ``{"ref": "<plan ref>"}`` or ``{"nodeId": "<node id>"}``. Code that
+    passed lands as the agent's change carrying the validation verdict; code
+    that failed is not written."""
 
     body = request.get_json(silent=True) or {}
     ref = body.get("ref")
@@ -272,10 +268,10 @@ def validate_node(project_id: str, attachment_id: str):
     if node_id is not None and not isinstance(node_id, str):
         return _error("'nodeId' must be a string when present")
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
-        config = _llm_for_attachment(project_id, attachment_id)
+        flow = _dataflow(project_id)
+        config = _llm_for_attachment(flow, attachment_id)
         events = agents_services.validate_node_stream(
-            _user_dir_key(g.user), project_id, attachment_id, config,
+            flow.key, flow.project_id, attachment_id, config,
             ref=ref or None, node_id=node_id or None,
         )
     except projects_repo.NotFoundError:
@@ -306,9 +302,9 @@ def cancel_solve(project_id: str, attachment_id: str):
     next node boundary; in-flight children finish and their results persist;
     undispatched targets revert to pending. 409 when nothing is running."""
     try:
-        projects_repo.get_for_user(project_id, g.user.id)
+        flow = _dataflow(project_id)
         payload = agents_services.request_solve_cancel(
-            _user_dir_key(g.user), project_id, attachment_id
+            flow.key, flow.project_id, attachment_id
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)

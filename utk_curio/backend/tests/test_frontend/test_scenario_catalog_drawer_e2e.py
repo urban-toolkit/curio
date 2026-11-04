@@ -60,7 +60,8 @@ def _node(node_id: str, x: int) -> dict:
 
 def _spec(name: str, scenarios: list[tuple[str, str]]) -> dict:
     """A chain of code nodes, a loader and then one step per scenario, each
-    scenario holding its step."""
+    scenario holding its step, all in one scenario set named after the
+    dataflow."""
     steps = [f"step{i}" for i in range(len(scenarios))]
     chain = ["load", *steps]
     return {
@@ -71,8 +72,9 @@ def _spec(name: str, scenarios: list[tuple[str, str]]) -> dict:
                 {"id": f"e-{a}-{b}", "source": a, "target": b, "sourceHandle": "out", "targetHandle": "in"}
                 for a, b in zip(chain, chain[1:])
             ],
+            "scenarioSets": [{"id": "set", "name": name}],
             "scenarios": [
-                {"id": f"s{i}", "name": scenario, "color": color, "nodes": [steps[i]]}
+                {"id": f"s{i}", "name": scenario, "color": color, "nodes": [steps[i]], "set": "set"}
                 for i, (scenario, color) in enumerate(scenarios)
             ],
         }
@@ -145,10 +147,17 @@ def test_browse_all_groups_the_cards_by_dataflow(
     ):
         group = drawer.get_by_role("region", name=name, exact=True)
         expect(group).to_have_attribute("data-scenario-group", project)
-        expect(group.locator("h3").first).to_have_text(f"{name} {count}")
+        # The set's name heads the panel, and its count stands beside it.
+        expect(group.locator("h3").first).to_have_text(name)
+        expect(group.locator("[data-scenario-set-count]")).to_have_text(count)
         held = group.locator("article[data-scenario-key]").evaluate_all(_CARD_KEYS_JS)
         assert held == keys, f"{name}'s group holds {held}, not its own cards {keys}"
 
+    # The set panels run past the drawer's bottom, so its list is scrolled to
+    # the last card, Levee, and the frame shows both groups' cards whole.
+    drawer.locator(f'article[data-scenario-key="{flood}/s0"]').evaluate(
+        "(card) => card.scrollIntoView({block: 'end', behavior: 'instant'})"
+    )
     # The pointer on the canvas, off the drawer, so no card shows hovered.
     page.mouse.move(400, page.viewport_size["height"] - 30)
     save_workflow_test_screenshot(page, "scenario-catalog-drawer", test_name=TEST_NAME, sweep_toasts=True)

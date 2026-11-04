@@ -1,9 +1,9 @@
 """How much of this runner's memory a CI job may use.
 
 A self-hosted runner can be a desktop with 12 GB of memory and 8 GB of video
-memory, or an arcade runner with a 64 GB container on an 80 GB H100. Two
+memory, or an arcade runner with a 64 GB container on an 80 GB H100. These
 numbers follow from what the runner has free when the job starts, and this
-writes both to ``$GITHUB_ENV``:
+writes them to ``$GITHUB_ENV``:
 
 * ``CURIO_E2E_PARALLEL``, test-gpu's e2e workers (``--workers-max``). Each one
   is a Chrome drawing Autark maps on the GPU, a pytest worker, and a backend
@@ -12,13 +12,24 @@ writes both to ``$GITHUB_ENV``:
   run 40157161068), and filled its 8 GB of video memory until maps came back
   blank (``VK_ERROR_OUT_OF_DEVICE_MEMORY``, run 40201256122's second
   attempt). So the count is what free memory and free video memory hold, at
-  most the maximum and at least ``MIN_WORKERS``.
+  most the maximum and at least one.
+* ``CURIO_E2E_SHARDS``, the backend and sandbox pairs, when the job starts
+  more of them than it runs workers. test_shard_isolation_e2e needs a second
+  pair (``MIN_SHARDS``) but not a second worker, so a runner that holds one
+  worker runs it beside a pair that only that test calls, and the serial
+  pytest counts its shards from this (``tests/shards.py``). Under xdist,
+  pytest counts them from its workers, so a run of several workers gets none.
 * ``CURIO_CI_MEM_LIMIT``, the CI container's memory limit, which the CI
   overlays set as both ``mem_limit`` and ``memswap_limit``. When the stack
   outgrows it, the kernel kills a process inside the container and the job
   fails with that, instead of the machine swapping until its runner stops
   answering GitHub. It is everything free except the reserve and what the
-  workers need outside the container, so it does not squeeze the stack.
+  workers need outside the container, so it does not squeeze the stack: it
+  holds what the workers it runs need inside, since the count is what the
+  memory holds. utk-desktop-02 (11.1 GiB free) once ran two workers where it
+  held one, and the 6.1 GiB this left the container was less than their two
+  shards took: the kernel killed shard 0's sandbox during example 11's PBF
+  load while the machine still had 2.8 GiB free (run 40700358711, 10-28).
 
 Free memory is ``MemAvailable``, and on a runner inside a container (arcade)
 also the room under that container's own limit, with its file cache counted as
@@ -32,6 +43,8 @@ reading at all the job keeps the maximum and no limit, with a warning.
     python3 scripts/ci_memory_budget.py --github-env
     python3 scripts/ci_memory_budget.py sample --out ci-report/memory.tsv
     python3 scripts/ci_memory_budget.py report --samples ci-report/memory.tsv
+    docker compose -p curio-ci exec -T curio cat /sys/fs/cgroup/memory.events \\
+        | python3 scripts/ci_memory_budget.py kills
 """
 
 from __future__ import annotations
@@ -47,11 +60,17 @@ from pathlib import Path
 GIB = 1024 ** 3
 MIB = 1024 ** 2
 
-#: The fewest e2e workers test-gpu runs with. test_shard_isolation_e2e checks
-#: that every other shard refuses a token from this one, so it needs a second
-#: shard: with one worker it ran in no job, and ci-report failed the run
-#: (run 40219074996 on utk-desktop-02, 10-25).
-MIN_WORKERS = 2
+#: The fewest backend and sandbox pairs (shards) test-gpu starts.
+#: test_shard_isolation_e2e checks that every other shard refuses a token from
+#: this one, so it needs a second shard: with one it ran in no job, and
+#: ci-report failed the run (run 40219074996 on utk-desktop-02, 10-25). The
+#: second shard needs no worker of its own. Running a second worker for it
+#: instead overcommitted utk-desktop-02, which holds one (run 40700358711).
+MIN_SHARDS = 2
+#: A shard no worker drives, its backend and sandbox idle: the stack went from
+#: 0.36 to 0.60 GiB while shard 1 booted and the first tests began (run
+#: 40700358711), so this is more than it takes.
+IDLE_SHARD_GIB = 0.5
 #: The first test-gpu worker, inside the container and out: its backend and
 #: sandbox pair with the Node runs of its Autark loads, its Chrome drawing maps,
 #: and its pytest worker. Measured as the drop in free memory: one worker
@@ -169,29 +188,41 @@ def free_vram() -> int | None:
 
 
 def budget(free: int | None, vram: int | None, workers_max: int | None) -> dict:
-    """The worker count and container limit for this much free memory.
+    """The worker and shard counts and the container limit for this much free
+    memory.
 
-    ``workers`` is None when no count was asked for; ``limit`` is None when
-    nothing was read, which leaves the container without one.
+    ``workers`` and ``shards`` are None when no count was asked for; ``limit``
+    is None when nothing was read, which leaves the container without one.
     """
-    if free is None:
-        return {"workers": workers_max, "limit": None}
-    workers = None
+    workers = shards = None
     if workers_max is not None:
-        held = workers_held(free, vram)
-        workers = max(min(MIN_WORKERS, workers_max), min(workers_max, held))
+        held = workers_max if free is None else workers_held(free, vram)
+        # One at least, even where none fits: the suite has to run.
+        workers = max(1, min(workers_max, held))
+        shards = max(workers, MIN_SHARDS)
+    if free is None:
+        return {"workers": workers, "shards": shards, "limit": None}
     outside = (workers or 1) * WORKER_OUTSIDE_GIB * GIB
     limit = max(int(free - RESERVE_GIB * GIB - outside), int(MIN_LIMIT_GIB * GIB))
-    return {"workers": workers, "limit": limit}
+    return {"workers": workers, "shards": shards, "limit": limit}
+
+
+def memory_needed(workers: int) -> int:
+    """Free memory, in bytes, a test-gpu job of this many workers needs: the
+    reserve, the first worker, each further worker's share, and the shards
+    that no worker drives."""
+    idle = max(MIN_SHARDS - workers, 0)
+    gib = (RESERVE_GIB + FIRST_WORKER_GIB + (workers - 1) * WORKER_GIB
+           + idle * IDLE_SHARD_GIB)
+    return int(gib * GIB)
 
 
 def workers_held(free: int, vram: int | None) -> int:
-    """How many test-gpu workers this much free memory and video memory hold:
-    the first, then one more for each further worker's share."""
-    spare = free - (RESERVE_GIB + FIRST_WORKER_GIB) * GIB
-    held = 0 if spare < 0 else 1 + int(spare // (WORKER_GIB * GIB))
-    if vram is not None:
-        held = min(held, int(vram // (WORKER_VRAM_GIB * GIB)))
+    """How many test-gpu workers this much free memory and video memory hold."""
+    held = 0
+    while memory_needed(held + 1) <= free and (
+            vram is None or (held + 1) * WORKER_VRAM_GIB * GIB <= vram):
+        held += 1
     return held
 
 
@@ -206,19 +237,23 @@ def size(args) -> int:
     except Exception as exc:  # noqa: BLE001 - a reading must never fail the run
         print(f"::warning::could not read this runner's memory ({exc}); keeping the defaults")
         free = vram = None
-        chosen = {"workers": args.workers_max, "limit": None}
+        chosen = budget(None, None, args.workers_max)
     if free is None:
         print("::warning::no free memory reading; the container gets no memory limit")
     lines = [f"Free memory {_gib(free)}, free video memory "
              f"{_gib(vram) if vram is not None else 'not read (no nvidia-smi)'}"]
     env = {}
     if chosen["workers"] is not None:
-        env["CURIO_E2E_PARALLEL"] = str(chosen["workers"])
-        lines.append(f"e2e workers: {chosen['workers']} of at most {args.workers_max}")
-        if free is not None and workers_held(free, vram) < chosen["workers"]:
-            print(f"::warning::{_gib(free)} free and {_gib(vram)} of video memory hold "
-                  f"{workers_held(free, vram)} e2e worker(s); running {chosen['workers']}, the "
-                  "fewest the suite runs with (test_shard_isolation_e2e needs a second shard)")
+        workers, shards = chosen["workers"], chosen["shards"]
+        env["CURIO_E2E_PARALLEL"] = str(workers)
+        lines.append(f"e2e workers: {workers} of at most {args.workers_max}")
+        if shards > workers:
+            env["CURIO_E2E_SHARDS"] = str(shards)
+            lines.append(f"backend and sandbox pairs: {shards}, {shards - workers} of them "
+                         "for test_shard_isolation_e2e alone")
+        if free is not None and workers_held(free, vram) < workers:
+            print(f"::warning::{_gib(free)} free and {_gib(vram)} of video memory hold no "
+                  f"e2e worker; running {workers}, since the suite has to run")
     if chosen["limit"] is not None:
         mib = chosen["limit"] // MIB
         env["CURIO_CI_MEM_LIMIT"] = f"{mib}m"
@@ -334,9 +369,41 @@ def report(args) -> int:
     return 0
 
 
+def oom_kills(text: str) -> int | None:
+    """The ``oom_kill`` count in the text of a cgroup's ``memory.events``."""
+    match = re.search(r"^oom_kill\s+(\d+)\s*$", text, re.MULTILINE)
+    return int(match.group(1)) if match else None
+
+
+def kills(args) -> int:
+    """Say how many processes the kernel killed in the CI container at its
+    memory limit, from its ``memory.events`` on stdin. A test sees such a kill
+    only as a server that stopped answering ("Could not reach the sandbox")."""
+    count = oom_kills(sys.stdin.read())
+    limit = os.environ.get("CURIO_CI_MEM_LIMIT", "")
+    at = (f"its {int(limit[:-1]) / 1024:.1f} GiB memory limit"
+          if re.fullmatch(r"\d+m", limit) else "its memory limit")
+    if count is None:
+        line = "No memory.events reading for the CI container"
+    elif count:
+        line = (f"The kernel killed {count} process(es) in the CI container at {at} "
+                "(memory.events oom_kill): a server there stopped, and the tests that "
+                "needed it failed")
+        print(f"::error::{line}")
+    else:
+        line = f"The kernel killed no process in the CI container at {at}"
+    print(line)
+    if os.environ.get("GITHUB_STEP_SUMMARY"):
+        with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
+            fh.write(f"### Memory limit\n\n- {line}\n\n")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command")
+    sub.add_parser("kills", help="the processes the kernel killed at the container's "
+                                 "limit, from its memory.events on stdin")
     sampling = sub.add_parser("sample", help="record memory use while the tests run")
     sampling.add_argument("--out", required=True)
     sampling.add_argument("--prefix", default="curio-ci", help="the CI containers' name prefix")
@@ -354,6 +421,8 @@ def main(argv: list[str]) -> int:
         return sample(args)
     if args.command == "report":
         return report(args)
+    if args.command == "kills":
+        return kills(args)
     return size(args)
 
 

@@ -1,14 +1,15 @@
 /**
- * The handle at a node's bottom-right corner resizes the node, and only an
- * owner resizes: a read-only canvas (`useSharedView`, the rule MainCanvas and
- * the top bar read) keeps every node at its size. There the handle is not
- * drawn, nothing listens for a drag, and a drag at the corner changes nothing.
+ * The handle at a node's bottom-right corner resizes the node, and only the
+ * owner or an editor they invited resizes: a read-only canvas (`useSharedView`,
+ * the rule MainCanvas and the top bar read) keeps every node at its size. There
+ * the handle is not drawn, nothing listens for a drag, and a drag at the corner
+ * changes nothing.
  */
 import React, { useRef } from "react";
 import { render } from "@testing-library/react";
 
 const mockFlow: { viewerMode: "owner" | "shared" } = { viewerMode: "owner" };
-const mockCollab = { enabled: false };
+const mockCollab: { role: "owner" | "editor" | "watcher" | null } = { role: null };
 
 jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => mockFlow,
@@ -57,7 +58,7 @@ const size = (box: HTMLElement) => [box.style.width, box.style.height];
 
 afterEach(() => {
   mockFlow.viewerMode = "owner";
-  mockCollab.enabled = false;
+  mockCollab.role = null;
 });
 
 describe("a node's corner handle", () => {
@@ -95,13 +96,52 @@ describe("a node's corner handle", () => {
     expect(onResizeEnd).not.toHaveBeenCalled();
   });
 
-  test("with collaboration on, another user's dataflow is not read-only, and the handle resizes", () => {
+  test("an editor the owner invited is not read-only on their dataflow, and the handle resizes", () => {
     mockFlow.viewerMode = "shared";
-    mockCollab.enabled = true;
+    mockCollab.role = "editor";
     const { box, onResizeEnd, handle } = draw();
     expect(handle()).not.toBeNull();
     dragFrom(handle() as HTMLElement);
     expect(size(box)).toEqual(["645px", "430px"]);
     expect(onResizeEnd).toHaveBeenCalledWith(645, 430);
+  });
+
+  test.each([["watcher"], [null]] as const)(
+    "a %s on another user's dataflow is read-only: no handle, and a drag changes no size",
+    (role) => {
+      mockFlow.viewerMode = "shared";
+      mockCollab.role = role;
+      const { box, onResize, onResizeEnd, handle } = draw();
+      expect(handle()).toBeNull();
+      dragFrom(box);
+      expect(size(box)).toEqual(["525px", "350px"]);
+      expect(onResize).not.toHaveBeenCalled();
+      expect(onResizeEnd).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe("a minimized node's chip handle", () => {
+  test("shrinks the chip no smaller than the least size it is given", () => {
+    const onResizeEnd = jest.fn();
+    function Chip() {
+      const box = useRef<HTMLDivElement>(null);
+      return (
+        <div>
+          <NodeResizeHandle nodeId="c1" box={box} minWidth={120} minHeight={40} onResize={() => {}} onResizeEnd={onResizeEnd} />
+          <div ref={box} id="c1chip" style={{ width: "250px", height: "40px" }} />
+        </div>
+      );
+    }
+    render(<Chip />);
+    const box = document.getElementById("c1chip") as HTMLElement;
+    Object.defineProperty(box, "offsetWidth", { configurable: true, get: () => parseFloat(box.style.width) || 0 });
+    Object.defineProperty(box, "offsetHeight", { configurable: true, get: () => parseFloat(box.style.height) || 0 });
+    const handle = document.getElementById("c1resizer") as HTMLElement;
+    handle.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, clientX: 600, clientY: 400 }));
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: 400, clientY: 380 }));
+    window.dispatchEvent(new MouseEvent("mouseup", { clientX: 400, clientY: 380 }));
+    expect(size(box)).toEqual(["120px", "40px"]);
+    expect(onResizeEnd).toHaveBeenCalledWith(120, 40);
   });
 });

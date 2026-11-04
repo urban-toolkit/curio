@@ -5,19 +5,16 @@ import { v4 as uuid } from "uuid";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { useToastContext } from "../../providers/ToastProvider";
 import { useCode } from "../../hook/useCode";
+import { useSharedView } from "../../hook/useSharedView";
 import { TrillGenerator } from "../../TrillGenerator";
 import { isDrawnHidden } from "../../utils/hiddenNodes";
-import type { Scenario } from "../../utils/scenarios/scenarioModel";
+import type { Scenario, SharedKind } from "../../utils/scenarios/scenarioModel";
+import { updateSharedLook } from "../../utils/scenarios/scenarioSets";
 import { duplicateSelection } from "../../utils/scenarios/duplicateSelection";
 import {
-  addNodesToScenario,
-  createScenario,
   deleteScenario,
   nextScenarioColor,
   nextScenarioName,
-  overlapProblem,
-  removeNodesFromScenarios,
-  scenarioHoldingExactly,
   updateScenario,
   type ScenarioEdit,
 } from "../../utils/scenarios/scenarioEdits";
@@ -25,32 +22,46 @@ import { liveScenarios, scenarioParts } from "../../utils/scenarios/scenarioPart
 // The context's own module, not the provider's: the provider mounts the
 // drawer, whose In project tab runs these commands.
 import { useScenarioCatalogDrawer } from "../../providers/scenarioCatalog/scenarioCatalogDrawerContext";
+import { scenarioBoxHeight } from "./ScenarioLayers";
+import { useScenarioUi } from "./scenarioUi";
 
 /** Room left between a selection and its duplicate, below it. */
 const DUPLICATE_GAP = 80;
 
 /**
- * The canvas's scenario commands (#662): saving a selection or the whole
- * dataflow as a scenario, Duplicate selection, Run scenario, collapse and
- * expand, and the edits of the Scenario Catalog drawer's In project tab. Every
- * change goes through the flow's `setScenarios`, so the dataflow is dirty until
- * its next save. A command that makes a scenario opens that tab, where the new
- * scenario is listed.
+ * The canvas's scenario commands (#662): Define scenario, Duplicate scenario,
+ * Run scenario, collapse and expand, and the edits of the Scenario Catalog
+ * drawer's In project tab. Every change goes through the flow's
+ * `setScenarios`, and none is made on a read-only canvas. A command that makes
+ * a scenario opens that tab, where the new scenario is listed.
  */
 export function useScenarioActions() {
-  const { scenarios: saved, nodes, setScenarios, playNodesUpTo, markDirty, workflowNameRef, workflowGoal } =
-    useFlowContext();
+  const {
+    scenarios: saved,
+    scenarioSets,
+    nodes,
+    setScenarios: writeScenarios,
+    playNodesUpTo,
+    markDirty,
+    workflowNameRef,
+    workflowGoal,
+  } = useFlowContext();
+  // A read-only canvas changes no scenario and no set, whatever asks.
+  const readOnly = useSharedView();
+  const setScenarios = useCallback(
+    (...args: Parameters<typeof writeScenarios>) => {
+      if (!readOnly) writeScenarios(...args);
+    },
+    [readOnly, writeScenarios],
+  );
   // Every edit reads, and writes, the members still on the canvas: the list
   // keeps a deleted node until the next save.
   const scenarios = useMemo(() => liveScenarios(saved, nodes), [saved, nodes]);
   const { loadTrill } = useCode();
   const reactFlow = useReactFlow();
   const { showToast } = useToastContext();
-  const { openScenarioCatalogDrawer } = useScenarioCatalogDrawer();
-  const showInProject = useCallback(
-    () => openScenarioCatalogDrawer({ tab: "installed" }),
-    [openScenarioCatalogDrawer],
-  );
+  const { closeScenarioCatalogDrawer } = useScenarioCatalogDrawer();
+  const { setDefine } = useScenarioUi();
 
   const selectedIds = useCallback(
     () => reactFlow.getNodes().filter((n) => n.selected && !isDrawnHidden(n)).map((n) => n.id),
@@ -70,47 +81,40 @@ export function useScenarioActions() {
     [setScenarios, showToast],
   );
 
+  /**
+   * Define scenario: opens the define panel beside the canvas, which asks for
+   * the nodes unique to the scenario, then has its context and outcomes
+   * confirmed and its set chosen; nothing is saved until its Save. Nodes
+   * selected already, and in no scenario, are its first selection.
+   */
   const saveSelectionAsScenario = useCallback(() => {
-    const edit = createScenario(scenarios, selectedIds(), { id: uuid() });
-    if (apply(edit, edit.scenarios ? `Saved the selection as "${edit.scenarios.at(-1)!.name}".` : undefined)) {
-      showInProject();
-    }
-  }, [scenarios, selectedIds, apply, showInProject]);
-
-  const saveDataflowAsScenario = useCallback(() => {
-    const all = reactFlow.getNodes().map((n) => n.id);
-    if (all.length === 0) {
-      showToast("The dataflow has no nodes to save as a scenario.", "warning");
-      return;
-    }
-    const edit = createScenario(scenarios, all, { id: uuid() });
-    if (apply(edit, edit.scenarios ? `Saved the dataflow as "${edit.scenarios.at(-1)!.name}".` : undefined)) {
-      showInProject();
-    }
-  }, [reactFlow, scenarios, apply, showToast, showInProject]);
+    const boxed = new Set(scenarios.flatMap((s) => s.nodes));
+    const ids = [...new Set(selectedIds())].filter((id) => !boxed.has(id));
+    closeScenarioCatalogDrawer();
+    setDefine({ mode: "new", nodes: ids });
+  }, [scenarios, selectedIds, closeScenarioCatalogDrawer, setDefine]);
 
   /**
-   * Copy the selected nodes below them, with the edges between them, and wire
-   * every edge entering the selection into the copy too. *asScenario* makes the
-   * selection a scenario (unless it is one) and the copy another.
+   * Edit scenario: opens the define panel on a saved scenario, where its nodes,
+   * shared context and outcomes, name, color and set are changed. A collapsed
+   * scenario is expanded, so its nodes can be seen and selected.
    */
-  const duplicate = useCallback(
-    (asScenario: boolean) => {
-      const ids = selectedIds();
-      if (ids.length === 0) {
-        showToast("Select the nodes to duplicate first (Shift and drag).", "warning");
-        return;
-      }
-      const chosen = new Set(ids);
-      const already = scenarioHoldingExactly(scenarios, ids);
-      if (asScenario && !already) {
-        const problem = overlapProblem(scenarios, ids);
-        if (problem) {
-          showToast(problem, "warning");
-          return;
-        }
-      }
+  const editScenario = useCallback(
+    (id: string) => {
+      const scenario = scenarios.find((s) => s.id === id);
+      if (!scenario) return;
+      closeScenarioCatalogDrawer();
+      if (scenario.collapsed) setScenarios(updateScenario(scenarios, id, { collapsed: false }));
+      setDefine({ mode: "edit", scenarioId: id });
+    },
+    [scenarios, closeScenarioCatalogDrawer, setScenarios, setDefine],
+  );
 
+  /** Copy *ids* below them, with the edges between them, and wire every edge
+   *  entering them into the copy too; the copy's ids by original id. */
+  const copyBelow = useCallback(
+    (ids: readonly string[]) => {
+      const chosen = new Set(ids);
       const nodes = reactFlow.getNodes();
       const picked = nodes.filter((n) => chosen.has(n.id));
       const top = Math.min(...picked.map((n) => n.position.y));
@@ -124,39 +128,74 @@ export function useScenarioActions() {
       // canvas as ordinary nodes ("none" is a node that is not a suggestion).
       loadTrill({ dataflow: { ...spec.dataflow, nodes: copy.nodes, edges: copy.edges } }, "none");
       markDirty();
-
-      if (!asScenario) {
-        showToast(`Duplicated ${ids.length} node${ids.length === 1 ? "" : "s"}.`, "success");
-        return;
-      }
-      let next: Scenario[] = scenarios;
-      if (!already) {
-        next = [...next, { id: uuid(), name: nextScenarioName(next), color: nextScenarioColor(next), nodes: ids }];
-      }
-      const twin: Scenario = {
-        id: uuid(),
-        name: nextScenarioName(next),
-        color: nextScenarioColor(next),
-        nodes: [...copy.ids.values()],
-      };
-      setScenarios([...next, twin]);
-      showInProject();
-      showToast(`Duplicated the selection as "${twin.name}".`, "success");
+      return copy.ids;
     },
-    [selectedIds, scenarios, reactFlow, workflowNameRef, workflowGoal, loadTrill, markDirty, showToast, setScenarios, showInProject],
+    [reactFlow, workflowNameRef, workflowGoal, loadTrill, markDirty],
   );
 
-  /** Run the scenario's levers, and only those of its context nodes that cannot be reused. */
+  /** Duplicate selection: the selected nodes, copied below them. */
+  const duplicate = useCallback(() => {
+    const ids = selectedIds();
+    if (ids.length === 0) {
+      showToast("Select the nodes to duplicate first (Shift and drag).", "warning");
+      return;
+    }
+    copyBelow(ids);
+    showToast(`Duplicated ${ids.length} node${ids.length === 1 ? "" : "s"}.`, "success");
+  }, [selectedIds, copyBelow, showToast]);
+
+  /**
+   * Duplicate scenario: its own nodes copied below them, made a scenario of
+   * the same set with the next color and the same shared context, which the
+   * define panel then opens on, at Name & set, to be
+   * named, recolored or put in another set. A collapsed scenario stays
+   * collapsed, and so does its copy, its box just below the original's.
+   * The copy reads what the original reads but feeds nothing (its outputs
+   * are left unwired), so it has no shared outcomes until they are wired and
+   * added.
+   */
+  const duplicateScenario = useCallback(
+    (id: string) => {
+      const scenario = scenarios.find((s) => s.id === id);
+      if (!scenario || scenario.nodes.length === 0) return;
+      let box: { x: number; y: number } | undefined;
+      if (scenario.collapsed) {
+        const members = reactFlow.getNodes().filter((n) => scenario.nodes.includes(n.id));
+        const at = scenario.box ?? {
+          x: Math.min(...members.map((n) => n.position.x)),
+          y: Math.min(...members.map((n) => n.position.y)),
+        };
+        box = { x: at.x, y: at.y + scenarioBoxHeight(scenario.nodes) + DUPLICATE_GAP };
+      }
+      const ids = copyBelow(scenario.nodes);
+      const twin: Scenario = {
+        id: uuid(),
+        name: nextScenarioName(scenarios),
+        color: nextScenarioColor(scenarios),
+        nodes: scenario.nodes.map((n) => ids.get(n)).filter((n): n is string => Boolean(n)),
+        ...(scenario.set ? { set: scenario.set } : {}),
+        ...(scenario.context ? { context: [...scenario.context] } : {}),
+        outcomes: [],
+        ...(box ? { collapsed: true, box } : {}),
+      };
+      setScenarios([...scenarios, twin]);
+      closeScenarioCatalogDrawer();
+      setDefine({ mode: "edit", scenarioId: twin.id, step: 3 });
+    },
+    [scenarios, reactFlow, copyBelow, setScenarios, closeScenarioCatalogDrawer, setDefine],
+  );
+
+  /** Run the scenario's own nodes, and only those of its context nodes that cannot be reused. */
   const runScenario = useCallback(
     (id: string) => {
       const scenario = scenarios.find((s) => s.id === id);
       if (!scenario) return;
-      const { levers } = scenarioParts(scenario, reactFlow.getNodes(), reactFlow.getEdges());
-      if (levers.length === 0) {
+      const { nodes: own } = scenarioParts(scenario, reactFlow.getNodes(), reactFlow.getEdges(), scenarios);
+      if (own.length === 0) {
         showToast(`"${scenario.name}" has no nodes to run.`, "warning");
         return;
       }
-      playNodesUpTo(levers);
+      playNodesUpTo(own);
     },
     [scenarios, reactFlow, playNodesUpTo, showToast],
   );
@@ -170,38 +209,40 @@ export function useScenarioActions() {
 
   const moveBox = useCallback((id: string, box: { x: number; y: number }) => update(id, { box }), [update]);
 
-  const addSelected = useCallback(
-    (id: string) => apply(addNodesToScenario(scenarios, id, selectedIds())),
-    [scenarios, selectedIds, apply],
+  /** Collapse or expand the shared context or shared outcomes of the set *setId*. */
+  const setSharedCollapsed = useCallback(
+    (setId: string, kind: SharedKind, collapsed: boolean) =>
+      setScenarios(saved, updateSharedLook(scenarioSets ?? [], setId, kind, { collapsed })),
+    [saved, scenarioSets, setScenarios],
   );
 
-  /** Take the selected nodes of the scenario *id* out of it; it keeps the others. */
-  const removeSelected = useCallback(
-    (id: string) => {
-      const scenario = scenarios.find((s) => s.id === id);
-      if (!scenario) return;
-      const ids = selectedIds().filter((n) => scenario.nodes.includes(n));
-      if (ids.length === 0) {
-        showToast(`Select nodes of "${scenario.name}" to take out first.`, "warning");
-        return;
-      }
-      setScenarios(removeNodesFromScenarios(scenarios, ids));
-    },
-    [scenarios, selectedIds, setScenarios, showToast],
+  const moveSharedBox = useCallback(
+    (setId: string, kind: SharedKind, box: { x: number; y: number }) =>
+      setScenarios(saved, updateSharedLook(scenarioSets ?? [], setId, kind, { box })),
+    [saved, scenarioSets, setScenarios],
+  );
+
+  /** Rename the scenario set *id*; a name another set has is refused by the caller. */
+  const renameSet = useCallback(
+    (id: string, name: string) =>
+      setScenarios(saved, (scenarioSets ?? []).map((s) => (s.id === id ? { ...s, name } : s))),
+    [saved, scenarioSets, setScenarios],
   );
 
   const remove = useCallback((id: string) => setScenarios(deleteScenario(scenarios, id)), [scenarios, setScenarios]);
 
   return {
     saveSelectionAsScenario,
-    saveDataflowAsScenario,
+    editScenario,
     duplicate,
+    duplicateScenario,
     runScenario,
     update,
     setCollapsed,
     moveBox,
-    addSelected,
-    removeSelected,
+    setSharedCollapsed,
+    moveSharedBox,
+    renameSet,
     remove,
   };
 }

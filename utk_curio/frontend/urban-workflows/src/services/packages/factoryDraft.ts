@@ -62,8 +62,9 @@ export interface TemplateDraft {
   widgets?: WidgetDef[];
   /** The template's `loadsDataset`: a node of it loads the dataset it names. */
   loadsDataset?: boolean;
-  /** The template's `opensOnWidgets`: a node of it opens on its Widgets tab. */
-  opensOnWidgets?: boolean;
+  /** The template's `opensOnControls`: a node of it shows only its controls
+   *  on its Widgets tab, and opens there. */
+  opensOnControls?: boolean;
 }
 
 export interface Draft {
@@ -202,7 +203,7 @@ export function toApiPayload(d: Draft): {
       if (k.sourceFilename) entry.source = `sources/${k.sourceFilename}`;
       if (k.widgets && k.widgets.length > 0) entry.widgets = k.widgets;
       if (k.loadsDataset) entry.loadsDataset = true;
-      if (k.opensOnWidgets) entry.opensOnWidgets = true;
+      if (k.opensOnControls) entry.opensOnControls = true;
       return entry;
     }),
   };

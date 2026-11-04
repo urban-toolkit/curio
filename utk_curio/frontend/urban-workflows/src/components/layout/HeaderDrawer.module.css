@@ -3,3 +3,21 @@
 .overlayRoot {
   --curio-drawer-z: var(--curio-z-header-drawer);
 }
+
+/* Define scenario, beside the canvas: under the top bar and at the lowest
+   catalog drawer tier, so a drawer opened while it is open lands over it. It
+   has no scrim: the canvas and the top bar keep the pointer, and the panel
+   takes it once presented. */
+.overlayRoot.beside {
+  --curio-drawer-z: var(--curio-z-node-drawer);
+  top: var(--curio-top-bar-height);
+  pointer-events: none;
+}
+
+.besidePresented > aside {
+  pointer-events: auto;
+}
+
+.besideBody {
+  composes: thinScrollbar from "../../styles/scrollbars.module.css";
+}

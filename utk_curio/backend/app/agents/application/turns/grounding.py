@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 
+from utk_curio.backend.app.agents.application import askers as agents_askers
 from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
 from utk_curio.backend.app.agents.application import delegation
 from utk_curio.backend.app.agents.application import source_grounding
@@ -30,7 +31,9 @@ from utk_curio.backend.app.agents.domain import document_validation
 from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
 from utk_curio.backend.app.datasets.domain.constants import is_layer_group_id, layer_group_kind
 from utk_curio.backend.app.datasets.domain.layer_group import group_base_title, ids_read, layer_group_formats
+from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.execution import workflow_spec
+from utk_curio.backend.app.execution.code_references import resolve_references, waits_for_data
 from utk_curio.backend.app.projects import storage as projects_storage
 from utk_curio.backend.app.agents.domain import agent_text
 
@@ -292,6 +295,7 @@ def _source_resolver(
     manifest=None,
     extra_texts=(),
     catalog_rows: list | None = None,
+    asker=None,
 ):
     """dev/126: the callable the content loop consults BEFORE generating for a
     data-loading node — the one place resolution initiates discovery.
@@ -302,6 +306,11 @@ def _source_resolver(
     ``dataset.discover`` delegation whose candidates await the user in that
     node's own Dataset Finder chat; a node already awaiting the user spends
     nothing at all.
+
+    *asker* is whoever the Solve runs for (its ``acting_user``): its job's
+    thread holds no request, so the Dataset Finder's run is handed it, and an
+    editor's run holds the skills of the packages the owner added
+    (``dataset_resolution.initiate``).
     """
     parent_manifest = manifest if manifest is not None else agents_catalog._resolve_definition(user_key, coord)
 
@@ -329,11 +338,11 @@ def _source_resolver(
             skip_literal = literal or project_literal
             if skip_literal and state.get("attachmentId"):
                 with projects_storage.spec_write_lock(user_key, project_id):
-                    fresh = projects_storage.read_spec(user_key, project_id)
+                    fresh = dataflow_docs.live(user_key, project_id)
                     if fresh is not None and agents_dataset_resolution.mark_skipped(
                         fresh, state["attachmentId"], literal=skip_literal
                     ):
-                        projects_storage.write_spec(user_key, project_id, fresh)
+                        dataflow_docs.write(user_key, project_id, fresh, dataflow_docs.by_curio(user_key, "dataset"))
             return {
                 "state": "resolved",
                 "detail": state["detail"] or (skip_literal or ""),
@@ -358,6 +367,7 @@ def _source_resolver(
                 if t
             )[:2000],
             catalog_rows=catalog_rows,
+            asker=asker,
         )
         if started["status"] == "awaiting":
             return {"state": "awaiting", "detail": started["detail"],
@@ -551,20 +561,24 @@ def _session_grounding_evidence(
 ) -> tuple[list[str], dict]:
     """dev/114: what this conversation already established — the user's own
     texts (the current message first) and every candidate row the runtime
-    verified (persisted turns + this run's ``_verified_urls``)."""
+    verified (persisted turns + this run's ``_verified_urls``). The task the
+    runtime recorded for a delegate in its session is the delegating agent's
+    words, not the user's (``sessions.a_persons_message``). A delegated write
+    reads the chat that asked for it (``asked_in_session_id``), not the home
+    chat it lands in."""
     texts: list[str] = []
     verified: dict = {}
     message = loop_ctx.get("message")
     if isinstance(message, str) and message.strip():
         texts.append(message)
-    session_id = loop_ctx.get("session_id")
+    session_id = loop_ctx.get("asked_in_session_id") or loop_ctx.get("session_id")
     if isinstance(session_id, str):
         try:
             turns = sessions.read_turns(user_key, project_id, session_id)
         except Exception:
             turns = []
         for turn in turns:
-            if turn.get("role") == "user" and isinstance(turn.get("text"), str):
+            if sessions.a_persons_message(turn):
                 texts.append(turn["text"])
             for part in turn.get("content") or []:
                 if not isinstance(part, dict) or part.get("type") != "datasetCandidates":
@@ -598,11 +612,17 @@ def _grounding_context(
     requested_ids=(),
     code_engine: str | None = None,
     chips: dict | None = None,
+    current: str | None = None,
 ) -> "source_grounding.GroundingContext":
     """dev/114 (DEC-072): everything the gate needs for ONE mint — catalog
     paths, the conversation's evidence, the run-budgeted prober, and the
     grant-aware corrective routes. ``base`` (a Solve batch's precomputed
     catalog paths / texts / verified map) replaces the per-mint reads.
+
+    The user's own messages, which hold the values a data-loading node's
+    inline data may add, are the conversation's alone: not *extra_texts*
+    (a delegate's intent) nor ``base`` (a Solve's task and goals), which a
+    model often writes. *current* is the content the node holds now.
 
     #411: the datasets the content must read are ``_requested_dataset_ids``
     plus ``requested_ids`` (the catalog rows the user confirmed for a Solve
@@ -620,23 +640,27 @@ def _grounding_context(
             node_type, packages_services.roster_templates(user_key, project_id),
         )
     base_of = base if base is not None else {}
+    keys = _keys_of(base, user_key)
     if base is not None:
         catalog_paths = base.get("catalog_paths") or {}
         catalog_ids = base.get("catalog_ids") or {}
         texts = list(base.get("texts") or [])
         verified = dict(base.get("verified") or {})
-        secrets = dict(base["secrets"]) if "secrets" in base else _connection_key_refs(user_key)
+        secrets = dict(base["secrets"]) if "secrets" in base else _connection_key_refs(keys)
+        messages: tuple[str, ...] = ()
     else:
         catalog_paths, catalog_ids = _catalog_grounding_refs(project_id)
         texts, verified = _session_grounding_evidence(user_key, project_id, loop_ctx)
-        secrets = _connection_key_refs(user_key)
+        secrets = _connection_key_refs(keys)
+        messages = tuple(texts)
     models = dict(base_of["models"]) if "models" in base_of else _model_refs(user_key)
     reachable, package_modules = None, None
     if code_engine == "python" and node_type:
         package_modules = (
-            base_of["package_modules"] if "package_modules" in base_of else _package_modules(user_key, project_id)
+            base_of["package_modules"] if "package_modules" in base_of
+            else _package_modules(user_key, project_id, keys)
         )
-        reachable = _reachable_modules(user_key, node_type, project_id)
+        reachable = _reachable_modules(user_key, node_type, project_id, keys)
     texts.extend(t for t in extra_texts if isinstance(t, str) and t.strip())
     budget = _run_egress_budget(loop_ctx)
     cache: dict = loop_ctx.setdefault("_probe_cache", {})
@@ -688,7 +712,7 @@ def _grounding_context(
             ),
             )
         )
-    secret_values = _exec_secrets_resolver(user_key)
+    secret_values = _exec_secrets_resolver(keys)
     return source_grounding.GroundingContext(
         catalog_paths=catalog_paths,
         catalog_ids=catalog_ids,
@@ -710,6 +734,8 @@ def _grounding_context(
         reachable_modules=reachable,
         package_modules=package_modules,
         chips=chips,
+        user_messages=messages,
+        current_content=current,
     )
 
 
@@ -759,22 +785,25 @@ def _gate_generated_content(
     chips: dict | None = None,
     node_id: str | None = None,
     widgets: list | None = None,
+    current: str | None = None,
 ) -> tuple["source_grounding.GroundingVerdict", str | None]:
     """The ONE call every agent-authored-content boundary makes (dev/114):
     ``(verdict, refusal_text | None)``. The refusal is model-correctable
     (DEC-067) and names only routes this run can take. *engine* is the one
     the node's code runs in (``source_grounding.code_engine``), None for
     content that is no code, which is read as a document; *chips*, what a
-    run resolves the node's chips with (:func:`_chip_context`). Content whose
+    run resolves the node's chips with (:func:`_chip_context`); *current*,
+    the content the node holds now, the user's own. Content whose
     sources are grounded and that is a chart's or a map's document is then
     checked as Solve checks one (:func:`_document_refusal`), for *node_id*'s
-    saved node, or for the node a proposal creates with the *widgets* it
+    saved node, or for the node a node.create adds with the *widgets* it
     declares: its refusal comes with a verdict that is ``ok``."""
     code_engine = engine if isinstance(engine, str) and engine else None
     ctx = _grounding_context(
         user_key, project_id, loop_ctx, node_type=node_type, params=params,
         extra_texts=extra_texts, base=base, is_data_loading=is_data_loading,
         request_texts=request_texts, requested_ids=requested_ids, code_engine=code_engine, chips=chips,
+        current=current,
     )
     verdict = source_grounding.check_grounding(code, code_engine or "python", ctx)
     if not verdict.ok:
@@ -782,7 +811,7 @@ def _gate_generated_content(
     return verdict, _document_refusal(user_key, project_id, node_type, code, node_id=node_id, widgets=widgets)
 
 
-#: The id the node a proposal creates goes by while its document is checked.
+#: The id the node a node.create adds goes by while its document is checked.
 _PROPOSED_NODE_ID = "__proposed__"
 
 
@@ -820,7 +849,7 @@ def _proposed_document(user_key, project_id, node_type, code, node_id, widgets, 
     """*code* with its references resolved as far as the dataflow knows them,
     as the canvas resolves them before it draws: the node's widgets, its
     wired inputs and their boxes. The node is *node_id*'s
-    saved one, or the one a proposal creates, with the *widgets* it declares.
+    saved one, or the one a node.create adds, with the *widgets* it declares.
     A reference nothing resolves yet, such as the input chip of a circle no
     edge reaches, is left as written, and the validator reads it as Solve
     reads one of a node the saved dataflow does not hold."""
@@ -858,7 +887,7 @@ def _chip_context(spec: dict | None, node_id: object = None, widgets=None) -> di
     """What a run resolves a node's chips with, as ``WorkflowSpec.node_code``
     gives it: the node's widgets, its wired circles, each with the scenario
     label its rows carry, and the node's selection tags. *widgets* are those
-    of a node the dataflow does not hold yet, as node.create proposes it. None
+    of a node the dataflow does not hold yet, as node.create adds it. None
     without a dataflow."""
     from utk_curio.backend.app.execution import workflow_spec
 
@@ -879,6 +908,34 @@ def _chip_context(spec: dict | None, node_id: object = None, widgets=None) -> di
     except Exception:  # noqa: BLE001 - a dataflow that cannot be read resolves no chip
         log.warning("Could not read the dataflow to resolve chips for source grounding", exc_info=True)
         return None
+
+
+def _reference_problems(code: str, current: str, engine: str | None, chips: dict | None) -> list[str]:
+    """The run's own words for each reference in *code*, an agent's code for
+    a node, that the node's run would refuse: what
+    ``code_references.resolve_references`` says over the node's chips
+    (*chips*, as :func:`_chip_context` gives them), as ``WorkflowSpec.node_code``
+    calls it, each once, in the code's order. None for content that is no
+    code (no *engine*: a chart's or a map's spec, which
+    :func:`_document_refusal` judges), and none where the dataflow cannot be
+    read (no *chips*). As the editor marks a node's chips, an empty Data
+    waiting for its data is not the code at fault (``waits_for_data``); and a
+    reference the node's code holds now (*current*) is the user's own, however
+    often *code* reads it."""
+    if engine is None or chips is None:
+        return []
+    # The language a run resolves the code in (``run_engine.sent_code``).
+    language = "javascript" if engine == "javascript" else "python"
+    widgets = chips.get("widgets") or []
+
+    def problems(text: str) -> list[str]:
+        _resolved, found = resolve_references(
+            text, widgets, language, chips.get("inputs") or (), selections=chips.get("selections") or (),
+        )
+        return [problem["message"] for problem in found if not waits_for_data(problem, widgets)]
+
+    held = set(problems(current))
+    return [message for message in dict.fromkeys(problems(code)) if message not in held]
 
 
 def _source_grounding_inputs(ctx: "source_grounding.GroundingContext") -> dict:
@@ -919,6 +976,8 @@ def _source_grounding_inputs(ctx: "source_grounding.GroundingContext") -> dict:
                 " " + agent_text.message("grounding.source-rule-no-key"),
             synthetic=" " + agent_text.message("grounding.source-rule-synthetic")
                 if ctx.synthetic_requested else "",
+            typed_values=" " + agent_text.message("grounding.source-rule-typed-values")
+                if ctx.user_messages else "",
         ),
     }
 
@@ -942,29 +1001,66 @@ def _model_refs(user_key: str) -> dict[str, tuple[int, ...]]:
     return {model_id: tuple(sorted(majors)) for model_id, majors in models.items()}
 
 
-def _package_modules(user_key: str, project_id: str) -> dict:
+def _editors_owners(user_key: str, project_id: str, keys: str | None):
+    """For a run an editor the dataflow's owner invited asked for, whose
+    storage key *keys* (:func:`_keys_of`) is not the owner's *user_key*: the
+    owner's packages the dataflow uses (``packages.OwnersPackages``), which
+    the editor's runs read from her store. None for the owner's own run. The
+    agents' routes admitted the editor (``access.agents_role``), so no
+    database is asked: a Solve's job runs on a thread of its own."""
+    if not keys or not project_id or keys == user_key:
+        return None
+    from utk_curio.backend.app.packages import service as packages_services
+
+    return packages_services.OwnersPackages(user_key, project_id)
+
+
+def _package_modules(user_key: str, project_id: str, keys: str | None = None) -> dict:
     """Every module a package ships, by name, with the nodes that import it
-    (``packages.module_index``). It never raises: what it cannot read adds
+    (``packages.module_index``). For an editor's run (*keys*), those of the
+    dataflow's packages and the editor's own, as the run gets them, and none
+    of the owner's other packages. It never raises: what it cannot read adds
     nothing, so the gate judges no import of it."""
     from utk_curio.backend.app.packages import service as packages_services
 
-    return packages_services.module_index(user_key, project_id)
+    owners = _editors_owners(user_key, project_id, keys)
+    if owners is None:
+        return packages_services.module_index(user_key, project_id)
+    return packages_services.module_index(keys, project_id, owners=owners)
 
 
-def _reachable_modules(user_key: str, node_type: object, project_id: str) -> frozenset[str]:
+def _reachable_modules(user_key: str, node_type: object, project_id: str,
+                       keys: str | None = None) -> frozenset[str]:
     """The modules a run hands a node of *node_type* (``packages.modules_for_node``,
     the run's own reader): those of its package and of the packages it
-    depends on. A built-in node gets none."""
+    depends on, for an editor's run (*keys*) as that run gets them. A
+    built-in node gets none."""
     from utk_curio.backend.app.packages import service as packages_services
 
-    found = packages_services.modules_for_node(user_key, node_type, project_id)
+    owners = _editors_owners(user_key, project_id, keys)
+    if owners is None:
+        found = packages_services.modules_for_node(user_key, node_type, project_id)
+    else:
+        found = packages_services.modules_for_node(keys, node_type, project_id, owners=owners)
     sources = found if isinstance(found, list) else [found] if isinstance(found, dict) else []
     return frozenset(name for source in sources for name in source.get("names") or ())
 
 
+def _keys_of(base: dict | None, user_key: str, user=None) -> str:
+    """The storage key whose saved connection keys a run lists and resolves:
+    whoever asked for it, as a Solve's grounding base recorded them in the
+    request thread (``"keys"``), else *user* or the request's account
+    (``askers.keys_account``). An invited editor's run so names the editor's
+    keys alone, never the owner's, and no value of the owner's resolves."""
+    if isinstance(base, dict) and isinstance(base.get("keys"), str):
+        return base["keys"]
+    return agents_askers.keys_account(user_key, user)
+
+
 def _connection_key_refs(user_key: str) -> dict:
-    """dev/116: the user's saved connection keys as ``SecretRef``s (names,
-    hosts, delivery — never values). Read in the request thread; a missing or
+    """dev/116: the saved connection keys of the account *user_key*, whoever
+    asked for the run (:func:`_keys_of`), as ``SecretRef``s: names, hosts and
+    delivery, never values. Read in the request thread; a missing or
     unreadable store is simply no keys."""
     from utk_curio.backend.app.users.connection_keys import default_store
 
@@ -980,8 +1076,9 @@ def _connection_key_refs(user_key: str) -> dict:
 def _exec_secrets_resolver(user_key: str):
     """dev/116: ``codes -> {name: value}`` for the ``curio_secret("<name>")``
     calls in *codes* — the ONE reader of values on the agent path. The user
-    key is captured here (request thread); the store needs no request context,
-    so a job thread may call the closure per round (dev/115 lesson 1)."""
+    key, that of whoever asked for the run (:func:`_keys_of`), is captured
+    here (request thread); the store needs no request context, so a job
+    thread may call the closure per round (dev/115 lesson 1)."""
     from utk_curio.backend.app.users.connection_keys import default_store, secret_names
 
     def _resolve(codes) -> dict:
@@ -1006,8 +1103,11 @@ def _solve_grounding_base(
     """dev/114: ONE grounding base per Solve batch, built in the request
     thread (workers hold no request context): catalog paths, the mission and
     plan texts (the human-authored intents), the session-free verified
-    map (empty: Solve has no candidates transcript of its own), and the
-    account's keys, models and the modules its packages ship."""
+    map (empty: Solve has no candidates transcript of its own), the
+    account's models and the modules its packages ship (an invited
+    editor's: :func:`_package_modules`), and the saved keys of whoever asked
+    for the Solve, with the storage key they are under (``"keys"``,
+    :func:`_keys_of`)."""
     dataflow = (spec or {}).get("dataflow") or {}
     texts = [str(dataflow.get("task") or ""), str(dataflow.get("name") or "")]
     for node_id in targets:
@@ -1015,14 +1115,16 @@ def _solve_grounding_base(
         texts.append(str(node.get("goal") or ""))
     items = _catalog_listing_items(project_id)
     by_path, by_id = _catalog_grounding_refs(project_id, items or [])
+    keys = _keys_of(None, user_key)
     return {
         "catalog_paths": by_path,
         "catalog_ids": by_id,
         "texts": [t for t in texts if t.strip()],
         "verified": {},
-        "secrets": _connection_key_refs(user_key),
+        "keys": keys,
+        "secrets": _connection_key_refs(keys),
         "models": _model_refs(user_key),
-        "package_modules": _package_modules(user_key, project_id),
+        "package_modules": _package_modules(user_key, project_id, keys),
         # The dataflow's datasets with their lines, for the dataflow block
         # each node's content-mode runs are given, from the same listing.
         "dataflow_datasets": agents_dataflow_block.datasets_in(items),

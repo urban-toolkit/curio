@@ -5,11 +5,14 @@ nothing and says why the drop cannot be made, if it cannot. A context with no
 saved output is listed to run first (``toRun``): the canvas runs it on the
 server, in its own project, and asks again; one only the browser can make is
 refused, naming the node. The canvas picks
-the copies' ids; then ``POST .../copy`` adds the packages the levers need and
-copies each saved output the drop brings to its copy, the target's own:
+the copies' ids; then ``POST .../copy`` adds the packages the copied nodes
+need and copies each saved output the drop brings to its copy, the target's
+own:
 
-* each context node's saved output, which a Data Loading node there reads;
-* the saved outputs of the levers its outcomes show, so they show without a run.
+* the saved output of each node whose output crosses into what is copied,
+  which a Data Loading node there reads;
+* the saved outputs that stand for its own last nodes and the shared outcomes
+  landing, so they show without a run.
 
 Run::
 
@@ -34,7 +37,8 @@ from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
     stored_artifact_file,
 )
 
-BASELINE = {"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": ["a", "chart"]}
+#: Node ``a``; the chart it feeds is its shared outcome.
+BASELINE = {"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": ["a"]}
 
 
 def _headers(token):
@@ -131,7 +135,7 @@ def _copied_data(user_key: str, node_id: str, project_id: str) -> str:
     return _table_text(dest / load_dataset_manifest(dest).data_file)
 
 
-def test_the_plan_names_the_levers_the_context_and_the_outcomes_saved_outputs(client, user_and_token):
+def test_the_plan_names_its_nodes_the_context_and_the_shared_outcomes_saved_outputs(client, user_and_token):
     _, token = user_and_token
     source, target = _source_and_target(client, token)
     _save_outputs(client, token, source, {"load": "id,height\n1,10\n", "a": "id,sunlight\n1,0.5\n"})
@@ -144,12 +148,16 @@ def test_the_plan_names_the_levers_the_context_and_the_outcomes_saved_outputs(cl
     assert plan["toRun"] == []
     assert plan["scenario"] == {"id": "s1", "name": "Baseline", "color": "#2a9d8f", "description": ""}
     assert plan["project"] == {"id": source, "name": "Shadows"}
-    assert plan["levers"] == ["a", "chart"]
+    assert plan["nodes"] == ["a"]
+    # Its last node, which the chart reads, shows its own saved output.
+    assert plan["last"] == [{"nodeId": "a", "sources": ["a"]}]
     [load] = plan["context"]
     assert load["nodeId"] == "load" and "parameter" not in load
     assert load["source"] == {"nodeId": "load", "copiedFrom": [], "datasetId": computed_dataset_id("load", source)}
-    # The chart saves nothing itself: what it shows is a's saved output.
-    assert plan["outcomes"] == [{"nodeId": "chart", "label": "Vis Vega", "sources": ["a"]}]
+    # Its shared outcome lands with it, every input being in: the chart saves
+    # nothing itself, and what it shows is a's saved output.
+    assert plan["shared"] == [{"nodeId": "chart", "label": "Vega-Lite", "scenarios": ["s1"], "sources": ["a"]}]
+    assert plan["outcomes"] == ["chart"]
     assert [n["id"] for n in plan["dataflow"]["nodes"]] == ["a", "chart"]
     assert [(e["source"], e["target"]) for e in plan["dataflow"]["edges"]] == [("load", "a"), ("a", "chart")]
     assert plan["packages"] == []

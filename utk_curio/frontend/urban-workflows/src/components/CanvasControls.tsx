@@ -2,10 +2,13 @@
  * The canvas's zoom and lock buttons: React Flow's Controls, drawn as they draw
  * them, the same buttons, classes and icons, but each button's words in its
  * Curio tooltip (`data-tooltip`) instead of a `title`, which drew the
- * browser's own. Its name stays the same aria-label.
+ * browser's own. Its name stays the same aria-label. Fit view fits as the
+ * canvas does when a dataflow opens: clear of the rail and the bar, and around
+ * what the scenario layers draw beside the nodes.
  */
 import React, { memo, useEffect, useState } from "react";
 import { ControlButton, Panel, useReactFlow, useStore, useStoreApi, type ReactFlowState } from "reactflow";
+import { fitViewWithMenuOffset } from "../utils/fitViewWithMenuOffset";
 
 // The icons of @reactflow/controls, as it draws them.
 const PlusIcon = () => (
@@ -49,7 +52,8 @@ function CanvasControlsInner() {
   const isInteractive = useStore(interactiveOf);
   const minZoomReached = useStore(atMinZoom);
   const maxZoomReached = useStore(atMaxZoom);
-  const { zoomIn, zoomOut, fitView } = useReactFlow();
+  const reactFlow = useReactFlow();
+  const { zoomIn, zoomOut } = reactFlow;
   useEffect(() => {
     setIsVisible(true);
   }, []);
@@ -83,7 +87,7 @@ function CanvasControlsInner() {
       </ControlButton>
       <ControlButton
         className="react-flow__controls-fitview"
-        onClick={() => fitView()}
+        onClick={() => fitViewWithMenuOffset(reactFlow)}
         data-tooltip="fit view"
         aria-label="fit view"
       >

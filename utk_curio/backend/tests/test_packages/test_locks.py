@@ -280,7 +280,8 @@ _ACCOUNTED_ENUMERATORS = {
                                              "lockfile_for_user"},  # lock owner
     "app/packages/application/seeding.py": {"ensure_user_seeded"},  # lock owner
     "app/packages/application/catalog.py": {"installed_package_payloads",  # lock owners
-                                            "catalog_listing"},
+                                            "catalog_listing",
+                                            "dataflow_package_payloads"},
     "app/packages/application/workflow_deps.py": {"check_workflow_deps"},  # lock owner
     "app/packages/application/starters.py": {"_generate_unlocked"},  # unlocked core
     "app/packages/application/libraries.py": {"package_derived",  # lock owners

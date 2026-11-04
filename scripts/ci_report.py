@@ -108,6 +108,7 @@ class Case:
     key: tuple = ()  # (classname, name), pytest only
     screenshot: str = ""
     comparisons: list = field(default_factory=list)
+    properties: list = field(default_factory=list)  # (name, value) the test recorded, pytest only
 
 
 @dataclass
@@ -226,6 +227,9 @@ def read_junit(label, path):
 
 def _junit_case(element, key):
     case = Case(name=display_name(*key), seconds=_float(element.get("time")), key=key)
+    # What the test recorded with pytest's record_property, in its order.
+    case.properties = [(prop.get("name") or "", prop.get("value") or "")
+                       for props in element.findall("properties") for prop in props.findall("property")]
     for tag in ("failure", "error", "skipped"):
         found = element.find(tag)
         if found is None:
@@ -256,6 +260,7 @@ def _merge(first, second):
         details="\n\n".join(d for d in (first.details, second.details) if d),
         kind=worse.kind,
         key=first.key,
+        properties=first.properties + [prop for prop in second.properties if prop not in first.properties],
     )
 
 
@@ -1032,6 +1037,14 @@ def render_suite(report, suite, anchor):
         parts.append(render_case(report, case))
     if len(bad) > MAX_LISTED:
         parts.append(f'<p class="note">{len(bad) - MAX_LISTED} more failures are in the job log.</p>')
+    # A failure shows its recorded values in its own entry; every other test that recorded any gets one here.
+    recorded = [case for case in suite.cases if case.properties and case.status not in ("failed", "error")]
+    if recorded:
+        entries = "".join(f'<article class="case"><h4>{badge(case.status)} <span class="test-id">{esc(case.name)}'
+                          f"</span></h4>{render_properties(case)}</article>" for case in recorded)
+        tests = "test" if len(recorded) == 1 else "tests"
+        parts.append(f'<details class="recorded"><summary>Values recorded by {len(recorded)} {tests}</summary>'
+                     f"{entries}</details>")
     skipped = Counter(case.message or "(no reason given)" for case in suite.cases
                       if case.status in ("skipped", "xfailed"))
     if skipped:
@@ -1048,6 +1061,8 @@ def render_case(report, case):
         parts.append(f'<pre class="message">{esc(clip(case.message, 2000))}</pre>')
     if case.details and case.details != case.message:
         parts.append(f"<details><summary>Trace</summary><pre>{esc(clip(case.details))}</pre></details>")
+    if case.properties:
+        parts.append(render_properties(case))
     if case.comparisons:
         links = ", ".join(
             f'<a href="#{esc(r["anchor"])}">{esc(r.get("baseline") or "?")}</a> '
@@ -1057,6 +1072,13 @@ def render_case(report, case):
     if case.screenshot:
         parts.append(_screenshot(report, case.screenshot, "Screenshot at the moment of failure"))
     return "".join(parts) + "</article>"
+
+
+def render_properties(case):
+    """The values *case* recorded (pytest's record_property), each name beside its value."""
+    rows = "".join(f"<tr><td>{esc(name)}</td><td>{esc(value)}</td></tr>" for name, value in case.properties)
+    return ('<div class="table-wrap"><table class="props"><thead><tr><th>Recorded</th><th>Value</th></tr></thead>'
+            f"<tbody>{rows}</tbody></table></div>")
 
 
 def _screenshot(report, path, caption):
@@ -1468,6 +1490,7 @@ details>summary{cursor:pointer;color:var(--muted);margin:4px 0}
 .suite h3{display:flex;gap:10px;align-items:center}
 .case{border-top:1px solid var(--line);padding:10px 0 4px;margin-top:8px}
 .test-id{font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-all}
+.props td{font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-word}
 .message{border-left:3px solid var(--fail)}
 .problem{border-left:3px solid var(--warn)}
 .failure-shot{margin:8px 0}

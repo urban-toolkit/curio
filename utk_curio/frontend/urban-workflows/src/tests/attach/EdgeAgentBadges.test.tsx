@@ -13,6 +13,11 @@ const mockCtx = jest.fn();
 jest.mock("../../providers/agents/AgentAttachmentsProvider", () => ({
   useAgentAttachmentsContext: () => mockCtx(),
 }));
+// The barrel the badges read the context from also holds the hook that names
+// the dataflow, which reads the flow state. The badges read none of it, and
+// FlowProvider's own imports reach vega's ES module build, which this Jest
+// setup does not transform; agentDockOverlaySlide.test.tsx mocks it the same way.
+jest.mock("../../providers/FlowProvider", () => ({ useFlowContext: () => ({}) }));
 
 // EdgeLabelRenderer portals into a div React Flow only renders inside a live
 // <ReactFlow>; outside one it returns null and would hide everything under test.

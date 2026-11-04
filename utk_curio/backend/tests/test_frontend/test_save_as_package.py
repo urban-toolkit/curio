@@ -22,6 +22,15 @@ Two behaviours make the round trip work, and both are asserted:
   coordinate is already installed - and the import would 400 for a reason with
   nothing to do with the feature.
 
+The name typed is the package's name, whenever React gets to what it defers.
+The ``held`` case keeps the page's deferred renders back from the click that
+opens the modal until ``fill`` has selected the name field's text, then runs
+them before ``fill`` types (``_HOLD_DEFERRED_RENDERS_JS``), as a busy runner
+did in stress dispatch 40814093594 (e2e-desktop 11): the modal used to set its
+default name in an effect, whose update React renders in a task of its own, so
+the default landed between ``fill``'s select-all and its typing, and the
+package was called "Python Computation packageSaved Roundtrip Package".
+
 Run::
 
     CURIO_TESTING=1 pytest utk_curio/backend/tests/test_frontend/test_save_as_package.py -v
@@ -61,6 +70,99 @@ SAVE_AS_NEW = "__save_as_new__"
 DRAWER_ROOT = '[data-curio-node-catalog-drawer="true"]'
 # factoryUiMakeId() is Math.random-derived, so the coordinate differs every run.
 DRAFT_ID_RE = re.compile(r"^curio\.canvas\.draft\.[a-z][a-z0-9-]*$")
+
+# Before the app's own scripts, so React's scheduler, which renders what React
+# defers (the state an effect sets among it) in a task of its own through a
+# MessageChannel, gives its handler to this script. Armed, the script keeps
+# those tasks back, as a busy page does. When ``fill`` focuses the name field,
+# after selecting its text and before typing, it runs them in a microtask, and
+# what they post to go on in the same drain, so all that React deferred lands
+# between the two. A timer releases them if that focus never comes, and the
+# test then fails on its own check, not on the package name.
+_HOLD_DEFERRED_RENDERS_JS = """(() => {
+    const Channel = window.MessageChannel;
+    const onmessage = Object.getOwnPropertyDescriptor(MessagePort.prototype, 'onmessage');
+    const post = MessagePort.prototype.postMessage;
+    if (typeof Channel !== 'function' || !onmessage || !onmessage.set) return;
+    const record = { armed: false, held: 0, releasedBy: null, valueAtFocus: null };
+    window.__curioTestDeferredRenders = record;
+    const handlers = new WeakMap();
+    const partners = new WeakMap();
+    const queue = [];
+    let draining = false;
+
+    window.MessageChannel = function MessageChannel() {
+        const channel = new Channel();
+        partners.set(channel.port1, channel.port2);
+        partners.set(channel.port2, channel.port1);
+        return channel;
+    };
+    window.MessageChannel.prototype = Channel.prototype;
+
+    Object.defineProperty(MessagePort.prototype, 'onmessage', {
+        configurable: true,
+        enumerable: onmessage.enumerable,
+        get() {
+            return handlers.has(this) ? handlers.get(this) : onmessage.get.call(this);
+        },
+        set(handler) {
+            if (typeof handler !== 'function') {
+                handlers.delete(this);
+                onmessage.set.call(this, handler);
+                return;
+            }
+            const port = this;
+            handlers.set(port, handler);
+            onmessage.set.call(port, (event) => {
+                if (record.armed && event.data === null) {
+                    record.held += 1;
+                    queue.push(() => handler.call(port, event));
+                    return;
+                }
+                handler.call(port, event);
+            });
+        },
+    });
+
+    MessagePort.prototype.postMessage = function (data, ...rest) {
+        const other = partners.get(this);
+        if (draining && data === null && other && handlers.has(other)) {
+            const handler = handlers.get(other);
+            queue.push(() => handler.call(other, new MessageEvent('message', { data: null })));
+            return;
+        }
+        return post.call(this, data, ...rest);
+    };
+
+    const release = (by) => {
+        if (!record.armed) return;
+        record.releasedBy = by;
+        draining = true;
+        try {
+            for (let ran = 0; queue.length && ran < 1000; ran += 1) queue.shift()();
+        } finally {
+            draining = false;
+            record.armed = false;
+            queue.splice(0).forEach((run) => setTimeout(run, 0));
+        }
+    };
+
+    window.__curioTestHoldDeferredRenders = (ms) => {
+        record.armed = true;
+        setTimeout(() => release('timer'), ms);
+    };
+
+    document.addEventListener('focus', (event) => {
+        const field = event.target;
+        if (!record.armed || !field || field.id !== 'save-as-new-package-name') return;
+        record.valueAtFocus = field.value;
+        queueMicrotask(() => release('focus'));
+    }, true);
+})();"""
+
+#: How long the held case keeps deferred renders back at most: well past the
+#: few steps from the click that opens the modal to ``fill``.
+DEFERRED_RENDERS_HOLD_MS = 20000
 
 
 def _spec() -> dict:
@@ -112,17 +214,24 @@ def uninstall_packages(current_server):
                 print(f"[teardown] DELETE {url} failed: {exc}")
 
 
+@pytest.mark.parametrize("deferred_renders", ["prompt", "held"])
 def test_save_node_as_package_export_then_load_back(
     app_frontend: "FrontendPage",
     current_server: str,
     page,
     tmp_path,
     uninstall_packages,
+    deferred_renders,
 ):
+    """*deferred_renders* ``held`` keeps what React defers back from the click
+    that opens the Save-As modal until ``fill`` has selected the name field's
+    text (``_HOLD_DEFERRED_RENDERS_JS``)."""
     require_project_page()
     require_user_auth()
 
     page.emulate_media(reduced_motion="reduce")
+    if deferred_renders == "held":
+        page.add_init_script(_HOLD_DEFERRED_RENDERS_JS)
     result = stub_login_and_enter_workflow(
         page,
         frontend_url=app_frontend.base_url,
@@ -157,6 +266,10 @@ def test_save_node_as_package_export_then_load_back(
     # 2. Node settings -> Save as package node… (U+2026, not three dots).
     save_as_entry = page.get_by_role("button", name="Save as package node…")
     expect(save_as_entry).to_be_visible(timeout=15000)
+    if deferred_renders == "held":
+        page.evaluate(
+            "(ms) => window.__curioTestHoldDeferredRenders(ms)", DEFERRED_RENDERS_HOLD_MS
+        )
     save_as_entry.click()
 
     modal = page.get_by_role("heading", name="Save as package node", level=2).locator(
@@ -171,14 +284,22 @@ def test_save_node_as_package_export_then_load_back(
     name_input = modal.locator("#save-as-new-package-name")
     expect(name_input).to_be_visible()
     name_input.fill(NEW_PACKAGE_NAME)
+    if deferred_renders == "held":
+        hold = page.evaluate("() => window.__curioTestDeferredRenders || null")
+        print(f"[deferred renders] {hold}")
+        assert hold and hold.get("releasedBy") == "focus", (
+            "what React deferred was not run when fill focused the name field, "
+            f"so this case tested nothing: {hold}"
+        )
 
     # Visual baseline of the Save-As modal in its ready-to-export state: the
     # destination explicitly set to "New package..." and the name filled in.
     # The generated package id is random per run but is not displayed here, so
-    # the capture stays deterministic.
-    save_workflow_test_screenshot(
-        page, "save-as-modal", test_name="test_save_node_as_package_export_then_load_back",
-    )
+    # the capture stays deterministic. One case writes it.
+    if deferred_renders == "prompt":
+        save_workflow_test_screenshot(
+            page, "save-as-modal", test_name="test_save_node_as_package_export_then_load_back",
+        )
 
     # 4. Export. Never hard-code the filename: the package id is randomised per
     #    Save-As, so the archive is curio.canvas.draft.<random>@1-0.1.0.curio.zip.

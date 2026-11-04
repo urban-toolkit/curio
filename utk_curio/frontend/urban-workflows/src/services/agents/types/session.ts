@@ -5,7 +5,8 @@
  */
 
 import type { AgentDatasetCandidateRow, AgentRemedy } from "./evidence";
-import type { AgentDataflowPlanPart, AgentProposalPart } from "./proposal";
+import type { AgentChangePart, AgentDataflowPlanPart, AgentProposalPart } from "./proposal";
+import type { AgentRunSkillPins } from "./skills";
 import type { AgentSolveAttemptsPart } from "./solve";
 
 /** Actual provider-reported token usage (memo dev/37) — never an estimate. */
@@ -26,6 +27,10 @@ export interface AgentToolCall {
   reason?: string;
   /** The egress policy refused it: its line stays under the reply (#447). */
   egress?: boolean;
+  /** A call that failed: its whole result, and the params it gave as JSON,
+   *  each bounded, for a look at the run later; the chat shows neither. */
+  detail?: string;
+  arguments?: string;
 }
 
 /**
@@ -46,12 +51,20 @@ export interface AgentExecution {
     /** The LLM configuration that answered: never its key. */
     llm?: { configId: string | null; label: string; baseUrlHost: string; source: string };
     policy?: Record<string, number | null>;
+    /** The skills its system turn held, each list only when it holds one. */
+    skills?: AgentRunSkillPins;
   };
   usage: AgentUsage | null;
   durationMs?: number;
-  status: "ok" | "error";
+  /** `stopped`: someone stopped the turn; what it said and landed until
+   * then stays. */
+  status: "ok" | "error" | "stopped";
+  /** Who stopped a stopped turn; null when the server ended it. */
+  stoppedBy?: AgentTurnWriter | null;
   /** The tool calls the run made, in order; absent when it made none. */
   toolCalls?: AgentToolCall[];
+  /** The skills skill.read loaded during the run; absent when it loaded none. */
+  skillsLoaded?: string[];
 }
 
 /**
@@ -84,7 +97,7 @@ export interface AgentDatasetCandidatesPart {
 
 /** dev/72: a delegated task's compact entry on the PARENT's turn — the icon
  * notch links to the delegated agent's chat where the full trace lives.
- * Runtime-emitted only (like proposals); attachmentId null = no home. */
+ * Runtime-emitted only (like changes); attachmentId null = no home. */
 export interface AgentDelegationPart {
   type: "delegation";
   capability: string;
@@ -103,17 +116,30 @@ export type AgentContentPart =
   | AgentSuggestedPromptsPart
   | AgentCardPart
   | AgentProposalPart
+  | AgentChangePart
   | AgentDatasetCandidatesPart
   | AgentDataflowPlanPart
   | AgentDelegationPart
   | AgentSolveAttemptsPart
   | { type: string };
 
+/** Who wrote a person's message, in a chat the dataflow's owner and the
+ * editors the owner invited share; named as a point of the dataflow's
+ * history names a person. */
+export interface AgentTurnWriter {
+  kind: "person";
+  account: string;
+  name: string;
+}
+
 /** One persisted chat turn of an attachment's session. */
 export interface AgentSessionTurn {
   role: "user" | "agent";
   text: string;
   ts?: string;
+  /** Who wrote a user turn; absent on a turn from before writers were kept,
+   * and on the local copy of the message this tab just sent. */
+  by?: AgentTurnWriter;
   /** Display-only failure marker; excluded from the agent's context. */
   error?: boolean;
   /** A client-side error turn's remedy (the refusal's own), never persisted. */
@@ -128,4 +154,37 @@ export interface AgentSession {
   attachmentId: string;
   sessionId: string | null;
   turns: AgentSessionTurn[];
+  /** The asks as they stand: the running turn's first, then those waiting
+   * their turn, in order. Absent from an old server. */
+  asks?: AgentAskView[];
+}
+
+/** One event of an ask, as the room and a follow of the ask carry it
+ * (`turn_jobs.EVENT`): `seq` is its place among the ask's events. Its
+ * `event` is `asked`, `started` or `withdrawn`, one of its turn's own
+ * stream's (`execution`, `delta`, `tool_result`, `change`, ..., `done`,
+ * `error`), or, first in a follow, `snapshot`, whose `data` is the ask's
+ * view. */
+export interface AgentTurnEnvelope {
+  projectId: string;
+  attachmentId: string;
+  askId: string;
+  seq: number;
+  event: string;
+  data: Record<string, unknown>;
+}
+
+/** An ask as it stands, for a tab that opens while it waits or runs: its
+ * message and writer, the reply's text so far and its turn's other events
+ * so far, each with its `seq`; `seq` is its last event's. */
+export interface AgentAskView {
+  askId: string;
+  by: AgentTurnWriter | null;
+  message: string;
+  state: "waiting" | "running" | "ended";
+  askedAt: number;
+  startedAt: number | null;
+  seq: number;
+  text: string;
+  events: Array<{ seq: number; event: string; data: Record<string, unknown> }>;
 }

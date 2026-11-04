@@ -1,9 +1,9 @@
 # Messages
 
 What the runtime tells a model about what the model wrote: a tool call it does
-not run, a proposal it does not make or makes for the user's review, a plan, a
-request, code or a document it sends back for another attempt, and the notes a
-next attempt is given. One section per message, by the id the check reads it
+not run, a change it makes to the dataflow or does not, an install it proposes
+for the user's review, a plan, a request, code or a document it sends back for
+another attempt, and the notes a next attempt is given. One section per message, by the id the check reads it
 by. A `{name}` is a value the check fills when it says the message, such as a
 node's id or the problems it found; a section names each value its check
 gives, and only those.
@@ -28,16 +28,16 @@ put the plan in a ```curio.v1 fenced block as the VERY LAST thing in your reply 
 
 ## tool-round.tool-fence
 
-put the tool request in a ```curio.v1 fenced block as the VERY LAST thing in your reply (not ```json, and with no text after it)
+put the request in a ```curio.v1 fenced block as the VERY LAST thing in your reply (not ```json, and with no text after it)
 
 ## tool-round.tool-invalid-native
 
-[tool validation] Your tool request was invalid and was NOT shown to the user. Fix exactly these problems and call the tool with the COMPLETE corrected arguments:
+[tool validation] Your request was invalid and was NOT shown to the user. Fix exactly these problems and call the tool with the COMPLETE corrected arguments:
 {listed}
 
 ## tool-round.tool-invalid
 
-[tool validation] Your tool request block was invalid and was NOT shown to the user. Fix exactly these problems and resend the COMPLETE corrected block (same fence syntax):
+[tool validation] Your request block was invalid and was NOT shown to the user. Fix exactly these problems and resend the COMPLETE corrected block (same fence syntax):
 {listed}
 
 ## tool-round.not-granted
@@ -89,6 +89,26 @@ no account is signed in to this run, so there is no Scenario Catalog to search
 
 node goals shortened to fit the tool output bound
 
+## tools.lineage-left-out
+
+the nodes each copy was copied from (copiedFrom) left out to fit the tool output bound; node.read gives a node's
+
+## tools.goals-left-out
+
+node goals left out to fit the tool output bound; node.read gives a node's goal
+
+## tools.datasets-shortened
+
+the dataflow's datasets cut to their ids to fit the tool output bound
+
+## tools.values-left-out
+
+node widgets, selection tags and settings left out to fit the tool output bound; node.read gives a node's
+
+## tools.nodes-left-out
+
+the nodes past the tool output bound left out, as many as nodesElided says; the edges name each, and node.read gives one
+
 ## mint.no-saved-spec
 
 no saved project spec is available
@@ -135,11 +155,27 @@ node {node_id} not found in the saved spec
 
 ## tools.node-history-none
 
-the saved dataflow holds no history of node {node_id}: no run of it or edit to it was saved yet
+the saved dataflow holds no history of node {node_id}: no run of it or edit to it is recorded yet
 
 ## tools.node-history-no-entry
 
 node {node_id} has no history entry {entry_id}: call node.history.read without entryId to list its entries
+
+## skills.not-listed
+
+{name} is not one of this run's skills; skill.read loads one of these: {names}
+
+## skills.already-loaded
+
+the skill {name} is already in this conversation: follow its instructions above instead of loading it again
+
+## skills.no-such-file
+
+the skill {name} has no file {path}; its files are: {files}
+
+## skills.file-already-read
+
+{path} of the skill {name} is already in this conversation, above
 
 ## mint.dataset-id-required
 
@@ -239,7 +275,7 @@ proposal {proposal_id} created: {summary} (artifact {digest}…). It awaits the 
 
 ## mint.no-conversation
 
-proposals need a persistent conversation; this attachment has none
+changes and proposals need a persistent conversation; this attachment has none
 
 ## mint.no-proposal-flow
 
@@ -256,11 +292,61 @@ params.content must be a non-empty string
 
 ## mint.content-too-large
 
-params.content exceeds the proposal size bound
+params.content exceeds the content size bound
 
-## mint.content-write-proposed
+## mint.content-references
 
-proposal {proposal_id} created for node {node_id}; it awaits the user's explicit review: do NOT assume it was applied
+{problems}
+Nothing was written. A value another node gives arrives on the input circle its edge reaches (input_0, input_1, ...): read it there, since a widget's chip names only a widget of this node and node.content.write declares none. Otherwise use a widget or selection tag this node has, or ask the user to add one in the node's Widgets tab. A scenario chip goes in the spec of the chart or map that draws it.
+
+## mint.create-references
+
+{problems}
+No node was added. Declare in "widgets" each widget the code reads, and read a value another node gives from one of the template's input circles (input_0, input_1, ...), which the user connects. A scenario chip goes in the spec of the chart or map that draws it.
+
+## change.content-written
+
+node {node_id} now holds your code, for everyone in the dataflow; the user can undo it from this chat. Summarize the change in one or two sentences, and do NOT restate the code
+
+## change.settings-written
+
+the settings of node {node_id} changed as you gave them, for everyone in the dataflow; the user can undo it from this chat
+
+## change.node-added
+
+a new {label} node, {node_id}, is on the canvas, for everyone in the dataflow; the user can undo it from this chat
+
+## change.plan-landed
+
+the plan is on the canvas, for everyone in the dataflow; the user can undo it from this chat: {result}
+
+## change.changed-meanwhile
+
+node {node_id} took other code while you worked, so it keeps that code and nothing changed: read it again and write from what it holds now
+
+## change.person-editing
+
+{name} is editing a node this change touches, so nothing changed: tell the user, who can ask again once {name} is done
+
+## change.plan-victim-changed
+
+a node the plan removes ({label}) changed after you read it, so nothing changed: read the dataflow again and plan from what it holds now
+
+## change.plan-closes-a-cycle
+
+a connection the plan draws would now close a cycle ({cycle}) through one drawn after you read the dataflow, so nothing changed: read the dataflow again and plan from what it holds now
+
+## change.plan-scenario-taken
+
+the scenario {name} the plan saves takes a name or a node of a scenario saved after you read the dataflow, so nothing changed: read the dataflow again and plan from what it holds now
+
+## change.plan-stopped
+
+someone removed {gone} while the plan landed, so the plan stopped there: {left} did not land, and what landed before stays. Tell the user what was left undone; they can undo the plan from this chat, or ask you again
+
+## change.plan-target-removed
+
+someone removed {gone} before the plan could join it, so nothing changed: read the dataflow again and plan from what it holds now
 
 ## mint.widgets-not-placeable
 
@@ -273,10 +359,6 @@ params.content: a {label} node starts from its template's own content, which a n
 ## mint.appearance-invalid
 
 params.appearance: {exc}
-
-## mint.node-create-proposed
-
-proposal {proposal_id} created for a new {label} node; it awaits the user's explicit review: do NOT assume it was applied
 
 ## mint.specialist-no-conversation
 
@@ -308,7 +390,7 @@ edges[{i}].toHandle {handle}: this node's inputs are {circles}
 
 ## plan.no-conversation
 
-proposals need a persistent conversation
+a plan needs a persistent conversation
 
 ## plan.nodes-carry-content
 
@@ -425,10 +507,6 @@ params names no setting to change: give {keys}
 ## node-settings.changes-nothing
 
 params changes nothing: the {label} node already has {settings}
-
-## mint.settings-write-proposed
-
-proposal {proposal_id} created for the settings of node {node_id}; it awaits the user's explicit review: do NOT assume it was applied
 
 ## plan.widgets-not-placeable
 
@@ -1056,7 +1134,15 @@ Change the code as each one says; no data source is missing.
 
 ## grounding.no-source
 
-no grounded source: this data-loading node opens no file and fetches no URL, and data invented inline is fabricated evidence unless the user asked for synthetic data
+no grounded source: this data-loading node opens no file and fetches no URL, and data invented inline is fabricated evidence unless the user typed those values in this conversation or asked for synthetic data
+
+## grounding.values-not-typed
+
+{values}: values the user did not type in this conversation, which the node did not hold either (a number the node holds is its own only as many times as the node holds it); write only the values the user gave, as typed, or ask the user for the rest
+
+## grounding.values-generated
+
+{calls}: values made up in the code (drawn at random, faked or made as a sample dataset), which no source gives and the user did not ask for; keep only what the node loads and what the code computes from it (to keep a random part of the loaded rows, use DataFrame.sample), or ask the user whether they want synthetic data
 
 ## grounding.refused
 
@@ -1066,13 +1152,17 @@ source grounding refused: {count} ungrounded source{s}:
 
 a path the user typed in this conversation
 
+## grounding.allowed-user-values
+
+values the user typed in this conversation, as typed, added to the values the node holds
+
 ## grounding.allowed
 
 Allowed sources: {sources}.
 
 ## grounding.never-invent
 
-Never invent a filename, never assume a file exists, never write a URL from memory. If no source can be grounded, ask the user for a path or URL instead of proposing.
+Never invent a filename, never assume a file exists, never write a URL from memory. If no source can be grounded, ask the user for a path or URL instead of writing the code.
 
 ## grounding.url-answered
 
@@ -1084,7 +1174,7 @@ refused by the egress policy
 
 ## grounding.candidates-pending
 
-dataset candidates are shown to the user for review: do not propose a node in this turn; end your reply by asking the user to select and confirm a source, then build from the confirmed one on the next turn
+dataset candidates are shown to the user to choose from: do not add a node in this turn; end your reply by asking the user to select and confirm a source, then build from the confirmed one on the next turn
 
 ## grounding.hint-catalog-search
 
@@ -1112,7 +1202,7 @@ a saved connection key by name: {use_lines}
 
 ## grounding.source-rule
 
-Load catalog datasets ONLY by their id, written as a string in {dataset_calls} (a collection's in {collection_calls}), as each row's `use` line does: the sandbox resolves it. Open ONLY the local paths listed (catalogDatasets[].path or userPaths), and fetch ONLY these URLs (verifiedUrls). Never invent a filename, never assume a file exists, never write a URL from memory: the runtime refuses ungrounded content. If none of these fits the intent, return a one-line explanation of what source is missing instead of code.{keyed_host}{synthetic}
+Load catalog datasets ONLY by their id, written as a string in {dataset_calls} (a collection's in {collection_calls}), as each row's `use` line does: the sandbox resolves it. Open ONLY the local paths listed (catalogDatasets[].path or userPaths), and fetch ONLY these URLs (verifiedUrls). Never invent a filename, never assume a file exists, never write a URL from memory: the runtime refuses ungrounded content. If none of these fits the intent, return a one-line explanation of what source is missing instead of code.{keyed_host}{synthetic}{typed_values}
 
 ## grounding.source-rule-keyed-host
 
@@ -1125,6 +1215,10 @@ A key-gated host has no saved connection key here: do not invent one; return the
 ## grounding.source-rule-synthetic
 
 The user asked for synthetic data: build it inline and say so.
+
+## grounding.source-rule-typed-values
+
+Values the user typed in the conversation, as the intent gives them, may be added inline to the values the node holds, as typed; add no other value: the runtime refuses a value the user did not type.
 
 ## dataset.candidates-finder-fallback
 
@@ -1148,7 +1242,7 @@ the agent asked for datasets
 
 ## dataset.candidates-shown
 
-{total} dataset candidate(s) are shown to the user for review; external rows carry the runtime's verification verdict.{note} Do NOT propose a node in this turn: ask the user to select and confirm; you will build from the confirmed source on the next turn.
+{total} dataset candidate(s) are shown to the user to choose from; external rows carry the runtime's verification verdict.{note} Do NOT add a node in this turn: ask the user to select and confirm; you will build from the confirmed source on the next turn.
 
 ## dataset.candidates-unconfirmed
 
@@ -1162,9 +1256,9 @@ The project's Data Catalog as catalog.search returned it
 
 The Data Catalog listing was empty or unavailable: the catalog lane must stay empty; say so.
 
-## delegate.content-not-minted
+## delegate.content-not-written
 
-the generated content could not become a reviewed proposal ({error}). Report this honestly: nothing was changed and nothing awaits review
+the generated content could not be written into the node ({error}). Report this honestly: nothing was changed
 
 ## delegate.content-not-minted-unknown
 
@@ -1178,9 +1272,9 @@ in this conversation
 
 at the node's own {home_name} agent
 
-## delegate.content-minted
+## delegate.content-written
 
-the generated content was minted as reviewed proposal {proposal_id} for node {node_id} ({where}); it awaits the user's explicit Apply: summarize the change in one or two sentences, do NOT restate the code, and do NOT say it was applied
+the generated content is in node {node_id} ({where}), for everyone in the dataflow; the user can undo it from that chat. Summarize the change in one or two sentences, and do NOT restate the code
 
 ## delegate.reuse-existing-enlisted
 
@@ -1226,13 +1320,13 @@ no installed notes template was available
 
 {answer}notes skipped: {reason}. Ask the Researcher (attached to a node or the canvas) to enlist or author a notes package; its own runs hold the reuse ladder a delegate cannot reach
 
-## delegate.notes-none-proposed
+## delegate.notes-none-added
 
-{answer}no notes could be proposed: {last_refusal}
+{answer}no notes could be added: {last_refusal}
 
-## delegate.notes-proposed
+## delegate.notes-added
 
-{answer}{count} reviewed note proposal(s) created{refusal}: they await the user's explicit Apply; do NOT claim the notes exist
+{answer}{count} note(s) are on the canvas{refusal}, for everyone in the dataflow; the user can undo each from this chat
 
 ## delegate.draft-empty
 
@@ -1322,6 +1416,14 @@ delegate {coord} failed: {error}
 
 delegate {coord} could not start: {exc}
 
+## delegate.cut-at-output-limit
+
+delegate {coord} was cut off: it reached its output limit of {limit} tokens before it finished its reply, so none of it was used
+
+## delegate.cut-while-thinking
+
+delegate {coord} was cut off: it spent its whole output limit of {limit} tokens thinking, before it wrote its reply, so nothing was used
+
 ## turn.example-unknown-key
 
 no worked example has the key {key}; call examples.read with no key to list the keys
@@ -1333,6 +1435,26 @@ the worked example {key} is not available in this project; call examples.read wi
 ## turn.context-truncated
 
 …[truncated: context exceeded the run-context bound]
+
+## turn.cut-at-output-limit
+
+*Cut off: the model reached its output limit of {limit} tokens before it finished this reply.*
+
+## turn.cut-while-thinking
+
+*Cut off: the model spent its whole output limit of {limit} tokens thinking, before it wrote this reply.*
+
+## turn.reply-cut-short
+
+the model's server ended the reply before the model finished it, after {seconds} s; a proxy before the server may limit how long a request lasts
+
+## turn.server-stopped-sending
+
+the model's server stopped sending: nothing came for {seconds} s after the last piece of its reply, so Curio stopped waiting for the rest
+
+## turn.server-sent-nothing
+
+the model's server stopped sending: nothing came for {seconds} s after it was asked, so Curio stopped waiting for its reply
 
 ## request.call-arguments-not-json
 

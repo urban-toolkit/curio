@@ -6,9 +6,9 @@ import type { InstallSyncOutcome, PendingInstall } from "../../services/datasetC
 import type { DataflowCategories, HandCategories } from "../../utils/dataflowCategories";
 import type { NotebookPane } from "../../utils/notebookLayout";
 import type { NodeSettings } from "../../utils/nodeSettingsWriters";
-import type { Scenario } from "../../utils/scenarios/scenarioModel";
-import type { WidgetDef } from "../../utils/widgets/widgetModel";
+import type { Scenario, ScenarioSet } from "../../utils/scenarios/scenarioModel";
 import type { IInteraction, IOutput, IPropagation, NodeExecOutcome } from "./flowTypes";
+import type { DataflowDocProvider } from "../collab/docProvider";
 import type { CanvasView } from "./useNotebookView";
 
 export interface FlowContextProps {
@@ -32,7 +32,9 @@ export interface FlowContextProps {
      * connection hands it over. */
     handOverAlongEdges: (edges: Edge[]) => void;
     isValidConnection: (connection: Connection) => boolean;
-    onEdgesDelete: (connections: Edge[]) => void;
+    /** Remove *connections* from the canvas; `remote`: the dataflow's doc
+     *  removed them, and the tab that did rewrote what their removal changes. */
+    onEdgesDelete: (connections: Edge[], options?: { remote?: boolean }) => void;
     onNodesDelete: (changes: NodeChange[]) => void;
     setPinForDashboard: (nodeId: string, value: boolean) => void;
     /** True while the tree is rendering the dashboard page rather than the canvas. */
@@ -65,7 +67,7 @@ export interface FlowContextProps {
     // Reviewed plan removals (dev/62): victims + their edge cascade leave in
     // one operation, without the manual "remove the edges first" guard.
     applyReviewedRemovals: (nodeIds: string[], edgeIds: string[]) => void;
-    loadParsedTrill: (workflowName: string, task: string, node: any, edges: any, provenance?: boolean, merge?: boolean, packages?: string[], description?: string, datasets?: any[], categories?: HandCategories, scenarios?: unknown, fit?: boolean, autoRun?: boolean) => void;
+    loadParsedTrill: (workflowName: string, task: string, node: any, edges: any, provenance?: boolean, merge?: boolean, packages?: string[], description?: string, datasets?: any[], categories?: HandCategories, scenarios?: unknown, fit?: boolean, autoRun?: boolean, scenarioSets?: unknown) => void;
     packages: string[];
     setPackages: (pkgs: string[]) => void;
     addPackage: (pkg: string) => void;
@@ -102,8 +104,17 @@ export interface FlowContextProps {
     // Project state
     projectId: string | null;
     projectName: string;
+    /** A canvas bound to no doc holds changes no one keeps: a dataflow not
+     *  saved yet, a hosted guest's own canvas, the dashboard's layout. */
     projectDirty: boolean;
     projectSavedAt: Date | null;
+    /** The dataflow's doc the canvas is bound to, or null: what the top bar's
+     *  Saved, Saving... or Offline reads (`useSaveState`). */
+    boundDoc: DataflowDocProvider | null;
+    /** Resolves true once no change this tab made waits for the server (at
+     *  once on a canvas bound to no doc), false when it could not reach the
+     *  server in time. */
+    whenChangesKept: () => Promise<boolean>;
     nodeExecStatus: Record<string, "stale" | "executed" | "errored">;
     viewerMode: "owner" | "shared";
 
@@ -111,37 +122,44 @@ export interface FlowContextProps {
     workflowCategories: HandCategories;
     /** Source and automatic categories, from the last load or save. */
     serverCategories: DataflowCategories;
-    /** The dataflow's scenarios (#662), saved with it. Member ids of nodes
-     * deleted since the last save are dropped when it saves. */
+    /** The dataflow's scenarios (#662), saved with it. A member's id names a
+     * node the canvas may no longer hold until the list is written again. */
     scenarios: Scenario[];
+    /** The scenarios' sets (`dataflow.scenarioSets`); every scenario names one in its `set`. */
+    scenarioSets: ScenarioSet[];
     /** "Run stale nodes automatically" (#845), saved with the dataflow; off by default. */
     autoRun: boolean;
 
     // Project operations
     /** Rename the open dataflow, writing BOTH name stores (#230). False if blank. */
     renameDataflow: (name: string) => boolean;
-    /** Replace the hand-set categories; the dataflow is dirty until the next save. */
+    /** Replace the hand-set categories. */
     updateDataflowCategories: (next: HandCategories) => void;
-    /** Replace the scenarios; the dataflow is dirty until the next save. */
-    setScenarios: (next: Scenario[]) => void;
-    /** Turn auto-run on or off; the dataflow is dirty until the next save. */
+    /** Replace the scenarios, and the sets when *sets* is given; the outputs
+     * they read are saved a moment later. */
+    setScenarios: (next: Scenario[], sets?: ScenarioSet[]) => void;
+    /** Turn auto-run on or off. */
     setAutoRun: (on: boolean) => void;
-    /** Save now, whatever else is saving. Only the save queue and the dashboard's
-     * Save layout call it; everything else uses `requestProjectSave`. */
-    saveCurrentProject: (
-        nameOverride?: string,
-        options?: { omitOutputs?: boolean; savedWidgets?: ReadonlyMap<string, WidgetDef[]> },
-    ) => Promise<any>;
-    /** Save once every save already requested has answered, so no two saves of
-     * the open dataflow go out at once (#909, #941). Resolves to the save's
-     * answer, or rejects with its error. */
-    requestProjectSave: () => Promise<any>;
+    /** File > Save: makes a dataflow not saved yet, and gives a saved one a
+     * version named Saved once the server holds every change. Rejects with
+     * the reason it could not. */
+    saveDataflow: () => Promise<{ id: string; created: boolean }>;
+    /** The dashboard's Save layout: each tile's place and size, and nothing else. */
+    saveDashboardLayout: () => Promise<void>;
     saveAsNewProject: (name: string, copyOf?: string | null) => Promise<any>;
+    /** The dataflow's id for an action on the server's copy of it, once the
+     * server holds every change; a dataflow not saved yet is made first. */
     ensureProjectId: () => Promise<string | null>;
-    persistDataflowForInstall: (nodeIds?: readonly string[]) => Promise<InstallSyncOutcome>;
+    /** Record the outputs the canvas holds that the dataflow records. */
+    recordOutputs: (nodeIds?: readonly string[]) => Promise<InstallSyncOutcome>;
+    /** The same, a moment from now: after a pin, a scenario or a node's Save
+     *  output switched (`useDashboardPinSave`). */
+    recordOutputsSoon?: () => void;
     /** Open the owner's dataflow; with `lastResults`, with the results its canvas was left with. */
     loadProject: (id: string, options?: { lastResults?: boolean }) => Promise<any>;
-    loadSharedProject: (id: string) => Promise<any>;
+    /** Open another account's dataflow from its link; with `lastResults`, an
+     *  editor the owner invited gets the results his own canvas was left with. */
+    loadSharedProject: (id: string, options?: { lastResults?: boolean }) => Promise<any>;
     discardProject: () => void;
     markDirty: () => void;
     markNodeExecuted: (nodeId: string) => void;
@@ -183,9 +201,6 @@ export interface FlowContextProps {
     /** A dashboard opened (#1117): what its nodes are saved with is kept, and a tile with
      * no saved output runs the nodes before it. Only on a dashboard. */
     dashboardOpened?: (projectId: string) => void;
-    /** The widgets each pinned node is saved with, which Save layout writes in place of
-     * the values a dashboard's viewer tried (#1117). */
-    dashboardSavedWidgets?: () => ReadonlyMap<string, WidgetDef[]> | undefined;
     defaultSaveOutputDataset: boolean;
     setDefaultSaveOutputDataset: (value: boolean) => void;
 
@@ -200,6 +215,27 @@ export interface FlowContextProps {
     /** In the notebook view, scroll the first of these nodes' cells into view
      *  (with `ifMoved`, only if the change under way moves it); false on the canvas. */
     revealNodes: (nodeIds: string[], options?: { ifMoved?: boolean }) => boolean;
+
+    /** Note the dataflow the canvas holds now, as a load or a create leaves
+     *  it, for the canvas's binding to the dataflow's doc (`useDataflowDoc`). */
+    noteLoadedDataflow?: (dataflow: any, projectId?: string | null) => void;
+    /** The canvas's binding to the dataflow's doc. */
+    dataflowDoc?: {
+        /** Whether the canvas is bound to the doc. */
+        bound(): boolean;
+        /** This tab's drag, which the others see live. */
+        noteDrag(changes: NodeChange[]): void;
+        /** Who else is editing a node's code. */
+        editorsOf(nodeId: string): string[];
+        /** Tell the others this tab removes these nodes now. */
+        noteRemoval(nodeIds: string[]): void;
+        /** Run *proceed*, which removes *nodeIds*, once asked if anyone
+         *  else is editing one of them. */
+        askBeforeRemoving(nodeIds: readonly string[], proceed: () => void): void;
+        /** A node's data changed in place, with no new node (a widget's
+         *  value, a selection tag): the doc takes it now. */
+        noteNodeData(nodeId: string): void;
+    };
 }
 
 // Stable context for NodeContainer — only updates when goal/minimized change, NOT on node drag

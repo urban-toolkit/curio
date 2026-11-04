@@ -6,10 +6,10 @@ module ``deep_umbra``. The package's license is its code's, MIT; the model
 block holds the weights' license, SCOUT's permission.
 
 The node reads a height raster, the one raster of Rasterize Buildings
-(``curio.scout@1``), runs Deep Umbra on every zoom-16 tile of it
+(``curio.rasterization@1``), runs Deep Umbra on every zoom-16 tile of it
 that holds heights and returns the accumulated shadow as a raster on the same
 grid. SCOUT's metrics, the mean and median over the ground, are the
-statistics of a Raster Calculator (``curio.scout@1`` too) with the heights as
+statistics of a Raster Calculator (``curio.rasterization@1`` too) with the heights as
 its mask, as the shipped dataflow ``chicago-loop-shadow-towers.json`` wires it.
 
 The proof starts from SCOUT's own files, copied unchanged into
@@ -76,11 +76,11 @@ PACKAGE = REPO / "packages" / f"{MODEL_ID}@1"
 SOURCES = PACKAGE / "sources"
 MODULE = "deep_umbra"
 NODE_TYPE = "model.scout.deep-umbra/accumulated-shadow"
-CALCULATOR_TYPE = "curio.scout/raster-calculator"
-RASTERIZE_TYPE = "curio.scout/rasterize-buildings"
-#: Scout's Bars, which charts the two scenarios' mean shadow, and the
+CALCULATOR_TYPE = "curio.rasterization/raster-calculator"
+RASTERIZE_TYPE = "curio.rasterization/rasterize-buildings"
+#: The Vega-Lite package's Bars, which charts the two scenarios' mean shadow, and the
 #: Compare Scenarios type no node of the dataflow is any more.
-BARS_TYPE = "curio.scout/bars"
+BARS_TYPE = "curio.vega-lite/bars"
 COMPARE_TYPE = "curio.builtin/compare-scenarios"
 #: The Raster Calculator's call that takes the change in shadow: Towers
 #: removed's shadow, on input_1, minus Existing's, on input_0.
@@ -131,10 +131,11 @@ BUILDINGS_MAP_DOCUMENT = {"map": {"layerRefs": [{
 #: season.
 SHADOW_RANGE = [0, 720]
 EXAMPLE = REPO / "docs" / "examples" / "24-scout-shadow-model-chicago-loop.json"
-RASTER_PACKAGE = REPO / "packages" / "curio.scout@1"
+RASTER_PACKAGE = REPO / "packages" / "curio.rasterization@1"
+CHART_PACKAGE = REPO / "packages" / "curio.vega-lite@1"
 RASTER_MODULE = "scout_rasters"
-#: The modules a run of Scout's Raster Calculator is handed, and those a run
-#: of Accumulated Shadow is: its own, then Scout's, which its package names in
+#: The modules a run of Rasterization's Raster Calculator is handed, and those a run
+#: of Accumulated Shadow is: its own, then Rasterization's, which its package names in
 #: ``dependencies.packages`` (``python_modules.modules_for_node``).
 RASTER_MODULES = {"root": str(RASTER_PACKAGE / "sources"), "names": [RASTER_MODULE]}
 SHADOW_MODULES = [{"root": str(SOURCES), "names": [MODULE]}, RASTER_MODULES]
@@ -277,7 +278,7 @@ def staged(tmp_path, sources: Path, module: str, *names: str, also=()):
 
 def shadow_modules(tmp_path):
     """``(deep_umbra, node_outputs)``, as the node imports them, beside the
-    Scout modules its node is handed."""
+    Rasterization modules its node is handed."""
     return staged(tmp_path, SOURCES, MODULE, "deep_umbra", "node_outputs", also=[RASTER_MODULES])
 
 
@@ -513,7 +514,7 @@ def test_the_mosaic_gives_back_scouts_tiles_and_inputs(tmp_path, scenario):
     bit, in each season."""
     import numpy as np
 
-    # The mosaic first: its writer stages Scout's modules, which Deep Umbra's
+    # The mosaic first: its writer stages Rasterization's modules, which Deep Umbra's
     # staged modules import too, and one name loads from one place at a time.
     mosaic_path = _mosaic(tmp_path, scenario)
     with shadow_modules(tmp_path) as (deep_umbra, outputs), _open(mosaic_path) as mosaic:
@@ -808,7 +809,7 @@ def test_its_module_is_deep_umbra_and_exports_the_cells_call(tmp_path):
 
 def test_the_package_writes_its_raster_with_curios_mosaic_helper():
     """The shadow raster is written by Curio's mosaic helper, and its tiles
-    placed by Scout's tile bounds, which the package names in
+    placed by Rasterization's tile bounds, which the package names in
     ``dependencies.packages``: not a copy of either in the package."""
     modules = (SOURCES / MODULE).glob("*.py")
     text = "\n".join(path.read_text(encoding="utf-8") for path in modules)
@@ -884,7 +885,7 @@ def test_the_season_reaches_the_call(workspace, tmp_path):
     for season in ("winter", "spring", "summer"):
         _art_id, shadow = run_node(_open(path), workspace, season=season)
         try:
-            # Scout's statistics, staged after the node's run, which stages its own.
+            # Rasterization's statistics, staged after the node's run, which stages its own.
             (tmp_path / season).mkdir()
             with staged(tmp_path / season, RASTER_PACKAGE / "sources", RASTER_MODULE, "raster_algebra") as (algebra,), \
                     _open(path) as heights:
@@ -908,7 +909,7 @@ def test_the_node_reads_the_rasterizers_one_raster_and_checks_its_height_scale(t
     the 550 m Deep Umbra needs is refused in a sentence."""
     import pandas as pd
 
-    # The mosaics first: their writer stages Scout's modules, which Deep
+    # The mosaics first: their writer stages Rasterization's modules, which Deep
     # Umbra's staged modules import too, and one name loads from one place at a time.
     mosaic_path, too_low_path = _mosaic(tmp_path, "A"), _mosaic(tmp_path, "A", max_height=275)
     with shadow_modules(tmp_path) as (_deep_umbra, outputs):
@@ -1015,7 +1016,7 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
     shadow node too; each scenario maps its own shadow, with example 24's map,
     and Towers removed also maps the buildings its lever hands on
     (``test_the_lever_feeds_a_map_of_its_buildings_and_is_linked_to_it``).
-    Scout's Bars charts the statistics, and a third Raster Calculator takes
+    The Vega-Lite package's Bars charts the statistics, and a third Raster Calculator takes
     the change in shadow from the shadows, which an Autark map after it, in no
     scenario, draws. No Compare Scenarios node is left (the plan answering
     komar41's review, step 6.3).
@@ -1024,7 +1025,7 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
     from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code, model_ids_in_code
 
     spec = _dataflow()
-    assert spec["packages"] == ["curio.scout@1", f"{MODEL_ID}@1"]
+    assert spec["packages"] == ["curio.rasterization@1", "curio.vega-lite@1", f"{MODEL_ID}@1"]
     assert [ref["datasetId"] for ref in spec["datasets"]] == ["data.scout.loop-buildings"]
     nodes = {node["id"]: node for node in spec["nodes"]}
     by_type: dict[str, list] = {}
@@ -1053,7 +1054,7 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
     (season,) = by_type["curio.builtin/computation-analysis"]
     assert season["title"] == "Season"
     # Its header and the chips it feeds name it Season, not its type's name.
-    assert season["metadata"]["packageTemplateLabel"] == "Season"
+    assert season["title"] == "Season"
     assert season["metadata"]["widgets"] == _template()["widgets"]
     assert season["content"].rstrip("\n").endswith("\nreturn [!! season !!]"), season["content"]
 
@@ -1100,7 +1101,7 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
         assert [nodes[n]["type"] for n in levers] == ([INTERACTION_TYPE] if scenario["id"] == "towers-removed" else []), (
             scenario["name"], others,
         )
-    # The chart: Scout's Bars, its spec its template's own, its widgets set as
+    # The chart: the Vega-Lite package's Bars, its spec its template's own, its widgets set as
     # the Compare node's bar drew it: each scenario's mean, combined by the
     # mean, Compare's default for a bar, the Y axis titled as Compare titled
     # it. Its circles take the two scenarios' statistics in the order of their
@@ -1108,9 +1109,9 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
     assert COMPARE_TYPE not in by_type, "a Compare Scenarios node is left"
     scenario_of = {node_id: scenario["id"] for scenario in spec["scenarios"] for node_id in scenario["nodes"]}
     (chart,) = by_type[BARS_TYPE]
-    (bars,) = [t for t in json.loads((RASTER_PACKAGE / "manifest.json").read_text(encoding="utf-8"))["templates"]
+    (bars,) = [t for t in json.loads((CHART_PACKAGE / "manifest.json").read_text(encoding="utf-8"))["templates"]
                if t["id"] == "bars"]
-    assert chart["content"] == (RASTER_PACKAGE / bars["source"]).read_text(encoding="utf-8")
+    assert chart["content"] == (CHART_PACKAGE / bars["source"]).read_text(encoding="utf-8")
     assert set(chart["metadata"]) == {"keywords", "widgets"}, chart["metadata"]
     assert [{k: v for k, v in w.items() if k != "value"} for w in chart["metadata"]["widgets"]] == bars["widgets"]
     assert {w["name"]: w.get("value", w["default"]) for w in chart["metadata"]["widgets"]} == {
@@ -1189,7 +1190,7 @@ def _minutes_raster(path, minutes):
 
 def test_the_change_in_shadow_is_towers_removed_minus_existing_as_compare_took_it(workspace, tmp_path):
     """The dataflow's change in shadow is a Raster Calculator, run as the
-    sandbox runs one, with Scout's modules: Towers removed's shadow, on input_1,
+    sandbox runs one, with Rasterization's modules: Towers removed's shadow, on input_1,
     minus Existing's, on input_0, cell by cell, its sign kept, on the shadows'
     grid: below zero where removing the towers takes shadow away, above where
     it adds some, 0 where nothing changed, and no value where either shadow
@@ -1231,7 +1232,7 @@ def test_example_24_holds_the_node_as_the_palette_drops_it_and_its_code_runs(wor
     from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
 
     spec = json.loads(EXAMPLE.read_text(encoding="utf-8"))["dataflow"]
-    assert spec["packages"] == ["curio.scout@1", f"{MODEL_ID}@1"]
+    assert spec["packages"] == ["curio.rasterization@1", f"{MODEL_ID}@1"]
     (node,) = [node for node in spec["nodes"] if node["type"] == NODE_TYPE]
     assert node["content"] == _source() == CELL
     assert node["metadata"]["widgets"] == _template()["widgets"]

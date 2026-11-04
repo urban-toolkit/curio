@@ -5,7 +5,7 @@
  * A node belongs to at most one scenario, so a scenario is never given a node
  * another scenario holds: the edit is refused, naming that scenario.
  */
-import { SCENARIO_COLOR_RE, type Scenario } from "./scenarioModel";
+import { SCENARIO_COLOR_RE, type Scenario, type ScenarioSet } from "./scenarioModel";
 
 /** The colors new scenarios take in turn, picked to tell apart on the canvas. */
 export const SCENARIO_COLORS = [
@@ -36,6 +36,47 @@ export function nextScenarioName(scenarios: readonly Scenario[], skip: readonly 
 }
 
 /**
+ * Why *name* cannot name a scenario of the set *setId*: no two scenarios of a
+ * set share a name, whatever their case or the spaces around them. Null when
+ * it can; *except* is the scenario being renamed.
+ */
+export function scenarioNameProblem(
+  scenarios: readonly Scenario[],
+  sets: readonly ScenarioSet[],
+  setId: string | null | undefined,
+  name: string,
+  except?: string,
+): string | null {
+  const wanted = name.trim().toLowerCase();
+  if (!setId || !wanted) return null;
+  const clash = scenarios.find((s) => s.set === setId && s.id !== except && s.name.trim().toLowerCase() === wanted);
+  if (!clash) return null;
+  const setName = sets.find((s) => s.id === setId)?.name ?? "this set";
+  return `"${clash.name}" is already a scenario in "${setName}". Choose another name.`;
+}
+
+/**
+ * Why *name* cannot name a scenario set of this dataflow: no two sets share a
+ * name, whatever their case or the spaces around them. Null when it can;
+ * *except* is the set being renamed.
+ */
+export function setNameProblem(sets: readonly ScenarioSet[], name: string, except?: string): string | null {
+  const wanted = name.trim().toLowerCase();
+  if (!wanted) return "Give the scenario set a name.";
+  const clash = sets.find((s) => s.id !== except && s.name.trim().toLowerCase() === wanted);
+  return clash ? `This dataflow already has a scenario set "${clash.name}". Choose another name.` : null;
+}
+
+/** *base*, or "*base* 2", "*base* 3", …: the first no set of *sets* is named. */
+export function uniqueSetName(base: string, sets: readonly ScenarioSet[]): string {
+  if (!setNameProblem(sets, base)) return base;
+  for (let n = 2; ; n += 1) {
+    const name = base.endsWith(")") ? `${base.slice(0, -1)} ${n})` : `${base} ${n}`;
+    if (!setNameProblem(sets, name)) return name;
+  }
+}
+
+/**
  * Why *nodeIds* cannot join a scenario other than *except*: the first one
  * that already holds one of them, named, or null.
  */
@@ -56,16 +97,6 @@ export function overlapProblem(
   return null;
 }
 
-/**
- * The scenario whose nodes are exactly *nodeIds*, in any order. Read it on
- * `liveScenarios`: a member deleted since the last save is still in the list
- * until then, and would hide the match.
- */
-export function scenarioHoldingExactly(scenarios: readonly Scenario[], nodeIds: readonly string[]): Scenario | undefined {
-  const wanted = new Set(nodeIds);
-  return scenarios.find((s) => s.nodes.length === wanted.size && s.nodes.every((id) => wanted.has(id)));
-}
-
 /** *scenarios* plus a new one holding *nodeIds*, or why not. */
 export function createScenario(
   scenarios: readonly Scenario[],
@@ -83,24 +114,6 @@ export function createScenario(
     nodes,
   };
   return { scenarios: [...scenarios, scenario] };
-}
-
-/** *scenarios* with *nodeIds* added to the scenario *id*, or why not. */
-export function addNodesToScenario(scenarios: readonly Scenario[], id: string, nodeIds: readonly string[]): ScenarioEdit {
-  if (nodeIds.length === 0) return { error: "Select the nodes to add first." };
-  const problem = overlapProblem(scenarios, nodeIds, id);
-  if (problem) return { error: problem };
-  return {
-    scenarios: scenarios.map((s) =>
-      s.id === id ? { ...s, nodes: [...s.nodes, ...nodeIds.filter((n) => !s.nodes.includes(n))] } : s,
-    ),
-  };
-}
-
-/** *scenarios* with *nodeIds* taken out of whichever scenario holds them. */
-export function removeNodesFromScenarios(scenarios: readonly Scenario[], nodeIds: readonly string[]): Scenario[] {
-  const gone = new Set(nodeIds);
-  return scenarios.map((s) => (s.nodes.some((n) => gone.has(n)) ? { ...s, nodes: s.nodes.filter((n) => !gone.has(n)) } : s));
 }
 
 /**

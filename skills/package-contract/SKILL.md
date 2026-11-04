@@ -1,0 +1,22 @@
+---
+name: package-contract
+description: >-
+  Use this skill when a node package being written needs server-side Python, such as a heavy
+  transform or a library with no browser equivalent. It gives the one backend contract a package
+  follows: the manifest's backend entry, handlers, timeout classes and permissions, the payload a
+  handler gets, the lazy imports of declared dependencies, the sandbox's limits, and what to report
+  as a finding instead of writing it.
+license: MIT
+compatibility: Written for Curio's agents, their tools and node code.
+metadata:
+  author: curio
+  version: "1.0.0"
+---
+## Backend contract
+
+Server-side compute follows ONE backend contract (the package backend sandbox, never code loaded into Curio itself). When a template genuinely needs server-side Python (heavy transforms, libraries with no browser equivalent), declare it, never improvise it:
+
+- Manifest: a top-level backend object, {"entry": "backend/<file>.py", "handlers": [{"name": "<a name matching {{backend.handler_pattern}}>", "timeoutClass": {{backend.timeout_classes}}}]}, plus the '{{backend.server_code_permission}}' permission in permissions (add '{{backend.server_network_permission}}' if and only if the code reaches the network; both are shown to the user at review). A template whose Run invokes a handler declares backendHandler: "<name>".
+- The entry file (shipped under backend/ in files) exposes def handle(payload), or a module-level HANDLERS dict mapping each declared name to a callable. A node run delivers payload {"content": <the node's editor text>, "input": <upstream JSON or null>}; return a JSON-serializable result. The build's probe phase loads the entry and resolves every handler before the draft can reach review: an import error or missing callable blocks it. Import declared python dependencies INSIDE your handler function (lazily), never at module level: they install at Apply into the package's isolated overlay and do NOT exist when the probe loads your entry, so a module-level import of a declared dependency fails the probe by construction.
+- The worker is a per-invocation sandboxed process with strict limits: pure Python plus the manifest's declared python dependencies. The policy scan BLOCKS subprocess/multiprocessing/ctypes, eval/exec/compile/__import__/importlib, and resident-service frameworks (flask, blueprints, socket servers): the sandbox is on-demand, one request per worker. A capped persistent directory rides the {{backend.data_dir_env}} env var; no secrets, credentials, or dataset store exist in the worker.
+- A need beyond this contract (a resident service, a background job, an API key) is a FINDING naming the Curio activation lifecycle or the deferred secret mediation, never smuggled code.

@@ -2033,8 +2033,9 @@ WHATIF_DATA = "whatif-data"
 WHATIF_POOL = "whatif-pool"
 WHATIF_EDIT = "whatif-towers-edit"
 WHATIF_MAPS = ["whatif-baseline-map", "whatif-modified-map", "whatif-towers-map"]
-#: The nodes that compare its scenarios, each with its type: Scout's Bars of the
-#: mean sunlight, and the Python node that takes each road's sunlight change.
+#: The nodes that compare its scenarios, each with its type: the Vega-Lite
+#: package's Bars of the mean sunlight, and the Python node that takes each
+#: road's sunlight change.
 WHATIF_COMPARES = [("whatif-compare-chart", "bars"), ("whatif-compare-difference", "computation-analysis")]
 WHATIF_BASELINE = "s-baseline"
 WHATIF_BASELINE_NODES = ["whatif-baseline-compute", "whatif-baseline-map"]
@@ -2242,16 +2243,16 @@ def scene_scenarios(ctx: Ctx) -> None:
 
     # Baseline, collapsed into one box that lists its context and outcomes. Its
     # box is drawn where its first node stood, clear of the other scenarios.
-    tour.click(scenario_card_button(page, WHATIF_BASELINE, "Collapse"))
-    collapsed = _box(page, WHATIF_BASELINE)
-    collapsed.wait_for(state="attached", timeout=10000)
     page.keyboard.press("Escape")
     wait_for_drawer_closed(page, DRAWER_SCENARIOS)
+    tour.click(page.get_by_test_id(f"scenario-collapse-{WHATIF_BASELINE}"))
+    collapsed = _box(page, WHATIF_BASELINE)
+    collapsed.wait_for(state="attached", timeout=10000)
     _frame_with_boxes(page, [WHATIF_POOL], (230, 140, 1870, 1160))
     collapsed.wait_for(state="visible", timeout=10000)
     page.wait_for_function(
         """(id) => {
-            const rows = document.querySelectorAll(`[data-scenario-box="${id}"] [data-scenario-outcome]`);
+            const rows = document.querySelectorAll(`[data-scenario-box="${id}"] [data-scenario-row]`);
             return rows.length > 0 && [...rows].every((row) => row.textContent.includes("Done"));
         }""",
         arg=WHATIF_BASELINE,
@@ -2295,7 +2296,7 @@ def scene_scenario_catalog(ctx: Ctx) -> None:
     tour.click(card.get_by_role("button", name="View details", exact=True))
     details = page.locator(f'[role="dialog"] [data-scenario-key="{project}/{WHATIF_BASELINE}"]')
     details.wait_for(state="visible", timeout=15000)
-    expect(details).to_contain_text("Outcomes", timeout=15000)
+    expect(details).to_contain_text("Shared outcomes", timeout=15000)
     tour.beat(2500)
     _still_with_boxes(ctx, "scenario-details", {"dialog": '[role="dialog"]:has([data-scenario-key])'})
     page.keyboard.press("Escape")
@@ -2323,7 +2324,7 @@ def scene_scenario_drop(ctx: Ctx) -> None:
     pane = page.locator(CANVAS_DROP_TARGET).bounding_box()
     _drag_on_camera(
         ctx,
-        (card_box["x"] + 40, card_box["y"] + 20),
+        (card_box["x"] + card_box["width"] / 2, card_box["y"] + 20),
         (pane["x"] + 320, pane["y"] + 240),
         dragging=f'{DRAWER_SCENARIOS}[data-dragging="true"]',
     )
@@ -2335,7 +2336,7 @@ def scene_scenario_drop(ctx: Ctx) -> None:
     box.wait_for(state="visible", timeout=15000)
     page.wait_for_function(
         """() => {
-            const rows = document.querySelectorAll('[data-scenario-box] [data-scenario-outcome]');
+            const rows = document.querySelectorAll('[data-scenario-box] [data-scenario-row]');
             return rows.length > 0 && [...rows].every((row) => row.textContent.includes("Done"));
         }""",
         timeout=15000,
@@ -2679,14 +2680,11 @@ def scene_quickstart(ctx: Ctx) -> None:
 def scene_collaboration(ctx: Ctx) -> None:
     """Two people in one dataflow, seen from the owner's screen.
 
-    Needs a stack started with ``--collab`` (``CURIO_E2E_COLLAB=1``). The second
-    person drives a context of their own that is not recorded: the video shows
-    what the owner sees when someone joins, adds a node and proposes a change.
+    The second person drives a context of their own that is not recorded: the
+    video shows what the owner sees when someone joins, adds a node and types
+    in a node's code.
     """
     page, tour = ctx.page, ctx.tour
-    if os.environ.get("CURIO_E2E_COLLAB", "0").strip().lower() not in ("1", "true", "yes", "on"):
-        _log("[tour] collaboration needs a --collab stack (CURIO_E2E_COLLAB=1); skipped")
-        return
     if "/dataflow/" in page.url:
         _new_dataflow_from_menu(ctx)
     else:
@@ -2706,9 +2704,8 @@ def scene_collaboration(ctx: Ctx) -> None:
         tour.click(page.locator("[data-curio-save-state]").first, force=True)
     page.wait_for_url(re.compile(r".*/dataflow/[0-9a-f-]{36}"), timeout=30000)
     project_id = re.search(r"/dataflow/([0-9a-f-]{36})", page.url).group(1)
-    # Only rendered when the server runs with --collab.
-    people = page.locator('button[data-tooltip^="Collaboration"]')
-    people.wait_for(state="visible", timeout=30000)
+    # Ben's chip, in the dock at the top of the canvas, once he is here.
+    ben = page.locator('[role="group"][aria-label="People here"] button[aria-label^="Ben Planner"]')
 
     other = page.context.browser.new_context(viewport=VIDEO_SIZE)
     try:
@@ -2720,18 +2717,13 @@ def scene_collaboration(ctx: Ctx) -> None:
         )
         page2.goto(f"{ctx.frontend}/dataflow/{project_id}")
         page2.wait_for_selector(".react-flow__node", timeout=45000)
-        expect(people).to_have_attribute("data-tooltip", "Collaboration (2 online)", timeout=30000)
+        ben.wait_for(state="visible", timeout=30000)
         tour.say(
             "Someone else opens the same dataflow",
-            "The people icon counts who is here; the panel lists them.",
+            "Their chip joins the row at the top of the canvas.",
             hold=2400,
         )
-        # The panel opens with the canvas; the icon only toggles it.
-        listed = page.get_by_text("Users (2)", exact=True)
-        if listed.is_visible():
-            tour.focus(listed, hold=1400)
-        else:
-            tour.click(people, hold=1400)
+        tour.focus(ben, hold=1400)
         tour.still("collaboration-users")
 
         # Ben adds a node, and it appears on this canvas.
@@ -2744,20 +2736,23 @@ def scene_collaboration(ctx: Ctx) -> None:
         _fit_view(page)
         tour.beat(900)
 
-        # Ben edits the loader's code: this canvas shows his lock while he types,
-        # and a proposal once he leaves the editor.
+        # Ben edits the loader's code: this canvas shows his lock, and each
+        # keystroke as he types it, with his cursor in his color.
         node_locator(page2, loader_id).locator(".view-lines").first.click()
         page2.keyboard.press("ControlOrMeta+End")
         page2.keyboard.press("Enter")
         page2.keyboard.type("# checked by Ben", delay=40)
+        page.wait_for_function(
+            """() => (window.monaco ? window.monaco.editor.getModels() : [])
+                .some((model) => model.getValue().includes('# checked by Ben'))""",
+            timeout=30000,
+        )
+        node_locator(page, loader_id).locator(".yRemoteSelectionHead").first.wait_for(
+            state="attached", timeout=30000)
         tour.beat(1800)
         tour.still("collaboration-lock")
-        page2.mouse.click(1100, 720)
-        banner = node_locator(page, loader_id).get_by_text("proposed a code change")
-        banner.wait_for(state="visible", timeout=30000)
-        tour.focus(banner, hold=1400)
-        tour.still("collaboration-proposal", cursor=True)
-        tour.click(node_locator(page, loader_id).get_by_role("button", name="Approve", exact=True), hold=1800)
+        tour.focus(node_locator(page, loader_id).locator(".view-lines").first, hold=1400)
+        tour.still("collaboration-typing", cursor=True)
     finally:
         other.close()
     tour.hush()
@@ -2953,8 +2948,6 @@ SCENES: list[tuple[str, Callable[[Ctx], None]]] = [
     ("catalogpages", scene_catalog_pages),
     ("discovery", scene_data_discovery),
     ("monitor", scene_monitor),
-    # Needs a --collab stack (CURIO_E2E_COLLAB=1), so the full tour skips it
-    # unless that is set; see scene_collaboration.
     ("collaboration", scene_collaboration),
     ("outro", scene_outro),
 ]

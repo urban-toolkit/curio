@@ -1,0 +1,77 @@
+{
+  "skill_name": "map-edits",
+  "agent": "agent.curio.node-builder@1",
+  "dataflow": "docs/examples/dataflows/chicago-loop-layers.json",
+  "evals": [
+    {
+      "id": 1,
+      "target": {"kind": "node", "node": "ece11802-86f4-5ea9-9faf-f5cf6e2d732f"},
+      "prompt": "Cap every building at 60 m.",
+      "expected_output": "A content change of the Map Editor node that is still one curio_edit_features call over [input_0, input_1, input_2, input_3, input_4] with by_input=True, now holding one edit that caps height at 60 on the buildings layer table_osm_buildings.",
+      "assertions": [
+        "The answer makes a content change of node ece11802-86f4-5ea9-9faf-f5cf6e2d732f (node.content.write), not a new node.",
+        "The code is one return curio_edit_features(...) statement, comment lines aside, with no chip and no other statement.",
+        "Its first argument is still [input_0, input_1, input_2, input_3, input_4], with by_input=True.",
+        "It holds an edit that caps height at 60 on the buildings layer, table_osm_buildings (named in the edit or in the call's layer argument): op set with where \"height > 60\", column height and value 60, or op expr whose value is min(height, 60)."
+      ]
+    },
+    {
+      "id": 2,
+      "target": {"kind": "node", "node": "ece11802-86f4-5ea9-9faf-f5cf6e2d732f"},
+      "prompt": "Lower only the part with osm_id 245900117 of building 30311742 to 60 m, and leave that building's other parts as they are.",
+      "expected_output": "A content change of the Map Editor node whose one curio_edit_features call holds a set edit on the buildings layer that names that one part by a where on both its building_id and its osm_id, setting height to 60.",
+      "assertions": [
+        "The answer makes a content change of node ece11802-86f4-5ea9-9faf-f5cf6e2d732f (node.content.write) that is still one curio_edit_features call over [input_0, input_1, input_2, input_3, input_4] with by_input=True.",
+        "It holds an edit with op set, column height and value 60.",
+        "That edit names the part by a where on both ids, such as \"building_id == 30311742 and osm_id == 245900117\".",
+        "The edit does not name the part by ids [30311742] keyed on building_id, which would change every part of the building.",
+        "The edit applies to the buildings layer, table_osm_buildings, named in the edit or in the call's layer argument."
+      ]
+    },
+    {
+      "id": 3,
+      "agent": "agent.curio.dataflow-builder@1",
+      "prompt": "Plan a what-if: downtown without its two tallest towers, removed by their building_id, drawn on a map of its own beside the current one.",
+      "expected_output": "A dataflow plan with a Map Editor node fed by the OpenStreetMap layers node, whose intent names its edits in a sentence that starts with Remove, such as \"Remove the two tallest towers by their building_id\", feeding a new Autark map linked to it by an interaction edge.",
+      "assertions": [
+        "The answer writes a dataflow plan (dataflow.plan.write).",
+        "The plan adds a Map Editor node (curio.builtin/edit-features) whose data comes from the OpenStreetMap layers node, 8de3c334-a7ef-515e-9ec8-6b65c1680a5e.",
+        "That node's intent has a sentence, or a clause after a colon or a semicolon, that starts with Remove (or another word that names edits, such as delete or drop) and says the two tallest towers are removed by their building_id.",
+        "The Map Editor node feeds a new Autark map node, and an interaction edge links the two."
+      ]
+    },
+    {
+      "id": 4,
+      "target": {"kind": "node", "node": "ece11802-86f4-5ea9-9faf-f5cf6e2d732f"},
+      "prompt": "Use the Map Editor to keep only the parks bigger than one hectare, so the map shows just the large ones.",
+      "expected_output": "No size filter in the Map Editor: the answer says keeping the parks over a size is an analysis filter, which stays in the node that computes the layer (or a code node before the map), not a what-if edit; any filter it writes is code in another node that keeps the parks of at least 10,000 square metres.",
+      "assertions": [
+        "No Map Editor code it writes holds an edit that removes parks by their size.",
+        "The answer says keeping the parks over a size is an analysis filter, which belongs in the node that computes the layer or in a code node before the map, not in a what-if edit of the Map Editor.",
+        "The answer offers a way to show only the large parks outside the Map Editor: code that keeps the parks of at least one hectare (10,000 square metres), in the node that computes the parks or in a Python node before the map."
+      ]
+    }
+  ],
+  "trigger_queries": [
+    {"query": "What if the two tallest towers in the Loop were gone? How would the map show that without touching the real data? Explain first.", "should_trigger": true},
+    {"query": "For a what-if that caps every building at 60 m, is that one edit or one per building, and what does it set?", "should_trigger": true},
+    {"query": "Can I draw a new park over the parking lot south of the Art Institute on the map? What kind of edit would that be?", "should_trigger": true},
+    {"query": "how would i make the buildings along the river twice as tall just to see, without changing the source data", "should_trigger": true},
+    {"query": "I removed some buildings in the Map Editor earlier. How do I get them back?", "should_trigger": true},
+    {"query": "Can the Clark/Lake station be moved 50 m east on the map, and what would that edit hold?", "should_trigger": true},
+    {"query": "How would I give every building a 'scenario' property set to 'baseline' on the map?", "should_trigger": true},
+    {"query": "The Willis Tower has several parts. How would an edit lower only its tower part to 300 m and leave the lower parts as they are?", "should_trigger": true},
+    {"query": "What would a what-if that removes three towers and shows the map before and after look like on the canvas?", "should_trigger": true},
+    {"query": "Can a new layer with one 40 m building go on the empty lot at State and Van Buren? What does such an edit need?", "should_trigger": true},
+    {"query": "Color the buildings by height on the Downtown Chicago layers map.", "should_trigger": false},
+    {"query": "When I pick a tract, show its row in a table.", "should_trigger": false},
+    {"query": "Make a Python node that reads the buildings I pick on the map.", "should_trigger": false},
+    {"query": "What did the Map Editor change, and when?", "should_trigger": false},
+    {"query": "Load the CTA bus routes into a new node.", "should_trigger": false},
+    {"query": "Pin the map to the dashboard.", "should_trigger": false},
+    {"query": "Compute the total building floor area per census tract in Python.", "should_trigger": false},
+    {"query": "Give the trees layer a legend title.", "should_trigger": false},
+    {"query": "Draw the census tracts in a Vega-Lite map.", "should_trigger": false},
+    {"query": "Count the trees in each census tract with a Spatial Join.", "should_trigger": false}
+  ]
+}

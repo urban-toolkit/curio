@@ -31,7 +31,45 @@ def test_save_new_project(app, db, user_and_token, tmp_curio):
     assert detail.id
     assert detail.name == "My Project"
     assert detail.spec_revision == 1
-    assert storage.read_spec(services._user_dir_key(user), detail.id) == _make_spec()
+    # The spec as sent, but for its name, which is the row's: the dataflow is
+    # made under the name its row is (see the test below).
+    expected = _make_spec()
+    expected["dataflow"]["name"] = "My Project"
+    assert storage.read_spec(services._user_dir_key(user), detail.id) == expected
+
+
+def test_a_new_dataflow_is_named_as_its_row(app, db, user_and_token, tmp_curio):
+    """A create names the dataflow it makes after its row.
+
+    The canvas titles a dataflow with ``spec.dataflow.name`` and the Projects
+    page lists the row's ``name`` (#230). A create whose spec named another
+    (Duplicate's "X (copy)", Save a copy, a notebook named after its file, a
+    script) opened under that other name, which then changed by itself at the
+    first save that sent the row's name. The spec's ``provenance_id`` is kept:
+    a copy's recorded versions are keyed on it.
+    """
+    user, _ = user_and_token
+    ukey = services._user_dir_key(user)
+    sent = _make_spec("Name In The Spec")
+    detail = services.save_project(user, ProjectCreate(name="Name Of The Row", spec=copy.deepcopy(sent)))
+
+    expected = copy.deepcopy(sent)
+    expected["dataflow"]["name"] = "Name Of The Row"
+    assert expected["dataflow"]["provenance_id"] == "Name In The Spec"
+    assert detail.name == "Name Of The Row"
+    assert detail.spec["dataflow"]["name"] == "Name Of The Row", (
+        "the create's answer names the dataflow otherwise than its row"
+    )
+    assert storage.read_spec(ukey, detail.id) == expected, (
+        "the spec on disk is not the one sent with the row's name"
+    )
+    # Opened as a tab opens it (the doc's dataflow over the file).
+    loaded = services.load_project(user, detail.id)
+    assert loaded["project"].name == "Name Of The Row"
+    assert loaded["spec"]["dataflow"]["name"] == "Name Of The Row", (
+        "the dataflow opens under the name its spec was sent with, not the one the Projects page lists"
+    )
+    assert loaded["spec"]["dataflow"]["provenance_id"] == "Name In The Spec"
 
 
 def test_update_project_bumps_revision(app, db, user_and_token, tmp_curio):
@@ -121,6 +159,18 @@ def test_duplicate_project(app, db, user_and_token, tmp_curio):
     dup = services.duplicate_project(user, detail.id)
     assert dup.id != detail.id
     assert dup.name == "Orig (copy)"
+    # The copy opens under its own name, as the Projects page lists it, not
+    # as the dataflow it copies; its recorded versions keep their key.
+    ukey = services._user_dir_key(user)
+    for where, spec in (
+        ("the duplicate's answer", dup.spec),
+        ("the duplicate's spec on disk", storage.read_spec(ukey, dup.id)),
+        ("the duplicate as it opens", services.load_project(user, dup.id)["spec"]),
+    ):
+        assert spec["dataflow"]["name"] == "Orig (copy)", f"{where} is named {spec['dataflow']['name']!r}"
+        assert spec["dataflow"]["provenance_id"] == "test", where
+    # The dataflow it copies keeps its own name.
+    assert storage.read_spec(ukey, detail.id)["dataflow"]["name"] == "Orig"
 
 
 def test_ownership_404(app, db, user_and_token, tmp_curio):
@@ -136,16 +186,50 @@ def test_ownership_404(app, db, user_and_token, tmp_curio):
         services.load_project(other, detail.id)
 
 
-def test_shared_guest_can_save(app, db, guest_user_and_token, tmp_curio):
+def test_shared_guest_can_save(app, db, guest_user_and_token, tmp_curio, monkeypatch):
+    """Without --deploy the shared guest is the one local user, and saves."""
+    from utk_curio.backend import config
+
+    monkeypatch.setattr(config, "CURIO_NO_AUTH", True)
     user, _ = guest_user_and_token
     user.username = services.CURIO_SHARED_GUEST_USERNAME
     db.session.commit()
 
     first = services.save_project(user, ProjectCreate(name="Shared1", spec=_make_spec()))
     second = services.save_project(user, ProjectCreate(name="Shared2", spec=_make_spec()))
+    updated = services.update_project(user, first.id, ProjectUpdate(name="Renamed"))
 
     assert first.id
     assert second.id
+    assert updated.name == "Renamed"
+
+
+def test_a_hosted_guests_save_is_refused(app, db, guest_user_and_token, tmp_curio, monkeypatch):
+    """With --deploy every visitor is the shared guest, which saves nothing:
+    not a new dataflow, and not the examples it opens as its own. The words are
+    the ones the page shows (useWorkflowOperations.ts)."""
+    from utk_curio.backend import config
+
+    monkeypatch.setattr(config, "CURIO_NO_AUTH", True)
+    user, _ = guest_user_and_token
+    user.username = services.CURIO_SHARED_GUEST_USERNAME
+    db.session.commit()
+    example = services.save_project(user, ProjectCreate(name="Example", spec=_make_spec()))
+
+    monkeypatch.setattr(config, "CURIO_NO_AUTH", False)
+    with pytest.raises(services.ProjectError, match="^Guest users cannot save projects$") as created:
+        services.save_project(user, ProjectCreate(name="Mine", spec=_make_spec()))
+    with pytest.raises(services.ProjectError, match="^Guest users cannot save projects$") as updated:
+        services.update_project(user, example.id, ProjectUpdate(name="Scribbled on"))
+    assert created.value.status == updated.value.status == 403
+    assert services.may_save(user, example.id) is False
+    from utk_curio.backend.app.projects.models import Project
+
+    assert db.session.get(Project, example.id).name == "Example"
+    # The one write the account still makes: the cleanup a dataset's removal
+    # does in the dataflows that bound it, as its dataset actions do.
+    cleaned = services.update_project(user, example.id, ProjectUpdate(name="Cleaned"), cleanup=True)
+    assert cleaned.name == "Cleaned"
 
 
 def test_guest_cannot_create_project(app, db, guest_user_and_token, tmp_curio):

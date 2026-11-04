@@ -18,10 +18,14 @@ So, on a fresh dataflow at the default 1280x720 viewport:
 * each catalog button opens its own drawer over the dataflow;
 * Monitor and API Settings open as drawers over the dataflow, which stays
   where it was;
-* the dataflow's title and the left rail start below the bar;
-* a title long enough to reach the dock of canvas agents, centered beside
-  it, never runs under the dock, also while it is renamed, and a title with
-  room leaves the dock where it always was.
+* the dataflow's title and the left rail start below the bar.
+
+And the section pages wear the same bar with their sections in it, drawn as
+the canvas draws its catalogs: Projects and the seven catalogs, each a glyph
+and a short name with its full name as its accessible name and tooltip, the
+page you are on marked current. Beside the widest account name, every name
+shows at 1280 and at 1150px; at 1000px only the glyphs do, and nothing
+overflows at any of the three.
 
 Run::
 
@@ -34,18 +38,14 @@ import uuid
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
-from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
-from utk_curio.backend.app.agents.domain import builtin
-
 from .utils import (
-    api_json,
+    hover_until_tooltip_says,
     require_owner_view,
     require_project_page,
     require_user_auth,
     signup_e2e_user,
-    stub_login_and_enter_workflow,
     wait_for_drawer_closed,
     wait_for_projects_page,
 )
@@ -53,7 +53,7 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-#: (accessible name, drawer root attribute), in the section tabs' order.
+#: (accessible name, drawer root attribute), in the section pages' bar's order.
 CATALOGS = (
     ("Node Catalog", "data-curio-node-catalog-drawer"),
     ("Data Catalog", "data-curio-dataset-catalog-drawer"),
@@ -63,7 +63,20 @@ CATALOGS = (
     ("Scenario Catalog", "data-curio-scenario-catalog-drawer"),
 )
 
+#: (accessible name, page), in the section pages' bar's order.
+SECTIONS = (
+    ("Projects", "/projects"),
+    ("Node Catalog", "/catalog/nodes"),
+    ("Data Catalog", "/catalog/data"),
+    ("Agent Catalog", "/catalog/agents"),
+    ("Skill Catalog", "/catalog/skills"),
+    ("Discovery Catalog", "/catalog/discovery"),
+    ("Model Catalog", "/catalog/models"),
+    ("Scenario Catalog", "/catalog/scenarios"),
+)
+
 BAR = "header[data-curio-menu-bar]"
+SECTION_NAV = 'nav[aria-label="Main sections"]'
 
 #: Longer than the account block shows (it ellipsizes at 110px), so the bar
 #: is measured with the widest right-hand cluster it can have.
@@ -73,6 +86,14 @@ _MEASURE_SLOT = """(bar) => {
   // The slot holding the page's controls: the bar's child that holds File.
   const file = bar.querySelector('[aria-label="File menu"]');
   let slot = file;
+  while (slot && slot.parentElement !== bar) slot = slot.parentElement;
+  return slot ? { clientWidth: slot.clientWidth, scrollWidth: slot.scrollWidth } : null;
+}"""
+
+_MEASURE_SECTION_SLOT = """(bar) => {
+  // The slot holding the section links: the bar's child that holds them.
+  const nav = bar.querySelector('nav[aria-label="Main sections"]');
+  let slot = nav;
   while (slot && slot.parentElement !== bar) slot = slot.parentElement;
   return slot ? { clientWidth: slot.clientWidth, scrollWidth: slot.scrollWidth } : null;
 }"""
@@ -221,89 +242,80 @@ def test_the_canvas_wears_the_shared_bar_with_the_catalogs_in_it(
     assert not failures, "\n".join(failures)
 
 
-#: The Crown Heights example's name: at 1280 wide, long enough to reach the
-#: dock of canvas agents centered beside it.
-LONG_TITLE = "Crown Heights shade from 1550 Bedford Avenue"
-
-DOCK = '[role="toolbar"][aria-label="Canvas agents"]'
-
-#: The title as shown (its name, or the name's input while renaming) and the
-#: dock, each as [left, top, right, bottom], whether they meet, and the
-#: dock's own style attribute.
-_TITLE_AND_DOCK = """(dock) => {
-  const name = document.querySelector('[data-curio-canvas-title]').firstElementChild;
-  const box = (el) => { const r = el.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; };
-  const [a, b] = [box(name), box(document.querySelector(dock))];
-  const meet = a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
-  return { title: a, dock: b, meet, style: document.querySelector(dock).getAttribute('style') };
-}"""
-
-
-def _title_clear_of_dock(page, what: str) -> None:
-    """The title and the dock come apart within a moment of *what*: the dock
-    moves once fonts and sizes settle."""
-    try:
-        page.wait_for_function(f"(dock) => !({_TITLE_AND_DOCK})(dock).meet", arg=DOCK, timeout=5000)
-    except PlaywrightTimeoutError:
-        shown = page.evaluate(_TITLE_AND_DOCK, DOCK)
-        raise AssertionError(
-            f"{what}: the title {shown['title']} runs under the agents' dock {shown['dock']}"
-        ) from None
+def _bar_fits(page, width: int) -> list[str]:
+    """What is wrong with the section pages' bar at this window width."""
+    bar = page.locator(BAR)
+    m = bar.evaluate(_MEASURE_BAR)
+    slot = bar.evaluate(_MEASURE_SECTION_SLOT)
+    print(f"section bar at {width}px: {m}; slot {slot}")
+    failures: list[str] = []
+    if slot is None:
+        failures.append(f"{width}px: the bar has no slot holding the section links")
+    elif slot["scrollWidth"] > slot["clientWidth"]:
+        failures.append(
+            f"{width}px: the section links need {slot['scrollWidth']}px in a "
+            f"{slot['clientWidth']}px slot"
+        )
+    if m["outside"]:
+        failures.append(f"{width}px: controls drawn outside the bar: {m['outside']}")
+    if m["overlapping"]:
+        failures.append(f"{width}px: controls overlapping in the bar: {m['overlapping']}")
+    return failures
 
 
-def test_a_long_title_never_runs_under_the_agents_dock(
-    app_frontend: "FrontendPage", current_server: str, page
+def test_the_section_pages_bar_holds_every_section(
+    app_frontend: "FrontendPage", frontend_server: str, page
 ):
     require_user_auth()
     require_project_page()
 
-    spec = {
-        "name": LONG_TITLE,
-        "dataflow": {"name": LONG_TITLE, "nodes": [], "edges": [], "task": "", "timestamp": 0},
-    }
-    session = stub_login_and_enter_workflow(
-        page,
-        frontend_url=app_frontend.base_url,
-        backend_url=current_server,
-        name="Title Tester",
-        username=f"title_{uuid.uuid4().hex[:10]}",
-        project_name=LONG_TITLE,
-        project_spec=spec,
+    signup_e2e_user(
+        page, frontend_server, name=LONG_NAME,
+        username=f"sections_{uuid.uuid4().hex[:10]}",
     )
-    require_owner_view(page)
-    # A canvas agent puts the dock on the canvas.
-    builder = next(m for m in builtin.list_builtin_manifests() if m.agent_id == "agent.curio.dataflow-builder")
-    base = f"{current_server}/api/agents/projects/{session['project']['id']}"
-    api_json(f"{base}/install", session["token"], method="POST", payload={"coord": builder.dir_name})
-    api_json(
-        f"{base}/attachments", session["token"], method="POST",
-        payload={"coord": builder.dir_name, "target": {"kind": "canvas"}},
-    )
-    page.reload()
-    expect(page.locator(DOCK)).to_be_visible(timeout=45000)
-    name = page.locator("[data-curio-canvas-title] h1")
-    expect(name).to_have_text(LONG_TITLE, timeout=20000)
-    page.evaluate("() => document.fonts.ready.then(() => true)")
-    _title_clear_of_dock(page, "the dataflow opened")
+    wait_for_projects_page(page, timeout=30000)
 
-    # Renamed, the title is an input, and still clear of the dock.
-    name.click()
-    field = page.locator("[data-curio-canvas-title] input")
-    expect(field).to_be_visible()
-    _title_clear_of_dock(page, "the title opened for renaming")
-
-    # A short name leaves the dock where its stylesheet centers it: no style
-    # of its own (React leaves an empty one once it drops a style).
-    field.fill("Short")
-    field.press("Enter")
-    expect(name).to_have_text("Short", timeout=10000)
-    try:
-        page.wait_for_function(
-            f"(dock) => !({_TITLE_AND_DOCK})(dock).style", arg=DOCK, timeout=5000,
+    failures: list[str] = []
+    for width in (1280, 1150):
+        page.set_viewport_size({"width": width, "height": 720})
+        page.goto(f"{app_frontend.base_url}/catalog/skills")
+        nav = page.locator(BAR).locator(SECTION_NAV)
+        expect(nav).to_be_visible(timeout=30000)
+        # In the bar, and nowhere else: the band of tabs under it is gone.
+        expect(page.locator(SECTION_NAV)).to_have_count(1)
+        for name, path in SECTIONS:
+            link = nav.get_by_role("link", name=name, exact=True)
+            expect(link).to_be_visible()
+            expect(link).to_have_attribute("href", re.compile(re.escape(path) + "$"))
+            expect(link).to_have_attribute("data-tooltip", name)
+            label = link.locator("span")
+            expect(label).to_be_visible()
+            assert name.startswith(label.inner_text().strip()), (
+                f"{width}px, {name}: the visible label {label.inner_text()!r} is not its short name"
+            )
+        expect(nav.get_by_role("link", name="Skill Catalog", exact=True)).to_have_attribute(
+            "aria-current", "page"
         )
-    except PlaywrightTimeoutError:
-        shown = page.evaluate(_TITLE_AND_DOCK, DOCK)
-        raise AssertionError(f"with a short title the dock is moved: style {shown['style']!r}") from None
+        expect(nav.locator('[aria-current="page"]')).to_have_count(1)
+        failures += _bar_fits(page, width)
+
+    # A narrow window: the names give way and the glyphs stay, each with its
+    # full name in the tooltip.
+    page.set_viewport_size({"width": 1000, "height": 720})
+    page.goto(f"{app_frontend.base_url}/catalog/skills")
+    nav = page.locator(BAR).locator(SECTION_NAV)
+    expect(nav).to_be_visible(timeout=30000)
+    for name, _ in SECTIONS:
+        link = nav.get_by_role("link", name=name, exact=True)
+        expect(link).to_be_visible()
+        expect(link.locator("span")).to_be_hidden()
+        expect(link.locator("svg")).to_be_visible()
+    failures += _bar_fits(page, 1000)
+    hover_until_tooltip_says(
+        page, f'{BAR} {SECTION_NAV} a[aria-label="Discovery Catalog"]',
+        "the Discovery Catalog glyph in a narrow bar", ["Discovery Catalog"],
+    )
+    assert not failures, "\n".join(failures)
 
 
 def test_each_catalog_button_opens_its_own_drawer(

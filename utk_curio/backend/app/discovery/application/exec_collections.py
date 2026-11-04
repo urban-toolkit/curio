@@ -13,7 +13,9 @@ from utk_curio.backend.app.datasets.domain.code_refs import (
 )
 
 
-def resolve_exec_collections(code: str, user_key: str | None, *, user=None) -> tuple[dict, str | None]:
+def resolve_exec_collections(
+    code: str, user_key: str | None, *, user=None, dataflow_id: str | None = None,
+) -> tuple[dict, str | None]:
     """Where the files of each collection *code* reads are, for this execution.
 
     Returns ``({datasetId: {root, objects, kind}}, media_dir)``. A folder
@@ -23,6 +25,13 @@ def resolve_exec_collections(code: str, user_key: str | None, *, user=None) -> t
     the Data Catalog needs to find the collection. Fail-open like dataset
     paths: the injected ``curio_load_collection`` raises a clear error for anything
     missing.
+
+    *dataflow_id* is the dataflow the run is of. Its owner and an editor the
+    owner invited read the collections it lists, from the owner's store, as
+    they read its datasets (``DiscoveryService.collection``): such a
+    collection's cached copies are the owner's, read where her store keeps
+    them (``DiscoveryService.collection_store``). Anyone else reads what a run
+    that names no dataflow reads.
     """
     if not user_key:
         return {}, None
@@ -39,7 +48,7 @@ def resolve_exec_collections(code: str, user_key: str | None, *, user=None) -> t
         if not ids:
             return {}, media_dir
 
-        service = DiscoveryService(user_key, user=user)
+        service = DiscoveryService(user_key, user=user, dataflow_id=dataflow_id)
         out = {}
         for dataset_id in ids:
             try:
@@ -50,7 +59,12 @@ def resolve_exec_collections(code: str, user_key: str | None, *, user=None) -> t
             if manifest.provider.type == "folder":
                 entry["root"] = str(storage.storage_root(manifest))
             else:
-                entry["objects"] = str(cache_collection.objects_dir(user_key, dataset_id))
+                # The cached copies are where the collection's store keeps
+                # them; a store other than the run's is read, never made into.
+                store_key = service.collection_store(item)
+                entry["objects"] = str(
+                    cache_collection.objects_dir(store_key, dataset_id, create=store_key == user_key)
+                )
             out[dataset_id] = entry
         return out, media_dir
     except Exception as e:  # noqa: BLE001 - resolution must never fail the execution
@@ -60,10 +74,12 @@ def resolve_exec_collections(code: str, user_key: str | None, *, user=None) -> t
 
 def resolve_spec_collections(
     spec_dict: dict | None, user_key: str | None, *extra: str | None, user=None,
+    dataflow_id: str | None = None,
 ) -> tuple[dict, str | None]:
     """:func:`resolve_exec_collections` for every node's code in *spec_dict*,
     as a run writes it (``node_run_code``: a dataset widget may hold a
-    collection's id), plus *extra* (a candidate not yet in the spec).
+    collection's id), plus *extra* (a candidate not yet in the spec), for a
+    run of the dataflow *dataflow_id*.
 
     *user* is the account's ``User`` row. A caller on a thread of its own
     (Solve's validation, a node run's worker) passes the one it captured in
@@ -80,4 +96,4 @@ def resolve_spec_collections(
             user = getattr(g, "user", None) if has_request_context() else None
         except Exception:  # noqa: BLE001 - no Flask, no user
             user = None
-    return resolve_exec_collections("\n".join(codes), user_key, user=user)
+    return resolve_exec_collections("\n".join(codes), user_key, user=user, dataflow_id=dataflow_id)

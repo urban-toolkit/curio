@@ -8,17 +8,26 @@
  *
  * "The same text" is checked against Vega itself: its own handler, from the
  * build the app bundles, run on the same values. Then each place that builds a
- * Vega view installs Curio's handler: the Vega-Lite node (useVega), the
- * grammar adapter, and the monitor page's charts. There the library is a fake
- * that records what each view was given, as in vegaPointerEvents.test.tsx.
+ * Vega view installs Curio's handler, and the nearest mark's tooltip
+ * (`reachVegaTooltips`): the Vega-Lite node (useVega), the grammar adapter,
+ * and the monitor page's charts. There the library is a fake that records what
+ * each view was given, as in vegaPointerEvents.test.tsx.
+ *
+ * Last, the nearest mark's tooltip on a view of a scenegraph written here: a
+ * pointer near a line, between its points, where Vega gives no tooltip, gets
+ * the nearer point's; Vega's own stands; a pointer leaving the chart takes it
+ * away. Where the nearest mark lies in a scenegraph Vega built from Vega-Lite
+ * is vegaNearestTooltip.test.ts.
  */
 import * as path from "path";
 import React from "react";
 import { act, render, renderHook } from "@testing-library/react";
 
 // Only what the three places call on the library. A view keeps the handler it
-// is given, through `view.tooltip(handler)` or its options, and draws into a
-// canvas it puts in its container, as vega's canvas renderer does.
+// is given, through `view.tooltip(handler)` or its options, and the events it
+// is asked to listen to, and draws into a canvas it puts in its container, as
+// vega's canvas renderer does. `point` maps a pointer to an element's pixels
+// as vega's does, at a CSS scale of 1.
 jest.mock(
   "vega",
   () => {
@@ -26,6 +35,7 @@ jest.mock(
       static made: View[] = [];
       options: Record<string, unknown>;
       handler: unknown = undefined;
+      listens: string[] = [];
       constructor(_spec: unknown, options?: Record<string, unknown>) {
         this.options = options ?? {};
         View.made.push(this);
@@ -51,11 +61,18 @@ jest.mock(
       scenegraph() { return { root: { marktype: "rect", items: [{}, {}, {}] } }; }
       getState() { return { signals: {} }; }
       addSignalListener() {}
-      addEventListener() {}
+      addEventListener(type: string) {
+        this.listens.push(type);
+        return this;
+      }
       change() { return this; }
       finalize() {}
     }
-    return { View, parse: (spec: unknown) => spec, Warn: 2, changeset: () => ({}) };
+    const point = (event: MouseEvent, el: Element) => {
+      const box = el.getBoundingClientRect();
+      return [event.clientX - box.left, event.clientY - box.top];
+    };
+    return { View, parse: (spec: unknown) => spec, Warn: 2, changeset: () => ({}), point };
   },
   { virtual: true },
 );
@@ -72,7 +89,12 @@ jest.mock("../../../providers/ToastProvider", () => ({
 }));
 jest.mock("../../../services/api", () => ({ fetchData: jest.fn(), fetchPreviewData: jest.fn() }));
 
-import { vegaTooltipHandler } from "../../../components/tooltip/vegaTooltip";
+import {
+  reachVegaTooltips,
+  vegaTooltipHandler,
+  type TooltipView,
+  type VegaSceneMark,
+} from "../../../components/tooltip/vegaTooltip";
 import { useVega } from "../../../hook/useVega";
 import { vegaLiteAdapter } from "../../../adapters/vegaLiteAdapter";
 import { DurationHistogram } from "../../../pages/monitor/MonitorCharts";
@@ -147,7 +169,11 @@ describe("Curio's Vega tooltip handler", () => {
 describe("every Vega view Curio builds uses it", () => {
   const views = () => (jest.requireMock("vega") as { View: { made: any[] } }).View.made;
 
-  /** The last view made was given a handler, and it is Curio's: data-tooltip at the pointer, no title. */
+  /**
+   * The last view made was given a handler, and it is Curio's: data-tooltip
+   * at the pointer, no title. And it listens to the pointer's moves and its
+   * leaving, for the nearest mark's tooltip.
+   */
   function expectCuriosHandler(where: string) {
     const view = views()[views().length - 1];
     expect({ where, made: view !== undefined }).toEqual({ where, made: true });
@@ -157,6 +183,7 @@ describe("every Vega view Curio builds uses it", () => {
       where,
       written: { title: null, tooltip: "label: a\nvalue: 1", side: "pointer" },
     });
+    expect({ where, listens: [...view.listens].sort() }).toEqual({ where, listens: ["pointermove", "pointerout"] });
   }
 
   const SPEC = {
@@ -209,5 +236,103 @@ describe("every Vega view Curio builds uses it", () => {
       />,
     );
     expectCuriosHandler("MonitorCharts");
+  });
+});
+
+describe("the nearest mark's tooltip", () => {
+  // A line from (0, 100) to (100, 0) in a group drawn at (10, 20): on the page,
+  // from (10, 120) to (110, 20). Its two points are far apart, so most of it
+  // lies more than its stroke's width from either, where Vega gives no tooltip.
+  const SCENE: VegaSceneMark = {
+    marktype: "group",
+    items: [
+      {
+        x: 10,
+        y: 20,
+        items: [
+          {
+            marktype: "line",
+            items: [
+              { x: 0, y: 100, tooltip: { day: 1 } },
+              { x: 100, y: 0, tooltip: { day: 2 } },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+
+  /**
+   * A view of SCENE drawn into a canvas in its container, at a scale of 1 and
+   * padding 0. When *vegaSays* is given, Vega's own handler gives that tooltip
+   * for each move, before the nearest mark's listener hears it, as Vega's
+   * canvas does.
+   */
+  function chartOf(vegaSays?: unknown) {
+    const container = document.createElement("div");
+    const chart = document.createElement("canvas");
+    container.appendChild(chart);
+    document.body.appendChild(container);
+    if (vegaSays !== undefined) {
+      chart.addEventListener("pointermove", (event) => curio({ element: () => container }, event, {}, vegaSays));
+    }
+    const heard: Record<string, (event: PointerEvent) => void> = {};
+    const view: TooltipView = {
+      addEventListener(type, handler) {
+        heard[type] = handler;
+        chart.addEventListener(type, handler as EventListener);
+        return view;
+      },
+      container: () => container,
+      scenegraph: () => ({ root: SCENE }),
+      padding: () => ({ left: 0, top: 0 }),
+      origin: () => [0, 0],
+    };
+    reachVegaTooltips(view);
+    const move = (x: number, y: number) =>
+      chart.dispatchEvent(new MouseEvent("pointermove", { clientX: x, clientY: y, bubbles: true }));
+    const said = () => container.getAttribute("data-tooltip") ?? "";
+    return { container, chart, heard, move, said };
+  }
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  test("a pointer near a line, between its points, gets the nearer point's tooltip at the pointer", () => {
+    const { container, move, said } = chartOf();
+    // 40% of the way from the first point, 2 px off the line.
+    move(10 + 40, 20 + 62);
+    expect(said()).toBe("day: 1");
+    expect(container.getAttribute("data-tooltip-side")).toBe("pointer");
+    // 80% of the way: the second point is nearer.
+    move(10 + 80, 20 + 20);
+    expect(said()).toBe("day: 2");
+  });
+
+  test("a pointer out of reach of every mark gets none", () => {
+    const { move, said } = chartOf();
+    move(10 + 40, 20 + 62);
+    expect(said()).toBe("day: 1");
+    // 14 px from the line.
+    move(10 + 40, 20 + 80);
+    expect(said()).toBe("");
+  });
+
+  test("the tooltip Vega gives for a move stands", () => {
+    const { move, said } = chartOf({ bar: "own" });
+    move(10 + 40, 20 + 62);
+    expect(said()).toBe("bar: own");
+  });
+
+  test("the pointer leaving the chart takes it away, and crossing from one mark to another does not", () => {
+    const { chart, heard, move, said } = chartOf();
+    move(10 + 40, 20 + 62);
+    expect(said()).toBe("day: 1");
+    // Vega's canvas calls its pointerout listeners with the move's own event.
+    heard.pointerout(new MouseEvent("pointermove") as PointerEvent);
+    expect(said()).toBe("day: 1");
+    chart.dispatchEvent(new MouseEvent("pointerout", { relatedTarget: document.body }));
+    expect(said()).toBe("");
   });
 });

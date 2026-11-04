@@ -1,4 +1,6 @@
 import React from "react";
+import { flushSync } from "react-dom";
+import { createRoot } from "react-dom/client";
 import { act, fireEvent, render } from "@testing-library/react";
 import "@testing-library/jest-dom";
 
@@ -135,5 +137,32 @@ describe("NodeSaveAsModal - a package list refresh while it is open", () => {
     rerender(<NodeSaveAsModal show nodeId={NODE_ID} onClose={jest.fn()} />);
 
     expect(nameField()).toHaveValue("Python Computation package");
+  });
+});
+
+describe("NodeSaveAsModal - what it first draws", () => {
+  // The first render holds the defaults. An effect used to set them, and React
+  // renders the state an effect sets in a task of its own, so the modal was
+  // drawn first with an empty name: Playwright's fill selected that empty
+  // field, the default landed, and the typed name went after it ("Python
+  // Computation packageSaved Roundtrip Package", stress dispatch 40814093594).
+  // A root rendered with flushSync, outside act(), which would also run what
+  // React defers, shows what the person has before React gets to it.
+  test("shows the default destination and name before anything React defers", () => {
+    const scope = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
+    const actEnvironment = scope.IS_REACT_ACT_ENVIRONMENT;
+    scope.IS_REACT_ACT_ENVIRONMENT = false;
+    const container = document.body.appendChild(document.createElement("div"));
+    const root = createRoot(container);
+    try {
+      flushSync(() => root.render(<NodeSaveAsModal show nodeId={NODE_ID} onClose={jest.fn()} />));
+
+      expect(targetField().selectedOptions[0]?.textContent).toBe("New package…");
+      expect(nameField()).toHaveValue("Python Computation package");
+    } finally {
+      root.unmount();
+      container.remove();
+      scope.IS_REACT_ACT_ENVIRONMENT = actEnvironment;
+    }
   });
 });

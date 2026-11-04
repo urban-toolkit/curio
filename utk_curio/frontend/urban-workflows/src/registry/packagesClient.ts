@@ -25,7 +25,7 @@ import { faCube } from '@fortawesome/free-solid-svg-icons';
 import { SupportedType } from '../constants';
 import { BUILTIN_PACKAGE_ID } from './packageKeys';
 import { isSupportedPortType } from '../constants/supportedPortTypes';
-import { getCurrentProjectPackages } from './projectPackagesStore';
+import { getCurrentProjectPackages, getOpenedFromLink } from './projectPackagesStore';
 import {
   inputOnly,
   outputOnly,
@@ -93,8 +93,9 @@ interface RawPackageTemplate {
   backendHandler?: string | null;
   /** Whether a node of this template loads the dataset it names. */
   loadsDataset?: boolean;
-  /** Whether a node of this template opens on its Widgets tab. */
-  opensOnWidgets?: boolean;
+  /** Whether a node of this template shows only its controls on its Widgets
+   *  tab, and opens there. */
+  opensOnControls?: boolean;
 }
 
 interface RawPackage {
@@ -123,6 +124,9 @@ interface RawPackage {
     root: { packageId: string; major: number };
   } | null;
   readOnly?: boolean;
+  /** Not this account's: the owner's copy of a package the open dataflow,
+   *  another account's, uses ({@link packagesOfTheOpenedDataflow}). */
+  ownersCopy?: boolean;
   createdAt?: string;
   createdAtMs?: number | string;
   /** Epoch ms when the package manifest was last written on disk (API diagnostic). */
@@ -270,6 +274,7 @@ function buildDescriptor(pkg: RawPackage, template: RawPackageTemplate, order: n
           }
         : {}),
       ...(pkg.readOnly === true ? { readOnly: true } : {}),
+      ...(pkg.ownersCopy === true ? { ownersCopy: true } : {}),
       ...(typeof pkg.createdAt === 'string' && pkg.createdAt.trim()
         ? { createdAt: pkg.createdAt.trim() }
         : {}),
@@ -294,7 +299,7 @@ function buildDescriptor(pkg: RawPackage, template: RawPackageTemplate, order: n
     ...(template.grammarId ? { grammarId: template.grammarId } : {}),
     ...(template.behavior ? { behavior: template.behavior } : {}),
     ...(template.loadsDataset === true ? { loadsDataset: true } : {}),
-    ...(template.opensOnWidgets === true ? { opensOnWidgets: true } : {}),
+    ...(template.opensOnControls === true ? { opensOnControls: true } : {}),
     ...(template.badge ? { badge: template.badge } : isBuiltin ? {} : { badge: 'PACKAGE' as const }),
     adapter: {
       handles,
@@ -492,6 +497,36 @@ async function loadPackageBehaviorScripts(packages: RawPackage[]): Promise<void>
 let startedLoads = 0;
 let appliedLoad = 0;
 
+/** A package's `<packageId>@<major>`. */
+function dirNameOf(pkg: RawPackage): string {
+  return pkg.dirName ?? `${pkg.packageId}@${pkg.major}`;
+}
+
+/**
+ * The packages the open dataflow uses that this account does not hold, when
+ * the canvas opened another account's dataflow from its link
+ * (`getOpenedFromLink`): its owner's copies, read-only, from
+ * `GET /api/packages/dataflows/<id>`, each marked `ownersCopy`. The canvas
+ * draws their nodes as it does any other: an invited editor's runs use the
+ * owner's copy, and a watcher's canvas has no Play for them
+ * (`UniversalNode`). None on the account's own dataflow, and none when the
+ * listing fails.
+ */
+async function packagesOfTheOpenedDataflow(own: RawPackage[]): Promise<RawPackage[]> {
+  try {
+    const opened = getOpenedFromLink();
+    if (!opened) return [];
+    const { packages } = await packagesApi.listForDataflow(opened);
+    const held = new Set(own.map(dirNameOf));
+    return ((packages ?? []) as RawPackage[])
+      .filter((pkg) => !held.has(dirNameOf(pkg)))
+      .map((pkg) => ({ ...pkg, ownersCopy: true }));
+  } catch (error) {
+    console.warn('Failed to load the packages of the open dataflow:', error);
+    return [];
+  }
+}
+
 export async function loadInstalledPackages(): Promise<NodeDescriptor[]> {
   const load = ++startedLoads;
   try {
@@ -506,12 +541,14 @@ export async function loadInstalledPackages(): Promise<NodeDescriptor[]> {
     const { packages } = embedded
       ? { packages: embedded.registry?.packages ?? [] }
       : await packagesApi.listInstalled();
-    const filtered = packages ?? [];
+    const own = (packages ?? []) as RawPackage[];
+    const filtered = embedded ? own : [...own, ...(await packagesOfTheOpenedDataflow(own))];
     const scope = getCurrentProjectPackages();
+    // Behavior scripts are served from this account's own copies only.
     const scoped =
       scope === null
-        ? filtered
-        : filtered.filter(
+        ? own
+        : own.filter(
             (p) =>
               p.packageId === BUILTIN_PACKAGE_ID ||
               scope.has(`${p.packageId}@${p.major}`),

@@ -26,6 +26,7 @@ jest.mock("vega", () => {
     }
     tooltip() { return this; }
     hover() { return this; }
+    addEventListener() { return this; }
     width() { return this; }
     height() { return this; }
     resize() { return this; }

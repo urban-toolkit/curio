@@ -14,6 +14,7 @@ from .. import comparisons
 from .environment import REPO_ROOT
 from .capture_waits import (
     WEBFONT_FAMILY,
+    _wait_for_changes_kept,
     _wait_for_no_node_running,
     _wait_for_reactflow_ready,
     _wait_for_webfont,
@@ -594,6 +595,9 @@ def save_workflow_test_screenshot(
     if sweep_toasts:
         dismiss_toasts(page)
 
+    # The top bar reads Saved once the server holds the tab's last change, and
+    # Saving... while an answer is slow: the same frame either way.
+    _wait_for_changes_kept(page)
     _wait_for_webfont(page)
 
     # Options only when asked for: a plain capture is the call it always was.

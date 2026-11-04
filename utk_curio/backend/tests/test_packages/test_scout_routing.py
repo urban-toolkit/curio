@@ -67,9 +67,9 @@ SCOUT = "https://github.com/urban-toolkit/scout"
 PYTHON_TYPE = "curio.builtin/computation-analysis"
 AUTARK_TYPE = "curio.builtin/autk-grammar"
 COMPARE_TYPE = "curio.builtin/compare-scenarios"
-#: Scout's package, whose Bars node charts each metric.
-SCOUT_PACKAGE = REPO / "packages" / "curio.scout@1"
-BARS_TYPE = "curio.scout/bars"
+#: The Vega-Lite package, whose Bars node charts each metric.
+CHART_PACKAGE = REPO / "packages" / "curio.vega-lite@1"
+BARS_TYPE = "curio.vega-lite/bars"
 DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "chicago-rain-wind-routing.json"
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "scout_routing"
 REFERENCE = FIXTURES / "routing_reference.json"
@@ -695,9 +695,9 @@ def test_the_shipped_dataflow_runs_scouts_example():
     from utk_curio.backend.app.execution.code_references import resolve_references
 
     spec = _dataflow()
-    # The lockfile names the model package and Scout's, whose Bars nodes chart
+    # The lockfile names the model package and the Vega-Lite package, whose Bars nodes chart
     # the routes, so opening the dataflow adds both.
-    assert spec["packages"] == ["curio.scout@1", f"{GNN_ID}@1"]
+    assert spec["packages"] == ["curio.vega-lite@1", f"{GNN_ID}@1"]
     assert sorted(ref["datasetId"] for ref in spec["datasets"]) == sorted(WEATHER_IDS.values())
     # The start time is the node's own widget: no Parameter node shares it.
     assert [n["id"] for n in spec["nodes"] if n["type"] == "curio.builtin/parameter"] == []
@@ -752,7 +752,7 @@ def test_the_start_time_reads_scouts_weather_step(tmp_path):
 
 def test_the_shipped_dataflows_bars_chart_the_four_metrics():
     """As in SCOUT's example, the two routes are compared on four bar charts,
-    one per metric: each a Bars node of Scout's (``curio.scout@1``), which
+    one per metric: each a Bars node of the Vega-Lite package's (``curio.vega-lite@1``), which
     replaced a Compare Scenarios node and keeps its id, its place and its
     header. Its spec is its template's own, and its widgets set what the
     Compare node's bar drew: the metric, each scenario's rows combined by
@@ -763,9 +763,9 @@ def test_the_shipped_dataflows_bars_chart_the_four_metrics():
     box its input comes from. No Compare Scenarios node is left."""
     spec = _dataflow()
     assert [n["id"] for n in spec["nodes"] if n["type"].split("@")[0] == COMPARE_TYPE] == []
-    manifest = json.loads((SCOUT_PACKAGE / "manifest.json").read_text(encoding="utf-8"))
+    manifest = json.loads((CHART_PACKAGE / "manifest.json").read_text(encoding="utf-8"))
     (template,) = [t for t in manifest["templates"] if t["id"] == "bars"]
-    starter = (SCOUT_PACKAGE / template["source"]).read_text(encoding="utf-8")
+    starter = (CHART_PACKAGE / template["source"]).read_text(encoding="utf-8")
     labels = [{"scenario": s["id"], "name": s["name"], "color": s["color"]} for s in spec["scenarios"]]
     assert labels == [{"scenario": sid, "name": name, "color": color}
                       for sid, (name, color, _route) in EXAMPLE_SCENARIOS.items()]
@@ -775,7 +775,7 @@ def test_the_shipped_dataflows_bars_chart_the_four_metrics():
     charted = []
     for node in charts:
         assert node["content"] == starter, node["id"]
-        assert set(node["metadata"]) == {"keywords", "packageTemplateLabel", "widgets"}, node["metadata"]
+        assert set(node["metadata"]) == {"keywords", "widgets"}, node["metadata"]
         widgets = node["metadata"]["widgets"]
         assert [{k: v for k, v in w.items() if k != "value"} for w in widgets] == template["widgets"]
         values = {w["name"]: w.get("value", w["default"]) for w in widgets}
@@ -788,7 +788,7 @@ def test_the_shipped_dataflows_bars_chart_the_four_metrics():
         # A chart feeds nothing.
         assert [e["target"] for e in spec["edges"] if e["source"] == node["id"]] == []
     assert charted == EXAMPLE_CHARTS
-    assert [n["metadata"]["packageTemplateLabel"] for n in charts] == CHART_LABELS
+    assert [n["title"] for n in charts] == CHART_LABELS
     # Each chart's id is the Compare node's it replaced.
     assert [n["id"][:8] for n in charts] == ["1f8b6d2c", "4d9a7f3e", "a2e6c9f4", "b7f3a1d8"]
 

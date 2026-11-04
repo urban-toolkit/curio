@@ -118,14 +118,20 @@ class VerifiedRounds:
         self.result_summary_fn = result_summary_fn
         self.grounding_base = grounding_base
         self.dataflow_block: str | None = None
+        # A runner takes a round's inputs and, as ``refused``, the kind the
+        # check that refused the round before recorded, which hands the run
+        # the skills that answer that check (``skill_runs.answering``). The
+        # run is the acting account's, whose package skills it holds.
         self.run_delegate = delegate_runner or (
-            lambda inputs: delegation.run_delegate(
+            lambda inputs, refused=None: delegation.run_delegate(
                 user_key, project_id, resolution.coord,
                 "node.content.generate", inputs, config,
                 parent_execution_id=parent_execution_id,
                 parent_coord=parent_coord,
                 attachment_id=attachment_id,
                 dataflow_block=self._dataflow_block(),
+                refused=refused,
+                asker=self.acting_user,
             )
         )
         self.node_id = node.get("id")
@@ -144,6 +150,8 @@ class VerifiedRounds:
         self.attempts: list[dict] = []
         self.previous_attempt: str | None = None
         self.previous_error: str | None = None
+        # The kind of the refusal the next round answers, when a check refused.
+        self.refused: str | None = None
         self.url_evidence: list[dict] = []
         self.confirmed_source: dict | None = None
         self.stopped_by: str | None = None  # dev/127: which bound ended the loop
@@ -235,6 +243,9 @@ class VerifiedRounds:
                     (self.available or {}).get(packages_services.canonical_template_id(self.node_type))
                 ),
                 chips=agents_grounding._chip_context(self.spec, self.node_id),
+                # The code the node holds is the user's own, which round 0 may
+                # run: a call in it that makes values up is not one a round adds.
+                current=str(self.node.get("content") or ""),
             )
         except Exception:
             log.warning("Grounding context unavailable for node %s", self.node_id, exc_info=True)
@@ -269,6 +280,7 @@ class VerifiedRounds:
                 str(carry_forward.get("code") or "")[:6000] or self.previous_attempt
             )
             self.previous_error = str(carry_forward["error"])[-2000:]
+            self.refused = str(carry_forward.get("kind") or "") or None
             self.rounds_trace.append(
                 "carrying forward the previous attempt's error: "
                 + failure_text.summary(
@@ -303,7 +315,7 @@ class VerifiedRounds:
             if self.use_current:
                 self.candidate = str(self.node.get("content") or "")
             else:
-                status, text, child = self.run_delegate(self._generation_inputs())
+                status, text, child = self.run_delegate(self._generation_inputs(), refused=self.refused)
                 self.delegations.append(child)
                 if status != "ok":
                     self._generation_failed(text)
@@ -344,6 +356,7 @@ class VerifiedRounds:
             self.dataflow_block = agents_dataflow_block.compose(
                 self.user_key, self.project_id, node_type=self.node_type,
                 datasets=(self.grounding_base or {}).get("dataflow_datasets"), user=self.acting_user,
+                keys=agents_grounding._keys_of(self.grounding_base, self.user_key, self.acting_user),
             ) or ""
         return self.dataflow_block or None
 
@@ -417,6 +430,7 @@ class VerifiedRounds:
     def _carry(self, error: str) -> None:
         self.previous_attempt = self.candidate
         self.previous_error = error
+        self.refused = ((self.verdict_result or {}).get("evidence") or {}).get("kind")
         self.url_evidence = []
 
     # ── stages: gates before the sandbox ────────────────────────────────────
@@ -927,6 +941,7 @@ class VerifiedRounds:
             return BREAK
         self.previous_attempt = self.candidate
         self.previous_error = round_evidence.get("stderrTail") or round_evidence.get("detail") or ""
+        self.refused = round_evidence.get("kind")
         self.url_evidence = agents_rounds._correction_url_evidence(
             self.candidate, self.previous_error, self.grounding_ctx)
         if self.url_evidence:

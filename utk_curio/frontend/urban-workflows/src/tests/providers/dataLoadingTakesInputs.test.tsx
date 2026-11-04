@@ -3,7 +3,7 @@
  * and an edge from a node that returns a value, such as the area several
  * loaders read, lands there, through the REAL FlowProvider (onConnect in
  * providers/flow/useConnect.ts, ConnectionValidator.ts). So do the readers of
- * a shared value in the Scout packages: an Accumulated Shadow node takes a
+ * a shared value in the SCOUT packages: an Accumulated Shadow node takes a
  * season on its second circle, and a Raster Calculator a region on its third.
  *
  * The templates are registered as the app registers them at boot: the shipped
@@ -35,7 +35,7 @@ jest.mock('../../hook/useWorkflowOperations', () => ({
     markNodeExecuted: jest.fn(),
     markNodeStale: jest.fn(),
     markDirty: jest.fn(),
-    persistDataflowForInstall: jest.fn().mockResolvedValue(undefined),
+    recordOutputs: jest.fn().mockResolvedValue(undefined),
     beginPendingInstall: jest.fn(),
     endPendingInstall: jest.fn(),
     applyRemoveChanges: jest.fn(),
@@ -58,12 +58,7 @@ jest.mock('../../providers/ToastProvider', () => ({
 
 jest.mock('../../providers/CollaborationProvider', () => ({
   useCollab: () => ({
-    enabled: false,
     onRemote: jest.fn(),
-    broadcastNodeAdded: jest.fn(),
-    broadcastNodeRemoved: jest.fn(),
-    broadcastEdgeAdded: jest.fn(),
-    broadcastEdgeRemoved: jest.fn(),
   }),
 }));
 
@@ -85,8 +80,8 @@ import { clearPackageNodes, tryGetNodeDescriptor } from '../../registry/nodeRegi
 
 const LOADER = 'curio.builtin/data-loading@1';
 const PYTHON = 'curio.builtin/computation-analysis@1';
-const RASTERIZE = 'curio.scout/rasterize-buildings@1';
-const CALCULATOR = 'curio.scout/raster-calculator@1';
+const RASTERIZE = 'curio.rasterization/rasterize-buildings@1';
+const CALCULATOR = 'curio.rasterization/raster-calculator@1';
 const SHADOW = 'model.scout.deep-umbra/accumulated-shadow@1';
 
 const PACKAGES_ROOT = path.resolve(__dirname, '../../../../../../packages');
@@ -141,7 +136,7 @@ function listedPackage(dirName: string): any {
 beforeAll(() => {
   registerPackageTemplates([
     listedPackage('curio.builtin@1'),
-    listedPackage('curio.scout@1'),
+    listedPackage('curio.rasterization@1'),
     listedPackage('model.scout.deep-umbra@1'),
   ]);
 });

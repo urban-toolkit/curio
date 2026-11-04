@@ -1,0 +1,3 @@
+{
+  "tools": ["dataset.install", "discovery.acquire", "package.draft.apply", "package.install"]
+}

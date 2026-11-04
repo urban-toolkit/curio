@@ -31,6 +31,10 @@ dependencies = [
   "flask-socketio>=5.6.0",
   "python-socketio>=5.16.2",
   "python-engineio>=4.13.2",
+  # Socket.IO's WebSocket transport, and the server's Yjs doc of each open
+  # dataflow. See requirements.txt.
+  "simple-websocket>=1.1.0",
+  "pycrdt>=0.14.10,<0.15",
   # Validates manifests and dataflow specs against docs/schemas/*.json, and
   # Autark documents against the vendored autk-grammar schema.
   # See requirements.txt for why this is a floor and not an exact pin.
@@ -39,9 +43,13 @@ dependencies = [
   # UTF-8. See requirements.txt for why this is declared and not left
   # transitive.
   "charset-normalizer>=3.3",
+  # Reads each skill's frontmatter (agents/domain/skills.py). See
+  # requirements.txt.
+  "PyYAML>=6.0",
   "psutil>=5.9",
   "pyseccomp>=0.1.2; sys_platform == 'linux'",
-  "pytest>=9.0.3",
+  # Below 9.2, for pytest-xdist's --dist loadgroup. See requirements.txt.
+  "pytest>=9.0.3,<9.2",
   "pytest-cov>=7.1.0",
   "pytest-playwright>=0.7.2",
   "pytest-xdist>=3.8.0",

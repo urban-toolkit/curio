@@ -545,22 +545,51 @@ describe("AgentChatPanel structured content (memo dev/39)", () => {
   });
 });
 
-describe("AgentChatPanel review + tool activity (memo dev/41)", () => {
-  it("renders a proposal part as the review card and wires apply", () => {
+describe("AgentChatPanel changes, reviews + tool activity (memo dev/41)", () => {
+  it("renders a change part as the change card and wires its Undo", () => {
+    const onUndoChange = jest.fn().mockResolvedValue(undefined);
+    renderPanel({
+      turns: [
+        {
+          role: "agent",
+          text: "I wrote the node's code.",
+          content: [
+            {
+              type: "change",
+              changeId: "c1",
+              tool: "node.content.write",
+              kind: "content",
+              summary: "Replaced the content of the Python node · n1",
+              preview: "print(2)",
+              status: "applied",
+              lines: ["n1"],
+              nodeId: "n1",
+            } as never,
+          ],
+        },
+      ],
+      onUndoChange,
+    });
+    expect(screen.queryByRole("button", { name: "Apply" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    expect(onUndoChange).toHaveBeenCalledWith("c1");
+  });
+
+  it("renders an install's proposal part as the review card and wires apply", () => {
     const onApplyProposal = jest.fn().mockResolvedValue(undefined);
     renderPanel({
       turns: [
         {
           role: "agent",
-          text: "Here is my proposal.",
+          text: "This needs the Cities dataset.",
           content: [
             {
               type: "proposal",
               proposalId: "p1",
-              tool: "node.content.write",
-              summary: "Replace the content of node 'n1'",
-              preview: "print(2)",
-              pins: { nodeId: "n1", contentSha256: "abc" },
+              tool: "dataset.install",
+              summary: "Install dataset · Cities",
+              preview: "Cities · csv · imported",
+              pins: { datasetId: "imported.abc@1" },
               status: "pending",
             },
           ],
@@ -649,14 +678,15 @@ describe("AgentChatPanel says when a canvas agent changed nothing (#243)", () =>
     capabilities: NODE_BUILDER_CAPABILITIES,
   };
   const ask: AgentSessionTurn = { role: "user", text: "Add a node that loads the parks." };
-  const proposal = {
-    type: "proposal",
-    proposalId: "pc1",
+  const created = {
+    type: "change",
+    changeId: "c1",
     tool: "node.create",
-    summary: "Create a node",
+    kind: "node",
+    summary: "Created a new Python node",
     preview: "print(1)",
-    pins: { nodeType: "COMPUTATION_ANALYSIS" },
-    status: "pending",
+    status: "applied",
+    lines: ["Load parks · COMPUTATION_ANALYSIS"],
   };
 
   it("a reloaded Node Builder reply with only a dataflow.read call says so", () => {
@@ -672,17 +702,34 @@ describe("AgentChatPanel says when a canvas agent changed nothing (#243)", () =>
     expect(screen.getByText(NO_CHANGE)).toBeInTheDocument();
   });
 
-  it("a reply that holds a node.create proposal does not", () => {
+  it("a reply that holds a node it added does not", () => {
     renderPanel({
       attachment: nodeBuilder,
       turns: [
         ask,
-        savedReply("Here is the node for your review.", {
-          toolCalls: [{ tool: "node.create", status: "proposed", durationMs: 3 }],
-        }, [proposal]),
+        savedReply("I added the node.", {
+          toolCalls: [{ tool: "node.create", status: "applied", durationMs: 3 }],
+        }, [created]),
       ],
     });
-    expect(screen.getByText("Here is the node for your review.")).toBeInTheDocument();
+    expect(screen.getByText("I added the node.")).toBeInTheDocument();
+    expect(screen.queryByText(NO_CHANGE)).not.toBeInTheDocument();
+  });
+
+  it("a reply that holds an install waiting for review does not either", () => {
+    const install = {
+      type: "proposal", proposalId: "pk1", tool: "package.install", summary: "Install package · Weather",
+      preview: "weather", pins: { dirName: "curio.weather@1" }, status: "pending",
+    };
+    renderPanel({
+      attachment: nodeBuilder,
+      turns: [
+        ask,
+        savedReply("This needs the weather package.", {
+          toolCalls: [{ tool: "package.install", status: "proposed", durationMs: 3 }],
+        }, [install]),
+      ],
+    });
     expect(screen.queryByText(NO_CHANGE)).not.toBeInTheDocument();
   });
 
@@ -702,20 +749,20 @@ describe("AgentChatPanel says when a canvas agent changed nothing (#243)", () =>
     expect(screen.getByText(NO_CHANGE)).toBeInTheDocument();
   });
 
-  it("a node.create the turn recovered from leaves no line beside the proposal (#447)", () => {
+  it("a node.create the turn recovered from leaves no line beside the change (#447)", () => {
     renderPanel({
       attachment: nodeBuilder,
       turns: [
         ask,
-        savedReply("Here is the node for your review.", {
+        savedReply("I added the node.", {
           toolCalls: [
             { tool: "node.create", status: "refused", durationMs: 1, reason: "template.content must be a non-empty string" },
-            { tool: "node.create", status: "proposed", durationMs: 3 },
+            { tool: "node.create", status: "applied", durationMs: 3 },
           ],
-        }, [proposal]),
+        }, [created]),
       ],
     });
-    expect(screen.getByRole("group", { name: "Review proposal: Create a node" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Change: Created a new Python node" })).toBeInTheDocument();
     expect(screen.queryByText(/^node\.create ·/)).not.toBeInTheDocument();
   });
 
@@ -724,7 +771,7 @@ describe("AgentChatPanel says when a canvas agent changed nothing (#243)", () =>
       attachment: nodeBuilder,
       turns: [
         ask,
-        savedReply("Here is the node for your review.", {}, [proposal]),
+        savedReply("I added the node.", {}, [created]),
         // A Solve verdict: written by the run, not a reply to a message.
         savedReply("Solved 'Load parks': the corrected code ran successfully.", {
           pins: { coord: "agent.curio.node-builder@1", tools: [], intentEdited: false },
@@ -1155,14 +1202,85 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
     expect(screen.getByLabelText(/session token usage/i)).toHaveTextContent("1.6k tokens");
   });
 
-  it("while running the send button keeps its loading glyph and is disabled", () => {
-    renderPanel({ runStatus: runningStatus() });
+  it("while a turn runs, Send stays ready: the message is asked and waits its turn", async () => {
+    const onSend = jest.fn().mockResolvedValue(undefined);
+    renderPanel({ runStatus: runningStatus(), onSend });
     fireEvent.change(screen.getByPlaceholderText(/message this agent/i), {
       target: { value: "queued question" },
     });
     const send = screen.getByRole("button", { name: "Send" });
-    expect(send).toBeDisabled();
-    expect(send).toHaveTextContent("…");
+    expect(send).not.toBeDisabled();
+    expect(send).not.toHaveTextContent("…");
+    fireEvent.click(send);
+    expect(onSend).toHaveBeenCalledWith("queued question");
+    await waitFor(() => expect(screen.getByPlaceholderText(/message this agent/i)).toHaveValue(""));
+  });
+
+  it("while a turn runs, Stop asks for it to stop, once, and goes with the turn", async () => {
+    let finish: () => void = () => undefined;
+    const onStopTurn = jest.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const { rerender, props } = renderPanel({
+      runStatus: runningStatus(), turns: [{ role: "user", text: "q1" }], onStopTurn,
+    });
+    const stop = screen.queryByRole("button", { name: "Stop" });
+    expect(stop).toBeInTheDocument();
+    fireEvent.click(stop as HTMLElement);
+    expect(onStopTurn).toHaveBeenCalledTimes(1);
+    const stopping = screen.getByRole("button", { name: "Stopping…" });
+    expect(stopping).toBeDisabled();
+    fireEvent.click(stopping);
+    expect(onStopTurn).toHaveBeenCalledTimes(1);
+    await act(async () => finish());
+    rerender(<AgentChatPanel {...props} runStatus={{ phase: "done", startedAt: Date.now(), durationMs: 10 }} />);
+    expect(screen.queryByRole("button", { name: /^Stop/ })).not.toBeInTheDocument();
+  });
+
+  it("a stopped reply says who stopped it and after how long", () => {
+    renderPanel({
+      turns: [
+        { role: "user", text: "Rewrite the sum." },
+        {
+          role: "agent",
+          text: "I will rewrite it.",
+          execution: {
+            executionId: "e-stopped",
+            usage: null,
+            status: "stopped",
+            durationMs: 8000,
+            stoppedBy: { kind: "person", account: "7", name: "Ana" },
+          },
+        },
+      ],
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("Stopped by Ana after 8s");
+  });
+
+  it("the asks waiting their turn follow the transcript, each named by its writer, and its asker may withdraw their own", async () => {
+    const onWithdrawAsk = jest.fn().mockResolvedValue(undefined);
+    renderPanel({
+      runStatus: runningStatus(),
+      turns: [{ role: "user", text: "q1" }],
+      viewerAccount: "3",
+      waitingAsks: [
+        { askId: "k-bob", by: { kind: "person", account: "7", name: "Bob" }, message: "And the map?", status: "waiting" },
+        { askId: "k-mine", by: { kind: "person", account: "3", name: "Ana" }, message: "Mine too.", status: "waiting" },
+        { askId: "k-now", by: null, message: "Just sent.", status: "sending" },
+      ],
+      onWithdrawAsk,
+    });
+    expect(screen.queryByText("And the map?")).toBeInTheDocument();
+    const bobs = screen.getByText("And the map?").closest("[data-agent-ask]") as HTMLElement;
+    expect(bobs).toHaveAttribute("data-agent-ask-status", "waiting");
+    expect(within(bobs).getByText("Bob")).toBeInTheDocument();
+    expect(within(bobs).getByText(/Waiting its turn/)).toBeInTheDocument();
+    expect(within(bobs).queryByRole("button", { name: "Withdraw" })).not.toBeInTheDocument();
+    const mine = screen.getByText("Mine too.").closest("[data-agent-ask]") as HTMLElement;
+    expect(within(mine).queryByText("Ana")).not.toBeInTheDocument();
+    const just = screen.getByText("Just sent.").closest("[data-agent-ask]") as HTMLElement;
+    expect(within(just).queryByText(/Waiting its turn/)).not.toBeInTheDocument();
+    fireEvent.click(within(mine).getByRole("button", { name: "Withdraw" }));
+    expect(onWithdrawAsk).toHaveBeenCalledWith("k-mine");
+    await waitFor(() => expect(within(mine).getByRole("button", { name: "Withdraw" })).toBeDisabled());
   });
 
   it("a wired-idle status re-enables send even while another chat's send is in flight (cycling leak fix)", async () => {
@@ -1228,15 +1346,15 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Failed");
   });
 
-  it("a pending review proposal marks only the newest reply", () => {
+  it("a pending install review marks only the newest reply", () => {
     renderPanel({
       attachment: {
         ...attachment,
         activeProposal: {
           proposalId: "p1",
-          tool: "node.content.write",
-          nodeId: "n1",
-          summary: "write",
+          tool: "dataset.install",
+          nodeId: "",
+          summary: "Install dataset · Cities",
           status: "pending",
         },
       },
@@ -1252,6 +1370,40 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
     const statuses = screen.getAllByRole("status");
     expect(statuses[0]).not.toHaveTextContent("Awaiting your review");
     expect(statuses[1]).toHaveTextContent("Awaiting your review");
+  });
+
+  it("a review of a change saved before agents edited directly awaits nothing and keeps Dismiss alone", () => {
+    const onApplyProposal = jest.fn().mockResolvedValue(undefined);
+    const onDismissProposal = jest.fn().mockResolvedValue(undefined);
+    const summary = "Replace the content of node n1";
+    renderPanel({
+      attachment: {
+        ...attachment,
+        activeProposal: { proposalId: "p-old", tool: "node.content.write", nodeId: "n1", summary, status: "pending" },
+      },
+      turns: [
+        { role: "user", text: "q1" },
+        {
+          ...doneTurn("a1", [10, 10]),
+          content: [{
+            type: "proposal", proposalId: "p-old", tool: "node.content.write", summary,
+            preview: "print(2)", pins: { nodeId: "n1" }, status: "pending",
+          }],
+        } as AgentSessionTurn,
+      ],
+      onApplyProposal,
+      onDismissProposal,
+    });
+    expect(screen.queryByText("Awaiting your review")).toBeNull();
+    const saved = within(screen.getByRole("group", { name: `Review proposal: ${summary}` }));
+    expect(saved.queryByRole("button", { name: "Apply" })).toBeNull();
+    // Read here, so a checkout without it fails this test alone.
+    const { MADE_BEFORE_DIRECT_EDITS } = require("../../components/agents/content/reviewCard/reviewCardText");
+    expect(MADE_BEFORE_DIRECT_EDITS).toEqual(expect.any(String));
+    expect(saved.getByText(MADE_BEFORE_DIRECT_EDITS)).toBeInTheDocument();
+    fireEvent.click(saved.getByRole("button", { name: "Dismiss" }));
+    expect(onDismissProposal).toHaveBeenCalledWith("p-old");
+    expect(onApplyProposal).not.toHaveBeenCalled();
   });
 
   it("the live cumulative counter includes the in-flight run's interim sums", () => {

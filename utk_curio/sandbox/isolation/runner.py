@@ -185,6 +185,7 @@ def execute_isolated(
     input_slots=None,
     saved_paths=None,
     imports_session=None,
+    library_keys=None,
 ):
     """Run one node in an isolated child. Returns the standard response dict.
 
@@ -203,7 +204,10 @@ def execute_isolated(
 
     *user_key* also selects that user's node-library overlay (#332), which the
     child puts on ``sys.path``: a library one user installed is importable by
-    their nodes and by nobody else's.
+    their nodes and by nobody else's. *library_keys*
+    (``supervisor.library_keys``) name the other accounts whose overlays the
+    run reads too, read-only, after the user's own: the dataflow owner's, for
+    a run of an editor she invited, which the backend alone decides.
 
     *package_modules* (``{"root", "names"}``, or a list of them, #468) are
     the modules the node's package ships beside its templates, and those of
@@ -241,6 +245,15 @@ def execute_isolated(
             supervisor.user_overlay_dir(str(_shared_data_dir()), user_key),
             exec_uid=config.exec_uid,
         )
+        # An editor's run of the owner's dataflow: her libraries too, after
+        # the editor's own. Located, not prepared: an owner who installed
+        # nothing adds no folder, and none of hers is written here.
+        others = [
+            supervisor.user_overlay_dir(str(_shared_data_dir()), key)
+            for key in supervisor.library_keys(library_keys, user_key)
+        ]
+        if others:
+            overlay_dir = [overlay_dir, *others]
 
     scratch_dir = None
     try:

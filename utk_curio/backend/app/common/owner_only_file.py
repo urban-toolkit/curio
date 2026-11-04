@@ -10,7 +10,8 @@ the two-layer lock (a thread lock, then a file lock) the project spec uses.
 running under isolation cannot open these files. **Plaintext at rest**:
 encryption is separate work that covers every secret at once.
 
-Used by ``users.connection_keys``, ``users.source_keys`` and ``agents.llm_configs``.
+Used by ``users.connection_keys``, ``users.source_keys``, ``agents.llm_configs``
+and ``agents.agent_skills``.
 """
 
 from __future__ import annotations

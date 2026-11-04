@@ -184,48 +184,28 @@ describe("usePackageInstallReview (dev/84)", () => {
     await flow;
   });
 
-  // dev/105 A3 — the install apply queues the Researcher's note cards below
-  // the install card; confirm walks them ONE AT A TIME.
-  it("confirm walks followUpProposals sequentially after the install apply", async () => {
-    const order: string[] = [];
-    let releaseFirst!: () => void;
-    const apply = jest.fn((id: string) => {
-      order.push(id);
-      if (id === "p1") return Promise.resolve({ followUpProposals: ["n1", "n2"] });
-      if (id === "n1") return new Promise<void>((resolve) => { releaseFirst = resolve; });
-      return Promise.resolve();
-    });
+  // An install that carries the Researcher's notes places them itself once it
+  // is applied: confirm applies the install once, and nothing else.
+  it("confirm applies the install once, its notes included, and settles", async () => {
+    const apply = jest.fn().mockResolvedValue({ createdNodes: [{ id: "n1" }, { id: "n2" }] });
     const { result } = renderHook(() => usePackageInstallReview(apply));
     let flow!: Promise<void>;
     act(() => {
       flow = result.current.beginReview("p1", "curio.notes@1");
     });
     await waitFor(() => expect(result.current.candidate).not.toBeNull());
-    let confirmed!: Promise<void>;
-    act(() => {
-      confirmed = result.current.confirm();
-    });
-    // n2 must NOT start while n1 is still applying.
-    await waitFor(() => expect(order).toEqual(["p1", "n1"]));
-    expect(result.current.busy).toBe(true);
-    act(() => releaseFirst());
     await act(async () => {
-      await confirmed;
+      await result.current.confirm();
     });
     await flow;
-    expect(order).toEqual(["p1", "n1", "n2"]);
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(apply).toHaveBeenCalledWith("p1");
     expect(result.current.candidate).toBeNull();
     expect(result.current.busy).toBe(false);
   });
 
-  it("a failing follow-up stops the walk and rejects into the card's line", async () => {
-    const order: string[] = [];
-    const apply = jest.fn((id: string) => {
-      order.push(id);
-      if (id === "p1") return Promise.resolve({ followUpProposals: ["n1", "n2"] });
-      if (id === "n1") return Promise.reject(new Error("node type no longer available"));
-      return Promise.resolve();
-    });
+  it("a failing install rejects into the card's line, and nothing else is applied", async () => {
+    const apply = jest.fn().mockRejectedValue(new Error("node type no longer available"));
     const { result } = renderHook(() => usePackageInstallReview(apply));
     let flow!: Promise<void>;
     act(() => {
@@ -237,10 +217,10 @@ describe("usePackageInstallReview (dev/84)", () => {
       await result.current.confirm();
     });
     await rejection;
-    expect(order).toEqual(["p1", "n1"]); // n2 left pending, applicable by hand
+    expect(apply).toHaveBeenCalledTimes(1);
   });
 
-  it("an apply result without follow-ups behaves as before", async () => {
+  it("an apply result that places nothing settles the same way", async () => {
     const apply = jest.fn().mockResolvedValue({});
     const { result } = renderHook(() => usePackageInstallReview(apply));
     let flow!: Promise<void>;

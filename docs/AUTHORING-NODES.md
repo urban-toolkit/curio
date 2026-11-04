@@ -86,7 +86,7 @@ built-in nodes, with nothing extra to declare.
 Your code calls Curio's functions by name, with no import: `curio_load_data("<id>")`
 reads a dataset of your Data Catalog, `curio_load_model("<id>")` loads a model of
 your Model Catalog, and `curio_secret("<name>")` gives a key you saved for node
-code. [Functions node code calls](../agents/agent.curio.builtin@1/knowledge/node-functions.md)
+code. [Functions node code calls](../skills/node-functions/SKILL.md)
 lists every one, with its arguments.
 
 Your package lands in your user store, not in the repo:
@@ -153,10 +153,12 @@ data = curio_load_data([!! data !!])
 return data
 ```
 
-To have the node open on its **Widgets** tab, where the user sets what the
-code reads, add `"opensOnWidgets": true`, as Data Loading and Data Export do.
-The code stays on the **Code** tab. A node whose code reads none of its widgets
-opens on its code.
+To have the node's **Widgets** tab show only its controls, add
+`"opensOnControls": true`, as Data Loading and Data Export do: a label and a
+control for each widget, as on a dashboard tile, with no tags, **Edit**,
+**Delete**, **Add widget** or selections. The node opens there while its code
+reads one of its widgets, and the code stays on the **Code** tab. A node whose
+code reads none of its widgets opens on its code.
 
 When the starter is the node's whole content and only its widgets change from
 one use to the next, add `"starterIsContent": true` beside `source`. A node the
@@ -166,9 +168,9 @@ one of its name, and **Solve** leaves its content as it is. Without it, a planne
 node is created with the template's widgets and no content, and Solve writes its
 content.
 
-A starter that each use edits leaves the flag out, as Scout's Raster
+A starter that each use edits leaves the flag out, as Rasterization's Raster
 Calculator does: its starter,
-[`sources/raster-calculator.py`](../packages/curio.scout@1/sources/raster-calculator.py),
+[`sources/raster-calculator.py`](../packages/curio.rasterization@1/sources/raster-calculator.py),
 returns one operation and lists the others, so a dropped calculator opens with
 it and Solve writes the operation each planned one needs.
 
@@ -257,6 +259,60 @@ A dataflow with a `flood-depth` node is then under Hydrology and Rasters. A name
 the page already lists, such as Rasters, files the dataflow there; a new name,
 such as Hydrology, adds an entry. A list holds up to 20 names, each up to 40
 characters.
+
+### Skills for the agents
+
+Curio's agents know each of your nodes by its manifest, its starter and its
+modules' docstrings. To tell them how to do a task with your nodes, such as which
+node does what and the rules its code follows, add a skill: a folder of the
+package's `skills/`, named as the skill, that holds a `SKILL.md`.
+
+```
+packages/me.flood@1/
+├── manifest.json
+├── sources/
+└── skills/
+    └── flood/
+        └── SKILL.md
+```
+
+```markdown
+---
+name: flood
+description: >-
+  Use this skill when a task writes or wires a flood-depth node, such as the
+  depth of a flood under each scenario's rainfall.
+license: MIT
+metadata:
+  author: me
+  version: "1.0.0"
+  curio-templates: flood-depth
+---
+## Flood depth
+
+A flood-depth node takes ...
+```
+
+- The file is in the [Agent Skills format](https://agentskills.io/specification):
+  `name`, the folder's name, and `description`, which says when to use the
+  skill, then the body the agents read, as you wrote it.
+  [EXTENDING §9](EXTENDING.md#9-writing-a-skill) has every rule.
+- Every agent on a dataflow that uses your package lists your skills, and
+  loads one when a task matches its description. The
+  [Skill Catalog](SKILL-CATALOG.md#skills-from-packages) lists them with your
+  package's name, for every account that can add the package.
+- `curio-templates` names your templates, by their `id`: a run that writes a
+  node of one of them is handed the skill.
+- `curio-asks` may name words of a person's chat message, a comma between
+  each, such as `curio-asks: flood depth, flooding`: a chat message that
+  holds one as a whole word, on a dataflow that uses your package, hands the
+  chat the skill.
+- Name a skill after your package: a skill whose name one of Curio's skills
+  already has is left out.
+- An import of a package whose skill breaks the format is refused, and the
+  message names the file. After editing a skill in place, run
+  `python scripts/regen_integrity.py packages/me.flood@1`, as after any other
+  file.
 
 ---
 

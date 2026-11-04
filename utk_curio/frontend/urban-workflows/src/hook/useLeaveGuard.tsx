@@ -28,26 +28,37 @@ export const LEAVE_DASHBOARD: LeaveGuardCopy = {
  *
  * `leave(action)` runs `action` at once when nothing is unsaved, and otherwise
  * holds it until the user confirms. Render `dialog` somewhere in the caller.
+ *
+ * `settle`, given, is how a dataflow bound to its doc leaves: nothing on it is
+ * unsaved, so the leave waits for the server to hold this tab's last change
+ * (`settle` resolves true), and asks only when it cannot reach the server in
+ * time, since what waits in the tab is lost on leaving.
  */
 export function useLeaveGuard(
   unsaved: boolean,
   copy: LeaveGuardCopy,
-  options: { layer?: "default" | "overlay" } = {},
+  options: { layer?: "default" | "overlay"; settle?: () => Promise<boolean> } = {},
 ): {
   leave: (action: () => void, body?: string) => void;
   dialog: React.ReactNode;
 } {
   const [pending, setPending] = useState<{ run: () => void; body: string } | null>(null);
+  const { settle } = options;
 
   const leave = useCallback(
     (action: () => void, body?: string) => {
-      if (!unsaved) {
+      const ask = () => setPending({ run: action, body: body ?? copy.body });
+      if (unsaved) {
+        ask();
+        return;
+      }
+      if (!settle) {
         action();
         return;
       }
-      setPending({ run: action, body: body ?? copy.body });
+      settle().then((kept) => (kept ? action() : ask()), ask);
     },
-    [unsaved, copy.body],
+    [unsaved, copy.body, settle],
   );
 
   const dialog = pending ? (

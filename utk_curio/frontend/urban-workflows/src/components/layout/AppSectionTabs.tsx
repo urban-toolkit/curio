@@ -1,15 +1,35 @@
 import React from "react";
+import clsx from "clsx";
 import { NavLink } from "react-router-dom";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+
+import { CATALOG_KIND_META } from "../catalog/CatalogKindVisuals";
+import { CATALOG_SECTIONS, PROJECTS_SECTION, type AppSection } from "./catalogSections";
+import headerStyles from "./GlobalPageHeader.module.css";
 import styles from "./AppSectionTabs.module.css";
 
-function tabClassName({ isActive }: { isActive: boolean }): string {
-  return [styles.tabLink, isActive ? styles.tabLinkActive : ""].filter(Boolean).join(" ");
+function SectionLink({ section }: { section: AppSection }) {
+  return (
+    <NavLink
+      to={section.path}
+      end={section.end}
+      className={({ isActive }) =>
+        clsx(headerStyles.barButton, isActive && headerStyles.barButtonActive, isActive && styles.sectionCurrent)
+      }
+      aria-label={section.name}
+      data-tooltip={section.name}
+    >
+      <FontAwesomeIcon icon={CATALOG_KIND_META[section.kind].icon} className={headerStyles.barIcon} />
+      <span className={styles.sectionLabel}>{section.shortName}</span>
+    </NavLink>
+  );
 }
 
 /**
- * The app's top-level sections, as sibling tabs. Rendered under
- * GlobalPageHeader on both /projects and /catalog/* so the two read as peers
- * instead of pointing at each other through one-off header buttons.
+ * The app's top-level sections, in the top bar of every section page (Projects,
+ * the catalogs, Monitor, API Settings), drawn as the canvas draws its catalog
+ * buttons: a glyph and a short name, the full name its accessible name and its
+ * tooltip. They link to the pages; the canvas's buttons open the drawers.
  *
  * aria-label is "Main sections", not "Catalog sections" — the latter is taken
  * by components/packages/publishing/DrawerTabs.tsx, and a duplicate makes
@@ -17,32 +37,12 @@ function tabClassName({ isActive }: { isActive: boolean }): string {
  */
 export function AppSectionTabs() {
   return (
-    <nav className={styles.tabBar} aria-label="Main sections">
-      <NavLink to="/projects" className={tabClassName} end>
-        Projects
-      </NavLink>
-      <NavLink to="/catalog/nodes" className={tabClassName} end>
-        Node Catalog
-      </NavLink>
-      {/* No `end`: /catalog/data/:datasetId keeps this tab active. */}
-      <NavLink to="/catalog/data" className={tabClassName}>
-        Data Catalog
-      </NavLink>
-      <NavLink to="/catalog/agents" className={tabClassName} end>
-        Agent Catalog
-      </NavLink>
-      {/* No `end`: /catalog/discovery/:sourceDir keeps this tab active. */}
-      <NavLink to="/catalog/discovery" className={tabClassName}>
-        Discovery Catalog
-      </NavLink>
-      {/* No `end`: /catalog/models/:modelId keeps this tab active. */}
-      <NavLink to="/catalog/models" className={tabClassName}>
-        Model Catalog
-      </NavLink>
-      {/* No `end`: /catalog/scenarios/:projectId/:scenarioId keeps this tab active. */}
-      <NavLink to="/catalog/scenarios" className={tabClassName}>
-        Scenario Catalog
-      </NavLink>
+    <nav className={styles.sections} aria-label="Main sections">
+      <SectionLink section={PROJECTS_SECTION} />
+      <span className={headerStyles.divider} aria-hidden />
+      {CATALOG_SECTIONS.map((section) => (
+        <SectionLink key={section.kind} section={section} />
+      ))}
     </nav>
   );
 }

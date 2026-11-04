@@ -28,7 +28,7 @@ jest.mock('../../hook/useWorkflowOperations', () => ({
     markNodeStale: jest.fn(),
     markNodeErrored: jest.fn(),
     markDirty: jest.fn(),
-    persistDataflowForInstall: jest.fn().mockResolvedValue({ saved: true, failedNodeIds: [] }),
+    recordOutputs: jest.fn().mockResolvedValue({ saved: true, failedNodeIds: [] }),
     beginPendingInstall: mockBeginPendingInstall,
     endPendingInstall: jest.fn(),
     failPendingInstall: jest.fn(),
@@ -46,7 +46,6 @@ jest.mock('../../hook/useWorkflowOperations', () => ({
     loadSharedProject: jest.fn(),
     cleanCanvas: jest.fn(),
     discardProject: jest.fn(),
-    saveCurrentProject: jest.fn().mockResolvedValue(undefined),
     projectId: 'project-1',
     viewerMode: 'owner',
     scenarios: mockScenarios,
@@ -59,18 +58,9 @@ jest.mock('../../providers/ToastProvider', () => ({
 }));
 jest.mock('../../providers/CollaborationProvider', () => ({
   useCollab: () => ({
-    enabled: false,
     lockedNodes: {},
-    currentUserId: null,
     lockNode: jest.fn(),
     unlockNode: jest.fn(),
-    signalExecDisplay: jest.fn(),
-    broadcastOutputProduced: jest.fn(),
-    broadcastNodeAdded: jest.fn(),
-    broadcastNodeRemoved: jest.fn(),
-    broadcastEdgeAdded: jest.fn(),
-    broadcastEdgeRemoved: jest.fn(),
-    broadcastNodeUpdated: jest.fn(),
     onRemote: jest.fn(),
   }),
 }));

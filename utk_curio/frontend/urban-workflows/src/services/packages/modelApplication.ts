@@ -5,6 +5,7 @@ import { MODEL_TYPE_LABEL } from "./modelPackages";
 import {
   beginPackageCardDrag,
   endPackageCardDrag,
+  readPackageCardDragPayload,
   writePackageCardDragData,
   type PackageCardNode,
 } from "./packageCardDrag";
@@ -120,6 +121,18 @@ export function writeModelCardDrag(dataTransfer: DataTransfer, model: PackagePay
 export function endModelCardDrag(): void {
   endPackageCardDrag();
   endModelDrag();
+}
+
+/**
+ * The model package a model dropped on a node is, as an ask of the dataflow's
+ * owner names it (`useAskForPackage`): its `<packageId>@<major>` and name,
+ * read off the card the drag carries beside the model (`writeModelCardDrag`).
+ * On an invited editor's canvas the drop of a model of his own then asks her
+ * to add it. Null for a drag that carries no card.
+ */
+export function modelDropRequest(dataTransfer: DataTransfer): { dirName: string; name: string } | null {
+  const card = readPackageCardDragPayload(dataTransfer);
+  return card && card.kind === "model" ? { dirName: card.dirName, name: card.name } : null;
 }
 
 /**

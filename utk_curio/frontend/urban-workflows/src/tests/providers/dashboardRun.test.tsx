@@ -260,18 +260,6 @@ describe("a change", () => {
     });
 });
 
-describe("Save layout", () => {
-    test("gets each pinned node's widgets as the page opened with them, never a value tried since", async () => {
-        const { nodes, hook } = setUp();
-        await act(async () => { hook.result.current.opened("dash-1"); });
-        // A Widgets tab writes its value into the node's data in place.
-        nodes[0].data.widgets[0].value = "Year" as any;
-        const saved = hook.result.current.savedWidgets();
-        expect(saved?.get("param")).toEqual([period]);
-        expect(saved?.has("grid")).toBe(false);
-    });
-});
-
 describe("a step only a browser runs", () => {
     const finished = (status: string) => ({ kind: "run_finished", status, ok: 1, failed: 0, skipped: 0, waiting: 2 });
 
@@ -397,7 +385,7 @@ describe("a step only a browser runs", () => {
     test("the step that could not run is named as its header names it", async () => {
         const gpu = {
             id: "gpu",
-            data: { nodeId: "gpu", nodeType: "curio.builtin/autk-grammar@1", packageTemplateLabel: "Cast sun rays on the GPU" },
+            data: { nodeId: "gpu", nodeType: "curio.builtin/autk-grammar@1", title: "Cast sun rays on the GPU" },
         };
         const { hook, run, outcomes } = await aRunLeavingTheGpuStep((_outputs, hooks) => {
             hooks.onNodeDone("gpu", { failed: true, message: "WebGPU is not available in this browser." });

@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/scenario-comparison-charts.json",
-    "sha256": "863b916dfbc8a2fb0bfae507307daf47e3e5c51277eab6d316275d398a103961",
+    "sha256": "b0bf8e27e7c5e609c188349faf0c511900ba73db9e7ca09b6cb9444507375024",
     "walkthrough": null
   },
   "prompt": "Make a gallery of nine ways to chart a comparison of scenarios, one row per example table from the Data Catalog: pedestrians per hour on four streets, flood damage curves, flooded streets by depth, peak depths of simulated storms, daily trips by mode, building carbon by life-cycle stage, park area in shade, bike route factors and green roof systems. Each table names its scenario in a case column. For every scenario keep its rows in a step of its own, with the case picked by a choice widget, and make that step the scenario; the 10-, 50- and 100-year storms are one scenario each across the two storm tables. Chart each table's scenarios in one Vega-Lite chart that reads each scenario's step directly and draws each scenario in its color: the pedestrians as lines with a band in a panel per street, the damage curves as one curve per damage state, the flooded streets as grouped bars with error bars, the peak depths as a strip of ticks per storm with its median, the daily trips as grouped bars by mode, the building carbon as stacked bars with their totals, the park shade as a donut per design, the bike route factors as a matrix of circles sized by weight and the green roof systems as a table. Those nine charts are not part of the standard node set, so whatever provides them needs installing first.",
@@ -22,7 +22,7 @@
       "data.curio.example-trips-by-mode"
     ],
     "packages": [
-      "curio.scout@1"
+      "curio.vega-lite@1"
     ],
     "paths": []
   },
@@ -261,63 +261,63 @@
       },
       {
         "ref": "visualization1",
-        "type": "curio.scout/bars-with-error-bars",
+        "type": "curio.vega-lite/bars-with-error-bars",
         "role": "visualization",
         "executable": false,
         "hasContent": true
       },
       {
         "ref": "visualization2",
-        "type": "curio.scout/curves-by-group",
+        "type": "curio.vega-lite/curves-by-group",
         "role": "visualization",
         "executable": false,
         "hasContent": true
       },
       {
         "ref": "visualization3",
-        "type": "curio.scout/donuts",
+        "type": "curio.vega-lite/donuts",
         "role": "visualization",
         "executable": false,
         "hasContent": true
       },
       {
         "ref": "visualization4",
-        "type": "curio.scout/ensemble-strips",
+        "type": "curio.vega-lite/ensemble-strips",
         "role": "visualization",
         "executable": false,
         "hasContent": true
       },
       {
         "ref": "visualization5",
-        "type": "curio.scout/grouped-bars",
+        "type": "curio.vega-lite/grouped-bars",
         "role": "visualization",
         "executable": false,
         "hasContent": true
       },
       {
         "ref": "visualization6",
-        "type": "curio.scout/lines-with-band",
+        "type": "curio.vega-lite/lines-with-band",
         "role": "visualization",
         "executable": false,
         "hasContent": true
       },
       {
         "ref": "visualization7",
-        "type": "curio.scout/stacked-bars-with-totals",
+        "type": "curio.vega-lite/stacked-bars-with-totals",
         "role": "visualization",
         "executable": false,
         "hasContent": true
       },
       {
         "ref": "visualization8",
-        "type": "curio.scout/table",
+        "type": "curio.vega-lite/table",
         "role": "visualization",
         "executable": false,
         "hasContent": true
       },
       {
         "ref": "visualization9",
-        "type": "curio.scout/weighted-matrix",
+        "type": "curio.vega-lite/weighted-matrix",
         "role": "visualization",
         "executable": false,
         "hasContent": true
@@ -618,15 +618,15 @@
   "execution": {
     "mode": "sandbox",
     "browserOnlyKinds": [
-      "curio.scout/bars-with-error-bars",
-      "curio.scout/curves-by-group",
-      "curio.scout/donuts",
-      "curio.scout/ensemble-strips",
-      "curio.scout/grouped-bars",
-      "curio.scout/lines-with-band",
-      "curio.scout/stacked-bars-with-totals",
-      "curio.scout/table",
-      "curio.scout/weighted-matrix"
+      "curio.vega-lite/bars-with-error-bars",
+      "curio.vega-lite/curves-by-group",
+      "curio.vega-lite/donuts",
+      "curio.vega-lite/ensemble-strips",
+      "curio.vega-lite/grouped-bars",
+      "curio.vega-lite/lines-with-band",
+      "curio.vega-lite/stacked-bars-with-totals",
+      "curio.vega-lite/table",
+      "curio.vega-lite/weighted-matrix"
     ],
     "notes": null
   },
@@ -644,7 +644,7 @@
   "split": "train",
   "review": {
     "status": "pending-owner-review",
-    "draftedBy": "the scenario comparison charts step (#914's port, step 19), from the example JSON, 2026-10-17; its seven charts the SCOUT Comparison package's nodes (step 28.2), 2026-10-18; those charts the Scout package's (curio.scout@1), 2026-10-20; each chart taking its scenarios' nodes directly, with no Compare Scenarios node, and the grouped bars and the table Scout's nodes too (the plan answering komar41's review, step 6.2), 2026-10-20",
+    "draftedBy": "the scenario comparison charts step (#914's port, step 19), from the example JSON, 2026-10-17; its seven charts the SCOUT Comparison package's nodes (step 28.2), 2026-10-18; those charts the Scout package's, 2026-10-20; each chart taking its scenarios' nodes directly, with no Compare Scenarios node, and the grouped bars and the table Scout's nodes too (the plan answering komar41's review, step 6.2), 2026-10-20; its charts the Vega-Lite package's nodes (#1270), 2026-11-04",
     "reviewedBy": null,
     "reviewedAt": null
   },
@@ -691,5 +691,5 @@
     ],
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the export carries the datasets' identifiers only. The nine datasets are Curio's example tables, written by its seeded script and published under MIT."
   },
-  "notes": "Nine rows, one per example table: per scenario a Data Transformation node whose Case widget keeps that scenario's rows, and one of the Scout package's Vega-Lite charts taking each scenario's node on an input of its own, its columns set in its widgets. Twenty-one scenarios; each storm's holds a node of each of the two storm tables."
+  "notes": "Nine rows, one per example table: per scenario a Data Transformation node whose Case widget keeps that scenario's rows, and one of the Vega-Lite package's charts taking each scenario's node on an input of its own, its columns set in its widgets. Twenty-one scenarios; each storm's holds a node of each of the two storm tables."
 }

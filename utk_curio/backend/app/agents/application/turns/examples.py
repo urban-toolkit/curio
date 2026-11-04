@@ -203,22 +203,32 @@ def dataset_ids_of(spec: object) -> set[str]:
     return ids
 
 
-def excluded_by(spec: object) -> set[str]:
-    """What a run in this project must not be shown.
+def excluded_by(spec: object, examples: list[Example] | None = None) -> set[str]:
+    """What a run in this project must not be shown, of *examples* (the
+    "Used" dataflows, read now when None).
+
+    A dataflow is never its own worked example: an example that shares a
+    node or an edge id with the project's dataflow, as a project made from a
+    shipped dataflow keeps them, is left out, since the run reads that
+    dataflow already.
 
     An evaluation scores the run against one shipped dataflow, named by its
     marker's ``fixtureId``. The run is shown neither that dataflow nor any
     example that shares a piece of it (a node or edge id, or a code line of
     ``SHARED_LINE_CHARS`` or more): either would hand the run part of the
     answer, and the score would measure copying."""
+    own = _ids(spec)
+    pool = (used_examples() if examples is None else examples) if own else []
+    excluded = {e.key for e in pool if _ids(e.spec) & own}
     marker = _dataflow(spec).get(_EVALUATION_KEY)
     fixture_id = marker.get("fixtureId") if isinstance(marker, dict) else None
     if not isinstance(fixture_id, str) or not fixture_id:
-        return set()
-    excluded = {fixture_id}
+        return excluded
+    excluded.add(fixture_id)
     answer = _scored_parts(fixture_id)
     if answer:
-        excluded.update(e.key for e in used_examples() if _answer_parts(e.spec) & answer)
+        pool = pool or (used_examples() if examples is None else examples)
+        excluded.update(e.key for e in pool if _answer_parts(e.spec) & answer)
     return excluded
 
 
@@ -233,13 +243,19 @@ def _scored_parts(fixture_id: str) -> set[str]:
     return set()
 
 
+def _ids(spec: object) -> set[str]:
+    """A dataflow's node and edge ids."""
+    dataflow = _dataflow(spec)
+    return {
+        item["id"] for item in [*_dicts(dataflow.get("nodes")), *_dicts(dataflow.get("edges"))]
+        if isinstance(item.get("id"), str) and item["id"]
+    }
+
+
 def _answer_parts(spec: object) -> set[str]:
     """A dataflow's node and edge ids, and its code lines of ``SHARED_LINE_CHARS`` or more."""
     dataflow = _dataflow(spec)
-    parts: set[str] = set()
-    for item in [*_dicts(dataflow.get("nodes")), *_dicts(dataflow.get("edges"))]:
-        if isinstance(item.get("id"), str) and item["id"]:
-            parts.add(item["id"])
+    parts = _ids(spec)
     for node in _dicts(dataflow.get("nodes")):
         content = node.get("content")
         if isinstance(content, str):
@@ -374,10 +390,12 @@ def trill_text(spec: object) -> str:
     return "\n".join(['{"dataflow": {', *head, '  "nodes": [', nodes, "  ],", '  "edges": [', edges, "  ]", "}}"])
 
 
-def block_for(query: str, *, node_type: object = None, dataset_ids=(), exclude=()) -> str | None:
+def block_for(query: str, *, node_type: object = None, dataset_ids=(), exclude=(),
+              examples: list[Example] | None = None) -> str | None:
     """The worked-examples block for one run, or None when nothing matches."""
     try:
-        return render(select(query, node_type=node_type, dataset_ids=dataset_ids, exclude=exclude))
+        return render(select(query, node_type=node_type, dataset_ids=dataset_ids, exclude=exclude,
+                             examples=examples))
     except Exception as exc:  # a broken index or file costs the examples, never the run
         log.warning("Worked examples unavailable (%s: %s); the run goes without them",
                     type(exc).__name__, exc)
@@ -394,8 +412,11 @@ def attached_block(coord: str, spec: object, target: object, message: str) -> st
     dataflow = _dataflow(spec)
     node = _target_node(dataflow, target)
     query = " ".join(_texts(message, dataflow.get("task"), node.get("goal")))
+    pool = _pool_or_none()
+    if pool is None:
+        return None
     return block_for(query, node_type=node.get("type"), dataset_ids=dataset_ids_of(spec),
-                     exclude=excluded_by(spec))
+                     exclude=excluded_by(spec, pool), examples=pool)
 
 
 def delegated_block(coord: str, capability: str, spec: object, inputs: object) -> str | None:
@@ -410,8 +431,23 @@ def delegated_block(coord: str, capability: str, spec: object, inputs: object) -
     summary = context.get("graphSummary") if isinstance(context.get("graphSummary"), dict) else {}
     query = " ".join(_texts(*(inputs.get(k) for k in _DELEGATED_TEXT_INPUTS),
                             context.get("intent"), summary.get("goal")))
+    pool = _pool_or_none()
+    if pool is None:
+        return None
     return block_for(query, node_type=inputs.get("nodeType") or context.get("nodeType"),
-                     dataset_ids=dataset_ids_of(spec), exclude=excluded_by(spec))
+                     dataset_ids=dataset_ids_of(spec), exclude=excluded_by(spec, pool), examples=pool)
+
+
+def _pool_or_none() -> list[Example] | None:
+    """The "Used" dataflows, read once for a run's block and for what it
+    leaves out; None, logged, when they cannot be read, and the run goes
+    without the block, as :func:`block_for` has it go."""
+    try:
+        return used_examples()
+    except Exception as exc:  # noqa: BLE001 - a broken index costs the examples, never the run
+        log.warning("Worked examples unavailable (%s: %s); the run goes without them",
+                    type(exc).__name__, exc)
+        return None
 
 
 def _example(key: str, entry: IndexEntry, spec: dict) -> Example:

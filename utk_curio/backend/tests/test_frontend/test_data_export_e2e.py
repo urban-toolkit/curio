@@ -1,8 +1,9 @@
 """Playwright E2E: a Data Export node's code writes the file its Download button saves.
 
 A Data Export node holds ``return curio_export(input_0, [!! file_name !!])``
-on its Code tab, and opens on its Widgets tab: its File name, then its Download
-button. A run writes the data on its input to a file, a table as CSV, a GeoDataFrame as
+on its Code tab, and opens on its Widgets tab, which shows only its File name,
+then its Download button. A File name typed and not yet left is the one
+Download takes. A run writes the data on its input to a file, a table as CSV, a GeoDataFrame as
 GeoJSON and a raster as GeoTIFF, under the File name with its format's
 extension, and the button names that file. Download saves it; with no result
 of the node's code and widgets as they are, it first runs the node and the
@@ -28,6 +29,7 @@ from typing import TYPE_CHECKING
 from playwright.sync_api import expect
 
 from .utils import (
+    assert_shows_only_controls,
     connect_nodes,
     dataset_widget_state,
     drag_builtin_to_canvas,
@@ -95,8 +97,9 @@ def _enter(page, base: str, server: str, name: str) -> dict:
 
 
 def _widgets_panel(page, export: str):
-    """The export's Widgets tab, which it opens on: File name, then Download."""
-    return node_locator(page, export).locator("[data-widgets-panel]")
+    """The export's Widgets tab, which it opens on and which shows only its
+    controls: File name, then Download."""
+    return node_locator(page, export).locator("[data-widget-controls]")
 
 
 def _download_button(page, export: str):
@@ -110,8 +113,9 @@ def _chain(page, code: str) -> tuple[str, str]:
     set_node_code(page, source, code)
     export = drag_builtin_to_canvas(page, "#tile-data-export", at=(760, 220))
     wait_for_node_code(page, export, STARTER)
-    # It opens on its Widgets tab, where its File name and Download are.
+    # It opens on its Widgets tab, where its File name and Download are, alone.
     expect(node_locator(page, export).locator(WIDGETS_TAB)).to_have_class(re.compile(r"\bactive\b"), timeout=30000)
+    assert_shows_only_controls(page, export)
     connect_nodes(page, source, export)
     expect(_download_button(page, export)).to_be_enabled(timeout=30000)
     return source, export
@@ -149,7 +153,8 @@ def test_a_table_downloads_as_csv_under_its_file_name_running_the_nodes_before_i
     require_user_auth()
     _enter(page, app_frontend.base_url, current_server, "Data Export table")
     source, export = _chain(page, TREES_CODE)
-    _name_the_file(page, export, "trees")
+    # Typed and not left: Download takes it all the same.
+    _widgets_panel(page, export).get_by_label("File name", exact=True).fill("trees")
     # Nothing has run yet: the button names no file.
     expect(_download_button(page, export)).to_have_attribute("aria-label", "Download")
 
@@ -157,6 +162,7 @@ def test_a_table_downloads_as_csv_under_its_file_name_running_the_nodes_before_i
 
     assert name == "trees.csv"
     assert body.decode("utf-8") == TREES_CSV
+    assert dataset_widget_state(page, export, "file_name")["value"] == "trees"
     # The click ran the node and the one before it, and the button names the file.
     wait_for_node_done(page, source)
     wait_for_node_done(page, export, node_type=EXPORT_TYPE)

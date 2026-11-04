@@ -41,8 +41,8 @@ def test_a_node_is_named_as_the_canvas_names_it(case):
 
 @pytest.mark.parametrize("case", _cases())
 def test_a_saved_node_is_named_as_the_canvas_names_it(case):
-    """The same cases, with the node as a saved dataflow holds it: the renamed
-    header under ``metadata``, the template label from the project's templates
+    """The same cases, with the node as a saved dataflow holds it: its title,
+    the template label from the project's templates
     keyed by unversioned id."""
     assert case is not None, f"{CASES_FILE} is missing"
     from utk_curio.backend.app.execution import node_names
@@ -50,7 +50,7 @@ def test_a_saved_node_is_named_as_the_canvas_names_it(case):
 
     node = {"id": "n", "type": case["nodeType"]}
     if case.get("customLabel") is not None:
-        node["metadata"] = {"packageTemplateLabel": case["customLabel"]}
+        node["title"] = case["customLabel"]
     labels = {}
     if case.get("templateLabel") is not None:
         labels[canonical_template_id(case["nodeType"])] = case["templateLabel"]
@@ -58,32 +58,34 @@ def test_a_saved_node_is_named_as_the_canvas_names_it(case):
 
 
 def test_the_older_saved_shape_is_read_too():
-    """``data.packageTemplateLabel`` and ``data.nodeType``, which the schema
-    still accepts and the save-time title has always read."""
+    """``data.nodeType``, which the schema still accepts and the save-time
+    title has always read."""
     from utk_curio.backend.app.execution import node_names
 
     labels = {"curio.builtin/computation-analysis": "Python Computation"}
     assert node_names.saved_node_label(
         {"id": "n", "data": {"nodeType": "curio.builtin/computation-analysis@1"}}, labels,
     ) == "Python Computation"
-    assert node_names.saved_node_label(
-        {"id": "n", "type": "curio.builtin/computation-analysis@1",
-         "data": {"packageTemplateLabel": "My Step"}}, labels,
-    ) == "My Step"
-    # The renamed header the canvas writes today wins over the older one.
-    assert node_names.saved_node_label(
-        {"id": "n", "type": "curio.builtin/computation-analysis@1",
-         "metadata": {"packageTemplateLabel": "Renamed"},
-         "data": {"packageTemplateLabel": "My Step"}}, labels,
-    ) == "Renamed"
 
 
-def test_a_title_set_by_an_agent_does_not_rename_the_node():
-    """The canvas header never shows ``title``, so neither does the name."""
+def test_the_title_is_the_name_and_a_header_an_older_save_holds_names_nothing():
+    """``title`` is a node's one name, whoever set it. A header an older save
+    holds at ``metadata.packageTemplateLabel`` (or ``data.packageTemplateLabel``)
+    is no name: the title wins, and without one the template's label, as
+    ``savedNodeTitle`` reads it on the canvas."""
     from utk_curio.backend.app.execution import node_names
 
+    labels = {"curio.builtin/data-loading": "Data Loading"}
     node = {"id": "n", "type": "curio.builtin/data-loading@1", "title": "Load the census"}
-    assert node_names.saved_node_label(node, {"curio.builtin/data-loading": "Data Loading"}) == "Data Loading"
+    assert node_names.saved_node_label(node, labels) == "Load the census"
+    assert node_names.saved_node_title(node) == "Load the census"
+    old = {**node, "metadata": {"packageTemplateLabel": "Census tracts"}, "data": {"packageTemplateLabel": "Tracts"}}
+    assert node_names.saved_node_label(old, labels) == "Load the census"
+    assert node_names.saved_node_title(old) == "Load the census"
+    untitled = {"id": "n", "type": "curio.builtin/data-loading@1", "metadata": {"packageTemplateLabel": "Census tracts"}}
+    assert node_names.saved_node_title(untitled) == ""
+    assert node_names.saved_node_label(untitled, labels) == "Data Loading"
+    assert node_names.saved_node_title({"id": "n", "type": "curio.builtin/data-loading@1"}) == ""
 
 
 def test_the_fallback_title_has_no_version_suffix():

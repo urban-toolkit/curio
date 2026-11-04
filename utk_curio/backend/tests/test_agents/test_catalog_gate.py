@@ -1,9 +1,9 @@
 """What node code an agent writes may name, call and import: the catalog ids gate.
 
-The page of the functions Curio gives node code
-(``agents/agent.curio.builtin@1/knowledge/node-functions.md``) says which
-argument of each function names an item of a catalog, and which engines have
-the function. The grounding gate reads both from it:
+The page of the functions Curio gives node code, the body of
+``skills/node-functions/SKILL.md``, says which argument of each function
+names an item of a catalog, and which engines have the function. The
+grounding gate reads both from it:
 
 - a Data Catalog dataset or collection, a Model Catalog model and a Node code
   key are ones the account has, each written as a string in the call: a model
@@ -37,7 +37,15 @@ from utk_curio.backend.tests.test_agents import test_verified_rounds as verified
 
 REPO = Path(__file__).resolve().parents[4]
 PACKAGES = REPO / "packages"
-PAGE = REPO / "agents" / "agent.curio.builtin@1" / "knowledge" / "node-functions.md"
+#: The skill that gives the functions Curio gives node code.
+SKILL = REPO / "skills" / "node-functions"
+
+
+def _page() -> str:
+    """The functions page as written: the skill's body, after its frontmatter."""
+    from utk_curio.backend.app.agents.domain import skills
+
+    return skills.parse(SKILL).body
 
 USER = "4343"
 PROJECT = "p-gate"
@@ -46,12 +54,12 @@ DL = "curio.builtin/data-loading"
 CA = "curio.builtin/computation-analysis"
 JS = "curio.builtin/js-computation"
 VEGA = "curio.builtin/vis-vega"
-RASTER_CALCULATOR = "curio.scout/raster-calculator"
+RASTER_CALCULATOR = "curio.rasterization/raster-calculator"
 DDRNET = "model.curio.ddrnet23-slim"
 HEAT = "data.x.heat"
 CENSUS = sg.SecretRef("census", "api.census.gov", "query:key")
 
-#: A Raster Calculator's operation: Scout's raster algebra, from its package's module.
+#: A Raster Calculator's operation: Rasterization's raster algebra, from its package's module.
 RASTERS = (
     "from scout_rasters.raster_algebra import raster_calculate\n\n"
     'return raster_calculate("subtract", [input_0, input_1], output_file=curio_output_file)'
@@ -271,7 +279,7 @@ class TestThePage:
     def test_each_argument_that_names_a_catalog_item_is_read_from_the_page(self, tmp_curio, monkeypatch):
         from utk_curio.backend.app.agents.domain import node_functions
 
-        functions = node_functions.parse(PAGE.read_text(encoding="utf-8") + MORE_FUNCTIONS)
+        functions = node_functions.parse(_page() + MORE_FUNCTIONS)
         monkeypatch.setattr(node_functions, "read", lambda: functions)
         secrets = {"census": CENSUS}
         assert _gate(f't = curio_open_table("{HEAT}")\nreturn t', catalog_ids=[HEAT]) is None
@@ -317,7 +325,7 @@ class TestThePage:
             assert f'{name}("<id>")' in rule, (name, rule)
             assert _gate(f'x = {name}("{HEAT}")\nreturn x', catalog_ids=[HEAT]) is None, name
         # It follows the page.
-        functions = node_functions.parse(PAGE.read_text(encoding="utf-8") + MORE_FUNCTIONS)
+        functions = node_functions.parse(_page() + MORE_FUNCTIONS)
         monkeypatch.setattr(node_functions, "read", lambda: functions)
         rule = grounding._source_grounding_inputs(ctx)["rule"]
         assert 'curio_open_table("<id>")' in rule and 'curio_open_photos("<id>")' in rule, rule
@@ -404,7 +412,7 @@ class TestImports:
     gets none. An import of any other module, a library's, is not judged."""
 
     def test_a_module_the_nodes_template_does_not_get_is_refused(self, app, tmp_curio):
-        _add_package(USER, "curio.scout@1")
+        _add_package(USER, "curio.rasterization@1")
         refusal = _gate(RASTERS, node_type=CA)
         assert refusal and "import scout_rasters (line 1)" in refusal, refusal
         # The refusal names the nodes that import it.
@@ -418,7 +426,7 @@ class TestImports:
 
     def test_solve_refuses_the_import_before_the_sandbox(self, app, tmp_curio):
         routes_proposals.TestNodeCreate()._write_builtin_package(verified_rounds.KEY, templates=verified_rounds.TEMPLATES)
-        _add_package(verified_rounds.KEY, "curio.scout@1")
+        _add_package(verified_rounds.KEY, "curio.rasterization@1")
         node = {"id": "n1", "type": CA, "goal": "subtract the two rasters", "content": ""}
         exec_fn = verified_rounds._Exec()
         _events, outcome, inputs = verified_rounds._rounds(

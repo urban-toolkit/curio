@@ -84,7 +84,7 @@ SHADE_CODE = 'df = input_0.copy()\ndf["sunlight"] = df["sunlight"] / [!! factor 
 
 #: Mean sunlight per scenario, a bar each, colored by scenario with a legend,
 #: through the scenario chips, which are not JSON until the editor resolves
-#: them, its dataset named by its chip, as Scout's charts are written.
+#: them, its dataset named by its chip, as the Vega-Lite package's charts are written.
 CHART_SPEC = """{
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "data": {"name": "[!! inputs !!]"},

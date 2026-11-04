@@ -47,8 +47,7 @@ export interface AgentAttachment {
   /** The attachment's single review proposal, newest wins (memo dev/41);
    * null/absent when none exists. Status wiring for the review card. */
   activeProposal?: AgentProposalSummary | null;
-  /** dev/67-9: the plan proposal PARKED while per-node content reviews cycle
-   * through the active slot — still pending, still addressable. */
+  /** dev/67-9: the plan the agent landed. */
   planProposal?: AgentProposalSummary | null;
   /** The Dataflow Builder orchestration session (dev/52 DR-2) — drives the
    * phase-aware builder panel; absent for every other agent. */
