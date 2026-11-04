@@ -398,6 +398,42 @@ def test_a_layer_title_names_its_legend(app_frontend: "FrontendPage", current_se
     save_node_closeup(page, CLOSEUP_STEM, titled, test_name="titled_legend", sweep_toasts=True)
 
 
+#: The ramp's values times 2000, so the legend's last label is long, 126,000.00.
+RAMP_LARGE = RAMP.replace("= col;", "= col * 2000;")
+
+# Each legend label's box against the legend's SVG, in page pixels.
+_LEGEND_BOXES_JS = """(id) => {
+    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
+    const svg = node && node.querySelector('#autkMapLegend svg');
+    if (!svg) return null;
+    const round = (box) => [box.left, box.right].map((v) => Math.round(v * 10) / 10);
+    return {
+        svg: round(svg.getBoundingClientRect()),
+        labels: [...svg.querySelectorAll('text')].map((t) => [t.textContent, round(t.getBoundingClientRect())]),
+    };
+}"""
+
+
+def test_a_legends_end_labels_stay_inside_the_legend(app_frontend: "FrontendPage", current_server: str, page):
+    """The legend's first label starts at its color bar's start and its last
+    ends at the bar's end, so a long last label, 126,000.00, is drawn whole
+    inside the legend. Centered on the bar's end, it ran past the legend's
+    edge and lost its last digits (Lower Manhattan's "720.00" read "720.0")."""
+    ramp, large = "large-ramp", "large-map"
+    _enter(page, app_frontend, current_server, username="autark_legend_ends", spec=_flow(
+        "AutarkLegendEnds", (ramp, JS_TYPE, RAMP_LARGE),
+        {large: _ramp_layer(colorMapInterpolator="interpolateViridis")},
+    ))
+
+    _draw(page, large, "a raster of large values")
+    _legend(page, large, 2)
+    boxes = page.evaluate(_LEGEND_BOXES_JS, large)
+
+    left, right = boxes["svg"]
+    outside = [(text, box) for text, box in boxes["labels"] if box[0] < left - 0.5 or box[1] > right + 0.5]
+    assert boxes["labels"] and not outside, f"labels past the legend's edges {left} to {right}: {outside}"
+
+
 @pytest.mark.parametrize("play_run", ["prompt", "held"])
 def test_raster_cells_and_legend_labels_follow_the_scheme(
     app_frontend: "FrontendPage", current_server: str, page, play_run,
