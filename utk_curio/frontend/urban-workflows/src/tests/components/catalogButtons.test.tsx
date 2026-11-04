@@ -1,8 +1,8 @@
 /**
  * The six catalogs on the canvas bar. They used to sit under a "Data" menu,
  * in an order of their own, and the Discovery Catalog could be reached no
- * other way. Now each is one click, in the order the section tabs use on every
- * other page, and each opens its drawer over the dataflow.
+ * other way. Now each is one click, in the order the section links use in
+ * every other page's bar, and each opens its drawer over the dataflow.
  */
 import React from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
@@ -43,7 +43,7 @@ import { CatalogButtons } from '../../components/menus/top/CatalogButtons';
 
 beforeEach(() => jest.clearAllMocks());
 
-test('lists the catalogs in the section tabs\' order, by their full names', () => {
+test('lists the catalogs in the section links\' order, by their full names', () => {
   render(<CatalogButtons projectId="p1" />);
   const group = screen.getByRole('group', { name: 'Catalogs' });
   expect(within(group).getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual([

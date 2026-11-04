@@ -47,8 +47,8 @@ def signup_e2e_user(
 def wait_for_projects_page(page, *, timeout: float = 10000) -> None:
     """Wait until ``/projects`` has rendered.
 
-    The page no longer has an ``<h1>Projects</h1>`` — the section tab strip
-    (AppSectionTabs) names the page instead, so wait on that link. ``exact``
+    The page no longer has an ``<h1>Projects</h1>``: the top bar's section
+    links (AppSectionTabs) name the page instead, so wait on that link. ``exact``
     keeps this off the Curio logo link, whose accessible name is "Curio".
     """
     page.get_by_role("link", name="Projects", exact=True).wait_for(timeout=timeout)

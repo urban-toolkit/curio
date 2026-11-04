@@ -1,18 +1,23 @@
 /**
- * The top-level Projects / Node Catalog / Data Catalog tabs.
+ * The top-level sections, Projects and the seven catalogs, in the top bar of
+ * every section page.
  *
  * These replaced the old one-off header buttons (a small "Catalog" button on
- * /projects, a mirror-image "Projects" button on /catalog), so the strip is now
- * the only way to move between sections — worth pinning.
+ * /projects, a mirror-image "Projects" button on /catalog), and then left the
+ * band of tabs under the bar for the bar itself, drawn as the canvas draws its
+ * catalog buttons. They are the only way to move between sections, which is
+ * worth pinning.
  */
 import React from 'react';
 import { render } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 import AppSectionTabs from '../../components/layout/AppSectionTabs';
+import { CATALOG_SECTIONS } from '../../components/layout/catalogSections';
+import { CANVAS_CATALOGS } from '../../components/menus/top/CatalogButtons';
 
 /** identity-obj-proxy maps CSS modules to their own key names. */
-const ACTIVE = 'tabLinkActive';
+const ACTIVE = 'barButtonActive';
 
 function renderAt(path: string) {
   return render(
@@ -24,7 +29,7 @@ function renderAt(path: string) {
 
 function activeLabels(container: HTMLElement): string[] {
   return Array.from(container.querySelectorAll(`.${ACTIVE}`)).map((el) =>
-    (el.textContent || '').trim()
+    el.getAttribute('aria-label') || ''
   );
 }
 
@@ -35,7 +40,7 @@ describe('AppSectionTabs', () => {
     const nav = getByRole('navigation', { name: 'Main sections' });
     expect(
       Array.from(nav.querySelectorAll('a')).map((a) => [
-        (a.textContent || '').trim(),
+        a.getAttribute('aria-label'),
         a.getAttribute('href'),
       ])
     ).toEqual([
@@ -51,6 +56,33 @@ describe('AppSectionTabs', () => {
     ]);
   });
 
+  test('each link is a bar button with a glyph, a short name its full name contains, and the full name as its tooltip', () => {
+    const { getByRole } = renderAt('/projects');
+
+    for (const link of Array.from(getByRole('navigation', { name: 'Main sections' }).querySelectorAll('a'))) {
+      const name = link.getAttribute('aria-label')!;
+      const label = (link.textContent || '').trim();
+      expect(link).toHaveClass('barButton');
+      expect(link.querySelector('svg.barIcon')).not.toBeNull();
+      expect(link.querySelector('.sectionLabel')?.textContent).toBe(label);
+      expect(label.length).toBeGreaterThan(0);
+      expect(name.startsWith(label)).toBe(true);
+      // The name stays readable when the bar has room only for the glyphs.
+      expect(link.getAttribute('data-tooltip')).toBe(name);
+    }
+  });
+
+  test('the canvas buttons are the same catalogs, in the same order, less the Skill Catalog', () => {
+    // The canvas bar keeps its six drawer buttons; on the canvas a skill is
+    // reached through an agent's details.
+    expect(CANVAS_CATALOGS.map((c) => c.name)).toEqual(
+      CATALOG_SECTIONS.filter((c) => c.name !== 'Skill Catalog').map((c) => c.name)
+    );
+    expect(CANVAS_CATALOGS.map((c) => c.shortName)).toEqual(
+      ['Node', 'Data', 'Agent', 'Discovery', 'Model', 'Scenario']
+    );
+  });
+
   test.each([
     ['/projects', 'Projects'],
     ['/catalog/nodes', 'Node Catalog'],
@@ -63,6 +95,13 @@ describe('AppSectionTabs', () => {
   ])('%s marks exactly %s active', (path, label) => {
     const { container } = renderAt(path);
     expect(activeLabels(container)).toEqual([label]);
+    // Lit and underlined, and named the current page for assistive tech.
+    expect(
+      Array.from(container.querySelectorAll('.sectionCurrent')).map((el) => el.getAttribute('aria-label'))
+    ).toEqual([label]);
+    expect(
+      Array.from(container.querySelectorAll('[aria-current="page"]')).map((el) => el.getAttribute('aria-label'))
+    ).toEqual([label]);
   });
 
   test('/monitor marks no tab active', () => {

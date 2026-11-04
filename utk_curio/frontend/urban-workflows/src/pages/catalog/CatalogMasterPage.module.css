@@ -1,5 +1,5 @@
-/* Shell for /catalog — header + section tabs + scrollable outlet.
-   Tab styles live in components/layout/AppSectionTabs.module.css. */
+/* Shell for /catalog: the top bar, which holds the section links
+   (components/layout/AppSectionTabs.tsx), and the scrollable outlet. */
 
 /* The shell for every top-level page: /catalog/* and /projects, which used to
    restate this as an inline style object on ProjectsList. */

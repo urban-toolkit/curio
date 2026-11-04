@@ -161,7 +161,9 @@ Each provider exposes its context via a custom hook (e.g., `useFlow()`, `useProv
 ### API Settings and the Monitor
 
 `GlobalPageHeader` (`src/components/layout/`) is the top bar of every signed-in
-page: the section pages, the canvas and the dashboard. Its **Monitor** and
+page: the section pages, the canvas and the dashboard. A section page puts its
+sections in the bar's slot (`AppSectionTabs`), links that the canvas's catalog
+buttons mirror from the same list (`catalogSections.ts`). Its **Monitor** and
 **API Settings** read `useMonitorDrawerOptional()` and
 `useApiSettingsDrawerOptional()`. Where `DataflowProviders` mounts
 `MonitorDrawerProvider` and `ApiSettingsDrawerProvider` (the canvas and the
@@ -3169,6 +3171,7 @@ blocker signature, so a dataset dropped on an upstream loader is progress.
 | `src/pages/skills/` | The `/catalog/skills` browse page, `SkillCatalogBrowse.tsx`, with its cards, its drawer and `useSkillCatalogBrowse.ts`, over `services/agents/skillsApi.ts` |
 | `src/components/skills/catalog/` | A skill's details window (`SkillDetailModal.tsx`), which the page and an agent's details open, and the import with its review (`SkillImportModal.tsx`) |
 | `src/components/layout/GlobalPageHeader.tsx` | The top bar of every signed-in page; its Monitor and API Settings open a page, or a drawer on the canvas and the dashboard (see [API Settings and the Monitor](#api-settings-and-the-monitor)) |
+| `src/components/layout/catalogSections.ts`, `AppSectionTabs.tsx` | The sections, Projects and the catalogs, listed once; `AppSectionTabs` puts their links in the bar of every section page, and the canvas's `CatalogButtons` (`components/menus/top/`) makes drawer buttons of the catalogs with one, every catalog but the Skill Catalog |
 | `src/components/layout/HeaderDrawer.tsx` | The drawer shell API Settings, the Monitor and provenance open in on the canvas and the dashboard; with `pinnable`, the catalog drawers' pin |
 | `src/providers/ApiSettingsDrawerProvider.tsx`, `src/providers/MonitorDrawerProvider.tsx`, `src/providers/ProvenanceDrawerProvider.tsx` | Mount those drawers, inside `DataflowProviders` |
 | `src/components/provenance/` | The provenance drawer: `ProvenanceDrawer`, `ProvenanceHistory` (the list), `DataflowProvenance`, `NodeRunsProvenance`; layout in `src/utils/provenanceTree.ts`, versions in `src/utils/dataflowVersions.ts`, runs in `src/utils/nodeRuns.ts` |

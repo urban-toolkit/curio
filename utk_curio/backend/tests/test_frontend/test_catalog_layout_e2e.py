@@ -16,6 +16,11 @@ card in view is cut short. That last one is the price of the others: a grid of
 fixed height may squeeze its rows, and the first version of this layout did,
 down to a strip and half a title per card, while passing the other three.
 
+Then the owner saw two cards in a row again, in a window narrower than about
+1240px: the grid fitted as many 220px cards as the rail and the drawer left
+room for. So the same pages are measured again at 1150x720, where every page
+must still lay out three columns, with no card cut short.
+
 Run::
 
     CURIO_TESTING=1 pytest utk_curio/backend/tests/test_frontend/test_catalog_layout_e2e.py -v
@@ -50,14 +55,19 @@ PAGES = (
     ("/catalog/scenarios", "Scenario Catalog", "article"),
 )
 
-#: The details drawer is 320px wide; with it open, <main> ends left of this.
-DRAWER_OPEN_MAIN_RIGHT = 1280 - 300
+#: The details drawer is 300px wide; with it open, <main> ends at or left of
+#: the window's width less this.
+DRAWER_WIDTH = 300
 
-#: Below the 65px header and the 47px tabs, a header band and the grid's
-#: padding. At or above this, two rows of cards fit above the version badge.
-FIRST_CARD_MAX_TOP = 260
+#: Below the 65px bar, which holds the section links, a header band and the
+#: grid's padding. At or above this, two rows of cards fit above the version
+#: badge. It was 260 while a 48px band of tabs sat under the bar.
+FIRST_CARD_MAX_TOP = 212
 
 MIN_COLUMNS = 3
+
+#: A window narrower than the default, where 220px cards fell to two a row.
+NARROW_WIDTH = 1150
 
 _MEASURE = """([cardSelector]) => {
   const rail = document.querySelector('aside');
@@ -111,12 +121,7 @@ def _save_a_scenario(page, backend: str) -> None:
     })
 
 
-def test_every_browse_page_paints_its_rail_and_fits_three_columns(
-    app_frontend: "FrontendPage", frontend_server: str, current_server: str, page
-):
-    require_user_auth()
-    require_project_page()
-
+def _sign_up_with_a_scenario(page, frontend_server: str, current_server: str) -> None:
     # A registered account, so /projects holds the seeded examples and has a
     # rail long enough to overflow.
     signup_e2e_user(
@@ -126,9 +131,13 @@ def test_every_browse_page_paints_its_rail_and_fits_three_columns(
     wait_for_projects_page(page, timeout=30000)
     _save_a_scenario(page, current_server)
 
-    failures: list[str] = []
+
+def _measure_every_page(page, base_url: str, width: int) -> list[dict]:
+    """Each page's measures at this window width, with its drawer open."""
+    page.set_viewport_size({"width": width, "height": 720})
+    measured = []
     for path, heading, card_selector in PAGES:
-        page.goto(f"{app_frontend.base_url}{path}")
+        page.goto(f"{base_url}{path}")
         expect(page.get_by_role("heading", name=heading, level=1)).to_be_visible(
             timeout=30000
         )
@@ -140,12 +149,42 @@ def test_every_browse_page_paints_its_rail_and_fits_three_columns(
         page.wait_for_function(
             "(limit) => document.querySelector('main')"
             ".getBoundingClientRect().right <= limit",
-            arg=DRAWER_OPEN_MAIN_RIGHT,
+            arg=width - DRAWER_WIDTH,
             timeout=15000,
         )
         page.wait_for_load_state("networkidle")
 
         m = page.evaluate(_MEASURE, [card_selector])
+        print(f"{width}px {path}: {m}")
+        measured.append({"path": path, **m})
+    return measured
+
+
+def _columns_and_cards(m: dict, width: int) -> list[str]:
+    failures: list[str] = []
+    if m["columns"] < MIN_COLUMNS:
+        failures.append(
+            f"{m['path']} at {width}px: the grid lays out {m['columns']} columns "
+            f"with the drawer open, fewer than {MIN_COLUMNS}"
+        )
+    if m["clipped"]:
+        failures.append(
+            f"{m['path']} at {width}px: {len(m['clipped'])} cards in view are cut "
+            f"short (drawn < content heights: {m['clipped']})"
+        )
+    return failures
+
+
+def test_every_browse_page_paints_its_rail_and_fits_three_columns(
+    app_frontend: "FrontendPage", frontend_server: str, current_server: str, page
+):
+    require_user_auth()
+    require_project_page()
+    _sign_up_with_a_scenario(page, frontend_server, current_server)
+
+    failures: list[str] = []
+    for m in _measure_every_page(page, app_frontend.base_url, 1280):
+        path = m["path"]
         if not m["dividers"]:
             failures.append(f"{path}: the rail has no section dividers")
         collapsed = [h for h in m["dividers"] if h < 1]
@@ -154,21 +193,25 @@ def test_every_browse_page_paints_its_rail_and_fits_three_columns(
                 f"{path}: {len(collapsed)} of {len(m['dividers'])} rail dividers "
                 f"are collapsed (heights {m['dividers']})"
             )
-        if m["columns"] < MIN_COLUMNS:
-            failures.append(
-                f"{path}: the grid lays out {m['columns']} columns with the "
-                f"drawer open, fewer than {MIN_COLUMNS}"
-            )
-        if m["clipped"]:
-            failures.append(
-                f"{path}: {len(m['clipped'])} cards in view are cut short "
-                f"(drawn < content heights: {m['clipped']})"
-            )
+        failures += _columns_and_cards(m, 1280)
         if m["firstCardTop"] is None or m["firstCardTop"] > FIRST_CARD_MAX_TOP:
             failures.append(
                 f"{path}: the first card starts at y={m['firstCardTop']}, "
                 f"below y={FIRST_CARD_MAX_TOP}"
             )
-        print(f"{path}: {m}")
+
+    assert not failures, "\n".join(failures)
+
+
+def test_every_browse_page_fits_three_columns_in_a_narrower_window(
+    app_frontend: "FrontendPage", frontend_server: str, current_server: str, page
+):
+    require_user_auth()
+    require_project_page()
+    _sign_up_with_a_scenario(page, frontend_server, current_server)
+
+    failures: list[str] = []
+    for m in _measure_every_page(page, app_frontend.base_url, NARROW_WIDTH):
+        failures += _columns_and_cards(m, NARROW_WIDTH)
 
     assert not failures, "\n".join(failures)

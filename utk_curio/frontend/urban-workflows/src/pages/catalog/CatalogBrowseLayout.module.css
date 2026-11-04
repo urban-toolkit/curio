@@ -20,17 +20,20 @@
   grid-template-rows: minmax(0, 1fr);
   /* Shared browse cards (every browse page; inherited by nested cards). A card
      is as tall as its content and a row as tall as its tallest card: the old
-     268px floor left a band of blank card under every short description. */
-  --catalogBrowseCardMinWidth: 220px;
-  --catalogBrowseCardGridGap: 16px;
-  --catalogBrowseCardGridPadding: 16px;
-  --catalogBrowseCardBodyPadX: 16px;
-  --catalogBrowseCardBodyPadBottom: 8px;
+     268px floor left a band of blank card under every short description.
+     186px is the narrowest card that still fits three in a row beside the
+     rail and the drawer from a 1110px window; it was 220px, which needed
+     about 1240px. */
+  --catalogBrowseCardMinWidth: 186px;
+  --catalogBrowseCardGridGap: 12px;
+  --catalogBrowseCardGridPadding: 12px;
+  --catalogBrowseCardBodyPadX: 14px;
+  --catalogBrowseCardBodyPadBottom: 6px;
   --catalogBrowseCardDescLineHeight: 1.4;
   --catalogBrowseCardDescLines: 2;
-  --catalogBrowseCardActionsMinH: 44px;
-  --catalogBrowseCardActionsPadY: 8px;
-  --catalogBrowseCardMetaPadTop: 10px;
+  --catalogBrowseCardActionsMinH: 30px;
+  --catalogBrowseCardActionsPadY: 2px;
+  --catalogBrowseCardMetaPadTop: 6px;
   --catalogBrowseCardTagGap: 5px;
   /* Card grid scrollbar (Data + Nodes tabs) */
   --catalogBrowseCardGridScrollbarThumb: rgba(30, 31, 35, 0.22);
@@ -39,7 +42,7 @@
 }
 
 .pageWithDrawer {
-  grid-template-columns: 188px minmax(0, 1fr) 320px;
+  grid-template-columns: 188px minmax(0, 1fr) 300px;
 }
 
 .detailPage {
@@ -212,7 +215,7 @@
 /* ── Page header (white): one row, then a one-line intro ── */
 .browseHeader {
   background: var(--curio-card-bg);
-  padding: 12px 20px 10px;
+  padding: 10px 16px 8px;
   border-bottom: 1px solid var(--curio-border);
   flex-shrink: 0;
 }
@@ -253,7 +256,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-top: 6px;
+  margin-top: 4px;
 }
 
 /* Page description under the title row. Was an inline style duplicated
@@ -292,7 +295,7 @@
   flex: 0 1 240px;
   min-width: 120px;
   max-width: 300px;
-  height: 34px;
+  height: 32px;
   border: 1px solid var(--curio-border);
   border-radius: 9px;
   background: var(--curio-card-bg);
@@ -306,7 +309,7 @@
 .hubSearch:focus { outline: none; border-color: #AAAAAA; }
 
 .publishButton {
-  height: 34px;
+  height: 32px;
   border: 1px solid var(--curio-border);
   border-radius: 8px;
   background: transparent;
@@ -323,7 +326,7 @@
 .publishButton:hover { background: #f5f5f5; }
 
 .primaryHeaderButton {
-  height: 34px;
+  height: 32px;
   border: 0;
   border-radius: var(--curio-radius-lg);
   background: var(--curio-top-bar-bg);
@@ -375,23 +378,23 @@
 
 /* ── Card grid ──
    As many columns as fit, from the width the grid actually has: with the
-   details drawer open at 1280px that is three, with it closed four. It was
-   three fixed columns that fell to two below a 1300px VIEWPORT, whatever the
-   rail and the drawer left of it. */
+   details drawer open, three from a 1110px window, four from about 1300px and
+   five from about 1500px. It was three fixed columns that fell to two below a
+   1300px VIEWPORT, whatever the rail and the drawer left of it. */
 .cardGrid {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--catalogBrowseCardMinWidth, 220px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(var(--catalogBrowseCardMinWidth, 186px), 1fr));
   /* A row is as tall as its tallest card, never less. The cards clip their
      overflow, which gives them no automatic minimum height, so in a grid of
      fixed height (this one scrolls) `auto` rows would share that height out
      and crush every card to a strip and half a title. */
   grid-auto-rows: max-content;
-  gap: var(--catalogBrowseCardGridGap, 16px);
-  padding: var(--catalogBrowseCardGridPadding, 16px);
+  gap: var(--catalogBrowseCardGridGap, 12px);
+  padding: var(--catalogBrowseCardGridPadding, 12px);
   /* Pack rows to the top so a short filtered list does not stretch rows to fill the viewport */
   align-content: start;
   align-items: stretch;
@@ -473,10 +476,10 @@
 
 /* Colored top strip */
 .cardStrip {
-  min-height: 28px;
+  min-height: 24px;
   display: flex;
   align-items: center;
-  padding: 3px 12px;
+  padding: 3px 10px;
   flex-shrink: 0;
 }
 
@@ -542,11 +545,11 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  padding: 0 var(--catalogBrowseCardBodyPadX, 16px) var(--catalogBrowseCardBodyPadBottom, 8px);
+  padding: 0 var(--catalogBrowseCardBodyPadX, 14px) var(--catalogBrowseCardBodyPadBottom, 6px);
 }
 
 .cardTitle {
-  margin: 10px 0 2px;
+  margin: 8px 0 2px;
   font-size: 13px;
   font-weight: 700;
   color: var(--curio-text-primary);
@@ -560,7 +563,7 @@
 }
 
 .cardDescription {
-  margin: 8px 0 0;
+  margin: 6px 0 0;
   font-size: 13px;
   color: var(--curio-text-primary);
   line-height: var(--catalogBrowseCardDescLineHeight, 1.4);
@@ -578,8 +581,8 @@
   gap: var(--catalogBrowseCardTagGap, 5px);
   margin: 0;
   margin-top: auto;
-  padding-top: 10px;
-  min-height: 22px;
+  padding-top: 8px;
+  min-height: 16px;
   align-content: flex-end;
 }
 
@@ -601,8 +604,8 @@
   justify-content: space-between;
   gap: 6px;
   margin: 0;
-  margin-top: 4px;
-  padding: var(--catalogBrowseCardMetaPadTop, 10px) var(--catalogBrowseCardBodyPadX, 16px) 0;
+  margin-top: 2px;
+  padding: var(--catalogBrowseCardMetaPadTop, 6px) var(--catalogBrowseCardBodyPadX, 14px) 0;
   border-top: 1px solid var(--curio-page-bg);
   font-size: 10px;
   color: var(--curio-text-meta);
@@ -635,16 +638,16 @@
 .liveDotGreen { background: var(--curio-role-installed-fg); }
 .liveDotGray  { background: var(--curio-text-muted); }
 
-/* Actions row */
+/* Actions row: right under the meta row, inside the rule that row draws, so
+   the two read as one footer. */
 .cardActions {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
   margin: 0;
-  min-height: var(--catalogBrowseCardActionsMinH, 44px);
-  padding: var(--catalogBrowseCardActionsPadY, 8px) var(--catalogBrowseCardBodyPadX, 16px) 10px;
-  border-top: 1px solid var(--curio-page-bg);
+  min-height: var(--catalogBrowseCardActionsMinH, 30px);
+  padding: var(--catalogBrowseCardActionsPadY, 2px) var(--catalogBrowseCardBodyPadX, 14px) 6px;
   flex-shrink: 0;
   box-sizing: border-box;
 }
@@ -737,7 +740,7 @@
 
 /* Entire drawer panel — appears and disappears with its column, no motion. */
 .browseDrawer {
-  width: 320px;
+  width: 300px;
   height: 100%;
   background: var(--curio-card-bg);
   border-left: 1px solid var(--curio-border);
@@ -800,15 +803,23 @@
     padding: 0 4px;
 }
 
+/* The kind's glyph at the top of the drawer. Only that tall: a glyph needs no
+   more room. */
 .drawerKindHero {
   margin: 16px 20px 0;
-  height: 112px;
+  height: 72px;
   border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: #f5f6f8;
   flex-shrink: 0;
+}
+
+/* The same place holding a dataflow's thumbnail (a project, a scenario), which
+   keeps the height its graph is drawn at. */
+.drawerPreviewHero {
+  height: 112px;
 }
 
 .drawerClose {

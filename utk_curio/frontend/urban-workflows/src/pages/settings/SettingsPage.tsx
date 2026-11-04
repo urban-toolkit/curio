@@ -29,8 +29,9 @@ export const SettingsPage: React.FC = () => {
 
   return (
     <div className={shellStyles.pageShell}>
-      <GlobalPageHeader />
-      <AppSectionTabs />
+      <GlobalPageHeader>
+        <AppSectionTabs />
+      </GlobalPageHeader>
       <div className={shellStyles.scroll}>
         <main className={styles.page}>
           <h1 className={styles.title}>API Settings</h1>
