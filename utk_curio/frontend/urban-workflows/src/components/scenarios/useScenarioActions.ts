@@ -5,6 +5,7 @@ import { v4 as uuid } from "uuid";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { useToastContext } from "../../providers/ToastProvider";
 import { useCode } from "../../hook/useCode";
+import { useSharedView } from "../../hook/useSharedView";
 import { TrillGenerator } from "../../TrillGenerator";
 import { isDrawnHidden } from "../../utils/hiddenNodes";
 import type { Scenario, SharedKind } from "../../utils/scenarios/scenarioModel";
@@ -28,24 +29,31 @@ import { useScenarioUi } from "./scenarioUi";
 const DUPLICATE_GAP = 80;
 
 /**
- * The canvas's scenario commands (#662): saving a selection or the whole
- * dataflow as a scenario, Duplicate selection, Run scenario, collapse and
- * expand, and the edits of the Scenario Catalog drawer's In project tab. Every
- * change goes through the flow's `setScenarios`, so the dataflow is dirty until
- * its next save. A command that makes a scenario opens that tab, where the new
- * scenario is listed.
+ * The canvas's scenario commands (#662): Define scenario, Duplicate scenario,
+ * Run scenario, collapse and expand, and the edits of the Scenario Catalog
+ * drawer's In project tab. Every change goes through the flow's
+ * `setScenarios`, and none is made on a read-only canvas. A command that makes
+ * a scenario opens that tab, where the new scenario is listed.
  */
 export function useScenarioActions() {
   const {
     scenarios: saved,
     scenarioSets,
     nodes,
-    setScenarios,
+    setScenarios: writeScenarios,
     playNodesUpTo,
     markDirty,
     workflowNameRef,
     workflowGoal,
   } = useFlowContext();
+  // A read-only canvas changes no scenario and no set, whatever asks.
+  const readOnly = useSharedView();
+  const setScenarios = useCallback(
+    (...args: Parameters<typeof writeScenarios>) => {
+      if (!readOnly) writeScenarios(...args);
+    },
+    [readOnly, writeScenarios],
+  );
   // Every edit reads, and writes, the members still on the canvas: the list
   // keeps a deleted node until the next save.
   const scenarios = useMemo(() => liveScenarios(saved, nodes), [saved, nodes]);

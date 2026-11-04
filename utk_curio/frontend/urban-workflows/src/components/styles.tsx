@@ -883,10 +883,11 @@ export const NodeContainer = ({
                         ) : null}
 
                         {/* The node's title, its one name: any node's can be renamed
-                            on the canvas; the settings cog stays a package node's. */}
+                            on a canvas that is not read-only; the settings cog stays
+                            a package node's. */}
                         <EditableNodeHeaderLabel
                             displayLabel={headerKindLabel}
-                            editable={!dashboardOn && !suggestionActive}
+                            editable={!sizeLocked && !suggestionActive}
                             showConfig={showPackageNodeActions}
                             executed={nodeExecStatus[nodeId] === "executed"}
                             keywordHighlighted={!!data.keywordHighlighted}

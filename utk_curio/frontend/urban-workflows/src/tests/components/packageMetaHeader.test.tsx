@@ -90,9 +90,9 @@ describe("the gate lives in the pill, not in its caller", () => {
       'const hasPackageMetaHeader = packageDescriptor?.source === "package" && !!packageDescriptor.package;',
     );
     expect(src).toContain("const showPackageNodeActions = hasPackageMetaHeader && !dashboardOn;");
-    // Any node's title can be renamed on the canvas; the settings cog stays a
-    // package node's.
-    expect(src).toContain("editable={!dashboardOn && !suggestionActive}");
+    // Any node's title can be renamed on a canvas that is not read-only; the
+    // settings cog stays a package node's.
+    expect(src).toContain("editable={!sizeLocked && !suggestionActive}");
     expect(src).toContain("showConfig={showPackageNodeActions}");
   });
 });

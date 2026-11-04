@@ -116,15 +116,17 @@ export interface ScenarioLayersProps {
   /** The kind of node *id* is, as its header names it: Python, Autark… */
   typeOf?: (id: string) => string;
   statusOf: (id: string) => { text: string; tone: "done" | "error" | "stale" | "none" };
-  onExpand: (id: string) => void;
-  /** Absent on the dashboard: a frame's header then has no Collapse. */
+  /** Absent on a read-only canvas and the dashboard: a box then does not expand. */
+  onExpand?: (id: string) => void;
+  /** Absent on a read-only canvas and the dashboard: a frame's header then has no Collapse. */
   onCollapse?: (id: string) => void;
   onMoveBox: (id: string, at: { x: number; y: number }) => void;
   /** False in a read-only view: boxes stay where they are. */
   editable: boolean;
   /** The name of the scenario set *id*, over its outline. */
   setNameOf?: (id: string | undefined) => string | undefined;
-  /** Absent on the dashboard: a shared group then has nothing to collapse. */
+  /** Absent on a read-only canvas and the dashboard: a shared group then
+   *  neither collapses nor expands. */
   onSharedCollapse?: (set: string, kind: SharedKind, collapsed: boolean) => void;
   onSharedMove?: (set: string, kind: SharedKind, at: { x: number; y: number }) => void;
 }
@@ -536,14 +538,13 @@ export function ScenarioLayers({
                 className={styles.groupBox}
                 data-shared-box={group.key}
                 data-testid={`shared-box-${group.set}-${group.kind}`}
-                data-tooltip="Double-click to expand"
                 style={{ left: x, top: y, width: layout.width, height: layout.height }}
-                onDoubleClick={() => onSharedCollapse?.(group.set, group.kind, false)}
+                onDoubleClick={onSharedCollapse ? () => onSharedCollapse(group.set, group.kind, false) : undefined}
                 onPointerDown={startDrag(group.key)}
                 onPointerMove={moveDrag}
                 onPointerUp={endDrag(group.key, group, (at) => onSharedMove?.(group.set, group.kind, at))}
               >
-                <div className={styles.groupHint}>Double-click to expand</div>
+                {onSharedCollapse ? <div className={styles.groupHint}>Double-click to expand</div> : null}
                 {[...layout.rows].map(([id, top]) =>
                   card(
                     group.key,
@@ -566,7 +567,6 @@ export function ScenarioLayers({
               className={styles.box}
               data-scenario-box={box.scenario.id}
               data-testid={`scenario-box-${box.scenario.id}`}
-              data-tooltip="Double-click to expand"
               style={{
                 left: x,
                 top: y,
@@ -575,7 +575,7 @@ export function ScenarioLayers({
                 borderColor: box.scenario.color,
                 background: `linear-gradient(${box.scenario.color}1f, ${box.scenario.color}1f), var(--curio-card-bg)`,
               }}
-              onDoubleClick={() => onExpand(box.scenario.id)}
+              onDoubleClick={onExpand ? () => onExpand(box.scenario.id) : undefined}
               onPointerDown={startDrag(box.scenario.id)}
               onPointerMove={moveDrag}
               onPointerUp={endDrag(box.scenario.id, box, (at) => onMoveBox(box.scenario.id, at))}
@@ -584,7 +584,7 @@ export function ScenarioLayers({
                 <span className={styles.boxDot} style={{ background: box.scenario.color }} />
                 <span className={styles.boxName}>{box.scenario.name}</span>
               </div>
-              <div className={styles.boxHint}>Double-click to expand</div>
+              {onExpand ? <div className={styles.boxHint}>Double-click to expand</div> : null}
               {[...layout.rows].map(([id, top]) =>
                 card(box.scenario.id, id, top, statusPill(id), box.scenario.color, { "data-scenario-row": id }),
               )}
@@ -721,7 +721,6 @@ export function DashboardScenarioLayers({ frames }: { frames: ScenarioFrame[] })
       editable={false}
       labelOf={(id) => id}
       statusOf={NO_STATUS}
-      onExpand={NOTHING}
       onMoveBox={NOTHING}
     />
   );
