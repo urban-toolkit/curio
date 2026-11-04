@@ -150,6 +150,19 @@ describe("the ladder", () => {
     expect(spec.encoding.shape.type).toBe("geojson");
   });
 
+  test("a map is drawn in the projection it is given", () => {
+    // The node hands the ladder the projection the chart's draw gives its
+    // input (vegaGeoSpec's geoProjection): identity for a projected CRS.
+    const identity = { type: "identity", reflectY: true } as const;
+    const maps: Record<string, string>[] = [{ geom: "geometry", pop: "int64" }, { geom: "geometry" }];
+    for (const schema of maps) {
+      const spec = chooseDefaultSpec(classifyColumns(schema, []), identity) as any;
+
+      expect(spec.mark).toBe("geoshape");
+      expect(spec.projection).toEqual(identity);
+    }
+  });
+
   test("temporal + quantitative gives a line", () => {
     const spec = pick({ when: "datetime64[ns]", pop: "int64" });
 

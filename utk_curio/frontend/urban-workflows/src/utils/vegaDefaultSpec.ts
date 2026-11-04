@@ -19,7 +19,9 @@
  * written here is **explicit and complete**: it spells out the `shape` encoding
  * and `projection` rather than leaning on the injection. The node is a teaching
  * surface, and the user should see a spec they can read and edit, not a minimal
- * one that works by magic.
+ * one that works by magic. The projection it spells out is the one the
+ * injection would choose for the input (`geoProjection`), so a map in a
+ * projected CRS such as EPSG:3395 draws, where mercator would draw nothing.
  *
  * Classification reads the payload's `schema` (pandas dtypes) rather than
  * sniffing values. Telling a date from a string, or a zip code from a
@@ -37,14 +39,15 @@ import {
   type ClassifiedColumn,
   type ColumnRole,
 } from "./starterSpec";
+import { geoProjection, type GeoProjection } from "./vegaGeoSpec";
 
 export interface DefaultSpecRule {
   /** Stable id, asserted in tests and named in docs/USAGE.md. */
   id: string;
   /** Does this rule apply? */
   when: (cols: Record<ColumnRole, string[]>) => boolean;
-  /** The spec it produces. */
-  build: (cols: Record<ColumnRole, string[]>) => Record<string, unknown>;
+  /** The spec it produces; a map is drawn in *projection*, lon/lat's when none is given. */
+  build: (cols: Record<ColumnRole, string[]>, projection?: GeoProjection) => Record<string, unknown>;
 }
 
 // No `data` block: the node replaces the root `data` with its own rows when
@@ -63,22 +66,26 @@ const base = (rest: Record<string, unknown>) => ({
  * rule.
  *
  * The bar rules state their `aggregate` rather than relying on vega-lite's
- * implicit behaviour, which silently overplots one bar per row.
+ * implicit behaviour, which silently overplots one bar per row. The map rules
+ * write the projection they are given.
  */
 export const VEGA_STARTER_BUILDERS: Readonly<
-  Record<string, (c: Record<ColumnRole, string[]>) => Record<string, unknown>>
+  Record<
+    string,
+    (c: Record<ColumnRole, string[]>, projection: GeoProjection) => Record<string, unknown>
+  >
 > = {
-  "geometry+quantitative": (c) => ({
+  "geometry+quantitative": (c, projection) => ({
     // Written out in full rather than relying on the geoshape injection:
     // the point of a default is to show the user what a spec looks like.
-    projection: { type: "mercator" },
+    projection,
     encoding: {
       shape: { field: c.geometry[0], type: "geojson" },
       color: { field: c.quantitative[0], type: "quantitative" },
     },
   }),
-  geometry: (c) => ({
-    projection: { type: "mercator" },
+  geometry: (c, projection) => ({
+    projection,
     encoding: { shape: { field: c.geometry[0], type: "geojson" } },
   }),
   "temporal+quantitative": (c) => ({
@@ -124,12 +131,16 @@ export const DEFAULT_SPEC_RULES: DefaultSpecRule[] = visDefaults.vegaStarterLadd
   (rule): DefaultSpecRule => ({
     id: rule.id,
     when: (c) => meetsRoles(c, rule.columns),
-    build: (c) => base({ mark: rule.produces, ...VEGA_STARTER_BUILDERS[rule.id](c) }),
+    // With no input to judge, the projection the injection gives such a map.
+    build: (c, projection = geoProjection([])) =>
+      base({ mark: rule.produces, ...VEGA_STARTER_BUILDERS[rule.id](c, projection) }),
   }),
 );
 
 /**
- * The spec for these columns, or `null` when nothing is usable.
+ * The spec for these columns, or `null` when nothing is usable. A map is
+ * drawn in *projection*: the one the chart's draw gives its input
+ * (`geoProjection`), lon/lat's when none is given.
  *
  * `null` rather than a half-built spec: an editor left empty is an honest
  * "nothing to suggest", while a spec referring to columns that are not there is
@@ -137,10 +148,11 @@ export const DEFAULT_SPEC_RULES: DefaultSpecRule[] = visDefaults.vegaStarterLadd
  */
 export function chooseDefaultSpec(
   columns: ClassifiedColumn[],
+  projection?: GeoProjection,
 ): Record<string, unknown> | null {
   const grouped = groupColumns(columns);
   const rule = DEFAULT_SPEC_RULES.find((r) => r.when(grouped));
-  return rule ? rule.build(grouped) : null;
+  return rule ? rule.build(grouped, projection) : null;
 }
 
 /** The chosen spec as the JSON text the editor should hold, or null. */
@@ -148,7 +160,8 @@ export function defaultSpecText(
   schema: Record<string, string> | null | undefined,
   sampleRows: any[] | null | undefined,
   geometryName?: string | null,
+  projection?: GeoProjection,
 ): string | null {
-  const spec = chooseDefaultSpec(classifyColumns(schema, sampleRows, geometryName));
+  const spec = chooseDefaultSpec(classifyColumns(schema, sampleRows, geometryName), projection);
   return spec ? JSON.stringify(spec, null, 2) : null;
 }

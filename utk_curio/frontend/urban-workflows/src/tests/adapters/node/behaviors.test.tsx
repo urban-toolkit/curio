@@ -84,6 +84,9 @@ jest.mock('../../../utils/parsing', () => ({
   // The real geometry-name resolver: the Vega fill depends on it, and a stub
   // returning undefined would make every geo case below silently fall back.
   activeGeometryName: jest.requireActual('../../../utils/parsing').activeGeometryName,
+  // The real reader of a GeoDataFrame's rows with their geometry, as the
+  // chart's draw hands them to normalizeGeoSpec.
+  parseGeoDataframeWithGeometry: jest.requireActual('../../../utils/parsing').parseGeoDataframeWithGeometry,
   shortenString: (s: string) => s,
 }));
 
@@ -145,6 +148,8 @@ import { describeAutkRun } from '../../../adapters/node/autkRunDescriptions';
 import { __resetWebGpuSupportCache } from '../../../utils/webgpuSupport';
 import { markSelectionEcho } from '../../../utils/selectionEcho';
 import { clearPackageNodes, registerNode } from '../../../registry/nodeRegistry';
+import { parseGeoDataframeWithGeometry } from '../../../utils/parsing';
+import { normalizeGeoSpec } from '../../../utils/vegaGeoSpec';
 
 function makeMockData(overrides: Partial<NodeBehaviorData> = {}): NodeBehaviorData {
   return {
@@ -312,6 +317,78 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       const spec = JSON.parse(result.current.defaultValueOverride as string);
       expect(spec.mark).toBe('geoshape');
       expect(spec.encoding.shape).toEqual({ field: 'geometry', type: 'geojson' });
+    });
+
+    // A starter map is drawn in the projection the chart's draw would give it
+    // (utils/vegaGeoSpec): mercator for lon/lat, identity for a projected CRS,
+    // whose metres mercator draws as NaN paths, so the map would start blank.
+
+    /** Three squares of *size* in a row from *corner*, in *epsg*, as /get-preview
+     * sends a GeoDataFrame's preview. New geometry on every call, since
+     * normalizeGeoSpec rewinds lon/lat rings in place. */
+    const previewIn = (epsg: number, corner: [number, number], size: number) => ({
+      dataType: 'geodataframe',
+      data: {
+        type: 'FeatureCollection',
+        geometry_name: 'geometry',
+        crs: { type: 'name', properties: { name: `urn:ogc:def:crs:EPSG::${epsg}` } },
+        features: [0, 1, 2].map((i) => {
+          const [x, y] = [corner[0] + 2 * i * size, corner[1]];
+          return {
+            type: 'Feature',
+            properties: { zip: `6060${i}`, pop: 10 * (i + 1) },
+            geometry: {
+              type: 'Polygon',
+              coordinates: [[[x, y], [x, y + size], [x + size, y + size], [x + size, y], [x, y]]],
+            },
+          };
+        }),
+      },
+      schema: { zip: 'str', pop: 'int64', geometry: 'geometry' },
+      filename: `artifact-epsg-${epsg}`,
+      preview: true,
+    });
+
+    /** The projection the chart's draw gives a map of *preview*: its rows
+     * and CRS, read as the draw reads them, through normalizeGeoSpec. */
+    const drawnProjection = (preview: ReturnType<typeof previewIn>) => {
+      const { values, geometryName, crsName } = parseGeoDataframeWithGeometry(preview.data, true);
+      const spec: any = { mark: 'geoshape' };
+      normalizeGeoSpec(spec, values, { geometryName, crsName });
+      return spec.projection;
+    };
+
+    /** The spec the starter writes when an artifact with *preview* arrives. */
+    const starterFor = async (preview: ReturnType<typeof previewIn>) => {
+      const { fetchPreviewData } = require('../../../services/api');
+      (fetchPreviewData as jest.Mock).mockResolvedValueOnce(preview);
+      const result = await callBehavior(useVegaBehavior, {
+        input: { path: preview.filename, dataType: 'geodataframe' } as any,
+      });
+      expect(fetchPreviewData).toHaveBeenCalledWith(preview.filename);
+      await waitFor(() => expect(result.current.defaultValueOverride).toBeDefined());
+      return JSON.parse(result.current.defaultValueOverride as string);
+    };
+
+    test('a GeoDataFrame in a projected CRS starts as a map in the projection its draw gives it, not mercator', async () => {
+      // EPSG:3395 metres around the Chicago Loop.
+      const loop = () => previewIn(3395, [-9752000, 5137000], 300);
+
+      const spec = await starterFor(loop());
+
+      expect(spec.mark).toBe('geoshape');
+      expect(drawnProjection(loop())).toEqual({ type: 'identity', reflectY: true });
+      expect(spec.projection).toEqual(drawnProjection(loop()));
+    });
+
+    test('a GeoDataFrame in lon/lat keeps its mercator starter', async () => {
+      const loop = () => previewIn(4326, [-87.63, 41.88], 0.003);
+
+      const spec = await starterFor(loop());
+
+      expect(spec.mark).toBe('geoshape');
+      expect(spec.projection).toEqual({ type: 'mercator' });
+      expect(spec.projection).toEqual(drawnProjection(loop()));
     });
 
     test('an inline FeatureCollection with no geometry_name still starts as a map', async () => {

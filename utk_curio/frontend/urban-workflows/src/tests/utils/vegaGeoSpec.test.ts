@@ -13,6 +13,7 @@
  *   counter-clockwise ring renders as the complement of its own shape.
  */
 import {
+  geoProjection,
   normalizeGeoSpec,
   rewindRingsClockwise,
   specNeedsGeometry,
@@ -201,6 +202,43 @@ describe("normalizeGeoSpec injection", () => {
     normalizeGeoSpec(spec, rows(), { geometryName: "geometry" });
 
     expect(spec.encoding.shape).toEqual({ field: "geometry", type: "geojson" });
+  });
+});
+
+describe("geoProjection", () => {
+  // The Vega-Lite starter writes its maps' projection from this
+  // (utils/vegaDefaultSpec), so it is what normalizeGeoSpec writes.
+  const urn = (code: number) => `urn:ogc:def:crs:EPSG::${code}`;
+  const square = (x: number, y: number, size: number) => ({
+    type: "Polygon",
+    coordinates: [[[x, y], [x, y + size], [x + size, y + size], [x + size, y], [x, y]]],
+  });
+  const metres = () => [{ zip: "a", geometry: square(-9752000, 5137000, 300) }];
+  const IDENTITY = { type: "identity", reflectY: true };
+  const MERCATOR = { type: "mercator" };
+  const cases: Array<[string, () => any[], { geometryName?: string | null; crsName?: string | null }, object]> = [
+    ["EPSG:3395 metres", metres, { geometryName: "geometry", crsName: urn(3395) }, IDENTITY],
+    ["EPSG:4326 lon/lat", rows, { geometryName: "geometry", crsName: urn(4326) }, MERCATOR],
+    ["metres with no CRS", metres, { geometryName: "geometry" }, IDENTITY],
+    ["lon/lat with no CRS", rows, { geometryName: "geometry" }, MERCATOR],
+    ["no rows at all", () => [], {}, MERCATOR],
+  ];
+
+  test.each(cases)("%s: what normalizeGeoSpec writes for the same rows and CRS", (_name, values, opts, expected) => {
+    const spec: any = { mark: "geoshape", encoding: { shape: { field: "geometry", type: "geojson" } } };
+    normalizeGeoSpec(spec, values(), opts);
+
+    expect(geoProjection(values(), opts)).toEqual(expected);
+    expect(geoProjection(values(), opts)).toEqual(spec.projection);
+  });
+
+  test("reads the rows without rewinding or wrapping their geometry", () => {
+    const values = [{ zip: "a", geometry: geometry(CCW) }];
+    const before = JSON.stringify(values);
+
+    geoProjection(values, { geometryName: "geometry", crsName: urn(4326) });
+
+    expect(JSON.stringify(values)).toBe(before);
   });
 });
 
