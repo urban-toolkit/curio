@@ -10,7 +10,7 @@
  * reads the view and the nodes from. On a canvas no doc binds, the drags are
  * those a run's change events play (`changeDragStates`).
  */
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { useStore, useStoreApi, type ReactFlowState } from "reactflow";
 import type { Awareness } from "y-protocols/awareness";
@@ -40,13 +40,21 @@ function prefersReducedMotion(): boolean {
         && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-/** The drags others in *awareness* are playing, and those runs' change events
- *  play on a canvas no doc binds, each with its start in this tab, read from
- *  the page when it arrives. */
+/**
+ * The drags others in *awareness* are playing, and those runs' change events
+ * play on a canvas no doc binds, each with its start in this tab, read from
+ * the page when it arrives.
+ *
+ * React reads them as a store (`useSyncExternalStore`), which draws each
+ * change in the task its message arrives in, so a drag is on the page before
+ * this tab reads the room's next message. A tab busy while an agent's drag and
+ * its drop both arrive reads the two back to back: drawn in a later task, as a
+ * state update is, the drag would come after its drop and never show.
+ */
 function usePlayedDrags(awareness: Awareness | null): PlayedDrag[] {
     const store = useStoreApi();
-    const [drags, setDrags] = useState<PlayedDrag[]>(NONE);
-    useEffect(() => {
+    const played = useMemo(() => {
+        let drags: PlayedDrag[] = NONE;
         const page: StartPage = {
             document,
             nodeBox: (id) => {
@@ -56,20 +64,25 @@ function usePlayedDrags(awareness: Awareness | null): PlayedDrag[] {
                 return { x: at.x, y: at.y, width: node.width ?? 0, height: node.height ?? 0 };
             },
         };
-        const tracker = new DragTracker((carrying) => dragStart(carrying, page), prefersReducedMotion);
-        const read = () => {
-            const next = tracker.read([...othersOf(awareness), ...changeDragStates()], Date.now());
-            setDrags((prev) => (sameDrags(prev, next) ? prev : next.length ? next : NONE));
+        const subscribe = (changed: () => void) => {
+            const tracker = new DragTracker((carrying) => dragStart(carrying, page), prefersReducedMotion);
+            const read = () => {
+                const next = tracker.read([...othersOf(awareness), ...changeDragStates()], Date.now());
+                if (sameDrags(drags, next)) return;
+                drags = next.length ? next : NONE;
+                changed();
+            };
+            read();
+            awareness?.on("change", read);
+            const unsubscribe = subscribeChangeDrags(read);
+            return () => {
+                awareness?.off("change", read);
+                unsubscribe();
+            };
         };
-        read();
-        awareness?.on("change", read);
-        const unsubscribe = subscribeChangeDrags(read);
-        return () => {
-            awareness?.off("change", read);
-            unsubscribe();
-        };
+        return { subscribe, snapshot: () => drags };
     }, [awareness, store]);
-    return drags;
+    return useSyncExternalStore(played.subscribe, played.snapshot);
 }
 
 /** This tab's clock, read on every frame until the last of *drags* reaches its
