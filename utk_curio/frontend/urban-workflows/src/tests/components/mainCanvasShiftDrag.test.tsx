@@ -63,7 +63,11 @@ jest.mock("../../components/notebook/NotebookRunAll", () => ({ NotebookRunAll: (
 jest.mock("../../components/agents/attach/AgentDockOverlay", () => ({ AgentDockOverlay: () => null }));
 jest.mock("../../components/agents/attach/AgentDock", () => ({ AgentDock: () => null }));
 jest.mock("../../components/scenarios/useScenarioDrop", () => ({ useScenarioDrop: () => mockDropScenario }));
-jest.mock("../../components/scenarios/ScenarioLayers", () => ({ BOX_WIDTH: 0, boxLayout: () => ({ height: 0 }) }));
+jest.mock("../../components/scenarios/ScenarioLayers", () => ({
+  BOX_WIDTH: 0,
+  boxLayout: () => ({ height: 0 }),
+  scenarioLayersExtent: () => [],
+}));
 jest.mock("../../components/scenarios/CanvasScenarioLayers", () => ({ CanvasScenarioLayers: () => null }));
 jest.mock("../../services/datasetCatalog", () => ({
   buildDatasetLoaderNodeOptions: jest.fn(),
@@ -112,6 +116,7 @@ jest.mock("../../utils/fitViewWithMenuOffset", () => ({
   CANVAS_TITLE_ATTR: "data-curio-canvas-title",
   fitViewWithMenuOffset: jest.fn(),
   fitViewWithMenuOffsetNow: jest.fn(),
+  setDrawnBeside: jest.fn(),
   topOverlayBottom: () => null,
 }));
 
