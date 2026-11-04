@@ -9,7 +9,8 @@
  * The real FlowProvider, ProjectLoader, useCode and `useScenarioDrop` run, on
  * a dataflow opened at its address; the projects API and the Scenario
  * Catalog's routes are mocked, the routes answering as the server plans and
- * copies a drop.
+ * copies a drop. Each drop asks them with the scenarios the set's copy here
+ * holds (`present`), and every id it picks is a new one, as uuid's are.
  */
 import React from "react";
 import { act, render, waitFor } from "@testing-library/react";
@@ -31,6 +32,14 @@ const mockShowToast = jest.fn();
 const mockGetProject = jest.fn();
 const mockGetCopyPlan = jest.fn();
 const mockCopyInto = jest.fn();
+
+// A new id each time, as uuid gives them. The stub the suites share answers
+// one id always: the second drop's copies would take the first one's id,
+// which the canvas holds already, and none of them would be added.
+jest.mock("uuid", () => {
+  let calls = 0;
+  return { v4: () => `00000000-0000-4000-8000-${String(++calls).padStart(12, "0")}` };
+});
 
 jest.mock("../../api/projectsApi", () => {
   const actual = jest.requireActual("../../api/projectsApi");
@@ -291,11 +300,22 @@ describe("a shared outcome landing with the second scenario of a set", () => {
     await waitFor(() => expect(api.projectId).toBe(PROJECT_ID), { timeout: 5000 });
 
     await dragIn("s-double", "Doubled", { x: 0, y: 0 });
+    // Planned with nothing of the set here yet.
+    expect(mockGetCopyPlan).toHaveBeenLastCalledWith(expect.objectContaining({ scenarioId: "s-double" }), PROJECT_ID, []);
     // The first scenario's own node shows its saved output; the outcome waits.
     expect(copyOf("double")).toBeDefined();
     expect(copyOf("compare")).toBeUndefined();
 
     await dragIn("s-triple", "Tripled", { x: 0, y: 400 });
+    // Planned and copied with "Doubled" in the set's copy here: only its own
+    // node's saved output is copied, and "compare" reads its inputs.
+    expect(mockGetCopyPlan).toHaveBeenLastCalledWith(
+      expect.objectContaining({ scenarioId: "s-triple" }), PROJECT_ID, ["s-double"],
+    );
+    expect(mockCopyInto).toHaveBeenLastCalledWith(
+      expect.objectContaining({ scenarioId: "s-triple" }), PROJECT_ID, ["s-double"],
+      [{ source: "triple", node: copyOf("triple")!.id }],
+    );
     const compare = copyOf("compare");
     expect(compare).toBeDefined();
     const circles = api.edges
