@@ -29,7 +29,9 @@ from utk_curio.backend.app.agents.infrastructure.providers import (
     NativeToolsRefused,
     ProviderConfig,
 )
+from utk_curio.backend.tests._support import gemma4_vllm
 from utk_curio.backend.tests._support.agent_routes import READER, _auth, _write_reader
+from utk_curio.backend.tests.test_agents import test_plan_scenario_routes as scenario_routes
 from utk_curio.backend.tests.test_agents import test_routes_proposals as routes_proposals
 
 #: An agent that only chats and reads: the three read tools, no delegates.
@@ -581,3 +583,211 @@ class TestStreaming:
         )
         _stream(client, headers, project, att)
         assert [o["toolChoice"] for o in _offered()] == ["auto"] * tool_rounds.MAX_TOOL_ROUNDS + ["none"]
+
+
+#: A number widget a Python node declares, with its default and its options.
+SCALE = {"name": "scale", "type": "number", "label": "Scale", "default": 1,
+         "options": {"min": 0.5, "max": 4, "step": 0.5}}
+
+
+def _offered_schema(tool_id: str) -> dict:
+    """The params schema a run on native tools is offered for *tool_id*."""
+    (spec,) = tools.native_tools([tool_id])
+    return spec["parameters"]
+
+
+def _as_gemma4_calls(tool_id: str, arguments: dict) -> dict:
+    """A native call of *tool_id* meant as *arguments*, as a vLLM server hands
+    over the one Gemma 4 makes (``_support/gemma4_vllm``): each value the
+    offered schema does not type is its text."""
+    return _call(tool_id, gemma4_vllm.delivered(arguments, _offered_schema(tool_id)))
+
+
+def _block(tool_id: str, params: dict) -> str:
+    return "```curio.v1\n" + json.dumps({"toolRequest": {"tool": tool_id, "params": params}}) + "\n```"
+
+
+def _new_dataflow(client, headers, nodes=None) -> str:
+    """Another dataflow of the fixtures' user: the fixture's node, then *nodes*."""
+    body = {"name": "q", "spec": {"dataflow": {"nodes": [
+        {"id": "n1", "type": CA, "goal": "count the rows", "content": "return 1", "x": 0, "y": 0},
+        *(nodes or []),
+    ], "edges": [], "packages": []}}, "outputs": []}
+    resp = client.post("/api/projects", json=body, headers=headers)
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+    return resp.get_json()["id"]
+
+
+def _saved_nodes(user, project) -> dict[str, dict]:
+    from utk_curio.backend.app.projects import storage as projects_storage
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    return {n["id"]: n for n in projects_storage.read_spec(_user_dir_key(user), project)["dataflow"]["nodes"]}
+
+
+def _native_results() -> list[str]:
+    """What each tool result told the model in the last run's calls."""
+    return [m["content"] for m in _run_calls()[-1] if m.get("role") == "tool"]
+
+
+class TestTypedValuesInANativeCall:
+    """On 11-03 the owner's vLLM server ran gemma4 on native tools, and 11 of
+    its 14 dataflow.plan.write calls were refused as invalid, while the fenced
+    plans of the same case landed with their widget's default, options and
+    duplicate's value. Gemma 4 writes a number bare in its own call syntax, and
+    vLLM's parser for it keeps a bare value as its text, typing it only where
+    the offered schema says what it is (``_support/gemma4_vllm``). The plan's
+    schema typed none of a widget's values: its default and options were not
+    in it, and a duplicate's values were an open object. So the scenarios
+    case's factor of 2, its default of 1 and its options came as text, which
+    the widget's own checks refuse ("must be a number", "Enter a number."),
+    round after round.
+
+    The schema now types each value it can (a widget's options) and gives the
+    others, whose type is their widget's, as JSON text, read back as a fenced
+    block is read (``tools.native_arguments``). Each call below is the one
+    vLLM hands over for Gemma 4, and lands as its fenced block does, through
+    the same reader."""
+
+    def test_a_plan_with_a_widget_and_a_duplicates_value_lands_as_its_block_does(
+        self, client, user_and_token, headers, project,
+    ):
+        user, _ = user_and_token
+        # The plan route tests' scenarios case: a number widget with its
+        # default and options, and a duplicate that sets it to 2.
+        plan = scenario_routes._plan()
+        factor = scenario_routes.FACTOR
+        # Fenced, in a dataflow of its own.
+        testing_provider.script_chat_capabilities(tools=False)
+        fenced_project = _new_dataflow(client, headers)
+        testing_provider.push_replies(scenario_routes._reply(plan))
+        fenced = routes_proposals._landed_plan(
+            _run(client, headers, fenced_project, _attach(client, headers, fenced_project, DFB)))
+        # Native, as vLLM hands over Gemma 4's call.
+        testing_provider.script_chat_capabilities(tools=True)
+        testing_provider.push_replies(
+            {"toolCalls": [_as_gemma4_calls("dataflow.plan.write", plan)]}, "The plan is on the canvas.",
+        )
+        body = _run(client, headers, project, _attach(client, headers, project, DFB))
+        assert [p["tool"] for p in body["content"] if p["type"] == "change"] == ["dataflow.plan.write"], (
+            _native_results())
+        native = routes_proposals._landed_plan(body)
+        assert native["summary"] == fenced["summary"] == "Plan · 4 nodes, 4 edges, 2 scenarios"
+        assert native["plan"] == fenced["plan"]
+        assert native["preview"] == fenced["preview"]
+        # The dataflow holds the widget's numbers, the copy's value among them.
+        saved = [n["metadata"]["widgets"] for n in _saved_nodes(user, project).values()
+                 if (n.get("metadata") or {}).get("widgets")]
+        assert sorted(saved, key=lambda widgets: "value" in widgets[0]) == [[factor], [{**factor, "value": 2}]]
+
+    def test_a_created_nodes_widget_lands_as_its_block_does(self, client, user_and_token, headers, project):
+        user, _ = user_and_token
+        params = {"nodeType": CA, "content": "return input_0 * [!! scale !!]", "widgets": [dict(SCALE)]}
+        testing_provider.script_chat_capabilities(tools=False)
+        fenced_project = _new_dataflow(client, headers)
+        testing_provider.push_replies(_block("node.create", params), "Added it.")
+        _run(client, headers, fenced_project, _attach(client, headers, fenced_project, NB))
+        testing_provider.script_chat_capabilities(tools=True)
+        testing_provider.push_replies({"toolCalls": [_as_gemma4_calls("node.create", params)]}, "Added it.")
+        body = _run(client, headers, project, _attach(client, headers, project, NB))
+        assert [p["tool"] for p in body["content"] if p["type"] == "change"] == ["node.create"], _native_results()
+
+        def created(where):
+            (node,) = [n for n in _saved_nodes(user, where).values() if n["id"] != "n1"]
+            return node["metadata"]
+
+        assert created(project) == created(fenced_project) == {"widgets": [SCALE]}
+
+    def test_a_widget_value_set_on_the_canvas_lands_as_its_block_does(
+        self, client, user_and_token, headers, project,
+    ):
+        user, _ = user_and_token
+        scaled = {"id": "scaled", "type": CA, "goal": "scale the rows", "content": "return input_0 * [!! scale !!]",
+                  "x": 400, "y": 0, "metadata": {"widgets": [dict(SCALE)]}}
+        params = {"nodeId": "scaled", "widgets": {"scale": 3}}
+        testing_provider.script_chat_capabilities(tools=False)
+        fenced_project = _new_dataflow(client, headers, [scaled])
+        testing_provider.push_replies(_block("node.settings.write", params), "Changed it.")
+        _run(client, headers, fenced_project, _attach(client, headers, fenced_project, NB))
+        testing_provider.script_chat_capabilities(tools=True)
+        native_project = _new_dataflow(client, headers, [scaled])
+        testing_provider.push_replies({"toolCalls": [_as_gemma4_calls("node.settings.write", params)]}, "Changed it.")
+        body = _run(client, headers, native_project, _attach(client, headers, native_project, NB))
+        assert [p["tool"] for p in body["content"] if p["type"] == "change"] == ["node.settings.write"], (
+            _native_results())
+        assert (_saved_nodes(user, native_project)["scaled"]["metadata"]
+                == _saved_nodes(user, fenced_project)["scaled"]["metadata"]
+                == {"widgets": [{**SCALE, "value": 3}]})
+
+    def test_a_text_that_is_no_json_is_still_a_text_and_judged_as_one(
+        self, client, user_and_token, headers, project,
+    ):
+        """A text given as it is, with no JSON quotes, is still that text: the
+        widget's own rule judges it, as it judges a fenced block's."""
+        user, _ = user_and_token
+        season = {"name": "season", "type": "choice", "default": "summer",
+                  "options": {"choices": ["summer", "winter"]}}
+        node = {"id": "season", "type": CA, "goal": "the season", "content": "return [!! season !!]",
+                "x": 400, "y": 0, "metadata": {"widgets": [season]}}
+        native_project = _new_dataflow(client, headers, [node])
+        testing_provider.push_replies(
+            {"toolCalls": [_as_gemma4_calls("node.settings.write", {"nodeId": "season", "widgets": {"season": "spring"}})]},
+            {"toolCalls": [_as_gemma4_calls("node.settings.write", {"nodeId": "season", "widgets": {"season": "winter"}})]},
+            "Changed it.",
+        )
+        body = _run(client, headers, native_project, _attach(client, headers, native_project, NB))
+        refused = _native_results()[0]
+        assert refused.startswith("refused: ") and "Pick one of the choices." in refused, refused
+        assert [p["tool"] for p in body["content"] if p["type"] == "change"] == ["node.settings.write"]
+        assert _saved_nodes(user, native_project)["season"]["metadata"]["widgets"] == [{**season, "value": "winter"}]
+
+    def test_the_schema_types_a_widget_as_the_trill_schema_does_and_gives_its_values_as_json(self):
+        """Each value of a widget is typed where its type is fixed, as
+        ``$defs.widget`` types it, and is JSON text where its type is its
+        widget's: a default, a duplicate's values, a value set on the canvas."""
+        from pathlib import Path
+
+        trill = json.loads((Path(__file__).resolve().parents[4] / "docs" / "schemas" / "trill.v1.json")
+                           .read_text(encoding="utf-8"))["$defs"]["widget"]["properties"]
+        plan = _offered_schema("dataflow.plan.write")["properties"]
+        created = _offered_schema("node.create")["properties"]
+        for widget in (plan["nodes"]["items"]["properties"]["widgets"]["items"], created["widgets"]["items"]):
+            options = (widget["properties"].get("options") or {}).get("properties") or {}
+            assert {key: value.get("type") for key, value in options.items()} == {
+                key: value["type"] for key, value in trill["options"]["properties"].items()}
+            assert (widget["properties"].get("default") or {}).get("contentMediaType") == "application/json"
+        values = plan["scenarios"]["items"]["properties"]["values"]
+        assert values.get("additionalProperties", {}).get("additionalProperties", {}).get(
+            "contentMediaType") == "application/json"
+        settings = _offered_schema("node.settings.write")["properties"]["widgets"]
+        assert settings["type"] == "object"
+        assert settings.get("additionalProperties", {}).get("contentMediaType") == "application/json"
+
+
+class TestARefusedCallsRecord:
+    def test_the_record_keeps_the_whole_refusal_and_the_calls_arguments(
+        self, client, headers, project,
+    ):
+        """A turn's record kept only a refusal's first line, so the 11-03 runs
+        could not say why their plans were refused. A refused call's record now
+        keeps the whole refusal and the params it gave, each bounded, with URL
+        query strings cut as its reason has them; the chat's event still
+        carries only the reason."""
+        plan = {"goal": "", "nodes": [
+            {"ref": "a", "nodeType": CA, "title": "Fetch https://example.org/rows?key=sk-live-0123456789",
+             "intent": "", "content": "x" * 6000},
+        ]}
+        testing_provider.push_replies({"toolCalls": [_call("dataflow.plan.write", plan)]}, "I could not.")
+        att = _attach(client, headers, project, DFB)
+        events = _stream(client, headers, project, att)
+        (record,) = _last_turn(client, headers, project, att)["execution"]["toolCalls"]
+        assert (record["tool"], record["status"]) == ("dataflow.plan.write", "refused")
+        assert record["reason"] == agent_text.message("mint.plan-params-invalid", listed="").strip()
+        detail = record.get("detail") or ""
+        assert "- goal must not be empty" in detail and "- nodes[0].intent must not be empty" in detail, record
+        arguments = record.get("arguments") or ""
+        assert arguments.startswith('{"goal": "", "nodes": [{"ref": "a"'), record
+        assert "https://example.org/rows?…" in arguments and "sk-live-0123456789" not in arguments
+        assert len(arguments) <= 4000 and arguments.endswith("…")
+        (result,) = [data for kind, data in events if kind == "tool_result"]
+        assert set(result) == {"tool", "status", "reason"}
