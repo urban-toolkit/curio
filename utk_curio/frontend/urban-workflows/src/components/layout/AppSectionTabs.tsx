@@ -31,6 +31,10 @@ export function AppSectionTabs() {
       <NavLink to="/catalog/agents" className={tabClassName} end>
         Agent Catalog
       </NavLink>
+      {/* `end`: a skill's details are a modal, never a route of their own. */}
+      <NavLink to="/catalog/skills" className={tabClassName} end>
+        Skill Catalog
+      </NavLink>
       {/* No `end`: /catalog/discovery/:sourceDir keeps this tab active. */}
       <NavLink to="/catalog/discovery" className={tabClassName}>
         Discovery Catalog

@@ -1,9 +1,9 @@
 """Playwright E2E: a skill of the account's own, imported through its review, exported and removed.
 
-**Import skill**, on the Agent Catalog page's Skills view, takes a zip of a
-skill's folder: here the worked example of AGENT-CATALOG's "Add skills and
-agents", ``docs/examples/skills/street-trees/``, as another client might
-write it. The review shows the skill as the server read it, leniently:
+**Import skill**, in the header of the Skill Catalog, reached through its tab,
+takes a zip of a skill's folder: here the worked example of AGENT-CATALOG's
+"Add skills and agents", ``docs/examples/skills/street-trees/``, as another
+client might write it. The review shows the skill as the server read it, leniently:
 its description, what does not follow the format, its files, and the agents
 that will use it, each offered picked. Here the Researcher is unpicked, so
 only the other agents are given the skill. Imported, the skill's drawer says
@@ -21,6 +21,7 @@ Run::
 from __future__ import annotations
 
 import io
+import re
 import zipfile
 from pathlib import Path
 
@@ -75,10 +76,6 @@ def _zip() -> bytes:
     return sink.getvalue()
 
 
-def _rail_row(page, section: str, value: str):
-    return page.locator(f'[data-curio-rail-section="{section}"][data-curio-rail-value="{value}"]')
-
-
 def _skill_names(backend: str, token: str) -> list[str]:
     return [card["name"] for card in api_json(f"{backend}/api/agents/skills", token)["skills"]]
 
@@ -99,14 +96,25 @@ def test_a_skill_of_your_own_is_imported_through_its_review_exported_and_removed
     token = login["token"]
     install_session_cookie(page, frontend_server, token)
 
+    # The Skill Catalog, through its tab: the Agent Catalog page imports no skill.
     _goto_when_served(page, f"{frontend_server}/catalog/agents")
     expect(page.get_by_role("heading", name="Agent Catalog", level=1)).to_be_visible(timeout=30000)
-    all_skills = _rail_row(page, "skills", "all-skills")
+    expect(page.get_by_role("button", name="Import agent", exact=True)).to_be_visible(timeout=15000)
+    expect(page.get_by_role("button", name="Import skill")).to_have_count(0)
+    page.get_by_role("navigation", name="Main sections").get_by_role(
+        "link", name="Skill Catalog", exact=True,
+    ).click()
+    expect(page).to_have_url(re.compile(r"/catalog/skills$"), timeout=15000)
+    expect(page.get_by_role("heading", name="Skill Catalog", level=1)).to_be_visible(timeout=30000)
+    all_skills = page.get_by_role("complementary", name="Filter skills").get_by_role(
+        "button", name=re.compile(r"^All skills"),
+    )
     expect(all_skills).to_be_visible(timeout=30000)
-    all_skills.click()
+    expect(all_skills).to_have_attribute("aria-pressed", "true")
     cards = page.locator("article[data-skill-name]")
-    shipped = len(_skill_names(current_server, token))
-    expect(cards).to_have_count(shipped, timeout=20000)
+    # Every skill the account sees, Curio's and the packages', before the import.
+    listed = len(_skill_names(current_server, token))
+    expect(cards).to_have_count(listed, timeout=20000)
 
     # The review: the skill as the server read it, every agent offered picked.
     import_skill = page.get_by_role("button", name="Import skill")
@@ -147,7 +155,7 @@ def test_a_skill_of_your_own_is_imported_through_its_review_exported_and_removed
     expect(page.locator(MODAL)).to_have_count(0, timeout=15000)
 
     # Imported: in the grid, in the drawer, and with the agents the review left picked.
-    expect(cards).to_have_count(shipped + 1, timeout=20000)
+    expect(cards).to_have_count(listed + 1, timeout=20000)
     drawer = page.locator(BROWSE_DRAWER)
     expect(drawer.get_by_role("heading", name=NAME, exact=True)).to_be_visible(timeout=15000)
     expect(drawer.get_by_text("✓ In your skills", exact=True)).to_be_visible()
@@ -185,6 +193,6 @@ def test_a_skill_of_your_own_is_imported_through_its_review_exported_and_removed
     ) as removed:
         drawer.get_by_role("button", name="Remove from your skills").click()
     assert removed.value.ok, removed.value.text()[:300]
-    expect(cards).to_have_count(shipped, timeout=20000)
+    expect(cards).to_have_count(listed, timeout=20000)
     assert NAME not in _skill_names(current_server, token)
     assert NAME not in _agent_skill_names(current_server, token, FINDER)

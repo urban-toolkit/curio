@@ -1,7 +1,7 @@
 """An account's own skills: import, export, publish, unpublish and remove them, through the agents' code.
 
-A skill is an entry of the Agent Catalog as an agent is, and each action
-runs the code an agent's runs:
+A skill is an entry of the Skill Catalog as an agent is of the Agent
+Catalog, and each action runs the code an agent's runs:
 
 - a hosted guest is refused every action but the export
   (``lifecycle.refuse_hosted_guest``);
@@ -372,8 +372,14 @@ def export_skill(user_key: str | None, name: str) -> tuple[str, bytes]:
     zip of its folder, ``<name>/SKILL.md`` and its other files. A skill Curio
     ships carries its markers filled (:func:`_filled`); any other is as it is
     kept. Every member carries one date, so the same skill exports to the
-    same bytes."""
+    same bytes. A package's skill is refused: it comes and goes with its
+    package."""
     seen = skill_catalog.seen_skills(user_key)
+    if name in seen.packaged:
+        raise AgentServiceError(
+            f"the package {seen.packaged[name][0]} ships {name}, which comes and goes with the package and is "
+            "not exported", 400,
+        )
     skill = seen.find(name)
     if skill is None:
         raise AgentServiceError(f"Curio ships no skill named {name}, and you see none by that name", 404)

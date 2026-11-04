@@ -6,7 +6,7 @@ import {
   type SkillImportReview,
   type SkillUploadFile,
 } from "../../../services/agents";
-import styles from "./AgentImportModal.module.css";
+import styles from "../../agents/catalog/AgentImportModal.module.css";
 
 /** A browser lets an input pick a folder through this attribute, which React's types do not name. */
 const FOLDER_PICKER = { webkitdirectory: "", directory: "" } as Record<string, string>;

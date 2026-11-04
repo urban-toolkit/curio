@@ -1,12 +1,13 @@
-"""Agents and skills are entries of one Agent Catalog, run through one code: each scenario here runs for both.
+"""The Agent Catalog's agents and the Skill Catalog's skills run through one code: each scenario here runs for both.
 
-An agent and a skill are imported, published, unpublished and removed through
-the agents' code (``application/lifecycle.py``): the refusal of a hosted
-guest (``refuse_hosted_guest``), the operator's switch on publishing, the
-shared catalog's publisher rules (``publish_entry``, ``unpublish_entry``), and
-the copy an account keeps of an entry it added from the shared catalog. Each
-test runs its scenario for an agent, then for a skill, and names the kind
-that broke it.
+The two catalogs are two pages over one backend. An agent and a skill are
+imported, published, unpublished and removed through the agents' code
+(``application/lifecycle.py``): the refusal of a hosted guest
+(``refuse_hosted_guest``), the operator's switch on publishing, the shared
+catalog's publisher rules (``publish_entry``, ``unpublish_entry``), and the
+copy an account keeps of an entry it added from the shared catalog. Each test
+runs its scenario for an agent, then for a skill, and names the kind that
+broke it.
 """
 
 from __future__ import annotations
@@ -94,7 +95,7 @@ class _Agent:
 
 
 class _Skill:
-    """A skill of the account's own, as the Agent Catalog's routes take it."""
+    """A skill of the account's own, as the Skill Catalog's routes take it."""
 
     noun = "skill"
     entry = "shared-trees"

@@ -24,7 +24,7 @@ from utk_curio.backend.app.agents.domain import manifest as agents_manifest
 # ── upload-import (user-authored definitions, memo dev/36) ───────────────────
 @dataclass(frozen=True)
 class UploadLimits:
-    """How much one upload of an Agent Catalog entry may hold."""
+    """How much one upload of an entry of the Agent or Skill Catalog may hold."""
 
     #: The most files it holds.
     files: int

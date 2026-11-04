@@ -1,19 +1,28 @@
-"""Skills as the Agent Catalog shows them, and what an account changes of an agent's skills.
+"""Skills as the Skill Catalog shows them, and what an account changes of an agent's skills.
 
-The Agent Catalog lists skills beside agents (``routes/skills.py``). An
-account sees three kinds (:func:`seen_skills`): the skills Curio ships, those
+The Skill Catalog lists skills on a page of its own (``routes/skills.py``),
+and an agent's details in the Agent Catalog list that agent's. An
+account sees four kinds (:func:`seen_skills`): the skills Curio ships, those
 it holds of its own (``repositories/user_skills.py``: the ones it imported,
-and its copies of skills it added from the shared catalog), and the skills
+and its copies of skills it added from the shared catalog), the skills
 other accounts published to the shared catalog (``publications.SKILLS``) that
-it holds no copy of.
+it holds no copy of, and the skills of the packages it can reach
+(``packages.package_skill_folders``). A name shows once, in the order runs
+hold skills (``skill_runs.first_of_each_name``): Curio's, the account's own,
+then the first package's; a published skill of a name one of those takes is
+left out. A package's skill is read-only: it comes and goes with its
+package, every agent on a dataflow that uses the package holds it, and it is
+never removed, published, exported or added to an agent.
 
 - :func:`skills_listing`: every skill the account sees, as a card: its name,
   its description and facts (``license``, ``compatibility``, the author and
   version its ``metadata`` gives), its other files, what it serves (the kinds
-  of node whose templates name one of its ``curio-behaviors``, and its
-  ``curio-features``), whether every call holds it (``core``: the preamble
-  Curio's agents read places it), whose it is and whether it is published,
-  and the agents that use it, after the account's changes.
+  of node whose templates name one of its ``curio-behaviors``, and in a
+  package's skill the templates of its package its ``curio-templates``
+  names, and its ``curio-features``), whether every call holds it (``core``:
+  the preamble Curio's agents read places it), whose it is and whether it is
+  published, the agents that use it, after the account's changes, and for a
+  package's skill its package's id and name.
 - :func:`skill_text`: one skill's body as an agent reads it, and its files.
 - :func:`agent_skill_rows`: one agent's skills as its details list them: the
   core skills its preamble holds, those its manifest names after the
@@ -36,7 +45,7 @@ Importing, exporting, publishing and removing an account's own skills is
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from utk_curio.backend.app.agents.application import catalog
 from utk_curio.backend.app.agents.application import skill_runs
@@ -58,11 +67,13 @@ log = logging.getLogger(__name__)
 #: The keys of a skill's ``metadata`` that name its author and version.
 AUTHOR_KEY = "author"
 VERSION_KEY = "version"
-#: Whose a skill is, as its card says: Curio's, one the account imported, or
-#: one of the shared catalog's (published, or the account's copy of one).
+#: Whose a skill is, as its card says: Curio's, one the account imported,
+#: one of the shared catalog's (published, or the account's copy of one), or
+#: a package's.
 CURIO = "curio"
 YOURS = "yours"
 SHARED = "shared"
+PACKAGE = "package"
 
 
 # --- The skills an account sees ------------------------------------------------------
@@ -77,8 +88,13 @@ class Seen:
     #: The skills it holds of its own: those it imported, and its copies of
     #: the shared catalog's.
     own: dict
-    #: The shared catalog's skills it holds no copy of.
+    #: The shared catalog's skills it holds no copy of, but those of a name a
+    #: package's skill takes.
     published: dict
+    #: The skills of the packages it can reach, of names the first two do
+    #: not take, each ``(<packageId>@<major>, skill)``: listed, read-only,
+    #: and never one an agent is given (:attr:`usable`, :meth:`find`).
+    packaged: dict = field(default_factory=dict)
 
     @property
     def usable(self) -> dict:
@@ -112,16 +128,24 @@ def published_skills(taken=()) -> dict:
 
 
 def seen_skills(user_key: str | None) -> Seen:
-    """The skills the account *user_key* sees (:class:`Seen`)."""
+    """The skills the account *user_key* sees (:class:`Seen`). The packages'
+    are those the import's name rule reads (``packages.package_skill_names``,
+    from the same folders), in the order runs hold them."""
     shipped = skill_runs.shipped_skills()
     own = skill_runs.account_skills(user_key)
-    return Seen(shipped=shipped, own=own, published=published_skills((*shipped, *own)))
+    packaged = {skill.name: (dir_name, skill) for dir_name, skill in skill_runs.first_of_each_name(
+        packages_services.package_skill_folders(user_key), shipped, own.values(), quiet=True)}
+    return Seen(shipped=shipped, own=own, published=published_skills((*shipped, *own, *packaged)),
+                packaged=packaged)
 
 
 def _source(seen: Seen, name: str) -> str:
-    """Whose the skill *name* is (:data:`CURIO`, :data:`YOURS`, :data:`SHARED`)."""
+    """Whose the skill *name* is (:data:`CURIO`, :data:`YOURS`, :data:`SHARED`,
+    :data:`PACKAGE`)."""
     if name in seen.shipped:
         return CURIO
+    if name in seen.packaged:
+        return PACKAGE
     if name in seen.own and not user_skills.is_copy(seen.own[name].folder):
         return YOURS
     return SHARED
@@ -230,28 +254,33 @@ def changeable_agent(user_key: str, coord: object) -> AgentManifest:
 
 
 def _node_kinds(skill: skill_format.Skill, behaviors_by_template: dict[str, str],
-                labels: dict[str, str]) -> list[str]:
-    """The labels of the templates whose behavior *skill* serves, the base
-    package's first, each once."""
+                labels: dict[str, str], templates: frozenset[str] | set[str] = frozenset()) -> list[str]:
+    """The labels of the templates whose behavior *skill* serves, and of
+    *templates*, those of its own package a package's skill serves
+    (``skill_runs.templates_served``), the base package's first, each once."""
     served = set(str(skill.metadata.get(skill_runs.BEHAVIORS_KEY) or "").split())
     found: list[str] = []
     for template_id, label in labels.items():
-        if behaviors_by_template.get(template_id) in served and label not in found:
+        if (behaviors_by_template.get(template_id) in served or template_id in templates) and label not in found:
             found.append(label)
     return found
 
 
 def skills_listing(user_key: str) -> list[dict]:
-    """Every skill the account sees, as the Agent Catalog shows it (the
+    """Every skill the account sees, as the Skill Catalog shows it (the
     module's docstring says what each card holds): Curio's in its folder's
-    order, then the account's own, then the shared catalog's, each by name."""
+    order, then the account's own, then the shared catalog's, then the
+    packages', each by name. No agent is named as a package's skill's user:
+    every agent on a dataflow that uses the package holds it."""
     seen = seen_skills(user_key)
     core = skill_runs.placed_in(builtin.read_page(builtin.PREAMBLE_FILE, wanted_by="the skills listing"),
                                 seen.shipped)
     behaviors_by_template = packages_services.catalog_template_behaviors()
     labels = packages_services.catalog_template_labels()
-    every = {**seen.shipped, **dict(sorted(seen.own.items())), **dict(sorted(seen.published.items()))}
-    users: dict[str, list[dict]] = {name: [] for name in every}
+    packaged = dict(sorted(seen.packaged.items()))
+    every = {**seen.shipped, **dict(sorted(seen.own.items())), **dict(sorted(seen.published.items())),
+             **{name: skill for name, (_package, skill) in packaged.items()}}
+    users: dict[str, list[dict]] = {name: [] for name in every if name not in packaged}
     for m in _agents(user_key):
         held = held_by(user_key, m, seen)
         added = set(skill_runs.account_choice(user_key, m).added)
@@ -267,7 +296,8 @@ def skills_listing(user_key: str) -> list[dict]:
     cards = []
     for name, skill in every.items():
         source = _source(seen, name)
-        published = source != CURIO and publications.SKILLS.is_published(name)
+        package = packaged[name][0] if name in packaged else None
+        published = source in (YOURS, SHARED) and publications.SKILLS.is_published(name)
         published_by_you = published and publications.SKILLS.is_publisher(name, user_key)
         cards.append({
             "name": skill.name,
@@ -279,14 +309,17 @@ def skills_listing(user_key: str) -> list[dict]:
             "files": list(skill.files),
             "behaviors": str(skill.metadata.get(skill_runs.BEHAVIORS_KEY) or "").split(),
             "features": str(skill.metadata.get(skill_runs.FEATURES_KEY) or "").split(),
-            "nodeKinds": _node_kinds(skill, behaviors_by_template, labels),
+            "nodeKinds": _node_kinds(skill, behaviors_by_template, labels,
+                                     skill_runs.templates_served(skill, package)),
             "core": name in core,
             "source": source,
             "published": published,
             "publishedByYou": published_by_you,
             "publishable": source == YOURS and (not published or published_by_you),
             "removable": name in seen.own,
-            "agents": users[name],
+            "agents": users.get(name, []),
+            "package": ({"id": package, "name": packages_services.package_name(user_key, package)}
+                        if package else None),
         })
     return cards
 
@@ -294,8 +327,11 @@ def skills_listing(user_key: str) -> list[dict]:
 def skill_text(user_key: str | None, name: str) -> dict:
     """The skill *name* the account sees: its body as an agent reads it,
     its frontmatter left out (a skill Curio ships with its markers filled,
-    any other as written), and its other files."""
-    skill = seen_skills(user_key).find(name)
+    any other, a package's too, as written), and its other files."""
+    seen = seen_skills(user_key)
+    skill = seen.find(name)
+    if skill is None and name in seen.packaged:
+        skill = seen.packaged[name][1]
     if skill is None:
         raise AgentServiceError(f"Curio ships no skill named {name}, and you see none by that name", 404)
     return {"name": skill.name, "text": skill_runs.text_of(skill), "files": list(skill.files)}
@@ -311,9 +347,10 @@ def agent_skill_rows(user_key: str, coord: str, *, editable: bool = True) -> dic
     core skills its preamble holds first, then its own in its order, then
     those only its instruction names, then those only its capabilities name;
     ``addable``, the skills it does not hold, Curio's, the account's own,
-    then the shared catalog's; and ``changed``, whether the account changed
-    them, which Restore undoes. Only a skill its runs hold whatever its
-    skills are is not ``removable``."""
+    then the shared catalog's, never a package's, which it holds on a
+    dataflow that uses the package; and ``changed``, whether the account
+    changed them, which Restore undoes. Only a skill its runs hold whatever
+    its skills are is not ``removable``."""
     m = _require_agent(user_key, coord)
     seen = seen_skills(user_key)
     usable = seen.usable
@@ -359,7 +396,13 @@ def _usable_name(user_key: str, name: object, seen: Seen) -> str:
     account's own, or the shared catalog's, which is copied into the
     account's skills first (:func:`_copy_published`). The account's copy of
     one is replaced when the publication's version is newer, as a copy of a
-    published agent is when it is added again."""
+    published agent is when it is added again. A package's skill is refused:
+    an agent holds it on a dataflow that uses the package, and only there."""
+    if isinstance(name, str) and name in seen.packaged:
+        raise AgentServiceError(
+            f"the package {seen.packaged[name][0]} ships {name}, which an agent holds only on a dataflow that "
+            "uses the package", 400,
+        )
     if not isinstance(name, str) or seen.find(name) is None:
         raise AgentServiceError(f"Curio ships no skill named {name}, and you see none by that name", 404)
     if name in seen.published:

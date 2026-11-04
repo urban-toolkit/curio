@@ -2,9 +2,10 @@
 
 Filesystem-backed (``DEC-040``), deployment-shared: publishing copies an
 account's own entry into a folder beside ``.curio/users/``, where every
-account's Agent Catalog can then browse it. An agent definition goes to
-``.curio/agents-catalog/<agentId>@<major>/`` (:data:`AGENTS`), a skill to
-``.curio/skills-catalog/<name>/`` (:data:`SKILLS`). Both are one
+account's Agent Catalog or Skill Catalog can then browse it. An agent
+definition goes to ``.curio/agents-catalog/<agentId>@<major>/``
+(:data:`AGENTS`), a skill to ``.curio/skills-catalog/<name>/``
+(:data:`SKILLS`). Both are one
 :class:`SharedCatalog`: the same copy, list and removal, and the publisher
 recorded beside each entry as the node-package shared catalog under
 ``<repo_root>/packages/`` records it.

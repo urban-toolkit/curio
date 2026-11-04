@@ -2,12 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { skillServes, skillsApi, type SkillCard } from "../../services/agents";
 
-/** Which skills the rail's Skills section shows: all, or the core ones. */
+/** Which skills the rail shows: all, or the core ones. */
 export type SkillBrowseFilter = "all" | "core";
 
 export interface SkillCatalogBrowseState {
   loading: boolean;
-  /** Every skill Curio ships, unfiltered. */
+  /** Every skill the account sees, unfiltered. */
   skills: SkillCard[];
   /** The skills after the search and the rail's filter, by name. */
   filtered: SkillCard[];
@@ -16,7 +16,7 @@ export interface SkillCatalogBrowseState {
   selectedName: string | null | undefined;
   setSelectedName: (name: string | null | undefined) => void;
   selectedSkill: SkillCard | null;
-  /** Read the skills again: an agent's skills changed, so their users did. */
+  /** Read the skills again: an import or a removal changed them, or who uses them. */
   reload: () => Promise<void>;
   /** The skill an action is running on, or null. */
   busyName: string | null;
@@ -43,10 +43,8 @@ export function matchesSkillSearch(skill: SkillCard, query: string): boolean {
 }
 
 /**
- * The skills the Agent Catalog page lists beside its agents, read once on
- * arrival so the rail can count them. A feed beside the agents', never a
- * precondition: a failure leaves the Skills section empty, and the agents as
- * they are.
+ * The skills the Skill Catalog page lists, read once on arrival so the rail
+ * can count them. A failure is logged and leaves the list empty.
  */
 export function useSkillCatalogBrowse(search: string, filter: SkillBrowseFilter): SkillCatalogBrowseState {
   const [skills, setSkills] = useState<SkillCard[]>([]);
@@ -60,7 +58,7 @@ export function useSkillCatalogBrowse(search: string, filter: SkillBrowseFilter)
       const resp = await skillsApi.list();
       setSkills(resp.skills ?? []);
     } catch (err) {
-      console.warn("[agent-catalog] could not read the skills:", err);
+      console.warn("[skill-catalog] could not read the skills:", err);
       setSkills([]);
     } finally {
       setLoading(false);

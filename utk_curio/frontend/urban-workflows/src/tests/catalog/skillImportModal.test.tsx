@@ -21,7 +21,7 @@ jest.mock("../../services/agents/skillsApi", () => ({
   },
 }));
 
-import { SkillImportModal } from "../../components/agents/catalog/SkillImportModal";
+import { SkillImportModal } from "../../components/skills/catalog/SkillImportModal";
 
 const FINDER = { id: "agent.curio.dataset-finder", coord: "agent.curio.dataset-finder@1", name: "Dataset Finder" };
 const RESEARCHER = { id: "agent.curio.researcher", coord: "agent.curio.researcher@1", name: "Researcher" };

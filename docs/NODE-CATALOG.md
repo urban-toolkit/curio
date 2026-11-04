@@ -2,7 +2,7 @@
 
 The Node Catalog is where Curio's nodes live. Every node you can drop on the canvas, whether a built-in that ships with the app or an extra you install, comes from a **package**: a small, self-contained folder with a `manifest.json` describing the nodes inside it.
 
-Curio has six catalogs: the Node Catalog holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the [Model Catalog](MODEL-CATALOG.md) the models they run, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, the [Discovery Catalog](DISCOVERY-CATALOG.md) the portals, storage, services and models you take datasets and models from, and the [Scenario Catalog](SCENARIO-CATALOG.md) the scenarios saved in your projects.
+Curio has seven catalogs: the Node Catalog holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the [Model Catalog](MODEL-CATALOG.md) the models they run, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, the [Skill Catalog](SKILL-CATALOG.md) the skills those assistants read, the [Discovery Catalog](DISCOVERY-CATALOG.md) the portals, storage, services and models you take datasets and models from, and the [Scenario Catalog](SCENARIO-CATALOG.md) the scenarios saved in your projects.
 
 This guide is in six parts, plus operator notes:
 
@@ -61,7 +61,7 @@ The palette reads the open project's lockfile, so two projects open in different
 There are two places you manage node packages:
 
 - **The drawer**, inside the canvas, works on the open project only. Open it from the **Node Catalog** button in the top bar, or from the **Node Catalog** dropdown in the left Tools panel and **Browse Node Catalog +**. Its two tabs are **Browse all** and **In project**.
-- **The `/catalog/nodes` page**, reached from `/projects` and the **Node Catalog** tab, works on your whole account: a package added here goes into every project you have and every new one. It has status and category filters and a details drawer. The **Data Catalog**, **Agent Catalog**, **Discovery Catalog** and **Model Catalog** tabs beside it are the other four catalogs.
+- **The `/catalog/nodes` page**, reached from `/projects` and the **Node Catalog** tab, works on your whole account: a package added here goes into every project you have and every new one. It has status and category filters and a details drawer. The **Data Catalog**, **Agent Catalog**, **Skill Catalog**, **Discovery Catalog**, **Model Catalog** and **Scenario Catalog** tabs beside it are the other catalogs.
 
 ### Action matrix
 
@@ -247,7 +247,7 @@ A node of the package can import the Python modules those packages ship in their
 
 Agents read a template the way its manifest and its sources describe it. An agent that writes the code of a node of the template reads its whole `description`, its `source` file, the starter a new node opens with, and the functions the node's code can import: every public function of the package's modules and of the modules of the packages in `dependencies.packages`, by its signature and the first paragraph of its docstring. An agent that checks a package before adding it reads the same functions. So the description, the starter and the docstrings are what an agent knows of the template.
 
-A package can also tell the agents how to use its nodes, in **skills**: the folders of its `skills/`, one per skill, each holding a `SKILL.md` in the [Agent Skills format](https://agentskills.io/specification), with any files it reads beside it, such as `references/` ([EXTENDING §9](EXTENDING.md#9-writing-a-skill) says how to write one). Every agent on a dataflow that uses the package reads them. Its chat lists them after the skills its own manifest names, and loads one when a task matches its description. A run that writes one of the package's nodes is handed, from its first message, each skill whose `metadata` names that node's template in `curio-templates`, by the template's `id` in the package's manifest:
+A package can also tell the agents how to use its nodes, in **skills**: the folders of its `skills/`, one per skill, each holding a `SKILL.md` in the [Agent Skills format](https://agentskills.io/specification), with any files it reads beside it, such as `references/` ([EXTENDING §9](EXTENDING.md#9-writing-a-skill) says how to write one). Every agent on a dataflow that uses the package reads them, and the [Skill Catalog](SKILL-CATALOG.md#skills-from-packages) lists them with the package. Its chat lists them after the skills its own manifest names, and loads one when a task matches its description. A run that writes one of the package's nodes is handed, from its first message, each skill whose `metadata` names that node's template in `curio-templates`, by the template's `id` in the package's manifest:
 
 ```yaml
 metadata:
@@ -274,7 +274,7 @@ A package you save or import lands in your package store:
 
 | Variable | Flag | Effect |
 |---|---|---|
-| `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH` | `--allow-publish` (default), `--no-allow-publish` | Allows or forbids **Publish** and **Unpublish**. When forbidden, both are refused and their buttons are hidden. |
+| `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH` | `--allow-publish` (default), `--no-allow-publish` | Allows or forbids **Publish** and **Unpublish** of node packages, model packages among them, as it does for datasets, agents and skills. When forbidden, both are refused and their buttons are hidden. |
 | `CURIO_PACKAGES_ROOT` | `--packages-root` | Reads and publishes the shared catalog in this directory instead of `<repo_root>/packages/`. Start it from a copy of `packages/`: the built-in nodes are installed from it. |
 
 **`curio.py start` sets the publish variable on every start**, so `--no-allow-publish` is the way to turn publishing off. A `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH=0` in `.env` has no effect when you start through `curio.py`. See [USAGE.md](USAGE.md) for the launcher reference.

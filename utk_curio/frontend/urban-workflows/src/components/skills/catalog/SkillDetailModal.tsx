@@ -3,14 +3,15 @@ import React, { useEffect, useState } from "react";
 import ModalShell from "../../ModalShell";
 import { CatalogDetailHeader } from "../../catalog/CatalogDetailHeader";
 import {
-  SKILL_SOURCE_WORDS,
+  packageSkillUsers,
   skillByline,
   skillServes,
+  skillSource,
   skillsApi,
   type SkillCard,
   type SkillText,
 } from "../../../services/agents";
-import styles from "./AgentDetailModal.module.css";
+import styles from "../../agents/catalog/AgentDetailModal.module.css";
 
 export interface SkillDetailModalProps {
   skill: SkillCard;
@@ -29,7 +30,8 @@ export interface SkillDetailModalProps {
  * read when the window opens. **Export** saves the skill as a zip of its
  * folder, as an agent's details export the agent: a skill Curio ships with
  * its markers filled, so it reads as the format has it in any Agent Skills
- * tool.
+ * tool. A package's skill has no Export: it comes and goes with its package,
+ * and every agent on a dataflow that uses the package holds it.
  */
 export const SkillDetailModal: React.FC<SkillDetailModalProps> = ({ skill, onClose }) => {
   const [text, setText] = useState<SkillText | null>(null);
@@ -73,7 +75,7 @@ export const SkillDetailModal: React.FC<SkillDetailModalProps> = ({ skill, onClo
   const files = text?.files ?? skill.files;
   const rows: [string, React.ReactNode][] = [
     ["Name", skill.name],
-    ["From", SKILL_SOURCE_WORDS[skill.source ?? "curio"]],
+    ["From", skillSource(skill)],
     ["Version", skill.version ?? "Not given"],
     ["Author", skill.author ?? "Not given"],
     ["License", skill.license ?? "Not given"],
@@ -92,15 +94,17 @@ export const SkillDetailModal: React.FC<SkillDetailModalProps> = ({ skill, onClo
           </>
         }
         actions={
-          <button
-            type="button"
-            className={styles.exportButton}
-            disabled={exporting}
-            data-tooltip="Save this skill as a zip of its folder"
-            onClick={() => void onExport()}
-          >
-            {exporting ? "Exporting…" : "Export"}
-          </button>
+          skill.package ? undefined : (
+            <button
+              type="button"
+              className={styles.exportButton}
+              disabled={exporting}
+              data-tooltip="Save this skill as a zip of its folder"
+              onClick={() => void onExport()}
+            >
+              {exporting ? "Exporting…" : "Export"}
+            </button>
+          )
         }
       />
 
@@ -133,7 +137,9 @@ export const SkillDetailModal: React.FC<SkillDetailModalProps> = ({ skill, onClo
 
         <section className={styles.section}>
           <h3 className={styles.sectionLabel}>Used by</h3>
-          {skill.agents.length > 0 ? (
+          {skill.package ? (
+            <p className={styles.sectionText}>{packageSkillUsers(skill.package)}</p>
+          ) : skill.agents.length > 0 ? (
             <ul className={styles.list}>
               {skill.agents.map((agent) => (
                 <li key={agent.coord}>

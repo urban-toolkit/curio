@@ -80,6 +80,7 @@ import logging
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from xml.sax.saxutils import escape, quoteattr
 
 from utk_curio.backend.app.agents.application import askers as agents_askers
@@ -284,41 +285,53 @@ def package_skills(user_key: str | None, spec, shipped: Mapping[str, skill_forma
                    asker=None) -> tuple[tuple[str, skill_format.Skill], ...]:
     """The skills of the packages the dataflow *spec* uses, as
     ``(<packageId>@<major>, skill)``: the packages in the lockfile's order,
-    each one's skills by name (``packages.dataflow_skill_folders``), each
-    read strictly, as the skills Curio ships are. A name shows once, in this
-    order: a skill Curio ships (*shipped*), a skill of the account the agent
-    holds (*held*), then the first package's. A package's skill of a name
-    taken so is left out, and a warning names it, its package and whose
-    skill runs hold by that name. One that cannot be read is left out and
-    logged.
+    each one's skills by name (``packages.dataflow_skill_folders``), a name
+    once, after a skill Curio ships (*shipped*) and a skill of the account
+    the agent holds (*held*) (:func:`first_of_each_name`).
 
     A run for an editor the owner invited (*asker*, else the request's
     account, ``askers.editor``) of the dataflow *project_id* holds only the
     skills of the packages its owner added to it herself
     (``collaboration.owner_uses``), as the editor's runs use only her packages
     she added; the owner's runs hold every package's."""
-    held_names = {skill.name for skill in held}
     hers = None
     if user_key and project_id and agents_askers.editor(user_key, asker):
         hers = owner_uses.recorded(user_key, project_id)
+    folders = [(dir_name, folder) for dir_name, folder in packages_services.dataflow_skill_folders(user_key, spec)
+               if hers is None or hers.package(dir_name)]
+    return first_of_each_name(folders, shipped, held)
+
+
+def first_of_each_name(folders: Iterable[tuple[str, Path]], shipped: Mapping[str, skill_format.Skill],
+                       held: Iterable[skill_format.Skill] = (), *,
+                       quiet: bool = False) -> tuple[tuple[str, skill_format.Skill], ...]:
+    """The skills of the packages' *folders*, each ``(<packageId>@<major>,
+    folder)``, as ``(<packageId>@<major>, skill)``, each read strictly, as
+    the skills Curio ships are. A name shows once, in this order: a skill
+    Curio ships (*shipped*), a skill of the account's (*held*), then the
+    first package's. A package's skill of a name taken so is left out, and a
+    warning names it, its package and whose skill runs hold by that name.
+    One that cannot be read is left out and logged. *quiet* logs none of it,
+    for a reader that is no run: the Skill Catalog lists the packages'
+    skills in this order (``skill_catalog.seen_skills``)."""
+    warn = (lambda *_args: None) if quiet else log.warning
+    held_names = {skill.name for skill in held}
     found: dict[str, tuple[str, skill_format.Skill]] = {}
-    for dir_name, folder in packages_services.dataflow_skill_folders(user_key, spec):
-        if hers is not None and not hers.package(dir_name):
-            continue
+    for dir_name, folder in folders:
         try:
             skill = skill_format.parse(folder)
         except (OSError, ValueError) as exc:  # a SkillError, or a file that is not UTF-8
-            log.warning("Runs on this dataflow go without a skill of %s, which cannot be read: %s", dir_name, exc)
+            warn("Runs on this dataflow go without a skill of %s, which cannot be read: %s", dir_name, exc)
             continue
         if skill.name in shipped:
-            log.warning("The skill %s of %s is left out of runs: its name is a skill Curio ships, which they hold",
-                        skill.name, dir_name)
+            warn("The skill %s of %s is left out of runs: its name is a skill Curio ships, which they hold",
+                 skill.name, dir_name)
         elif skill.name in held_names:
-            log.warning("The skill %s of %s is left out of runs: the agent holds the account's own skill of that "
-                        "name", skill.name, dir_name)
+            warn("The skill %s of %s is left out of runs: the agent holds the account's own skill of that "
+                 "name", skill.name, dir_name)
         elif skill.name in found:
-            log.warning("The skill %s of %s is left out of runs: %s ships a skill of that name, which they hold",
-                        skill.name, dir_name, found[skill.name][0])
+            warn("The skill %s of %s is left out of runs: %s ships a skill of that name, which they hold",
+                 skill.name, dir_name, found[skill.name][0])
         else:
             found[skill.name] = (dir_name, skill)
     return tuple(found.values())
@@ -512,7 +525,7 @@ def named_in(message: str | None, listed: Iterable[str]) -> list[str]:
     each, as agentskills.io's guide has a person activate a skill: each a
     name of *listed*, the run's catalog, once, in the message's order. The
     first word that names no listed skill ends them, so a path such as
-    ``/catalog/agents`` names none."""
+    ``/catalog/skills`` names none."""
     listed = set(listed)
     names: list[str] = []
     for word in (message or "").split():

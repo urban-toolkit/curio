@@ -83,6 +83,7 @@ import CatalogMasterPage from "./pages/catalog/CatalogMasterPage";
 import NodeCatalogBrowse from "./pages/catalog/NodeCatalogBrowse";
 import DataCatalogBrowse from "./pages/dataCatalog/DataCatalogBrowse";
 import AgentCatalogBrowse from "./pages/agents/AgentCatalogBrowse";
+import SkillCatalogBrowse from "./pages/skills/SkillCatalogBrowse";
 import DiscoveryCatalogBrowse from "./pages/discovery/DiscoveryCatalogBrowse";
 import DiscoverySourceDetail from "./pages/discovery/DiscoverySourceDetail";
 import ModelCatalogBrowse from "./pages/models/ModelCatalogBrowse";
@@ -199,6 +200,9 @@ const App: React.FC = () => {
                           dataset's details over the Data Catalog. */}
                       <Route path="data/:datasetId?" element={<DataCatalogBrowse />} />
                       <Route path="agents" element={<AgentCatalogBrowse />} />
+                      {/* A skill's details are a modal over the page, so the
+                          route takes no name. */}
+                      <Route path="skills" element={<SkillCatalogBrowse />} />
                       <Route path="discovery" element={<DiscoveryCatalogBrowse />} />
                       <Route
                         path="discovery/:sourceDir"

@@ -893,7 +893,7 @@ access to PyPI and skips (rather than fails) when the index is unreachable.
 ## Cleaning up after a test
 
 `e2e_clean_db` truncates the mutable tables AND deletes `.curio/test/users/`
-plus `.curio/test/agents-catalog/` between tests, over
+plus `.curio/test/agents-catalog/` and `.curio/test/skills-catalog/` between tests, over
 `/api/testing/reset-db` when it is talking to a separately-started backend and
 on the files otherwise (#308). That matters because `user.id` is a bare sqlite
 rowid alias, so ids recycle from 1: a store left behind is handed to the next

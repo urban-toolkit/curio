@@ -122,9 +122,13 @@ describe("the account-scope CTA says what the click does", () => {
     // button through the entire terminology pass - the e2e caught it, this
     // suite did not. It now walks every agent component. Comment lines are
     // skipped so the explanation of why the word is banned may still name it.
+    // The skills' surfaces are the agents' too: their own folders since the
+    // Skill Catalog has a page of its own.
     const dirs = [
       "components/agents",
       "pages/agents",
+      "components/skills",
+      "pages/skills",
       "components/menus/nodes/agentsPalette",
     ];
     const files: string[] = [];

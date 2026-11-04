@@ -1,5 +1,5 @@
 /**
- * The skill words and the `/` command the chat and the Agent Catalog share
+ * The skill words and the `/` command the chat and the Skill Catalog share
  * (`services/agents/agentSkills.ts`).
  *
  * Every feature of a dataflow a skill Curio ships can serve has words for its
@@ -13,8 +13,10 @@ import * as path from "path";
 import {
   SKILL_FEATURE_WORDS,
   SKILL_NAME_MAX,
+  packageSkillUsers,
   skillByline,
   skillServes,
+  skillSource,
   skillsMatching,
   skillsUsedBy,
   slashQuery,
@@ -98,12 +100,29 @@ describe("what a skill serves", () => {
 });
 
 describe("whose a skill is", () => {
+  const SCOUT = { id: "curio.scout@1", name: "Scout" };
+
   it("names the author its metadata gives, else whose it is, never Curio for an account's", () => {
     expect(skillByline({ author: "parks-team", source: "yours" })).toBe("parks-team");
     expect(skillByline({ author: null, source: "yours" })).toBe("you");
     expect(skillByline({ source: "shared" })).toBe("shared catalog");
     expect(skillByline({ author: "curio", source: "curio" })).toBe("curio");
     expect(skillByline({})).toBe("curio");
+  });
+
+  it("names a package's skill by its package, whatever author it gives", () => {
+    // Scout's skill says `author: curio`; the account holds it through Scout.
+    expect(skillByline({ author: "curio", source: "package", package: SCOUT })).toBe("Scout");
+    expect(skillByline({ author: null, source: "package", package: SCOUT })).toBe("Scout");
+  });
+
+  it("says where it is from, a package's by its package, and who uses a package's", () => {
+    expect(skillSource({ source: "curio" })).toBe("Curio");
+    expect(skillSource({})).toBe("Curio");
+    expect(skillSource({ source: "yours" })).toBe("You imported it");
+    expect(skillSource({ source: "shared" })).toBe("The shared catalog");
+    expect(skillSource({ source: "package", package: SCOUT })).toBe("Scout");
+    expect(packageSkillUsers(SCOUT)).toBe("Agents on a dataflow that uses Scout");
   });
 });
 

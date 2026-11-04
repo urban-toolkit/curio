@@ -5,7 +5,7 @@
  * skill serves.
  */
 
-import type { AgentExecution, SkillSource } from "./types";
+import type { AgentExecution, SkillPackage, SkillSource } from "./types";
 
 /** How a reply's run came to hold a skill. */
 export type SkillUse = "handed" | "named" | "asked" | "kept" | "loaded";
@@ -97,16 +97,39 @@ export function skillServes(skill: { nodeKinds: string[]; features: string[] }):
   ];
 }
 
-/** Whose a skill is, in the words its drawer and details show. */
+/** Whose a skill is, in the words its drawer and details show; a package's
+ *  skill names its package instead (`skillSource`). */
 export const SKILL_SOURCE_WORDS: Record<SkillSource, string> = {
   curio: "Curio",
   yours: "You imported it",
   shared: "The shared catalog",
+  package: "A package",
 };
 
+/** Whose a skill is, as its drawer's and its details' From row says it: a
+ *  package's skill by its package's name, so the row reads "From Scout". */
+export function skillSource(skill: { source?: SkillSource; package?: SkillPackage | null }): string {
+  if (skill.source === "package" && skill.package) return skill.package.name;
+  return SKILL_SOURCE_WORDS[skill.source ?? "curio"];
+}
+
+/** Who uses a package's skill, as its drawer and details say under Used by:
+ *  every agent on a dataflow that uses the package, never one by name. */
+export function packageSkillUsers(pkg: SkillPackage): string {
+  return `Agents on a dataflow that uses ${pkg.name}`;
+}
+
 /** Who a skill's card names under its name: the author its metadata gives,
- *  else whose it is. A skill no account brought is Curio's. */
-export function skillByline(skill: { author?: string | null; source?: SkillSource }): string {
+ *  else whose it is. A skill no account brought is Curio's. A package's
+ *  skill names its package whatever author it gives, since the account
+ *  holds it through the package (Scout's says `author: curio`); its details
+ *  name the author. */
+export function skillByline(skill: {
+  author?: string | null;
+  source?: SkillSource;
+  package?: SkillPackage | null;
+}): string {
+  if (skill.source === "package" && skill.package) return skill.package.name;
   if (skill.author) return skill.author;
   if (skill.source === "yours") return "you";
   if (skill.source === "shared") return "shared catalog";

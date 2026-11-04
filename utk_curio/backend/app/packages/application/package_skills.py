@@ -1,4 +1,4 @@
-"""The skills of the packages a dataflow uses, for the agents that work on it.
+"""The skills of the packages a dataflow uses, for the agents that work on it, and of the packages an account can reach.
 
 Application layer of the packages package. A package ships skills for Curio's
 agents in its ``skills/`` folder, one folder each (``repositories/skills.py``).
@@ -7,6 +7,10 @@ A run on a dataflow holds the skills of the packages its lockfile names
 included), each read from the account's copy of the package, else from the
 package catalog's, as a run finds a node's template (``node_templates``). The
 agents feature reads them as skills (``agents/application/skill_runs.py``).
+
+The skills of every package an account can reach, its own copies and the
+package catalog's (:func:`package_skill_folders`), are what the Skill
+Catalog lists of the packages, and the names an imported skill may not take.
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ from utk_curio.backend.app.common.safe_paths import is_within
 from utk_curio.backend.app.packages.domain.package_id import PACKAGE_DIR_RE
 from utk_curio.backend.app.packages.domain.spec_packages import project_packages
 from utk_curio.backend.app.packages.repositories import catalog_dir as packages_catalog_dir
+from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 from utk_curio.backend.app.packages.repositories.skills import skill_folders
 from utk_curio.backend.app.packages.repositories.store import package_dir
 from utk_curio.backend.app.packages.application import store_reads as packages_store_reads
@@ -44,12 +49,13 @@ def dataflow_skill_folders(user_key: str | None, spec) -> list[tuple[str, Path]]
     return found
 
 
-def package_skill_names(user_key: str | None) -> dict[str, str]:
-    """The skills each package the account can reach ships, by name: the
-    package of each, ``<packageId>@<major>``. The account's own copies come
-    first, then the package catalog's, each in its folder's order; a name
-    two packages ship is the first's. Never raises: a store or a catalog
-    that cannot be read ships none, and the cause is logged."""
+def package_skill_folders(user_key: str | None) -> list[tuple[str, Path]]:
+    """``(<packageId>@<major>, folder)`` for each skill of each package the
+    account can reach: the account's own copies first, then the package
+    catalog's, each in its folder's order, each one's skills by name. A
+    package the account holds a copy of is listed twice, its copy first.
+    Never raises: a store or a catalog that cannot be read ships none, and
+    the cause is logged."""
     roots: list[tuple[str, Path]] = []
     if user_key:
         try:
@@ -65,11 +71,32 @@ def package_skill_names(user_key: str | None) -> dict[str, str]:
                       if entry.is_dir() and PACKAGE_DIR_RE.match(entry.name)]
     except Exception as exc:  # noqa: BLE001 - an unreadable catalog holds no package
         log.warning("Could not list the package catalog for its skills: %s", exc)
+    return [(dir_name, folder) for dir_name, root in roots for folder in skill_folders(root)]
+
+
+def package_skill_names(user_key: str | None) -> dict[str, str]:
+    """The skills each package the account can reach ships
+    (:func:`package_skill_folders`), by name: the package of each,
+    ``<packageId>@<major>``. A name two packages ship is the first's. Never
+    raises."""
     found: dict[str, str] = {}
-    for dir_name, root in roots:
-        for folder in skill_folders(root):
-            found.setdefault(folder.name, dir_name)
+    for dir_name, folder in package_skill_folders(user_key):
+        found.setdefault(folder.name, dir_name)
     return found
+
+
+def package_name(user_key: str | None, dir_name: str) -> str:
+    """The name the manifest of the package *dir_name* gives it, from the
+    account's copy, else the package catalog's, as a person reads it beside
+    one of its skills; *dir_name* when neither can be read. Never raises."""
+    root = _package_root(user_key, dir_name)
+    if root is None:
+        return dir_name
+    try:
+        return load_package_manifest(root).name or dir_name
+    except Exception as exc:  # noqa: BLE001 - a manifest that cannot be read names nothing
+        log.warning("Could not read the name of the package %s: %s", dir_name, exc)
+        return dir_name
 
 
 def _package_root(user_key: str | None, dir_name: str) -> Path | None:
