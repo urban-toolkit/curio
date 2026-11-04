@@ -674,6 +674,9 @@ class _PlanSteps:
             self._keep(spec)
 
         self._write(spec, on_dropped=dropped)
+        # The scenarios as the write left them, each in its set.
+        made = {s.get("id") for s in self.scenarios if isinstance(s, dict)}
+        self.scenarios = [s for s in flow.get("scenarios") or [] if isinstance(s, dict) and s.get("id") in made]
         did = [("added", "connection", str(e["id"])) for e in self.edges]
         did += [("added", "scenario", s["id"]) for s in self.scenarios if isinstance(s, dict) and s.get("id")]
         step = self._step({"nodes": [], "edges": copy.deepcopy(self.edges),
