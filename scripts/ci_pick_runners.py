@@ -12,8 +12,9 @@ when utk-gpu is busy too, where it runs as many workers as the desktop holds
 runs one job of either kind, so the desktops' room counts the jobs of both. A
 self-hosted runner's labels are its machine (arcade, utk, utk-desktop-01,
 utk-desktop-02; both desktops also carry utk-desktop) and its kind (cpu or
-gpu). The skill-evals job picks no runner: it runs on arcade-cpu-40, which
-carries ``skill-evals`` instead of ``cpu``, and holds no pool's room.
+gpu). arcade-cpu-40 also carries ``skill-evals``, the one runner of the
+skill-evals job, which picks no runner: while it runs there it holds that
+runner of the CPU pool, as any job does.
 GitHub cannot express "this runner, or that one if busy": ``runs-on`` has no
 "or", and it sends ``ubuntu-latest`` jobs only to its own runners. So a run
 picks twice: the pick-runners job, for the jobs that start at once, and
@@ -72,12 +73,8 @@ CPU_POOLS = ("arcade", "hosted", "desktop")
 #: The GPU pools a dispatch can name, and the place each one is.
 GPU_POOLS = {"arcade": "arcade-gpu", "utk": "utk", "desktop": "desktop-gpu"}
 
-#: Runners in the arcade CPU pool (arcade-cpu-01..39). arcade-cpu-40 carries
-#: EVAL_LABEL instead of cpu: it runs the skill-evals job alone.
-CPU_RUNNERS = 39
-#: The label of the runner the skill-evals job runs on (.github/workflows/skill-evals.yml).
-#: Its jobs hold no pool's room, whatever their runner's name.
-EVAL_LABEL = "skill-evals"
+#: Runners in the arcade CPU pool (arcade-cpu-01..40).
+CPU_RUNNERS = 40
 #: Runners in the arcade GPU pool (arcade-gpu-01..04, all on one H100).
 GPU_RUNNERS = 4
 #: utk-gpu, one runner.
@@ -117,8 +114,6 @@ def pool_of(job: dict) -> str | None:
     def asks(place: str) -> bool:
         return set(RUNS_ON[place]) <= labels
 
-    if EVAL_LABEL in labels:
-        return None
     if asks("desktop-gpu"):
         return "desktop-gpu"
     if runner.startswith("utk-desktop") or asks("desktop"):

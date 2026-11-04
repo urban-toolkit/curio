@@ -18,7 +18,8 @@ name: Skill evaluations
 # Saturday.
 #
 # Every model runs side by side in one job, on the one runner labelled
-# skill-evals (arcade-cpu-40, out of the CPU pool: scripts/ci_pick_runners.py).
+# skill-evals: arcade-cpu-40, one of the CPU runners, which an evaluation
+# holds as any job does (scripts/ci_pick_runners.py).
 # So runs from different pull requests queue for it, and none is cancelled,
 # while each model gets CURIO_EVAL_JOBS workers (4 when unset) and no more.
 # A newer push to the same pull request cancels its older evaluation.

@@ -116,18 +116,19 @@ def test_a_job_on_any_arcade_gpu_runner_counts_against_the_gpu_pool():
     assert picker.busy(jobs, NOW)["arcade-gpu"] == 2
 
 
-def test_a_skill_evals_job_holds_no_pool_s_room_on_its_arcade_runner():
-    # It runs for hours on arcade-cpu-40, which carries skill-evals instead of
-    # cpu, and is placed by its label before its runner's name.
-    labels = ["self-hosted", "arcade", picker.EVAL_LABEL]
+def test_a_skill_evals_job_holds_its_arcade_runner_as_any_job_does():
+    # arcade-cpu-40 carries skill-evals beside cpu. An evaluation running there
+    # holds one of the pool's runners, for hours; one still queued for it holds none.
+    labels = ["self-hosted", "arcade", "skill-evals"]
     evals = [_job("in_progress", labels, "arcade-cpu-40"), _job("queued", labels, age_s=3600)]
     counts = picker.busy(evals, NOW)
-    assert {pool: counts[pool] for pool in picker.RUNS_ON if counts[pool]} == {}
-    # With hosted full and arcade's room exactly the CPU jobs', all of them still go to arcade.
+    assert {pool: counts[pool] for pool in picker.RUNS_ON if counts[pool]} == {"arcade": 1}
+    assert counts["arcade_stuck"] is False
+    # With hosted full and arcade's room the CPU jobs' but for the evaluation's runner, one goes on.
     jobs = ([_hosted("queued", age_s=picker.HOSTED_FULL_AFTER_S + 30)]
             + [_arcade() for _ in range(picker.CPU_RUNNERS - len(CPU))] + evals)
     chosen, _ = picker.pick(CPU, GPU, "auto", "auto", lambda: jobs)
-    assert [chosen[key] for key in CPU] == ["arcade"] * len(CPU)
+    assert [chosen[key] for key in CPU] == ["arcade"] * (len(CPU) - 1) + ["desktop"]
 
 
 def test_a_queued_job_counts_against_the_pool_its_labels_ask_for():

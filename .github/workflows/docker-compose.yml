@@ -200,11 +200,12 @@ env:
 #
 #   * CPU jobs: GitHub-hosted ubuntu-latest while the organization's hosted
 #     runners have room, the self-hosted arcade runners ([self-hosted, arcade,
-#     cpu], 39 of them) for the rest, and the utk-desktop runners
+#     cpu], 40 of them) for the rest, and the utk-desktop runners
 #     (utk-desktop-01 and -02, [self-hosted, utk-desktop]) when arcade is full
 #     too.
 #   * skill-evals: arcade-cpu-40 alone ([self-hosted, arcade, skill-evals]),
-#     out of the CPU pool, so the skills' live evaluations queue there.
+#     so the skills' live evaluations queue there. It stays a CPU runner too,
+#     and an evaluation running there holds it as any job does.
 #   * test-gpu: an arcade GPU runner (arcade-gpu-01..04, [self-hosted, arcade,
 #     gpu]) while one is free, then utk-gpu ([self-hosted, utk, gpu]), and
 #     utk-desktop-01 ([self-hosted, utk-desktop-01, gpu]) when utk-gpu is
