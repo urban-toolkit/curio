@@ -1,0 +1,73 @@
+{
+  "skill_name": "dashboards",
+  "agent": "agent.curio.dataflow-builder@1",
+  "dataflow": "evals/files/green-roofs-dashboard.json",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "My dashboard won't open. It says the Loop buildings map tile loads its own data. Can you fix it so the page opens?",
+      "expected_output": "A dataflow plan that moves the map's data section (the Chicago Loop OSM load) into a node of its own upstream of the pinned Loop buildings map, such as an Autark node whose spec holds only that section, wired into the map so the tile draws that node's output; the answer says the map's spec then drops its data section, and the map stays pinned.",
+      "assertions": [
+        "The answer writes a dataflow plan that adds a node upstream of the map to load the Chicago Loop buildings the map's data section loads now, such as an Autark node (curio.builtin/autk-grammar) whose spec holds only that section.",
+        "The plan connects that new node into the Loop buildings map (loop-map) with a data edge.",
+        "The answer says the map's own spec must then drop its \"data\" section and draw the new node's output instead.",
+        "The answer neither unpins nor removes the map, and does not give unpinning it as the fix."
+      ]
+    },
+    {
+      "id": 2,
+      "agent": "agent.curio.researcher@1",
+      "prompt": "I'm sending the dashboard link to our parks team. Which of its controls can they change, and could anything they do there mess up my dataflow?",
+      "expected_output": "The parks team can move the Top zip codes node's top_n slider but cannot change its zip_prefix text widget, since viewers cannot change text, text list or file widgets; a viewer's change runs on the server with the owner's datasets and never changes the dataflow, its saved outputs or the Data Catalog, and what it makes is kept for 7 days.",
+      "assertions": [
+        "The answer says viewers can change the top_n slider (How many zip codes) of the Top zip codes node.",
+        "The answer says viewers cannot change the zip_prefix text widget (Zip code prefix).",
+        "The answer says a viewer's change never changes the saved dataflow or its saved outputs.",
+        "The answer says what a viewer's run makes is kept for 7 days."
+      ]
+    },
+    {
+      "id": 3,
+      "agent": "agent.curio.node-builder@1",
+      "prompt": "Put the roofs table on the dashboard too, next to the chart.",
+      "expected_output": "No change: the answer says only the user pins a node, and tells them to pin the Roofs table with the pin in its header.",
+      "assertions": [
+        "The answer tells the user to pin the Roofs table themselves, with the pin in the node's header.",
+        "The answer makes no change: no node.create, node.settings.write, node.content.write or dataflow plan.",
+        "The answer does not claim the table is now pinned or on the dashboard."
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Delete the zip code bar chart, we don't need it anymore.",
+      "expected_output": "A dataflow plan whose removeNodes holds roofs-chart and nothing else, and an answer that restates the removal and says the chart's tile leaves the dashboard with it.",
+      "assertions": [
+        "The answer writes a dataflow plan whose removeNodes holds roofs-chart.",
+        "The plan removes no other node.",
+        "The answer says removing the chart also takes its tile off the dashboard."
+      ]
+    }
+  ],
+  "trigger_queries": [
+    {"query": "The dashboard page refuses to open and names the Loop buildings map. What should I change?", "should_trigger": true},
+    {"query": "Which of the controls can people who only have the link actually move?", "should_trigger": true},
+    {"query": "Get rid of the zip code bar chart, the table says the same thing.", "should_trigger": true},
+    {"query": "pls put the roofs table on the public page w/ the chart", "should_trigger": true},
+    {"query": "Rewrite the Loop map's spec so it also loads the city's parks from OpenStreetMap.", "should_trigger": true},
+    {"query": "Can visitors of my shared page type in their own zip code prefix?", "should_trigger": true},
+    {"query": "My colleague moved the top N slider on the dashboard yesterday. Did that overwrite the chart I saved?", "should_trigger": true},
+    {"query": "Let the people who open the dashboard pick how many zip codes the chart shows.", "should_trigger": true},
+    {"query": "The page says its saved data is over 25 MB. How do I get it under the limit?", "should_trigger": true},
+    {"query": "Unpin the map for me, it keeps breaking the page.", "should_trigger": true},
+    {"query": "Add a Data Summary node after the loader.", "should_trigger": false},
+    {"query": "Load the Chicago neighborhoods too and join each roof to its neighborhood in the loader.", "should_trigger": false},
+    {"query": "Share this dataflow with my teammate so she can edit it with me.", "should_trigger": false},
+    {"query": "What does the sjoin in the loader do?", "should_trigger": false},
+    {"query": "Who edited the loader's code last?", "should_trigger": false},
+    {"query": "Add a node that fetches today's weather in Chicago.", "should_trigger": false},
+    {"query": "Plan a second analysis that counts roofs per community area, with its own chart.", "should_trigger": false},
+    {"query": "Export the top zip codes to a CSV I can download.", "should_trigger": false},
+    {"query": "Turn the roofs table into a bar chart of the same numbers.", "should_trigger": false},
+    {"query": "Add a dataset widget to the loader so I can drop another roofs file on it.", "should_trigger": false}
+  ]
+}

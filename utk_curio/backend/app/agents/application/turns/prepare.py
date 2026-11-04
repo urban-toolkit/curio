@@ -21,6 +21,7 @@ from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 from utk_curio.backend.app.agents.repositories import catalog_settings
 from utk_curio.backend.app.agents.repositories import project_agents
 from utk_curio.backend.app.agents.repositories import sessions
+from utk_curio.backend.app.agents.application import askers as agents_askers
 from utk_curio.backend.app.agents.application import catalog as agents_catalog
 from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
 from utk_curio.backend.app.agents.application import lifecycle as agents_lifecycle
@@ -57,19 +58,7 @@ def _prepare_run(
     (granted ids + the attachment target). A required manifest tool that
     resolves no grant refuses the run here — validation stage, before
     admission, so it consumes no quota."""
-    spec, record, coord = _resolve_run_target(user_key, project_id, attachment_id)
-    manifest = agents_catalog._resolve_definition(user_key, coord)
-    requested_tools = manifest.tools if manifest is not None else []
-    missing = tools.missing_required(requested_tools)
-    if missing:
-        raise AgentServiceError(
-            f"required tool(s) not available for this agent: {', '.join(sorted(missing))}", 422
-        )
-    instruction = record.get("intent") or agents_prompts._resolve_instruction_text(user_key, coord)
-    if instruction is None:
-        raise AgentServiceError(
-            f"no instruction prompt available for {coord!r} (not materialized)", 422
-        )
+    spec, record, coord, manifest, requested_tools, instruction = _runnable(user_key, project_id, attachment_id)
     # An edited intent replaces the instruction slot only, so the preamble,
     # the configuration and every runtime-owned slot still apply
     # (contracts.compose_system).
@@ -151,6 +140,10 @@ def _prepare_run(
         # delegatesTo resolution inside the loop.
         "coord": coord,
         "manifest": manifest,
+        # The capabilities the run is offered to delegate, which make a block
+        # of the model's a delegation to correct, as a granted tool makes one a
+        # tool request (tool_rounds._handle_tool_reply).
+        "delegable": [capability for capability, _name in entries],
         # The tool protocol (_RunConversation): the native tools offered, and
         # the fenced system turn a refusal of them falls back to.
         "native_tools": native_tools,
@@ -162,8 +155,38 @@ def _prepare_run(
         "dataflow_datasets": dataflow_datasets,
         # The run's skills: what skill.read loads from and records loading.
         "skills": run_skills,
+        # Who wrote the message, which its turn names (askers.writer).
+        "writer": agents_askers.writer(),
     }
     return coord, session_id, messages, run_policy, wants_title, pins, loop_ctx
+
+
+def check_runnable(user_key: str, project_id: str, attachment_id: str) -> None:
+    """What an ask is checked for in the request that asks, before its turn
+    waits or runs: the attachment is there (404), and its agent has every tool
+    it requires and an instruction (422). The turn checks them again when it
+    starts (:func:`_prepare_run`)."""
+    _runnable(user_key, project_id, attachment_id)
+
+
+def _runnable(user_key: str, project_id: str, attachment_id: str) -> tuple:
+    """The spec, the attachment record, its coord, its manifest, the tools it
+    asks for and its instruction, refused when the agent lacks a required
+    tool or an instruction (422)."""
+    spec, record, coord = _resolve_run_target(user_key, project_id, attachment_id)
+    manifest = agents_catalog._resolve_definition(user_key, coord)
+    requested_tools = manifest.tools if manifest is not None else []
+    missing = tools.missing_required(requested_tools)
+    if missing:
+        raise AgentServiceError(
+            f"required tool(s) not available for this agent: {', '.join(sorted(missing))}", 422
+        )
+    instruction = record.get("intent") or agents_prompts._resolve_instruction_text(user_key, coord)
+    if instruction is None:
+        raise AgentServiceError(
+            f"no instruction prompt available for {coord!r} (not materialized)", 422
+        )
+    return spec, record, coord, manifest, requested_tools, instruction
 
 
 def _previous_user_text(prior: list) -> str | None:
@@ -338,11 +361,12 @@ def _persist_exchange(
     error: bool = False,
     execution: dict | None = None,
     parts: list | None = None,
+    writer: dict | None = None,
 ) -> None:
     """Persist one exchange to the session (no-op without a session id). Error
     markers are display-only history, excluded from future context (dev/20).
     The execution record (dev/37) and content parts (dev/39) ride the agent
-    turn."""
+    turn; *writer*, who wrote the message, rides the user turn."""
     if session_id is None:
         return
     sessions.append_turns(
@@ -351,7 +375,7 @@ def _persist_exchange(
         session_id,
         attachment_id,
         [
-            sessions.make_turn("user", message),
+            sessions.make_turn("user", message, by=writer),
             sessions.make_turn("agent", reply, error=error, execution=execution, content=parts),
         ],
     )

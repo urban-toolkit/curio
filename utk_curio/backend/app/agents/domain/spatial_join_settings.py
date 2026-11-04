@@ -85,7 +85,7 @@ def template_problem(behavior: object, label: object, where: str) -> str | None:
 
 
 def describe(setting: dict | None) -> str:
-    """The setting as a review card reads it: ``operation within, output counts``."""
+    """The setting as a change card reads it: ``operation within, output counts``."""
     words = {"predicate": "operation", "output": "output"}
     return ", ".join(f"{words[key]} {setting[key]}" for key in SETTING_KEYS if key in (setting or {}))
 

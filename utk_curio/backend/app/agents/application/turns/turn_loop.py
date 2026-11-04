@@ -3,28 +3,54 @@
 ``run_attachment`` and ``stream_attachment`` (memo dev/22) used to be two
 copies of the same bounded tool loop (memos dev/41/48) — one blocking, one
 streaming with dev/39's tail withholding — that drifted by a branch here and
-an event there. :class:`AttachmentTurn` is that loop once: the streaming
-entry point yields its events, the blocking one drains the same generator
-and yields nothing, because every event is emitted through :meth:`_emit`,
-which is silent unless ``streaming`` is set. The only genuinely different
-stage, the provider round, is two methods (:meth:`_blocking_round`,
-:meth:`_streaming_round`) with one result shape.
+an event there. :class:`AttachmentTurn` is that loop once. Every turn runs as
+a job (``turn_jobs.py``) whose events reach the dataflow's room, so it always
+yields them (:meth:`_emit`). Its provider round is two methods with one result
+shape: a streamed one (:meth:`_streaming_round`), whose deltas are the reply as
+it is written, and a blocking one (:meth:`_blocking_round`) for an ask whose
+answer waits for the whole turn, whose reply arrives with its ``done``.
 
-Nothing about WHAT a turn does changed: admission before dispatch (dev/40),
-the native-tools fallback to the fenced protocol, the round cap and free
-parameter refusals (dev/105 D2), the plan and tool correction rounds
-(dev/54, #245), delegate rounds with their runtime-minted
-reviews/drafts/candidates/notes (dev/73/90/95/114), settlement and the
-persisted exchange, the title, review_required/content/done.
+What a turn does: admission before dispatch (dev/40), the native-tools
+fallback to the fenced protocol, the round cap and free parameter refusals
+(dev/105 D2), the plan and tool correction rounds (dev/54, #245), delegate
+rounds with what the runtime makes of their success: code written, drafts,
+candidates, notes (dev/73/90/95/114), each change that lands as a ``change``
+event, settlement and the persisted exchange, the title, and
+review_required/content/done.
+
+The rounds are the agent's work in the dataflow's room (:meth:`at_work`): it
+joins as they begin, with who asked and the skills its run holds, and leaves
+as they end, before the reply's settlement and its last events.
+
+A turn may be stopped (:class:`Stop`): it stops at its next step, between two
+pieces of the reply or before its next round, never in the middle of a tool's
+or a delegate's landing. What it said and landed until then stays, as a reply
+stopped by whoever stopped it.
+
+A round whose model stopped at the output cap (``ChatTurn.cut_at_output_cap``)
+ends the turn the same way: what the model wrote stays, all but a block it
+began and did not close, and nothing that round asked for runs, since a call's
+arguments and a request's block are cut too. The reply then ends with a line
+that says it was cut at the cap (``turn.cut-at-output-limit``), or that the
+model spent the cap thinking, when its server streamed thinking and no reply
+came (``turn.cut-while-thinking``), and its record says ``cutAtOutputLimit``.
+Each round offers the run policy's room for thinking (``thinking_tokens``),
+which a model seen thinking gets on top of the cap (``providers``), so the
+line names the cap the round's request carried (``ChatTurn.output_limit``).
+A round whose server refused that room was asked without it, and the record
+says ``thinkingRoomRefused``.
 """
 
 from __future__ import annotations
 
+import threading
 import time
 import uuid
+from contextlib import ExitStack
 
 from utk_curio.backend.app.agents.application.tool_rounds import ParamRefusal
 from utk_curio.backend.app.agents.application.tool_rounds import _RunConversation
+from utk_curio.backend.app.agents.domain import agent_text
 from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.infrastructure import provider_config
 from utk_curio.backend.app.agents.infrastructure.providers import ChatTurn
@@ -32,8 +58,10 @@ from utk_curio.backend.app.agents.infrastructure.providers import NativeToolsRef
 from utk_curio.backend.app.agents.infrastructure.providers import ToolCall
 from utk_curio.backend.app.agents.repositories import ledger
 from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
+from utk_curio.backend.app.agents.application import in_the_room as agents_room
 from utk_curio.backend.app.agents.application import skill_runs as agents_skill_runs
 from utk_curio.backend.app.agents.application import tool_rounds as agents_tool_rounds
+from utk_curio.backend.app.agents.application.proposals import changes as agents_changes
 from utk_curio.backend.app.agents.application.turns import delegates as agents_delegates
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.application.turns import policy as agents_policy
@@ -45,17 +73,59 @@ CONTINUE = "continue"
 BREAK = "break"
 
 
+def _before_an_open_block(text: str) -> str:
+    """*text* without a ```curio.v1 block it begins and never closes, which a
+    reply the output cap cut can end inside: such a block is half written, a
+    request or a card that cannot be read, so it is no text to show. A block
+    begins on a line of its own, as ``content.split_tail`` reads one."""
+    at = text.rfind("\n" + content.TAIL_FENCE)
+    at = at + 1 if at != -1 else (0 if text.startswith(content.TAIL_FENCE) else -1)
+    if at == -1 or "\n```" in text[at + len(content.TAIL_FENCE):]:
+        return text
+    return text[:at].rstrip()
+
+
+class Stop:
+    """Someone's ask to stop a turn, which the turn takes at its next step;
+    ``by`` names who asked, as a chat message names its writer."""
+
+    def __init__(self):
+        self._asked = threading.Event()
+        self.by: dict | None = None
+
+    def ask(self, by: dict | None) -> bool:
+        """Ask the turn to stop, as *by*. False when it was asked already,
+        whose stop stays the first one's."""
+        if self._asked.is_set():
+            return False
+        self.by = by
+        self._asked.set()
+        return True
+
+    def asked(self) -> bool:
+        return self._asked.is_set()
+
+
 class AttachmentTurn:
     """One turn: prepared and admitted on construction, run by :meth:`rounds`."""
 
     def __init__(self, user_key: str, project_id: str, attachment_id: str, message: str,
-                 config, run_context, *, streaming: bool):
+                 config, run_context, *, streaming: bool, stop: Stop | None = None):
         self.user_key = user_key
         self.project_id = project_id
         self.attachment_id = attachment_id
         self.message = message
         self.config = config
         self.streaming = streaming
+        self.stop = stop
+        # Whether the turn stopped when it was asked to (:class:`Stop`).
+        self.stopped = False
+        # Whether a round's model stopped at the output cap, which ended the turn.
+        self.cut = False
+        # Whether the server refused a round the room a model that thinks gets.
+        self.room_refused = False
+        # What the turn settled with (:meth:`settle_ok`), for an ask that waits for it.
+        self.result: dict | None = None
         (self.coord, self.session_id, messages, self.run_policy, self.wants_title,
          self.pins, self.loop_ctx) = agents_prepare._prepare_run(
             user_key, project_id, attachment_id, message, config, run_context
@@ -64,6 +134,9 @@ class AttachmentTurn:
         # grounding gate cannot read it from the session; a path the user typed
         # is the one human-trusted source of a local path.
         self.loop_ctx["message"] = message
+        # Who asked, as the agent's peer in the room names them, read here in
+        # the request: the changes the turn lands wait for anyone else.
+        self.loop_ctx["room_asker"] = agents_room.asker()
         self.execution_id = uuid.uuid4().hex
         # Atomic admission (dev/40): after validation (an invalid request never
         # consumes quota), before provider dispatch (a denied run never reaches a
@@ -82,30 +155,58 @@ class AttachmentTurn:
         self.tool_calls: list = []
         self.delegations: list = []
         self.minted: list = []
-        # dev/73: reviews minted at a FOREIGN home (the node's agent) — they
-        # never ride the parent turn's parts, but still pause at review.
-        self.homed_reviews: list = []
+        # The changes that landed, which a blocking ask's answer carries.
+        self.landed: list = []
         self.folded: list[str] = []
         self.final_parts: list = []
         self.conversation = _RunConversation(messages, self.loop_ctx)
         self.rounds_used = 0
+        # The last round corrected a plan, so the next call is the plan's next
+        # try, which a run on native tools is offered at the cap too
+        # (plan_corrected); this round is that try (plan_try); and what the
+        # plan's last refusal said (plan_errors).
+        self.plan_corrected = False
+        self.plan_try = False
+        self.plan_errors: list[str] = []
         self.refusals_used = 0  # dev/105 D2: free parameter corrections taken
         self.skill_reads = 0  # skill.read calls, free up to skill_runs.FREE_READS a turn
         self.started = time.monotonic()
 
     def _emit(self, name: str, payload):
-        if self.streaming:
-            yield (name, payload)
+        yield (name, payload)
+
+    def _stopping(self) -> bool:
+        """Whether someone asked the turn to stop."""
+        return self.stop is not None and self.stop.asked()
+
+    def at_work(self):
+        """The turn's agent at work in the dataflow's room for its rounds
+        (``in_the_room.at_work``): named after its manifest, asked by whoever
+        sent the message, holding the skills its run holds. A skill it loads
+        joins them (``tool_rounds``)."""
+        return agents_room.at_work(
+            self.user_key, self.project_id, self.attachment_id,
+            coord=self.coord, manifest=self.loop_ctx.get("manifest"), who=self.loop_ctx["room_asker"],
+            skills=agents_room.held_skills(self.loop_ctx.get("skills")),
+        )
 
     # ── the loop ────────────────────────────────────────────────────────────
 
     def rounds(self):
         """The bounded tool loop (memos dev/41/48): parse → execute granted
         read tool / mint proposal / run depth-1 delegate → re-prompt, at most
-        MAX_TOOL_ROUNDS request executions per run (one shared budget). Each
+        MAX_TOOL_ROUNDS request executions per run (one shared budget), and a
+        plan's last try at the cap, as a plan block has one (dev/54). Each
         streamed round streams its own deltas; a toolRequest tail becomes tool
-        events and a delegateRequest tail becomes delegate events, never text."""
+        events and a delegateRequest tail becomes delegate events, never text.
+        A stop ends the loop before its next round, or in a round as the
+        model writes: what the model showed stays, and nothing it asked for
+        in that round runs. A round the output cap cut ends it too
+        (:meth:`_cut`)."""
         while True:
+            if self._stopping():
+                self.stopped = True
+                break
             self.usage_sink = {}
             try:
                 result = yield from self._provider_round()
@@ -114,11 +215,25 @@ class AttachmentTurn:
                 # again, on the fenced protocol.
                 self.conversation.fall_back(refusal, self.pins)
                 continue
+            # Only a correction of a plan in this round opens the next call.
+            self.plan_try, self.plan_corrected = self.plan_corrected, False
             if self.usage_sink:
                 # dev/80: interim Actual sums, once per provider round — the
                 # client's live token counter ticks during long tool loops.
                 # Additive; old clients skip unknown events.
                 yield from self._emit("usage", {"usage": dict(self.usage_total)})
+            if result.get("turn") is not None and result["turn"].thinking_room_refused:
+                self.room_refused = True
+            if result.get("stopped") or self._stopping():
+                # What the round showed stays; what it asked for does not run.
+                self.stopped = True
+                shown = result["shown"] if result.get("stopped") else result["visible"]
+                if shown:
+                    self.folded.append(shown)
+                break
+            if result["turn"].cut_at_output_cap:
+                self._cut(result)
+                break
             parts = result["parts"]
             req = parts[0] if parts and parts[0].get("type") in ("toolRequest", "delegateRequest") else None
             native_calls = self.conversation.native_calls(result["turn"])
@@ -132,6 +247,7 @@ class AttachmentTurn:
                 req = token
             if req is None:
                 outcome = yield from self._reply_without_request(result)
+                yield from self._emit_landed()
                 if outcome == CONTINUE:
                     continue
                 if outcome == BREAK:
@@ -140,15 +256,52 @@ class AttachmentTurn:
             if result["visible"]:
                 self.folded.append(result["visible"])
             if self.rounds_used >= agents_tool_rounds.MAX_TOOL_ROUNDS:
+                if agents_tool_rounds._is_plan_request(self.loop_ctx, req):
+                    # The plan's last try, judged as a plan block is at the
+                    # cap (dev/54): it lands, or its card says why it could
+                    # not. No round follows it.
+                    yield from self._tool_round(req, result, native_calls, last_try=True)
+                    yield from self._emit_landed()
+                    break
                 # dev/73: a mutate request cut off at the cap is a visible
                 # outcome — never a silent drop under confident prose.
                 if req["type"] == "toolRequest" and req.get("tool") in agents_tool_rounds.MUTATE_PROPOSAL_TOOLS:
                     self.minted.append(agents_tool_rounds._round_cap_cutoff_card(req["tool"]))
+                self._plan_not_made()
                 break  # dangling read request at the cap: dropped, text kept
             if req["type"] == "delegateRequest":
                 yield from self._delegate_round(req, result, native_calls)
+                yield from self._emit_landed()
                 continue
             yield from self._tool_round(req, result, native_calls)
+            yield from self._emit_landed()
+
+    def _cut(self, result: dict) -> None:
+        """End the turn on a round whose model stopped at the output cap: its
+        text stays, all but a block it began and did not close, and nothing
+        it asked for runs (a call's arguments and a request's block are cut
+        too), as with a stopped round. The reply ends with a line that says
+        so, which later turns read with the rest of the reply."""
+        turn = result["turn"]
+        kept = _before_an_open_block(result["visible"])
+        if kept:
+            self.folded.append(kept)
+        # The cap the request carried: with the room a model that thinks gets.
+        limit = f"{turn.output_limit or self.run_policy['max_output_tokens']:,}"
+        if turn.thinking and not kept:
+            self.folded.append(agent_text.message("turn.cut-while-thinking", limit=limit))
+        else:
+            self.folded.append(agent_text.message("turn.cut-at-output-limit", limit=limit))
+        self.cut = True
+
+    def _emit_landed(self):
+        """Each change that landed since the last round, as a ``change``
+        event: a tab no doc binds takes its canvas mutation, and every tab
+        knows its chat holds a new change. A blocking ask's answer carries
+        them too (``changes``)."""
+        for landed in agents_changes.take_landed(self.loop_ctx):
+            self.landed.append(landed)
+            yield from self._emit("change", landed)
 
     def _native_call_request(self, native_calls: list, result: dict):
         """The round's request is its first native call. Returns the parsed
@@ -158,17 +311,27 @@ class AttachmentTurn:
         req, call_errors = agents_tool_rounds._native_request(native_calls[0])
         if req is not None:
             return req
+        # A plan's call is corrected as a broken plan block is (dev/54).
+        plan = agents_tool_rounds._is_plan_call(self.loop_ctx, native_calls[0])
         if self.rounds_used < agents_tool_rounds.MAX_TOOL_ROUNDS:
             self.rounds_used += 1
             yield from self._emit("tool_revision", {"attempt": self.rounds_used, "errors": len(call_errors)})
+            self.plan_corrected = plan
+            if plan:
+                self.plan_errors = list(call_errors)
             self.conversation.add_unreadable_call_round(
-                result["turn"], call_errors, final=self.rounds_used >= agents_tool_rounds.MAX_TOOL_ROUNDS
+                result["turn"], call_errors,
+                final=self.rounds_used >= agents_tool_rounds.MAX_TOOL_ROUNDS and not plan,
             )
             return CONTINUE
         if result["visible"]:
             self.folded.append(result["visible"])
+        if plan:
+            self.final_parts = [agents_tool_rounds._plan_cap_card(call_errors)]
+            return BREAK
         if agents_tool_rounds._is_mutate_call(native_calls[0]):
             self.final_parts = [agents_tool_rounds._tool_cap_card(call_errors)]
+        self._plan_not_made()
         return BREAK
 
     def _reply_without_request(self, result: dict):
@@ -180,10 +343,12 @@ class AttachmentTurn:
             self.minted, self.rounds_used,
         )
         req = None
+        request_capped = False  # a request block still broken at the cap
         if kind == "correct":
             # Corrective prose is not folded: the invalid attempt never
             # reaches the user; the final round's text is the truth.
             self.rounds_used += 1
+            self.plan_corrected, self.plan_errors = True, list(payload)
             yield from self._emit("plan_revision", {"attempt": self.rounds_used, "errors": len(payload)})
             self.conversation.add_text_round(
                 result["reply"], agents_tool_rounds._plan_correction_message(payload),
@@ -205,6 +370,7 @@ class AttachmentTurn:
                     agents_tool_rounds._tool_correction_message(payload, native=True),
                 )
                 return CONTINUE
+            request_capped = kind == "cap"
             # A held request tail is NOT released at the cap: see
             # _handle_tool_reply — a source file is not a spec.
         if kind == "cap" and result.get("heldPlanTail"):
@@ -222,7 +388,16 @@ class AttachmentTurn:
         if effective_visible:
             self.folded.append(effective_visible)
         self.final_parts = payload
+        if request_capped:
+            self._plan_not_made()
         return BREAK
+
+    def _plan_not_made(self) -> None:
+        """At the cap, the try a plan's correction asked for went to another
+        request, which the cap drops or cuts off: the plan could not be made,
+        and its card says why, as it does for a plan refused at the cap."""
+        if self.plan_try:
+            self.final_parts = [*self.final_parts, agents_tool_rounds._plan_cap_card(self.plan_errors)]
 
     def _re_prompt(self, result: dict, native_calls: list, req: dict, status: str, text,
                    *, final: bool, result_msg: dict) -> None:
@@ -252,7 +427,8 @@ class AttachmentTurn:
             self.conversation.messages,
             max_output_tokens=self.run_policy["max_output_tokens"],
             usage_out=self.usage_sink,
-            **self.conversation.offer(self.rounds_used),
+            thinking_tokens=self.run_policy["thinking_tokens"],
+            **self.conversation.offer(self.rounds_used, self.plan_corrected),
         ))
         self._answered()
         reply = turn.text
@@ -291,57 +467,80 @@ class AttachmentTurn:
         cap (fail-open transparency). ``heldToolTail`` (#245): the same for a
         mutate toolRequest tail — and, unlike the plan tail, never released:
         the params are a whole source file, and streaming them as chat prose
-        IS the bug (see ``_handle_tool_reply``)."""
+        IS the bug (see ``_handle_tool_reply``). A stop asked meanwhile ends
+        the round at the model's next piece: it returns ``{stopped, shown}``,
+        *shown* the text its deltas showed, and nothing more is read. The
+        turn carries the stop reason the stream ended with; a tail held in a
+        round the output cap cut is half written, so it is neither held for a
+        correction nor released (:meth:`_cut`)."""
         marker = content.TAIL_FENCE
         granted = self.loop_ctx.get("granted", [])
         hold_plan_tail = "dataflow.plan.write" in granted
         hold_request_tail = bool(set(granted or []) & agents_tool_rounds.MUTATE_PROPOSAL_TOOLS)
         chunks: list[str] = []
+        shown: list[str] = []  # what the round's deltas showed
         calls: list = []
         buf = ""  # pass-mode text not yet emitted
         withheld: str | None = None  # not None → holding a candidate tail
-        for delta in agents_providers.stream_chat_turn(
+        finish: dict = {}  # how the stream ended, once it has
+        deltas = agents_providers.stream_chat_turn(
             self.config,
             self.conversation.messages,
             max_output_tokens=self.run_policy["max_output_tokens"],
             usage_out=self.usage_sink,
-            **self.conversation.offer(self.rounds_used),
-        ):
-            if isinstance(delta, ToolCall):
-                calls.append(delta)  # a native call is an event, never text
-                continue
-            if not isinstance(delta, str):
-                continue  # a text delta is a bare string
-            chunks.append(delta)
-            if withheld is not None:
-                withheld += delta
-                close = withheld.find("\n```", len(marker))
-                if close != -1 and withheld[close + 4 :].strip():
-                    # Closed fence followed by more content: not terminal —
-                    # flush the closed block verbatim and rescan the rest.
-                    yield ("delta", withheld[: close + 4])
-                    buf = withheld[close + 4 :]
-                    withheld = None
-                else:
+            finish=finish,
+            thinking_tokens=self.run_policy["thinking_tokens"],
+            **self.conversation.offer(self.rounds_used, self.plan_corrected),
+        )
+        try:
+            for delta in deltas:
+                if self._stopping():
+                    return {"stopped": True, "shown": "".join(shown)}
+                if isinstance(delta, ToolCall):
+                    calls.append(delta)  # a native call is an event, never text
                     continue
-            else:
-                buf += delta
-            idx = buf.find(marker)
-            if idx != -1:
-                if buf[:idx]:
-                    yield ("delta", buf[:idx])
-                withheld = buf[idx:]
-                buf = ""
-            else:
-                emit, buf = self._hold_split(buf)
-                if emit:
-                    yield ("delta", emit)
+                if not isinstance(delta, str):
+                    continue  # a text delta is a bare string
+                chunks.append(delta)
+                if withheld is not None:
+                    withheld += delta
+                    close = withheld.find("\n```", len(marker))
+                    if close != -1 and withheld[close + 4 :].strip():
+                        # Closed fence followed by more content: not terminal,
+                        # so flush the closed block verbatim and rescan the rest.
+                        shown.append(withheld[: close + 4])
+                        yield ("delta", withheld[: close + 4])
+                        buf = withheld[close + 4 :]
+                        withheld = None
+                    else:
+                        continue
+                else:
+                    buf += delta
+                idx = buf.find(marker)
+                if idx != -1:
+                    if buf[:idx]:
+                        shown.append(buf[:idx])
+                        yield ("delta", buf[:idx])
+                    withheld = buf[idx:]
+                    buf = ""
+                else:
+                    emit, buf = self._hold_split(buf)
+                    if emit:
+                        shown.append(emit)
+                        yield ("delta", emit)
+        finally:
+            close_stream = getattr(deltas, "close", None)
+            if close_stream is not None:
+                close_stream()
         reply = "".join(chunks)
         visible, parts = content.extract_content(reply)
         self._check_candidates(parts)
-        result = {"reply": reply, "visible": visible, "parts": parts,
-                  "turn": ChatTurn(text=reply, tool_calls=tuple(calls))}
-        if withheld is not None and not parts:
+        turn = ChatTurn(text=reply, tool_calls=tuple(calls), stop_reason=str(finish.get("reason") or ""),
+                        thinking=bool(finish.get("thinking")), output_limit=int(finish.get("limit") or 0),
+                        thinking_room_refused=bool(finish.get("thinking_room_refused")))
+        result = {"reply": reply, "visible": visible, "parts": parts, "turn": turn}
+        # A tail the output cap cut is half written: neither held nor shown.
+        if withheld is not None and not parts and not turn.cut_at_output_cap:
             if hold_plan_tail and (
                 '"dataflowPlan"' in withheld or '"dataflow.plan.write"' in withheld
             ):
@@ -374,7 +573,10 @@ class AttachmentTurn:
         )
         if resolution is not None:
             yield from self._emit("delegate_started", {"capability": req["capability"], "coord": resolution.coord})
-            status, text, child, home_att, delegate_summary = self._run_delegate(req, resolution)
+            # The delegate is at work in the room from its run until what it
+            # made has landed.
+            with ExitStack() as stay:
+                status, text, child, home_att, delegate_summary = self._run_delegate(req, resolution, stay)
             # dev/72: the parent keeps the compact, linkable entry.
             self.minted.append(agents_delegates._delegation_part_for(
                 resolution, req["capability"], status, delegate_summary, home_att,
@@ -402,15 +604,16 @@ class AttachmentTurn:
             )
         self._re_prompt(result, native_calls, req, status, text, final=final, result_msg=result_msg)
 
-    def _run_delegate(self, req: dict, resolution):
+    def _run_delegate(self, req: dict, resolution, stay=None):
         """Run the resolved delegate and mint what its success PROVES exists
-        (dev/73 review, dev/90 draft, dev/114 candidates, dev/95 notes) —
-        runtime-minted, never the model's second step. Returns
-        (status, text, child, home_att, summary)."""
+        (dev/73 content, dev/90 draft, dev/114 candidates, dev/95 notes),
+        runtime-minted, never the model's second step. The delegate is at work
+        in the dataflow's room while *stay*, the caller's ``ExitStack``, holds
+        it. Returns (status, text, child, home_att, summary)."""
         loop_ctx = self.loop_ctx
         inputs = req.get("inputs") or {}
         # dev/73: node-scoped content generation homes its trace AND its
-        # minted review at the node's own agent. Content for a new node (a
+        # change at the node's own agent. Content for a new node (a
         # nodeType and no nodeId) has no node: it returns to this run, for
         # its node.create.
         gen_node_id = (
@@ -449,13 +652,16 @@ class AttachmentTurn:
                 self.user_key, self.project_id, req["capability"], enriched,
                 datasets=loop_ctx.get("dataflow_datasets"),
             ),
+            asker=loop_ctx.get("asker"),
+            stay=stay,
+            who=loop_ctx["room_asker"],
         )
         self.delegations.append(child)
         delegate_summary = text
         if status == "ok" and gen_node_id:
-            # dev/73: generation success ⇒ the review EXISTS — runtime-minted,
-            # never the model's second step.
-            review_part, review_home, text = agents_delegates._mint_content_review_from_delegate(
+            # dev/73: generation success: the runtime writes the code into
+            # the node, never the model's second step.
+            change_part, change_home, text = agents_delegates._mint_content_review_from_delegate(
                 self.user_key, self.project_id,
                 node_id=gen_node_id,
                 generated_text=text,
@@ -465,15 +671,10 @@ class AttachmentTurn:
                 delegate_coord=resolution.coord,
             )
             delegate_summary = text
-            if review_part is not None:
-                delegate_summary = (
-                    f"reviewed content change proposed for node "
-                    f"{gen_node_id!r} — awaits Apply"
-                )
-                if review_home == loop_ctx.get("attachment_id"):
-                    self.minted.append(review_part)
-                else:
-                    self.homed_reviews.append((review_part, review_home))
+            if change_part is not None:
+                delegate_summary = f"content written into node {gen_node_id!r}"
+                if change_home == loop_ctx.get("attachment_id"):
+                    self.minted.append(change_part)
         elif status == "ok" and req["capability"] in agents_delegates.PACKAGE_AUTHORING_CAPABILITIES:
             # dev/90: authoring success ⇒ the reviewed draft EXISTS —
             # runtime-minted from the child's payload, never the model's
@@ -508,23 +709,22 @@ class AttachmentTurn:
                 delegate_summary = "dataset candidates shown for review — select and confirm"
             status = cand_outcome
         elif status == "ok" and req["capability"] == "research.notes.compose":
-            # dev/95 (Follow-up D): notes success ⇒ the reviewed A16 sequence
-            # EXISTS — runtime-minted from the child's schema reply, never the
-            # model's second step.
+            # dev/95 (Follow-up D): notes success ⇒ the notes EXIST, each the
+            # agent's change, runtime-minted from the child's schema reply,
+            # never the model's second step.
             note_parts, text, notes_outcome = agents_delegates._mint_notes_from_delegate(
                 self.user_key, self.project_id, loop_ctx, text,
             )
             delegate_summary = text
             if note_parts:
                 self.minted.extend(note_parts)
-                delegate_summary = (
-                    f"{len(note_parts)} reviewed note proposal(s) "
-                    "— await Apply"
-                )
+                delegate_summary = f"{len(note_parts)} note(s) added"
             status = notes_outcome
         return status, text, child, home_att, delegate_summary
 
-    def _tool_round(self, req: dict, result: dict, native_calls: list):
+    def _tool_round(self, req: dict, result: dict, native_calls: list, *, last_try: bool = False):
+        """Run *req* and answer it. A plan's *last_try*, at the cap, is not
+        answered: it landed, or the plan's card ends the turn."""
         yield from self._emit("tool_requested", {"tool": req["tool"]})
         yield from self._emit("tool_started", {"tool": req["tool"]})
         status, text = agents_tool_rounds._execute_tool_request(
@@ -535,13 +735,24 @@ class AttachmentTurn:
         record = self.tool_calls[-1]
         extra = {key: record[key] for key in ("reason", "egress") if key in record}
         yield from self._emit("tool_result", {"tool": req["tool"], "status": status, **extra})
+        # A plan refused is a correction, as an invalid plan block is (dev/54).
+        plan_refused = (agents_tool_rounds._is_plan_request(self.loop_ctx, req)
+                        and status not in agents_tool_rounds._NATIVE_OK_STATUSES)
+        if last_try:
+            if plan_refused:
+                self.final_parts = [agents_tool_rounds._plan_cap_card([text])]
+            return
         if req["tool"] == agents_skill_runs.TOOL and self.skill_reads < agents_skill_runs.FREE_READS:
             self.skill_reads += 1  # loading a skill is no round, up to FREE_READS a turn
         elif isinstance(text, ParamRefusal) and self.refusals_used < agents_tool_rounds.MAX_REFUSED_ROUNDS:
             self.refusals_used += 1  # dev/105 D2: a free correction, not a round
         else:
             self.rounds_used += 1
-        final = self.rounds_used >= agents_tool_rounds.MAX_TOOL_ROUNDS
+        # Its result asks for the plan again, and the next call may make it.
+        self.plan_corrected = plan_refused
+        if plan_refused:
+            self.plan_errors = [text]
+        final = self.rounds_used >= agents_tool_rounds.MAX_TOOL_ROUNDS and not plan_refused
         result_msg = agents_tool_rounds._tool_result_message(req["tool"], status, text, final=final)
         self._re_prompt(result, native_calls, req, status, text, final=final, result_msg=result_msg)
 
@@ -567,6 +778,7 @@ class AttachmentTurn:
                 delegations=self.delegations,
                 skills_loaded=self._skills_loaded(),
             ),
+            writer=self.loop_ctx.get("writer"),
         )
 
     def _skills_loaded(self) -> list[str]:
@@ -576,16 +788,29 @@ class AttachmentTurn:
 
     def settle_ok(self) -> dict:
         """Settle the reservation, persist both turns, title the conversation
-        when this is its first exchange; returns the run's result payload."""
+        when this is its first exchange; returns the run's result payload. A
+        stopped turn settles as ``stopped``, its record naming who stopped it
+        (``stoppedBy``), with what it said and landed until then, and asks
+        the model for no title. A turn the output cap cut (:meth:`_cut`)
+        says so in its record, its payload and its ``done``
+        (``cutAtOutputLimit``)."""
         reply_text = "\n\n".join(self.folded)
         run_parts = self.minted + self.final_parts  # proposals ride the turn (dev/41)
-        ledger.settle(self.user_key, self.reservation, usage=self.usage_total or None, status="ok")
+        status = "stopped" if self.stopped else "ok"
+        ledger.settle(self.user_key, self.reservation, usage=self.usage_total or None, status=status)
         execution = agents_policy._execution_record(
-            self.execution_id, self.pins, self.usage_total, self.started, "ok", self.tool_calls,
+            self.execution_id, self.pins, self.usage_total, self.started, status, self.tool_calls,
             delegations=self.delegations,
             refused_rounds=self.refusals_used,
             skills_loaded=self._skills_loaded(),
         )
+        stopped = {"by": self.stop.by} if self.stopped and self.stop is not None else None
+        if stopped is not None:
+            execution["stoppedBy"] = stopped["by"]
+        if self.cut:
+            execution["cutAtOutputLimit"] = True
+        if self.room_refused:
+            execution["thinkingRoomRefused"] = True
         agents_prepare._persist_exchange(
             self.user_key,
             self.project_id,
@@ -595,10 +820,11 @@ class AttachmentTurn:
             reply_text,
             execution=execution,
             parts=run_parts,
+            writer=self.loop_ctx.get("writer"),
         )
         # Title before the done frame: the reply text already streamed via
         # deltas, and the client's post-send refresh must see the title.
-        if self.wants_title:
+        if self.wants_title and not self.stopped:
             agents_titles._generate_conversation_title(
                 self.user_key, self.project_id, self.attachment_id, self.message, self.config
             )
@@ -606,7 +832,7 @@ class AttachmentTurn:
         # holds them: those its system turn held (pins.skills, its catalog
         # left out) and those it loaded (skillsLoaded).
         held = {key: names for key, names in (self.pins.get("skills") or {}).items() if key != "catalog"}
-        return {
+        self.result = {
             "attachmentId": self.attachment_id,
             "coord": self.coord,
             "reply": reply_text,
@@ -617,46 +843,44 @@ class AttachmentTurn:
             "content": run_parts,
             **({"skills": held} if held else {}),
             **({"skillsLoaded": execution["skillsLoaded"]} if execution.get("skillsLoaded") else {}),
+            **({"stopped": stopped} if stopped is not None else {}),
+            **({"cutAtOutputLimit": True} if self.cut else {}),
+            # What the stream sends as change events, for a tab no doc binds.
+            **({"changes": list(self.landed)} if self.landed else {}),
         }
+        return self.result
 
     # ── the streaming envelope ──────────────────────────────────────────────
 
     def stream(self):
-        """The SSE stream: the dev/37 execution handshake, the loop's events,
-        then review_required / content / done — or error."""
+        """The turn's events: the dev/37 execution handshake, the loop's
+        events, then review_required / content / done, or error. A stopped
+        turn's done says who stopped it (``stopped``), and a turn the output
+        cap cut says so (``cutAtOutputLimit``)."""
         # The typed-envelope handshake (memo dev/37): the execution identity
         # arrives before the first delta so a client can correlate the stream
         # with the record that will land on the transcript.
         yield ("execution", {"executionId": self.execution_id})
         try:
-            yield from self.rounds()
+            # The agent is in the room while it works, and gone before its
+            # reply's last events: a reply on screen means it left.
+            with self.at_work():
+                yield from self.rounds()
         except Exception as exc:  # provider failure mid-stream
             self.settle_error(exc)
             yield ("error", f"agent run failed: {self.redacted(exc)}")
             return
         payload = self.settle_ok()
-        # A pending mutation pauses at review (dev/03:344 review_required).
+        # An install waits for the person's review (dev/03:344 review_required).
         for part in self.minted:
             if part.get("type") != "proposal":
-                continue  # dev/72: delegation entries ride the content event
+                continue  # dev/72: delegation entries and changes ride the content event
             yield (
                 "review_required",
                 {
                     "proposalId": part["proposalId"],
                     "tool": part["tool"],
                     "summary": part["summary"],
-                },
-            )
-        # dev/73: reviews homed at the node's agent pause visibly too — the
-        # client refreshes and the parent's delegation entry links there.
-        for part, review_home in self.homed_reviews:
-            yield (
-                "review_required",
-                {
-                    "proposalId": part["proposalId"],
-                    "tool": part["tool"],
-                    "summary": part["summary"],
-                    "attachmentId": review_home,
                 },
             )
         if payload["content"]:
@@ -672,7 +896,8 @@ class AttachmentTurn:
                 "durationMs": payload["durationMs"],
                 "content": payload["content"],
                 # The skills the reply's line names, as the blocking answer
-                # carries them.
-                **{key: payload[key] for key in ("skills", "skillsLoaded") if key in payload},
+                # carries them, who stopped it, and whether the cap cut it.
+                **{key: payload[key] for key in ("skills", "skillsLoaded", "stopped", "cutAtOutputLimit")
+                   if key in payload},
             },
         )

@@ -4,7 +4,7 @@ import { faChevronLeft, faChevronRight, faShapes } from "@fortawesome/free-solid
 import { NodeCategory, NodeDescriptor, NodeTemplateId } from "../../../../registry/types";
 import { isRegistryReady, subscribeToRegistryReady } from "../../../../registry/registryReadiness";
 import { PaletteDragHint } from "../PaletteDragHint";
-import { TOOLS_PALETTE_DROPDOWN_ATTR, TOOLS_PALETTE_PANEL_ATTR } from "../toolsPaletteDismiss";
+import { TOOLS_PALETTE_DROPDOWN_ATTR, TOOLS_PALETTE_PANEL_ATTR, paletteItemAttrs } from "../toolsPaletteDismiss";
 import styles from "./BuiltinPalette.module.css";
 
 /** The DOM id of a built-in palette tile: `curio.builtin/data-loading@1` is `tile-data-loading`. */
@@ -32,6 +32,7 @@ const DraggableTool = memo(function DraggableTool({
             aria-label={tooltip}
             data-tooltip={tooltip}
             data-tooltip-side="right"
+            {...paletteItemAttrs("builtin", nodeType)}
             className={styles.optionStyle}
             draggable
             onDragStart={(event) => {

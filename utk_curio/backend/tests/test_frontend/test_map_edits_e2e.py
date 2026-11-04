@@ -11,7 +11,7 @@ is its only state.
 
 1. A building clicked on the linked map is selected in Map Editor, which sends
    it back for the map to light up. Remove takes it off the map at once, the
-   dataflow reads Unsaved and the nodes below keep what they had. Commit edits
+   server has it with no save, and the nodes below keep what they had. Commit edits
    runs them, and the count drops by every part of the building. Saved and
    opened again, the code, the list and the Remove's entry in the node's
    Provenance drawer come back.
@@ -110,6 +110,7 @@ from .utils import (
     save_workflow_test_screenshot,
     set_node_code,
     stub_login_and_enter_workflow,
+    wait_for_changes_kept,
     wait_for_drawer_closed,
     wait_for_node_capture,
     wait_for_node_run_to_end,
@@ -635,8 +636,8 @@ def _frame(page, step: str, gesture: str, phase: str, source: str, target: str, 
         )
 
 
-# Records each state the dataflow's save indicator takes from now on, so an
-# Unsaved that the 30 second autosave clears soon after is still seen.
+# Records each state the dataflow's save indicator takes from now on, so a
+# state it shows only for a moment is still seen.
 _WATCH_SAVE_STATE_JS = """() => {
     const el = document.querySelector('[data-curio-save-state]');
     if (!el) return null;
@@ -658,15 +659,14 @@ def _watch_save_state(page) -> str:
     return state
 
 
-def _wait_for_unsaved(page, what: str) -> None:
-    states: list = []
-    deadline = time.time() + 10
-    while time.time() < deadline:
-        states = page.evaluate("() => window.__curioSaveStates || []")
-        if "unsaved" in states:
-            return
-        page.wait_for_timeout(200)
-    raise AssertionError(f"after {what}, the dataflow never read Unsaved: its save states were {states}")
+def _kept_with_no_save(page, current_server: str, token: str, project_id: str, node_id: str, code: str, what: str) -> None:
+    """The server has *node_id*'s *code* though nothing saved the dataflow: the
+    doc keeps each change as it is made, and the bar never read Unsaved."""
+    wait_for_changes_kept(page)
+    kept = {node["id"]: node for node in _saved_spec(current_server, token, project_id)["dataflow"]["nodes"]}
+    assert kept[node_id]["content"] == code, f"after {what}, the server does not have the node's code"
+    states = page.evaluate("() => window.__curioSaveStates || []")
+    assert "unsaved" not in states, f"after {what}, the dataflow read Unsaved: its save states were {states}"
 
 
 # A node's new outcome: "error", or "success" once its output is saved to
@@ -706,7 +706,15 @@ def _wait_for_new_outcome(page, node_id: str, before: str, *, node_type: str, ti
 def _commit(page, edit_id: str, saved: list[str], drawn: list[str], *, below: int) -> None:
     """Commit edits, from the foot of the node's list, which says how many
     nodes below lack the edits: each of *saved* runs again, its output saved to
-    a new file, each map of *drawn* ends done, and the foot says committed."""
+    a new file, each map of *drawn* draws again in the run and ends done, and
+    the foot says committed.
+
+    A map draws in the run's browser part, which starts only once the server's
+    part has ended (``finish`` in useServerRun.ts). Until then the map shows
+    the Done of its last drawing, so a wait for Done can return before the run
+    reaches it, and a second read can then find it running (run 40873036116:
+    "ended 'running'"). Each map is watched from the click and read once the
+    run the click started has ended, by the run guard."""
     frame_nodes(page, [edit_id])
     box = node_locator(page, edit_id)
     foot = box.get_by_test_id("interaction-commit")
@@ -720,6 +728,8 @@ def _commit(page, edit_id: str, saved: list[str], drawn: list[str], *, below: in
     expect(button).to_have_text("Commit edits")
     saved_to = {node_id: page.evaluate(_OUTPUT_ARTIFACT_JS, node_id) for node_id in saved}
     assert all(saved_to.values()), f"a node shows no saved output before Commit edits: {saved_to}"
+    for node_id in drawn:
+        watch_node_run(page, node_id)
     button.click()
     for node_id in saved:
         outcome = _wait_for_new_outcome(page, node_id, saved_to[node_id], node_type=node_id, timeout_ms=RUN_MS)
@@ -727,19 +737,23 @@ def _commit(page, edit_id: str, saved: list[str], drawn: list[str], *, below: in
         assert (outcome, status) == ("success", "done"), (
             f"{node_id} ran again and ended {outcome}, {status}: {read_node_error_text(node_locator(page, node_id))}"
         )
-    for node_id in drawn:
-        _done(page, node_id, MAP_TYPE)
     wait_for_run_guard_released(page, timeout_ms=RUN_MS)
+    for node_id in drawn:
+        status = wait_for_node_run_to_end(page, node_id, node_type=MAP_TYPE, timeout_ms=60000)
+        assert status == "done", f"{node_id} ended {status!r}: {read_node_error_text(node_locator(page, node_id))}"
     expect(foot).to_have_attribute("data-commit-state", "done", timeout=60000)
     expect(foot).to_contain_text("Edits committed")
 
 
 def _open_provenance(page, node_id: str):
-    """The node's Provenance drawer, opened from the button in its header."""
+    """The node's Provenance drawer, opened from the button in its header, once
+    it has read the node's history, which the server keeps."""
     node_locator(page, node_id).locator('.nav-link[data-rr-ui-event-key="provenance"]').first.click()
     expect(page.get_by_role("dialog", name="Node provenance")).to_be_visible(timeout=20000)
     await_drawer_at_rest(page)
-    return page.locator(PROVENANCE_PANEL)
+    panel = page.locator(PROVENANCE_PANEL)
+    expect(panel.get_by_text("Reading the history…")).to_have_count(0, timeout=20000)
+    return panel
 
 
 def _close_provenance(page) -> None:
@@ -767,8 +781,8 @@ def test_a_building_picked_on_the_linked_map_is_removed_at_once_and_committed_an
     In One removed's Remove, a building clicked on the linked map is picked in
     the node, which sends the pick back for the map to light up. Remove writes
     the edit into the node's code by building_id, lists it, and the map draws
-    without the building at once; the dataflow reads Unsaved, and the count
-    below keeps what it had. Commit edits runs the node, the map and the
+    without the building at once; the server has it with no save, and the
+    count below keeps what it had. Commit edits runs the node, the map and the
     count, which drops by every part of the building, the other scenario's
     staying. Saved and opened again, the code, the list and the Remove's entry
     in the node's Provenance drawer come back."""
@@ -824,7 +838,7 @@ def test_a_building_picked_on_the_linked_map_is_removed_at_once_and_committed_an
         _frame(page, "map-pick", "pick", "after", MAP_2, EDIT_2)
 
     # Remove takes out every part of it, in the node's code and on the map at
-    # once. The dataflow reads Unsaved, and the nodes below keep what they had.
+    # once. The server has it with no save, and the nodes below keep what they had.
     save_dataflow_and_settle_header(page)
     assert _watch_save_state(page) == "saved"
     counted = page.evaluate(_OUTPUT_ARTIFACT_JS, COUNT_2)
@@ -835,7 +849,7 @@ def test_a_building_picked_on_the_linked_map_is_removed_at_once_and_committed_an
     expect(edit.locator('[data-edit-list="1"] [data-edit-op="remove"]')).to_contain_text(f"Remove building_id {picked}")
     expect(edit.get_by_test_id("interaction-counts")).to_have_text(f"{PARTS[picked]} removed, 0 changed")
     expect(remove).to_be_disabled()
-    _wait_for_unsaved(page, f"a Remove of building {picked}")
+    _kept_with_no_save(page, current_server, token, project_id, EDIT_2, code, f"a Remove of building {picked}")
     _wait_for_redraw(page, MAP_2, f"a Remove of building {picked}")
     gone = _changed(before, _map_pixels(page, MAP_2))
     assert gone >= REMOVED_MIN_SHARE, f"removing building {picked} changed {gone:.2%} of the map: it still draws it"
@@ -1163,6 +1177,8 @@ def test_each_change_is_an_entry_in_the_node_provenance_and_putting_one_back_res
     _run_all(page)
     frame_nodes(page, [EDIT_2, MAP_2])
     panel = _open_provenance(page, EDIT_2)
+    # The run reaches the server's history once it has ended.
+    expect(panel.locator("[data-provenance-item]").first).to_be_visible(timeout=20000)
     ran = _entries(panel)
     assert ran, "the node's run is not in its Provenance drawer"
     _close_provenance(page)
@@ -1209,6 +1225,7 @@ def test_each_change_is_an_entry_in_the_node_provenance_and_putting_one_back_res
     # Three entries more, before any run, each named by what it changed, one
     # after the other on one line, the Remove the newest.
     panel = _open_provenance(page, EDIT_2)
+    expect(panel.locator("[data-provenance-item]")).to_have_count(len(ran) + 3, timeout=20000)
     entries = _entries(panel)
     assert len(entries) == len(ran) + 3, f"the drawer lists {entries}: not the node's run and the three changes"
     made = entries[-3:]

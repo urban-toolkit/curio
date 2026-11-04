@@ -24,7 +24,7 @@ from pathlib import Path
 
 import pytest
 
-from .test_dataflow_docs import SPEC, _code, _type, room  # noqa: F401 - room is a fixture
+from .test_dataflow_docs import SPEC, _code, _imported_entries, _type, room  # noqa: F401 - room is a fixture
 
 #: The agent the writers here write as.
 BUILDER = "agent.curio.node-builder@1"
@@ -107,7 +107,80 @@ def test_a_writer_changes_only_what_it_changed_and_a_tab_gets_it(room):
     on_disk = room.on_disk()
     assert _code(on_disk["dataflow"]) == "# alice\nx = 1\n" and on_disk["dataflow"]["name"] == "Written"
     assert on_disk["dataflow"]["agents"] == SPEC["dataflow"]["agents"]
-    assert on_disk["nodeProvenance"] == SPEC["nodeProvenance"], "the write touched the history"
+    assert _imported_entries(room) == len(SPEC["nodeProvenance"]["loader"]), "the write touched the history"
+
+
+def _remove_node(node_id: str, *edge_ids: str):
+    """A tab's change: *node_id* removed, with the connections *edge_ids*."""
+    def change(doc):
+        from pycrdt import Map
+
+        del doc.get("nodes", type=Map)[node_id]
+        for edge_id in edge_ids:
+            del doc.get("edges", type=Map)[edge_id]
+
+    return change
+
+
+def _connection(edge_id: str, source: str, target: str) -> dict:
+    return {"id": edge_id, "source": source, "target": target, "sourceHandle": "out", "targetHandle": "in"}
+
+
+def test_a_writers_connection_to_a_node_removed_before_its_write_never_lands(room):
+    """A writer reads the dataflow, adds a node and draws two connections, one
+    of them into the chart; alice removes the chart before the write. Inside
+    the write, under the doc's lock, each connection the writer drew is
+    checked again: the one into the chart is taken out in the writer's own
+    transaction, so no tab, no file and no record of the log holds a
+    connection to a node that is gone, and the writer is told. The other one
+    lands. A second writer is told through its callback before the file is
+    written, as one whose code was refused is."""
+    from utk_curio.backend.app.collaboration.dataflow_docs import by_agent, live, write
+
+    alice = room.tab("alice")
+    alice.sync()
+    spec = live(room.owner_key, room.project_id)
+    spec["dataflow"]["nodes"].append({"id": "extra", "type": "curio.builtin/code", "x": 600, "y": 20, "content": ""})
+    spec["dataflow"]["edges"] += [_connection("into-chart", "extra", "chart"), _connection("into-extra", "loader", "extra")]
+    alice.edit(_remove_node("chart", "e1"))
+
+    written = write(room.owner_key, room.project_id, spec, by_agent(BUILDER, room.owner_key, "plan"))
+
+    seen = alice.dataflow()
+    assert sorted(edge["id"] for edge in seen["edges"]) == ["into-extra"], (
+        f"a connection the writer drew landed pointing at a node that is gone: {seen['edges']}"
+    )
+    assert sorted(node["id"] for node in seen["nodes"]) == ["extra", "loader"]
+    on_disk = room.on_disk()["dataflow"]
+    assert sorted(edge["id"] for edge in on_disk["edges"]) == ["into-extra"], on_disk["edges"]
+    assert not _ever_logged(room, "into-chart"), "a record of the log holds the connection to the removed chart"
+    assert getattr(written, "dropped", None) == ("into-chart",), written
+
+    # A second writer reads, alice removes the node it draws into, and its
+    # callback is told before the file is written.
+    spec = live(room.owner_key, room.project_id)
+    spec["dataflow"]["edges"].append(_connection("into-extra-again", "loader", "extra"))
+    alice.edit(_remove_node("extra", "into-extra"))
+    told: list = []
+    written = write(room.owner_key, room.project_id, spec, by_agent(BUILDER, room.owner_key, "plan"),
+                    on_dropped=told.extend)
+    assert told == ["into-extra-again"] and written.dropped == ("into-extra-again",), (told, written)
+    assert room.on_disk()["dataflow"]["edges"] == [], room.on_disk()["dataflow"]["edges"]
+
+
+def _ever_logged(room, edge_id: str) -> bool:
+    """Whether the open doc's log, at any of its records today, holds the
+    connection *edge_id*."""
+    from utk_curio.backend.app.collaboration import dataflow_docs, doc_mapping
+
+    entry = dataflow_docs._open_entry(room.project_id)
+    assert entry is not None, "the server holds no doc of the dataflow"
+    doc = dataflow_docs.rebuilt(room.owner_key, room.project_id, entry.doc_id, entry.segment, upto=0)
+    for update in dataflow_docs.logged_updates(room.owner_key, room.project_id, entry.doc_id, entry.segment):
+        doc.apply_update(update)
+        if edge_id in {edge.get("id") for edge in doc_mapping.doc_to_dataflow(doc).get("edges") or []}:
+            return True
+    return False
 
 
 def test_a_writer_writes_the_spec_it_was_handed_and_nothing_when_it_changed_nothing(room):
@@ -262,11 +335,14 @@ def test_a_create_makes_an_open_doc_match_it_and_a_closed_one_start_anew(room):
     assert fresh.dataflow()["name"] == "Seeded again"
 
 
-def test_a_history_only_save_writes_the_history_and_never_the_dataflow(room):
-    """A tab bound to the doc saves its history, never the dataflow: the doc's
-    change is written first, the history goes on record, the dataflow's
-    revision moves for the doc's change alone, and the doc keeps what alice
-    typed."""
+def test_a_save_that_sends_no_dataflow_writes_only_the_docs_change_and_reads_no_history(room):
+    """A tab bound to the doc saves its outputs, never the dataflow: the doc's
+    change is written first and the dataflow's revision moves for it alone,
+    and the doc keeps what alice typed. A history such a save still carries,
+    as a tab of an earlier Curio sends it, is not read: the dataflow's points
+    are its history (``collaboration/history.py``)."""
+    from utk_curio.backend.app.projects import storage
+
     alice = room.tab("alice")
     alice.sync()
     alice.edit(_type("# typed\n"))
@@ -280,11 +356,12 @@ def test_a_history_only_save_writes_the_history_and_never_the_dataflow(room):
     assert resp.status_code == 200, resp.get_data(as_text=True)
     answered = resp.get_json()["spec"]
     assert _code(answered["dataflow"]) == "# typed\nx = 1\n", "the save answered with a dataflow behind the doc"
-    assert answered["nodeProvenance"] == history["nodeProvenance"]
+    assert not set(answered) & set(storage.HISTORY_KEYS), "the save answered with history sections"
+    assert storage.history_sections(room.owner_key, room.project_id) == {}, "the history was written beside the spec"
+    assert _imported_entries(room) == len(SPEC["nodeProvenance"]["loader"]), "the save changed the history"
     on_disk = room.on_disk()
-    assert on_disk["nodeProvenance"] == history["nodeProvenance"], "the history was not put on record"
     assert _code(on_disk["dataflow"]) == "# typed\nx = 1\n"
-    assert room.revision() == before + 1, "the history save wrote the spec beyond the doc's own change"
+    assert room.revision() == before + 1, "the save wrote the spec beyond the doc's own change"
     assert _code(alice.dataflow()) == "# typed\nx = 1\n"
     assert _code(room.live()["dataflow"]) == "# typed\nx = 1\n"
 

@@ -1,7 +1,12 @@
 import { renderHook, act } from "@testing-library/react";
 
-// Same collaborator mocks as installSync.test.ts — this suite exercises the same
-// save path, just the name that rides on it.
+/**
+ * A rename writes both name stores (#230): the dataflow's, which the canvas
+ * title renders, and the project row's, which the Projects list renders. On a
+ * dataflow bound to its doc, the doc takes the dataflow's name and the rename
+ * sends the row's as the Projects page does; on a canvas never saved, its
+ * create sends the name it holds when it leaves (#270).
+ */
 jest.mock("reactflow", () => ({
   useReactFlow: () => ({ getNodes: () => [], getEdges: () => [] }),
   useNodesInitialized: () => false,
@@ -9,14 +14,18 @@ jest.mock("reactflow", () => ({
 jest.mock("../../providers/ProvenanceProvider", () => ({
   useProvenanceContext: () => ({ getAllNodeProvenance: () => ({}) }),
 }));
+const mockShowToast = jest.fn();
 jest.mock("../../providers/ToastProvider", () => ({
-  useToastContext: () => ({ showToast: jest.fn() }),
+  useToastContext: () => ({ showToast: mockShowToast }),
 }));
 jest.mock("../../providers/UserProvider", () => ({
   useUserContext: () => ({ user: null, enableUserAuth: false }),
 }));
 jest.mock("../../api/projectsApi", () => ({
-  projectsApi: { create: jest.fn(), update: jest.fn(), get: jest.fn() },
+  projectsApi: {
+    create: jest.fn(), update: jest.fn(), get: jest.fn(), getShared: jest.fn(),
+    recordOutputs: jest.fn(), renameShared: jest.fn(),
+  },
 }));
 jest.mock("../../TrillGenerator", () => ({
   TrillGenerator: {
@@ -30,8 +39,7 @@ jest.mock("../../utils/saveOutputDataset", () => ({
 }));
 jest.mock("../../registry/projectPackagesStore", () => ({
   getCurrentProjectPackagesList: jest.fn(() => []),
-  // No routed dataflow and nothing loading: saves take their id from the
-  // hook's own state, as they do once a load has landed.
+  // No routed dataflow and nothing loading: the id is the hook's own.
   getCurrentProjectId: jest.fn(() => undefined),
   whenProjectSettled: jest.fn(async () => {}),
   setCurrentProject: jest.fn(),
@@ -42,13 +50,21 @@ jest.mock("../../registry/projectPackagesStore", () => ({
 import { useWorkflowOperations } from "../../hook/useWorkflowOperations";
 import { projectsApi } from "../../api/projectsApi";
 
+/** The canvas's binding to the dataflow's doc. */
+const bridge = (bound: boolean) => ({
+  bound: () => bound,
+  whenBound: jest.fn(async () => bound),
+  whenKept: jest.fn(async () => bound),
+  canvasNow: jest.fn(() => ({})),
+});
+
 /**
  * `setWorkflowName` is threaded in from FlowProvider, so the fake has to write
  * `workflowNameRef` too — that ref is what the spec serializer reads, and the
  * whole bug is the two drifting apart. `setWorkflowDescription` comes from the
  * same place and writes its ref the same way.
  */
-const makeDeps = () => {
+const makeDeps = (bound = false) => {
   const workflowNameRef = { current: "Loaded name" };
   const workflowDescriptionRef = { current: "" };
   return {
@@ -74,10 +90,11 @@ const makeDeps = () => {
     onConnect: jest.fn(),
     addNode: jest.fn(),
     defaultSaveOutputDataset: false,
+    docBridgeRef: { current: bridge(bound) },
   } as any;
 };
 
-/** Put the hook in the state the bug needs: a project loaded from the server. */
+/** A project loaded from the server. */
 async function loadedProject(result: any, name = "Loaded name") {
   (projectsApi.get as jest.Mock).mockResolvedValue({
     project: { id: "proj-1", name, updated_at: null },
@@ -89,42 +106,168 @@ async function loadedProject(result: any, name = "Loaded name") {
   });
 }
 
+const created = (name: string) => ({
+  id: "proj-2",
+  name,
+  spec: { dataflow: { datasets: [], packages: [] } },
+  categories: {},
+});
+
 beforeEach(() => {
   jest.clearAllMocks();
-  (projectsApi.update as jest.Mock).mockResolvedValue({
-    id: "proj-1",
-    name: "Server name",
-    spec: { dataflow: { datasets: [], packages: [] } },
+  (projectsApi.update as jest.Mock).mockResolvedValue({ id: "proj-1", name: "Server name", categories: {} });
+  (projectsApi.create as jest.Mock).mockResolvedValue(created("Server name"));
+});
+
+describe("renameDataflow on a dataflow bound to its doc", () => {
+  it("sends the NEW name to the project row, not the load-time one (#230)", async () => {
+    // The doc takes the dataflow's name, and no doc writes a project row: the
+    // Projects card moves only because the rename sends it.
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps(true)));
+    await loadedProject(result);
+
+    await act(async () => {
+      result.current.renameDataflow("New name");
+    });
+
+    expect(projectsApi.update).toHaveBeenCalledTimes(1);
+    expect(projectsApi.update).toHaveBeenCalledWith("proj-1", { name: "New name" });
+    expect(result.current.projectName).toBe("New name");
+  });
+
+  it("marks nothing Unsaved: the doc keeps it", async () => {
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps(true)));
+    await loadedProject(result);
+
+    await act(async () => {
+      result.current.renameDataflow("New name");
+    });
+
+    expect(result.current.projectDirty).toBe(false);
+  });
+
+  it("refuses a blank entry and sends nothing", async () => {
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps(true)));
+    await loadedProject(result);
+
+    let accepted: boolean | undefined;
+    await act(async () => {
+      accepted = result.current.renameDataflow("   ");
+    });
+
+    expect(accepted).toBe(false);
+    expect(projectsApi.update).not.toHaveBeenCalled();
+    expect(result.current.projectName).toBe("Loaded name");
+  });
+
+  it("trims the committed name", async () => {
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps(true)));
+    await loadedProject(result);
+
+    await act(async () => {
+      result.current.renameDataflow("  Padded  ");
+    });
+
+    expect(projectsApi.update).toHaveBeenCalledWith("proj-1", { name: "Padded" });
+  });
+
+  it("says so when the rename could not reach the project row", async () => {
+    (projectsApi.update as jest.Mock).mockRejectedValue(new Error("offline"));
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps(true)));
+    await loadedProject(result);
+
+    await act(async () => {
+      result.current.renameDataflow("New name");
+    });
+
+    expect(mockShowToast).toHaveBeenCalledWith("offline", "error");
   });
 });
 
-describe("renameDataflow", () => {
-  it("makes the next save send the NEW name, not the load-time one", async () => {
-    // #230 itself. `saveCurrentProject` reads `projectName`, which only
-    // `loadProject` ever set, so a rename that touched `workflowName` alone was
-    // overruled by the stale value and the Projects card never moved.
-    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
-    await loadedProject(result);
-
-    act(() => {
-      result.current.renameDataflow("New name");
+describe("renameDataflow on an invited editor's canvas, bound to the owner's dataflow", () => {
+  /** The owner's dataflow, opened from its link as an editor opens it. */
+  async function openedAsEditor(result: any) {
+    const { getCurrentProjectId } = jest.requireMock("../../registry/projectPackagesStore");
+    (getCurrentProjectId as jest.Mock).mockReturnValue("owners-proj");
+    (projectsApi.getShared as jest.Mock).mockResolvedValue({
+      project: { id: "owners-proj", name: "Owner's name", categories: {} },
+      spec: { dataflow: { nodes: [], edges: [] } },
+      outputs: [],
     });
     await act(async () => {
-      await result.current.saveCurrentProject();
+      await result.current.loadSharedProject("owners-proj");
     });
+  }
 
-    expect(projectsApi.update).toHaveBeenCalledWith(
-      "proj-1",
-      expect.objectContaining({ name: "New name" }),
-    );
+  afterEach(() => {
+    const { getCurrentProjectId } = jest.requireMock("../../registry/projectPackagesStore");
+    (getCurrentProjectId as jest.Mock).mockReturnValue(undefined);
   });
 
-  it("marks the dataflow dirty, so the save indicator and autosave notice", async () => {
-    // Nothing said a rename diverged from disk. That went unseen only because
-    // the phantom dirty flag of #229 was masking it; with that fixed, a rename
-    // that did not mark dirty would read as already-saved.
-    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
+  it("sends the new name to the owner's project row through the editors' route", async () => {
+    // The doc takes the canvas's name; the row the owner's Projects page
+    // lists is renamed only by this.
+    (projectsApi.renameShared as jest.Mock).mockResolvedValue({ id: "owners-proj", name: "Bob's name" });
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps(true)));
+    await openedAsEditor(result);
+
+    await act(async () => {
+      result.current.renameDataflow("Bob's name");
+    });
+
+    expect(projectsApi.renameShared).toHaveBeenCalledTimes(1);
+    expect(projectsApi.renameShared).toHaveBeenCalledWith("owners-proj", "Bob's name");
+    // Never the owner's PUT, which refuses anyone but the owner.
+    expect(projectsApi.update).not.toHaveBeenCalled();
+  });
+
+  it("says so when the rename could not reach the row", async () => {
+    (projectsApi.renameShared as jest.Mock).mockRejectedValue(new Error("refused"));
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps(true)));
+    await openedAsEditor(result);
+
+    await act(async () => {
+      result.current.renameDataflow("Bob's name");
+    });
+
+    expect(mockShowToast).toHaveBeenCalledWith("refused", "error");
+  });
+
+  it("sends nothing from a shared view bound to no doc", async () => {
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps(false)));
+    await openedAsEditor(result);
+
+    await act(async () => {
+      result.current.renameDataflow("Bob's name");
+    });
+
+    expect(projectsApi.renameShared).not.toHaveBeenCalled();
+    expect(projectsApi.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("renameDataflow on a saved dataflow not bound to its doc yet", () => {
+  it("still sends the project row its name: no save sends it later", async () => {
+    // The doc takes the name with the bind; the row only from the rename.
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps(false)));
     await loadedProject(result);
+
+    await act(async () => {
+      result.current.renameDataflow("New name");
+    });
+
+    expect(projectsApi.update).toHaveBeenCalledTimes(1);
+    expect(projectsApi.update).toHaveBeenCalledWith("proj-1", { name: "New name" });
+    // Unsaved until the bind writes it into the doc.
+    expect(result.current.projectDirty).toBe(true);
+  });
+});
+
+describe("renameDataflow on a canvas never saved", () => {
+  it("marks the dataflow Unsaved, so the save indicator and the leave question notice", async () => {
+    // Nothing said a rename diverged from what was kept. That went unseen only
+    // because the phantom dirty flag of #229 was masking it.
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
     expect(result.current.projectDirty).toBe(false);
 
     act(() => {
@@ -132,44 +275,21 @@ describe("renameDataflow", () => {
     });
 
     expect(result.current.projectDirty).toBe(true);
+    // A canvas with no dataflow has no row to send it to.
+    expect(projectsApi.update).not.toHaveBeenCalled();
   });
 
-  it("refuses a blank entry and changes nothing", async () => {
+  it("makes File > Save create the dataflow under the NEW name", async () => {
     const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
-    await loadedProject(result);
-
-    let accepted: boolean | undefined;
-    act(() => {
-      accepted = result.current.renameDataflow("   ");
-    });
-
-    expect(accepted).toBe(false);
-    expect(result.current.projectDirty).toBe(false);
-
-    await act(async () => {
-      await result.current.saveCurrentProject();
-    });
-    expect(projectsApi.update).toHaveBeenCalledWith(
-      "proj-1",
-      expect.objectContaining({ name: "Loaded name" }),
-    );
-  });
-
-  it("trims the committed name", async () => {
-    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
-    await loadedProject(result);
 
     act(() => {
-      result.current.renameDataflow("  Padded  ");
+      result.current.renameDataflow("  New name  ");
     });
     await act(async () => {
-      await result.current.saveCurrentProject();
+      await result.current.saveDataflow();
     });
 
-    expect(projectsApi.update).toHaveBeenCalledWith(
-      "proj-1",
-      expect.objectContaining({ name: "Padded" }),
-    );
+    expect(projectsApi.create).toHaveBeenCalledWith(expect.objectContaining({ name: "New name" }));
   });
 });
 
@@ -210,17 +330,12 @@ describe("discardProject (#428)", () => {
     expect(result.current.workflowGoal).toBe("");
     expect(deps.workflowDescriptionRef.current).toBe("");
 
-    // What the save actually serializes: generateTrill(nodes, edges, name,
+    // What the create actually serializes: generateTrill(nodes, edges, name,
     // goal, packages, description, ...).
-    (projectsApi.create as jest.Mock).mockResolvedValue({
-      id: "proj-2",
-      name: "DefaultDataflow",
-      spec: { dataflow: { datasets: [], packages: [] } },
-    });
     const { TrillGenerator } = jest.requireMock("../../TrillGenerator");
     (TrillGenerator.generateTrill as jest.Mock).mockClear();
     await act(async () => {
-      await result.current.saveCurrentProject();
+      await result.current.saveDataflow();
     });
     expect(projectsApi.create).toHaveBeenCalledTimes(1);
     const args = (TrillGenerator.generateTrill as jest.Mock).mock.calls[0];
@@ -229,82 +344,39 @@ describe("discardProject (#428)", () => {
   });
 });
 
-describe("saveCurrentProject", () => {
-  it("re-pins the client's name to whatever the server stored", async () => {
-    // The create branch always did this; the update branch could only drift.
-    // Observable through the NEXT save, which must carry the server's name.
-    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
-    await loadedProject(result);
-
-    await act(async () => {
-      await result.current.saveCurrentProject();
-    });
-    await act(async () => {
-      await result.current.saveCurrentProject();
-    });
-
-    expect(projectsApi.update).toHaveBeenLastCalledWith(
-      "proj-1",
-      expect.objectContaining({ name: "Server name" }),
-    );
-  });
-});
-
-describe("queued saves (#270)", () => {
-  // The rename fix of #230 held on the direct path and lost on the queued one:
-  // ``requestProjectSave`` chained ``prior.then(() => saveCurrentProject())``,
-  // capturing the save closure - and its name - as of enqueue time. The 500 ms
-  // install-sync save that follows a producing node uses that chain, so a
-  // rename made between two such saves was PUT back over by the second.
-  function deferredUpdate() {
+describe("a create's name (#270)", () => {
+  // A create sends the name the canvas holds when it leaves. A rename made
+  // while it is out is not in what it sent: the client keeps the new name,
+  // and the dataflow stays Unsaved, its leave question with it, until the
+  // canvas binds and the doc takes the rename.
+  function deferredCreate() {
     let resolve!: (detail: unknown) => void;
     const promise = new Promise((r) => { resolve = r; });
-    (projectsApi.update as jest.Mock).mockImplementationOnce(() => promise);
-    return (name: string) =>
-      resolve({ id: "proj-1", name, spec: { dataflow: { datasets: [], packages: [] } } });
+    (projectsApi.create as jest.Mock).mockImplementationOnce(() => promise);
+    return (name: string) => resolve(created(name));
   }
 
-  it("a save queued before the rename still sends the NEW name", async () => {
+  it("re-pins the client's name to whatever the server stored", async () => {
     const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
-    await loadedProject(result);
-    const finishFirst = deferredUpdate();
+    act(() => {
+      result.current.renameDataflow("Typed name");
+    });
 
-    let first!: Promise<unknown>;
-    let second!: Promise<unknown>;
-    act(() => {
-      first = result.current.requestProjectSave();   // in flight, name "Loaded name"
-      second = result.current.requestProjectSave();  // queued behind it, BEFORE the rename
-    });
-    act(() => {
-      result.current.renameDataflow("New name");
-    });
     await act(async () => {
-      finishFirst("Loaded name");
-      await first;
-      await second;
+      await result.current.saveDataflow();
     });
 
-    expect(projectsApi.update).toHaveBeenCalledTimes(2);
-    expect(projectsApi.update).toHaveBeenLastCalledWith(
-      "proj-1",
-      expect.objectContaining({ name: "New name" }),
-    );
+    expect(projectsApi.create).toHaveBeenCalledWith(expect.objectContaining({ name: "Typed name" }));
+    expect(result.current.projectName).toBe("Server name");
   });
 
-  it("a rename made while a save is in flight leaves the project unsaved", async () => {
-    // Keeping the name in the client is only half of it. The rename is not in
-    // the payload that save already sent, so it is not on disk - and clearing
-    // the dirty flag on that response says it is. Everything downstream trusts
-    // the flag: the 30s auto-save is gated on it, the beforeunload handler
-    // unbinds without it, and the in-app leave guard stops prompting - so the
-    // next navigation drops the rename silently, which is what #270 reported.
+  it("a rename made while the create is out leaves the dataflow Unsaved", async () => {
     const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
-    await loadedProject(result);
-    const finishFirst = deferredUpdate();
+    const finish = deferredCreate();
 
-    let first!: Promise<unknown>;
+    let saving!: Promise<unknown>;
     act(() => {
-      first = result.current.requestProjectSave();
+      saving = result.current.saveDataflow();
     });
     act(() => {
       result.current.renameDataflow("New name");
@@ -312,63 +384,60 @@ describe("queued saves (#270)", () => {
     expect(result.current.projectDirty).toBe(true);
 
     await act(async () => {
-      finishFirst("Loaded name");
-      await first;
+      finish("Loaded name");
+      await saving;
     });
 
     expect(result.current.projectName).toBe("New name");
     expect(result.current.projectDirty).toBe(true);
+    // The row the create made has the name it sent: the rename goes there
+    // once it exists, as no save will send it.
+    expect(projectsApi.update).toHaveBeenCalledTimes(1);
+    expect(projectsApi.update).toHaveBeenCalledWith("proj-2", { name: "New name" });
   });
 
-  it("a save with nothing edited behind it still clears the dirty flag", async () => {
-    // The control: the guard above must not leave every project permanently
-    // dirty, or the auto-save would run for ever and the leave guard would
-    // prompt on a saved dataflow.
+  it("a create with nothing edited behind it clears the Unsaved flag", async () => {
+    // The control: the guard above must not leave every new dataflow Unsaved
+    // for ever, or the leave question would ask on a dataflow that is kept.
     const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
-    await loadedProject(result);
-    const finishFirst = deferredUpdate();
+    const finish = deferredCreate();
 
-    let first!: Promise<unknown>;
     act(() => {
       result.current.renameDataflow("New name");
     });
+    let saving!: Promise<unknown>;
     act(() => {
-      first = result.current.requestProjectSave();
+      saving = result.current.saveDataflow();
     });
     await act(async () => {
-      finishFirst("New name");
-      await first;
+      finish("New name");
+      await saving;
     });
 
     expect(result.current.projectDirty).toBe(false);
+    // The create sent the name: nothing more to send the row.
+    expect(projectsApi.update).not.toHaveBeenCalled();
   });
 
-  it("a rename made while a save is in flight is not undone by that save's echo", async () => {
-    // The response re-pins the client's name to what the server stored. When
-    // the user renamed in between, the server is echoing the name we SENT, and
-    // adopting it would silently revert the rename.
+  it("a rename made while the create is out is not undone by its echo", async () => {
+    // The answer re-pins the client's name to what the server stored. When
+    // the user renamed in between, the server is echoing the name we SENT,
+    // and adopting it would silently revert the rename.
     const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
-    await loadedProject(result);
-    const finishFirst = deferredUpdate();
+    const finish = deferredCreate();
 
-    let first!: Promise<unknown>;
+    let saving!: Promise<unknown>;
     act(() => {
-      first = result.current.saveCurrentProject();
+      saving = result.current.saveDataflow();
     });
     act(() => {
       result.current.renameDataflow("New name");
     });
     await act(async () => {
-      finishFirst("Loaded name");
-      await first;
-    });
-    await act(async () => {
-      await result.current.saveCurrentProject();
+      finish("Loaded name");
+      await saving;
     });
 
-    expect(projectsApi.update).toHaveBeenLastCalledWith(
-      "proj-1",
-      expect.objectContaining({ name: "New name" }),
-    );
+    expect(result.current.projectName).toBe("New name");
   });
 });

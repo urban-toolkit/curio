@@ -16,6 +16,7 @@ import { useNotebookViewContext } from "../../../../providers/flow/notebookViewC
 import { useToastContext } from "../../../../providers/ToastProvider";
 import { DetailsButton } from "../../../DetailsButton";
 import packageStyles from "../toolsMenuPackagePalette/ToolsMenuPackagePalette.module.css";
+import { paletteItemAttrs } from "../toolsPaletteDismiss";
 import rowStyles from "./ModelPaletteRow.module.css";
 
 /**
@@ -59,6 +60,7 @@ export const ModelPaletteRow = memo(function ModelPaletteRow({
     <div className={packageStyles.packageKindRow} data-model-id={modelId}>
       <div
         className={`${packageStyles.packageKindRowDrag} ${rowStyles.avatar_model}`}
+        {...paletteItemAttrs("models", modelId)}
         draggable
         onDragStart={(event) => {
           writeModelCardDrag(event.dataTransfer, model);

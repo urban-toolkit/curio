@@ -107,10 +107,11 @@ describe("a hosted guest", () => {
     mockUserContext = HOSTED_GUEST;
   });
 
-  it("cannot save the dataflow, and nothing is sent", async () => {
+  it("cannot save the dataflow, is told why, and nothing is sent", async () => {
+    // UpMenu's Save shows this message as its toast (upMenuSave.test.tsx).
     const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
 
-    await expect(result.current.saveCurrentProject()).rejects.toThrow("Guest users cannot save projects");
+    await expect(result.current.saveDataflow()).rejects.toThrow("Guest users cannot save projects");
     expect(projectsApi.create).not.toHaveBeenCalled();
     expect(projectsApi.update).not.toHaveBeenCalled();
   });
@@ -122,13 +123,20 @@ describe("a hosted guest", () => {
     expect(projectsApi.create).not.toHaveBeenCalled();
   });
 
-  it("is still told why when it saves by itself, through the save queue File > Save takes", async () => {
-    // UpMenu's Save shows this message as its toast (upMenuSaveQueue.test.tsx).
+  it("records no output Curio would record for it, and is told nothing", async () => {
+    // After a run, a pin or a scenario Curio records the canvas's outputs on
+    // its own; a guest's never leave the tab.
     const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
 
-    await expect(result.current.requestProjectSave()).rejects.toThrow("Guest users cannot save projects");
+    let outcome: any;
+    await act(async () => {
+      outcome = await result.current.recordOutputs(["n1"]);
+    });
+
+    expect(outcome).toEqual({ saved: false, failedNodeIds: ["n1"] });
     expect(projectsApi.create).not.toHaveBeenCalled();
     expect(projectsApi.update).not.toHaveBeenCalled();
+    expect(mockShowToast).not.toHaveBeenCalled();
   });
 
   it("gets no dataflow created before an install, and is told nothing", async () => {
@@ -158,7 +166,7 @@ describe.each([
     const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
 
     await act(async () => {
-      await result.current.saveCurrentProject();
+      await result.current.saveDataflow();
     });
     expect(projectsApi.create).toHaveBeenCalledTimes(1);
     expect(result.current.projectId).toBe("proj-new");

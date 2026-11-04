@@ -9,10 +9,13 @@ Each "room" key has the form ``project:<uuid>`` (:func:`room_for`).
 
 A room tells its participants apart by **participant id**, one per socket,
 never by account: two tabs of one account, or two hosted guests on the one
-guest account, are two participants. Locks, proposals and votes name the
-participant that holds or made them, and each participant carries the role
-its account has on the dataflow (``projects/access.py``). The socket's own
-id stays on the server.
+guest account, are two participants. A lock names the participant that holds
+it, and each participant carries the role its account has on the dataflow
+(``projects/access.py``). Every guest, and every tab of a Curio with no
+sign-in, signs in to the one guest account, so the room numbers that
+account's tabs (:data:`GUEST_NUMBER`), which name each of them apart. The
+socket's own id stays on the server. The dataflow is not here: it is the
+server's Yjs doc (``dataflow_docs.py``).
 """
 
 from __future__ import annotations
@@ -28,12 +31,8 @@ _lock = threading.RLock()
 
 _room_users: Dict[str, Dict[str, dict]] = {}      # room -> sid -> participant
 _room_locks: Dict[str, Dict[str, dict]] = {}      # room -> nodeId -> lock info
-_room_graph: Dict[str, dict] = {}                 # room -> {"nodes": {...}, "edges": {...}}
-_room_outputs: Dict[str, Dict[str, dict]] = {}    # room -> nodeId -> last output payload
-_room_versions: Dict[str, int] = {}               # room -> monotonic counter
 _room_meta: Dict[str, dict] = {}                  # room -> bookkeeping
 _room_activity: Dict[str, deque] = {}             # room -> ring buffer of events
-_room_proposals: Dict[str, Dict[str, dict]] = {}  # room -> proposal_id -> proposal
 _sid_index: Dict[str, set] = {}                   # sid -> rooms (for fast cleanup)
 _sid_identity: Dict[str, dict] = {}               # sid -> authenticated identity
 
@@ -58,12 +57,8 @@ def _now() -> float:
 def _ensure_room(room: str) -> None:
     _room_users.setdefault(room, {})
     _room_locks.setdefault(room, {})
-    _room_graph.setdefault(room, {"nodes": {}, "edges": {}})
-    _room_outputs.setdefault(room, {})
-    _room_versions.setdefault(room, 0)
     _room_meta.setdefault(room, {"created_at": _now(), "last_active": _now()})
     _room_activity.setdefault(room, deque(maxlen=ACTIVITY_CAP))
-    _room_proposals.setdefault(room, {})
 
 
 def set_identity(sid: str, identity: dict) -> None:
@@ -88,14 +83,45 @@ def drop_identity(sid: str) -> None:
         _sid_identity.pop(sid, None)
 
 
-def add_user(room: str, sid: str, user_info: dict) -> None:
+#: The number of a tab of the guest account in its room: the lowest no other
+#: participant of the room holds when the tab joins (:func:`add_user`), free
+#: again once it leaves. Its chip, its cursor, its locks and its Activity lines
+#: say it, "Shared Guest 2"; its chip and its cursor are in that number's color.
+GUEST_NUMBER = "guest_number"
+
+
+def numbered(participant: Optional[dict]) -> dict:
+    """*participant*'s :data:`GUEST_NUMBER` as a field of its own, for what
+    names it; nothing for a participant with none."""
+    number = (participant or {}).get(GUEST_NUMBER)
+    return {} if number is None else {GUEST_NUMBER: number}
+
+
+def _free_number(users: Dict[str, dict], sid: str) -> int:
+    """The lowest number no participant in *users* but *sid*'s holds."""
+    held = {entry.get(GUEST_NUMBER) for other, entry in users.items() if other != sid}
+    number = 1
+    while number in held:
+        number += 1
+    return number
+
+
+def add_user(room: str, sid: str, user_info: dict) -> dict:
     """Put the participant *user_info* (with its ``participant_id`` and
-    ``role``) in *room* for the socket *sid*."""
+    ``role``) in *room* for the socket *sid*; the participant as the room keeps
+    it. A socket signed in to a guest account, the one every guest signs in
+    to, is numbered (:data:`GUEST_NUMBER`), and keeps its number when it joins
+    again."""
     with _lock:
         _ensure_room(room)
-        _room_users[room][sid] = dict(user_info, joined_at=_now())
+        users = _room_users[room]
+        entry = dict(user_info, joined_at=_now())
+        if (_sid_identity.get(sid) or {}).get("is_guest"):
+            entry[GUEST_NUMBER] = (users.get(sid) or {}).get(GUEST_NUMBER) or _free_number(users, sid)
+        users[sid] = entry
         _sid_index.setdefault(sid, set()).add(room)
         _room_meta[room]["last_active"] = _now()
+        return dict(entry)
 
 
 def _release_locks_of(room: str, participant_id: Optional[str]) -> List[str]:
@@ -147,6 +173,21 @@ def participant(room: str, sid: str) -> Optional[dict]:
         return dict(entry) if entry is not None else None
 
 
+def sign_in_of(room: str, participant_id: Optional[str]) -> Optional[str]:
+    """The sign-in of the socket that is *participant_id* in *room*, as text:
+    the id of the session its handshake signed in with, which tells apart the
+    tabs of the one guest account in different browsers. ``None`` when no
+    socket of the room is that participant."""
+    if participant_id is None:
+        return None
+    with _lock:
+        for sid, entry in (_room_users.get(room) or {}).items():
+            if entry.get("participant_id") == participant_id:
+                session = (_sid_identity.get(sid) or {}).get("token_session_id")
+                return None if session is None else str(session)
+    return None
+
+
 def set_user_role(room: str, user_id, role: str) -> Tuple[bool, List[str]]:
     """Give every participant of the account *user_id* in *room* the role
     *role*. Returns whether any changed, and the nodes whose locks they
@@ -164,13 +205,20 @@ def set_user_role(room: str, user_id, role: str) -> Tuple[bool, List[str]]:
         return changed, released
 
 
+#: What an agent's lock names besides a person's fields: the agent, and what
+#: it writes on the node (``agent_peers.py``).
+AGENT_LOCK_FIELDS = ("agent", "writes")
+
+
 def try_lock(room: str, node_id: str, user_info: dict) -> Optional[dict]:
     """Acquire (or refresh) the soft lock on ``node_id`` for the participant
-    *user_info*.
+    *user_info*. An agent's lock also keeps its :data:`AGENT_LOCK_FIELDS`, and
+    a tab of the guest account's its :data:`GUEST_NUMBER`.
 
     Returns the lock record if it owns it after the call (newly or
     already), otherwise ``None`` (another participant holds it).
     """
+    agent = {key: user_info[key] for key in AGENT_LOCK_FIELDS if user_info.get(key) is not None}
     with _lock:
         _ensure_room(room)
         locks = _room_locks[room]
@@ -179,6 +227,7 @@ def try_lock(room: str, node_id: str, user_info: dict) -> Optional[dict]:
         if existing is not None:
             if existing.get("participant_id") == participant_id:
                 existing["since"] = _now()
+                existing.update(agent)
                 return dict(existing)
             return None
         lock = {
@@ -187,6 +236,8 @@ def try_lock(room: str, node_id: str, user_info: dict) -> Optional[dict]:
             "name": user_info.get("name"),
             "participant_id": participant_id,
             "since": _now(),
+            **agent,
+            **numbered(user_info),
         }
         locks[node_id] = lock
         return dict(lock)
@@ -202,14 +253,6 @@ def release_lock(room: str, node_id: str, participant_id: Optional[str]) -> bool
         return True
 
 
-def bump_version(room: str) -> int:
-    with _lock:
-        _ensure_room(room)
-        _room_versions[room] += 1
-        _room_meta[room]["last_active"] = _now()
-        return _room_versions[room]
-
-
 def record_activity(room: str, kind: str, payload: dict) -> dict:
     with _lock:
         _ensure_room(room)
@@ -218,71 +261,26 @@ def record_activity(room: str, kind: str, payload: dict) -> dict:
         return dict(entry)
 
 
-def set_output(room: str, node_id: str, output: dict) -> None:
-    with _lock:
-        _ensure_room(room)
-        _room_outputs[room][node_id] = dict(output, ts=_now())
-
-
-def add_proposal(room: str, proposal: dict) -> dict:
-    with _lock:
-        _ensure_room(room)
-        pid = proposal.get("id") or str(uuid.uuid4())
-        record = dict(
-            proposal, id=pid, created_at=_now(),
-            approvals=[], rejections=[],
-        )
-        _room_proposals[room][pid] = record
-        return dict(record)
-
-
-def vote_proposal(
-    room: str, proposal_id: str, participant_id: str, approve: bool,
-) -> Optional[dict]:
-    with _lock:
-        prop = (_room_proposals.get(room) or {}).get(proposal_id)
-        if not prop:
-            return None
-        bucket = "approvals" if approve else "rejections"
-        if participant_id not in prop[bucket]:
-            prop[bucket].append(participant_id)
-        return dict(prop)
-
-
-def voters(room: str, proposal: dict) -> List[str]:
-    """The participants whose approval applies *proposal*: everyone in the
-    room who edits the dataflow, but the one who proposed it. A watcher has
-    no vote."""
-    proposer = (proposal.get("proposed_by") or {}).get("participant_id")
-    with _lock:
-        return [
-            entry.get("participant_id")
-            for entry in (_room_users.get(room) or {}).values()
-            if entry.get("participant_id") != proposer and entry.get("role") in EDIT_ROLES
-        ]
-
-
-def remove_proposal(room: str, proposal_id: str) -> Optional[dict]:
-    with _lock:
-        return (_room_proposals.get(room) or {}).pop(proposal_id, None)
-
-
 def snapshot(room: str) -> dict:
     with _lock:
         _ensure_room(room)
         return {
             "users": list(map(dict, _room_users[room].values())),
             "locks": {nid: dict(lock) for nid, lock in _room_locks[room].items()},
-            "outputs": dict(_room_outputs[room]),
-            "proposals": [dict(p) for p in _room_proposals[room].values()],
             "activity": list(_room_activity[room]),
-            "version": _room_versions[room],
         }
 
 
 def users_in(room: str) -> List[dict]:
     with _lock:
         return [dict(entry) for entry in (_room_users.get(room) or {}).values()]
+
+
+def edit_sids(room: str) -> List[str]:
+    """The sockets in *room* whose participant edits the dataflow, its owner's
+    and its editors' (:data:`EDIT_ROLES`), by the roles they have now."""
+    with _lock:
+        return [sid for sid, entry in (_room_users.get(room) or {}).items() if entry.get("role") in EDIT_ROLES]
 
 
 def is_member(room: str, sid: str) -> bool:
@@ -295,11 +293,7 @@ def reset_for_tests() -> None:
     with _lock:
         _room_users.clear()
         _room_locks.clear()
-        _room_graph.clear()
-        _room_outputs.clear()
-        _room_versions.clear()
         _room_meta.clear()
         _room_activity.clear()
-        _room_proposals.clear()
         _sid_index.clear()
         _sid_identity.clear()

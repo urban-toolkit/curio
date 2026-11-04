@@ -396,6 +396,29 @@
   border-bottom: 8px solid transparent;
 }
 
+/* A message someone else wrote, in a chat the owner and the editors the owner
+   invited share: its writer's name above the bubble, in the meta line's quiet
+   type. Your own messages carry no name. */
+.userTurn {
+  align-self: flex-end;
+  max-width: 85%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+}
+
+.userTurn .msgUser {
+  max-width: 100%;
+}
+
+.msgWriter {
+  padding-right: 2px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--curio-text-secondary, var(--curio-text-meta));
+}
+
 .agentRow {
   align-self: flex-start;
   display: flex;

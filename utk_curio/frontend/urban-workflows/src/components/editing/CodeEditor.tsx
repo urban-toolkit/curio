@@ -13,6 +13,10 @@ import { unversionedNodeType } from "../../utils/flowNodeCanonicalType";
 // Editor
 import Editor, { Monaco } from "@monaco-editor/react";
 import { useFlowContext } from "../../providers/FlowProvider";
+import { useCollab } from "../../providers/CollaborationProvider";
+import { canvasRole } from "../../providers/collab/participants";
+import { getCurrentProjectId } from "../../registry/projectPackagesStore";
+import { agentsDataflowId } from "../../services/agents/agentEditors";
 import { shouldSaveOutputOnRun } from "../../utils/saveOutputDataset";
 import { executionResultOutput } from "../../utils/executionResult";
 import { runKeyOf } from "../../utils/references/runKeys";
@@ -21,9 +25,8 @@ import { MissingModuleNotice, type InstallState } from "./MissingModuleNotice";
 import { MIN_PROGRESS_MS, readInstallResponse } from "../../utils/libraryInstall";
 import { resolveNodeDisplayLabel } from "../../utils/palettePackageFactoryDraft";
 import { useProvenanceContext } from "../../providers/ProvenanceProvider";
-import { useCollab, CodeProposal } from "../../providers/CollaborationProvider";
-import { canEditRole, isOwnParticipant, otherEditors } from "../../providers/collab/participants";
 import { useMonacoExternalValue } from "../../hook/useMonacoExternalValue";
+import { useYMonacoBinding } from "./useYMonacoBinding";
 import { CredentialHint } from "./CredentialHint";
 import {
     credentialLiterals,
@@ -140,7 +143,11 @@ function CodeEditor({
     chipPreviews = null,
     restoredCode = null,
 }: CodeEditorProps) {
-    const [code, setCode] = useState<string>(""); // code with all original markers
+    // The code with all original markers, the node's from the first render: what
+    // this floats into the node's code at mount. Floated as the editor's empty
+    // "", the node's code read "" until its code came in, and a save then kept
+    // "" as the node's code.
+    const [code, setCode] = useState<string>(() => (typeof defaultValue === "string" ? defaultValue : ""));
     const [execCount, setExecCount] = useState<number>(0);
     // #662: the mounted editor, for the reference tags and chips.
     const [widgetEditor, setWidgetEditor] = useState<{ editor: any; monaco: any } | null>(null);
@@ -159,6 +166,7 @@ function CodeEditor({
         markNodeErrored,
         signalNodeExecDone,
         projectId,
+        viewerMode,
         defaultSaveOutputDataset,
         isDashboardSource,
         playNodesUpTo,
@@ -166,6 +174,7 @@ function CodeEditor({
         edges,
         dashboardOn,
     } = useFlowContext();
+    const collab = useCollab();
     // The wired circles: the value on circle k is the code's input_k. A ref,
     // since the run effect below is keyed on the resolved code alone.
     const wiredSlotsRef = useRef<number[]>([]);
@@ -174,7 +183,6 @@ function CodeEditor({
     // on a dashboard tile.
     const look = nodeEditorLook(!!dashboardOn);
     const { nodeExecProv } = useProvenanceContext();
-    const collab = useCollab();
     // dev/91: non-null exactly when this template declares a backendHandler.
     const backendRun = usePackageBackendRun(nodeType);
     // #603: whether a node wired into this one ran and failed, asked the way a
@@ -235,7 +243,8 @@ function CodeEditor({
     // arrives (initial load, dataset drop, LLM apply, provenance navigation)
     // and ignores `undefined`/stale flips, so in-progress edits are never
     // clobbered and the cursor never jumps (dev/70). `baselineCodeRef` is the
-    // canonical "as-loaded" code the collab blur-diff compares against.
+    // canonical "as-loaded" code: an editor holding something else holds the
+    // user's typing.
     const { baselineRef: baselineCodeRef, applyValue, attachEditor } = useMonacoExternalValue({
         externalValue: defaultValue,
         onExternalApply: (value) => {
@@ -245,10 +254,10 @@ function CodeEditor({
         },
     });
 
-    // A run's code put back from the provenance drawer, through the same
-    // channel as a collaborator's applied change, then handled as content that
-    // arrived whole. A default that equals the loaded code never applies, and
-    // putting back the first run must.
+    // A run's code put back from the provenance drawer, written into the
+    // editor, then handled as content that arrived whole. A default that
+    // equals the loaded code never applies, and putting back the first run
+    // must.
     useEffect(() => {
         if (!restoredCode) return;
         applyValue(restoredCode.code);
@@ -256,34 +265,19 @@ function CodeEditor({
         sendCodeToWidgets(restoredCode.code);
         scanNow(restoredCode.code);
     }, [restoredCode]);
-    const codeRef = useRef<string>("");
-    const collabRef = useRef(collab);
-    collabRef.current = collab;
-    useEffect(() => {
-        codeRef.current = code;
-    }, [code]);
+
+    // The node's code in the dataflow's doc, typed together: everyone's
+    // keystrokes and cursors, and Ctrl+Z for this tab's typing alone.
+    useYMonacoBinding(widgetEditor?.editor, widgetEditor?.monaco, data?.nodeId, {
+        canWrite: !readOnly,
+        baselineRef: baselineCodeRef,
+    });
 
     // @ts-ignore
     const handleCodeChange = (value, event) => {
         setCode(value);
         markNodeStale(data.nodeId);
         scheduleScan(typeof value === "string" ? value : ""); // dev/117
-    };
-
-    // ------------------------------------------------------------------
-    // Collaboration: code-change proposals + receiving applied changes
-    // ------------------------------------------------------------------
-
-    const proposeOnBlur = () => {
-        const c = collabRef.current;
-        if (!c.enabled || !c.connected) return;
-        // A watcher proposes nothing, and with no one else who edits there
-        // is nobody to approve.
-        if (!canEditRole(c.role) || otherEditors(c.users, c.participantId).length === 0) return;
-        const local = codeRef.current;
-        const baseline = baselineCodeRef.current;
-        if (local === baseline) return;
-        c.requestCodeChange(data.nodeId, baseline, local, "code");
     };
 
     // Install state for the missing-library notice (#299). Held here rather
@@ -342,37 +336,11 @@ function CodeEditor({
         editorInstanceRef.current = editor;
         setWidgetEditor({ editor, monaco });
         editorHeight.attach(editor, monaco);
-        editor.onDidBlurEditorText(proposeOnBlur);
         // Ctrl/Cmd+Enter. Registered here rather than on the window because
         // Monaco owns the chord while the editor has focus — and already bound
         // it to "insert line below", which is what the keystroke did before.
         registerRunNodeAction(editor, monaco, () => runNodeRef.current);
     };
-
-    // Apply remote-approved code changes to this node's editor.
-    useEffect(() => {
-        if (!collab.enabled) return;
-        const unsub = collab.onRemote("code_change_applied", (payload) => {
-            const prop = payload as CodeProposal;
-            if (!prop || prop.nodeId !== data.nodeId || prop.kind !== "code") return;
-            // Skip if this tab proposed it: its local code already matches.
-            // Another tab of the same account still takes the change.
-            if (isOwnParticipant(collab.participantId, prop.proposed_by)) {
-                baselineCodeRef.current = prop.newValue;
-                return;
-            }
-            applyValue(prop.newValue); // editor + baseline (cursor-preserving)
-            setCode(prop.newValue);
-        });
-        return unsub;
-    }, [collab.enabled, collab.onRemote, collab.participantId, data.nodeId]);
-
-    const pendingProposal = collab.proposals.find(
-        (p) => p.nodeId === data.nodeId && p.kind === "code",
-    );
-    const proposalIsMine = Boolean(
-        pendingProposal && isOwnParticipant(collab.participantId, pendingProposal.proposed_by),
-    );
 
     useEffect(() => {
         if (floatCode != undefined) floatCode(code);
@@ -434,11 +402,17 @@ function CodeEditor({
         // selection, widget value or code changed while it runs leaves the
         // node stale.
         const runKey = runKeyOf(code, data.widgets, data.selections);
+        // The dataflow the run is of, by the rule its agents follow
+        // (useAgentsDataflowId): the one the owner's canvas saves, the one an
+        // invited editor's route opened, and none on a watcher's canvas. The
+        // run then reads the dataflow's datasets and saved outputs, and an
+        // editor's the packages it uses, from the owner's store.
+        const runDataflowId = agentsDataflowId(canvasRole(viewerMode, collab), projectId, getCurrentProjectId());
         if (backendRun) {
             // dev/91: a backendHandler template Runs through the package
             // backend sandbox — registry-driven dispatch, never another
             // hardcoded template-id literal.
-            void backendRun({ content: replacedCode, input: data.input }).then((outcome) => {
+            void backendRun({ content: replacedCode, input: data.input, dataflowId: runDataflowId }).then((outcome) => {
                 if (outcome.ok) {
                     setOutputCallback({ code: "success", content: outcome.content, runKey });
                     markNodeExecuted(data.nodeId);
@@ -462,7 +436,7 @@ function CodeEditor({
             data.nodeId,
             workflowNameRef.current,
             nodeExecProv,
-            projectId,
+            runDataflowId,
             // A node feeding a pinned dashboard tile saves its output whatever
             // its own toggle says: that saved dataset is what lets the tile draw
             // when someone opens the dashboard later.
@@ -559,43 +533,6 @@ function CodeEditor({
                     onDismiss={() => setDismissedFindingsKey(currentFindingsKey)}
                 />
             ) : null}
-            {pendingProposal && (
-                <div
-                    style={{
-                        padding: "4px 8px",
-                        background: proposalIsMine ? "#fff8e1" : "#e3f2fd",
-                        borderBottom: "1px solid #ccc",
-                        fontSize: 11,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6,
-                    }}
-                >
-                    <span style={{ flex: 1 }}>
-                        {proposalIsMine
-                            ? `Awaiting approval from peers (${pendingProposal.approvals.length} so far).`
-                            : `${pendingProposal.proposed_by?.username || "Peer"} proposed a code change.`}
-                    </span>
-                    {!proposalIsMine && (
-                        <>
-                            <button
-                                type="button"
-                                onClick={() => collab.approveCodeChange(pendingProposal.id)}
-                                style={{ padding: "1px 8px", fontSize: 11 }}
-                            >
-                                Approve
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => collab.rejectCodeChange(pendingProposal.id)}
-                                style={{ padding: "1px 8px", fontSize: 11 }}
-                            >
-                                Reject
-                            </button>
-                        </>
-                    )}
-                </div>
-            )}
             <ReferenceStrip
                 nodeId={data?.nodeId}
                 widgets={references.widgets}

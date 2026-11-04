@@ -345,6 +345,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
   );
   const collection = useCollectionStatus(
     dataset?.format === "collection" ? dataset.id : undefined,
+    dataflowId,
   );
 
   const columnsLabel =
@@ -522,7 +523,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
             />
           ) : (
             <div className={styles.previewSection}>
-              {dataset.collection ? <CollectionStrip status={collection.status} /> : null}
+              {dataset.collection ? <CollectionStrip status={collection.status} dataflowId={dataflowId} /> : null}
               <div className={styles.previewSubtab}>
                 <span className={styles.previewSubtabActive}>Table Preview</span>
               </div>

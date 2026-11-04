@@ -1,0 +1,47 @@
+{
+  "id": "agent.you.tree-counter",
+  "name": "Tree Counter",
+  "category": "canvas",
+  "version": "1.0.0",
+  "purpose": "Count and map a city's street trees from its tree census, by block, neighborhood or species.",
+  "skills": [
+    "street-trees"
+  ],
+  "capabilities": [
+    {
+      "id": "trees.count",
+      "contractVersion": "1"
+    }
+  ],
+  "prompts": {
+    "system": {
+      "path": "curio:default_preamble.md",
+      "variables": []
+    },
+    "instruction": {
+      "path": "prompts/instruction.md",
+      "variables": []
+    }
+  },
+  "compatibleTargets": [
+    {
+      "kind": "canvas",
+      "requires": []
+    }
+  ],
+  "tools": [
+    {
+      "id": "dataflow.read"
+    },
+    {
+      "id": "catalog.search"
+    },
+    {
+      "id": "node.create"
+    }
+  ],
+  "provenance": {
+    "publisher": "you",
+    "trust": "imported"
+  }
+}

@@ -20,6 +20,10 @@ export interface PackageDetailModalProps {
   /** The dataflow behind the modal has changes not yet saved, so a link that
    *  leaves it asks first. Set only on the canvas. */
   unsavedChanges?: boolean;
+  /** A dataflow bound to its doc: a link that leaves it waits for the server
+   *  to have its last change, and asks only when it cannot. Set only on the
+   *  canvas. */
+  whenChangesKept?: () => Promise<boolean>;
   onClose: () => void;
 }
 
@@ -64,16 +68,19 @@ function samePath(a: string, b: string): boolean {
 function DownloadedFrom({
   source,
   unsavedChanges,
+  whenChangesKept,
   onClose,
 }: {
   source: { sourceId: string; sourceName?: string; resourceId?: string };
   unsavedChanges: boolean;
+  whenChangesKept?: () => Promise<boolean>;
   onClose: () => void;
 }) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const { leave, dialog: leaveDialog } = useLeaveGuard(unsavedChanges, LEAVE_DATAFLOW, {
     layer: "overlay",
+    settle: whenChangesKept,
   });
   const followLink = (to: string) => {
     if (samePath(to, pathname)) {
@@ -146,6 +153,7 @@ export const PackageDetailModal: React.FC<PackageDetailModalProps> = ({
   inAllProjects,
   isPublished,
   unsavedChanges = false,
+  whenChangesKept,
   onClose,
 }) => {
   const [exporting, setExporting] = useState(false);
@@ -317,6 +325,7 @@ export const PackageDetailModal: React.FC<PackageDetailModalProps> = ({
               <DownloadedFrom
                 source={{ ...source, sourceId: source.sourceId }}
                 unsavedChanges={unsavedChanges}
+                whenChangesKept={whenChangesKept}
                 onClose={onClose}
               />
             ) : null}

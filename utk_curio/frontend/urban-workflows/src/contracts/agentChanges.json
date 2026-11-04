@@ -1,0 +1,3 @@
+{
+  "tools": ["dataflow.plan.write", "node.content.write", "node.create", "node.settings.write"]
+}

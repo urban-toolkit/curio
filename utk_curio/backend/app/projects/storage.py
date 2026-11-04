@@ -217,6 +217,79 @@ def drop_history(user_key: str, project_id: str) -> None:
             )
 
 
+@contextmanager
+def history_lock(user_key: str, project_id: str):
+    """The project's history lock (:func:`_history_lock`), for the history's
+    points (``collaboration/history.py``), which it guards beside the logs."""
+    with _history_lock(project_dir(user_key, project_id)):
+        yield
+
+
+def history_sections(user_key: str, project_id: str) -> dict:
+    """The history sections (:data:`HISTORY_KEYS`) the project holds on
+    record, as a spec holds them: each log's, or the spec file's for one it
+    still holds. What the history's points import once
+    (``collaboration/history.py``)."""
+    d = project_dir(user_key, project_id)
+    if not d.is_dir():
+        return {}
+    with _history_lock(d):
+        in_file = _sections_in_spec_file(d)
+        logs = {key: _read_log_bytes(d, key) for key in HISTORY_KEYS if key not in in_file}
+    out = dict(in_file)
+    for key, data in logs.items():
+        if data is None:
+            continue
+        value, _committed = _replay(data, _SECTIONS[key])
+        if value is not _ABSENT:
+            out[key] = value
+    return out
+
+
+#: Where the history sections go once the history's points hold them:
+#: ``history/imported/``, kept as the logs were, and read by nothing.
+IMPORTED_DIR = "imported"
+
+
+def set_history_aside(user_key: str, project_id: str) -> None:
+    """Move the history sections on record into ``history/imported/``, as
+    logs, once the history's points hold them: no read or write of the
+    document finds them again. A spec file that still holds one leaves it,
+    the rest of the file as it is, and the write counter as it is."""
+    d = project_dir(user_key, project_id)
+    if not d.is_dir():
+        return
+    with _history_lock(d):
+        in_file = _sections_in_spec_file(d)
+        aside = d / HISTORY_DIR / IMPORTED_DIR
+        for key in HISTORY_KEYS:
+            path = _log_path(d, key)
+            target = aside / HISTORY_FILES[key]
+            if path.is_file():
+                aside.mkdir(parents=True, exist_ok=True)
+                os.replace(path, target)
+            elif key in in_file:
+                aside.mkdir(parents=True, exist_ok=True)
+                _rewrite(target, _SECTIONS[key].records(in_file[key]))
+        if in_file:
+            spec = json.loads((d / SPEC_FILE).read_text(encoding="utf-8"))
+            _write_json_atomically(
+                d / SPEC_FILE, {k: v for k, v in spec.items() if k not in HISTORY_KEYS},
+            )
+
+
+def drop_history_aside(user_key: str, project_id: str) -> None:
+    """Remove what :func:`set_history_aside` kept, and the logs a later write
+    made, with what a spec file still holds: the history's points clear the
+    history before a version, or drop it (``collaboration/history.py``)."""
+    d = project_dir(user_key, project_id)
+    if not d.is_dir():
+        return
+    drop_history(user_key, project_id)
+    with _history_lock(d):
+        shutil.rmtree(d / HISTORY_DIR / IMPORTED_DIR, ignore_errors=True)
+
+
 def write_history(user_key: str, project_id: str, sections: dict) -> bool:
     """Put *sections*, history sections (:data:`HISTORY_KEYS`) as a spec holds
     them, on record as the project's history, and write nothing else: not its
@@ -271,62 +344,6 @@ def _bump_spec_revision(project_dir_path: Path) -> int:
         # reads a missing counter as "no basis", which is today's behaviour.
         return current
     return nxt
-
-
-#: The number of the latest save applied to this project from each tab, as a
-#: JSON object of tab id to number, beside the write counter. A tab numbers its
-#: saves one after another (``api/saveOrder.ts``) and the page gives up on a
-#: save after 2 minutes, but the server may still be working on it: a save
-#: numbered lower than one already applied from its tab is refused
-#: (``services.update_project``), so it cannot land over the newer one.
-SAVE_ORDER_FILE = ".save.order.json"
-
-#: How many tabs the record keeps. The tab that saved longest ago goes first,
-#: and a save from a tab no longer on record is not checked.
-SAVE_ORDER_TABS = 32
-
-
-def _read_save_order(path: Path) -> dict:
-    """The record at *path*; empty when it is missing or cannot be read, which
-    refuses nothing."""
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    if not isinstance(raw, dict):
-        return {}
-    return {
-        str(tab): number for tab, number in raw.items()
-        if isinstance(number, int) and not isinstance(number, bool)
-    }
-
-
-def last_save_number(user_key: str, project_id: str, tab: str) -> Optional[int]:
-    """The number of the latest save applied to this project from *tab*, or
-    ``None`` when there is none on record."""
-    try:
-        path = project_dir(user_key, project_id) / SAVE_ORDER_FILE
-    except (PathTraversalError, ValueError):
-        return None
-    return _read_save_order(path).get(tab)
-
-
-def record_save_number(user_key: str, project_id: str, tab: str, number: int) -> None:
-    """Record *number* as the latest save applied from *tab*. Called under the
-    spec lock, like every other write of the project's files."""
-    path = ensure_project_dir(user_key, project_id) / SAVE_ORDER_FILE
-    order = _read_save_order(path)
-    order.pop(tab, None)
-    order[tab] = int(number)
-    while len(order) > SAVE_ORDER_TABS:
-        order.pop(next(iter(order)))
-    try:
-        _write_json_atomically(path, order)
-    except OSError:
-        # Like the counter: a record that cannot be written must not fail the
-        # save. A missing record refuses nothing, which is the behaviour from
-        # before saves were numbered.
-        logger.warning("Could not record the save order of project %s", project_id, exc_info=True)
 
 
 def read_spec(user_key: str, project_id: str) -> Optional[dict]:

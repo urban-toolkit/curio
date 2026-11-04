@@ -77,6 +77,13 @@
   "endpoint": "packages_api.install_from_catalog"
  },
  {
+  "rule": "/api/packages/dataflows/<project_id>",
+  "methods": [
+   "GET"
+  ],
+  "endpoint": "packages_api.list_dataflow_packages"
+ },
+ {
   "rule": "/api/packages/defaults",
   "methods": [
    "GET"

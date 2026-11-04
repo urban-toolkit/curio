@@ -27,7 +27,7 @@ which of the two is wrong when it fails.
 
 The "about a second" is not folklore: ``applyNewOutput`` ->
 ``scheduleInstallSyncRef`` paints an optimistic "Adding..." row and debounces
-500 ms before the save whose ``.then`` clears it (``providers/flow/useInstallSave.ts``). So
+500 ms before the record of outputs whose ``.then`` clears it (``providers/flow/useInstallSave.ts``). So
 the window the reporter describes is exactly the placeholder's lifetime, and
 anything asserted before that has settled is asserting against a state that has
 not happened yet.
@@ -38,8 +38,10 @@ Run::
 """
 from __future__ import annotations
 
+import json
 import re
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 from playwright.sync_api import expect
 
@@ -69,21 +71,30 @@ DRAWER_ROOT = '[data-curio-dataset-catalog-drawer="true"]'
 # own, which is what made #180 mis-report it as a failed generation.
 SCALAR_CODE = "return 1\n"
 
-# Long enough to cover the 500 ms install-sync debounce, its save round trip and
+# Long enough to cover the 500 ms install-sync debounce, its record's round trip and
 # the catalog refetch that follows -- i.e. past the window in which the reporter
 # says the row is still visible.
 SETTLE_MS = 4000
 
 
 def _install_save_response(project_id: str, node_id: str):
-    """Match the project save that carries this node's output ref."""
+    """Match the record of outputs that carries this node's output ref: a POST
+    of ``/api/projects/<id>/outputs`` whose ``outputs`` hold a ref of the node.
+    Not a request to another of the dataflow's routes that names the node
+    otherwise (a server run of it, a run in its history), whose answer carries
+    no install warnings at all, nor a record made before the run."""
 
     def predicate(response) -> bool:
-        if f"/api/projects/{project_id}" not in response.url:
+        if response.request.method != "POST":
             return False
-        if response.request.method not in ("PUT", "POST"):
+        if urlparse(response.url).path.rstrip("/") != f"/api/projects/{project_id}/outputs":
             return False
-        return node_id in (response.request.post_data or "")
+        try:
+            body = json.loads(response.request.post_data or "{}")
+        except ValueError:
+            return False
+        outputs = body.get("outputs") if isinstance(body, dict) else None
+        return any(isinstance(ref, dict) and ref.get("node_id") == node_id for ref in outputs or [])
 
     return predicate
 

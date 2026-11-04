@@ -1,12 +1,12 @@
 /**
- * Simulation Mode from the client's side (memo dev/142, F2 — extracted from
- * `AgentAttachmentsProvider`): run the driver (step or auto, dev/67-9) with
- * its canvas mutations applied live and its current step narrated; cancel.
+ * Build & validate from the client's side (memo dev/142, F2: extracted from
+ * `AgentAttachmentsProvider`): run the driver over the plan that landed (step
+ * or auto, dev/67-9), each change that lands reaching a canvas no doc binds,
+ * and its current step narrated; cancel.
  */
 import { useCallback, useMemo, useState } from "react";
 
-import { agentsApi, notifyAgentCanvasMutation } from "../../services/agents";
-import { bridgePlanRemovals } from "./useAgentProposals";
+import { agentsApi, bridgeLandedChangeEvent } from "../../services/agents";
 
 export interface AgentSimulationSlice {
   runSimulation: (attachmentId: string, mode: "step" | "auto") => Promise<Record<string, unknown>>;
@@ -36,24 +36,8 @@ export function useAgentSimulation(opts: {
         });
       try {
         return await agentsApi.simulate(pid, attachmentId, mode, (name, payload) => {
-          if (name === "node_created" && payload.createdNode) {
-            notifyAgentCanvasMutation({ kind: "node-created", node: payload.createdNode as never });
-          } else if (name === "node_content_applied" && typeof payload.nodeId === "string") {
-            notifyAgentCanvasMutation({
-              kind: "node-content-applied",
-              nodeId: payload.nodeId,
-              content: String(payload.content ?? ""),
-              ...(typeof payload.agent === "string" && payload.agent ? { agent: payload.agent } : {}),
-            });
-          } else if (name === "edges_created" && Array.isArray(payload.createdEdges)) {
-            const edges = payload.createdEdges as Array<{ id: string; source: string; target: string }>;
-            notifyAgentCanvasMutation({ kind: "edges-created", batchId: `sim:${edges.map((e) => e.id).join(",")}`, edges });
-          } else if (name === "plan_removals") {
-            // The apply that completed the plan removed what it names.
-            bridgePlanRemovals(String(payload.proposalId ?? ""), {
-              removedNodeIds: Array.isArray(payload.removedNodeIds) ? (payload.removedNodeIds as string[]) : [],
-              removedEdgeIds: Array.isArray(payload.removedEdgeIds) ? (payload.removedEdgeIds as string[]) : [],
-            });
+          if (bridgeLandedChangeEvent(name, payload)) {
+            // A validated node's code landed: a canvas no doc binds takes it.
           } else if (name === "stage") {
             narrate(`${String(payload.action)}${payload.label ? `: ${String(payload.label)}` : ""}`);
           } else if (name === "node_executed") {

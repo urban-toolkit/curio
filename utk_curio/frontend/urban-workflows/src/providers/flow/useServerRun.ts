@@ -1,7 +1,8 @@
 // Runs on the server. Run All, a node's play button, Ctrl+Enter and an
-// automatic run (useAutoRun, #845) save the dataflow, then start a run of that
-// saved revision, which goes on with the tab
-// closed (runs/routes.py). The tab follows the run's stream: each step reaches
+// automatic run (useAutoRun, #845) start a run of the dataflow as its doc holds
+// it, once the server has this tab's last change, and the run goes on with the
+// tab closed (runs/routes.py). A dataflow not saved yet is made first. The tab
+// follows the run's stream: each step reaches
 // its node by the rules a run in the browser follows (executionResultOutput,
 // applyNewOutput, the provenance), and the nodes only a browser can run go
 // through usePlayAll once the server's part has ended, each reported to the run.
@@ -60,11 +61,18 @@ interface FollowedRun {
     /** The nodes an automatic run ran (#845); null for any other run. */
     targets: readonly string[] | null;
     /**
-     * Each node's run key when this tab saved the revision the run runs; a
-     * result is stamped with its node's. Null for a run of another tab or
-     * revision, whose results take the key their node holds when they land.
+     * Each node's run key when the server had this tab's last change and the
+     * run started; a result is stamped with its node's. Null for a run this
+     * tab did not start, whose results take the key their node holds when they
+     * land.
      */
     runKeys: Map<string, string> | null;
+    /**
+     * Each node's code when the run started, which its entry in the history
+     * names: typing while the run goes is the node's next change. Null for a
+     * run this tab did not start, which files no entry.
+     */
+    codes: Map<string, string> | null;
     controller: AbortController;
     done: boolean;
     refollows: number;
@@ -76,15 +84,18 @@ type PlayNodes = (
 ) => boolean;
 
 export function useServerRun({
-    reactFlow, setNodes, showToast, requestProjectSave, applyNewOutput, setOutputs,
+    reactFlow, setNodes, showToast, keepDataflow, applyNewOutput, setOutputs,
     hydrateRestoredOutputs, markNodeErroredRef, playNodes, playAllStateRef,
     emittedForInputRef, outputsRef, workflowNameRef, nodeExecProv, flushInstallSyncRef,
-    surfaceInstallWarnings, outcomes,
+    surfaceInstallWarnings, outcomes, onRunEnded,
 }: {
     reactFlow: ReactFlowInstance;
     setNodes: React.Dispatch<React.SetStateAction<Node[]>>;
     showToast: ReturnType<typeof useToastContext>["showToast"];
-    requestProjectSave: () => Promise<any>;
+    /** The dataflow's id once the server has this tab's every change, a
+     *  dataflow not saved yet made first (`ensureProjectId`); null when there
+     *  is none to run, with the reason said. */
+    keepDataflow: () => Promise<string | null>;
     applyNewOutput: (output: IOutput) => void;
     setOutputs: (fnOrValue: ((prev: IOutput[]) => IOutput[]) | IOutput[]) => void;
     hydrateRestoredOutputs: (restored: IOutput[], edges?: readonly any[]) => void;
@@ -95,7 +106,7 @@ export function useServerRun({
     outputsRef: React.MutableRefObject<IOutput[]>;
     workflowNameRef: React.MutableRefObject<string>;
     nodeExecProv: (...args: any[]) => void;
-    flushInstallSyncRef: React.MutableRefObject<() => void>;
+    flushInstallSyncRef: React.MutableRefObject<() => Promise<void> | void>;
     /** The warning a save's `dataset_install_warnings` raises, for an output a run could not install. */
     surfaceInstallWarnings?: (
         detail: { dataset_install_warnings?: DatasetInstallWarning[] } | undefined,
@@ -103,6 +114,9 @@ export function useServerRun({
     ) => void;
     /** What a step does to its node, shared with a dashboard's runs (useStepOutcomes). */
     outcomes?: StepOutcomes;
+    /** A run this tab followed ended: the canvas title asks for the dataflow's
+     *  categories as it is now (useCategoriesRefresh). */
+    onRunEnded?: () => void;
 }) {
     // True from the click until the server's part ends. UniversalNode reads it
     // with isRunActive: a map or chart draws in the run's browser part, or from
@@ -113,7 +127,8 @@ export function useServerRun({
     // moment before the server writes its end, and a start in that moment is
     // refused naming it.
     const endedRunRef = useRef<string | null>(null);
-    // Between the click and the run's answer: the save, then the start.
+    // Between the click and the run's answer: the wait for the server to hold
+    // this tab's changes, then the start.
     const startingRef = useRef<{ stopped: boolean } | null>(null);
 
     // ── What reaches a node ──────────────────────────────────────────────
@@ -136,7 +151,9 @@ export function useServerRun({
         if (run.applied.has(nodeId)) return;
         run.applied.add(nodeId);
         if (change.kind === "result") {
-            showResult(nodeId, change, { live: run.startedHere, runKey: run.runKeys?.get(nodeId) });
+            showResult(nodeId, change, {
+                live: run.startedHere, runKey: run.runKeys?.get(nodeId), code: run.codes?.get(nodeId),
+            });
         }
         else if (change.kind === "skipped") showSkipped(nodeId, change.reason);
         else showOnNode(nodeId, { code: "error", content: STOPPED_MESSAGE });
@@ -213,8 +230,9 @@ export function useServerRun({
 
     const attach = (
         record: Run,
-        { startedHere, played = null, runKeys = null }: {
+        { startedHere, played = null, runKeys = null, codes = null }: {
             startedHere: boolean; played?: FollowedRun["played"]; runKeys?: FollowedRun["runKeys"];
+            codes?: FollowedRun["codes"];
         },
     ) => {
         const run: FollowedRun = {
@@ -228,6 +246,7 @@ export function useServerRun({
             played,
             targets: record.targetNodeIds?.length ? record.targetNodeIds : null,
             runKeys,
+            codes,
             controller: new AbortController(),
             done: false,
             refollows: 0,
@@ -305,7 +324,8 @@ export function useServerRun({
         const browserPart = run.startedHere && finishInBrowser(run.runId, run.steps, run.played, run.targets);
         if (!run.startedHere && status === "needs_canvas") offerFinish(run.runId);
         setServerRunActive(false);
-        if (!browserPart) flushInstallSyncRef.current();
+        if (!browserPart) void flushInstallSyncRef.current();
+        onRunEnded?.();
     };
 
     /** Stop following without ending the run; with *stopped*, a node it left running says so. */
@@ -338,8 +358,9 @@ export function useServerRun({
     };
 
     /**
-     * Save, then run the whole dataflow, or *target* and the ancestors it
-     * needs: one node (a play), or several (an automatic run, #845).
+     * Run the whole dataflow, or *target* and the ancestors it needs: one node
+     * (a play), or several (an automatic run, #845), once the server has this
+     * tab's last change.
      */
     const startRun = async (target?: string | readonly string[]) => {
         const targetNodeId = typeof target === "string" ? target : undefined;
@@ -354,13 +375,13 @@ export function useServerRun({
         const starting = { stopped: false };
         startingRef.current = starting;
         setServerRunActive(true);
-        // Read before the save: what the canvas holds now is what it would reuse.
+        // Read at the click: what the canvas holds now is what it would reuse.
         const reuseTarget = targetNodeId ?? targets;
         const reuse = reuseTarget
             ? reuseFor(reuseTarget, reactFlow.getNodes(), reactFlow.getEdges(), emittedForInputRef.current, outputsRef.current)
             : undefined;
         // The played node says it runs from the click, as its own play makes it
-        // say at once, rather than showing its last outcome through the save.
+        // say at once, rather than showing its last outcome through the wait.
         const shownBefore: NodeOutput | undefined = targetNodeId
             ? reactFlow.getNode(targetNodeId)?.data?.output
             : undefined;
@@ -374,20 +395,25 @@ export function useServerRun({
             unmark();
             if (message) showToast(message, "error");
         };
-        // The server runs what the save writes: each node's key now is the one
-        // its result is stamped with, so a selection, widget value or code
-        // changed while the run goes leaves the node stale.
-        const runKeys = runKeysOf(reactFlow.getNodes());
-        let saved: any;
+        // The server runs the dataflow as its doc holds it once it has this
+        // tab's last change (a dataflow not saved yet is made first).
+        let projectId: string | null = null;
         try {
-            saved = await requestProjectSave();
+            projectId = await keepDataflow();
         } catch (err: any) {
-            giveUp(`The dataflow was not run, because it could not be saved: ${err?.message || err}`);
+            giveUp(`The dataflow was not run: ${err?.message || err}`);
             return;
         }
         if (starting.stopped) { giveUp(); return; }
-        const projectId: string | undefined = saved?.id;
-        if (!projectId) { giveUp("The dataflow was not run, because it could not be saved."); return; }
+        if (!projectId) { giveUp(); return; }
+        // Each node's key now is the one its result is stamped with, so a
+        // selection, widget value or code changed while the run goes leaves
+        // the node stale.
+        const runKeys = runKeysOf(reactFlow.getNodes());
+        // And each node's code now is the code its entry names.
+        const codes = new Map<string, string>(
+            reactFlow.getNodes().map((node): [string, string] => [node.id, node.data?.code ?? ""]),
+        );
         let record: Run | null = null;
         let refused: any = null;
         for (let attempt = 1; attempt <= MAX_START_ATTEMPTS && !record; attempt++) {
@@ -395,7 +421,6 @@ export function useServerRun({
                 record = await runsApi.start(projectId, {
                     ...(targetNodeId ? { target: targetNodeId, reuse } : {}),
                     ...(targets ? { targets, reuse } : {}),
-                    specRevision: saved?.spec_revision ?? null,
                 });
             } catch (err: any) {
                 refused = err;
@@ -413,9 +438,9 @@ export function useServerRun({
                 giveUp(starting.stopped ? undefined : (err?.message || "The run could not start."));
                 return;
             }
-            // The dataflow already runs: follow that run. Only one of the
-            // revision just saved is this click's run; one of an earlier
-            // version is shown as a run opened later is, and says so.
+            // The dataflow already runs, started by another tab or before this
+            // one opened: follow that run, as a run opened later is shown, and
+            // say so. The tab that started it runs its browser part.
             try {
                 record = await runsApi.get(runningId);
             } catch (readErr: any) {
@@ -424,14 +449,11 @@ export function useServerRun({
             }
             if (startingRef.current === starting) startingRef.current = null;
             unmark();
-            const current = record.specRevision === (saved?.spec_revision ?? null);
-            if (!current) {
-                showToast(
-                    "An earlier version of this dataflow is still running, and its outputs show as it goes. Run it again when it ends.",
-                    "info",
-                );
-            }
-            attach(record, { startedHere: current, runKeys: current ? runKeys : null });
+            showToast(
+                "This dataflow is already running, and its outputs show as it goes. Run it again when it ends.",
+                "info",
+            );
+            attach(record, { startedHere: false });
             return;
         }
         if (startingRef.current === starting) startingRef.current = null;
@@ -444,6 +466,7 @@ export function useServerRun({
             startedHere: true,
             played: targetNodeId ? { nodeId: targetNodeId, before: shownBefore } : null,
             runKeys,
+            codes,
         });
     };
 
@@ -473,13 +496,14 @@ export function useServerRun({
      * A canvas just opened *projectId*: follow its last run if it still goes,
      * and offer to finish it if it waits for a tab. What a finished run made
      * came with the load, which shows each node's newest kept result
-     * (`GET /api/projects/<id>?results=last`).
+     * (`GET /api/projects/<id>?results=last`). The run is this account's
+     * own: the owner lists her editors' runs too, whose outputs are theirs.
      */
     const attachLatestRun = async (projectId: string) => {
         if (followedRef.current || startingRef.current) return;
         let record: Run;
         try {
-            const [latest] = await runsApi.listForProject(projectId, { limit: 1 });
+            const [latest] = await runsApi.listForProject(projectId, { limit: 1, mine: true });
             if (!latest) return;
             record = await runsApi.get(latest.id);
         } catch {

@@ -26,6 +26,8 @@ from pycrdt import (
 from ._support import NAMESPACE
 
 EVENT = "yjs"
+#: What answers a tab's updates the server queued, once their batch is applied.
+KEPT_EVENT = "yjs_kept"
 
 
 class DocClient:
@@ -41,6 +43,12 @@ class DocClient:
         self.events: list = []
         #: Each server step 1 this tab answered, and the ack of its answer.
         self.answers: list = []
+        #: Every update the server sent this tab (its step 2 and its
+        #: updates), and every update this tab sent, each in order.
+        self.received: list[bytes] = []
+        self.sent: list[bytes] = []
+        #: Every awareness update the server sent this tab, in order.
+        self.presences: list[bytes] = []
         self._unsent: list[bytes] = []
         self._remote = False
         self.doc.observe(self._local)
@@ -76,13 +84,15 @@ class DocClient:
                 answer = handle_sync_message(message[1:], self.doc)
                 self.answers.append((answer, self.send(answer)))
             elif message[0] == YMessageType.SYNC:
+                self.received.append(read_message(message[2:]))
                 self._remote = True
                 try:
                     handle_sync_message(message[1:], self.doc)
                 finally:
                     self._remote = False
             elif message[0] == YMessageType.AWARENESS:
-                self.awareness.apply_awareness_update(read_message(message[1:]), "server")
+                self.presences.append(read_message(message[1:]))
+                self.awareness.apply_awareness_update(self.presences[-1], "server")
 
     def edit(self, change) -> list:
         """Make *change* (a function of the doc) in one transaction, as a
@@ -90,7 +100,16 @@ class DocClient:
         with self.doc.transaction():
             change(self.doc)
         unsent, self._unsent = self._unsent, []
+        self.sent += unsent
         return [self.send(create_update_message(update)) for update in unsent]
+
+    def kept(self) -> list:
+        """The answers to this tab's queued updates the server sent since the
+        last call, in the order they came: its :data:`KEPT_EVENT` messages."""
+        self.pump()
+        kept = [event["args"][0] for event in self.events if event["name"] == KEPT_EVENT]
+        self.events = [event for event in self.events if event["name"] != KEPT_EVENT]
+        return kept
 
     def set_presence(self, state) -> dict:
         """Set this tab's awareness state and send it; the ack."""

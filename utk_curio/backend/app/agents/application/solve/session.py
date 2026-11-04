@@ -27,6 +27,7 @@ from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import catalog as agents_catalog
 from utk_curio.backend.app.agents.application import dataset_resolution as agents_dataset_resolution
+from utk_curio.backend.app.agents.application import in_the_room as agents_room
 from utk_curio.backend.app.agents.application import lifecycle as agents_lifecycle
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application.proposals import acquire as agents_acquire
@@ -133,9 +134,8 @@ def solve_attachment(
     verify: bool = True,
 ) -> dict:
     """The dev/52 Solve batch (DEC-048), blocking form: drains the streaming
-    batch (dev/63 — one implementation) and returns its terminal payload,
-    minus the stream-only keys, so the response is byte-compatible. Always
-    write mode — propose mode (dev/67-6) is the streaming route's.
+    batch (dev/63, one implementation) and returns its terminal payload,
+    minus the stream-only keys, so the response is byte-compatible.
     ``verify`` (dev/115): data-loading nodes execute before they are final."""
     payload: dict | None = None
     for kind, data in solve_attachment_stream(
@@ -147,7 +147,6 @@ def solve_attachment(
         raise AgentServiceError("solve ended without a result", 500)
     payload.pop("cancelled", None)
     payload.pop("notAttempted", None)
-    payload.pop("mode", None)
     return payload
 
 
@@ -201,17 +200,15 @@ def solve_attachment_stream(
     attachment_id: str,
     config: ProviderConfig,
     node_ids: list[str] | None = None,
-    mode: str = "write",
     verify: bool = True,
 ):
     """The dev/52 Solve batch (DEC-048) as an event stream (dev/63): ONE
-    explicit, authenticated user action authorizes filling the applied plan's
-    pending nodes.
+    explicit, authenticated user action fills the landed plan's pending
+    nodes.
 
-    The endpoint is the review: it is scoped to plan-created placeholder
-    nodes (the builder session's ``nodeRuns``) and digest-guarded per node
-    (only still-empty content is written — user edits are ``skipped``,
-    never overwritten). Each node runs a depth-1 child under
+    It is scoped to plan-created placeholder nodes (the builder session's
+    ``nodeRuns``) and digest-guarded per node (only still-empty content is
+    written: user edits are ``skipped``, never overwritten). Each node runs a depth-1 child under
     ``delegation.run_delegate`` with every dev/48 guarantee (own ledger pair
     under the child's policy, ``parentExecutionId``, failure isolation) —
     coordinated by a bounded worker pool. The endpoint itself consumes no
@@ -224,22 +221,13 @@ def solve_attachment_stream(
     re-guarded spec write that also runs on client disconnect and
     cancellation — streamed events are transport, never truth.
 
-    ``mode`` (dev/67-6): ``"write"`` — the classic DEC-048 batch, content
-    written under the per-node digest guard; ``"propose"`` — each solved
-    child MINTS a reviewed ``node.content.write`` proposal instead (the
-    Simulation Mode solve stage): nothing is written, ``node_result`` carries
-    the ``proposalId``, the node stays ``pending`` until the user applies,
-    and the session returns to its pre-solve phase. The single-activeProposal
-    model means a multi-node propose batch supersedes all but the last —
-    the 67-9 sequence solves one node at a time by design.
-
     ``verify`` (dev/115, DEC-073): a data-loading node's content is not final
-    until it has EXECUTED — the worker drives the one verified-content loop
-    (generate → gate → run in the sandbox → correct with the traceback → run
-    again, ≤2 corrections) and only code that passed is written (write mode)
-    or minted (propose mode, with the validation block); exhaustion is
-    ``failed`` with the attempt trail, a sandbox outage leaves the node
-    ``pending`` with the reason. ``verify=False`` keeps the legacy path.
+    until it has EXECUTED: the worker drives the one verified-content loop
+    (generate, gate, run in the sandbox, correct with the traceback, run
+    again, at most 2 corrections) and only code that passed is written;
+    exhaustion is ``failed`` with the attempt trail, a sandbox outage leaves
+    the node ``pending`` with the reason. ``verify=False`` keeps the legacy
+    path.
     """
 
     spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
@@ -272,9 +260,6 @@ def solve_attachment_stream(
     ]
     if not targets:
         raise AgentServiceError("no pending or failed plan nodes to solve", 409)
-    if mode not in ("write", "propose"):
-        raise AgentServiceError("mode must be 'write' or 'propose'", 422)
-    return_phase = session.get("phase")  # propose mode restores it (dev/67-6)
     nodes_by_id = {
         n.get("id"): n
         for n in (spec.get("dataflow") or {}).get("nodes") or []
@@ -321,10 +306,12 @@ def solve_attachment_stream(
     events = _solve_events(
         user_key, project_id, attachment_id, config, targets, nodes_by_id,
         manifest, coord, session_id, solve_execution_id, stop,
-        spec=spec, mode=mode, return_phase=return_phase, verify=verify,
+        spec=spec, verify=verify,
         grounding_base=solve_ground, dataset_paths=solve_dataset_paths,
         catalog_rows=solve_catalog_rows, acting_user=solve_user,
         retry_of=retry_of if isinstance(retry_of, str) else None,
+        # Who asked, as the room names them, read here: the job's thread holds no request.
+        room_asker=agents_room.asker(),
     )
     # dev/115 (DEC-021, single-process slice): the batch runs as a detached
     # job — the request only SUBSCRIBES (replay + tail); a disconnect no
@@ -351,14 +338,13 @@ def _solve_events(
     stop,
     *,
     spec: dict | None = None,
-    mode: str = "write",
-    return_phase: str | None = None,
     verify: bool = True,
     grounding_base: dict | None = None,
     dataset_paths: dict | None = None,
     retry_of: str | None = None,
     catalog_rows: list | None = None,
     acting_user=None,
+    room_asker: agents_room.Asker | None = None,
 ):
     """The solve batch stream (dev/63 → dev/118 → dev/131): one
     :class:`solve.batch.SolveBatch` over *targets*, its events relayed. Kept a
@@ -368,9 +354,9 @@ def _solve_events(
     batch = agents_batch.SolveBatch(
         user_key, project_id, attachment_id, config, targets, nodes_by_id, manifest, coord,
         session_id, solve_execution_id, stop,
-        spec=spec, mode=mode, return_phase=return_phase, verify=verify,
+        spec=spec, verify=verify,
         grounding_base=grounding_base, dataset_paths=dataset_paths, retry_of=retry_of,
-        catalog_rows=catalog_rows, acting_user=acting_user,
+        catalog_rows=catalog_rows, acting_user=acting_user, room_asker=room_asker,
     )
     yield from batch.events()
 

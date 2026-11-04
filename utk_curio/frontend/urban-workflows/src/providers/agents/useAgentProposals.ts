@@ -1,10 +1,11 @@
 /**
- * Review-before-apply from the client's side (memo dev/142, F2 — extracted
- * from `AgentAttachmentsProvider`): apply, the per-node and per-edge plan
- * applies, a plan goal edit, dismiss, the dataset selection and the portal
- * import. Every apply carries its mutation to the LIVE canvas through the
- * dev/48 §3.3 bridge — the apply response is the only payload source — and
- * then refreshes the transcript and the listing, which are the truth.
+ * An agent's changes and the installs a person reviews, from the client's side
+ * (memo dev/142, F2: extracted from `AgentAttachmentsProvider`): an install's
+ * apply and dismiss, a change's Undo, the dataset selection and the portal
+ * import. An applied install and an Undo carry their mutation to the LIVE
+ * canvas through the dev/48 §3.3 bridge: the server's answer is the only
+ * payload source: and then refresh the transcript and the listing, which are
+ * the truth.
  */
 import type { DatasetDiscoverySourceInput } from "../../services/datasetCatalog/datasetCatalogTypes";
 import { useCallback, useMemo } from "react";
@@ -16,20 +17,21 @@ import {
   agentsApi,
   notifyAgentCanvasMutation,
   notifyAgentCatalogRefresh,
+  notifyAgentChangesLanded,
 } from "../../services/agents";
 import type {
   AgentApplyResult,
   AgentDatasetPick,
   AgentDatasetSelection,
-  AgentPlanEdgesResult,
+  AgentUndoResult,
 } from "../../services/agents/types";
 
 export interface AgentProposalsSlice {
   applyProposal: (attachmentId: string, proposalId: string) => Promise<AgentApplyResult>;
-  applyPlanNode: (attachmentId: string, proposalId: string, ref: string) => Promise<void>;
-  applyPlanEdges: (attachmentId: string, proposalId: string, indices?: number[]) => Promise<AgentPlanEdgesResult>;
-  savePlanGoal: (attachmentId: string, proposalId: string, ref: string, goal: string) => Promise<void>;
   dismissProposal: (attachmentId: string, proposalId: string) => Promise<void>;
+  /** Undo a change the attachment's agent made; rejects with the refusal
+   * (who changed it after) when nothing was undone. */
+  undoChange: (attachmentId: string, changeId: string) => Promise<AgentUndoResult>;
   recordDatasetSelection: (attachmentId: string, picks: AgentDatasetPick[]) => Promise<AgentDatasetSelection>;
   /** `discoverySource` is where the file came from, recorded with it. */
   importDataset: (file: File, discoverySource?: DatasetDiscoverySourceInput) => Promise<string | null>;
@@ -38,10 +40,9 @@ export interface AgentProposalsSlice {
 export function useAgentProposals(opts: {
   effectiveProjectId: string | null;
   projectRef: React.MutableRefObject<string | null>;
-  reload: () => Promise<void>;
   refreshAfterMutation: (attachmentId: string) => Promise<void>;
 }): AgentProposalsSlice {
-  const { effectiveProjectId, projectRef, reload, refreshAfterMutation } = opts;
+  const { effectiveProjectId, projectRef, refreshAfterMutation } = opts;
   // dev/132: the toast is how the shared import reports itself; the provider
   // must still render where none is mounted (a test, an embedded surface).
   const toast = useOptionalToastContext();
@@ -77,8 +78,6 @@ export function useAgentProposals(opts: {
         // dev/106: a reviewed project.install landed a template (and its
         // required closure) in the lockfile — the AGENTS palette repaints.
         if (result.installedCoord) notifyAgentCatalogRefresh();
-        // dev/105 A3: callers that queue follow-ups (the package install
-        // review) read the result to walk them one at a time.
         return result;
       } finally {
         // Success appends the result turn + statuses; a 409 marked it stale —
@@ -89,71 +88,6 @@ export function useAgentProposals(opts: {
     [projectRef, refreshAfterMutation],
   );
 
-  const applyPlanNode = useCallback(
-    async (attachmentId: string, proposalId: string, ref: string) => {
-      const pid = projectRef.current;
-      if (!pid) throw new Error("no project");
-      try {
-        const result = await agentsApi.applyPlanNode(pid, attachmentId, proposalId, ref);
-        // The last row removes what the plan removes, first, as a whole
-        // applied plan's removals go.
-        bridgePlanRemovals(proposalId, result);
-        // The created node reaches the LIVE canvas through the same bridge
-        // path as node.create applies (dev/48 §3.3).
-        if (result.createdNode) {
-          notifyAgentCanvasMutation({ kind: "node-created", node: result.createdNode });
-        }
-        // dev/71: the progressive sweep's edges draw immediately too.
-        if (result.createdEdges?.length) {
-          notifyAgentCanvasMutation({
-            kind: "edges-created",
-            batchId: `${proposalId}:${ref}:${result.createdEdges.map((e) => e.id).join(",")}`,
-            edges: result.createdEdges,
-          });
-        }
-        // #662: and a scenario whose last node this was.
-        if (result.createdScenarios?.length) {
-          notifyAgentCanvasMutation({ kind: "scenarios-created", scenarios: result.createdScenarios });
-        }
-      } finally {
-        await refreshAfterMutation(attachmentId); // the result turn + the per-node ledger
-      }
-    },
-    [projectRef, refreshAfterMutation],
-  );
-
-  const applyPlanEdges = useCallback(
-    async (attachmentId: string, proposalId: string, indices?: number[]) => {
-      const pid = projectRef.current;
-      if (!pid) throw new Error("no project");
-      try {
-        const result = await agentsApi.applyPlanEdges(pid, attachmentId, proposalId, indices);
-        bridgePlanRemovals(proposalId, result);
-        if (result.createdEdges.length) {
-          notifyAgentCanvasMutation({
-            kind: "edges-created",
-            batchId: `${proposalId}:${result.createdEdges.map((e) => e.id).join(",")}`,
-            edges: result.createdEdges,
-          });
-        }
-        return result;
-      } finally {
-        await refreshAfterMutation(attachmentId);
-      }
-    },
-    [projectRef, refreshAfterMutation],
-  );
-
-  const savePlanGoal = useCallback(
-    async (attachmentId: string, proposalId: string, ref: string, goal: string) => {
-      const pid = projectRef.current;
-      if (!pid) throw new Error("no project");
-      await agentsApi.savePlanGoal(pid, attachmentId, proposalId, ref, goal);
-      await reload(); // the mirror carries editedGoals
-    },
-    [projectRef, reload],
-  );
-
   const dismissProposal = useCallback(
     async (attachmentId: string, proposalId: string) => {
       const pid = projectRef.current;
@@ -161,6 +95,24 @@ export function useAgentProposals(opts: {
       try {
         await agentsApi.dismissProposal(pid, attachmentId, proposalId);
       } finally {
+        await refreshAfterMutation(attachmentId);
+      }
+    },
+    [projectRef, refreshAfterMutation],
+  );
+
+  const undoChange = useCallback(
+    async (attachmentId: string, changeId: string) => {
+      const pid = projectRef.current;
+      if (!pid) throw new Error("no project");
+      try {
+        const result = await agentsApi.undoChange(pid, attachmentId, changeId);
+        // The server put it back in the dataflow's doc; a canvas no doc
+        // binds takes the same mutations here.
+        notifyAgentChangesLanded(result.canvas);
+        return result;
+      } finally {
+        // Undone, the card says so; refused, nothing changed.
         await refreshAfterMutation(attachmentId);
       }
     },
@@ -183,67 +135,22 @@ export function useAgentProposals(opts: {
   );
 
   return useMemo(
-    () => ({ applyProposal, applyPlanNode, applyPlanEdges, savePlanGoal, dismissProposal, recordDatasetSelection, importDataset }),
-    [applyProposal, applyPlanNode, applyPlanEdges, savePlanGoal, dismissProposal, recordDatasetSelection, importDataset],
+    () => ({ applyProposal, dismissProposal, undoChange, recordDatasetSelection, importDataset }),
+    [applyProposal, dismissProposal, undoChange, recordDatasetSelection, importDataset],
   );
-}
-
-/** What the plan removes, when the row or the Connect all that completes it
- * lands: the saved spec lost it, so the live canvas loses it too, or its next
- * save would put it back. */
-export function bridgePlanRemovals(
-  proposalId: string,
-  result: { removedNodeIds?: string[]; removedEdgeIds?: string[] },
-): void {
-  const removedNodeIds = result.removedNodeIds ?? [];
-  const removedEdgeIds = result.removedEdgeIds ?? [];
-  if (removedNodeIds.length || removedEdgeIds.length) {
-    notifyAgentCanvasMutation({ kind: "plan-removals", planId: proposalId, removedNodeIds, removedEdgeIds });
-  }
 }
 
 /** The apply→canvas bridge (dev/48 §3.3): the saved spec was mutated; carry
  * the same mutation to the LIVE canvas in this user action so the next save
- * can't clobber it. */
+ * can't clobber it. An applied package (dev/89), or a package's install that
+ * placed notes, refreshes the package registry BEFORE painting its nodes. */
 function bridgeApplyResult(proposalId: string, result: AgentApplyResult): void {
   if (result.requiresRegistryRefresh && result.installedPackage) {
-    // dev/89: an applied package draft — the bridge refreshes the package
-    // registry BEFORE painting the created nodes.
     notifyAgentCanvasMutation({
       kind: "package-nodes-created",
       artifactDigest: proposalId,
       packageDir: result.installedPackage.dirName,
       nodes: result.createdNodes ?? [],
-    });
-  } else if (result.createdNode) {
-    notifyAgentCanvasMutation({ kind: "node-created", node: result.createdNode });
-  } else if (result.appliedContent) {
-    notifyAgentCanvasMutation({
-      kind: "node-content-applied",
-      nodeId: result.appliedContent.nodeId,
-      content: result.appliedContent.content,
-      ...(result.appliedContent.agent ? { agent: result.appliedContent.agent } : {}),
-    });
-  } else if (result.appliedSettings) {
-    // An existing node's settings: the live node takes them through its own
-    // setters, and files no Provenance entry, which holds code.
-    notifyAgentCanvasMutation({
-      kind: "node-settings-applied",
-      nodeId: result.appliedSettings.nodeId,
-      settings: result.appliedSettings.settings,
-    });
-  } else if (result.appliedGraph) {
-    // dev/52: a whole applied plan — bulk insert + edges + fit; dev/59:
-    // removals ride the same event, applied first.
-    notifyAgentCanvasMutation({
-      kind: "graph-created",
-      planId: proposalId,
-      nodes: result.appliedGraph.nodes,
-      edges: result.appliedGraph.edges,
-      removedNodeIds: result.appliedGraph.removedNodeIds,
-      removedEdgeIds: result.appliedGraph.removedEdgeIds,
-      // #662: the scenarios it saved, so the next canvas save keeps them.
-      ...(result.appliedGraph.scenarios?.length ? { scenarios: result.appliedGraph.scenarios } : {}),
     });
   }
 }

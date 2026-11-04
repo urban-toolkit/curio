@@ -39,12 +39,8 @@ export const CANVAS_CATALOGS: ReadonlyArray<{
  */
 export function CatalogButtons({
   projectId,
-  crowded = false,
 }: {
   projectId?: string | null;
-  /** Another control shares the bar (the collaboration button), so the
-   *  labels give way sooner. */
-  crowded?: boolean;
 }) {
   const { openNodeCatalogDrawer } = useNodeCatalogDrawer();
   const { openAgentCatalogDrawer } = useAgentCatalogDrawerControls();
@@ -66,7 +62,7 @@ export function CatalogButtons({
 
   return (
     <div
-      className={clsx(styles.catalogs, crowded && styles.catalogsCrowded)}
+      className={styles.catalogs}
       role="group"
       aria-label="Catalogs"
     >

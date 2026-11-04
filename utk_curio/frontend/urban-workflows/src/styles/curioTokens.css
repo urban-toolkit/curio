@@ -102,6 +102,12 @@
      the drawer footer's "Import package" button leaves it unclickable rather
      than briefly covered. */
   --curio-toast-bottom-gutter: 84px;
+  /* The left edge of the agents' dock while it shares the canvas title's row,
+     which the dock sets on the page's root as it lays out and takes off when
+     it goes (AgentDock.tsx); the title is cut short before it
+     (UpMenu.module.css). With no dock on the row, the window's width, so the
+     title keeps all of it. */
+  --curio-canvas-dock-left: 100vw;
 
   /* ── Effects ───────────────────────────────────────────────────────── */
   --curio-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04);
@@ -403,6 +409,10 @@
   --curio-z-node-drawer: 10040;
   --curio-z-dataset-drawer: 10045;
   --curio-z-agent-drawer: 10048;
+  /* An agent's drag on the canvas (components/collab/AgentDrags): over the
+     catalog drawers and the tool rail, where a drag starts, and under API
+     Settings and everything above it. */
+  --curio-z-agent-drags: 10049;
   /* API Settings and Monitor on the canvas: above the catalog drawers, since a
      catalog card can open API Settings, and below the modals. */
   --curio-z-header-drawer: 10050;

@@ -61,6 +61,7 @@ from .utils import (
     require_project_page,
     require_user_auth,
     run_node_and_wait,
+    save_dataflow,
     save_workflow_test_screenshot,
     set_canvas_zoom,
     set_node_code,
@@ -509,17 +510,10 @@ def test_save_export_import_and_run_package_nodes(
     assert f"{HEAD_MARKER} 2" in second_output, second_output
 
     # And the consuming dataflow persists the imported kinds, so a reload gets
-    # the same graph back rather than three dangling node types.
-    page.get_by_role("button", name=re.compile("File")).click(force=True)
-    save_btn = page.get_by_role("button", name="Save dataflow", exact=True)
-    save_btn.wait_for(state="visible", timeout=10000)
-    with page.expect_response(
-        lambda r: f"/api/projects/{consumer_project_id}" in r.url
-        and r.request.method in ("PUT", "PATCH")
-        and r.ok,
-        timeout=30000,
-    ):
-        save_btn.click()
+    # the same graph back rather than three dangling node types. File > Save
+    # ends once the server has every change the canvas made.
+    saved = save_dataflow(page)
+    assert saved.get("id") == consumer_project_id, saved
 
     spec = api_json(
         f"{current_server}/api/projects/{consumer_project_id}", token

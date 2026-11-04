@@ -1,14 +1,14 @@
 """The one user policy an evaluation plays (memo dev/123, ``DEC-079``).
 
-An evaluation has to decide what its "user" does with each proposal the agent
-returns, and that decision cannot vary between callers: a remote CLI run and a
+An evaluation has to decide what its "user" does with each install the agent
+proposes, and that decision cannot vary between callers: a remote CLI run and a
 CI run that answered differently would be measuring two different things while
 reporting one number.
 
 The policy, written once:
 
 1. Send the fixture's prompt once. Never rephrase.
-2. Apply a plan proposal whole — no per-node edits.
+2. A plan lands whole, as the agent's change: there is nothing to apply.
 3. Apply a dataset, package or project install **only** when the fixture
    required that resource. Anything else is left pending, with its reason.
 4. Add no correction rounds; the runtime's bound is the bound.
@@ -29,11 +29,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Mapping
 
-#: Proposal kinds an evaluation may apply at all. Everything else — a content
-#: write, a package draft, a node-template creation — is a decision a person
-#: makes, so an unattended run leaves it pending and says so.
+#: Proposal kinds an evaluation may apply at all. Everything else, such as a
+#: package draft, is a decision a person makes, so an unattended run leaves it
+#: pending and says so.
 APPLICABLE_TOOLS = (
-    "dataflow.plan.write",
     "dataset.install",
     "package.install",
     "project.install",
@@ -89,8 +88,6 @@ class UserPolicy:
         """Apply, or leave pending with a reason a report can print."""
         tool = str((proposal or {}).get("tool") or "")
         pins = (proposal or {}).get("pins") or {}
-        if tool == "dataflow.plan.write":
-            return Decision(apply=True, tool=tool)
         if tool == "project.install":
             # dev/106 (DEC-068): a specialist the run needs but the project
             # lacks. Refusing it would fail the run for a reason the fixture

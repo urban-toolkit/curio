@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo } from "react";
 
-import { useFlowContext } from "../FlowProvider";
 import { useAgentAttachments, type AgentAttachmentsState } from "../../services/agents";
+import { useAgentsDataflowId } from "./useAgentsDataflowId";
 import { useAgentSession, type AgentSessionSlice } from "./useAgentSession";
 import { useAgentProposals, type AgentProposalsSlice } from "./useAgentProposals";
 import { useAgentSolve, type AgentSolveSlice } from "./useAgentSolve";
@@ -18,7 +18,7 @@ import { useAgentNodeRuns, type AgentNodeRunsSlice } from "./useAgentNodeRuns";
  *
  * Since memo dev/142 (F2) the provider COMPOSES five hooks, one per concern —
  * `useAgentSession` (chat, transcripts, the streamed send and its run status),
- * `useAgentProposals` (review-before-apply and the canvas bridge),
+ * `useAgentProposals` (an install's review, a change's Undo, the canvas bridge),
  * `useAgentSolve` (the batch, the per-node Solve, the job re-attach),
  * `useAgentSimulation`, `useAgentNodeRuns` — and the context value keeps every
  * key it had, so no consumer changed.
@@ -31,22 +31,32 @@ export interface AgentAttachmentsContextValue
     AgentSimulationSlice,
     AgentNodeRunsSlice {
   closeChat: () => void;
+  /** An editor the owner invited drives the agents here: an install a
+   * proposal makes waits for the owner's review (`agentsOnCanvas`). */
+  installsWaitForOwner?: boolean;
+  /** The dataflow these agents work on (`useAgentsDataflowId`), or null when
+   * the hook is disabled or there is none. */
+  dataflowId?: string | null;
 }
 
 const AgentAttachmentsContext = createContext<AgentAttachmentsContextValue | null>(null);
 
 export const AgentAttachmentsProvider: React.FC<{
-  /** When false (e.g. shared read-only view) the hook is disabled and no
+  /** When false (a watcher's read-only view) the hook is disabled and no
    * attachments are fetched. */
   enabled?: boolean;
+  /** An invited editor's canvas: an install waits for the owner's review. */
+  installsWaitForOwner?: boolean;
   children: React.ReactNode;
-}> = ({ enabled = true, children }) => {
-  const { projectId } = useFlowContext();
-  const effectiveProjectId = enabled ? (projectId ?? null) : null;
+}> = ({ enabled = true, installsWaitForOwner = false, children }) => {
+  // The dataflow whose agents this canvas drives: on an invited editor's
+  // canvas, the one its link opened, since the flow state names none there.
+  const dataflowId = useAgentsDataflowId();
+  const effectiveProjectId = enabled ? dataflowId : null;
   const state = useAgentAttachments(effectiveProjectId);
   const session = useAgentSession(effectiveProjectId, state);
   const { projectRef, refreshAfterMutation, setSelectedId, ...sessionValue } = session;
-  const proposals = useAgentProposals({ effectiveProjectId, projectRef, reload: state.reload, refreshAfterMutation });
+  const proposals = useAgentProposals({ effectiveProjectId, projectRef, refreshAfterMutation });
   const solve = useAgentSolve({ projectRef, attachments: state.attachments, refreshAfterMutation });
   const simulation = useAgentSimulation({ projectRef, refreshAfterMutation });
   const nodeRuns = useAgentNodeRuns({ projectRef, refreshAfterMutation });
@@ -69,9 +79,11 @@ export const AgentAttachmentsProvider: React.FC<{
       ...solve,
       ...simulation,
       ...nodeRuns,
+      installsWaitForOwner,
+      dataflowId: effectiveProjectId,
     }),
     // `sessionValue` is a rest of `session`, whose identity already tracks its fields.
-    [state, session, setSelectedId, proposals, solve, simulation, nodeRuns],
+    [state, session, setSelectedId, proposals, solve, simulation, nodeRuns, installsWaitForOwner, effectiveProjectId],
   );
 
   return <AgentAttachmentsContext.Provider value={value}>{children}</AgentAttachmentsContext.Provider>;

@@ -6,6 +6,7 @@ import React, {
   useState,
 } from 'react';
 import { useFlowContext } from './FlowProvider';
+import { useAgentsDataflowId } from './agents/useAgentsDataflowId';
 import {
   DATASET_CATALOG_REFRESH_EVENT,
   DatasetCatalogItem,
@@ -35,7 +36,9 @@ const DatasetPaletteContext = createContext<DatasetPaletteContextValue | null>(n
 export function DatasetPaletteProvider({ children }: { children: React.ReactNode }) {
   const [datasetRevealId, setDatasetRevealId] = useState<string | null>(null);
 
-  const { projectId, outputs, nodes, defaultSaveOutputDataset } = useFlowContext();
+  const { outputs, nodes, defaultSaveOutputDataset } = useFlowContext();
+  // The dataflow the palette lists (`useAgentsDataflowId`).
+  const dataflowId = useAgentsDataflowId();
 
   // This dataflow's datasets only (`includeHub: false`), which is what the
   // producer pills need. Saveable live outputs surface freshly saved computed
@@ -46,7 +49,7 @@ export function DatasetPaletteProvider({ children }: { children: React.ReactNode
   );
 
   const catalog = useDatasetCatalog({
-    dataflowId: projectId,
+    dataflowId,
     includeHub: false,
     sort: 'recent',
     liveOutputs,

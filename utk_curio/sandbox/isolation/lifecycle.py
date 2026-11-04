@@ -42,6 +42,14 @@ MALLOC_ARENA_SHARE = 4
 #: glibc's malloc, in the arenas capped above.
 ARROW_POOL_UNDER_A_CAP = "system"
 
+#: glibc's mmap threshold in the sandbox server, held fixed: a block of this
+#: size or more is mapped on its own, and unmapped as soon as it is freed.
+SERVER_MMAP_THRESHOLD_BYTES = 8 * 1024 * 1024
+
+#: glibc's trim threshold in the sandbox server, held fixed: an arena gives
+#: its free top back once a free leaves it bigger than this.
+SERVER_TRIM_THRESHOLD_BYTES = 16 * 1024 * 1024
+
 
 class ZygoteStartupError(RuntimeError):
     """The zygote could not be started or never became ready."""
@@ -133,10 +141,30 @@ def server_environment(environ=None):
     beyond the cap share the arenas there are, as an isolated child's do; how
     many threads a library starts is unchanged.
 
+    glibc's two thresholds are held at fixed values too
+    (``MALLOC_MMAP_THRESHOLD_``, ``MALLOC_TRIM_THRESHOLD_``). glibc raises
+    them by itself: freeing a mapped block bigger than the mmap threshold, up
+    to 32 MiB, makes that block's size the new threshold and twice it the trim
+    threshold. After a run's first big frees, blocks of up to 32 MiB come from
+    the arenas, and up to 64 MiB of free top stays in each arena that is not
+    the main one, where the idle release cannot trim. With Arrow allocating in
+    glibc, that is where a run's columns go. Held at 8 MiB, the mmap threshold
+    maps a block of that size or more on its own and unmaps it as soon as it
+    is freed; held at 16 MiB, the trim threshold has an arena give back a free
+    top bigger than that when a block is freed into it, rather than keep up to
+    64 MiB. After ten re-runs of #408's replay on four cores
+    (``tests/_rerun_memory.py``, kernel 7.0) the sandbox kept 1.06 to 1.75
+    times its largest request at rest without them, and 0.45 to 0.72 with
+    them, its peaks about 30% lower (diagnostic runs 40830598948 and
+    40833698033 on ``tmp/rerun-memory-probe``). Measured on one runner,
+    interleaved, the replay's loaders ran 5 to 8% slower, a pandas groupby and
+    merge on a million rows 11 to 13% faster, and numpy temporaries of 256 KiB
+    to 2 MiB as before. An operator's own values stand.
+
     Set in the environment the server starts with, because glibc settles its
-    arena limit, and Arrow its pool, once per process. The server's children
-    inherit both, the zygote among them, whose own settings from the same
-    budget are the same.
+    arena limit and thresholds, and Arrow its pool, once per process. The
+    server's children inherit them, the zygote among them, whose own arena
+    and pool settings from the same budget are the same.
     """
     from utk_curio.sandbox.isolation.supervisor import DEFAULT_LIMITS
 
@@ -148,6 +176,10 @@ def server_environment(environ=None):
     _cap_arenas(env, memory_mb)
     if not env.get("ARROW_DEFAULT_MEMORY_POOL"):
         env["ARROW_DEFAULT_MEMORY_POOL"] = ARROW_POOL_UNDER_A_CAP
+    for name, value in (("MALLOC_MMAP_THRESHOLD_", SERVER_MMAP_THRESHOLD_BYTES),
+                        ("MALLOC_TRIM_THRESHOLD_", SERVER_TRIM_THRESHOLD_BYTES)):
+        if not env.get(name):
+            env[name] = str(value)
     return env
 
 

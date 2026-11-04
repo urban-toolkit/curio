@@ -9,6 +9,7 @@ import { useAgentAttachmentsContext } from "../../../providers/agents";
 import { composeAgentRunContext, skillsApi } from "../../../services/agents";
 import { useAgentCanvasMutations } from "./useAgentCanvasMutations";
 import { useFlowContext } from "../../../providers/FlowProvider";
+import { useUserContext } from "../../../providers/userContext";
 import { useSlideDrawerPresentation } from "../../../hook/useSlideDrawerPresentation";
 
 /**
@@ -21,8 +22,13 @@ export const AgentDockOverlay: React.FC = () => {
   const ctx = useAgentAttachmentsContext();
   // dev/129 (porting dev/111): `outputs` rides along so nodeContext's
   // current_output can name the artifact a node produced.
-  const { workflowGoal, setWorkflowGoal, workflowNameRef, outputs, scenarios, projectId } =
-    useFlowContext();
+  const { workflowGoal, setWorkflowGoal, workflowNameRef, outputs, scenarios } = useFlowContext();
+  // The dataflow these agents work on: on an invited editor's canvas, the one
+  // its link opened, which the flow state does not name.
+  const dataflowId = ctx?.dataflowId ?? null;
+  // Whose messages the chat names the writer of: everyone's but this account's.
+  const { user } = useUserContext();
+  const viewerAccount = user?.id != null ? String(user.id) : null;
   const { getNodes, getEdges } = useReactFlow();
   // The apply→canvas bridge listener (dev/48 §3.3): applied node creations
   // and content writes land on the LIVE canvas from here, where React Flow
@@ -175,6 +181,8 @@ export const AgentDockOverlay: React.FC = () => {
               onPrev={prev ? () => ctx.openChat(prev.attachmentId) : undefined}
               onNext={next ? () => ctx.openChat(next.attachmentId) : undefined}
               turns={ctx.transcripts[shown.attachmentId] ?? []}
+              viewerAccount={viewerAccount}
+              installsWaitForOwner={ctx.installsWaitForOwner}
               loadingHistory={ctx.hydratingId === shown.attachmentId}
               historyError={ctx.hydrateErrors[shown.attachmentId] ?? null}
               onRetryHistory={() => ctx.hydrateSession(shown.attachmentId)}
@@ -197,18 +205,13 @@ export const AgentDockOverlay: React.FC = () => {
               onClose={ctx.closeChat}
               toolActivity={ctx.toolActivity[shown.attachmentId] ?? []}
               runStatus={ctx.runStatus[shown.attachmentId] ?? null}
+              waitingAsks={ctx.waitingAsks[shown.attachmentId] ?? []}
+              onStopTurn={() => ctx.stopTurn(shown.attachmentId)}
+              onWithdrawAsk={(askId) => ctx.withdrawAsk(shown.attachmentId, askId)}
               onApplyProposal={(proposalId) =>
                 ctx.applyProposal(shown.attachmentId, proposalId)
               }
-              onApplyPlanNode={(proposalId, ref) =>
-                ctx.applyPlanNode(shown.attachmentId, proposalId, ref)
-              }
-              onSavePlanGoal={(proposalId, ref, goal) =>
-                ctx.savePlanGoal(shown.attachmentId, proposalId, ref, goal)
-              }
-              onApplyPlanEdges={async (proposalId, indices) => {
-                await ctx.applyPlanEdges(shown.attachmentId, proposalId, indices);
-              }}
+              onUndoChange={(changeId) => ctx.undoChange(shown.attachmentId, changeId)}
               onSolvePlanNode={async (ref) => {
                 await ctx.validateNode(shown.attachmentId, { ref });
               }}
@@ -261,8 +264,8 @@ export const AgentDockOverlay: React.FC = () => {
               onClearConversation={() => ctx.clearConversation(shown.attachmentId)}
               // What `/` offers: the skills this chat's next run lists.
               loadSkills={
-                projectId
-                  ? async () => (await skillsApi.runSkills(projectId, shown.attachmentId)).skills
+                dataflowId
+                  ? async () => (await skillsApi.runSkills(dataflowId, shown.attachmentId)).skills
                   : undefined
               }
             />,

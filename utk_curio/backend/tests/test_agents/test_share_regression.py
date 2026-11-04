@@ -6,7 +6,7 @@ returns the project spec — which on disk carries the backend-owned agent
 sections (install lockfile, attachments with intents/titles/session ids,
 project defaults). This suite proves the shared payload excludes them, that
 sanitization never mutates the on-disk truth, and that per-project agent
-endpoints stay owner-only.
+endpoints stay the owner's and the editors' the owner invited.
 """
 
 from __future__ import annotations
@@ -136,16 +136,37 @@ class TestSharedRouteExcludesAgentPrivateData:
         # from a shared spec, which the sibling case above asserts.
         assert "agentDefaults" not in spec["dataflow"]
 
-    def test_agent_endpoints_stay_owner_only(
-        self, client, shared_project_with_agent_state, guest_user_and_token
+    def test_agent_endpoints_are_the_owners_and_the_invited_editors(
+        self, client, db, shared_project_with_agent_state, guest_user_and_token
     ):
+        """Anyone with the dataflow's link watches it, and the agents' routes
+        refuse a watcher with a 403 that holds nothing private; an editor the
+        owner invited reads the attachments and their chats."""
+        from utk_curio.backend.app.projects import access
+        from utk_curio.backend.app.users.models import User, UserSession
+
         ctx = shared_project_with_agent_state
         _, other_token = guest_user_and_token
         att_id = ctx["attachment"]["attachmentId"]
-        for path in (
+        paths = (
             f"/api/agents/projects/{ctx['project_id']}/attachments",
             f"/api/agents/projects/{ctx['project_id']}/attachments/{att_id}/session",
-        ):
+        )
+        for path in paths:
             r = client.get(path, headers=_auth(other_token))
-            assert r.status_code == 404, f"{path} not owner-only: {r.status_code}"
-            assert ctx["attachment"]["sessionId"] not in r.get_data(as_text=True)
+            assert r.status_code == 403, f"{path} not refused to a watcher: {r.status_code}"
+            assert r.get_json()["error"] == access.AGENTS_WATCHER_REFUSAL
+            for private in (ctx["attachment"]["sessionId"], SECRET_INTENT, SECRET_TITLE):
+                assert private not in r.get_data(as_text=True), f"{path} leaked {private!r}"
+
+        bob = User(username="bob", name="Bob", email="bob@test.com")
+        db.session.add(bob)
+        db.session.flush()
+        db.session.add(UserSession(user_id=bob.id, token="bob-token-for-tests"))
+        db.session.commit()
+        access.add_editor(ctx["user"], ctx["project_id"], "bob")
+        listed, session = (client.get(path, headers=_auth("bob-token-for-tests")) for path in paths)
+        assert listed.status_code == 200, listed.get_data(as_text=True)
+        assert [a["attachmentId"] for a in listed.get_json()["attachments"]] == [att_id]
+        assert session.status_code == 200, session.get_data(as_text=True)
+        assert [t["text"] for t in session.get_json()["turns"]][:1] == ["hello"]

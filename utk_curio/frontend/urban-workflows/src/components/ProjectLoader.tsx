@@ -8,8 +8,6 @@
  * File > Load picked.
  */
 import React, {
-  createContext,
-  useContext,
   useEffect,
   useRef,
   useState,
@@ -44,22 +42,9 @@ import { SHARE_UUID_RE as UUID_RE } from "../utils/shareLinks";
 import { dashboardRefusal, getEmbeddedDashboard } from "../standalone/dashboardPayload";
 import { mayEditServedDashboard } from "../standalone/servedDashboardAccess";
 import { setOpenDataflow } from "../services/dataflowReads";
+import { ProjectLoadStateContext, type ProjectLoadState } from "./projectLoadState";
 
-/** How far the load has got, for a page that has to say which state it is in. */
-export type ProjectLoadState = "idle" | "loading" | "loaded" | "failed";
-
-const ProjectLoadStateContext = createContext<ProjectLoadState>("idle");
-
-/**
- * The load's progress.
- *
- * The dashboard needs it to tell three things apart that all render as an empty
- * page: still loading, loaded with nothing pinned, and could not be opened. The
- * canvas has its own chrome to say so and ignores this.
- */
-export function useProjectLoadState(): ProjectLoadState {
-  return useContext(ProjectLoadStateContext);
-}
+export { useProjectLoadState, type ProjectLoadState } from "./projectLoadState";
 
 /**
  * Shown when neither the owner-scoped nor the shared endpoint could produce the
@@ -88,7 +73,12 @@ export const ProjectLoader: React.FC<{
 }> = ({ children, presentation = false }) => {
   const { id } = useParams<{ id?: string }>();
   const navigate = useNavigate();
-  const [loadState, setLoadState] = useState<ProjectLoadState>("idle");
+  // A route that names a dataflow is loading from the first frame: the effect
+  // below starts its load only after that frame is drawn, and the canvas would
+  // show it under the name of no dataflow meanwhile.
+  const [loadState, setLoadState] = useState<ProjectLoadState>(() =>
+    id && UUID_RE.test(id) ? "loading" : "idle",
+  );
   const { showToast } = useToastContext();
   const loaded = useRef<string | null>(null);
   const {
@@ -302,6 +292,10 @@ export const ProjectLoader: React.FC<{
         return;
       }
 
+      // Another account's dataflow, opened from its link: the registry then
+      // draws the nodes of its packages this account does not hold, from its
+      // owner's copies (refreshPackageRegistry).
+      let openedFromLink: string | undefined;
       try {
         // A canvas opens with the results it was left with, each node its
         // owner's runs ran showing its newest kept result; a dashboard with
@@ -326,8 +320,12 @@ export const ProjectLoader: React.FC<{
         // this is the same failure through the /dataflow/:id route.
         if (status === 404) {
           try {
-            const result = await loadSharedProject(id);
+            // A canvas of an editor the owner invited opens with the results
+            // his own runs kept, as hers opens with hers; anyone else, and a
+            // dashboard, with the saved outputs.
+            const result = await loadSharedProject(id, { lastResults: !presentation });
             applyResult(result, { trusted: false });
+            openedFromLink = id;
             setLoadState("loaded");
           } catch (sharedErr) {
             console.error("Failed to load shared project:", sharedErr);
@@ -356,7 +354,7 @@ export const ProjectLoader: React.FC<{
       // lockfile (or stays empty on failure). Re-refresh so the palette
       // intersects with the lockfile the store learned from loadParsedTrill.
       try {
-        await refreshPackageRegistry();
+        await (openedFromLink ? refreshPackageRegistry({ openedFromLink }) : refreshPackageRegistry());
       } catch {
         /* ditto: descriptor-miss surfaces per-node */
       }

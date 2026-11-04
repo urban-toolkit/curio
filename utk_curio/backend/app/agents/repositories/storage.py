@@ -203,37 +203,56 @@ def write_definition_atomic(
     (a version itself is immutable, ``DEC-029``). The old folder is moved aside
     first and put back if the swap fails.
     """
+    target = agent_definition_dir(user_key, dir_name)  # validated + contained
+    files = {"manifest.json": json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", **prompt_files}
+    return write_folder_atomic(user_agents_dir(user_key), target, files, replace=replace)
+
+
+def write_folder_atomic(base: Path, target: Path, files: dict[str, str | bytes], *,
+                        replace: bool = False) -> Path:
+    """Write *files*, each a path inside the folder to its text or bytes, as
+    the folder *target* of *base*, all at once: an agent definition
+    (:func:`write_definition_atomic`) or a skill an account brought
+    (``user_skills.py``).
+
+    The folder is staged in a hidden folder of *base* and ``os.replace``d into
+    place, so a failed or interrupted write never leaves a part of it visible
+    (``RISK-IMPORT-001``). An existing *target* is refused with
+    ``FileExistsError`` unless *replace*; it is then moved aside first and put
+    back if the swap fails. Each path must stay inside the folder."""
+    import errno
     import os
     import shutil
     import tempfile
 
-    target = agent_definition_dir(user_key, dir_name)  # validated + contained
     if target.exists() and not replace:
-        raise FileExistsError(f"definition {dir_name!r} already exists")
-    base = user_agents_dir(user_key)
+        raise FileExistsError(f"{target.name!r} already exists")
     base.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=".upload-", dir=base))
     retired = Path(tempfile.mkdtemp(prefix=".replaced-", dir=base))
     try:
-        (staging / "manifest.json").write_text(
-            json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
-        )
-        for rel, text in prompt_files.items():
+        for rel, content in files.items():
             dest = (staging / rel).resolve()
             if not is_within(dest, staging.resolve()):
                 raise PathTraversalError(
-                    f"Path traversal blocked: prompt asset {dest!s} escapes {staging!s}"
+                    f"Path traversal blocked: {rel!r} escapes {staging!s}"
                 )
             dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_text(text, encoding="utf-8")
+            if isinstance(content, bytes):
+                dest.write_bytes(content)
+            else:
+                dest.write_text(content, encoding="utf-8")
         old = retired / "old"
         if target.exists():
             os.replace(target, old)
         try:
             os.replace(staging, target)
-        except Exception:
+        except Exception as exc:
             if old.exists():
                 os.replace(old, target)
+            if not replace and isinstance(exc, OSError) and exc.errno in (errno.EEXIST, errno.ENOTEMPTY):
+                # Another write put the folder there after the check above.
+                raise FileExistsError(f"{target.name!r} already exists") from exc
             raise
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)

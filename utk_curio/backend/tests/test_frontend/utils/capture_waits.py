@@ -1,5 +1,6 @@
 """What a capture waits for first: the viewport fit, toasts swept away, the
-webfont, and no node running. Also a viewport that has landed after a move.
+webfont, no node running, and the server holding the tab's last change. Also a
+viewport that has landed after a move.
 """
 
 import time
@@ -341,6 +342,35 @@ def _wait_for_webfont(page) -> bool:
         ))
     except Exception:  # noqa: BLE001
         return False
+
+#: How long a capture waits for the server to hold the tab's last change.
+CHANGES_KEPT_TIMEOUT_MS = 15000
+
+# True once the top bar has nothing on its way to show: no save status, a
+# canvas bound to no doc (whose Unsaved stays), or no change of the tab's
+# waiting for the server (`data-curio-changes-pending`, set at once, before
+# the bar reads Saving... a moment later).
+_CHANGES_SETTLED_JS = """() => {
+    const el = document.querySelector('[data-curio-save-state]');
+    return !el || el.getAttribute('data-curio-save-state') === 'unsaved'
+        || el.getAttribute('data-curio-changes-pending') !== 'true';
+}"""
+
+
+def _wait_for_changes_kept(page) -> bool:
+    """Wait until the server holds the tab's last change, so the top bar reads
+    Saved and not Saving..., which a change shows while its answer takes long
+    on a busy runner. Returns whether it did.
+
+    Never raises: a change the server never keeps shows up as a diff, or in
+    the test that made it.
+    """
+    try:
+        page.wait_for_function(_CHANGES_SETTLED_JS, timeout=CHANGES_KEPT_TIMEOUT_MS)
+        return True
+    except Exception:  # noqa: BLE001 - a settle wait must never fail a test
+        return False
+
 
 #: How long a capture waits for the nodes on the canvas to stop running.
 NODE_SETTLE_TIMEOUT_MS = 180_000

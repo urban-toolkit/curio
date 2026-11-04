@@ -1,8 +1,8 @@
 """The server's Yjs doc of each open dataflow (``collaboration/dataflow_docs.py``).
 
 Every test runs tabs that are each a pycrdt doc syncing over a Flask-SocketIO
-test client (``_ydoc_client.py``), on an app started without ``--collab``,
-since every backend serves Socket.IO. alice owns the dataflow, bob is an editor
+test client (``_ydoc_client.py``), on an app as every backend starts, since
+every backend serves Socket.IO. alice owns the dataflow, bob is an editor
 she invited, and carol watches. Nothing here waits on a clock: the doc is
 written when a test calls for it, at the times a test sets.
 """
@@ -48,8 +48,8 @@ SPEC = {
 }
 
 
-#: What a backend that serves no Socket.IO without --collab fails with.
-NO_SOCKETS = "a backend started without --collab serves no Socket.IO"
+#: What a backend that serves no Socket.IO fails with.
+NO_SOCKETS = "the backend serves no Socket.IO"
 
 
 class _Room:
@@ -160,13 +160,22 @@ def _code(dataflow: dict, node: str = "loader") -> str:
     return next(n for n in dataflow["nodes"] if n["id"] == node)["content"]
 
 
-def test_every_backend_serves_the_sockets_without_collab(doc_app):
-    """Socket.IO starts whatever --collab says: a tab connects, joins and
-    syncs on an app started without it."""
+def _imported_entries(room) -> int:
+    """How many entries of the dataflow's earlier history its points hold,
+    imported when its doc first opened (``collaboration/history.py``)."""
+    from utk_curio.backend.app.collaboration import history
+
+    return sum(len(point.get("notes") or []) for point in history.points(room.owner_key, room.project_id)
+               if point["kind"] == "importedEntry")
+
+
+def test_every_backend_serves_the_sockets(doc_app):
+    """Collaboration has no switch: every backend starts Socket.IO, and a tab
+    connects and joins."""
     from utk_curio.backend import config
 
     application, socketio = doc_app
-    assert config.ENABLE_COLLAB is False
+    assert not hasattr(config, "ENABLE_COLLAB"), "collaboration has a switch again"
     assert socketio is not None, NO_SOCKETS
     user, session = make_user("alice")
     project_id = make_project(user)
@@ -437,7 +446,7 @@ def test_the_doc_is_written_after_a_second_with_no_change_or_every_ten_seconds(r
     on_disk = room.on_disk()
     assert _code(on_disk["dataflow"]) == "ax = 1\n" + "b" * 21
     assert on_disk["dataflow"]["agents"] == SPEC["dataflow"]["agents"], "the doc dropped the agents"
-    assert on_disk["nodeProvenance"] == SPEC["nodeProvenance"], "the doc dropped the history"
+    assert _imported_entries(room) == len(SPEC["nodeProvenance"]["loader"]), "the doc dropped the history"
 
 
 def test_a_read_of_an_open_dataflow_is_its_doc(room):
@@ -448,7 +457,7 @@ def test_a_read_of_an_open_dataflow_is_its_doc(room):
 
     live = room.live()
     assert _code(live["dataflow"]) == "# live\nx = 1\n"
-    assert live["nodeProvenance"] == SPEC["nodeProvenance"]
+    assert _imported_entries(room) == len(SPEC["nodeProvenance"]["loader"]), "the history is not the dataflow's"
     assert live["dataflow"]["agents"] == SPEC["dataflow"]["agents"]
 
     room.docs.reset_for_tests()  # stopped before the spec was written
@@ -596,8 +605,9 @@ def test_a_doc_grown_too_large_is_built_anew_with_a_new_log(room, monkeypatch):
 
 def test_a_doc_hands_over_no_history_and_a_spec_that_held_its_history_keeps_it(room, monkeypatch):
     """A spec saved before the history moved beside it still holds the
-    history. The doc writes its dataflow and leaves the history out, so every
-    version stays on record, and no write of the doc reads the history."""
+    history. The doc writes its dataflow and leaves the history out, so no
+    write of the doc reads the history, and the dataflow's first open keeps
+    every version, as its points (``collaboration/history.py``)."""
     from utk_curio.backend.app.projects import storage
 
     storage.drop_history(room.owner_key, room.project_id)
@@ -627,8 +637,11 @@ def test_a_doc_hands_over_no_history_and_a_spec_that_held_its_history_keeps_it(r
     )
     on_disk = room.on_disk()
     assert _code(on_disk["dataflow"]) == "# doc\nx = 1\n"
-    assert on_disk["nodeProvenance"] == legacy["nodeProvenance"], "the doc's write erased the history"
-    assert on_disk["dataflowProvenance"] == legacy["dataflowProvenance"]
+    from utk_curio.backend.app.collaboration import history
+
+    points = history.points(room.owner_key, room.project_id)
+    assert [p["id"] for p in points if p["kind"] == "imported"] == [marker], "the doc's write erased the history"
+    assert _imported_entries(room) == len(legacy["nodeProvenance"]["loader"])
 
 
 def test_a_doc_message_needs_a_join_a_started_sync_and_frames_that_read(room):
@@ -646,3 +659,71 @@ def test_a_doc_message_needs_a_join_a_started_sync_and_frames_that_read(room):
     for frame in (b"\x07\x01", b"\x00", b"\x00\x02", b"\x01", create_update_message(b"\x01\x02\x03")):
         assert alice.send(frame)["error"] == "invalid_message", frame
     assert alice.edit(_type("# still fine\n"))[0]["ok"] is True
+
+
+# ---------------------------------------------------------------------------
+# The merge rule for a connection to a removed node
+# ---------------------------------------------------------------------------
+
+#: alice's new connection, from the loader to the chart.
+NEW_EDGE = {"id": "e2", "source": "loader", "target": "chart", "sourceHandle": "out", "targetHandle": "in_1"}
+
+
+def _connect_to_chart(doc):
+    from pycrdt import Array, Map
+
+    from utk_curio.backend.app.collaboration import doc_mapping
+
+    doc.get("edges", type=Map)["e2"] = doc_mapping.encode(NEW_EDGE)
+    doc.get("edgeOrder", type=Array).append("e2")
+
+
+def _remove_chart(doc):
+    from pycrdt import Map
+
+    del doc.get("nodes", type=Map)["chart"]
+    del doc.get("edges", type=Map)["e1"]
+
+
+def _dropped(tab) -> list:
+    tab.pump()
+    return [event["args"][0] for event in tab.events if event["name"] == "connection_dropped"]
+
+
+def test_a_connection_drawn_to_a_node_removed_meanwhile_is_dropped_and_its_drawer_told(room):
+    """bob removes the chart; alice, who has not seen that yet, connects the
+    loader to it. The connection points nowhere once both changes merge: the
+    server takes it out for every tab and tells alice who removed the node."""
+    alice, bob = room.tab("alice"), room.tab("bob")
+    alice.sync()
+    bob.sync()
+
+    assert bob.edit(_remove_chart)[0]["ok"] is True
+    assert alice.edit(_connect_to_chart)[0]["ok"] is True
+
+    for tab in (alice, bob):
+        seen = tab.dataflow()
+        assert [node["id"] for node in seen["nodes"]] == ["loader"]
+        assert seen["edges"] == [], "a connection to a removed node was kept"
+    assert room.live()["dataflow"]["edges"] == []
+    [notice] = _dropped(alice)
+    assert notice["edgeIds"] == ["e2"] and notice["projectId"] == room.project_id
+    assert notice["by"]["username"] == "bob" and notice["by"]["name"] == "Bob"
+    assert _dropped(bob) == [], "the tab that removed the node was told of a connection it never drew"
+
+
+def test_a_node_removed_after_a_connection_to_it_was_drawn_drops_it_too(room):
+    """The other order: alice's connection lands first, then bob, who has not
+    seen it, removes the chart and the one connection he knew of."""
+    alice, bob = room.tab("alice"), room.tab("bob")
+    alice.sync()
+    bob.sync()
+
+    assert alice.edit(_connect_to_chart)[0]["ok"] is True
+    assert bob.edit(_remove_chart)[0]["ok"] is True
+
+    for tab in (alice, bob):
+        assert tab.dataflow()["edges"] == []
+    [notice] = _dropped(alice)
+    assert notice["edgeIds"] == ["e2"] and notice["by"]["username"] == "bob"
+    assert _dropped(bob) == []

@@ -442,13 +442,6 @@ def main():
         ),
     )
     parser.add_argument(
-        "--collab", action="store_true", default=False,
-        help=(
-            "Enable real-time collaborative editing (sets ENABLE_COLLAB=1). "
-            "Experimental, LAN-only. Default: off"
-        ),
-    )
-    parser.add_argument(
         "--collab-origins", default=None, metavar="ORIGINS",
         help=(
             "Comma-separated origins whose pages may open a Socket.IO connection "
@@ -513,7 +506,6 @@ def main():
         reseed=args.reseed,
         allow_publish=args.allow_publish,
         testing=args.testing,
-        collab=args.collab,
         catalog_root=args.catalog_root,
         exec_memory_mb=args.exec_memory_mb,
         exec_timeout=args.exec_timeout,

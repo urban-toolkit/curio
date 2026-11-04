@@ -2,12 +2,17 @@
  * The three window events the agent surfaces speak through (memo dev/142, F1 —
  * formerly `utils/agentCanvasEvents.ts` and half of `utils/agentCatalogEvents.ts`).
  *
- * Apply→canvas bridge events (memo dev/48 §3.3): the apply endpoint mutates the
- * SAVED spec; these carry the applied mutation to the LIVE React Flow canvas in
- * the same user action, so the next canvas save re-posts the same state instead
- * of silently clobbering it (the dev/41 `node.content.write` clobber fix rides
- * the same bridge). The apply response is the only payload source — the bridge
- * never re-derives it. The catalog and dock refresh signals mirror the dataset
+ * Canvas bridge events (memo dev/48 §3.3): the server writes the dataflow; these
+ * carry the same mutation to the LIVE React Flow canvas, so the next canvas
+ * save re-posts the same state instead of silently clobbering it. An agent's
+ * change lands on the server through the dataflow's doc, so a canvas the doc
+ * binds has it already: its mutation is marked `landed`, which only a canvas no
+ * doc binds takes (a hosted guest's, a dataflow open without collaboration).
+ * There, a change the agent landed in steps (a new node dragged in, a plan a
+ * step at a time) plays each step as the room's tabs saw it: its drag, then
+ * its mutation, one change after another.
+ * The server's answer or stream is the only payload source: the bridge never
+ * re-derives it. The catalog and dock refresh signals mirror the dataset
  * catalog's refresh-event convention: dispatched after an install/uninstall or
  * attach/detach so the palette and the dock re-read without a page reload.
  */
@@ -20,6 +25,8 @@ import type {
   AgentSimpleVisSetting,
   AgentSpatialJoinSetting,
 } from "./types/proposal";
+import { agentsSeenThroughAwareness, holdAgentsOfChange } from "../../providers/collab/agentHolds";
+import { playChangeDrag } from "../../providers/collab/agentDrags";
 
 export type AgentCreatedNode = {
   id: string;
@@ -51,7 +58,11 @@ export type AgentCreatedNode = {
   };
 };
 
-export type AgentCanvasMutation =
+/** A canvas mutation. `landed`: an agent's change (or its Undo), which the
+ * server wrote into the dataflow's doc, so a canvas the doc binds holds it. */
+export type AgentCanvasMutation = AgentCanvasMutationBody & { landed?: boolean };
+
+type AgentCanvasMutationBody =
   | { kind: "node-created"; node: AgentCreatedNode }
   | {
       kind: "node-content-applied";
@@ -75,6 +86,9 @@ export type AgentCanvasMutation =
        * before inserts wire to survivors). */
       kind: "graph-created";
       planId: string;
+      /** One step of the plan, as it landed, by its place in the plan: a
+       *  canvas no doc binds takes a plan a step at a time. */
+      step?: number;
       nodes: AgentCreatedNode[];
       edges: Array<{
         id: string;
@@ -92,33 +106,12 @@ export type AgentCanvasMutation =
       scenarios?: AgentAppliedScenario[];
     }
   | {
-      /** #662: scenarios a per-node apply completed; idempotent per id. */
-      kind: "scenarios-created";
-      scenarios: AgentAppliedScenario[];
-    }
-  | {
-      /** What a plan removes, once the row or the Connect all that completes
-       * it lands: the nodes and connections leave through the reviewed path,
-       * as a whole applied plan's do. Idempotent per plan id. */
+      /** Nodes and connections that leave: a node an agent added, undone.
+       * Idempotent per plan id. */
       kind: "plan-removals";
       planId: string;
       removedNodeIds: string[];
       removedEdgeIds: string[];
-    }
-  | {
-      /** dev/67-8: connection-stage edges — inserted quietly (no fit, no
-       * center); idempotent per batchId. */
-      kind: "edges-created";
-      batchId: string;
-      edges: Array<{
-        id: string;
-        source: string;
-        target: string;
-        sourceHandle?: string;
-        targetHandle?: string;
-        /** dev/112: `"Interaction"` for a Trill feedback edge (in/out both ends). */
-        type?: string;
-      }>;
     }
   | {
       /** dev/89: an applied package draft — the promoted package's dirName
@@ -140,25 +133,101 @@ export function notifyAgentCanvasMutation(mutation: AgentCanvasMutation): void {
   );
 }
 
+const MUTATION_KINDS = new Set([
+  "node-created",
+  "node-content-applied",
+  "node-settings-applied",
+  "graph-created",
+  "plan-removals",
+  "package-nodes-created",
+]);
+
+function isMutation(value: unknown): value is AgentCanvasMutation {
+  return Boolean(value) && typeof value === "object" && MUTATION_KINDS.has(String((value as { kind?: unknown }).kind));
+}
+
+/**
+ * The canvas mutations of an agent's change that landed, or of its Undo, as a
+ * run's `change` event, a blocking run's `changes` and the Undo answer carry
+ * them (one mutation or a list): each dispatched marked `landed`, which a
+ * canvas no doc binds takes. Anything else is skipped. Returns how many it
+ * dispatched.
+ */
+export function notifyAgentChangesLanded(canvas: unknown): number {
+  const mutations = (Array.isArray(canvas) ? canvas : [canvas]).filter(isMutation);
+  for (const mutation of mutations) notifyAgentCanvasMutation({ ...mutation, landed: true });
+  return mutations.length;
+}
+
+/** What a canvas no doc binds still has to play of the changes that landed,
+ * in order: each a drag to play first, or none, then what lands. */
+const toPlay: Array<{ dragged?: unknown; land: () => void }> = [];
+let playing = false;
+
+function playNext(): void {
+  const next = toPlay.shift();
+  if (!next) {
+    playing = false;
+    return;
+  }
+  playing = true;
+  const land = () => {
+    try {
+      next.land();
+    } finally {
+      playNext();
+    }
+  };
+  if (next.dragged) playChangeDrag(next.dragged, land);
+  else land();
+}
+
+/** A run's stream event, when it says a change landed: its canvas mutations
+ * go to the canvas bridge (`notifyAgentChangesLanded`). A canvas the dataflow's
+ * doc binds saw the agent's drags and writes through the doc's awareness, and
+ * has the change: it takes the whole change at once. On a canvas no doc binds,
+ * the change plays as the room's tabs saw it, after the changes before it:
+ * each of its `steps` in turn, the agent's drag first when the step had one
+ * (`playChangeDrag`), then the step's mutation; and the nodes the agent wrote
+ * show what it wrote just before they land, as its state in the room said it
+ * (`writing`, `providers/collab/agentHolds`). True when it was one. */
+export function bridgeLandedChangeEvent(name: string, payload: Record<string, unknown>): boolean {
+  if (name !== "change") return false;
+  if (agentsSeenThroughAwareness()) {
+    holdAgentsOfChange(payload.writing);
+    notifyAgentChangesLanded(payload.canvas);
+    return true;
+  }
+  const steps = Array.isArray(payload.steps) ? (payload.steps as Array<Record<string, unknown>>) : null;
+  if (steps && steps.length > 0) {
+    steps.forEach((step, i) =>
+      toPlay.push({
+        dragged: step?.dragged,
+        land: () => {
+          if (i === 0) holdAgentsOfChange(payload.writing);
+          notifyAgentChangesLanded(step?.canvas);
+        },
+      }),
+    );
+  } else {
+    toPlay.push({
+      land: () => {
+        holdAgentsOfChange(payload.writing);
+        notifyAgentChangesLanded(payload.canvas);
+      },
+    });
+  }
+  if (!playing) playNext();
+  return true;
+}
+
 export function subscribeAgentCanvasMutations(
   listener: (mutation: AgentCanvasMutation) => void,
 ): () => void {
   if (typeof window === "undefined") return () => undefined;
   const handler = (event: Event) => {
     const detail = (event as CustomEvent<AgentCanvasMutation>).detail;
-    if (
-      detail &&
-      (detail.kind === "node-created" ||
-        detail.kind === "node-content-applied" ||
-        detail.kind === "node-settings-applied" ||
-        detail.kind === "graph-created" ||
-        detail.kind === "scenarios-created" ||
-        detail.kind === "plan-removals" ||
-        detail.kind === "edges-created" ||
-        detail.kind === "package-nodes-created")
-    ) {
-      listener(detail);
-    }
+    if (isMutation(detail)) listener(detail);
   };
   window.addEventListener(AGENT_CANVAS_MUTATION_EVENT, handler);
   return () => window.removeEventListener(AGENT_CANVAS_MUTATION_EVENT, handler);

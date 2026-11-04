@@ -161,6 +161,13 @@
   "endpoint": "agents_api.update_attachment"
  },
  {
+  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/changes/<change_id>/undo",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.undo_change"
+ },
+ {
   "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/dataset-selection",
   "methods": [
    "POST"
@@ -187,27 +194,6 @@
    "POST"
   ],
   "endpoint": "agents_api.apply_proposal"
- },
- {
-  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/proposals/<proposal_id>/apply-edges",
-  "methods": [
-   "POST"
-  ],
-  "endpoint": "agents_api.apply_plan_edges"
- },
- {
-  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/proposals/<proposal_id>/apply-node",
-  "methods": [
-   "POST"
-  ],
-  "endpoint": "agents_api.apply_plan_node"
- },
- {
-  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/proposals/<proposal_id>/plan-goals",
-  "methods": [
-   "PATCH"
-  ],
-  "endpoint": "agents_api.set_plan_goal"
  },
  {
   "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/run",
@@ -294,6 +280,34 @@
   "endpoint": "agents_api.solve_attachment_stream"
  },
  {
+  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/turns",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.ask_turn"
+ },
+ {
+  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/turns/<ask_id>",
+  "methods": [
+   "DELETE"
+  ],
+  "endpoint": "agents_api.withdraw_turn"
+ },
+ {
+  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/turns/<ask_id>/stop",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.stop_turn"
+ },
+ {
+  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/turns/<ask_id>/stream",
+  "methods": [
+   "GET"
+  ],
+  "endpoint": "agents_api.follow_turn"
+ },
+ {
   "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/validate-node",
   "methods": [
    "POST"
@@ -352,8 +366,50 @@
  {
   "rule": "/api/agents/skills/<name>",
   "methods": [
+   "DELETE"
+  ],
+  "endpoint": "agents_api.remove_own_skill"
+ },
+ {
+  "rule": "/api/agents/skills/<name>",
+  "methods": [
    "GET"
   ],
   "endpoint": "agents_api.read_skill"
+ },
+ {
+  "rule": "/api/agents/skills/<name>/export",
+  "methods": [
+   "GET"
+  ],
+  "endpoint": "agents_api.export_skill"
+ },
+ {
+  "rule": "/api/agents/skills/imports",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.import_skill"
+ },
+ {
+  "rule": "/api/agents/skills/imports/check",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.check_skill_import"
+ },
+ {
+  "rule": "/api/agents/skills/publications",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.publish_skill"
+ },
+ {
+  "rule": "/api/agents/skills/publications/<name>",
+  "methods": [
+   "DELETE"
+  ],
+  "endpoint": "agents_api.unpublish_skill"
  }
 ]

@@ -120,7 +120,8 @@ class VerifiedRounds:
         self.dataflow_block: str | None = None
         # A runner takes a round's inputs and, as ``refused``, the kind the
         # check that refused the round before recorded, which hands the run
-        # the skills that answer that check (``skill_runs.answering``).
+        # the skills that answer that check (``skill_runs.answering``). The
+        # run is the acting account's, whose package skills it holds.
         self.run_delegate = delegate_runner or (
             lambda inputs, refused=None: delegation.run_delegate(
                 user_key, project_id, resolution.coord,
@@ -130,6 +131,7 @@ class VerifiedRounds:
                 attachment_id=attachment_id,
                 dataflow_block=self._dataflow_block(),
                 refused=refused,
+                asker=self.acting_user,
             )
         )
         self.node_id = node.get("id")
@@ -241,6 +243,9 @@ class VerifiedRounds:
                     (self.available or {}).get(packages_services.canonical_template_id(self.node_type))
                 ),
                 chips=agents_grounding._chip_context(self.spec, self.node_id),
+                # The code the node holds is the user's own, which round 0 may
+                # run: a call in it that makes values up is not one a round adds.
+                current=str(self.node.get("content") or ""),
             )
         except Exception:
             log.warning("Grounding context unavailable for node %s", self.node_id, exc_info=True)
@@ -351,6 +356,7 @@ class VerifiedRounds:
             self.dataflow_block = agents_dataflow_block.compose(
                 self.user_key, self.project_id, node_type=self.node_type,
                 datasets=(self.grounding_base or {}).get("dataflow_datasets"), user=self.acting_user,
+                keys=agents_grounding._keys_of(self.grounding_base, self.user_key, self.acting_user),
             ) or ""
         return self.dataflow_block or None
 

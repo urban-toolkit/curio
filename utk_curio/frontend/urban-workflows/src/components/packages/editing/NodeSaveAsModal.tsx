@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { useReactFlow, useStore } from "reactflow";
 import ModalShell from "../../ModalShell";
 import {
@@ -54,8 +54,6 @@ export function NodeSaveAsModal({
   const { showToast } = useToastContext();
   const { ensureProjectId } = useFlowContext();
   const hostedGuest = useHostedGuest();
-  const [targetKey, setTargetKey] = useState<string>(SAVE_AS_NEW_PACK);
-  const [newPackageName, setNewPackageName] = useState("");
   const [busy, setBusy] = useState(false);
   const [busyKind, setBusyKind] = useState<"save" | "export" | null>(null);
 
@@ -93,29 +91,39 @@ export function NodeSaveAsModal({
 
   // The defaults (the first writable package, "<node label> package") follow
   // the node and the package list until the person changes the destination or
-  // the name. The package list follows the node registry, which grows while
-  // packages load, and re-applying the defaults on every change threw away a
-  // destination just chosen and a name being typed. Each opening starts over.
-  const editedRef = useRef(false);
-  useEffect(() => {
-    if (show) editedRef.current = false;
-  }, [show]);
+  // the name; then both stay as they were. The package list follows the node
+  // registry, which grows while packages load, and re-applying the defaults on
+  // every change threw away a destination just chosen and a name being typed.
+  //
+  // The defaults are worked out in the render, so the modal is drawn with them.
+  // An effect used to set them, and React renders the state an effect sets in
+  // a task of its own: the modal was drawn first with an empty name, and on a
+  // busy page the default could land while a person typed into that field,
+  // putting what they typed after it ("Python Computation packageSaved
+  // Roundtrip Package").
+  //
+  // Each opening starts over: what the person chose is dropped in the render in
+  // which `show` changes, before anything is drawn.
+  const [chosen, setChosen] = useState<{ targetKey: string; name: string } | null>(null);
+  const [shownBefore, setShownBefore] = useState(show);
+  if (shownBefore !== show) {
+    setShownBefore(show);
+    setChosen(null);
+  }
+  const defaultTargetKey = packageOptions[0]?.sectionKey ?? SAVE_AS_NEW_PACK;
+  const defaultName = `${nodeLabel} package`;
+  const targetKey = chosen?.targetKey ?? defaultTargetKey;
+  const newPackageName = chosen?.name ?? defaultName;
 
-  useEffect(() => {
-    if (!show || editedRef.current) return;
-    setTargetKey(packageOptions[0]?.sectionKey ?? SAVE_AS_NEW_PACK);
-    setNewPackageName(`${nodeLabel} package`);
-  }, [show, nodeLabel, packageOptions]);
+  const chooseTarget = useCallback(
+    (key: string) => setChosen((was) => ({ targetKey: key, name: was?.name ?? defaultName })),
+    [defaultName],
+  );
 
-  const chooseTarget = useCallback((key: string) => {
-    editedRef.current = true;
-    setTargetKey(key);
-  }, []);
-
-  const typeName = useCallback((name: string) => {
-    editedRef.current = true;
-    setNewPackageName(name);
-  }, []);
+  const typeName = useCallback(
+    (name: string) => setChosen((was) => ({ targetKey: was?.targetKey ?? defaultTargetKey, name })),
+    [defaultTargetKey],
+  );
 
   const willReplace = useMemo(() => {
     if (targetKey === SAVE_AS_NEW_PACK) return false;

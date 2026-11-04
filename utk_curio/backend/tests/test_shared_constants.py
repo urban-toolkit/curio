@@ -25,7 +25,7 @@ CONTRACTS = REPO_ROOT / "utk_curio" / "frontend" / "urban-workflows" / "src" / "
 #: Each shared file, by its name without ``.json``.
 FILES = (
     "renderCauses", "solveStopReasons", "agentCategories", "noteColors", "autkGrammar", "visDefaults", "nodeSettings",
-    "dashboardRuns",
+    "dashboardRuns", "agentInstalls", "agentChanges",
 )
 
 
@@ -40,7 +40,8 @@ def test_the_backend_reads_each_file_from_the_frontends_folder(name):
     from utk_curio.common import shared_constants
 
     assert shared_constants.CONTRACTS_DIR.resolve() == CONTRACTS.resolve()
-    assert shared_constants.read(name) == _file(name)
+    expected = _file(name)
+    assert shared_constants.read(name) == expected
 
 
 def test_a_key_given_twice_is_refused_where_json_would_keep_the_last():
@@ -159,6 +160,33 @@ def test_what_a_dashboard_viewer_never_changes_and_the_run_token_header_are_the_
     data = _file("dashboardRuns")
     assert viewer.READ_ONLY_WIDGET_KINDS == set(data["readOnlyWidgetKinds"])
     assert viewer.RUN_TOKEN_HEADER == RUN_TOKEN_HEADER == data["runTokenHeader"]
+
+
+def test_the_installs_a_dataflows_owner_reviews_are_the_files():
+    """The tools whose Apply installs into an account, which an editor the
+    owner invited leaves to the owner: each is a mutate tool an agent asks for."""
+    from utk_curio.backend.app.agents.application import editors, tools
+
+    named = _file("agentInstalls")["tools"]
+    assert editors.ACCOUNT_INSTALL_TOOLS == frozenset(named)
+    assert len(named) == len(set(named)) > 0
+    for tool in named:
+        assert tools.REGISTRY[tool].effect == "mutate", tool
+
+
+def test_the_tools_whose_work_lands_as_a_change_are_the_files():
+    """The tools whose work lands at once as the agent's change, each a mutate
+    tool with a kind of Undo, none an install: a review of one saved before
+    agents changed the dataflow directly is refused at its Apply."""
+    from utk_curio.backend.app.agents.application import editors, tools
+    from utk_curio.backend.app.agents.application.proposals import changes
+
+    named = _file("agentChanges")["tools"]
+    assert changes.CHANGE_TOOLS == frozenset(named) == frozenset(changes.KIND_OF_TOOL)
+    assert len(named) == len(set(named)) > 0
+    assert not changes.CHANGE_TOOLS & editors.ACCOUNT_INSTALL_TOOLS
+    for tool in named:
+        assert tools.REGISTRY[tool].effect == "mutate", tool
 
 
 def test_the_starter_tables_are_well_formed():

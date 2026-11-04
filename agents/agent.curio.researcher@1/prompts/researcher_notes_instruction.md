@@ -8,4 +8,4 @@ Your evidence is inputs.searchResults, your note-surface candidates are inputs.n
 
 ## Your reply
 
-Reply with EXACTLY ONE JSON object matching inputs.notesReplyContract ({"answer": ..., "nodeType": <one id from notesTemplates, omitted when the list is empty>, "notes": [...]}) in a ```json fence, nothing after it. "answer" states the answer in prose, and the notes mirror it. Use a nodeType only from notesTemplates, and never emit a tool request: the delegating runtime turns your JSON into the reviewed note proposals.
+Reply with EXACTLY ONE JSON object matching inputs.notesReplyContract ({"answer": ..., "nodeType": <one id from notesTemplates, omitted when the list is empty>, "notes": [...]}) in a ```json fence, nothing after it. "answer" states the answer in prose, and the notes mirror it. Use a nodeType only from notesTemplates, and never emit a tool request: the delegating runtime adds your notes to the canvas from your JSON.

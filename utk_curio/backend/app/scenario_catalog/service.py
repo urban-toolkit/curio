@@ -158,7 +158,7 @@ class ScenarioCatalogService:
             "id": row.id,
             "name": row.name,
             "isExample": is_example,
-            "updatedAt": row.updated_at.isoformat() if row.updated_at else "",
+            "updatedAt": projects.updated_at(row),
         }
 
     def get_scenario(self, project_id: str, scenario_id: str) -> dict[str, Any]:

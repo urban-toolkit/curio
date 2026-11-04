@@ -1,7 +1,7 @@
 """Source grounding for agent-authored node content (memo dev/114, DEC-072).
 
-The ONE gate every agent-authored node content passes before it can become a
-proposal or be written by Solve. Issue #298: the Node Builder proposed
+The ONE gate every agent-authored node content passes before it can land as
+the agent's change or be written by Solve. Issue #298: the Node Builder proposed
 ``pd.read_csv("bras_ibge_data.csv")`` — a file that never existed — because
 nothing between "load this data" and the review card resolved, verified, or
 checked the source. DEC-053 already made "the runtime verifies, never the
@@ -22,10 +22,22 @@ The rules (all runtime-enforced; prompt wording only teaches them):
   credential) or an already-verified candidate row in this session carries
   it — a URL in the user's text is NOT evidence (the DEC-047 handoff prompt
   is model-suggested text the user forwards);
-- a **data-loading node with no source** is grounded only when the USER asked
+- a **data-loading node with no source** is grounded when the USER asked
   for synthetic data (or the model declared ``synthetic: true`` for such a
   request) and is labeled synthetic — inline invented values are the same
   fabrication class as an invented filename;
+- such a node is grounded too when the values its code adds to those the
+  node holds now are values the user typed in this conversation's own
+  messages (:func:`added_values`), labeled user-provided values; a value the
+  user did not type and the node did not hold is refused by name. A node's
+  goal, the dataflow's task and a delegate's intent never count here: a
+  model often writes them;
+- values a data-loading node's code **makes up** with a call (a draw from a
+  random number generator, a fake-data library, a sample-dataset maker:
+  :func:`generated_calls`) are grounded only when the user asked for
+  synthetic data, beside any source or typed values; a call the node holds
+  now is its own, and what the code computes from what it loads is not made
+  up;
 - a **catalog item** a function names (the functions page,
   ``skills/node-functions/SKILL.md``, says which argument names a Data Catalog
   dataset or collection, a Model Catalog model or a Node code key) is one the
@@ -40,7 +52,7 @@ The rules (all runtime-enforced; prompt wording only teaches them):
 - an **import** of a module a package ships is grounded only in a node a run
   hands that module to (``packages.modules_for_node``): a built-in node gets
   none. An import of a library is the sandbox's to judge;
-- anything else is **refused with the correction named** — never proposed,
+- anything else is **refused with the correction named**: never landed,
   never written, never described as existing.
 
 Pure by construction: no Flask, no provider, no store. The catalog read, the
@@ -58,7 +70,9 @@ import importlib.machinery
 import os
 import re
 import sys
+from collections import Counter
 from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 from functools import lru_cache
 from typing import Callable
 from urllib.parse import urlsplit, urlunsplit
@@ -217,6 +231,13 @@ class GroundingContext:
     #: "inputs", "selections"}``. None where the gate has no
     #: dataflow; a chip it cannot resolve leaves its argument unjudged.
     chips: dict | None = None
+    #: The user's own messages in this conversation, and nothing else: the
+    #: values a data-loading node's inline data may add (:func:`added_values`).
+    #: Empty where no conversation is read, as in a Solve batch.
+    user_messages: tuple[str, ...] = ()
+    #: The content the node holds now, which is the user's own; None for a
+    #: node the content would create.
+    current_content: str | None = None
 
 
 @dataclass(frozen=True)
@@ -1123,6 +1144,303 @@ def synthetic_requested(texts: list[str] | tuple[str, ...], params: dict | None 
     return any(marker in lowered for marker in SYNTHETIC_MARKERS)
 
 
+# A number as the user types it: a run of digits with its decimals, and a
+# minus sign written right before it. A digit run inside a word ("J2") or
+# after a decimal point is not one; "1,200" is read both ways, as 1 and 200
+# and as 1200 (``_GROUPED_NUMBER_RE``).
+_TYPED_NUMBER_RE = re.compile(r"(?<![\w.])(-?)(\d+(?:\.\d+)?)")
+_GROUPED_NUMBER_RE = re.compile(r"(?<![\w.,])(-?)(\d{1,3}(?:,\d{3})+(?:\.\d+)?)")
+
+
+def _number(value: object) -> Decimal | None:
+    """*value* as a number compared by its value (60 and 60.0 are one), or
+    None for anything else; ``True`` and ``False`` are no numbers."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        number = Decimal(repr(value)) if isinstance(value, float) else Decimal(value)
+    except (InvalidOperation, ValueError):
+        return None
+    return number if number.is_finite() else None
+
+
+def typed_numbers(messages: tuple[str, ...] | list[str]) -> set[Decimal]:
+    """Every number *messages*, the user's own, write, by its value."""
+    numbers: set[Decimal] = set()
+    for message in messages or ():
+        if not isinstance(message, str):
+            continue
+        for pattern in (_TYPED_NUMBER_RE, _GROUPED_NUMBER_RE):
+            for sign, digits in pattern.findall(message):
+                try:
+                    numbers.add(Decimal(sign + digits.replace(",", "")))
+                except InvalidOperation:
+                    continue
+    return numbers
+
+
+def _is_word_char(char: str) -> bool:
+    return char.isalnum() or char == "_"
+
+
+def typed_text(value: str, messages: tuple[str, ...] | list[str]) -> bool:
+    """Whether one of *messages*, the user's own, writes *value* whole, as
+    written: "J" in "J with 60", never in "Jay" or "jet"."""
+    if not value:
+        return False
+    for message in messages or ():
+        if not isinstance(message, str):
+            continue
+        start = message.find(value)
+        while start >= 0:
+            end = start + len(value)
+            before = start == 0 or not (_is_word_char(message[start - 1]) and _is_word_char(value[0]))
+            after = end == len(message) or not (_is_word_char(message[end]) and _is_word_char(value[-1]))
+            if before and after:
+                return True
+            start = message.find(value, start + 1)
+    return False
+
+
+def inline_values(code: object) -> list[tuple[object, int]] | None:
+    """The values Python node *code* writes in itself, in the code's order,
+    each with its line: every string and number literal, a number with the
+    sign written before it. ``True``, ``False``, ``None`` and empty strings
+    are no values, and nor is a chip. None when the code does not parse."""
+    if not isinstance(code, str) or not code.strip():
+        return []
+    parsed = _parse_python(_with_chips_resolved(code))
+    if parsed is None:
+        return None
+    tree, offset = parsed
+    signed: dict[int, object] = {}
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd))
+            and isinstance(node.operand, ast.Constant) and _number(node.operand.value) is not None
+        ):
+            value = node.operand.value
+            signed[id(node.operand)] = -value if isinstance(node.op, ast.USub) else value
+    found: list[tuple[int, int, object]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Constant):
+            continue
+        value = signed.get(id(node), node.value)
+        if value is None or value is Ellipsis or isinstance(value, bool):
+            continue
+        if isinstance(value, bytes):
+            value = value.decode("utf-8", "replace")
+        if isinstance(value, str) and (not value.strip() or UNRESOLVED_CHIP in value):
+            continue
+        found.append((max(1, node.lineno - offset), node.col_offset, value))
+    found.sort(key=lambda item: (item[0], item[1]))
+    return [(value, line) for line, _column, value in found]
+
+
+def _shown_value(value: object, line: int | None = None) -> str:
+    """A value as a refusal or a card names it: a string quoted, a number bare."""
+    shown = repr(value) if isinstance(value, str) else str(value)
+    return f"{shown} (line {line})" if line is not None else shown
+
+
+def added_values(code: object, engine: str | None, ctx: "GroundingContext") -> tuple[list, list]:
+    """``(typed, made up)``: the values data-loading node *code* adds to those
+    the node holds now (``ctx.current_content``, the user's own), each with
+    its line, split by whether the user's own messages in this conversation
+    (``ctx.user_messages``) write it. A number the node holds is its own as
+    many times as the node holds it, so one of its values moved to a new row
+    is added; any other value the node holds is its own wherever it is
+    written, such as a column's name. Both are empty for code that is not
+    Python or does not parse, and where no conversation is read."""
+    if (engine or "python") != "python" or not ctx.user_messages:
+        return [], []
+    values = inline_values(code)
+    if not values:
+        return [], []
+    held_numbers: Counter = Counter()
+    held_texts: set[str] = set()
+    for value, _line in inline_values(ctx.current_content) or []:
+        number = _number(value)
+        if number is not None:
+            held_numbers[number] += 1
+        else:
+            held_texts.add(value if isinstance(value, str) else repr(value))
+    numbers = typed_numbers(ctx.user_messages)
+    typed: list[tuple[object, int]] = []
+    made_up: list[tuple[object, int]] = []
+    for value, line in values:
+        number = _number(value)
+        if number is not None:
+            if held_numbers[number] > 0:
+                held_numbers[number] -= 1
+                continue
+            given = number in numbers
+        else:
+            text = value if isinstance(value, str) else repr(value)
+            if text in held_texts:
+                continue
+            held_texts.add(text)
+            given = isinstance(value, str) and typed_text(value, ctx.user_messages)
+        (typed if given else made_up).append((value, line))
+    return typed, made_up
+
+
+#: The modules whose calls make values up: random number generators and
+#: fake-data libraries. Every call of one, and of a generator one makes (a
+#: class, or ``numpy.random.default_rng``), writes values no source gives,
+#: but making or seeding a generator, which draws none (:data:`_DRAWS_NONE`).
+GENERATOR_MODULES: tuple[str, ...] = ("numpy.random", "random", "faker", "mimesis")
+#: The functions that make a sample dataset up: scikit-learn's ``make_*``.
+SAMPLE_MAKERS: tuple[str, ...] = ("sklearn.datasets.make_",)
+#: What a generator does that draws no value.
+_DRAWS_NONE = frozenset({"seed", "get_state", "set_state", "getstate", "setstate", "seed_instance", "seed_locale"})
+#: The names node code reaches a module by without importing it: the sandbox
+#: binds ``np`` and ``numpy`` (``sandbox/app/worker.py``), and a node sees
+#: the modules the nodes before it imported (#158), so ``random`` is Python's.
+_PRESET_MODULES = {"np": "numpy", "numpy": "numpy", "random": "random"}
+_SHOWN_CALL_MAX_CHARS = 80
+
+
+def _module_names(tree: ast.AST) -> dict[str, str]:
+    """The dotted path each name of *tree*, node code, stands for when it
+    names a module or what a module holds: what the code imports, and the
+    names of :data:`_PRESET_MODULES` the code binds no other way."""
+    imported: dict[str, str] = {}
+    bound: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                top = alias.name.split(".", 1)[0]
+                imported[alias.asname or top] = alias.name if alias.asname else top
+        elif isinstance(node, ast.ImportFrom) and not node.level and node.module:
+            for alias in node.names:
+                if alias.name != "*":
+                    imported[alias.asname or alias.name] = f"{node.module}.{alias.name}"
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            bound.add(node.name)
+        elif isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            bound.add(node.id)
+        elif isinstance(node, ast.arg):
+            bound.add(node.arg)
+    names = {name: path for name, path in _PRESET_MODULES.items() if name not in bound}
+    names.update(imported)
+    return names
+
+
+def _dotted(expr: ast.AST, names: dict[str, str]) -> str | None:
+    """``numpy.random.normal`` for ``np.random.normal``: *expr*, a name or the
+    attributes of one, on the path *names* gives that name, or None."""
+    attrs: list[str] = []
+    while isinstance(expr, ast.Attribute):
+        attrs.append(expr.attr)
+        expr = expr.value
+    if not isinstance(expr, ast.Name) or expr.id not in names:
+        return None
+    return ".".join([names[expr.id], *reversed(attrs)])
+
+
+def _of_a_generator_module(path: str) -> bool:
+    return any(path == module or path.startswith(module + ".") for module in GENERATOR_MODULES)
+
+
+def _makes_a_generator(path: str) -> bool:
+    """Whether a call of *path*, a generator module's, makes a generator: a
+    class (``Faker``, ``random.Random``, ``numpy.random.RandomState``) or
+    ``numpy.random.default_rng``. It draws nothing itself."""
+    last = path.rsplit(".", 1)[-1]
+    return last == "default_rng" or last[:1].isupper()
+
+
+def _made_up_calls(code: object) -> list[tuple[str, str, int]] | None:
+    """``(key, shown, line)`` for each call Python *code* makes values up
+    with, in the code's order: a call of a module of
+    :data:`GENERATOR_MODULES`, or of a generator one makes, that draws values,
+    and a sample maker of :data:`SAMPLE_MAKERS`. *key* is the call as its
+    module names it, *shown* as the code writes it. None when the code does
+    not parse."""
+    if not isinstance(code, str) or not code.strip():
+        return []
+    parsed = _parse_python(_with_chips_resolved(code))
+    if parsed is None:
+        return None
+    tree, offset = parsed
+    names = _module_names(tree)
+
+    def _generator_made_by(expr: ast.AST) -> str | None:
+        """The path of the call that makes the generator *expr* is, when the
+        code makes one: ``np.random.default_rng(0)``, or a name it binds to
+        such a call (``rng``, :data:`makers`)."""
+        if isinstance(expr, ast.Name):
+            return makers.get(expr.id)
+        if isinstance(expr, ast.Call):
+            path = _dotted(expr.func, names)
+            if path is not None and _of_a_generator_module(path) and _makes_a_generator(path):
+                return path
+        return None
+
+    makers: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
+            made = _generator_made_by(node.value)
+            for target in node.targets:
+                if made is not None and isinstance(target, ast.Name):
+                    makers[target.id] = made
+    found: list[tuple[int, int, str, str]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        key = None
+        path = _dotted(node.func, names)
+        if path is not None:
+            if (
+                _of_a_generator_module(path) and not _makes_a_generator(path)
+                and path.rsplit(".", 1)[-1] not in _DRAWS_NONE
+            ) or path.startswith(SAMPLE_MAKERS):
+                key = path
+        elif isinstance(node.func, ast.Attribute) and node.func.attr not in _DRAWS_NONE:
+            # A call of a generator the code makes: ``rng.normal(...)``,
+            # ``np.random.default_rng(0).integers(...)``, ``fake.unique.name()``.
+            attrs: list[str] = []
+            owner: ast.AST = node.func
+            while isinstance(owner, ast.Attribute):
+                attrs.append(owner.attr)
+                owner = owner.value
+            made = _generator_made_by(owner)
+            if made is not None:
+                key = f"{made}()." + ".".join(reversed(attrs))
+        if key is not None:
+            shown = ast.unparse(node.func)
+            if len(shown) > _SHOWN_CALL_MAX_CHARS:
+                shown = shown[:_SHOWN_CALL_MAX_CHARS - 3] + "..."
+            found.append((max(1, node.lineno - offset), node.col_offset, key, shown))
+    found.sort(key=lambda item: (item[0], item[1]))
+    return [(key, shown, line) for line, _column, key, shown in found]
+
+
+def generated_calls(code: object, engine: str | None, ctx: "GroundingContext") -> list[tuple[str, int]]:
+    """``(call, line)`` for each call data-loading node *code* makes values up
+    with (:func:`_made_up_calls`: a draw from a random number generator, a
+    fake-data library, a sample-dataset maker) that it adds to those the node
+    holds now (``ctx.current_content``, the user's own), as the code writes
+    it. A call the node holds is its own as many times as the node holds it.
+    What the code computes from what it loads is no such call: a derived
+    column, a join, a filter, an aggregation, ``DataFrame.sample``. Empty for
+    code that is not Python or does not parse."""
+    if (engine or "python") != "python":
+        return []
+    calls = _made_up_calls(code)
+    if not calls:
+        return []
+    held = Counter(key for key, _shown, _line in _made_up_calls(ctx.current_content) or [])
+    added: list[tuple[str, int]] = []
+    for key, shown, line in calls:
+        if held[key] > 0:
+            held[key] -= 1
+            continue
+        added.append((shown, line))
+    return added
+
+
 def loads_dataset(node_type: object, templates: dict | None = None) -> bool:
     """Whether a node of *node_type* loads a dataset: its template declares
     ``loadsDataset``, in the project's roster snapshot *templates* or in the
@@ -1442,9 +1760,14 @@ def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> 
     must be verified (session evidence or a probe now); every catalog item a
     call of the functions page names must be the account's, every such call
     in an engine that has it, and every module a package ships one the node
-    gets; a data-loading node with no refs needs the synthetic request.
-    Deterministic, model-free. *engine* is the language the content is read
-    in; ``ctx.code_engine`` the one its code runs in, when it is code."""
+    gets; a data-loading node with no refs needs the synthetic request, or
+    adds values the user typed (:func:`added_values`) and no other; and a
+    data-loading node's code adds no call that makes values up
+    (:func:`generated_calls`) unless the user asked for synthetic data, which
+    then labels them. A node that nothing grounds keeps its one refusal, no
+    grounded source. Deterministic, model-free. *engine* is the language the
+    content is read in; ``ctx.code_engine`` the one its code runs in, when it
+    is code."""
     functions = page_functions()
     calls = function_calls(code, engine, functions, ctx.chips)
     refs = scan_sources(code, engine)
@@ -1471,13 +1794,46 @@ def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> 
     code_violations += import_violations
     # A chip the gate could not resolve may name the dataset the node loads.
     unjudged_read = any(call.kind in DATA_CATALOG_KINDS and call.unresolved for call in calls)
+    # The calls a data-loading node's code makes values up with, beyond those
+    # the node holds: values no source gives, beside a source or not.
+    generated = generated_calls(code, engine, ctx) if ctx.is_data_loading else []
+    made_up_calls = agent_text.message(
+        "grounding.values-generated",
+        calls=_listed([f"{shown} (line {line})" for shown, line in generated], "none"),
+    ) if generated else None
     if not refs and not unjudged_read and ctx.is_data_loading:
+        typed, made_up = ([], []) if ctx.synthetic_requested else added_values(code, engine, ctx)
         if ctx.synthetic_requested:
             source_refs.append({"kind": "synthetic"})
+        elif typed and not made_up and not generated:
+            # The values the code adds are the user's own, typed in this
+            # conversation, beside those the node already held.
+            source_refs.append({
+                "kind": "user-values",
+                "value": ", ".join(_shown_value(value) for value, _line in typed)[:_VALUE_MAX_CHARS],
+            })
         else:
+            # The values named first: a delegate's refusal is cut short.
+            if made_up:
+                violations.append(agent_text.message(
+                    "grounding.values-not-typed",
+                    values=_listed([_shown_value(value, line) for value, line in made_up], "none"),
+                ))
+            if typed and made_up_calls:
+                # Beside values the user typed, the calls that make the rest
+                # up; a node nothing grounds keeps its one refusal below.
+                violations.append(made_up_calls)
             violations.append(
                 agent_text.message("grounding.no-source")
             )
+    elif generated and ctx.synthetic_requested:
+        # Beside a source, the values the user asked to have made up, labeled.
+        source_refs.append({
+            "kind": "synthetic",
+            "value": ", ".join(dict.fromkeys(shown for shown, _line in generated))[:_VALUE_MAX_CHARS],
+        })
+    elif made_up_calls:
+        violations.append(made_up_calls)
     verdict = GroundingVerdict(ok=not violations, violations=violations, refs=refs, code_violations=code_violations)
     if verdict.ok and source_refs:
         verdict.source = source_payload(source_refs)
@@ -1521,9 +1877,14 @@ def _ref_label(ref: dict) -> str:
         return f"External · {ref.get('value')} · {status}{gate}"
     if kind == "user-path":
         return f"User-provided path · {ref.get('value')}"
+    if kind == "user-values":
+        return f"User-provided values · {ref.get('value')}"
     if kind == "secret":
         return f"Connection key · {ref.get('name')} · {ref.get('host')}"
     if kind == "synthetic":
+        if ref.get("value"):
+            # Beside another source: the calls that made values up, as asked.
+            return f"Synthetic · {ref.get('value')}"
         return "Synthetic · generated in the node, no external source"
     return str(kind)
 
@@ -1548,6 +1909,8 @@ def refusal_text(verdict: GroundingVerdict, ctx: GroundingContext) -> str:
     for i, violation in enumerate(verdict.violations, 1):
         lines.append(f"({i}) {violation}")
     allowed = [agent_text.message("grounding.allowed-user-path")]
+    if ctx.is_data_loading and ctx.user_messages:
+        allowed.append(agent_text.message("grounding.allowed-user-values"))
     allowed.extend(ctx.hints)
     lines.append(agent_text.message("grounding.allowed", sources="; ".join(allowed)))
     lines.append(

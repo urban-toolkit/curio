@@ -24,4 +24,4 @@ The dashboard refuses to open, saying why and naming the nodes to change, in two
 - Its saved data is over 25 MB, the most a page carries. Aggregate or filter upstream of the heaviest tiles, or the user unpins them.
 - A pinned {{template.label:curio.builtin/autk-grammar}} tile loads its own data: its spec has a "data" section, which it would fetch when the page draws. Move the "data" section into a node of its own upstream of the tile, such as an {{template.label:curio.builtin/autk-grammar}} node whose spec holds only that section, and draw that node's output in the tile. A spec an agent writes for a pinned tile with a "data" section is sent back.
 
-The user pins and unpins a node with the pin in its header; an agent never pins or unpins a node. A plan that removes a pinned node takes its tile off the dashboard, and the plan's review card says so.
+The user pins and unpins a node with the pin in its header; an agent never pins or unpins a node. A plan that removes a pinned node takes its tile off the dashboard, and the plan's card says so.

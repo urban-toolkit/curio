@@ -12,7 +12,6 @@ from utk_curio.backend.config import (
     CURIO_DEFAULT_SAVE_NODE_OUTPUT,
     CURIO_ENV,
     CURIO_SHARED_GUEST_USERNAME,
-    ENABLE_COLLAB,
 )
 from utk_curio.backend.app.users.dependencies import get_current_token, require_auth
 from utk_curio.backend.app.users.schemas import SignInIn, SignUpIn, UserPatchIn
@@ -171,7 +170,6 @@ def public_config_route():
             "skip_project_page": CURIO_NO_PROJECT,
             "curio_env": CURIO_ENV,
             "shared_guest_username": CURIO_SHARED_GUEST_USERNAME,
-            "enable_collab": ENABLE_COLLAB,
             "collab_namespace": COLLAB_NAMESPACE,
             "default_save_node_output": CURIO_DEFAULT_SAVE_NODE_OUTPUT,
         }

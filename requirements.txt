@@ -93,3 +93,8 @@ numpy>=1.26
 # README says it is for demonstration, so only the tests import it, and the
 # pin keeps its verdicts fixed.
 skills-ref==0.1.1
+# The WebSocket transport of python-socketio's client, which the stress
+# harness's tabs connect with (utk_curio/backend/tests/stress/sockets.py), as
+# the canvas's socket.io-client connects over WebSocket. Only the harness
+# imports it; without it the client can only poll.
+websocket-client>=1.8.0

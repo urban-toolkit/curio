@@ -7,15 +7,17 @@ import path from "path";
  * "View details" opens a modal, and neither leaves the page.
  *
  * Read from disk, as that suite is: the claims are about what the page does
- * not do.
+ * not do. The skills have their own page, the Skill Catalog's, and the Agent
+ * Catalog page holds none of their surfaces.
  */
 
 const SRC = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(SRC, rel), "utf8");
 
-const BROWSE = "pages/agents/AgentCatalogBrowse.tsx";
-const CARD = "pages/agents/SkillCatalogBrowseCard.tsx";
-const DRAWER = "pages/agents/SkillCatalogBrowseDrawer.tsx";
+const BROWSE = "pages/skills/SkillCatalogBrowse.tsx";
+const CARD = "pages/skills/SkillCatalogBrowseCard.tsx";
+const DRAWER = "pages/skills/SkillCatalogBrowseDrawer.tsx";
+const AGENT_BROWSE = "pages/agents/AgentCatalogBrowse.tsx";
 
 describe("skill detail entry points", () => {
   it("uses the shared wording, with no arrow, on the card and in the drawer", () => {
@@ -38,6 +40,22 @@ describe("skill detail entry points", () => {
     expect(browse).not.toContain("useNavigate");
     expect(browse).not.toContain("/catalog/agents/");
     expect(browse).not.toContain("/catalog/skills");
-    expect(read("components/agents/catalog/SkillDetailModal.tsx")).toContain("<ModalShell");
+    expect(read("components/skills/catalog/SkillDetailModal.tsx")).toContain("<ModalShell");
+    // The page's one route takes no skill's name.
+    expect(read("index.tsx")).toContain('<Route path="skills" element={<SkillCatalogBrowse />} />');
+    expect(read("index.tsx")).not.toMatch(/path="skills\//);
+  });
+
+  it("leaves the Agent Catalog page no skill card, drawer or modal", () => {
+    const agents = read(AGENT_BROWSE);
+    for (const name of [
+      "SkillCatalogBrowseCard",
+      "SkillCatalogBrowseDrawer",
+      "SkillDetailModal",
+      "SkillImportModal",
+      "showSkills",
+    ]) {
+      expect(agents).not.toContain(name);
+    }
   });
 });

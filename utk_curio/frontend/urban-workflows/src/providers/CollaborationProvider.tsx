@@ -1,15 +1,13 @@
 /**
  * Real-time collaboration provider.
  *
- * Disabled by default: when the backend reports ``enable_collab=false``
- * via ``/api/config/public``, this provider renders children with a
- * no-op context value and never opens a socket.
- *
- * When enabled, it follows the currently-loaded project via
- * ``projectPackagesStore.subscribe`` — opening one socket per project
- * id, emitting ``join_session`` on connect, and tearing the socket
- * down when the user navigates to a different project (or away from
- * the canvas).
+ * It follows the currently-loaded project via
+ * ``projectPackagesStore.subscribe``, opening one socket per project id once a
+ * tab is signed in, emitting ``join_session`` on connect, and tearing the
+ * socket down when the user navigates to a different project (or away from
+ * the canvas), once the server has the tab's last change on it. Every
+ * backend serves the socket, and the dataflow's Yjs doc travels on it
+ * (``collab/docProvider.ts``).
  *
  * Identity is anchored in the backend Bearer token sent through the
  * Socket.IO ``auth`` handshake. We never trust user-supplied identity
@@ -22,7 +20,17 @@
  * editors reaches it with the list (``roles_changed``). Every "is this me?"
  * compares participant ids (``collab/participants.ts``). A join the server
  * refuses (a hosted guest's to an example) closes the socket for that
- * dataflow.
+ * dataflow, and its canvas stays its own, bound to no doc.
+ *
+ * Once joined, the tab syncs the dataflow's doc, which ``DataflowDocContext``
+ * hands the canvas. A change of the tab's role, either way, and a doc the
+ * server built anew, start the doc again from the server's. A Curio with no
+ * sign-in (``curio_no_auth``, where the shared guest is signed in for
+ * everyone) syncs its saved dataflows' docs as any signed-in tab does.
+ *
+ * The room's events, the join's and each one after it, are its Activity
+ * (``activity``), which the canvas's dock lists: who joined and left, whose
+ * role changed, and each agent at work's join and leave.
  */
 
 import React, {
@@ -43,13 +51,60 @@ import {
 } from "../registry/projectPackagesStore";
 import { backendUrl } from "../utils/backendUrl";
 import { collabSocketTarget } from "../utils/collabSocketTarget";
-import { roleIn, type RoomRole } from "./collab/participants";
+import { roleIn, writesDoc, type RoomRole } from "./collab/participants";
+import { DataflowDocProvider, KEPT_WAIT_MS } from "./collab/docProvider";
+import { CONNECTION_DROPPED_EVENT, DataflowDocContext, type DocBinding } from "./collab/docContext";
+import { HISTORY_CHANGED_EVENT } from "./history/serverHistory";
+import { EDITOR_REQUESTS_CHANGED_EVENT } from "../services/editorRequests";
+import { remoteCursorStyle } from "./collab/presence";
+import { useAgentsWriting } from "./collab/agentHolds";
+import { AGENT_TURN_EVENT } from "./agents/turnAsks";
 
 export type { RoomRole } from "./collab/participants";
 
 const BACKEND_URL = backendUrl();
 // The backend's --collab-namespace, until /api/config/public reports it.
 const DEFAULT_NAMESPACE = "/collab";
+
+/**
+ * Close *socket* and drop *provider*, the doc this tab held on it, once the
+ * server has every change the tab sent (at most `KEPT_WAIT_MS`): a leave that
+ * asked nothing, the browser's Back among them, never drops a change still on
+ * its way, which the server refuses once its socket has gone. Its presence
+ * (its cursor, the node it edits) goes at once all the same, and the socket
+ * listens for nothing but the doc's answers meanwhile. Its locks go one way
+ * only: with its socket, which the server lets go of them for and names them
+ * to the room (``user_left``'s ``released_locks``).
+ */
+function retire(socket: Socket | null, provider: DataflowDocProvider | null): void {
+    const close = () => {
+        provider?.destroy();
+        if (!socket) return;
+        try {
+            socket.removeAllListeners();
+            socket.disconnect();
+        } catch {
+            /* socket already gone */
+        }
+    };
+    if (!socket || !provider || !socket.connected || provider.isKept()) {
+        close();
+        return;
+    }
+    try {
+        provider.awareness.setLocalState(null);
+        socket.removeAllListeners();
+    } catch {
+        /* socket already gone */
+    }
+    provider.listenAgain();
+    void provider.whenKept(KEPT_WAIT_MS).then(close, close);
+}
+/** The style element that colors everyone else's cursor in the code editors. */
+const CURSOR_STYLE_ID = "curio-remote-cursors";
+/** How many of the room's events a tab keeps, as the server does
+ *  (``room_state.ACTIVITY_CAP``). */
+const ACTIVITY_CAP = 200;
 
 export interface CollabUser {
     user_id: number;
@@ -59,6 +114,8 @@ export interface CollabUser {
     /** This participant's id in the room: one per tab. */
     participant_id?: string;
     role?: RoomRole;
+    /** A tab of the shared guest account: its number in the room. */
+    guest_number?: number;
 }
 
 export interface NodeLock {
@@ -68,19 +125,8 @@ export interface NodeLock {
     /** The participant that holds the lock. */
     participant_id?: string;
     since: number;
-}
-
-export interface CodeProposal {
-    id: string;
-    nodeId: string;
-    kind: "code" | "grammar";
-    oldValue: string | null;
-    newValue: string;
-    proposed_by: { user_id: number; username: string; participant_id?: string };
-    /** The participants that approved or rejected it. */
-    approvals: string[];
-    rejections: string[];
-    created_at: number;
+    /** A tab of the shared guest account's lock: its number in the room. */
+    guest_number?: number;
 }
 
 export interface ActivityEntry {
@@ -89,17 +135,39 @@ export interface ActivityEntry {
     payload: Record<string, unknown>;
 }
 
-export interface OutputBroadcast {
-    nodeId: string;
-    nodeType?: string;
-    output: { code: string; content: unknown; [k: string]: unknown };
-}
-
 /** Listener callback for "a peer applied a remote change" events. */
 export type RemoteHandler<T = unknown> = (payload: T) => void;
 
+/** Who a join's or a leave's Activity names, as the server records it
+ *  (``events.py``): the account, its name and, for a tab of the shared guest
+ *  account, its number in the room. */
+function activityWho(user: Partial<CollabUser>): Record<string, unknown> {
+    const who: Record<string, unknown> = { user_id: user.user_id, username: user.username };
+    if (user.name) who.name = user.name;
+    if (typeof user.guest_number === "number") who.guest_number = user.guest_number;
+    return who;
+}
+
+/** An agent at work's join and leave in the room, as the server sends and
+ *  records them (``agent_peers.JOINED_EVENT`` and ``LEFT_EVENT``). */
+const AGENT_EVENTS = ["agent_joined", "agent_left"] as const;
+
+/** The room's events a change to the editors makes: one for each account
+ *  whose role changed, as the server records it (``roles.py``). */
+export function roleChanges(before: ReadonlyArray<CollabUser>, after: ReadonlyArray<CollabUser>): Array<Record<string, unknown>> {
+    const keyOf = (user: CollabUser) => user.participant_id ?? `user:${user.user_id}`;
+    const was = new Map(before.map((user) => [keyOf(user), user.role]));
+    const told = new Set<number>();
+    const changes: Array<Record<string, unknown>> = [];
+    for (const user of after) {
+        if (!was.has(keyOf(user)) || was.get(keyOf(user)) === user.role || told.has(user.user_id)) continue;
+        told.add(user.user_id);
+        changes.push({ user_id: user.user_id, username: user.username, name: user.name, role: user.role });
+    }
+    return changes;
+}
+
 export interface CollabContextValue {
-    enabled: boolean;
     connected: boolean;
     /** This tab's participant id in the room, once its join answered. */
     participantId: string | null;
@@ -108,72 +176,36 @@ export interface CollabContextValue {
     role: RoomRole | null;
     users: CollabUser[];
     lockedNodes: Record<string, NodeLock>;
-    proposals: CodeProposal[];
+    /** The room's events, oldest first: those the join brought, then each as
+     *  it comes. */
     activity: ActivityEntry[];
-
-    /** Whether the right-docked side panel is currently visible. */
-    panelOpen: boolean;
-    /** Toggle the side panel from anywhere in the tree (UpMenu trigger). */
-    setPanelOpen: (open: boolean) => void;
 
     lockNode: (nodeId: string) => void;
     unlockNode: (nodeId: string) => void;
-    requestCodeChange: (
-        nodeId: string,
-        oldValue: string | null,
-        newValue: string,
-        kind?: "code" | "grammar",
-    ) => void;
-    approveCodeChange: (proposalId: string) => void;
-    rejectCodeChange: (proposalId: string) => void;
-    resolveConflict: (payload: Record<string, unknown>) => void;
-
-    broadcastNodeAdded: (payload: Record<string, unknown>) => void;
-    broadcastNodeUpdated: (payload: Record<string, unknown>) => void;
-    broadcastNodeRemoved: (nodeId: string) => void;
-    broadcastEdgeAdded: (payload: Record<string, unknown>) => void;
-    broadcastEdgeRemoved: (edgeId: string) => void;
-    broadcastOutputProduced: (payload: OutputBroadcast) => void;
-    signalExecDisplay: (nodeId: string) => void;
 
     /**
      * Subscribe to incoming remote events. Returns an unsubscribe fn.
-     * Event names mirror the backend ``events.py`` outgoing event list:
-     * ``node_added``, ``node_updated``, ``node_removed``,
-     * ``edge_added``, ``edge_removed``, ``output_produced``,
-     * ``code_change_applied``, ``conflict_resolved``,
-     * ``node_exec_display``.
+     * Event names mirror the backend's outgoing events: the room's
+     * (``events.py``, ``roles.py``), ``connection_dropped``
+     * (``dataflow_docs.py``), ``history_changed`` (``history.py``),
+     * ``editor_requests_changed`` (``projects/editor_requests.py``)
+     * and ``agent_turn``, each event of an agent's chat turn
+     * (``turns/turn_jobs.py``), which only the owner's and the editors'
+     * tabs are told.
      */
     onRemote: (event: string, handler: RemoteHandler) => () => void;
 }
 
 const NOOP_VALUE: CollabContextValue = {
-    enabled: false,
     connected: false,
     participantId: null,
     role: null,
     users: [],
     lockedNodes: {},
-    proposals: [],
     activity: [],
-
-    panelOpen: false,
-    setPanelOpen: () => undefined,
 
     lockNode: () => undefined,
     unlockNode: () => undefined,
-    requestCodeChange: () => undefined,
-    approveCodeChange: () => undefined,
-    rejectCodeChange: () => undefined,
-    resolveConflict: () => undefined,
-
-    broadcastNodeAdded: () => undefined,
-    broadcastNodeUpdated: () => undefined,
-    broadcastNodeRemoved: () => undefined,
-    broadcastEdgeAdded: () => undefined,
-    broadcastEdgeRemoved: () => undefined,
-    broadcastOutputProduced: () => undefined,
-    signalExecDisplay: () => undefined,
 
     onRemote: () => () => undefined,
 };
@@ -182,9 +214,8 @@ const CollabContext = createContext<CollabContextValue>(NOOP_VALUE);
 
 /**
  * Hook for any component that wants to talk to the collaboration layer.
- * Safe to call without a provider mounted — returns a no-op value so
- * the rest of the app keeps working off-canvas, in tests, and when
- * collaboration is disabled.
+ * Safe to call without a provider mounted: it returns a no-op value, so the
+ * rest of the app keeps working off the canvas (the dashboard) and in tests.
  */
 export function useCollab(): CollabContextValue {
     return useContext(CollabContext);
@@ -196,47 +227,41 @@ const REMOTE_EVENTS = [
     "roles_changed",
     "node_locked",
     "node_unlocked",
-    "node_added",
-    "node_updated",
-    "node_removed",
-    "edge_added",
-    "edge_removed",
-    "code_change_proposed",
-    "code_change_voted",
-    "code_change_applied",
-    "code_change_rejected",
-    "output_produced",
-    "node_exec_display",
-    "conflict_resolved",
+    CONNECTION_DROPPED_EVENT,
+    HISTORY_CHANGED_EVENT,
+    EDITOR_REQUESTS_CHANGED_EVENT,
+    AGENT_TURN_EVENT,
 ] as const;
 
 export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     children,
 }) => {
-    const [enabled, setEnabled] = useState<boolean>(false);
+    const [configLoaded, setConfigLoaded] = useState<boolean>(false);
     const [connected, setConnected] = useState<boolean>(false);
     const [users, setUsers] = useState<CollabUser[]>([]);
     const [lockedNodes, setLockedNodes] = useState<Record<string, NodeLock>>({});
-    const [proposals, setProposals] = useState<CodeProposal[]>([]);
     const [activity, setActivity] = useState<ActivityEntry[]>([]);
     const [participantId, setParticipantId] = useState<string | null>(null);
-    // Panel visibility is owned by the provider so the UpMenu trigger can
-    // toggle it without prop-drilling through MainCanvas.
-    const [panelOpen, setPanelOpen] = useState<boolean>(true);
     // This tab's role is its own entry's in the room's list, so every list
     // the server sends (a join, a leave, a change of editors) keeps it current.
     const role = useMemo(() => roleIn(users, participantId), [users, participantId]);
+    // The dataflow's doc on this tab, once the room has joined it.
+    const [docBinding, setDocBinding] = useState<DocBinding | null>(null);
 
     const socketRef = useRef<Socket | null>(null);
     const namespaceRef = useRef<string>(DEFAULT_NAMESPACE);
+    // The room's list as this tab last drew it, which a change to the editors
+    // is read against.
+    const usersRef = useRef<CollabUser[]>([]);
     const projectIdRef = useRef<string | undefined>(getCurrentProjectId());
     // The dataflow whose room refused this tab: no socket is opened for it
     // again until another dataflow opens.
     const refusedProjectRef = useRef<string | undefined>(undefined);
     const remoteHandlersRef = useRef<Map<string, Set<RemoteHandler>>>(new Map());
+    const docProviderRef = useRef<DataflowDocProvider | null>(null);
 
     // ------------------------------------------------------------------
-    // Read the flag once. If disabled we never open a socket.
+    // Read the namespace once.
     // ------------------------------------------------------------------
     useEffect(() => {
         let cancelled = false;
@@ -245,32 +270,69 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
             .then((cfg) => {
                 if (cancelled) return;
                 namespaceRef.current = cfg.collab_namespace || DEFAULT_NAMESPACE;
-                setEnabled(Boolean(cfg.enable_collab));
+                setConfigLoaded(true);
             })
             .catch(() => {
-                if (!cancelled) setEnabled(false);
+                if (cancelled) return;
+                setConfigLoaded(true);
             });
         return () => {
             cancelled = true;
         };
     }, []);
 
+    /** Drop the doc this tab holds. */
+    const dropDoc = useCallback(() => {
+        const provider = docProviderRef.current;
+        docProviderRef.current = null;
+        provider?.destroy();
+        setDocBinding(null);
+    }, []);
+
+    /** Start the dataflow's doc on *socket*, joined to *projectId*'s room, as a
+     *  tab with *role*: the doc the tab holds, synced again, unless *fresh*
+     *  or the tab's role changed whether it writes (`writesDoc`). */
+    const startDoc = useCallback((socket: Socket, projectId: string, role: RoomRole | null, fresh = false) => {
+        const prior = docProviderRef.current;
+        const writes = writesDoc(role);
+        if (!fresh && prior && prior.projectId === projectId && prior.canWrite === writes) {
+            prior.attach(socket);
+            return;
+        }
+        dropDoc();
+        const provider: DataflowDocProvider = new DataflowDocProvider(projectId, {
+            canWrite: writes,
+            onSynced: () => {
+                if (docProviderRef.current === provider) setDocBinding({ provider, synced: true });
+            },
+            // The server holds another doc: this tab starts again from it.
+            onReload: () => {
+                if (docProviderRef.current !== provider || socketRef.current !== socket) return;
+                startDoc(socket, projectId, role, true);
+            },
+            // The tab watches now: what it did not send is dropped, and its doc
+            // is the server's again.
+            onReadOnly: () => {
+                if (docProviderRef.current !== provider || socketRef.current !== socket) return;
+                startDoc(socket, projectId, "watcher", true);
+            },
+        });
+        docProviderRef.current = provider;
+        setDocBinding({ provider, synced: false });
+        provider.attach(socket);
+    }, [dropDoc]);
+
     const closeSocket = useCallback(() => {
         const s = socketRef.current;
-        if (s) {
-            try {
-                s.removeAllListeners();
-                s.disconnect();
-            } catch {
-                /* socket already gone */
-            }
-        }
+        const provider = docProviderRef.current;
         socketRef.current = null;
+        docProviderRef.current = null;
+        setDocBinding(null);
+        retire(s, provider);
         setConnected(false);
         setParticipantId(null);
         setUsers([]);
         setLockedNodes({});
-        setProposals([]);
         setActivity([]);
     }, []);
 
@@ -291,7 +353,6 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
                         snapshot?: {
                             users: CollabUser[];
                             locks: Record<string, NodeLock>;
-                            proposals: CodeProposal[];
                             activity: ActivityEntry[];
                         };
                     }) => {
@@ -299,8 +360,10 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
                             setParticipantId(ack.participant_id ?? null);
                             setUsers(ack.snapshot.users);
                             setLockedNodes(ack.snapshot.locks);
-                            setProposals(ack.snapshot.proposals);
                             setActivity(ack.snapshot.activity);
+                            if (socketRef.current === socket) {
+                                startDoc(socket, projectId, ack.role ?? null);
+                            }
                         } else if (ack && ack.ok === false && socketRef.current === socket) {
                             // Refused: this tab is not in the room, so it keeps
                             // no socket for it. Nothing is retried for the
@@ -315,24 +378,47 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
                 setConnected(false);
                 // A reconnected socket is a new participant, named by its next join.
                 setParticipantId(null);
+                docProviderRef.current?.detach();
             });
             socket.on("connect_error", () => setConnected(false));
 
+            // Activity: the room's events as they come, after those the join
+            // brought, as the server records them (``events.py``).
+            const recordActivity = (kind: string, payload: Record<string, unknown> = {}) =>
+                setActivity((prev) =>
+                    [...prev, { kind, ts: Date.now() / 1000, payload }].slice(-ACTIVITY_CAP),
+                );
+
             // Presence
-            socket.on("user_joined", (payload: { users: CollabUser[] }) => {
+            socket.on("user_joined", (payload: CollabUser & { users: CollabUser[] }) => {
                 if (payload && Array.isArray(payload.users)) {
                     setUsers(payload.users);
+                    recordActivity("user_joined", { ...activityWho(payload), role: payload.role });
                 }
             });
-            socket.on("user_left", (payload: { users: CollabUser[] }) => {
+            socket.on("user_left", (payload: CollabUser & { users: CollabUser[] }) => {
                 if (payload && Array.isArray(payload.users)) {
                     setUsers(payload.users);
+                    recordActivity("user_left", activityWho(payload));
                 }
             });
+            // An agent at work joins and leaves as the server runs it
+            // (``agent_peers.py``), in no list of the room's people: its join
+            // names it and who asked it, its leave also what it did (``did``).
+            // Each is kept as the server keeps it, so it reads the same as it
+            // comes and from a later join's snapshot.
+            for (const kind of AGENT_EVENTS) {
+                socket.on(kind, (payload: Record<string, unknown>) => {
+                    if (payload && typeof payload === "object" && !Array.isArray(payload)) recordActivity(kind, payload);
+                });
+            }
             // The owner invited or removed an editor: everyone's roles, this
             // tab's among them.
             socket.on("roles_changed", (payload: { users: CollabUser[] }) => {
                 if (payload && Array.isArray(payload.users)) {
+                    for (const change of roleChanges(usersRef.current, payload.users)) {
+                        recordActivity("role_changed", change);
+                    }
                     setUsers(payload.users);
                 }
             });
@@ -354,56 +440,23 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
                     return next;
                 });
             });
-
-            // Proposals
-            socket.on("code_change_proposed", (proposal: CodeProposal) => {
-                setProposals((prev) =>
-                    prev.some((p) => p.id === proposal.id)
-                        ? prev
-                        : [...prev, proposal],
-                );
+            // A participant that leaves lets go of its locks: the server
+            // released them (``room_state.remove_user``) and names them. A
+            // node someone took since keeps its new lock.
+            socket.on("user_left", (payload: { participant_id?: string; released_locks?: unknown }) => {
+                const released = Array.isArray(payload?.released_locks) ? payload.released_locks : [];
+                if (released.length === 0 || !payload.participant_id) return;
+                setLockedNodes((prev) => {
+                    const next = { ...prev };
+                    let dropped = false;
+                    for (const nodeId of released) {
+                        if (typeof nodeId !== "string" || next[nodeId]?.participant_id !== payload.participant_id) continue;
+                        delete next[nodeId];
+                        dropped = true;
+                    }
+                    return dropped ? next : prev;
+                });
             });
-            socket.on(
-                "code_change_voted",
-                (vote: {
-                    proposalId: string;
-                    approvals: string[];
-                    rejections: string[];
-                }) => {
-                    setProposals((prev) =>
-                        prev.map((p) =>
-                            p.id === vote.proposalId
-                                ? {
-                                      ...p,
-                                      approvals: vote.approvals,
-                                      rejections: vote.rejections,
-                                  }
-                                : p,
-                        ),
-                    );
-                },
-            );
-            const dropProposal = (proposalId: string) =>
-                setProposals((prev) => prev.filter((p) => p.id !== proposalId));
-            socket.on("code_change_applied", (proposal: CodeProposal) => {
-                dropProposal(proposal.id);
-            });
-            socket.on(
-                "code_change_rejected",
-                (payload: { proposalId: string }) => {
-                    dropProposal(payload.proposalId);
-                },
-            );
-
-            // Activity log: every relayed event also bumps the activity feed.
-            const recordActivity = (kind: string) =>
-                setActivity((prev) =>
-                    [
-                        ...prev,
-                        { kind, ts: Date.now() / 1000, payload: {} },
-                    ].slice(-200),
-                );
-            socket.on("conflict_resolved", () => recordActivity("conflict_resolved"));
 
             // Fan-out to consumer-registered handlers.
             for (const ev of REMOTE_EVENTS) {
@@ -420,7 +473,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
                 });
             }
         },
-        [closeSocket],
+        [closeSocket, startDoc],
     );
 
     const connectFor = useCallback(
@@ -444,16 +497,14 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
         [closeSocket, installSocketListeners],
     );
 
-    // Follow the current project. When enabled flips on, take whatever
-    // project is already loaded; on every project change close the socket
-    // and reconnect with the new room. Closing is the whole story - the
-    // backend's ``disconnect`` handler releases this sid's locks and emits
-    // ``user_left`` to the old room, so there is nothing to send first.
+    // Follow the current project once the namespace is known. On every
+    // project change close the socket and reconnect with the new room.
+    // Closing waits only for the server to have this tab's last change
+    // (``retire``); the backend's ``disconnect`` handler then releases this
+    // sid's locks, emits ``user_left`` to the old room and clears its
+    // presence in the doc, so there is nothing else to send first.
     useEffect(() => {
-        if (!enabled) {
-            closeSocket();
-            return;
-        }
+        if (!configLoaded) return;
         const reconcile = () => {
             const nextId = getCurrentProjectId();
             const prevId = projectIdRef.current;
@@ -474,7 +525,50 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
             unsub();
             closeSocket();
         };
-    }, [enabled, closeSocket, connectFor]);
+    }, [configLoaded, closeSocket, connectFor]);
+
+    // A change of this tab's role, either way, starts the doc again: an
+    // editor made a watcher drops what it did not send, and a watcher made an
+    // editor takes the server's doc before it writes.
+    useEffect(() => {
+        const provider = docProviderRef.current;
+        const socket = socketRef.current;
+        if (!provider || !socket || !role) return;
+        if (provider.canWrite !== writesDoc(role)) startDoc(socket, provider.projectId, role, true);
+    }, [role, startDoc]);
+
+    useEffect(() => {
+        usersRef.current = users;
+    }, [users]);
+
+    // The nodes agents are writing, from their states in the doc's awareness
+    // (``collab/agentHolds``), with or without the node's lock.
+    useAgentsWriting(docBinding?.provider.awareness);
+
+    // Everyone else's cursor in the code editors, in their color. The style
+    // is written only when it changes: a pointer moving on someone's canvas
+    // changes their state about 20 times a second, and a style written again
+    // has the page work out every element's style again.
+    useEffect(() => {
+        const awareness = docBinding?.provider.awareness;
+        if (!awareness || typeof document === "undefined") return;
+        let style = document.getElementById(CURSOR_STYLE_ID) as HTMLStyleElement | null;
+        if (!style) {
+            style = document.createElement("style");
+            style.id = CURSOR_STYLE_ID;
+            document.head.appendChild(style);
+        }
+        const paint = () => {
+            const rules = remoteCursorStyle(awareness);
+            if (style && style.textContent !== rules) style.textContent = rules;
+        };
+        paint();
+        awareness.on("change", paint);
+        return () => {
+            awareness.off("change", paint);
+            if (style) style.textContent = "";
+        };
+    }, [docBinding?.provider]);
 
     // ------------------------------------------------------------------
     // Outbound helpers (no-op when not connected; safe to call from any
@@ -496,63 +590,6 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     );
     const unlockNode = useCallback(
         (nodeId: string) => _emit("node_unlock", { nodeId }),
-        [_emit],
-    );
-    const requestCodeChange = useCallback(
-        (
-            nodeId: string,
-            oldValue: string | null,
-            newValue: string,
-            kind: "code" | "grammar" = "code",
-        ) =>
-            _emit("request_code_change", {
-                nodeId,
-                kind,
-                oldValue,
-                newValue,
-            }),
-        [_emit],
-    );
-    const approveCodeChange = useCallback(
-        (proposalId: string) => _emit("approve_code_change", { proposalId }),
-        [_emit],
-    );
-    const rejectCodeChange = useCallback(
-        (proposalId: string) => _emit("reject_code_change", { proposalId }),
-        [_emit],
-    );
-    const resolveConflict = useCallback(
-        (payload: Record<string, unknown>) => _emit("resolve_conflict", payload),
-        [_emit],
-    );
-
-    const broadcastNodeAdded = useCallback(
-        (payload: Record<string, unknown>) => _emit("node_added", payload),
-        [_emit],
-    );
-    const broadcastNodeUpdated = useCallback(
-        (payload: Record<string, unknown>) => _emit("node_updated", payload),
-        [_emit],
-    );
-    const broadcastNodeRemoved = useCallback(
-        (nodeId: string) => _emit("node_removed", { nodeId }),
-        [_emit],
-    );
-    const broadcastEdgeAdded = useCallback(
-        (payload: Record<string, unknown>) => _emit("edge_added", payload),
-        [_emit],
-    );
-    const broadcastEdgeRemoved = useCallback(
-        (edgeId: string) => _emit("edge_removed", { edgeId }),
-        [_emit],
-    );
-    const broadcastOutputProduced = useCallback(
-        (payload: OutputBroadcast) =>
-            _emit("output_produced", payload as unknown as Record<string, unknown>),
-        [_emit],
-    );
-    const signalExecDisplay = useCallback(
-        (nodeId: string) => _emit("node_exec_display", { nodeId }),
         [_emit],
     );
 
@@ -577,63 +614,34 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
 
     const value: CollabContextValue = useMemo(
         () => ({
-            enabled,
             connected,
             participantId,
             role,
             users,
             lockedNodes,
-            proposals,
             activity,
-
-            panelOpen,
-            setPanelOpen,
 
             lockNode,
             unlockNode,
-            requestCodeChange,
-            approveCodeChange,
-            rejectCodeChange,
-            resolveConflict,
-
-            broadcastNodeAdded,
-            broadcastNodeUpdated,
-            broadcastNodeRemoved,
-            broadcastEdgeAdded,
-            broadcastEdgeRemoved,
-            broadcastOutputProduced,
-            signalExecDisplay,
 
             onRemote,
         }),
         [
-            enabled,
             connected,
             participantId,
             role,
             users,
             lockedNodes,
-            proposals,
             activity,
-            panelOpen,
             lockNode,
             unlockNode,
-            requestCodeChange,
-            approveCodeChange,
-            rejectCodeChange,
-            resolveConflict,
-            broadcastNodeAdded,
-            broadcastNodeUpdated,
-            broadcastNodeRemoved,
-            broadcastEdgeAdded,
-            broadcastEdgeRemoved,
-            broadcastOutputProduced,
-            signalExecDisplay,
             onRemote,
         ],
     );
 
     return (
-        <CollabContext.Provider value={value}>{children}</CollabContext.Provider>
+        <CollabContext.Provider value={value}>
+            <DataflowDocContext.Provider value={docBinding}>{children}</DataflowDocContext.Provider>
+        </CollabContext.Provider>
     );
 };

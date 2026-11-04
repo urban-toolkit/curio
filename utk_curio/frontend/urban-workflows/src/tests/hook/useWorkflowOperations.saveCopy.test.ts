@@ -3,6 +3,10 @@
  * gets that dataflow's saved outputs from its owner's Data Catalog, whichever
  * account owns it, rather than from the store, which keeps them only so long
  * and lets no other account read them.
+ *
+ * And the canvas, the copy's from then on, is titled with the copy's name: it
+ * kept the name of the dataflow it copied, so the copy read as the original
+ * until a save renamed it.
  */
 import { renderHook, act } from "@testing-library/react";
 
@@ -103,4 +107,25 @@ it("names none when it copies no dataflow", async () => {
 
   expect(projectsApi.create).toHaveBeenCalledTimes(1);
   expect((projectsApi.create as jest.Mock).mock.calls[0][0]).not.toHaveProperty("copy_of");
+});
+
+it("titles the canvas with the copy's own name, not the name of the dataflow it copied", async () => {
+  // The server names the copy's dataflow as its row (save_project).
+  (projectsApi.create as jest.Mock).mockResolvedValue({
+    id: "proj-copy",
+    name: "wf (copy)",
+    spec: { dataflow: { name: "wf (copy)", datasets: [], packages: [] } },
+    spec_revision: 1,
+  });
+  const deps = makeDeps();
+  const { result } = renderHook(() => useWorkflowOperations(deps));
+
+  await act(async () => {
+    await result.current.saveAsNewProject("wf (copy)", SOURCE);
+  });
+
+  // The copy was made from the canvas titled "wf".
+  expect((TrillGenerator.generateTrill as jest.Mock).mock.calls[0][2]).toBe("wf");
+  expect(deps.setWorkflowName).toHaveBeenLastCalledWith("wf (copy)");
+  expect(result.current.projectName).toBe("wf (copy)");
 });

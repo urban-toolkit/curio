@@ -120,7 +120,7 @@ class Comparison:
     matching: tuple = ()          # (expected index, actual index) pairs
     #: Matched nodes the example filled but the reconstruction left empty.
     #: Reported, not scored: the plan contract leaves content to Solve and to
-    #: separate reviewed content steps, so an empty grammar node is a stage of
+    #: separate content steps, so an empty grammar node is a stage of
     #: the workflow rather than a wrong node -- but a reader should see it.
     content_missing: tuple = ()
     unmatched_expected: tuple = ()

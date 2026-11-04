@@ -6,6 +6,10 @@
  * the drop then goes the way a Data Catalog card's drop goes: MainCanvas makes
  * a Data Loading node of it, and a node (NodeContainer) sets its dataset
  * widget or writes its loader into the code.
+ *
+ * On the owner's dataflow, an invited editor's file goes into his own Data
+ * Catalog, and the owner is asked to add it (`useAskTheOwner`) where her own
+ * drop adds it: her Apply copies it into her store.
  */
 import { useCallback } from "react";
 import { useFlowContext } from "../../providers/FlowProvider";
@@ -20,6 +24,7 @@ import {
   type DatasetDragPayload,
 } from "../../services/datasetCatalog";
 import { addDatasetToDataflow } from "./catalog/dataflowDatasetRef";
+import { useAskTheOwner } from "./useAskTheOwner";
 
 /** Whether a drag carries files from the computer. */
 export function hasFileDrag(dataTransfer: DataTransfer | null | undefined): boolean {
@@ -47,6 +52,8 @@ export function useDataFileImport(): (files: readonly File[]) => Promise<Dataset
   const { ensureProjectId, setDataflowDatasets } = useFlowContext();
   const hostedGuest = useHostedGuest();
   const { showToast } = useToastContext();
+  // On the owner's dataflow, an invited editor's tab asks her instead.
+  const askTheOwner = useAskTheOwner();
   return useCallback(
     async (files: readonly File[]) => {
       if (files.length === 0) return null;
@@ -61,29 +68,31 @@ export function useDataFileImport(): (files: readonly File[]) => Promise<Dataset
       }
       // The dataflow it goes into, saved first if it never was. A hosted guest
       // cannot save one, so it is told to sign in, as Add to project tells it.
-      const dataflowId = await ensureProjectId();
-      if (!dataflowId) {
+      // An editor's tab saves none: his file goes into his own Data Catalog.
+      const dataflowId = askTheOwner ? null : await ensureProjectId();
+      if (!dataflowId && !askTheOwner) {
         if (hostedGuest) showToast(hostedGuestSignInNote("add datasets"), "warning");
         return null;
       }
-      showToast(`Importing ${file.name} into the Data Catalog...`, "info");
+      showToast(`Importing ${file.name} into ${askTheOwner ? "your" : "the"} Data Catalog...`, "info");
       try {
-        const imported = await datasetCatalogApi.importDataset(file, { dataflowId });
+        const imported = await datasetCatalogApi.importDataset(file, dataflowId ? { dataflowId } : {});
         // A file of several layers (an OSM extract, a GeoPackage) becomes one
         // dataset per layer, in the group each of them names.
         const groupId = typeof imported.groupId === "string" && isLayerGroupId(imported.groupId)
           ? imported.groupId
           : null;
         const dataset: DatasetCatalogItem = groupId
-          ? await datasetCatalogApi.getDataset(groupId, { dataflowId })
+          ? await datasetCatalogApi.getDataset(groupId, dataflowId ? { dataflowId } : {})
           : imported;
-        await addDatasetToDataflow(dataflowId, dataset, setDataflowDatasets);
+        if (askTheOwner) await askTheOwner(dataset);
+        else await addDatasetToDataflow(dataflowId as string, dataset, setDataflowDatasets);
         return createDatasetDragPayload(dataset);
       } catch (err) {
         showToast((err as Error)?.message || `Could not import ${file.name}.`, "error");
         return null;
       }
     },
-    [ensureProjectId, setDataflowDatasets, hostedGuest, showToast],
+    [ensureProjectId, setDataflowDatasets, hostedGuest, showToast, askTheOwner],
   );
 }

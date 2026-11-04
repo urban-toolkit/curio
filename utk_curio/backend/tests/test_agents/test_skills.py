@@ -200,17 +200,28 @@ def test_strict_mode_names_every_problem_it_finds(tmp_path):
      lambda s: s.allowed_tools == "dataflow.read node.read"),
     (("description: Use this skill when a node reads a city's street trees.", "description: " + "d" * 1100),
      "street-trees", lambda s: len(s.description) == 1100),
+    (("description: Use this skill when a node reads a city's street trees.",
+      "description: Use this skill when: a node reads a city's street trees"),
+     "street-trees", lambda s: s.description == "Use this skill when: a node reads a city's street trees"
+     and any("a colon and a space" in warning for warning in s.warnings)),
 ])
 def test_lenient_mode_warns_and_reads_the_skill(tmp_path, change, folder, check):
     """agentskills.io's guide for clients: a name that differs from its
     folder or runs past 64 characters warns, and so does every break of the
-    format's rules that leaves the skill readable."""
+    format's rules that leaves the skill readable. A plain value that holds a
+    colon and a space, which YAML refuses and other clients' readers take, is
+    read as quoted text, as the guide advises."""
     skills = _skills()
     old, new = change
     where = _skill(tmp_path, GOOD.replace(old, new, 1), folder=folder)
     with pytest.raises(skills.SkillError):
         skills.parse(where)
-    skill = skills.parse(where, strict=False)
+    refused = None
+    try:
+        skill = skills.parse(where, strict=False)
+    except skills.SkillError as error:
+        refused = str(error)
+    assert refused is None, f"lenient mode refused a skill it should read: {refused}"
     assert check(skill), skill
     assert skill.warnings and all(warning.startswith(f"{folder}/SKILL.md: ") for warning in skill.warnings)
     assert skill.body == BODY
@@ -222,12 +233,13 @@ def test_lenient_mode_warns_and_reads_the_skill(tmp_path, change, folder, check)
     (GOOD.replace("description: Use this skill when a node reads a city's street trees.", 'description: ""'),
      "gives no description"),
     (GOOD.replace("description: Use this skill when a node reads a city's street trees.",
-                  "description: Use this skill when: the user asks"), "its frontmatter is not YAML"),
+                  "description: [Use this skill when the user asks"), "its frontmatter is not YAML"),
     ("- a list\n", "is no YAML mapping"),
 ])
 def test_lenient_mode_refuses_a_skill_with_no_description_or_unreadable_yaml(tmp_path, front, said):
     """A description is how an agent knows when to use a skill, so a skill
-    with none is refused, and so is frontmatter no YAML reader can read."""
+    with none is refused, and so is frontmatter no YAML reader can read, even
+    with each plain value that holds a colon read as quoted text."""
     skills = _skills()
     with pytest.raises(skills.SkillError, match=said):
         skills.parse(_skill(tmp_path, front), strict=False)
@@ -285,14 +297,18 @@ def test_every_skill_curio_ships_carries_curios_frontmatter():
     """Each skill Curio ships is read strictly with no warning, says when to
     use it in a description that starts as agentskills.io's examples do, and
     carries the license, the compatibility and the metadata Curio gives its
-    skills: their author and their version, and what each serves
+    skills: their author and their version, what each serves
     (``curio-behaviors``, ``curio-features``, ``curio-refusals``, which
-    ``test_skill_listing.py`` and ``test_skill_runs.py`` hold to the code), as
-    strings."""
+    ``test_skill_listing.py`` and ``test_skill_runs.py`` hold to the code),
+    and the words of a person's message that hand it (``curio-asks``: words
+    or phrases in lowercase, a comma between each, each once), as strings.
+    ``scenarios`` alone names words: scenario, scenarios, what if and
+    what-if."""
     skills = _skills()
     shipped = skills.shipped_skills()
     assert [skill.name for skill in shipped] == sorted(path.parent.name for path in SKILLS.glob("*/SKILL.md"))
     assert len(shipped) == 21
+    asks = {}
     for skill in shipped:
         assert skill.description.startswith("Use this skill when "), skill.name
         assert len(skill.description) <= skills.DESCRIPTION_MAX, skill.name
@@ -303,8 +319,14 @@ def test_every_skill_curio_ships_carries_curios_frontmatter():
             "author": "curio", "version": "1.0.0",
         }, skill.name
         assert set(skill.metadata) - {"author", "version"} <= {
-            "curio-behaviors", "curio-features", "curio-refusals",
+            "curio-behaviors", "curio-features", "curio-refusals", "curio-asks",
         }, skill.name
         assert all(value == " ".join(value.split()) and value for value in skill.metadata.values()), skill.name
         assert skill.files == () and skill.warnings == (), skill.name
         assert skill.body.startswith("## ") and skill.body.endswith("\n"), skill.name
+        if "curio-asks" in skill.metadata:
+            words = [" ".join(part.split()) for part in skill.metadata["curio-asks"].split(",")]
+            assert all(words) and words == [word.lower() for word in words], (skill.name, words)
+            assert len(words) == len(set(words)), (skill.name, words)
+            asks[skill.name] = words
+    assert asks == {"scenarios": ["scenario", "scenarios", "what if", "what-if"]}

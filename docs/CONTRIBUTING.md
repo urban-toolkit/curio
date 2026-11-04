@@ -330,19 +330,14 @@ last synced with as `baseRevision`, and a save whose basis is stale **and**
 which would delete a node, an edge or a node's code that exists on disk is
 refused with 409. A caller that sends no basis is not checked. If you add a path
 that writes a project spec, you get the counter for free; if you add a client
-that saves one, send the basis.
-
-The page gives up on a save after 2 minutes (`SAVE_TIMEOUT_MS` in
-`src/api/projectsApi.ts`), and the server may still apply it later. So a canvas
-save also sends its tab's id and a number one higher than the tab's last save
-(`saveTab` and `saveNumber`, from `src/api/saveOrder.ts`), and a save numbered
-lower than one already applied from its tab is refused with 409 before anything
-is written. A save without them is not checked.
+that saves one, send the basis. The canvas sends none: a tab bound to the
+dataflow's doc never sends the dataflow, and records its outputs with
+`POST /api/projects/<id>/outputs`.
 
 ```bash
 pytest utk_curio/backend/tests/test_projects/test_save_concurrency.py \
        utk_curio/backend/tests/test_projects/test_routes.py \
-       utk_curio/backend/tests/test_datasets/test_save_order.py
+       utk_curio/backend/tests/test_datasets/test_outputs_a_canvas_records.py
 ```
 
 ### Frontend Unit Tests
@@ -433,8 +428,9 @@ Everything the agents read is hand-written Markdown in `agents/` and
 `skills/`: each agent's prompts in its folder, the pages they share in the
 base entry, [`agents/agent.curio.builtin@1/`](../agents/agent.curio.builtin@1/)
 (the preamble, the worked examples' index and the rules prompts include), and
-Curio's skills, [`skills/`](../skills/), one per feature of Curio: the
-preamble places the core three, and each agent's manifest names the others
+Curio's skills, [`skills/`](../skills/), one per feature of Curio and one per
+procedure several agents follow: the preamble places the core three, and each
+agent's manifest names the others
 its runs read. A new feature, such as a built-in template, a function node
 code calls or a kind of chip, gets its lines in a skill in the same change:
 `test_feature_skills.py` fails while one is in no skill, and

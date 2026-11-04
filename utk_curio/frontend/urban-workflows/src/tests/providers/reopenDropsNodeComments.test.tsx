@@ -1,12 +1,14 @@
 /**
  * A saved dataflow whose node still carries comments (`metadata.comments`)
- * opens without them, and its next save writes none. The load neither refuses
- * the dataflow nor migrates it: the key stays behind, and the rest of the node
- * comes through.
+ * opens without them, and what the canvas sends of it writes none. The load
+ * neither refuses the dataflow nor migrates it: the key stays behind, and the
+ * rest of the node comes through.
  *
  * The dataflow is reopened as `ProjectLoader` opens it, `loadProject` and then
- * `useCode().loadTrill`, with the harness of `reopenKeepsRestoredOutputs.test.tsx`,
- * and saved through the save queue, as Save and the autosave save it.
+ * `useCode().loadTrill`, with the harness of `reopenKeepsRestoredOutputs.test.tsx`.
+ * No tab saves the dataflow: the doc writes what the canvas changes, through
+ * the serializer a dataflow made from the canvas goes through, which Save a
+ * copy is.
  */
 import React from 'react';
 import { render, act } from '@testing-library/react';
@@ -25,6 +27,7 @@ if (!(global as any).DOMMatrixReadOnly) {
 const mockShowToast = jest.fn();
 const mockGetProject = jest.fn();
 const mockUpdateProject = jest.fn();
+const mockCreateProject = jest.fn();
 
 jest.mock('../../api/projectsApi', () => {
   const actual = jest.requireActual('../../api/projectsApi');
@@ -34,6 +37,7 @@ jest.mock('../../api/projectsApi', () => {
       ...actual.projectsApi,
       get: (...args: any[]) => mockGetProject(...args),
       update: (...args: any[]) => mockUpdateProject(...args),
+      create: (...args: any[]) => mockCreateProject(...args),
     },
   };
 });
@@ -57,18 +61,9 @@ jest.mock('../../providers/ToastProvider', () => ({
 
 jest.mock('../../providers/CollaborationProvider', () => ({
   useCollab: () => ({
-    enabled: false,
     lockedNodes: {},
-    currentUserId: null,
     lockNode: jest.fn(),
     unlockNode: jest.fn(),
-    signalExecDisplay: jest.fn(),
-    broadcastOutputProduced: jest.fn(),
-    broadcastNodeAdded: jest.fn(),
-    broadcastNodeRemoved: jest.fn(),
-    broadcastNodeUpdated: jest.fn(),
-    broadcastEdgeAdded: jest.fn(),
-    broadcastEdgeRemoved: jest.fn(),
     onRemote: jest.fn(),
   }),
 }));
@@ -108,8 +103,9 @@ function spec() {
       task: '',
       nodes: [
         {
-          id: DISCUSSED, type: NODE_TYPE, x: 0, y: 0, content: 'return 1\n',
-          metadata: { packageTemplateLabel: LABEL, comments: [SAVED_COMMENT] },
+          id: DISCUSSED, type: NODE_TYPE, x: 0, y: 0, content: 'return 1\n', title: LABEL,
+          // A header an older save held beside the title, which names nothing.
+          metadata: { packageTemplateLabel: 'Parcels, an older header', comments: [SAVED_COMMENT] },
         },
         { id: PLAIN, type: NODE_TYPE, x: 645, y: 0, content: 'return input_0\n' },
       ],
@@ -220,6 +216,9 @@ beforeEach(() => {
   mockUpdateProject.mockImplementation(async (id: string) => ({
     id, name: 'Commented reopen', spec_revision: 4, spec: spec(), categories: {}, outputs: [],
   }));
+  mockCreateProject.mockImplementation(async (body: any) => ({
+    id: 'the-copy', name: body.name, spec_revision: 1, spec: body.spec, categories: {}, outputs: [],
+  }));
 });
 
 afterEach(() => {
@@ -231,27 +230,28 @@ describe('a saved dataflow whose node carries comments', () => {
     await reopen();
 
     const node = loadedNode(DISCUSSED);
-    // A renamed header saved before `title` was a node's one name is its title.
+    // Its title is its one name, never the older header beside it.
     expect(node.data.title).toBe(LABEL);
     expect(mockShowToast.mock.calls.filter(([, kind]) => kind === 'error')).toEqual([]);
     // Checked last, so a canvas that still loads them fails here and nowhere earlier.
     expect(node.data).not.toHaveProperty('comments');
   });
 
-  test('saves back without them', async () => {
+  test('a dataflow made from it carries none of them', async () => {
     await reopen();
 
     await act(async () => {
-      await api.requestProjectSave();
+      await api.saveAsNewProject('Commented reopen (copy)', PROJECT_ID);
     });
 
-    expect(mockUpdateProject).toHaveBeenCalled();
-    const [savedId, saved] = mockUpdateProject.mock.calls[mockUpdateProject.mock.calls.length - 1];
-    expect(savedId).toBe(PROJECT_ID);
-    const savedNode = saved.spec.dataflow.nodes.find((n: any) => n.id === DISCUSSED);
-    expect(savedNode.title).toBe(LABEL);
-    expect(savedNode.metadata ?? {}).not.toHaveProperty('packageTemplateLabel');
-    // Checked last, so a canvas that still saves them fails here and nowhere earlier.
-    expect(savedNode.metadata).not.toHaveProperty('comments');
+    expect(mockCreateProject).toHaveBeenCalledTimes(1);
+    // No tab sends the dataflow it is open on.
+    expect(mockUpdateProject).not.toHaveBeenCalled();
+    const [sent] = mockCreateProject.mock.calls[0];
+    const sentNode = sent.spec.dataflow.nodes.find((n: any) => n.id === DISCUSSED);
+    expect(sentNode.title).toBe(LABEL);
+    expect(sentNode.metadata ?? {}).not.toHaveProperty('packageTemplateLabel');
+    // Checked last, so a canvas that still sends them fails here and nowhere earlier.
+    expect(sentNode.metadata).not.toHaveProperty('comments');
   });
 });

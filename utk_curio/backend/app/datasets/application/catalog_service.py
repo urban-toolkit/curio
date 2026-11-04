@@ -69,6 +69,11 @@ class DatasetCatalogService:
     def resolve_execution_paths(self, *args: Any, **kwargs: Any) -> Any:
         return self._listing.resolve_execution_paths(*args, **kwargs)
 
+    def listed_from_the_owners_store(self, dataflow_id: str | None) -> dict[str, dict[str, Any]]:
+        """For an editor the owner invited, the datasets *dataflow_id* lists
+        from the owner's store, by id; none for the owner."""
+        return self._listing._listed_from_the_owners_store(dataflow_id)
+
     def preview(self, *args: Any, **kwargs: Any) -> Any:
         return self._listing.preview(*args, **kwargs)
 

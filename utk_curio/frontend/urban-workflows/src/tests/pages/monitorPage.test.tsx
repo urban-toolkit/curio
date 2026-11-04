@@ -62,7 +62,7 @@ const monitorPayload = {
   deployment: {
     version: "0.16.114", isolation: "fork", isolationActive: "fork",
     execUserConfigured: true, authEnabled: true, projectsEnabled: true,
-    guestLoginAllowed: true, collabEnabled: false,
+    guestLoginAllowed: true,
     factoryPublishAllowed: true, saveNodeOutputDefault: false,
     llmProviderConfigured: true, searchToolConfigured: false, env: "prod",
     platform: "macOS-27.0-arm64", pythonVersion: "3.12.1",

@@ -6,6 +6,15 @@ so it goes on whether or not any browser is open. Its record is the
 writes them as ``run_engine.run_events`` yields. The sign-in token that
 started the run tags its artifacts in the sandbox, as Play's does; it lives
 on the thread only, never in a table, an event or a log line.
+
+The dataflow's owner runs it, and so does an editor the owner invited
+(``projects/access.agents_role``, as the dataflow's agents ask it). Either
+way the dataflow is read from its owner's store. An editor's run is the
+editor's: its record, the cap on the editor's runs at once, and its steps,
+which run as the editor's Play does, their outputs kept as his
+(``execution/node_exec._kept_run``). Only the owner's run records its
+outputs in the dataflow. The owner sees every run of her dataflow, whoever
+started it, and stops any of them; an editor sees and stops his own.
 """
 from __future__ import annotations
 
@@ -52,14 +61,18 @@ def _iso(moment: Optional[datetime]) -> Optional[str]:
 # Serialization
 # ---------------------------------------------------------------------------
 
-def current_code_hashes(user, project_id: str) -> dict:
+def current_code_hashes(project_id: str) -> dict:
     """``{nodeId: digest}`` of each node's code in the dataflow as saved now,
-    hashed as a step hashes the code it ran."""
+    in its owner's store, hashed as a step hashes the code it ran."""
     from utk_curio.backend.app.execution.runtime_journal import normalized_code_sha256
     from utk_curio.backend.app.projects import storage
-    from utk_curio.backend.app.projects.services import _user_dir_key
+    from utk_curio.backend.app.projects.models import Project
+    from utk_curio.backend.app.projects.services import _owner_user_dir_key
 
-    spec = storage.read_spec(_user_dir_key(user), project_id) or {}
+    project = db.session.get(Project, project_id)
+    if project is None:
+        return {}
+    spec = storage.read_spec(_owner_user_dir_key(project), project_id) or {}
     nodes = (spec.get("dataflow") or {}).get("nodes") or []
     return {
         node["id"]: normalized_code_sha256(node.get("content") or "")
@@ -103,11 +116,23 @@ def step_payload(step: DataflowRunStep, current: Optional[dict] = None) -> dict:
     return payload
 
 
+def _started_by(run: DataflowRun) -> Optional[dict]:
+    """Who started *run*: the account's username and name, as the room names
+    people."""
+    from utk_curio.backend.app.users.models import User
+
+    user = db.session.get(User, run.user_id)
+    if user is None:
+        return None
+    return {"username": user.username, "name": user.name}
+
+
 def run_payload(run: DataflowRun, *, steps: bool = False, current: Optional[dict] = None) -> dict:
     payload = {
         "id": run.id,
         "projectId": run.project_id,
         "projectName": run.project.name if run.project is not None else None,
+        "startedBy": _started_by(run),
         "trigger": run.trigger,
         "targetNodeId": run.target_node_id,
         "targetNodeIds": run.target_ids,
@@ -161,25 +186,62 @@ def interrupt_runs_of_other_processes() -> int:
 # Reading
 # ---------------------------------------------------------------------------
 
+def _owns_dataflow(user, project_id: str) -> bool:
+    """Whether *user* owns the dataflow *project_id*."""
+    from utk_curio.backend.app.projects.models import Project
+
+    project = db.session.get(Project, project_id)
+    return project is not None and project.user_id == getattr(user, "id", None)
+
+
 def get_run(user, run_id: str) -> DataflowRun:
-    """A run of *user*'s, or 404."""
+    """A run *user* may see, or 404: one they started, or any run of a
+    dataflow they own, whoever started it."""
     interrupt_runs_of_other_processes()
     run = runs_repo.get_run(run_id)
-    if run is None or run.user_id != user.id:
+    if run is None or (run.user_id != user.id and not _owns_dataflow(user, run.project_id)):
         raise RunError("Run not found.", 404)
     return run
 
 
-def list_project_runs(user, project_id: str, *, whole_dataflow=None, limit=50, offset=0) -> list:
-    from utk_curio.backend.app.projects import repositories as projects_repo
+def _own_run(user, run_id: str) -> DataflowRun:
+    """A run *user* started, or 404: what only its starter's tab does to it."""
+    run = get_run(user, run_id)
+    if run.user_id != user.id:
+        raise RunError("Run not found.", 404)
+    return run
 
-    try:
-        projects_repo.get_for_user(project_id, user.id)
-    except projects_repo.NotFoundError as exc:
-        raise RunError("Dataflow not found.", 404) from exc
+
+def _dataflow_for_runs(user, project_id: str):
+    """``(project, role, owner's storage key)`` of the dataflow *project_id*
+    names, for *user* to run it or list their runs of it: its owner, or an
+    editor the owner invited (``access.agents_role``, the rule the dataflow's
+    agents ask). Anyone else is told the dataflow is not found. The dataflow,
+    its templates and its labels are read under the owner's key."""
+    from utk_curio.backend.app.projects import access
+    from utk_curio.backend.app.projects.models import Project
+    from utk_curio.backend.app.projects.services import _owner_user_dir_key
+
+    project = db.session.get(Project, project_id)
+    role = access.agents_role(user, project) if project is not None else access.WATCHER
+    if role not in access.EDIT_ROLES:
+        raise RunError("Dataflow not found.", 404)
+    return project, role, _owner_user_dir_key(project)
+
+
+def list_project_runs(user, project_id: str, *, whole_dataflow=None, limit=50, offset=0, mine=False) -> list:
+    """The dataflow's runs, newest first: for its owner every account's, the
+    runs of the editors she invited among them, and for an invited editor
+    his own. *mine* keeps the owner's own, as her canvas asks for the last
+    run it follows."""
+    from utk_curio.backend.app.projects import access
+
+    _project, role, _ukey = _dataflow_for_runs(user, project_id)
     interrupt_runs_of_other_processes()
+    everyone = role == access.OWNER and not mine
     return runs_repo.list_project_runs(
-        project_id, whole_dataflow=whole_dataflow, limit=limit, offset=offset,
+        project_id, user_id=None if everyone else user.id,
+        whole_dataflow=whole_dataflow, limit=limit, offset=offset,
     )
 
 
@@ -239,45 +301,36 @@ def start_run(
     target_node_id: Optional[str] = None,
     target_node_ids: Optional[list] = None,
     reuse: Optional[dict] = None,
-    spec_revision: Optional[int] = None,
     trigger: Optional[str] = None,
     rerun_of: Optional[str] = None,
 ) -> DataflowRun:
-    """Run *project_id*'s saved dataflow, one node of it, or several nodes
-    (*target_node_ids*: an automatic run, #845), on a thread of its own.
-    Refused for a user who may not save it, for a revision that is not the
-    saved one, while the dataflow already runs, and past the account's cap."""
+    """Run *project_id*'s dataflow as its doc holds it, one node of it, or
+    several nodes (*target_node_ids*: an automatic run, #845), on a thread of
+    its own, for its owner or an editor the owner invited
+    (:func:`_dataflow_for_runs`). Refused for a guest, for anyone else, while
+    *user* runs the dataflow already, and past *user*'s cap."""
     from flask import current_app
 
     from utk_curio.backend.app.collaboration import dataflow_docs
     from utk_curio.backend.app.execution.node_names import template_labels
     from utk_curio.backend.app.execution.run_engine import PlanError, plan_run
     from utk_curio.backend.app.packages.service import roster_templates
-    from utk_curio.backend.app.projects import repositories as projects_repo
+    from utk_curio.backend.app.projects import access
     from utk_curio.backend.app.projects import storage
-    from utk_curio.backend.app.projects.services import _user_dir_key
     from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
     from utk_curio.backend.app.users.capabilities import run_refusal
 
     refusal = run_refusal(user)
     if refusal:
         raise RunError(refusal, 403)
-    try:
-        projects_repo.get_for_user(project_id, user.id)
-    except projects_repo.NotFoundError as exc:
-        raise RunError("Dataflow not found.", 404) from exc
-    ukey = _user_dir_key(user)
+    _project, role, ukey = _dataflow_for_runs(user, project_id)
     # The dataflow as it is now, its open doc's over the file: the run never
     # starts from a file a second behind the doc.
     spec = dataflow_docs.read(ukey, project_id)
     if spec is None:
         raise RunError("Dataflow not found.", 404)
+    # The revision the run starts from, which its record keeps.
     current = storage.spec_revision(ukey, project_id)
-    if spec_revision is not None and int(spec_revision) != current:
-        raise RunError(
-            "The dataflow changed since this tab saved it. Save it again, then run.",
-            409, specRevision=current,
-        )
     try:
         plan = plan_run(
             spec, target_node_id=target_node_id, target_node_ids=target_node_ids, reuse=reuse,
@@ -288,6 +341,8 @@ def start_run(
     except PlanError as exc:
         raise RunError(str(exc), 422) from exc
 
+    # The run is *user*'s: an editor's counts against the editor's cap, and
+    # the busy check is theirs alone.
     user_key = str(user.id)
     try:
         jobs.REGISTRY.check_can_start(user_key, project_id)
@@ -311,7 +366,10 @@ def start_run(
     )
     run_id = run.id
     app = current_app._get_current_object()
-    events = _run_thread(app, run_id, user.id, token, project_id, plan, spec, ukey)
+    events = _run_thread(
+        app, run_id, user.id, token, project_id, plan, spec, ukey,
+        records_outputs=role == access.OWNER,
+    )
     try:
         jobs.REGISTRY.start(
             user_key=user_key, project_id=project_id, key=project_id,
@@ -330,10 +388,15 @@ def start_run(
     return runs_repo.get_run(run_id)
 
 
-def _run_thread(app, run_id, user_id, token, project_id, plan, spec, user_key=None) -> Iterator[tuple[str, dict]]:
+def _run_thread(
+    app, run_id, user_id, token, project_id, plan, spec, user_key=None, *, records_outputs=True,
+) -> Iterator[tuple[str, dict]]:
     """The run's thread: drive the engine, record each event, pass it on.
-    *user_key* is the account's store key, whose packages say what each
-    node's template declares."""
+    Each step runs as *user_id*, with *token*. *user_key* is the store key of
+    the dataflow's owner, whose packages say what each node's template
+    declares. With *records_outputs*, the owner's run, an output is recorded
+    in the dataflow as ``save_policy`` says; an invited editor's run records
+    none, its outputs staying in the editor's session as their Play's do."""
     from utk_curio.backend import config
     from utk_curio.backend.app.execution import node_exec, runtime_journal
     from utk_curio.backend.app.execution.run_engine import run_events
@@ -411,7 +474,7 @@ def _run_thread(app, run_id, user_id, token, project_id, plan, spec, user_key=No
                 _record_step(run_id, plan.steps[payload["nodeId"]], payload, runtime_journal)
                 output = payload.get("output") or {}
                 step = plan.steps[payload["nodeId"]]
-                if payload["status"] == "ok" and records_output_on_save(
+                if records_outputs and payload["status"] == "ok" and records_output_on_save(
                     step.node, default_save, sources, packages,
                 ):
                     warnings: list = []
@@ -481,8 +544,9 @@ def _record_step(run_id, step, payload, runtime_journal) -> None:
 # ---------------------------------------------------------------------------
 
 def cancel_run(user, run_id: str) -> DataflowRun:
-    """Stop *run_id* before its next node starts. The node already running
-    finishes, and its output is dropped."""
+    """Stop *run_id* before its next node starts: a run *user* started, or
+    any run of a dataflow *user* owns. The node already running finishes, and
+    its output is dropped."""
     run = get_run(user, run_id)
     flag = jobs.existing_cancel_flag(run_id)
     if run.status not in ACTIVE_RUN_STATUSES or flag is None:
@@ -503,11 +567,12 @@ def rerun(user, token: Optional[str], run_id: str) -> DataflowRun:
 
 
 def report_browser_step(user, run_id: str, node_id: str, *, status: str, message: str = "") -> DataflowRun:
-    """A tab ran a node only the browser can, or one that waited for it, and
-    says how it went. Once nothing waits any more, the run has its outcome."""
+    """A tab of the run's starter ran a node only the browser can, or one
+    that waited for it, and says how it went. Once nothing waits any more, the
+    run has its outcome."""
     if status not in ("ok", "error"):
         raise RunError("status must be ok or error", 400)
-    run = get_run(user, run_id)
+    run = _own_run(user, run_id)
     if run.status in ACTIVE_RUN_STATUSES:
         # The server's part ends first; its outcome would overwrite a report.
         raise RunError("The run is still going; report once it has finished.", 409)

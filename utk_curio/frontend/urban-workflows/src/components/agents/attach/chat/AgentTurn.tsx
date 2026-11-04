@@ -5,11 +5,13 @@ import { faRobot } from "@fortawesome/free-solid-svg-icons";
 import {
   DATASET_SELECT_CAPABILITY,
   declaresCapability,
+  installsIntoAccount,
   NODE_BUILD_CAPABILITY,
   SKILL_USE_WORDS,
   skillsUsedBy,
   type AgentAttachment,
   type AgentCardPart,
+  type AgentChangePart,
   type AgentDatasetCandidatesPart,
   type AgentDatasetPick,
   type AgentDatasetSelection,
@@ -19,6 +21,7 @@ import {
   type AgentSolveAttemptsPart,
   type RunStatusDisplay,
 } from "../../../../services/agents";
+import { AgentChangeCard } from "../../content/AgentChangeCard";
 import { AgentChatCard } from "../../content/AgentChatCard";
 import { AgentDatasetCandidatesCard } from "../../content/AgentDatasetCandidatesCard";
 import { AgentSolveAttemptsCard } from "../../content/AgentSolveAttemptsCard";
@@ -30,7 +33,8 @@ import { LlmConfigAction } from "../../../llmConfigs/LlmConfigAction";
 import styles from "../AgentChatPanel.module.css";
 import { lastingToolFailures, planNodeStateFor } from "./chatPanelDerived";
 
-/** The review-before-apply and plan callbacks a turn's cards may need. */
+/** The callbacks a turn's cards may need: an install's review, a change's
+ * Undo, a landed plan's rows. */
 export interface AgentTurnActions {
   onComposePrompt: (prompt: string) => void;
   /** A link the agent wrote to another Curio page: the owner decides whether leaving the dataflow needs a confirmation first. */
@@ -48,11 +52,12 @@ export interface AgentTurnActions {
   /** dev/84: a package.install proposal applies THROUGH the install review dialog. */
   beginPackageReview: (proposalId: string, dirName: string) => Promise<unknown>;
   onDismissProposal?: (proposalId: string) => Promise<void>;
-  onApplyPlanNode?: (proposalId: string, ref: string) => Promise<void>;
-  onSavePlanGoal?: (proposalId: string, ref: string, goal: string) => Promise<void>;
-  onApplyPlanEdges?: (proposalId: string, indices?: number[]) => Promise<void>;
+  /** Undo a change this attachment's agent made. */
+  onUndoChange?: (changeId: string) => Promise<unknown>;
   onSolvePlanNode?: (ref: string) => Promise<void>;
   onRunPlanNode?: (ref: string) => Promise<void>;
+  /** An invited editor's chat: an install waits for the owner's review. */
+  installsWaitForOwner?: boolean;
 }
 
 /**
@@ -77,6 +82,9 @@ export const AgentTurn: React.FC<{
   // #447: the failed tool calls that keep their reason under the reply.
   const failedCalls = lastingToolFailures(t);
   const usedSkills = t.error ? [] : skillsUsedBy(t.execution);
+  // An install on an invited editor's chat is the owner's to review.
+  const waitsForOwner = (part: AgentProposalPart) =>
+    Boolean(actions.installsWaitForOwner) && installsIntoAccount(part.tool);
   return (
     <div className={styles.agentRow}>
       <span className={`${styles.agentRowAvatar} ${tint}`} aria-hidden="true">
@@ -140,26 +148,37 @@ export const AgentTurn: React.FC<{
               />
             ))}
           {(t.content ?? [])
+            .filter((p): p is AgentChangePart => p.type === "change")
+            .map((part, j) => (
+              <AgentChangeCard
+                key={part.changeId ?? j}
+                part={part}
+                tintClassName={tint}
+                onUndo={actions.onUndoChange}
+                planNodeState={planNodeStateFor(attachment, part)}
+                onSolvePlanNode={actions.onSolvePlanNode}
+                onRunPlanNode={actions.onRunPlanNode}
+                onOpenAgentChat={actions.onOpenAgentChat}
+                delegateExists={actions.delegateExists}
+                agentNameOf={actions.agentNameOf}
+              />
+            ))}
+          {(t.content ?? [])
             .filter((p): p is AgentProposalPart => p.type === "proposal")
             .map((part, j) => (
               <AgentReviewCard
                 key={part.proposalId ?? j}
                 part={part}
                 tintClassName={tint}
+                waitsForOwner={waitsForOwner(part)}
                 onApply={
-                  part.tool === "package.install" && actions.onApplyProposal
-                    ? (proposalId) => actions.beginPackageReview(proposalId, part.pins?.dirName ?? "")
-                    : actions.onApplyProposal
+                  waitsForOwner(part)
+                    ? undefined
+                    : part.tool === "package.install" && actions.onApplyProposal
+                      ? (proposalId) => actions.beginPackageReview(proposalId, part.pins?.dirName ?? "")
+                      : actions.onApplyProposal
                 }
-                onDismiss={actions.onDismissProposal}
-                onApplyPlanNode={actions.onApplyPlanNode}
-                onSavePlanGoal={actions.onSavePlanGoal}
-                onApplyPlanEdges={actions.onApplyPlanEdges}
-                onSolvePlanNode={actions.onSolvePlanNode}
-                onRunPlanNode={actions.onRunPlanNode}
-                onOpenAgentChat={actions.onOpenAgentChat}
-                delegateExists={actions.delegateExists}
-                planNodeState={planNodeStateFor(attachment, part)}
+                onDismiss={waitsForOwner(part) ? undefined : actions.onDismissProposal}
               />
             ))}
         </div>

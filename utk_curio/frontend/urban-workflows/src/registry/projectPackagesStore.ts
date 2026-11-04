@@ -14,7 +14,8 @@
  * first save), and the palette must honour it.
  *
  * Writers:
- *  - {@link ProjectLoader} on project load → ``setCurrentProject``
+ *  - {@link ProjectLoader} on project load → ``setCurrentProject``, and on a
+ *    load from the dataflow's link → ``markOpenedFromLink``
  *  - {@link ProjectLoader} on ``/dataflow/new`` → ``setUnsavedDataflow``
  *  - {@link NodeCatalogDrawer} install / uninstall handlers → ``setCurrentProjectPackages``
  *  - On the project-list / catalog pages (no dataflow at all):
@@ -57,6 +58,15 @@ let _state: ProjectPackages = {
  * lets a read tell whether the world moved under it while it was in flight.
  */
 let _revision = 0;
+
+/**
+ * The dataflow the canvas opened from its link (``ProjectLoader``'s shared
+ * load): another account's, which this one edits at its owner's invitation
+ * or watches. The registry then also draws the nodes of the packages that
+ * dataflow uses from its owner's copies (``loadInstalledPackages``). Read
+ * only while that dataflow is the one open (``getOpenedFromLink``).
+ */
+let _openedFromLink: string | undefined;
 
 export function setCurrentProject(projectId: string, packages: Iterable<string>): void {
   const next = new Set(packages);
@@ -103,6 +113,7 @@ export function setCurrentProjectPackages(packages: Iterable<string>): void {
 
 export function clearCurrentProject(): void {
   _abandonLoad();
+  _openedFromLink = undefined;
   _state = { kind: 'none', projectId: undefined, packages: new Set() };
   _revision += 1;
   _notify();
@@ -124,6 +135,16 @@ export function getCurrentProjectPackagesList(): string[] {
 
 export function getCurrentProjectId(): string | undefined {
   return _state.projectId;
+}
+
+/** Marks the open dataflow as opened from its link (``_openedFromLink``). */
+export function markOpenedFromLink(projectId: string): void {
+  if (_state.projectId === projectId) _openedFromLink = projectId;
+}
+
+/** The open dataflow when the canvas opened it from its link, else undefined. */
+export function getOpenedFromLink(): string | undefined {
+  return _openedFromLink !== undefined && _openedFromLink === _state.projectId ? _openedFromLink : undefined;
 }
 
 /**

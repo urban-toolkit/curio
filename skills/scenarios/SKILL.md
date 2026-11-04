@@ -12,6 +12,7 @@ metadata:
   author: curio
   version: "1.0.0"
   curio-features: scenario-boxes
+  curio-asks: scenario, scenarios, what if, what-if
 ---
 ## Scenarios
 

@@ -69,7 +69,7 @@ export function DashboardTopBar({ id, onArranged }: { id: string; onArranged?: (
     projectDirty,
     dashboardLocked,
     setDashboardLocked,
-    saveCurrentProject,
+    saveDashboardLayout,
     nodes,
     edges,
     dashboardPins,
@@ -77,7 +77,6 @@ export function DashboardTopBar({ id, onArranged }: { id: string; onArranged?: (
     onNodesChange,
     updateDataNode,
     markDirty,
-    dashboardSavedWidgets,
   } = useFlowContext();
   const canEditLayout = useCanEditLayout();
   // A page the server refused to build carries nothing to open the dataflow
@@ -118,12 +117,10 @@ export function DashboardTopBar({ id, onArranged }: { id: string; onArranged?: (
   const saveLayout = async () => {
     setSaving(true);
     try {
-      // ``omitOutputs``: this page writes where the tiles sit. Which outputs the
-      // dataflow has is the canvas's business, and a run here is a viewer's.
-      // ``savedWidgets``: every control as saved, never a value tried here.
-      // Directly, not through the save queue the canvas uses: nothing else
-      // saves on this page, and this button is disabled while it saves.
-      await saveCurrentProject(undefined, { omitOutputs: true, savedWidgets: dashboardSavedWidgets?.() });
+      // Where the tiles sit and how large they are, and nothing else: which
+      // outputs the dataflow has is the canvas's business, a run here is a
+      // viewer's, and a control's value tried here is never the dataflow's.
+      await saveDashboardLayout();
       setDashboardLocked(true);
       showToast("Dashboard layout saved.", "success");
     } catch (err) {

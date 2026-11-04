@@ -22,14 +22,16 @@ import type {
   AgentDatasetPick,
   AgentDatasetSelection,
   AgentInstallResponse,
+  AgentLandedChange,
   AgentListResponse,
-  AgentPlanEdgesResult,
-  AgentPlanNodeApplyResult,
   AgentProposalStatus,
   AgentRunSkillPins,
   AgentSession,
   AgentSolveResult,
   AgentTarget,
+  AgentTurnEnvelope,
+  AgentTurnWriter,
+  AgentUndoResult,
   AgentUsage,
   CatalogSettingsResponse,
 } from "./types";
@@ -193,8 +195,8 @@ export const agentsApi = {
     );
   },
 
-  /** Apply a pending review proposal (memo dev/41) — the only mutation path;
-   * revision-safe (409 when the target drifted, marking the proposal stale). */
+  /** Apply a pending install the person reviewed (memo dev/41); revision-safe
+   * (409 when the target drifted, marking the proposal stale). */
   applyProposal(
     projectId: string,
     attachmentId: string,
@@ -206,18 +208,17 @@ export const agentsApi = {
     );
   },
 
-  /** Apply ONE planned node from a pending plan proposal (dev/67-5,
-   * Simulation Mode: create). The proposal stays pending until every ref is
-   * applied or it is dismissed; edges are the connection stage's (67-8). */
-  applyPlanNode(
+  /** Undo a change the attachment's agent made, as the caller's own change,
+   * by its kind; a 409 says who changed it after (nothing was undone). The
+   * answer carries the canvas mutations a canvas no doc binds takes. */
+  undoChange(
     projectId: string,
     attachmentId: string,
-    proposalId: string,
-    ref: string
-  ): Promise<AgentPlanNodeApplyResult> {
+    changeId: string
+  ): Promise<AgentUndoResult> {
     return apiFetch(
-      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/proposals/${encodeURIComponent(proposalId)}/apply-node`,
-      { method: "POST", body: JSON.stringify({ ref }) }
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/changes/${encodeURIComponent(changeId)}/undo`,
+      { method: "POST" }
     );
   },
 
@@ -235,42 +236,7 @@ export const agentsApi = {
     );
   },
 
-  /** Apply plan edges — the connection review stage (dev/67-8). Omitted
-   * indices apply every not-yet-applied edge; refusals are per-edge and
-   * named; `createdEdges` feeds the canvas bridge. */
-  applyPlanEdges(
-    projectId: string,
-    attachmentId: string,
-    proposalId: string,
-    indices?: number[]
-  ): Promise<AgentPlanEdgesResult> {
-    return apiFetch(
-      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/proposals/${encodeURIComponent(proposalId)}/apply-edges`,
-      { method: "POST", body: JSON.stringify(indices ? { edges: indices } : {}) }
-    );
-  },
-
-  /** Edit one planned node's goal before creation (dev/67-5): an audited
-   * review-stage overlay — the pinned plan bytes stay immutable. */
-  savePlanGoal(
-    projectId: string,
-    attachmentId: string,
-    proposalId: string,
-    ref: string,
-    goal: string
-  ): Promise<{
-    proposalId: string;
-    ref: string;
-    goal: string;
-    editedGoals: Record<string, string>;
-  }> {
-    return apiFetch(
-      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/proposals/${encodeURIComponent(proposalId)}/plan-goals`,
-      { method: "PATCH", body: JSON.stringify({ ref, goal }) }
-    );
-  },
-
-  /** Dismiss a pending review proposal without applying it. */
+  /** Dismiss a pending install without applying it. */
   dismissProposal(
     projectId: string,
     attachmentId: string,
@@ -319,6 +285,8 @@ export const agentsApi = {
     skills?: AgentRunSkillPins;
     /** The skills the run loaded with skill.read. */
     skillsLoaded?: string[];
+    /** The changes that landed, which a streamed run sends as `change` events. */
+    changes?: AgentLandedChange[];
   }> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/run`,
@@ -342,13 +310,17 @@ export const agentsApi = {
     attachmentId: string,
     message: string,
     onDelta: (text: string) => void,
-    /** Optional observer for the dev/41 tool/review events (`tool_requested`,
-     * `tool_started`, `tool_result`, `review_required`) and the dev/80
-     * interim `usage` events — transient display only; the durable state
-     * arrives with `done`/rehydration. */
+    /** Optional observer for the turn's `execution` handshake, the dev/41
+     * tool/review events (`tool_requested`, `tool_started`, `tool_result`,
+     * `review_required`), the `change` event of each change that landed (its
+     * canvas mutations, for a canvas no doc binds) and the dev/80 interim
+     * `usage` events. The durable state arrives with `done`/rehydration. */
     onEvent?: (name: string, payload: Record<string, unknown>) => void,
     /** Ephemeral grounded context (memo dev/44) — composed fresh per send. */
-    context?: string | null
+    context?: string | null,
+    /** The ask's id, chosen by this tab: the same ask when it is asked
+     * again, which a follow of it finds (`followTurn`). */
+    askId?: string
   ): Promise<{
     reply: string;
     executionId?: string;
@@ -360,6 +332,8 @@ export const agentsApi = {
     skills?: AgentRunSkillPins;
     /** The skills the run loaded with skill.read. */
     skillsLoaded?: string[];
+    /** Who stopped the turn, when someone did. */
+    stopped?: { by: AgentTurnWriter | null };
   }> {
     let reply: string | null = null;
     let executionId: string | undefined;
@@ -368,10 +342,11 @@ export const agentsApi = {
     let content: AgentContentPart[] | undefined;
     let skills: AgentRunSkillPins | undefined;
     let skillsLoaded: string[] | undefined;
+    let stopped: { by: AgentTurnWriter | null } | undefined;
 
     await postSseStream(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/run/stream`,
-      context ? { message, context } : { message },
+      { message, ...(context ? { context } : {}), ...(askId ? { askId } : {}) },
       (event, raw) => {
         const payload = raw as {
           text?: string;
@@ -384,15 +359,20 @@ export const agentsApi = {
           content?: AgentContentPart[];
           skills?: AgentRunSkillPins;
           skillsLoaded?: string[];
+          stopped?: { by: AgentTurnWriter | null };
         };
         if (event === "delta" && payload.text) onDelta(payload.text);
-        else if (event === "execution") executionId = payload.executionId;
-        else if (event === "content") content = payload.parts;
+        else if (event === "execution") {
+          // The turn's identity, which the transcript's record of it will carry.
+          executionId = payload.executionId;
+          onEvent?.(event, payload as Record<string, unknown>);
+        } else if (event === "content") content = payload.parts;
         else if (
           event === "tool_requested" ||
           event === "tool_started" ||
           event === "tool_result" ||
           event === "review_required" ||
+          event === "change" ||
           event === "delegate_requested" ||
           event === "delegate_started" ||
           event === "delegate_result" ||
@@ -409,11 +389,84 @@ export const agentsApi = {
           content = payload.content ?? content;
           skills = payload.skills;
           skillsLoaded = payload.skillsLoaded;
+          stopped = payload.stopped;
         } else if (event === "error") throw new Error(payload.error || "agent run failed");
       }
     );
     if (reply === null) throw new Error("stream ended without a reply");
-    return { reply, executionId, usage, durationMs, content, skills, skillsLoaded };
+    return { reply, executionId, usage, durationMs, content, skills, skillsLoaded, ...(stopped ? { stopped } : {}) };
+  },
+
+  /**
+   * Ask one turn of an attached agent, answered at once: the turn runs on
+   * the server, now (`running`) or once the asks before it on the
+   * attachment are done (`waiting`), and goes on when this tab closes. Its
+   * events reach the tabs of the dataflow's room that edit it
+   * (`agent_turn`); a tab no room holds follows it (`followTurn`). `askId`,
+   * chosen by this tab, names the ask: asked again, it is the same ask.
+   */
+  askTurn(
+    projectId: string,
+    attachmentId: string,
+    askId: string,
+    message: string,
+    context?: string | null
+  ): Promise<{ askId: string; attachmentId: string; state: "running" | "waiting" | "ended" }> {
+    return apiFetch(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/turns`,
+      { method: "POST", body: JSON.stringify({ message, ...(context ? { context } : {}), askId }) }
+    );
+  },
+
+  /**
+   * Follow one ask: `onEnvelope` gets the ask as it stands (an envelope whose
+   * `event` is `snapshot` and whose `data` is its view), then each of its
+   * events, in the room's envelope, until it ends. 404 for an ask the
+   * attachment does not have.
+   */
+  async followTurn(
+    projectId: string,
+    attachmentId: string,
+    askId: string,
+    onEnvelope: (envelope: AgentTurnEnvelope) => void,
+    signal?: AbortSignal
+  ): Promise<void> {
+    await postSseStream(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/turns/${encodeURIComponent(askId)}/stream`,
+      undefined,
+      (event, payload) => {
+        if (event === "turn") onEnvelope(payload as unknown as AgentTurnEnvelope);
+      },
+      signal,
+      "GET"
+    );
+  },
+
+  /** Stop a running turn: whoever asked it, the owner or an editor. It stops
+   * at its next step, and its end names who stopped it. 409 when it is not
+   * running. */
+  stopTurn(
+    projectId: string,
+    attachmentId: string,
+    askId: string
+  ): Promise<{ askId: string; attachmentId: string; stopping: boolean }> {
+    return apiFetch(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/turns/${encodeURIComponent(askId)}/stop`,
+      { method: "POST" }
+    );
+  },
+
+  /** Withdraw a waiting ask, for whoever asked it alone. 409 once its turn
+   * started. */
+  withdrawTurn(
+    projectId: string,
+    attachmentId: string,
+    askId: string
+  ): Promise<{ askId: string; attachmentId: string; withdrawn: boolean }> {
+    return apiFetch(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/turns/${encodeURIComponent(askId)}`,
+      { method: "DELETE" }
+    );
   },
 
   /**
@@ -429,15 +482,12 @@ export const agentsApi = {
     attachmentId: string,
     onEvent: (name: string, payload: Record<string, unknown>) => void,
     nodeIds?: string[],
-    signal?: AbortSignal,
-    /** dev/67-6: "propose" mints reviewed content proposals instead of
-     * writing — the Simulation Mode solve stage. Default: classic write. */
-    mode?: "write" | "propose"
+    signal?: AbortSignal
   ): Promise<AgentSolveResult> {
     let result: AgentSolveResult | null = null;
     await postSseStream(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/solve/stream`,
-      { ...(nodeIds ? { nodeIds } : {}), ...(mode ? { mode } : {}) },
+      nodeIds ? { nodeIds } : {},
       (event, payload) => {
         if (event === "done") result = payload as unknown as AgentSolveResult;
         else if (event === "error")
@@ -451,12 +501,12 @@ export const agentsApi = {
   },
 
   /**
-   * The Simulation Mode driver (dev/67-9, DEC-054): `step` performs the next
-   * single action; `auto` chains create → validate → auto-approve-on-PASS →
-   * connections, pausing on any failure. Canvas mutations ride the stream
-   * (`node_created`/`node_content_applied`/`edges_created`) — the caller
-   * dispatches them. Resolves with the `done` payload (status
-   * completed|stepped|paused|cancelled + builderSession).
+   * Build & validate over the plan that landed (dev/67-9, DEC-054): `step`
+   * performs the next single action; `auto` validates then approves each node
+   * in plan order, pausing at the first failure. Code that passes lands as
+   * the agent's change, whose `change` event rides the stream; the caller
+   * dispatches its canvas mutations. Resolves with the `done` payload
+   * (status completed|stepped|paused|cancelled + builderSession).
    */
   async simulate(
     projectId: string,
@@ -522,12 +572,12 @@ export const agentsApi = {
   },
 
   /**
-   * Generate → execute-through → validate → self-correct → propose for ONE
-   * node (dev/67-7, Simulation Mode: validate). Streams lifecycle events
+   * Generate → execute-through → validate → self-correct for ONE node
+   * (dev/67-7, Build & validate). Streams lifecycle events
    * (`validation_started`, `generation_round`, `node_executed`,
-   * `round_verdict`) and resolves with the `done` payload — verdict,
-   * evidence, rounds, and the minted proposal id (PASS or FAIL: the user
-   * decides on the review card).
+   * `round_verdict`, and `change` when its code passed and landed) and
+   * resolves with the `done` payload: verdict, evidence, rounds, and the
+   * landed change's id. Code that failed is not written.
    */
   async validateNode(
     projectId: string,
@@ -554,11 +604,12 @@ export const agentsApi = {
 
   /**
    * dev/115 (DEC-073, Amendment A2): the per-node Solve — run the node's
-   * CURRENT code in the sandbox, fix what fails, run again; a node with
-   * content lands as an already-executed content review, an empty node is
-   * written on PASS. Streams `solve_node_started` → `generation_round` /
-   * `node_executed` / `round_verdict` → `done`. Detached on the server:
-   * closing the stream does not stop the run (`attachJobStream` re-attaches).
+   * CURRENT code in the sandbox, fix what fails, run again; corrected code
+   * that passed lands as the agent's change with its Undo (its `change`
+   * event rides the stream), an empty node is written on PASS. Streams
+   * `solve_node_started` → `generation_round` / `node_executed` /
+   * `round_verdict` → `done`. Detached on the server: closing the stream
+   * does not stop the run (`attachJobStream` re-attaches).
    */
   async solveNodeStream(
     projectId: string,

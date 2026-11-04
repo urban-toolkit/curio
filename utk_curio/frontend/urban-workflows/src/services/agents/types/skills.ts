@@ -1,5 +1,5 @@
 /**
- * Skills as the Agent Catalog shows them, an agent's skills for this account,
+ * Skills as the Skill Catalog shows them, an agent's skills for this account,
  * a chat's skills, and what a run's record holds of the skills it used.
  *
  * The backend's shapes, from `application/skill_catalog.py` and the run
@@ -19,7 +19,23 @@ export interface SkillAgentUse {
   always: boolean;
 }
 
-/** One skill Curio ships, as its card and details show it. */
+/**
+ * Whose a skill is: Curio's; one this account imported; the shared
+ * catalog's, which an account published, or this account's copy of one it
+ * gave an agent; or a package's, which every agent on a dataflow that uses
+ * the package holds.
+ */
+export type SkillSource = "curio" | "yours" | "shared" | "package";
+
+/** The package a package's skill comes with. */
+export interface SkillPackage {
+  /** `<packageId>@<major>`. */
+  id: string;
+  /** Its name, as its manifest gives it. */
+  name: string;
+}
+
+/** One skill the account sees, as its card and details show it. */
 export interface SkillCard {
   name: string;
   /** When an agent uses the skill, in the skill's own words. */
@@ -38,7 +54,63 @@ export interface SkillCard {
   nodeKinds: string[];
   /** Every call holds it: the preamble Curio's agents read places it. */
   core: boolean;
+  /** Whose it is; a listing that predates the field lists Curio's alone. */
+  source?: SkillSource;
+  /** It is in the shared catalog. */
+  published?: boolean;
+  /** This account published it. */
+  publishedByYou?: boolean;
+  /** This account may publish it: one it imported, unpublished or its own publication. */
+  publishable?: boolean;
+  /** This account holds it, so it may remove it from its skills. */
+  removable?: boolean;
+  /** The agents that use it; none by name for a package's skill. */
   agents: SkillAgentUse[];
+  /** The package a package's skill comes with; null for any other. */
+  package?: SkillPackage | null;
+}
+
+/** One file of a skill's upload: its path in what was picked, and the file. */
+export interface SkillUploadFile {
+  path: string;
+  file: Blob;
+}
+
+/** An agent an import review offers a skill to. */
+export interface SkillImportAgent {
+  id: string;
+  coord: string;
+  name: string;
+}
+
+/** What an import review shows of an upload: nothing is kept yet. */
+export interface SkillImportReview {
+  /** The name it is kept under: the one asked for, or the one its SKILL.md gives. */
+  name: string;
+  /** The name its SKILL.md gives. */
+  givenName: string;
+  description: string;
+  /** What does not follow the format, which the import reads anyway. */
+  warnings: string[];
+  /** What keeping it in the format leaves out, and files outside its folder. */
+  leftOut: string[];
+  /** Its files besides SKILL.md. */
+  files: string[];
+  /** Why it cannot be kept under `name`, or null. */
+  problem: string | null;
+  /** The problem is its name: another name keeps it. */
+  rename: boolean;
+  /** It replaces this account's skill of that name, an older version. */
+  replaces: boolean;
+  agents: SkillImportAgent[];
+}
+
+/** What an import kept. */
+export interface SkillImportResult {
+  skill: SkillCard;
+  /** The agents given the skill, by name. */
+  agents: string[];
+  replaced: boolean;
 }
 
 export interface SkillListResponse {
@@ -106,4 +178,6 @@ export interface AgentRunSkillPins {
   kept?: string[];
   /** Named with `/<name>` in its message. */
   named?: string[];
+  /** Asked for in its message, in words the skill names (`curio-asks`). */
+  asked?: string[];
 }

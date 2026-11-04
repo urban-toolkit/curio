@@ -14,6 +14,8 @@ import styles from "./WidgetTags.module.css";
 import { WidgetControl } from "./WidgetControl";
 import { effectiveValue, type WidgetDef, type WidgetValue } from "../../../utils/widgets/widgetModel";
 import { changeableOnDashboard } from "../../../utils/widgets/dashboardControls";
+import { agentMarkClass, type WidgetMarks } from "../agentChangeMarks";
+import type { AgentPaletteKey } from "../../menus/nodes/agentsPalette/agentCategoryStyle";
 
 /** How long a value waits for the next keystroke or slider step before it
  * reaches the node. Leaving the control sends it at once. */
@@ -27,10 +29,12 @@ type RowProps = {
   dashboard?: boolean;
   /** Every control frozen. */
   disabled?: boolean;
+  /** An agent's change just set it: marked in the agent's tint, for a moment. */
+  markedIn?: AgentPaletteKey | null;
 };
 
 /** One widget: its label above its control, and the row's settling value. */
-export function WidgetValueRow({ widget, onCommit, dashboard = false, disabled = false }: RowProps) {
+export function WidgetValueRow({ widget, onCommit, dashboard = false, disabled = false, markedIn = null }: RowProps) {
   // The value shown follows the control at once; the node hears of it when
   // the control settles.
   const committed = effectiveValue(widget);
@@ -75,7 +79,12 @@ export function WidgetValueRow({ widget, onCommit, dashboard = false, disabled =
   };
 
   return (
-    <div className={`${styles.row} ${styles.plainRow}`} data-widget-row={widget.name} onBlur={() => flush()}>
+    <div
+      className={`${styles.row} ${styles.plainRow}${markedIn ? ` ${agentMarkClass(markedIn)}` : ""}`}
+      data-widget-row={widget.name}
+      data-agent-change={markedIn ? "true" : undefined}
+      onBlur={() => flush()}
+    >
       <span className={styles.rowLabel}>{widget.label || widget.name}</span>
       <span className={styles.rowControl}>
         <WidgetControl
@@ -102,11 +111,13 @@ type ControlsProps = {
   controls?: React.ReactNode;
   /** What the panel says when it holds no control. */
   empty?: string;
+  /** The widgets an agent's change just set, marked for a moment. */
+  marks?: WidgetMarks | null;
 };
 
 /** A tile's controls: every widget of its node, in a panel. */
 export function WidgetValueControls({
-  widgets, onCommit, dashboard = false, disabled = false, aboveOutput = false, controls, empty,
+  widgets, onCommit, dashboard = false, disabled = false, aboveOutput = false, controls, empty, marks = null,
 }: ControlsProps) {
   return (
     <div
@@ -120,6 +131,7 @@ export function WidgetValueControls({
           onCommit={onCommit}
           dashboard={dashboard}
           disabled={disabled}
+          markedIn={marks?.names.has(widget.name) ? marks.tint : null}
         />
       ))}
       {controls ? (

@@ -31,6 +31,7 @@ const GRIDS = [
   "pages/catalog/NodeCatalogBrowse.tsx",
   "pages/dataCatalog/DataCatalogBrowse.tsx",
   "pages/agents/AgentCatalogBrowse.tsx",
+  "pages/skills/SkillCatalogBrowse.tsx",
   "pages/scenarios/ScenarioCatalogBrowse.tsx",
 ];
 
@@ -38,7 +39,7 @@ const CARDS = [
   "pages/catalog/PackageBrowseCard.tsx",
   "pages/dataCatalog/DataCatalogBrowseCard.tsx",
   "pages/agents/AgentCatalogBrowseCard.tsx",
-  "pages/agents/SkillCatalogBrowseCard.tsx",
+  "pages/skills/SkillCatalogBrowseCard.tsx",
   "pages/scenarios/ScenarioCatalogBrowseCard.tsx",
 ];
 

@@ -106,6 +106,9 @@ def create_app(config_class=config_class):
 
     from utk_curio.backend.app.projects.routes import projects_bp
     app.register_blueprint(projects_bp)
+    # What a dataflow's invited editors ask its owner to add, of every kind.
+    from utk_curio.backend.app.projects.request_routes import requests_bp
+    app.register_blueprint(requests_bp)
 
     # The run tables, and the cascade that deletes a project's runs with it.
     from utk_curio.backend.app.runs import models as _run_models  # noqa: F401
@@ -240,8 +243,7 @@ def create_app(config_class=config_class):
             db.session.rollback()
 
     # Every backend serves Socket.IO: the collaboration room and each open
-    # dataflow's Yjs doc travel over it. ENABLE_COLLAB (--collab) only tells
-    # the page to show the collaboration panel (/api/config/public).
+    # dataflow's Yjs doc travel over it.
     from utk_curio.backend.config import COLLAB_NAMESPACE
     from utk_curio.backend.extensions import init_socketio
     sio = init_socketio(app)

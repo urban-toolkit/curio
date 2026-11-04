@@ -5,10 +5,10 @@ whose height factor is a widget, a scenario of that step, a duplicate of it as
 a second scenario with the factor set to 2, and a step that compares the two.
 The browser shows what a person judges:
 
-1. **The review card** names both scenarios, what the duplicate copies and the
-   value it changes, before anything lands.
-2. **Apply** carries the widgets, the copy's lineage and the scenarios to the
-   live canvas, so the canvas's own save keeps them.
+1. **The plan's card** names both scenarios, what the duplicate copies and the
+   value it changes, and offers its Undo: the plan landed with the reply.
+2. **The live canvas** holds the widgets, the copy's lineage and the
+   scenarios, so the canvas's own save keeps them.
 3. **Solve** writes code that places the widget as a reference, and the
    comparison, run on the canvas, reads two different outcomes: the copy's
    shadows are twice as long.
@@ -205,8 +205,9 @@ class TestTheDataflowBuilderBuildsTwoScenarios:
         )
         panel.get_by_role("button", name="Send", exact=True).click()
 
-        # 1. The card says what it will build, both scenarios by name, before anything lands.
-        card = panel.get_by_role("group", name=re.compile(r"^Review proposal: Apply plan")).first
+        # 1. The plan landed with the reply: its card says what it built, both
+        #    scenarios by name, and offers its Undo.
+        card = panel.get_by_role("group", name=re.compile(r"^Change: Plan")).first
         expect(card).to_be_visible(timeout=45000)
         expect(card).to_contain_text("2 scenarios", timeout=15000)
         listed = card.get_by_role("group", name="Scenarios this plan saves")
@@ -214,17 +215,9 @@ class TestTheDataflowBuilderBuildsTwoScenarios:
         expect(listed.get_by_label("Scenario Twice as tall")).to_contain_text(
             "a copy of Real heights · Shadows · sets height_factor 2"
         )
-        assert page.evaluate("() => window.__curio_reactFlow.getNodes().length") == 0
+        expect(card.get_by_role("button", name="Undo")).to_be_visible()
 
-        # 2. Apply: the copy, its lineage and its widget value reach the live canvas.
-        apply_control = panel.get_by_role("button", name=re.compile(r"^(Apply plan|Apply all without validation)$")).first
-        expect(apply_control).to_be_visible(timeout=20000)
-        with page.expect_response(
-            lambda r: "/proposals/" in r.url and r.url.endswith("/apply") and r.request.method == "POST",
-            timeout=60000,
-        ) as applied:
-            apply_control.click()
-        assert applied.value.ok, f"apply failed: {applied.value.status}"
+        # 2. The copy, its lineage and its widget value are on the live canvas.
         page.wait_for_function("() => window.__curio_reactFlow.getNodes().length === 4", timeout=45000)
         live = {n["id"]: n for n in page.evaluate(_STORE_NODES_JS)}
         copy = next(n for n in live.values() if n["copiedFrom"])
@@ -249,7 +242,7 @@ class TestTheDataflowBuilderBuildsTwoScenarios:
         )
         _close_chat(page, panel)
 
-        # The canvas's own save keeps what the apply wrote: nothing was dropped
+        # The canvas's own save keeps what the plan wrote: nothing was dropped
         # on the way through the live canvas.
         save_dataflow(page)
         saved = _saved(session, project_id)

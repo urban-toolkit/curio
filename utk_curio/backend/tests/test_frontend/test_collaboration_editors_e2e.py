@@ -2,15 +2,12 @@
 
 The owner invites an editor by username from Share > Invite editors. The
 editor opens the dataflow's link and moves its node: the move reaches the
-owner's canvas, which marks the dataflow Unsaved so its save keeps it. A
-watcher, anyone else signed in who opens the link, gets a read-only canvas:
-the banner says so and the node does not move, while the editor's next change
-reaches the watcher too.
-
-Needs a stack started with ``--collab``: CI's e2e-collab job, which runs the
-tests marked ``needs_collab`` (``runner_split.py``), or a local run with
-``CURIO_E2E_COLLAB=1``, as ``fixtures.py`` passes ``--collab`` then. On any
-other stack it fails saying so.
+owner's canvas, and the server keeps it with no save, since the dataflow is
+its doc. A watcher, anyone else signed in who opens the link, gets a
+read-only canvas: the banner says so and the node does not move, while the
+editor's next change reaches the watcher too. Each sees the others in the
+canvas's dock, with their roles. Every stack serves this: there is no switch
+for it.
 """
 
 from __future__ import annotations
@@ -34,11 +31,11 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-pytestmark = pytest.mark.needs_collab
-
 FRAMES = "collaboration-editors"
 NODE = "collab-node"
 EDITOR = "collab_editor_e2e"
+#: A person's chip in the canvas's dock, with their role.
+PERSON = '[role="group"][aria-label="People here"] button[data-collab-role="{}"]'
 
 _POSITION_JS = """(id) => {
     const node = window.__curio_reactFlow && window.__curio_reactFlow.getNodes().find((n) => n.id === id);
@@ -60,33 +57,26 @@ def _spec() -> dict:
     }
 
 
-def _require_collab_stack(backend: str) -> None:
-    if not api_json(f"{backend}/api/config/public", "").get("enable_collab"):
-        pytest.fail(
-            "this stack runs without --collab: run the test in CI's e2e-collab job, "
-            "or locally with CURIO_E2E_COLLAB=1"
-        )
-
-
 def _open_as(page, base: str, project_id: str, role: str) -> None:
-    """Open the dataflow's link and wait for its room to name this tab's role:
-    the collaboration panel lists everyone with theirs."""
+    """Open the dataflow's link and wait for its room to name this tab's role."""
     page.goto(f"{base}/dataflow/{project_id}", timeout=120000)
     node_locator(page, NODE).wait_for(timeout=30000)
     try:
-        page.locator(f'[data-collab-role="{role}"]').first.wait_for(timeout=30000)
+        page.locator(f'[data-curio-room-role="{role}"]').wait_for(state="attached", timeout=30000)
     except Exception as exc:  # noqa: BLE001 - said in the test's words
-        raise AssertionError(f"the collaboration panel never named a {role} on this tab") from exc
+        raise AssertionError(f"the dataflow's room never named this tab its {role}") from exc
+
+
+def _sees(page, role: str, *, what: str) -> None:
+    """*page*'s dock shows someone of *role*."""
+    try:
+        page.locator(PERSON.format(role)).wait_for(timeout=30000)
+    except Exception as exc:  # noqa: BLE001 - said in the test's words
+        raise AssertionError(f"{what} never showed the {role} in its dock") from exc
 
 
 def _position(page, node_id: str = NODE):
     return page.evaluate(_POSITION_JS, node_id)
-
-
-def _save(page) -> None:
-    """Save from the top bar's save status, and wait until it reads Saved."""
-    page.locator("[data-curio-save-state]").click()
-    page.locator('[data-curio-save-state="saved"]').wait_for(timeout=30000)
 
 
 def _open_invite_editors(page, *, frame: bool = False) -> None:
@@ -163,7 +153,6 @@ def test_an_invited_editors_move_reaches_the_owner_and_a_watcher_only_watches(
 ):
     require_project_page()
     require_user_auth()
-    _require_collab_stack(current_server)
     base = app_frontend.base_url
     viewport = {"width": 1280, "height": 768}
     owner_ctx = browser.new_context(viewport=viewport)
@@ -192,14 +181,15 @@ def test_an_invited_editors_move_reaches_the_owner_and_a_watcher_only_watches(
         dialog.locator(f'[data-editor="{EDITOR}"]').wait_for(timeout=10000)
         dialog.get_by_role("button", name="Done").click()
         dialog.wait_for(state="detached", timeout=10000)
-        # What is on disk, so that Unsaved below is the editor's change alone.
-        _save(owner)
 
         # The editor's canvas is editable, and their move reaches the owner.
+        # Each sees the other in the dock, by their role.
         _open_as(editor, base, project_id, "editor")
         assert editor.get_by_test_id("shared-view-banner").count() == 0, (
             "an invited editor's canvas opened read-only"
         )
+        _sees(owner, "editor", what="the owner's canvas")
+        _sees(editor, "owner", what="the editor's canvas")
         # The room can answer before the tab's load fit lands, and the canvas
         # then still shows its default view, the node's header under the top
         # bar. The editor's canvas is put there, so every run meets that order.
@@ -211,14 +201,17 @@ def test_an_invited_editors_move_reaches_the_owner_and_a_watcher_only_watches(
             f"the editor's drag did not move the node: {before} -> {moved}"
         )
         _wait_for_position(owner, moved, what="the editor's move never reached the owner")
-        # The owner's tab keeps it: the dataflow reads Unsaved, and its save
-        # writes the editor's position.
-        owner.locator('[data-curio-save-state="unsaved"]').wait_for(timeout=15000)
-        _save(owner)
-        saved = api_json(f"{current_server}/api/projects/{project_id}", owner_token)["spec"]
-        node = next(n for n in saved["dataflow"]["nodes"] if n["id"] == NODE)
+        # The server keeps it, with no save from anyone: the dataflow is its
+        # doc, which it writes a second after the last change.
+        node = None
+        for _ in range(30):
+            saved = api_json(f"{current_server}/api/projects/{project_id}", owner_token)["spec"]
+            node = next(n for n in saved["dataflow"]["nodes"] if n["id"] == NODE)
+            if (node["x"], node["y"]) == pytest.approx(tuple(moved), abs=0.5):
+                break
+            owner.wait_for_timeout(500)
         assert (node["x"], node["y"]) == pytest.approx(tuple(moved), abs=0.5), (
-            f"the owner's save did not keep the editor's move: {node['x']}, {node['y']} not {moved}"
+            f"the server did not keep the editor's move: {node['x']}, {node['y']} not {moved}"
         )
 
         # A watcher's canvas is read-only: the banner, and a node that stays.
@@ -226,6 +219,7 @@ def test_an_invited_editors_move_reaches_the_owner_and_a_watcher_only_watches(
         banner = watcher.get_by_test_id("shared-view-banner")
         banner.wait_for(timeout=15000)
         assert "read-only" in (banner.inner_text() or "").lower()
+        _sees(owner, "watcher", what="the owner's canvas")
         watching = _position(watcher)
         assert watching == pytest.approx(moved, abs=0.5), f"the watcher opened {watching}, not the saved {moved}"
         _drag_node_by(watcher, NODE, 200, 120)

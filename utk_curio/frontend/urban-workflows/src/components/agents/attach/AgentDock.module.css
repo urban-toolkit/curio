@@ -15,8 +15,72 @@
   max-width: min(90vw, 720px);
 }
 
+/* A read-only canvas's dock, under its banner (UpMenu.module.css's
+   `.sharedBanner`: 8px under the top bar, about 32px tall). */
+.dockBelowBanner {
+  top: calc(var(--curio-top-bar-height) + 48px);
+}
+
 /* Avatar chips are the shared AgentAvatarBadge; the chat panel's styles live
    in AgentChatPanel.module.css (concept-aligned visual system). */
+
+/* Who else is here (PeopleHere): a chip each, on the agents' chip, then the
+   Activity button. One item of the dock's row, spaced as the row is. */
+.people {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* A person's initials, in their color (set on the chip), where an agent's
+   chip has its category's glyph. */
+.initials {
+  font-size: var(--curio-font-size-md);
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* The room's Activity, opened from its button at the row's end. */
+.activityList {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 260px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  background: var(--curio-card-bg);
+  border: 1px solid var(--curio-border);
+  border-radius: var(--curio-radius-lg);
+  box-shadow: var(--curio-shadow-browse-card-raised);
+  color: var(--curio-text-primary);
+  font-size: var(--curio-font-size-sm);
+  line-height: var(--curio-line-height-sm);
+  text-align: left;
+}
+
+.activityTitle {
+  margin-bottom: 6px;
+  font-size: var(--curio-font-size-xs);
+  font-weight: 700;
+  color: var(--curio-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.activityItems {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.activityEmpty {
+  margin: 0;
+  color: var(--curio-text-muted);
+}
 
 /* The dataflow goal, shown in the dock beside the agents that read it.
 

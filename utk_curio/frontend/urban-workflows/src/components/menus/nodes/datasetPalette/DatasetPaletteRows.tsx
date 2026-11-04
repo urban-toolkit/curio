@@ -20,6 +20,7 @@ import {
   relativeTimeOrEmpty as relativeTime,
 } from "../../../datasets/catalog/datasetDetailHelpers";
 import packageStyles from "../toolsMenuPackagePalette/ToolsMenuPackagePalette.module.css";
+import { paletteItemAttrs } from "../toolsPaletteDismiss";
 import rowStyles from "./DatasetPaletteRows.module.css";
 
 import { DatasetConnectionBadge } from "../../../datasets/catalog/DatasetConnectionBadge";
@@ -92,6 +93,7 @@ export const DatasetRow = memo(function DatasetRow({
     >
       <div
         className={`${packageStyles.packageKindRowDrag} ${rowStyles.datasetRowDrag}`}
+        {...paletteItemAttrs("datasets", dataset.id)}
         draggable
         // An icon and a format chip: the drag handle is named for what it does.
         aria-label={`Drag ${datasetDisplayTitle(dataset)} onto the canvas`}
@@ -199,6 +201,7 @@ export const DatasetGroupRow = memo(function DatasetGroupRow({
       >
         <div
           className={`${packageStyles.packageKindRowDrag} ${rowStyles.datasetRowDrag} ${rowStyles.groupIconBox}`}
+          {...paletteItemAttrs("datasets", group.groupId)}
           draggable
           onDragStart={(event) => {
             writeDatasetDragData(event.dataTransfer, beginDatasetDragWith(dragPayload));

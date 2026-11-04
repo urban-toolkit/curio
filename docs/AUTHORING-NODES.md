@@ -298,9 +298,15 @@ A flood-depth node takes ...
   skill, then the body the agents read, as you wrote it.
   [EXTENDING §9](EXTENDING.md#9-writing-a-skill) has every rule.
 - Every agent on a dataflow that uses your package lists your skills, and
-  loads one when a task matches its description.
+  loads one when a task matches its description. The
+  [Skill Catalog](SKILL-CATALOG.md#skills-from-packages) lists them with your
+  package's name, for every account that can add the package.
 - `curio-templates` names your templates, by their `id`: a run that writes a
   node of one of them is handed the skill.
+- `curio-asks` may name words of a person's chat message, a comma between
+  each, such as `curio-asks: flood depth, flooding`: a chat message that
+  holds one as a whole word, on a dataflow that uses your package, hands the
+  chat the skill.
 - Name a skill after your package: a skill whose name one of Curio's skills
   already has is left out.
 - An import of a package whose skill breaks the format is refused, and the

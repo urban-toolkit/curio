@@ -1,0 +1,76 @@
+{
+  "skill_name": "data-sources",
+  "agent": "agent.curio.dataflow-builder@1",
+  "dataflow": "docs/examples/dataflows/data-pool-vega-2.json",
+  "evals": [
+    {
+      "id": 1,
+      "agent": "agent.curio.node-builder@1",
+      "prompt": "Add a node that loads the Chicago Energy Usage 2010 dataset from the Data Catalog.",
+      "expected_output": "One node.create of a Data Loading node whose code loads the dataset by its Data Catalog id, data.cityofchicago.energy-usage-2010, with the loader line catalog.search gives, and names no file path or URL.",
+      "assertions": [
+        "The answer makes one node.create of type curio.builtin/data-loading.",
+        "The code it writes loads the dataset by its id, data.cityofchicago.energy-usage-2010, through curio_load_data or curio_data_path.",
+        "The code it writes names no file path on disk and no URL.",
+        "The run calls catalog.search."
+      ]
+    },
+    {
+      "id": 2,
+      "agent": "agent.curio.node-builder@1",
+      "prompt": "Add a node that pulls today's air quality readings for Chicago from the AirNow API.",
+      "expected_output": "No node: AirNow's API needs a key and the account has no saved key for its host, so the answer names that host as needing one and stops, telling the user to save a Node code key for it, with no key or placeholder written in any code.",
+      "assertions": [
+        "The answer creates no node (no node.create).",
+        "The answer names the AirNow API host as one that needs a saved key.",
+        "The answer tells the user to save a key for that host (a Node code key in API Settings) before a node can read it.",
+        "No code it writes holds an API key value or a placeholder such as YOUR_API_KEY."
+      ]
+    },
+    {
+      "id": 3,
+      "agent": "agent.curio.node-builder@1",
+      "dataflow": "docs/examples/dataflows/vega.json",
+      "prompt": "I don't have the real numbers yet. Make up about 50 fake green roofs with a zip code and a vegetated area so I can try the chart.",
+      "expected_output": "One node.create whose code builds about 50 made-up roofs in the code, with a zip code and a vegetated area each, reading no file, dataset or URL, and whose title says the data is made up.",
+      "assertions": [
+        "The answer makes a node.create whose code builds the roofs in the code, reading no file, dataset or URL.",
+        "The node's title says the data is made up (for example synthetic, fake, sample or made-up).",
+        "The code makes rows with a zip code column and a vegetated area column."
+      ]
+    },
+    {
+      "id": 4,
+      "agent": "agent.curio.node-builder@1",
+      "prompt": "Add a node that downloads Chicago's building footprints straight from the city's open data portal API.",
+      "expected_output": "No node yet: the run holds no verified URL for that data, so the answer writes no portal URL from memory; it asks the Dataset Finder for candidates (or the user for a URL) and lets the user pick and confirm a source before any node is built.",
+      "assertions": [
+        "The answer creates no node in this turn (no node.create).",
+        "The answer writes no code with a portal URL written from memory.",
+        "The answer asks the user to pick or confirm a source (a candidate the Dataset Finder found, or a URL the user gives) before a node is built."
+      ]
+    }
+  ],
+  "trigger_queries": [
+    {"query": "Add a loader for the file I have at /Users/ana/data/chicago_trees.csv and join the trees to the roofs by zip code.", "should_trigger": true},
+    {"query": "Pull the last 30 days of 311 requests from https://data.cityofchicago.org/resource/v6vf-nfxy.json into a new node.", "should_trigger": true},
+    {"query": "I saved my AirNow key in API Settings as airnow. Add a node that reads today's Chicago air quality with it.", "should_trigger": true},
+    {"query": "Just make up a few hundred fake roofs with random sizes so I can test the chart without the real data.", "should_trigger": true},
+    {"query": "Load the Chicago Energy Usage 2010 dataset from my Data Catalog next to the roofs.", "should_trigger": true},
+    {"query": "the census api wants a key and i dont have one yet. can you still get median income per tract for chicago?", "should_trigger": true},
+    {"query": "Could the loader read the roofs from the city's live API instead of the copy in the catalog? What would it have to check first?", "should_trigger": true},
+    {"query": "My roofs export in the Data Catalog uses semicolons instead of commas. How should the loader read it correctly?", "should_trigger": true},
+    {"query": "Get the Divvy bike station list from its public GBFS feed into a node.", "should_trigger": true},
+    {"query": "Add a node that downloads the building footprints for the roofs' zip codes from the Chicago Data Portal.", "should_trigger": true},
+    {"query": "Which datasets in my Data Catalog cover Chicago?", "should_trigger": false},
+    {"query": "Install the Chicago Neighborhoods dataset into this project.", "should_trigger": false},
+    {"query": "Add a slider to the transformation for the minimum vegetated area.", "should_trigger": false},
+    {"query": "Why does the loader take so long to run?", "should_trigger": false},
+    {"query": "Export the joined roofs to a GeoJSON file I can download.", "should_trigger": false},
+    {"query": "Plot the roofs on a map colored by vegetated area.", "should_trigger": false},
+    {"query": "Explain what the sjoin in the loader does.", "should_trigger": false},
+    {"query": "Which open data portals does this Curio connect to?", "should_trigger": false},
+    {"query": "Add a Data Summary of the loader's output.", "should_trigger": false},
+    {"query": "Who changed the loader's code last?", "should_trigger": false}
+  ]
+}

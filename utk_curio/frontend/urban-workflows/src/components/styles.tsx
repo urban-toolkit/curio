@@ -61,11 +61,14 @@ import {
 import { datasetWidgetBindings, datasetWidgetReadBy } from "../utils/widgets/datasetWidgets";
 import { DatasetWidgetContext, type DatasetWidgetNode } from "./editing/widgets/datasetWidgetContext";
 import { hasFileDrag, useDataFileImport } from "./datasets/useDataFileImport";
+import { useAskTheOwner } from "./datasets/useAskTheOwner";
+import { useAskForPackage } from "./packages/useAskForPackage";
 import { packageStarterCode } from "../adapters/node/packageNodeBehavior";
 import {
     applyModelToNodeData,
     canApplyModelToNode,
     hasModelDrag,
+    modelDropRequest,
     modelSwapRefusal,
     nodeModelType,
     readModelDragPayload,
@@ -149,6 +152,7 @@ export const NodeContainer = ({
         markNodeStale,
         requestAutoRun,
         defaultSaveOutputDataset,
+        recordOutputsSoon,
     } = useFlowContext();
     // A notebook cell is never minimized or resized: its width comes from the
     // column and its height from its content, and the node's own size stays its
@@ -427,6 +431,9 @@ export const NodeContainer = ({
         saveOutput: saveOutputDataset,
         onSaveOutputChange: (next: boolean) => {
             updateDataNode(nodeId, { ...data, saveOutputDataset: next });
+            // The output the node holds goes to the Data Catalog once its Save
+            // is on, and its recorded output goes once it is off.
+            recordOutputsSoon?.();
         },
         onPlay: () => {
             playNodesUpTo(data.nodeId);
@@ -447,6 +454,8 @@ export const NodeContainer = ({
     // its dataset widget shows.
     const [dropping, setDropping] = useState(false);
     const importDataFile = useDataFileImport();
+    const askTheOwner = useAskTheOwner();
+    const askForPackage = useAskForPackage();
 
     // A dataset reaching this node, dropped as a Data Catalog card or as a
     // file it has just imported: it sets the dataset widget the node's code
@@ -523,6 +532,9 @@ export const NodeContainer = ({
         e.preventDefault();
         e.stopPropagation();
         takeDatasetRef.current(dataset);
+        // On the owner's dataflow, an invited editor's card of his own Data
+        // Catalog asks her to add it, as his drop on the canvas does.
+        if (askTheOwner) void askTheOwner(dataset, { nodeId });
     };
     const canApplyRef = useRef(false);
     canApplyRef.current = canApplyDatasetToNode(data);
@@ -564,6 +576,10 @@ export const NodeContainer = ({
         sendCodeToWidgets?.(applied.code);
         markDirty();
         showToast(`Model set to ${model.name}`, "success");
+        // On the owner's dataflow, an invited editor's model asks her to add
+        // it, unless her dataflow has it: the node waits for her review.
+        const asked = askForPackage ? modelDropRequest(e.dataTransfer) : null;
+        if (askForPackage && asked) void askForPackage(asked, { nodeId });
     };
 
     useEffect(() => {
@@ -885,6 +901,7 @@ export const NodeContainer = ({
                                 pkg={packageDescriptor.package}
                                 category={packageDescriptor.category}
                                 suggestionActive={suggestionActive}
+                                nodeId={nodeId}
                             />
                         ) : null}
 

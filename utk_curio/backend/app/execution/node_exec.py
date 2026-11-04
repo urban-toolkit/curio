@@ -120,12 +120,15 @@ def input_names(input_ref: dict) -> list[str]:
 WRAPPER_KINDS = frozenset({"dict", "list", "outputs", ""})
 
 
-def _kept_as_a_wrapper(dataflow_id: str, name: str) -> bool:
-    """Whether the runs of *dataflow_id*'s owner kept *name* as an output the
-    sandbox called a kind a wrapper is stored as."""
+def _kept_as_a_wrapper(dataflow_id: str, name: str, user=None) -> bool:
+    """Whether the runs of *dataflow_id*'s owner, or *user*'s own runs as an
+    editor of it, kept *name* as an output the sandbox called a kind a
+    wrapper is stored as."""
     from utk_curio.backend.app.runs import kept
 
     entry = kept.owner_entry(dataflow_id, name)
+    if entry is None and user is not None:
+        entry = kept.editor_entry(dataflow_id, getattr(user, "id", None), name)
     if entry is None:
         return False
     try:
@@ -142,14 +145,15 @@ def wrapped_input_names(user, run: "NodeRun", input_ref: dict, saved_inputs: dic
     once the row is gone, as the run reads it. [] for any other input; None
     when the sandbox cannot say. Asked of the sandbox only for an input that
     can be one: one the request calls a wrapper's kind, a saved output, whose
-    kind a save names, or one the owner's runs kept as such a kind."""
+    kind a save names, or one the owner's runs, or the caller's own as an
+    editor, kept as such a kind."""
     path = (input_ref or {}).get('path')
     if user is None or not run.dataflow_id or not isinstance(path, str) or not path:
         return []
     declared = str((run.input or {}).get('dataType') or '') if isinstance(run.input, dict) else ''
     try:
         if (declared not in WRAPPER_KINDS and path not in saved_inputs
-                and not _kept_as_a_wrapper(run.dataflow_id, path)):
+                and not _kept_as_a_wrapper(run.dataflow_id, path, user)):
             return []
     except Exception:  # noqa: BLE001 - asked of the sandbox instead
         pass
@@ -223,28 +227,56 @@ def resolve_saved_inputs(names: list[str], dataflow_id: str | None) -> dict:
         return {}
 
 
+def _kept_maker(user, project) -> str | None:
+    """Whose kept outputs a run of *user* on *project* keeps and reads:
+    the owner's (``kept.MADE_BY_OWNER``), those of an editor she invited
+    (``kept.MADE_BY_EDITOR``, his account's alone), or None for anyone else,
+    whose run stays in their own session."""
+    from utk_curio.backend.app.projects import access
+    from utk_curio.backend.app.runs import kept
+
+    if user is None or project is None:
+        return None
+    role = access.agents_role(user, project)
+    if role == access.OWNER:
+        return kept.MADE_BY_OWNER
+    if role == access.EDITOR:
+        return kept.MADE_BY_EDITOR
+    return None
+
+
+def _own_kept_entry(maker: str, dataflow_id: str, user, name: str):
+    """The live output *name* that the runs of *maker*, the owner or the
+    editor *user*, kept on *dataflow_id*, or None."""
+    from utk_curio.backend.app.runs import kept
+
+    if maker == kept.MADE_BY_EDITOR:
+        return kept.editor_entry(dataflow_id, getattr(user, "id", None), name)
+    return kept.owner_entry(dataflow_id, name)
+
+
 def resolve_kept_inputs(user, names: list[str], dataflow_id: str | None, saved_inputs: dict) -> dict:
     """``{name: {"session"}}`` for each of *names*, the outputs a run that is
     not kept (:func:`_kept_run`) reads, that the runs of its dataflow's owner
-    kept, when the caller is that owner: the kept session that made it, which
-    the caller's own session cannot read. A tab's run below a step only the
-    browser makes is such a run, its input from that step being the tab's
-    own, and it may read what the owner's run on the server kept, an output a
+    kept, when the caller is that owner, or that the caller's own runs kept,
+    when the caller is an editor she invited: the kept session that made it,
+    which the caller's own session cannot read. A tab's run below a step only
+    the browser makes is such a run, its input from that step being the tab's
+    own, and it may read what the caller's run on the server kept, an output a
     wrapper among its inputs names too. A name *saved_inputs* resolves is
     left to its saved file. Fail-open, as saved inputs are."""
     if user is None or not dataflow_id:
         return {}
     try:
         from utk_curio.backend.app.projects.models import Project
-        from utk_curio.backend.app.runs import kept
         from utk_curio.backend.extensions import db
 
-        project = db.session.get(Project, dataflow_id)
-        if project is None or project.user_id != getattr(user, "id", None):
+        maker = _kept_maker(user, db.session.get(Project, dataflow_id))
+        if maker is None:
             return {}
         granted = {}
         for name in names[:MAX_SAVED_INPUTS]:
-            entry = None if name in saved_inputs else kept.owner_entry(dataflow_id, name)
+            entry = None if name in saved_inputs else _own_kept_entry(maker, dataflow_id, user, name)
             if entry is not None:
                 granted[name] = {"session": entry.session_id}
         return granted
@@ -282,12 +314,14 @@ def resolve_dataset_ids(ids: list, dataflow_id: str | None, user, formats: dict 
         return {}
 
 
-def resolve_models_for(code: str, user_key: str | None) -> dict:
+def resolve_models_for(code: str, user_key: str | None, *, owners=None) -> dict:
     """``{model id: folder}`` for the models *code* runs as
     ``curio_load_model("<id>")`` that the store of *user_key* holds: models
     behave like nodes, so a model package never added gives none
-    (``packages.service.resolve_model_dirs``). Fail-open like dataset paths:
-    the sandbox's ``curio_load_model`` names a model that is not there."""
+    (``packages.service.resolve_model_dirs``). With *owners*
+    (:func:`owners_packages_for`), a model the dataflow uses comes from its
+    owner's store. Fail-open like dataset paths: the sandbox's
+    ``curio_load_model`` names a model that is not there."""
     from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
 
     ids = model_ids_in_code(code)
@@ -296,28 +330,77 @@ def resolve_models_for(code: str, user_key: str | None) -> dict:
     try:
         from utk_curio.backend.app.packages.service import resolve_model_dirs
 
-        return resolve_model_dirs(user_key, ids)
+        if owners is None:
+            return resolve_model_dirs(user_key, ids)
+        return resolve_model_dirs(user_key, ids, owners=owners)
     except Exception as e:  # noqa: BLE001 - resolution must never fail the execution
         print(f"[processPythonCode] model resolution failed: {e}", flush=True)
         return {}
 
 
-def resolve_models(code: str, user) -> dict:
-    """:func:`resolve_models_for` the account *user* runs as."""
-    return resolve_models_for(code, exec_user_key(user))
+def resolve_models(code: str, user, dataflow_id: str | None = None) -> dict:
+    """:func:`resolve_models_for` the account *user* runs as, on the dataflow
+    *dataflow_id*: one whose owner invited *user* to edit it gives the models
+    it uses from her store (:func:`owners_packages_for`)."""
+    owners = owners_packages_for(user, dataflow_id) if "curio_load_model" in code else None
+    return resolve_models_for(code, exec_user_key(user), owners=owners)
 
 
 def resolve_package_modules(
-    node_type: str, user_key: str | None, dataflow_id: str | None = None,
+    node_type: str, user_key: str | None, dataflow_id: str | None = None, *, owners=None,
 ) -> dict | list | None:
     """The modules the node's package ships beside its templates, and those of
     the packages it depends on, which the sandbox makes importable for this
     run (#468): ``{"root", "names"}``, a list of them, or None for a node
-    whose package ships none and depends on none. Fail-open like dataset
-    paths."""
+    whose package ships none and depends on none. With *owners*
+    (:func:`owners_packages_for`), a node of a package the dataflow uses gets
+    those of its owner's copy. Fail-open like dataset paths."""
     from utk_curio.backend.app.packages.service import modules_for_node
 
-    return modules_for_node(user_key, node_type, dataflow_id)
+    if owners is None:
+        return modules_for_node(user_key, node_type, dataflow_id)
+    return modules_for_node(user_key, node_type, dataflow_id, owners=owners)
+
+
+def owners_packages_for(user, dataflow_id: str | None):
+    """What a run of *user* on the dataflow *dataflow_id* reads from its
+    owner's store when she invited *user* to edit it: the packages and models
+    the dataflow uses (``packages.service.OwnersPackages``). Who edits it is
+    ``access.agents_role``, and her store is ``_owner_user_dir_key``, as the
+    datasets such a run loads are read (``InstalledDatasetRepository``). None
+    for her own run, for anyone she did not invite, and for a run that names
+    no dataflow, whose packages and models are all the runner's own. Asks the
+    database, so it is called in a request or an app context. Fail-open."""
+    if user is None or not dataflow_id:
+        return None
+    try:
+        from utk_curio.backend.app.packages.service import OwnersPackages
+        from utk_curio.backend.app.projects import access
+        from utk_curio.backend.app.projects.models import Project
+        from utk_curio.backend.app.projects.services import _owner_user_dir_key, _user_dir_key
+        from utk_curio.backend.extensions import db
+
+        project = db.session.get(Project, dataflow_id)
+        if project is None or access.agents_role(user, project) not in access.EDIT_ROLES:
+            return None
+        store_key = _owner_user_dir_key(project)
+        if store_key == _user_dir_key(user):
+            return None
+        return OwnersPackages(store_key, project.id)
+    except Exception as e:  # noqa: BLE001 - the run's own packages still answer
+        print(f"[node_exec] the dataflow owner's packages could not be read: {e.__class__.__name__}", flush=True)
+        return None
+
+
+def library_keys_of(owners) -> dict:
+    """``{"library_keys": [<the owner's storage key>]}`` for a run of an
+    editor the dataflow's owner invited (*owners*, :func:`owners_packages_for`),
+    else nothing. Under fork isolation each account's node libraries are a
+    folder of their own, and the sandbox puts the owner's on the run's import
+    path, read-only, after the editor's own (``sandbox/isolation/runner.py``),
+    so a node of her packages imports the libraries she installed for them.
+    Without isolation every run shares one interpreter and this is ignored."""
+    return {"library_keys": [owners.store_key]} if owners is not None else {}
 
 
 def resolve_secrets(code: str, user) -> dict:
@@ -400,31 +483,35 @@ def execute_js_node(user, session_token: str | None, run: NodeRun) -> tuple[dict
 
 @dataclass(frozen=True)
 class _KeptRun:
-    """The kept session an owner's run of a saved dataflow runs in, and
-    whether what it reads is the owner's alone (``kept.OWNER_ONLY``)."""
+    """The kept session a run of a saved dataflow runs in, whose run it is
+    (*made_by*: its owner's, or an invited editor's, whose outputs are his
+    alone), and whether what an owner's run reads is hers alone
+    (``kept.OWNER_ONLY``)."""
 
     session_id: str
     private: bool
+    made_by: str = "owner"
 
 
 def _kept_run(user, run: NodeRun, names: list[str], saved_inputs: dict) -> _KeptRun | None:
     """A kept session for this run (``common/kept_sessions.py``) when it is
-    the owner's run of a saved dataflow that reads only that dataflow's
-    outputs: those the owner's runs kept, and those it saved. *names* are
-    what it reads: its inputs, and what a wrapper among them names
-    (:func:`wrapped_input_names`), which a node's code may have written to
-    name any output. Its output is then kept too (``runs/kept.py``), and the
-    owner reads it through the dataflow's routes, under any sign-in, for as
-    long as it is kept.
+    the run of a saved dataflow by its owner, or by an editor she invited,
+    that reads only that dataflow's outputs: those the caller's runs kept
+    (the owner's, or the editor's own, never hers), and those it saved.
+    *names* are what it reads: its inputs, and what a wrapper among them
+    names (:func:`wrapped_input_names`), which a node's code may have written
+    to name any output. Its output is then kept too (``runs/kept.py``), and
+    the caller reads it through the dataflow's routes, under any sign-in, for
+    as long as it is kept: the owner's as hers, an editor's as his alone.
 
-    Anything else runs in the caller's own session, as before: a
-    collaborator's play, an unsaved canvas, and a run whose input is not the
-    dataflow's, such as one made before its first save, which reads the
-    dataflow's kept outputs among its inputs under the sessions that made
-    them (:func:`resolve_kept_inputs`). The sandbox lets a
-    kept session read any kept output, so only this dataflow's names may
+    Anything else runs in the caller's own session, as before: the play of
+    someone she did not invite, an unsaved canvas, and a run whose input is
+    not the dataflow's, such as one made before its first save, which reads
+    the caller's kept outputs among its inputs under the sessions that made
+    them (:func:`resolve_kept_inputs`). The sandbox lets a kept session read
+    any kept output, so only this dataflow's names that the caller may read
     reach one. A saved output is read from the store first, so a name its
-    manifest records that a kept run made, and the owner's runs did not
+    manifest records that a kept run made, and the caller's runs did not
     keep, is not one: the sandbox would read that run's artifact, whoever's
     it is.
     """
@@ -437,21 +524,52 @@ def _kept_run(user, run: NodeRun, names: list[str], saved_inputs: dict) -> _Kept
     from utk_curio.common.kept_sessions import new_session_id
 
     try:
-        project = db.session.get(Project, run.dataflow_id)
+        maker = _kept_maker(user, db.session.get(Project, run.dataflow_id))
     except Exception:  # noqa: BLE001 - a run never fails on this lookup
         return None
-    if project is None or project.user_id != getattr(user, "id", None):
+    if maker is None:
         return None
     if len(names) > MAX_SAVED_INPUTS:
         return None
-    private = False
+    private = maker == kept.MADE_BY_EDITOR
     for name in names:
-        entry = kept.owner_entry(run.dataflow_id, name)
+        entry = _own_kept_entry(maker, run.dataflow_id, user, name)
         if entry is not None:
             private = private or entry.private_to is not None
-        elif name not in saved_inputs or made_by_a_kept_run(name):
+        elif name not in saved_inputs or (
+            made_by_a_kept_run(name) and not _saved_from_the_owners_run(maker, run.dataflow_id, name)
+        ):
             return None
-    return _KeptRun(session_id=new_session_id(), private=private)
+    return _KeptRun(session_id=new_session_id(), private=private, made_by=maker)
+
+
+def _saved_from_the_owners_run(maker: str, dataflow_id: str, name: str) -> bool:
+    """Whether *name*, a saved output of *dataflow_id*, is one the owner's
+    runs of it kept, for an editor's run: the dataflow's own output, which
+    the editor reads anyway, so his kept session may read its artifact."""
+    from utk_curio.backend.app.runs import kept
+
+    return maker == kept.MADE_BY_EDITOR and kept.owner_entry(dataflow_id, name) is not None
+
+
+def _writes_dataflow_id(user, run: NodeRun) -> str | None:
+    """The dataflow *run*'s output joins the Data Catalog of, and its outcome
+    the runtime journal of, in *user*'s store: the run's, unless another
+    account owns that dataflow, as :func:`_kept_run` tells an owner. The run
+    of an editor the owner invited reads the dataflow's saved outputs and
+    datasets, and writes neither, as a run that names no dataflow."""
+    if user is None or not run.dataflow_id:
+        return run.dataflow_id
+    from utk_curio.backend.app.projects.models import Project
+    from utk_curio.backend.extensions import db
+
+    try:
+        project = db.session.get(Project, run.dataflow_id)
+    except Exception:  # noqa: BLE001 - a run never fails on this lookup
+        return run.dataflow_id
+    if project is not None and project.user_id != getattr(user, "id", None):
+        return None
+    return run.dataflow_id
 
 
 def _forget_kept_run(kept_run: _KeptRun | None) -> None:
@@ -462,18 +580,23 @@ def _forget_kept_run(kept_run: _KeptRun | None) -> None:
         kept.forget_sessions([kept_run.session_id])
 
 
-def _keep_owner_output(user, run: NodeRun, kept_run: _KeptRun, output, *,
-                       language: str, used_keys: bool, dataset_paths: dict | None) -> None:
-    """Keep the output of an owner's run (:func:`_kept_run`) under the key a
+def _keep_run_output(user, run: NodeRun, kept_run: _KeptRun, output, *,
+                     language: str, used_keys: bool, dataset_paths: dict | None) -> None:
+    """Keep the output of a kept run (:func:`_kept_run`) under the key a
     viewer's run of the same step computes (``runs/viewer.py``), or forget
-    its session when it made none. Private when the owner's keys made it, or
-    anything it read."""
+    its session when it made none. An owner's is private when her keys made
+    it, or anything it read; an invited editor's is his account's alone
+    (``kept.account_private``)."""
     from utk_curio.backend.app.projects.services import _user_dir_key
     from utk_curio.backend.app.runs import kept
 
     if not (isinstance(output, dict) and output.get("path")):
         _forget_kept_run(kept_run)
         return
+    if kept_run.made_by == kept.MADE_BY_EDITOR:
+        private_to = kept.account_private(user.id)
+    else:
+        private_to = kept.OWNER_ONLY if (kept_run.private or used_keys) else None
     try:
         key = kept.step_key(
             packages=kept.packages_fingerprint(_user_dir_key(user)),
@@ -483,8 +606,7 @@ def _keep_owner_output(user, run: NodeRun, kept_run: _KeptRun, output, *,
         )
         kept.keep(
             run.dataflow_id, run.node_id, key, kept_run.session_id, output,
-            private_to=kept.OWNER_ONLY if (kept_run.private or used_keys) else None,
-            made_by=kept.MADE_BY_OWNER,
+            private_to=private_to, made_by=kept_run.made_by,
         )
     except Exception as e:  # noqa: BLE001 - the run's reply goes out either way
         print(f"[node_exec] could not keep the output of node {run.node_id}: "
@@ -546,7 +668,7 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
         # with its own error, where the sandbox would only say "not available".
         with left_out_files.failures() as unavailable:
             dataset_paths = resolve_dataset_paths(run.code, run.dataflow_id, user, dataset_formats)
-            exec_models = resolve_models(run.code, user)
+            exec_models = resolve_models(run.code, user, run.dataflow_id)
         if unavailable:
             return _unavailable_reply(user, run, input_ref, unavailable, started=t0), 200
         # Under isolation the sandbox gives each user a persistent work directory,
@@ -555,9 +677,14 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
         # the backend knows it: the sandbox has no notion of who is logged in, and
         # the in-process path ignores it entirely.
         user_key = exec_user_key(user)
-        collections, media_dir = resolve_exec_collections(run.code, user_key, user=user)
+        # The dataflow's collections, as its datasets above: for its owner and
+        # an editor she invited, those it lists, from her store.
+        collections, media_dir = resolve_exec_collections(
+            run.code, user_key, user=user, dataflow_id=run.dataflow_id,
+        )
         exec_secrets = resolve_secrets(run.code, user)
-        package_modules = resolve_package_modules(run.node_type, user_key, run.dataflow_id)
+        owners = owners_packages_for(user, run.dataflow_id)
+        package_modules = resolve_package_modules(run.node_type, user_key, run.dataflow_id, owners=owners)
         body.update({
             "dataset_paths": dataset_paths,
             "dataset_formats": dataset_formats,
@@ -571,6 +698,9 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
             **({"models": exec_models} if exec_models else {}),
             # And only when the node's package ships modules beside its templates.
             **({"package_modules": package_modules} if package_modules else {}),
+            # And only for an editor's run of the owner's dataflow: her node
+            # libraries, which an isolated run reads after the editor's own.
+            **library_keys_of(owners),
         })
     else:
         endpoint = '/execJs'
@@ -619,7 +749,7 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
     stderr = response_json['stderr']
     output = response_json['output']
     if kept_run is not None:
-        _keep_owner_output(
+        _keep_run_output(
             user, run, kept_run, output, language=language,
             used_keys=bool(exec_secrets), dataset_paths=dataset_paths,
         )
@@ -637,6 +767,9 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
     # Auto-install into the user store (not the public Data Catalog).
     from utk_curio.backend.app.datasets.application.auto_install import auto_install_node_output
 
+    # The dataflow the run's writes are of: none for another account's
+    # (:func:`_writes_dataflow_id`).
+    own_dataflow_id = _writes_dataflow_id(user, run)
     installed_dataset = None
     dataset_diagnostic = None
     if run.save_output_dataset and isinstance(output, dict) and run.node_id:
@@ -644,7 +777,7 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
             user=user,
             node_id=run.node_id,
             sandbox_output=output,
-            dataflow_id=run.dataflow_id,
+            dataflow_id=own_dataflow_id,
             node_name=run.node_name,
             node_type=run.node_type,
         )
@@ -665,7 +798,7 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
     record_runtime_outcome(
         user,
         node_id=run.node_id,
-        dataflow_id=run.dataflow_id,
+        dataflow_id=own_dataflow_id,
         code=run.code, stdout=stdout, stderr=stderr, output=output,
         duration_ms=(time.perf_counter() - t0) * 1000.0,
     )
@@ -714,8 +847,8 @@ def _unavailable_reply(user, run: NodeRun, input_ref: dict, unavailable: dict, *
     output = {'path': '', 'dataType': 'str'}
     duration_ms = (time.perf_counter() - started) * 1000.0
     record_runtime_outcome(
-        user, node_id=run.node_id, dataflow_id=run.dataflow_id, code=run.code,
-        stdout=[], stderr=stderr, output=output, duration_ms=duration_ms,
+        user, node_id=run.node_id, dataflow_id=_writes_dataflow_id(user, run),
+        code=run.code, stdout=[], stderr=stderr, output=output, duration_ms=duration_ms,
     )
     _monitor_counters.record_execution(
         language="python", node_type=run.node_type, ok=False, duration_ms=duration_ms,

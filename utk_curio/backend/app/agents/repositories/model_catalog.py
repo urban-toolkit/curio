@@ -180,24 +180,28 @@ def remember_chat_capabilities(
     user_key: str, api_type: str, base_url: str, model: str, capabilities: dict
 ) -> None:
     """Record what a trial found this endpoint's model can do beyond text
-    (``chat_capabilities``). Never raises."""
+    (``chat_capabilities``), and why (``cause``, when given). Never raises."""
     if not isinstance(capabilities, dict):
         return
     entries = _load_sidecar(user_key, _CHAT_CAPABILITIES_FILENAME, "endpoints")
-    entries[_chat_key(api_type, base_url, model)] = {
+    entry = {
         "tools": bool(capabilities.get("tools")),
         "structuredOutput": bool(capabilities.get("structuredOutput")),
         "reason": str(capabilities.get("reason") or ""),
-        "seenAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
+    if capabilities.get("cause"):
+        entry["cause"] = str(capabilities["cause"])
+    entry["seenAt"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    entries[_chat_key(api_type, base_url, model)] = entry
     _write_sidecar(user_key, _CHAT_CAPABILITIES_FILENAME, "endpoints", entries)
 
 
 def remembered_chat_capabilities(
     user_key: str, api_type: str, base_url: str, model: str
 ) -> dict | None:
-    """``{tools, structuredOutput, reason, seenAt}`` for this endpoint and
-    model, or None when it was never asked."""
+    """``{tools, structuredOutput, reason, cause, seenAt}`` for this endpoint
+    and model (no ``cause`` in a record kept before causes were), or None
+    when it was never asked."""
     entry = _load_sidecar(user_key, _CHAT_CAPABILITIES_FILENAME, "endpoints").get(
         _chat_key(api_type, base_url, model)
     )

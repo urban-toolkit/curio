@@ -221,6 +221,24 @@
     background: var(--curio-top-bar-bg-hover);
 }
 
+/* The owner's: the history before the version goes. */
+.clear {
+    justify-self: start;
+    min-height: 28px;
+    padding: 5px 10px;
+    border: 1px solid var(--curio-danger-border);
+    border-radius: var(--curio-radius-md);
+    background: transparent;
+    color: var(--curio-danger-text);
+    font: 500 12px/1.3 var(--curio-font-family);
+    text-align: left;
+    cursor: pointer;
+}
+
+.clear:hover {
+    background: var(--curio-danger-bg);
+}
+
 .thumbnail {
     width: 100%;
     max-width: 260px;

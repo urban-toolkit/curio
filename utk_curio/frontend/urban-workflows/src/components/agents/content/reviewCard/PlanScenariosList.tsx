@@ -1,16 +1,14 @@
 import React from "react";
 
-import type { AgentProposalPart } from "../../../../services/agents";
 import styles from "../AgentReviewCard.module.css";
-import { planScenarioLine, type PlanNodeReviewState } from "./reviewCardText";
+import { planScenarioLine, type PlanDisplay, type PlanNodeReviewState } from "./reviewCardText";
 
-/** #662: the scenarios a plan saves, reviewed BY NAME like its nodes and
- * connections: each with its color, its nodes, and for a duplicate what it
- * copies and the widget values it changes. A scenario is saved once all of
- * its nodes exist, by the plan's Apply or by the per-node Apply that creates
- * the last of them; the row says when it is. */
+/** #662: the scenarios a plan saved, BY NAME like its nodes and connections:
+ * each with its color, its nodes, and for a duplicate what it copies and the
+ * widget values it changes. They land with the plan; the row says each one
+ * saved. */
 export const PlanScenariosList: React.FC<{
-  part: AgentProposalPart;
+  part: PlanDisplay;
   planNodeState?: PlanNodeReviewState;
 }> = ({ part, planNodeState }) => {
   const scenarios = part.plan?.scenarios ?? [];

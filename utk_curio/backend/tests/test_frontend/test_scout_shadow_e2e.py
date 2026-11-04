@@ -38,6 +38,16 @@ A second test edits the lever, as a user does, and presses Commit edits:
 the scenario runs again with the edit, and its numbers move (see its
 docstring).
 
+Commit edits' run draws the maps only in its browser part, once the server's
+part has ended: until then each map shows the Done of its last drawing. The
+second test's ``held`` case plays the order the CI failure of run 40873036116
+had ("549969fc-... ended 'running'", 549969fc being the Buildings map): the
+end of the server's part waits until a read of the map's status finds that
+Done, and the run then starts drawing the map before the page does anything
+else (``_LATE_BROWSER_PART_JS``). So a wait for a map after Commit edits reads
+it once the run has ended, never on a Done from before the run reached it
+(``_commit`` in test_map_edits_e2e.py).
+
 The packages are in every account's store and their libraries are installed
 because the stack starts with ``--with-examples`` and this dataflow declares the
 packages.
@@ -424,11 +434,290 @@ def _below(dataflow: dict, node_id: str) -> list[str]:
     return sorted(reached)
 
 
+#: How long the held case keeps the end of the run's server part back, at
+#: most, for a read of the map's Done. It then lets it go anyway, and the case
+#: fails on its own check, which says how it was let go.
+LATE_BROWSER_PART_MS = 30000
+
+# Before the app's own scripts, for the held case: the order the CI failure
+# had, made to happen every time. *map* is the Buildings map; *after* is the
+# last node Commit edits' check waits on before it reads the maps, Towers
+# removed's statistics.
+#
+# 1. Commit edits' run stream: the result of *after* and every event behind
+#    it wait until the run has finished on the server. Then that result goes
+#    on, and the events behind it, the end of the server's part, wait for a
+#    read of the map's status that finds Done, the Done of the drawing it
+#    showed before the commit.
+# 2. That read lets them go, in a microtask: the page ends the server's part
+#    and starts the browser part, which draws the map again.
+# 3. React's scheduler renders what React defers in a task of its own,
+#    through a MessageChannel (as in test_save_as_package.py). From that
+#    release until the page's next task, what it posts runs in a microtask,
+#    and a message it had posted before runs then too. So the map shows
+#    running before anything else can read it.
+#
+# window.__curioTestLateBrowserPart records what was held, for the guard below.
+_LATE_BROWSER_PART_JS = r"""(map, after, lateMs) => {
+    const state = window.__curioTestLateBrowserPart = {
+        streams: 0, phase: 'off', gathered: 0, late: 0, doneReads: 0,
+        releasedBy: null, statusNextTask: null, earlyMessages: 0, soonMessages: 0,
+    };
+    const realGetAttribute = Element.prototype.getAttribute;
+    const mapNode = `.react-flow__node[data-id="${map}"]`;
+    const status = () => {
+        const el = document.querySelector(`${mapNode} [data-curio-node-status]`);
+        return el ? realGetAttribute.call(el, 'data-curio-node-status') : null;
+    };
+
+    // React's scheduler: its null messages, run in a microtask while `soon`.
+    const Channel = window.MessageChannel;
+    const onmessage = Object.getOwnPropertyDescriptor(MessagePort.prototype, 'onmessage');
+    const post = MessagePort.prototype.postMessage;
+    const handlers = new WeakMap();
+    const partners = new WeakMap();
+    const pending = new WeakMap();
+    const early = new WeakMap();
+    const schedulers = new Set();
+    const count = (counts, port) => counts.get(port) || 0;
+    let soon = false;
+    if (typeof Channel === 'function' && onmessage && onmessage.set) {
+        window.MessageChannel = function MessageChannel() {
+            const channel = new Channel();
+            partners.set(channel.port1, channel.port2);
+            partners.set(channel.port2, channel.port1);
+            return channel;
+        };
+        window.MessageChannel.prototype = Channel.prototype;
+        Object.defineProperty(MessagePort.prototype, 'onmessage', {
+            configurable: true,
+            enumerable: onmessage.enumerable,
+            get() {
+                return handlers.has(this) ? handlers.get(this) : onmessage.get.call(this);
+            },
+            set(handler) {
+                if (typeof handler !== 'function') {
+                    handlers.delete(this);
+                    onmessage.set.call(this, handler);
+                    return;
+                }
+                const port = this;
+                handlers.set(port, handler);
+                onmessage.set.call(port, (event) => {
+                    if (event.data === null) {
+                        // A message this script already ran early.
+                        if (count(early, port) > 0) {
+                            early.set(port, count(early, port) - 1);
+                            return;
+                        }
+                        pending.set(port, Math.max(0, count(pending, port) - 1));
+                    }
+                    handler.call(port, event);
+                });
+            },
+        });
+        MessagePort.prototype.postMessage = function (data, ...rest) {
+            const other = partners.get(this);
+            if (data === null && rest.length === 0 && other && handlers.has(other)) {
+                schedulers.add(other);
+                if (soon) {
+                    state.soonMessages += 1;
+                    const handler = handlers.get(other);
+                    queueMicrotask(() => handler.call(other, new MessageEvent('message', { data: null })));
+                    return undefined;
+                }
+                pending.set(other, count(pending, other) + 1);
+            }
+            return post.call(this, data, ...rest);
+        };
+    }
+    const runPostedEarly = () => {
+        for (const port of schedulers) {
+            if (count(pending, port) === 0 || !handlers.has(port)) continue;
+            pending.set(port, count(pending, port) - 1);
+            early.set(port, count(early, port) + 1);
+            state.earlyMessages += 1;
+            handlers.get(port).call(port, new MessageEvent('message', { data: null }));
+        }
+    };
+
+    // Commit edits' run stream.
+    let armed = false;
+    let release = null;
+    document.addEventListener('click', (event) => {
+        const target = event.target;
+        if (target instanceof Element && target.closest('[data-testid="interaction-update"]')) armed = true;
+    }, true);
+
+    const frameOf = (frame) => {
+        let event = 'message';
+        let data = '';
+        for (const line of frame.split('\n')) {
+            if (line.startsWith('event: ')) event = line.slice(7).trim();
+            else if (line.startsWith('data: ')) data += line.slice(6);
+        }
+        try {
+            return { event, payload: data ? JSON.parse(data) : null };
+        } catch (error) {
+            return { event, payload: null };
+        }
+    };
+
+    const holding = (body) => {
+        const reader = body.getReader();
+        const decoder = new TextDecoder();
+        const encoder = new TextEncoder();
+        const gathered = [];
+        const late = [];
+        let buffer = '';
+        let ended = false;
+        let timer = null;
+        state.phase = 'pass';
+        return new ReadableStream({
+            start(controller) {
+                // A stream the page stopped reading takes nothing more.
+                const send = (text) => {
+                    try {
+                        controller.enqueue(encoder.encode(text));
+                    } catch (stopped) {
+                        // Closed or errored: nothing is read from it any more.
+                    }
+                };
+                const shut = () => {
+                    try {
+                        controller.close();
+                    } catch (stopped) {
+                        // Closed or errored already.
+                    }
+                };
+                const goLate = () => {
+                    if (state.phase !== 'gather') return;
+                    if (timer !== null) clearTimeout(timer);
+                    state.phase = 'late';
+                    send(gathered.shift());
+                    late.push(...gathered.splice(0));
+                    state.late = late.length;
+                    release = (by) => {
+                        release = null;
+                        if (timer !== null) clearTimeout(timer);
+                        state.phase = 'released';
+                        state.releasedBy = by;
+                        soon = true;
+                        send(late.splice(0).join(''));
+                        if (ended) shut();
+                        // After the page's own microtask that reads what was sent.
+                        queueMicrotask(runPostedEarly);
+                        setTimeout(() => {
+                            state.statusNextTask = status();
+                            soon = false;
+                        }, 0);
+                    };
+                    timer = setTimeout(() => { if (release) release('timer'); }, lateMs);
+                };
+                const take = (frame) => {
+                    if (state.phase === 'pass') {
+                        const { event, payload } = frameOf(frame);
+                        if (event !== 'step_finished' || !payload || payload.nodeId !== after) {
+                            send(frame);
+                            return;
+                        }
+                        state.phase = 'gather';
+                        timer = setTimeout(goLate, lateMs);
+                    }
+                    if (state.phase === 'gather') {
+                        gathered.push(frame);
+                        state.gathered = gathered.length;
+                        if (frameOf(frame).event === 'run_finished') goLate();
+                        return;
+                    }
+                    if (state.phase === 'late') {
+                        late.push(frame);
+                        state.late = late.length;
+                        return;
+                    }
+                    send(frame);
+                };
+                const pump = () => reader.read().then(({ done, value }) => {
+                    if (done) {
+                        ended = true;
+                        buffer += decoder.decode();
+                        if (buffer) take(buffer);
+                        buffer = '';
+                        goLate();
+                        if (state.phase !== 'late') shut();
+                        return undefined;
+                    }
+                    buffer += decoder.decode(value, { stream: true });
+                    for (let sep = buffer.indexOf('\n\n'); sep >= 0; sep = buffer.indexOf('\n\n')) {
+                        take(buffer.slice(0, sep + 2));
+                        buffer = buffer.slice(sep + 2);
+                    }
+                    return pump();
+                }, (error) => {
+                    try {
+                        controller.error(error);
+                    } catch (closed) {
+                        // Closed already: nothing is left to read.
+                    }
+                });
+                pump();
+            },
+            cancel(reason) {
+                return reader.cancel(reason);
+            },
+        });
+    };
+
+    const realFetch = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+        const url = typeof input === 'string' ? input : String((input && input.url) || input || '');
+        if (!armed || !/\/api\/runs\/[^/?]+\/stream/.test(url)) return realFetch(input, init);
+        armed = false;
+        state.streams += 1;
+        return realFetch(input, init).then((response) => {
+            if (!response.ok || !response.body) return response;
+            Object.defineProperty(response, 'body', { configurable: true, value: holding(response.body) });
+            return response;
+        });
+    };
+
+    // The read that finds the map's Done lets the end of the server's part go.
+    Element.prototype.getAttribute = function (name) {
+        const value = realGetAttribute.call(this, name);
+        if (release && name === 'data-curio-node-status' && value === 'done' && this.closest(mapNode)) {
+            state.doneReads += 1;
+            const go = release;
+            release = null;
+            queueMicrotask(() => go('read'));
+        }
+        return value;
+    };
+}"""
+
+
+def _late_browser_part_script(map_id: str, after_id: str) -> str:
+    """``_LATE_BROWSER_PART_JS`` as an init script for the map *map_id*, with
+    the run's end held once the result of *after_id* has gone on."""
+    return f"({_LATE_BROWSER_PART_JS})({json.dumps(map_id)}, {json.dumps(after_id)}, {LATE_BROWSER_PART_MS});"
+
+
+def _assert_the_browser_part_came_late(page) -> None:
+    """The held case held what it plays: one Commit edits stream, the end of
+    its server part held after the statistics' result, let go by a read of
+    the map's Done, and the map running before the page's next task. Without
+    these the case would pass without the order the CI failure had."""
+    held = page.evaluate("() => window.__curioTestLateBrowserPart || null")
+    assert held and held["streams"] == 1 and held["late"] >= 1 and held["releasedBy"] == "read" \
+        and held["statusNextTask"] == "running", f"the held case did not hold the steps it plays: {held!r}"
+
+
+@pytest.mark.parametrize("browser_part", ["prompt", "held"])
 def test_an_edit_in_the_towers_lever_reaches_the_shadow_with_commit_edits(
     app_frontend: "FrontendPage",
     current_server: str,
     page,
     record_property,
+    browser_part,
 ):
     """Towers removed's Map Editor node is the scenario's lever: its code holds
     SCOUT's 15 removed buildings, one removal by building_id under a label, and
@@ -448,6 +737,12 @@ def test_an_edit_in_the_towers_lever_reaches_the_shadow_with_commit_edits(
        took; Existing, which did not run, keeps its mean. The lever's and its
        map's close-ups are the frames.
     5. The code is saved with the dataflow, SCOUT's entry under its label.
+
+    *browser_part* ``held`` has Commit edits' run start its browser part, which
+    draws the maps, only once a read of the Buildings map's status has found
+    the Done of its drawing before the commit, and then draw the map before
+    anything else reads it (``_LATE_BROWSER_PART_JS``): the order the CI
+    failure of run 40873036116 had.
     """
     require_project_page()
     require_user_auth()
@@ -478,6 +773,8 @@ def test_an_edit_in_the_towers_lever_reaches_the_shadow_with_commit_edits(
     assert sorted(statistics) == ["existing", "towers-removed"], statistics
     chart = _parts(dataflow)["chart"]
     shadow_map = _shadow_maps(dataflow)["towers-removed"]
+    if browser_part == "held":
+        page.add_init_script(_late_browser_part_script(buildings_map, statistics["towers-removed"]))
 
     session = stub_login_and_enter_workflow(
         page,
@@ -582,8 +879,13 @@ def test_an_edit_in_the_towers_lever_reaches_the_shadow_with_commit_edits(
     )
     _back_to_layers(page, lever)
     assert_autark_map_drawn(page, buildings_map, timeout=60000, attach_as="the towers lever's buildings map after the edit")
-    save_node_closeup(page, "scout-shadow-towers-lever", lever, test_name=LEVER_TEST_NAME, sweep_toasts=True)
-    save_node_closeup(page, "scout-shadow-towers-lever-map", buildings_map, test_name=LEVER_TEST_NAME, sweep_toasts=True)
+    if browser_part == "held":
+        _assert_the_browser_part_came_late(page)
+    else:
+        # The held case draws the same maps, later, and takes no close-ups.
+        save_node_closeup(page, "scout-shadow-towers-lever", lever, test_name=LEVER_TEST_NAME, sweep_toasts=True)
+        save_node_closeup(page, "scout-shadow-towers-lever-map", buildings_map, test_name=LEVER_TEST_NAME,
+                          sweep_toasts=True)
 
     # 5. The code is saved with the dataflow.
     save_dataflow(page)

@@ -43,6 +43,11 @@ nothing for its tiles.
   maps share one download of the module, each day's maps and plot draw it,
   the year's plot and the table stay as they were, and the page logs no
   error.
+* A visitor whose browser starts its GPU process late, as a fresh Chrome's
+  does on a GPU runner several test jobs share, still sees what the run on
+  open made: the switch to software compositing drops the request the page's
+  WebGPU check made while the page drew nothing, and the check asks again
+  once the page draws.
 
 The numbers are the CPU reference's (``tests/_support/crown_heights.py``,
 which ``test_scripts/test_bedford_shadow_example.py`` pins): the table's
@@ -238,6 +243,68 @@ COMPUTING = ("Computing...", "Results will be shown here once they are ready.")
 #: Before the page's own scripts: a browser with no WebGPU, as the
 #: walkthroughs make one.
 _NO_WEBGPU_JS = "Object.defineProperty(navigator, 'gpu', { configurable: true, value: undefined });"
+
+#: When the switch to software compositing answers the adapter request the
+#: page made while it drew nothing: 3562 ms after it, as in run 40777113421,
+#: where the request made at the end of the WebGPU check's 10 s wait for a
+#: frame came back null at 13562 ms, past the check's 3 s of retries.
+SWITCH_AFTER_MS = 3562
+
+#: The page's first adapter request goes once its WebGPU check's 10 s wait for
+#: a frame runs out. One made sooner means the page drew, which proves nothing.
+ASKED_AFTER_MS = 9000
+
+#: Before the page's own scripts: a browser whose GPU process starts late, as
+#: ``test_webgpu_adapter_e2e.py`` plays it, on the browser's own WebGPU. The
+#: page's animation frames are held from its start, as a page that draws
+#: nothing does; an adapter request made meanwhile waits for the switch to
+#: software compositing, which comes SWITCH_AFTER_MS after the first such
+#: request, answers every waiting request null and lets the frames come. A
+#: request made after the switch reaches the browser's WebGPU. Each request is
+#: logged, timed from the page's start. Without WebGPU it plays nothing.
+_LATE_GPU_START_JS = """(() => {
+    if (typeof GPU === 'undefined' || !navigator.gpu) return;
+    const frame = window.requestAnimationFrame.bind(window);
+    const cancel = window.cancelAnimationFrame.bind(window);
+    let held = new Map();
+    let nextId = -1;
+    window.requestAnimationFrame = (callback) => {
+        if (!held) return frame(callback);
+        const id = nextId--;
+        held.set(id, callback);
+        return id;
+    };
+    window.cancelAnimationFrame = (id) => {
+        if (held && held.delete(id)) return;
+        cancel(id);
+    };
+    const since = Date.now();
+    const log = window.__curioTestGpuStart = [];
+    const note = (what) => log.push({ what, ms: Date.now() - since });
+    const requestAdapter = GPU.prototype.requestAdapter;
+    let waiting = [];
+    let switchTimer = null;
+    const switchToSoftware = () => {
+        const dropped = waiting;
+        waiting = [];
+        dropped.forEach((resolve) => {
+            note('dropped');
+            resolve(null);
+        });
+        const deferred = [...held.values()];
+        held = null;
+        deferred.forEach((callback) => frame(callback));
+    };
+    GPU.prototype.requestAdapter = function (...args) {
+        if (held) {
+            note('held');
+            if (switchTimer === null) switchTimer = setTimeout(switchToSoftware, %d);
+            return new Promise((resolve) => waiting.push(resolve));
+        }
+        note('asked');
+        return requestAdapter.apply(this, args);
+    };
+})();""" % SWITCH_AFTER_MS
 
 #: The table node *id* draws, as text: its headers and each row's cells, or null.
 _TABLE_JS = """(id) => {
@@ -1208,6 +1275,110 @@ def test_a_visitor_in_a_private_window_goes_through_the_four_days(
             )
             answered = any(path.endswith("screenshot.png") for path in written)
             story = _page_story(page, console, reported) if answered else "\nThe page did not answer a screenshot."
+            if isinstance(failure, AssertionError):
+                raise AssertionError(f"{failure}{story}") from failure
+            print(story)
+            raise
+        finally:
+            ctx.close()
+
+
+def _gpu_start_said(page) -> str:
+    """The adapter requests the late GPU start saw, timed from the page's start."""
+    try:
+        log = page.evaluate("() => window.__curioTestGpuStart || null")
+    except Exception as exc:  # noqa: BLE001 - the story is told with what can be read
+        return f"could not be read: {exc}"
+    if log is None:
+        return "none: the page plays no late GPU start"
+    return ", ".join(f"{entry['what']} at {entry['ms']} ms" for entry in log) or "none"
+
+
+def _gpu_started_late(page) -> None:
+    """The page asked for an adapter only once its WebGPU check's wait for a
+    frame ran out, the switch dropped that request, and a request made after
+    the switch reached the browser's WebGPU. Otherwise the test proves
+    nothing."""
+    log = page.evaluate("() => window.__curioTestGpuStart || null") or []
+    said = _gpu_start_said(page)
+    assert log and log[0]["what"] == "held" and log[0]["ms"] >= ASKED_AFTER_MS, (
+        f"the page's first adapter request did not wait for the switch once its check's wait for a frame "
+        f"ran out, so this test proves nothing: {said}"
+    )
+    dropped = [at for at, entry in enumerate(log) if entry["what"] == "dropped"]
+    assert dropped, f"the switch dropped no request, so this test proves nothing: {said}"
+    assert any(entry["what"] == "asked" for entry in log[dropped[0]:]), (
+        f"no adapter request reached the browser's WebGPU after the switch: {said}"
+    )
+
+
+@pytest.mark.xdist_group("crown-heights-late-gpu")
+def test_a_visitor_whose_gpu_process_starts_late_still_sees_what_the_run_made(
+    app_frontend: "FrontendPage", current_server, browser, monkeypatch, request,
+):
+    """The private-window visit above, in a browser whose GPU process starts
+    late, as a fresh Chrome's does on a GPU runner several test jobs share
+    (#1017): in run 40777113421 that visit's table never drew. The page draws
+    nothing past the 10 s its WebGPU check waits for a frame, so the check
+    asks while the GPU process is still starting, and the switch to software
+    compositing answers that request null, past the check's 3 s of retries.
+    The dashboard runs its GPU steps on that check as it opens, with nothing
+    for a visitor to press. The page draws right after the switch, and the
+    check asks again: the table shows the CPU's months, the maps and the
+    plots draw, and what the run made of the day and of the year is the
+    CPU's. Only then does the test ask for an adapter itself: asked sooner,
+    its request would be the one the switch drops, and the page's would come
+    after the switch."""
+    require_project_page()
+    require_user_auth()
+    ids = _ids()
+    colors = _colors()
+    # The shared guest's copy, seeded as dev seeds it (see the link test).
+    guest = api_json(f"{current_server}/api/auth/signin/guest", "", method="POST", payload={})["token"]
+    api_json(f"{current_server}/api/projects", guest)
+    hosted = _serve_hosted(app_frontend, current_server, monkeypatch)
+
+    with _CompressingProxy(hosted) as proxied:
+        ctx = browser.new_context()
+        ctx.add_init_script(_LATE_GPU_START_JS)
+        page = ctx.new_page()
+        diagnostics.watch_browser_log(page)
+        console: list[str] = []
+        page.on("console", lambda message: console.append(f"[{message.type}] {message.text}"[:300]))
+        reported: list[str] = []
+        page.on("request", lambda request: (
+            reported.append(_client_error_report(request.post_data))
+            if request.method == "POST" and urlsplit(request.url).path.endswith(CLIENT_ERROR_PATH)
+            else None
+        ))
+        starts: list = []
+        page.on("response", lambda response: (
+            starts.append(response)
+            if response.request.method == "POST" and urlsplit(response.url).path.endswith("/dashboard/runs")
+            else None
+        ))
+        try:
+            page.goto(f"{proxied}/dashboard/{LINK_ID}", wait_until="domcontentloaded")
+            page.get_by_test_id("open-dataflow-link").wait_for(state="visible", timeout=45000)
+            if page.evaluate("() => !window.__curioTestGpuStart"):
+                # No WebGPU to start late: fails on CI's GPU job, skips elsewhere.
+                require_webgpu(page)
+            _shows_winter(page, ids, colors, "the link opened while the GPU process started")
+            _gpu_started_late(page)
+            require_webgpu(page)
+            on_open = _ran(starts)
+            _day_reads(on_open, ids, WINTER)
+            _year_reads(on_open, ids)
+        except Exception as failure:
+            # As in the private-window visit: this window's screenshot, nodes
+            # and log go with the failure, and the message says where each
+            # node stood and what the page's adapter requests were answered.
+            written = diagnostics.capture(
+                page, os.path.join(diagnostics.failure_dir(request.node.nodeid), "late-gpu-start"),
+            )
+            answered = any(path.endswith("screenshot.png") for path in written)
+            story = _page_story(page, console, reported) if answered else "\nThe page did not answer a screenshot."
+            story += f"\nThe page's adapter requests, from its start: {_gpu_start_said(page)}"
             if isinstance(failure, AssertionError):
                 raise AssertionError(f"{failure}{story}") from failure
             print(story)

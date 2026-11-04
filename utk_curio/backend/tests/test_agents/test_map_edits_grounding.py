@@ -22,6 +22,7 @@ import shutil
 from utk_curio.backend.tests._support.agent_routes import _auth
 from utk_curio.backend.tests.test_agents.test_source_grounding_routes import (
     _attach,
+    _changes,
     _create_tail,
     _install,
     _proposals,
@@ -29,6 +30,14 @@ from utk_curio.backend.tests.test_agents.test_source_grounding_routes import (
     _script,
     _tool_results,
 )
+
+
+def _landed_graph(body) -> dict:
+    """The nodes and connections the plan that landed with the turn put on
+    the canvas."""
+    from utk_curio.backend.tests.test_agents.test_routes_proposals import _landed_plan
+
+    return _landed_plan(body)["canvas"]
 
 NB = "agent.curio.node-builder@1"
 DFB = "agent.curio.dataflow-builder@1"
@@ -91,8 +100,8 @@ def _refusals(calls, tool: str) -> list[str]:
 
 
 class TestTheMintsHoldAnAgentsCodeToTheNodesReader:
-    """Code the node cannot read is never proposed: the model is told why, in
-    the node's own words, and corrects it."""
+    """Code the node cannot read never lands: the model is told why, in the
+    node's own words, and corrects it."""
 
     def test_node_create_refuses_map_edits_code_the_node_cannot_read(
         self, client, user_and_token, tmp_curio, monkeypatch,
@@ -103,7 +112,7 @@ class TestTheMintsHoldAnAgentsCodeToTheNodesReader:
         att = _attach(client, token, project, NB)
         calls = _script(monkeypatch, [_create_tail(UNREADABLE, node_type=EDIT), "I could not write it."])
         body = _run(client, token, project, att, "add a Map Editor node that removes building 2")
-        assert not _proposals(body), "code the Map Editor node cannot read was proposed"
+        assert not _proposals(body) and not _changes(body), "code the Map Editor node cannot read landed"
         [refusal] = _refusals(calls, "node.create")
         assert "Map Editor" in refusal and PROBLEM in refusal, refusal
 
@@ -119,7 +128,7 @@ class TestTheMintsHoldAnAgentsCodeToTheNodesReader:
         att = _attach(client, token, project, NB, target={"kind": "node", "targetId": "edit"})
         calls = _script(monkeypatch, [_write_tail("edit", UNREADABLE), "I could not write it."])
         body = _run(client, token, project, att, "remove building 2")
-        assert not _proposals(body), "code the Map Editor node cannot read was proposed"
+        assert not _proposals(body) and not _changes(body), "code the Map Editor node cannot read landed"
         [refusal] = _refusals(calls, "node.content.write")
         assert "Map Editor" in refusal and PROBLEM in refusal, refusal
 
@@ -129,35 +138,35 @@ class TestTheMintsHoldAnAgentsCodeToTheNodesReader:
             {"id": "edit", "type": EDIT, "content": content, "goal": "Remove building 2", "x": 700, "y": 0},
         ], [{"id": "e", "source": "load", "target": "edit", "sourceHandle": "out", "targetHandle": "in"}])
 
-    def test_code_the_node_reads_is_proposed_and_its_apply_names_the_agent(
+    def test_code_the_node_reads_lands_and_names_the_agent(
         self, client, user_and_token, tmp_curio, monkeypatch,
     ):
-        """The node's own reader takes the code, so it is proposed; applied,
-        the answer names the agent that wrote it, which the node's entry for
-        the change is named after."""
+        """The node's own reader takes the code, so it lands; what a canvas no
+        doc binds takes names the agent that wrote it, which the node's entry
+        for the change is named after."""
         user, token = user_and_token
         project = self._edit_project(client, user, token, NO_EDITS)
         _install(client, token, project, NB)
         att = _attach(client, token, project, NB, target={"kind": "node", "targetId": "edit"})
-        _script(monkeypatch, [_write_tail("edit", REMOVE_TWO), "Proposed."])
-        [proposal] = _proposals(_run(client, token, project, att, "remove building 2"))
-        applied = client.post(
-            f"/api/agents/projects/{project}/attachments/{att}/proposals/{proposal['proposalId']}/apply",
-            headers=_auth(token),
-        ).get_json()
-        assert applied["appliedContent"] == {"nodeId": "edit", "content": REMOVE_TWO_LANDED, "agent": "Node Builder"}
+        _script(monkeypatch, [_write_tail("edit", REMOVE_TWO), "Written."])
+        body = _run(client, token, project, att, "remove building 2")
+        assert not _proposals(body)
+        [landed] = body["changes"]
+        assert landed["canvas"] == {
+            "kind": "node-content-applied", "nodeId": "edit", "content": REMOVE_TWO_LANDED, "agent": "Node Builder",
+        }
 
     def test_the_code_the_node_holds_is_the_users_own_and_is_never_refused(
         self, client, user_and_token, tmp_curio, monkeypatch,
     ):
         """Code the node cannot read, which the user wrote into it, still runs;
-        proposing it again is not the agent's to refuse."""
+        writing it again is not the agent's to refuse."""
         user, token = user_and_token
         project = self._edit_project(client, user, token, UNREADABLE)
         _install(client, token, project, NB)
         att = _attach(client, token, project, NB, target={"kind": "node", "targetId": "edit"})
-        calls = _script(monkeypatch, [_write_tail("edit", UNREADABLE), "Proposed."])
-        assert _proposals(_run(client, token, project, att, "keep it")), _tool_results(calls[-1], "node.content.write")
+        calls = _script(monkeypatch, [_write_tail("edit", UNREADABLE), "Written."])
+        assert _changes(_run(client, token, project, att, "keep it")), _tool_results(calls[-1], "node.content.write")
 
 
 #: The two buildings a Map Editor node edits in the Solve tests.
@@ -267,12 +276,8 @@ class TestSolveHoldsAnAgentsCodeToTheNodesReader:
         _install(client, token, project, DFB, NB)
         att = _attach(client, token, project, DFB)
         _script(monkeypatch, [_reply])
-        [proposal] = _proposals(_run(client, token, project, att, "plan a what-if without building 2"))
-        applied = client.post(
-            f"/api/agents/projects/{project}/attachments/{att}/proposals/{proposal['proposalId']}/apply",
-            headers=_auth(token),
-        ).get_json()
-        edit = next(n["id"] for n in applied["appliedGraph"]["nodes"] if str(n.get("type", "")).startswith(EDIT))
+        graph = _landed_graph(_run(client, token, project, att, "plan a what-if without building 2"))
+        edit = next(n["id"] for n in graph["nodes"] if str(n.get("type", "")).startswith(EDIT))
         body = client.post(
             f"/api/agents/projects/{project}/attachments/{att}/solve",
             json={"verify": False}, headers=_auth(token),
@@ -408,7 +413,7 @@ class TestTheUsersOwnCodeIsNeverRefused:
 
 def _applied_what_if(client, user, token, monkeypatch, *, edit_intent, edit_code, loaders=1):
     """A Dataflow Builder plan of *loaders* loaders, each on a circle of a Map
-    Editor node, applied; the Node Builder writes each node's code when asked,
+    Editor node, landed; the Node Builder writes each node's code when asked,
     *edit_code* for the Map Editor node. Returns the project, the builder's
     attachment, the node ids by plan ref and the calls the model got."""
     project = _project(client, user, token, [])
@@ -437,14 +442,10 @@ def _applied_what_if(client, user, token, monkeypatch, *, edit_intent, edit_code
     _install(client, token, project, DFB, NB)
     att = _attach(client, token, project, DFB)
     calls = _script(monkeypatch, [_reply])
-    [proposal] = _proposals(_run(client, token, project, att, "plan a what-if without building 2"))
-    applied = client.post(
-        f"/api/agents/projects/{project}/attachments/{att}/proposals/{proposal['proposalId']}/apply",
-        headers=_auth(token),
-    ).get_json()
+    graph = _landed_graph(_run(client, token, project, att, "plan a what-if without building 2"))
     ids = {
         "edit" if str(node.get("type", "")).startswith(EDIT) else "load": node["id"]
-        for node in applied["appliedGraph"]["nodes"]
+        for node in graph["nodes"]
     }
     return project, att, ids, calls
 
@@ -636,7 +637,7 @@ class TestTheBehaviorIsReadAsARunFindsTheNodesPackage:
         att = _attach(client, token, project, NB)
         calls = _script(monkeypatch, [_create_tail(UNREADABLE, node_type=USER_EDITS), "I could not write it."])
         body = _run(client, token, project, att, "add a what-if node that removes building 2")
-        assert not _proposals(body), "code the user's Map Editor template cannot read was proposed"
+        assert not _proposals(body) and not _changes(body), "code the user's Map Editor template cannot read landed"
         [refusal] = _refusals(calls, "node.create")
         assert "Map Editor" in refusal and PROBLEM in refusal, refusal
 

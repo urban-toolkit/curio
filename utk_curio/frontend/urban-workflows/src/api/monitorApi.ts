@@ -22,7 +22,6 @@ export interface MonitorDeployment {
   authEnabled: boolean;
   projectsEnabled: boolean;
   guestLoginAllowed: boolean;
-  collabEnabled: boolean;
   factoryPublishAllowed: boolean;
   saveNodeOutputDefault: boolean;
   llmProviderConfigured: boolean;

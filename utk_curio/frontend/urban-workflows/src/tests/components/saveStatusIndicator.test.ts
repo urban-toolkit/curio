@@ -6,77 +6,95 @@ import path from "path";
  * while reviewing the agent-catalog recordings: the disk was simply absent).
  *
  * It used to render only when `saving || projectDirty || projectSavedAt`, so a
- * brand-new dataflow showed nothing — the one moment the state is most worth
+ * brand-new dataflow showed nothing: the one moment the state is most worth
  * stating, because nothing is on disk at all. Absence then had to be read as
  * either "saved" or "nothing to save", and it meant neither.
  *
- * The rule now: present whenever the viewer owns the dataflow; unsaved unless
- * what you see is on disk. "Saved" means that and only that, and the bar says
- * it in a word as well as a colour.
+ * The rule now: present whenever the viewer owns the dataflow. On a dataflow
+ * bound to its doc it reads Saved once the server has every change, and
+ * Saving... or Offline while changes wait; a canvas bound to no doc reads
+ * Unsaved unless what you see is on the server. "Saved" means that and only
+ * that, and the bar says it in a word as well as a colour.
  *
- * Source-read because UpMenu needs the whole provider stack to render; the live
- * behaviour is asserted in the `agent-catalog-adding-to-an-unsaved-dataflow`
- * walkthrough, which starts on `/dataflow/new` and reads the rendered state.
+ * Source-read for the rules that hold whatever the provider stack; the states
+ * as the bar renders them are in upMenuSave.test.tsx, and the live behaviour
+ * in the `agent-catalog-adding-to-an-unsaved-dataflow` walkthrough, which
+ * starts on `/dataflow/new` and reads the rendered state.
  */
 
 const SRC = path.resolve(__dirname, "../..");
-const UP_MENU = fs.readFileSync(
-  path.join(SRC, "components/menus/top/UpMenu.tsx"),
-  "utf8",
-);
-const STYLES = fs.readFileSync(
-  path.join(SRC, "components/menus/top/UpMenu.module.css"),
-  "utf8",
-);
-const TOKENS = fs.readFileSync(path.join(SRC, "styles/curioTokens.css"), "utf8");
+const read = (file: string) => fs.readFileSync(path.join(SRC, file), "utf8");
+const UP_MENU = read("components/menus/top/UpMenu.tsx");
+const SAVE_STATUS = read("components/menus/top/SaveStatus.tsx");
+const SAVE_STATE = read("providers/flow/useSaveState.ts");
+const STYLES = read("components/menus/top/UpMenu.module.css");
+const TOKENS = read("styles/curioTokens.css");
 
-/** The JSX from the save-status comment to the end of its button. */
+/** The status's JSX: its button, from the opening tag to the closing one. */
 function saveBlock(): string {
-  const at = UP_MENU.indexOf("Save status indicator");
+  const at = SAVE_STATUS.indexOf("<button");
   expect(at).toBeGreaterThan(-1);
-  const end = UP_MENU.indexOf("</button>", at);
+  const end = SAVE_STATUS.indexOf("</button>", at);
   expect(end).toBeGreaterThan(at);
-  return UP_MENU.slice(at, end);
+  return SAVE_STATUS.slice(at, end);
+}
+
+/** What the bar says for each state, as SaveStatus names them. */
+function labels(): Record<string, string> {
+  const table = SAVE_STATUS.match(/const LABEL: Record<SaveState, string> = \{([\s\S]*?)\};/);
+  expect(table).not.toBeNull();
+  return Object.fromEntries(
+    [...table![1].matchAll(/(\w+): "([^"]*)"/g)].map(([, state, label]) => [state, label]),
+  );
 }
 
 describe("the save status indicator", () => {
   it("is not gated on the dataflow having been saved before", () => {
     // The exact regression: `projectSavedAt` in the render guard hid the disk
     // on every dataflow that had never been written to disk.
-    expect(saveBlock()).not.toMatch(/\{\(saving \|\| projectDirty \|\| projectSavedAt\) &&/);
+    expect(UP_MENU).not.toMatch(/\{\(saving \|\| projectDirty \|\| projectSavedAt\) &&/);
+    expect(UP_MENU).not.toMatch(/projectSavedAt\)? &&\s*<SaveStatus/);
+    // Nor does the status itself render nothing in any state.
+    expect(SAVE_STATUS).not.toMatch(/return null/);
   });
 
   it("is shown to anyone who can save", () => {
     // The owner's tab: another account's dataflow, a watcher's or an
     // editor's, is saved by its owner's tab.
-    expect(saveBlock()).toContain("{savesHere && (");
+    expect(UP_MENU).toContain("{savesHere && <SaveStatus saving={saving} onSave={handleSave} />}");
     expect(UP_MENU).toContain('const savesHere = viewerMode !== "shared";');
   });
 
   it("treats a never-saved dataflow as unsaved", () => {
-    const block = saveBlock();
-    expect(block).toContain("!projectSavedAt");
-    expect(block).toMatch(/projectDirty \|\| !projectSavedAt[\s\S]{0,60}unsavedIcon/);
+    // A canvas bound to no doc: a dataflow never saved has nothing on the
+    // server, whatever it holds.
+    expect(SAVE_STATE).toMatch(
+      /if \(!provider\) \{[\s\S]{0,80}state: projectDirty \|\| !projectSavedAt \? "unsaved" : "saved"/,
+    );
+    expect(saveBlock()).toMatch(/done \? styles\.savedIcon : styles\.unsavedIcon/);
+    expect(SAVE_STATUS).toContain('const done = shown === "saved";');
   });
 
   it("names its state for anything that needs to read it", () => {
-    // The walkthrough asserts on this rather than on a hashed CSS class.
+    // The walkthroughs assert on these rather than on a hashed CSS class.
     const block = saveBlock();
-    expect(block).toContain('data-curio-save-state');
-    for (const state of ["saving", "unsaved", "saved"]) {
-      expect(block).toContain(`"${state}"`);
-    }
+    expect(block).toContain("data-curio-save-state={shown}");
+    expect(block).toContain('data-curio-changes-pending={pending ? "true" : "false"}');
+    expect(SAVE_STATE).toContain('export type SaveState = "saved" | "saving" | "offline" | "unsaved";');
+    expect(Object.keys(labels()).sort()).toEqual(["offline", "saved", "saving", "unsaved"]);
   });
 
   it("says which state it is in, in words", () => {
-    const block = saveBlock();
-    expect(block).toContain("Not saved yet - click to save");
+    expect(SAVE_STATUS).toContain("Not saved yet - click to save");
     // On the bar itself, not only in the tooltip: the colour alone is not
-    // something every reader can tell apart. Matched as the rendered label,
-    // not as words, because the comment above it quotes them too.
-    expect(block).toMatch(
-      /<span>\s*\{saving \? "Saving\.\.\." : projectDirty \|\| !projectSavedAt \? "Unsaved" : "Saved"\}\s*<\/span>/,
-    );
+    // something every reader can tell apart.
+    expect(saveBlock()).toMatch(/<span>\{LABEL\[shown\]\}<\/span>/);
+    expect(labels()).toEqual({
+      saved: "Saved",
+      saving: "Saving...",
+      offline: "Offline",
+      unsaved: "Unsaved",
+    });
   });
 
   it("keeps one colour for unsaved and another for saved, from the tokens", () => {

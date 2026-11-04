@@ -186,7 +186,7 @@ def outcomes(root: Path, first_run_only: bool = False):
 
 def kind_of(job: str) -> str:
     """The job a part belongs to: every e2e job is "e2e", unit-backend-3 is "unit-backend"."""
-    if job in ("test-gpu", "e2e-collab") or job.startswith("e2e-desktop-"):
+    if job == "test-gpu" or job.startswith("e2e-desktop-"):
         return "e2e"
     return re.sub(r"-\d+$", "", job)
 

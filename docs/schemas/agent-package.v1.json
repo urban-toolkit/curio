@@ -119,7 +119,7 @@
         "maxLength": 64,
         "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
       },
-      "description": "The skills the agent's runs may hold, by name (a folder of Curio's skills/). Its chat lists them, beyond those its preamble holds, and loads one with skill.read when a task needs it; a run with no tools is handed the ones its task needs. Without this field, every skill Curio ships; an empty list, none."
+      "description": "The skills the agent's runs may hold, by name: a skill Curio ships (a folder of its skills/) or one the account holds of its own. Its chat lists them, beyond those its preamble holds, and loads one with skill.read when a task needs it; a run with no tools is handed the ones its task needs. Without this field, every skill Curio ships; an empty list, none."
     },
     "roles": {
       "type": "array",
@@ -249,7 +249,7 @@
           "path": {
             "type": "string",
             "pattern": "^(?:curio:)?[A-Za-z0-9_.][A-Za-z0-9_./-]*$",
-            "description": "Path to the prompt file inside the package, relative to its root. Must be contained inside the package: no leading '/', no '..' segment, and no leading '-'. The upload flow writes every prompt as 'prompts/<filename>.txt', so a manifest that names anything else cannot be imported through the UI even though the path itself is legal. Or 'curio:<path>', a page of Curio's agent text by its path in the base entry, such as 'curio:default_preamble.md', the preamble Curio shares with every agent: it is read from Curio, rendered, an upload carries no file for it, and an export carries it as 'prompts/<path>'. A 'curio:' path that leads out of the base entry, or names no page it lists, is refused."
+            "description": "Path to the prompt file inside the package, relative to its root. Must be contained inside the package: no leading '/', no '..' segment, and no leading '-'. Or 'curio:<path>', a page of Curio's agent text by its path in the base entry, such as 'curio:default_preamble.md', the preamble Curio shares with every agent: it is read from Curio, rendered, an upload carries no file for it, and an export carries it as 'prompts/<path>'. A 'curio:' path that leads out of the base entry, or names no page it lists, is refused."
           },
           "runs": {
             "type": "string",

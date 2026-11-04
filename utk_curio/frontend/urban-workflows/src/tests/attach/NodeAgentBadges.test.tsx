@@ -5,6 +5,11 @@ const mockCtx = jest.fn();
 jest.mock("../../providers/agents/AgentAttachmentsProvider", () => ({
   useAgentAttachmentsContext: () => mockCtx(),
 }));
+// The barrel the badges read the context from also holds the hook that names
+// the dataflow, which reads the flow state. The badges read none of it, and
+// FlowProvider's own imports reach vega's ES module build, which this Jest
+// setup does not transform; agentDockOverlaySlide.test.tsx mocks it the same way.
+jest.mock("../../providers/FlowProvider", () => ({ useFlowContext: () => ({}) }));
 
 import { NodeAgentBadges } from "../../components/agents/attach/NodeAgentBadges";
 

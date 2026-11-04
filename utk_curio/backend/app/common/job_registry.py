@@ -7,10 +7,12 @@ client that disconnects only unsubscribes and the job keeps running.
 
 One :class:`JobRegistry` per kind of work: agent jobs key on an attachment,
 dataflow runs on a dataflow. Each registry allows one live job per key, caps
-live jobs per user, and keeps finished jobs for a while so a reconnecting
-client can still replay them. Jobs do not survive a restart: the registry is
-the source of truth for liveness and the event log only, and whatever owns
-the work persists its own record.
+live jobs per user (a registry may set no cap), and keeps finished jobs for a
+while so a reconnecting client can still replay them. What follows a job's end
+(``on_finish``, such as the next chat turn waiting for its attachment) runs once
+the job is no longer live. Jobs do not survive a restart: the registry is the
+source of truth for liveness and the event log only, and whatever owns the work
+persists its own record.
 """
 
 from __future__ import annotations
@@ -83,7 +85,8 @@ class JobRegistry:
     """Live jobs of one kind of work, under one lock.
 
     *busy_message* is the refusal when a job already runs for a key,
-    *cap_message* the one when a user is at *max_active_per_user*.
+    *cap_message* the one when a user is at *max_active_per_user*, which is
+    None for a registry that caps no user.
     """
 
     def __init__(
@@ -91,7 +94,7 @@ class JobRegistry:
         *,
         name: str,
         kinds: Iterable[str],
-        max_active_per_user: int,
+        max_active_per_user: int | None,
         finished_ttl_seconds: float,
         max_events: int,
         busy_message: str,
@@ -156,7 +159,7 @@ class JobRegistry:
             current = self._by_key.get((user_key, key))
             if current and (job := self._jobs.get(current)) is not None and job.live:
                 raise JobRefused(self.busy_message, 409, job_id=job.job_id)
-            if self._active_count(user_key) >= self.max_active_per_user:
+            if self.max_active_per_user is not None and self._active_count(user_key) >= self.max_active_per_user:
                 raise JobRefused(self.cap_message, 429)
 
     def start(
@@ -170,11 +173,14 @@ class JobRegistry:
         events: Iterator[tuple[str, Any]],
         app_context: Callable | None = None,
         redact_values: dict | None = None,
+        on_finish: Callable[[Job], None] | None = None,
     ) -> Job:
         """Register *job_id* and drive *events* (a ``(kind, payload)`` generator)
         on a daemon thread. An exception in the generator becomes a terminal
         ``error`` event, never a lost job, with *redact_values* taken out of its
-        text."""
+        text. *on_finish* is called with the job on its thread once it is no
+        longer live and its subscribers have its end, so it may start the next
+        job of the same key."""
         if kind not in self.kinds:
             raise ValueError(f"unknown job kind {kind!r}")
         self.check_can_start(user_key, key)
@@ -196,14 +202,14 @@ class JobRegistry:
             except Exception:  # not under Flask (unit tests, tools): run bare
                 app_context = None
         thread = threading.Thread(
-            target=self._run, args=(job, events, app_context), daemon=True,
+            target=self._run, args=(job, events, app_context, on_finish), daemon=True,
             name=f"{self.name}-job-{kind}-{job_id[:8]}",
         )
         job.thread = thread
         thread.start()
         return job
 
-    def _run(self, job: Job, events: Iterator[tuple[str, Any]], app_context=None) -> None:
+    def _run(self, job: Job, events: Iterator[tuple[str, Any]], app_context=None, on_finish=None) -> None:
         status = "done"
         try:
             if app_context is not None:
@@ -228,6 +234,12 @@ class JobRegistry:
                 for q in job.subscribers:
                     q.put(_SENTINEL)
                 job.subscribers.clear()
+            if on_finish is not None:
+                try:
+                    on_finish(job)
+                except Exception:  # what follows a job never takes its thread down unlogged
+                    log.error("%s job %s (%s): what follows its end failed:\n%s", self.name,
+                              job.job_id, job.kind, traceback.format_exc())
 
     @staticmethod
     def publish(job: Job, item: tuple[str, Any]) -> None:

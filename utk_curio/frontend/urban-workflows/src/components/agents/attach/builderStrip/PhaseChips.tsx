@@ -4,8 +4,8 @@ import { AgentRunStatusLine } from "../AgentRunStatusLine";
 import styles from "../AgentBuilderStrip.module.css";
 import { PHASES, PHASE_RANK } from "./builderStripDerived";
 
-/** The phase chips (Plan → Review → Solve → Ready) and, while a batch runs,
- * the shared running-status line (dev/83) beside them. */
+/** The phase chips (Plan → Solve → Ready) and, while a batch runs, the shared
+ * running-status line (dev/83) beside them. */
 export const PhaseChips: React.FC<{
   phase: string;
   activeBatchLabel: string | null;

@@ -50,7 +50,10 @@
     "reactflow": "^11.11.4",
     "socket.io-client": "^4.8.1",
     "uuid": "^14.0.0",
-    "vega-lite": "^6.4.3"
+    "vega-lite": "^6.4.3",
+    "y-monaco": "0.1.6",
+    "y-protocols": "1.0.7",
+    "yjs": "13.6.33"
   },
   "overrides": {
     "uuid": "^14.0.0",

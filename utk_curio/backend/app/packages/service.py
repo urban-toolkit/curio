@@ -29,6 +29,7 @@ from utk_curio.backend.app.packages.application.defaults_install import (
 )
 from utk_curio.backend.app.packages.domain.errors import PackageServiceError
 from utk_curio.backend.app.packages.application.project_packages import (
+    OwnersPackages,
     detach_from_all_projects,
     get_project_lockfile,
     install_to_project,
@@ -78,7 +79,12 @@ from utk_curio.backend.app.packages.application.templates import (
     template_is_executable,
 )
 from utk_curio.backend.app.packages.application.node_templates import installed_template, template_behavior
-from utk_curio.backend.app.packages.application.package_skills import dataflow_skill_folders
+from utk_curio.backend.app.packages.application.package_skills import (
+    dataflow_skill_folders,
+    package_name,
+    package_skill_folders,
+    package_skill_names,
+)
 from utk_curio.backend.app.packages.builder.factory import FactoryError
 
 from utk_curio.backend.app.packages.application.store_install import (
@@ -121,6 +127,7 @@ from utk_curio.backend.app.packages.domain.package_id import (
 from utk_curio.backend.app.packages.domain.manifest import PackageManifest
 from utk_curio.backend.app.packages.domain.dataflow_categories import declared_dataflow_categories
 from utk_curio.backend.app.packages.domain.spec_packages import (
+    backfilled_packages,
     dir_name_from_model_ref,
     dir_name_from_node_type,
     is_package_node_type,
@@ -154,6 +161,7 @@ __all__ = [
     "PackageId",
     "PackageManifest",
     "declared_dataflow_categories",
+    "backfilled_packages",
     "dir_name_from_model_ref",
     "dir_name_from_node_type",
     "is_package_node_type",
@@ -190,6 +198,7 @@ __all__ = [
     "get_project_lockfile",
     "install_to_project",
     "uninstall_from_project",
+    "OwnersPackages",
     "InstallOutcome",
     "provision_declared_deps",
     "provision_python_deps",
@@ -220,6 +229,9 @@ __all__ = [
     "installed_template",
     "template_behavior",
     "dataflow_skill_folders",
+    "package_name",
+    "package_skill_folders",
+    "package_skill_names",
     "template_content_kind",
     "template_flags",
     "template_is_executable",

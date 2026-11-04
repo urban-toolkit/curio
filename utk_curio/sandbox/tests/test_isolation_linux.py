@@ -412,6 +412,53 @@ def test_one_user_does_not_land_in_anothers_directory(isolated, workspace):
     assert other["output"]["dataType"] == "bool"
 
 
+def test_an_editors_run_imports_the_owners_libraries_after_his_own(isolated, workspace, monkeypatch):
+    """A run of an editor the dataflow's owner invited, as ``/exec`` takes it
+    (``library_keys``, which the backend sends for such a run alone): the
+    child imports a library only she installed from her folder, and one both
+    installed from his own, which comes first. Her own run, and the run of an
+    account she never invited, read their own folder alone."""
+    import json
+
+    from utk_curio.sandbox.app import api, app
+    from utk_curio.sandbox.isolation import runner, supervisor
+    from utk_curio.sandbox.util.parsers import _shared_data_dir
+
+    monkeypatch.setattr(api, "_isolation_state", (runner.execute_isolated, isolated))
+    installed = {"7": {"flood_lib": "hers", "tide_lib": "hers"}, "8": {"tide_lib": "his"}}
+    for key, libraries in installed.items():
+        folder = supervisor.user_overlay_dir(str(_shared_data_dir()), key)
+        os.makedirs(folder, exist_ok=True)
+        for name, whose in libraries.items():
+            with open(os.path.join(folder, f"{name}.py"), "w") as f:
+                f.write(f"WHOSE = {whose!r}\n")
+
+    def imported(user_key, **body):
+        resp = app.test_client().post("/exec", json={
+            "code": (
+                "    import importlib\n"
+                "    found = []\n"
+                "    for name in ('flood_lib', 'tide_lib'):\n"
+                "        try:\n"
+                "            found.append(name + '=' + importlib.import_module(name).WHOSE)\n"
+                "        except ImportError:\n"
+                "            found.append(name + '=none')\n"
+                "    print(' '.join(found))\n"
+                "    return 1\n"
+            ),
+            "file_path": "", "nodeType": "curio.builtin/computation-analysis", "dataType": "",
+            "session_id": "session-editor-libraries", "save_dataset": False, "user_key": user_key, **body,
+        })
+        reply = json.loads(resp.get_data(as_text=True))
+        resp.close()
+        assert reply["stderr"] == "", reply["stderr"]
+        return reply["stdout"]
+
+    assert "flood_lib=hers tide_lib=his" in imported("8", library_keys=["7"])
+    assert "flood_lib=hers tide_lib=hers" in imported("7")
+    assert "flood_lib=none tide_lib=none" in imported("9")
+
+
 # ---------------------------------------------------------------------------
 # Escapes. The reason this work exists.
 # ---------------------------------------------------------------------------

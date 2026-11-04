@@ -5,8 +5,10 @@ import { LEAVE_DATAFLOW, useLeaveGuard } from "../../../hook/useLeaveGuard";
 import {
   attachmentDisplayName,
   declaresCapability,
+  landsAsAChange,
   ORCHESTRATE_CAPABILITY,
   sessionTokenTotals,
+  writtenBySomeoneElse,
   type AgentAttachment,
   type AgentSessionTurn,
   type AgentRunStatus,
@@ -34,6 +36,7 @@ import { IntentMessage } from "./chat/IntentMessage";
 import { PendingReplyRow } from "./chat/PendingReplyRow";
 import { SuggestedPromptsRow } from "./chat/SuggestedPromptsRow";
 import { useConversationTitle } from "./chat/useConversationTitle";
+import { WaitingAskRow } from "./chat/WaitingAskRow";
 import {
   canvasUnchangedFor,
   suggestedPromptsOf,
@@ -41,6 +44,7 @@ import {
   targetTooltipFor,
   turnMetaFor,
 } from "./chat/chatPanelDerived";
+import type { WaitingAsk } from "../../../providers/agents/turnAsks";
 
 /**
  * Chat panel for one attached agent, styled to the approved concept screens
@@ -61,6 +65,12 @@ import {
 export const AgentChatPanel: React.FC<{
   attachment: AgentAttachment;
   turns: AgentSessionTurn[];
+  /** The viewer's account. The owner and the editors the owner invited share
+   * the chat, and a message someone else wrote names its writer. */
+  viewerAccount?: string | null;
+  /** An invited editor's chat: an install a proposal makes waits for the
+   * owner's review in place of its Apply and Dismiss. */
+  installsWaitForOwner?: boolean;
   /**
    * Display name of what this agent is attached to, for the header.
    *
@@ -93,29 +103,31 @@ export const AgentChatPanel: React.FC<{
   /** Transient tool-activity lines for the in-flight send (memo dev/41). */
   toolActivity?: string[];
   /** This attachment's live run status (memo dev/80) — drives the status
-   * strip and the per-attachment send disable. Pass null for "wired, idle"
-   * (the send busy state then follows the provider, keyed per attachment);
-   * omit entirely to fall back to the panel-local sending flag. Without it
-   * the strip still derives a finished state from the last turn's execution
-   * record. */
+   * strip. Pass null for "wired, idle": the provider then follows each
+   * attachment's asks, and a running turn never holds the composer back, as
+   * an ask sent meanwhile waits its turn; omit entirely to fall back to the
+   * panel-local sending flag. Without it the strip still derives a finished
+   * state from the last turn's execution record. */
   runStatus?: AgentRunStatus | null;
+  /** The asks waiting their turn after the running one, in order. */
+  waitingAsks?: WaitingAsk[];
+  /** Stop the running turn: whoever asked it, the owner or an editor may.
+   * Omitted → no Stop. */
+  onStopTurn?: () => Promise<void>;
+  /** Withdraw a waiting ask the viewer asked. Omitted → no Withdraw. */
+  onWithdrawAsk?: (askId: string) => Promise<void>;
   /** Opens the shared settings modal at the Attached-instance scope (memo
    * dev/42) — the labeled cog beneath the header (the docs/08 anatomy slot;
    * never in the DEC-042 header itself). Omitted → no cog. */
-  /** Review-before-apply actions (memo dev/41); omitted → cards render inert. */
-  /** Resolves with the apply result when the caller has one (dev/105 A3: the
-   * package install review walks `followUpProposals` from it). */
-  onApplyProposal?: (proposalId: string) => Promise<{ followUpProposals?: string[] } | void>;
+  /** An install's review actions (memo dev/41); omitted → its cards render inert. */
+  onApplyProposal?: (proposalId: string) => Promise<unknown>;
   onDismissProposal?: (proposalId: string) => Promise<void>;
-  /** dev/67-5: per-node plan review actions (Simulation Mode: create). */
-  onApplyPlanNode?: (proposalId: string, ref: string) => Promise<void>;
-  onSavePlanGoal?: (proposalId: string, ref: string, goal: string) => Promise<void>;
-  /** dev/67-8: the connection review stage. */
-  onApplyPlanEdges?: (proposalId: string, indices?: number[]) => Promise<void>;
-  /** dev/71: per-row Solve/Run on the plan card. */
+  /** Undo a change this agent made; omitted → its change cards offer none. */
+  onUndoChange?: (changeId: string) => Promise<unknown>;
+  /** dev/71: per-row Solve/Run on a landed plan's card. */
   onSolvePlanNode?: (ref: string) => Promise<void>;
   onRunPlanNode?: (ref: string) => Promise<void>;
-  /** dev/67-9: the Simulation Mode driver + its narration. */
+  /** dev/67-9: Build & validate over the landed plan + its narration. */
   onSimulate?: (mode: "step" | "auto") => Promise<unknown>;
   onCancelSimulate?: () => Promise<void>;
   simulationActivity?: string;
@@ -176,6 +188,8 @@ export const AgentChatPanel: React.FC<{
 }> = ({
   attachment,
   turns,
+  viewerAccount = null,
+  installsWaitForOwner = false,
   targetName = null,
   index = 1,
   total = 1,
@@ -190,11 +204,12 @@ export const AgentChatPanel: React.FC<{
   onClose,
   toolActivity = [],
   runStatus,
+  waitingAsks = [],
+  onStopTurn,
+  onWithdrawAsk,
   onApplyProposal,
   onDismissProposal,
-  onApplyPlanNode,
-  onSavePlanGoal,
-  onApplyPlanEdges,
+  onUndoChange,
   onSolvePlanNode,
   onRunPlanNode,
   onSimulate,
@@ -226,8 +241,10 @@ export const AgentChatPanel: React.FC<{
   // A link the agent writes to another Curio page leaves this dataflow, so it
   // asks first when there is unsaved work, like every other way out of it.
   const navigate = useNavigate();
-  const { projectDirty } = useFlowContext();
-  const { leave, dialog: leaveDialog } = useLeaveGuard(Boolean(projectDirty), LEAVE_DATAFLOW);
+  const { projectDirty, whenChangesKept } = useFlowContext();
+  const { leave, dialog: leaveDialog } = useLeaveGuard(Boolean(projectDirty), LEAVE_DATAFLOW, {
+    settle: whenChangesKept,
+  });
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   // The app's own dialog, not the browser's (#197).
@@ -267,10 +284,11 @@ export const AgentChatPanel: React.FC<{
 
   // Per-reply execution status (memo dev/80, amended: the status rides each
   // agent message, not a global strip). The review chip derives from the
-  // attachment's proposal mirrors — it self-clears on apply/dismiss — and
-  // marks only the NEWEST reply.
+  // attachment's install mirror: it self-clears on apply/dismiss: and
+  // marks only the NEWEST reply. A review of a change saved before agents
+  // changed the dataflow directly awaits nothing: it can only be dismissed.
   const pendingReview =
-    attachment.activeProposal?.status === "pending" || attachment.planProposal?.status === "pending";
+    attachment.activeProposal?.status === "pending" && !landsAsAChange(attachment.activeProposal.tool);
   const runInFlight = runStatus?.phase === "running";
   const lastAgentIdx = useMemo(() => {
     for (let i = turns.length - 1; i >= 0; i--) if (turns[i].role === "agent") return i;
@@ -288,11 +306,22 @@ export const AgentChatPanel: React.FC<{
     () => sessionTokenTotals(turns, runInFlight ? runStatus?.liveUsage : null),
     [turns, runInFlight, runStatus?.liveUsage],
   );
-  // Per-attachment send disable (dev/80): when the provider wires a status
-  // (null = wired, idle) the busy state follows it, keyed by attachment — so
-  // cycling agents mid-run no longer leaks the panel-local `sending` flag
-  // into another chat. Unwired (tests, previews): the local flag governs.
-  const sendBusy = runStatus === undefined ? sending : runInFlight;
+  // A running turn never holds the composer back: a message sent meanwhile is
+  // asked at once and waits its turn on the server. When the provider wires a
+  // status (null = wired, idle) it follows each attachment's asks, so the
+  // panel-local `sending` flag never leaks into another chat as agents are
+  // cycled. Unwired (tests, previews): the local flag governs.
+  const sendBusy = runStatus === undefined ? sending : false;
+  // Stop asked for the running turn: it stops at its next step.
+  const [stopping, setStopping] = useState(false);
+  useEffect(() => {
+    if (!runInFlight) setStopping(false);
+  }, [runInFlight]);
+  const stop = () => {
+    if (!onStopTurn || stopping) return;
+    setStopping(true);
+    onStopTurn().catch(() => setStopping(false));
+  };
 
   const suggested = useMemo(() => suggestedPromptsOf(turns), [turns]);
 
@@ -375,11 +404,10 @@ export const AgentChatPanel: React.FC<{
     onApplyProposal,
     beginPackageReview: packageReview.beginReview,
     onDismissProposal,
-    onApplyPlanNode,
-    onSavePlanGoal,
-    onApplyPlanEdges,
+    onUndoChange,
     onSolvePlanNode,
     onRunPlanNode,
+    installsWaitForOwner,
   };
 
   return (
@@ -466,9 +494,17 @@ export const AgentChatPanel: React.FC<{
         ) : (
           turns.map((t, i) =>
             t.role === "user" ? (
-              <div key={i} className={styles.msgUser}>
-                {t.text}
-              </div>
+              writtenBySomeoneElse(t.by, viewerAccount) ? (
+                // A message someone else wrote names its writer above it.
+                <div key={i} className={styles.userTurn} data-curio-writer={t.by?.name}>
+                  <div className={styles.msgWriter}>{t.by?.name}</div>
+                  <div className={styles.msgUser}>{t.text}</div>
+                </div>
+              ) : (
+                <div key={i} className={styles.msgUser}>
+                  {t.text}
+                </div>
+              )
             ) : (
               <AgentTurn
                 key={i}
@@ -490,6 +526,16 @@ export const AgentChatPanel: React.FC<{
         {runInFlight && !streamingTurnVisible && runStatus ? (
           <PendingReplyRow tint={tint} startedAt={runStatus.startedAt} />
         ) : null}
+        {runInFlight && onStopTurn ? (
+          <div className={styles.systemLine}>
+            <button type="button" className={styles.retry} onClick={stop} disabled={stopping} data-agent-turn-stop="">
+              {stopping ? "Stopping…" : "Stop"}
+            </button>
+          </div>
+        ) : null}
+        {waitingAsks.map((ask) => (
+          <WaitingAskRow key={ask.askId} ask={ask} viewerAccount={viewerAccount} onWithdraw={onWithdrawAsk} />
+        ))}
       </div>
       <TranscriptJumpButton
         visible={!atBottom}

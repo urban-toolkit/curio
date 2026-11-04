@@ -23,6 +23,85 @@
   font-size: 12px;
 }
 
+/* A skill's import: two ways to pick, then the review of what was picked. */
+.pickers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.pickerLabel {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--curio-text-primary);
+}
+
+.review {
+  margin-top: 12px;
+  max-height: 52vh;
+  overflow-y: auto;
+  border: 1px solid var(--curio-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--curio-surface-muted);
+}
+
+.reviewSection + .reviewSection {
+  margin-top: 10px;
+}
+
+.reviewLabel {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--curio-text-secondary, var(--curio-text-meta));
+}
+
+.reviewText {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--curio-text-primary);
+}
+
+.reviewList {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--curio-text-primary);
+}
+
+.nameRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.nameInput {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--curio-border);
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-size: 12px;
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+}
+
+.agentRow {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--curio-text-primary);
+}
+
 .summary {
   margin: 10px 0 0;
   font-size: 12px;

@@ -27,7 +27,6 @@ import { askPage, forgetPageSteps, keepPageResult } from "../../services/runs/da
 import { dashboardSourceNodeIds } from "../../utils/dashboardLayout";
 import { resolveNodeDisplayLabel } from "../../utils/palettePackageFactoryDraft";
 import { dashboardValues, type DashboardValues } from "../../utils/widgets/dashboardControls";
-import type { WidgetDef } from "../../utils/widgets/widgetModel";
 import type { IOutput } from "./flowTypes";
 import { STOPPED_MESSAGE, nodeChangeFor, type NodeChange } from "./serverRunSteps";
 import type { StepOutcomes } from "./useStepOutcomes";
@@ -58,8 +57,6 @@ interface FollowedDashboardRun {
 interface Saved {
     /** The outputs the page opened with, by node. */
     outputs: Map<string, IOutput>;
-    /** The widgets each pinned node is saved with. */
-    widgets: Map<string, WidgetDef[]>;
 }
 
 /** usePlayAll's playNodes: run nodes as Run All would, each reported when done. */
@@ -339,18 +336,10 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
         const nodes = reactFlow.getNodes();
         savedRef.current = {
             outputs: new Map(outputsRef.current.map((output) => [output.nodeId, output])),
-            widgets: new Map(
-                nodes
-                    .filter((node) => node.data?.dashboardPinned && Array.isArray(node.data.widgets))
-                    .map((node) => [node.id, JSON.parse(JSON.stringify(node.data.widgets)) as WidgetDef[]]),
-            ),
         };
         const sources = dashboardSourceNodeIds(nodes, reactFlow.getEdges());
         if ([...sources].some((nodeId) => !savedRef.current?.outputs.has(nodeId))) void start();
     };
-
-    /** The widgets each pinned node is saved with: Save layout writes these, never a tried value. */
-    const savedWidgets = () => savedRef.current?.widgets;
 
     // Leaving the page stops following; what the runs made is not read again.
     useEffect(() => () => {
@@ -360,5 +349,5 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
         forgetPageSteps();
     }, []);
 
-    return { active, stopped, start, opened, savedWidgets };
+    return { active, stopped, start, opened };
 }

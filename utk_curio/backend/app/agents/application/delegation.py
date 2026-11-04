@@ -302,6 +302,8 @@ def run_delegate(
     attachment_id: str | None,
     dataflow_block: str | None = None,
     refused: str | None = None,
+    asker=None,
+    uses_skills=None,
 ) -> tuple[str, str, dict]:
     """One synchronous, depth-1 child run (DEC-046 — direct provider-port code).
 
@@ -317,7 +319,12 @@ def run_delegate(
     The child is handed the skills its task needs (``skill_runs.for_delegated``),
     and *refused*, the kind a check recorded when it refused the round before
     (a Solve round's), adds the skills of what that check guards. Only the
-    runtime passes it, as it does *dataflow_block*.
+    runtime passes it, as it does *dataflow_block*. *asker* is the person a
+    job's thread runs the child for, which the request names otherwise: an
+    editor's child holds the skills of the packages the owner added.
+    *uses_skills*, when given, is told the names of the skills the child
+    holds before it asks its provider: its agent at work in the dataflow's
+    room lists them.
 
     Returns ``(status, result_text, child_record)``: ``status`` is
     ``"ok"``/``"error"``, ``result_text`` is the bounded child reply (or the
@@ -325,6 +332,12 @@ def run_delegate(
     own pins, own ledger reserve→settle under the child's effective policy,
     ``parentExecutionId`` link — which the caller stores under the parent
     record's ``delegations``. Never raises: a child failure is data.
+
+    A child whose model stopped at the output cap failed: its reply is only
+    the start of one, so its code, draft or notes are not whole, and none of
+    it is used. Its reason says so (``delegate.cut-at-output-limit``, or
+    ``delegate.cut-while-thinking`` when its server streamed thinking and no
+    reply came), and its record says ``cutAtOutputLimit``.
     """
     child_id = uuid.uuid4().hex
     started = time.monotonic()
@@ -346,7 +359,7 @@ def run_delegate(
                   "llm": provider_config.llm_pin(config)}
     try:
         child = _prepare_child(user_key, project_id, coord, capability, inputs, config,
-                               attachment_id=attachment_id, child_id=child_id, refused=refused)
+                               attachment_id=attachment_id, child_id=child_id, refused=refused, asker=asker)
     except _NoInstruction:
         return (
             "error",
@@ -356,6 +369,9 @@ def run_delegate(
     except Exception as exc:  # resolution/policy failure - data, not an error
         return ("error", agent_text.message("delegate.could-not-start", coord=coord, exc=exc), _record("error", {}, pins))
     pins = child.pins
+    if uses_skills is not None:
+        held = pins.get("skills") or {}
+        uses_skills([name for key in ("handed", "kept", "named") for name in held.get(key) or []])
 
     usage_sink: dict = {}
     task = {"role": "user", "content": _frame_inputs(parent_coord, capability, inputs)}
@@ -369,13 +385,27 @@ def run_delegate(
             agent_text.message("delegate.failed", coord=coord, error=provider_config.redact_error(exc, config)),
             _record("error", usage_sink, pins),
         )
+    if turn.cut_at_output_cap:
+        ledger.settle(user_key, child.reservation, usage=usage_sink or None, status="error")
+        record = _record("error", usage_sink, pins)
+        record["cutAtOutputLimit"] = True
+        if turn.thinking_room_refused:
+            record["thinkingRoomRefused"] = True
+        # The cap the request carried: with the room a model that thinks gets.
+        limit = f"{turn.output_limit or child.run_policy['max_output_tokens']:,}"
+        if turn.thinking and not turn.text.strip():
+            return ("error", agent_text.message("delegate.cut-while-thinking", coord=coord, limit=limit), record)
+        return ("error", agent_text.message("delegate.cut-at-output-limit", coord=coord, limit=limit), record)
     ledger.settle(user_key, child.reservation, usage=usage_sink or None, status="ok")
     text = child.reply.decode(turn.text) if child.reply is not None else turn.text
     if len(text) > DELEGATE_RESULT_MAX_CHARS:
         text = text[:DELEGATE_RESULT_MAX_CHARS] + ("\n" + agent_text.message("delegate.result-truncated"))
     # The child's reply is returned verbatim as data — NEVER parsed for
     # toolRequest/delegateRequest (depth-1 by construction).
-    return ("ok", text, _record("ok", usage_sink, pins))
+    record = _record("ok", usage_sink, pins)
+    if turn.thinking_room_refused:
+        record["thinkingRoomRefused"] = True
+    return ("ok", text, record)
 
 
 class _NoInstruction(Exception):
@@ -400,7 +430,8 @@ class _ChildRun:
 
 
 def _prepare_child(user_key: str, project_id: str, coord: str, capability: str, inputs: dict, config,
-                   *, attachment_id: str | None, child_id: str, refused: str | None = None) -> _ChildRun:
+                   *, attachment_id: str | None, child_id: str, refused: str | None = None,
+                   asker=None) -> _ChildRun:
     """Resolve the child: its definition and instruction (the capability is the mode: a merged
     agent runs that capability's own instruction), the skills it is handed, the reply schema
     when the document has one and the provider takes it, the effective policy, the DEC-031
@@ -419,7 +450,7 @@ def _prepare_child(user_key: str, project_id: str, coord: str, capability: str, 
     examples_block = worked_examples.delegated_block(coord, capability, spec, inputs)
     # What the task needs, handed: a tool-less run cannot load a skill.
     run_skills = skill_runs.for_delegated(
-        user_key, project_id, manifest, capability, inputs, spec, preamble, refused=refused,
+        user_key, project_id, manifest, capability, inputs, spec, preamble, refused=refused, asker=asker,
     )
     handed = skill_runs.skills_text(run_skills)
 
@@ -486,7 +517,7 @@ def _ask_child(child: _ChildRun, turns: list[dict], usage_sink: dict) -> ChatTur
         return ChatTurn.of(providers.run_chat_turn(
             child.config, [system_message, *turns],
             max_output_tokens=child.run_policy["max_output_tokens"],
-            usage_out=usage_sink, **extra,
+            usage_out=usage_sink, thinking_tokens=child.run_policy["thinking_tokens"], **extra,
         ))
 
     try:

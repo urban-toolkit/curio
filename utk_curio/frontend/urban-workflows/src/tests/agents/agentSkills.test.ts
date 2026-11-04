@@ -1,5 +1,5 @@
 /**
- * The skill words and the `/` command the chat and the Agent Catalog share
+ * The skill words and the `/` command the chat and the Skill Catalog share
  * (`services/agents/agentSkills.ts`).
  *
  * Every feature of a dataflow a skill Curio ships can serve has words for its
@@ -12,27 +12,33 @@ import * as path from "path";
 
 import {
   SKILL_FEATURE_WORDS,
+  SKILL_NAME_MAX,
+  packageSkillUsers,
+  skillByline,
   skillServes,
+  skillSource,
   skillsMatching,
   skillsUsedBy,
   slashQuery,
+  suggestSkillName,
   withSlashCommand,
 } from "../../services/agents/agentSkills";
+import { skillUploadForm } from "../../services/agents/skillsApi";
 import { REPO_ROOT } from "../_support/workflowPaths";
 
 describe("the skills a reply's run used", () => {
-  it("lists those it was handed, named, kept and loaded, each once, in that order", () => {
+  it("lists those it was handed, named, asked for, kept and loaded, each once, in that order", () => {
+    // The record as the server writes it: `asked` holds what the message's
+    // words handed (a skill's `curio-asks`).
+    const skills = {
+      catalog: ["a", "b", "c", "d", "e"], kept: ["c"], asked: ["e", "a"], named: ["b"], handed: ["a"],
+    };
     expect(
-      skillsUsedBy({
-        executionId: "e1",
-        usage: null,
-        status: "ok",
-        pins: { skills: { catalog: ["a", "b", "c", "d"], kept: ["c"], named: ["b"], handed: ["a"] } },
-        skillsLoaded: ["d", "a"],
-      }),
+      skillsUsedBy({ executionId: "e1", usage: null, status: "ok", pins: { skills }, skillsLoaded: ["d", "a"] }),
     ).toEqual([
       { name: "a", use: "handed" },
       { name: "b", use: "named" },
+      { name: "e", use: "asked" },
       { name: "c", use: "kept" },
       { name: "d", use: "loaded" },
     ]);
@@ -90,5 +96,70 @@ describe("what a skill serves", () => {
     }
     expect(named.size).toBeGreaterThan(0);
     expect([...named].filter((feature) => !(feature in SKILL_FEATURE_WORDS))).toEqual([]);
+  });
+});
+
+describe("whose a skill is", () => {
+  const SCOUT = { id: "curio.scout@1", name: "Scout" };
+
+  it("names the author its metadata gives, else whose it is, never Curio for an account's", () => {
+    expect(skillByline({ author: "parks-team", source: "yours" })).toBe("parks-team");
+    expect(skillByline({ author: null, source: "yours" })).toBe("you");
+    expect(skillByline({ source: "shared" })).toBe("shared catalog");
+    expect(skillByline({ author: "curio", source: "curio" })).toBe("curio");
+    expect(skillByline({})).toBe("curio");
+  });
+
+  it("names a package's skill by its package, whatever author it gives", () => {
+    // Scout's skill says `author: curio`; the account holds it through Scout.
+    expect(skillByline({ author: "curio", source: "package", package: SCOUT })).toBe("Scout");
+    expect(skillByline({ author: null, source: "package", package: SCOUT })).toBe("Scout");
+  });
+
+  it("says where it is from, a package's by its package, and who uses a package's", () => {
+    expect(skillSource({ source: "curio" })).toBe("Curio");
+    expect(skillSource({})).toBe("Curio");
+    expect(skillSource({ source: "yours" })).toBe("You imported it");
+    expect(skillSource({ source: "shared" })).toBe("The shared catalog");
+    expect(skillSource({ source: "package", package: SCOUT })).toBe("Scout");
+    expect(packageSkillUsers(SCOUT)).toBe("Agents on a dataflow that uses Scout");
+  });
+});
+
+describe("the name an import review offers", () => {
+  it("is the name given in a skill name's letters, with -2 when that is the name refused", () => {
+    expect(suggestSkillName({ name: "Street Trees", givenName: "Street Trees" })).toBe("street-trees");
+    expect(suggestSkillName({ name: "widgets", givenName: "widgets" })).toBe("widgets-2");
+    expect(suggestSkillName({ name: "pdf_tools", givenName: "pdf_tools" })).toBe("pdf-tools");
+    expect(suggestSkillName({ name: "--", givenName: "--" })).toBe("skill");
+    const long = suggestSkillName({ name: "a".repeat(62), givenName: "a".repeat(80) });
+    expect(long).toBe(`${"a".repeat(62)}-2`);
+    expect(long.length).toBeLessThanOrEqual(SKILL_NAME_MAX);
+  });
+});
+
+describe("a skill's upload", () => {
+  it("sends each file with its path in what was picked, and the name and agents asked for", () => {
+    const form = skillUploadForm(
+      [
+        { path: "street-trees/SKILL.md", file: new Blob(["---"]) },
+        { path: "street-trees/references/species.md", file: new Blob(["Oak"]) },
+      ],
+      { name: "my-trees", agents: ["agent.curio.dataset-finder@1"] },
+    );
+    const files = form.getAll("files") as File[];
+    expect(files.map((file) => file.name)).toEqual(["SKILL.md", "species.md"]);
+    expect(JSON.parse(form.get("paths") as string)).toEqual([
+      "street-trees/SKILL.md",
+      "street-trees/references/species.md",
+    ]);
+    expect(form.get("name")).toBe("my-trees");
+    expect(JSON.parse(form.get("agents") as string)).toEqual(["agent.curio.dataset-finder@1"]);
+  });
+
+  it("sends no name and no agents when the review asked for neither", () => {
+    const form = skillUploadForm([{ path: "SKILL.md", file: new Blob(["---"]) }]);
+    expect(form.get("name")).toBeNull();
+    expect(form.get("agents")).toBeNull();
   });
 });

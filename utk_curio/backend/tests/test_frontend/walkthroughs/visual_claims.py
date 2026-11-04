@@ -79,7 +79,9 @@ def node_settings_reads_plainly(ctx: Ctx) -> None:
     # The gear activates on pointerdown/pointerup and swallows the native
     # click (useHeaderIconDragClick), so a plain click does nothing.
     activate_header_icon(cog)
-    expect(page.get_by_role("heading", name="Node settings")).to_be_visible(timeout=15000)
+    # The dialog's heading, exactly: the canvas title is the scene's dataflow
+    # name, "Node settings say what they mean", a heading too.
+    expect(page.get_by_role("heading", name="Node settings", exact=True)).to_be_visible(timeout=15000)
     ctx.beat(600)
 
     # The claim, stated as an assertion as well as a picture: a baseline alone

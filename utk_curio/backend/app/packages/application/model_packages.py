@@ -280,13 +280,37 @@ def model_default_cell(manifest: PackageManifest, folder: Path) -> str:
     return default_cell(manifest.package_id, block.type, inputs)
 
 
-def resolve_model_dirs(user_key: str | None, model_ids) -> dict[str, str]:
+def _used_by_the_dataflow(owners, model_id: str) -> bool:
+    """Whether the model package *model_id* names in the dataflow owner's
+    store (*owners*, ``project_packages.OwnersPackages``), as
+    :func:`find_model_package` picks it there, is one the dataflow uses."""
+    try:
+        found = find_model_package(owners.store_key, model_id)
+        return found is not None and owners.uses(found[1].name)
+    except Exception as exc:  # noqa: BLE001 - the run's own store still answers
+        log.warning("Could not read whether dataflow %s uses model %s: %s", owners.project_id, model_id, exc)
+        return False
+
+
+def resolve_model_dirs(user_key: str | None, model_ids, *, owners=None) -> dict[str, str]:
     """``{model id: folder}`` for the model packages *model_ids* name that
     *user_key*'s store holds: the folder whose ``manifest.json`` and
     ``models/`` a node's ``curio_load_model`` reads. An id that names no model
     package in the store, or whose weights cannot be had, is left out: the
     sandbox's ``curio_load_model`` says to add it, or the run fails with the
-    download's own error."""
+    download's own error.
+
+    With *owners* (``project_packages.OwnersPackages``), the run is one of an
+    editor the dataflow's owner invited: an id whose model package in her
+    store the dataflow uses resolves from her store, as her own run's does,
+    and any other id from *user_key*'s."""
+    if owners is not None:
+        ids = [str(model_id) for model_id in model_ids]
+        theirs = [model_id for model_id in ids if _used_by_the_dataflow(owners, model_id)]
+        return {
+            **resolve_model_dirs(user_key, [model_id for model_id in ids if model_id not in theirs]),
+            **resolve_model_dirs(owners.store_key, theirs),
+        }
     from utk_curio.backend.app.datasets.infrastructure import left_out_files
 
     out: dict[str, str] = {}

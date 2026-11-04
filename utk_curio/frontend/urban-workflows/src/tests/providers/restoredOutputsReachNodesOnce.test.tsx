@@ -82,18 +82,9 @@ jest.mock('../../providers/ToastProvider', () => ({
 
 jest.mock('../../providers/CollaborationProvider', () => ({
   useCollab: () => ({
-    enabled: false,
     lockedNodes: {},
-    currentUserId: null,
     lockNode: jest.fn(),
     unlockNode: jest.fn(),
-    signalExecDisplay: jest.fn(),
-    broadcastOutputProduced: jest.fn(),
-    broadcastNodeAdded: jest.fn(),
-    broadcastNodeRemoved: jest.fn(),
-    broadcastNodeUpdated: jest.fn(),
-    broadcastEdgeAdded: jest.fn(),
-    broadcastEdgeRemoved: jest.fn(),
     onRemote: jest.fn(),
   }),
 }));
@@ -356,7 +347,8 @@ describe('a load hands each restored output to each node below it once', () => {
     open('dataflow');
     await settle();
 
-    expect(mockGetShared).toHaveBeenCalledWith(PROJECT_ID);
+    // A canvas asks for the results an invited editor's runs left it with.
+    expect(mockGetShared).toHaveBeenCalledWith(PROJECT_ID, { lastResults: true });
     expectEachRestoredOutputOnce();
   });
 

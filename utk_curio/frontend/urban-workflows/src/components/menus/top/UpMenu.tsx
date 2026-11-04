@@ -5,7 +5,6 @@ import {
     useNodeActionsContext,
 } from "../../../providers/FlowProvider";
 import { useProvenanceDrawerOptional } from "../../../providers/provenanceDrawerContext";
-import { useCollab } from "../../../providers/CollaborationProvider";
 import { TrillGenerator } from "../../../TrillGenerator";
 import { trillToNotebook, serializeNotebook } from "../../../NotebookConvertor";
 import styles from "./UpMenu.module.css";
@@ -14,7 +13,6 @@ import clsx from "clsx";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
     faBolt,
-    faCircleCheck,
     faClockRotateLeft,
     faClone,
     faCubes,
@@ -25,7 +23,6 @@ import {
     faFolderOpen,
     faFloppyDisk,
     faPlus,
-    faUsers,
     faUpRightAndDownLeftFromCenter,
     faDownLeftAndUpRightToCenter,
 } from "@fortawesome/free-solid-svg-icons";
@@ -47,11 +44,13 @@ import { openDataflowFile } from "../../../utils/openedDataflowFile";
 import { LEAVE_DATAFLOW, useLeaveGuard } from "../../../hook/useLeaveGuard";
 import { useSharedView } from "../../../hook/useSharedView";
 import ShareMenu from "./ShareMenu";
+import { SaveStatus } from "./SaveStatus";
 import InviteEditorsDialog from "../../collab/InviteEditorsDialog";
 import DataflowCategoryInput from "../../projects/DataflowCategoryInput";
 import { projectsApi, type ProjectSummary } from "../../../api/projectsApi";
 import { SHARE_UUID_RE } from "../../../utils/shareLinks";
 import { useScenarioActions } from "../../scenarios/useScenarioActions";
+import { OPENING_TITLE, useProjectLoadState } from "../../projectLoadState";
 
 export default function UpMenu() {
     const [isEditing, setIsEditing] = useState(false);
@@ -68,14 +67,14 @@ export default function UpMenu() {
         projectId,
         projectName,
         projectDirty,
-        projectSavedAt,
+        whenChangesKept,
         cleanCanvas,
         renameDataflow,
         workflowCategories,
         serverCategories,
         scenarios,
         updateDataflowCategories,
-        requestProjectSave,
+        saveDataflow,
         saveAsNewProject,
         discardProject,
         packages,
@@ -90,11 +89,14 @@ export default function UpMenu() {
     } = useFlowContext();
 
     /** Run *action* now, or ask first when there is unsaved work to lose.
-     *  The same guard every other way out of a dataflow uses (#197). */
-    const { leave: guardLeave, dialog: leaveDialog } = useLeaveGuard(projectDirty, LEAVE_DATAFLOW);
+     *  The same guard every other way out of a dataflow uses (#197). On a
+     *  dataflow bound to its doc nothing is unsaved: the leave waits for the
+     *  server to hold this tab's last change, and asks only if it cannot. */
+    const { leave: guardLeave, dialog: leaveDialog } = useLeaveGuard(projectDirty, LEAVE_DATAFLOW, {
+        settle: whenChangesKept,
+    });
     const leaveWithGuard = (body: string, action: () => void) => guardLeave(action, body);
 
-    const collab = useCollab();
     // The ``isSharedView`` gate MainCanvas reads: a watcher's canvas is
     // read-only, and an editor the owner invited edits it, so the read-only
     // banner and the editing items stand down for them.
@@ -102,10 +104,10 @@ export default function UpMenu() {
     // Saving is the owner's: an editor, like a watcher, saves a copy, and has
     // no save status of their own.
     const savesHere = viewerMode !== "shared";
-    // Share > Invite editors, for the owner of a saved dataflow with
-    // collaboration on. A guest invites nobody: the shared guest owns the
-    // examples every hosted guest opens.
-    const canInviteEditors = collab.enabled && savesHere && Boolean(projectId) && !user?.is_guest;
+    // Share > Invite editors, for the owner of a saved dataflow. A guest
+    // invites nobody: the shared guest owns the examples every hosted guest
+    // opens.
+    const canInviteEditors = savesHere && Boolean(projectId) && !user?.is_guest;
     const {
         workflowName,
         setWorkflowName,
@@ -114,6 +116,11 @@ export default function UpMenu() {
         expandStatus,
         setExpandStatus,
     } = useNodeActionsContext();
+    // The dataflow the link names is still on its way: the title says so,
+    // since its name is not known yet, and the name and the categories cannot
+    // be changed until it is in, which would put its own over them.
+    const opening = useProjectLoadState() === "loading";
+    const title = opening ? OPENING_TITLE : workflowName;
     const { showToast } = useToastContext();
     // The id the Share links are built from. A shared viewer has no
     // ``projectId`` (the dataflow is not open for editing in their workspace),
@@ -223,18 +230,16 @@ export default function UpMenu() {
 
     const handleSave = async () => {
         setSaving(true);
-        const wasNew = !projectId;
         try {
-            // Through the save queue, after any save already out (the pin's
-            // save, the autosave, an install save): two PUTs of one dataflow
-            // at once were behind #909 and #941. "Saving" lasts until this
-            // save has answered.
-            const detail = await requestProjectSave();
+            // A dataflow not saved yet is made; a saved one is a version named
+            // Saved once the server holds every change. "Saving" lasts until
+            // that has answered.
+            const saved = await saveDataflow();
             // First save of a brand-new dataflow: promote the placeholder
             // ``/dataflow/new`` URL to the canonical, shareable one. We use
             // replace so the user's back button still works as expected.
-            if (wasNew && detail?.id) {
-                navigate(`/dataflow/${detail.id}`, { replace: true });
+            if (saved.created && saved.id) {
+                navigate(`/dataflow/${saved.id}`, { replace: true });
             }
         } catch (err: any) {
             console.error("Save failed:", err);
@@ -544,77 +549,12 @@ export default function UpMenu() {
                     onInviteEditors={canInviteEditors ? () => setInviteOpen(true) : undefined}
                 />
 
-                {/* Real-time collaboration side panel toggle. Only rendered
-                    when --collab is on; the badge surfaces the live peer
-                    count so presence stays glanceable even with the panel
-                    closed. */}
-                {collab.enabled && (
-                    <button
-                        type="button"
-                        className={clsx(headerStyles.barButton, collab.panelOpen && headerStyles.barButtonActive)}
-                        aria-label="Collaboration"
-                        aria-pressed={collab.panelOpen}
-                        onClick={() => collab.setPanelOpen(!collab.panelOpen)}
-                        data-tooltip={
-                            collab.connected
-                                ? `Collaboration (${collab.users.length} online)`
-                                : "Collaboration disconnected"
-                        }
-                    >
-                        <FontAwesomeIcon icon={faUsers} />
-                        {collab.users.length > 1 && (
-                            <span className={styles.peerCount}>{collab.users.length}</span>
-                        )}
-                    </button>
-                )}
-
-                {/* Save status indicator.
-                    Always present on a dataflow you own, so its absence never
-                    has to be interpreted. It used to render only once the
-                    dataflow was dirty or had been saved at least once, which
-                    meant a brand-new dataflow showed nothing at all - the one
-                    moment the state is most worth stating, because nothing is
-                    on disk yet. A never-saved dataflow reads as unsaved, the
-                    same as a dirty one; "Saved" means, and only means, "what
-                    you see is on disk". The word says it as well as the
-                    colour, so the state does not rest on telling two hues
-                    apart. Hidden on a tab that does not save the dataflow, a
-                    watcher's or an editor's: its owner's tab saves it. */}
-                {savesHere && (
-                    <button
-                        type="button"
-                        className={clsx(headerStyles.barButton, styles.saveStatus)}
-                        disabled={saving}
-                        onClick={handleSave}
-                        data-tooltip={
-                            saving          ? "Saving…"
-                            : projectDirty  ? "Unsaved changes - click to save"
-                            : !projectSavedAt ? "Not saved yet - click to save"
-                            : `Saved at ${projectSavedAt.toLocaleTimeString()} - click to save`
-                        }
-                        data-curio-save-state={
-                            saving ? "saving"
-                            : projectDirty || !projectSavedAt ? "unsaved"
-                            : "saved"
-                        }
-                    >
-                        <FontAwesomeIcon
-                            icon={saving || projectDirty || !projectSavedAt ? faFloppyDisk : faCircleCheck}
-                            className={clsx(
-                                saving || projectDirty || !projectSavedAt
-                                    ? styles.unsavedIcon
-                                    : styles.savedIcon,
-                                saving && styles.savingPulse,
-                            )}
-                        />
-                        <span>
-                            {saving ? "Saving..." : projectDirty || !projectSavedAt ? "Unsaved" : "Saved"}
-                        </span>
-                    </button>
-                )}
+                {/* Save status (SaveStatus). Hidden on a tab that does not save
+                    the dataflow, a watcher's or an editor's. */}
+                {savesHere && <SaveStatus saving={saving} onSave={handleSave} />}
 
                 <span className={headerStyles.divider} aria-hidden="true" />
-                <CatalogButtons projectId={projectId} crowded={collab.enabled} />
+                <CatalogButtons projectId={projectId} />
 
                 {/* The canvas, or the same nodes as a column of notebook cells.
                     Last in the slot and pushed to its end, so it sits beside
@@ -626,7 +566,6 @@ export default function UpMenu() {
                         setActiveMenu(null);
                         setCanvasView(view);
                     }}
-                    crowded={collab.enabled}
                 />
             </GlobalPageHeader>
 
@@ -637,7 +576,7 @@ export default function UpMenu() {
                     : styles.workflowNameContainer}
                 data-curio-canvas-title="true"
             >
-                {isEditing && !isSharedView ? (
+                {isEditing && !isSharedView && !opening ? (
                     <input
                         type="text"
                         value={workflowName}
@@ -650,9 +589,12 @@ export default function UpMenu() {
                 ) : (
                     <h1
                         className={styles.workflowNameStyle}
-                        onClick={() => { if (!isSharedView) setIsEditing(true); }}
+                        // The whole name, which the title cuts short beside
+                        // the agents' dock.
+                        data-tooltip={title}
+                        onClick={() => { if (!isSharedView && !opening) setIsEditing(true); }}
                     >
-                        {workflowName}
+                        {title}
                     </h1>
                 )}
                 {/* The dataflow's categories. The automatic ones come from the
@@ -661,7 +603,7 @@ export default function UpMenu() {
                     className={styles.workflowCategories}
                     categories={serverCategories ?? {}}
                     hand={workflowCategories ?? {}}
-                    onChange={isSharedView ? undefined : updateDataflowCategories}
+                    onChange={isSharedView || opening ? undefined : updateDataflowCategories}
                     suggestionItems={categorySuggestions}
                     onOpenAdd={loadCategorySuggestions}
                     maxVisible={6}

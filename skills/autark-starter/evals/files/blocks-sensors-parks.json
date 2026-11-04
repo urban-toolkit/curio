@@ -1,0 +1,125 @@
+{
+  "dataflow": {
+    "categories": {"city": ["Chicago"], "complexity": ["Beginner"]},
+    "nodes": [
+      {
+        "id": "city-blocks",
+        "type": "curio.builtin/data-loading",
+        "title": "City blocks",
+        "x": 200,
+        "y": 200,
+        "content": "import geopandas as gpd\nfrom shapely.geometry import box\n\n# Four city blocks near the Chicago Loop, in EPSG:3395 (World Mercator, metres).\ncx, cy = -9752000, 5137000\nblocks = [box(cx + i * 400, cy, cx + i * 400 + 300, cy + 300) for i in range(4)]\n\nreturn gpd.GeoDataFrame(\n    {\n        \"land_use\": [\"residential\", \"commercial\", \"residential\", \"park\"],\n        \"population\": [1240, 310, 980, 0],\n        \"median_rent\": [1650.0, 2100.0, 1480.0, 0.0],\n    },\n    geometry=blocks,\n    crs=\"EPSG:3395\",\n)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Return city blocks as a GeoDataFrame in EPSG:3395: land_use (object), population (int64), median_rent (float64), geometry (polygons, active).",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "parks",
+        "type": "curio.builtin/data-loading",
+        "title": "Parks",
+        "x": 200,
+        "y": 700,
+        "content": "import geopandas as gpd\nfrom shapely.geometry import box\n\n# Two parks beside the blocks, in EPSG:3395 (World Mercator, metres).\ncx, cy = -9752000, 5137000\nparks = [box(cx, cy + 500, cx + 700, cy + 900), box(cx + 1000, cy + 500, cx + 1300, cy + 700)]\n\nreturn gpd.GeoDataFrame(\n    {\"park_name\": [\"Grant\", \"Maggie Daley\"], \"area_m2\": [280000.0, 60000.0]},\n    geometry=parks,\n    crs=\"EPSG:3395\",\n)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Return parks as a GeoDataFrame in EPSG:3395: park_name (object), area_m2 (float64), geometry (polygons, active).",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "air-sensors",
+        "type": "curio.builtin/data-loading",
+        "title": "Air sensors",
+        "x": 200,
+        "y": 1200,
+        "content": "import pandas as pd\n\n# Five air quality sensors and their latest PM2.5 reading.\nreturn pd.DataFrame({\n    \"sensor_id\": [\"S-01\", \"S-02\", \"S-03\", \"S-04\", \"S-05\"],\n    \"LATITUDE\": [41.8781, 41.8827, 41.8757, 41.8850, 41.8712],\n    \"LONGITUDE\": [-87.6298, -87.6233, -87.6244, -87.6320, -87.6270],\n    \"pm25\": [8.4, 11.2, 9.7, 14.1, 7.9],\n})",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Return air sensors as a plain DataFrame with no geometry column: sensor_id (object), LATITUDE (float64), LONGITUDE (float64), pm25 (float64).",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "blocks-map",
+        "type": "curio.builtin/autk-grammar",
+        "title": "Blocks map",
+        "x": 1000,
+        "y": 200,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "blocks-parks-map",
+        "type": "curio.builtin/autk-grammar",
+        "title": "Blocks and parks map",
+        "x": 1000,
+        "y": 700,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "sensors-map",
+        "type": "curio.builtin/autk-grammar",
+        "title": "Sensors map",
+        "x": 1000,
+        "y": 1200,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-city-blocksout-blocks-mapin",
+        "source": "city-blocks",
+        "target": "blocks-map",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-city-blocksout-blocks-parks-mapin",
+        "source": "city-blocks",
+        "target": "blocks-parks-map",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-parksout-blocks-parks-mapin_1",
+        "source": "parks",
+        "target": "blocks-parks-map",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-air-sensorsout-sensors-mapin",
+        "source": "air-sensors",
+        "target": "sensors-map",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      }
+    ],
+    "name": "Blocks, parks and air sensors",
+    "task": "",
+    "timestamp": 1777164480406,
+    "provenance_id": "blocks-sensors-parks"
+  }
+}

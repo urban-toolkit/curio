@@ -2,7 +2,7 @@
 
 The Node Catalog is where Curio's nodes live. Every node you can drop on the canvas, whether a built-in that ships with the app or an extra you install, comes from a **package**: a small, self-contained folder with a `manifest.json` describing the nodes inside it.
 
-Curio has six catalogs: the Node Catalog holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the [Model Catalog](MODEL-CATALOG.md) the models they run, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, the [Discovery Catalog](DISCOVERY-CATALOG.md) the portals, storage, services and models you take datasets and models from, and the [Scenario Catalog](SCENARIO-CATALOG.md) the scenarios saved in your projects.
+Curio has seven catalogs: the Node Catalog holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the [Model Catalog](MODEL-CATALOG.md) the models they run, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, the [Skill Catalog](SKILL-CATALOG.md) the skills those assistants read, the [Discovery Catalog](DISCOVERY-CATALOG.md) the portals, storage, services and models you take datasets and models from, and the [Scenario Catalog](SCENARIO-CATALOG.md) the scenarios saved in your projects.
 
 This guide is in six parts, plus operator notes:
 
@@ -61,7 +61,7 @@ The palette reads the open project's lockfile, so two projects open in different
 There are two places you manage node packages:
 
 - **The drawer**, inside the canvas, works on the open project only. Open it from the **Node Catalog** button in the top bar, or from the **Node Catalog** dropdown in the left Tools panel and **Browse Node Catalog +**. Its two tabs are **Browse all** and **In project**.
-- **The `/catalog/nodes` page**, reached from `/projects` and the **Node Catalog** tab, works on your whole account: a package added here goes into every project you have and every new one. It has status and category filters and a details drawer. The **Data Catalog**, **Agent Catalog**, **Discovery Catalog** and **Model Catalog** tabs beside it are the other four catalogs.
+- **The `/catalog/nodes` page**, reached from `/projects` and the **Node Catalog** tab, works on your whole account: a package added here goes into every project you have and every new one. It has status and category filters and a details drawer. The **Data Catalog**, **Agent Catalog**, **Skill Catalog**, **Discovery Catalog**, **Model Catalog** and **Scenario Catalog** tabs beside it are the other catalogs.
 
 ### Action matrix
 
@@ -86,6 +86,8 @@ There are two places you manage node packages:
 
 **I want other users on this install to be able to add a package I built.** Build it with **Save as package node** ([part 4](#4-creating-a-package-from-a-canvas-node)), then click **Publish** on it in the Tools panel's **Node Catalog** dropdown or in the `/catalog/nodes` details drawer.
 
+**I edit someone else's dataflow and want to add a package of mine.** On a dataflow whose owner invited you to edit it ([Collaboration](COLLABORATION.md#who-edits-owner-editors-and-watchers)), a package reaches the dataflow through the owner's review. **Add to project** in the drawer asks the owner to add it, once you confirm, a card you drop on the canvas makes its node at once and asks too, and **Import package** puts an archive's package in your own account and asks. The node's **PACKAGE** pill reads **WAITING** until the owner reviews it. The owner's drawer lists your request under **Waiting for review**, with your name, the package's version and publisher and the permissions it asks for. **Apply** opens the review the owner's own **Add to project** opens; confirming there copies the package into the owner's account, its files checked against the record its install wrote, installs its libraries there and adds it to the dataflow, and your runs then use the owner's copy. **Dismiss** leaves nothing behind. A package of the shared catalog asks the owner too, and the owner's **Apply** installs it from the catalog.
+
 ---
 
 ## 3. Using a node in a dataflow
@@ -95,6 +97,10 @@ Once a package is in the open project, its nodes are in the palette: the built-i
 A package can also be dragged onto the canvas by its card in the drawer. For a package with one node, its node appears where you drop it. For a package with several nodes, a menu of its nodes opens where you drop it: pick one and it appears there, or press Escape or click outside the menu to make none. If the project does not have the package yet, picking a node, or dropping a package with one node, first opens the same review as **Add to project**, and the node appears once the package and its Python libraries are installed. On a hosted deployment, a guest's drop of a package the project does not have is refused.
 
 A Python node that calls a key-gated API reads the key by name, never as a literal: `api_key = curio_secret("<name>")` returns the key saved under that name as a **Node code** key on the **API keys** tab of **API Settings** (see [USAGE.md](USAGE.md#keys-for-node-code)). Like `curio_data_path("<id>")`, the name travels with the dataflow, and the value reaches the sandbox for the run only.
+
+On a dataflow you edit at its owner's invitation ([COLLABORATION.md](COLLABORATION.md#who-edits-owner-editors-and-watchers)), a run of yours of a node of a package the owner added to the dataflow, a play, a run on the server or one its agents make, takes the package's Python modules from the owner's copy, as the owner's runs do. A node of any other package runs with your own copy. Nothing is added to your account, and the owner's packages stay the owner's to publish, export and remove.
+
+Your canvas of such a dataflow draws the nodes of a package the owner added to it that you do not have from the owner's copy, and so does the canvas of anyone who watches it, where those nodes have no play button. Your palette lists that package too, without the buttons that act on your own copy (details, export, metadata, publish). A node whose package runs code on the server calls the owner's copy of it. Under fork isolation your runs also import the Python libraries the owner installed, after your own, so a library you installed yourself comes first.
 
 ---
 
@@ -241,14 +247,14 @@ A node of the package can import the Python modules those packages ship in their
 
 Agents read a template the way its manifest and its sources describe it. An agent that writes the code of a node of the template reads its whole `description`, its `source` file, the starter a new node opens with, and the functions the node's code can import: every public function of the package's modules and of the modules of the packages in `dependencies.packages`, by its signature and the first paragraph of its docstring. An agent that checks a package before adding it reads the same functions. So the description, the starter and the docstrings are what an agent knows of the template.
 
-A package can also tell the agents how to use its nodes, in **skills**: the folders of its `skills/`, one per skill, each holding a `SKILL.md` in the [Agent Skills format](https://agentskills.io/specification), with any files it reads beside it, such as `references/` ([EXTENDING §9](EXTENDING.md#9-writing-a-skill) says how to write one). Every agent on a dataflow that uses the package reads them. Its chat lists them after the skills its own manifest names, and loads one when a task matches its description. A run that writes one of the package's nodes is handed, from its first message, each skill whose `metadata` names that node's template in `curio-templates`, by the template's `id` in the package's manifest:
+A package can also tell the agents how to use its nodes, in **skills**: the folders of its `skills/`, one per skill, each holding a `SKILL.md` in the [Agent Skills format](https://agentskills.io/specification), with any files it reads beside it, such as `references/` ([EXTENDING §9](EXTENDING.md#9-writing-a-skill) says how to write one). Every agent on a dataflow that uses the package reads them, and the [Skill Catalog](SKILL-CATALOG.md#skills-from-packages) lists them with the package. Its chat lists them after the skills its own manifest names, and loads one when a task matches its description. A run that writes one of the package's nodes is handed, from its first message, each skill whose `metadata` names that node's template in `curio-templates`, by the template's `id` in the package's manifest:
 
 ```yaml
 metadata:
   curio-templates: raster-calculator rasterize-buildings
 ```
 
-A skill names only its own package's templates, and an agent reads it as its author wrote it. Name your skills after your package: a skill named like one of Curio's, or like one that a package before it in the dataflow's lockfile ships, is left out, with a warning in the backend's log. Scout's skill, [`scout`](../packages/curio.scout@1/skills/scout/SKILL.md), is an example.
+A skill names only its own package's templates, and an agent reads it as its author wrote it. A skill can also name, in `curio-asks`, words of a person's chat message that hand it to the chat ([EXTENDING §9](EXTENDING.md#9-writing-a-skill)). Name your skills after your package: a skill named like one of Curio's, or like one that a package before it in the dataflow's lockfile ships, is left out, with a warning in the backend's log. Scout's skill, [`scout`](../packages/curio.scout@1/skills/scout/SKILL.md), is an example.
 
 A package you save or import lands in your package store:
 
@@ -268,7 +274,7 @@ A package you save or import lands in your package store:
 
 | Variable | Flag | Effect |
 |---|---|---|
-| `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH` | `--allow-publish` (default), `--no-allow-publish` | Allows or forbids **Publish** and **Unpublish**. When forbidden, both are refused and their buttons are hidden. |
+| `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH` | `--allow-publish` (default), `--no-allow-publish` | Allows or forbids **Publish** and **Unpublish** of node packages, model packages among them, as it does for datasets, agents and skills. When forbidden, both are refused and their buttons are hidden. |
 | `CURIO_PACKAGES_ROOT` | `--packages-root` | Reads and publishes the shared catalog in this directory instead of `<repo_root>/packages/`. Start it from a copy of `packages/`: the built-in nodes are installed from it. |
 
 **`curio.py start` sets the publish variable on every start**, so `--no-allow-publish` is the way to turn publishing off. A `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH=0` in `.env` has no effect when you start through `curio.py`. See [USAGE.md](USAGE.md) for the launcher reference.
@@ -283,7 +289,7 @@ A package you save or import lands in your package store:
 
 ### Where the code lives
 
-Since memo dev/143 the catalog is layered like the Data Catalog. The backend is `utk_curio/backend/app/packages/{domain,schemas,repositories,infrastructure,application,builder,routes}` behind the one `service.py` facade, and the agents feature is layered the same way, `utk_curio/backend/app/agents/{domain,repositories,infrastructure,application,routes}` behind its `service.py`, with `src/services/agents/` + `src/providers/agents/` on the frontend (memo dev/142) (`builder/` is the package build pipeline beside the layers; dependency rule `domain ← schemas ← repositories ← infrastructure ← application ← routes`, enforced by `tests/test_packages/test_layering.py`). The frontend is `src/services/packages/`, holding the transport (`packagesApi`, `packagesBlobTransport`, `packageBackendApi`), `usePackageCatalog` (the one hook both the canvas drawer and the `/catalog/nodes` page render, scoped per project or to the account defaults) and the pure logic and types they share (import it from its barrel, `services/packages`), and `src/providers/packages/` (the drawer provider, the palette context, and the two hooks that also refresh the node-kind registry: `usePackageArchiveImport`, the one sideload pathway, and `useEnsureWorkflowDeps`). The surfaces (`components/packages/`, `pages/catalog/`, the palette dropdown under `components/menus/nodes/`) only render: `tests/packages/servicesBarrel.test.ts` refuses transport there and refuses any runtime import of `registry/` inside the layer (see [ARCHITECTURE.md](ARCHITECTURE.md)).
+The catalog is layered like the Data Catalog. The backend is `utk_curio/backend/app/packages/{domain,schemas,repositories,infrastructure,application,builder,routes}` behind the one `service.py` facade, and the agents feature is layered the same way, `utk_curio/backend/app/agents/{domain,repositories,infrastructure,application,routes}` behind its `service.py`, with `src/services/agents/` + `src/providers/agents/` on the frontend (`builder/` is the package build pipeline beside the layers; dependency rule `domain ← schemas ← repositories ← infrastructure ← application ← routes`, enforced by `tests/test_packages/test_layering.py`). The frontend is `src/services/packages/`, holding the transport (`packagesApi`, `packagesBlobTransport`, `packageBackendApi`), `usePackageCatalog` (the one hook both the canvas drawer and the `/catalog/nodes` page render, scoped per project or to the account defaults) and the pure logic and types they share (import it from its barrel, `services/packages`), and `src/providers/packages/` (the drawer provider, the palette context, and the two hooks that also refresh the node-kind registry: `usePackageArchiveImport`, the one sideload pathway, and `useEnsureWorkflowDeps`). The surfaces (`components/packages/`, `pages/catalog/`, the palette dropdown under `components/menus/nodes/`) only render: `tests/packages/servicesBarrel.test.ts` refuses transport there and refuses any runtime import of `registry/` inside the layer (see [ARCHITECTURE.md](ARCHITECTURE.md)).
 
 ## See also
 

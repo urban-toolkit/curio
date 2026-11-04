@@ -377,18 +377,25 @@ def _add_overlay_to_path(overlay_dir):
     yet -- pandas, geopandas, shapely and duckdb are already resident from the
     zygote's warm-up, and a per-user VERSION of those would need a zygote per
     user. Additions are the case this serves, and the common one.
+
+    A list is an editor's run of the dataflow's owner's dataflow: the editor's
+    own directory, then the owner's, which the child only reads. They go on
+    the path in that order, so the editor's own copy of a library wins.
     """
     if not overlay_dir:
         return
-    try:
-        if os.path.isdir(overlay_dir) and overlay_dir not in sys.path:
-            sys.path.insert(0, overlay_dir)
-    except OSError:
-        # A missing or unreadable overlay is a user with nothing installed, or
-        # a permissions problem the operator has to fix. Neither is a reason to
-        # refuse to run the node: it fails later with a plain ImportError
-        # naming the library, which is the message that helps.
-        pass
+    folders = list(overlay_dir) if isinstance(overlay_dir, (list, tuple)) else [overlay_dir]
+    # Each at the front, the last first, so the first ends up first.
+    for folder in reversed(folders):
+        try:
+            if folder and os.path.isdir(folder) and folder not in sys.path:
+                sys.path.insert(0, folder)
+        except OSError:
+            # A missing or unreadable overlay is a user with nothing installed,
+            # or a permissions problem the operator has to fix. Neither is a
+            # reason to refuse to run the node: it fails later with a plain
+            # ImportError naming the library, which is the message that helps.
+            pass
 
 
 # ---------------------------------------------------------------------------

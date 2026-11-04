@@ -131,6 +131,84 @@ def provenance_counts(page) -> dict:
     return {"items": page.locator(PROVENANCE_ITEM).count()}
 
 
+def listed_versions(page) -> list[str]:
+    """The ids of the versions the drawer lists, top to bottom, those on
+    folded branches left out."""
+    return page.locator(PROVENANCE_ITEM).evaluate_all("els => els.map((el) => el.dataset.provenanceItem)")
+
+
+# Every version the drawer holds: those it lists, and those each folded branch
+# it shows says it holds ("4 versions on another branch"), its own folded
+# branches among them.
+_PROVENANCE_TOTAL_JS = """(sel) => {
+    const root = document.querySelector(sel);
+    if (!root) return null;
+    let total = root.querySelectorAll('[data-provenance-item]').length;
+    for (const fold of root.querySelectorAll('[data-provenance-fold][aria-expanded="false"]')) {
+        const size = /^(\\d+) /.exec(fold.textContent.trim());
+        if (size) total += Number(size[1]);
+    }
+    return total;
+}"""
+
+
+def provenance_total(page) -> int | None:
+    """How many versions the provenance drawer holds, folded ones included."""
+    return page.evaluate(_PROVENANCE_TOTAL_JS, PROVENANCE_DRAWER)
+
+
+def await_provenance_total(page, want: int, *, timeout: float = 20000) -> None:
+    """Wait until the drawer holds *want* versions: the server's history reaches
+    the drawer once its change is in, and again on every change after."""
+    try:
+        page.wait_for_function(
+            f"(want) => ({_PROVENANCE_TOTAL_JS})({json.dumps(PROVENANCE_DRAWER)}) === want",
+            arg=want, timeout=timeout,
+        )
+    except PlaywrightTimeoutError:
+        raise AssertionError(
+            f"the provenance drawer holds {provenance_total(page)} versions, not {want}"
+        ) from None
+
+
+def unfold_through(page, firsts: list[str]) -> None:
+    """Open each folded branch that starts at one of the versions *firsts*, in
+    that order: a branch folded under another shows once that one is open."""
+    for first in firsts:
+        fold = page.locator(f'{PROVENANCE_DRAWER} [data-provenance-fold="{first}"]').first
+        if fold.count() and fold.get_attribute("aria-expanded") == "false":
+            fold.click()
+            page.wait_for_function(
+                "(el) => el.getAttribute('aria-expanded') === 'true'", arg=fold.element_handle(), timeout=10000,
+            )
+
+
+# Whether the canvas shows *want*'s nodes and connections, every one drawn.
+_CANVAS_IS_JS = """
+(want) => {
+    const outside = (el) => !el.closest('[data-curio-modal-shell="true"]');
+    const nodes = Array.from(document.querySelectorAll('.react-flow__node')).filter(outside);
+    if (nodes.length !== want.nodes || nodes.some((el) => el.style.visibility === 'hidden')) return false;
+    const drawn = Array.from(document.querySelectorAll('.react-flow__edge')).filter(outside).length;
+    const flow = window.__curio_reactFlow;
+    if (!flow) return false;
+    return drawn === want.edges && flow.getEdges().filter((edge) => !edge.hidden).length === want.edges;
+}
+"""
+
+
+def await_canvas_graph(page, want: dict, *, timeout: float = 20000) -> None:
+    """Wait for the canvas to show *want* (``{nodes, edges}``), every node and
+    connection drawn: a version the server puts back reaches the canvas through
+    the dataflow's doc, a round trip after the click. Swallowing the timeout is
+    deliberate, as in :func:`await_canvas_nodes`: the assertion that follows
+    reports the counts."""
+    try:
+        page.wait_for_function(_CANVAS_IS_JS, arg=want, polling=100, timeout=timeout)
+    except PlaywrightTimeoutError:
+        pass
+
+
 def await_provenance_history(page, *, timeout: float = 20000) -> dict:
     """Wait until the provenance drawer lists its history, and return
     :func:`provenance_counts`."""

@@ -84,6 +84,40 @@ def installed_package_payloads(user_key: str, kind: str | None = None, *, usage:
     return out
 
 
+def dataflow_package_payloads(owners) -> list[dict]:
+    """The packages a dataflow uses, as its owner's store holds them
+    (*owners*, ``project_packages.OwnersPackages``), in the shape of
+    :func:`installed_package_payloads` and in its order, each ``readOnly``.
+    A canvas of the dataflow that is not its owner's, an invited editor's or
+    a watcher's, draws the nodes of a package it does not hold from these.
+    Manifests only: nothing is copied or written.
+
+    A lock owner, as :func:`installed_package_payloads` is: the enumeration
+    and the manifests are read under one hold of the owner's store's seed
+    lock, so a seed or an install there is never seen halfway."""
+    # Read before the store's lock, which reading what the dataflow uses takes.
+    used = owners.used
+    out: list[dict] = []
+    with package_seed_lock(owners.store_key):
+        for package_path in list_user_packages(owners.store_key):
+            if package_path.name not in used:
+                continue
+            try:
+                manifest = load_package_manifest(package_path)
+            except ManifestError as exc:
+                log.warning("Skipping malformed package %s: %s", package_path.name, exc)
+                continue
+            payload = _with_catalog_flags(_listing_payload(manifest, package_path))
+            # The manifest's, and nothing else of the folder.
+            payload.pop("readme", None)
+            payload["readOnly"] = True
+            out.append(payload)
+    out.sort(
+        key=lambda p: (-int(p.get("createdAtMs") or 0), p.get("dirName") or ""),
+    )
+    return out
+
+
 def catalog_listing(user_key: str, kind: str | None = None) -> dict:
     """The catalog scan from ``<repo_root>/packages/``: ``{"packages", "families", "catalogCollisions"}``.
 

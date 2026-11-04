@@ -2,7 +2,7 @@
 
 The Model Catalog is where Curio keeps the **trained models** your nodes can run. A model ships with Curio, or you add one from the [Discovery Catalog](DISCOVERY-CATALOG.md) or import its package. You add a model to one dataflow, or to all your projects, as you add a node package in the [Node Catalog](NODE-CATALOG.md). Each model has a node that runs it, such as **Image Segmentation**: drag the model's card onto the canvas to add that node, or onto a node of the same type of model to run it there.
 
-Curio has six catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the Model Catalog the models they run, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, the [Discovery Catalog](DISCOVERY-CATALOG.md) the portals, storage, services and models you take datasets and models from, and the [Scenario Catalog](SCENARIO-CATALOG.md) the scenarios saved in your projects.
+Curio has seven catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the Model Catalog the models they run, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, the [Skill Catalog](SKILL-CATALOG.md) the skills those assistants read, the [Discovery Catalog](DISCOVERY-CATALOG.md) the portals, storage, services and models you take datasets and models from, and the [Scenario Catalog](SCENARIO-CATALOG.md) the scenarios saved in your projects.
 
 This guide is in six parts, plus operator notes:
 
@@ -60,6 +60,8 @@ The weather GNN, SCOUT's weather graph network, is about 52 KB. Its package, `mo
 
 A node runs a model whose package is in your store: one you added, one a dataflow that names it brought, or one installed for the examples. A model whose package your store does not hold stops the node, with a message saying to add it.
 
+On a dataflow you edit at its owner's invitation ([COLLABORATION.md](COLLABORATION.md#who-edits-owner-editors-and-watchers)), a node also runs the models the owner added to the dataflow, those its lockfile names and those dropped onto its nodes, from the owner's store, without your adding them: in a play, a run on the server and a run its agents make for you. No other model of the owner's runs, and the owner's models stay the owner's to publish, export and remove.
+
 An agent writes only models your store holds into a node, and asks you to add any other.
 
 ---
@@ -102,6 +104,8 @@ An agent writes only models your store holds into a node, and asks you to add an
 **A node says a model is not one of your models.** The node names a model whose package is not in your store, for example in a dataflow someone shared with you. Add that model (**Add to project** in the drawer, or **Import package** with an archive of it), or drag one of yours onto the node.
 
 **I want to remove a model.** Open each dataflow that has it and use **Remove from project** in the Model Catalog drawer. When you remove it from the last one, Curio deletes it from your account, drops it from your defaults and uninstalls its Python libraries.
+
+**I edit someone else's dataflow and want to use a model of mine.** On a dataflow whose owner invited you to edit it ([Collaboration](COLLABORATION.md#who-edits-owner-editors-and-watchers)), a model reaches the dataflow through the owner's review, as a package does ([Node Catalog](NODE-CATALOG.md#workflows)). **Add to project** in the drawer, a card dropped on the canvas, which makes its node at once, and a model dropped on a node each ask the owner to add it, and the node reads **WAITING** until the owner reviews it. The owner's Model Catalog drawer lists your request under **Waiting for review**; **Apply** copies the model into the owner's Model Catalog with its weights, installs its libraries there and adds it to the dataflow, and your runs then load the owner's copy.
 
 ---
 

@@ -39,10 +39,11 @@ export const DataflowProviders: React.FC<{
   presentation?: boolean;
 }> = ({ children, presentation = false }) => {
   const body = (
-    // CollaborationProvider must wrap FlowProvider: FlowProvider's mutation
-    // handlers call ``useCollab()`` to broadcast graph changes, and a context
-    // only reaches *descendants*. Putting it on the inside would hand
-    // FlowProvider the no-op default value and silently drop every broadcast.
+    // CollaborationProvider must wrap FlowProvider: FlowProvider binds the
+    // canvas to the dataflow's doc (``useDocBinding``) and reads the tab's role
+    // and the room's events (``useCollab()``), and a context only reaches
+    // *descendants*. Putting it on the inside would hand FlowProvider no doc
+    // and the no-op default value.
     <FlowProvider dashboardOn={presentation}>
       {/* Above the drawers and the palettes: every one of them opens a
           dataset's details through it, and the modal reads the live graph. */}

@@ -119,8 +119,12 @@ _PLAN_REF_MAX_CHARS = 32
 _PLAN_TITLE_MAX_CHARS = 120
 _PLAN_INTENT_MAX_CHARS = 300
 _PLAN_NODE_TYPE_MAX_CHARS = 120
-# dev/59 revision fields: existing node/edge ids (uuids in practice).
+# dev/59 revision fields: existing node ids (uuids in practice).
 _PLAN_REMOVAL_ID_MAX_CHARS = 64
+# An existing edge's id: React Flow names a connection
+# reactflow__edge-<source><sourceHandle>-<target><targetHandle>, two node ids
+# and two handles, 94 characters for the one in docs/examples/dataflows/vega.json.
+_PLAN_EDGE_ID_MAX_CHARS = 200
 # dev/67-3: an edge may name the target's input handle (input circles in,
 # in_1, ...; or a named handle a package declares). The mint validates semantics; this is shape.
 _PLAN_TO_HANDLE_MAX_CHARS = 24
@@ -498,10 +502,12 @@ def _field_error(where: str, value: object, max_chars: int) -> str | None:
 
 
 def _parse_removal_list(
-    raw: object, key: str, max_entries: int, errors: list[str]
+    raw: object, key: str, max_entries: int, errors: list[str],
+    max_chars: int = _PLAN_REMOVAL_ID_MAX_CHARS,
 ) -> list[str]:
-    """A bounded, deduplicated list of existing-element ids (dev/59) —
-    existence against the saved spec is the MINT's check, not the grammar's."""
+    """A bounded, deduplicated list of existing-element ids (dev/59), each at
+    most *max_chars* long. Existence against the saved spec is the MINT's
+    check, not the grammar's."""
     if raw is None:
         return []
     if not isinstance(raw, list):
@@ -513,7 +519,7 @@ def _parse_removal_list(
     out: list[str] = []
     seen: set[str] = set()
     for i, value in enumerate(raw):
-        err = _field_error(f"{key}[{i}]", value, _PLAN_REMOVAL_ID_MAX_CHARS)
+        err = _field_error(f"{key}[{i}]", value, max_chars)
         if err:
             errors.append(err)
             continue
@@ -552,7 +558,9 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
             plan["templateId"] = str(raw.get("templateId")).strip()
     # dev/59: revision fields parse first — a remove-only plan is valid.
     remove_nodes = _parse_removal_list(raw.get("removeNodes"), "removeNodes", _PLAN_MAX_NODES, errors)
-    remove_edges = _parse_removal_list(raw.get("removeEdges"), "removeEdges", _PLAN_MAX_EDGES, errors)
+    remove_edges = _parse_removal_list(
+        raw.get("removeEdges"), "removeEdges", _PLAN_MAX_EDGES, errors, _PLAN_EDGE_ID_MAX_CHARS,
+    )
     nodes_raw = raw.get("nodes")
     if nodes_raw is None and (remove_nodes or remove_edges):
         nodes_raw = []  # a remove-only revision carries no new nodes
@@ -740,7 +748,7 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
     plan["edges"] = edges
     if not errors:
         # #662: named selections and duplicates; a duplicate's copies join the
-        # plan's nodes and edges here, so the review names each of them.
+        # plan's nodes and edges here, so the plan's card names each of them.
         errors.extend(plan_scenarios.parse_scenarios(
             raw.get("scenarios"), plan, removed, _field_error, _PLAN_REF_MAX_CHARS,
         ))
@@ -880,25 +888,35 @@ def plan_tail_diagnosis(tail_body: str | None) -> list[str] | None:
     return errors
 
 
+#: The keys a request block wraps its request in: a tool's, then a delegation's.
+REQUEST_KEYS = ("toolRequest", "delegateRequest")
+
+
 def tool_tail_diagnosis(tail_body: str | None) -> list[str] | None:
-    """Classify a terminal tail body as a toolRequest attempt (#245).
+    """Classify a terminal tail body as a request attempt (#245): a
+    ``toolRequest``, or a ``delegateRequest`` the same way.
 
     The ``plan_tail_diagnosis`` twin, and the same three-way contract:
-    ``None`` — not a request attempt, so generic fail-open applies untouched;
-    ``[]`` — a valid request; ``[errors]`` — a request attempt with correctable
+    ``None``: not a request attempt, so generic fail-open applies untouched;
+    ``[]``: a valid request; ``[errors]``: a request attempt with correctable
     problems, JSON breakage included, which is exactly what the corrective
     round feeds back.
     """
-    if not isinstance(tail_body, str) or '"toolRequest"' not in tail_body:
+    if not isinstance(tail_body, str) or not any(f'"{key}"' in tail_body for key in REQUEST_KEYS):
         return None
     try:
         payload = json.loads(tail_body)
     except (ValueError, TypeError) as exc:
         return [agent_text.message("request.block-not-json", exc=exc)]
-    if not isinstance(payload, dict) or "toolRequest" not in payload:
+    if not isinstance(payload, dict):
         return None
-    _, errors = parse_tool_request_verbose(payload["toolRequest"])
-    return errors
+    if "toolRequest" in payload:
+        _, errors = parse_tool_request_verbose(payload["toolRequest"])
+        return errors
+    if "delegateRequest" in payload:
+        _, errors = parse_delegate_request_verbose(payload["delegateRequest"])
+        return errors
+    return None
 
 
 def extract_tool_request_attempt(reply: str) -> tuple[str, object]:
@@ -911,17 +929,18 @@ def extract_tool_request_attempt(reply: str) -> tuple[str, object]:
     and for a mutate tool that text is a whole source file rendered as chat.
 
     Scans every fenced block for a request payload: ``{"toolRequest": …}`` or
-    the bare ``{"tool": …, "params": {…}}`` object. Returns
-    ``(reply_with_the_block_stripped, payload)`` where payload is the raw
-    request dict, the unparseable block body (``str`` — so the JSON error still
-    feeds back), or ``None`` when the reply carries no request attempt. The
-    caller owns the grant check: this is grammar, not authority.
+    the bare ``{"tool": …, "params": {…}}`` object, and a delegation's
+    ``{"delegateRequest": …}``, which keeps its wrapper so the caller knows it
+    for one. Returns ``(reply_with_the_block_stripped, payload)`` where payload
+    is the raw request dict, the unparseable block body (``str``, so the JSON
+    error still feeds back), or ``None`` when the reply carries no request
+    attempt. The caller owns the grant check: this is grammar, not authority.
     """
     if not isinstance(reply, str) or "```" not in reply:
         return reply, None
     for match in reversed(list(_FENCE_RE.finditer(reply))):
         body = match.group(1)
-        marked = '"toolRequest"' in body
+        marked = any(f'"{key}"' in body for key in REQUEST_KEYS)
         if not marked and '"tool"' not in body:
             continue
         if len(body.encode("utf-8")) > PLAN_TAIL_MAX_BYTES:
@@ -937,6 +956,8 @@ def extract_tool_request_attempt(reply: str) -> tuple[str, object]:
             continue
         if isinstance(payload.get("toolRequest"), dict):
             return stripped, payload["toolRequest"]
+        if isinstance(payload.get("delegateRequest"), dict):
+            return stripped, {"delegateRequest": payload["delegateRequest"]}
         # The wrapper-less form: a bare request object. Claimed only on the
         # full shape, so a chatty JSON block never parses as one by accident.
         if isinstance(payload.get("tool"), str) and isinstance(payload.get("params"), dict):
@@ -947,7 +968,9 @@ def extract_tool_request_attempt(reply: str) -> tuple[str, object]:
 def parse_delegate_request_verbose(raw: object) -> tuple[dict | None, list[str]]:
     """Validate one ``delegateRequest`` payload, naming what is wrong: the
     sibling :func:`parse_tool_request_verbose` has for tools. A native
-    ``delegate`` call reads the errors back; a fenced block fails open."""
+    ``delegate`` call reads the errors back, and a block the reply's parts do
+    not take gets them in a correction round, as a tool request's block does
+    (``tool_rounds._handle_tool_reply``)."""
     if not isinstance(raw, dict):
         return None, [agent_text.message("request.delegate-not-object")]
     capability = raw.get("capability")
@@ -1031,8 +1054,8 @@ def parse_parts(body: str) -> list[dict] | None:
         # A content-class tool's enlarged tail is spent on its CONTENT FIELD;
         # parse_tool_request_verbose still holds every other param to the
         # classic cap, so a padded non-content param cannot ride it (#245).
-    if "proposal" in payload or "proposals" in payload:
-        return None  # never accepted from the model (memo dev/41 §4.1)
+    if any(key in payload for key in ("proposal", "proposals", "change", "changes")):
+        return None  # runtime parts, never accepted from the model (memo dev/41 §4.1)
     if "toolRequest" in payload and "delegateRequest" in payload:
         return None  # one request per reply (memo dev/48)
     if "toolRequest" in payload:

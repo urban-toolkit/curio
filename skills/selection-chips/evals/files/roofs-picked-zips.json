@@ -1,0 +1,127 @@
+{
+  "dataflow": {
+    "categories": {"city": ["Chicago"], "topic": ["Greenery"], "complexity": ["Beginner"]},
+    "nodes": [
+      {
+        "id": "a1abfa78-6517-4606-9660-c7eeeeb49851",
+        "type": "curio.builtin/data-loading",
+        "x": 275,
+        "y": 314.5,
+        "content": "import geopandas as gpd\nimport pandas as pd\nfrom shapely.geometry import Point\n# Read the green roofs dataset\ngreen_roofs_path = curio_data_path(\"data.cityofchicago.green-roofs\")\ngreen_roofs_df = pd.read_csv(green_roofs_path)\n\n# Create the dataset into geo dataframe using latitude and longitude columns\ngeometry = [Point(xy) for xy in zip(green_roofs_df['LONGITUDE'], green_roofs_df['LATITUDE'])]\ngreen_roofs_df = gpd.GeoDataFrame(green_roofs_df, geometry=geometry, crs=4326)\nchicago_path = curio_data_path(\"data.utk.chicago-boundary\")\nchicago = gpd.read_file(chicago_path)\n\n# Joining the green roofs dataset with the chicago neighborhood geojson file\njoined = gpd.sjoin(green_roofs_df, chicago, predicate='within')\nreturn joined",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "5f658c2a-5124-4421-807f-9ce343d160ce",
+        "type": "curio.builtin/data-pool",
+        "x": 999.9310780008192,
+        "y": 313.73933933162647,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "f9e2b9af-23e6-4db3-9140-38bfecd6afc5",
+        "type": "curio.builtin/data-transformation",
+        "x": 1796.9237776095802,
+        "y": 318.7250241808757,
+        "content": "import geopandas as gpd\n\njoined = input_0\n\n# filter out the top 10 zip codes from the joined dataframe on 'zip' by square feet\ntop_10_largest = joined.groupby('zip')['VEGETATED_SQFT'].sum().reset_index().sort_values(by='VEGETATED_SQFT', ascending=False).head(10)\n\nreturn top_10_largest",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "b601d363-50fd-4209-bee2-9997dcb050f3",
+        "type": "curio.builtin/vis-vega",
+        "x": 2633.9071041709058,
+        "y": 325.0633183059499,
+        "width": 590,
+        "height": 350,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Top 10 largest zip codes by green roof area\",\n  \"width\": 400,\n  \"height\": 200,\n  \"params\": [\n    {\n      \"name\": \"zip_select\",\n      \"select\": {\n        \"type\": \"point\",\n        \"fields\": [\"zip\"],\n        \"toggle\": \"event.shiftKey\"\n      }\n    }\n  ],\n  \"mark\": {\"type\": \"bar\", \"stroke\": \"black\", \"color\": \"green\"},\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"VEGETATED_SQFT\",\n      \"type\": \"quantitative\",\n      \"axis\": {\n        \"title\": \"Total Vegetated Roof Size (sqft)\",\n        \"values\": [100000, 250000, 500000, 1000000],\n        \"format\": \",d\"\n      }\n    },\n    \"y\": {\n      \"field\": \"zip\",\n      \"type\": \"nominal\",\n      \"sort\": \"-x\",\n      \"axis\": {\"title\": \"Zip Code\"}\n    },\n    \"color\": {\n      \"field\": \"zip\",\n      \"type\": \"nominal\",\n      \"scale\": {\"scheme\": \"category20\"}\n    },\n    \"opacity\": {\n      \"condition\": {\"param\": \"zip_select\", \"value\": 1},\n      \"value\": 0.3\n    },\n    \"tooltip\": [\n      {\"field\": \"zip\", \"type\": \"nominal\"},\n      {\"field\": \"VEGETATED_SQFT\", \"type\": \"quantitative\"}\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "c3a1f0d2-7b64-4e19-9a2e-5d8b1c6e4f70",
+        "type": "curio.builtin/data-transformation",
+        "title": "Roofs in the picked zip codes",
+        "x": 1796.9237776095802,
+        "y": 760,
+        "content": "# The roofs of the zip codes picked in the bar chart: to be written.\nreturn input_0",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the green roofs of the zip codes the user clicks in the bar chart, which this node's selection tag picked_zips holds.",
+        "metadata": {
+          "keywords": [],
+          "selections": [
+            {
+              "name": "picked_zips",
+              "node": "b601d363-50fd-4209-bee2-9997dcb050f3",
+              "column": "zip",
+              "ids": [60607, 60614]
+            }
+          ]
+        }
+      },
+      {
+        "id": "e8d24b91-3f05-4c7a-b6d1-0a9c27e5f413",
+        "type": "curio.builtin/computation-analysis",
+        "title": "Mean roof size",
+        "x": 1796.9237776095802,
+        "y": 1120,
+        "content": "return input_0[\"VEGETATED_SQFT\"].mean()",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Return the mean vegetated square feet of the roofs on its input.",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-a1abfa78-6517-4606-9660-c7eeeeb49851out-5f658c2a-5124-4421-807f-9ce343d160cein",
+        "source": "a1abfa78-6517-4606-9660-c7eeeeb49851",
+        "target": "5f658c2a-5124-4421-807f-9ce343d160ce"
+      },
+      {
+        "id": "reactflow__edge-5f658c2a-5124-4421-807f-9ce343d160ceout-f9e2b9af-23e6-4db3-9140-38bfecd6afc5in",
+        "source": "5f658c2a-5124-4421-807f-9ce343d160ce",
+        "target": "f9e2b9af-23e6-4db3-9140-38bfecd6afc5"
+      },
+      {
+        "id": "reactflow__edge-f9e2b9af-23e6-4db3-9140-38bfecd6afc5out-b601d363-50fd-4209-bee2-9997dcb050f3in",
+        "source": "f9e2b9af-23e6-4db3-9140-38bfecd6afc5",
+        "target": "b601d363-50fd-4209-bee2-9997dcb050f3"
+      },
+      {
+        "id": "reactflow__edge-5f658c2a-5124-4421-807f-9ce343d160ceout-c3a1f0d2-7b64-4e19-9a2e-5d8b1c6e4f70in",
+        "source": "5f658c2a-5124-4421-807f-9ce343d160ce",
+        "target": "c3a1f0d2-7b64-4e19-9a2e-5d8b1c6e4f70"
+      },
+      {
+        "id": "reactflow__edge-5f658c2a-5124-4421-807f-9ce343d160ceout-e8d24b91-3f05-4c7a-b6d1-0a9c27e5f413in",
+        "source": "5f658c2a-5124-4421-807f-9ce343d160ce",
+        "target": "e8d24b91-3f05-4c7a-b6d1-0a9c27e5f413"
+      }
+    ],
+    "name": "Green roofs by zip code",
+    "task": "",
+    "timestamp": 1777164480406,
+    "provenance_id": "roofs-picked-zips"
+  }
+}

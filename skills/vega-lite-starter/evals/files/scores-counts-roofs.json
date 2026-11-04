@@ -1,0 +1,118 @@
+{
+  "dataflow": {
+    "categories": {"city": ["Chicago"], "complexity": ["Beginner"]},
+    "nodes": [
+      {
+        "id": "neighborhood-scores",
+        "type": "curio.builtin/data-loading",
+        "title": "Neighborhood scores",
+        "x": 200,
+        "y": 200,
+        "content": "import pandas as pd\n\n# Accessibility and coverage scores of twelve neighborhoods, three per side of the city.\nreturn pd.DataFrame({\n    \"side\": [\"North\"] * 3 + [\"South\"] * 3 + [\"West\"] * 3 + [\"Central\"] * 3,\n    \"accessibility\": [0.62, 0.71, 0.55, 0.38, 0.44, 0.29, 0.47, 0.52, 0.41, 0.83, 0.79, 0.88],\n    \"coverage\": [0.91, 0.85, 0.77, 0.64, 0.70, 0.58, 0.73, 0.69, 0.75, 0.97, 0.95, 0.99],\n})",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Return 12 neighborhood scores: side (object: North, South, West or Central, three rows each), accessibility (float64), coverage (float64).",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "scores-chart",
+        "type": "curio.builtin/vis-vega",
+        "title": "Scores chart",
+        "x": 1000,
+        "y": 200,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "hourly-counts",
+        "type": "curio.builtin/data-loading",
+        "title": "Hourly counts",
+        "x": 200,
+        "y": 700,
+        "content": "import pandas as pd\n\n# Pedestrians and cyclists counted on State Street, one row per hour of one day.\nhours = pd.date_range(\"2026-06-03 00:00\", periods=24, freq=\"h\")\npedestrians = [12, 8, 5, 4, 6, 20, 85, 240, 410, 380, 350, 420, 510, 480, 430, 450, 520, 610, 470, 300, 190, 110, 60, 30]\ncyclists = [2, 1, 0, 0, 1, 6, 30, 95, 140, 110, 90, 100, 120, 115, 105, 110, 150, 170, 120, 70, 40, 20, 10, 5]\n\nreturn pd.DataFrame({\"hour\": hours, \"pedestrians\": pedestrians, \"cyclists\": cyclists})",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Return 24 rows, one per hour of one day: hour (datetime64[ns]), pedestrians (int64), cyclists (int64).",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "counts-chart",
+        "type": "curio.builtin/vis-vega",
+        "title": "Counts chart",
+        "x": 1000,
+        "y": 700,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "roof-sizes",
+        "type": "curio.builtin/data-loading",
+        "title": "Roof sizes",
+        "x": 200,
+        "y": 1200,
+        "content": "import pandas as pd\n\n# Twelve green roofs, each with an id of its own, and their vegetated area.\nreturn pd.DataFrame({\n    \"roof_id\": [f\"R-{n:03d}\" for n in range(1, 13)],\n    \"VEGETATED_SQFT\": [1200.0, 5400.0, 830.0, 15200.0, 2600.0, 7100.0, 400.0, 3900.0, 21000.0, 1800.0, 6300.0, 950.0],\n})",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Return 12 roofs: roof_id (object, a different id on every row), VEGETATED_SQFT (float64).",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "roofs-chart",
+        "type": "curio.builtin/vis-vega",
+        "title": "Roofs chart",
+        "x": 1000,
+        "y": 1200,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-neighborhood-scoresout-scores-chartin",
+        "source": "neighborhood-scores",
+        "target": "scores-chart",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-hourly-countsout-counts-chartin",
+        "source": "hourly-counts",
+        "target": "counts-chart",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-roof-sizesout-roofs-chartin",
+        "source": "roof-sizes",
+        "target": "roofs-chart",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      }
+    ],
+    "name": "Scores, counts and roofs",
+    "task": "",
+    "timestamp": 1777164480406,
+    "provenance_id": "scores-counts-roofs"
+  }
+}

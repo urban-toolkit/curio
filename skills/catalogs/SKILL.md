@@ -1,11 +1,11 @@
 ---
 name: catalogs
 description: >-
-  Use this skill when a task needs something from one of Curio's six catalogs: a node package, a
-  trained model, a dataset or collection, a data portal or source to download from, another agent,
-  or a scenario of another project. It says what each catalog holds, which tools list it and
-  propose adding from it, how node code loads a dataset or a model by its id, how it reads a key
-  saved for node code, and what a run that writes code is given of its dataflow.
+  Use this skill when the user asks what they already have, or could add, before building:
+  a node package, a trained model, a dataset or a collection of files, a portal to download data
+  from, another agent, a scenario from another project, or where a key for node code is kept, even
+  if they never say catalog. It says what each of Curio's seven catalogs holds, which tool searches
+  or adds from it, and how node code loads a dataset, a model or a key by its id.
 license: MIT
 compatibility: Written for Curio's agents, their tools and node code.
 metadata:
@@ -16,13 +16,14 @@ metadata:
 ---
 ## Catalogs
 
-Curio has six catalogs, each holding what the account that runs an agent has. An agent reaches each through the tools below that it has, and writes an id from a catalog exactly as a tool gave it, never from memory.
+Curio has seven catalogs, each holding what the account that runs an agent has. An agent reaches each through the tools below that it has, and writes an id from a catalog exactly as a tool gave it, never from memory.
 
 - Node Catalog: the node packages, each with its templates, the types a node is made from. A run that can place or plan nodes receives the templates this dataflow can use; packages.catalog lists the catalog's packages and whether this project has each, packages.resolve gives a package's dependencies, the packages it names, its permissions and the functions its modules define, and package.install proposes adding one to this project.
 - Model Catalog: the trained models this account added, which node code loads with `curio_load_model("<id>")`. models.search lists them, each with the line that loads it.
 - Data Catalog: the datasets this account holds, collections among them, which node code reads with `curio_load_data("<id>")`, `curio_data_path("<id>")` or `curio_load_collection("<id>")`. catalog.search lists them, each with the line that loads it when its file is here, and dataset.install proposes adding one to this project.
 - Discovery Catalog: the data portals, storage, services and model sources this Curio connects to. discovery.sources lists the portals, discovery.search searches them, and discovery.acquire proposes downloading one resource into the Data Catalog, where it becomes a dataset.
 - Agent Catalog: the agents. An agent that can hand a task to another is told which, and hands it over by the capability it delegates.
+- Skill Catalog: the skills agents read, Curio's, this account's own and those of node packages. The user imports a skill there, and gives one to an agent with Add skill in that agent's details.
 - Scenario Catalog: the scenarios saved in this account's projects. scenarios.search lists them, each with its project and whether it is one of this dataflow's own, and this dataflow's own scenarios, with their levers, fixed context and outcomes, are in dataflow.read. A scenario of another project comes into this dataflow, with its saved results, when the user drags its card in from Scenario, Browse all (Ctrl-click or Cmd-click picks several of one set, which come together): name it and its project and tell the user so, rather than rebuilding it.
 
 A key node code sends to an API is saved in API Settings as a Node code key, under a name, for one host. Node code reads it only as `api_key = curio_secret("<name>")`, never as a value written in the code.

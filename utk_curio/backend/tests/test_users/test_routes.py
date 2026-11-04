@@ -241,6 +241,8 @@ class TestPublicConfig:
         assert "default_save_node_output" in data
         assert isinstance(data["default_save_node_output"], bool)
         assert "enable_user_auth" not in data
+        # Collaboration has no switch for the page to read: it is always on.
+        assert "enable_collab" not in data
 
     def test_public_config_names_the_collaboration_namespace(self, client, monkeypatch):
         """The page opens its collaboration socket on the namespace the

@@ -42,9 +42,6 @@
 #    other jobs pull the one build-image built with the same argument. Every
 #    CI overlay sets both.
 #
-# 5. CURIO_E2E_STACK_ARGS, empty unless a job sets it, adds curio.py arguments
-#    to the command: e2e-collab starts its stack with --collab.
-#
 # Deliberately NOT docker-compose.deploy.yml: that overlay also passes
 # --no-allow-publish, which would disable the two catalog mutators that the
 # publish-catalog tests exercise. CI wants auth on and publish still allowed.
@@ -115,6 +112,6 @@ services:
       - sh
       - -c
       - >-
-        umask 000 && exec python curio.py start all --deploy --testing --with-examples ${CURIO_E2E_STACK_ARGS:-}
+        umask 000 && exec python curio.py start all --deploy --testing --with-examples
         --backend-host 0.0.0.0 --backend-port 5002 --backend-url "${CURIO_E2E_BACKEND_URL:?the host address of this stack's backend}"
         --sandbox-host 0.0.0.0 --sandbox-port 2000

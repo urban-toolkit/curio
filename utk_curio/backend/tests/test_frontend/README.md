@@ -62,16 +62,12 @@ workers as its runner's free memory and video memory hold
 (`scripts/ci_memory_budget.py`), and always at least two backend and sandbox
 pairs: on a runner that holds one worker (`utk-desktop-02`), the second pair
 answers only those tests, and the serial run counts it from
-`CURIO_E2E_SHARDS`. A test that needs real-time collaboration is marked
-`needs_collab` and runs on the `collab` share alone, CI's `e2e-collab` job,
-the one stack started with `--collab`; locally, set `CURIO_E2E_COLLAB=1` so
-the harness starts its stack with `--collab`. Everything else runs on the CPU
-runners. Two variables select a share, and a run with neither runs everything:
+`CURIO_E2E_SHARDS`. Everything else runs on the CPU runners. Two variables
+select a share, and a run with neither runs everything:
 
 ```bash
 CURIO_E2E_RUNNER=utk pytest utk_curio/backend/tests/test_frontend/       # the webgpu share
 CURIO_E2E_RUNNER=desktop CURIO_E2E_PART=3/14 pytest ...                  # one of fourteen desktop parts
-CURIO_E2E_COLLAB=1 CURIO_E2E_RUNNER=collab pytest ...                    # the collaboration share
 ```
 
 CI runs `E2E_DESKTOP_PARTS` desktop parts (`tests/parts.py`; a Jest test
@@ -101,7 +97,7 @@ Autark workflows use the single `AUTK_GRAMMAR` node type, which renders its map/
 
 There is **no WebGPU tolerance**: an `AUTK_GRAMMAR` node that errors (including because WebGPU is unavailable) is a hard test failure. To run the autk examples you need a browser that provides WebGPU - which the system-Chrome `executable_path` above ensures. `_webgpu_diagnostics` still probes adapter/device state once per session and attaches it to the failure dump for debugging.
 
-A test that needs an adapter asks with `require_webgpu(page)` (fails on CI's GPU job, skips elsewhere) or asserts `webgpu_adapter(page)`, both in `utils/webgpu.py`. Never with its own `requestAdapter()`: these ask through the app's probe itself (`window.__curio_probeWebGpu`, from `src/utils/webgpuSupport.ts`), which waits until the page has drawn a frame and asks again after a null before calling the adapter missing. A request made before the page draws can be dropped by Chrome's switch to software compositing. The probe waits at most 10 s for that frame, and a freshly launched Chrome on a busy GPU runner can take longer, so while the page has drawn no frame and no adapter came, the helper runs the probe again, for up to a minute (#1017).
+A test that needs an adapter asks with `require_webgpu(page)` (fails on CI's GPU job, skips elsewhere) or asserts `webgpu_adapter(page)`, both in `utils/webgpu.py`. Never with its own `requestAdapter()`: these ask through the app's probe itself (`window.__curio_probeWebGpu`, from `src/utils/webgpuSupport.ts`), which waits until the page has drawn a frame and asks again after a null before calling the adapter missing. A request made before the page draws can be dropped by Chrome's switch to software compositing. The probe waits at most 10 s for that frame, and a freshly launched Chrome on a busy GPU runner can take longer (#1017). So a probe whose wait ran out and that found no adapter with every request made before the page drew waits for a frame once more and asks again once one comes, which is what a dashboard's own GPU steps rely on; when the page drew nothing through that wait either, the helper runs the probe again, for up to a minute.
 
 `AUTK_GRAMMAR` is a `"grammar"` node (grammar/JSON editor + output tab) and exercises the full matrix: `test_node_type_and_content` checks the grammar editor; `test_node_execution` verifies each node reaches **Done**. Its grammar content (and any JavaScript/WGSL compute blocks) is excluded from the Python random-seed injection used by Python `CODE_TYPES` nodes.
 
@@ -133,6 +129,43 @@ python -m utk_curio.backend.tests.stress \
 It writes `report.json` and `summary.md` (errors by kind, p50/p95/max per
 endpoint, the slowest users, every failure with its stderr) and exits non-zero
 if any tier had any failure.
+
+**Each user's tab** (`stress/sockets.py`). A tier's users are also put in rooms
+of five (`--room-size`, 0 for none). The first user of a room owns the dataflow
+it created, and invites the others as editors by username through the Share
+menu's route (`POST /api/projects/<id>/editors`), since the server drops a
+watcher's changes. While its own dataflow runs, each user opens a tab of the
+room's dataflow as the canvas does: a pycrdt doc that connects with the user's
+token over WebSocket (python-socketio's client and `websocket-client`), joins
+the room (`join_session`) and syncs over the `yjs` event, with the frames the
+server's doc speaks (`collaboration/dataflow_docs.py`). It then types two
+comment lines into a node's code, a keystroke a transaction, and drags the node
+every 15 keystrokes, at five keys a second in the burst profile and at a
+person's pace in the session profile. Once every tab of the room has typed, the
+tabs check they hold the same code and places, and each stays open until its
+user's dataflow work is done. A tier's users run in harness processes of at
+most ten, two whole rooms each, behind one start gate, so no one process
+carries every tab. The report adds, per tier:
+
+- sync times, p50, p95 and max: how long an update took from its tab to every
+  other tab of the room, known by its sender's client id and clock, as Yjs
+  knows what a doc holds; an update not in every tab 60 s after the room's
+  last one is an `unsynced` failure, and a tab whose nodes' code and places
+  then differ from the room's first tab's is a `diverged` one;
+- the backend's threads and resident memory before the tier, at their peak (read
+  every second while it runs) and after it;
+- the CPU, user plus system, of the backend's process and of the harness's
+  processes, which drive every user's calls and tab: the seconds each ran, and
+  the cores that kept busy over the tier and at most over one reading;
+- the doc logs the tier's dataflows left on disk, each day's checkpoint
+  (`ydoc/<doc id>/<day>.bin`) and updates (`<day>.updates`), and the size of
+  the doc a tab joining at the end downloads.
+
+The backend's process and files are read by `stress/backend_probe.py`, run with
+Python where the backend runs: `--probe "docker exec <container> python"` in
+CI, since the stack's `.curio` is its root's alone, and this Python by default,
+for a stack started on this machine. A reading it cannot take is reported as
+not measured, with the reason; `--no-probe` reads nothing.
 
 Two profiles, because they answer different questions. `--profile burst` (the
 default, and what the tiers gate on) starts every user at the same instant and
@@ -215,7 +248,7 @@ The DB stub is strictly additive - Strategy A still works against the same test 
 | Helper | What it does |
 |---|---|
 | `api_json(url, token, *, method="GET", payload=None, timeout=10.0, raw=False)` | Authenticated JSON request, stdlib only. The escape hatch for asserting backend state from a browser test: a seeding or persistence problem then fails in about a second with the offending payload, instead of as a 15-second locator timeout that says nothing about which side broke. `raw=True` returns bytes, for binary endpoints such as a `.curio.zip`. |
-| `require_owner_view(page, *, timeout=4000)` | **Fails** when the dataflow opened read-only as the shared guest. A guest cannot see another user's installed packages, datasets or agents, so every catalog fetch comes back empty and the test asserts nothing. That is a setup bug: boot the stack with `--deploy`. |
+| `require_owner_view(page, *, timeout=4000)` | **Fails** unless the tab is the dataflow's owner's: a watcher's canvas shows the read-only banner, and an invited editor's has no save status. Only the owner sees the dataflow's installed packages, datasets and agents, so on anyone else's tab every catalog fetch comes back empty and the test asserts nothing. The usual cause is a stack without user auth, where the browser lands as the shared guest: boot it with `--deploy`. |
 | `open_tools_palette(page, kind)` | Opens one left-rail palette, `"builtin"`, `"packages"`, `"datasets"`, `"agents"` or `"models"`, and returns its panel locator. Re-callable: it matches either the `Open …` or the `Close …` tooltip (`data-tooltip`) and clicks only when the panel is not already showing, so a test that needs two palettes can come back to the first one. They are mutually exclusive (`ToolsMenu` keeps a single `activePalette`), so opening one closes the other. `close_tools_palette(page, kind)` closes one, and `tools_palette_is_open(page, kind)` says whether it shows. |
 
 ### Canvas authoring helpers
@@ -351,7 +384,7 @@ exactly that.
 Pass `sweep_toasts=True` when capturing anything that follows a node run.
 Toasts are bottom-right, up to 360px wide, and land exactly where canvas content
 usually is - and a node reaching "Done" does not mean its follow-up work has
-finished: the dataset install-save is debounced 500 ms past it and answers
+finished: the record of its output is debounced 500 ms past it and answers
 seconds later, so any toast it raises lands well after the status flips. The
 helper sweeps, waits for a quiet window, and sweeps again, right before the
 shutter.
@@ -398,7 +431,7 @@ Two families of baseline live in that folder:
   `package-metadata-roundtrip`, `package-export-drawer`, `save-as-modal`,
   `library-manager`, `node-catalog-drawer`, `data-catalog-drawer`,
   `agent-catalog-drawer`, `agent-run` (one per built-in agent, plus a
-  `_chat` companion for the four that mutate), `agent-review-card`,
+  `_chat` companion for the four that mutate), `agent-change-card`,
   `dataset-export`, `dataset-lineage`, `autark-grammar-edit`,
   `multi-input-authoring`, `canvas-delete-key`, `projects-page-scroll`,
   `global-imports`, `uhvi-install`, `data-pool-scroll`,
@@ -560,7 +593,7 @@ test_frontend/
   test_data_catalog.py        # Data Catalog drawer: hub datasets, search, add/remove, import
   test_agent_catalog.py       # Agent Catalog drawer: list, search, add -> palette, requiresAgents closure
   test_agent_runs_e2e.py      # EVERY built-in agent: install -> attach -> run a scripted turn (NO browser)
-  test_agent_chat_e2e.py      # one chat-panel baseline screenshot per agent + the review-card Apply
+  test_agent_chat_e2e.py      # one chat-panel baseline screenshot per agent + a change card and its Undo
   test_dataset_export.py      # Data Catalog detail panel -> Export: the downloaded name and bytes
   test_dataset_lineage_e2e.py # one edge -> the dataset's lineage grows (panel, card badge, server)
   test_computed_json_output_e2e.py # dict/scalar node output installs as json, no warning (#180)
@@ -734,18 +767,18 @@ agent arriving by some other path cannot slip past.
 
 | Module | Browser | What it is for |
 |---|---|---|
-| `test_agent_runs_e2e.py` | no | The correctness gate: install -> attach -> run -> the reply, the minted proposal or tool round, and the persisted transcript. ~1-2 s per agent. Each agent runs twice, fenced and on native tools, and one run falls back from native to fenced. One more writes an Autark document under its reply schema. |
-| `test_agent_chat_e2e.py` | yes | Drives a real chat turn per agent and captures the baselines below. A mutate-capable agent additionally **applies its proposal and is held to the canvas actually changing**; a report-only one is held to the canvas NOT changing. |
+| `test_agent_runs_e2e.py` | no | The correctness gate: install -> attach -> run -> the reply, the change that landed or the tool round, and the persisted transcript. ~1-2 s per agent. Each agent runs twice, fenced and on native tools, and one run falls back from native to fenced. One more writes an Autark document under its reply schema. |
+| `test_agent_chat_e2e.py` | yes | Drives a real chat turn per agent and captures the baselines below. A mutate-capable agent's **change lands with the reply and is held to the canvas actually changing**; a report-only one is held to the canvas NOT changing. |
 
 **What gets captured, and why it differs by agent.** 3 of the 4 catalog agents
-mint a proposal these tests can apply; the Dataset Finder's turn is a read
+make a change these tests can see land; the Dataset Finder's turn is a read
 (its one mutation, a dataset install, needs a real catalog row) - so there are
 two kinds of evidence and two capture shapes.
 
 | Agent kind | Baselines under `agent-run` | The assertion behind it |
 |---|---|---|
 | report-only (1) | `<agent-id>.png` - the chat panel, clipped | the reply rendered, and the saved dataflow is byte-identical afterwards |
-| mutate-capable (3) | `<agent-id>_chat.png` (panel) + `<agent-id>.png` (full canvas) | the proposal was applied and the node was really created or rewritten, on the server *and* on the canvas |
+| mutate-capable (3) | `<agent-id>_chat.png` (panel) + `<agent-id>.png` (full canvas) | the change landed and the node was really created or rewritten, on the server *and* on the canvas |
 
 Three things about those captures are deliberate:
 
@@ -773,7 +806,7 @@ handed. Three things make that usable from a test:
 | Point the user at it | `use_scripted_llm(backend, token)` - real `/api/agents/llm` calls that add a `testing` LLM configuration and make it the default, so the production `resolve_llm` path is the one under test |
 | Script the replies | `script_agent_replies(backend, *replies)` -> `POST /api/testing/agent-script`. One entry **per provider call**: a reply carrying a `toolRequest` tail is answered by the runtime and the model is prompted again, so script the follow-up too |
 | Script native tool calls | `script_agent_replies(backend, *replies, native_tools=True)`: the scripted endpoint calls tools natively, so runs are offered their tools instead of the fenced syntax (a reset puts it back). A reply is then `{"text", "toolCalls": [{"name", "arguments"}]}`, the name a tool id or its native name; `{"error": ..., "status": 400}` makes the call refuse the tools, which is how a test reaches the fallback tool calls: the same round again on the fenced protocol. `structured_output=True` makes it take a reply schema, so content written for an Autark node is scripted as the constrained JSON (`reply_schemas.autk_reply_schema(...).encode(document)`) |
-| Script a created node's id | `script_agent_replies(backend, *replies, node_ids=(uuid,))`: the next nodes an Apply creates get these ids, in order, until the next reset. Use it when a capture shows the applied turn: it prints the id, and a random one wraps that line or not by its width, moving the transcript by a line |
+| Script a created node's id | `script_agent_replies(backend, *replies, node_ids=(uuid,))`: the next nodes an agent's change creates get these ids, in order, until the next reset. Use it when a capture shows the change card: it prints the id, and a random one wraps that line or not by its width, moving the transcript by a line |
 | Read what reached the model | `captured_system_prompt(backend)` / `captured_agent_prompts(backend)` -> `GET /api/testing/agent-script`; `captured_agent_calls(backend)` says which configuration answered each call, and `captured_agent_offers(backend)` which native tools and which reply schema each call carried |
 
 The `agent-script` routes 404 unless `CURIO_TESTING` is set, on top of the
@@ -801,21 +834,21 @@ Things worth knowing before adding to these:
 - **Only three mutate tools are minted here**, and `MINTABLE_TOOLS` is ordered
   most-specific-first because an agent that declares several gets the first
   match: `dataflow.plan.write` (so the Dataflow Builder plans rather than
-  creating one node), then `node.create` (applying it puts a NEW node on the
+  creating one node), then `node.create` (it puts a NEW node on the
   canvas - the most visible proof an agent did something), then
   `node.content.write`. That spread is intentional: one plan and two node
   creations. No card's first match is `node.content.write` (node content is
-  the Node Builder's mode), so `TestAgentReviewCard` in
-  `test_agent_chat_e2e.py` applies a content replacement. The remaining mutate contracts
+  the Node Builder's mode), so `TestAgentChangeCard` in
+  `test_agent_chat_e2e.py` lands a content replacement and undoes it. The remaining mutate contracts
   (`dataset.install`, `package.install`, `package.draft.apply`) each need a real
   catalog row, or a run of the isolated build service; their mints are covered
   in-process by
   `test_agents/test_routes_turns.py` and `test_agents/test_routes_proposals.py`,
   and an agent declaring only those falls through
   to the read-tool leg.
-- **A plan is applied per node**, through the planned row's own
-  `Create node <title>` button and the `apply-node` route - not the card's
-  single `Apply`.
+- **A change lands with the reply**: a plan, a node, a node's code or
+  settings reach the canvas as the reply ends, and the change's card in the
+  chat offers **Undo**. Only an install has a review card's `Apply`.
 - **The transcript's vocabulary is `{"role": "user"|"agent", "text": ...}`.**
   `assistant` exists only in the provider-context mapping in `sessions.py`.
 - **`TestAgentChatGallery` is in `fixtures.py::_SHARED_SESSION_CLASSES`**, so the
@@ -860,7 +893,7 @@ access to PyPI and skips (rather than fails) when the index is unreachable.
 ## Cleaning up after a test
 
 `e2e_clean_db` truncates the mutable tables AND deletes `.curio/test/users/`
-plus `.curio/test/agents-catalog/` between tests, over
+plus `.curio/test/agents-catalog/` and `.curio/test/skills-catalog/` between tests, over
 `/api/testing/reset-db` when it is talking to a separately-started backend and
 on the files otherwise (#308). That matters because `user.id` is a bare sqlite
 rowid alias, so ids recycle from 1: a store left behind is handed to the next

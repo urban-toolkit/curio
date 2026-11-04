@@ -5,7 +5,8 @@ the link watches: the server refuses each of a watcher's edits. Participants
 are told apart by participant, not by account, so two tabs of one account, or
 two hosted guests on the one guest account, are two people. A hosted guest
 joins no room of a dataflow a guest owns, and a change to the editors reaches
-the room at once.
+the room at once. The dataflow itself is the server's Yjs doc, whose roles
+``test_dataflow_docs.py`` holds; code is typed together, with no vote.
 """
 
 from __future__ import annotations
@@ -14,8 +15,22 @@ import pytest
 
 from ._support import NAMESPACE, connect, drain, invite, join, make_project, make_user, received
 
-NODE = {"id": "n1", "position": {"x": 10, "y": 20}, "data": {"nodeType": "x"}}
-EDGE = {"id": "e1", "source": "n1", "target": "n2"}
+#: The events the room took before the dataflow became its doc: a node's or
+#: a connection's change relayed, the votes on a code change, and a run's
+#: output, its running state and a conflict's choice relayed.
+GONE_EVENTS = [
+    ("node_added", {"nodeId": "n9", "node": {"id": "n9", "position": {"x": 1, "y": 2}, "data": {}}}),
+    ("node_updated", {"nodeId": "n1", "patch": {"position": {"x": 1, "y": 2}}}),
+    ("node_removed", {"nodeId": "n1"}),
+    ("edge_added", {"edgeId": "e1", "edge": {"id": "e1", "source": "n1", "target": "n2"}}),
+    ("edge_removed", {"edgeId": "e1"}),
+    ("request_code_change", {"nodeId": "n1", "kind": "code", "oldValue": "a", "newValue": "b"}),
+    ("approve_code_change", {"proposalId": "p1"}),
+    ("reject_code_change", {"proposalId": "p1"}),
+    ("output_produced", {"nodeId": "n1", "output": {"code": "success", "content": "x"}}),
+    ("node_exec_display", {"nodeId": "n1"}),
+    ("resolve_conflict", {"choice": "mine"}),
+]
 
 
 def _room(collab_app, *invited):
@@ -46,32 +61,24 @@ def test_a_watchers_edit_is_refused_and_an_invited_editors_is_relayed(collab_app
     from utk_curio.backend.app.collaboration.events import READ_ONLY_REFUSAL
 
     project_id, s, _acks = _room(collab_app, "bob")
-    payload = {"projectId": project_id, "nodeId": NODE["id"], "node": NODE}
+    payload = {"projectId": project_id, "nodeId": "n1"}
 
-    refused = s["carol"].emit("node_added", payload, namespace=NAMESPACE, callback=True)
+    refused = s["carol"].emit("node_lock", payload, namespace=NAMESPACE, callback=True)
     assert refused == {"ok": False, "error": "read_only", "message": READ_ONLY_REFUSAL}
-    assert received(s["alice"], "node_added") == [], "a watcher's node reached the owner"
+    assert received(s["alice"], "node_locked") == [], "a watcher's lock reached the owner"
 
-    relayed = s["bob"].emit("node_added", payload, namespace=NAMESPACE, callback=True)
-    assert relayed == {"ok": True}
-    got = received(s["alice"], "node_added")
-    assert [g["node"]["id"] for g in got] == ["n1"]
-    assert got[0]["from"]["username"] == "bob"
-    assert [g["node"]["id"] for g in received(s["carol"], "node_added")] == ["n1"], (
-        "a watcher sees the editor's change"
+    relayed = s["bob"].emit("node_lock", payload, namespace=NAMESPACE, callback=True)
+    assert relayed["ok"] is True
+    got = received(s["alice"], "node_locked")
+    assert [g["nodeId"] for g in got] == ["n1"]
+    assert got[0]["lock"]["username"] == "bob"
+    assert [g["nodeId"] for g in received(s["carol"], "node_locked")] == ["n1"], (
+        "a watcher sees the editor's lock"
     )
 
 
 @pytest.mark.parametrize("event,extra", [
-    ("node_added", {"nodeId": "n9", "node": dict(NODE, id="n9")}),
-    ("node_updated", {"nodeId": "n1", "patch": {"position": {"x": 1, "y": 2}}}),
-    ("node_removed", {"nodeId": "n1"}),
-    ("edge_added", {"edgeId": "e1", "edge": EDGE}),
-    ("edge_removed", {"edgeId": "e1"}),
     ("node_lock", {"nodeId": "n1"}),
-    ("request_code_change", {"nodeId": "n1", "kind": "code", "oldValue": "a", "newValue": "b"}),
-    ("output_produced", {"nodeId": "n1", "output": {"code": "success", "content": "x"}}),
-    ("resolve_conflict", {"choice": "mine"}),
 ])
 def test_a_watcher_is_refused_every_change_to_the_room(collab_app, event, extra):
     project_id, s, _acks = _room(collab_app)
@@ -84,38 +91,30 @@ def test_a_watcher_is_refused_every_change_to_the_room(collab_app, event, extra)
     )
 
 
-@pytest.mark.parametrize("vote", ["approve_code_change", "reject_code_change"])
-def test_a_watcher_has_no_vote(collab_app, vote):
+@pytest.mark.parametrize("event,extra", GONE_EVENTS, ids=[event for event, _ in GONE_EVENTS])
+def test_the_room_answers_none_of_the_events_it_took_before_the_doc(collab_app, event, extra):
+    """Code is typed together in the dataflow's doc, with no vote, the doc
+    carries every node and connection, and each tab runs its own nodes: the
+    room takes none of these from an editor, and they reach nobody."""
     project_id, s, _acks = _room(collab_app, "bob")
-    proposal = s["alice"].emit("request_code_change", {
-        "projectId": project_id, "nodeId": "n1", "kind": "code", "oldValue": "a", "newValue": "b",
-    }, namespace=NAMESPACE, callback=True)["proposal"]
-    drain(*s.values())
+    if event in ("approve_code_change", "reject_code_change"):
+        # A vote on a change alice asked for, as a room with votes kept one.
+        asked = s["alice"].emit("request_code_change", {
+            "projectId": project_id, "nodeId": "n1", "kind": "code", "oldValue": "a", "newValue": "b",
+        }, namespace=NAMESPACE, callback=True)
+        if isinstance(asked, dict) and isinstance(asked.get("proposal"), dict):
+            extra = {"proposalId": asked["proposal"]["id"]}
+        drain(*s.values())
 
-    ack = s["carol"].emit(vote, {"projectId": project_id, "proposalId": proposal["id"]},
-                          namespace=NAMESPACE, callback=True)
+    ack = s["bob"].emit(event, {"projectId": project_id, **extra}, namespace=NAMESPACE, callback=True)
 
-    assert ack["ok"] is False and ack["error"] == "read_only", ack
-    assert [e["name"] for e in s["bob"].get_received(namespace=NAMESPACE)] == [], (
-        "a watcher's vote reached the room"
-    )
-
-
-def test_a_change_waits_for_the_editors_votes_alone(collab_app):
-    """A watcher in the room does not hold a proposal back: bob's approval is
-    the one alice's change waits for."""
-    project_id, s, _acks = _room(collab_app, "bob")
-    proposal = s["alice"].emit("request_code_change", {
-        "projectId": project_id, "nodeId": "n1", "kind": "code", "oldValue": "a", "newValue": "b",
-    }, namespace=NAMESPACE, callback=True)["proposal"]
-    drain(*s.values())
-
-    ack = s["bob"].emit("approve_code_change", {"projectId": project_id, "proposalId": proposal["id"]},
-                        namespace=NAMESPACE, callback=True)
-
-    assert ack == {"ok": True, "applied": True}
-    applied = received(s["carol"], "code_change_applied")
-    assert [a["newValue"] for a in applied] == ["b"]
+    assert not (isinstance(ack, dict) and ack.get("ok")), (event, ack)
+    for name in ("alice", "carol"):
+        assert [e["name"] for e in s[name].get_received(namespace=NAMESPACE)] == [], (
+            f"bob's {event} reached {name}"
+        )
+    snapshot = join(s["alice"], project_id)["snapshot"]
+    assert "proposals" not in snapshot, "the room still keeps proposals"
 
 
 def test_the_room_lists_each_participants_role(collab_app):
@@ -135,8 +134,7 @@ def test_the_room_lists_each_participants_role(collab_app):
 
 
 def test_two_participants_of_one_account_are_told_apart(collab_app):
-    """Two tabs of alice's: each its own participant, with a lock of its own
-    and a vote on the other's change."""
+    """Two tabs of alice's: each its own participant, with a lock of its own."""
     application, socketio, _ = collab_app
     with application.app_context():
         alice, tok = make_user("alice")
@@ -152,14 +150,8 @@ def test_two_participants_of_one_account_are_told_apart(collab_app):
     assert lock["ok"] is True and lock["lock"]["participant_id"] == one["participant_id"]
     taken = second.emit("node_lock", {"projectId": project_id, "nodeId": "n1"}, namespace=NAMESPACE, callback=True)
     assert taken == {"ok": False, "error": "locked_by_other"}
-
-    proposal = first.emit("request_code_change", {
-        "projectId": project_id, "nodeId": "n1", "kind": "code", "oldValue": "a", "newValue": "b",
-    }, namespace=NAMESPACE, callback=True)["proposal"]
-    assert proposal["proposed_by"]["participant_id"] == one["participant_id"]
-    vote = second.emit("approve_code_change", {"projectId": project_id, "proposalId": proposal["id"]},
-                       namespace=NAMESPACE, callback=True)
-    assert vote == {"ok": True, "applied": True}
+    other = second.emit("node_lock", {"projectId": project_id, "nodeId": "n2"}, namespace=NAMESPACE, callback=True)
+    assert other["ok"] is True and other["lock"]["participant_id"] == two["participant_id"]
 
 
 def test_a_hosted_guest_joins_no_room_of_a_dataflow_a_guest_owns(collab_app, monkeypatch):
@@ -182,7 +174,7 @@ def test_a_hosted_guest_joins_no_room_of_a_dataflow_a_guest_owns(collab_app, mon
     assert join(visitor, example) == {"ok": False, "error": "guest_owned", "message": GUEST_OWNED_REFUSAL}
     watching = join(visitor, alices)
     assert watching["ok"] is True and watching["role"] == "watcher"
-    ack = visitor.emit("node_added", {"projectId": alices, "nodeId": "n1", "node": NODE},
+    ack = visitor.emit("node_lock", {"projectId": alices, "nodeId": "n1"},
                        namespace=NAMESPACE, callback=True)
     assert ack["error"] == "read_only"
 
@@ -202,6 +194,44 @@ def test_without_deploy_the_shared_guest_edits_its_own_dataflows(collab_app, mon
 
     ack = join(local, project_id)
     assert ack["ok"] is True and ack.get("role") == "owner", ack
+
+
+def test_without_deploy_the_shared_guests_tab_syncs_its_dataflows_doc_and_what_it_types_is_kept(
+    collab_app, monkeypatch,
+):
+    """A Curio with no sign-in binds its canvas as a signed-in tab does, since no
+    tab saves a dataflow: the shared guest's tab syncs its own dataflow's doc,
+    and the server applies what it types."""
+    from pycrdt import Map
+
+    from utk_curio.backend import config
+    from utk_curio.backend.app.collaboration import dataflow_docs
+    from utk_curio.backend.app.projects import storage
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    from ._ydoc_client import synced_tab
+
+    monkeypatch.setattr(config, "CURIO_NO_AUTH", True)
+    application, _socketio, _ = collab_app
+    with application.app_context():
+        guest, session = make_user(config.CURIO_SHARED_GUEST_USERNAME, is_guest=True)
+        token = session.token
+        project_id = make_project(guest)
+        ukey = _user_dir_key(guest)
+        storage.write_spec(ukey, project_id, {"dataflow": {"name": "Local", "nodes": [
+            {"id": "loader", "type": "curio.builtin/computation-analysis", "x": 0, "y": 0, "content": "x = 1\n"},
+        ], "edges": []}})
+    tab = synced_tab(application, token, project_id)
+
+    def change(doc):
+        doc.get("nodes", type=Map)["loader"]["content"].insert(0, "# local\n")
+
+    acks = tab.edit(change)
+
+    assert acks and all(ack.get("ok") for ack in acks), acks
+    with application.app_context():
+        live = dataflow_docs.read(ukey, project_id)
+    assert live["dataflow"]["nodes"][0]["content"] == "# local\nx = 1\n"
 
 
 def test_a_removed_editor_watches_at_once_and_on_their_next_join(collab_app):
@@ -224,7 +254,7 @@ def test_a_removed_editor_watches_at_once_and_on_their_next_join(collab_app):
     assert events["node_unlocked"] == {"nodeId": "n1"}, "a removed editor's lock stayed"
     roles = {u["participant_id"]: u["role"] for u in events["roles_changed"]["users"]}
     assert roles[acks["bob"]["participant_id"]] == "watcher"
-    refused = s["bob"].emit("node_added", {"projectId": project_id, "nodeId": "n1", "node": NODE},
+    refused = s["bob"].emit("node_lock", {"projectId": project_id, "nodeId": "n1"},
                             namespace=NAMESPACE, callback=True)
     assert refused["error"] == "read_only"
 
@@ -245,9 +275,9 @@ def test_an_editor_invited_while_watching_edits_at_once(collab_app):
 
     roles = {u["participant_id"]: u["role"] for u in received(s["carol"], "roles_changed")[-1]["users"]}
     assert roles[acks["carol"]["participant_id"]] == "editor"
-    ack = s["carol"].emit("node_added", {"projectId": project_id, "nodeId": "n1", "node": NODE},
+    ack = s["carol"].emit("node_lock", {"projectId": project_id, "nodeId": "n1"},
                           namespace=NAMESPACE, callback=True)
-    assert ack == {"ok": True}
+    assert ack["ok"] is True
 
 
 def test_a_join_to_a_dataflow_that_does_not_exist_is_refused(collab_app):

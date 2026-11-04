@@ -8,11 +8,11 @@ more -- it is representative by design, not a second matrix:
 1. **The palettes.** A dataset installed through the catalog service shows up as
    a draggable row, and a package's templates appear under their package, so
    "provisioned" means provisioned in the UI and not only in a lockfile.
-2. **The review card.** The plan arrives as a card that names what it will
-   build, and nothing reaches the canvas until someone presses Apply.
+2. **The plan's card.** The plan lands with the reply, whole, and its card
+   names what it built and offers its Undo.
 3. **Solve progress and reconnection.** The strip reports the run, and a reload
    mid-run re-attaches to the same job instead of losing it.
-4. **The output.** The applied nodes render on the canvas and carry the content
+4. **The output.** The plan's nodes render on the canvas and carry the content
    Solve wrote.
 
 Marked ``examples`` (the suite's opt-in marker for tests that need the shipped
@@ -294,11 +294,11 @@ class TestPaletteShowsWhatWasProvisioned:
         expect(row).to_have_count(1, timeout=15000)
 
 
-class TestReviewCardAndApply:
-    """Mode 2 of what a person judges: the plan is a proposal, and the canvas
-    changes only when they say so."""
+class TestThePlansCard:
+    """Mode 2 of what a person judges: the plan lands whole with the reply,
+    its card says what it built, and the canvas shows it."""
 
-    def test_the_plan_is_reviewed_then_applied_and_the_canvas_shows_it(
+    def test_the_plan_lands_with_its_card_and_the_canvas_shows_it(
         self, reconstruction_session
     ):
         require_project_page()
@@ -319,32 +319,17 @@ class TestReviewCardAndApply:
         expected_nodes = len(FIXTURE.expected["nodes"])
         expected_edges = len(FIXTURE.expected["edges"])
         card = panel.get_by_role(
-            "group", name=re.compile(r"^Review proposal: Apply plan")
+            "group", name=re.compile(r"^Change: Plan")
         ).first
         expect(card).to_be_visible(timeout=45000)
-        # The card says what it will build, in the words the runtime minted.
+        # The card says what it built, in the words the runtime landed it with.
         expect(card).to_contain_text(f"{expected_nodes} nodes", timeout=15000)
         expect(card).to_contain_text(f"{expected_edges} edges")
-        # Nothing has happened yet: a proposal is not a change (DEC-048).
-        assert canvas_nodes(page) == []
-        assert not attempt_mod.spec_nodes(_saved_spec(session, project_id))
+        expect(card.get_by_role("button", name="Undo")).to_be_visible()
         save_workflow_test_screenshot(
-            page, SCREENSHOT_STEM, test_name="plan_review_card",
+            page, SCREENSHOT_STEM, test_name="plan_card",
             fit_reactflow=False,
         )
-
-        apply_control = panel.get_by_role(
-            "button", name=re.compile(r"^(Apply plan|Apply all without validation)$")
-        ).first
-        expect(apply_control).to_be_visible(timeout=20000)
-        with page.expect_response(
-            lambda r: "/proposals/" in r.url
-            and r.url.endswith("/apply")
-            and r.request.method == "POST",
-            timeout=60000,
-        ) as info:
-            apply_control.click()
-        assert info.value.ok, f"apply failed: {info.value.status}"
 
         page.wait_for_function(
             "(n) => window.__curio_reactFlow.getNodes().length === n",
@@ -435,15 +420,8 @@ class TestSolveProgressAndReconnection:
         dismiss_toasts(page)
         panel = _open_chat(page)
         _send(panel, FIXTURE.prompt)
-        apply_control = panel.get_by_role(
-            "button", name=re.compile(r"^(Apply plan|Apply all without validation)$")
-        ).first
-        expect(apply_control).to_be_visible(timeout=45000)
-        with page.expect_response(
-            lambda r: r.url.endswith("/apply") and r.request.method == "POST",
-            timeout=60000,
-        ):
-            apply_control.click()
+        # The plan lands with the reply.
+        expect(panel.get_by_role("group", name=re.compile(r"^Change: Plan")).first).to_be_visible(timeout=45000)
 
         strip = page.get_by_role("group", name="Dataflow Builder").first
         expect(strip).to_be_visible(timeout=20000)

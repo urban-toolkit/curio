@@ -1,0 +1,57 @@
+/* Every other peer's drag (AgentDrags.tsx): over the canvas, the tool rail and
+   the catalog drawers, since a drag starts in them, and under API Settings,
+   the modals, the toasts and the tooltip. It takes no pointer event. */
+.layer {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: var(--curio-z-agent-drags);
+}
+
+/* One drag: the point its cursor's tip is at, which its ghost hangs from by
+   its top-left corner. It moves on every frame, so it has no transition. */
+.drag {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+/* A copy of the tile, row or card it drags, the size it has on the page at any
+   zoom: scaled back from its top-left, as the cursor is from its tip. */
+.copy {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  opacity: 0.85;
+  box-shadow: var(--curio-shadow-browse-card-raised);
+}
+
+/* The outline of the node it adds or moves, the node's size on the dataflow. */
+.outline {
+  position: absolute;
+  left: 0;
+  top: 0;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed;
+  border-radius: var(--curio-radius-lg);
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.outlineLabel {
+  max-width: 90%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 10px;
+  border-radius: var(--curio-radius-pill);
+  color: #fff;
+  font-family: var(--curio-font-family);
+  font-size: var(--curio-font-size-sm);
+  font-weight: 600;
+  line-height: 18px;
+}

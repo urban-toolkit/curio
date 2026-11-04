@@ -1,0 +1,81 @@
+{
+  "dataflow": {
+    "categories": {"city": ["Chicago"], "complexity": ["Beginner"]},
+    "nodes": [
+      {
+        "id": "lincoln-photos",
+        "type": "curio.builtin/data-loading",
+        "title": "Lincoln Park photos",
+        "x": 200,
+        "y": 200,
+        "content": "# One row per photo of the collection, with the links a Simple View shows.\nreturn curio_load_collection(\"data.curio.mapillary-sample\")",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the Lincoln Park street photos collection: one row per photo, with its thumbnail and its full photo in image_url.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "photo-cards",
+        "type": "curio.builtin/vis-simple",
+        "title": "Photo cards",
+        "x": 1000,
+        "y": 200,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "survey-photos",
+        "type": "curio.builtin/data-loading",
+        "title": "Survey photos",
+        "x": 200,
+        "y": 700,
+        "content": "import pandas as pd\n\n# The street survey's photos, as the survey team saved them.\nreturn pd.DataFrame({\n    \"photo_id\": [\"P-0001\", \"P-0002\", \"P-0003\", \"P-0004\"],\n    \"photo\": [\"photos/2019/0001.jpg\", \"photos/2019/0002.jpg\", \"photos/2023/0001.jpg\", \"photos/2023/0002.jpg\"],\n    \"year\": [2019, 2019, 2023, 2023],\n})",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Return the survey photos: photo_id (object), photo (object: local file paths such as photos/2019/0001.jpg), year (int64).",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "survey-cards",
+        "type": "curio.builtin/vis-simple",
+        "title": "Survey cards",
+        "x": 1000,
+        "y": 700,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-lincoln-photosout-photo-cardsin",
+        "source": "lincoln-photos",
+        "target": "photo-cards",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-survey-photosout-survey-cardsin",
+        "source": "survey-photos",
+        "target": "survey-cards",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      }
+    ],
+    "name": "Street photos",
+    "task": "",
+    "timestamp": 1777164480406,
+    "provenance_id": "photo-cards"
+  }
+}

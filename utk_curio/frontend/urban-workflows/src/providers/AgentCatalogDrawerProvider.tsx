@@ -7,6 +7,7 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import { useFlowContext } from "./FlowProvider";
+import { useAgentsDataflowId } from "./agents";
 import { AgentCatalogDrawer } from "../components/agents/catalog/AgentCatalogDrawer";
 import { modalStackDepth } from "../components/ModalShell";
 import { useSlideDrawerPresentation } from "../hook/useSlideDrawerPresentation";
@@ -17,9 +18,9 @@ import { useSlideDrawerPresentation } from "../hook/useSlideDrawerPresentation";
  * drawer mounts closed and slides in on the next frames; closing keeps it
  * mounted through the exit slide and unmounts on `onExitComplete` (with a
  * timer fallback), so open/close animate exactly like the Nodes and Datasets
- * drawers. Must sit INSIDE ``FlowProvider`` — the drawer reads
- * ``useFlowContext().projectId`` to scope Install/Uninstall to the open
- * project. Rendered via a portal so it overlays the canvas.
+ * drawers. Must sit INSIDE ``FlowProvider``: the drawer reads the dataflow
+ * whose agents the canvas drives (``useAgentsDataflowId``) to scope
+ * Install/Uninstall to it. Rendered via a portal so it overlays the canvas.
  */
 
 type AgentCatalogDrawerContextValue = {
@@ -42,7 +43,10 @@ export function AgentCatalogDrawerProvider({ children }: { children: React.React
   // DEC-042: the roster header carries the Pin only — pinned blocks the
   // backdrop/Escape dismissals (programmatic close still works).
   const [pinned, setPinned] = useState(false);
-  const { projectId, ensureProjectId } = useFlowContext();
+  const { ensureProjectId } = useFlowContext();
+  // The dataflow Install and Uninstall work on: on an invited editor's canvas,
+  // the one its link opened, which the flow state does not name.
+  const projectId = useAgentsDataflowId();
 
   useEffect(() => {
     if (!presented) return;

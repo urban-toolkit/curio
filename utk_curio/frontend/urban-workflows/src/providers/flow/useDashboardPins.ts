@@ -1,5 +1,6 @@
 // Dashboard pins: pinning a node, which nodes a pinned tile depends on, and
-// the save that follows a pin change.
+// the record of the outputs a pinned tile or a scenario reads, which follows
+// a pin or scenario change.
 import React, { useCallback, useRef } from "react";
 import type { Node, ReactFlowInstance } from "reactflow";
 import { dashboardSourceNodeIds } from "../../utils/dashboardLayout";
@@ -45,14 +46,12 @@ export function useDashboardPins({
         setNodes((nds: Node[]) =>
             nds.map(n => n.id === nodeId ? { ...n, data: { ...n.data, dashboardPinned: value } } : n)
         );
-        // A pin is part of the saved spec, so it is an edit. Nothing said so
-        // before, which was harmless while the dashboard was a canvas mode and
-        // is not now: the page renders what is on disk, so an unsaved pin would
-        // be a tile the dashboard never shows.
+        // A pin is part of the dataflow, so it is an edit: the doc keeps it on
+        // a saved dataflow, and a dataflow not saved yet is Unsaved.
         markDirtyRef.current();
-        // Both directions: unpinning has to reach the dashboard just as promptly
-        // as pinning, or the tile stays on a page the user has already removed
-        // it from.
+        // Both directions: the outputs a newly pinned tile reads are recorded
+        // for the dashboard to draw, and an unpinned tile's sources are no
+        // longer kept on its account.
         savePinChangeRef.current();
         // A hosted guest's pin is not saved, nor the outputs behind it, so
         // there is nothing to announce.
@@ -94,9 +93,9 @@ export function useDashboardPinSave({
     /** A hosted guest (`isHostedGuest`), who cannot save the dataflow. */
     hostedGuest?: boolean;
 }) {
-    // Debounced so toggling several pins in a row is one save, and so the save
-    // reads the React Flow store after the pin has landed in it rather than the
-    // snapshot from the click.
+    // Debounced so toggling several pins in a row is one record, and so the
+    // record reads the React Flow store after the pin has landed in it rather
+    // than the snapshot from the click.
     const pinSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     savePinChangeRef.current = () => {
         // The dashboard writes on its own terms (Save layout), and a visitor
@@ -104,23 +103,15 @@ export function useDashboardPinSave({
         if (dashboardOn) return;
         if (!workflowOps.projectId) return;
         if (workflowOps.viewerMode === "shared") return;
-        // A hosted guest's saves are refused. This one is Curio's own, so it
-        // is skipped rather than tried and reported as "Could not save the pin".
+        // A hosted guest's saves are refused. This record is Curio's own, so
+        // it is skipped rather than tried and reported.
         if (hostedGuest) return;
         if (pinSaveTimerRef.current) clearTimeout(pinSaveTimerRef.current);
         pinSaveTimerRef.current = setTimeout(() => {
-            // Through the save queue, after any save already out: a Save
-            // clicked within the debounce used to go out beside this one, and
-            // two PUTs of one dataflow at once were behind #909 and #941.
-            workflowOps.requestProjectSave().catch((err: unknown) => {
-                // Loud, unlike the 30 second auto-save: the user just asked for
-                // something whose only visible effect is on another page, so a
-                // silent failure would look like the dashboard ignoring them.
-                console.error("Saving the pin failed:", err);
-                showToast(
-                    "Could not save the pin. The dashboard will not show this tile until the dataflow is saved.",
-                    "error",
-                );
+            // recordOutputs says itself when the record fails.
+            void workflowOps.recordOutputs().catch((err: unknown) => {
+                console.error("Recording the outputs a tile or a scenario reads failed:", err);
+                showToast("Could not save the outputs this dataflow's tiles and scenarios read.", "error");
             });
         }, 400);
     };

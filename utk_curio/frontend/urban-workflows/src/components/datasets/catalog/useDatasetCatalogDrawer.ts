@@ -9,6 +9,7 @@ import {
   type DragEvent,
 } from "react";
 import { useFlowContext } from "../../../providers/FlowProvider";
+import { useAgentsDataflowId } from "../../../providers/agents/useAgentsDataflowId";
 import { hostedGuestSignInNote, useHostedGuest } from "../../apiSettings/useHostedGuest";
 import { useDatasetDetails, viewDatasetDetailsToast } from "./datasetDetailsContext";
 import { useToastContext } from "../../../providers/ToastProvider";
@@ -31,6 +32,7 @@ import {
 import { buildSaveableLiveOutputs } from "../../../utils/saveOutputDataset";
 import { resolveComputedInstallTitle } from "../../../utils/palettePackageFactoryDraft";
 import { addDatasetToDataflow, dataflowRefFromCatalogItem } from "./dataflowDatasetRef";
+import { useAskTheOwner } from "../useAskTheOwner";
 import { permanentDeletionNotice } from "../../../services/retentionCopy";
 import { codeOnlyDataflows, codeOnlyWarning } from "../../../services/codeOnlyUsage";
 import type { DrawerTab } from "./datasetCatalogDrawerTypes";
@@ -50,6 +52,14 @@ export interface DatasetConfirmAction {
 export function useDatasetCatalogDrawer(presented: boolean) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { projectId, projectName, ensureProjectId, setDataflowDatasets, outputs, nodes, defaultSaveOutputDataset, pendingInstalls, beginPendingInstall, endPendingInstall } = useFlowContext();
+  // The dataflow the drawer lists, by the rule the canvas's agents and runs
+  // follow: the one the owner's canvas saves, the one an invited editor's
+  // route opened, none on a watcher's canvas.
+  const dataflowId = useAgentsDataflowId();
+  // On the owner's dataflow, an invited editor's Add to project asks her
+  // (`useAskTheOwner`), and his Remove from project changes her dataflow
+  // alone, as his deleting a node does.
+  const askTheOwner = useAskTheOwner();
   const hostedGuest = useHostedGuest();
   // The canvas's one dataset details modal, the same one the palettes and the
   // Dataset Finder open (`CanvasDatasetDetailsProvider`), and the one this
@@ -77,7 +87,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
   }, [search]);
 
   const catalog = useDatasetCatalog({
-    dataflowId: projectId,
+    dataflowId,
     search: debouncedSearch,
     sort,
     origin: tabOrigin(tab),
@@ -145,16 +155,16 @@ export function useDatasetCatalogDrawer(presented: boolean) {
       // created on its first save, so before that nothing is installed and this
       // tab rendered empty even for datasets the user had just added to every
       // project. Those ARE in this dataflow, one save away.
-      list = list.filter((item) => isInThisDataflow(item, Boolean(projectId)));
+      list = list.filter((item) => isInThisDataflow(item, Boolean(dataflowId)));
     } else if (tab === "computed") {
       list = list.filter((item) => item.origin === "computed" || Boolean(item.producerNodeId));
     }
     return list.filter(matchesSearch);
-  }, [catalogItems, tab, debouncedSearch, projectId]);
+  }, [catalogItems, tab, debouncedSearch, dataflowId]);
 
   const installedCount = useMemo(
-    () => catalogItems.filter((item) => isInThisDataflow(item, Boolean(projectId))).length,
-    [catalogItems, projectId],
+    () => catalogItems.filter((item) => isInThisDataflow(item, Boolean(dataflowId))).length,
+    [catalogItems, dataflowId],
   );
 
   const computedCount = useMemo(
@@ -188,6 +198,15 @@ export function useDatasetCatalogDrawer(presented: boolean) {
 
   const performInstall = useCallback(
     async (dataset: DatasetCatalogItem) => {
+      if (askTheOwner) {
+        setBusyId(dataset.id);
+        try {
+          await askTheOwner(dataset, { add: true });
+        } finally {
+          setBusyId(null);
+        }
+        return;
+      }
       const id = await dataflowIdFor("add datasets");
       if (!id) return;
       setBusyId(dataset.id);
@@ -220,7 +239,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         setBusyId(null);
       }
     },
-    [dataflowIdFor, setDataflowDatasets, showToast, beginPendingInstall, endPendingInstall, openDetails],
+    [askTheOwner, dataflowIdFor, setDataflowDatasets, showToast, beginPendingInstall, endPendingInstall, openDetails],
   );
 
   // #196: the Data catalog confirms an add too, so all three catalogs agree.
@@ -231,22 +250,33 @@ export function useDatasetCatalogDrawer(presented: boolean) {
       const title = datasetDisplayTitle(dataset);
       const isGroup = isLayerGroupId(dataset.id);
       const layerCount = isGroup ? (dataset.groupLayerIds ?? []).length : 0;
-      setConfirmAction({
-        title: `Add ${title}?`,
-        body: isGroup
-          ? `Add all ${layerCount} layers from ${title} to this project?`
-          : `Add ${title} to this project?`,
-        confirmLabel: "Add to project",
-        destructive: false,
-        run: () => performInstall(dataset),
-      });
+      setConfirmAction(
+        askTheOwner
+          ? {
+              title: `Ask to add ${title}?`,
+              body: `Ask the dataflow's owner to add ${title} to this dataflow? It is added once the owner applies your request.`,
+              confirmLabel: "Ask the owner",
+              destructive: false,
+              run: () => performInstall(dataset),
+            }
+          : {
+              title: `Add ${title}?`,
+              body: isGroup
+                ? `Add all ${layerCount} layers from ${title} to this project?`
+                : `Add ${title} to this project?`,
+              confirmLabel: "Add to project",
+              destructive: false,
+              run: () => performInstall(dataset),
+            },
+      );
     },
-    [performInstall],
+    [askTheOwner, performInstall],
   );
 
   const performUninstall = useCallback(
     async (dataset: DatasetCatalogItem) => {
-      const id = await dataflowIdFor("remove datasets");
+      // An editor's tab saves no dataflow: it removes from the one it opened.
+      const id = askTheOwner ? dataflowId : await dataflowIdFor("remove datasets");
       if (!id) return;
       setBusyId(dataset.id);
       try {
@@ -280,7 +310,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         setBusyId(null);
       }
     },
-    [dataflowIdFor, setDataflowDatasets, showToast, openDetails],
+    [askTheOwner, dataflowId, dataflowIdFor, setDataflowDatasets, showToast, openDetails],
   );
 
   /** Would removing this from the dataflow also delete it from the account?
@@ -293,6 +323,8 @@ export function useDatasetCatalogDrawer(presented: boolean) {
    */
   const uninstallAlsoDeletes = useCallback(
     async (dataset: DatasetCatalogItem): Promise<boolean> => {
+      // An editor's removal deletes nothing from any store.
+      if (askTheOwner) return false;
       const dirName = String(dataset.dirName ?? "");
       if (!dirName.startsWith("imported.")) return false;
       if (dataset.origin === "computed" || dataset.origin === "source_node") return false;
@@ -310,7 +342,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         return false;
       }
     },
-    [],
+    [askTheOwner],
   );
 
   // #197 gave the other two catalogs a confirmation for this and left the Data
@@ -356,7 +388,11 @@ export function useDatasetCatalogDrawer(presented: boolean) {
       setConfirmAction({
         title: `Remove ${title}?`,
         body:
-          (alsoDeletes
+          (askTheOwner
+            ? `Remove ${title} from this dataflow?
+
+The dataset stays in the Data Catalog of the dataflow's owner.`
+            : alsoDeletes
             ? `Remove ${title} from this project?
 
 No other dataflow uses it, so the uploaded file is also deleted from your Data Catalog.`
@@ -369,7 +405,7 @@ The dataset stays in your Data Catalog and in any other dataflow using it.`) +
         run: () => performUninstall(dataset),
       });
     },
-    [codeOnlyUsers, performUninstall, uninstallAlsoDeletes],
+    [askTheOwner, codeOnlyUsers, performUninstall, uninstallAlsoDeletes],
   );
 
   const onPublish = useCallback(
@@ -611,7 +647,10 @@ The dataset stays in your Data Catalog and in any other dataflow using it.`) +
 
   return {
     fileInputRef,
-    projectId,
+    // The dataflow the drawer is of, the one its listing and its In project
+    // tab read, so a card's in-project state agrees with the tab that listed
+    // it. Its Add, Remove and Publish save through the flow state instead.
+    projectId: dataflowId,
     tab,
     setTab,
     search,

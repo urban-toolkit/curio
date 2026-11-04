@@ -48,6 +48,15 @@ def _names(events) -> list[str]:
 # turn_stream_deltas' "doneKeys" edited by hand to add "skills" (#1206): a chat
 # run's done names the skills its run held, and the Researcher's chat holds its
 # instruction's own (#1209).
+# Edited by hand when an agent's change came to land at once, as a person's
+# edit does: solve_batch_two_waves' "doneKeys" lose "mode", since Solve has one
+# way now and writes what passed. solve_node_fix and validate_node_pass end
+# their rounds with the "change" of the code that landed, their "doneKeys" name
+# that change where they named a review, and the fixed code is the node's.
+# simulate_auto, Build & validate, works on a plan that landed whole: it
+# validates, then approves, each node, so it creates and connects nothing, and
+# each node's code rides the stream as a "change". Its "edgeStates", the
+# connections it drew, became "nodeChanges", the change it recorded per node.
 
 GOLDEN: dict[str, dict | None] = {'run_node_chain': {'doneKeys': ['blocker',
                                  'error',
@@ -61,23 +70,15 @@ GOLDEN: dict[str, dict | None] = {'run_node_chain': {'doneKeys': ['blocker',
                     'order_len': 2,
                     'outputTypes': ['dataframe', 'dataframe']},
  'simulate_auto': {'doneKeys': ['builderSession', 'mode', 'status'],
-                   'edgeStates': {'0': 'applied'},
                    'names': ['simulate_started',
                              'stage',
-                             'node_created',
-                             'action_result',
-                             'stage',
                              'validation_started',
                              'generation_round',
                              'node_executed',
                              'round_verdict',
+                             'change',
                              'action_result',
                              'stage',
-                             'node_content_applied',
-                             'action_result',
-                             'stage',
-                             'node_created',
-                             'edges_created',
                              'action_result',
                              'stage',
                              'validation_started',
@@ -85,11 +86,12 @@ GOLDEN: dict[str, dict | None] = {'run_node_chain': {'doneKeys': ['blocker',
                              'node_executed',
                              'node_executed',
                              'round_verdict',
+                             'change',
                              'action_result',
                              'stage',
-                             'node_content_applied',
                              'action_result',
                              'done'],
+                   'nodeChanges': ['a', 'b'],
                    'nodeStates': ['approved', 'approved'],
                    'status': 'completed'},
  'solve_batch_two_waves': {'appliedContents': ['load', 'stats'],
@@ -100,7 +102,6 @@ GOLDEN: dict[str, dict | None] = {'run_node_chain': {'doneKeys': ['blocker',
                                         'cancelled',
                                         'endedBy',
                                         'executionId',
-                                        'mode',
                                         'notAttempted',
                                         'passes',
                                         'results',
@@ -138,10 +139,10 @@ GOLDEN: dict[str, dict | None] = {'run_node_chain': {'doneKeys': ['blocker',
                            'waves': [[1, 2, 1], [2, 2, 1]]},
  'solve_node_fix': {'attempts': [['fail', 'current content'], ['pass', 'generated']],
                     'doneKeys': ['attempts',
+                                 'changeAttachmentId',
+                                 'changeId',
                                  'evidence',
                                  'nodeId',
-                                 'proposalAttachmentId',
-                                 'proposalId',
                                  'rounds',
                                  'stoppedBy',
                                  'verdict'],
@@ -152,9 +153,10 @@ GOLDEN: dict[str, dict | None] = {'run_node_chain': {'doneKeys': ['blocker',
                               'generation_round',
                               'node_executed',
                               'round_verdict',
+                              'change',
                               'done'],
                     'rounds': 2,
-                    'spec_content_replaced': False,
+                    'spec_content_replaced': True,
                     'verdict': 'pass'},
  'turn_stream_deltas': {'content': [],
                         'doneKeys': ['content', 'durationMs', 'executionId', 'reply', 'skills', 'usage'],
@@ -163,16 +165,17 @@ GOLDEN: dict[str, dict | None] = {'run_node_chain': {'doneKeys': ['blocker',
                         'turns': [['user', 'q1'], ['agent', 'hello']]},
  'validate_node_pass': {'doneKeys': ['attempts',
                                      'builderSession',
+                                     'changeAttachmentId',
+                                     'changeId',
                                      'evidence',
                                      'nodeId',
-                                     'proposalAttachmentId',
-                                     'proposalId',
                                      'rounds',
                                      'verdict'],
                         'names': ['validation_started',
                                   'generation_round',
                                   'node_executed',
                                   'round_verdict',
+                                  'change',
                                   'done'],
                         'nodeState': 'validated',
                         'outputDataType': 'dataframe',
@@ -235,10 +238,10 @@ class TestSolveNodeStream:
 class TestSimulationStream:
     def test_auto_mode(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
-        h = routes_solve.TestSimulationDriver()
+        h = routes_solve.TestBuildAndValidate()
         plan = routes_proposals.TestDataflowPlanMint()
         h._fake_exec(monkeypatch)
-        att_id, proposal, _ = h._setup(
+        att_id, _card, _ids, _ = h._setup(
             client, user, token, alice_project, monkeypatch,
             replies=["Plan.\n" + plan._plan_tail(), "print('generated')"],
         )
@@ -248,7 +251,7 @@ class TestSimulationStream:
             "names": _names(events),
             "status": done["status"],
             "nodeStates": sorted(done["builderSession"]["nodeStates"].values()),
-            "edgeStates": done["builderSession"]["edgeStates"],
+            "nodeChanges": sorted(done["builderSession"]["nodeChanges"]),
             "doneKeys": sorted(done.keys()),
         }
         _check("simulate_auto", actual, GOLDEN["simulate_auto"])
@@ -257,17 +260,14 @@ class TestSimulationStream:
 class TestRunNodeStream:
     def test_chain_runs(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
-        h = routes_solve.TestProgressiveLifecycle()
         monkeypatch.setattr(
             "utk_curio.backend.app.execution.runner._http_exec",
             lambda endpoint, payload: {"stdout": ["ran"], "stderr": "",
                                        "output": {"path": "art-run", "dataType": "dataframe"}},
         )
-        att_id, proposal = h._mint(client, user, token, alice_project, monkeypatch)
-        pid = proposal["proposalId"]
-        refs = [n["ref"] for n in proposal["plan"]["nodes"]]
-        h._apply_node(client, token, alice_project, att_id, pid, refs[0])
-        h._apply_node(client, token, alice_project, att_id, pid, refs[1])
+        # The plan's nodes and its connection landed with it.
+        att_id, card, _ids, _ = routes_solve._landed_plan(client, user, token, alice_project, monkeypatch)
+        refs = [n["ref"] for n in card["plan"]["nodes"]]
         r = client.post(f"/api/agents/projects/{alice_project}/attachments/{att_id}/run-node",
                         json={"ref": refs[1]}, headers=_auth(token))
         assert r.status_code == 200

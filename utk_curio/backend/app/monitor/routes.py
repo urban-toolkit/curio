@@ -143,7 +143,6 @@ def _deployment(sandbox) -> dict:
         "authEnabled": not config.CURIO_NO_AUTH,
         "projectsEnabled": not config.CURIO_NO_PROJECT,
         "guestLoginAllowed": bool(config.ALLOW_GUEST_LOGIN),
-        "collabEnabled": bool(config.ENABLE_COLLAB),
         # The switch the package and dataset catalog routes obey.
         "factoryPublishAllowed": bool(packages_routes_common.CURIO_ALLOW_FACTORY_CATALOG_PUBLISH),
         "saveNodeOutputDefault": bool(config.CURIO_DEFAULT_SAVE_NODE_OUTPUT),

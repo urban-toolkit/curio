@@ -1,0 +1,78 @@
+{
+  "skill_name": "widgets",
+  "agent": "agent.curio.node-builder@1",
+  "dataflow": "docs/examples/dataflows/data-pool-vega-2.json",
+  "evals": [
+    {
+      "id": 1,
+      "target": {"kind": "node", "node": "f9e2b9af-23e6-4db3-9140-38bfecd6afc5"},
+      "prompt": "Add a node after this one that keeps only the zip codes I tick in a list of checkboxes: 60601, 60614 and 60622, all ticked to start.",
+      "expected_output": "One new node whose code keeps the rows whose zip is among the ticked ones, from a checkbox group widget whose choices are the three zip codes and whose default holds all three; the code places the widget's reference on its own, as the list it becomes, such as isin([!! zips !!]).",
+      "assertions": [
+        "The answer creates one new node (node.create) that declares a widget of type checkbox-group or multi-select whose choices are 60601, 60614 and 60622.",
+        "That widget's default is a list holding all three zip codes.",
+        "The code places the widget's reference on its own where a list of values is used, such as .isin([!! zips !!]) with the widget's own name.",
+        "The code neither splits, parses nor quotes the reference to make a list of it: no .split(, no json.loads or eval, and no quotes around the reference."
+      ]
+    },
+    {
+      "id": 2,
+      "target": {"kind": "node", "node": "a1abfa78-6517-4606-9660-c7eeeeb49851"},
+      "prompt": "Add a node after this one with a box I can tick to drop the roofs under 1,000 vegetated square feet. When it is not ticked, every roof stays. Start with it ticked.",
+      "expected_output": "One new node whose code drops the roofs under 1,000 VEGETATED_SQFT while a checkbox widget is ticked and returns every roof when it is not, the checkbox declared with true as its default and read through its reference on its own, as the true or false value it becomes.",
+      "assertions": [
+        "The answer creates one new node (node.create) that declares a widget of type checkbox with a default of true.",
+        "The code uses the widget's reference on its own as a true or false value, such as if [!! drop_small !!]: with the widget's own name.",
+        "The code never compares the reference with a text, such as \"true\" or \"True\", and never puts it in quotes.",
+        "When the box is not ticked, the code returns every roof."
+      ]
+    },
+    {
+      "id": 3,
+      "dataflow": "docs/examples/dataflows/widget.json",
+      "target": {"kind": "node", "node": "c8c48cdb-323d-4f80-ace9-7ac358277f90"},
+      "prompt": "Use 25 as the factor this node multiplies column b by, and keep that factor something I can change later without editing code.",
+      "expected_output": "The factor reaches this node from the multiplier node's number_multiplier widget, so the answer sets that widget to 25 with node.settings.write on the multiplier node (f325441e-55be-4415-aa1b-b2055f590de2), where the user can change it later, and types 25 into no node's code.",
+      "assertions": [
+        "The answer uses node.settings.write on node f325441e-55be-4415-aa1b-b2055f590de2 to set its widget number_multiplier to 25.",
+        "The reply tells the user the factor is now set in the multiplier node's Number Multiplier widget, where they can change it later.",
+        "No code the answer writes holds the number 25: it changes no node's code to type the factor in place of the widget.",
+        "The answer creates no new node."
+      ]
+    },
+    {
+      "id": 4,
+      "dataflow": "docs/examples/dataflows/quad-cities-flood-vulnerability.json",
+      "target": {"kind": "node", "node": "f4a5b6c7-3d4e-4f5a-9b6c-7d8e9fa0b1c4"},
+      "prompt": "Show the 2050 - 2080 period instead, in both flood depth layers.",
+      "expected_output": "Both depth loaders read the period from one node's timeline widget (Projection period), so the answer sets that widget to \"2050 - 2080\" with node.settings.write on node c7246f52-d977-5353-9951-bcb855d2ebda, and changes neither loader's code.",
+      "assertions": [
+        "The answer uses node.settings.write on node c7246f52-d977-5353-9951-bcb855d2ebda to set its widget timeline to \"2050 - 2080\".",
+        "The reply says both depth layers follow the one Projection period setting, which is where the period was changed.",
+        "The answer changes neither loader's code: no node.content.write on f4a5b6c7-3d4e-4f5a-9b6c-7d8e9fa0b1c4 or a5b6c7d8-4e5f-4a6b-8c7d-8e9fa0b1c2d5."
+      ]
+    }
+  ],
+  "trigger_queries": [
+    {"query": "Could the top 10 in the transformation node be something I change with a slider instead of editing the code? 5 to 25 is enough. How would that work?", "should_trigger": true},
+    {"query": "can i pick the year from a dropdown (2019, 2020, 2021) instead of hardcoding it in the python? how", "should_trigger": true},
+    {"query": "What would a node that keeps only the roofs above a minimum vegetated area, set without touching code, declare and read? Default 5000 sq ft.", "should_trigger": true},
+    {"query": "How can the people using this dataflow choose which zip codes to keep from a list of checkboxes, with no code edits?", "should_trigger": true},
+    {"query": "The 10 is buried in the code. How do I get it into the node's Widgets tab?", "should_trigger": true},
+    {"query": "Two of my nodes need the same buffer distance in meters. Where do I keep it so that changing it once updates both?", "should_trigger": true},
+    {"query": "How does a loading node load whatever CSV of roofs my colleague drops on it, without its code naming the file?", "should_trigger": true},
+    {"query": "Set the count slider on the transformation node to 15.", "should_trigger": true},
+    {"query": "my manager wants to try different cutoffs for what counts as a big green roof without calling me every time. whats the way to make that adjustable", "should_trigger": true},
+    {"query": "How would a toggle turn outlier removal on and off in a cleaning step before the chart?", "should_trigger": true},
+    {"query": "When I click a bar in the chart, show the roofs of that zip code in a table next to it.", "should_trigger": false},
+    {"query": "Load the Chicago building footprints from the Data Catalog into a new node.", "should_trigger": false},
+    {"query": "Make the bars green and sort them from largest to smallest.", "should_trigger": false},
+    {"query": "Put the green roofs on a map of Chicago, colored by vegetated area.", "should_trigger": false},
+    {"query": "What did the transformation node look like before my last edit?", "should_trigger": false},
+    {"query": "Pin the chart to the dashboard so my team can see it.", "should_trigger": false},
+    {"query": "Write a node that downloads the green roofs CSV straight from the city's open data portal.", "should_trigger": false},
+    {"query": "Why does the transformation node fail with a KeyError on 'zip'?", "should_trigger": false},
+    {"query": "Change the chart's title to 'Top zip codes by green roof area'.", "should_trigger": false},
+    {"query": "Add a Map Editor node that removes the buildings under three floors as a what-if.", "should_trigger": false}
+  ]
+}

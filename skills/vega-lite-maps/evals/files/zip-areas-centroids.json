@@ -1,0 +1,48 @@
+{
+  "dataflow": {
+    "categories": {"city": ["Chicago"], "topic": ["Greenery"], "complexity": ["Beginner"]},
+    "nodes": [
+      {
+        "id": "zip-areas",
+        "type": "curio.builtin/data-loading",
+        "title": "Zip code areas",
+        "x": 200,
+        "y": 200,
+        "content": "import geopandas as gpd\nfrom shapely.geometry import box\n\n# Three zip code areas near the Loop, in longitude and latitude (EPSG:4326),\n# with how many green roofs each holds.\nareas = gpd.GeoDataFrame(\n    {\"zip\": [\"60601\", \"60602\", \"60603\"], \"roofs\": [14, 6, 9]},\n    geometry=[\n        box(-87.630, 41.880, -87.620, 41.890),\n        box(-87.640, 41.880, -87.630, 41.890),\n        box(-87.640, 41.870, -87.630, 41.880),\n    ],\n    crs=\"EPSG:4326\",\n)\n# A second geometry column: each area's centroid, kept as points.\nareas[\"centroid\"] = areas.geometry.centroid\n\nreturn areas",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Return three zip code areas as a GeoDataFrame in EPSG:4326: zip (object), roofs (int64), geometry (polygons, active), centroid (points, a second geometry column).",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "zip-map",
+        "type": "curio.builtin/vis-vega",
+        "title": "Zip code map",
+        "x": 1000,
+        "y": 200,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-zip-areasout-zip-mapin",
+        "source": "zip-areas",
+        "target": "zip-map",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      }
+    ],
+    "name": "Zip code areas",
+    "task": "",
+    "timestamp": 1777164480406,
+    "provenance_id": "zip-areas-centroids"
+  }
+}

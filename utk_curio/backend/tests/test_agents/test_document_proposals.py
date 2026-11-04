@@ -1,10 +1,9 @@
-"""A chart or a map an agent proposes is checked as Solve checks one, before
-its review card appears: a Node Builder ``node.create`` and a content
-replacement (``node.content.write``, which delegated content and a proposing
-Solve mint too), through the gate every agent-authored content passes. A
-Solve that writes without running holds a document to the same check, and a
-document that does not validate fails the node as one, not as an ungrounded
-source.
+"""A chart or a map an agent writes is checked as Solve checks one, before it
+lands: a Node Builder ``node.create`` and a content replacement
+(``node.content.write``, which delegated content lands through too), through
+the gate every agent-authored content passes. A Solve that writes without
+running holds a document to the same check, and a document that does not
+validate fails the node as one, not as an ungrounded source.
 
 A document is checked with its references resolved as far as the dataflow
 knows them: the node's widgets (a created node's, the ones it declares) and
@@ -126,8 +125,8 @@ def _results(calls: list, tool: str) -> list[str]:
     return grounding_routes._tool_results(calls[-1], tool)
 
 
-def _proposals(body) -> list[dict]:
-    return [p for p in body["content"] if p["type"] == "proposal"]
+def _changes(body) -> list[dict]:
+    return routes_proposals._changes(body)
 
 
 def _node(user, project, node_id) -> dict:
@@ -136,74 +135,79 @@ def _node(user, project, node_id) -> dict:
 
 
 class TestACreatedNode:
-    def test_a_chart_that_does_not_validate_is_refused_and_one_with_its_chips_and_widgets_is_proposed(
+    def test_a_chart_that_does_not_validate_is_refused_and_one_with_its_chips_and_widgets_lands(
         self, client, user_and_token, tmp_curio, charts, monkeypatch
     ):
-        _, token = user_and_token
+        user, token = user_and_token
         grounding_routes._install(client, token, charts, NB)
         att = grounding_routes._attach(client, token, charts, NB)
         calls = grounding_routes._script(monkeypatch, [
             _create(VEGA, OWNERS_VEGA),
             _create(VEGA, SCOUT_STYLE, widgets=SCOUT_WIDGETS),
-            "Proposed: review it above.",
+            "Added it.",
         ])
         body = grounding_routes._run(client, token, charts, att, "chart the mean trips per scenario")
-        refused, proposed = _results(calls, "node.create")
+        refused, landed = _results(calls, "node.create")
         assert "document refused" in refused, refused
         assert "'else' was unexpected" in refused
-        assert proposed.startswith("[tool result] node.create: proposed"), proposed
-        # The chart that resolves through its own widgets and the scenario chips is proposed as written.
-        [proposal] = _proposals(body)
-        assert proposal["preview"] == SCOUT_STYLE
+        assert landed.startswith("[tool result] node.create: applied"), landed
+        # The chart that resolves through its own widgets and the scenario chips lands as written.
+        [card] = _changes(body)
+        assert card["preview"] == SCOUT_STYLE
+        [created] = [c["canvas"]["node"] for c in body["changes"] if c["tool"] == "node.create"]
+        assert _node(user, charts, created["id"])["content"] == SCOUT_STYLE
 
-    def test_a_map_that_draws_nothing_is_refused_and_one_reading_an_input_not_yet_wired_is_proposed(
+    def test_a_map_that_draws_nothing_is_refused_and_one_reading_an_input_not_yet_wired_lands(
         self, client, user_and_token, tmp_curio, charts, monkeypatch
     ):
-        _, token = user_and_token
+        user, token = user_and_token
         grounding_routes._install(client, token, charts, NB)
         att = grounding_routes._attach(client, token, charts, NB)
         calls = grounding_routes._script(monkeypatch, [
             _create(AUTK, '{"map": {"layerRefs": []}}'),
             _create(AUTK, MAP_OF_INPUT_0),
-            "Proposed: review it above.",
+            "Added it.",
         ])
         body = grounding_routes._run(client, token, charts, att, "map the population density")
-        refused, proposed = _results(calls, "node.create")
+        refused, landed = _results(calls, "node.create")
         assert "document refused" in refused, refused
         assert "a map with no layers renders nothing" in refused
-        assert proposed.startswith("[tool result] node.create: proposed"), proposed
-        [proposal] = _proposals(body)
-        assert proposal["preview"] == MAP_OF_INPUT_0
+        assert landed.startswith("[tool result] node.create: applied"), landed
+        [card] = _changes(body)
+        assert card["preview"] == MAP_OF_INPUT_0
+        [created] = [c["canvas"]["node"] for c in body["changes"] if c["tool"] == "node.create"]
+        assert _node(user, charts, created["id"])["content"] == MAP_OF_INPUT_0
 
 
 class TestAReplacedContent:
-    def test_a_chart_that_does_not_validate_is_refused_and_one_with_its_boxes_chips_is_proposed(
+    def test_a_chart_that_does_not_validate_is_refused_and_one_with_its_boxes_chips_lands(
         self, client, user_and_token, tmp_curio, charts, monkeypatch
     ):
-        """What a verified Solve accepts for this node, the review mint accepts too."""
+        """What a verified Solve accepts for this node, the write accepts too."""
         user, token = user_and_token
         grounding_routes._install(client, token, charts, NB)
         att = grounding_routes._attach(client, token, charts, NB, target={"kind": "node", "targetId": "chart"})
         calls = grounding_routes._script(monkeypatch, [
             _write("chart", OWNERS_VEGA),
             _write("chart", WITH_SCENARIO_CHIPS),
-            "Proposed: review it above.",
+            "Written.",
         ])
         body = grounding_routes._run(client, token, charts, att, "chart the trips per scenario")
-        refused, proposed = _results(calls, "node.content.write")
+        refused, landed = _results(calls, "node.content.write")
         assert "document refused" in refused, refused
         assert "'else' was unexpected" in refused
-        assert proposed.startswith("[tool result] node.content.write: proposed"), proposed
-        [proposal] = _proposals(body)
-        assert proposal["preview"] == WITH_SCENARIO_CHIPS
-        assert _node(user, charts, "chart")["content"] == ""  # proposed, not written
+        assert landed.startswith("[tool result] node.content.write: applied"), landed
+        [card] = _changes(body)
+        assert card["preview"] == WITH_SCENARIO_CHIPS
+        # The document that validates is the node's; the refused one never was.
+        assert _node(user, charts, "chart")["content"] == WITH_SCENARIO_CHIPS
 
 
 class TestASolveThatDoesNotRun:
-    """A Solve without verification writes, or proposes, without running; a
-    document still has to validate, and the node's error says it did not."""
+    """A Solve without verification writes without running; a document still
+    has to validate, and the node's error says it did not."""
 
-    def _applied_chart(self, client, user, token, project, monkeypatch, document):
+    def _landed_chart(self, client, user, token, project, monkeypatch, document):
         plan = {
             "goal": "trips per scenario",
             "nodes": [{"ref": "trips", "nodeType": VEGA, "title": "Trips", "intent": "a bar chart of mean trips"}],
@@ -215,12 +219,9 @@ class TestASolveThatDoesNotRun:
         grounding_routes._script(monkeypatch, [
             lambda calls: document if "[delegated task" in calls[-1][-1]["content"] else plan_tail,
         ])
-        [proposal] = _proposals(grounding_routes._run(client, token, project, att, "plan the chart"))
-        applied = client.post(
-            f"/api/agents/projects/{project}/attachments/{att}/proposals/{proposal['proposalId']}/apply",
-            headers=_auth(token),
-        ).get_json()
-        chart = next(n["id"] for n in applied["appliedGraph"]["nodes"] if str(n.get("type", "")).startswith(VEGA))
+        body = grounding_routes._run(client, token, project, att, "plan the chart")
+        graph = routes_proposals._landed_plan(body)["canvas"]
+        chart = next(n["id"] for n in graph["nodes"] if str(n.get("type", "")).startswith(VEGA))
         return att, chart
 
     def test_a_document_that_does_not_validate_fails_the_node_and_one_that_does_is_written(
@@ -229,7 +230,7 @@ class TestASolveThatDoesNotRun:
         from utk_curio.backend.tests.test_agents.test_document_validation import FIXED_VEGA
 
         user, token = user_and_token
-        att, chart = self._applied_chart(client, user, token, charts, monkeypatch, OWNERS_VEGA)
+        att, chart = self._landed_chart(client, user, token, charts, monkeypatch, OWNERS_VEGA)
         body = client.post(
             f"/api/agents/projects/{charts}/attachments/{att}/solve",
             json={"verify": False}, headers=_auth(token),
@@ -249,18 +250,18 @@ class TestASolveThatDoesNotRun:
         assert body["results"][chart]["status"] == "solved", body["results"][chart]
         assert _node(user, charts, chart)["content"] == FIXED_VEGA
 
-    def test_a_proposing_solve_proposes_no_document_that_does_not_validate(
+    def test_a_streamed_solve_writes_no_document_that_does_not_validate(
         self, client, user_and_token, tmp_curio, charts, monkeypatch
     ):
         user, token = user_and_token
-        att, chart = self._applied_chart(client, user, token, charts, monkeypatch, OWNERS_VEGA)
+        att, chart = self._landed_chart(client, user, token, charts, monkeypatch, OWNERS_VEGA)
         r = client.post(
             f"/api/agents/projects/{charts}/attachments/{att}/solve/stream",
-            json={"mode": "propose", "verify": False}, headers=_auth(token),
+            json={"verify": False}, headers=_auth(token),
         )
         events = routes_solve.TestStreamedSolve()._sse_events(r)
         results = [p for k, p in events if k == "node_result" and p.get("nodeId") == chart]
         assert results and all(p["status"] == "failed" for p in results), results
         assert results[-1]["error"].startswith("document-invalid: "), results[-1]["error"]
-        assert not any(p.get("proposalId") for p in results)
+        assert not [k for k, _ in events if k == "change"]
         assert _node(user, charts, chart)["content"] == ""

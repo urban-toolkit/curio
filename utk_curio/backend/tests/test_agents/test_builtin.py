@@ -678,10 +678,10 @@ class TestNodeBuilderComposite:
         assert "catalog.search" in text
         assert 'curio_data_path("<id>")' in text
         assert '"dataset.discover"' in text
-        assert "do not propose in that same turn" in text
+        assert "do not add the node in that same turn" in text
         assert "synthetic data ONLY when the user explicitly asked for made-up data in their own words" in text
         assert "Never invent a filename" in text
-        assert "ask the user for a path or URL instead of proposing" in text
+        assert "ask the user for a path or URL instead of writing the node's code" in text
 
     def test_instruction_sends_code_through_params_not_the_reply(self):
         # #245: the runtime now recovers a misplaced request, but the cheapest
@@ -1195,7 +1195,10 @@ class TestResearcher:
         # 2026-10-26: a value several nodes read is a widget on one Python
         # node that returns it, wired into each reader, and a setting change
         # names a widget's value only: the Parameter node is gone (PR #1186).
-        "7ceb84cbd0b03bc18f7daf026e7a89789f468dcf358d661f971bf86cf00a4ca4"
+        # 2026-10-29: a plan, a node, a node's code or settings land at once,
+        # as the agent's change the user can undo; the rules say what landed
+        # and that a node's code is written into it (step 13).
+        "ef82c2265c1a1884be2d0dfacf6ca0e88d7586506c9a755716bd9a0d2e3afb9b"
     )
 
     def test_manifest_surface(self):
@@ -1209,8 +1212,8 @@ class TestResearcher:
             "agent.curio.node-builder": ("package.build", "package.extend", "node.kind.author"),
         }
         assert [t.kind for t in m.compatible_targets] == ["node", "canvas"]
-        # It reads the dataflow as it is on screen, unsaved edits included,
-        # beside what it is attached to (on a node, that node's last run).
+        # It reads the dataflow as it is on screen, beside what it is
+        # attached to (on a node, that node's last run).
         assert list(m.inputs_reads) == [
             "mission", "targetContext", "installedTemplates", "dataflowContext",
         ]
@@ -1283,9 +1286,9 @@ class TestResearcher:
         route = low.split("## what the user wants", 1)[1].split("\n## ", 1)[0]
         assert "explain it, debug it, or define what to build" in route
         assert "answer from the dataflow you were given and your read tools" in route
-        assert "use no web tools and propose no notes" in route
+        assert "use no web tools and place no notes" in route
         assert "a question the dataflow cannot answer" in route
-        assert "search the web, answer in prose, and propose notes" in route
+        assert "search the web, answer in prose, and place notes" in route
         assert "a fact to check" in route and "labeled findings" in route
         # The sections the routes name, in this order.
         headings = ["## explain", "## debug", "## define a task", "## gather findings",
@@ -1303,7 +1306,9 @@ class TestResearcher:
         notes = low.split("\n## notes\n", 1)[1].split("\n## ", 1)[0]
         assert "place and write notes as the research-notes skill says" in notes
         # It reads the dataflow on screen and looks further with its tools.
-        assert "unsaved edits included" in low
+        # No tab holds edits apart from its dataflow, so none are named.
+        assert "with each message you receive the dataflow as it is on screen: its nodes" in low
+        assert "unsaved" not in low
         for tool in ("dataflow.read", "node.read", "node.runtime.read"):
             assert tool in text, tool
         # A finished task definition ends in the fixed summary, and nothing

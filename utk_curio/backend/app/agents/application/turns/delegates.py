@@ -1,4 +1,4 @@
-"""Delegation inside a turn: resolving the delegate, running it traced, and minting candidates, reviews, notes, and drafts from its reply.
+"""Delegation inside a turn: resolving the delegate, running it traced, and minting candidates, changes, notes, and drafts from its reply.
 
 Application layer of the agents package (memo dev/142, B2; re-derived on enh/agent-catalog): cut from
 ``services.py`` by responsibility; every function keeps its name and body. Sibling modules are reached
@@ -26,10 +26,12 @@ from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.domain import node_context
 from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 from utk_curio.backend.app.agents.repositories import sessions
+from utk_curio.backend.app.agents.application import in_the_room as agents_room
 from utk_curio.backend.app.agents.application import lifecycle as agents_lifecycle
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application import tools as agents_tools
 from utk_curio.backend.app.agents.application.proposals import acquire as agents_acquire
+from utk_curio.backend.app.agents.application.proposals import changes as agents_changes
 from utk_curio.backend.app.agents.application.proposals import mint as agents_mint
 from utk_curio.backend.app.agents.application.proposals import plans as agents_plans
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
@@ -254,6 +256,9 @@ def _run_delegate_traced(
     home_create: bool = True,
     dataflow_block: str | None = None,
     refused: str | None = None,
+    asker=None,
+    stay=None,
+    who: agents_room.Asker | None = None,
 ) -> tuple[str, str, dict, str | None]:
     """One delegated task, TRACED (memo dev/72): the DEC-046 seam stays pure —
     this wrapper resolves the task's home attachment, writes the framed task
@@ -264,8 +269,14 @@ def _run_delegate_traced(
 
     An agent that hands work to one of its own modes and names no node opens
     no chat of its own: like an internal agent's, its record rides the
-    parent's turn. *dataflow_block* and *refused* go to the child as
-    ``delegation.run_delegate`` says."""
+    parent's turn. *dataflow_block*, *refused* and *asker* go to the child as
+    ``delegation.run_delegate`` says.
+
+    With *stay*, an ``ExitStack`` the caller holds while it lands what the
+    run made, the delegate is at work in the dataflow's room as the agent of
+    its home (else of the parent's attachment, whose peer it then shares),
+    asked by *who*, with the skills its run is handed, until the caller lets
+    it go."""
     home_attachment_id: str | None = None
     home_session_id: str | None = None
     try:
@@ -282,6 +293,11 @@ def _run_delegate_traced(
                     dataflow_docs.write(user_key, project_id, spec, dataflow_docs.by_agent(coord, user_key, "delegate"))
     except Exception:
         home_attachment_id = home_session_id = None
+    peer = None
+    if stay is not None:
+        peer = stay.enter_context(agents_room.at_work(
+            user_key, project_id, home_attachment_id or attachment_id, coord=coord, who=who,
+        ))
     # Without a name, the id's last segment: my-helper for agent.acme.my-helper.
     parent_label = parent_name or parent_coord.split("@", 1)[0].rsplit(".", 1)[-1]
     if isinstance(home_session_id, str):
@@ -290,7 +306,7 @@ def _run_delegate_traced(
                 user_key, project_id, home_session_id, home_attachment_id,
                 [sessions.make_turn(
                     "user",
-                    f"[Delegated by {parent_label}] "
+                    f"{sessions.DELEGATED_TURN_PREFIX}{parent_label}] "
                     f"{_delegation_task_text(capability, inputs)}",
                 )],
             )
@@ -304,6 +320,8 @@ def _run_delegate_traced(
         attachment_id=attachment_id,
         dataflow_block=dataflow_block,
         refused=refused,
+        asker=asker,
+        uses_skills=peer.use_skills if peer is not None else None,
     )
     if isinstance(home_session_id, str):
         try:
@@ -397,19 +415,20 @@ def _mint_content_review_from_delegate(
     grounding_base: dict | None = None,
     delegate_coord: str | None = None,
 ) -> tuple[dict | None, str | None, str]:
-    """dev/73: the ONE content→review sequence (the Solve drain's, extracted):
-    a successful ``node.content.generate`` delegation becomes a reviewed
-    ``node.content.write`` proposal minted by the RUNTIME — applyability
-    never depends on the model re-emitting the content as a second
+    """dev/73: the ONE content sequence: a successful ``node.content.generate``
+    delegation's code lands in the node by the RUNTIME, through the
+    ``node.content.write`` mint and its checks, as the agent's change. It
+    never depends on the model sending the code again as a second
     toolRequest.
 
-    Mints at the dev/72 delegation home (the node's own agent) when one
-    exists — find-only; the traced delegation already created it when it
-    could — else at the parent attachment. The review turn is written at a
-    foreign home (the parent's composed turn carries the part locally);
-    ``local_turn=True`` (the Solve drain, which composes no parent parts)
-    writes it unconditionally. *delegate_coord* is the agent that generated
-    the content. Returns ``(proposal_part | None, home_attachment_id,
+    Lands at the dev/72 delegation home (the node's own agent) when one
+    exists (find-only; the traced delegation already created it when it
+    could), else at the parent attachment: the change is that attachment's,
+    and its Undo is in that chat. The change's turn is written at a foreign
+    home (the parent's composed turn carries the part locally);
+    ``local_turn=True`` writes it unconditionally. *delegate_coord* is the
+    agent that generated the content. The canvas mutation rides the parent's
+    stream. Returns ``(change_part | None, home_attachment_id,
     text_for_model)``; on failure the text is the honest refusal to feed
     back.
     """
@@ -439,11 +458,18 @@ def _mint_content_review_from_delegate(
     mint_ctx = {
         k: v for k, v in (parent_loop_ctx or {}).items()
         if k in ("message", "previous_message", "_verified_urls", "_egress_budget", "_probe_cache",
-                 "granted", "manifest")
+                 "granted", "manifest", "asker_id", "asker", "room_asker")
     }
     mint_ctx.update({"attachment_id": home_att, "session_id": home_sess})
+    if isinstance(parent_session_id, str):
+        # The change lands in the home's chat, but the user's words are in the
+        # chat that asked for it, which the gate reads.
+        mint_ctx["asked_in_session_id"] = parent_session_id
+    if parent_loop_ctx is not None:
+        # The change's canvas mutation rides the parent's stream.
+        mint_ctx["_landed"] = parent_loop_ctx.setdefault("_landed", [])
     if grounding_base is not None:
-        # dev/115: a job thread holds no request context — the gate grounds
+        # dev/115: a job thread holds no request context: the gate grounds
         # against the batch's precomputed catalog refs, not a live listing.
         mint_ctx["_grounding_base"] = grounding_base
     p_status, p_error, part = agents_mint._mint_node_content_write(
@@ -454,10 +480,10 @@ def _mint_content_review_from_delegate(
     )
     if part is None:
         return None, home_att, agent_text.message(
-            "delegate.content-not-minted", error=(p_error or agent_text.message("delegate.content-not-minted-unknown"))[:200],
+            "delegate.content-not-written", error=(p_error or agent_text.message("delegate.content-not-minted-unknown"))[:200],
         )
     if validation:
-        # dev/115: an EXECUTED review carries its verdict and attempt trail —
+        # dev/115: an EXECUTED change carries its verdict and attempt trail,
         # stamped before the turn is written so the persisted part has it.
         part["validation"] = dict(validation)
     if isinstance(home_sess, str) and (local_turn or home_att != parent_attachment_id):
@@ -466,7 +492,7 @@ def _mint_content_review_from_delegate(
                 user_key, project_id, home_sess, home_att,
                 [sessions.make_turn(
                     "agent",
-                    f"Proposed content for {node_label!r} — review and apply it below.",
+                    f"Wrote the content of {node_label!r}.",
                     content=[part],
                 )],
             )
@@ -478,7 +504,7 @@ def _mint_content_review_from_delegate(
         else agent_text.message("delegate.content-minted-at-node", home_name=home_name or 'content')
     )
     return part, home_att, agent_text.message(
-        "delegate.content-minted", proposal_id=part['proposalId'], node_id=repr(node_id), where=where,
+        "delegate.content-written", node_id=repr(node_id), where=where,
     )
 
 
@@ -697,21 +723,20 @@ def _mint_notes_from_delegate(
     """dev/95 (Follow-up D): the one-mint-policy extended to note sequences.
 
     A successful ``research.notes.compose`` delegation whose bounded child
-    reply matches the notes schema becomes reviewed ``node.create``
-    proposals minted by the RUNTIME at the parent's attachment — one per
-    note, a same-run A16 jointly-pending sequence (apply in any order), each
-    row re-validated through ``_mint_node_create`` (the ONE creation lane:
-    dev/93 template vocabulary, A12 content bounds, dev/89 appearance
-    normalization). Gated on the PARENT's ``node.create`` grant (the
-    ``_mint_package_draft_from_delegate`` posture). Degradations land as
-    text with the way out named: no grant, no/invalid template (→ the
-    Researcher's own attachment owns the enlist/author ladder — depth-1
-    keeps it out of reach here), every row refused.
+    reply matches the notes schema becomes notes the RUNTIME adds at the
+    parent's attachment: one per row, in order, each the agent's change with
+    its own Undo, each row checked through ``_mint_node_create`` (the ONE
+    creation lane: dev/93 template vocabulary, A12 content bounds, dev/89
+    appearance normalization). Gated on the PARENT's ``node.create`` grant
+    (the ``_mint_package_draft_from_delegate`` posture). Degradations land as
+    text with the way out named: no grant, no or an invalid template (the
+    Researcher's own attachment owns the enlist and author ladder, which
+    depth 1 keeps out of reach here), every row refused.
 
-    Returns ``(proposal_parts, text_for_model, outcome)`` — outcome "ok"
-    when the delegation produced its answer (notes minted, legitimately
-    empty, or honestly skipped for a missing template), "failed" when the
-    reply broke the contract or notes existed but nothing could mint.
+    Returns ``(change_parts, text_for_model, outcome)``: outcome "ok" when
+    the delegation produced its answer (notes added, legitimately empty, or
+    honestly skipped for a missing template), "failed" when the reply broke
+    the contract or notes existed but none could be added.
     """
     payload = _extract_notes_reply(child_text)
     if payload is None:
@@ -749,16 +774,16 @@ def _mint_notes_from_delegate(
             "appearance": appearance,
         }}
         status, text, part = agents_mint._mint_node_create(user_key, project_id, loop_ctx, req)
-        if status == "proposed" and part is not None:
+        if status == agents_changes.LANDED and part is not None:
             parts.append(part)
         else:
             last_refusal = text
     if not parts:
         return [], agent_text.message(
-            "delegate.notes-none-proposed", answer=f"{answer}\n\n" if answer else "", last_refusal=last_refusal,
+            "delegate.notes-none-added", answer=f"{answer}\n\n" if answer else "", last_refusal=last_refusal,
         ), "failed"
     summary = agent_text.message(
-        "delegate.notes-proposed", answer=f"{answer}\n\n" if answer else "", count=len(parts),
+        "delegate.notes-added", answer=f"{answer}\n\n" if answer else "", count=len(parts),
         refusal=f" ({last_refusal})" if last_refusal else "",
     )
     return parts, summary, "ok"
@@ -1050,6 +1075,7 @@ def _draft_corrector(
                 user_key, project_id, req["capability"], enriched,
                 datasets=loop_ctx.get("dataflow_datasets"),
             ),
+            asker=loop_ctx.get("asker"),
         )
         delegations.append(child)
         return status, text
@@ -1258,13 +1284,15 @@ def _enriched_delegate_inputs(
         return inputs
     # dev/114 — the SEVENTH application: a data-loading node's content child
     # is HANDED its grounded sources (catalog paths, the user's paths, the
-    # URLs already verified) instead of guessing a filename.
+    # URLs already verified) instead of guessing a filename. The paths are the
+    # ones the user typed, which the write's gate holds the content to: the
+    # intent is the delegating agent's words.
     if "sourceGrounding" not in enriched and source_grounding.loads_dataset(
         node_type, agents_roster._roster_templates(user_key, project_id)
     ):
         enriched["sourceGrounding"] = agents_grounding._source_grounding_inputs(
             agents_grounding._grounding_context(user_key, project_id, loop_ctx, node_type=node_type,
-                               extra_texts=(str(inputs.get("intent") or ""),), is_data_loading=True)
+                                                is_data_loading=True)
         )
     return enriched
 

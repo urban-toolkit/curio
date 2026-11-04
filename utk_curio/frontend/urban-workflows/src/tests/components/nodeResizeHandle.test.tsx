@@ -9,7 +9,7 @@ import React, { useRef } from "react";
 import { render } from "@testing-library/react";
 
 const mockFlow: { viewerMode: "owner" | "shared" } = { viewerMode: "owner" };
-const mockCollab: { enabled: boolean; role: "owner" | "editor" | "watcher" | null } = { enabled: false, role: null };
+const mockCollab: { role: "owner" | "editor" | "watcher" | null } = { role: null };
 
 jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => mockFlow,
@@ -58,7 +58,6 @@ const size = (box: HTMLElement) => [box.style.width, box.style.height];
 
 afterEach(() => {
   mockFlow.viewerMode = "owner";
-  mockCollab.enabled = false;
   mockCollab.role = null;
 });
 
@@ -97,9 +96,8 @@ describe("a node's corner handle", () => {
     expect(onResizeEnd).not.toHaveBeenCalled();
   });
 
-  test("with collaboration on, an editor the owner invited is not read-only on their dataflow, and the handle resizes", () => {
+  test("an editor the owner invited is not read-only on their dataflow, and the handle resizes", () => {
     mockFlow.viewerMode = "shared";
-    mockCollab.enabled = true;
     mockCollab.role = "editor";
     const { box, onResizeEnd, handle } = draw();
     expect(handle()).not.toBeNull();
@@ -109,10 +107,9 @@ describe("a node's corner handle", () => {
   });
 
   test.each([["watcher"], [null]] as const)(
-    "with collaboration on, a %s on another user's dataflow is read-only: no handle, and a drag changes no size",
+    "a %s on another user's dataflow is read-only: no handle, and a drag changes no size",
     (role) => {
       mockFlow.viewerMode = "shared";
-      mockCollab.enabled = true;
       mockCollab.role = role;
       const { box, onResize, onResizeEnd, handle } = draw();
       expect(handle()).toBeNull();

@@ -360,6 +360,16 @@ def _resolve_files(descriptor, scratch_dir):
         descriptor["path"] = resolve_in_scratch(scratch_dir, descriptor["file"])
 
 
+def _overlay_on_the_wire(overlay_dir):
+    """*overlay_dir* as the request carries it: one directory as text, several
+    as a list of text in their order, none as None."""
+    if not overlay_dir:
+        return None
+    if isinstance(overlay_dir, (list, tuple)):
+        return [str(folder) for folder in overlay_dir if folder]
+    return str(overlay_dir)
+
+
 def build_exec_request(
     *,
     code,
@@ -399,7 +409,9 @@ def build_exec_request(
     prepended to the child's ``sys.path`` AFTER the fork, so one user's install
     is importable by their nodes and nobody else's. None means the shared
     interpreter, which is what an unisolated instance and an older parent both
-    mean.
+    mean. A list of directories is an editor's run of the dataflow's owner's
+    dataflow: the editor's own first, then the owner's, read-only, put on the
+    path in that order.
 
     ``package_modules`` is ``{"root", "names"}`` for a node whose package ships
     modules beside its templates (#468): ``root`` is the folder they were
@@ -418,7 +430,7 @@ def build_exec_request(
         "data_type": data_type,
         "scratch_dir": str(scratch_dir),
         "work_dir": str(work_dir) if work_dir else None,
-        "overlay_dir": str(overlay_dir) if overlay_dir else None,
+        "overlay_dir": _overlay_on_the_wire(overlay_dir),
         "input": input_spec,
         # The wired circles, in circle order: which input_k each value of the
         # input is (util/input_names.py). None leaves it to the input's shape.
