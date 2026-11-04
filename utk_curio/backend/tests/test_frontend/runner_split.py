@@ -4,8 +4,8 @@ CI runs the e2e suite on two kinds of machine. A self-hosted GPU runner
 (``arcade-gpu-01..04``, ``utk-gpu`` or ``utk-desktop-01``; the share keeps the name
 ``utk``) has an NVIDIA GPU and is the only place hardware WebGPU exists; it is also
 one machine, so everything on it runs in series. The CPU runners (GitHub-hosted
-``ubuntu-latest``, self-hosted ``[self-hosted, cpu]`` or the utk-desktop runners'
-``[self-hosted, desktop]``) have no GPU in use but come
+``ubuntu-latest``, self-hosted ``[self-hosted, arcade, cpu]`` or the utk-desktop runners'
+``[self-hosted, utk-desktop]``) have no GPU in use but come
 as many as a matrix asks for. So a test belongs on utk only when the browser
 has to run WebGPU, and everything else is spread across a matrix of CPU jobs.
 

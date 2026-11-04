@@ -5,7 +5,7 @@
  * writes the workers to CURIO_E2E_PARALLEL and, when the shards outnumber
  * them, the shards to CURIO_E2E_SHARDS (tested in the backend suite). So the
  * job must start the shards from CURIO_E2E_SHARDS: started from the workers,
- * a runner that holds one worker (utk-desktop-02) would start no second shard,
+ * a runner that holds one worker (utk-desktop-02 on 10-28) would start no second shard,
  * and the isolation test would run in no job. Two workers there took more
  * memory than the container's limit left them, and the kernel killed a
  * sandbox at the limit (run 40700358711, 10-28).
