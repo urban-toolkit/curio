@@ -13,6 +13,9 @@ import "@testing-library/jest-dom";
 import { ReactFlowProvider } from "reactflow";
 import { faCircle } from "@fortawesome/free-solid-svg-icons";
 
+jest.mock("vega", () => ({}), { virtual: true });
+jest.mock("vega-lite", () => ({}), { virtual: true });
+
 const mockFlow: Record<string, any> = {};
 jest.mock("../../providers/FlowProvider", () => ({ useFlowContext: () => mockFlow }));
 jest.mock("../../components/scenarios/useScenarioActions", () => ({ useScenarioActions: () => ({}) }));
