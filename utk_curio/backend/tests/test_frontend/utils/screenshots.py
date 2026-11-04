@@ -125,7 +125,7 @@ REMINT_FORCE: tuple = ()
 
 #: The GPU models CI's test-gpu job draws on: the arcade runners
 #: (arcade-gpu-01..04) share an H100, utk-gpu has an RTX PRO 6000, and
-#: utk-desktop-02 an RTX 4070. A frame they draw differently (example 07's plot
+#: utk-desktop-01 an RTX 3070. A frame they draw differently (example 07's plot
 #: close-up) keeps a baseline per GPU kind, ``<name>.<kind>.png``, beside its
 #: default one.
 GPU_KINDS = ("arcade-gpu", "utk-gpu", "utk-desktop")

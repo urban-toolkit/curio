@@ -4,16 +4,15 @@ CPU jobs run on GitHub-hosted ``ubuntu-latest`` while the organization's
 hosted runners have room, on the self-hosted arcade pool (``[self-hosted,
 arcade, cpu]``) after that, and on the utk-desktop runners (utk-desktop-01 and
 -02, ``[self-hosted, utk-desktop]``) when arcade is full too. The GPU job
-(test-gpu) asks for a GPU model: the arcade GPU pool's H100 (arcade-gpu-01..04,
-``[self-hosted, gpu, nvidia-h100]``) while it has a free runner, then utk-gpu's
-RTX PRO 6000 (``[self-hosted, gpu, nvidia-rtx-pro-6000]``), and utk-desktop-02's
-RTX 4070 (``[self-hosted, gpu, nvidia-rtx-4070]``) when utk-gpu is busy too,
-where it runs as many workers as the desktop holds
-(scripts/ci_memory_budget.py). It never runs on utk-desktop-01's RTX 3070,
-which takes CPU jobs only. A desktop runs one job of either kind, so the
-desktops' room counts the jobs of both. A self-hosted runner's labels are its
-site (arcade, utk, utk-desktop), its kind (cpu or gpu) and its GPU's model
-(nvidia-h100, nvidia-rtx-pro-6000, nvidia-rtx-3070, nvidia-rtx-4070).
+(test-gpu) runs on the arcade GPU pool (arcade-gpu-01..04, ``[self-hosted,
+arcade, gpu]``) while it has a free runner, then on utk-gpu (``[self-hosted,
+utk, gpu]``), and on utk-desktop-01 (``[self-hosted, utk-desktop-01, gpu]``)
+when utk-gpu is busy too, where it runs as many workers as the desktop holds
+(scripts/ci_memory_budget.py). utk-desktop-02 takes CPU jobs only. A desktop
+runs one job of either kind, so the desktops' room counts the jobs of both. A
+self-hosted runner's labels are its machine (arcade, utk, utk-desktop-01,
+utk-desktop-02; both desktops also carry utk-desktop) and its kind (cpu or
+gpu).
 GitHub cannot express "this runner, or that one if busy": ``runs-on`` has no
 "or", and it sends ``ubuntu-latest`` jobs only to its own runners. So a run
 picks twice: the pick-runners job, for the jobs that start at once, and
@@ -63,10 +62,10 @@ from datetime import datetime, timezone
 RUNS_ON = {
     "arcade": ["self-hosted", "arcade", "cpu"],
     "hosted": "ubuntu-latest",
-    "arcade-gpu": ["self-hosted", "gpu", "nvidia-h100"],
-    "utk": ["self-hosted", "gpu", "nvidia-rtx-pro-6000"],
+    "arcade-gpu": ["self-hosted", "arcade", "gpu"],
+    "utk": ["self-hosted", "utk", "gpu"],
     "desktop": ["self-hosted", "utk-desktop"],
-    "desktop-gpu": ["self-hosted", "gpu", "nvidia-rtx-4070"],
+    "desktop-gpu": ["self-hosted", "utk-desktop-01", "gpu"],
 }
 CPU_POOLS = ("arcade", "hosted", "desktop")
 #: The GPU pools a dispatch can name, and the place each one is.
@@ -80,10 +79,11 @@ GPU_RUNNERS = 4
 UTK_RUNNERS = 1
 #: The utk-desktop runners (utk-desktop-01 and -02), each one job at a time.
 DESKTOP_RUNNERS = 2
-#: Those of them that also take the GPU job, asked for by its GPU's model:
-#: utk-desktop-02 (12 GB, an RTX 4070). test-gpu runs on an RTX 4070, an RTX
-#: PRO 6000 or an H100, never on utk-desktop-01's RTX 3070 (owner, 11-04).
-GPU_DESKTOPS = ("utk-desktop-02",)
+#: Those of them that also take the GPU job, asked for by name: utk-desktop-01
+#: (30 GB, an RTX 3070). utk-desktop-02's 12 GB hold one worker, and test-gpu
+#: took 47 min there against 20 on utk-desktop-01, so it carries cpu, not gpu
+#: (owner, 11-04).
+GPU_DESKTOPS = ("utk-desktop-01",)
 DESKTOP_GPU_RUNNERS = len(GPU_DESKTOPS)
 #: Concurrent GitHub-hosted jobs the organization's plan allows.
 HOSTED_SLOTS = 20
@@ -172,7 +172,7 @@ def desktop_room(counts: dict) -> tuple[int, int]:
     """Free desktops for CPU jobs, and for the GPU job.
 
     A CPU job can take any desktop, the GPU job only those in GPU_DESKTOPS (today
-    utk-desktop-02, so a CPU job there leaves the GPU job no desktop). A running
+    utk-desktop-01, so a CPU job there leaves the GPU job no desktop). A running
     CPU job's runner says which desktop it holds; a queued one's does not, so
     CPU jobs are also taken to fill the desktops without a GPU first, and the
     rest to hold GPU desktops, whichever holds more.

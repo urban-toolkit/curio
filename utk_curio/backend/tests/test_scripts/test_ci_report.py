@@ -545,7 +545,7 @@ RUN_JOBS = {"jobs": [
     {"name": "test-gpu", "status": "completed", "conclusion": "success",
      "html_url": "https://github.com/o/r/actions/runs/1/job/2",
      "runner_name": "utk-gpu", "runner_group_name": "gpu",
-     "labels": ["self-hosted", "gpu", "nvidia-rtx-pro-6000"],
+     "labels": ["self-hosted", "utk", "gpu"],
      "created_at": "2026-09-30T11:59:58Z",
      "started_at": "2026-09-30T12:00:00Z", "completed_at": "2026-09-30T12:08:00Z",
      "steps": [{"name": "Run e2e tests", "status": "completed", "conclusion": "success",
