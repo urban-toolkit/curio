@@ -1,14 +1,13 @@
-"""The skill-evals node's steps (``.github/workflows/skill-evals.yml``).
+"""The steps of the Skill evaluations workflow (``.github/workflows/skill-evals.yml``).
 
 - ``mask``: on the runner, before anything prints, has GitHub mask the base
   URL's host and its host and port in the job's log, as it masks the secrets
   themselves. It prints only the ``::add-mask::`` commands GitHub reads.
 - ``previous --out <folder>``: on the runner, the per-model summaries of the
-  newest finished run of this workflow on main that measured the skills by
-  itself (the weekly run, or a dispatch on main), from its
+  newest finished run of this workflow on main, from its
   ``skill-evals-summary`` artifact. The report compares with them. Nothing
   found is no failure.
-- ``run --scope <file> --out <folder>``: in the CI image, the commit's own
+- ``run --scope <file> --out <folder>``: in the CI image, on the branch's own
   code. It reads the models from ``CURIO_EVAL_MODELS`` (a JSON list) and the
   endpoint from ``CURIO_EVAL_BASE_URL`` and ``CURIO_EVAL_API_KEY``.
   1. Each model is probed with one short request, and one that does not
@@ -55,8 +54,6 @@ PROBE_TRIES = 2
 #: The artifact a run's per-model summaries go to, and this workflow's file.
 SUMMARY_ARTIFACT = "skill-evals-summary"
 WORKFLOW = "skill-evals.yml"
-#: The events of the runs whose summaries later runs compare with.
-OWN_EVENTS = ("schedule", "workflow_dispatch")
 
 ENV_MODELS = "CURIO_EVAL_MODELS"
 ENV_JOBS = "CURIO_EVAL_JOBS"
@@ -109,8 +106,6 @@ def cmd_previous(args) -> int:
         listing = _api(f"{api}/repos/{repo}/actions/workflows/{WORKFLOW}/runs?branch=main&status=completed"
                        "&per_page=20", token)
         for run in listing.get("workflow_runs") or []:
-            if run.get("event") not in OWN_EVENTS:
-                continue
             artifacts = _api(f"{api}/repos/{repo}/actions/runs/{run['id']}/artifacts?name={SUMMARY_ARTIFACT}",
                              token).get("artifacts") or []
             if not artifacts or artifacts[0].get("expired"):
