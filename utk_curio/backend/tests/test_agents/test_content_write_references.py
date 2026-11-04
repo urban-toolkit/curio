@@ -3,10 +3,13 @@
 A run writes a node's chips in before it sends its code
 (``WorkflowSpec.node_code``, through ``code_references.resolve_references``)
 and refuses each one it cannot resolve: a widget the node does not declare, a
-scenario chip in code. The ``node.content.write`` mint, which a delegated
-node's code lands through too, refuses such code in the run's own words, so
-the agent is told. node.content.write declares no widget, so the agent could
-never repair the node by writing the chip again.
+scenario chip in code. Wherever an agent's code is written into a node, such
+code is refused in the run's own words, so the agent is told:
+``node.content.write``, which a delegated node's code lands through too
+(whose agent that asked reads the refusal whole); ``node.create``, against
+the widgets the new node starts with and the input circles its template has;
+and a Solve that writes without running, for a planned node, against the
+circles the plan's edges wire.
 
 A chip the node's code holds already is the user's own, and an empty Data
 widget waits for its data, as the editor draws it: neither is refused.
@@ -16,10 +19,19 @@ fails test by test rather than at collection.
 """
 from __future__ import annotations
 
-from utk_curio.backend.tests.test_agents.test_map_edits_grounding import _project, _refusals, _write_tail
+import json
+
+from utk_curio.backend.tests._support.agent_routes import _auth
+from utk_curio.backend.tests.test_agents.test_map_edits_grounding import (
+    _landed_graph,
+    _project,
+    _refusals,
+    _write_tail,
+)
 from utk_curio.backend.tests.test_agents.test_source_grounding_routes import (
     _attach,
     _changes,
+    _create_tail,
     _delegate_tail,
     _install,
     _proposals,
@@ -29,8 +41,11 @@ from utk_curio.backend.tests.test_agents.test_source_grounding_routes import (
 )
 
 NB = "agent.curio.node-builder@1"
+DFB = "agent.curio.dataflow-builder@1"
 DL = "curio.builtin/data-loading"
 CA = "curio.builtin/computation-analysis"
+#: A template whose node takes one input: its only circle is input_0.
+SUMMARY = "curio.builtin/data-summary"
 
 #: The widgets case of the live runs: column b multiplied by a factor, a
 #: widget the node does not declare.
@@ -76,6 +91,23 @@ def _refusal_text(words: list[str]) -> str:
     from utk_curio.backend.app.agents.domain import agent_text
 
     return agent_text.message("mint.content-references", problems="\n".join(words))
+
+
+def _a_new_nodes_words(code: str, widgets=(), circles=(0,)) -> list[str]:
+    """What a run says of each reference in *code* it cannot resolve, on a
+    node that holds *widgets* with its input *circles* wired: the run's own
+    function (``code_references.resolve_references``)."""
+    from utk_curio.backend.app.execution.code_references import resolve_references
+
+    _code, problems = resolve_references(code, list(widgets), "python", [{"slot": slot} for slot in circles])
+    return [p["message"] for p in problems]
+
+
+def _create_refusal_text(words: list[str]) -> str:
+    """The refusal node.create's mint hands the model for the run's *words*."""
+    from utk_curio.backend.app.agents.domain import agent_text
+
+    return agent_text.message("mint.create-references", problems="\n".join(words))
 
 
 def _attached_builder(client, token, project, node_id) -> str:
@@ -141,6 +173,8 @@ class TestCodeTheNodesRunRefusesIsNotWritten:
         assert len(words) == 1 and "has no widget named factor" in words[0], words
         result = calls[2][-1]["content"]
         assert "could not be written into the node" in result and words[0] in result, result
+        # Whole: what to do instead comes after the run's words.
+        assert _refusal_text(words) in result, result
 
 
 class TestCodeTheNodesRunResolvesIsWritten:
@@ -191,3 +225,143 @@ class TestCodeTheNodesRunResolvesIsWritten:
         assert _saved_content(user, project, "load") == code
         words = _the_runs_words(user, project, "load", code)
         assert len(words) == 1 and "drop a file or a Data Catalog dataset on Data first" in words[0], words
+
+
+class TestANewNodesCodeIsHeldToItsRun:
+    """node.create: a new node's chips are judged as its run resolves them once
+    the node is wired, against the widgets the request declares and its
+    template gives it, and the input circles its template has. The Node
+    Builder never wires a node: the user, or a plan's edges, do."""
+
+    def _create(self, client, user, token, monkeypatch, code, node_type=CA, **params):
+        project = _project(client, user, token, [])
+        _install(client, token, project, NB)
+        att = _attach(client, token, project, NB)
+        calls = _script(monkeypatch, [_create_tail(code, node_type=node_type, **params), "Done."])
+        return calls, _run(client, token, project, att, "add a node for it")
+
+    def test_code_naming_a_widget_the_new_node_does_not_declare_is_refused_in_the_runs_words(
+        self, client, user_and_token, tmp_curio, monkeypatch,
+    ):
+        user, token = user_and_token
+        code = "df = [!! input_0 !!]\nreturn df * [!! factor !!]"
+        calls, body = self._create(client, user, token, monkeypatch, code)
+        assert not _changes(body) and not _proposals(body), "a node whose run refuses its code was added"
+        words = _a_new_nodes_words(code)
+        assert len(words) == 1 and "has no widget named factor" in words[0], words
+        [refusal] = _refusals(calls, "node.create")
+        assert _create_refusal_text(words) in refusal, refusal
+
+    def test_python_holding_a_scenario_chip_is_refused_in_the_runs_words(
+        self, client, user_and_token, tmp_curio, monkeypatch,
+    ):
+        user, token = user_and_token
+        calls, body = self._create(client, user, token, monkeypatch, SCENARIO_COLORS)
+        assert not _changes(body) and not _proposals(body), "a node whose run refuses its code was added"
+        words = _a_new_nodes_words(SCENARIO_COLORS)
+        assert len(words) == 1 and "is for a Vega-Lite or Autark spec, not for code" in words[0], words
+        [refusal] = _refusals(calls, "node.create")
+        assert _create_refusal_text(words) in refusal, refusal
+
+    def test_a_chip_of_a_circle_its_template_lacks_is_refused_in_the_runs_words(
+        self, client, user_and_token, tmp_curio, monkeypatch,
+    ):
+        """A Data Summary node takes one input, so input_1 is no circle of it:
+        no edge could ever reach it."""
+        user, token = user_and_token
+        code = "df = [!! input_0 !!]\nreturn df.merge([!! input_1 !!])"
+        calls, body = self._create(client, user, token, monkeypatch, code, node_type=SUMMARY)
+        assert not _changes(body) and not _proposals(body), "a node whose run refuses its code was added"
+        words = _a_new_nodes_words(code)
+        assert len(words) == 1 and "input_1 has no edge" in words[0], words
+        [refusal] = _refusals(calls, "node.create")
+        assert _create_refusal_text(words) in refusal, refusal
+
+    def test_a_chip_of_a_circle_its_template_has_lands_unwired(self, client, user_and_token, tmp_curio, monkeypatch):
+        """As the live runs' created nodes did: the code reads input_0, and the
+        user connects it."""
+        user, token = user_and_token
+        code = "df = [!! input_0 !!]\nreturn df.describe()"
+        calls, body = self._create(client, user, token, monkeypatch, code)
+        assert [card["preview"] for card in _changes(body)] == [code], _tool_results(calls[-1], "node.create")
+
+    def test_code_reading_a_widget_the_request_declares_lands(self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        code = "df = [!! input_0 !!]\nreturn df * [!! factor !!]"
+        calls, body = self._create(client, user, token, monkeypatch, code, widgets=[dict(FACTOR)])
+        assert [card["preview"] for card in _changes(body)] == [code], _tool_results(calls[-1], "node.create")
+
+    def test_code_reading_its_templates_empty_data_widget_lands(self, client, user_and_token, tmp_curio, monkeypatch):
+        """A Data Loading node starts with its template's Data widget, empty:
+        code that loads what Data holds waits for its data."""
+        user, token = user_and_token
+        code = "data = curio_load_data([!! data !!])\nreturn data"
+        calls, body = self._create(client, user, token, monkeypatch, code, node_type=DL)
+        assert [card["preview"] for card in _changes(body)] == [code], _tool_results(calls[-1], "node.create")
+
+
+class TestAPlannedNodesCodeWrittenWithoutRunning:
+    """A plan carries no code (``plan.nodes-carry-content``): Solve writes each
+    planned node's. A Solve that writes without running holds that code to the
+    references the node's run resolves, against the node's own widgets and the
+    circles the plan's edges wire, as a verified Solve's run does."""
+
+    def _planned(self, client, user, token, monkeypatch, code) -> tuple[str, str, str]:
+        """A loader wired into a Python node, as a plan lands them, whose code
+        a content builder writes as *code*: the project, the plan's attachment
+        and the Python node's id."""
+        project = _project(client, user, token, [])
+        plan = {
+            "goal": "the buildings scaled by a factor",
+            "nodes": [
+                {"ref": "load", "nodeType": DL, "title": "Buildings", "intent": "synthetic sample buildings, by building_id"},
+                {"ref": "scale", "nodeType": CA, "title": "Scaled", "intent": "the buildings scaled by a factor"},
+            ],
+            "edges": [{"from": "load", "to": "scale"}],
+        }
+        plan_tail = "Plan.\n```curio.v1\n" + json.dumps({"dataflowPlan": plan}) + "\n```"
+
+        def _reply(calls):
+            frame = calls[-1][-1]["content"]
+            if "[delegated task" not in frame:
+                return plan_tail
+            if f'"nodeType": "{CA}"' in frame:
+                return code
+            return 'import pandas as pd\nreturn pd.DataFrame({"building_id": [1, 2]})'
+
+        _install(client, token, project, DFB, NB)
+        att = _attach(client, token, project, DFB)
+        _script(monkeypatch, [_reply])
+        graph = _landed_graph(_run(client, token, project, att, "plan the buildings scaled by a factor"))
+        scale = next(n["id"] for n in graph["nodes"] if str(n.get("type", "")).startswith(CA))
+        return project, att, scale
+
+    def _solved_without_running(self, client, token, project, att, node_id) -> dict:
+        body = client.post(
+            f"/api/agents/projects/{project}/attachments/{att}/solve",
+            json={"verify": False}, headers=_auth(token),
+        ).get_json()
+        return body["results"][node_id]
+
+    def test_code_naming_a_widget_the_node_does_not_have_fails_it_in_the_runs_words(
+        self, client, user_and_token, tmp_curio, monkeypatch,
+    ):
+        user, token = user_and_token
+        code = "df = [!! input_0 !!]\nreturn df * [!! factor !!]"
+        project, att, scale = self._planned(client, user, token, monkeypatch, code)
+        result = self._solved_without_running(client, token, project, att, scale)
+        assert result["status"] == "failed", result
+        assert _saved_content(user, project, scale) == "", "code its node's run refuses was written"
+        words = _the_runs_words(user, project, scale, code)
+        assert len(words) == 1 and "has no widget named factor" in words[0], words
+        assert words[0] in result["error"], result
+
+    def test_code_reading_the_circle_the_plans_edge_wires_is_written(
+        self, client, user_and_token, tmp_curio, monkeypatch,
+    ):
+        user, token = user_and_token
+        code = "df = [!! input_0 !!]\nreturn df.describe()"
+        project, att, scale = self._planned(client, user, token, monkeypatch, code)
+        result = self._solved_without_running(client, token, project, att, scale)
+        assert result["status"] == "solved", result
+        assert _saved_content(user, project, scale) == code
