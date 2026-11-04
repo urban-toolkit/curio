@@ -1397,12 +1397,18 @@ def _cut_text(key: str, text: str, bound: int) -> dict:
 def _history_row(record: dict) -> dict:
     """One entry of a node's history as node.history.read lists it: its id and
     parent, run or edit, an edit's label (whoever made it, or what it
-    changed), when it started and ended, the kinds of data it read and
-    returned, and how long its code is."""
+    changed), who made it as the drawer names them (``by``), when it started
+    and ended, the kinds of data it read and returned, and how long its code
+    is."""
+    from utk_curio.backend.app.projects.services import history_author
+
     edit = record.get("kind") == "edit"
     row: dict = {"id": record.get("id"), "parentId": record.get("parentId"), "kind": "edit" if edit else "run"}
     if edit and isinstance(record.get("label"), str):
         row["label"] = record["label"]
+    by = history_author(record["by"]) if isinstance(record.get("by"), dict) else None
+    if by:
+        row["by"] = by
     code = record.get("code")
     return {
         **row,
@@ -1418,11 +1424,12 @@ def _execute_node_history_read(spec: dict, target: dict | None, params: dict,
                                user_key: str = "", project_id: str = "") -> tuple[str, str]:
     """``node.history.read``: a node's entries, newest first, or with
     ``entryId`` that entry's code. A dataflow whose history the server keeps
-    as points reads the node's entries there (``collaboration/history``);
-    another reads the saved dataflow's ``nodeProvenance``, keyed by node id
-    as a load keys it (``projects/node_provenance``, the twin of
-    ``utils/nodeProvenanceKeys.ts``)."""
+    as points reads the node's entries there, named as its Provenance drawer
+    names them (``projects/services.node_entries``); another reads the saved
+    dataflow's ``nodeProvenance``, keyed by node id as a load keys it
+    (``projects/node_provenance``, the twin of ``utils/nodeProvenanceKeys.ts``)."""
     from utk_curio.backend.app.collaboration import history
+    from utk_curio.backend.app.projects import services as projects_services
     from utk_curio.backend.app.projects.node_provenance import rekey_node_provenance
 
     node_id = _resolve_node_id(target, params)
@@ -1434,7 +1441,7 @@ def _execute_node_history_read(spec: dict, target: dict | None, params: dict,
         return "error", agent_text.message("tools.node-not-in-spec", node_id=repr(node_id))
     if user_key and project_id and history.has_points(user_key, project_id):
         code = node.get("content") if isinstance(node.get("content"), str) else None
-        found = history.entries(user_key, project_id, node_id, code=code)["entries"]
+        found = projects_services.node_entries(user_key, project_id, node_id, code=code)["entries"]
     else:
         saved = spec.get("nodeProvenance")
         keyed = rekey_node_provenance(saved if isinstance(saved, dict) else {}, [str(n.get("id")) for n in nodes])
