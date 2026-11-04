@@ -266,6 +266,15 @@ def test_a_drawer_opened_over_define_scenario_closes_alone(
     # drawer slides in over Define.
     page.evaluate("() => window.__curio_reactFlow.setViewport({ x: -270, y: 200, zoom: 0.6 })")
     page.wait_for_function(_LEFT_OF_DEFINE_JS, arg="real", timeout=10000)
+    # The box that selected the node still lies over it, React Flow's frame of
+    # a box selection: a click on the empty canvas between the node and the
+    # one under it drops it, as a person's does, and Define keeps its pick.
+    real, tall = node_locator(page, "real").bounding_box(), node_locator(page, "tall").bounding_box()
+    empty = [real["x"] + real["width"] / 2, (real["y"] + real["height"] + tall["y"]) / 2]
+    assert page.evaluate(_ON_PANE_JS, empty), f"{empty} is not on the empty canvas"
+    page.mouse.click(*empty)
+    page.locator(".react-flow__nodesselection").wait_for(state="detached", timeout=10000)
+    expect(picked).to_be_visible()
     node_locator(page, "real").locator('.nav-link[data-rr-ui-event-key="provenance"]').first.click()
     expect(page.get_by_role("dialog", name="Node provenance")).to_be_visible(timeout=20000)
 
